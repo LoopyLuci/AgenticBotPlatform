@@ -1,0 +1,35 @@
+default_backend: cli
+action_overrides:
+  quick_question:
+    backend: cli
+    backup: []
+  project_task:
+    backend: cli
+    backup: []
+  desktop_specific:
+    backend: ui
+    backup: []
+backends:
+  api:
+    model: claude-sonnet-5
+    max_tokens: 4096
+  cli:
+    binary: claude
+    mode: print
+    allowed_tools: []
+    cwd: null
+  ui:
+    window_title_re: Claude.*
+    poll_interval_s: 0.5
+timeouts:
+  api: 30
+  cli: 60
+  ui: 45
+env_file: null
+desktop:
+  exe_path: null
+security:
+  confirm_destructive: true
+features:
+  ui_automation_enabled: true
+  verbose_telemetry: true

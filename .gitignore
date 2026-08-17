@@ -1,0 +1,18 @@
+.env
+data/env_backups/
+__pycache__/
+*.pyc
+.venv/
+venv/
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/pre_migration_backup/
+data/inbox/
+logs/*.log
+
+# Tauri desktop shell build output (target/ also holds a copy of bot/,
+# config/, and .venv/ per tauri.conf.json's bundle.resources — regenerated
+# on every build, never hand-edit anything under it)
+desktop-app/src-tauri/target/
+desktop-app/src-tauri/gen/schemas/
