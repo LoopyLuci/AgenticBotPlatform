@@ -44,26 +44,50 @@ def setup_logging() -> None:
 logger = logging.getLogger("bot.main")
 
 
-def _log_task_exception(name: str, task: "asyncio.Task") -> None:
-    if task.cancelled():
+def _handle_asyncio_exception(loop: asyncio.AbstractEventLoop, context: dict) -> None:
+    """Windows' Proactor event loop routinely raises ConnectionResetError
+    from its own _call_connection_lost cleanup when a long-poll socket
+    (Telegram's HTTP client cycling connections) gets closed by the remote
+    side first — harmless, but the default handler logs it at ERROR with a
+    full traceback on every occurrence, which under load can happen often
+    enough to drown out errors that actually matter. Everything else still
+    goes through asyncio's normal default handling unchanged."""
+    exc = context.get("exception")
+    handle = context.get("handle")
+    if (
+        isinstance(exc, ConnectionResetError)
+        and handle is not None
+        and "_call_connection_lost" in repr(handle)
+    ):
+        logger.debug("benign Proactor connection-lost cleanup: %s", exc)
         return
-    exc = task.exception()
-    if exc is not None:
-        logger.error("%s platform task ended with an error: %s", name, exc, exc_info=exc)
+    loop.default_exception_handler(context)
 
 
-async def _build_telegram(outbox) -> "telegram.ext.Application | None":
+async def build_telegram_instance(row: dict) -> "telegram.ext.Application":
+    """Builds, initializes, and starts polling for one Telegram bot
+    instance — called once per enabled bot_instances row with
+    platform="telegram" (bot/platform_supervisor.py owns the task that
+    keeps each one alive). Public (not prefixed with _) since
+    platform_supervisor imports it directly.
+    """
     from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
-    from bot import handlers
+    from bot import handlers, outbox
 
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    if not token:
-        logger.info("TELEGRAM_BOT_TOKEN not set — Telegram platform skipped")
-        return None
-
+    token = row["credentials"]["bot_token"]
     application = Application.builder().token(token).build()
-    outbox.register("telegram", lambda chat_id, text: application.bot.send_message(chat_id=chat_id, text=text))
+    application.bot_data["instance_id"] = row["id"]
+    application.bot_data["instance_name"] = row["name"]
+    application.bot_data["allowed_ids"] = {int(i) for i in row["allowed_user_ids"]}
+
+    outbox.register(row["id"], lambda chat_id, text: application.bot.send_message(chat_id=chat_id, text=text))
+
+    async def _send_file(chat_id, file_path, filename, caption):
+        with open(file_path, "rb") as f:
+            await application.bot.send_document(chat_id=chat_id, document=f, filename=filename, caption=caption)
+
+    outbox.register_file_sender(row["id"], _send_file)
 
     application.add_handler(CommandHandler("start", handlers.cmd_start))
     application.add_handler(CommandHandler("help", handlers.cmd_start))
@@ -73,6 +97,7 @@ async def _build_telegram(outbox) -> "telegram.ext.Application | None":
     application.add_handler(CommandHandler("stop_desktop", handlers.cmd_stop_desktop))
     application.add_handler(CommandHandler("restart_desktop", handlers.cmd_restart_desktop))
     application.add_handler(CommandHandler("backend", handlers.cmd_backend))
+    application.add_handler(CommandHandler("model", handlers.cmd_model))
     application.add_handler(CommandHandler("mcp", handlers.cmd_mcp))
     application.add_handler(CommandHandler("project", handlers.cmd_project))
     application.add_handler(CallbackQueryHandler(handlers.on_callback))
@@ -82,40 +107,29 @@ async def _build_telegram(outbox) -> "telegram.ext.Application | None":
     await application.initialize()
     await application.start()
     await application.updater.start_polling()
-    logger.info("Telegram platform connected")
+    logger.info("Telegram bot instance %r (id=%s) connected", row["name"], row["id"])
     return application
 
 
 async def run() -> None:
-    from bot import db, desktop, outbox
+    from bot import bot_instances, db, platform_supervisor
     from bot.config import config
-    from bot.platforms import discord_platform, slack_platform
 
     db.init_db()
     logger.info("secrets loaded from %s (exists=%s)", _env_path, _env_path.exists())
     db.log_audit(actor="system", action="startup", detail=f"env: {_env_path}")
 
-    telegram_app = await _build_telegram(outbox)
+    migrated_id = bot_instances.migrate_legacy_env_instance()
+    if migrated_id is not None:
+        logger.info("migrated legacy .env Telegram config into bot instance #%s", migrated_id)
 
-    platform_tasks: list[tuple[str, asyncio.Task]] = []
-    if discord_platform.is_configured():
-        t = asyncio.create_task(discord_platform.start())
-        t.add_done_callback(lambda tk: _log_task_exception("discord", tk))
-        platform_tasks.append(("discord", t))
-    elif os.environ.get("DISCORD_BOT_TOKEN"):
-        logger.warning("DISCORD_BOT_TOKEN is set but DISCORD_ALLOWED_USER_IDS is missing — Discord platform skipped")
+    instances = bot_instances.list_instances(enabled_only=True)
+    await platform_supervisor.start_all_enabled(instances)
 
-    if slack_platform.is_configured():
-        t = asyncio.create_task(slack_platform.start())
-        t.add_done_callback(lambda tk: _log_task_exception("slack", tk))
-        platform_tasks.append(("slack", t))
-    elif os.environ.get("SLACK_BOT_TOKEN") or os.environ.get("SLACK_APP_TOKEN"):
-        logger.warning("Slack tokens are only partially set (need SLACK_BOT_TOKEN, SLACK_APP_TOKEN, and SLACK_ALLOWED_USER_IDS) — Slack platform skipped")
-
-    if telegram_app is None and not platform_tasks:
+    if not instances:
         raise SystemExit(
-            "No messaging platform is configured — set up Telegram, Discord, or Slack "
-            "from the dashboard's Platforms settings (or scripts/setup.py) and restart."
+            "No bot is configured — add one from the dashboard's Bots tab "
+            "(or scripts/setup.py) and restart."
         )
 
     # dashboard app, sharing this process/loop
@@ -135,6 +149,7 @@ async def run() -> None:
         stop_event.set()
 
     loop = asyncio.get_running_loop()
+    loop.set_exception_handler(_handle_asyncio_exception)
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
             loop.add_signal_handler(sig, _handle_signal)
@@ -143,6 +158,19 @@ async def run() -> None:
 
     dashboard_task = asyncio.create_task(server.serve())
     watch_task = asyncio.create_task(config.watch_forever())
+
+    # server.serve() just got scheduled, not confirmed running — uvicorn
+    # sets Server.started once it's actually bound and accepting
+    # connections. Wait for that (bounded, so a real bind failure still
+    # surfaces promptly) before claiming "listening": logging this before
+    # it's true is exactly the kind of thing that makes a startup failure
+    # look like a working server in the log.
+    for _ in range(100):  # 100 x 0.05s = 5s
+        if server.started or dashboard_task.done():
+            break
+        await asyncio.sleep(0.05)
+    if dashboard_task.done():
+        dashboard_task.result()  # re-raise the real bind error, if any
     logger.info("Dashboard listening on http://%s:%s", host, port)
 
     try:
@@ -152,16 +180,10 @@ async def run() -> None:
         watch_task.cancel()
         server.should_exit = True
         await dashboard_task
-        for name, task in platform_tasks:
-            task.cancel()
-        if discord_platform.is_configured():
-            await discord_platform.stop()
-        if slack_platform.is_configured():
-            await slack_platform.stop()
-        if telegram_app is not None:
-            await telegram_app.updater.stop()
-            await telegram_app.stop()
-            await telegram_app.shutdown()
+        await platform_supervisor.stop_all()
+        from bot.router import router as _router
+
+        await _router.shutdown_backends()
         db.log_audit(actor="system", action="shutdown")
 
 

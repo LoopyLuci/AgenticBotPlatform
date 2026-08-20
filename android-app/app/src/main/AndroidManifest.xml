@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <application
+        android:name=".BotServerApp"
+        android:allowBackup="false"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.BotServerMobile"
+        android:usesCleartextTraffic="true">
+        <!--
+          Cleartext (plain HTTP) is required: BotServer has no TLS of its
+          own by design (see docs/mobile-access.md) — the intended transport
+          is a Tailscale tunnel, which is already encrypted at the network
+          layer, so this app talks plain HTTP *to a private tailnet address*,
+          never to the open internet directly.
+        -->
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.BotServerMobile">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- botserver://pair?host=...&key=... deep link, for pairing via
+                 a shared link as an alternative to scanning the QR directly. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="botserver" android:host="pair" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".push.FcmService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- Lets DevicesScreen hand a content:// URI for its own copied APK
+             to the OS share sheet — the installed app's real path
+             (applicationInfo.sourceDir) isn't directly shareable. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+</manifest>

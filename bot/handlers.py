@@ -1,11 +1,23 @@
 """Telegram command handlers.
 
 Every handler is wrapped with @require_auth — anything from a user not on
-the allowlist is dropped silently (from their point of view) and logged.
+this Telegram bot instance's allowlist is dropped silently (from their
+point of view) and logged.
+
+One Application (see bot/main.py's _build_telegram_instance) is built per
+enabled Telegram bot_instances row, and each carries its own instance_id
+and allowed_ids in application.bot_data — a per-Application dict
+python-telegram-bot provides for exactly this (shared state visible to
+every handler that Application runs, isolated from any other Application
+instance's bot_data). Handlers read `context.bot_data["instance_id"]` /
+`context.bot_data["allowed_ids"]` instead of a single global allowlist, so
+the same handler functions work correctly for any number of concurrently
+running Telegram bots.
 """
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import logging
 
@@ -13,25 +25,31 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
-from bot import auth, db, desktop, setup_wizard
-from bot.backends.base import BackendError
+from bot import attachments, commands, db, desktop, push
+from bot.commands import CmdContext
 from bot.config import config
-from bot.envfile import PROJECT_ROOT
-from bot.router import VALID_BACKENDS, router
 
 logger = logging.getLogger("bot.handlers")
 
 TELEGRAM_MAX_LEN = 4096
-INBOX_DIR = PROJECT_ROOT / "data" / "inbox"
 
 
 def require_auth(handler):
     @functools.wraps(handler)
     async def wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
-        if not user or not auth.is_allowed(user.id):
+        allowed_ids = context.bot_data.get("allowed_ids", set())
+        instance_id = context.bot_data.get("instance_id")
+        if not user or user.id not in allowed_ids:
             if user:
-                auth.reject_and_log(user.id, user.username or "")
+                logger.warning(
+                    "rejected message from unauthorized user %s (%s) on instance %s",
+                    user.id, user.username or "", instance_id,
+                )
+                db.log_audit(
+                    actor=str(user.id), action="unauthorized_attempt",
+                    detail=f"{user.username or ''} (telegram instance {instance_id})",
+                )
             return
         # Single choke point for every authorized incoming update (commands
         # and plain text alike) — the dashboard's chat view reads this table
@@ -47,13 +65,15 @@ def require_auth(handler):
                 direction="in",
                 source="telegram",
                 text=text,
+                instance_id=instance_id,
             )
+            asyncio.create_task(push.notify_new_message(context.bot_data.get("instance_name", "Bot"), text))
         return await handler(update, context)
 
     return wrapped
 
 
-async def _reply_chunked(update: Update, text: str) -> None:
+async def _reply_chunked(update: Update, text: str, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = text or "(empty response)"
     db.log_message(
         chat_id=update.effective_chat.id,
@@ -61,36 +81,28 @@ async def _reply_chunked(update: Update, text: str) -> None:
         direction="out",
         source="bot",
         text=text,
+        instance_id=context.bot_data.get("instance_id"),
     )
     for i in range(0, len(text), TELEGRAM_MAX_LEN):
         await update.message.reply_text(text[i : i + TELEGRAM_MAX_LEN])
 
 
-def _parse_backend_flag(text: str) -> tuple[str, str | None]:
-    """Strip a trailing --backend=x flag off a message, if present."""
-    parts = text.rsplit("--backend=", 1)
-    if len(parts) == 2:
-        rest, override = parts
-        override = override.strip().split()[0]
-        if override in VALID_BACKENDS:
-            return rest.strip(), override
-    return text, None
+def _ctx_from(update: Update, context: ContextTypes.DEFAULT_TYPE) -> CmdContext:
+    return CmdContext(
+        instance_id=context.bot_data.get("instance_id"),
+        instance_name=context.bot_data.get("instance_name", "Bot"),
+        user_id=update.effective_user.id,
+        chat_id=update.effective_chat.id,
+        actor=str(update.effective_user.id),
+        session=context.user_data,
+    )
 
 
 # --------------------------------------------------------------- basic ----
 
 @require_auth
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await _reply_chunked(
-        update,
-        "Bot Control is online.\n\n"
-        "/ask <text> — send a prompt (append --backend=api|cli|ui to override)\n"
-        "/status — health snapshot\n"
-        "/backend show|set — router config\n"
-        "/mcp list|enable|disable|logs — MCP servers\n"
-        "/start_desktop /stop_desktop /restart_desktop\n"
-        "/project open <path> — set working dir for the next /ask",
-    )
+    await _reply_chunked(update, commands.HELP_TEXT, context)
 
 
 @require_auth
@@ -105,54 +117,96 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def _handle_ask(update: Update, context: ContextTypes.DEFAULT_TYPE, raw: str):
-    prompt, backend_override = _parse_backend_flag(raw)
-    if not prompt:
-        await _reply_chunked(update, "Usage: /ask <text> [--backend=api|cli|ui]")
-        return
-
-    action_type = context.user_data.get("action_type", "quick_question")
-    cwd = context.user_data.get("project_cwd")
-
     await update.message.chat.send_action("typing")
-    try:
-        result = await router.ask(
-            prompt,
-            action_type=action_type,
-            user_id=update.effective_user.id,
-            backend_override=backend_override,
-            context={"cwd": cwd} if cwd else None,
-        )
-        await _reply_chunked(update, result.text)
-    except BackendError as exc:
-        await _reply_chunked(update, f"Backend failed: {exc}")
+    reply = await commands.cmd_ask(_ctx_from(update, context), raw)
+    await _reply_chunked(update, reply, context)
 
 
 # --------------------------------------------------------------- status ---
 
 @require_auth
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ov = db.get_overview()
-    d = desktop.status()
-    cfg = config.current
-    readiness = setup_wizard.backend_readiness()
-    backend_lines = []
-    for name in ("api", "cli", "ui"):
-        info = readiness[name]
-        mark = "ready" if info["ready"] else f"not set up ({info['reason']})"
-        used = " · in use" if info["in_use"] else ""
-        backend_lines.append(f"  {name}: {mark}{used}")
-    lines = [
-        f"Desktop: {'running' if d.get('running') else 'stopped'}" + (f" (pid {d['pid']})" if d.get("pid") else ""),
-        f"Default backend: {cfg.get('default_backend')}",
-        "Backends:",
-        *backend_lines,
-        f"Jobs running: {ov['jobs_running']} · queued: {ov['jobs_queued']}",
-        f"Completed today: {ov['completed_today']} · failed: {ov['failed_today']}",
-        f"Success rate (7d): {ov['success_rate_7d']}%",
-        f"Avg duration: {ov['avg_duration_ms']}ms",
-        f"Config version: v{config.version}",
-    ]
-    await _reply_chunked(update, "\n".join(lines))
+    reply = await commands.cmd_status(_ctx_from(update, context), context.args or [])
+    await _reply_chunked(update, reply, context)
+
+
+# -------------------------------------------------------------- models ----
+# /model with no args opens the same two-level inline-keyboard picker the
+# real Hermes Agent Telegram bot uses (backend list with a checkmark on the
+# current one -> paginated model list with Prev/Next/Back/Cancel -> tap to
+# set, editing the message in place at every step). Discord/Slack keep the
+# plain-text commands.cmd_model form (see bot/commands.py) since neither
+# platform integration here builds inline-keyboard widgets.
+
+def _model_root_text() -> str:
+    lines = ["Choose a backend to change its model:"]
+    for info in commands.model_backend_summary():
+        mark = "✓ " if info["is_default_backend"] else "  "
+        current = info["current_model"] or "(default)"
+        lines.append(f"{mark}{info['name']}: {current}")
+    return "\n".join(lines)
+
+
+def _model_root_keyboard() -> InlineKeyboardMarkup:
+    rows = []
+    for info in commands.model_backend_summary():
+        label = ("✓ " if info["is_default_backend"] else "") + info["name"]
+        label += f" ({info['count']})" if info["count"] is not None else " (custom)"
+        rows.append([InlineKeyboardButton(label, callback_data=f"modelpick:backend:{info['name']}:0")])
+    rows.append([InlineKeyboardButton("Cancel", callback_data="modelpick:cancel")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _model_page(backend: str, page: int) -> tuple[str, InlineKeyboardMarkup]:
+    data = commands.model_page(backend, page)
+    rows = []
+    if data["has_known_list"]:
+        for m in data["models"]:
+            mark = "✓ " if m == data["current_model"] else ""
+            rows.append([InlineKeyboardButton(f"{mark}{m}", callback_data=f"modelpick:set:{backend}:{m}")])
+        nav = []
+        if data["page"] > 0:
+            nav.append(InlineKeyboardButton("< Prev", callback_data=f"modelpick:backend:{backend}:{data['page'] - 1}"))
+        if data["page"] < data["total_pages"] - 1:
+            nav.append(InlineKeyboardButton("Next >", callback_data=f"modelpick:backend:{backend}:{data['page'] + 1}"))
+        if nav:
+            rows.append(nav)
+        text = f"{backend} — pick a model (current: {data['current_model'] or '(default)'}):"
+    else:
+        text = (
+            f"{backend} has no known model list — Hermes CLI's own models aren't discoverable "
+            f"from here.\nReply with `/model set {backend} <name>` to set one directly.\n"
+            f"Current: {data['current_model'] or '(default)'}"
+        )
+    rows.append([InlineKeyboardButton("< Back", callback_data="modelpick:root"), InlineKeyboardButton("Cancel", callback_data="modelpick:cancel")])
+    return text, InlineKeyboardMarkup(rows)
+
+
+@require_auth
+async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args or []
+    if not args:
+        await update.message.reply_text(_model_root_text(), reply_markup=_model_root_keyboard())
+        return
+    if len(args) == 1 and args[0] not in ("show", "set"):
+        # Hermes-style shorthand: `/model <name>` with no backend — infer it
+        # from the default backend, same as Hermes inferring the active
+        # provider. Only makes sense if the default backend even has a model
+        # setting (cli/ui don't).
+        default_backend = config.current.get("default_backend")
+        if default_backend not in commands.MODEL_BACKENDS:
+            await _reply_chunked(
+                update,
+                f"Default backend {default_backend!r} has no model setting — use "
+                f"/model set <api|hermes_cli|hermes_gateway> <name>, or /model to open the picker.",
+                context,
+            )
+            return
+        reply = await commands.cmd_model(_ctx_from(update, context), ["set", default_backend, args[0]])
+        await _reply_chunked(update, reply, context)
+        return
+    reply = await commands.cmd_model(_ctx_from(update, context), args)
+    await _reply_chunked(update, reply, context)
 
 
 # ---------------------------------------------------------- desktop ctrl --
@@ -168,9 +222,9 @@ def _confirm_keyboard(action: str) -> InlineKeyboardMarkup:
 async def cmd_start_desktop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         desktop.start()
-        await _reply_chunked(update, "Claude Desktop starting.")
+        await _reply_chunked(update, "Claude Desktop starting.", context)
     except FileNotFoundError as exc:
-        await _reply_chunked(update, str(exc))
+        await _reply_chunked(update, str(exc), context)
 
 
 @require_auth
@@ -179,7 +233,7 @@ async def cmd_stop_desktop(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Stop Claude Desktop?", reply_markup=_confirm_keyboard("stop_desktop"))
     else:
         desktop.stop()
-        await _reply_chunked(update, "Claude Desktop stopped.")
+        await _reply_chunked(update, "Claude Desktop stopped.", context)
 
 
 @require_auth
@@ -188,19 +242,33 @@ async def cmd_restart_desktop(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("Restart Claude Desktop?", reply_markup=_confirm_keyboard("restart_desktop"))
     else:
         desktop.restart()
-        await _reply_chunked(update, "Claude Desktop restarted.")
+        await _reply_chunked(update, "Claude Desktop restarted.", context)
 
 
 @require_auth
 async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    if query.data == "cancel":
+    data = query.data
+    if data in ("cancel", "modelpick:cancel"):
         await query.edit_message_text("Cancelled.")
         return
-    if not query.data.startswith("confirm:"):
+    if data == "modelpick:root":
+        await query.edit_message_text(_model_root_text(), reply_markup=_model_root_keyboard())
         return
-    action = query.data.split(":", 1)[1]
+    if data.startswith("modelpick:backend:"):
+        _, _, backend, page = data.split(":", 3)
+        text, keyboard = _model_page(backend, int(page))
+        await query.edit_message_text(text, reply_markup=keyboard)
+        return
+    if data.startswith("modelpick:set:"):
+        _, _, backend, model = data.split(":", 3)
+        reply = commands.apply_model(backend, model, actor=str(update.effective_user.id))
+        await query.edit_message_text(reply)
+        return
+    if not data.startswith("confirm:"):
+        return
+    action = data.split(":", 1)[1]
     if action == "stop_desktop":
         desktop.stop()
         await query.edit_message_text("Claude Desktop stopped.")
@@ -217,72 +285,24 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @require_auth
 async def cmd_backend(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    args = context.args or []
-    cfg = config.current
-    if not args or args[0] == "show":
-        overrides = cfg.get("action_overrides", {})
-        lines = [f"default: {cfg.get('default_backend')}"]
-        for action, entry in overrides.items():
-            lines.append(f"{action}: {entry.get('backend')} (backup: {entry.get('backup', [])})")
-        await _reply_chunked(update, "\n".join(lines))
-        return
-    if args[0] == "set" and len(args) >= 3:
-        action_or_default, name = args[1], args[2]
-        if name not in VALID_BACKENDS:
-            await _reply_chunked(update, f"unknown backend {name!r}")
-            return
-        if action_or_default == "default":
-            config.set_value(["default_backend"], name, actor=str(update.effective_user.id))
-        else:
-            config.set_value(["action_overrides", action_or_default, "backend"], name, actor=str(update.effective_user.id))
-        await _reply_chunked(update, f"Set {action_or_default} -> {name} (v{config.version})")
-        return
-    await _reply_chunked(update, "Usage: /backend show | /backend set <action|default> <api|cli|ui>")
+    reply = await commands.cmd_backend(_ctx_from(update, context), context.args or [])
+    await _reply_chunked(update, reply, context)
 
 
 # ----------------------------------------------------------------- mcp ----
 
 @require_auth
 async def cmd_mcp(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    args = context.args or []
-    if not args or args[0] == "list":
-        servers = desktop.list_mcp_servers()
-        if not servers:
-            await _reply_chunked(update, "No MCP servers configured.")
-            return
-        lines = [f"{'✓' if s['enabled'] else '✗'} {s['name']}" for s in servers]
-        await _reply_chunked(update, "\n".join(lines))
-        return
-    if args[0] in ("enable", "disable") and len(args) >= 2:
-        name = args[1]
-        try:
-            if args[0] == "enable":
-                desktop.enable_mcp(name)
-            else:
-                desktop.disable_mcp(name)
-            await _reply_chunked(update, f"{name} {args[0]}d. Restart Desktop to apply.")
-        except KeyError as exc:
-            await _reply_chunked(update, str(exc))
-        return
-    if args[0] == "logs" and len(args) >= 2:
-        lines = desktop.tail_mcp_log(args[1], lines=30)
-        await _reply_chunked(update, "\n".join(lines))
-        return
-    await _reply_chunked(update, "Usage: /mcp list | enable <name> | disable <name> | logs <name>")
+    reply = await commands.cmd_mcp(_ctx_from(update, context), context.args or [])
+    await _reply_chunked(update, reply, context)
 
 
 # ------------------------------------------------------------- project ----
 
 @require_auth
 async def cmd_project(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    args = context.args or []
-    if len(args) >= 2 and args[0] == "open":
-        path = " ".join(args[1:])
-        context.user_data["project_cwd"] = path
-        context.user_data["action_type"] = "project_task"
-        await _reply_chunked(update, f"Project set to {path} — next /ask runs with action_type=project_task")
-        return
-    await _reply_chunked(update, "Usage: /project open <path>")
+    reply = await commands.cmd_project(_ctx_from(update, context), context.args or [])
+    await _reply_chunked(update, reply, context)
 
 
 # ---------------------------------------------------------------- files ---
@@ -290,9 +310,19 @@ async def cmd_project(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @require_auth
 async def on_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     doc = update.message.document
-    INBOX_DIR.mkdir(parents=True, exist_ok=True)
-    dest = INBOX_DIR / doc.file_name
     file = await context.bot.get_file(doc.file_id)
-    await file.download_to_drive(custom_path=str(dest))
-    db.log_audit(actor=str(update.effective_user.id), action="file_upload", detail=str(dest))
-    await _reply_chunked(update, f"Saved to inbox: {dest.name}. Reference it in your next /ask.")
+    data = bytes(await file.download_as_bytearray())
+    rel_path, orig_name = attachments.safe_store(doc.file_name, data)
+    db.log_audit(actor=str(update.effective_user.id), action="file_upload", detail=rel_path)
+    db.log_message(
+        chat_id=update.effective_chat.id, direction="in", source="telegram",
+        text="", platform="telegram", user_id=update.effective_user.id,
+        username=update.effective_user.username or "", instance_id=context.bot_data.get("instance_id"),
+        attachment_path=rel_path, attachment_name=orig_name, attachment_mime=doc.mime_type,
+    )
+    if not (update.message.caption or "").strip():
+        # require_auth's wrapper already pushed for a captioned document
+        # (it logs+notifies on any non-empty text/caption) — this covers
+        # the attachment-only case that leaves that path a no-op.
+        asyncio.create_task(push.notify_new_message(context.bot_data.get("instance_name", "Bot"), f"📎 {orig_name}"))
+    await _reply_chunked(update, f"Saved: {orig_name}. Reference it in your next /ask.", context)

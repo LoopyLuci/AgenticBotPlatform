@@ -1,5 +1,6 @@
 .env
 data/env_backups/
+data/bot_instances_backups/
 __pycache__/
 *.pyc
 .venv/
@@ -9,6 +10,7 @@ data/*.db-wal
 data/*.db-shm
 data/pre_migration_backup/
 data/inbox/
+data/attachments/
 logs/*.log
 
 # Tauri desktop shell build output (target/ also holds a copy of bot/,

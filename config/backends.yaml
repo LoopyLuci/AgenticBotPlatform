@@ -21,6 +21,13 @@ backends:
   ui:
     window_title_re: Claude.*
     poll_interval_s: 0.5
+  hermes_cli:
+    binary: hermes
+    model: null
+  hermes_gateway:
+    binary: hermes
+    port: 8799
+    model: null
 timeouts:
   api: 30
   cli: 60
@@ -33,3 +40,5 @@ security:
 features:
   ui_automation_enabled: true
   verbose_telemetry: true
+agent_control:
+  mode: trust_all

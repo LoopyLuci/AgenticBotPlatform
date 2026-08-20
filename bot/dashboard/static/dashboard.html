@@ -162,6 +162,29 @@
   .chat-row.out .chat-bubble.from-dashboard { background:var(--accent-ink); }
   .chat-composer { display:flex; gap:8px; align-items:flex-end; }
   .chat-composer textarea { flex:1; resize:vertical; min-height:38px; max-height:140px; padding:9px 12px; border-radius:8px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font-family:var(--font-body); font-size:13px; line-height:1.4; }
+  .chat-tabs { display:flex; gap:6px; flex-wrap:wrap; }
+  .chat-tab { background:var(--surface-2); border:1px solid var(--line); color:var(--ink-soft); border-radius:7px; padding:5px 11px; font-size:12px; font-weight:600; cursor:pointer; }
+  .chat-tab.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .chat-panels { position:relative; }
+  .chat-panels .chat-window { display:none; }
+  .chat-panels .chat-window.active { display:flex; }
+  #btn-chat-mic.recording { background:var(--accent); color:#fff; animation:chatmicpulse 1.2s infinite; }
+  @keyframes chatmicpulse { 0%,100% { opacity:1; } 50% { opacity:.55; } }
+  .chat-pending-attachment { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink-soft); background:var(--surface-2); border:1px solid var(--line); border-radius:8px; padding:6px 10px; }
+  .chat-pending-attachment.hidden { display:none; }
+  .chat-pending-attachment button { background:none; border:none; color:var(--ink-soft); cursor:pointer; font-size:12px; }
+  .chat-attachment { display:inline-block; margin-top:4px; font-size:12px; text-decoration:underline; cursor:pointer; }
+
+  .sessions-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+  .sessions-toolbar select, .sessions-toolbar input { background:var(--surface-2); border:1px solid var(--line); color:var(--ink); border-radius:7px; padding:6px 10px; font-family:var(--font-mono); font-size:12.5px; }
+  .sessions-toolbar input[type="text"] { flex:1; min-width:140px; }
+  .session-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; border-radius:9px; border:1px solid var(--line); background:var(--surface-2); cursor:pointer; margin-bottom:7px; }
+  .session-row:hover { border-color:var(--accent); }
+  .session-row .st { font-weight:700; font-size:13px; }
+  .session-row .sm { font-size:11.5px; color:var(--muted); font-family:var(--font-mono); }
+  .chat-bubble.job-prompt { background:var(--surface-3); }
+  .chat-bubble.job-result { background:var(--accent-ink); color:#fff; }
+  .chat-bubble .chat-kind { display:inline-block; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; opacity:.65; margin-bottom:3px; }
 
   .timeline { border-left:2px solid var(--line); margin:6px 0 0 6px; padding-left:22px; }
   .tlitem { position:relative; padding-bottom:20px; }
@@ -195,7 +218,7 @@
   .wizard-field .optional-tag { font-family:var(--font-mono); font-size:10px; color:var(--muted); font-weight:600; text-transform:uppercase; }
   .wizard-field .help { font-size:11.5px; color:var(--muted); margin-bottom:7px; }
   .wizard-field .row { display:flex; gap:8px; align-items:center; }
-  .wizard-field input { flex:1; padding:9px 11px; border-radius:7px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font-family:var(--font-mono); font-size:12.5px; }
+  .wizard-field input, .wizard-field select { flex:1; padding:9px 11px; border-radius:7px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font-family:var(--font-mono); font-size:12.5px; }
   .wizard-field input.ok { border-color:var(--good); }
   .wizard-field input.bad { border-color:var(--critical); }
   .wizard-field .msg { font-size:11px; margin-top:5px; }
@@ -217,7 +240,7 @@
       </div>
     </div>
     <p class="wizard-intro">A few things this bot needs before it can run. Anything already valid is pre-filled and skippable — nothing here blocks you from the dashboard, it's just where you'd come back to finish later.</p>
-    <p class="wizard-intro">You don't need all three backends — only set up the ones you actually route to. A field only becomes required here once <code class="mono">config/backends.yaml</code> is actually sending something to that backend.</p>
+    <p class="wizard-intro">You don't need all five backends — only set up the ones you actually route to. A field only becomes required here once <code class="mono">config/backends.yaml</code> is actually sending something to that backend.</p>
     <div id="wizard-backends"></div>
     <div id="wizard-fields"></div>
     <div class="wizard-foot">
@@ -255,7 +278,11 @@
       <a href="#resilience"><span class="ic">↻</span>Resilience</a>
       <a href="#logs"><span class="ic">▦</span>Live Logs</a>
       <a href="#chat"><span class="ic">💬</span>Chat</a>
+      <a href="#sessions"><span class="ic">🗂</span>Sessions</a>
+      <a href="#bots"><span class="ic">🤖</span>Bots</a>
+      <a href="#swarms"><span class="ic">🐝</span>Swarms</a>
       <a href="#platforms"><span class="ic">🔌</span>Platforms</a>
+      <a href="#mobile"><span class="ic">📱</span>Mobile</a>
     </nav>
     <div class="side-status">
       <div class="row"><span>Desktop</span><b id="s-desktop">—</b></div>
@@ -388,6 +415,17 @@
         </div>
 
         <div class="card">
+          <h3>Agent control</h3>
+          <div class="settingrow">
+            <div><div class="st">Cross-agent targeting</div><div class="sd">Whether one bot instance may ask/command another via ask_instance/run_swarm</div></div>
+            <div class="segmented" id="agent-control-seg">
+              <button data-m="trust_all">Trust all</button><button data-m="allowlist">Allowlist</button>
+            </div>
+          </div>
+          <p class="cardnote">Under "Allowlist," set which instances each bot may target from its edit form in the Bots tab.</p>
+        </div>
+
+        <div class="card">
           <h3>Feature toggles</h3>
           <div class="settingrow"><div><div class="st">UI automation backend</div><div class="sd">Allow routing to the Desktop window</div></div><div class="toggle" id="tg-ui-automation" data-path="features,ui_automation_enabled"></div></div>
           <div class="settingrow"><div><div class="st">Confirm destructive actions</div><div class="sd">Restart / stop / MCP changes need a tap</div></div><div class="toggle" id="tg-confirm" data-path="security,confirm_destructive"></div></div>
@@ -498,27 +536,244 @@
     <section id="chat">
       <div class="sec-head"><h2>Chat</h2><span class="desc">The real conversation across every connected platform — read it live, or send a message straight to the phone/laptop it's logged in on</span></div>
       <div class="card chat-card">
+        <div class="chat-tabs" id="chat-tabs"></div>
         <div class="chat-toolbar">
-          <label for="chat-platform" class="chat-toolbar-label">Platform</label>
-          <select id="chat-platform"></select>
+          <label for="chat-instance" class="chat-toolbar-label">Bot</label>
+          <select id="chat-instance"></select>
           <label for="chat-recipient" class="chat-toolbar-label">Send to</label>
           <select id="chat-recipient"></select>
           <span class="cardnote" id="chat-recipient-note"></span>
         </div>
-        <div class="chat-window" id="chat-window">
+        <div class="chat-panels" id="chat-panels">
           <p class="cardnote">Unlock with the dashboard token to view.</p>
+        </div>
+        <div class="chat-pending-attachment hidden" id="chat-pending-attachment">
+          <span id="chat-pending-name"></span>
+          <button class="btn" id="btn-chat-attach-clear">✕</button>
         </div>
         <div class="chat-composer">
           <textarea id="chat-input" placeholder="Message…" rows="1"></textarea>
+          <button class="btn" id="btn-chat-attach" title="Attach file">📎</button>
+          <input type="file" id="chat-file-input" hidden>
+          <button class="btn" id="btn-chat-mic" title="Voice to text">🎤</button>
           <button class="btn primary" id="btn-chat-send">Send</button>
         </div>
         <div class="cardnote" id="chat-status"></div>
       </div>
     </section>
 
+    <section id="sessions">
+      <div class="sec-head"><h2>Sessions</h2><span class="desc">Every past conversation, grouped and browsable — pick one up where you left off</span></div>
+      <div class="card">
+        <div class="sessions-toolbar">
+          <label for="sessions-instance" class="chat-toolbar-label">Bot</label>
+          <select id="sessions-instance"><option value="">All bots</option></select>
+          <input type="text" id="sessions-search" placeholder="Search title…">
+          <label for="sessions-since" class="chat-toolbar-label">Since</label>
+          <input type="date" id="sessions-since">
+          <label for="sessions-until" class="chat-toolbar-label">Until</label>
+          <input type="date" id="sessions-until">
+        </div>
+        <div id="sessions-list"><p class="cardnote">Loading…</p></div>
+      </div>
+      <div class="card hidden" id="session-detail">
+        <div class="sec-head"><h2 id="session-detail-title">Session</h2><button class="btn" id="btn-session-close">✕ Close</button></div>
+        <div class="cardnote" id="session-detail-meta"></div>
+        <div class="chat-panels" id="session-detail-items"></div>
+        <button class="btn primary" id="btn-session-continue">Continue in Chat →</button>
+      </div>
+    </section>
+
+    <section id="bots">
+      <div class="sec-head"><h2>Bots</h2><span class="desc">Run any number of independent bots at once — a Claude bot and a Hermes bot on the same platform, or several platforms each, all with fully separate chats and jobs. Changes here take effect on the next server restart.</span></div>
+
+      <div class="card">
+        <h3>Add a bot</h3>
+        <div class="wizard-field">
+          <label>Name</label>
+          <div class="row"><input type="text" id="bot-new-name" placeholder="e.g. claude-support-telegram" autocomplete="off" spellcheck="false"></div>
+        </div>
+        <div class="wizard-field">
+          <label>Platform</label>
+          <div class="row">
+            <select id="bot-new-platform">
+              <option value="telegram">Telegram</option>
+              <option value="discord">Discord</option>
+              <option value="slack">Slack</option>
+            </select>
+          </div>
+        </div>
+        <div class="wizard-field">
+          <label>Backend</label>
+          <div class="row">
+            <select id="bot-new-backend">
+              <option value="cli">cli (Claude Code CLI)</option>
+              <option value="api">api (Anthropic API)</option>
+              <option value="ui">ui (Claude Desktop automation)</option>
+              <option value="hermes_cli">hermes_cli (Hermes Agent CLI)</option>
+              <option value="hermes_gateway">hermes_gateway (Hermes Agent gateway)</option>
+            </select>
+          </div>
+        </div>
+        <div class="wizard-field">
+          <label>Bot token</label>
+          <div class="row"><input type="text" id="bot-new-token" placeholder="platform bot token" autocomplete="off" spellcheck="false"></div>
+        </div>
+        <div class="wizard-field" id="bot-new-apptoken-field" style="display:none;">
+          <label>App token (Slack only, xapp-...)</label>
+          <div class="row"><input type="text" id="bot-new-apptoken" placeholder="xapp-..." autocomplete="off" spellcheck="false"></div>
+        </div>
+        <div class="wizard-field">
+          <label>Allowed user ID(s)</label>
+          <div class="help">Comma-separated. Numeric IDs for Telegram/Discord, Slack member IDs (U.../W...) for Slack.</div>
+          <div class="row"><input type="text" id="bot-new-allowed" placeholder="123456789, 987654321" autocomplete="off" spellcheck="false"></div>
+        </div>
+        <div class="wizard-field hidden" id="bot-new-cantarget-field">
+          <label>Can target</label>
+          <div class="help">Under Control Center's "Allowlist" agent-control mode, this bot may only ask/command the instances checked below.</div>
+          <div class="row" id="bot-new-cantarget-list"></div>
+        </div>
+        <div class="wizard-foot">
+          <span class="cardnote" id="bot-new-status"></span>
+          <button class="btn primary" id="btn-bot-create">Add bot</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Configured bots</h3>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Name</th><th>Platform</th><th>Backend</th><th>Enabled</th><th></th></tr></thead>
+            <tbody id="bots-tbody"><tr class="emptyrow"><td colspan="5">Unlock with the dashboard token to view.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Backups</h3>
+        <p class="cardnote">Every create/update/delete snapshots the full bot list first — kept indefinitely, nothing here is auto-deleted.</p>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Backup</th><th>Saved</th><th class="num">Size</th><th></th></tr></thead>
+            <tbody id="bots-backups-tbody"><tr class="emptyrow"><td colspan="4">Unlock with the dashboard token to view.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="swarms">
+      <div class="sec-head"><h2>Swarms</h2><span class="desc">Groups of bots working together on one prompt — fan out to several bots and merge the answers, have a leader pick the best one, relay drafts through a pipeline, decompose into subtasks, or build a fully custom step graph.</span></div>
+
+      <div class="card">
+        <h3>Add a swarm</h3>
+        <div class="wizard-field">
+          <label>Name</label>
+          <div class="row"><input type="text" id="swarm-new-name" placeholder="e.g. research-team" autocomplete="off" spellcheck="false"></div>
+        </div>
+        <div class="wizard-field">
+          <label>Strategy</label>
+          <div class="row">
+            <select id="swarm-new-strategy">
+              <option value="fanout_synthesize">fanout_synthesize — parallel answers, optional synthesizer</option>
+              <option value="leader_vote">leader_vote — parallel answers, leader picks the best</option>
+              <option value="sequential_relay">sequential_relay — pipeline, each member refines the last</option>
+              <option value="decompose_delegate">decompose_delegate — planner splits work, workers + aggregator</option>
+              <option value="custom">custom — hand-built step graph, full control</option>
+            </select>
+          </div>
+        </div>
+        <div class="wizard-field">
+          <label>Config (JSON)</label>
+          <div class="help" id="swarm-config-help">Bot instance IDs, from the Bots tab: <span id="swarm-instance-legend">—</span></div>
+          <div class="row"><textarea id="swarm-new-config" rows="6" spellcheck="false" style="width:100%; padding:9px 11px; border-radius:7px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font-family:var(--font-mono); font-size:12px;"></textarea></div>
+        </div>
+        <div class="wizard-foot">
+          <span class="cardnote" id="swarm-new-status"></span>
+          <button class="btn primary" id="btn-swarm-create">Add swarm</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Configured swarms</h3>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Name</th><th>Strategy</th><th>Enabled</th><th></th></tr></thead>
+            <tbody id="swarms-tbody"><tr class="emptyrow"><td colspan="4">Unlock with the dashboard token to view.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Run a swarm</h3>
+        <div class="wizard-field">
+          <label>Swarm</label>
+          <div class="row"><select id="swarm-run-select"></select></div>
+        </div>
+        <div class="wizard-field">
+          <label>Prompt</label>
+          <div class="row"><textarea id="swarm-run-prompt" rows="3" style="width:100%; padding:9px 11px; border-radius:7px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font-family:var(--font-mono); font-size:12.5px;"></textarea></div>
+        </div>
+        <div class="wizard-foot">
+          <span class="cardnote" id="swarm-run-status"></span>
+          <button class="btn primary" id="btn-swarm-run">Run</button>
+        </div>
+        <div id="swarm-run-progress" style="margin-top:14px; display:none;">
+          <h3 style="font-size:13px;">Progress</h3>
+          <div id="swarm-run-steps" class="tablewrap"></div>
+          <div class="wizard-field" style="margin-top:10px;">
+            <label>Final result</label>
+            <div class="cardnote" id="swarm-run-result" style="white-space:pre-wrap;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Run history</h3>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Started</th><th>Prompt</th><th>Status</th><th></th></tr></thead>
+            <tbody id="swarm-runs-tbody"><tr class="emptyrow"><td colspan="4">No runs yet.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <section id="platforms">
-      <div class="sec-head"><h2>Platforms</h2><span class="desc">Connect Telegram, Discord, Slack — set up or reconfigure any of them here, any time. Changes take effect on the next server restart.</span></div>
+      <div class="sec-head"><h2>Platforms (legacy)</h2><span class="desc">Superseded by the Bots tab, which supports any number of bots per platform. Kept here read/write for transparency into the original single-bot .env fields this app started with — no longer read at startup, safe to ignore.</span></div>
       <div id="platforms-list"></div>
+    </section>
+
+    <section id="mobile">
+      <div class="sec-head"><h2>Mobile</h2><span class="desc">Pair the Android app with this server — each key is its own revocable device credential, never the master dashboard token</span></div>
+      <div class="card">
+        <h3>Generate a key</h3>
+        <div class="row" style="gap:8px; align-items:center;">
+          <input type="text" id="mobile-new-label" placeholder="Device label, e.g. \"My Phone\"" style="flex:1;">
+          <input type="text" id="mobile-new-host" placeholder="Host:port the phone should reach, e.g. your-tailnet-host:8787">
+          <input type="text" id="mobile-new-host2" placeholder="Fallback host:port (optional), e.g. LAN IP if the above is Tailscale">
+          <button class="btn primary" id="btn-mobile-generate">Generate key</button>
+        </div>
+        <p class="cardnote">Leave either host blank to fill it in yourself later. The fallback is an optional second, independent path to this server (e.g. a Tailscale hostname alongside a LAN IP) — the app automatically switches to it if the first one stops answering.</p>
+        <div class="hidden" id="mobile-new-result" style="margin-top:14px;">
+          <p class="cardnote" style="color:var(--warning);">Shown once — this key can't be recovered after you leave this page. Copy it or scan the QR now.</p>
+          <div class="row" style="gap:14px; align-items:flex-start;">
+            <img id="mobile-new-qr" style="width:180px; height:180px; border-radius:8px; border:1px solid var(--line);">
+            <div style="flex:1;">
+              <div class="cardnote">Key</div>
+              <div class="mono" id="mobile-new-key" style="word-break:break-all; font-size:12px; background:var(--surface-2); border:1px solid var(--line); border-radius:7px; padding:8px;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>Paired devices</h3>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Label</th><th>Created</th><th>Last used</th><th>Status</th><th></th></tr></thead>
+            <tbody id="mobile-keys-tbody"><tr class="emptyrow"><td colspan="5">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
     <footer class="dashfoot">Bot Control Dashboard · local-only · single-user allowlist enforced</footer>
@@ -725,6 +980,10 @@ async function refreshConfig() {
 
   document.querySelectorAll('#default-backend-seg button').forEach(b => b.classList.toggle('active', b.dataset.b === current.default_backend));
 
+  const agentMode = (current.agent_control || {}).mode || 'trust_all';
+  document.querySelectorAll('#agent-control-seg button').forEach(b => b.classList.toggle('active', b.dataset.m === agentMode));
+  refreshBotsCanTargetVisibility(agentMode);
+
   const overridesEl = document.getElementById('action-overrides-list');
   overridesEl.innerHTML = Object.entries(current.action_overrides || {}).map(([action, entry]) => `
     <div class="settingrow">
@@ -757,6 +1016,13 @@ document.querySelectorAll('.toggle[data-path]').forEach(el => {
 
 document.querySelectorAll('#default-backend-seg button').forEach(btn => {
   btn.onclick = async () => { await api(`/api/backend/default/${btn.dataset.b}`, { method: 'POST' }); refreshConfig(); refreshOverview(); };
+});
+
+document.querySelectorAll('#agent-control-seg button').forEach(btn => {
+  btn.onclick = async () => {
+    await api('/api/config/set', { method: 'POST', body: JSON.stringify({ path: ['agent_control', 'mode'], value: btn.dataset.m }) });
+    refreshConfig();
+  };
 });
 
 async function refreshEnv() {
@@ -934,12 +1200,407 @@ function startDashboard() {
   refreshEnvEditor();
   refreshEnvBackups();
   startChatPolling();
+  startSessionsPolling();
   refreshPlatforms();
   setInterval(refreshPlatforms, 15000);
+  refreshBots();
+  refreshBotsBackups();
+  setInterval(refreshBots, 15000);
+  refreshSwarmInstanceLegend();
+  refreshSwarms();
+  refreshSwarmRuns();
+  setInterval(refreshSwarms, 15000);
+  refreshMobileKeys();
+  setInterval(refreshMobileKeys, 15000);
+}
+
+// ---------------------------------------------------------------- bots ---
+let botEditingId = null;
+
+document.getElementById('bot-new-platform').onchange = (e) => {
+  document.getElementById('bot-new-apptoken-field').style.display = e.target.value === 'slack' ? '' : 'none';
+};
+
+let botsCache = [];
+let lastAgentMode = 'trust_all';
+
+function renderCanTargetCheckboxes(excludeId, checkedIds) {
+  const list = document.getElementById('bot-new-cantarget-list');
+  const others = botsCache.filter(b => b.id !== excludeId);
+  if (!others.length) {
+    list.innerHTML = '<span class="cardnote">No other bot instances yet.</span>';
+    return;
+  }
+  list.innerHTML = others.map(b => `
+    <label style="display:inline-flex; align-items:center; gap:5px; margin-right:14px; font-size:12.5px;">
+      <input type="checkbox" data-cantarget-id="${b.id}" ${(checkedIds || []).includes(b.id) ? 'checked' : ''}> ${esc(b.name)}
+    </label>`).join('');
+}
+
+function refreshBotsCanTargetVisibility(mode) {
+  lastAgentMode = mode;
+  document.getElementById('bot-new-cantarget-field').classList.toggle('hidden', mode !== 'allowlist');
+}
+
+function _resetBotForm() {
+  botEditingId = null;
+  document.getElementById('bot-new-name').value = '';
+  document.getElementById('bot-new-platform').value = 'telegram';
+  document.getElementById('bot-new-backend').value = 'cli';
+  document.getElementById('bot-new-token').value = '';
+  document.getElementById('bot-new-apptoken').value = '';
+  document.getElementById('bot-new-allowed').value = '';
+  document.getElementById('bot-new-apptoken-field').style.display = 'none';
+  document.getElementById('btn-bot-create').textContent = 'Add bot';
+  renderCanTargetCheckboxes(null, []);
+}
+
+function _loadBotIntoForm(bot) {
+  botEditingId = bot.id;
+  document.getElementById('bot-new-name').value = bot.name;
+  document.getElementById('bot-new-platform').value = bot.platform;
+  document.getElementById('bot-new-backend').value = bot.backend;
+  document.getElementById('bot-new-token').value = bot.credentials.bot_token || '';
+  document.getElementById('bot-new-apptoken').value = bot.credentials.app_token || '';
+  document.getElementById('bot-new-apptoken-field').style.display = bot.platform === 'slack' ? '' : 'none';
+  document.getElementById('bot-new-allowed').value = (bot.allowed_user_ids || []).join(', ');
+  renderCanTargetCheckboxes(bot.id, bot.can_target || []);
+  document.getElementById('btn-bot-create').textContent = 'Save changes';
+  document.getElementById('bots').scrollIntoView({ behavior: 'smooth' });
+}
+
+async function refreshBots() {
+  const tbody = document.getElementById('bots-tbody');
+  if (!getToken()) {
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="5">Unlock with the dashboard token to view.</td></tr>';
+    return;
+  }
+  let bots;
+  try {
+    bots = await api('/api/bots');
+  } catch (_e) { return; }
+  botsCache = bots;
+  if (botEditingId == null) renderCanTargetCheckboxes(null, []);
+  tbody.innerHTML = bots.length ? bots.map(b => `
+    <tr>
+      <td>${esc(b.name)}</td>
+      <td class="mono">${esc(b.platform)}</td>
+      <td class="mono">${esc(b.backend)}</td>
+      <td>
+        <span class="pill"><span class="dot ${b.enabled ? 'good' : ''}"></span>${b.enabled ? 'Enabled' : 'Disabled'}</span>
+        <span class="pill"><span class="dot ${b.live_running ? 'good' : (b.last_error ? 'critical' : '')}"></span>${b.live_running ? 'Running' : (b.last_error ? 'Crashed' : 'Stopped')}</span>
+      </td>
+      <td style="white-space:nowrap;">
+        <button class="btn" data-bot-edit="${b.id}" style="padding:3px 8px; font-size:11px;">Edit</button>
+        <button class="btn" data-bot-toggle="${b.id}" style="padding:3px 8px; font-size:11px;">${b.enabled ? 'Disable' : 'Enable'}</button>
+        ${b.enabled ? `<button class="btn" data-bot-startstop="${b.id}" style="padding:3px 8px; font-size:11px;">${b.live_running ? 'Stop' : 'Start'}</button>
+        <button class="btn" data-bot-restart="${b.id}" style="padding:3px 8px; font-size:11px;">Restart</button>` : ''}
+        <button class="btn" data-bot-delete="${b.id}" style="padding:3px 8px; font-size:11px;">Delete</button>
+      </td>
+    </tr>${b.last_error ? `<tr><td colspan="5"><span class="cardnote" style="color:var(--critical);">${esc(b.name)}: ${esc(b.last_error)}</span></td></tr>` : ''}`).join('') : '<tr class="emptyrow"><td colspan="5">No bots yet — add one above.</td></tr>';
+
+  document.querySelectorAll('[data-bot-edit]').forEach(btn => btn.onclick = () => {
+    const bot = bots.find(b => b.id === Number(btn.dataset.botEdit));
+    if (bot) _loadBotIntoForm(bot);
+  });
+  document.querySelectorAll('[data-bot-toggle]').forEach(btn => btn.onclick = async () => {
+    const id = Number(btn.dataset.botToggle);
+    const bot = bots.find(b => b.id === id);
+    await api(`/api/bots/${id}/${bot.enabled ? 'disable' : 'enable'}`, { method: 'POST' });
+    refreshBots();
+  });
+  document.querySelectorAll('[data-bot-startstop]').forEach(btn => btn.onclick = async () => {
+    const id = Number(btn.dataset.botStartstop);
+    const bot = bots.find(b => b.id === id);
+    await api(`/api/bots/${id}/${bot.live_running ? 'stop' : 'start'}`, { method: 'POST' });
+    refreshBots();
+  });
+  document.querySelectorAll('[data-bot-restart]').forEach(btn => btn.onclick = async () => {
+    await api(`/api/bots/${btn.dataset.botRestart}/restart`, { method: 'POST' });
+    refreshBots();
+  });
+  document.querySelectorAll('[data-bot-delete]').forEach(btn => btn.onclick = async () => {
+    const id = Number(btn.dataset.botDelete);
+    const bot = bots.find(b => b.id === id);
+    if (!confirm(`Delete bot "${bot.name}"? It's stopped immediately; job/chat history stays but keeps this id as a reference. A backup is taken first.`)) return;
+    await api(`/api/bots/${id}`, { method: 'DELETE' });
+    if (botEditingId === id) _resetBotForm();
+    refreshBots();
+    refreshBotsBackups();
+  });
+}
+
+document.getElementById('btn-bot-create').onclick = async () => {
+  const statusEl = document.getElementById('bot-new-status');
+  const platform = document.getElementById('bot-new-platform').value;
+  const credentials = { bot_token: document.getElementById('bot-new-token').value.trim() };
+  if (platform === 'slack') credentials.app_token = document.getElementById('bot-new-apptoken').value.trim();
+  const allowed_user_ids = document.getElementById('bot-new-allowed').value
+    .split(',').map(s => s.trim()).filter(Boolean)
+    .map(s => (platform === 'slack' ? s : Number(s)));
+  const can_target = Array.from(document.querySelectorAll('#bot-new-cantarget-list [data-cantarget-id]'))
+    .filter(cb => cb.checked).map(cb => Number(cb.dataset.cantargetId));
+  const payload = {
+    name: document.getElementById('bot-new-name').value.trim(),
+    platform,
+    backend: document.getElementById('bot-new-backend').value,
+    credentials,
+    allowed_user_ids,
+    can_target,
+  };
+  statusEl.textContent = 'Saving…';
+  try {
+    if (botEditingId) {
+      await api(`/api/bots/${botEditingId}`, { method: 'PUT', body: JSON.stringify(payload) });
+      statusEl.textContent = 'Saved — use Restart on this bot\'s row to apply.';
+    } else {
+      await api('/api/bots', { method: 'POST', body: JSON.stringify(payload) });
+      statusEl.textContent = 'Added and starting…';
+    }
+    _resetBotForm();
+    refreshBots();
+    refreshBotsBackups();
+  } catch (e) {
+    statusEl.textContent = `Failed: ${e.message}`;
+  }
+};
+
+async function refreshBotsBackups() {
+  const tbody = document.getElementById('bots-backups-tbody');
+  if (!getToken()) {
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="4">Unlock with the dashboard token to view.</td></tr>';
+    return;
+  }
+  let backups;
+  try {
+    backups = await api('/api/bots/backups');
+  } catch (_e) { return; }
+  tbody.innerHTML = backups.length ? backups.map(b => `
+    <tr>
+      <td class="mono">${esc(b.name)}</td>
+      <td class="mono">${fmtTime(b.mtime)}</td>
+      <td class="num mono">${(b.size / 1024).toFixed(1)} KB</td>
+      <td><button class="btn" data-restore-bots="${esc(b.name)}" style="padding:3px 8px; font-size:11px;">Restore</button></td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="4">No backups yet.</td></tr>';
+
+  document.querySelectorAll('[data-restore-bots]').forEach(btn => btn.onclick = async () => {
+    const name = btn.dataset.restoreBots;
+    if (!confirm(`Restore ${name}? The current bot list is backed up first, then replaced entirely with this version. Restart the server afterward for it to take effect.`)) return;
+    await api(`/api/bots/backups/${encodeURIComponent(name)}/restore`, { method: 'POST' });
+    _resetBotForm();
+    refreshBots();
+    refreshBotsBackups();
+  });
+}
+
+// -------------------------------------------------------------- swarms ---
+const SWARM_CONFIG_PLACEHOLDERS = {
+  fanout_synthesize: '{\n  "members": [1, 2],\n  "synthesizer": 1\n}',
+  leader_vote: '{\n  "members": [1, 2],\n  "leader": 1\n}',
+  sequential_relay: '{\n  "members": [\n    {"instance_id": 1, "instruction": "draft an answer"},\n    {"instance_id": 2, "instruction": "critique and improve it"}\n  ]\n}',
+  decompose_delegate: '{\n  "planner": 1,\n  "members": [1, 2],\n  "aggregator": 1\n}',
+  custom: '{\n  "steps": [\n    {"id": "s1", "instance_id": 1, "depends_on": []},\n    {"id": "s2", "instance_id": 2, "depends_on": []},\n    {"id": "s3", "instance_id": 1, "depends_on": ["s1", "s2"], "role": "synthesize"}\n  ]\n}',
+};
+
+let swarmEditingId = null;
+let swarmInstancesCache = [];
+
+document.getElementById('swarm-new-strategy').onchange = () => {
+  if (!document.getElementById('swarm-new-config').value.trim()) {
+    document.getElementById('swarm-new-config').placeholder = SWARM_CONFIG_PLACEHOLDERS[document.getElementById('swarm-new-strategy').value];
+  }
+};
+document.getElementById('swarm-new-config').placeholder = SWARM_CONFIG_PLACEHOLDERS.fanout_synthesize;
+
+function _resetSwarmForm() {
+  swarmEditingId = null;
+  document.getElementById('swarm-new-name').value = '';
+  document.getElementById('swarm-new-strategy').value = 'fanout_synthesize';
+  document.getElementById('swarm-new-config').value = '';
+  document.getElementById('swarm-new-config').placeholder = SWARM_CONFIG_PLACEHOLDERS.fanout_synthesize;
+  document.getElementById('btn-swarm-create').textContent = 'Add swarm';
+}
+
+function _loadSwarmIntoForm(swarm) {
+  swarmEditingId = swarm.id;
+  document.getElementById('swarm-new-name').value = swarm.name;
+  document.getElementById('swarm-new-strategy').value = swarm.strategy;
+  document.getElementById('swarm-new-config').value = JSON.stringify(swarm.config, null, 2);
+  document.getElementById('btn-swarm-create').textContent = 'Save changes';
+  document.getElementById('swarms').scrollIntoView({ behavior: 'smooth' });
+}
+
+async function refreshSwarmInstanceLegend() {
+  try {
+    swarmInstancesCache = await api('/api/bots');
+  } catch (_e) { return; }
+  document.getElementById('swarm-instance-legend').textContent = swarmInstancesCache.length
+    ? swarmInstancesCache.map(b => `${b.id}=${b.name}`).join(', ')
+    : 'none yet — add one in the Bots tab first';
+}
+
+async function refreshSwarms() {
+  const tbody = document.getElementById('swarms-tbody');
+  const runSelect = document.getElementById('swarm-run-select');
+  if (!getToken()) {
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="4">Unlock with the dashboard token to view.</td></tr>';
+    return;
+  }
+  let swarms;
+  try {
+    swarms = await api('/api/swarms');
+  } catch (_e) { return; }
+  tbody.innerHTML = swarms.length ? swarms.map(s => `
+    <tr>
+      <td>${esc(s.name)}</td>
+      <td class="mono">${esc(s.strategy)}</td>
+      <td><span class="pill"><span class="dot ${s.enabled ? 'good' : ''}"></span>${s.enabled ? 'Enabled' : 'Disabled'}</span></td>
+      <td style="white-space:nowrap;">
+        <button class="btn" data-swarm-edit="${s.id}" style="padding:3px 8px; font-size:11px;">Edit</button>
+        <button class="btn" data-swarm-toggle="${s.id}" style="padding:3px 8px; font-size:11px;">${s.enabled ? 'Disable' : 'Enable'}</button>
+        <button class="btn" data-swarm-delete="${s.id}" style="padding:3px 8px; font-size:11px;">Delete</button>
+      </td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="4">No swarms yet — add one above.</td></tr>';
+
+  runSelect.innerHTML = swarms.length
+    ? swarms.map(s => `<option value="${s.id}">${esc(s.name)} (${esc(s.strategy)})</option>`).join('')
+    : '<option value="">no swarms configured</option>';
+
+  document.querySelectorAll('[data-swarm-edit]').forEach(btn => btn.onclick = () => {
+    const s = swarms.find(x => x.id === Number(btn.dataset.swarmEdit));
+    if (s) _loadSwarmIntoForm(s);
+  });
+  document.querySelectorAll('[data-swarm-toggle]').forEach(btn => btn.onclick = async () => {
+    const id = Number(btn.dataset.swarmToggle);
+    const s = swarms.find(x => x.id === id);
+    await api(`/api/swarms/${id}/${s.enabled ? 'disable' : 'enable'}`, { method: 'POST' });
+    refreshSwarms();
+  });
+  document.querySelectorAll('[data-swarm-delete]').forEach(btn => btn.onclick = async () => {
+    const id = Number(btn.dataset.swarmDelete);
+    const s = swarms.find(x => x.id === id);
+    if (!confirm(`Delete swarm "${s.name}"? Its run history stays but keeps this id as a reference.`)) return;
+    await api(`/api/swarms/${id}`, { method: 'DELETE' });
+    if (swarmEditingId === id) _resetSwarmForm();
+    refreshSwarms();
+  });
+}
+
+document.getElementById('btn-swarm-create').onclick = async () => {
+  const statusEl = document.getElementById('swarm-new-status');
+  let config;
+  try {
+    config = JSON.parse(document.getElementById('swarm-new-config').value || document.getElementById('swarm-new-config').placeholder);
+  } catch (e) {
+    statusEl.textContent = 'Config isn\'t valid JSON.';
+    return;
+  }
+  const payload = {
+    name: document.getElementById('swarm-new-name').value.trim(),
+    strategy: document.getElementById('swarm-new-strategy').value,
+    config,
+  };
+  statusEl.textContent = 'Saving…';
+  try {
+    if (swarmEditingId) {
+      await api(`/api/swarms/${swarmEditingId}`, { method: 'PUT', body: JSON.stringify(payload) });
+      statusEl.textContent = 'Saved.';
+    } else {
+      await api('/api/swarms', { method: 'POST', body: JSON.stringify(payload) });
+      statusEl.textContent = 'Added.';
+    }
+    _resetSwarmForm();
+    refreshSwarms();
+  } catch (e) {
+    statusEl.textContent = `Failed: ${e.message}`;
+  }
+};
+
+let swarmRunPollTimer = null;
+
+function renderSwarmSteps(steps) {
+  const el = document.getElementById('swarm-run-steps');
+  if (!steps || !steps.length) { el.innerHTML = '<p class="cardnote">Waiting for the first step…</p>'; return; }
+  el.innerHTML = `<table><thead><tr><th>Step</th><th>Role</th><th>Status</th><th>Result</th></tr></thead><tbody>${
+    steps.map(s => `<tr>
+      <td class="mono">${esc(s.step)}</td>
+      <td class="mono">${esc(s.role || '')}</td>
+      <td><span class="pill"><span class="dot ${s.status === 'success' ? 'good' : (s.status === 'failed' ? 'critical' : '')}"></span>${esc(s.status)}</span></td>
+      <td style="max-width:360px; white-space:pre-wrap;">${esc((s.result || s.error || '').slice(0, 400))}</td>
+    </tr>`).join('')
+  }</tbody></table>`;
+}
+
+async function pollSwarmRun(runId) {
+  const progress = document.getElementById('swarm-run-progress');
+  progress.style.display = '';
+  const statusEl = document.getElementById('swarm-run-status');
+  if (swarmRunPollTimer) clearInterval(swarmRunPollTimer);
+  const tick = async () => {
+    let run;
+    try {
+      run = await api(`/api/swarms/runs/${runId}`);
+    } catch (_e) { return; }
+    renderSwarmSteps(run.steps);
+    document.getElementById('swarm-run-result').textContent = run.result || (run.error || '');
+    if (run.status === 'running') {
+      statusEl.textContent = 'Running…';
+    } else {
+      statusEl.textContent = `Finished: ${run.status}`;
+      clearInterval(swarmRunPollTimer);
+      refreshSwarmRuns();
+    }
+  };
+  await tick();
+  swarmRunPollTimer = setInterval(tick, 2500);
+}
+
+document.getElementById('btn-swarm-run').onclick = async () => {
+  const statusEl = document.getElementById('swarm-run-status');
+  const swarmId = document.getElementById('swarm-run-select').value;
+  const prompt = document.getElementById('swarm-run-prompt').value.trim();
+  if (!swarmId) { statusEl.textContent = 'No swarm selected.'; return; }
+  if (!prompt) { statusEl.textContent = 'Enter a prompt.'; return; }
+  statusEl.textContent = 'Starting…';
+  try {
+    const res = await api(`/api/swarms/${swarmId}/run`, { method: 'POST', body: JSON.stringify({ prompt }) });
+    pollSwarmRun(res.swarm_run_id);
+  } catch (e) {
+    statusEl.textContent = `Failed to start: ${e.message}`;
+  }
+};
+
+async function refreshSwarmRuns() {
+  const tbody = document.getElementById('swarm-runs-tbody');
+  if (!getToken()) return;
+  let runs;
+  try {
+    runs = await api('/api/swarms/runs?limit=20');
+  } catch (_e) { return; }
+  tbody.innerHTML = runs.length ? runs.map(r => `
+    <tr>
+      <td class="mono">${fmtTime(r.created_at)}</td>
+      <td style="max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(r.prompt)}</td>
+      <td><span class="pill"><span class="dot ${r.status === 'success' ? 'good' : (r.status === 'failed' ? 'critical' : '')}"></span>${esc(r.status)}</span></td>
+      <td><button class="btn" data-view-run="${esc(r.swarm_run_id)}" style="padding:3px 8px; font-size:11px;">View</button></td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="4">No runs yet.</td></tr>';
+
+  document.querySelectorAll('[data-view-run]').forEach(btn => btn.onclick = () => pollSwarmRun(btn.dataset.viewRun));
 }
 
 // ------------------------------------------------------------------ chat -
-const chatState = { lastId: 0, platform: 'telegram', recipient: null, loaded: false, recipients: null };
+// Per-instance panels: chatState.panels[id] holds each bot's own cursor,
+// draft, and recipient so switching tabs is instant (no re-fetch flash)
+// and never loses what you were mid-typing. Only the active panel is
+// polled on the 2s interval — an inactive bot's messages just wait for
+// the next time you switch to it (immediate refreshChat() on switch keeps
+// that from feeling stale in practice for this single-user dashboard).
+const chatState = { activeInstanceId: null, instances: null, panels: {} };
+
+function panelFor(id) {
+  if (!chatState.panels[id]) chatState.panels[id] = { lastId: 0, recipient: null, loaded: false, draft: '' };
+  return chatState.panels[id];
+}
 
 function fmtChatTime(ts) {
   // ts is already a full ISO8601 string with explicit UTC offset
@@ -949,17 +1610,82 @@ function fmtChatTime(ts) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function appendChatMessages(rows) {
-  const win = document.getElementById('chat-window');
+async function downloadAttachment(messageId, name) {
+  try {
+    const headers = {};
+    const token = getToken();
+    if (token) headers['X-Dashboard-Token'] = token;
+    const res = await fetch(`/api/chat/attachments/${messageId}`, { headers });
+    if (!res.ok) throw new Error(await res.text());
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name || 'file';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert('Download failed — check the dashboard token.');
+  }
+}
+
+function ensurePanel(instanceId) {
+  const panels = document.getElementById('chat-panels');
+  let win = panels.querySelector(`.chat-window[data-instance-id="${instanceId}"]`);
+  if (!win) {
+    win = document.createElement('div');
+    win.className = 'chat-window';
+    win.dataset.instanceId = String(instanceId);
+    panels.appendChild(win);
+  }
+  return win;
+}
+
+function activatePanel(instanceId) {
+  document.querySelectorAll('#chat-panels .chat-window').forEach(w => {
+    w.classList.toggle('active', w.dataset.instanceId === String(instanceId));
+  });
+  document.querySelectorAll('#chat-tabs .chat-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.instanceId === String(instanceId));
+  });
+}
+
+function renderChatTabs() {
+  const tabs = document.getElementById('chat-tabs');
+  const instances = chatState.instances || [];
+  tabs.innerHTML = instances.map(i =>
+    `<button class="chat-tab${i.id === chatState.activeInstanceId ? ' active' : ''}" data-instance-id="${i.id}">${esc(i.name)}</button>`
+  ).join('');
+  tabs.querySelectorAll('.chat-tab').forEach(btn => {
+    btn.onclick = () => switchToInstance(Number(btn.dataset.instanceId));
+  });
+}
+
+function appendChatMessages(instanceId, rows) {
+  const win = ensurePanel(instanceId);
+  const panel = panelFor(instanceId);
   const atBottom = win.scrollHeight - win.scrollTop - win.clientHeight < 60;
   rows.forEach(m => {
     const row = document.createElement('div');
     row.className = 'chat-row ' + (m.direction === 'in' ? 'in' : 'out');
+    row.dataset.msgId = String(m.id);
     const bubble = document.createElement('div');
     bubble.className = 'chat-bubble' + (m.source === 'dashboard' ? ' from-dashboard' : '');
-    const textEl = document.createElement('div');
-    textEl.textContent = m.text;
-    bubble.appendChild(textEl);
+    if (m.text) {
+      const textEl = document.createElement('div');
+      textEl.textContent = m.text;
+      bubble.appendChild(textEl);
+    }
+    if (m.attachment_path) {
+      const att = document.createElement('a');
+      att.className = 'chat-attachment';
+      att.textContent = '📎 ' + (m.attachment_name || 'file');
+      att.href = '#';
+      att.onclick = (e) => { e.preventDefault(); downloadAttachment(m.id, m.attachment_name); };
+      bubble.appendChild(att);
+    }
     const meta = document.createElement('span');
     meta.className = 'chat-meta';
     const who = m.source === 'dashboard' ? 'sent from dashboard' : (m.direction === 'in' && m.username) ? m.username : '';
@@ -967,7 +1693,7 @@ function appendChatMessages(rows) {
     bubble.appendChild(meta);
     row.appendChild(bubble);
     win.appendChild(row);
-    chatState.lastId = Math.max(chatState.lastId, m.id);
+    panel.lastId = Math.max(panel.lastId, m.id);
   });
   if (rows.length && atBottom) win.scrollTop = win.scrollHeight;
 }
@@ -975,89 +1701,180 @@ function appendChatMessages(rows) {
 function renderChatRecipients() {
   const recipientSelect = document.getElementById('chat-recipient');
   const note = document.getElementById('chat-recipient-note');
-  const data = chatState.recipients;
-  if (!data) return;
-  const ids = (data[chatState.platform] || []).map(String);
+  const instances = chatState.instances || [];
+  const inst = instances.find(i => i.id === chatState.activeInstanceId);
+  if (!inst) return;
+  const panel = panelFor(chatState.activeInstanceId);
+  const ids = (inst.allowed_ids || []).map(String);
   if (!ids.length) {
     recipientSelect.innerHTML = '<option value="">no allowed users</option>';
-    note.textContent = `Set up ${chatState.platform} allowlist in the Platforms tab.`;
+    note.textContent = `${inst.name} has no allowed user IDs — edit it in the Bots tab.`;
     return;
   }
   recipientSelect.innerHTML = ids.map(id => `<option value="${esc(id)}">${esc(id)}</option>`).join('');
-  if (!chatState.recipient || !ids.includes(String(chatState.recipient))) {
-    chatState.recipient = ids[0];
+  if (!panel.recipient || !ids.includes(String(panel.recipient))) {
+    panel.recipient = ids[0];
   }
-  recipientSelect.value = String(chatState.recipient);
-  const connected = data.connected.includes(chatState.platform);
-  note.textContent = connected ? '' : `${chatState.platform} is configured but not connected right now — restart the server.`;
+  recipientSelect.value = String(panel.recipient);
+  note.textContent = inst.connected ? '' : `${inst.name} is configured but not running right now — start it from the Bots tab.`;
 }
 
 async function refreshChatRecipients() {
-  const platformSelect = document.getElementById('chat-platform');
+  const instanceSelect = document.getElementById('chat-instance');
   try {
     const data = await api('/api/chat/recipients');
-    chatState.recipients = data;
-    const platforms = ['telegram', 'discord', 'slack'].filter(p => (data[p] || []).length > 0);
-    if (!platforms.length) {
-      platformSelect.innerHTML = '<option value="">none configured</option>';
+    const instances = (data.instances || []).filter(i => (i.allowed_ids || []).length > 0);
+    chatState.instances = instances;
+    if (!instances.length) {
+      instanceSelect.innerHTML = '<option value="">no bots configured</option>';
       document.getElementById('chat-recipient').innerHTML = '';
-      document.getElementById('chat-recipient-note').textContent = 'Set up a platform in the Platforms tab first.';
+      document.getElementById('chat-recipient-note').textContent = 'Add a bot in the Bots tab first.';
+      document.getElementById('chat-tabs').innerHTML = '';
       return;
     }
-    platformSelect.innerHTML = platforms.map(p => `<option value="${p}">${p}${data.connected.includes(p) ? '' : ' (not connected)'}</option>`).join('');
-    if (!chatState.platform || !platforms.includes(chatState.platform)) chatState.platform = platforms[0];
-    platformSelect.value = chatState.platform;
+    const panelsContainer = document.getElementById('chat-panels');
+    if (!panelsContainer.querySelector('.chat-window')) panelsContainer.innerHTML = '';
+    instances.forEach(i => ensurePanel(i.id));
+    instanceSelect.innerHTML = instances.map(i => `<option value="${i.id}">${esc(i.name)} (${esc(i.platform)})${i.connected ? '' : ' — not running'}</option>`).join('');
+    if (!chatState.activeInstanceId || !instances.some(i => i.id === chatState.activeInstanceId)) {
+      chatState.activeInstanceId = instances[0].id;
+      activatePanel(chatState.activeInstanceId);
+    }
+    instanceSelect.value = String(chatState.activeInstanceId);
+    renderChatTabs();
     renderChatRecipients();
   } catch (_e) { /* token not set yet — leave placeholder */ }
 }
 
-async function refreshChat() {
-  const win = document.getElementById('chat-window');
+async function refreshChat(instanceId) {
+  instanceId = instanceId || chatState.activeInstanceId;
+  if (!instanceId) return;
+  const panel = panelFor(instanceId);
   try {
-    if (!chatState.loaded) {
-      win.innerHTML = '';
-      const rows = await api('/api/chat/messages?limit=100');
-      appendChatMessages(rows);
-      chatState.loaded = true;
+    if (!panel.loaded) {
+      ensurePanel(instanceId).innerHTML = '';
+      const rows = await api(`/api/chat/messages?limit=100&instance_id=${instanceId}`);
+      appendChatMessages(instanceId, rows);
+      panel.loaded = true;
     } else {
-      const rows = await api(`/api/chat/messages?after_id=${chatState.lastId}&limit=200`);
-      appendChatMessages(rows);
+      const rows = await api(`/api/chat/messages?after_id=${panel.lastId}&limit=200&instance_id=${instanceId}`);
+      appendChatMessages(instanceId, rows);
     }
   } catch (_e) { /* token not set yet, or server not ready — try again next tick */ }
 }
 
 function startChatPolling() {
   refreshChatRecipients();
-  refreshChat();
-  setInterval(refreshChat, 2000);
+  setInterval(() => refreshChat(chatState.activeInstanceId), 2000);
   setInterval(refreshChatRecipients, 15000);
 }
 
-document.getElementById('chat-platform').onchange = (e) => {
-  chatState.platform = e.target.value;
-  chatState.recipient = null;
+function switchToInstance(instanceId) {
+  if (!instanceId || instanceId === chatState.activeInstanceId) return;
+  const input = document.getElementById('chat-input');
+  if (chatState.activeInstanceId) {
+    panelFor(chatState.activeInstanceId).draft = input.value;
+  }
+  chatState.activeInstanceId = instanceId;
+  ensurePanel(instanceId);
+  activatePanel(instanceId);
+  input.value = panelFor(instanceId).draft || '';
+  document.getElementById('chat-instance').value = String(instanceId);
+  renderChatTabs();
   renderChatRecipients();
+  refreshChat(instanceId);
+}
+
+document.getElementById('chat-instance').onchange = (e) => {
+  switchToInstance(Number(e.target.value));
 };
-document.getElementById('chat-recipient').onchange = (e) => { chatState.recipient = e.target.value; };
+document.getElementById('chat-recipient').onchange = (e) => {
+  panelFor(chatState.activeInstanceId).recipient = e.target.value;
+};
+
+let chatPendingFile = null;
+document.getElementById('btn-chat-attach').onclick = () => document.getElementById('chat-file-input').click();
+document.getElementById('chat-file-input').onchange = (e) => {
+  chatPendingFile = e.target.files[0] || null;
+  const box = document.getElementById('chat-pending-attachment');
+  if (chatPendingFile) {
+    document.getElementById('chat-pending-name').textContent = chatPendingFile.name;
+    box.classList.remove('hidden');
+  } else {
+    box.classList.add('hidden');
+  }
+};
+document.getElementById('btn-chat-attach-clear').onclick = () => {
+  chatPendingFile = null;
+  document.getElementById('chat-file-input').value = '';
+  document.getElementById('chat-pending-attachment').classList.add('hidden');
+};
+
+const ChatSpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+const chatMicBtn = document.getElementById('btn-chat-mic');
+if (!ChatSpeechRec) {
+  chatMicBtn.disabled = true;
+  chatMicBtn.title = 'Voice input not supported in this browser/WebView';
+} else {
+  let chatRecognizer = null, chatRecording = false;
+  chatMicBtn.onclick = () => {
+    const input = document.getElementById('chat-input');
+    if (chatRecording) { chatRecognizer.stop(); return; }
+    chatRecognizer = new ChatSpeechRec();
+    chatRecognizer.lang = navigator.language || 'en-US';
+    chatRecognizer.interimResults = false;
+    chatRecognizer.continuous = false;
+    chatRecognizer.onresult = (e) => {
+      const transcript = Array.from(e.results).map(r => r[0].transcript).join(' ');
+      input.value = (input.value ? input.value + ' ' : '') + transcript;
+    };
+    chatRecognizer.onerror = () => { chatRecording = false; chatMicBtn.classList.remove('recording'); };
+    chatRecognizer.onend = () => { chatRecording = false; chatMicBtn.classList.remove('recording'); };
+    chatRecognizer.start();
+    chatRecording = true;
+    chatMicBtn.classList.add('recording');
+  };
+}
 
 async function sendChatMessage() {
   const input = document.getElementById('chat-input');
   const statusEl = document.getElementById('chat-status');
   const text = input.value.trim();
-  if (!text) return;
-  if (!chatState.recipient) {
-    statusEl.textContent = 'No recipient — set up an allowed user for this platform first.';
+  if (!text && !chatPendingFile) return;
+  const panel = panelFor(chatState.activeInstanceId);
+  if (!panel.recipient) {
+    statusEl.textContent = 'No recipient — set up an allowed user for this bot first.';
     return;
   }
   const btn = document.getElementById('btn-chat-send');
   btn.disabled = true;
   statusEl.textContent = '';
   try {
-    await api('/api/chat/send', { method: 'POST', body: JSON.stringify({ platform: chatState.platform, chat_id: chatState.recipient, text }) });
+    if (chatPendingFile) {
+      // Raw fetch, not the shared api() helper — api() always sets
+      // Content-Type: application/json, which would break FormData's
+      // auto-generated multipart boundary header.
+      const fd = new FormData();
+      fd.append('instance_id', chatState.activeInstanceId);
+      fd.append('chat_id', panel.recipient);
+      fd.append('text', text);
+      fd.append('file', chatPendingFile);
+      const headers = {};
+      const token = getToken();
+      if (token) headers['X-Dashboard-Token'] = token;
+      const res = await fetch('/api/chat/send-file', { method: 'POST', headers, body: fd });
+      if (!res.ok) throw new Error(await res.text());
+      chatPendingFile = null;
+      document.getElementById('chat-file-input').value = '';
+      document.getElementById('chat-pending-attachment').classList.add('hidden');
+    } else {
+      await api('/api/chat/send', { method: 'POST', body: JSON.stringify({ instance_id: chatState.activeInstanceId, chat_id: panel.recipient, text }) });
+    }
     input.value = '';
-    await refreshChat();
+    panel.draft = '';
+    await refreshChat(chatState.activeInstanceId);
   } catch (e) {
-    statusEl.textContent = 'Send failed — check the dashboard token and that this platform is connected.';
+    statusEl.textContent = 'Send failed — check the dashboard token and that this bot is running.';
   } finally {
     btn.disabled = false;
   }
@@ -1069,6 +1886,151 @@ document.getElementById('chat-input').addEventListener('keydown', (e) => {
     sendChatMessage();
   }
 });
+
+// --------------------------------------------------------------- sessions
+const sessionsState = { list: [], activeId: null };
+
+function fmtSessionTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (isNaN(d)) return ts;
+  return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function instanceNameFor(instanceId) {
+  const inst = (chatState.instances || []).find(i => i.id === instanceId);
+  return inst ? inst.name : `instance ${instanceId}`;
+}
+
+async function refreshSessionsInstanceFilter() {
+  const select = document.getElementById('sessions-instance');
+  const current = select.value;
+  const instances = chatState.instances || (await api('/api/chat/recipients')).instances || [];
+  select.innerHTML = '<option value="">All bots</option>' + instances.map(i => `<option value="${i.id}">${esc(i.name)}</option>`).join('');
+  select.value = current;
+}
+
+function renderSessionsList() {
+  const list = document.getElementById('sessions-list');
+  if (!sessionsState.list.length) {
+    list.innerHTML = '<p class="cardnote">No sessions yet — start a conversation in the Chat tab.</p>';
+    return;
+  }
+  list.innerHTML = sessionsState.list.map(s => `
+    <div class="session-row" data-session-id="${esc(String(s.id))}">
+      <div>
+        <div class="st">${esc(s.title || 'Untitled')}</div>
+        <div class="sm">${esc(instanceNameFor(s.instance_id))} · ${s.item_count} item${s.item_count === 1 ? '' : 's'}</div>
+      </div>
+      <div class="sm">${esc(fmtSessionTime(s.last_activity_at))}</div>
+    </div>
+  `).join('');
+  list.querySelectorAll('.session-row').forEach(row => {
+    row.onclick = () => openSession(row.dataset.sessionId);
+  });
+}
+
+async function refreshSessions() {
+  const instanceId = document.getElementById('sessions-instance').value;
+  const q = document.getElementById('sessions-search').value.trim();
+  const since = document.getElementById('sessions-since').value;
+  const until = document.getElementById('sessions-until').value;
+  const params = new URLSearchParams();
+  if (instanceId) params.set('instance_id', instanceId);
+  if (q) params.set('q', q);
+  if (since) params.set('since', since);
+  if (until) params.set('until', until);
+  try {
+    sessionsState.list = await api('/api/sessions?' + params.toString());
+    renderSessionsList();
+  } catch (_e) { /* token not set yet */ }
+}
+
+function renderSessionItem(kind, item) {
+  const row = document.createElement('div');
+  const bubble = document.createElement('div');
+  if (kind === 'message') {
+    row.className = 'chat-row ' + (item.direction === 'in' ? 'in' : 'out');
+    bubble.className = 'chat-bubble' + (item.source === 'dashboard' ? ' from-dashboard' : '');
+    if (item.text) bubble.appendChild(Object.assign(document.createElement('div'), { textContent: item.text }));
+    if (item.attachment_path) {
+      const att = document.createElement('a');
+      att.className = 'chat-attachment';
+      att.textContent = '📎 ' + (item.attachment_name || 'file');
+      att.href = '#';
+      att.onclick = (e) => { e.preventDefault(); downloadAttachment(item.id, item.attachment_name); };
+      bubble.appendChild(att);
+    }
+    const meta = document.createElement('span');
+    meta.className = 'chat-meta';
+    meta.textContent = [fmtChatTime(item.ts), item.platform].filter(Boolean).join(' · ');
+    bubble.appendChild(meta);
+  } else {
+    row.className = 'chat-row in';
+    const promptBubble = bubble;
+    promptBubble.className = 'chat-bubble job-prompt';
+    promptBubble.appendChild(Object.assign(document.createElement('div'), { innerHTML: '<span class="chat-kind">Ask</span>' }));
+    promptBubble.appendChild(Object.assign(document.createElement('div'), { textContent: item.prompt || '' }));
+    const meta = document.createElement('span');
+    meta.className = 'chat-meta';
+    meta.textContent = [fmtChatTime(item.created_at), item.backend, item.status].filter(Boolean).join(' · ');
+    promptBubble.appendChild(meta);
+  }
+  row.appendChild(bubble);
+  return row;
+}
+
+async function openSession(sessionId) {
+  sessionsState.activeId = sessionId;
+  const detail = await api('/api/sessions/' + encodeURIComponent(sessionId));
+  const card = document.getElementById('session-detail');
+  const items = document.getElementById('session-detail-items');
+  document.getElementById('session-detail-title').textContent = detail.session.title || 'Session';
+  document.getElementById('session-detail-meta').textContent =
+    `${instanceNameFor(detail.session.instance_id)} · ${detail.messages.length + detail.jobs.length} item(s)`;
+  const timeline = [
+    ...detail.messages.map(m => ({ kind: 'message', ts: m.ts || m.created_at, item: m })),
+    ...detail.jobs.map(j => ({ kind: 'job', ts: j.created_at, item: j })),
+  ].sort((a, b) => new Date(a.ts) - new Date(b.ts));
+  items.innerHTML = '';
+  const win = document.createElement('div');
+  win.className = 'chat-window active';
+  timeline.forEach(t => win.appendChild(renderSessionItem(t.kind, t.item)));
+  items.appendChild(win);
+  card.classList.remove('hidden');
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('btn-session-continue').onclick = () => {
+    const instanceId = detail.session.instance_id;
+    if (!instanceId) return;
+    document.getElementById('chat').scrollIntoView({ behavior: 'smooth' });
+    switchToInstance(instanceId);
+    const lastMsg = detail.messages[detail.messages.length - 1];
+    if (lastMsg) {
+      setTimeout(() => {
+        const target = document.querySelector(`#chat-panels .chat-window[data-instance-id="${instanceId}"] [data-msg-id="${lastMsg.id}"]`);
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 400);
+    }
+  };
+}
+
+document.getElementById('btn-session-close').onclick = () => {
+  document.getElementById('session-detail').classList.add('hidden');
+};
+document.getElementById('sessions-instance').onchange = refreshSessions;
+document.getElementById('sessions-since').onchange = refreshSessions;
+document.getElementById('sessions-until').onchange = refreshSessions;
+let sessionsSearchTimer = null;
+document.getElementById('sessions-search').oninput = () => {
+  clearTimeout(sessionsSearchTimer);
+  sessionsSearchTimer = setTimeout(refreshSessions, 300);
+};
+
+async function startSessionsPolling() {
+  await refreshSessionsInstanceFilter();
+  refreshSessions();
+  setInterval(refreshSessions, 15000);
+}
 
 // -------------------------------------------------------------- platforms
 async function refreshPlatforms() {
@@ -1122,6 +2084,55 @@ async function refreshPlatforms() {
     });
   } catch (_e) { /* token not set yet */ }
 }
+
+// ------------------------------------------------------------- mobile ----
+function fmtMobileTime(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  return isNaN(d) ? ts : d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+async function refreshMobileKeys() {
+  const tbody = document.getElementById('mobile-keys-tbody');
+  let keys;
+  try {
+    keys = await api('/api/mobile-keys');
+  } catch (_e) { return; }
+  tbody.innerHTML = keys.length ? keys.map(k => `
+    <tr>
+      <td>${esc(k.label)}</td>
+      <td class="mono">${fmtMobileTime(k.created_at)}</td>
+      <td class="mono">${fmtMobileTime(k.last_used_at)}</td>
+      <td><span class="pill"><span class="dot ${k.revoked_at ? '' : 'good'}"></span>${k.revoked_at ? 'Revoked' : 'Active'}</span></td>
+      <td>${k.revoked_at ? '' : `<button class="btn" data-mobile-revoke="${k.id}" style="padding:3px 8px; font-size:11px;">Revoke</button>`}</td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="5">No devices paired yet.</td></tr>';
+
+  tbody.querySelectorAll('[data-mobile-revoke]').forEach(btn => btn.onclick = async () => {
+    if (!confirm('Revoke this device\'s key? It loses access to chat/sessions/jobs/bots immediately.')) return;
+    await api(`/api/mobile-keys/${btn.dataset.mobileRevoke}`, { method: 'DELETE' });
+    refreshMobileKeys();
+  });
+}
+
+document.getElementById('btn-mobile-generate').onclick = async () => {
+  const label = document.getElementById('mobile-new-label').value.trim() || 'Unnamed device';
+  const host = document.getElementById('mobile-new-host').value.trim();
+  const host2 = document.getElementById('mobile-new-host2').value.trim();
+  const btn = document.getElementById('btn-mobile-generate');
+  btn.disabled = true;
+  try {
+    const res = await api('/api/mobile-keys', { method: 'POST', body: JSON.stringify({ label, host, host2 }) });
+    document.getElementById('mobile-new-key').textContent = res.key;
+    document.getElementById('mobile-new-qr').src = `data:image/png;base64,${res.qr_png_base64}`;
+    document.getElementById('mobile-new-result').classList.remove('hidden');
+    document.getElementById('mobile-new-label').value = '';
+    refreshMobileKeys();
+  } catch (e) {
+    alert('Failed to generate key — check the dashboard token.');
+  } finally {
+    btn.disabled = false;
+  }
+};
 
 // -------------------------------------------------------- setup wizard ---
 function renderWizardBackends(status) {

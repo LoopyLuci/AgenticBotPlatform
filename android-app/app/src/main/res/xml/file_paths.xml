@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Grants FileProvider access to app-cache subfolders it needs to hand
+     files to other apps via ACTION_SEND/ACTION_VIEW: "shared" is this app's
+     own APK (DevicesScreen), "downloads" is chat attachments pulled from
+     the server on demand (ChatRepository.downloadAttachment). -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path name="shared" path="shared/" />
+    <cache-path name="downloads" path="downloads/" />
+</paths>

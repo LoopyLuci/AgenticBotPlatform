@@ -22,62 +22,17 @@ from typing import Any, Callable, Optional
 from dotenv import dotenv_values
 
 from bot import envfile
-
-
-def _validate_telegram_token(v: str) -> tuple[bool, str]:
-    if re.match(r"^\d{6,}:[A-Za-z0-9_-]{30,}$", v):
-        return True, "looks like a valid bot token"
-    return False, "should look like 123456789:AAExampleTokenFromBotFather"
-
-
-def _validate_anthropic_key(v: str) -> tuple[bool, str]:
-    if v.startswith("sk-ant-") and len(v) > 20:
-        return True, "looks like a valid Anthropic API key"
-    return False, "should start with sk-ant- (from console.anthropic.com/settings/keys)"
-
-
-def _validate_user_ids(v: str) -> tuple[bool, str]:
-    parts = [p.strip() for p in v.split(",") if p.strip()]
-    if parts and all(p.isdigit() for p in parts):
-        return True, f"{len(parts)} user id{'s' if len(parts) != 1 else ''}"
-    return False, "should be one or more numeric Telegram user IDs, comma-separated"
-
-
-def _validate_dashboard_token(v: str) -> tuple[bool, str]:
-    if len(v) >= 16:
-        return True, "looks good"
-    return False, "should be at least 16 random characters — use Generate"
-
-
-def _validate_desktop_path(v: str) -> tuple[bool, str]:
-    if Path(v).exists():
-        return True, "found"
-    return False, "path doesn't exist yet — will still be saved as-is"
-
-
-def _validate_discord_token(v: str) -> tuple[bool, str]:
-    if re.match(r"^[\w-]{20,}\.[\w-]{6,}\.[\w-]{20,}$", v):
-        return True, "looks like a valid Discord bot token"
-    return False, "should be a bot token from the Developer Portal's Bot tab"
-
-
-def _validate_slack_bot_token(v: str) -> tuple[bool, str]:
-    if v.startswith("xoxb-") and len(v) > 20:
-        return True, "looks like a valid Slack bot token"
-    return False, "should start with xoxb- (Bot User OAuth Token, after installing to workspace)"
-
-
-def _validate_slack_app_token(v: str) -> tuple[bool, str]:
-    if v.startswith("xapp-") and len(v) > 20:
-        return True, "looks like a valid Slack app token"
-    return False, "should start with xapp- (Socket Mode -> Generate Token and Scopes)"
-
-
-def _validate_slack_user_ids(v: str) -> tuple[bool, str]:
-    parts = [p.strip() for p in v.split(",") if p.strip()]
-    if parts and all(re.match(r"^[UW][A-Z0-9]{6,}$", p) for p in parts):
-        return True, f"{len(parts)} user id{'s' if len(parts) != 1 else ''}"
-    return False, "should be one or more Slack member IDs (start with U or W), comma-separated"
+from bot.validators import (
+    validate_anthropic_key as _validate_anthropic_key,
+    validate_dashboard_token as _validate_dashboard_token,
+    validate_desktop_path as _validate_desktop_path,
+    validate_discord_token as _validate_discord_token,
+    validate_slack_app_token as _validate_slack_app_token,
+    validate_slack_bot_token as _validate_slack_bot_token,
+    validate_slack_user_ids as _validate_slack_user_ids,
+    validate_telegram_token as _validate_telegram_token,
+    validate_user_ids as _validate_user_ids,
+)
 
 
 # Core fields: the dashboard itself and (conditionally) the api backend.
@@ -199,9 +154,13 @@ def current_values() -> dict[str, str]:
 
 
 def active_backends() -> set[str]:
-    """Which of api/cli/ui config/backends.yaml actually routes anything
-    to — the default, every action_override's backend, and every backup
-    chain entry. A backend nobody's routing to doesn't need its
+    """Which backends actually have something routing to them — the global
+    config/backends.yaml chain (default, every action_override's backend
+    and backup entries) plus every enabled bot instance's own backend and
+    action_overrides. Once bot instances exist they're the primary way a
+    backend gets used, so this has to look at both, not just the legacy
+    global chain, or the readiness panel would show real in-use backends
+    as unused. A backend nobody's routing to doesn't need its
     prerequisites configured at all."""
     from bot.config import config
 
@@ -211,7 +170,23 @@ def active_backends() -> set[str]:
         if entry.get("backend"):
             names.add(entry["backend"])
         names.update(entry.get("backup") or [])
-    return names & {"api", "cli", "ui"}
+
+    try:
+        from bot import bot_instances
+
+        for inst in bot_instances.list_instances(enabled_only=True):
+            if inst.get("backend"):
+                names.add(inst["backend"])
+            for entry in (inst.get("action_overrides") or {}).values():
+                if entry.get("backend"):
+                    names.add(entry["backend"])
+                names.update(entry.get("backup") or [])
+    except Exception:
+        pass  # DB not initialized yet (e.g. called very early at boot)
+
+    from bot.router import VALID_BACKENDS
+
+    return names & set(VALID_BACKENDS)
 
 
 def _api_ready() -> tuple[bool, str]:
@@ -229,6 +204,21 @@ def _cli_ready() -> tuple[bool, str]:
     return ok, "" if ok else f"'{binary}' not found on PATH or bundled with Claude Desktop — install/update it below"
 
 
+def _hermes_cli_ready() -> tuple[bool, str]:
+    import shutil
+
+    ok = shutil.which("hermes") is not None
+    return ok, "" if ok else "'hermes' not found on PATH — install Hermes Agent"
+
+
+def _hermes_gateway_ready() -> tuple[bool, str]:
+    # Same underlying binary as hermes_cli — the gateway backend spawns its
+    # own `hermes serve` process on first use, so "ready" here just means
+    # the binary exists to spawn; a real connection failure at first ask()
+    # will surface as a per-job error, not a setup-time block.
+    return _hermes_cli_ready()
+
+
 def _ui_ready() -> tuple[bool, str]:
     from bot import desktop
 
@@ -241,6 +231,8 @@ _READINESS_CHECKS: dict[str, Callable[[], tuple[bool, str]]] = {
     "api": _api_ready,
     "cli": _cli_ready,
     "ui": _ui_ready,
+    "hermes_cli": _hermes_cli_ready,
+    "hermes_gateway": _hermes_gateway_ready,
 }
 
 
@@ -253,7 +245,7 @@ def check_backend_ready(name: str) -> tuple[bool, str]:
 
 
 def backend_readiness() -> dict[str, dict[str, Any]]:
-    """All three backends' status at once, for display (the dashboard's
+    """All five backends' status at once, for display (the dashboard's
     "available backends" panel) — separate from active_backends(), which
     is about whether anything's routing to them."""
     active = active_backends()
@@ -367,7 +359,14 @@ def check_status() -> dict[str, Any]:
         }
     core_ready = all(fields[k]["valid"] for k in FIELDS if fields[k]["required"])
     platforms = platform_status()
-    ready = core_ready and any(p["configured"] for p in platforms.values())
+    has_bot = False
+    try:
+        from bot import bot_instances
+
+        has_bot = bool(bot_instances.list_instances(enabled_only=True))
+    except Exception:
+        pass  # DB not initialized yet (e.g. called very early at boot)
+    ready = core_ready and (has_bot or any(p["configured"] for p in platforms.values()))
     return {
         "fields": fields,
         "backends": backend_readiness(),

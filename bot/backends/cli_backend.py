@@ -69,9 +69,16 @@ class CliBackend(Backend):
             raise BackendError(f"cli backend timed out after {timeout_s}s") from exc
 
         if proc.returncode != 0:
-            raise BackendError(
-                f"cli exited {proc.returncode}: {stderr.decode(errors='replace')[:500]}"
-            )
+            detail = stderr.decode(errors="replace").strip()
+            if not detail:
+                # The CLI often reports the real error (auth failures, etc.)
+                # as JSON on stdout rather than stderr, even on nonzero exit.
+                try:
+                    data = json.loads(stdout.decode(errors="replace"))
+                    detail = data.get("result") or ""
+                except json.JSONDecodeError:
+                    pass
+            raise BackendError(f"cli exited {proc.returncode}: {detail[:500]}")
 
         raw_text = stdout.decode(errors="replace")
         try:

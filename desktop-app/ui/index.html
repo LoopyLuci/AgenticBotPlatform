@@ -7,65 +7,87 @@
 <style>
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg:#10141a; --surface:#171c23; --surface-2:#1e252e; --surface-3:#252d38;
-      --ink:#eceff3; --ink-soft:#9aa5b1; --muted:#6d7885; --line:#2a323c;
-      --accent:#3987e5; --accent-soft:#1b2c40; --accent-ink:#bcd7f7;
+      --bg:#0e1621; --surface:#17212b; --surface-2:#1e2c3a; --surface-3:#28394a;
+      --ink:#e9edf1; --ink-soft:#8b98a5; --muted:#64707c; --line:#0c141d;
+      --accent:#4ea4f5; --accent-2:#2f8ce0; --accent-soft:#20344a; --accent-ink:#bfe0ff;
       --good-soft:#123319; --warning-soft:#3a2c10; --serious-soft:#3a2015; --critical-soft:#3a1414;
-      --s1:#3987e5; --s2:#d95926; --s3:#199e70;
-      --chart-surface:#1a1a19;
+      --s1:#4ea4f5; --s2:#d95926; --s3:#199e70;
+      --chart-surface:#0f1720;
+      --bubble-in:#1e2c3a; --bubble-out:#2b5278; --bubble-out-ink:#e9f2fd;
     }
   }
   :root[data-theme="dark"] {
-    --bg:#10141a; --surface:#171c23; --surface-2:#1e252e; --surface-3:#252d38;
-    --ink:#eceff3; --ink-soft:#9aa5b1; --muted:#6d7885; --line:#2a323c;
-    --accent:#3987e5; --accent-soft:#1b2c40; --accent-ink:#bcd7f7;
+    --bg:#0e1621; --surface:#17212b; --surface-2:#1e2c3a; --surface-3:#28394a;
+    --ink:#e9edf1; --ink-soft:#8b98a5; --muted:#64707c; --line:#0c141d;
+    --accent:#4ea4f5; --accent-2:#2f8ce0; --accent-soft:#20344a; --accent-ink:#bfe0ff;
     --good-soft:#123319; --warning-soft:#3a2c10; --serious-soft:#3a2015; --critical-soft:#3a1414;
-    --s1:#3987e5; --s2:#d95926; --s3:#199e70;
-    --chart-surface:#1a1a19;
+    --s1:#4ea4f5; --s2:#d95926; --s3:#199e70;
+    --chart-surface:#0f1720;
+    --bubble-in:#1e2c3a; --bubble-out:#2b5278; --bubble-out-ink:#e9f2fd;
   }
   :root {
-    --bg:#f3f5f7; --surface:#ffffff; --surface-2:#edf0f3; --surface-3:#e4e9ee;
-    --ink:#161b22; --ink-soft:#576270; --muted:#8a94a0; --line:#dce2e8;
-    --accent:#2a78d6; --accent-soft:#e3eefb; --accent-ink:#1c5cab;
-    --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#d03b3b;
-    --good-soft:#e3f7e3; --warning-soft:#fff3dc; --serious-soft:#fde7de; --critical-soft:#fbe3e3;
-    --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a;
+    --bg:#e6ebee; --surface:#ffffff; --surface-2:#f4f6f8; --surface-3:#e9edf0;
+    --ink:#1c2733; --ink-soft:#5b6975; --muted:#8b98a5; --line:#e2e7eb;
+    --accent:#3390ec; --accent-2:#2478d4; --accent-soft:#e3f1ff; --accent-ink:#1467bf;
+    --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#e0473e;
+    --good-soft:#e3f7e3; --warning-soft:#fff3dc; --serious-soft:#fde7de; --critical-soft:#fde5e3;
+    --s1:#3390ec; --s2:#eb6834; --s3:#1baf7a;
     --chart-surface:#fcfcfb;
-    --font-display:'Bahnschrift','Segoe UI Semibold',system-ui,sans-serif;
+    --bubble-in:#ffffff; --bubble-out:#eeffde; --bubble-out-ink:#1c2733;
+    --font-display:'Segoe UI Semibold','Bahnschrift',system-ui,sans-serif;
     --font-body:'Segoe UI',system-ui,-apple-system,sans-serif;
     --font-mono:'Cascadia Code','Consolas',ui-monospace,monospace;
   }
+  :root[data-theme="dark"] { --bubble-out-ink:#e9f2fd; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bubble-out-ink:#e9f2fd; } }
   * { box-sizing:border-box; }
   html { scroll-behavior:smooth; }
   body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--font-body); font-size:14px; }
-  .shell { display:grid; grid-template-columns:220px 1fr; min-height:100vh; }
+  ::-webkit-scrollbar { width:9px; height:9px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:var(--surface-3); border-radius:999px; border:2px solid transparent; background-clip:padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background:var(--muted); background-clip:padding-box; }
+  .shell { display:grid; grid-template-columns:236px 1fr; min-height:100vh; }
   @media (max-width:980px){ .shell{ grid-template-columns:1fr; } .side{ position:static !important; } }
 
-  .side { position:sticky; top:0; height:100vh; overflow-y:auto; background:var(--surface); border-right:1px solid var(--line); padding:18px 14px; display:flex; flex-direction:column; gap:22px; }
-  .brand { display:flex; align-items:center; gap:9px; padding:2px 6px 10px; border-bottom:1px solid var(--line); }
-  .brand .mark { width:26px; height:26px; border-radius:7px; background:var(--accent); display:flex; align-items:center; justify-content:center; color:#fff; font-family:var(--font-mono); font-weight:700; font-size:13px; flex:none; }
-  .brand .name { font-family:var(--font-display); font-weight:700; font-size:15px; letter-spacing:0.01em; }
+  .side { position:sticky; top:0; height:100vh; overflow-y:auto; background:var(--surface); padding:16px 12px; display:flex; flex-direction:column; gap:18px; box-shadow:1px 0 0 var(--line); }
+  .brand { display:flex; align-items:center; gap:10px; padding:6px 8px 16px; }
+  .brand .mark { width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,var(--accent),var(--accent-2)); display:flex; align-items:center; justify-content:center; color:#fff; font-family:var(--font-display); font-weight:700; font-size:14px; flex:none; box-shadow:0 2px 8px rgba(51,144,236,.35); }
+  .brand .name { font-family:var(--font-display); font-weight:700; font-size:16px; letter-spacing:0.01em; }
   .brand .sub { font-size:10.5px; color:var(--muted); font-family:var(--font-mono); }
-  nav.sidenav { display:flex; flex-direction:column; gap:2px; }
-  nav.sidenav a { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:7px; color:var(--ink-soft); text-decoration:none; font-size:13px; font-weight:600; }
+  .side-search { position:relative; margin:0 2px 4px; }
+  .side-search-ic { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--muted); font-size:14px; pointer-events:none; }
+  .side-search input { width:100%; background:var(--surface-2); border:none; border-radius:999px; padding:8px 12px 8px 32px; color:var(--ink); font-size:12.5px; font-family:var(--font-body); }
+  .side-search input:focus { outline:2px solid var(--accent-soft); }
+  nav.sidenav { display:flex; flex-direction:column; gap:1px; }
+  nav.sidenav a { display:flex; align-items:center; gap:12px; padding:8px 10px; border-radius:12px; color:var(--ink-soft); text-decoration:none; transition:background .12s ease, color .12s ease; }
   nav.sidenav a:hover, nav.sidenav a:focus-visible { background:var(--surface-2); color:var(--ink); }
-  nav.sidenav a .ic { width:16px; text-align:center; font-family:var(--font-mono); color:var(--accent); font-size:12px; }
-  .side-status { margin-top:auto; padding:12px; border-radius:10px; background:var(--surface-2); font-size:11.5px; color:var(--ink-soft); display:flex; flex-direction:column; gap:6px; }
+  nav.sidenav a.active { background:var(--accent-soft); }
+  nav.sidenav a.active .nav-txt b { color:var(--accent); }
+  nav.sidenav a.active .ic { background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:#fff; }
+  nav.sidenav a.hidden-by-search { display:none; }
+  nav.sidenav a .ic { width:30px; height:30px; text-align:center; line-height:30px; border-radius:50%; background:var(--surface-2); font-family:var(--font-mono); color:var(--accent); font-size:13px; flex:none; }
+  nav.sidenav a:hover .ic { background:var(--surface-3); }
+  nav.sidenav a .nav-txt { display:flex; flex-direction:column; gap:1px; min-width:0; }
+  nav.sidenav a .nav-txt b { font-size:13.3px; font-weight:600; color:inherit; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  nav.sidenav a .nav-txt small { font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .side-status { margin-top:auto; padding:13px 14px; border-radius:14px; background:var(--surface-2); font-size:11.5px; color:var(--ink-soft); display:flex; flex-direction:column; gap:6px; }
   .side-status .row { display:flex; justify-content:space-between; gap:8px; }
   .side-status .row b { color:var(--ink); font-family:var(--font-mono); font-weight:600; }
 
   main { min-width:0; padding:0 0 80px; }
 
-  .topbar { position:sticky; top:0; z-index:5; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 28px; background:var(--bg); border-bottom:1px solid var(--line); }
-  .topbar .title { font-family:var(--font-display); font-size:18px; font-weight:700; }
+  .topbar { position:sticky; top:0; z-index:5; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 28px; background:color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter:blur(10px); border-bottom:1px solid var(--line); }
+  .topbar .title { font-family:var(--font-display); font-size:19px; font-weight:700; }
   .pillrow { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-  .pill { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:999px; font-size:12px; font-weight:600; background:var(--surface-2); color:var(--ink-soft); border:1px solid var(--line); }
+  .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; font-size:12px; font-weight:600; background:var(--surface); color:var(--ink-soft); box-shadow:0 0 0 1px var(--line) inset; }
   .pill .dot { width:7px; height:7px; border-radius:50%; flex:none; }
   .dot.good{ background:var(--good); } .dot.warning{ background:var(--warning); } .dot.critical{ background:var(--critical); }
-  .btn { font-family:var(--font-body); font-size:12.5px; font-weight:700; padding:7px 13px; border-radius:7px; border:1px solid var(--line); background:var(--surface); color:var(--ink); cursor:pointer; }
-  .btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
-  .btn.danger { color:var(--critical); border-color:var(--critical); background:transparent; }
-  .btn:hover{ filter:brightness(1.05); }
+  .btn { font-family:var(--font-body); font-size:12.5px; font-weight:700; padding:8px 16px; border-radius:999px; border:none; background:var(--surface-2); color:var(--ink); cursor:pointer; box-shadow:0 0 0 1px var(--line) inset; transition:filter .12s ease, transform .05s ease; }
+  .btn.primary { background:linear-gradient(135deg,var(--accent),var(--accent-2)); box-shadow:none; color:#fff; }
+  .btn.danger { color:var(--critical); box-shadow:0 0 0 1px var(--critical) inset; background:transparent; }
+  .btn:hover{ filter:brightness(1.06); }
+  .btn:active{ transform:scale(.97); }
   .btn:disabled{ opacity:0.5; cursor:not-allowed; }
 
   section { padding:30px 28px 6px; scroll-margin-top:70px; max-width:1320px; }
@@ -80,7 +102,7 @@
   .g3 { grid-template-columns:repeat(3,1fr); }
   @media (max-width:900px){ .g2,.g3{ grid-template-columns:1fr; } }
 
-  .card { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
+  .card { background:var(--surface); border:none; box-shadow:0 0 0 1px var(--line); border-radius:16px; padding:16px 18px; }
   .card h3 { margin:0 0 4px; font-size:12px; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); font-weight:700; }
   .card .cardnote { font-size:11.5px; color:var(--muted); margin-top:2px; }
 
@@ -121,18 +143,18 @@
   .barcap { height:9px; border-radius:5px; background:var(--surface-2); overflow:hidden; margin-top:8px; }
   .barcap > i { display:block; height:100%; background:var(--accent); border-radius:5px; }
 
-  .toggle { position:relative; width:38px; height:21px; border-radius:999px; background:var(--surface-3); border:1px solid var(--line); flex:none; cursor:pointer; }
-  .toggle.on { background:var(--accent); border-color:var(--accent); }
-  .toggle::after { content:""; position:absolute; top:2px; left:2px; width:15px; height:15px; border-radius:50%; background:#fff; transition:left .15s; }
-  .toggle.on::after { left:19px; }
-  .settingrow { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:10px 0; border-bottom:1px solid var(--line); }
+  .toggle { position:relative; width:38px; height:22px; border-radius:999px; background:var(--surface-3); flex:none; cursor:pointer; transition:background .15s ease; }
+  .toggle.on { background:linear-gradient(135deg,var(--accent),var(--accent-2)); }
+  .toggle::after { content:""; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.25); transition:left .15s; }
+  .toggle.on::after { left:18px; }
+  .settingrow { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:11px 0; border-bottom:1px solid var(--line); }
   .settingrow:last-child { border-bottom:none; }
   .settingrow .st { font-size:13px; font-weight:600; }
   .settingrow .sd { font-size:11.5px; color:var(--muted); margin-top:2px; }
 
-  .segmented { display:inline-flex; background:var(--surface-2); border-radius:8px; padding:3px; gap:2px; }
-  .segmented button { border:none; background:transparent; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:700; color:var(--ink-soft); cursor:pointer; font-family:var(--font-mono); }
-  .segmented button.active { background:var(--surface); color:var(--accent); box-shadow:0 1px 2px rgba(0,0,0,.08); }
+  .segmented { display:inline-flex; background:var(--surface-2); border-radius:999px; padding:3px; gap:2px; }
+  .segmented button { border:none; background:transparent; padding:6px 13px; border-radius:999px; font-size:12px; font-weight:700; color:var(--ink-soft); cursor:pointer; font-family:var(--font-mono); transition:background .12s ease, color .12s ease; }
+  .segmented button.active { background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:#fff; }
 
   .term { background:var(--chart-surface); color:#e4e1d8; border-radius:10px; overflow:hidden; border:1px solid var(--line); }
   .term .tb { display:flex; align-items:center; gap:6px; padding:9px 12px; border-bottom:1px solid rgba(255,255,255,.08); }
@@ -142,22 +164,110 @@
   .term .ts { color:#7a8087; }
   .term .lvl-info{ color:#7fb0e0; } .term .lvl-warn{ color:var(--warning); } .term .lvl-error{ color:#f08b8b; } .term .lvl-debug{ color:#8a8f98; }
 
-  .chat-card { display:flex; flex-direction:column; gap:10px; }
-  .chat-toolbar { display:flex; align-items:center; gap:10px; }
-  .chat-toolbar-label { font-size:12px; font-weight:700; color:var(--ink-soft); }
-  .chat-toolbar select { background:var(--surface-2); border:1px solid var(--line); color:var(--ink); border-radius:7px; padding:6px 10px; font-family:var(--font-mono); font-size:12.5px; }
-  .chat-window { background:var(--surface-2); border:1px solid var(--line); border-radius:10px; padding:14px; min-height:340px; max-height:520px; overflow-y:auto; display:flex; flex-direction:column; gap:10px; }
-  .chat-bubble { max-width:72%; padding:9px 13px; border-radius:14px; font-size:13px; line-height:1.5; white-space:pre-wrap; word-break:break-word; }
-  .chat-bubble .chat-meta { display:block; font-size:10.5px; color:var(--muted); margin-top:4px; font-family:var(--font-mono); }
-  .chat-row { display:flex; }
+  .visually-hidden { position:absolute !important; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; padding:0; margin:-1px; }
+  .chat-card { padding:0; overflow:hidden; }
+  .chat-toolbar-label { font-size:11.5px; font-weight:700; color:var(--muted); }
+
+  /* Telegram's actual app shell: a fixed-width conversation list on the
+     left (one row per bot instance — the closest analogue this dashboard
+     has to "chats") and the open conversation filling the rest, with its
+     own sticky header — not a dropdown-driven single pane. */
+  .chat-shell { display:flex; height:600px; }
+  .chat-list-pane { width:280px; flex:none; border-right:1px solid var(--line); display:flex; flex-direction:column; background:var(--surface); }
+  .chat-list-search { position:relative; padding:12px; flex:none; }
+  .chat-list-search input { width:100%; background:var(--surface-2); border:none; border-radius:999px; padding:8px 12px 8px 32px; color:var(--ink); font-size:12.5px; font-family:var(--font-body); }
+  .chat-list-search .side-search-ic { left:24px; }
+  .chat-list { flex:1; overflow-y:auto; padding:0 6px 6px; }
+  .chat-list-item { display:flex; align-items:center; gap:10px; width:100%; padding:9px 8px; border-radius:12px; border:none; background:transparent; cursor:pointer; text-align:left; font-family:var(--font-body); }
+  .chat-list-item:hover { background:var(--surface-2); }
+  .chat-list-item.active { background:var(--accent-soft); }
+  .chat-list-item.active .chat-list-name { color:var(--accent); }
+  .chat-list-avatar { flex:none; width:42px; height:42px; border-radius:50%; background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; font-family:var(--font-display); }
+  .chat-list-txt { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+  .chat-list-name { font-size:13.3px; font-weight:600; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .chat-list-meta { font-size:11.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-transform:capitalize; }
+  .chat-list-dot { flex:none; width:8px; height:8px; border-radius:50%; background:var(--surface-3); }
+  .chat-list-dot.online { background:var(--good); box-shadow:0 0 0 2px var(--good-soft); }
+  .chat-list-empty { padding:24px 16px; text-align:center; color:var(--muted); font-size:12.5px; }
+
+  .chat-convo-pane { flex:1; min-width:0; display:flex; flex-direction:column; background:var(--bg); }
+  .chat-convo-header { flex:none; display:flex; align-items:center; gap:12px; padding:12px 18px; border-bottom:1px solid var(--line); background:var(--surface); }
+  .chat-convo-header .chat-avatar { flex:none; width:38px; height:38px; border-radius:50%; background:var(--surface-3); color:var(--ink-soft); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; font-family:var(--font-display); }
+  .chat-convo-header .chat-avatar.online { background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:#fff; }
+  .chat-header-txt { flex:0 1 auto; min-width:0; max-width:38%; }
+  .chat-convo-header::after { content:""; flex:1; }
+  .chat-header-name { font-size:14.5px; font-weight:700; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .chat-header-sub { font-size:11.5px; color:var(--muted); text-transform:capitalize; }
+  .chat-header-recipient { flex:none; display:flex; align-items:center; gap:8px; }
+  .chat-header-recipient select { background:var(--surface-2); border:none; color:var(--ink); border-radius:999px; padding:6px 14px; font-family:var(--font-mono); font-size:12px; min-width:190px; }
+  .chat-convo-pane .chat-panels { flex:1; min-height:0; display:flex; }
+  .chat-convo-pane .chat-panels .chat-window { flex:1; min-height:0; max-height:none; border-radius:0; }
+  .chat-convo-pane .chat-composer { margin:10px 14px 12px; }
+  .chat-convo-pane #chat-recipient-note { padding:6px 18px 0; }
+  .chat-convo-pane #chat-status { padding:0 18px 6px; }
+  .chat-window {
+    background:var(--bg); border-radius:14px; padding:16px 18px; min-height:340px; max-height:520px;
+    overflow-y:auto; display:flex; flex-direction:column; gap:3px;
+    background-image:
+      radial-gradient(circle at 15% 20%, color-mix(in srgb, var(--accent) 5%, transparent) 0, transparent 45%),
+      radial-gradient(circle at 85% 75%, color-mix(in srgb, var(--accent) 5%, transparent) 0, transparent 45%);
+  }
+  .chat-row { display:flex; margin:3px 0; }
   .chat-row.in { justify-content:flex-start; }
   .chat-row.out { justify-content:flex-end; }
-  .chat-row.in .chat-bubble { background:var(--surface-3); color:var(--ink); border-bottom-left-radius:4px; }
-  .chat-row.out .chat-bubble { background:var(--accent); color:#fff; border-bottom-right-radius:4px; }
-  .chat-row.out .chat-bubble .chat-meta { color:rgba(255,255,255,.75); }
-  .chat-row.out .chat-bubble.from-dashboard { background:var(--accent-ink); }
-  .chat-composer { display:flex; gap:8px; align-items:flex-end; }
-  .chat-composer textarea { flex:1; resize:vertical; min-height:38px; max-height:140px; padding:9px 12px; border-radius:8px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font-family:var(--font-body); font-size:13px; line-height:1.4; }
+  .chat-bubble {
+    max-width:72%; padding:7px 12px 8px; border-radius:16px; font-size:13.5px; line-height:1.5;
+    white-space:pre-wrap; word-break:break-word; box-shadow:0 1px 1px rgba(0,0,0,.06); position:relative;
+  }
+  .chat-bubble .chat-meta { display:block; font-size:10.5px; color:var(--muted); margin-top:3px; text-align:right; font-family:var(--font-mono); }
+  .chat-row.in .chat-bubble { background:var(--bubble-in); color:var(--ink); border-bottom-left-radius:5px; }
+  .chat-row.out .chat-bubble { background:var(--bubble-out); color:var(--bubble-out-ink); border-bottom-right-radius:5px; }
+  .chat-row.out .chat-bubble .chat-meta { color:color-mix(in srgb, var(--bubble-out-ink) 60%, transparent); }
+  .chat-row.out .chat-bubble.from-dashboard { background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:#fff; }
+  .chat-row.out .chat-bubble.from-dashboard .chat-meta { color:rgba(255,255,255,.75); }
+  .chat-composer { position:relative; display:flex; gap:8px; align-items:center; background:var(--surface-2); border-radius:24px; padding:6px 8px 6px 16px; }
+  .slash-menu {
+    position:absolute; left:0; right:0; bottom:calc(100% + 8px); max-height:260px; overflow-y:auto;
+    background:var(--surface); border:1px solid var(--line); border-radius:14px; box-shadow:0 8px 24px rgba(0,0,0,.18);
+    padding:6px; z-index:20;
+  }
+  .slash-menu-item { display:flex; align-items:baseline; gap:8px; padding:7px 10px; border-radius:9px; cursor:pointer; }
+  .slash-menu-item:hover, .slash-menu-item.active { background:var(--surface-3); }
+  .slash-menu-item .cmd { font-family:var(--font-mono); font-size:12.5px; font-weight:700; color:var(--accent); white-space:nowrap; }
+  .slash-menu-item .desc { font-size:12px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .chat-composer textarea {
+    flex:1; resize:none; min-height:22px; max-height:140px; padding:6px 0; border:none; background:transparent;
+    color:var(--ink); font-family:var(--font-body); font-size:13.5px; line-height:1.4; outline:none;
+  }
+  .chat-composer .btn { border-radius:50%; width:36px; height:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; font-size:15px; flex:none; box-shadow:none; background:transparent; }
+  .chat-composer .btn:hover { background:var(--surface-3); }
+  .chat-composer .btn.primary { background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:#fff; }
+  .chat-composer .btn.primary:hover { filter:brightness(1.08); }
+  .chat-panels { position:relative; }
+  .chat-panels .chat-window { display:none; }
+  .chat-panels .chat-window.active { display:flex; }
+  #btn-chat-mic.recording { background:var(--accent) !important; color:#fff; animation:chatmicpulse 1.2s infinite; }
+  @keyframes chatmicpulse { 0%,100% { opacity:1; } 50% { opacity:.55; } }
+  .chat-pending-attachment { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink-soft); background:var(--surface-2); border-radius:999px; padding:6px 12px; }
+  .chat-pending-attachment.hidden { display:none; }
+  .chat-pending-attachment button { background:none; border:none; color:var(--ink-soft); cursor:pointer; font-size:12px; }
+  .chat-attachment { display:inline-block; margin-top:4px; font-size:12px; text-decoration:underline; cursor:pointer; }
+  .chat-thumb { display:block; margin-top:4px; max-width:220px; max-height:220px; border-radius:10px; cursor:pointer; object-fit:cover; }
+  .chat-upload-progress { display:flex; align-items:center; gap:8px; font-size:11.5px; color:var(--ink-soft); }
+  .chat-upload-progress.hidden { display:none; }
+  .chat-upload-progress-track { flex:1; height:6px; border-radius:4px; background:var(--surface-3); overflow:hidden; }
+  .chat-upload-progress-bar { height:100%; width:0%; background:linear-gradient(90deg,var(--accent),var(--accent-2)); transition:width .15s ease; }
+
+  .sessions-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+  .sessions-toolbar select, .sessions-toolbar input { background:var(--surface-2); border:none; color:var(--ink); border-radius:999px; padding:7px 12px; font-family:var(--font-mono); font-size:12.5px; }
+  .sessions-toolbar input[type="text"] { flex:1; min-width:140px; }
+  .session-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:11px 14px; border-radius:12px; background:var(--surface-2); cursor:pointer; margin-bottom:6px; transition:background .12s ease; }
+  .session-row:hover { background:var(--surface-3); }
+  .session-row .st { font-weight:700; font-size:13px; }
+  .session-row .sm { font-size:11.5px; color:var(--muted); font-family:var(--font-mono); }
+  .chat-bubble.job-prompt { background:var(--bubble-in); }
+  .chat-bubble.job-result { background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:#fff; }
+  .chat-bubble .chat-kind { display:inline-block; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; opacity:.65; margin-bottom:3px; }
 
   .platform-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
   .platform-guide { margin-bottom:14px; }
@@ -175,19 +285,19 @@
   footer.dashfoot { padding:26px 28px 40px; color:var(--muted); font-size:11.5px; }
 
   .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:50; }
-  .modal { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:22px; width:340px; }
+  .modal { background:var(--surface); border:none; box-shadow:0 12px 40px rgba(0,0,0,.3); border-radius:18px; padding:22px; width:340px; }
   .modal h3 { margin:0 0 4px; font-size:15px; }
   .modal p { font-size:12.5px; color:var(--muted); margin:0 0 12px; }
-  .modal input { width:100%; padding:8px 10px; border-radius:7px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font-family:var(--font-mono); font-size:12.5px; margin-bottom:12px; }
+  .modal input { width:100%; padding:9px 12px; border-radius:10px; border:none; background:var(--surface-2); color:var(--ink); font-family:var(--font-mono); font-size:12.5px; margin-bottom:12px; }
   .modal .row { display:flex; gap:8px; justify-content:flex-end; }
   .hidden { display:none !important; }
 
   /* setup wizard — shown instead of the dashboard until required .env fields are valid */
   #wizard { position:fixed; inset:0; z-index:90; background:var(--bg); display:flex; align-items:flex-start; justify-content:center; padding:48px 24px; overflow-y:auto; }
   #wizard.hidden { display:none; }
-  .wizard-card { background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:28px 30px 24px; max-width:580px; width:100%; }
+  .wizard-card { background:var(--surface); border:none; box-shadow:0 12px 40px rgba(0,0,0,.16); border-radius:18px; padding:28px 30px 24px; max-width:580px; width:100%; }
   .wizard-head { display:flex; align-items:center; gap:12px; margin-bottom:6px; }
-  .wizard-head .mark { width:34px; height:34px; border-radius:9px; background:var(--accent); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-family:var(--font-mono); flex:none; }
+  .wizard-head .mark { width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-family:var(--font-mono); flex:none; }
   .wizard-head .t { font-family:var(--font-display); font-size:19px; font-weight:700; }
   .wizard-head .sub { font-size:11px; color:var(--muted); font-family:var(--font-mono); }
   .wizard-intro { font-size:12.5px; color:var(--ink-soft); margin:10px 0 22px; line-height:1.6; }
@@ -196,7 +306,7 @@
   .wizard-field .optional-tag { font-family:var(--font-mono); font-size:10px; color:var(--muted); font-weight:600; text-transform:uppercase; }
   .wizard-field .help { font-size:11.5px; color:var(--muted); margin-bottom:7px; }
   .wizard-field .row { display:flex; gap:8px; align-items:center; }
-  .wizard-field input { flex:1; padding:9px 11px; border-radius:7px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font-family:var(--font-mono); font-size:12.5px; }
+  .wizard-field input, .wizard-field select { flex:1; padding:9px 12px; border-radius:10px; border:1px solid transparent; background:var(--surface-2); color:var(--ink); font-family:var(--font-mono); font-size:12.5px; }
   .wizard-field input.ok { border-color:var(--good); }
   .wizard-field input.bad { border-color:var(--critical); }
   .wizard-field .msg { font-size:11px; margin-top:5px; }
@@ -205,51 +315,76 @@
   .wizard-foot { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:6px; padding-top:16px; border-top:1px solid var(--line); flex-wrap:wrap; }
   .wizard-foot .cardnote { max-width:280px; }
 
-  /* boot overlay — shown until the Python process reports ready */
-  #boot {
-    position:fixed; inset:0; z-index:100; background:var(--chart-surface); color:#e4e1d8;
-    display:flex; flex-direction:column; font-family:var(--font-mono);
-    transition:opacity .35s ease, visibility .35s ease;
+  /* boot panel — a small floating status/log drawer for the Python process
+     the Tauri shell spawns, NOT a full-screen takeover: the dashboard shell
+     underneath is always visible and usable, even while the backend is
+     still starting or has crashed (individual panels just show their own
+     "can't reach the server yet" empty states, same as an expired token
+     does today). Collapsed by default to a status pill; expands on click
+     or automatically when there's something worth seeing (an error, or
+     the very first boot). */
+  #boot { position:fixed; right:16px; bottom:16px; z-index:100; width:380px; max-width:calc(100vw - 32px); font-family:var(--font-mono); }
+  #boot.hidden { display:none; }
+  #boot-pill {
+    display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--line); border-radius:10px;
+    padding:9px 13px; cursor:pointer; box-shadow:0 4px 18px rgba(0,0,0,.28); font-size:12px; color:var(--ink);
   }
-  #boot.hidden { opacity:0; visibility:hidden; pointer-events:none; }
-  #boot .boot-head { display:flex; align-items:center; gap:10px; padding:16px 22px; border-bottom:1px solid rgba(255,255,255,.08); }
-  #boot .boot-head .mark { width:28px; height:28px; border-radius:7px; background:var(--accent); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:13px; }
-  #boot .boot-head .t { font-family:var(--font-display); font-size:15px; font-weight:700; color:#fff; }
-  #boot .boot-head .sub { font-size:11.5px; color:#8a8f98; margin-left:auto; }
-  #boot .boot-resources { display:flex; gap:22px; padding:12px 22px; border-bottom:1px solid rgba(255,255,255,.08); font-size:12px; }
+  #boot-pill .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); flex:none; }
+  #boot-pill.ok .dot { background:var(--good); }
+  #boot-pill.err .dot { background:var(--critical); }
+  #boot-pill .pill-text { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #boot-pill .chev { color:var(--muted); font-size:11px; transition:transform .15s ease; }
+  #boot.expanded #boot-pill .chev { transform:rotate(180deg); }
+  #boot-panel {
+    margin-top:8px; background:var(--chart-surface); color:#e4e1d8; border-radius:12px; overflow:hidden;
+    box-shadow:0 8px 28px rgba(0,0,0,.35); display:none; flex-direction:column; max-height:60vh;
+  }
+  #boot.expanded #boot-panel { display:flex; }
+  #boot .boot-head { display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid rgba(255,255,255,.08); }
+  #boot .boot-head .mark { width:22px; height:22px; border-radius:6px; background:var(--accent); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:11px; flex:none; }
+  #boot .boot-head .t { font-family:var(--font-display); font-size:13px; font-weight:700; color:#fff; }
+  #boot .boot-head .sub { font-size:11px; color:#8a8f98; margin-left:auto; }
+  #boot .boot-resources { display:flex; gap:16px; padding:9px 16px; border-bottom:1px solid rgba(255,255,255,.08); font-size:11.5px; }
   #boot .boot-resources .r b { color:#fff; font-weight:700; }
-  #boot .boot-resources .r span { color:#8a8f98; margin-right:6px; }
-  #boot .boot-lines { flex:1; overflow-y:auto; padding:16px 22px; font-size:12.5px; line-height:1.9; white-space:pre-wrap; word-break:break-word; }
+  #boot .boot-resources .r span { color:#8a8f98; margin-right:5px; }
+  #boot .boot-lines { flex:1; overflow-y:auto; padding:12px 16px; font-size:11.5px; line-height:1.8; white-space:pre-wrap; word-break:break-word; max-height:280px; }
   #boot .boot-lines .line { opacity:0; animation:boot-fade-in .18s ease forwards; }
   @keyframes boot-fade-in { to { opacity:1; } }
   #boot .boot-lines .stderr { color:#f08b8b; }
   #boot .boot-lines .stdout { color:#c9cdd3; }
   #boot .boot-lines .meta { color:var(--accent); }
-  #boot .boot-foot { padding:14px 22px 22px; display:flex; align-items:center; gap:12px; border-top:1px solid rgba(255,255,255,.08); }
-  #boot .boot-spinner { width:14px; height:14px; border-radius:50%; border:2px solid rgba(255,255,255,.2); border-top-color:var(--accent); animation:boot-spin .8s linear infinite; flex:none; }
+  #boot .boot-foot { padding:10px 16px 14px; display:flex; align-items:center; gap:10px; border-top:1px solid rgba(255,255,255,.08); }
+  #boot .boot-spinner { width:13px; height:13px; border-radius:50%; border:2px solid rgba(255,255,255,.2); border-top-color:var(--accent); animation:boot-spin .8s linear infinite; flex:none; }
   @keyframes boot-spin { to { transform:rotate(360deg); } }
-  #boot .boot-status { font-size:12.5px; color:#c9cdd3; }
-  #boot .boot-error { color:var(--critical); font-size:12.5px; }
+  #boot .boot-status { font-size:11.5px; color:#c9cdd3; }
+  #boot .boot-error { color:var(--critical); font-size:11.5px; }
   @media (prefers-reduced-motion: reduce) { #boot .boot-lines .line { animation:none; opacity:1; } #boot .boot-spinner { animation:none; } }
 </style>
 </head>
 <body>
 
 <div id="boot">
-  <div class="boot-head">
-    <div class="mark">BS</div>
-    <div class="t">Bot Server</div>
-    <div class="sub" id="boot-envline">booting…</div>
+  <div id="boot-pill">
+    <span class="dot" id="boot-pill-dot"></span>
+    <span class="pill-text" id="boot-pill-text">Starting the bot process…</span>
+    <span class="chev">▲</span>
   </div>
-  <div class="boot-resources">
-    <div class="r"><span>PID</span><b id="boot-pid">—</b></div>
-    <div class="r"><span>CPU</span><b id="boot-cpu">—</b></div>
-    <div class="r"><span>MEM</span><b id="boot-mem">—</b></div>
-  </div>
-  <div class="boot-lines" id="boot-lines"></div>
-  <div class="boot-foot">
-    <div class="boot-spinner" id="boot-spinner"></div>
-    <div class="boot-status" id="boot-status">Starting the bot process…</div>
+  <div id="boot-panel">
+    <div class="boot-head">
+      <div class="mark">BS</div>
+      <div class="t">Bot Server</div>
+      <div class="sub" id="boot-envline">booting…</div>
+    </div>
+    <div class="boot-resources">
+      <div class="r"><span>PID</span><b id="boot-pid">—</b></div>
+      <div class="r"><span>CPU</span><b id="boot-cpu">—</b></div>
+      <div class="r"><span>MEM</span><b id="boot-mem">—</b></div>
+    </div>
+    <div class="boot-lines" id="boot-lines"></div>
+    <div class="boot-foot">
+      <div class="boot-spinner" id="boot-spinner"></div>
+      <div class="boot-status" id="boot-status">Starting the bot process…</div>
+    </div>
   </div>
 </div>
 
@@ -263,7 +398,7 @@
       </div>
     </div>
     <p class="wizard-intro">A few things this bot needs before it can run. Anything already valid is pre-filled and skippable — nothing here blocks you from the dashboard, it's just where you'd come back to finish later.</p>
-    <p class="wizard-intro">You don't need all three backends — only set up the ones you actually route to. A field only becomes required here once <code class="mono">config/backends.yaml</code> is actually sending something to that backend.</p>
+    <p class="wizard-intro">You don't need all five backends — only set up the ones you actually route to. A field only becomes required here once <code class="mono">config/backends.yaml</code> is actually sending something to that backend.</p>
     <div id="wizard-backends"></div>
     <div id="wizard-fields"></div>
     <div class="wizard-foot">
@@ -290,18 +425,27 @@
   <aside class="side">
     <div class="brand">
       <div class="mark">BS</div>
-      <div><div class="name">Bot Control</div><div class="sub">telegram-server</div></div>
+      <div><div class="name">Bot Control</div></div>
     </div>
-    <nav class="sidenav">
-      <a href="#overview"><span class="ic">◆</span>Overview</a>
-      <a href="#jobs"><span class="ic">▤</span>Jobs</a>
-      <a href="#telemetry"><span class="ic">◈</span>Connections &amp; Telemetry</a>
-      <a href="#database"><span class="ic">▥</span>Database</a>
-      <a href="#control"><span class="ic">⚙</span>Control Center</a>
-      <a href="#resilience"><span class="ic">↻</span>Resilience</a>
-      <a href="#logs"><span class="ic">▦</span>Live Logs</a>
-      <a href="#chat"><span class="ic">💬</span>Chat</a>
-      <a href="#platforms"><span class="ic">🔌</span>Platforms</a>
+    <div class="side-search">
+      <span class="side-search-ic">⌕</span>
+      <input type="text" id="sidenav-search" placeholder="Search sections">
+    </div>
+    <nav class="sidenav" id="sidenav">
+      <a href="#overview" data-kw="overview live status kpis"><span class="ic">◆</span><span class="nav-txt"><b>Overview</b><small>Live status &amp; KPIs</small></span></a>
+      <a href="#jobs" data-kw="jobs queue history backends"><span class="ic">▤</span><span class="nav-txt"><b>Jobs</b><small>Queue, history &amp; backends</small></span></a>
+      <a href="#telemetry" data-kw="connections telemetry health latency errors"><span class="ic">◈</span><span class="nav-txt"><b>Connections &amp; Telemetry</b><small>Health, latency &amp; errors</small></span></a>
+      <a href="#database" data-kw="database storage maintenance"><span class="ic">▥</span><span class="nav-txt"><b>Database</b><small>Storage &amp; maintenance</small></span></a>
+      <a href="#control" data-kw="control center backends models security settings"><span class="ic">⚙</span><span class="nav-txt"><b>Control Center</b><small>Backends, models &amp; security</small></span></a>
+      <a href="#resilience" data-kw="resilience hot reload health"><span class="ic">↻</span><span class="nav-txt"><b>Resilience</b><small>Hot reload &amp; health checks</small></span></a>
+      <a href="#logs" data-kw="live logs streaming tail"><span class="ic">▦</span><span class="nav-txt"><b>Live Logs</b><small>Streaming tail</small></span></a>
+      <a href="#chat" data-kw="chat message conversation"><span class="ic">💬</span><span class="nav-txt"><b>Chat</b><small>Talk to any connected bot</small></span></a>
+      <a href="#support-bot" data-kw="support bot assistant ai help manage local"><span class="ic">🛟</span><span class="nav-txt"><b>Support Bot</b><small>Local assistant for server management</small></span></a>
+      <a href="#sessions" data-kw="sessions past conversations"><span class="ic">🗂</span><span class="nav-txt"><b>Sessions</b><small>Past conversations</small></span></a>
+      <a href="#bots" data-kw="bots agents instances"><span class="ic">🤖</span><span class="nav-txt"><b>Bots</b><small>Manage bot instances</small></span></a>
+      <a href="#swarms" data-kw="swarms orchestration multi-bot"><span class="ic">🐝</span><span class="nav-txt"><b>Swarms</b><small>Multi-bot orchestration</small></span></a>
+      <a href="#platforms" data-kw="platforms legacy single-bot"><span class="ic">🔌</span><span class="nav-txt"><b>Platforms</b><small>Legacy single-bot config</small></span></a>
+      <a href="#mobile" data-kw="mobile android pairing devices"><span class="ic">📱</span><span class="nav-txt"><b>Mobile</b><small>Pair &amp; manage devices</small></span></a>
     </nav>
     <div class="side-status">
       <div class="row"><span>Desktop</span><b id="s-desktop">—</b></div>
@@ -438,6 +582,33 @@
         </div>
 
         <div class="card">
+          <h3>Models</h3>
+          <div class="settingrow">
+            <div><div class="st">api (Anthropic API)</div><div class="sd">Model used for every request routed to the api backend</div></div>
+            <select id="model-api"></select>
+          </div>
+          <div class="settingrow">
+            <div><div class="st">hermes_cli</div><div class="sd">Passed to `hermes -z` — blank uses Hermes's own default</div></div>
+            <input type="text" id="model-hermes_cli" placeholder="(default)" autocomplete="off" spellcheck="false" style="width:160px;">
+          </div>
+          <div class="settingrow">
+            <div><div class="st">hermes_gateway</div><div class="sd">Passed to the Hermes gateway session — blank uses Hermes's own default</div></div>
+            <input type="text" id="model-hermes_gateway" placeholder="(default)" autocomplete="off" spellcheck="false" style="width:160px;">
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Agent control</h3>
+          <div class="settingrow">
+            <div><div class="st">Cross-agent targeting</div><div class="sd">Whether one bot instance may ask/command another via ask_instance/run_swarm</div></div>
+            <div class="segmented" id="agent-control-seg">
+              <button data-m="trust_all">Trust all</button><button data-m="allowlist">Allowlist</button>
+            </div>
+          </div>
+          <p class="cardnote">Under "Allowlist," set which instances each bot may target from its edit form in the Bots tab.</p>
+        </div>
+
+        <div class="card">
           <h3>Feature toggles</h3>
           <div class="settingrow"><div><div class="st">UI automation backend</div><div class="sd">Allow routing to the Desktop window</div></div><div class="toggle" id="tg-ui-automation" data-path="features,ui_automation_enabled"></div></div>
           <div class="settingrow"><div><div class="st">Confirm destructive actions</div><div class="sd">Restart / stop / MCP changes need a tap</div></div><div class="toggle" id="tg-confirm" data-path="security,confirm_destructive"></div></div>
@@ -548,27 +719,313 @@
     <section id="chat">
       <div class="sec-head"><h2>Chat</h2><span class="desc">The real conversation across every connected platform — read it live, or send a message straight to the phone/laptop it's logged in on</span></div>
       <div class="card chat-card">
-        <div class="chat-toolbar">
-          <label for="chat-platform" class="chat-toolbar-label">Platform</label>
-          <select id="chat-platform"></select>
-          <label for="chat-recipient" class="chat-toolbar-label">Send to</label>
-          <select id="chat-recipient"></select>
-          <span class="cardnote" id="chat-recipient-note"></span>
+        <div class="chat-shell">
+          <div class="chat-list-pane">
+            <div class="chat-list-search">
+              <span class="side-search-ic">⌕</span>
+              <input type="text" id="chat-list-search" placeholder="Search bots">
+            </div>
+            <div class="chat-list" id="chat-tabs"><p class="cardnote" style="padding:0 12px;">Unlock with the dashboard token to view.</p></div>
+            <select id="chat-instance" class="visually-hidden" tabindex="-1" aria-hidden="true"></select>
+          </div>
+          <div class="chat-convo-pane">
+            <div class="chat-convo-header">
+              <span class="chat-avatar" id="chat-header-avatar">—</span>
+              <div class="chat-header-txt">
+                <div class="chat-header-name" id="chat-header-name">Select a bot</div>
+                <div class="chat-header-sub" id="chat-header-sub">Pick one from the list</div>
+              </div>
+              <div class="chat-header-recipient">
+                <label for="chat-recipient" class="chat-toolbar-label">Send to</label>
+                <select id="chat-recipient"></select>
+              </div>
+            </div>
+            <span class="cardnote hidden" id="chat-recipient-note"></span>
+            <div class="chat-panels" id="chat-panels"></div>
+            <div class="chat-pending-attachment hidden" id="chat-pending-attachment">
+              <span id="chat-pending-name"></span>
+              <button class="btn" id="btn-chat-attach-clear">✕</button>
+            </div>
+            <div class="chat-upload-progress hidden" id="chat-upload-progress">
+              <span>Uploading…</span>
+              <div class="chat-upload-progress-track"><div class="chat-upload-progress-bar" id="chat-upload-progress-bar"></div></div>
+            </div>
+            <div class="chat-composer">
+              <textarea id="chat-input" placeholder="Message…" rows="1"></textarea>
+              <button class="btn" id="btn-chat-attach" title="Attach file">📎</button>
+              <input type="file" id="chat-file-input" hidden>
+              <button class="btn" id="btn-chat-mic" title="Voice to text">🎤</button>
+              <button class="btn primary" id="btn-chat-send" title="Send">➤</button>
+            </div>
+            <div class="cardnote" id="chat-status"></div>
+          </div>
         </div>
-        <div class="chat-window" id="chat-window">
-          <p class="cardnote">Unlock with the dashboard token to view.</p>
+      </div>
+    </section>
+
+    <section id="support-bot">
+      <div class="sec-head"><h2>Support Bot</h2><span class="desc">A small assistant built directly into BotServer — no external model, no internet call, just this app's own local classifier wired to the same status/backend/model/MCP/bot/desktop actions the dashboard already has.</span></div>
+      <div class="card chat-card">
+        <div class="chat-window" id="support-bot-window">
+          <div class="chat-row in"><div class="chat-bubble">Ask me things like "what's the status", "restart the discord bot", "enable the filesystem mcp server", or "set the api model to claude-opus-5".</div></div>
         </div>
         <div class="chat-composer">
-          <textarea id="chat-input" placeholder="Message…" rows="1"></textarea>
-          <button class="btn primary" id="btn-chat-send">Send</button>
+          <textarea id="support-bot-input" placeholder="Ask the Support Bot…" rows="1"></textarea>
+          <button class="btn primary" id="btn-support-bot-send" title="Send">➤</button>
         </div>
-        <div class="cardnote" id="chat-status"></div>
+        <div class="cardnote" id="support-bot-status"></div>
+      </div>
+    </section>
+
+    <section id="sessions">
+      <div class="sec-head"><h2>Sessions</h2><span class="desc">Every past conversation, grouped and browsable — pick one up where you left off</span></div>
+      <div class="card">
+        <div class="sessions-toolbar">
+          <label for="sessions-instance" class="chat-toolbar-label">Bot</label>
+          <select id="sessions-instance"><option value="">All bots</option></select>
+          <input type="text" id="sessions-search" placeholder="Search title…">
+          <label for="sessions-since" class="chat-toolbar-label">Since</label>
+          <input type="date" id="sessions-since">
+          <label for="sessions-until" class="chat-toolbar-label">Until</label>
+          <input type="date" id="sessions-until">
+        </div>
+        <div id="sessions-list"><p class="cardnote">Loading…</p></div>
+      </div>
+      <div class="card hidden" id="session-detail">
+        <div class="sec-head"><h2 id="session-detail-title">Session</h2><button class="btn" id="btn-session-close">✕ Close</button></div>
+        <div class="cardnote" id="session-detail-meta"></div>
+        <div class="chat-panels" id="session-detail-items"></div>
+        <button class="btn primary" id="btn-session-continue">Continue in Chat →</button>
+      </div>
+    </section>
+
+    <section id="bots">
+      <div class="sec-head"><h2>Bots</h2><span class="desc">Run any number of independent bots at once — a Claude bot and a Hermes bot on the same platform, or several platforms each, all with fully separate chats and jobs. Changes here take effect on the next server restart.</span></div>
+
+      <div class="card">
+        <h3>Add a bot</h3>
+        <div class="wizard-field">
+          <label>Name</label>
+          <div class="row"><input type="text" id="bot-new-name" placeholder="e.g. claude-support-telegram" autocomplete="off" spellcheck="false"></div>
+        </div>
+        <div class="wizard-field">
+          <label>Platform</label>
+          <div class="row">
+            <select id="bot-new-platform">
+              <option value="telegram">Telegram</option>
+              <option value="discord">Discord</option>
+              <option value="slack">Slack</option>
+            </select>
+          </div>
+        </div>
+        <div class="wizard-field">
+          <label>Backend</label>
+          <div class="row">
+            <select id="bot-new-backend">
+              <option value="cli">cli (Claude Code CLI)</option>
+              <option value="api">api (Anthropic API)</option>
+              <option value="ui">ui (Claude Desktop automation)</option>
+              <option value="hermes_cli">hermes_cli (Hermes Agent CLI)</option>
+              <option value="hermes_gateway">hermes_gateway (Hermes Agent gateway)</option>
+            </select>
+          </div>
+        </div>
+        <div class="wizard-field" id="bot-new-model-field">
+          <label>Model override (optional)</label>
+          <div class="help">Leave blank to use this backend's configured default. Applies to api/hermes_cli/hermes_gateway only.</div>
+          <div class="row"><input type="text" id="bot-new-model" list="bot-new-model-options" placeholder="e.g. claude-opus-5" autocomplete="off" spellcheck="false"></div>
+          <datalist id="bot-new-model-options"></datalist>
+        </div>
+        <div class="wizard-field">
+          <label>Bot token</label>
+          <div class="row"><input type="text" id="bot-new-token" placeholder="platform bot token" autocomplete="off" spellcheck="false"></div>
+        </div>
+        <div class="wizard-field" id="bot-new-apptoken-field" style="display:none;">
+          <label>App token (Slack only, xapp-...)</label>
+          <div class="row"><input type="text" id="bot-new-apptoken" placeholder="xapp-..." autocomplete="off" spellcheck="false"></div>
+        </div>
+        <div class="wizard-field">
+          <label>Allowed user ID(s)</label>
+          <div class="help">Comma-separated. Numeric IDs for Telegram/Discord, Slack member IDs (U.../W...) for Slack.</div>
+          <div class="row"><input type="text" id="bot-new-allowed" placeholder="123456789, 987654321" autocomplete="off" spellcheck="false"></div>
+        </div>
+        <div class="wizard-field hidden" id="bot-new-cantarget-field">
+          <label>Can target</label>
+          <div class="help">Under Control Center's "Allowlist" agent-control mode, this bot may only ask/command the instances checked below.</div>
+          <div class="row" id="bot-new-cantarget-list"></div>
+        </div>
+        <div class="wizard-foot">
+          <span class="cardnote" id="bot-new-status"></span>
+          <button class="btn primary" id="btn-bot-create">Add bot</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Configured bots</h3>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Name</th><th>Platform</th><th>Backend</th><th>Enabled</th><th></th></tr></thead>
+            <tbody id="bots-tbody"><tr class="emptyrow"><td colspan="5">Unlock with the dashboard token to view.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Backups</h3>
+        <p class="cardnote">Every create/update/delete snapshots the full bot list first — kept indefinitely, nothing here is auto-deleted.</p>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Backup</th><th>Saved</th><th class="num">Size</th><th></th></tr></thead>
+            <tbody id="bots-backups-tbody"><tr class="emptyrow"><td colspan="4">Unlock with the dashboard token to view.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="swarms">
+      <div class="sec-head"><h2>Swarms</h2><span class="desc">Groups of bots working together on one prompt — fan out to several bots and merge the answers, have a leader pick the best one, relay drafts through a pipeline, decompose into subtasks, or build a fully custom step graph.</span></div>
+
+      <div class="card">
+        <h3>Add a swarm</h3>
+        <div class="wizard-field">
+          <label>Name</label>
+          <div class="row"><input type="text" id="swarm-new-name" placeholder="e.g. research-team" autocomplete="off" spellcheck="false"></div>
+        </div>
+        <div class="wizard-field">
+          <label>Strategy</label>
+          <div class="row">
+            <select id="swarm-new-strategy">
+              <option value="fanout_synthesize">fanout_synthesize — parallel answers, optional synthesizer</option>
+              <option value="leader_vote">leader_vote — parallel answers, leader picks the best</option>
+              <option value="sequential_relay">sequential_relay — pipeline, each member refines the last</option>
+              <option value="decompose_delegate">decompose_delegate — planner splits work, workers + aggregator</option>
+              <option value="custom">custom — hand-built step graph, full control</option>
+            </select>
+          </div>
+        </div>
+        <div class="wizard-field">
+          <label>Config (JSON)</label>
+          <div class="help" id="swarm-config-help">Bot instance IDs, from the Bots tab: <span id="swarm-instance-legend">—</span></div>
+          <div class="row"><textarea id="swarm-new-config" rows="6" spellcheck="false" style="width:100%; padding:9px 11px; border-radius:7px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font-family:var(--font-mono); font-size:12px;"></textarea></div>
+        </div>
+        <div class="wizard-foot">
+          <span class="cardnote" id="swarm-new-status"></span>
+          <button class="btn primary" id="btn-swarm-create">Add swarm</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Configured swarms</h3>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Name</th><th>Strategy</th><th>Enabled</th><th></th></tr></thead>
+            <tbody id="swarms-tbody"><tr class="emptyrow"><td colspan="4">Unlock with the dashboard token to view.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Run a swarm</h3>
+        <div class="wizard-field">
+          <label>Swarm</label>
+          <div class="row"><select id="swarm-run-select"></select></div>
+        </div>
+        <div class="wizard-field">
+          <label>Prompt</label>
+          <div class="row"><textarea id="swarm-run-prompt" rows="3" style="width:100%; padding:9px 11px; border-radius:7px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font-family:var(--font-mono); font-size:12.5px;"></textarea></div>
+        </div>
+        <div class="wizard-foot">
+          <span class="cardnote" id="swarm-run-status"></span>
+          <button class="btn primary" id="btn-swarm-run">Run</button>
+        </div>
+        <div id="swarm-run-progress" style="margin-top:14px; display:none;">
+          <h3 style="font-size:13px;">Progress</h3>
+          <div id="swarm-run-steps" class="tablewrap"></div>
+          <div class="wizard-field" style="margin-top:10px;">
+            <label>Final result</label>
+            <div class="cardnote" id="swarm-run-result" style="white-space:pre-wrap;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Run history</h3>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Started</th><th>Prompt</th><th>Status</th><th></th></tr></thead>
+            <tbody id="swarm-runs-tbody"><tr class="emptyrow"><td colspan="4">No runs yet.</td></tr></tbody>
+          </table>
+        </div>
       </div>
     </section>
 
     <section id="platforms">
-      <div class="sec-head"><h2>Platforms</h2><span class="desc">Connect Telegram, Discord, Slack — set up or reconfigure any of them here, any time. Changes take effect on the next server restart.</span></div>
+      <div class="sec-head"><h2>Platforms (legacy)</h2><span class="desc">Superseded by the Bots tab, which supports any number of bots per platform. Kept here read/write for transparency into the original single-bot .env fields this app started with — no longer read at startup, safe to ignore.</span></div>
       <div id="platforms-list"></div>
+    </section>
+
+    <section id="mobile">
+      <div class="sec-head"><h2>Mobile</h2><span class="desc">Pair the Android app with this server — each key is its own revocable device credential, never the master dashboard token</span></div>
+      <div class="card">
+        <h3>Generate a key</h3>
+        <div class="row" style="gap:8px; align-items:center;">
+          <input type="text" id="mobile-new-label" placeholder="Device label, e.g. \"My Phone\"" style="flex:1;">
+          <input type="text" id="mobile-new-host" placeholder="Host:port the phone should reach — auto-filled with this machine's LAN address">
+          <input type="text" id="mobile-new-host2" placeholder="Fallback host:port — auto-filled with Tailscale if installed">
+          <button class="btn primary" id="btn-mobile-generate">Generate key</button>
+        </div>
+        <p class="cardnote">Both auto-fill on startup (LAN address, then Tailscale as a fallback path) — edit them only if the detected address is wrong. The fallback is a second, independent path to this server; the app automatically switches to it if the first one stops answering.</p>
+        <div class="hidden" id="mobile-new-result" style="margin-top:14px;">
+          <p class="cardnote" style="color:var(--warning);">Shown once — this key can't be recovered after you leave this page. Copy it or scan the QR now.</p>
+          <div class="row" style="gap:14px; align-items:flex-start;">
+            <img id="mobile-new-qr" style="width:180px; height:180px; border-radius:8px; border:1px solid var(--line);">
+            <div style="flex:1;">
+              <div class="cardnote">Key</div>
+              <div class="mono" id="mobile-new-key" style="word-break:break-all; font-size:12px; background:var(--surface-2); border:1px solid var(--line); border-radius:7px; padding:8px;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <div class="row" style="justify-content:space-between; align-items:center;">
+          <h3 style="margin:0;">Paired devices</h3>
+          <div class="row" style="gap:8px;">
+            <button class="btn" id="btn-mobile-save">Save Devices List Data</button>
+            <button class="btn" id="btn-mobile-clear-revoked">Clear Revoked Devices</button>
+          </div>
+        </div>
+        <p class="cardnote">Labels below are editable — change one and click "Save Devices List Data" to persist it. "Clear Revoked Devices" permanently deletes revoked entries from this list (the devices themselves already lost access the moment they were revoked; this just tidies the list).</p>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Label</th><th>Device</th><th>Created</th><th>Last seen</th><th>Status</th><th></th></tr></thead>
+            <tbody id="mobile-keys-tbody"><tr class="emptyrow"><td colspan="6">Loading…</td></tr></tbody>
+          </table>
+        </div>
+        <p class="cardnote" id="mobile-devices-status"></p>
+      </div>
+
+      <div class="card hidden" id="android-card" style="margin-top:14px;">
+        <h3>Android app — build, install &amp; pair</h3>
+        <p class="cardnote" id="android-env-status">Checking for the Android SDK and project…</p>
+
+        <div class="row" style="gap:8px; align-items:center; margin-top:10px;">
+          <select id="android-device-select" style="flex:1;"><option value="">No devices found</option></select>
+          <button class="btn" id="btn-android-refresh-devices">Refresh devices</button>
+        </div>
+        <p class="cardnote">Connect your phone by USB with USB debugging enabled (or use wireless adb), then refresh.</p>
+
+        <div class="row" style="gap:8px; margin-top:12px; flex-wrap:wrap;">
+          <button class="btn primary" id="btn-android-build-install-pair">Build, install &amp; pair</button>
+          <button class="btn" id="btn-android-build">Build only</button>
+          <button class="btn" id="btn-android-install">Install only</button>
+          <button class="btn" id="btn-android-pair">Pair only</button>
+        </div>
+        <p class="cardnote" id="android-step"></p>
+
+        <div id="android-log-wrap" class="hidden" style="margin-top:10px;">
+          <div id="android-log" style="background:var(--chart-surface); color:#e4e1d8; border-radius:10px; padding:10px 12px; font-family:var(--font-mono); font-size:11.5px; line-height:1.7; white-space:pre-wrap; word-break:break-word; max-height:260px; overflow-y:auto;"></div>
+        </div>
+      </div>
     </section>
 
     <footer class="dashfoot">Bot Control Dashboard · local-only · single-user allowlist enforced</footer>

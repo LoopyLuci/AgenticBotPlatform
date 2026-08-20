@@ -1,0 +1,261 @@
+package com.botserver.mobile.ui.bots
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.botserver.mobile.data.dto.BotInstance
+
+private val PLATFORMS = listOf("telegram", "discord", "slack")
+private val BACKENDS = listOf("cli", "api", "ui", "hermes_cli", "hermes_gateway")
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun BotsScreen(viewModel: BotsViewModel = hiltViewModel()) {
+    val state by viewModel.uiState.collectAsState()
+    LaunchedEffect(Unit) { viewModel.refresh() }
+    BackHandler(enabled = state.form != null) { viewModel.cancelForm() }
+
+    if (state.form != null) {
+        BotFormScreen(
+            form = state.form!!,
+            onChange = viewModel::updateForm,
+            onCancel = viewModel::cancelForm,
+            onSave = viewModel::saveForm,
+        )
+        return
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Bots", fontWeight = FontWeight.Bold) },
+                actions = {
+                    IconButton(onClick = { viewModel.startCreate() }) {
+                        Icon(Icons.Filled.Add, contentDescription = "Add bot")
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            if (state.bots.isEmpty()) {
+                Text(
+                    state.error ?: "No bots configured yet — tap + to add one.",
+                    modifier = Modifier.align(Alignment.Center).padding(24.dp),
+                )
+            } else {
+                LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(state.bots, key = { it.id }) { bot ->
+                        BotRow(
+                            bot,
+                            busy = state.busyId == bot.id,
+                            onEdit = { viewModel.startEdit(bot) },
+                            onToggleEnabled = { viewModel.toggleEnabled(bot) },
+                            onToggleRunning = { viewModel.toggleRunning(bot) },
+                            onRestart = { viewModel.restart(bot) },
+                            onDelete = { viewModel.delete(bot) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BotRow(
+    bot: BotInstance,
+    busy: Boolean,
+    onEdit: () -> Unit,
+    onToggleEnabled: () -> Unit,
+    onToggleRunning: () -> Unit,
+    onRestart: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+
+    Surface(shape = RoundedCornerShape(14.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
+                    Text(bot.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    val subtitle = buildString {
+                        append(bot.platform)
+                        append(" · ")
+                        append(bot.backend)
+                        if (!bot.model.isNullOrBlank()) { append(" · "); append(bot.model) }
+                    }
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                }
+                if (busy) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                } else {
+                    Box {
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "More actions")
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(text = { Text("Edit") }, onClick = { menuOpen = false; onEdit() })
+                            DropdownMenuItem(text = { Text("Restart") }, onClick = { menuOpen = false; onRestart() })
+                            DropdownMenuItem(
+                                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                                onClick = { menuOpen = false; confirmDelete = true },
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                AssistChip(onClick = onToggleEnabled, enabled = !busy, label = { Text(if (bot.enabled) "Enabled" else "Disabled") })
+                if (bot.enabled) {
+                    AssistChip(onClick = onToggleRunning, enabled = !busy, label = { Text(if (bot.liveRunning) "Running" else "Stopped") })
+                }
+            }
+            bot.lastError?.let {
+                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 6.dp))
+            }
+        }
+    }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Delete ${bot.name}?") },
+            text = { Text("This permanently removes the bot instance and stops it if running. This can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = { confirmDelete = false; onDelete() }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BotFormScreen(form: BotForm, onChange: ((BotForm) -> BotForm) -> Unit, onCancel: () -> Unit, onSave: () -> Unit) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                navigationIcon = {
+                    IconButton(onClick = onCancel) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Cancel") }
+                },
+                title = { Text(if (form.isEditing) "Edit bot" else "Add bot") },
+            )
+        },
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+        ) {
+            OutlinedTextField(
+                value = form.name,
+                onValueChange = { v -> onChange { it.copy(name = v) } },
+                label = { Text("Name") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            Spacer(Modifier.height(14.dp))
+            LabeledDropdown("Platform", PLATFORMS, form.platform) { v -> onChange { it.copy(platform = v) } }
+            Spacer(Modifier.height(14.dp))
+            LabeledDropdown("Backend", BACKENDS, form.backend) { v -> onChange { it.copy(backend = v) } }
+            Spacer(Modifier.height(14.dp))
+            OutlinedTextField(
+                value = form.model,
+                onValueChange = { v -> onChange { it.copy(model = v) } },
+                label = { Text("Model override (optional)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                supportingText = { Text("Leave blank to use the backend's configured default.") },
+            )
+            Spacer(Modifier.height(14.dp))
+            OutlinedTextField(
+                value = form.botToken,
+                onValueChange = { v -> onChange { it.copy(botToken = v) } },
+                label = { Text("Bot token") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            if (form.platform == "slack") {
+                Spacer(Modifier.height(14.dp))
+                OutlinedTextField(
+                    value = form.appToken,
+                    onValueChange = { v -> onChange { it.copy(appToken = v) } },
+                    label = { Text("App token (xapp-...)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+            }
+            Spacer(Modifier.height(14.dp))
+            OutlinedTextField(
+                value = form.allowedIds,
+                onValueChange = { v -> onChange { it.copy(allowedIds = v) } },
+                label = { Text("Allowed user ID(s)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                supportingText = { Text("Comma-separated. Numeric IDs for Telegram/Discord, member IDs (U.../W...) for Slack.") },
+            )
+            if (form.isEditing) {
+                Spacer(Modifier.height(14.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("Enabled", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                    Switch(checked = form.enabled, onCheckedChange = { v -> onChange { it.copy(enabled = v) } })
+                }
+            }
+            form.error?.let {
+                Spacer(Modifier.height(10.dp))
+                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+            Spacer(Modifier.height(20.dp))
+            Button(onClick = onSave, enabled = !form.saving, modifier = Modifier.fillMaxWidth()) {
+                if (form.saving) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                else Text(if (form.isEditing) "Save changes" else "Add bot")
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LabeledDropdown(label: String, options: List<String>, selected: String, onSelect: (String) -> Unit) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+        OutlinedTextField(
+            value = selected,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.fillMaxWidth().menuAnchor(),
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { option ->
+                DropdownMenuItem(text = { Text(option) }, onClick = { onSelect(option); expanded = false })
+            }
+        }
+    }
+}

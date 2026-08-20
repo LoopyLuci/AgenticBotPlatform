@@ -18,6 +18,11 @@ use serde::Serialize;
 use sysinfo::{Pid, ProcessesToUpdate, System};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+mod android;
+use android::{android_env_status, build_android_apk, install_android_apk, list_adb_devices, pair_android_device};
+mod network;
+use network::{detect_lan_host, detect_tailscale_host};
+
 /// Passed to CreateProcess on Windows so spawning a console app (python.exe,
 /// taskkill.exe) never flashes its own console window on top of the GUI —
 /// the app is windows_subsystem = "windows" and has no console of its own,
@@ -26,7 +31,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 /// Applies CREATE_NO_WINDOW on Windows; no-op elsewhere.
-fn no_window(cmd: &mut Command) -> &mut Command {
+pub(crate) fn no_window(cmd: &mut Command) -> &mut Command {
     #[cfg(target_os = "windows")]
     {
         cmd.creation_flags(CREATE_NO_WINDOW);
@@ -279,7 +284,14 @@ pub fn run() {
             stop_server,
             restart_server,
             server_status,
-            get_dashboard_token
+            get_dashboard_token,
+            android_env_status,
+            list_adb_devices,
+            build_android_apk,
+            install_android_apk,
+            pair_android_device,
+            detect_lan_host,
+            detect_tailscale_host
         ])
         .setup(|app| {
             let handle = app.handle().clone();

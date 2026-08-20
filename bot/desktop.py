@@ -122,11 +122,17 @@ def install_cli(actor: str = "dashboard") -> dict[str, Any]:
 
 
 def find_exe_path() -> Optional[str]:
+    # A configured/env path is only trusted if it still exists — Claude
+    # Desktop auto-updates its versioned MSIX install folder (see
+    # _find_msix_claude_exe()'s docstring), so a path saved even a few
+    # updates ago silently goes stale. Falling through to auto-detection
+    # instead of returning a dead path is the whole reason that resolver
+    # exists; short-circuiting here on an unchecked env var defeated it.
     cfg_path = (config.current.get("desktop") or {}).get("exe_path")
-    if cfg_path:
+    if cfg_path and Path(cfg_path).exists():
         return cfg_path
     env_path = os.environ.get("CLAUDE_DESKTOP_EXE")
-    if env_path:
+    if env_path and Path(env_path).exists():
         return env_path
     local = os.environ.get("LOCALAPPDATA", "")
     candidates = glob.glob(str(Path(local) / "AnthropicClaude" / "**" / PROCESS_NAME), recursive=True)
@@ -153,10 +159,17 @@ def status() -> dict[str, Any]:
         return {"running": False}
     try:
         with proc.oneshot():
+            # interval=None (non-blocking): compares against psutil's own
+            # last-call cache instead of sleeping 100ms synchronously here.
+            # status() runs on the dashboard's asyncio event loop (see
+            # api_overview()/api_telemetry() in dashboard/server.py, which
+            # offload this whole call to a thread anyway) — a blocking
+            # sleep here would freeze every other request and the Telegram
+            # bots' long-polling for its duration on every single call.
             return {
                 "running": True,
                 "pid": proc.pid,
-                "cpu_percent": proc.cpu_percent(interval=0.1),
+                "cpu_percent": proc.cpu_percent(interval=None),
                 "memory_mb": round(proc.memory_info().rss / (1024 * 1024), 1),
                 "started_at": proc.create_time(),
             }
