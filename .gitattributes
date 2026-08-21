@@ -1,0 +1,6 @@
+# Shell scripts must always check out with LF line endings — a CRLF
+# shebang line ("#!/usr/bin/env bash\r") fails to exec on Linux/macOS.
+# Without this, Windows' core.autocrlf=true (a common default) silently
+# converts scripts/run.sh to CRLF on checkout/commit, breaking it for
+# every Linux user even though it looks fine in an editor on Windows.
+*.sh text eol=lf

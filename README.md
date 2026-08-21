@@ -133,10 +133,14 @@ logs/bot.log              rotating log file, also tailed by the dashboard
 
    **Where `.env` lives:** `bot/envfile.py` auto-detects it, checked in
    order: an explicit override in `config/backends.yaml`'s `env_file` key
-   (editable from Control Center -> Environment), then this project's own
-   `/path/redacted`, then a global `~/.claude/.env`
-   shared with other Claude tooling. Whichever is found first wins. A
-   location change takes effect on the next restart.
+   (editable from Control Center -> Environment), then a hardcoded
+   canonical install path (this maintainer's own machine — a Windows-only
+   pin that has no effect anywhere else; on any other checkout, Windows or
+   Linux, it's simply absent and this step is skipped), then this
+   checkout's own root `.env` (`__file__`-relative, works identically on
+   both platforms), then a global `~/.claude/.env` shared with other
+   Claude tooling. Whichever is found first wins. A location change takes
+   effect on the next restart.
 3. **Development:**
    ```powershell
    cd desktop-app\src-tauri
@@ -152,6 +156,67 @@ logs/bot.log              rotating log file, also tailed by the dashboard
    (and `target/release/bundle/` for the MSI/NSIS installer). A build
    doesn't copy your `.env` into the bundle — put one next to the built
    exe (or point `env_file` at your real one) before running it standalone.
+
+### Linux
+
+Every file needed to build and run Bot Server on Linux is already in this
+repo — nothing above is Windows-only at the source level, just the
+`.ps1` scripts, which have a `.sh` counterpart for every step.
+
+1. **Prerequisites** — Python 3.11+, Rust + Cargo, the Tauri CLI
+   (`cargo install tauri-cli --version "^2"`), and Tauri's own Linux
+   system libraries (WebKitGTK for the window, GTK3, AppIndicator for the
+   tray, etc.) via your distro's package manager:
+   ```bash
+   # Debian/Ubuntu
+   sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+     libayatana-appindicator3-dev libssl-dev patchelf build-essential
+
+   # Fedora
+   sudo dnf install webkit2gtk4.1-devel gtk3-devel librsvg2-devel \
+     libappindicator-gtk3-devel openssl-devel patchelf @development-tools
+
+   # Arch
+   sudo pacman -S webkit2gtk-4.1 gtk3 librsvg libappindicator-gtk3 \
+     openssl patchelf base-devel
+   ```
+   (Package names/versions vary a little across Tauri releases — if
+   `cargo tauri build` complains about a missing `.pc` file, search your
+   distro's repos for that library name.)
+2. **Set up the venv + config**, same three steps as `run.ps1`, just the
+   `.sh` counterpart:
+   ```bash
+   ./scripts/run.sh
+   ```
+   Creates `.venv`, installs `requirements.txt` (`pywinauto`, the only
+   Windows-only dependency, is skipped automatically via an environment
+   marker), and runs the same interactive setup wizard as Windows. Ctrl+C
+   out once it reports "Ready to run" and move to step 3.
+3. **Development:**
+   ```bash
+   cd desktop-app/src-tauri
+   cargo tauri dev
+   ```
+   **Production build** (produces a `bot-server` binary, with the venv
+   and bot code bundled alongside it — build the venv with `./scripts/run.sh`
+   *first*, since the bundle step packages whatever `.venv/` already
+   exists; a Windows-built `.venv` isn't usable here and vice versa):
+   ```bash
+   cd desktop-app/src-tauri
+   cargo tauri build
+   ```
+   `bundle.targets: "all"` in `tauri.conf.json` isn't Windows-specific —
+   on Linux it produces the platform-appropriate packages automatically
+   (`.deb`, `.rpm`, and an AppImage), landing in
+   `desktop-app/src-tauri/target/release/bundle/`.
+
+Everything else in this README — the Bots tab, backends, Support Bot,
+swarms, slash commands, session linking — behaves identically on Linux;
+the only backend that's inherently Windows/macOS-only is `ui` (it drives
+a real Claude Desktop window via `pywinauto`, which itself only ships for
+Windows), and it degrades to a clean error on Linux rather than crashing
+anything else. Everything else (`api`, `cli`, `hermes_cli`,
+`hermes_gateway`) works exactly the same.
 
 ## Using the desktop app
 
@@ -188,8 +253,14 @@ To run the desktop app automatically at login:
 ```powershell
 .\scripts\install_task.ps1
 ```
-(edit it to point at the built `.exe` instead of `run.ps1` if you've
-switched over fully — see the script for the one line to change).
+(Windows Task Scheduler; edit it to point at the built `.exe` instead of
+`run.ps1` if you've switched over fully — see the script for the one line
+to change). On Linux, the equivalent is a `systemd --user` service:
+```bash
+./scripts/install_service.sh
+```
+Same behavior (runs at login, restarts on failure) via the Linux-native
+mechanism instead — see the script's own comments for what it registers.
 
 ## The setup wizard
 

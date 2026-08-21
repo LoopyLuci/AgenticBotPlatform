@@ -92,6 +92,17 @@ fn terminate_child(mut child: Child) {
 /// gitignored, never meant to be bundled), so preferring it during dev
 /// silently loses secrets. Debug builds always run against the live repo
 /// tree; only a release build reads the bundled copy.
+/// A venv's interpreter lives at `.venv/Scripts/python.exe` on Windows but
+/// `.venv/bin/python` on Linux/macOS — different layout, not just a file
+/// extension difference.
+fn venv_python(venv_root: &std::path::Path) -> PathBuf {
+    if cfg!(target_os = "windows") {
+        venv_root.join(".venv").join("Scripts").join("python.exe")
+    } else {
+        venv_root.join(".venv").join("bin").join("python")
+    }
+}
+
 fn resolve_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf), String> {
     if cfg!(debug_assertions) {
         let dev_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -99,7 +110,7 @@ fn resolve_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf), String> {
             .and_then(|p| p.parent())
             .ok_or_else(|| "could not resolve project root".to_string())?
             .to_path_buf();
-        let python = dev_root.join(".venv").join("Scripts").join("python.exe");
+        let python = venv_python(&dev_root);
         return Ok((dev_root, python));
     }
 
@@ -107,7 +118,7 @@ fn resolve_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf), String> {
         .path()
         .resource_dir()
         .map_err(|e| format!("could not resolve resource_dir: {e}"))?;
-    let python = res_dir.join(".venv").join("Scripts").join("python.exe");
+    let python = venv_python(&res_dir);
     Ok((res_dir, python))
 }
 
@@ -119,8 +130,13 @@ fn spawn_internal(app: &AppHandle, state: &State<ServerState>) -> Result<(), Str
 
     let (project_root, python) = resolve_paths(app)?;
     if !python.exists() {
+        let hint = if cfg!(target_os = "windows") {
+            "scripts\\run.ps1"
+        } else {
+            "scripts/run.sh"
+        };
         return Err(format!(
-            "python not found at {} — run scripts\\run.ps1 once to create the venv",
+            "python not found at {} — run {hint} once to create the venv",
             python.display()
         ));
     }

@@ -30,14 +30,28 @@ logger = logging.getLogger("bot.desktop")
 PROCESS_NAME = "Claude.exe"
 
 
-def _mcp_config_path() -> Path:
+def _require_appdata() -> str:
+    # Claude Desktop itself only ships for Windows/macOS — there is no
+    # config/log directory to find on Linux. Raising here (instead of
+    # quietly resolving to a bogus cwd-relative "Claude/..." path when
+    # APPDATA is unset) turns every MCP-config caller below into a clear
+    # "not supported on this platform" error instead of either a stray
+    # file write or a confusing FileNotFoundError three layers down.
     appdata = os.environ.get("APPDATA", "")
-    return Path(appdata) / "Claude" / "claude_desktop_config.json"
+    if not appdata:
+        raise RuntimeError(
+            "Claude Desktop's MCP config isn't available on this platform "
+            "(no APPDATA — Claude Desktop only ships for Windows/macOS)."
+        )
+    return appdata
+
+
+def _mcp_config_path() -> Path:
+    return Path(_require_appdata()) / "Claude" / "claude_desktop_config.json"
 
 
 def _mcp_log_dir() -> Path:
-    appdata = os.environ.get("APPDATA", "")
-    return Path(appdata) / "Claude" / "logs"
+    return Path(_require_appdata()) / "Claude" / "logs"
 
 
 def _find_msix_claude_exe() -> Optional[str]:

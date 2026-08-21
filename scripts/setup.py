@@ -20,6 +20,7 @@ own Platforms settings, not just on first run.
 from __future__ import annotations
 
 import argparse
+import platform
 import sys
 from pathlib import Path
 from typing import Optional
@@ -179,7 +180,10 @@ def main() -> None:
         status = setup_wizard.check_status()
         _print_status(status)
         if status["ready"]:
-            print("\nNext: .\\scripts\\run.ps1  (or, once built, launch BotServer.exe)")
+            if platform.system() == "Windows":
+                print("\nNext: .\\scripts\\run.ps1  (or, once built, launch BotServer.exe)")
+            else:
+                print("\nNext: ./scripts/run.sh  (or, once built, launch the bot-server binary)")
     except (KeyboardInterrupt, EOFError):
         print("\nAborted.")
         sys.exit(1)

@@ -53,11 +53,19 @@ pub struct AdbDevice {
 /// checkout next to `android-app/`. Deliberately not resolved off
 /// `resource_dir()`: the Android project isn't bundled into the installer
 /// (see module docs), so there's nothing to find there.
+fn gradlew_name() -> &'static str {
+    if cfg!(target_os = "windows") { "gradlew.bat" } else { "gradlew" }
+}
+
+fn adb_name() -> &'static str {
+    if cfg!(target_os = "windows") { "adb.exe" } else { "adb" }
+}
+
 fn find_android_project_dir() -> Option<PathBuf> {
     let mut dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
     for _ in 0..8 {
         let candidate = dir.join("android-app");
-        if candidate.join("gradlew.bat").is_file() {
+        if candidate.join(gradlew_name()).is_file() {
             return Some(candidate);
         }
         if !dir.pop() {
@@ -93,7 +101,7 @@ fn find_android_sdk(project_dir: Option<&Path>) -> Option<PathBuf> {
 }
 
 fn adb_path_from_sdk(sdk: &Path) -> Option<PathBuf> {
-    let p = sdk.join("platform-tools").join("adb.exe");
+    let p = sdk.join("platform-tools").join(adb_name());
     p.is_file().then_some(p)
 }
 
@@ -115,7 +123,7 @@ fn require_adb() -> Result<PathBuf, String> {
     let sdk = find_android_sdk(project_dir.as_deref())
         .ok_or_else(|| "Android SDK not found (checked ANDROID_HOME/ANDROID_SDK_ROOT and android-app/local.properties).".to_string())?;
     adb_path_from_sdk(&sdk)
-        .ok_or_else(|| format!("adb.exe not found under {} — is platform-tools installed?", sdk.display()))
+        .ok_or_else(|| format!("{} not found under {} — is platform-tools installed?", adb_name(), sdk.display()))
 }
 
 #[tauri::command]
@@ -153,7 +161,7 @@ pub fn build_android_apk(app: AppHandle) -> Result<(), String> {
     let project_dir = find_android_project_dir()
         .ok_or_else(|| "android-app/ source tree not found next to this app — this feature only works on the machine used for development.".to_string())?;
 
-    let mut cmd = Command::new(project_dir.join("gradlew.bat"));
+    let mut cmd = Command::new(project_dir.join(gradlew_name()));
     cmd.args(["assembleDebug", "--console=plain"])
         .current_dir(&project_dir)
         .stdout(Stdio::piped())

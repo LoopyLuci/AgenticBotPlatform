@@ -16,8 +16,9 @@ To use from Claude Desktop or Claude Code, register it as an MCP server
 pointing at this project's venv python running `-m bot.mcp_server` — see
 desktop.py's register_self_mcp() for the Claude Desktop case, or run
 `claude mcp add bot-server -- <path to .venv>\\Scripts\\python.exe -m bot.mcp_server`
-for Claude Code. Either way the dashboard API itself must already be
-running (launch BotServer.exe, or `python -m bot.main`) — this
+(Windows) or `claude mcp add bot-server -- <path to .venv>/bin/python -m bot.mcp_server`
+(Linux/macOS) for Claude Code. Either way the dashboard API itself must
+already be running (launch the built app, or `python -m bot.main`) — this
 process is a thin client, not a second copy of the server.
 """
 
