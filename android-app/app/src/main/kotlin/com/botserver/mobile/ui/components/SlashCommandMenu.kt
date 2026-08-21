@@ -37,6 +37,7 @@ val SLASH_COMMANDS = listOf(
     SlashCommand("stop_desktop", "", "Stop Claude Desktop"),
     SlashCommand("restart_desktop", "", "Restart Claude Desktop"),
     SlashCommand("project", "open <path>", "Set working dir for the next /ask"),
+    SlashCommand("new_session", "", "Open a fresh linked chat in Claude Desktop/Hermes for this bot"),
     SlashCommand("help", "", "List available commands"),
 )
 

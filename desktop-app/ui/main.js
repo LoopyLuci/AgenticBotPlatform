@@ -594,12 +594,14 @@ async function refreshBots() {
       <td>
         <span class="pill"><span class="dot ${b.enabled ? 'good' : ''}"></span>${b.enabled ? 'Enabled' : 'Disabled'}</span>
         <span class="pill"><span class="dot ${b.live_running ? 'good' : (b.last_error ? 'critical' : '')}"></span>${b.live_running ? 'Running' : (b.last_error ? 'Crashed' : 'Stopped')}</span>
+        ${['ui', 'hermes_gateway'].includes(b.backend) ? `<span class="pill" title="Linked chat/session in the real desktop app">${b.desktop_session_key ? 'Session: ' + esc(b.desktop_session_key) : 'No session linked yet'}</span>` : ''}
       </td>
       <td style="white-space:nowrap;">
         <button class="btn" data-bot-edit="${b.id}" style="padding:3px 8px; font-size:11px;">Edit</button>
         <button class="btn" data-bot-toggle="${b.id}" style="padding:3px 8px; font-size:11px;">${b.enabled ? 'Disable' : 'Enable'}</button>
         ${b.enabled ? `<button class="btn" data-bot-startstop="${b.id}" style="padding:3px 8px; font-size:11px;">${b.live_running ? 'Stop' : 'Start'}</button>
         <button class="btn" data-bot-restart="${b.id}" style="padding:3px 8px; font-size:11px;">Restart</button>` : ''}
+        ${['ui', 'hermes_gateway'].includes(b.backend) ? `<button class="btn" data-bot-newsession="${b.id}" style="padding:3px 8px; font-size:11px;" title="Opens a real new chat in Claude Desktop/Hermes and links it to this bot">New Session</button>` : ''}
         <button class="btn" data-bot-delete="${b.id}" style="padding:3px 8px; font-size:11px;">Delete</button>
       </td>
     </tr>${b.last_error ? `<tr><td colspan="5"><span class="cardnote" style="color:var(--critical);">${esc(b.name)}: ${esc(b.last_error)}</span></td></tr>` : ''}`).join('') : '<tr class="emptyrow"><td colspan="5">No bots yet — add one above.</td></tr>';
@@ -623,6 +625,21 @@ async function refreshBots() {
   document.querySelectorAll('[data-bot-restart]').forEach(btn => btn.onclick = async () => {
     await api(`/api/bots/${btn.dataset.botRestart}/restart`, { method: 'POST' });
     refreshBots();
+  });
+  document.querySelectorAll('[data-bot-newsession]').forEach(btn => btn.onclick = async () => {
+    const id = Number(btn.dataset.botNewsession);
+    const bot = bots.find(b => b.id === id);
+    if (!confirm(`Open a brand-new chat in ${bot.backend === 'ui' ? 'Claude Desktop' : 'Hermes'} for "${bot.name}"? Future messages to this bot will go there instead of its current linked chat.`)) return;
+    btn.disabled = true;
+    btn.textContent = 'Opening…';
+    try {
+      await api(`/api/bots/${id}/session/new`, { method: 'POST' });
+      refreshBots();
+    } catch (e) {
+      alert(`Could not create session: ${e.message}`);
+      btn.disabled = false;
+      btn.textContent = 'New Session';
+    }
   });
   document.querySelectorAll('[data-bot-delete]').forEach(btn => btn.onclick = async () => {
     const id = Number(btn.dataset.botDelete);
@@ -1962,7 +1979,7 @@ async function refreshAndroidStatus() {
       el.textContent = 'Android SDK not found (checked ANDROID_HOME/ANDROID_SDK_ROOT and android-app/local.properties).';
     }
     const disabled = !(s.sdk_found && s.project_found);
-    ['btn-android-build-install-pair', 'btn-android-build'].forEach(id => {
+    ['btn-android-build-install-pair', 'btn-android-build-install', 'btn-android-build'].forEach(id => {
       document.getElementById(id).disabled = disabled;
     });
   } catch (e) {
@@ -2124,6 +2141,20 @@ function initAndroidPanel() {
     document.getElementById('btn-android-build').disabled = false;
   };
 
+  document.getElementById('btn-android-build-install').onclick = async () => {
+    const serial = selectedAndroidDevice();
+    if (!serial) return;
+    const btn = document.getElementById('btn-android-build-install');
+    btn.disabled = true;
+    try {
+      const result = await buildAndroidApk();
+      if (!result.success) return;
+      await installAndroidApk(serial);
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
   document.getElementById('btn-android-install').onclick = async () => {
     const serial = selectedAndroidDevice();
     if (!serial) return;
@@ -2203,6 +2234,7 @@ const SLASH_COMMANDS = [
   { cmd: 'stop_desktop', args: '', desc: 'Stop Claude Desktop' },
   { cmd: 'restart_desktop', args: '', desc: 'Restart Claude Desktop' },
   { cmd: 'project', args: 'open <path>', desc: 'Set working dir for the next /ask' },
+  { cmd: 'new_session', args: '', desc: 'Open a fresh linked chat in Claude Desktop/Hermes for this bot' },
   { cmd: 'help', args: '', desc: 'List available commands' },
 ];
 

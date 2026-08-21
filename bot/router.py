@@ -80,6 +80,8 @@ class Router:
                 poll_interval_s=b_cfg.get("poll_interval_s", 0.5),
                 input_automation_id=b_cfg.get("input_automation_id"),
                 send_button_automation_id=b_cfg.get("send_button_automation_id"),
+                new_chat_button_automation_id=b_cfg.get("new_chat_button_automation_id"),
+                sidebar_item_control_type=b_cfg.get("sidebar_item_control_type", "ListItem"),
             )
         if name == "hermes_cli":
             return HermesCliBackend(
@@ -163,12 +165,24 @@ class Router:
         timeouts = cfg.get("timeouts", {})
 
         instance_model: Optional[str] = None
+        desktop_session_key: Optional[str] = None
         if instance_id is not None:
             from bot import bot_instances
 
             instance = bot_instances.get_instance(instance_id)
             if instance:
                 instance_model = instance.get("model")
+                desktop_session_key = instance.get("desktop_session_key")
+
+        # ui/hermes_gateway are session-aware backends (see their own
+        # ask()) — they need to know which bot instance this call belongs
+        # to and which already-created chat/session it's linked to, so they
+        # never send into an unlinked/wrong conversation. Other backends
+        # ignore these keys.
+        context = dict(context or {})
+        if instance_id is not None:
+            context.setdefault("instance_id", instance_id)
+            context.setdefault("desktop_session_key", desktop_session_key)
 
         job_id = db.create_job(
             action_type=action_type,
@@ -208,6 +222,12 @@ class Router:
                 db.log_telemetry(component=backend_name, metric="latency_ms", value=latency_ms)
                 db.log_connection_event(component=backend_name, event="request_ok")
                 db.mark_job_done(job_id, status="success", result=result.text, tokens=result.tokens)
+                if instance_id is not None and isinstance(result.raw, dict) and result.raw.get("desktop_session_key"):
+                    from bot import bot_instances
+
+                    bot_instances.set_desktop_session_key(
+                        instance_id, result.raw["desktop_session_key"], actor="system"
+                    )
                 return result
             except BackendError as exc:
                 latency_ms = (time.monotonic() - t0) * 1000
@@ -218,6 +238,34 @@ class Router:
 
         db.mark_job_done(job_id, status="failed", error=str(last_error))
         raise last_error or BackendError("all backends in chain failed")
+
+    async def create_session(self, instance_id: int) -> str:
+        """Explicitly opens a brand-new chat/session in the real desktop
+        agent app (Claude Desktop for "ui", Hermes for "hermes_gateway")
+        for this specific bot instance, persists the link, and returns the
+        new session key. This is the only way a bot instance's linked
+        session ever changes — ask() always reuses whatever is already
+        linked, never silently creates or switches one on its own (aside
+        from the very first call, which lazily creates one exactly like
+        this)."""
+        from bot import bot_instances
+
+        instance = bot_instances.get_instance(instance_id)
+        if instance is None:
+            raise BackendError(f"bot instance {instance_id} not found")
+
+        backend_name = instance.get("backend")
+        cfg = config.current
+        backend = self._get_backend(backend_name, cfg, model_override=instance.get("model"))
+
+        create = getattr(backend, "create_session", None)
+        if create is None:
+            raise BackendError(
+                f"backend {backend_name!r} does not support session linking — only ui/hermes_gateway do"
+            )
+        key = await create()
+        bot_instances.set_desktop_session_key(instance_id, key, actor="dashboard")
+        return key
 
 
 router = Router()

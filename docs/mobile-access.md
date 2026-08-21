@@ -65,6 +65,14 @@ by firing the same `botserver://pair` link the QR encodes directly on the
 device via `adb`. Pick the device from the dropdown (refresh if it's not
 listed) and click **Build, install & pair**.
 
+Prefer to build and install without pairing right away (e.g. you're about
+to pair a different device, or just want the latest APK on the phone)?
+Click **Build & install** instead — same build + install steps, skips the
+pairing step at the end. **Build only** / **Install only** / **Pair only**
+break the same three steps apart individually if you need to re-run just
+one of them (e.g. re-pairing after `DASHBOARD_TOKEN` rotated, without
+rebuilding).
+
 This only works on that one machine — it's not something a phone-only user
 or a stranger's install can use, since it needs the Android build toolchain
 and a USB/adb connection to the device. Everything below (manual build,

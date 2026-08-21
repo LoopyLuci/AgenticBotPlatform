@@ -35,12 +35,17 @@ this session (not guessed from docs):
     `id` for RPC responses and `payload.task_id` for background completion,
     not by assuming strict frame ordering.
 
-Sessions are created fresh per call (stateless, no conversation memory) —
-matching how api_backend/cli_backend already behave, and avoiding the need
-to plumb per-bot-instance session identity into the backend layer, which
-would break the "backend definitions stay instance-agnostic" boundary the
-router relies on. Threading `context["session_id"]` through for real
-multi-turn continuity is a clean, documented future upgrade, not built now.
+Session identity is threaded through from Router.ask() via
+`context["desktop_session_key"]` (this instance's persisted, real Hermes
+`session_id` — see bot_instances.desktop_session_key / Router.create_session)
+so a given bot instance's messages keep landing in the *same* Hermes
+session/conversation instead of a throwaway one-shot session per call. If
+`context` carries no key (first-ever call for that instance, or the caller
+passed `force_new_session`), a fresh `session.create` is issued and its
+`session_id` is returned via `BackendResult.raw["desktop_session_key"]` for
+the router to persist. A call with no bot instance at all (instance_id is
+None — e.g. an ad-hoc /ask with no linked instance) still gets a fresh
+throwaway session each time, matching the old stateless behavior.
 """
 
 from __future__ import annotations
@@ -78,27 +83,52 @@ class HermesGatewayBackend(Backend):
         self._connect_lock = asyncio.Lock()
 
     async def ask(self, prompt: str, *, context=None, timeout_s: float = 60) -> BackendResult:
+        context = context or {}
+        instance_id = context.get("instance_id")
+        session_key = context.get("desktop_session_key") if not context.get("force_new_session") else None
         try:
-            text = await self._ask_once(prompt, timeout_s)
+            text, session_id, created = await self._ask_once(prompt, timeout_s, session_key, instance_id)
         except (ConnectionError, asyncio.IncompleteReadError, BackendError) as first_exc:
             logger.warning("hermes_gateway connection issue, retrying once: %s", first_exc)
             await self._teardown_connection()
             try:
-                text = await self._ask_once(prompt, timeout_s)
+                text, session_id, created = await self._ask_once(prompt, timeout_s, session_key, instance_id)
             except Exception as exc:
                 raise BackendError(f"hermes_gateway failed after retry: {exc}") from exc
-        return BackendResult(text=text, tokens=None, raw=None)
+        raw = {"desktop_session_key": session_id} if created else None
+        return BackendResult(text=text, tokens=None, raw=raw)
 
-    async def _ask_once(self, prompt: str, timeout_s: float) -> str:
+    async def create_session(self, timeout_s: float = 15) -> str:
+        """Explicitly opens a brand-new Hermes session and returns its
+        session_id as the key the caller (Router.create_session) should
+        persist against the bot instance."""
         await self._ensure_connected()
-        # `model` in session.create's params is unverified against a real
-        # gateway (no live Hermes install in this codebase to confirm the
-        # param name) — correct this if the gateway rejects/ignores it.
         session_params = {"model": self.model} if self.model else {}
-        session = await self._call("session.create", session_params, timeout_s=15)
+        session = await self._call("session.create", session_params, timeout_s=timeout_s)
         session_id = session.get("session_id")
         if not session_id:
             raise BackendError("hermes session.create returned no session_id")
+        return session_id
+
+    async def _ask_once(
+        self, prompt: str, timeout_s: float, session_key: Optional[str], instance_id: Optional[int]
+    ) -> tuple[str, Optional[str], bool]:
+        await self._ensure_connected()
+        created = False
+        session_id = session_key
+        if not session_id:
+            if instance_id is None:
+                # No linked bot instance at all — keep the old stateless
+                # behavior (a fresh throwaway session every call) rather than
+                # persisting anything nowhere.
+                session_params = {"model": self.model} if self.model else {}
+                session = await self._call("session.create", session_params, timeout_s=15)
+                session_id = session.get("session_id")
+                if not session_id:
+                    raise BackendError("hermes session.create returned no session_id")
+            else:
+                session_id = await self.create_session(timeout_s=15)
+                created = True
 
         bg = await self._call("prompt.background", {"session_id": session_id, "text": prompt}, timeout_s=15)
         task_id = bg.get("task_id")
@@ -109,10 +139,11 @@ class HermesGatewayBackend(Backend):
         fut: asyncio.Future = loop.create_future()
         self._bg_pending[task_id] = fut
         try:
-            return await asyncio.wait_for(fut, timeout=timeout_s)
+            text = await asyncio.wait_for(fut, timeout=timeout_s)
         except asyncio.TimeoutError as exc:
             self._bg_pending.pop(task_id, None)
             raise BackendError(f"hermes_gateway timed out after {timeout_s}s waiting for a response") from exc
+        return text, session_id, created
 
     # ------------------------------------------------------- connection ---
 

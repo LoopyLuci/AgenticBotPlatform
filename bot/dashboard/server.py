@@ -545,6 +545,22 @@ def build_app() -> FastAPI:
         await platform_supervisor.restart_instance(instance_id)
         return {"ok": True}
 
+    @app.post("/api/bots/{instance_id}/session/new", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_bots_new_session(instance_id: int):
+        # Opens a real new chat in Claude Desktop / Hermes for this instance
+        # and links it — see router.create_session(). Only ui/hermes_gateway
+        # backends support this; other backends 400.
+        from bot.backends.base import BackendError
+        from bot.router import router
+
+        if bot_instances.get_instance(instance_id) is None:
+            raise HTTPException(status_code=404, detail=f"bot instance {instance_id} not found")
+        try:
+            key = await router.create_session(instance_id)
+        except BackendError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True, "desktop_session_key": key}
+
     # ------------------------------------------------------------ swarms --
     # A swarm is a named group of bot instances plus a strategy for how
     # they collaborate — see bot/swarm/strategies.py. Strictly token-gated,

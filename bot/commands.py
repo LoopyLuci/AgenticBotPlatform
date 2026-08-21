@@ -41,7 +41,8 @@ HELP_TEXT = (
     "/model — interactive model picker (Telegram) | /model show|set <backend> <model> — text form\n"
     "/mcp list|enable|disable|logs — MCP servers\n"
     "/start_desktop /stop_desktop /restart_desktop\n"
-    "/project open <path> — set working dir for the next /ask"
+    "/project open <path> — set working dir for the next /ask\n"
+    "/new_session — open a fresh linked chat in Claude Desktop/Hermes for this bot (ui/hermes_gateway only)"
 )
 
 
@@ -255,6 +256,21 @@ async def cmd_ask(ctx: CmdContext, raw: str) -> str:
         return f"Backend failed: {exc}"
 
 
+async def cmd_new_session(ctx: CmdContext, args: list[str]) -> str:
+    """Opens a brand-new linked chat/session in the real Claude Desktop or
+    Hermes app for this bot instance — see Router.create_session(). Every
+    /ask for this bot from now on reselects that exact chat instead of
+    whatever happens to be open, so this is the only supported way to
+    deliberately start a fresh conversation with a ui/hermes_gateway bot."""
+    if ctx.instance_id is None:
+        return "/new_session needs a bot instance — this chat isn't linked to one."
+    try:
+        key = await router.create_session(ctx.instance_id)
+    except BackendError as exc:
+        return f"Could not create a session: {exc}"
+    return f"New session linked: {key!r}. Future messages to this bot go there."
+
+
 def _parse_backend_flag(text: str) -> tuple[str, Optional[str]]:
     parts = text.rsplit("--backend=", 1)
     if len(parts) == 2:
@@ -273,6 +289,7 @@ COMMANDS: dict[str, Callable[[CmdContext, list[str]], Any]] = {
     "model": cmd_model,
     "mcp": cmd_mcp,
     "project": cmd_project,
+    "new_session": cmd_new_session,
 }
 
 _DESKTOP_COMMANDS = {

@@ -130,6 +130,7 @@ CREATE TABLE IF NOT EXISTS bot_instances (
     action_overrides   TEXT NOT NULL DEFAULT '{}',    -- JSON, same shape as backends.yaml's action_overrides
     can_target         TEXT NOT NULL DEFAULT '[]',    -- JSON array of bot_instances.id this instance may command (agent_control)
     model              TEXT,                          -- optional per-instance model override, passed through to this instance's backend
+    desktop_session_key TEXT,                         -- links to one specific chat/session in the ui/hermes_gateway backend, NULL if none created yet
     created_at         TEXT NOT NULL,
     updated_at         TEXT NOT NULL,
     last_started_at    TEXT,
@@ -297,6 +298,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE bot_instances ADD COLUMN can_target TEXT NOT NULL DEFAULT '[]'")
     if "model" not in instance_cols:
         conn.execute("ALTER TABLE bot_instances ADD COLUMN model TEXT")
+    if "desktop_session_key" not in instance_cols:
+        # Links this instance to one specific already-created chat/session in
+        # a real desktop agent app — see bot/backends/ui_backend.py and
+        # hermes_gateway_backend.py. NULL means "no session created yet" —
+        # those two backends must never fall back to "whatever's open" when
+        # this is NULL; see Router.create_session().
+        conn.execute("ALTER TABLE bot_instances ADD COLUMN desktop_session_key TEXT")
 
     presence_cols = {row["name"] for row in conn.execute("PRAGMA table_info(device_presence)").fetchall()}
     if "device_model" not in presence_cols:

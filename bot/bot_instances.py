@@ -223,6 +223,20 @@ def record_error(instance_id: int, error: str) -> None:
         conn.commit()
 
 
+def set_desktop_session_key(instance_id: int, key: Optional[str], actor: str = "system") -> None:
+    """Links (or clears, if key is None) this instance to one specific
+    already-created chat/session inside the real Claude Desktop / Hermes app —
+    see bot/router.py's create_session() and bot/backends/ui_backend.py /
+    hermes_gateway_backend.py. Deliberately bypasses update_instance()'s
+    validation/backup machinery — this is routing plumbing set by the
+    backend layer itself, not a user-editable instance field."""
+    conn = db.get_conn()
+    with db._lock:
+        conn.execute("UPDATE bot_instances SET desktop_session_key=?, updated_at=? WHERE id=?", (key, _now(), instance_id))
+        conn.commit()
+    db.log_audit(actor=actor, action="bot_instance_session_link", detail=f"instance {instance_id} desktop_session_key -> {key!r}")
+
+
 # ------------------------------------------------------------- backups ----
 # Mirrors bot/envfile.py's backup_current()/list_backups()/restore_backup()
 # shape exactly, just snapshotting the whole bot_instances table as JSON

@@ -21,6 +21,10 @@ backends:
   ui:
     window_title_re: Claude.*
     poll_interval_s: 0.5
+    # input_automation_id: null
+    # send_button_automation_id: null
+    # new_chat_button_automation_id: null   # set if the heuristic ("New chat" / "+" button text) doesn't find it
+    # sidebar_item_control_type: ListItem   # set to TreeItem etc if your Claude Desktop version exposes chats that way
   hermes_cli:
     binary: hermes
     model: null

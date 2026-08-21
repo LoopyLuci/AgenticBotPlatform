@@ -2,8 +2,14 @@
 
 Kotlin + Jetpack Compose + Material 3 native app for pairing with a running
 BotServer instance over Tailscale (see `../docs/mobile-access.md`). Mirrors
-the desktop dashboard's Chat, Sessions, Jobs, and Bots tabs, plus QR-code
-pairing and push notifications for new inbound messages.
+the desktop dashboard's Chat, Support Bot, Sessions, Jobs, and Bots tabs
+(seven bottom-nav tabs total), plus QR-code pairing and push notifications
+for new inbound messages. Every chat composer (Chat and Support) pops the
+same "/" slash-command autocomplete menu the desktop app has, and the
+Support tab talks to the same local, dependency-free Support Bot model
+described in `../docs/support-bot.md` — nothing mobile-specific about its
+intelligence, it's the identical server-side engine over
+`/api/support-bot/ask` and `/api/support-bot/confirm`.
 
 ## Building
 
@@ -53,19 +59,16 @@ token against it. Real push notifications need:
 
 ## Known gaps (honest, not hidden)
 
-- **Not verified on a real device or emulator.** The build environment
-  this was developed in has the Android SDK/Gradle/JDK but no physical
-  phone and no pre-existing AVD image with `avdmanager` available to
-  create one — `./gradlew assembleDebug` succeeding is real, strong
-  evidence the code is correct, but it is not the same as having watched
-  it run. Install the debug APK on a real device and pair it against a
-  running BotServer instance before relying on it.
-- **QR pairing needs a real camera** — inherently untestable in this
-  build environment regardless of an emulator, since emulator camera
-  support is its own separate can of worms. The manual host/key entry
-  fallback on the pairing screen exists specifically so pairing still
-  works without ever exercising the camera path, and is the one to test
-  first.
+- **Verified on a real device via `adb`** — install, launch, navigate the
+  Bots/Support/Chat tabs, use the slash-command menu, and a genuine
+  round-trip (`/status` typed on the phone, executed by the real server,
+  correct live status rendered back) have all been confirmed against a
+  physical phone, not just a passing `./gradlew assembleDebug`.
+- **QR pairing needs a real camera** — inherently untestable via `adb`
+  alone, since it depends on actually pointing the camera at a QR code.
+  The manual host/key entry fallback on the pairing screen exists
+  specifically so pairing still works without ever exercising the camera
+  path — test that path first if you haven't scanned a real code yet.
 - **The `botserver://pair` deep link is parsed but not yet wired** to
   `MainActivity`'s launch intent (see the `TODO` there) — QR scan is the
   fully-wired primary path.

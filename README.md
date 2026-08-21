@@ -18,6 +18,30 @@ Companion design docs (published earlier in this project's chat):
 architecture spec and dashboard mockup. This repo is the working
 implementation of both, plus the desktop shell.
 
+Beyond routing prompts to bots, the app also ships a **Support Bot** — a
+small, fully local, dependency-free AI model built into the desktop app
+that understands plain-English server-management requests ("restart
+Claude Desktop", "what's my default backend") and every slash command,
+so you can manage the whole server from one chat panel without touching
+config files. There's also a companion **Android app** with feature
+parity for chat, bot management, and the Support Bot from your phone.
+
+## Documentation
+
+This README covers setup and every core feature end to end. Two topics
+get their own deep-dive doc:
+
+- **[docs/support-bot.md](docs/support-bot.md)** — how the local Support
+  Bot model works, its intents, the confirm-before-destructive-action
+  flow, and how to extend it.
+- **[docs/sessions.md](docs/sessions.md)** — how Bot Server links each
+  bot instance to one specific real chat/session inside Claude Desktop or
+  Hermes, so messages never land in the wrong (or an unlinked) window.
+- **[docs/mobile-access.md](docs/mobile-access.md)** — pairing the Android
+  app over Tailscale, push notifications, one-click build/install/pair.
+- **[android-app/README.md](android-app/README.md)** — the Android app's
+  own architecture and build instructions.
+
 ## What's here
 
 ```
@@ -47,9 +71,16 @@ bot/                   the Python server (multi-bot engine + dashboard API)
   backends/
     api_backend.py          Anthropic API
     cli_backend.py           Claude Code CLI (headless)
-    ui_backend.py             pywinauto automation of the Desktop window
+    ui_backend.py             pywinauto automation of the Desktop window, session-linked (see docs/sessions.md)
     hermes_cli_backend.py     Hermes Agent one-shot CLI (`hermes -z`), no persistent process
-    hermes_gateway_backend.py Hermes Agent JSON-RPC/WebSocket gateway, session-based, async
+    hermes_gateway_backend.py Hermes Agent JSON-RPC/WebSocket gateway, session-linked (see docs/sessions.md)
+  support_bot/             local, dependency-free Support Bot — see docs/support-bot.md
+    training_data.py          hand-authored (phrase, intent) examples, one set per management action
+    model.py                   pure-Python TF-IDF + nearest-centroid intent classifier
+    slots.py                    fuzzy argument extraction (bot/MCP-server/backend/model names)
+    actions.py                   one handler per intent, thin wrappers over existing bot/* functions
+    engine.py                    SupportBot.handle()/confirm() — classify, confirm-gate, execute
+  commands.py              platform-agnostic slash commands, shared by Telegram/Discord/Slack/Support Bot
   swarm/
     base.py                  SwarmStrategy interface + SwarmRunResult, mirrors backends/base.py
     engine.py                 dispatches a run to its strategy, owns the swarm_runs row lifecycle
@@ -240,7 +271,14 @@ secrets (`.env`), bot credentials live in the SQLite `bot_instances` table
 — arbitrary instance counts don't fit `.env`'s one-name-per-line shape —
 with the same safety net: every create/update/delete snapshots the whole
 table first into `data/bot_instances_backups/`, restorable from the same
-tab, never auto-pruned.
+tab, never auto-pruned. `ui`/`hermes_gateway` bots additionally show a
+**New Session** button and their currently linked chat — see
+[docs/sessions.md](docs/sessions.md).
+
+The **Android app** card on the Mobile tab has one-click **Build,
+install & pair**, **Build & install** (skip pairing), **Build only**,
+**Install only**, and **Pair only** buttons for the Android project in
+this repo — see [docs/mobile-access.md](docs/mobile-access.md).
 
 Per-platform credential requirements (same regardless of how many
 instances you create):
@@ -350,21 +388,37 @@ full step breakdown.
 
 ## Using the bot
 
-Plain text messages on any platform are routed through `/ask`. The slash
-commands below are Telegram-specific (`bot/handlers.py`); Discord and Slack
-currently only handle plain-text prompts.
+Plain text messages on any platform are routed through `/ask`. Every slash
+command below works identically on **Telegram, Discord, Slack, the
+desktop app's Support Bot panel, and the Android app** — they all share
+one implementation, `bot/commands.py`'s `dispatch_command()`, so there's
+no "Telegram-only" command left. Telegram additionally gets a nicer
+inline-keyboard confirm flow for destructive actions; every other
+platform (and Discord/Slack, and Support Bot) uses the plain-text
+"reply `confirm`" form shown below.
 
 - `/ask <text> [--backend=api|cli|ui|hermes_cli|hermes_gateway]` — send a
   prompt. Plain text messages (no leading `/`) are treated as `/ask` too.
 - `/status` — health snapshot.
-- `/backend show` / `/backend set <action|default> <api|cli|ui>` — view or
-  edit routing without touching the YAML.
+- `/backend show` / `/backend set <action|default> <api|cli|ui|hermes_cli|hermes_gateway>` —
+  view or edit routing without touching the YAML.
+- `/model show` / `/model set <api|hermes_cli|hermes_gateway> <model>` —
+  view or change the model a backend uses.
 - `/mcp list` / `/mcp enable <name>` / `/mcp disable <name>` / `/mcp logs <name>`
 - `/start_desktop` / `/stop_desktop` / `/restart_desktop` — the latter two
   ask for a confirm tap when `security.confirm_destructive` is on.
 - `/project open <path>` — sets a working directory and switches the next
   `/ask` to the `project_task` action type (routes to `cli` by default).
+- `/new_session` — opens a brand-new, linked chat in the real Claude
+  Desktop/Hermes app for this bot instance (`ui`/`hermes_gateway` only).
+  See **[docs/sessions.md](docs/sessions.md)**.
+- `/help` — lists all of the above.
 - Send a file — saved to `data/inbox/`.
+
+Typing `/` in any composer — desktop dashboard, Android app, the Support
+Bot panel, or the Chat tab's outbound composer — pops up a Telegram-style
+autocomplete list of every command above with its arguments and a
+description, so you don't need to remember the exact syntax.
 
 ## Controlling this app over MCP
 
@@ -393,6 +447,98 @@ claude mcp add bot-server -- .\.venv\Scripts\python.exe -m bot.mcp_server
 Either way the dashboard API itself has to actually be running first
 (launch the desktop app, or `python -m bot.main`) — the MCP server has no
 logic of its own to fall back on if it can't reach `127.0.0.1:8787`.
+
+## Support Bot — a local AI assistant built into the desktop app
+
+The dashboard has its own dedicated **Support Bot** panel (sidebar, below
+Chat) — a chat window where you can type plain English or slash commands
+to manage the entire server, with no external AI service involved at all.
+
+**It's a real, small, trainable model — not a wrapper around another
+LLM.** No Ollama, no API call, no extra process: it's pure-Python
+(`bot/support_bot/`), built from the standard library's `math`/`re`/
+`collections` only — nothing in `requirements.txt` changed to add it.
+Concretely, it's a TF-IDF vectorizer plus a nearest-centroid classifier:
+`training_data.py` has a hand-authored set of example phrasings per
+management intent (restart the desktop app, show the default backend,
+list MCP servers, enable/disable a bot, and so on — 21 intents in all),
+`model.py` turns those into one centroid vector per intent at process
+start, and classifies new text by cosine similarity against them. Below
+a confidence threshold it just says so ("not sure what you mean") instead
+of guessing.
+
+**What it can do:**
+- Slash commands work exactly as documented above (typing `/` pops the
+  same autocomplete menu) — routed straight through the shared
+  `dispatch_command()`, no NLP involved.
+- Plain English gets classified into an intent, has its arguments
+  extracted (`slots.py` — fuzzy-matches bot/MCP-server/backend/model
+  names against what's actually configured, e.g. "restart the telegram
+  bot" resolves to the real instance even with typos), and is executed
+  by a thin handler in `actions.py` that calls the same functions the
+  dashboard API itself calls (`bot/desktop.py`, `bot/bot_instances.py`,
+  `bot/config.py`, `bot/router.py`) — no separate business logic exists
+  anywhere for "what the Support Bot can do" versus "what the dashboard
+  can do".
+- Destructive intents (deleting/disabling a bot, stopping/restarting
+  Desktop, disabling an MCP server) are confirm-gated exactly like
+  `/stop_desktop` already is: the reply describes what it's about to do
+  and shows a **Confirm** button instead of acting immediately, honoring
+  the same `security.confirm_destructive` config flag. Confirm tokens
+  live in memory only, expire after 5 minutes, and are never persisted.
+
+Access it from the desktop app only — see
+**[docs/support-bot.md](docs/support-bot.md)** for the full intent list,
+architecture, and how to add a new intent. The Android app talks to the
+same server-side engine (`POST /api/support-bot/ask` /
+`/api/support-bot/confirm`) through its own **Support** tab.
+
+## Session linking — every bot talks into its own real chat
+
+The `ui` and `hermes_gateway` backends each drive a *real* conversation in
+a real desktop app (Claude Desktop's window, or a Hermes gateway session)
+rather than a one-shot API call — which raises an obvious risk if you run
+more than one bot instance against them: without tracking which chat
+belongs to which bot, two instances could end up typing into the same
+window, or a message could land in whatever chat happened to be open
+rather than the one you meant.
+
+Bot Server closes that gap by requiring every `ui`/`hermes_gateway` bot
+instance to be **linked** to one specific, already-created chat/session
+before it can send anything:
+
+- The first message ever sent through such an instance automatically
+  opens a fresh chat (clicks "New chat" in Claude Desktop, or calls
+  Hermes's `session.create`) and links it — you don't have to do anything
+  extra for this to work out of the box.
+- From then on, every message re-selects that exact linked chat before
+  typing — for Claude Desktop, by clicking the matching sidebar entry; if
+  it can't find it (renamed or deleted from inside Desktop itself), the
+  bot fails loudly rather than silently sending into the wrong window.
+- Click **New Session** on a bot's row in the **Bots** tab (or run
+  `/new_session` from that bot's own chat) any time you want to
+  deliberately start a fresh conversation instead of continuing the
+  linked one.
+
+See **[docs/sessions.md](docs/sessions.md)** for the full mechanics,
+config knobs for tuning Claude Desktop's UI automation, and
+troubleshooting.
+
+## Android app
+
+A native Kotlin + Jetpack Compose companion app pairs with a running Bot
+Server instance (over Tailscale — see
+**[docs/mobile-access.md](docs/mobile-access.md)**) and mirrors the
+desktop dashboard's core tabs from your phone: **Chat** (talk through any
+connected bot, with the same `/` slash-command autocomplete as desktop),
+**Bots** (add/edit/enable/disable/start/stop/restart, exactly like the
+Bots tab), **Support** (the same local Support Bot, reachable from
+anywhere your phone can reach the server), **Sessions**, and **Jobs**.
+Pairing is a QR-code scan or a manual host/key entry; optional push
+notifications alert you the moment a bot gets a new inbound message,
+not just while the app happens to be open. See
+**[android-app/README.md](android-app/README.md)** for build instructions
+and architecture.
 
 ## How routing works
 
