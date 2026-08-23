@@ -50,6 +50,24 @@ data class SendMessageRequest(
 @Serializable
 data class OkResponse(val ok: Boolean = false)
 
+/** Mirrors POST /api/chat/send-to-bot — "Chat with Bot" mode: a real
+ * message to the bot, no chat_id needed (the server derives the sender's
+ * identity from this request's own auth). */
+@Serializable
+data class SendToBotRequest(
+    @SerialName("instance_id") val instanceId: Int,
+    val text: String,
+)
+
+/** Response for send-to-bot — the bot's real reply text, returned directly
+ * (in addition to it landing in the message log the next poll picks up) so
+ * the UI can show it immediately. */
+@Serializable
+data class SendToBotResponse(
+    val ok: Boolean = false,
+    val reply: String? = null,
+)
+
 @Serializable
 data class RegisterPushTokenRequest(@SerialName("fcm_token") val fcmToken: String)
 

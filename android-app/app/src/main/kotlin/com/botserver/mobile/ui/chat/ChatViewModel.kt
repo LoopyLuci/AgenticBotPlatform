@@ -32,6 +32,20 @@ sealed interface DownloadState {
     data class Error(val message: String) : DownloadState
 }
 
+/** SEND_FROM_SERVER = this device pushes a real message OUT, through
+ * outbox.py + a live platform SDK, to a real Telegram/Discord/Slack user
+ * (POST /api/chat/send) — appears to that user as coming from the bot.
+ * CHAT_WITH_BOT = a real message FROM this device TO the bot (POST
+ * /api/chat/send-to-bot), through the exact same
+ * CmdContext/dispatch_command/router.ask() pipeline every real Telegram/
+ * Discord/Slack message goes through — nothing simulated, a genuine reply
+ * comes back. Mirrors dashboard.html's Chat tab mode toggle — same two
+ * modes, same backend endpoints, same always-visible-mode requirement.
+ * Global to the screen, not per-instance, matching the dashboard's choice
+ * for the same reason: exactly one place to look to know which seat you're
+ * in. */
+enum class ChatMode { SEND_FROM_SERVER, CHAT_WITH_BOT }
+
 data class ChatUiState(
     val instances: List<BotInstanceSummary> = emptyList(),
     val activeInstanceId: Int? = null,
@@ -41,6 +55,7 @@ data class ChatUiState(
     val sendFileError: String? = null,
     val sendingFile: Boolean = false,
     val uploadProgress: Float = 0f,
+    val mode: ChatMode = ChatMode.SEND_FROM_SERVER,
 )
 
 @HiltViewModel
@@ -92,8 +107,19 @@ class ChatViewModel @Inject constructor(private val repository: ChatRepository) 
         viewModelScope.launch { refreshMessages(instanceId) }
     }
 
+    fun setMode(mode: ChatMode) {
+        _uiState.update { it.copy(mode = mode) }
+    }
+
     fun send(text: String) {
         val instanceId = _uiState.value.activeInstanceId ?: return
+        if (_uiState.value.mode == ChatMode.CHAT_WITH_BOT) {
+            viewModelScope.launch {
+                runCatching { repository.sendToBot(instanceId, text) }
+                    .onSuccess { refreshMessages(instanceId) }
+            }
+            return
+        }
         val inst = _uiState.value.instances.find { it.id == instanceId } ?: return
         val chatId = inst.allowedIds.firstOrNull() ?: return
         viewModelScope.launch {

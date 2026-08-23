@@ -41,7 +41,7 @@ this is just the map:
 | **Control Center** | The router config editor (backends, action overrides, models, timeouts), agent-control mode, feature toggles, security settings, desktop process controls, the **Environment** card (`.env` editor + backups + setup wizard + MCP self-register), and the **MCP servers** card. |
 | **Resilience** | Health checks, hot-reload status, and the full `config_history` change timeline with diffs. |
 | **Live Logs** | Streaming tail of `logs/bot.log`, filterable by level. |
-| **Chat** | A Telegram-style conversation view across every connected bot instance — send text, send files, see attachments/thumbnails inline. A Sender/Receiver mode toggle lets you operate as the bot (real outbound sends) or as the platform user (simulated inbound messages that trigger a real bot reply) — see "Sender vs. Receiver" below. |
+| **Chat** | A Telegram-style conversation view across every connected bot instance — send text, send files, see attachments/thumbnails inline. A mode toggle switches between Send from Server (real outbound, as the bot) and Chat with Bot (a real message to the bot, replied to for real) — see "Send from Server vs. Chat with Bot" below. |
 | **Support Bot** | Plain-English or slash-command server management — see its own section below. |
 | **Sessions** | Browse *past* conversations (grouped by 30-minute gaps, or the "legacy" pre-sessions bucket) — a history view, not to be confused with **session linking** (below), which is about which live chat a bot writes into. |
 | **Bots** | Add/edit/enable/disable/start/stop/restart bot instances; per-instance backups; the **New Session** button for `ui`/`hermes_gateway` bots. |
@@ -472,38 +472,42 @@ best-effort thumbnail generated automatically
 a UUID-prefixed name (`bot/attachments.py`) so a client-supplied filename
 can never be used to write outside the intended folder.
 
-### Sender vs. Receiver — operating both sides of the conversation
+### Send from Server vs. Chat with Bot — operating both sides of the conversation
 
-The Chat tab has a **mode toggle** at the top (📤 Sender / 📥 Receiver) that's
-always visibly on — the whole chat card's border, a banner line, the
-"Send to"/"Acting as" label, and every message bubble's styling all change
-with it, so which seat you're in is never ambiguous:
+The Chat tab (dashboard and Android app both) has a **mode toggle** that's
+always visibly on — the whole chat card's border, a banner line, and the
+recipient controls all change with it, so which seat you're in is never
+ambiguous. Both modes are **fully real** — nothing in either one is
+simulated:
 
-- **📤 Sender** (the default, and everything described above) — you operate
-  *as the bot*. What you type goes out for real, straight to the platform
-  user picked in the dropdown, via `bot/outbox.py` and the live platform
-  SDK connection. This is the only mode that existed before; nothing about
-  it changed.
-- **📥 Receiver** — you operate *as the platform user*. What you type is
-  injected as a **simulated inbound message** — `POST
-  /api/chat/simulate-inbound` — through the exact same
-  `CmdContext`/`dispatch_command`/`router.ask()` pipeline a real inbound
-  Telegram/Discord/Slack message goes through (see e.g.
-  `discord_platform.py`'s `on_message`), so slash commands, backend
-  routing, and the bot's real reply all behave identically to the genuine
-  article. It's still gated by that instance's `allowed_user_ids` — same
-  allowlist a real platform message would be checked against, just against
-  who you're picked as "acting as" instead of who you're sending to. This
-  path **never touches `outbox.py` or any platform SDK** — no real
-  Telegram/Discord/Slack user ever sees this traffic — which is the point:
-  it lets you operate or test a bot instance from the user's side without
-  a real platform account attached to it. File attachments aren't
-  supported in this mode (the attach button disables itself).
+- **📤 Send from Server** (the default) — the dashboard/app operates *as
+  the bot*, sending real outbound messages straight to the platform user
+  picked in the dropdown, via `bot/outbox.py` and the live platform SDK
+  connection (`POST /api/chat/send`). This is the original Chat tab
+  feature; nothing about it changed except the name, clarifying what it
+  actually does (push a message out from the server).
+- **💬 Chat with Bot** — the dashboard/app itself becomes a genuine,
+  first-class way to talk to a bot instance, exactly the way Telegram/
+  Discord/Slack already are: what you type is a **real inbound message**
+  (`POST /api/chat/send-to-bot`) through the exact same
+  `CmdContext`/`dispatch_command`/`router.ask()` pipeline a real Telegram/
+  Discord/Slack message goes through (see e.g. `discord_platform.py`'s
+  `on_message`), and the bot's reply is a real reply, not a canned or
+  simulated one. The sender's identity comes from the request's own
+  auth — the dashboard token, or a specific paired mobile device's own API
+  key — never a client-chosen value, so each device gets its own
+  persistent conversation thread with the bot the same way each real
+  Telegram user does. There's no recipient picker in this mode: you're
+  just you. This path **never touches `outbox.py` or any platform
+  SDK** — it's the Bot Server App's own real channel, logged with
+  `platform="app"` rather than disguised as whichever platform the target
+  instance happens to also use. File attachments aren't supported yet in
+  this mode (the attach button disables itself).
 
-Simulated-inbound messages are logged with `source="dashboard-sim"`
-(distinct from `source="dashboard"` used by real Sender-mode sends) and
-render in the timeline with a dashed border, so scrolling back through
-history you can always tell a simulated turn from a real one.
+Every bot instance any paired device can already see (through normal
+pairing) can be chatted with this way — no separate per-instance
+configuration needed, unlike Telegram/Discord/Slack's own credential
+setup.
 
 A legacy **Platforms** tab still exists, read/write, for the original
 single-bot-per-platform `.env` fields this app started with

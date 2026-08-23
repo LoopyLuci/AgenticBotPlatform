@@ -19,7 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -191,6 +191,9 @@ private fun ConversationScreen(
                         }
                     }
                 },
+                actions = {
+                    ModeSwitch(mode = state.mode, onChange = { viewModel.setMode(it) })
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
             )
         },
@@ -201,6 +204,7 @@ private fun ConversationScreen(
                 .padding(padding)
                 .background(MaterialTheme.colorScheme.background),
         ) {
+            ModeBanner(mode = state.mode)
             val activePanel = state.panels[state.activeInstanceId]
             val listState = rememberLazyListState()
             val scope = rememberCoroutineScope()
@@ -233,10 +237,71 @@ private fun ConversationScreen(
             Composer(
                 sending = state.sendingFile,
                 uploadProgress = state.uploadProgress,
+                mode = state.mode,
                 onSend = { viewModel.send(it) },
                 onSendFile = { uri, caption -> viewModel.sendFile(uri, caption) },
             )
         }
+    }
+}
+
+/** Compact toggle in the conversation top bar — same idea as
+ * dashboard.html's chat-mode-switch: a small labeled pill sitting among the
+ * other bar controls, not a separate banner block, so it reads as one more
+ * option rather than a thing you have to go hunting for. */
+@Composable
+private fun ModeSwitch(mode: ChatMode, onChange: (ChatMode) -> Unit) {
+    val isBot = mode == ChatMode.CHAT_WITH_BOT
+    val tint = if (isBot) Color(0xFFEB6834) else MaterialTheme.colorScheme.primary
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .padding(end = 12.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable { onChange(if (isBot) ChatMode.SEND_FROM_SERVER else ChatMode.CHAT_WITH_BOT) }
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = 32.dp, height = 18.dp)
+                .clip(RoundedCornerShape(9.dp))
+                .background(tint),
+        ) {
+            Box(
+                modifier = Modifier
+                    .padding(2.dp)
+                    .size(14.dp)
+                    .align(if (isBot) Alignment.CenterEnd else Alignment.CenterStart)
+                    .clip(CircleShape)
+                    .background(Color.White),
+            )
+        }
+        Spacer(Modifier.width(6.dp))
+        Text(
+            if (isBot) "💬 Chat with Bot" else "📤 Send from Server",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
+private fun ModeBanner(mode: ChatMode) {
+    val isBot = mode == ChatMode.CHAT_WITH_BOT
+    Surface(
+        color = if (isBot) Color(0xFFEB6834).copy(alpha = 0.15f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            if (isBot)
+                "💬 CHAT WITH BOT — you are talking directly to the bot. It receives this for real and replies for real."
+            else
+                "📤 SEND FROM SERVER — messages you send go out for real, straight to the platform user.",
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+        )
     }
 }
 
@@ -328,7 +393,7 @@ private fun AttachmentChip(name: String, state: DownloadState?, onClick: () -> U
         modifier = Modifier.padding(top = 4.dp),
         leadingIcon = {
             if (state is DownloadState.Downloading) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-            else Icon(Icons.Filled.InsertDriveFile, contentDescription = null, modifier = Modifier.size(16.dp))
+            else Icon(Icons.AutoMirrored.Filled.InsertDriveFile, contentDescription = null, modifier = Modifier.size(16.dp))
         },
         label = {
             Text(
@@ -344,10 +409,22 @@ private fun AttachmentChip(name: String, state: DownloadState?, onClick: () -> U
 }
 
 @Composable
-private fun Composer(sending: Boolean, uploadProgress: Float, onSend: (String) -> Unit, onSendFile: (Uri, String) -> Unit) {
+private fun Composer(
+    sending: Boolean,
+    uploadProgress: Float,
+    mode: ChatMode,
+    onSend: (String) -> Unit,
+    onSendFile: (Uri, String) -> Unit,
+) {
     var text by remember { mutableStateOf("") }
     var pickedUri by remember { mutableStateOf<Uri?>(null) }
     val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> pickedUri = uri }
+    val isBot = mode == ChatMode.CHAT_WITH_BOT
+    // Attachments aren't supported in Chat with Bot mode — /api/chat/send-to-bot
+    // only accepts text (see bot/dashboard/server.py). Drop any pending pick
+    // the moment the mode flips so a stale attachment can't get sent once
+    // the mode changes back.
+    LaunchedEffect(isBot) { if (isBot) pickedUri = null }
 
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
         pickedUri?.let { uri ->
@@ -366,8 +443,14 @@ private fun Composer(sending: Boolean, uploadProgress: Float, onSend: (String) -
         }
         SlashCommandSuggestions(text = text, onSelect = { text = it })
         Row(verticalAlignment = Alignment.Bottom) {
-            IconButton(onClick = { pickFile.launch("*/*") }, enabled = !sending) {
-                Icon(Icons.Filled.AttachFile, contentDescription = "Attach a file")
+            IconButton(
+                onClick = { pickFile.launch("*/*") },
+                enabled = !sending && !isBot,
+            ) {
+                Icon(
+                    Icons.Filled.AttachFile,
+                    contentDescription = if (isBot) "Attachments aren't supported in Chat with Bot mode" else "Attach a file",
+                )
             }
             // A pill-shaped, borderless field sitting in a tinted surface —
             // Telegram's composer, not Material's boxed OutlinedTextField.
@@ -375,7 +458,7 @@ private fun Composer(sending: Boolean, uploadProgress: Float, onSend: (String) -
                 value = text,
                 onValueChange = { text = it },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("Message…") },
+                placeholder = { Text(if (isBot) "Message the bot…" else "Message…") },
                 maxLines = 4,
                 enabled = !sending,
                 shape = RoundedCornerShape(24.dp),

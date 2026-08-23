@@ -14,6 +14,8 @@ import com.botserver.mobile.data.dto.ModelsResponse
 import com.botserver.mobile.data.dto.OkResponse
 import com.botserver.mobile.data.dto.RegisterPushTokenRequest
 import com.botserver.mobile.data.dto.SendMessageRequest
+import com.botserver.mobile.data.dto.SendToBotRequest
+import com.botserver.mobile.data.dto.SendToBotResponse
 import com.botserver.mobile.data.dto.SessionDetail
 import com.botserver.mobile.data.dto.SessionSummary
 import com.botserver.mobile.data.dto.SupportBotAskRequest
@@ -50,6 +52,12 @@ interface ApiService {
 
     @POST("/api/chat/send")
     suspend fun sendMessage(@Body request: SendMessageRequest): OkResponse
+
+    // "Chat with Bot" mode — a real message TO the bot; no chat_id in the
+    // request, the server derives the sender's identity from this request's
+    // own auth. See bot/dashboard/server.py's api_chat_send_to_bot().
+    @POST("/api/chat/send-to-bot")
+    suspend fun sendToBot(@Body request: SendToBotRequest): SendToBotResponse
 
     @Streaming
     @GET("/api/chat/attachments/{messageId}")

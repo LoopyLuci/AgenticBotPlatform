@@ -143,18 +143,18 @@
   .term .lvl-info{ color:#7fb0e0; } .term .lvl-warn{ color:var(--warning); } .term .lvl-error{ color:#f08b8b; } .term .lvl-debug{ color:#8a8f98; }
 
   .chat-card { display:flex; flex-direction:column; gap:10px; border-width:2px; transition:border-color .15s ease; }
-  .chat-card.mode-sender { border-color:var(--accent); }
-  .chat-card.mode-receiver { border-color:var(--s2); }
+  .chat-card.mode-server { border-color:var(--accent); }
+  .chat-card.mode-bot { border-color:var(--s2); }
   .chat-mode-switch { display:flex; align-items:center; gap:8px; padding:5px 10px 5px 5px; border-radius:20px; border:1px solid var(--line); background:var(--surface-2); cursor:pointer; font-family:var(--font-body); }
   .chat-mode-switch-track { position:relative; width:36px; height:20px; border-radius:10px; background:var(--accent); transition:background .15s ease; flex-shrink:0; }
-  .chat-card.mode-receiver .chat-mode-switch-track { background:var(--s2); }
+  .chat-card.mode-bot .chat-mode-switch-track { background:var(--s2); }
   .chat-mode-switch-thumb { position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; transition:left .15s ease; }
-  .chat-card.mode-receiver .chat-mode-switch-thumb { left:18px; }
+  .chat-card.mode-bot .chat-mode-switch-thumb { left:18px; }
   .chat-mode-switch-text { font-size:12.5px; font-weight:700; color:var(--ink); white-space:nowrap; }
   .chat-mode-banner { font-size:12px; font-weight:600; padding:7px 11px; border-radius:7px; }
-  .chat-card.mode-sender .chat-mode-banner { background:var(--accent-soft); color:var(--accent-ink); }
-  .chat-card.mode-receiver .chat-mode-banner { background:var(--warning-soft); color:#8a5c00; }
-  :root[data-theme="dark"] .chat-card.mode-receiver .chat-mode-banner, :root:not([data-theme="light"]) .chat-card.mode-receiver .chat-mode-banner { color:var(--warning); }
+  .chat-card.mode-server .chat-mode-banner { background:var(--accent-soft); color:var(--accent-ink); }
+  .chat-card.mode-bot .chat-mode-banner { background:var(--warning-soft); color:#8a5c00; }
+  :root[data-theme="dark"] .chat-card.mode-bot .chat-mode-banner, :root:not([data-theme="light"]) .chat-card.mode-bot .chat-mode-banner { color:var(--warning); }
   .chat-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
   .chat-toolbar-label { font-size:12px; font-weight:700; color:var(--ink-soft); }
   .chat-toolbar select { background:var(--surface-2); border:1px solid var(--line); color:var(--ink); border-radius:7px; padding:6px 10px; font-family:var(--font-mono); font-size:12.5px; }
@@ -172,7 +172,7 @@
   .chat-row.out .chat-bubble { background:var(--accent); color:#fff; border-bottom-right-radius:4px; }
   .chat-row.out .chat-bubble .chat-meta { color:rgba(255,255,255,.75); }
   .chat-row.out .chat-bubble.from-dashboard { background:var(--accent-ink); }
-  .chat-row.in .chat-bubble.from-sim { border:2px dashed var(--s2); }
+  .chat-row.in .chat-bubble.from-app { border:2px solid var(--s2); }
   .chat-composer { display:flex; gap:8px; align-items:flex-end; }
   .chat-composer textarea { flex:1; resize:vertical; min-height:38px; max-height:140px; padding:9px 12px; border-radius:8px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font-family:var(--font-body); font-size:13px; line-height:1.4; }
   .chat-tabs { display:flex; gap:6px; flex-wrap:wrap; }
@@ -548,13 +548,13 @@
 
     <section id="chat">
       <div class="sec-head"><h2>Chat</h2><span class="desc">The real conversation across every connected platform — read it live, and operate either side of it</span></div>
-      <div class="card chat-card mode-sender" id="chat-card">
+      <div class="card chat-card mode-server" id="chat-card">
         <div class="chat-tabs" id="chat-tabs"></div>
         <div class="chat-toolbar">
           <label class="chat-toolbar-label">Mode</label>
-          <button type="button" class="chat-mode-switch" id="chat-mode-switch" role="switch" aria-checked="false" aria-label="Chat mode: Sender">
+          <button type="button" class="chat-mode-switch" id="chat-mode-switch" role="switch" aria-checked="false" aria-label="Chat mode: Send from Server">
             <span class="chat-mode-switch-track"><span class="chat-mode-switch-thumb"></span></span>
-            <span class="chat-mode-switch-text" id="chat-mode-switch-text">📤 Sender</span>
+            <span class="chat-mode-switch-text" id="chat-mode-switch-text">📤 Send from Server</span>
           </button>
           <label for="chat-instance" class="chat-toolbar-label">Bot</label>
           <select id="chat-instance"></select>
@@ -1614,42 +1614,47 @@ async function refreshSwarmRuns() {
 // polled on the 2s interval — an inactive bot's messages just wait for
 // the next time you switch to it (immediate refreshChat() on switch keeps
 // that from feeling stale in practice for this single-user dashboard).
-const chatState = { activeInstanceId: null, instances: null, panels: {}, mode: 'sender' };
+const chatState = { activeInstanceId: null, instances: null, panels: {}, mode: 'server' };
 
-// Sender = the dashboard operates as the bot (POST /api/chat/send — a real
-// message goes out to the real platform user via outbox.py). Receiver = the
-// dashboard operates as the platform-side user (POST
-// /api/chat/simulate-inbound — injects a simulated inbound message through
-// the exact same CmdContext/dispatch_command/router.ask() pipeline a real
-// Telegram/Discord/Slack message would go through, including a real bot
-// reply). One mode applies to the whole Chat tab at a time — deliberately
-// global, not per-instance-panel, so there's exactly one place to look to
-// know which seat you're in right now.
+// "server" = Send from Server: the dashboard pushes a real message OUT,
+// through outbox.py + a live platform SDK, to a real Telegram/Discord/Slack
+// user (POST /api/chat/send) — appears to that user as coming from the bot.
+// "bot" = Chat with Bot: a real message FROM the dashboard operator TO the
+// bot (POST /api/chat/send-to-bot), through the exact same
+// CmdContext/dispatch_command/router.ask() pipeline every real Telegram/
+// Discord/Slack message goes through — a genuine reply comes back, nothing
+// simulated. No recipient picker in this mode: the sender's identity comes
+// from the request's own auth, not a client-chosen value. One mode applies
+// to the whole Chat tab at a time — deliberately global, not per-instance-
+// panel, so there's exactly one place to look to know which seat you're in.
 function setChatMode(mode) {
   chatState.mode = mode;
-  document.getElementById('chat-card').classList.toggle('mode-sender', mode === 'sender');
-  document.getElementById('chat-card').classList.toggle('mode-receiver', mode === 'receiver');
+  const isBot = mode === 'bot';
+  document.getElementById('chat-card').classList.toggle('mode-server', !isBot);
+  document.getElementById('chat-card').classList.toggle('mode-bot', isBot);
   const switchBtn = document.getElementById('chat-mode-switch');
-  switchBtn.setAttribute('aria-checked', String(mode === 'receiver'));
-  switchBtn.setAttribute('aria-label', 'Chat mode: ' + (mode === 'sender' ? 'Sender' : 'Receiver') + ' — click to switch');
-  document.getElementById('chat-mode-switch-text').textContent = mode === 'sender' ? '📤 Sender' : '📥 Receiver';
-  document.getElementById('chat-recipient-label').textContent = mode === 'sender' ? 'Send to' : 'Acting as';
-  document.getElementById('chat-mode-banner').textContent = mode === 'sender'
-    ? '📤 SENDER MODE — messages you send go out for real, straight to the platform user picked below.'
-    : '📥 RECEIVER MODE — messages you send are simulated as if they arrived FROM the platform user picked below, and trigger a real bot reply. No real Telegram/Discord/Slack user ever sees this.';
+  switchBtn.setAttribute('aria-checked', String(isBot));
+  switchBtn.setAttribute('aria-label', 'Chat mode: ' + (isBot ? 'Chat with Bot' : 'Send from Server') + ' — click to switch');
+  document.getElementById('chat-mode-switch-text').textContent = isBot ? '💬 Chat with Bot' : '📤 Send from Server';
+  document.getElementById('chat-mode-banner').textContent = isBot
+    ? '💬 CHAT WITH BOT — you are talking directly to the bot. It receives this for real and replies for real.'
+    : '📤 SEND FROM SERVER — messages you send go out for real, straight to the platform user picked below.';
+  document.getElementById('chat-recipient-label').classList.toggle('hidden', isBot);
+  document.getElementById('chat-recipient').classList.toggle('hidden', isBot);
+  document.getElementById('chat-recipient-note').classList.toggle('hidden', isBot);
   const attachBtn = document.getElementById('btn-chat-attach');
-  attachBtn.disabled = mode === 'receiver';
-  attachBtn.title = mode === 'receiver' ? 'Attachments aren\'t supported in Receiver mode' : 'Attach file';
+  attachBtn.disabled = isBot;
+  attachBtn.title = isBot ? 'Attachments aren\'t supported in Chat with Bot mode' : 'Attach file';
   const input = document.getElementById('chat-input');
-  input.placeholder = mode === 'sender' ? 'Message…' : 'Message, as if sent by the user…';
-  if (mode === 'receiver' && typeof chatPendingFile !== 'undefined' && chatPendingFile) {
+  input.placeholder = isBot ? 'Message the bot…' : 'Message…';
+  if (isBot && typeof chatPendingFile !== 'undefined' && chatPendingFile) {
     chatPendingFile = null;
     document.getElementById('chat-file-input').value = '';
     document.getElementById('chat-pending-attachment').classList.add('hidden');
   }
 }
-document.getElementById('chat-mode-switch').onclick = () => setChatMode(chatState.mode === 'sender' ? 'receiver' : 'sender');
-setChatMode('sender');
+document.getElementById('chat-mode-switch').onclick = () => setChatMode(chatState.mode === 'server' ? 'bot' : 'server');
+setChatMode('server');
 
 function panelFor(id) {
   if (!chatState.panels[id]) chatState.panels[id] = { lastId: 0, recipient: null, loaded: false, draft: '' };
@@ -1726,7 +1731,7 @@ function appendChatMessages(instanceId, rows) {
     row.className = 'chat-row ' + (m.direction === 'in' ? 'in' : 'out');
     row.dataset.msgId = String(m.id);
     const bubble = document.createElement('div');
-    bubble.className = 'chat-bubble' + (m.source === 'dashboard' ? ' from-dashboard' : '') + (m.source === 'dashboard-sim' ? ' from-sim' : '');
+    bubble.className = 'chat-bubble' + (m.source === 'dashboard' && m.direction === 'out' ? ' from-dashboard' : '') + (m.platform === 'app' && m.direction === 'in' ? ' from-app' : '');
     if (m.text) {
       const textEl = document.createElement('div');
       textEl.textContent = m.text;
@@ -1742,7 +1747,7 @@ function appendChatMessages(instanceId, rows) {
     }
     const meta = document.createElement('span');
     meta.className = 'chat-meta';
-    const who = m.source === 'dashboard' ? 'sent from dashboard' : m.source === 'dashboard-sim' ? 'simulated from dashboard' : (m.direction === 'in' && m.username) ? m.username : '';
+    const who = m.source === 'dashboard' && m.direction === 'out' ? 'sent from dashboard' : (m.direction === 'in' && m.username) ? m.username : '';
     meta.textContent = [fmtChatTime(m.ts), m.platform, who].filter(Boolean).join(' · ');
     bubble.appendChild(meta);
     row.appendChild(bubble);
@@ -1896,16 +1901,16 @@ async function sendChatMessage() {
   const text = input.value.trim();
   if (!text && !chatPendingFile) return;
   const panel = panelFor(chatState.activeInstanceId);
-  if (!panel.recipient) {
+  if (chatState.mode !== 'bot' && !panel.recipient) {
     statusEl.textContent = 'No recipient — set up an allowed user for this bot first.';
     return;
   }
   const btn = document.getElementById('btn-chat-send');
   btn.disabled = true;
-  statusEl.textContent = chatState.mode === 'receiver' ? 'Waiting for bot reply…' : '';
+  statusEl.textContent = chatState.mode === 'bot' ? 'Waiting for bot reply…' : '';
   try {
-    if (chatState.mode === 'receiver') {
-      const res = await api('/api/chat/simulate-inbound', { method: 'POST', body: JSON.stringify({ instance_id: chatState.activeInstanceId, chat_id: panel.recipient, text }) });
+    if (chatState.mode === 'bot') {
+      await api('/api/chat/send-to-bot', { method: 'POST', body: JSON.stringify({ instance_id: chatState.activeInstanceId, text }) });
       statusEl.textContent = '';
     } else if (chatPendingFile) {
       // Raw fetch, not the shared api() helper — api() always sets
@@ -1931,8 +1936,8 @@ async function sendChatMessage() {
     panel.draft = '';
     await refreshChat(chatState.activeInstanceId);
   } catch (e) {
-    statusEl.textContent = chatState.mode === 'receiver'
-      ? 'Simulated send failed — check the dashboard token, that this bot instance exists, and that the acting-as id is on its allowed list.'
+    statusEl.textContent = chatState.mode === 'bot'
+      ? 'Send failed — check the dashboard token and that this bot instance exists.'
       : 'Send failed — check the dashboard token and that this bot is running.';
   } finally {
     btn.disabled = false;

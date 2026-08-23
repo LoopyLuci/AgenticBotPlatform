@@ -49,14 +49,14 @@ PLATFORM_RELAY_LIMIT_BYTES = 25 * 1024 * 1024
 # Configurable since "how much local disk am I willing to give a single
 # file" is a genuinely personal, per-deployment choice.
 MAX_ATTACHMENT_BYTES = int(os.environ.get("MAX_ATTACHMENT_BYTES", 5 * 1024 * 1024 * 1024))
-# Per-(instance, chat_id) scratch state for simulated inbound messages (Chat
-# tab "Receiver" mode) — mirrors each platform adapter's own in-memory
-# self._sessions dict (e.g. discord_platform.py's DiscordPlatformInstance),
-# so /project and other session-scoped slash commands behave identically
-# whether the "inbound" message came from a real platform or was simulated
-# here. Intentionally not persisted — same lifetime as the platform adapters'
-# own equivalents.
-_dashboard_sim_sessions: dict[tuple[int, str], dict] = {}
+# Per-(instance, chat_id) scratch state for "Chat with Bot" mode messages —
+# mirrors each platform adapter's own in-memory self._sessions dict (e.g.
+# discord_platform.py's DiscordPlatformInstance), so /project and other
+# session-scoped slash commands behave identically whether the message came
+# from a real platform or through the Bot Server App's own real channel.
+# Intentionally not persisted — same lifetime as the platform adapters' own
+# equivalents.
+_app_chat_sessions: dict[tuple[int, str], dict] = {}
 # A paired device counts as "online" if it's made an authenticated request
 # within this window — see db.verify_api_key()'s device_presence upsert.
 DEVICE_ONLINE_WINDOW_S = 30
@@ -178,6 +178,41 @@ def _identify_caller(
 
 def _require_token_or_api_key(caller: str = Depends(_identify_caller)) -> None:
     return None
+
+
+def _caller_thread_identity(
+    x_dashboard_token: Optional[str] = Header(default=None),
+    x_device_platform: Optional[str] = Header(default=None),
+    x_device_app_version: Optional[str] = Header(default=None),
+    x_device_model: Optional[str] = Header(default=None),
+    x_device_os_version: Optional[str] = Header(default=None),
+) -> tuple[str, str, str]:
+    """Like _identify_caller, but resolves to a real, stable per-caller
+    thread identity — (source, chat_id, username) — instead of just
+    "dashboard"/"mobile". Used by "Chat with Bot" (POST
+    /api/chat/send-to-bot): each distinct caller (the desktop dashboard, or
+    each individually-paired phone/tablet) gets its own persistent chat_id,
+    the same way each real Telegram user gets their own chat — so /project
+    and other session-scoped commands stay correctly separated per device
+    instead of every device sharing one conversation thread. Derived
+    entirely from auth already on the request; the client never gets to
+    declare its own identity."""
+    expected = os.environ.get("DASHBOARD_TOKEN")
+    if expected and x_dashboard_token == expected:
+        return "dashboard", "dashboard", "Dashboard"
+    key_id = db.verify_api_key(
+        x_dashboard_token or "",
+        platform=x_device_platform,
+        app_version=x_device_app_version,
+        device_model=x_device_model,
+        os_version=x_device_os_version,
+    )
+    if key_id is not None:
+        label = next((r["label"] for r in db.list_api_keys() if r["id"] == key_id), f"device {key_id}")
+        return "mobile", f"device:{key_id}", label
+    if not expected:
+        raise HTTPException(status_code=503, detail="DASHBOARD_TOKEN is not set in .env")
+    raise HTTPException(status_code=401, detail="invalid dashboard token or api key")
 
 
 def _require_mobile_key_id(x_dashboard_token: Optional[str] = Header(default=None)) -> int:
@@ -915,43 +950,41 @@ def build_app() -> FastAPI:
         )
         return {"ok": True}
 
-    # ---------------------------------------------------- receiver mode ----
-    # The Chat tab's "Receiver" mode: everything above (/api/chat/send) puts
-    # the dashboard in the bot's own seat, pushing an outbound message to a
-    # real platform user through outbox.py + the live platform SDK. This is
-    # the opposite seat — it injects a *simulated inbound* message exactly as
-    # if it had arrived from that platform (same allowed_user_ids check, same
-    # CmdContext/dispatch_command/router.ask() pipeline every real Telegram/
-    # Discord/Slack handler uses — see e.g. discord_platform.py's on_message),
-    # so slash commands, backend routing, and replies all behave identically
-    # to the real thing. Never touches outbox.py or any platform SDK — a real
-    # platform user never sees this traffic, which is the whole point: it's
-    # for operating/testing a bot instance from "the user's side" without a
-    # real Telegram/Discord/Slack account attached to it.
-    @app.post("/api/chat/simulate-inbound", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_chat_simulate_inbound(payload: dict = Body(...)):
+    # ------------------------------------------------- "Chat with Bot" mode -
+    # The Chat tab's other mode: /api/chat/send (above) is "Send from
+    # Server" — the dashboard/app pushes a message OUT, through outbox.py +
+    # a live platform SDK, appearing to a real Telegram/Discord/Slack user as
+    # if it came from the bot. This is the reverse direction: a real message
+    # FROM the dashboard operator or a real paired device TO the bot, using
+    # the exact same CmdContext/dispatch_command/router.ask() pipeline every
+    # Telegram/Discord/Slack handler uses (see e.g. discord_platform.py's
+    # on_message) — genuinely processed, genuinely replied to. Nothing here
+    # is simulated: the sender's identity comes from real request auth (see
+    # _caller_thread_identity), not a client-declared value, and is logged
+    # as platform="app" — the Bot Server App's own real channel — rather
+    # than disguised as whichever platform the target instance happens to
+    # also use. Never touches outbox.py or any platform SDK.
+    @app.post("/api/chat/send-to-bot", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_chat_send_to_bot(
+        payload: dict = Body(...),
+        identity: tuple[str, str, str] = Depends(_caller_thread_identity),
+    ):
         instance_id = payload.get("instance_id")
-        chat_id = payload.get("chat_id")
         text = (payload.get("text") or "").strip()
-        if not instance_id or not chat_id or not text:
-            raise HTTPException(status_code=400, detail="payload must be {instance_id: int, chat_id: str|int, text: str}")
+        if not instance_id or not text:
+            raise HTTPException(status_code=400, detail="payload must be {instance_id: int, text: str}")
         instance = bot_instances.get_instance(int(instance_id))
         if instance is None:
             raise HTTPException(status_code=404, detail=f"bot instance {instance_id} not found")
-        if str(chat_id) not in {str(x) for x in instance["allowed_user_ids"]}:
-            raise HTTPException(
-                status_code=403,
-                detail=f"{chat_id} is not on this instance's allowed_user_ids — pick one from the recipient list, "
-                       "the same allowlist a real platform message would be checked against",
-            )
+        source, chat_id, username = identity
         db.log_message(
-            platform=instance["platform"], chat_id=chat_id, user_id=chat_id, username="(simulated)",
-            direction="in", source="dashboard-sim", text=text, instance_id=int(instance_id),
+            platform="app", chat_id=chat_id, user_id=chat_id, username=username,
+            direction="in", source=source, text=text, instance_id=int(instance_id),
         )
-        session = _dashboard_sim_sessions.setdefault((int(instance_id), str(chat_id)), {})
+        session = _app_chat_sessions.setdefault((int(instance_id), chat_id), {})
         cmd_ctx = CmdContext(
             instance_id=int(instance_id), instance_name=instance["name"], user_id=chat_id,
-            chat_id=chat_id, actor=f"dashboard-sim:{chat_id}", session=session,
+            chat_id=chat_id, actor=f"{source}:{chat_id}", session=session,
         )
         try:
             cmd_reply = await dispatch_command(text, cmd_ctx)
@@ -967,7 +1000,7 @@ def build_app() -> FastAPI:
         except BackendError as exc:
             reply_text = f"Backend failed: {exc}"
         db.log_message(
-            platform=instance["platform"], chat_id=chat_id, direction="out", source="bot",
+            platform="app", chat_id=chat_id, direction="out", source="bot",
             text=reply_text, instance_id=int(instance_id),
         )
         return {"ok": True, "reply": reply_text}

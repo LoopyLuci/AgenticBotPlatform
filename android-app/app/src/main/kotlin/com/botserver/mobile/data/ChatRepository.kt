@@ -6,6 +6,7 @@ import android.provider.OpenableColumns
 import com.botserver.mobile.data.dto.BotInstanceSummary
 import com.botserver.mobile.data.dto.ChatMessage
 import com.botserver.mobile.data.dto.SendMessageRequest
+import com.botserver.mobile.data.dto.SendToBotRequest
 import com.botserver.mobile.data.dto.UploadInitRequest
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -40,6 +41,12 @@ class ChatRepository @Inject constructor(
     suspend fun send(instanceId: Int, chatId: String, text: String) {
         apiService.sendMessage(SendMessageRequest(instanceId, chatId, text))
     }
+
+    /** Chat with Bot mode — a real message TO the bot; the sender's identity
+     * comes from this request's own auth (the paired device's api key), not
+     * a client-declared chat_id. Returns the bot's real reply text. */
+    suspend fun sendToBot(instanceId: Int, text: String): String? =
+        apiService.sendToBot(SendToBotRequest(instanceId, text)).reply
 
     /** Streams GET /api/chat/attachments/{id} into cacheDir/downloads/ —
      * the pull-on-demand path (see bot/attachments.py): nothing is pushed
