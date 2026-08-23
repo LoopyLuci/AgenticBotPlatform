@@ -145,15 +145,17 @@
   .chat-card { display:flex; flex-direction:column; gap:10px; border-width:2px; transition:border-color .15s ease; }
   .chat-card.mode-sender { border-color:var(--accent); }
   .chat-card.mode-receiver { border-color:var(--s2); }
-  .chat-mode-toggle { display:flex; gap:6px; }
-  .chat-mode-btn { flex:1; font-family:var(--font-body); font-size:12.5px; font-weight:700; padding:9px 12px; border-radius:8px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink-soft); cursor:pointer; text-align:center; }
-  .chat-mode-btn.active#chat-mode-sender { background:var(--accent); border-color:var(--accent); color:#fff; }
-  .chat-mode-btn.active#chat-mode-receiver { background:var(--s2); border-color:var(--s2); color:#fff; }
+  .chat-mode-switch { display:flex; align-items:center; gap:8px; padding:5px 10px 5px 5px; border-radius:20px; border:1px solid var(--line); background:var(--surface-2); cursor:pointer; font-family:var(--font-body); }
+  .chat-mode-switch-track { position:relative; width:36px; height:20px; border-radius:10px; background:var(--accent); transition:background .15s ease; flex-shrink:0; }
+  .chat-card.mode-receiver .chat-mode-switch-track { background:var(--s2); }
+  .chat-mode-switch-thumb { position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; transition:left .15s ease; }
+  .chat-card.mode-receiver .chat-mode-switch-thumb { left:18px; }
+  .chat-mode-switch-text { font-size:12.5px; font-weight:700; color:var(--ink); white-space:nowrap; }
   .chat-mode-banner { font-size:12px; font-weight:600; padding:7px 11px; border-radius:7px; }
   .chat-card.mode-sender .chat-mode-banner { background:var(--accent-soft); color:var(--accent-ink); }
   .chat-card.mode-receiver .chat-mode-banner { background:var(--warning-soft); color:#8a5c00; }
   :root[data-theme="dark"] .chat-card.mode-receiver .chat-mode-banner, :root:not([data-theme="light"]) .chat-card.mode-receiver .chat-mode-banner { color:var(--warning); }
-  .chat-toolbar { display:flex; align-items:center; gap:10px; }
+  .chat-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
   .chat-toolbar-label { font-size:12px; font-weight:700; color:var(--ink-soft); }
   .chat-toolbar select { background:var(--surface-2); border:1px solid var(--line); color:var(--ink); border-radius:7px; padding:6px 10px; font-family:var(--font-mono); font-size:12.5px; }
   .platform-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
@@ -547,19 +549,20 @@
     <section id="chat">
       <div class="sec-head"><h2>Chat</h2><span class="desc">The real conversation across every connected platform — read it live, and operate either side of it</span></div>
       <div class="card chat-card mode-sender" id="chat-card">
-        <div class="chat-mode-toggle" id="chat-mode-toggle" role="group" aria-label="Chat mode">
-          <button type="button" class="chat-mode-btn active" id="chat-mode-sender" data-mode="sender">📤 Sender — I am the bot</button>
-          <button type="button" class="chat-mode-btn" id="chat-mode-receiver" data-mode="receiver">📥 Receiver — I am the user</button>
-        </div>
-        <div class="chat-mode-banner" id="chat-mode-banner"></div>
         <div class="chat-tabs" id="chat-tabs"></div>
         <div class="chat-toolbar">
+          <label class="chat-toolbar-label">Mode</label>
+          <button type="button" class="chat-mode-switch" id="chat-mode-switch" role="switch" aria-checked="false" aria-label="Chat mode: Sender">
+            <span class="chat-mode-switch-track"><span class="chat-mode-switch-thumb"></span></span>
+            <span class="chat-mode-switch-text" id="chat-mode-switch-text">📤 Sender</span>
+          </button>
           <label for="chat-instance" class="chat-toolbar-label">Bot</label>
           <select id="chat-instance"></select>
           <label for="chat-recipient" class="chat-toolbar-label" id="chat-recipient-label">Send to</label>
           <select id="chat-recipient"></select>
           <span class="cardnote" id="chat-recipient-note"></span>
         </div>
+        <div class="chat-mode-banner" id="chat-mode-banner"></div>
         <div class="chat-panels" id="chat-panels">
           <p class="cardnote">Unlock with the dashboard token to view.</p>
         </div>
@@ -1626,8 +1629,10 @@ function setChatMode(mode) {
   chatState.mode = mode;
   document.getElementById('chat-card').classList.toggle('mode-sender', mode === 'sender');
   document.getElementById('chat-card').classList.toggle('mode-receiver', mode === 'receiver');
-  document.getElementById('chat-mode-sender').classList.toggle('active', mode === 'sender');
-  document.getElementById('chat-mode-receiver').classList.toggle('active', mode === 'receiver');
+  const switchBtn = document.getElementById('chat-mode-switch');
+  switchBtn.setAttribute('aria-checked', String(mode === 'receiver'));
+  switchBtn.setAttribute('aria-label', 'Chat mode: ' + (mode === 'sender' ? 'Sender' : 'Receiver') + ' — click to switch');
+  document.getElementById('chat-mode-switch-text').textContent = mode === 'sender' ? '📤 Sender' : '📥 Receiver';
   document.getElementById('chat-recipient-label').textContent = mode === 'sender' ? 'Send to' : 'Acting as';
   document.getElementById('chat-mode-banner').textContent = mode === 'sender'
     ? '📤 SENDER MODE — messages you send go out for real, straight to the platform user picked below.'
@@ -1643,8 +1648,7 @@ function setChatMode(mode) {
     document.getElementById('chat-pending-attachment').classList.add('hidden');
   }
 }
-document.getElementById('chat-mode-sender').onclick = () => setChatMode('sender');
-document.getElementById('chat-mode-receiver').onclick = () => setChatMode('receiver');
+document.getElementById('chat-mode-switch').onclick = () => setChatMode(chatState.mode === 'sender' ? 'receiver' : 'sender');
 setChatMode('sender');
 
 function panelFor(id) {
