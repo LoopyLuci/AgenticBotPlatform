@@ -1632,7 +1632,9 @@ function renderMobileKeysTable() {
       <td class="mono">${fmtMobileTime(k.created_at)}</td>
       <td class="mono">${lastSeen}</td>
       <td><span class="pill"><span class="dot ${statusDot}"></span>${statusLabel}</span></td>
-      <td>${k.revoked_at ? '' : `<button class="btn" data-mobile-revoke="${k.id}" style="padding:3px 8px; font-size:11px;">Revoke</button>`}</td>
+      <td>${k.revoked_at ? '' : `
+        <button class="btn" data-mobile-send-apk="${k.id}" style="padding:3px 8px; font-size:11px;">Send APK</button>
+        <button class="btn" data-mobile-revoke="${k.id}" style="padding:3px 8px; font-size:11px;">Revoke</button>`}</td>
     </tr>`;
   }).join('') : '<tr class="emptyrow"><td colspan="6">No devices paired yet.</td></tr>';
 
@@ -1646,7 +1648,34 @@ function renderMobileKeysTable() {
     await api(`/api/mobile-keys/${btn.dataset.mobileRevoke}`, { method: 'DELETE' });
     refreshMobileKeys();
   });
+
+  tbody.querySelectorAll('[data-mobile-send-apk]').forEach(btn => btn.onclick = async () => {
+    const statusEl = document.getElementById('mobile-devices-status');
+    btn.disabled = true;
+    try {
+      await api('/api/android/apk/send', { method: 'POST', body: JSON.stringify({ api_key_id: Number(btn.dataset.mobileSendApk) }) });
+      statusEl.textContent = 'Queued — the device will download it next time the app is open.';
+    } catch (e) {
+      statusEl.textContent = `Failed to send: ${e.message}`;
+    } finally {
+      btn.disabled = false;
+    }
+  });
 }
+
+document.getElementById('btn-mobile-send-apk-all').onclick = async () => {
+  const statusEl = document.getElementById('mobile-devices-status');
+  const btn = document.getElementById('btn-mobile-send-apk-all');
+  btn.disabled = true;
+  try {
+    const res = await api('/api/android/apk/send-all', { method: 'POST' });
+    statusEl.textContent = `Queued for ${res.sent_to} device(s) — each downloads it next time the app is open.`;
+  } catch (e) {
+    statusEl.textContent = `Failed to send: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+};
 
 document.getElementById('btn-mobile-save').onclick = async () => {
   const statusEl = document.getElementById('mobile-devices-status');

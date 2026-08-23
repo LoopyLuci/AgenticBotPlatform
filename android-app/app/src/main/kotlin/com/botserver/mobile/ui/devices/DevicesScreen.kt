@@ -38,9 +38,16 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsState()
     val devices by viewModel.devices.collectAsState()
     val refreshing by viewModel.refreshing.collectAsState()
+    val updateState by viewModel.updateState.collectAsState()
     var label by remember { mutableStateOf("") }
     var apkShareError by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) { viewModel.startPresence() }
+    LaunchedEffect(Unit) { viewModel.checkForUpdate() }
+    LaunchedEffect(updateState) {
+        val downloaded = updateState as? UpdateState.Downloaded ?: return@LaunchedEffect
+        context.startActivity(viewModel.installIntent(downloaded.file))
+        viewModel.dismissUpdate()
+    }
 
     Scaffold(topBar = { TopAppBar(title = { Text("Devices") }) }) { padding ->
         Column(
@@ -68,6 +75,45 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel()) {
                         Text("No other devices paired yet.", style = MaterialTheme.typography.bodySmall)
                     } else {
                         devices.forEach { device -> DeviceRow(device) }
+                    }
+                }
+            }
+
+            if (updateState !is UpdateState.None) {
+                Spacer(Modifier.height(16.dp))
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    tonalElevation = 3.dp,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("Update available", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        when (val s = updateState) {
+                            is UpdateState.Available -> {
+                                Text(
+                                    "Sent from the desktop app — download and install now?",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(onClick = { viewModel.downloadUpdate() }) { Text("Download & install") }
+                                    TextButton(onClick = { viewModel.dismissUpdate() }) { Text("Not now") }
+                                }
+                            }
+                            is UpdateState.Downloading -> {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Downloading…", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                            is UpdateState.Error -> {
+                                Text(s.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
+                                TextButton(onClick = { viewModel.dismissUpdate() }) { Text("Dismiss") }
+                            }
+                            else -> {}
+                        }
                     }
                 }
             }

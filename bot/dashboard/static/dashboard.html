@@ -876,13 +876,18 @@
         </div>
       </div>
       <div class="card" style="margin-top:14px;">
-        <h3>Paired devices</h3>
+        <div class="row" style="justify-content:space-between; align-items:center;">
+          <h3 style="margin:0;">Paired devices</h3>
+          <button class="btn primary" id="btn-mobile-send-apk-all">Send APK to All Paired Devices</button>
+        </div>
+        <p class="cardnote">"Send APK" queues the last APK built on the desktop app for that device — it downloads and prompts to install next time the Android app is opened (there's no way to push to a closed/backgrounded phone without Firebase configured).</p>
         <div class="tablewrap" style="margin-top:6px;">
           <table>
             <thead><tr><th>Label</th><th>Created</th><th>Last used</th><th>Status</th><th></th></tr></thead>
             <tbody id="mobile-keys-tbody"><tr class="emptyrow"><td colspan="5">Loading…</td></tr></tbody>
           </table>
         </div>
+        <p class="cardnote" id="mobile-devices-status"></p>
       </div>
     </section>
 
@@ -2460,7 +2465,9 @@ async function refreshMobileKeys() {
       <td class="mono">${fmtMobileTime(k.created_at)}</td>
       <td class="mono">${fmtMobileTime(k.last_used_at)}</td>
       <td><span class="pill"><span class="dot ${k.revoked_at ? '' : 'good'}"></span>${k.revoked_at ? 'Revoked' : 'Active'}</span></td>
-      <td>${k.revoked_at ? '' : `<button class="btn" data-mobile-revoke="${k.id}" style="padding:3px 8px; font-size:11px;">Revoke</button>`}</td>
+      <td>${k.revoked_at ? '' : `
+        <button class="btn" data-mobile-send-apk="${k.id}" style="padding:3px 8px; font-size:11px;">Send APK</button>
+        <button class="btn" data-mobile-revoke="${k.id}" style="padding:3px 8px; font-size:11px;">Revoke</button>`}</td>
     </tr>`).join('') : '<tr class="emptyrow"><td colspan="5">No devices paired yet.</td></tr>';
 
   tbody.querySelectorAll('[data-mobile-revoke]').forEach(btn => btn.onclick = async () => {
@@ -2468,7 +2475,34 @@ async function refreshMobileKeys() {
     await api(`/api/mobile-keys/${btn.dataset.mobileRevoke}`, { method: 'DELETE' });
     refreshMobileKeys();
   });
+
+  tbody.querySelectorAll('[data-mobile-send-apk]').forEach(btn => btn.onclick = async () => {
+    const statusEl = document.getElementById('mobile-devices-status');
+    btn.disabled = true;
+    try {
+      await api('/api/android/apk/send', { method: 'POST', body: JSON.stringify({ api_key_id: Number(btn.dataset.mobileSendApk) }) });
+      statusEl.textContent = 'Queued — the device will download it next time the app is open.';
+    } catch (e) {
+      statusEl.textContent = `Failed to send: ${e.message}`;
+    } finally {
+      btn.disabled = false;
+    }
+  });
 }
+
+document.getElementById('btn-mobile-send-apk-all').onclick = async () => {
+  const statusEl = document.getElementById('mobile-devices-status');
+  const btn = document.getElementById('btn-mobile-send-apk-all');
+  btn.disabled = true;
+  try {
+    const res = await api('/api/android/apk/send-all', { method: 'POST' });
+    statusEl.textContent = `Queued for ${res.sent_to} device(s) — each downloads it next time the app is open.`;
+  } catch (e) {
+    statusEl.textContent = `Failed to send: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+};
 
 document.getElementById('btn-mobile-generate').onclick = async () => {
   const label = document.getElementById('mobile-new-label').value.trim() || 'Unnamed device';

@@ -4,6 +4,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Required on Android 8+ to launch the system installer for an APK
+         from a source other than the Play Store (see UpdateInstaller.kt) —
+         the user still has to explicitly allow "install unknown apps" for
+         this app once in Settings; this permission just lets us prompt
+         that flow instead of the install silently failing. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application

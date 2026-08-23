@@ -254,6 +254,24 @@ CREATE TABLE IF NOT EXISTS support_bot_classifications (
     agreed            INTEGER NOT NULL
 );
 
+-- A pending APK offer for one paired device — created by the desktop
+-- app's "Send APK" / "Send APK to All Paired Devices" buttons. Pull-based
+-- by design (there's no reliable way to push to a backgrounded phone
+-- without FCM, which is optional and often unconfigured): the Android
+-- app checks GET /api/android/apk/pending on its own next poll, and
+-- downloaded_at is stamped the moment it actually downloads the file, so
+-- the "update available" banner clears on its own without a separate ack
+-- round trip. One row per (device, send) — sending again to an already-
+-- pending device is fine, list_pending_apk_push() only returns the newest.
+CREATE TABLE IF NOT EXISTS apk_pushes (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    api_key_id    INTEGER NOT NULL,
+    apk_path      TEXT NOT NULL,
+    version_label TEXT,
+    created_at    TEXT NOT NULL,
+    downloaded_at TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at);
 CREATE INDEX IF NOT EXISTS idx_telemetry_component ON telemetry_events(component, ts);
@@ -264,6 +282,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_instance ON sessions(instance_id, last_a
 CREATE INDEX IF NOT EXISTS idx_sessions_chat ON sessions(instance_id, chat_id, last_activity_at);
 CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
 CREATE INDEX IF NOT EXISTS idx_push_tokens_key ON push_tokens(api_key_id);
+CREATE INDEX IF NOT EXISTS idx_apk_pushes_key ON apk_pushes(api_key_id, id);
 CREATE INDEX IF NOT EXISTS idx_support_bot_classifications_ts ON support_bot_classifications(ts);
 """
 # idx_jobs_instance / idx_jobs_swarm_run / idx_messages_instance are created
@@ -842,6 +861,41 @@ def list_push_tokens() -> list[sqlite3.Row]:
     return conn.execute(
         "SELECT pt.* FROM push_tokens pt JOIN api_keys ak ON ak.id = pt.api_key_id WHERE ak.revoked_at IS NULL"
     ).fetchall()
+
+
+def create_apk_push(api_key_id: int, apk_path: str, version_label: Optional[str] = None) -> int:
+    conn = get_conn()
+    with _lock:
+        cur = conn.execute(
+            "INSERT INTO apk_pushes (api_key_id, apk_path, version_label, created_at) VALUES (?, ?, ?, ?)",
+            (api_key_id, apk_path, version_label, _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def get_pending_apk_push(api_key_id: int) -> Optional[sqlite3.Row]:
+    """The newest not-yet-downloaded push for this device, or None. Only
+    the newest matters — an older undownloaded push for the same device is
+    superseded, not queued behind it."""
+    conn = get_conn()
+    return conn.execute(
+        "SELECT * FROM apk_pushes WHERE api_key_id=? AND downloaded_at IS NULL "
+        "ORDER BY id DESC LIMIT 1",
+        (api_key_id,),
+    ).fetchone()
+
+
+def get_apk_push(push_id: int) -> Optional[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute("SELECT * FROM apk_pushes WHERE id=?", (push_id,)).fetchone()
+
+
+def mark_apk_push_downloaded(push_id: int) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute("UPDATE apk_pushes SET downloaded_at=? WHERE id=?", (_now(), push_id))
+        conn.commit()
 
 
 def verify_api_key(

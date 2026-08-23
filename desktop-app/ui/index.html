@@ -1068,9 +1068,10 @@
           <div class="row" style="gap:8px;">
             <button class="btn" id="btn-mobile-save">Save Devices List Data</button>
             <button class="btn" id="btn-mobile-clear-revoked">Clear Revoked Devices</button>
+            <button class="btn primary" id="btn-mobile-send-apk-all">Send APK to All Paired Devices</button>
           </div>
         </div>
-        <p class="cardnote">Labels below are editable — change one and click "Save Devices List Data" to persist it. "Clear Revoked Devices" permanently deletes revoked entries from this list (the devices themselves already lost access the moment they were revoked; this just tidies the list).</p>
+        <p class="cardnote">Labels below are editable — change one and click "Save Devices List Data" to persist it. "Clear Revoked Devices" permanently deletes revoked entries from this list (the devices themselves already lost access the moment they were revoked; this just tidies the list). "Send APK" queues the last APK built below for that device — it downloads and prompts to install next time the Android app is opened (there's no way to push to a closed/backgrounded phone without Firebase configured).</p>
         <div class="tablewrap" style="margin-top:6px;">
           <table>
             <thead><tr><th>Label</th><th>Device</th><th>Created</th><th>Last seen</th><th>Status</th><th></th></tr></thead>

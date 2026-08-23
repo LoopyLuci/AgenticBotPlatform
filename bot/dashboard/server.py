@@ -1318,6 +1318,78 @@ def build_app() -> FastAPI:
         db.log_audit(actor="dashboard", action="mobile_keys_purge_revoked", detail=f"removed {n} revoked key(s)")
         return {"ok": True, "purged": n}
 
+    # ------------------------------------------------------- android apk ---
+    # Sends the last APK the desktop app's Android panel built to one or
+    # every paired device. Pull-based, deliberately: there's no reliable way
+    # to wake a backgrounded phone without FCM (optional, often
+    # unconfigured), so "send" just queues an apk_pushes row and the phone
+    # picks it up on its own next /api/android/apk/pending poll — see
+    # bot/db.py's apk_pushes table comment.
+
+    def _latest_apk_path() -> Path:
+        return envfile.PROJECT_ROOT / "android-app" / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
+
+    def _apk_version_label(path: Path) -> str:
+        return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
+
+    @app.get("/api/android/apk/status", dependencies=[Depends(_require_token)])
+    async def api_android_apk_status():
+        path = _latest_apk_path()
+        if not path.is_file():
+            return {"available": False}
+        stat = path.stat()
+        return {
+            "available": True,
+            "built_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+            "size_bytes": stat.st_size,
+        }
+
+    @app.post("/api/android/apk/send", dependencies=[Depends(_require_token)])
+    async def api_android_apk_send(payload: dict = Body(...)):
+        api_key_id = payload.get("api_key_id")
+        if not isinstance(api_key_id, int):
+            raise HTTPException(status_code=400, detail="payload must be {api_key_id: <int>}")
+        path = _latest_apk_path()
+        if not path.is_file():
+            raise HTTPException(status_code=400, detail="no built APK found — build one first")
+        push_id = db.create_apk_push(api_key_id, str(path), version_label=_apk_version_label(path))
+        db.log_audit(actor="dashboard", action="apk_send", detail=f"queued apk push {push_id} for device {api_key_id}")
+        return {"ok": True, "push_id": push_id}
+
+    @app.post("/api/android/apk/send-all", dependencies=[Depends(_require_token)])
+    async def api_android_apk_send_all():
+        path = _latest_apk_path()
+        if not path.is_file():
+            raise HTTPException(status_code=400, detail="no built APK found — build one first")
+        keys = [r for r in db.list_api_keys() if not r["revoked_at"]]
+        version_label = _apk_version_label(path)
+        push_ids = [db.create_apk_push(r["id"], str(path), version_label=version_label) for r in keys]
+        db.log_audit(actor="dashboard", action="apk_send_all", detail=f"queued apk push for {len(push_ids)} device(s)")
+        return {"ok": True, "sent_to": len(push_ids)}
+
+    @app.get("/api/android/apk/pending")
+    async def api_android_apk_pending(api_key_id: int = Depends(_require_mobile_key_id)):
+        row = db.get_pending_apk_push(api_key_id)
+        if row is None:
+            return {"available": False}
+        return {
+            "available": True,
+            "push_id": row["id"],
+            "version_label": row["version_label"],
+            "created_at": row["created_at"],
+        }
+
+    @app.get("/api/android/apk/download/{push_id}")
+    async def api_android_apk_download(push_id: int, api_key_id: int = Depends(_require_mobile_key_id)):
+        row = db.get_apk_push(push_id)
+        if row is None or row["api_key_id"] != api_key_id:
+            raise HTTPException(status_code=404, detail="no such pending push for this device")
+        path = Path(row["apk_path"])
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="APK file no longer available — ask the desktop app to send again")
+        db.mark_apk_push_downloaded(push_id)
+        return FileResponse(path, media_type="application/vnd.android.package-archive", filename="BotServer.apk")
+
     # ------------------------------------------------------------ devices --
     # Live presence view — /api/devices for the initial snapshot on screen
     # load, /api/ws for deltas after that. Same _require_token_or_api_key

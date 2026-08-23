@@ -4,12 +4,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.botserver.mobile.data.DevicesRepository
 import com.botserver.mobile.data.NewDevicePairing
+import com.botserver.mobile.data.UpdateRepository
 import com.botserver.mobile.data.dto.DeviceInfo
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import java.io.File
 import javax.inject.Inject
 
 sealed interface GenerateState {
@@ -19,8 +21,19 @@ sealed interface GenerateState {
     data class Error(val message: String) : GenerateState
 }
 
+sealed interface UpdateState {
+    data object None : UpdateState
+    data class Available(val pushId: Int, val versionLabel: String?) : UpdateState
+    data object Downloading : UpdateState
+    data class Downloaded(val file: File) : UpdateState
+    data class Error(val message: String) : UpdateState
+}
+
 @HiltViewModel
-class DevicesViewModel @Inject constructor(private val repository: DevicesRepository) : ViewModel() {
+class DevicesViewModel @Inject constructor(
+    private val repository: DevicesRepository,
+    private val updateRepository: UpdateRepository,
+) : ViewModel() {
 
     private val _state = MutableStateFlow<GenerateState>(GenerateState.Idle)
     val state: StateFlow<GenerateState> = _state
@@ -32,6 +45,43 @@ class DevicesViewModel @Inject constructor(private val repository: DevicesReposi
 
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing
+
+    private val _updateState = MutableStateFlow<UpdateState>(UpdateState.None)
+    val updateState: StateFlow<UpdateState> = _updateState
+
+    /** Checked once per screen visit (see LaunchedEffect in DevicesScreen)
+     * — cheap enough (one small GET) that there's no need for a background
+     * schedule beyond "whenever this screen is opened." */
+    fun checkForUpdate() {
+        viewModelScope.launch {
+            runCatching { updateRepository.checkPending() }.onSuccess { resp ->
+                _updateState.value = if (resp.available && resp.pushId != null) {
+                    UpdateState.Available(resp.pushId, resp.versionLabel)
+                } else {
+                    UpdateState.None
+                }
+            }
+        }
+    }
+
+    fun downloadUpdate() {
+        val current = _updateState.value
+        if (current !is UpdateState.Available) return
+        viewModelScope.launch {
+            _updateState.value = UpdateState.Downloading
+            _updateState.value = runCatching { updateRepository.downloadApk(current.pushId) }
+                .fold(
+                    onSuccess = { UpdateState.Downloaded(it) },
+                    onFailure = { e -> UpdateState.Error(e.message ?: "Download failed.") },
+                )
+        }
+    }
+
+    fun dismissUpdate() {
+        _updateState.value = UpdateState.None
+    }
+
+    fun installIntent(file: File) = updateRepository.installIntent(file)
 
     /** Manual "Update Devices" pull — the live WebSocket (startPresence
      * below) is the primary path, but it's a single long-lived connection

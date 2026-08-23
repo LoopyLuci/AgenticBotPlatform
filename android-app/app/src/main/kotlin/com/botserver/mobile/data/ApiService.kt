@@ -12,6 +12,7 @@ import com.botserver.mobile.data.dto.DeviceInfo
 import com.botserver.mobile.data.dto.JobSummary
 import com.botserver.mobile.data.dto.ModelsResponse
 import com.botserver.mobile.data.dto.OkResponse
+import com.botserver.mobile.data.dto.PendingApkResponse
 import com.botserver.mobile.data.dto.RegisterPushTokenRequest
 import com.botserver.mobile.data.dto.SendMessageRequest
 import com.botserver.mobile.data.dto.SendToBotRequest
@@ -85,6 +86,19 @@ interface ApiService {
 
     @GET("/api/devices")
     suspend fun devices(): List<DeviceInfo>
+
+    // Pull-based APK delivery — see bot/db.py's apk_pushes table comment.
+    // The desktop app's "Send APK"/"Send APK to All Paired Devices"
+    // buttons queue a push server-side; this device checks for one of its
+    // own on its own schedule (there's no reliable way for the server to
+    // wake a backgrounded phone without Firebase configured) and, if
+    // present, downloads and hands off to UpdateInstaller.
+    @GET("/api/android/apk/pending")
+    suspend fun pendingApk(): PendingApkResponse
+
+    @Streaming
+    @GET("/api/android/apk/download/{pushId}")
+    suspend fun downloadApk(@Path("pushId") pushId: Int): ResponseBody
 
     @GET("/api/sessions")
     suspend fun sessions(
