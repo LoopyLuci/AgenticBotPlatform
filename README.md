@@ -26,6 +26,29 @@ so you can manage the whole server from one chat panel without touching
 config files. There's also a companion **Android app** with feature
 parity for chat, bot management, and the Support Bot from your phone.
 
+## Dashboard tour
+
+The desktop app's sidebar has one tab per system. Everything below is
+covered in depth further down this README (or in its own linked doc) —
+this is just the map:
+
+| Tab | What it's for |
+|---|---|
+| **Overview** | KPIs at a glance: job counts, desktop process state, DB size, config version, default backend. |
+| **Jobs** | Every `/ask` attempt, filterable by status, with a completed/failed timeseries and per-backend breakdown charts. |
+| **Connections & Telemetry** | Live desktop/backend/MCP status, per-backend latency, recent errors, connection event log. |
+| **Database** | Storage size and per-table row counts, plus a **Vacuum** button (`POST /api/database/vacuum`) for reclaiming space. |
+| **Control Center** | The router config editor (backends, action overrides, models, timeouts), agent-control mode, feature toggles, security settings, desktop process controls, the **Environment** card (`.env` editor + backups + setup wizard + MCP self-register), and the **MCP servers** card. |
+| **Resilience** | Health checks, hot-reload status, and the full `config_history` change timeline with diffs. |
+| **Live Logs** | Streaming tail of `logs/bot.log`, filterable by level. |
+| **Chat** | A Telegram-style conversation view across every connected bot instance — send text, send files, see attachments/thumbnails inline. |
+| **Support Bot** | Plain-English or slash-command server management — see its own section below. |
+| **Sessions** | Browse *past* conversations (grouped by 30-minute gaps, or the "legacy" pre-sessions bucket) — a history view, not to be confused with **session linking** (below), which is about which live chat a bot writes into. |
+| **Bots** | Add/edit/enable/disable/start/stop/restart bot instances; per-instance backups; the **New Session** button for `ui`/`hermes_gateway` bots. |
+| **Swarms** | Create/edit/enable/disable swarms; trigger runs; browse run history with per-step results. |
+| **Platforms** | Legacy single-bot-per-platform `.env` fields — superseded by the Bots tab, kept for transparency. |
+| **Mobile** | Mobile pairing keys + QR codes, paired-device list with live online/offline status, and the Android one-click build/install/pair panel. |
+
 ## Documentation
 
 This README covers setup and every core feature end to end. Two topics
@@ -55,8 +78,12 @@ bot/                   the Python server (multi-bot engine + dashboard API)
   db.py                    SQLite (WAL) storage: jobs, telemetry, audit, config history, messages,
                             bot_instances, swarms, swarm_runs
   auth.py                 legacy Telegram-only allowlist (superseded by per-instance allowed_user_ids)
+  agent_control.py         cross-bot ask_instance/run_swarm allowlist (trust_all vs allowlist mode)
   outbox.py                registry, keyed by bot instance id, that lets the dashboard's Chat tab
                             send through any connected bot
+  attachments.py            safe on-disk attachment storage (UUID-prefixed names) + chunked uploads
+  thumbnails.py             best-effort JPEG thumbnails for image attachments
+  push.py                  Firebase Cloud Messaging push notifications to the Android app (optional)
   envfile.py               resolves which .env to load core secrets from
   setup_wizard.py           validates + writes .env's core fields; legacy per-platform fields
                             (superseded by the Bots tab, kept read/write for transparency)
@@ -368,6 +395,14 @@ The dashboard's **Chat** tab is bot-aware — pick a bot from its own
 dropdown (not just a platform), see the real conversation for whichever
 ones are connected, and send a message straight to the phone/laptop it's
 logged in on, through `bot/outbox.py`'s registry keyed by instance id.
+Small files send in one request (`/api/chat/send-file`); larger ones use
+a chunked-upload protocol (`/api/uploads/init` → repeated
+`PUT .../chunk/{index}` → `/api/uploads/{id}/complete`) so a big attachment
+doesn't have to fit in one HTTP body. Inbound image attachments get a
+best-effort thumbnail generated automatically
+(`/api/chat/attachments/{id}/thumbnail`); every attachment is stored under
+a UUID-prefixed name (`bot/attachments.py`) so a client-supplied filename
+can never be used to write outside the intended folder.
 
 A legacy **Platforms** tab still exists, read/write, for the original
 single-bot-per-platform `.env` fields this app started with
@@ -397,11 +432,14 @@ process, simplest to reason about); `hermes_gateway` spawns and owns a
 dedicated `hermes serve --isolated` process on a fixed port
 (`backends.hermes_gateway.port` in `config/backends.yaml`, default 8799),
 connects over its WebSocket JSON-RPC API, and holds that connection for
-the life of the app (torn down cleanly on shutdown). The gateway backend
-is session-based per call but currently stateless across calls — no
-conversation memory is threaded between prompts, matching how `api`/`cli`
-already behave; per-instance conversation continuity is a documented
-future upgrade, not built yet.
+the life of the app (torn down cleanly on shutdown). For any bot instance
+with a session link, `hermes_gateway` reuses that instance's persisted
+`desktop_session_key` (Hermes's own real `session_id`) across calls, so
+conversation memory is threaded between prompts — see
+**[docs/sessions.md](docs/sessions.md)** for exactly how that link is
+created and maintained. Only an instance-less ad-hoc call (nothing to
+persist a link against) still gets a throwaway session per call, matching
+how `api`/`cli` behave.
 
 **Important:** Hermes Agent has its own built-in Telegram/Discord/Slack
 adapters (`hermes gateway run`). Never configure the same platform bot
@@ -457,6 +495,29 @@ succeeds); the run's final `status` is `success`, `partial`, `failed`, or
 `cancelled`, visible in the run-history table alongside every past run's
 full step breakdown.
 
+## Agent-to-agent control
+
+Beyond swarms, any bot instance (or Claude Desktop itself, via the MCP
+tools above) can directly ask *another* bot instance a one-off question
+and get its reply back — `POST /api/agent/ask` /
+`mcp__bot-server__ask_instance` `{source_instance, target_instance,
+prompt}` — without setting up a whole swarm for a single cross-bot query.
+`source_instance` is self-declared (by name or id) rather than verified
+against a live credential, so it isn't a security boundary on its own —
+it drives the allowlist check and the audit-log entry.
+
+Whether a given `source_instance` may target a given `target_instance` is
+governed by `agent_control.mode` in `config/backends.yaml`:
+
+- **`trust_all`** (default) — any instance may target any other.
+- **`allowlist`** — an instance may only target the ids listed in its own
+  `can_target` column (Bots tab, per-instance). A denied call returns a
+  clear error, not a stack trace or a silent no-op.
+
+The same allowlist gates `run_swarm`/`POST /api/swarms/{id}/run` when it's
+called with a `source_instance` — every member the swarm references must
+be a permitted target, checked before the run starts.
+
 ## Using the bot
 
 Plain text messages on any platform are routed through `/ask`. Every slash
@@ -495,14 +556,17 @@ description, so you don't need to remember the exact syntax.
 
 The messaging bot drives Claude Desktop (via the `ui` backend). The other
 direction now exists too: `bot/mcp_server.py` is a stdio MCP server that
-exposes the same control surface the dashboard GUI has — `get_status`,
-`list_jobs`, `get_config`, `set_backend`, `reload_config`,
+exposes the same control surface the dashboard GUI has, as MCP tools:
+`get_status`, `list_jobs`, `get_config`, `set_backend`, `reload_config`,
 `list_mcp_servers`, `enable_mcp_server`/`disable_mcp_server`,
-`start_claude_desktop`/`stop_claude_desktop`/`restart_claude_desktop`, and
-`get_setup_status` — as MCP tools. It's a thin client: every tool call is
-just an HTTP request to the already-running dashboard API using the same
-`DASHBOARD_TOKEN`, so there's exactly one place (`bot/dashboard/server.py`)
-that actually implements any of this.
+`start_claude_desktop`/`stop_claude_desktop`/`restart_claude_desktop`,
+`get_setup_status`, and two agent-to-agent tools — `ask_instance` (relay a
+prompt to another registered bot instance and get its reply back) and
+`run_swarm` (trigger a swarm run by name or id) — both subject to the
+`agent_control` allowlist described below. It's a thin client: every tool
+call is just an HTTP request to the already-running dashboard API using
+the same `DASHBOARD_TOKEN`, so there's exactly one place
+(`bot/dashboard/server.py`) that actually implements any of this.
 
 Fastest way to wire it up: Control Center -> Environment ->
 **Register with Claude Desktop**, or `POST /api/mcp/self-register`. That
@@ -558,11 +622,11 @@ of guessing.
   the same `security.confirm_destructive` config flag. Confirm tokens
   live in memory only, expire after 5 minutes, and are never persisted.
 
-Access it from the desktop app only — see
-**[docs/support-bot.md](docs/support-bot.md)** for the full intent list,
-architecture, and how to add a new intent. The Android app talks to the
-same server-side engine (`POST /api/support-bot/ask` /
-`/api/support-bot/confirm`) through its own **Support** tab.
+See **[docs/support-bot.md](docs/support-bot.md)** for the full intent
+list, architecture, and how to add a new intent. The desktop panel and
+the Android app's own **Support** tab both talk to the exact same
+server-side engine (`POST /api/support-bot/ask` /
+`/api/support-bot/confirm`) — there's no separate mobile implementation.
 
 ## Session linking — every bot talks into its own real chat
 

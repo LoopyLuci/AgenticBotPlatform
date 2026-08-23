@@ -18,3 +18,6 @@ logs/*.log
 # on every build, never hand-edit anything under it)
 desktop-app/src-tauri/target/
 desktop-app/src-tauri/gen/schemas/
+
+# Local agent handoff notes — not user-facing docs, never published
+PLAN.md
