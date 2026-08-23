@@ -16,6 +16,12 @@ tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sysinfo = "0.32"
+# Update checking/downloading (see src/updater.rs) — the one new
+# dependency this feature needs. ureq over reqwest: this app only ever
+# makes a couple of small, synchronous HTTP calls (GitHub's releases API,
+# then one installer download), so a lightweight blocking client is a
+# better fit than reqwest's async runtime and much larger dependency tree.
+ureq = { version = "2", default-features = false, features = ["tls"] }
 
 [profile.release]
 panic = "abort"

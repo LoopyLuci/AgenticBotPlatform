@@ -21,6 +21,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 mod android;
 use android::{android_env_status, build_android_apk, install_android_apk, list_adb_devices, pair_android_device};
 mod network;
+mod updater;
+use updater::{check_for_update, download_update, install_update};
 use network::{detect_lan_host, detect_tailscale_host};
 
 /// Passed to CreateProcess on Windows so spawning a console app (python.exe,
@@ -307,7 +309,10 @@ pub fn run() {
             install_android_apk,
             pair_android_device,
             detect_lan_host,
-            detect_tailscale_host
+            detect_tailscale_host,
+            check_for_update,
+            download_update,
+            install_update
         ])
         .setup(|app| {
             let handle = app.handle().clone();
