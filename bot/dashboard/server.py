@@ -27,6 +27,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from bot import agent_control, attachments, bot_instances, db, desktop, envfile, outbox, platform_supervisor, setup_wizard, thumbnails
+from bot.backends.base import BackendError
+from bot.commands import CmdContext, dispatch_command
 from bot.config import config
 from bot.router import VALID_BACKENDS, router
 from bot.support_bot.engine import support_bot
@@ -47,6 +49,14 @@ PLATFORM_RELAY_LIMIT_BYTES = 25 * 1024 * 1024
 # Configurable since "how much local disk am I willing to give a single
 # file" is a genuinely personal, per-deployment choice.
 MAX_ATTACHMENT_BYTES = int(os.environ.get("MAX_ATTACHMENT_BYTES", 5 * 1024 * 1024 * 1024))
+# Per-(instance, chat_id) scratch state for simulated inbound messages (Chat
+# tab "Receiver" mode) — mirrors each platform adapter's own in-memory
+# self._sessions dict (e.g. discord_platform.py's DiscordPlatformInstance),
+# so /project and other session-scoped slash commands behave identically
+# whether the "inbound" message came from a real platform or was simulated
+# here. Intentionally not persisted — same lifetime as the platform adapters'
+# own equivalents.
+_dashboard_sim_sessions: dict[tuple[int, str], dict] = {}
 # A paired device counts as "online" if it's made an authenticated request
 # within this window — see db.verify_api_key()'s device_presence upsert.
 DEVICE_ONLINE_WINDOW_S = 30
@@ -904,6 +914,63 @@ def build_app() -> FastAPI:
             text=text, instance_id=int(instance_id),
         )
         return {"ok": True}
+
+    # ---------------------------------------------------- receiver mode ----
+    # The Chat tab's "Receiver" mode: everything above (/api/chat/send) puts
+    # the dashboard in the bot's own seat, pushing an outbound message to a
+    # real platform user through outbox.py + the live platform SDK. This is
+    # the opposite seat — it injects a *simulated inbound* message exactly as
+    # if it had arrived from that platform (same allowed_user_ids check, same
+    # CmdContext/dispatch_command/router.ask() pipeline every real Telegram/
+    # Discord/Slack handler uses — see e.g. discord_platform.py's on_message),
+    # so slash commands, backend routing, and replies all behave identically
+    # to the real thing. Never touches outbox.py or any platform SDK — a real
+    # platform user never sees this traffic, which is the whole point: it's
+    # for operating/testing a bot instance from "the user's side" without a
+    # real Telegram/Discord/Slack account attached to it.
+    @app.post("/api/chat/simulate-inbound", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_chat_simulate_inbound(payload: dict = Body(...)):
+        instance_id = payload.get("instance_id")
+        chat_id = payload.get("chat_id")
+        text = (payload.get("text") or "").strip()
+        if not instance_id or not chat_id or not text:
+            raise HTTPException(status_code=400, detail="payload must be {instance_id: int, chat_id: str|int, text: str}")
+        instance = bot_instances.get_instance(int(instance_id))
+        if instance is None:
+            raise HTTPException(status_code=404, detail=f"bot instance {instance_id} not found")
+        if str(chat_id) not in {str(x) for x in instance["allowed_user_ids"]}:
+            raise HTTPException(
+                status_code=403,
+                detail=f"{chat_id} is not on this instance's allowed_user_ids — pick one from the recipient list, "
+                       "the same allowlist a real platform message would be checked against",
+            )
+        db.log_message(
+            platform=instance["platform"], chat_id=chat_id, user_id=chat_id, username="(simulated)",
+            direction="in", source="dashboard-sim", text=text, instance_id=int(instance_id),
+        )
+        session = _dashboard_sim_sessions.setdefault((int(instance_id), str(chat_id)), {})
+        cmd_ctx = CmdContext(
+            instance_id=int(instance_id), instance_name=instance["name"], user_id=chat_id,
+            chat_id=chat_id, actor=f"dashboard-sim:{chat_id}", session=session,
+        )
+        try:
+            cmd_reply = await dispatch_command(text, cmd_ctx)
+            if cmd_reply is not None:
+                reply_text = cmd_reply
+            else:
+                result = await router.ask(
+                    text, action_type=session.get("action_type", "quick_question"), user_id=chat_id,
+                    context={"cwd": session["project_cwd"]} if session.get("project_cwd") else None,
+                    instance_id=int(instance_id), chat_id=chat_id,
+                )
+                reply_text = result.text
+        except BackendError as exc:
+            reply_text = f"Backend failed: {exc}"
+        db.log_message(
+            platform=instance["platform"], chat_id=chat_id, direction="out", source="bot",
+            text=reply_text, instance_id=int(instance_id),
+        )
+        return {"ok": True, "reply": reply_text}
 
     @app.post("/api/chat/send-file", dependencies=[Depends(_require_token_or_api_key)])
     async def api_chat_send_file(

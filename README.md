@@ -41,7 +41,7 @@ this is just the map:
 | **Control Center** | The router config editor (backends, action overrides, models, timeouts), agent-control mode, feature toggles, security settings, desktop process controls, the **Environment** card (`.env` editor + backups + setup wizard + MCP self-register), and the **MCP servers** card. |
 | **Resilience** | Health checks, hot-reload status, and the full `config_history` change timeline with diffs. |
 | **Live Logs** | Streaming tail of `logs/bot.log`, filterable by level. |
-| **Chat** | A Telegram-style conversation view across every connected bot instance — send text, send files, see attachments/thumbnails inline. |
+| **Chat** | A Telegram-style conversation view across every connected bot instance — send text, send files, see attachments/thumbnails inline. A Sender/Receiver mode toggle lets you operate as the bot (real outbound sends) or as the platform user (simulated inbound messages that trigger a real bot reply) — see "Sender vs. Receiver" below. |
 | **Support Bot** | Plain-English or slash-command server management — see its own section below. |
 | **Sessions** | Browse *past* conversations (grouped by 30-minute gaps, or the "legacy" pre-sessions bucket) — a history view, not to be confused with **session linking** (below), which is about which live chat a bot writes into. |
 | **Bots** | Add/edit/enable/disable/start/stop/restart bot instances; per-instance backups; the **New Session** button for `ui`/`hermes_gateway` bots. |
@@ -471,6 +471,39 @@ best-effort thumbnail generated automatically
 (`/api/chat/attachments/{id}/thumbnail`); every attachment is stored under
 a UUID-prefixed name (`bot/attachments.py`) so a client-supplied filename
 can never be used to write outside the intended folder.
+
+### Sender vs. Receiver — operating both sides of the conversation
+
+The Chat tab has a **mode toggle** at the top (📤 Sender / 📥 Receiver) that's
+always visibly on — the whole chat card's border, a banner line, the
+"Send to"/"Acting as" label, and every message bubble's styling all change
+with it, so which seat you're in is never ambiguous:
+
+- **📤 Sender** (the default, and everything described above) — you operate
+  *as the bot*. What you type goes out for real, straight to the platform
+  user picked in the dropdown, via `bot/outbox.py` and the live platform
+  SDK connection. This is the only mode that existed before; nothing about
+  it changed.
+- **📥 Receiver** — you operate *as the platform user*. What you type is
+  injected as a **simulated inbound message** — `POST
+  /api/chat/simulate-inbound` — through the exact same
+  `CmdContext`/`dispatch_command`/`router.ask()` pipeline a real inbound
+  Telegram/Discord/Slack message goes through (see e.g.
+  `discord_platform.py`'s `on_message`), so slash commands, backend
+  routing, and the bot's real reply all behave identically to the genuine
+  article. It's still gated by that instance's `allowed_user_ids` — same
+  allowlist a real platform message would be checked against, just against
+  who you're picked as "acting as" instead of who you're sending to. This
+  path **never touches `outbox.py` or any platform SDK** — no real
+  Telegram/Discord/Slack user ever sees this traffic — which is the point:
+  it lets you operate or test a bot instance from the user's side without
+  a real platform account attached to it. File attachments aren't
+  supported in this mode (the attach button disables itself).
+
+Simulated-inbound messages are logged with `source="dashboard-sim"`
+(distinct from `source="dashboard"` used by real Sender-mode sends) and
+render in the timeline with a dashed border, so scrolling back through
+history you can always tell a simulated turn from a real one.
 
 A legacy **Platforms** tab still exists, read/write, for the original
 single-bot-per-platform `.env` fields this app started with
