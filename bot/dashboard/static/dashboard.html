@@ -280,7 +280,7 @@
   <aside class="side">
     <div class="brand">
       <div class="mark">BS</div>
-      <div><div class="name">Bot Control</div><div class="sub">bot-server</div></div>
+      <div><div class="name">Bot Control</div></div>
     </div>
     <nav class="sidenav">
       <a href="#overview"><span class="ic">◆</span>Overview</a>
@@ -422,8 +422,15 @@
           <h3>Backend router</h3>
           <div class="settingrow">
             <div><div class="st">Default backend</div><div class="sd">Used when no action-type override matches</div></div>
-            <div class="segmented" id="default-backend-seg">
-              <button data-b="ui">ui</button><button data-b="cli">cli</button><button data-b="api">api</button>
+            <div>
+              <div class="cardnote" style="margin-bottom:4px;">Claude</div>
+              <div class="segmented default-backend-seg" id="default-backend-seg-claude">
+                <button data-b="ui">ui</button><button data-b="cli">cli</button><button data-b="api">api</button>
+              </div>
+              <div class="cardnote" style="margin:8px 0 4px;">Hermes Agent</div>
+              <div class="segmented default-backend-seg" id="default-backend-seg-hermes">
+                <button data-b="hermes_cli">hermes_cli</button><button data-b="hermes_gateway">hermes_gateway</button>
+              </div>
             </div>
           </div>
           <div id="action-overrides-list"></div>
@@ -445,6 +452,31 @@
           <div class="settingrow"><div><div class="st">UI automation backend</div><div class="sd">Allow routing to the Desktop window</div></div><div class="toggle" id="tg-ui-automation" data-path="features,ui_automation_enabled"></div></div>
           <div class="settingrow"><div><div class="st">Confirm destructive actions</div><div class="sd">Restart / stop / MCP changes need a tap</div></div><div class="toggle" id="tg-confirm" data-path="security,confirm_destructive"></div></div>
           <div class="settingrow"><div><div class="st">Verbose telemetry</div><div class="sd">Log every backend call, not just failures</div></div><div class="toggle" id="tg-verbose" data-path="features,verbose_telemetry"></div></div>
+        </div>
+      </div>
+
+      <div class="grid g2" style="margin-top:14px;">
+        <div class="card">
+          <h3>Models — Claude</h3>
+          <div class="settingrow">
+            <div><div class="st">api (Anthropic API)</div><div class="sd">Model used for every request routed to the api backend</div></div>
+            <input type="text" id="model-api" list="model-api-options" placeholder="claude-sonnet-5" style="min-width:220px;">
+          </div>
+          <datalist id="model-api-options"></datalist>
+          <p class="cardnote" id="model-api-note"></p>
+        </div>
+        <div class="card">
+          <h3>Models — Hermes Agent</h3>
+          <div class="settingrow">
+            <div><div class="st">hermes_cli</div><div class="sd">Passed to `hermes -z` — blank uses Hermes's own default</div></div>
+            <input type="text" id="model-hermes_cli" list="model-hermes-options" placeholder="(default)" style="min-width:220px;">
+          </div>
+          <div class="settingrow">
+            <div><div class="st">hermes_gateway</div><div class="sd">Passed to the Hermes gateway session — blank uses Hermes's own default</div></div>
+            <input type="text" id="model-hermes_gateway" list="model-hermes-options" placeholder="(default)" style="min-width:220px;">
+          </div>
+          <datalist id="model-hermes-options"></datalist>
+          <p class="cardnote" id="model-hermes-note"></p>
         </div>
       </div>
 
@@ -642,11 +674,15 @@
           <label>Backend</label>
           <div class="row">
             <select id="bot-new-backend">
-              <option value="cli">cli (Claude Code CLI)</option>
-              <option value="api">api (Anthropic API)</option>
-              <option value="ui">ui (Claude Desktop automation)</option>
-              <option value="hermes_cli">hermes_cli (Hermes Agent CLI)</option>
-              <option value="hermes_gateway">hermes_gateway (Hermes Agent gateway)</option>
+              <optgroup label="Claude">
+                <option value="cli">cli (Claude Code CLI)</option>
+                <option value="api">api (Anthropic API)</option>
+                <option value="ui">ui (Claude Desktop automation)</option>
+              </optgroup>
+              <optgroup label="Hermes Agent">
+                <option value="hermes_cli">hermes_cli (Hermes Agent CLI)</option>
+                <option value="hermes_gateway">hermes_gateway (Hermes Agent gateway)</option>
+              </optgroup>
             </select>
           </div>
         </div>
@@ -1052,7 +1088,7 @@ async function refreshConfig() {
   state.configCache = cfg;
   const current = cfg.current;
 
-  document.querySelectorAll('#default-backend-seg button').forEach(b => b.classList.toggle('active', b.dataset.b === current.default_backend));
+  document.querySelectorAll('.default-backend-seg button').forEach(b => b.classList.toggle('active', b.dataset.b === current.default_backend));
 
   const agentMode = (current.agent_control || {}).mode || 'trust_all';
   document.querySelectorAll('#agent-control-seg button').forEach(b => b.classList.toggle('active', b.dataset.m === agentMode));
@@ -1072,7 +1108,49 @@ async function refreshConfig() {
   document.getElementById('config-history').innerHTML = cfg.history.map(h => `
     <div class="tlitem"><div class="v">v${h.version}</div><div class="d">${esc(h.summary)}</div><div class="m">${fmtTime(h.ts)} · ${esc(h.actor)}</div></div>`).join('')
     || '<p class="cardnote">No reloads recorded yet.</p>';
+
+  refreshModels();
 }
+
+// Live-fetched model lists: Claude models come from Anthropic's own
+// /v1/models (via ANTHROPIC_API_KEY), Hermes models come from Hermes
+// Agent's own disk cache of every provider's live /v1/models response —
+// see bot/models.py for why each falls back the way it does. Plain text
+// inputs with a <datalist> rather than <select>: Hermes accepts any
+// string, and a currently-set model that's fallen out of the live list
+// (stale config, offline) must stay visible and editable either way.
+async function refreshModels() {
+  const m = await api('/api/models');
+
+  const apiOptions = (m.live && m.live.api) || m.known.api || [];
+  document.getElementById('model-api-options').innerHTML = apiOptions.map(name => `<option value="${esc(name)}"></option>`).join('');
+  document.getElementById('model-api').value = m.current.api || '';
+  document.getElementById('model-api-note').textContent = (m.live && m.live.api)
+    ? `Live from your Anthropic account — ${apiOptions.length} models.`
+    : `No ANTHROPIC_API_KEY configured — showing the built-in list (${apiOptions.length} models).`;
+
+  const hermesGrouped = (m.live && m.live.hermes) || null;
+  const hermesOptions = hermesGrouped ? [...new Set(Object.values(hermesGrouped).flat())].sort() : [];
+  document.getElementById('model-hermes-options').innerHTML = hermesOptions.map(name => `<option value="${esc(name)}"></option>`).join('');
+  document.getElementById('model-hermes_cli').value = m.current.hermes_cli || '';
+  document.getElementById('model-hermes_gateway').value = m.current.hermes_gateway || '';
+  document.getElementById('model-hermes-note').textContent = hermesGrouped
+    ? `Live from Hermes's own provider cache — ${hermesOptions.length} models across ${Object.keys(hermesGrouped).length} providers.`
+    : 'Hermes not detected on this machine — type a model name manually.';
+}
+
+document.getElementById('model-api').onchange = async (e) => {
+  const value = e.target.value.trim() || null;
+  await api('/api/config/set', { method: 'POST', body: JSON.stringify({ path: ['backends', 'api', 'model'], value }) });
+  refreshConfig();
+};
+['hermes_cli', 'hermes_gateway'].forEach(name => {
+  document.getElementById(`model-${name}`).onchange = async (e) => {
+    const value = e.target.value.trim() || null;
+    await api('/api/config/set', { method: 'POST', body: JSON.stringify({ path: ['backends', name, 'model'], value }) });
+    refreshConfig();
+  };
+});
 
 function setToggle(id, on) {
   const el = document.getElementById(id);
@@ -1088,7 +1166,7 @@ document.querySelectorAll('.toggle[data-path]').forEach(el => {
   };
 });
 
-document.querySelectorAll('#default-backend-seg button').forEach(btn => {
+document.querySelectorAll('.default-backend-seg button').forEach(btn => {
   btn.onclick = async () => { await api(`/api/backend/default/${btn.dataset.b}`, { method: 'POST' }); refreshConfig(); refreshOverview(); };
 });
 

@@ -247,22 +247,37 @@ async function refreshDatabase() {
 document.getElementById('btn-vacuum').onclick = async () => { await api('/api/database/vacuum', { method: 'POST' }); refreshDatabase(); };
 
 // ---------------------------------------------------------------- control
-let modelOptionsLoaded = false;
+// Live-fetched model lists: Claude models come from Anthropic's own
+// /v1/models (via ANTHROPIC_API_KEY), Hermes models come from Hermes
+// Agent's own disk cache of every provider's live /v1/models response —
+// see bot/models.py for why each falls back the way it does. Plain text
+// inputs with a <datalist> rather than <select>: Hermes accepts any
+// string, and a currently-set model that's fallen out of the live list
+// (stale config, offline) must stay visible and editable either way.
 async function refreshModels() {
   const m = await api('/api/models');
-  if (!modelOptionsLoaded) {
-    const apiSelect = document.getElementById('model-api');
-    apiSelect.innerHTML = (m.known.api || []).map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
-    document.getElementById('bot-new-model-options').innerHTML = (m.known.api || []).map(name => `<option value="${esc(name)}"></option>`).join('');
-    modelOptionsLoaded = true;
-  }
-  document.getElementById('model-api').value = m.current.api || (m.known.api || [])[0] || '';
+
+  const apiOptions = (m.live && m.live.api) || m.known.api || [];
+  document.getElementById('model-api-options').innerHTML = apiOptions.map(name => `<option value="${esc(name)}"></option>`).join('');
+  document.getElementById('bot-new-model-options').innerHTML = apiOptions.map(name => `<option value="${esc(name)}"></option>`).join('');
+  document.getElementById('model-api').value = m.current.api || '';
+  document.getElementById('model-api-note').textContent = (m.live && m.live.api)
+    ? `Live from your Anthropic account — ${apiOptions.length} models.`
+    : `No ANTHROPIC_API_KEY configured — showing the built-in list (${apiOptions.length} models).`;
+
+  const hermesGrouped = (m.live && m.live.hermes) || null;
+  const hermesOptions = hermesGrouped ? [...new Set(Object.values(hermesGrouped).flat())].sort() : [];
+  document.getElementById('model-hermes-options').innerHTML = hermesOptions.map(name => `<option value="${esc(name)}"></option>`).join('');
   document.getElementById('model-hermes_cli').value = m.current.hermes_cli || '';
   document.getElementById('model-hermes_gateway').value = m.current.hermes_gateway || '';
+  document.getElementById('model-hermes-note').textContent = hermesGrouped
+    ? `Live from Hermes's own provider cache — ${hermesOptions.length} models across ${Object.keys(hermesGrouped).length} providers.`
+    : 'Hermes not detected on this machine — type a model name manually.';
 }
 
 document.getElementById('model-api').onchange = async (e) => {
-  await api('/api/config/set', { method: 'POST', body: JSON.stringify({ path: ['backends', 'api', 'model'], value: e.target.value }) });
+  const value = e.target.value.trim() || null;
+  await api('/api/config/set', { method: 'POST', body: JSON.stringify({ path: ['backends', 'api', 'model'], value }) });
   refreshConfig();
 };
 ['hermes_cli', 'hermes_gateway'].forEach(name => {
@@ -279,7 +294,7 @@ async function refreshConfig() {
   const current = cfg.current;
   refreshModels();
 
-  document.querySelectorAll('#default-backend-seg button').forEach(b => b.classList.toggle('active', b.dataset.b === current.default_backend));
+  document.querySelectorAll('.default-backend-seg button').forEach(b => b.classList.toggle('active', b.dataset.b === current.default_backend));
 
   const agentMode = (current.agent_control || {}).mode || 'trust_all';
   document.querySelectorAll('#agent-control-seg button').forEach(b => b.classList.toggle('active', b.dataset.m === agentMode));
@@ -315,7 +330,7 @@ document.querySelectorAll('.toggle[data-path]').forEach(el => {
   };
 });
 
-document.querySelectorAll('#default-backend-seg button').forEach(btn => {
+document.querySelectorAll('.default-backend-seg button').forEach(btn => {
   btn.onclick = async () => { await api(`/api/backend/default/${btn.dataset.b}`, { method: 'POST' }); refreshConfig(); refreshOverview(); };
 });
 
@@ -515,6 +530,11 @@ function startDashboardPolling() {
   refreshMobileKeys();
   setInterval(refreshMobileKeys, 15000);
   connectDevicesSocket();
+  refreshTrainingPhrases();
+  refreshTrainingInstructions();
+  refreshTrainingHealth();
+  setInterval(refreshTrainingPhrases, 20000);
+  setInterval(refreshTrainingHealth, 10000);
 }
 
 // ---------------------------------------------------------------- bots ---
@@ -918,12 +938,49 @@ async function refreshSwarmRuns() {
 // polled on the 2s interval — an inactive bot's messages just wait for
 // the next time you switch to it (immediate refreshChat() on switch keeps
 // that from feeling stale in practice for this single-user dashboard).
-const chatState = { activeInstanceId: null, instances: null, panels: {} };
+const chatState = { activeInstanceId: null, instances: null, panels: {}, mode: 'server' };
 
 function panelFor(id) {
   if (!chatState.panels[id]) chatState.panels[id] = { lastId: 0, recipient: null, loaded: false, draft: '' };
   return chatState.panels[id];
 }
+
+// "server" = Send from Server: a real message OUT through outbox.py + a
+// live platform SDK (POST /api/chat/send) — appears to that user as coming
+// from the bot. "bot" = Chat with Bot: a real message FROM this app TO the
+// bot (POST /api/chat/send-to-bot), through the same CmdContext/
+// dispatch_command/router.ask() pipeline every Telegram/Discord/Slack
+// message goes through. No recipient picker in this mode — the sender's
+// identity comes from the request's own auth. Mirrors the same toggle in
+// bot/dashboard/static/dashboard.html so both GUIs behave identically.
+function setChatMode(mode) {
+  chatState.mode = mode;
+  const isBot = mode === 'bot';
+  document.getElementById('chat-card').classList.toggle('mode-server', !isBot);
+  document.getElementById('chat-card').classList.toggle('mode-bot', isBot);
+  const switchBtn = document.getElementById('chat-mode-switch');
+  switchBtn.setAttribute('aria-checked', String(isBot));
+  switchBtn.setAttribute('aria-label', 'Chat mode: ' + (isBot ? 'Chat with Bot' : 'Send from Server') + ' — click to switch');
+  document.getElementById('chat-mode-switch-text').textContent = isBot ? '💬 Chat with Bot' : '📤 Send from Server';
+  document.getElementById('chat-mode-banner').textContent = isBot
+    ? '💬 CHAT WITH BOT — you are talking directly to the bot. It receives this for real and replies for real.'
+    : '📤 SEND FROM SERVER — messages you send go out for real, straight to the platform user picked below.';
+  document.getElementById('chat-recipient-label').classList.toggle('hidden', isBot);
+  document.getElementById('chat-recipient').classList.toggle('hidden', isBot);
+  document.getElementById('chat-recipient-note').classList.toggle('hidden', isBot);
+  const attachBtn = document.getElementById('btn-chat-attach');
+  attachBtn.disabled = isBot;
+  attachBtn.title = isBot ? 'Attachments aren\'t supported in Chat with Bot mode' : 'Attach file';
+  const input = document.getElementById('chat-input');
+  input.placeholder = isBot ? 'Message the bot…' : 'Message…';
+  if (isBot && typeof chatPendingFile !== 'undefined' && chatPendingFile) {
+    chatPendingFile = null;
+    document.getElementById('chat-file-input').value = '';
+    document.getElementById('chat-pending-attachment').classList.add('hidden');
+  }
+}
+document.getElementById('chat-mode-switch').onclick = () => setChatMode(chatState.mode === 'server' ? 'bot' : 'server');
+setChatMode('server');
 
 function fmtChatTime(ts) {
   // ts is already a full ISO8601 string with explicit UTC offset
@@ -1057,7 +1114,7 @@ function appendChatMessages(instanceId, rows) {
     row.className = 'chat-row ' + (m.direction === 'in' ? 'in' : 'out');
     row.dataset.msgId = String(m.id);
     const bubble = document.createElement('div');
-    bubble.className = 'chat-bubble' + (m.source === 'dashboard' ? ' from-dashboard' : '');
+    bubble.className = 'chat-bubble' + (m.source === 'dashboard' ? ' from-dashboard' : '') + (m.platform === 'app' && m.direction === 'in' ? ' from-app' : '');
     if (m.text) {
       const textEl = document.createElement('div');
       textEl.textContent = m.text;
@@ -1240,15 +1297,18 @@ async function sendChatMessage() {
   const text = input.value.trim();
   if (!text && !chatPendingFile) return;
   const panel = panelFor(chatState.activeInstanceId);
-  if (!panel.recipient) {
+  if (chatState.mode !== 'bot' && !panel.recipient) {
     statusEl.textContent = 'No recipient — set up an allowed user for this bot first.';
     return;
   }
   const btn = document.getElementById('btn-chat-send');
   btn.disabled = true;
-  statusEl.textContent = '';
+  statusEl.textContent = chatState.mode === 'bot' ? 'Waiting for bot reply…' : '';
   try {
-    if (chatPendingFile) {
+    if (chatState.mode === 'bot') {
+      await api('/api/chat/send-to-bot', { method: 'POST', body: JSON.stringify({ instance_id: chatState.activeInstanceId, text }) });
+      statusEl.textContent = '';
+    } else if (chatPendingFile) {
       await sendChatFile(chatPendingFile, text, panel, statusEl);
       chatPendingFile = null;
       document.getElementById('chat-file-input').value = '';
@@ -1260,7 +1320,9 @@ async function sendChatMessage() {
     panel.draft = '';
     await refreshChat(chatState.activeInstanceId);
   } catch (e) {
-    statusEl.textContent = 'Send failed — check the dashboard token and that this bot is running.';
+    statusEl.textContent = chatState.mode === 'bot'
+      ? 'Send failed — check the dashboard token and that this bot instance exists.'
+      : 'Send failed — check the dashboard token and that this bot is running.';
   } finally {
     btn.disabled = false;
   }
@@ -1657,6 +1719,158 @@ document.getElementById('btn-mobile-generate').onclick = async () => {
   }
 };
 
+// ----------------------------------------------------------- training ----
+let trainingIntents = [];
+
+async function refreshTrainingHealth() {
+  let h;
+  try {
+    h = await api('/api/support-bot/health');
+  } catch (_e) { return; }
+  document.getElementById('health-total').textContent = h.total;
+  document.getElementById('health-agreement').textContent = h.total ? `${(h.agreement_rate * 100).toFixed(0)}%` : '—';
+  document.getElementById('health-unknown').textContent = h.total ? `${(h.unknown_rate * 100).toFixed(0)}%` : '—';
+  document.getElementById('health-tfidf-conf').textContent = h.total ? h.avg_tfidf_confidence.toFixed(2) : '—';
+  document.getElementById('health-nn-conf').textContent = h.total ? h.avg_nn_confidence.toFixed(2) : '—';
+}
+
+async function refreshTrainingPhrases() {
+  let data;
+  try {
+    data = await api('/api/support-bot/training');
+  } catch (_e) { return; }
+  trainingIntents = data.intents || [];
+  const select = document.getElementById('training-intent-select');
+  const prevValue = select.value;
+  select.innerHTML = trainingIntents.map(i => `<option value="${esc(i)}">${esc(i)}</option>`).join('');
+  if (trainingIntents.includes(prevValue)) select.value = prevValue;
+
+  const tbody = document.getElementById('training-phrases-tbody');
+  const phrases = data.phrases || [];
+  tbody.innerHTML = phrases.length ? phrases.map(p => `
+    <tr>
+      <td>${esc(p.phrase)}</td>
+      <td class="mono">${esc(p.intent)}</td>
+      <td><button class="btn" data-phrase-delete="${p.id}" style="padding:3px 8px; font-size:11px;">Delete</button></td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="3">No custom phrases added yet.</td></tr>';
+  document.querySelectorAll('[data-phrase-delete]').forEach(btn => btn.onclick = async () => {
+    await api(`/api/support-bot/training/${btn.dataset.phraseDelete}`, { method: 'DELETE' });
+    refreshTrainingPhrases();
+  });
+}
+
+document.getElementById('btn-training-add').onclick = async () => {
+  const phraseInput = document.getElementById('training-phrase-input');
+  const statusEl = document.getElementById('training-status');
+  const phrase = phraseInput.value.trim();
+  const intent = document.getElementById('training-intent-select').value;
+  if (!phrase || !intent) {
+    statusEl.textContent = 'Enter a phrase and pick an intent.';
+    return;
+  }
+  try {
+    await api('/api/support-bot/training', { method: 'POST', body: JSON.stringify({ phrase, intent }) });
+    phraseInput.value = '';
+    statusEl.textContent = 'Added and retrained.';
+    refreshTrainingPhrases();
+  } catch (e) {
+    statusEl.textContent = 'Failed to add phrase — check the dashboard token.';
+  }
+};
+
+async function refreshTrainingInstructions() {
+  const list = document.getElementById('training-instructions-list');
+  let bots;
+  try {
+    bots = botsCache && botsCache.length ? botsCache : await api('/api/bots');
+  } catch (_e) { return; }
+  if (!bots.length) {
+    list.innerHTML = '<p class="cardnote">No bot instances yet — add one in the Bots tab.</p>';
+    return;
+  }
+  list.innerHTML = bots.map(b => `
+    <div class="wizard-field" style="margin-top:${bots.indexOf(b) === 0 ? '0' : '14px'};">
+      <label>${esc(b.name)} <span style="font-weight:400; color:var(--muted);">(${esc(b.platform)}/${esc(b.backend)})</span></label>
+      <div class="row"><textarea data-instructions-for="${b.id}" rows="3" style="width:100%; font-family:var(--font-body); padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink);" placeholder="e.g. Always answer in a formal tone and cite sources when possible.">${esc(b.custom_instructions || '')}</textarea></div>
+      <div class="row" style="margin-top:6px;"><button class="btn primary" data-instructions-save="${b.id}" style="padding:5px 12px; font-size:12px;">Save</button><span class="cardnote" id="instructions-status-${b.id}"></span></div>
+    </div>`).join('');
+  document.querySelectorAll('[data-instructions-save]').forEach(btn => btn.onclick = async () => {
+    const id = btn.dataset.instructionsSave;
+    const textarea = document.querySelector(`[data-instructions-for="${id}"]`);
+    const statusEl = document.getElementById(`instructions-status-${id}`);
+    try {
+      await api(`/api/bots/${id}`, { method: 'PUT', body: JSON.stringify({ custom_instructions: textarea.value }) });
+      statusEl.textContent = 'Saved.';
+      setTimeout(() => { statusEl.textContent = ''; }, 2000);
+    } catch (e) {
+      statusEl.textContent = 'Failed to save.';
+    }
+  });
+}
+
+// ------------------------------------------------------------ updates ----
+let latestUpdateInfo = null;
+
+async function checkForUpdate(showBusyState) {
+  if (!IS_TAURI) return;
+  const { invoke } = window.__TAURI__.core;
+  const statusEl = document.getElementById('update-status');
+  if (showBusyState) statusEl.textContent = 'Checking GitHub for the latest release…';
+  try {
+    const info = await invoke('check_for_update');
+    latestUpdateInfo = info;
+    document.getElementById('update-current-version').textContent = info.current_version;
+    document.getElementById('update-latest-version').textContent = info.latest_version;
+    document.getElementById('update-available-pill').classList.toggle('hidden', !info.update_available);
+    document.getElementById('update-uptodate-pill').classList.toggle('hidden', info.update_available);
+    document.getElementById('btn-update-install').classList.toggle('hidden', !info.update_available || !info.download_url);
+    const notesWrap = document.getElementById('update-notes-wrap');
+    if (info.update_available && info.release_notes) {
+      document.getElementById('update-notes').textContent = info.release_notes;
+      notesWrap.classList.remove('hidden');
+    } else {
+      notesWrap.classList.add('hidden');
+    }
+    statusEl.textContent = info.update_available
+      ? `Version ${info.latest_version} is available.`
+      : 'You\'re on the latest version.';
+  } catch (e) {
+    statusEl.textContent = `Couldn't check for updates: ${e}`;
+  }
+}
+
+async function installUpdateFlow() {
+  if (!latestUpdateInfo || !latestUpdateInfo.download_url) return;
+  const proceed = confirm(
+    `Download and install version ${latestUpdateInfo.latest_version}?\n\n` +
+    'The installer will run silently, then this app will restart automatically. ' +
+    'Any unsaved work in other apps is unaffected — this only restarts Bot Server.'
+  );
+  if (!proceed) return;
+  const { invoke } = window.__TAURI__.core;
+  const statusEl = document.getElementById('update-status');
+  const installBtn = document.getElementById('btn-update-install');
+  installBtn.disabled = true;
+  try {
+    statusEl.textContent = 'Downloading installer…';
+    const installerPath = await invoke('download_update', { url: latestUpdateInfo.download_url });
+    statusEl.textContent = 'Installing and restarting…';
+    await invoke('install_update', { installerPath });
+    // If we get here, install_update's std::process::exit(0) didn't fire —
+    // something upstream failed silently rather than via a thrown error.
+  } catch (e) {
+    statusEl.textContent = 'Update failed: ' + e;
+    installBtn.disabled = false;
+  }
+}
+
+function initUpdatesPanel() {
+  if (!IS_TAURI) return;
+  document.getElementById('btn-update-check').onclick = () => checkForUpdate(true);
+  document.getElementById('btn-update-install').onclick = installUpdateFlow;
+  checkForUpdate(false);
+}
+
 // -------------------------------------------------------- setup wizard ---
 function renderWizardBackends(status) {
   const container = document.getElementById('wizard-backends');
@@ -1941,6 +2155,7 @@ async function initTauriBoot() {
 if (IS_TAURI) {
   initTauriBoot();
   initAndroidPanel();
+  initUpdatesPanel();
 } else {
   document.getElementById('boot').classList.add('hidden');
   checkSetupAndProceed(startDashboardPolling);
