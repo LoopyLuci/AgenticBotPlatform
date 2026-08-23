@@ -166,6 +166,11 @@ class Router:
 
         instance_model: Optional[str] = None
         desktop_session_key: Optional[str] = None
+        # effective_prompt is what actually goes to the backend; prompt
+        # itself stays the clean, original text for db.create_job() below
+        # so Jobs-tab history isn't cluttered with the same instructions
+        # repeated on every row for this instance.
+        effective_prompt = prompt
         if instance_id is not None:
             from bot import bot_instances
 
@@ -173,6 +178,9 @@ class Router:
             if instance:
                 instance_model = instance.get("model")
                 desktop_session_key = instance.get("desktop_session_key")
+                custom_instructions = (instance.get("custom_instructions") or "").strip()
+                if custom_instructions:
+                    effective_prompt = f"{custom_instructions}\n\n{prompt}"
 
         # ui/hermes_gateway are session-aware backends (see their own
         # ask()) — they need to know which bot instance this call belongs
@@ -217,7 +225,7 @@ class Router:
             timeout_s = timeouts.get(backend_name, 30)
             t0 = time.monotonic()
             try:
-                result = await backend.ask(prompt, context=context, timeout_s=timeout_s)
+                result = await backend.ask(effective_prompt, context=context, timeout_s=timeout_s)
                 latency_ms = (time.monotonic() - t0) * 1000
                 db.log_telemetry(component=backend_name, metric="latency_ms", value=latency_ms)
                 db.log_connection_event(component=backend_name, event="request_ok")

@@ -13,7 +13,7 @@ from typing import Optional
 from bot.commands import CmdContext, dispatch_command
 from bot.config import config
 from bot.support_bot import actions
-from bot.support_bot.model import model
+from bot.support_bot import hybrid
 from bot.support_bot.training_data import DESTRUCTIVE_INTENTS
 
 # Pending confirmations expire quickly — this mirrors a chat confirm
@@ -74,7 +74,7 @@ class SupportBot:
                 intent="unknown",
             )
 
-        intent, confidence = model.predict(text)
+        intent = hybrid.classify(text).intent
         if intent == "unknown":
             return SupportBotReply(
                 text="I'm not sure what you're asking — try \"help\" to see what I can do.",

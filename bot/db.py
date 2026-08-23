@@ -131,6 +131,7 @@ CREATE TABLE IF NOT EXISTS bot_instances (
     can_target         TEXT NOT NULL DEFAULT '[]',    -- JSON array of bot_instances.id this instance may command (agent_control)
     model              TEXT,                          -- optional per-instance model override, passed through to this instance's backend
     desktop_session_key TEXT,                         -- links to one specific chat/session in the ui/hermes_gateway backend, NULL if none created yet
+    custom_instructions TEXT,                          -- optional persona/instructions prepended to every prompt this instance routes through router.ask()
     created_at         TEXT NOT NULL,
     updated_at         TEXT NOT NULL,
     last_started_at    TEXT,
@@ -222,6 +223,37 @@ CREATE TABLE IF NOT EXISTS device_presence (
     last_seen     TEXT NOT NULL
 );
 
+-- User-added training phrases for the Support Bot's TF-IDF intent
+-- classifier (bot/support_bot/model.py), on top of the hand-authored
+-- baseline in bot/support_bot/training_data.py's EXAMPLES. Lets someone
+-- improve recognition for a phrasing the classifier missed without
+-- editing code — see the Training tab.
+CREATE TABLE IF NOT EXISTS support_bot_phrases (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    phrase     TEXT NOT NULL,
+    intent     TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+-- Self-monitoring log for the Support Bot's hybrid classifier
+-- (bot/support_bot/hybrid.py) — every single classification, both
+-- sub-models' independent verdicts, and which one the hybrid trusted.
+-- This is what the Training tab's model-health panel is computed from —
+-- real logged behavior, not a guess.
+CREATE TABLE IF NOT EXISTS support_bot_classifications (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts                TEXT NOT NULL,
+    text              TEXT NOT NULL,
+    tfidf_intent      TEXT NOT NULL,
+    tfidf_confidence  REAL NOT NULL,
+    nn_intent         TEXT NOT NULL,
+    nn_confidence     REAL NOT NULL,
+    final_intent      TEXT NOT NULL,
+    final_confidence  REAL NOT NULL,
+    source            TEXT NOT NULL,   -- 'ensemble' | 'tfidf' | 'nn' | 'unknown'
+    agreed            INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at);
 CREATE INDEX IF NOT EXISTS idx_telemetry_component ON telemetry_events(component, ts);
@@ -232,6 +264,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_instance ON sessions(instance_id, last_a
 CREATE INDEX IF NOT EXISTS idx_sessions_chat ON sessions(instance_id, chat_id, last_activity_at);
 CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
 CREATE INDEX IF NOT EXISTS idx_push_tokens_key ON push_tokens(api_key_id);
+CREATE INDEX IF NOT EXISTS idx_support_bot_classifications_ts ON support_bot_classifications(ts);
 """
 # idx_jobs_instance / idx_jobs_swarm_run / idx_messages_instance are created
 # in _migrate(), not here — on a pre-existing DB, jobs/messages get their
@@ -305,6 +338,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         # those two backends must never fall back to "whatever's open" when
         # this is NULL; see Router.create_session().
         conn.execute("ALTER TABLE bot_instances ADD COLUMN desktop_session_key TEXT")
+    if "custom_instructions" not in instance_cols:
+        conn.execute("ALTER TABLE bot_instances ADD COLUMN custom_instructions TEXT")
 
     presence_cols = {row["name"] for row in conn.execute("PRAGMA table_info(device_presence)").fetchall()}
     if "device_model" not in presence_cols:
@@ -630,6 +665,90 @@ def remove_allowed_user(telegram_id: int) -> None:
 def list_allowed_users() -> list[sqlite3.Row]:
     conn = get_conn()
     return conn.execute("SELECT * FROM allowed_users ORDER BY added_at").fetchall()
+
+
+# ------------------------------------------------- support bot training ---
+# User-added phrases layered on top of training_data.py's hand-authored
+# EXAMPLES — see bot/support_bot/model.py's load_examples()/reload().
+def list_support_bot_phrases() -> list[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute("SELECT * FROM support_bot_phrases ORDER BY intent, id").fetchall()
+
+
+def add_support_bot_phrase(phrase: str, intent: str) -> int:
+    phrase = (phrase or "").strip()
+    intent = (intent or "").strip()
+    if not phrase or not intent:
+        raise ValueError("both phrase and intent are required")
+    conn = get_conn()
+    with _lock:
+        cur = conn.execute(
+            "INSERT INTO support_bot_phrases (phrase, intent, created_at) VALUES (?, ?, ?)",
+            (phrase, intent, _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def delete_support_bot_phrase(phrase_id: int) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute("DELETE FROM support_bot_phrases WHERE id=?", (phrase_id,))
+        conn.commit()
+
+
+def log_support_bot_classification(
+    text: str,
+    tfidf_intent: str,
+    tfidf_confidence: float,
+    nn_intent: str,
+    nn_confidence: float,
+    final_intent: str,
+    final_confidence: float,
+    source: str,
+    agreed: bool,
+) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute(
+            "INSERT INTO support_bot_classifications "
+            "(ts, text, tfidf_intent, tfidf_confidence, nn_intent, nn_confidence, final_intent, final_confidence, source, agreed) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (_now(), text, tfidf_intent, tfidf_confidence, nn_intent, nn_confidence, final_intent, final_confidence, source, 1 if agreed else 0),
+        )
+        conn.commit()
+
+
+def get_support_bot_classification_stats(limit: int = 500) -> dict[str, Any]:
+    """Self-monitoring summary for the Training tab — computed from the
+    last `limit` real classifications, not a static guess. Empty/zeroed
+    fields if nothing's been classified yet."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM support_bot_classifications ORDER BY id DESC LIMIT ?", (limit,)
+    ).fetchall()
+    total = len(rows)
+    if total == 0:
+        return {
+            "total": 0, "agreement_rate": 0.0, "unknown_rate": 0.0,
+            "avg_tfidf_confidence": 0.0, "avg_nn_confidence": 0.0, "avg_final_confidence": 0.0,
+            "source_counts": {}, "recent": [],
+        }
+    agreed = sum(1 for r in rows if r["agreed"])
+    unknown = sum(1 for r in rows if r["final_intent"] == "unknown")
+    source_counts: dict[str, int] = {}
+    for r in rows:
+        source_counts[r["source"]] = source_counts.get(r["source"], 0) + 1
+    return {
+        "total": total,
+        "agreement_rate": round(agreed / total, 3),
+        "unknown_rate": round(unknown / total, 3),
+        "avg_tfidf_confidence": round(sum(r["tfidf_confidence"] for r in rows) / total, 3),
+        "avg_nn_confidence": round(sum(r["nn_confidence"] for r in rows) / total, 3),
+        "avg_final_confidence": round(sum(r["final_confidence"] for r in rows) / total, 3),
+        "source_counts": source_counts,
+        "recent": [dict(r) for r in rows[:15]],
+    }
 
 
 # ---------------------------------------------------------- api keys ------

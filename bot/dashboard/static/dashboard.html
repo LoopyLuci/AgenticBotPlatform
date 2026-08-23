@@ -291,9 +291,11 @@
       <a href="#resilience"><span class="ic">↻</span>Resilience</a>
       <a href="#logs"><span class="ic">▦</span>Live Logs</a>
       <a href="#chat"><span class="ic">💬</span>Chat</a>
+      <a href="#support"><span class="ic">🛟</span>Support Bot</a>
       <a href="#sessions"><span class="ic">🗂</span>Sessions</a>
       <a href="#bots"><span class="ic">🤖</span>Bots</a>
       <a href="#swarms"><span class="ic">🐝</span>Swarms</a>
+      <a href="#training"><span class="ic">🎓</span>Training</a>
       <a href="#platforms"><span class="ic">🔌</span>Platforms</a>
       <a href="#mobile"><span class="ic">📱</span>Mobile</a>
     </nav>
@@ -581,6 +583,20 @@
       </div>
     </section>
 
+    <section id="support">
+      <div class="sec-head"><h2>Support Bot</h2><span class="desc">A local, dependency-free assistant for managing this server — plain English or slash commands, same engine the Android app's Support tab uses</span></div>
+      <div class="card chat-card">
+        <div class="chat-panels" id="support-panel">
+          <div class="chat-window active" id="support-window"></div>
+        </div>
+        <div class="chat-composer">
+          <textarea id="support-input" placeholder="Ask me anything — try &quot;help&quot;…" rows="1"></textarea>
+          <button class="btn primary" id="btn-support-send">Send</button>
+        </div>
+        <div class="cardnote" id="support-status"></div>
+      </div>
+    </section>
+
     <section id="sessions">
       <div class="sec-head"><h2>Sessions</h2><span class="desc">Every past conversation, grouped and browsable — pick one up where you left off</span></div>
       <div class="card">
@@ -754,6 +770,45 @@
             <tbody id="swarm-runs-tbody"><tr class="emptyrow"><td colspan="4">No runs yet.</td></tr></tbody>
           </table>
         </div>
+      </div>
+    </section>
+
+    <section id="training">
+      <div class="sec-head"><h2>Training</h2><span class="desc">Improve the Support Bot's recognition, and give any bot instance persistent custom instructions — separate from each other, and from any live conversation</span></div>
+
+      <div class="card">
+        <h3>Model health <span style="font-weight:400; color:var(--muted); font-size:12px;">— hybrid classifier self-monitoring</span></h3>
+        <p class="cardnote">Every message the Support Bot classifies runs through <b>two</b> independent models — the deterministic TF-IDF centroid model and a trained neural network (MLP) — and the hybrid trusts whichever is right more often. This is that behavior, measured live over real traffic, not a static claim.</p>
+        <div class="grid kpis" id="training-health-kpis" style="margin-top:10px;">
+          <div class="card kpi"><h3>Classifications logged</h3><div class="value" id="health-total">—</div></div>
+          <div class="card kpi"><h3>Model agreement rate</h3><div class="value" id="health-agreement">—</div></div>
+          <div class="card kpi"><h3>Unknown rate</h3><div class="value" id="health-unknown">—</div></div>
+          <div class="card kpi"><h3>Avg TF-IDF confidence</h3><div class="value" id="health-tfidf-conf">—</div></div>
+          <div class="card kpi"><h3>Avg neural net confidence</h3><div class="value" id="health-nn-conf">—</div></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Support Bot phrases</h3>
+        <p class="cardnote">Add example phrasings for an intent the Support Bot misrecognized or missed entirely — retrains <b>both</b> the TF-IDF model and the neural network immediately, no restart. These are layered on top of the built-in baseline (<code>training_data.py</code>), never replacing it.</p>
+        <div class="row" style="gap:8px; margin-top:10px; flex-wrap:wrap;">
+          <input type="text" id="training-phrase-input" placeholder="e.g. &quot;show me what's broken right now&quot;" style="flex:2; min-width:220px;">
+          <select id="training-intent-select" style="flex:1; min-width:160px;"></select>
+          <button class="btn primary" id="btn-training-add">+ Add phrase</button>
+        </div>
+        <div class="cardnote" id="training-status"></div>
+        <div class="tablewrap" style="margin-top:12px;">
+          <table>
+            <thead><tr><th>Phrase</th><th>Intent</th><th></th></tr></thead>
+            <tbody id="training-phrases-tbody"><tr class="emptyrow"><td colspan="3">No custom phrases added yet.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Custom bot instructions</h3>
+        <p class="cardnote">Optional persona/instructions prepended to every prompt a bot instance routes through <code>router.ask()</code> — a system-prompt-style customization, independent of which backend it uses. Leave blank for default behavior.</p>
+        <div id="training-instructions-list"><p class="cardnote">Loading…</p></div>
       </div>
     </section>
 
@@ -1231,6 +1286,165 @@ function startDashboard() {
   setInterval(refreshSwarms, 15000);
   refreshMobileKeys();
   setInterval(refreshMobileKeys, 15000);
+  refreshTrainingPhrases();
+  refreshTrainingInstructions();
+  refreshTrainingHealth();
+  setInterval(refreshTrainingPhrases, 20000);
+  setInterval(refreshTrainingHealth, 10000);
+}
+
+// --------------------------------------------------------- support bot ---
+function appendSupportBubble(text, direction, extra) {
+  const win = document.getElementById('support-window');
+  const row = document.createElement('div');
+  row.className = 'chat-row ' + (direction === 'in' ? 'in' : 'out');
+  const bubble = document.createElement('div');
+  bubble.className = 'chat-bubble';
+  const textEl = document.createElement('div');
+  textEl.textContent = text;
+  bubble.appendChild(textEl);
+  if (extra) bubble.appendChild(extra);
+  row.appendChild(bubble);
+  win.appendChild(row);
+  win.scrollTop = win.scrollHeight;
+  return bubble;
+}
+
+async function sendSupportMessage() {
+  const input = document.getElementById('support-input');
+  const statusEl = document.getElementById('support-status');
+  const text = input.value.trim();
+  if (!text) return;
+  appendSupportBubble(text, 'out');
+  input.value = '';
+  const btn = document.getElementById('btn-support-send');
+  btn.disabled = true;
+  statusEl.textContent = '';
+  try {
+    const reply = await api('/api/support-bot/ask', { method: 'POST', body: JSON.stringify({ text }) });
+    let extra = null;
+    if (reply.needs_confirm) {
+      extra = document.createElement('div');
+      extra.style.marginTop = '8px';
+      const confirmBtn = document.createElement('button');
+      confirmBtn.className = 'btn primary';
+      confirmBtn.style.cssText = 'padding:4px 10px; font-size:11px; margin-right:6px;';
+      confirmBtn.textContent = 'Confirm';
+      confirmBtn.onclick = async () => {
+        confirmBtn.disabled = true;
+        const result = await api('/api/support-bot/confirm', { method: 'POST', body: JSON.stringify({ token: reply.confirm_token }) });
+        appendSupportBubble(result.text, 'in');
+      };
+      extra.appendChild(confirmBtn);
+    }
+    appendSupportBubble(reply.text, 'in', extra);
+  } catch (e) {
+    statusEl.textContent = 'Support Bot request failed — check the dashboard token.';
+  } finally {
+    btn.disabled = false;
+  }
+}
+document.getElementById('btn-support-send').onclick = sendSupportMessage;
+document.getElementById('support-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendSupportMessage();
+  }
+});
+
+// ----------------------------------------------------------- training ----
+let trainingIntents = [];
+
+async function refreshTrainingHealth() {
+  if (!getToken()) return;
+  let h;
+  try {
+    h = await api('/api/support-bot/health');
+  } catch (_e) { return; }
+  document.getElementById('health-total').textContent = h.total;
+  document.getElementById('health-agreement').textContent = h.total ? `${(h.agreement_rate * 100).toFixed(0)}%` : '—';
+  document.getElementById('health-unknown').textContent = h.total ? `${(h.unknown_rate * 100).toFixed(0)}%` : '—';
+  document.getElementById('health-tfidf-conf').textContent = h.total ? h.avg_tfidf_confidence.toFixed(2) : '—';
+  document.getElementById('health-nn-conf').textContent = h.total ? h.avg_nn_confidence.toFixed(2) : '—';
+}
+
+async function refreshTrainingPhrases() {
+  if (!getToken()) return;
+  let data;
+  try {
+    data = await api('/api/support-bot/training');
+  } catch (_e) { return; }
+  trainingIntents = data.intents || [];
+  const select = document.getElementById('training-intent-select');
+  const prevValue = select.value;
+  select.innerHTML = trainingIntents.map(i => `<option value="${esc(i)}">${esc(i)}</option>`).join('');
+  if (trainingIntents.includes(prevValue)) select.value = prevValue;
+
+  const tbody = document.getElementById('training-phrases-tbody');
+  const phrases = data.phrases || [];
+  tbody.innerHTML = phrases.length ? phrases.map(p => `
+    <tr>
+      <td>${esc(p.phrase)}</td>
+      <td class="mono">${esc(p.intent)}</td>
+      <td><button class="btn" data-phrase-delete="${p.id}" style="padding:3px 8px; font-size:11px;">Delete</button></td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="3">No custom phrases added yet.</td></tr>';
+  document.querySelectorAll('[data-phrase-delete]').forEach(btn => btn.onclick = async () => {
+    await api(`/api/support-bot/training/${btn.dataset.phraseDelete}`, { method: 'DELETE' });
+    refreshTrainingPhrases();
+  });
+}
+
+document.getElementById('btn-training-add').onclick = async () => {
+  const phraseInput = document.getElementById('training-phrase-input');
+  const statusEl = document.getElementById('training-status');
+  const phrase = phraseInput.value.trim();
+  const intent = document.getElementById('training-intent-select').value;
+  if (!phrase || !intent) {
+    statusEl.textContent = 'Enter a phrase and pick an intent.';
+    return;
+  }
+  try {
+    await api('/api/support-bot/training', { method: 'POST', body: JSON.stringify({ phrase, intent }) });
+    phraseInput.value = '';
+    statusEl.textContent = 'Added and retrained.';
+    refreshTrainingPhrases();
+  } catch (e) {
+    statusEl.textContent = 'Failed to add phrase — check the dashboard token.';
+  }
+};
+
+async function refreshTrainingInstructions() {
+  const list = document.getElementById('training-instructions-list');
+  if (!getToken()) {
+    list.innerHTML = '<p class="cardnote">Unlock with the dashboard token to view.</p>';
+    return;
+  }
+  let bots;
+  try {
+    bots = botsCache && botsCache.length ? botsCache : await api('/api/bots');
+  } catch (_e) { return; }
+  if (!bots.length) {
+    list.innerHTML = '<p class="cardnote">No bot instances yet — add one in the Bots tab.</p>';
+    return;
+  }
+  list.innerHTML = bots.map(b => `
+    <div class="wizard-field" style="margin-top:${bots.indexOf(b) === 0 ? '0' : '14px'};">
+      <label>${esc(b.name)} <span style="font-weight:400; color:var(--muted);">(${esc(b.platform)}/${esc(b.backend)})</span></label>
+      <div class="row"><textarea data-instructions-for="${b.id}" rows="3" style="width:100%; font-family:var(--font-body); padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink);" placeholder="e.g. Always answer in a formal tone and cite sources when possible.">${esc(b.custom_instructions || '')}</textarea></div>
+      <div class="row" style="margin-top:6px;"><button class="btn primary" data-instructions-save="${b.id}" style="padding:5px 12px; font-size:12px;">Save</button><span class="cardnote" id="instructions-status-${b.id}"></span></div>
+    </div>`).join('');
+  document.querySelectorAll('[data-instructions-save]').forEach(btn => btn.onclick = async () => {
+    const id = btn.dataset.instructionsSave;
+    const textarea = document.querySelector(`[data-instructions-for="${id}"]`);
+    const statusEl = document.getElementById(`instructions-status-${id}`);
+    try {
+      await api(`/api/bots/${id}`, { method: 'PUT', body: JSON.stringify({ custom_instructions: textarea.value }) });
+      statusEl.textContent = 'Saved.';
+      setTimeout(() => { statusEl.textContent = ''; }, 2000);
+    } catch (e) {
+      statusEl.textContent = 'Failed to save.';
+    }
+  });
 }
 
 // ---------------------------------------------------------------- bots ---

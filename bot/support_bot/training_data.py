@@ -149,6 +149,130 @@ EXAMPLES: list[tuple[str, str]] = [
     ("show the allowlist", "allowed_users_list"),
     ("which telegram users can talk to the bot", "allowed_users_list"),
 
+    # jobs_list
+    ("list recent jobs", "jobs_list"),
+    ("show me the job queue", "jobs_list"),
+    ("what jobs failed today", "jobs_list"),
+    ("show running jobs", "jobs_list"),
+    ("list failed jobs", "jobs_list"),
+    ("show job history", "jobs_list"),
+    ("what jobs are queued", "jobs_list"),
+
+    # job_status
+    ("what's the status of job 42", "job_status"),
+    ("check job #17", "job_status"),
+    ("show me job 5", "job_status"),
+    ("did job 12 succeed", "job_status"),
+
+    # swarms_list
+    ("list my swarms", "swarms_list"),
+    ("show all swarms", "swarms_list"),
+    ("what swarms do i have", "swarms_list"),
+    ("which swarms are configured", "swarms_list"),
+
+    # swarm_run
+    ("run the research swarm", "swarm_run"),
+    ("trigger swarm X with prompt hello", "swarm_run"),
+    ("start a run of swarm X", "swarm_run"),
+    ("kick off the fanout swarm", "swarm_run"),
+
+    # swarm_run_status
+    ("check the status of the last swarm run", "swarm_run_status"),
+    ("how's the swarm run going", "swarm_run_status"),
+    ("what happened in swarm run X", "swarm_run_status"),
+    ("show me the swarm run result", "swarm_run_status"),
+
+    # diagnostics
+    ("show me the error rate", "diagnostics"),
+    ("what's the latency by backend", "diagnostics"),
+    ("show recent errors", "diagnostics"),
+    ("how's the connection health", "diagnostics"),
+    ("any errors in the last few minutes", "diagnostics"),
+    ("run diagnostics", "diagnostics"),
+
+    # db_status
+    ("how big is the database", "db_status"),
+    ("show database size", "db_status"),
+    ("what's the db table row counts", "db_status"),
+    ("database status", "db_status"),
+
+    # db_vacuum
+    ("vacuum the database", "db_vacuum"),
+    ("reclaim space in the db", "db_vacuum"),
+    ("run vacuum", "db_vacuum"),
+    ("clean up the database", "db_vacuum"),
+
+    # backups_list
+    ("list backups", "backups_list"),
+    ("show env backups", "backups_list"),
+    ("what backups are available", "backups_list"),
+    ("list bot instance backups", "backups_list"),
+
+    # backup_restore
+    ("restore the latest backup", "backup_restore"),
+    ("restore backup env-20260101", "backup_restore"),
+    ("roll back to a previous backup", "backup_restore"),
+    ("restore bot instances from backup", "backup_restore"),
+
+    # settings_show
+    ("show feature toggles", "settings_show"),
+    ("what's the agent control mode", "settings_show"),
+    ("show current settings", "settings_show"),
+    ("is ui automation enabled", "settings_show"),
+    ("show security settings", "settings_show"),
+
+    # settings_set
+    ("turn on verbose telemetry", "settings_set"),
+    ("disable ui automation", "settings_set"),
+    ("enable confirm destructive actions", "settings_set"),
+    ("set agent control mode to allowlist", "settings_set"),
+    ("turn off confirm destructive", "settings_set"),
+    ("switch agent control to trust all", "settings_set"),
+
+    # devices_list
+    ("list paired devices", "devices_list"),
+    ("show my mobile devices", "devices_list"),
+    ("which devices are paired", "devices_list"),
+    ("what phones are connected", "devices_list"),
+
+    # device_revoke
+    ("revoke my old phone", "device_revoke"),
+    ("remove the paired device X", "device_revoke"),
+    ("unpair device X", "device_revoke"),
+    ("revoke device X's key", "device_revoke"),
+
+    # mobile_key_create
+    ("generate a new pairing key", "mobile_key_create"),
+    ("create a mobile pairing key", "mobile_key_create"),
+    ("i need a new pairing key for my tablet", "mobile_key_create"),
+    ("pair a new device", "mobile_key_create"),
+
+    # sessions_list
+    ("list recent sessions", "sessions_list"),
+    ("show my sessions", "sessions_list"),
+    ("search sessions for X", "sessions_list"),
+    ("what conversations happened today", "sessions_list"),
+
+    # session_show
+    ("show me session 5", "session_show"),
+    ("what's in session 12", "session_show"),
+    ("open session #3", "session_show"),
+
+    # claude_setup_check
+    ("check claude desktop setup", "claude_setup_check"),
+    ("is claude desktop ready", "claude_setup_check"),
+    ("verify claude desktop connection", "claude_setup_check"),
+    ("help me connect claude desktop", "claude_setup_check"),
+    ("is the ui backend set up", "claude_setup_check"),
+
+    # hermes_setup_check
+    ("check hermes setup", "hermes_setup_check"),
+    ("is hermes ready", "hermes_setup_check"),
+    ("verify hermes connection", "hermes_setup_check"),
+    ("help me connect hermes agent", "hermes_setup_check"),
+    ("is the hermes gateway backend set up", "hermes_setup_check"),
+    ("check for hermes telegram token conflicts", "hermes_setup_check"),
+
     # help
     ("help", "help"),
     ("what can you do", "help"),
@@ -168,4 +292,7 @@ DESTRUCTIVE_INTENTS = {
     "desktop_restart",
     "mcp_disable",
     "bot_restart",
+    "db_vacuum",
+    "backup_restore",
+    "device_revoke",
 }

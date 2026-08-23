@@ -31,6 +31,8 @@ from bot.backends.base import BackendError
 from bot.commands import CmdContext, dispatch_command
 from bot.config import config
 from bot.router import VALID_BACKENDS, router
+from bot.support_bot import hybrid as support_bot_hybrid
+from bot.support_bot import training_data
 from bot.support_bot.engine import support_bot
 from bot.swarm import engine as swarm_engine
 from bot.swarm import strategies as swarm_strategies
@@ -512,6 +514,7 @@ def build_app() -> FastAPI:
                 action_overrides=payload.get("action_overrides") or {},
                 enabled=bool(payload.get("enabled", True)),
                 model=payload.get("model") or None,
+                custom_instructions=payload.get("custom_instructions") or None,
                 actor="dashboard",
             )
         except bot_instances.ValidationError as exc:
@@ -532,7 +535,7 @@ def build_app() -> FastAPI:
         fields = {
             k: v
             for k, v in payload.items()
-            if k in ("name", "platform", "backend", "enabled", "credentials", "allowed_user_ids", "action_overrides", "can_target", "model")
+            if k in ("name", "platform", "backend", "enabled", "credentials", "allowed_user_ids", "action_overrides", "can_target", "model", "custom_instructions")
         }
         try:
             bot_instances.update_instance(instance_id, actor="dashboard", **fields)
@@ -857,6 +860,43 @@ def build_app() -> FastAPI:
             "confirm_token": reply.confirm_token,
             "applied": reply.applied,
         }
+
+    # Training tab — user-added phrases for the Support Bot's hybrid
+    # classifier (TF-IDF centroid model + trained neural network, see
+    # bot/support_bot/hybrid.py), layered on top of training_data.py's
+    # hand-authored baseline. Every mutation retrains both sub-models in
+    # place so it takes effect immediately, no restart.
+    @app.get("/api/support-bot/training", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_support_bot_training_list():
+        return {
+            "phrases": [dict(r) for r in db.list_support_bot_phrases()],
+            "intents": sorted({intent for _, intent in training_data.EXAMPLES}),
+        }
+
+    @app.post("/api/support-bot/training", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_support_bot_training_add(payload: dict = Body(...)):
+        phrase = (payload.get("phrase") or "").strip()
+        intent = (payload.get("intent") or "").strip()
+        if not phrase or not intent:
+            raise HTTPException(status_code=400, detail="payload must be {phrase: str, intent: str}")
+        phrase_id = db.add_support_bot_phrase(phrase, intent)
+        counts = support_bot_hybrid.retrain_all()
+        db.log_audit(actor="dashboard", action="support_bot_phrase_add", detail=f"{phrase!r} -> {intent}")
+        return {"ok": True, "id": phrase_id, "trained_on": counts}
+
+    @app.delete("/api/support-bot/training/{phrase_id}", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_support_bot_training_delete(phrase_id: int):
+        db.delete_support_bot_phrase(phrase_id)
+        counts = support_bot_hybrid.retrain_all()
+        db.log_audit(actor="dashboard", action="support_bot_phrase_delete", detail=f"id {phrase_id}")
+        return {"ok": True, "trained_on": counts}
+
+    # Self-monitoring: the hybrid classifier's own logged behavior over
+    # real traffic — agreement rate between its two sub-models, unknown
+    # rate, confidence trends. See bot/support_bot/hybrid.py's health().
+    @app.get("/api/support-bot/health", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_support_bot_health():
+        return support_bot_hybrid.health()
 
     @app.post("/api/mcp/{name}/enable", dependencies=[Depends(_require_token)])
     async def api_mcp_enable(name: str):

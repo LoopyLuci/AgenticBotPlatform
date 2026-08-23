@@ -105,6 +105,7 @@ def create_instance(
     can_target: Optional[list[int]] = None,
     enabled: bool = True,
     model: Optional[str] = None,
+    custom_instructions: Optional[str] = None,
     actor: str = "dashboard",
 ) -> int:
     name = (name or "").strip()
@@ -118,8 +119,8 @@ def create_instance(
         try:
             cur = conn.execute(
                 "INSERT INTO bot_instances "
-                "(name, platform, backend, enabled, credentials, allowed_user_ids, action_overrides, can_target, model, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "(name, platform, backend, enabled, credentials, allowed_user_ids, action_overrides, can_target, model, custom_instructions, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     name,
                     platform,
@@ -130,6 +131,7 @@ def create_instance(
                     json.dumps(action_overrides or {}),
                     json.dumps(can_target or []),
                     model or None,
+                    (custom_instructions or "").strip() or None,
                     _now(),
                     _now(),
                 ),
@@ -160,7 +162,7 @@ def update_instance(instance_id: int, actor: str = "dashboard", **fields: Any) -
 
     columns: list[str] = []
     params: list[Any] = []
-    for key in ("name", "platform", "backend", "enabled", "model"):
+    for key in ("name", "platform", "backend", "enabled", "model", "custom_instructions"):
         if key in fields:
             columns.append(f"{key}=?")
             params.append(1 if key == "enabled" and fields[key] else (0 if key == "enabled" else fields[key]))

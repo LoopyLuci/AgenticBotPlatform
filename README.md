@@ -43,9 +43,11 @@ this is just the map:
 | **Live Logs** | Streaming tail of `logs/bot.log`, filterable by level. |
 | **Chat** | A Telegram-style conversation view across every connected bot instance — send text, send files, see attachments/thumbnails inline. A mode toggle switches between Send from Server (real outbound, as the bot) and Chat with Bot (a real message to the bot, replied to for real) — see "Send from Server vs. Chat with Bot" below. |
 | **Support Bot** | Plain-English or slash-command server management — see its own section below. |
+| **Support Bot** | Chat with the local hybrid (TF-IDF + neural network) management assistant — plain English or slash commands, same engine the Android app's Support tab uses. See "Support Bot" below. |
 | **Sessions** | Browse *past* conversations (grouped by 30-minute gaps, or the "legacy" pre-sessions bucket) — a history view, not to be confused with **session linking** (below), which is about which live chat a bot writes into. |
 | **Bots** | Add/edit/enable/disable/start/stop/restart bot instances; per-instance backups; the **New Session** button for `ui`/`hermes_gateway` bots. |
 | **Swarms** | Create/edit/enable/disable swarms; trigger runs; browse run history with per-step results. |
+| **Training** | Add phrasings to teach the Support Bot's hybrid classifier (retrains both sub-models live), view its self-monitoring "Model health" panel, and give any bot instance persistent custom instructions/persona. |
 | **Platforms** | Legacy single-bot-per-platform `.env` fields — superseded by the Bots tab, kept for transparency. |
 | **Mobile** | Mobile pairing keys + QR codes, paired-device list with live online/offline status, and the Android one-click build/install/pair panel. |
 
@@ -57,6 +59,10 @@ get their own deep-dive doc:
 - **[docs/support-bot.md](docs/support-bot.md)** — how the local Support
   Bot model works, its intents, the confirm-before-destructive-action
   flow, and how to extend it.
+- **[docs/connecting-claude-and-hermes.md](docs/connecting-claude-and-hermes.md)**
+  — complete setup for Claude Desktop and Hermes Agent (CLI, gateway, and
+  the separate Hermes Desktop app), including the one real gotcha (shared
+  platform tokens between Hermes's own gateway and a Bot Server instance).
 - **[docs/sessions.md](docs/sessions.md)** — how Bot Server links each
   bot instance to one specific real chat/session inside Claude Desktop or
   Hermes, so messages never land in the wrong (or an unlinked) window.
@@ -550,7 +556,10 @@ how `api`/`cli` behave.
 adapters (`hermes gateway run`). Never configure the same platform bot
 token in both Hermes's own gateway and a Bot Server instance — pick one
 owner per token. Use Bot Server's bot instances as the sole platform
-connection, and Hermes purely as a backend engine behind them.
+connection, and Hermes purely as a backend engine behind them. See
+**[docs/connecting-claude-and-hermes.md](docs/connecting-claude-and-hermes.md)**
+for the full setup walkthrough, including exactly how to check for and
+fix this if you hit it.
 
 Also worth knowing: `hermes serve --isolated` gives the gateway backend
 its own dedicated web/API server process and port, but the underlying
@@ -688,47 +697,59 @@ Either way the dashboard API itself has to actually be running first
 (launch the desktop app, or `python -m bot.main`) — the MCP server has no
 logic of its own to fall back on if it can't reach `127.0.0.1:8787`.
 
-## Support Bot — a local AI assistant built into the desktop app
+## Support Bot — a local, hybrid AI assistant built into the desktop app
 
-The dashboard has its own dedicated **Support Bot** panel (sidebar, below
-Chat) — a chat window where you can type plain English or slash commands
-to manage the entire server, with no external AI service involved at all.
+The dashboard has its own dedicated **Support Bot** panel — a chat window
+where you can type plain English or slash commands to manage the entire
+server, with no external AI service involved at all.
 
-**It's a real, small, trainable model — not a wrapper around another
-LLM.** No Ollama, no API call, no extra process: it's pure-Python
-(`bot/support_bot/`), built from the standard library's `math`/`re`/
-`collections` only — nothing in `requirements.txt` changed to add it.
-Concretely, it's a TF-IDF vectorizer plus a nearest-centroid classifier:
-`training_data.py` has a hand-authored set of example phrasings per
-management intent (restart the desktop app, show the default backend,
-list MCP servers, enable/disable a bot, and so on — 21 intents in all),
-`model.py` turns those into one centroid vector per intent at process
-start, and classifies new text by cosine similarity against them. Below
-a confidence threshold it just says so ("not sure what you mean") instead
-of guessing.
+**It's a real hybrid: a dependency-free deterministic model plus a
+genuinely trained neural network, running together.** Every message goes
+through *both* `model.py`'s TF-IDF nearest-centroid classifier (stdlib
+only — `math`/`re`/`collections`) and `nn_model.py`'s neural network (a
+real backprop-trained multi-layer perceptron, `scikit-learn`, the one ML
+dependency this specific feature adds) at once. `hybrid.py` combines
+them: if both agree, that's the strongest possible signal; if they
+disagree, it trusts whichever is more confident; if neither is confident,
+it says so honestly ("not sure what you mean") instead of guessing.
+`training_data.py` has ~190 hand-authored example phrasings across 40
+management intents (restart the desktop app, show the default backend,
+list MCP servers, enable/disable a bot, inspect jobs/swarms, run
+diagnostics, manage backups and paired devices, check Claude Desktop/
+Hermes Agent setup, and more) that both sub-models train on identically.
+
+**Self-monitoring**: every classification — both sub-models' verdicts,
+which one won, whether they agreed — is logged, and the dashboard's
+**Training** tab shows it live as a "Model health" panel (agreement rate,
+unknown rate, average confidence per model) computed from real traffic.
 
 **What it can do:**
 - Slash commands work exactly as documented above (typing `/` pops the
   same autocomplete menu) — routed straight through the shared
   `dispatch_command()`, no NLP involved.
-- Plain English gets classified into an intent, has its arguments
-  extracted (`slots.py` — fuzzy-matches bot/MCP-server/backend/model
-  names against what's actually configured, e.g. "restart the telegram
-  bot" resolves to the real instance even with typos), and is executed
-  by a thin handler in `actions.py` that calls the same functions the
-  dashboard API itself calls (`bot/desktop.py`, `bot/bot_instances.py`,
-  `bot/config.py`, `bot/router.py`) — no separate business logic exists
-  anywhere for "what the Support Bot can do" versus "what the dashboard
-  can do".
+- Plain English gets classified by the hybrid model into an intent, has
+  its arguments extracted (`slots.py` — fuzzy-matches bot/swarm/MCP-
+  server/device/backend/model names against what's actually configured
+  right now, e.g. "restart the telegram bot" resolves to the real
+  instance even with typos), and is executed by a thin handler in
+  `actions.py` that calls the same functions the dashboard API itself
+  calls — no separate business logic exists anywhere for "what the
+  Support Bot can do" versus "what the dashboard can do".
 - Destructive intents (deleting/disabling a bot, stopping/restarting
-  Desktop, disabling an MCP server) are confirm-gated exactly like
+  Desktop, disabling an MCP server, vacuuming the database, restoring a
+  backup, revoking a paired device) are confirm-gated exactly like
   `/stop_desktop` already is: the reply describes what it's about to do
   and shows a **Confirm** button instead of acting immediately, honoring
   the same `security.confirm_destructive` config flag. Confirm tokens
   live in memory only, expire after 5 minutes, and are never persisted.
+- **Training tab**: add example phrasings for a misrecognized intent
+  (retrains both sub-models immediately, no restart), or give any bot
+  instance persistent custom instructions/persona — a system-prompt-style
+  field prepended to every prompt that instance routes through
+  `router.ask()`, independent of which backend it uses.
 
 See **[docs/support-bot.md](docs/support-bot.md)** for the full intent
-list, architecture, and how to add a new intent. The desktop panel and
+list, hybrid architecture, and how to extend it. The desktop panel and
 the Android app's own **Support** tab both talk to the exact same
 server-side engine (`POST /api/support-bot/ask` /
 `/api/support-bot/confirm`) — there's no separate mobile implementation.

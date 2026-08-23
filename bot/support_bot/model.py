@@ -22,6 +22,7 @@ import re
 from collections import Counter
 from typing import Optional
 
+from bot import db
 from bot.support_bot.training_data import EXAMPLES
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -107,7 +108,31 @@ class TfidfCentroidModel:
         return best_intent, best_score
 
 
-# Trained once at import time — cheap (a few hundred short strings) and the
-# training set only changes when someone edits training_data.py and
-# restarts the process, so there's no benefit to lazy/repeated training.
-model = TfidfCentroidModel(EXAMPLES)
+def _load_examples() -> list[tuple[str, str]]:
+    """The hand-authored baseline plus any phrases added at runtime through
+    the Training tab (support_bot_phrases table) — DB-backed additions are
+    layered on top so extending recognition never requires an actual code
+    edit, just a dashboard action followed by retrain()."""
+    examples = list(EXAMPLES)
+    try:
+        examples += [(row["phrase"], row["intent"]) for row in db.list_support_bot_phrases()]
+    except Exception:
+        # DB not initialized yet (e.g. import-time in a context before
+        # db.init_db() has run) — fall back to the static baseline only;
+        # retrain() after the DB is up will pick up any DB phrases.
+        pass
+    return examples
+
+
+# Trained once at import time — cheap (a few hundred short strings). Call
+# retrain() after adding/removing a phrase via the Training tab to pick up
+# the change without restarting the process.
+model = TfidfCentroidModel(_load_examples())
+
+
+def retrain() -> int:
+    """Rebuilds the model in place from the current baseline + DB phrases.
+    Returns the total example count trained on."""
+    examples = _load_examples()
+    model._train(examples)
+    return len(examples)
