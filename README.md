@@ -245,6 +245,74 @@ Windows), and it degrades to a clean error on Linux rather than crashing
 anything else. Everything else (`api`, `cli`, `hermes_cli`,
 `hermes_gateway`) works exactly the same.
 
+#### NixOS
+
+The `.deb`/`.rpm`/`apt`/`dnf`/`pacman` instructions above don't apply on
+NixOS — there's no FHS and no system package manager in that sense.
+`flake.nix` in the repo root provides a Nix-native path instead:
+
+```bash
+nix develop      # dev shell: Rust, cargo-tauri, Python 3.11, and every
+                  # WebKitGTK/GTK3/AppIndicator/librsvg lib the Debian/Fedora
+                  # sections above install manually — all pinned via nixpkgs
+./scripts/run.sh # sets up .venv + config, same as any other Linux checkout
+cd desktop-app/src-tauri && cargo tauri dev   # or `cargo tauri build`
+```
+
+`nix build` (using the flake's `packages.default`) is also available, but
+it only produces the raw `bot-server` Rust binary — **not** the
+self-contained Windows-style bundle with a `.venv` baked in. Bundling a
+pip-installed venv into an immutable `/nix/store` path fights Nix's
+model, so the Nix package expects to be run from a checkout with its own
+`.venv` next to it (via `./scripts/run.sh`), the same as the "Development"
+workflow above, not the standalone production bundle.
+
+**A real, separate NixOS gotcha, not just a `cargo tauri` one:** several of
+`requirements.txt`'s packages (`cryptography` in particular) ship
+prebuilt `manylinux` wheels compiled against FHS paths (`/lib64/ld-linux...`)
+that plain NixOS doesn't have, so a bare `pip install` inside
+`./scripts/run.sh`'s venv can fail to import with a dynamic-linker error —
+this is unrelated to and not fixed by the Tauri dev shell above. Two
+common fixes, neither of which this repo automates yet: run the venv setup
+under [`nix-ld`](https://github.com/nix-community/nix-ld) (patches the
+dynamic linker search path system-wide), or wrap `./scripts/run.sh` in a
+`pkgs.buildFHSEnv` shell. **This flake and these NixOS notes are
+written but not build-verified on a real NixOS machine** — same caveat as
+the rest of this Linux section (see "Known gaps" in the project's internal
+notes); if you hit something not covered here, it's a genuine gap, not a
+known-and-ignored issue.
+
+#### Qubes OS
+
+Qubes AppVMs run ordinary Fedora or Debian templates under the hood, so
+the Fedora/Debian instructions above apply as-is inside the AppVM — there
+is no Qubes-specific build step. A few things worth knowing about running
+Bot Server *in* a Qubes AppVM specifically, though:
+
+- **Networking is opt-in per VM.** Bot Server's dashboard binds to
+  `127.0.0.1` only and never needs inbound connections from outside its
+  own VM, so it works in a fully network-isolated AppVM for local-only use
+  (`ui`/`api`/`cli` backends talking to a locally-installed model/CLI). Any
+  bot instance that needs to reach a real chat platform (Telegram/Discord/
+  Slack) or an external API (`hermes_gateway`, the `api` backend's
+  Anthropic calls) needs that AppVM's NetVM configured normally, same as
+  any other networked app in Qubes.
+- **Pick one AppVM per trust boundary**, the same way you'd split any
+  other app in Qubes — e.g. a bot instance handling an untrusted public
+  Telegram bot in a different AppVM than one used for your own private
+  Claude Desktop automation, rather than running every bot instance in one
+  VM. Bot Server itself has no Qubes-awareness (no `qrexec` integration,
+  no inter-VM policy) — this is a deployment-topology recommendation, not
+  a built-in feature.
+- **The MCP self-register flow** (`POST /api/mcp/self-register`, Control
+  Center -> Environment) assumes Claude Desktop is reachable in the same
+  VM it's registering into — if Claude Desktop runs in a different AppVM
+  or in dom0 (unusual, and not a Qubes-recommended place to run GUI apps),
+  self-register won't find it; use the manual MCP config steps instead.
+- Nothing above is enforced or checked by the app — it's operational
+  guidance for Qubes' compartmentalization model, not a code-level Qubes
+  integration.
+
 ## Using the desktop app
 
 Launch `bot-server.exe` (or `cargo tauri dev` while developing).
