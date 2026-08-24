@@ -13,6 +13,7 @@ since inline buttons aren't portable across all three platforms.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
@@ -169,32 +170,94 @@ async def cmd_model(ctx: CmdContext, args: list[str]) -> str:
 
 INSTANCE_MODEL_PAGE_SIZE = 6
 
+_FREE_MODEL_RE = re.compile(r"[-:_]free$", re.IGNORECASE)
 
-async def instance_model_options(backend: str) -> list[str]:
+
+def is_free_model_id(model_id: str) -> bool:
+    """Free-tier model ids follow a "...-free"/"...:free" suffix convention
+    across every provider Hermes's cache has shown so far (OpenRouter,
+    opencode-free, etc.) — there's no pricing metadata to check instead, so
+    this is a naming-convention heuristic, not a guarantee."""
+    return bool(_FREE_MODEL_RE.search(model_id))
+
+
+def _sort_group(model_ids) -> list[str]:
+    uniq = sorted(set(model_ids))
+    free = [m for m in uniq if is_free_model_id(m)]
+    paid = [m for m in uniq if not is_free_model_id(m)]
+    return free + paid
+
+
+async def instance_model_groups(backend: str) -> list[dict]:
+    """Models available to `backend`, grouped by provider (Hermes's own
+    cache is already keyed by provider; the Claude family has exactly one),
+    each group's models sorted with free ones first. Replaces the old flat
+    instance_model_options() list, which discarded the provider structure
+    Hermes's cache already gives us and interleaved every provider's models
+    together."""
     from bot.models import BACKEND_FAMILY, live_api_models, live_hermes_models
 
     family = BACKEND_FAMILY.get(backend, "claude")
     if family == "hermes":
         grouped = live_hermes_models()
-        return sorted({m for models in grouped.values() for m in models}) if grouped else []
+        if not grouped:
+            return []
+        return [
+            {"provider": name, "models": _sort_group(models)}
+            for name, models in sorted(grouped.items(), key=lambda kv: kv[0].lower())
+            if models
+        ]
     live = await live_api_models()
-    return live or KNOWN_MODELS.get("api", [])
+    models = live or KNOWN_MODELS.get("api", [])
+    return [{"provider": "Anthropic", "models": _sort_group(models)}] if models else []
 
 
-async def instance_model_page(instance_id: int, page: int) -> Optional[dict]:
+async def instance_model_page(instance_id: int, provider: Optional[int], page: int) -> Optional[dict]:
+    """Two-level picker data: with multiple provider groups and no
+    `provider` index chosen yet, returns a provider-list payload (mode
+    "providers"); otherwise returns a paginated model-list payload (mode
+    "models") scoped to that provider group. A backend with only one
+    provider group (Claude, or a Hermes install whose cache only has one
+    provider) skips straight to "models" — there's nothing to pick between."""
     from bot import bot_instances
 
     instance = bot_instances.get_instance(instance_id)
     if instance is None:
         return None
     backend = instance["backend"]
-    models = await instance_model_options(backend)
+    groups = await instance_model_groups(backend)
     current_model = instance.get("model")
+
+    if not groups:
+        return {"mode": "models", "backend": backend, "provider": None, "provider_idx": None,
+                "page": 0, "total_pages": 1, "models": [], "current_model": current_model,
+                "has_known_list": False}
+
+    if len(groups) > 1 and provider is None:
+        providers = [
+            {
+                "idx": i,
+                "name": g["provider"],
+                "count": len(g["models"]),
+                "free_count": sum(1 for m in g["models"] if is_free_model_id(m)),
+                "is_current": current_model in g["models"],
+            }
+            for i, g in enumerate(groups)
+        ]
+        return {"mode": "providers", "backend": backend, "providers": providers, "current_model": current_model}
+
+    idx = provider if (provider is not None and 0 <= provider < len(groups)) else 0
+    group = groups[idx]
+    models = group["models"]
     total_pages = max(1, -(-len(models) // INSTANCE_MODEL_PAGE_SIZE))
     page = max(0, min(page, total_pages - 1))
     start = page * INSTANCE_MODEL_PAGE_SIZE
     return {
+        "mode": "models",
         "backend": backend,
+        "provider": group["provider"],
+        "provider_idx": idx,
+        "multi_provider": len(groups) > 1,
         "page": page,
         "total_pages": total_pages,
         "models": models[start : start + INSTANCE_MODEL_PAGE_SIZE],

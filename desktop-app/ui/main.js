@@ -80,6 +80,40 @@ function connectDevicesSocket() {
 }
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+
+// Custom dropdown standing in for native <select> where it matters: Chrome
+// force-closes an open native select popup the instant the underlying page
+// scrolls, even for a scroll the user meant to apply to the page behind it,
+// not the menu. This one is just an absolutely-positioned div anchored to
+// its trigger, so it scrolls along with the page instead of vanishing, and
+// only closes on an explicit outside click, Escape, or picking an option.
+function wireCustomSelects(root, onChange) {
+  root.querySelectorAll('.custom-select').forEach(box => {
+    const btn = box.querySelector('.custom-select-btn');
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const wasOpen = box.classList.contains('open');
+      document.querySelectorAll('.custom-select.open').forEach(o => o.classList.remove('open'));
+      if (!wasOpen) box.classList.add('open');
+    };
+    box.querySelectorAll('.custom-select-opt').forEach(opt => {
+      opt.onclick = (e) => {
+        e.stopPropagation();
+        box.classList.remove('open');
+        box.querySelectorAll('.custom-select-opt').forEach(o => o.classList.remove('sel'));
+        opt.classList.add('sel');
+        btn.textContent = opt.dataset.label ?? opt.textContent;
+        onChange(box, opt.dataset.value);
+      };
+    });
+  });
+}
+document.addEventListener('click', () => {
+  document.querySelectorAll('.custom-select.open').forEach(o => o.classList.remove('open'));
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') document.querySelectorAll('.custom-select.open').forEach(o => o.classList.remove('open'));
+});
 function fmtBytes(n) {
   if (!n) return '';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -304,6 +338,62 @@ function modelOptionsForBackend(backend) {
     return grouped ? [...new Set(Object.values(grouped).flat())].sort() : [];
   }
   return (modelsCache.live && modelsCache.live.api) || modelsCache.known.api || [];
+}
+
+// Free-tier model ids follow a "…-free" or "…:free" suffix convention
+// across every provider Hermes's cache has shown so far (OpenRouter,
+// opencode-free, etc.) — no pricing metadata is available to check
+// instead, so this is a naming-convention heuristic, not a guarantee.
+function _isFreeModelId(id) {
+  return /[-:_]free$/i.test(id);
+}
+
+// Same models as modelOptionsForBackend, but grouped by provider (Hermes's
+// cache is already keyed by provider; the Claude family has exactly one
+// provider) with free models sorted first within each group, for pickers
+// that want to show that structure rather than one flat list.
+function modelGroupsForBackend(backend) {
+  if (!modelsCache) return [];
+  const family = (modelsCache.family || {})[backend] || 'claude';
+  const sortGroup = (ids) => {
+    const uniq = [...new Set(ids)];
+    const free = uniq.filter(_isFreeModelId).sort();
+    const paid = uniq.filter(id => !_isFreeModelId(id)).sort();
+    return [...free, ...paid];
+  };
+  if (family === 'hermes') {
+    const grouped = (modelsCache.live && modelsCache.live.hermes) || null;
+    if (!grouped) return [];
+    return Object.keys(grouped).sort((a, b) => a.localeCompare(b))
+      .map(provider => ({ provider, models: sortGroup(grouped[provider]) }))
+      .filter(g => g.models.length);
+  }
+  const apiOptions = (modelsCache.live && modelsCache.live.api) || modelsCache.known.api || [];
+  return apiOptions.length ? [{ provider: 'Anthropic', models: sortGroup(apiOptions) }] : [];
+}
+
+// Builds the menu HTML (provider group headers, free-tagged options) plus
+// the current selection's display label, for the custom-select model
+// picker on each bot card.
+function buildModelMenuHtml(backend, currentModel) {
+  const groups = modelGroupsForBackend(backend);
+  const allIds = new Set(groups.flatMap(g => g.models));
+  let label = '(backend default)';
+  let html = `<div class="custom-select-opt${!currentModel ? ' sel' : ''}" data-value="" data-label="(backend default)">(backend default)</div>`;
+  if (currentModel && !allIds.has(currentModel)) {
+    label = `${currentModel} (not in live list)`;
+    html += `<div class="custom-select-opt sel" data-value="${esc(currentModel)}" data-label="${esc(label)}">${esc(label)}</div>`;
+  }
+  for (const { provider, models } of groups) {
+    html += `<div class="custom-select-group">${esc(provider)}</div>`;
+    for (const id of models) {
+      const isSel = id === currentModel;
+      if (isSel) label = id;
+      const freeTag = _isFreeModelId(id) ? ' <span class="tag-free">free</span>' : '';
+      html += `<div class="custom-select-opt${isSel ? ' sel' : ''}" data-value="${esc(id)}" data-label="${esc(id)}">${esc(id)}${freeTag}</div>`;
+    }
+  }
+  return { label, html };
 }
 
 function refreshBotModelOptions() {
@@ -785,11 +875,12 @@ async function refreshBots() {
     return;
   }
   // This runs on a 15s timer — rebuilding the grid's innerHTML while the
-  // user has a <select> (e.g. the per-bot Model picker) open force-closes
+  // user has the Model dropdown open (or any other control focused) force-closes
   // it out from under them. Skip this cycle entirely while any control
-  // inside the grid has focus; the next tick (or their own action, which
-  // calls refreshBots() directly) picks up the real state once they're done.
-  if (grid.contains(document.activeElement)) return;
+  // inside the grid has focus, or a custom dropdown is open; the next tick
+  // (or their own action, which calls refreshBots() directly) picks up the
+  // real state once they're done.
+  if (grid.contains(document.activeElement) || grid.querySelector('.custom-select.open')) return;
   let bots;
   try {
     bots = await api('/api/bots');
@@ -800,12 +891,8 @@ async function refreshBots() {
   grid.innerHTML = bots.length ? bots.map(b => {
     const persona = personaMeta(b.persona);
     const manages = (b.can_target || []).map(id => bots.find(x => x.id === id)).filter(Boolean);
-    const modelOptions = modelOptionsForBackend(b.backend);
     const currentModel = b.model || '';
-    const modelSelectOptions = [`<option value="">(backend default)</option>`]
-      .concat(currentModel && !modelOptions.includes(currentModel) ? [`<option value="${esc(currentModel)}" selected>${esc(currentModel)} (not in live list)</option>`] : [])
-      .concat(modelOptions.map(m => `<option value="${esc(m)}" ${m === currentModel ? 'selected' : ''}>${esc(m)}</option>`))
-      .join('');
+    const { label: currentModelLabel, html: modelMenuOptions } = buildModelMenuHtml(b.backend, currentModel);
     return `
     <div class="botcard">
       <div class="bc-head">
@@ -819,7 +906,10 @@ async function refreshBots() {
       </div>
       <div class="bc-model">
         <label style="font-weight:600; color:var(--muted);">Model</label>
-        <select data-bot-model="${b.id}">${modelSelectOptions}</select>
+        <div class="custom-select" data-bot-model="${b.id}">
+          <button type="button" class="custom-select-btn">${esc(currentModelLabel)}</button>
+          <div class="custom-select-menu">${modelMenuOptions}</div>
+        </div>
       </div>
       ${manages.length ? `<div class="bc-manages"><span style="font-weight:600; color:var(--muted);">Manages:</span> ${manages.map(m => `<span class="chip neutral">${personaMeta(m.persona).icon} ${esc(m.name)}</span>`).join('')}</div>` : ''}
       ${b.last_error ? `<div class="bc-error">${esc(b.last_error)}</div>` : ''}
@@ -834,9 +924,9 @@ async function refreshBots() {
     </div>`;
   }).join('') : '<p class="cardnote">No bots yet — add one above.</p>';
 
-  document.querySelectorAll('[data-bot-model]').forEach(sel => sel.onchange = async () => {
-    const id = Number(sel.dataset.botModel);
-    await api(`/api/bots/${id}`, { method: 'PUT', body: JSON.stringify({ model: sel.value || null }) });
+  wireCustomSelects(grid, async (el, value) => {
+    const id = Number(el.dataset.botModel);
+    await api(`/api/bots/${id}`, { method: 'PUT', body: JSON.stringify({ model: value || null }) });
   });
   document.querySelectorAll('[data-bot-edit]').forEach(btn => btn.onclick = () => {
     const bot = bots.find(b => b.id === Number(btn.dataset.botEdit));

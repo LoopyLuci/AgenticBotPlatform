@@ -268,28 +268,66 @@ def _paired_rows(buttons: list[InlineKeyboardButton]) -> list[list[InlineKeyboar
     return [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
 
 
-async def _model_page(instance_id: int, page: int) -> tuple[str, InlineKeyboardMarkup]:
-    data = await commands.instance_model_page(instance_id, page)
+_NO_PROVIDER = -1  # sentinel provider index for a single-group backend (no picking needed)
+
+
+async def _model_providers_page(instance_id: int) -> tuple[str, InlineKeyboardMarkup]:
+    """Top level of the two-level picker for a backend with more than one
+    model provider (only Hermes backends can have this — Hermes's own
+    cache is keyed by provider, e.g. openrouter/anthropic/opencode-zen —
+    the Claude family always has exactly one and skips straight to the
+    model list)."""
+    data = await commands.instance_model_page(instance_id, None, 0)
+    if data is None:
+        return "This chat isn't linked to a bot instance.", InlineKeyboardMarkup(
+            [[InlineKeyboardButton("Cancel", callback_data="modelpick:cancel")]]
+        )
+    if data["mode"] == "models":
+        # Only one provider group (or none) — no picking needed, go straight in.
+        return await _model_page(instance_id, data.get("provider_idx", _NO_PROVIDER), 0)
+    buttons = []
+    for p in data["providers"]:
+        mark = "✓ " if p["is_current"] else ""
+        free = f", {p['free_count']} free" if p["free_count"] else ""
+        buttons.append(InlineKeyboardButton(
+            f"{mark}{p['name']} ({p['count']}{free})",
+            callback_data=f"modelpick:provider:{instance_id}:{p['idx']}",
+        ))
+    rows = [[b] for b in buttons]
+    rows.append([InlineKeyboardButton("Cancel", callback_data="modelpick:cancel")])
+    text = f"Model provider for this bot ({data['backend']}) — current: {data['current_model'] or '(backend default)'}"
+    return text, InlineKeyboardMarkup(rows)
+
+
+async def _model_page(instance_id: int, provider_idx: int, page: int) -> tuple[str, InlineKeyboardMarkup]:
+    provider = None if provider_idx == _NO_PROVIDER else provider_idx
+    data = await commands.instance_model_page(instance_id, provider, page)
     rows = []
     if data is None:
         return "This chat isn't linked to a bot instance.", InlineKeyboardMarkup(
             [[InlineKeyboardButton("Cancel", callback_data="modelpick:cancel")]]
         )
     backend = data["backend"]
+    idx = data.get("provider_idx")
+    idx = _NO_PROVIDER if idx is None else idx
     if data["has_known_list"]:
         buttons = []
         for m in data["models"]:
             mark = "✓ " if m == data["current_model"] else ""
-            buttons.append(InlineKeyboardButton(f"{mark}{m}", callback_data=f"modelpick:set:{instance_id}:{m}"))
+            free = " 🆓" if commands.is_free_model_id(m) else ""
+            buttons.append(InlineKeyboardButton(f"{mark}{m}{free}", callback_data=f"modelpick:set:{instance_id}:{m}"))
         rows.extend(_paired_rows(buttons))
         nav = []
         if data["page"] > 0:
-            nav.append(InlineKeyboardButton("< Prev", callback_data=f"modelpick:page:{instance_id}:{data['page'] - 1}"))
+            nav.append(InlineKeyboardButton("< Prev", callback_data=f"modelpick:page:{instance_id}:{idx}:{data['page'] - 1}"))
         if data["page"] < data["total_pages"] - 1:
-            nav.append(InlineKeyboardButton("Next >", callback_data=f"modelpick:page:{instance_id}:{data['page'] + 1}"))
+            nav.append(InlineKeyboardButton("Next >", callback_data=f"modelpick:page:{instance_id}:{idx}:{data['page'] + 1}"))
         if nav:
             rows.append(nav)
-        text = f"Model for this bot ({backend}) — current: {data['current_model'] or '(backend default)'}"
+        if data.get("multi_provider"):
+            rows.append([InlineKeyboardButton("< Providers", callback_data=f"modelpick:providers:{instance_id}")])
+        provider_label = f" — {data['provider']}" if data.get("provider") else ""
+        text = f"Model for this bot ({backend}{provider_label}) — current: {data['current_model'] or '(backend default)'}"
     else:
         text = (
             f"This bot's backend ({backend}) has no discoverable model list.\n"
@@ -317,7 +355,7 @@ async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if ctx.instance_id is None:
             await _reply_chunked(update, "This chat isn't linked to a bot instance.", context)
             return
-        text, kb = await _model_page(ctx.instance_id, 0)
+        text, kb = await _model_providers_page(ctx.instance_id)
         await update.message.reply_text(text, reply_markup=kb)
         return
 
@@ -381,9 +419,19 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data in ("cancel", "modelpick:cancel"):
         await query.edit_message_text("Cancelled.")
         return
+    if data.startswith("modelpick:providers:"):
+        _, _, instance_id_s = data.split(":", 2)
+        text, keyboard = await _model_providers_page(int(instance_id_s))
+        await query.edit_message_text(text, reply_markup=keyboard)
+        return
+    if data.startswith("modelpick:provider:"):
+        _, _, instance_id_s, provider_idx_s = data.split(":", 3)
+        text, keyboard = await _model_page(int(instance_id_s), int(provider_idx_s), 0)
+        await query.edit_message_text(text, reply_markup=keyboard)
+        return
     if data.startswith("modelpick:page:"):
-        _, _, instance_id_s, page = data.split(":", 3)
-        text, keyboard = await _model_page(int(instance_id_s), int(page))
+        _, _, instance_id_s, provider_idx_s, page = data.split(":", 4)
+        text, keyboard = await _model_page(int(instance_id_s), int(provider_idx_s), int(page))
         await query.edit_message_text(text, reply_markup=keyboard)
         return
     if data.startswith("modelpick:set:"):
