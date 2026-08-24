@@ -128,10 +128,11 @@ CREATE TABLE IF NOT EXISTS bot_instances (
     credentials        TEXT NOT NULL,                 -- JSON, shape depends on platform
     allowed_user_ids   TEXT NOT NULL DEFAULT '[]',    -- JSON array
     action_overrides   TEXT NOT NULL DEFAULT '{}',    -- JSON, same shape as backends.yaml's action_overrides
-    can_target         TEXT NOT NULL DEFAULT '[]',    -- JSON array of bot_instances.id this instance may command (agent_control)
+    can_target         TEXT NOT NULL DEFAULT '[]',    -- JSON array of bot_instances.id this instance may command (agent_control) — also doubles as "manages" for persona='manager'
     model              TEXT,                          -- optional per-instance model override, passed through to this instance's backend
     desktop_session_key TEXT,                         -- links to one specific chat/session in the ui/hermes_gateway backend, NULL if none created yet
     custom_instructions TEXT,                          -- optional persona/instructions prepended to every prompt this instance routes through router.ask()
+    persona            TEXT NOT NULL DEFAULT 'assistant', -- one of bot/personas.py's PERSONA_PRESETS keys; purely metadata + a custom_instructions seed
     created_at         TEXT NOT NULL,
     updated_at         TEXT NOT NULL,
     last_started_at    TEXT,
@@ -254,6 +255,37 @@ CREATE TABLE IF NOT EXISTS support_bot_classifications (
     agreed            INTEGER NOT NULL
 );
 
+-- Server Chat — a permanent, bot-independent messaging/file-transfer
+-- channel between the devices themselves (the desktop app and every
+-- paired Android phone), separate from the platform-facing `messages`
+-- table above. Device identity here is a plain integer: 0 always means
+-- "the desktop app" (a fixed sentinel — never a real api_keys.id, since
+-- those start at 1), any positive integer is an api_keys.id. One 'group'
+-- row always exists (the single permanent "Server Chat" room every
+-- device sees); one 'direct' row exists per unordered device pair,
+-- auto-created for a new device against every device that already
+-- existed at pairing time — see create_conversations_for_new_device().
+CREATE TABLE IF NOT EXISTS server_chat_conversations (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind           TEXT NOT NULL,   -- 'group' | 'direct'
+    participant_a  INTEGER,         -- NULL for 'group'; the lower device id for 'direct'
+    participant_b  INTEGER,         -- NULL for 'group'; the higher device id for 'direct'
+    created_at     TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS server_chat_messages (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id   INTEGER NOT NULL,
+    sender_device_id  INTEGER NOT NULL,
+    ts                TEXT NOT NULL,
+    text              TEXT NOT NULL DEFAULT '',
+    attachment_path   TEXT,
+    attachment_name   TEXT,
+    attachment_mime   TEXT,
+    attachment_size   INTEGER,
+    thumbnail_path    TEXT
+);
+
 -- A pending APK offer for one paired device — created by the desktop
 -- app's "Send APK" / "Send APK to All Paired Devices" buttons. Pull-based
 -- by design (there's no reliable way to push to a backgrounded phone
@@ -283,6 +315,8 @@ CREATE INDEX IF NOT EXISTS idx_sessions_chat ON sessions(instance_id, chat_id, l
 CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
 CREATE INDEX IF NOT EXISTS idx_push_tokens_key ON push_tokens(api_key_id);
 CREATE INDEX IF NOT EXISTS idx_apk_pushes_key ON apk_pushes(api_key_id, id);
+CREATE INDEX IF NOT EXISTS idx_server_chat_conv_participants ON server_chat_conversations(participant_a, participant_b);
+CREATE INDEX IF NOT EXISTS idx_server_chat_messages_conv ON server_chat_messages(conversation_id, id);
 CREATE INDEX IF NOT EXISTS idx_support_bot_classifications_ts ON support_bot_classifications(ts);
 """
 # idx_jobs_instance / idx_jobs_swarm_run / idx_messages_instance are created
@@ -359,6 +393,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE bot_instances ADD COLUMN desktop_session_key TEXT")
     if "custom_instructions" not in instance_cols:
         conn.execute("ALTER TABLE bot_instances ADD COLUMN custom_instructions TEXT")
+    if "persona" not in instance_cols:
+        conn.execute("ALTER TABLE bot_instances ADD COLUMN persona TEXT NOT NULL DEFAULT 'assistant'")
 
     presence_cols = {row["name"] for row in conn.execute("PRAGMA table_info(device_presence)").fetchall()}
     if "device_model" not in presence_cols:
@@ -382,6 +418,8 @@ def init_db() -> None:
         conn.executescript(SCHEMA)
         _migrate(conn)
         conn.commit()
+    ensure_server_chat_group()
+    backfill_server_chat_conversations()
 
 
 # ------------------------------------------------------------ sessions ----
@@ -896,6 +934,159 @@ def mark_apk_push_downloaded(push_id: int) -> None:
     with _lock:
         conn.execute("UPDATE apk_pushes SET downloaded_at=? WHERE id=?", (_now(), push_id))
         conn.commit()
+
+
+SERVER_CHAT_DESKTOP_DEVICE_ID = 0
+
+
+def device_label(device_id: int) -> str:
+    if device_id == SERVER_CHAT_DESKTOP_DEVICE_ID:
+        return "Desktop"
+    row = get_conn().execute(
+        "SELECT label, revoked_at FROM api_keys WHERE id=?", (device_id,)
+    ).fetchone()
+    if row is None:
+        return f"device {device_id}"
+    return row["label"] + (" (revoked)" if row["revoked_at"] else "")
+
+
+def ensure_server_chat_group() -> int:
+    """The single permanent "Server Chat" room every device sees — created
+    once, reused forever after."""
+    conn = get_conn()
+    with _lock:
+        row = conn.execute("SELECT id FROM server_chat_conversations WHERE kind='group' LIMIT 1").fetchone()
+        if row is not None:
+            return row["id"]
+        cur = conn.execute(
+            "INSERT INTO server_chat_conversations (kind, participant_a, participant_b, created_at) "
+            "VALUES ('group', NULL, NULL, ?)",
+            (_now(),),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def ensure_direct_conversation(device_a: int, device_b: int) -> int:
+    """One row per unordered device pair — participant_a is always the
+    smaller id so (3, 7) and (7, 3) resolve to the same conversation."""
+    lo, hi = (device_a, device_b) if device_a <= device_b else (device_b, device_a)
+    conn = get_conn()
+    with _lock:
+        row = conn.execute(
+            "SELECT id FROM server_chat_conversations WHERE kind='direct' AND participant_a=? AND participant_b=?",
+            (lo, hi),
+        ).fetchone()
+        if row is not None:
+            return row["id"]
+        cur = conn.execute(
+            "INSERT INTO server_chat_conversations (kind, participant_a, participant_b, created_at) "
+            "VALUES ('direct', ?, ?, ?)",
+            (lo, hi, _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def backfill_server_chat_conversations() -> None:
+    """Fills in direct conversations for devices paired before Server Chat
+    existed — a full mesh across desktop + every non-revoked device.
+    ensure_direct_conversation() is idempotent, so this is safe to call on
+    every startup, not just once."""
+    keys = [r["id"] for r in list_api_keys() if not r["revoked_at"]]
+    devices = [SERVER_CHAT_DESKTOP_DEVICE_ID] + keys
+    for i, a in enumerate(devices):
+        for b in devices[i + 1:]:
+            ensure_direct_conversation(a, b)
+
+
+def create_conversations_for_new_device(device_id: int) -> None:
+    """Called right after a new paired device's key is created — opens a
+    direct conversation between it and the desktop app, and between it and
+    every other already-paired (non-revoked) device, so every device can
+    reach every other device from the moment it's added without anyone
+    having to manually start a chat."""
+    ensure_direct_conversation(device_id, SERVER_CHAT_DESKTOP_DEVICE_ID)
+    for row in list_api_keys():
+        if row["id"] != device_id and not row["revoked_at"]:
+            ensure_direct_conversation(device_id, row["id"])
+
+
+def is_conversation_participant(conversation_id: int, device_id: int) -> bool:
+    conn = get_conn()
+    row = conn.execute("SELECT kind, participant_a, participant_b FROM server_chat_conversations WHERE id=?", (conversation_id,)).fetchone()
+    if row is None:
+        return False
+    if row["kind"] == "group":
+        return True
+    return device_id in (row["participant_a"], row["participant_b"])
+
+
+def list_server_chat_conversations(device_id: int) -> list[dict]:
+    """Every conversation `device_id` can see: the group room, plus every
+    direct conversation it's a participant of. Each is annotated with a
+    display title (the room name, or the other device's current label)
+    and its own last-message preview so a device list can render without
+    N+1 follow-up requests."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM server_chat_conversations WHERE kind='group' OR participant_a=? OR participant_b=? "
+        "ORDER BY id",
+        (device_id, device_id),
+    ).fetchall()
+    out = []
+    for row in rows:
+        d = dict(row)
+        if d["kind"] == "group":
+            d["title"] = "Server Chat"
+            d["peer_device_id"] = None
+        else:
+            peer_id = d["participant_b"] if d["participant_a"] == device_id else d["participant_a"]
+            d["title"] = device_label(peer_id)
+            d["peer_device_id"] = peer_id
+        last = conn.execute(
+            "SELECT text, ts, attachment_name FROM server_chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 1",
+            (d["id"],),
+        ).fetchone()
+        d["last_message"] = dict(last) if last else None
+        out.append(d)
+    return out
+
+
+def create_server_chat_message(
+    conversation_id: int,
+    sender_device_id: int,
+    text: str,
+    attachment_path: Optional[str] = None,
+    attachment_name: Optional[str] = None,
+    attachment_mime: Optional[str] = None,
+    attachment_size: Optional[int] = None,
+    thumbnail_path: Optional[str] = None,
+) -> int:
+    conn = get_conn()
+    with _lock:
+        cur = conn.execute(
+            "INSERT INTO server_chat_messages "
+            "(conversation_id, sender_device_id, ts, text, attachment_path, attachment_name, "
+            "attachment_mime, attachment_size, thumbnail_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (conversation_id, sender_device_id, _now(), text, attachment_path, attachment_name,
+             attachment_mime, attachment_size, thumbnail_path),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def list_server_chat_messages(conversation_id: int, after_id: int = 0, limit: int = 100) -> list[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute(
+        "SELECT * FROM server_chat_messages WHERE conversation_id=? AND id > ? ORDER BY id LIMIT ?",
+        (conversation_id, after_id, limit),
+    ).fetchall()
+
+
+def get_server_chat_message(message_id: int) -> Optional[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute("SELECT * FROM server_chat_messages WHERE id=?", (message_id,)).fetchone()
 
 
 def verify_api_key(

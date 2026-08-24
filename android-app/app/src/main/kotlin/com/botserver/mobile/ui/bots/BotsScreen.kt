@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -21,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.botserver.mobile.data.dto.BotInstance
+import com.botserver.mobile.data.dto.PersonaPreset
 
 private val PLATFORMS = listOf("telegram", "discord", "slack")
 private val BACKENDS = listOf("cli", "api", "ui", "hermes_cli", "hermes_gateway")
@@ -35,6 +37,7 @@ fun BotsScreen(viewModel: BotsViewModel = hiltViewModel()) {
     if (state.form != null) {
         BotFormScreen(
             form = state.form!!,
+            personas = state.personas,
             onChange = viewModel::updateForm,
             onCancel = viewModel::cancelForm,
             onSave = viewModel::saveForm,
@@ -65,6 +68,7 @@ fun BotsScreen(viewModel: BotsViewModel = hiltViewModel()) {
                     items(state.bots, key = { it.id }) { bot ->
                         BotRow(
                             bot,
+                            personaIcon = state.personas.find { it.id == bot.persona }?.icon ?: "💬",
                             busy = state.busyId == bot.id,
                             onEdit = { viewModel.startEdit(bot) },
                             onToggleEnabled = { viewModel.toggleEnabled(bot) },
@@ -82,6 +86,7 @@ fun BotsScreen(viewModel: BotsViewModel = hiltViewModel()) {
 @Composable
 private fun BotRow(
     bot: BotInstance,
+    personaIcon: String,
     busy: Boolean,
     onEdit: () -> Unit,
     onToggleEnabled: () -> Unit,
@@ -96,7 +101,10 @@ private fun BotRow(
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f)) {
-                    Text(bot.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(personaIcon, modifier = Modifier.padding(end = 6.dp))
+                        Text(bot.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    }
                     val subtitle = buildString {
                         append(bot.platform)
                         append(" · ")
@@ -153,7 +161,13 @@ private fun BotRow(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun BotFormScreen(form: BotForm, onChange: ((BotForm) -> BotForm) -> Unit, onCancel: () -> Unit, onSave: () -> Unit) {
+private fun BotFormScreen(
+    form: BotForm,
+    personas: List<PersonaPreset>,
+    onChange: ((BotForm) -> BotForm) -> Unit,
+    onCancel: () -> Unit,
+    onSave: () -> Unit,
+) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -191,6 +205,25 @@ private fun BotFormScreen(form: BotForm, onChange: ((BotForm) -> BotForm) -> Uni
                 singleLine = true,
                 supportingText = { Text("Leave blank to use the backend's configured default.") },
             )
+            Spacer(Modifier.height(14.dp))
+            Text("Persona", style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.height(6.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            ) {
+                personas.forEach { p ->
+                    FilterChip(
+                        selected = form.persona == p.id,
+                        onClick = { onChange { it.copy(persona = p.id) } },
+                        label = { Text("${p.icon} ${p.label}") },
+                    )
+                }
+            }
+            personas.find { it.id == form.persona }?.let {
+                Spacer(Modifier.height(4.dp))
+                Text(it.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+            }
             Spacer(Modifier.height(14.dp))
             OutlinedTextField(
                 value = form.botToken,

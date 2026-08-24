@@ -254,8 +254,11 @@ document.getElementById('btn-vacuum').onclick = async () => { await api('/api/da
 // inputs with a <datalist> rather than <select>: Hermes accepts any
 // string, and a currently-set model that's fallen out of the live list
 // (stale config, offline) must stay visible and editable either way.
+let modelsCache = null;
+
 async function refreshModels() {
   const m = await api('/api/models');
+  modelsCache = m;
 
   const apiOptions = (m.live && m.live.api) || m.known.api || [];
   document.getElementById('model-api-options').innerHTML = apiOptions.map(name => `<option value="${esc(name)}"></option>`).join('');
@@ -273,6 +276,29 @@ async function refreshModels() {
   document.getElementById('model-hermes-note').textContent = hermesGrouped
     ? `Live from Hermes's own provider cache — ${hermesOptions.length} models across ${Object.keys(hermesGrouped).length} providers.`
     : 'Hermes not detected on this machine — type a model name manually.';
+
+  refreshBotModelOptions();
+  refreshBots();
+}
+
+// A given bot instance can only ever reach the models its own backend's
+// family exposes (Claude vs Hermes Agent) — see bot/models.py's
+// BACKEND_FAMILY. Used both by the Add/Edit form's datalist and by each
+// bot card's own quick-pick model <select>.
+function modelOptionsForBackend(backend) {
+  if (!modelsCache) return [];
+  const family = (modelsCache.family || {})[backend] || 'claude';
+  if (family === 'hermes') {
+    const grouped = (modelsCache.live && modelsCache.live.hermes) || null;
+    return grouped ? [...new Set(Object.values(grouped).flat())].sort() : [];
+  }
+  return (modelsCache.live && modelsCache.live.api) || modelsCache.known.api || [];
+}
+
+function refreshBotModelOptions() {
+  const backend = document.getElementById('bot-new-backend').value;
+  const options = modelOptionsForBackend(backend);
+  document.getElementById('bot-new-model-options').innerHTML = options.map(name => `<option value="${esc(name)}"></option>`).join('');
 }
 
 document.getElementById('model-api').onchange = async (e) => {
@@ -520,6 +546,7 @@ function startDashboardPolling() {
   startSessionsPolling();
   refreshPlatforms();
   setInterval(refreshPlatforms, 15000);
+  refreshPersonas();
   refreshBots();
   refreshBotsBackups();
   setInterval(refreshBots, 15000);
@@ -535,6 +562,7 @@ function startDashboardPolling() {
   refreshTrainingHealth();
   setInterval(refreshTrainingPhrases, 20000);
   setInterval(refreshTrainingHealth, 10000);
+  startServerChatPolling();
 }
 
 // ---------------------------------------------------------------- bots ---
@@ -543,9 +571,36 @@ let botEditingId = null;
 document.getElementById('bot-new-platform').onchange = (e) => {
   document.getElementById('bot-new-apptoken-field').style.display = e.target.value === 'slack' ? '' : 'none';
 };
+document.getElementById('bot-new-backend').onchange = refreshBotModelOptions;
 
 let botsCache = [];
+let personasCache = [];
+let selectedPersona = 'assistant';
 let lastAgentMode = 'trust_all';
+
+async function refreshPersonas() {
+  try {
+    personasCache = await api('/api/personas');
+  } catch (_e) { return; }
+  renderPersonaPicker(selectedPersona);
+}
+
+function renderPersonaPicker(active) {
+  selectedPersona = active;
+  const list = document.getElementById('bot-new-persona-list');
+  list.className = 'persona-pick';
+  list.innerHTML = personasCache.map(p => `
+    <div class="persona-opt${p.id === active ? ' active' : ''}" data-persona-id="${p.id}">
+      <span class="ic">${p.icon}</span>${esc(p.label)}
+    </div>`).join('');
+  const picked = personasCache.find(p => p.id === active);
+  document.getElementById('bot-new-persona-desc').textContent = picked ? picked.description : '';
+  list.querySelectorAll('[data-persona-id]').forEach(el => el.onclick = () => renderPersonaPicker(el.dataset.personaId));
+}
+
+function personaMeta(id) {
+  return personasCache.find(p => p.id === id) || { id, label: id || 'Assistant', icon: '💬' };
+}
 
 function renderCanTargetCheckboxes(excludeId, checkedIds) {
   const list = document.getElementById('bot-new-cantarget-list');
@@ -562,7 +617,9 @@ function renderCanTargetCheckboxes(excludeId, checkedIds) {
 
 function refreshBotsCanTargetVisibility(mode) {
   lastAgentMode = mode;
-  document.getElementById('bot-new-cantarget-field').classList.toggle('hidden', mode !== 'allowlist');
+  document.getElementById('bot-new-cantarget-help').textContent = mode === 'allowlist'
+    ? 'Bots this one manages as assistants. Control Center is in "Allowlist" agent-control mode, so this also restricts which instances it may command.'
+    : 'Bots this one manages as assistants, shown as an org chart on its card. (Control Center\'s agent-control mode isn\'t "Allowlist", so this list doesn\'t additionally restrict commanding.)';
 }
 
 function _resetBotForm() {
@@ -576,6 +633,8 @@ function _resetBotForm() {
   document.getElementById('bot-new-allowed').value = '';
   document.getElementById('bot-new-apptoken-field').style.display = 'none';
   document.getElementById('btn-bot-create').textContent = 'Add bot';
+  renderPersonaPicker('assistant');
+  refreshBotModelOptions();
   renderCanTargetCheckboxes(null, []);
 }
 
@@ -589,15 +648,17 @@ function _loadBotIntoForm(bot) {
   document.getElementById('bot-new-apptoken').value = bot.credentials.app_token || '';
   document.getElementById('bot-new-apptoken-field').style.display = bot.platform === 'slack' ? '' : 'none';
   document.getElementById('bot-new-allowed').value = (bot.allowed_user_ids || []).join(', ');
+  renderPersonaPicker(bot.persona || 'assistant');
+  refreshBotModelOptions();
   renderCanTargetCheckboxes(bot.id, bot.can_target || []);
   document.getElementById('btn-bot-create').textContent = 'Save changes';
   document.getElementById('bots').scrollIntoView({ behavior: 'smooth' });
 }
 
 async function refreshBots() {
-  const tbody = document.getElementById('bots-tbody');
+  const grid = document.getElementById('bots-grid');
   if (!getToken()) {
-    tbody.innerHTML = '<tr class="emptyrow"><td colspan="5">Unlock with the dashboard token to view.</td></tr>';
+    grid.innerHTML = '<p class="cardnote">Unlock with the dashboard token to view.</p>';
     return;
   }
   let bots;
@@ -606,26 +667,48 @@ async function refreshBots() {
   } catch (_e) { return; }
   botsCache = bots;
   if (botEditingId == null) renderCanTargetCheckboxes(null, []);
-  tbody.innerHTML = bots.length ? bots.map(b => `
-    <tr>
-      <td>${esc(b.name)}</td>
-      <td class="mono">${esc(b.platform)}</td>
-      <td class="mono">${esc(b.backend)}</td>
-      <td>
+
+  grid.innerHTML = bots.length ? bots.map(b => {
+    const persona = personaMeta(b.persona);
+    const manages = (b.can_target || []).map(id => bots.find(x => x.id === id)).filter(Boolean);
+    const modelOptions = modelOptionsForBackend(b.backend);
+    const currentModel = b.model || '';
+    const modelSelectOptions = [`<option value="">(backend default)</option>`]
+      .concat(currentModel && !modelOptions.includes(currentModel) ? [`<option value="${esc(currentModel)}" selected>${esc(currentModel)} (not in live list)</option>`] : [])
+      .concat(modelOptions.map(m => `<option value="${esc(m)}" ${m === currentModel ? 'selected' : ''}>${esc(m)}</option>`))
+      .join('');
+    return `
+    <div class="botcard">
+      <div class="bc-head">
+        <div class="bc-title"><span class="bc-persona-ic" title="${esc(persona.label)}">${persona.icon}</span>${esc(b.name)}</div>
         <span class="pill"><span class="dot ${b.enabled ? 'good' : ''}"></span>${b.enabled ? 'Enabled' : 'Disabled'}</span>
+      </div>
+      <div class="bc-meta">
+        <span class="mono">${esc(b.platform)}</span> · <span class="mono">${esc(b.backend)}</span>
         <span class="pill"><span class="dot ${b.live_running ? 'good' : (b.last_error ? 'critical' : '')}"></span>${b.live_running ? 'Running' : (b.last_error ? 'Crashed' : 'Stopped')}</span>
         ${['ui', 'hermes_gateway'].includes(b.backend) ? `<span class="pill" title="Linked chat/session in the real desktop app">${b.desktop_session_key ? 'Session: ' + esc(b.desktop_session_key) : 'No session linked yet'}</span>` : ''}
-      </td>
-      <td style="white-space:nowrap;">
+      </div>
+      <div class="bc-model">
+        <label style="font-weight:600; color:var(--muted);">Model</label>
+        <select data-bot-model="${b.id}">${modelSelectOptions}</select>
+      </div>
+      ${manages.length ? `<div class="bc-manages"><span style="font-weight:600; color:var(--muted);">Manages:</span> ${manages.map(m => `<span class="chip neutral">${personaMeta(m.persona).icon} ${esc(m.name)}</span>`).join('')}</div>` : ''}
+      ${b.last_error ? `<div class="bc-error">${esc(b.last_error)}</div>` : ''}
+      <div class="bc-actions">
         <button class="btn" data-bot-edit="${b.id}" style="padding:3px 8px; font-size:11px;">Edit</button>
         <button class="btn" data-bot-toggle="${b.id}" style="padding:3px 8px; font-size:11px;">${b.enabled ? 'Disable' : 'Enable'}</button>
         ${b.enabled ? `<button class="btn" data-bot-startstop="${b.id}" style="padding:3px 8px; font-size:11px;">${b.live_running ? 'Stop' : 'Start'}</button>
         <button class="btn" data-bot-restart="${b.id}" style="padding:3px 8px; font-size:11px;">Restart</button>` : ''}
         ${['ui', 'hermes_gateway'].includes(b.backend) ? `<button class="btn" data-bot-newsession="${b.id}" style="padding:3px 8px; font-size:11px;" title="Opens a real new chat in Claude Desktop/Hermes and links it to this bot">New Session</button>` : ''}
         <button class="btn" data-bot-delete="${b.id}" style="padding:3px 8px; font-size:11px;">Delete</button>
-      </td>
-    </tr>${b.last_error ? `<tr><td colspan="5"><span class="cardnote" style="color:var(--critical);">${esc(b.name)}: ${esc(b.last_error)}</span></td></tr>` : ''}`).join('') : '<tr class="emptyrow"><td colspan="5">No bots yet — add one above.</td></tr>';
+      </div>
+    </div>`;
+  }).join('') : '<p class="cardnote">No bots yet — add one above.</p>';
 
+  document.querySelectorAll('[data-bot-model]').forEach(sel => sel.onchange = async () => {
+    const id = Number(sel.dataset.botModel);
+    await api(`/api/bots/${id}`, { method: 'PUT', body: JSON.stringify({ model: sel.value || null }) });
+  });
   document.querySelectorAll('[data-bot-edit]').forEach(btn => btn.onclick = () => {
     const bot = bots.find(b => b.id === Number(btn.dataset.botEdit));
     if (bot) _loadBotIntoForm(bot);
@@ -687,6 +770,7 @@ document.getElementById('btn-bot-create').onclick = async () => {
     platform,
     backend: document.getElementById('bot-new-backend').value,
     model: document.getElementById('bot-new-model').value.trim() || null,
+    persona: selectedPersona,
     credentials,
     allowed_user_ids,
     can_target,
@@ -1384,6 +1468,195 @@ document.getElementById('chat-input').addEventListener('keydown', (e) => {
 });
 attachSlashMenu(document.getElementById('chat-input'));
 
+// ----------------------------------------------------------- server chat
+// A permanent, bot-independent channel between this server's own devices
+// (desktop + every paired phone) — see bot/db.py's server_chat_conversations
+// comment. The desktop app is always device id 0 (db.SERVER_CHAT_DESKTOP_
+// DEVICE_ID); every message not sent by us renders as "in" regardless of
+// which other device sent it, same visual language as the platform Chat tab.
+const SERVER_CHAT_MY_DEVICE_ID = 0;
+const serverChatState = { conversations: [], activeId: null, lastId: 0 };
+let serverChatPendingFile = null;
+
+function serverChatInitials(name) {
+  return (name || '?').trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+}
+
+function renderServerChatList() {
+  const el = document.getElementById('serverchat-list');
+  if (!serverChatState.conversations.length) {
+    el.innerHTML = '<div class="chat-list-empty">No conversations yet.</div>';
+    return;
+  }
+  el.innerHTML = serverChatState.conversations.map(c => {
+    const preview = c.last_message
+      ? esc(c.last_message.text || (c.last_message.attachment_name ? '📎 ' + c.last_message.attachment_name : ''))
+      : 'No messages yet';
+    return `
+    <button class="chat-list-item ${c.id === serverChatState.activeId ? 'active' : ''}" data-serverchat-conv="${c.id}" type="button">
+      <span class="chat-list-avatar">${esc(serverChatInitials(c.title))}</span>
+      <span class="chat-list-txt">
+        <span class="chat-list-name">${esc(c.title)}</span>
+        <span class="chat-list-meta">${preview}</span>
+      </span>
+    </button>`;
+  }).join('');
+  el.querySelectorAll('[data-serverchat-conv]').forEach(btn => {
+    btn.onclick = () => activateServerChatConversation(Number(btn.dataset.serverchatConv));
+  });
+}
+
+async function refreshServerChatList() {
+  try {
+    serverChatState.conversations = await api('/api/server-chat/conversations');
+  } catch (_e) { return; }
+  renderServerChatList();
+  if (serverChatState.activeId == null && serverChatState.conversations.length) {
+    activateServerChatConversation(serverChatState.conversations[0].id);
+  }
+}
+
+function activateServerChatConversation(id) {
+  serverChatState.activeId = id;
+  serverChatState.lastId = 0;
+  document.getElementById('serverchat-panels').innerHTML = '';
+  const conv = serverChatState.conversations.find(c => c.id === id);
+  document.getElementById('serverchat-header-name').textContent = conv ? conv.title : 'Conversation';
+  document.getElementById('serverchat-header-avatar').textContent = conv ? serverChatInitials(conv.title) : '—';
+  renderServerChatList();
+  refreshServerChatMessages();
+}
+
+async function downloadServerChatAttachment(messageId, name) {
+  try {
+    const headers = {};
+    const token = getToken();
+    if (token) headers['X-Dashboard-Token'] = token;
+    const res = await fetch(API_BASE + `/api/server-chat/attachments/${messageId}`, { headers });
+    if (!res.ok) throw new Error(await res.text());
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name || 'file';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert('Download failed — check the dashboard token.');
+  }
+}
+
+function appendServerChatMessages(rows) {
+  const win = document.getElementById('serverchat-panels');
+  const atBottom = win.scrollHeight - win.scrollTop - win.clientHeight < 60;
+  rows.forEach(m => {
+    const row = document.createElement('div');
+    row.className = 'chat-row ' + (m.sender_device_id === SERVER_CHAT_MY_DEVICE_ID ? 'out' : 'in');
+    const bubble = document.createElement('div');
+    bubble.className = 'chat-bubble';
+    if (m.text) {
+      const textEl = document.createElement('div');
+      textEl.textContent = m.text;
+      bubble.appendChild(textEl);
+    }
+    if (m.attachment_path) {
+      const att = document.createElement('a');
+      att.className = 'chat-attachment';
+      att.textContent = '📎 ' + (m.attachment_name || 'file') + (m.attachment_size ? ` (${fmtBytes(m.attachment_size)})` : '');
+      att.href = '#';
+      att.onclick = (e) => { e.preventDefault(); downloadServerChatAttachment(m.id, m.attachment_name); };
+      bubble.appendChild(att);
+    }
+    const meta = document.createElement('span');
+    meta.className = 'chat-meta';
+    meta.textContent = fmtChatTime(m.ts);
+    bubble.appendChild(meta);
+    row.appendChild(bubble);
+    win.appendChild(row);
+    serverChatState.lastId = Math.max(serverChatState.lastId, m.id);
+  });
+  if (rows.length && atBottom) win.scrollTop = win.scrollHeight;
+}
+
+async function refreshServerChatMessages() {
+  if (serverChatState.activeId == null) return;
+  try {
+    const rows = await api(`/api/server-chat/messages?conversation_id=${serverChatState.activeId}&after_id=${serverChatState.lastId}&limit=200`);
+    if (rows.length) appendServerChatMessages(rows);
+  } catch (_e) { /* token not set yet, or server not ready — try again next tick */ }
+}
+
+async function sendServerChatMessage() {
+  const input = document.getElementById('serverchat-input');
+  const statusEl = document.getElementById('serverchat-status');
+  const text = input.value.trim();
+  if (!text && !serverChatPendingFile) return;
+  if (serverChatState.activeId == null) {
+    statusEl.textContent = 'Pick a conversation first.';
+    return;
+  }
+  const btn = document.getElementById('btn-serverchat-send');
+  btn.disabled = true;
+  statusEl.textContent = '';
+  try {
+    if (serverChatPendingFile) {
+      const fd = new FormData();
+      fd.append('conversation_id', serverChatState.activeId);
+      fd.append('text', text);
+      fd.append('file', serverChatPendingFile);
+      const headers = {};
+      const token = getToken();
+      if (token) headers['X-Dashboard-Token'] = token;
+      const res = await fetch(API_BASE + '/api/server-chat/send-file', { method: 'POST', headers, body: fd });
+      if (!res.ok) throw new Error(await res.text());
+      serverChatPendingFile = null;
+      document.getElementById('serverchat-file-input').value = '';
+      document.getElementById('serverchat-pending-attachment').classList.add('hidden');
+    } else {
+      await api('/api/server-chat/send', { method: 'POST', body: JSON.stringify({ conversation_id: serverChatState.activeId, text }) });
+    }
+    input.value = '';
+    await refreshServerChatMessages();
+    await refreshServerChatList();
+  } catch (e) {
+    statusEl.textContent = 'Send failed — check the dashboard token.';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('btn-serverchat-send').onclick = sendServerChatMessage;
+document.getElementById('serverchat-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendServerChatMessage();
+  }
+});
+document.getElementById('btn-serverchat-attach').onclick = () => document.getElementById('serverchat-file-input').click();
+document.getElementById('serverchat-file-input').onchange = (e) => {
+  serverChatPendingFile = e.target.files[0] || null;
+  const box = document.getElementById('serverchat-pending-attachment');
+  if (serverChatPendingFile) {
+    document.getElementById('serverchat-pending-name').textContent = serverChatPendingFile.name;
+    box.classList.remove('hidden');
+  } else {
+    box.classList.add('hidden');
+  }
+};
+document.getElementById('btn-serverchat-attach-clear').onclick = () => {
+  serverChatPendingFile = null;
+  document.getElementById('serverchat-file-input').value = '';
+  document.getElementById('serverchat-pending-attachment').classList.add('hidden');
+};
+
+function startServerChatPolling() {
+  refreshServerChatList();
+  setInterval(refreshServerChatMessages, 2000);
+  setInterval(refreshServerChatList, 15000);
+}
+
 // --------------------------------------------------------------- sessions
 const sessionsState = { list: [], activeId: null };
 
@@ -1821,8 +2094,17 @@ async function refreshTrainingInstructions() {
     <div class="wizard-field" style="margin-top:${bots.indexOf(b) === 0 ? '0' : '14px'};">
       <label>${esc(b.name)} <span style="font-weight:400; color:var(--muted);">(${esc(b.platform)}/${esc(b.backend)})</span></label>
       <div class="row"><textarea data-instructions-for="${b.id}" rows="3" style="width:100%; font-family:var(--font-body); padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink);" placeholder="e.g. Always answer in a formal tone and cite sources when possible.">${esc(b.custom_instructions || '')}</textarea></div>
-      <div class="row" style="margin-top:6px;"><button class="btn primary" data-instructions-save="${b.id}" style="padding:5px 12px; font-size:12px;">Save</button><span class="cardnote" id="instructions-status-${b.id}"></span></div>
+      <div class="row" style="margin-top:6px;">
+        <button class="btn primary" data-instructions-save="${b.id}" style="padding:5px 12px; font-size:12px;">Save</button>
+        ${personaMeta(b.persona).instructions ? `<button class="btn" data-instructions-preset="${b.id}" style="padding:5px 12px; font-size:12px;" title="Fill in with this bot's ${esc(personaMeta(b.persona).label)} persona's default instructions">Insert ${esc(personaMeta(b.persona).label)} preset</button>` : ''}
+        <span class="cardnote" id="instructions-status-${b.id}"></span>
+      </div>
     </div>`).join('');
+  document.querySelectorAll('[data-instructions-preset]').forEach(btn => btn.onclick = () => {
+    const id = btn.dataset.instructionsPreset;
+    const bot = botsCache.find(b => String(b.id) === String(id));
+    if (bot) document.querySelector(`[data-instructions-for="${id}"]`).value = personaMeta(bot.persona).instructions || '';
+  });
   document.querySelectorAll('[data-instructions-save]').forEach(btn => btn.onclick = async () => {
     const id = btn.dataset.instructionsSave;
     const textarea = document.querySelector(`[data-instructions-for="${id}"]`);

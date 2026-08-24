@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.botserver.mobile.data.BotsRepository
 import com.botserver.mobile.data.dto.BotInstance
+import com.botserver.mobile.data.dto.PersonaPreset
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,6 +18,7 @@ data class BotForm(
     val platform: String = "telegram",
     val backend: String = "cli",
     val model: String = "",
+    val persona: String = "assistant",
     val botToken: String = "",
     val appToken: String = "",
     val allowedIds: String = "",
@@ -29,6 +31,7 @@ data class BotForm(
 
 data class BotsUiState(
     val bots: List<BotInstance> = emptyList(),
+    val personas: List<PersonaPreset> = emptyList(),
     val error: String? = null,
     val form: BotForm? = null,
     val busyId: Int? = null,
@@ -45,6 +48,11 @@ class BotsViewModel @Inject constructor(private val repository: BotsRepository) 
             runCatching { repository.list() }
                 .onSuccess { list -> _uiState.update { it.copy(bots = list, error = null) } }
                 .onFailure { e -> _uiState.update { it.copy(error = e.message) } }
+        }
+        if (_uiState.value.personas.isEmpty()) {
+            viewModelScope.launch {
+                runCatching { repository.personas() }.onSuccess { list -> _uiState.update { it.copy(personas = list) } }
+            }
         }
     }
 
@@ -93,6 +101,7 @@ class BotsViewModel @Inject constructor(private val repository: BotsRepository) 
                     platform = bot.platform,
                     backend = bot.backend,
                     model = bot.model ?: "",
+                    persona = bot.persona,
                     botToken = bot.credentials.botToken ?: "",
                     appToken = bot.credentials.appToken ?: "",
                     allowedIds = bot.allowedUserIds.joinToString(", "),
@@ -131,6 +140,7 @@ class BotsViewModel @Inject constructor(private val repository: BotsRepository) 
                         platform = form.platform,
                         backend = form.backend,
                         model = form.model,
+                        persona = form.persona,
                         botToken = form.botToken,
                         appToken = form.appToken,
                         allowedUserIds = allowedIds,
@@ -142,6 +152,7 @@ class BotsViewModel @Inject constructor(private val repository: BotsRepository) 
                         platform = form.platform,
                         backend = form.backend,
                         model = form.model,
+                        persona = form.persona,
                         botToken = form.botToken,
                         appToken = form.appToken,
                         allowedUserIds = allowedIds,

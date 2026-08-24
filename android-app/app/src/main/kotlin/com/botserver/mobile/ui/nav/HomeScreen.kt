@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
@@ -27,6 +28,7 @@ import com.botserver.mobile.ui.bots.BotsScreen
 import com.botserver.mobile.ui.chat.ChatScreen
 import com.botserver.mobile.ui.devices.DevicesScreen
 import com.botserver.mobile.ui.jobs.JobsScreen
+import com.botserver.mobile.ui.serverchat.ServerChatScreen
 import com.botserver.mobile.ui.sessions.SessionsScreen
 import com.botserver.mobile.ui.settings.SettingsScreen
 import com.botserver.mobile.ui.support.SupportBotScreen
@@ -35,6 +37,7 @@ private data class Tab(val route: String, val label: String, val icon: androidx.
 
 private val tabs = listOf(
     Tab("chat", "Chat", Icons.Filled.Chat),
+    Tab("server-chat", "Server Chat", Icons.Filled.Dns),
     Tab("support", "Support", Icons.Filled.SupportAgent),
     Tab("sessions", "Sessions", Icons.Filled.Folder),
     Tab("jobs", "Jobs", Icons.Filled.List),
@@ -43,7 +46,7 @@ private val tabs = listOf(
     Tab("devices", "Devices", Icons.Filled.Devices),
 )
 
-/** The paired-in-app shell — seven tabs, matching the dashboard's Chat /
+/** The paired-in-app shell — matching the dashboard's Chat / Server Chat /
  * Support Bot / Sessions / Jobs / Bots / Control Center tabs this Android
  * app mirrors, plus Devices for onboarding new devices from this one. */
 @Composable
@@ -78,6 +81,7 @@ fun HomeScreen() {
             modifier = Modifier.padding(padding),
         ) {
             composable("chat") { ChatScreen() }
+            composable("server-chat") { ServerChatScreen() }
             composable("support") { SupportBotScreen() }
             composable("sessions") { SessionsScreen() }
             composable("jobs") { JobsScreen() }

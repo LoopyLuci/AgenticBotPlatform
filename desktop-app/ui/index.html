@@ -326,6 +326,24 @@
   .wizard-foot { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:6px; padding-top:16px; border-top:1px solid var(--line); flex-wrap:wrap; }
   .wizard-foot .cardnote { max-width:280px; }
 
+  .persona-pick { display:flex; gap:8px; flex-wrap:wrap; }
+  .persona-opt { display:flex; align-items:center; gap:6px; padding:7px 12px; border-radius:9px; box-shadow:0 0 0 1px var(--line) inset; background:var(--surface); color:var(--ink-soft); font-size:12.5px; font-weight:600; cursor:pointer; user-select:none; }
+  .persona-opt .ic { font-size:14px; }
+  .persona-opt.active { box-shadow:0 0 0 1.5px var(--accent, #6d5efc) inset; color:var(--ink); }
+
+  .botgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:12px; margin-top:10px; }
+  .botcard { border-radius:12px; padding:14px; background:var(--surface); box-shadow:0 0 0 1px var(--line) inset; display:flex; flex-direction:column; gap:9px; }
+  .botcard .bc-head { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+  .botcard .bc-title { display:flex; align-items:center; gap:8px; font-weight:700; font-size:13.5px; }
+  .botcard .bc-persona-ic { font-size:18px; line-height:1; }
+  .botcard .bc-meta { font-size:11.5px; color:var(--muted); display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  .botcard .bc-manages { font-size:11.5px; color:var(--ink-soft); display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
+  .botcard .bc-manages .chip.neutral { font-weight:600; }
+  .botcard .bc-model { font-size:11.5px; }
+  .botcard .bc-model select { width:100%; padding:5px 8px; border-radius:6px; box-shadow:0 0 0 1px var(--line) inset; background:var(--surface-2); color:var(--ink); font-family:var(--font-mono); font-size:11.5px; border:none; }
+  .botcard .bc-actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:auto; padding-top:8px; border-top:1px solid var(--line); }
+  .botcard .bc-error { font-size:11px; color:var(--critical); }
+
   /* boot panel — a small floating status/log drawer for the Python process
      the Tauri shell spawns, NOT a full-screen takeover: the dashboard shell
      underneath is always visible and usable, even while the backend is
@@ -451,6 +469,7 @@
       <a href="#resilience" data-kw="resilience hot reload health"><span class="ic">↻</span><span class="nav-txt"><b>Resilience</b><small>Hot reload &amp; health checks</small></span></a>
       <a href="#logs" data-kw="live logs streaming tail"><span class="ic">▦</span><span class="nav-txt"><b>Live Logs</b><small>Streaming tail</small></span></a>
       <a href="#chat" data-kw="chat message conversation"><span class="ic">💬</span><span class="nav-txt"><b>Chat</b><small>Talk to any connected bot</small></span></a>
+      <a href="#server-chat" data-kw="server chat devices files desktop android"><span class="ic">🖥</span><span class="nav-txt"><b>Server Chat</b><small>Message &amp; send files between devices</small></span></a>
       <a href="#support-bot" data-kw="support bot assistant ai help manage local"><span class="ic">🛟</span><span class="nav-txt"><b>Support Bot</b><small>Local assistant for server management</small></span></a>
       <a href="#training" data-kw="training model health phrases custom instructions"><span class="ic">🎓</span><span class="nav-txt"><b>Training</b><small>Support Bot phrases &amp; bot instructions</small></span></a>
       <a href="#sessions" data-kw="sessions past conversations"><span class="ic">🗂</span><span class="nav-txt"><b>Sessions</b><small>Past conversations</small></span></a>
@@ -796,6 +815,37 @@
       </div>
     </section>
 
+    <section id="server-chat">
+      <div class="sec-head"><h2>Server Chat</h2><span class="desc">A permanent channel between this server's own devices — the desktop app and every paired phone — for sending messages and files directly between them, no bot involved</span></div>
+      <div class="card chat-card">
+        <div class="chat-shell">
+          <div class="chat-list-pane">
+            <div class="chat-list" id="serverchat-list"><p class="cardnote" style="padding:0 12px;">Unlock with the dashboard token to view.</p></div>
+          </div>
+          <div class="chat-convo-pane">
+            <div class="chat-convo-header">
+              <span class="chat-avatar" id="serverchat-header-avatar">—</span>
+              <div class="chat-header-txt">
+                <div class="chat-header-name" id="serverchat-header-name">Select a conversation</div>
+              </div>
+            </div>
+            <div class="chat-panels" id="serverchat-panels"></div>
+            <div class="chat-pending-attachment hidden" id="serverchat-pending-attachment">
+              <span id="serverchat-pending-name"></span>
+              <button class="btn" id="btn-serverchat-attach-clear">✕</button>
+            </div>
+            <div class="chat-composer">
+              <textarea id="serverchat-input" placeholder="Message…" rows="1"></textarea>
+              <button class="btn" id="btn-serverchat-attach" title="Attach file">📎</button>
+              <input type="file" id="serverchat-file-input" hidden>
+              <button class="btn primary" id="btn-serverchat-send" title="Send">➤</button>
+            </div>
+            <div class="cardnote" id="serverchat-status"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section id="support-bot">
       <div class="sec-head"><h2>Support Bot</h2><span class="desc">A small assistant built directly into BotServer — no external model, no internet call, just this app's own local classifier wired to the same status/backend/model/MCP/bot/desktop actions the dashboard already has.</span></div>
       <div class="card chat-card">
@@ -908,9 +958,14 @@
         </div>
         <div class="wizard-field" id="bot-new-model-field">
           <label>Model override (optional)</label>
-          <div class="help">Leave blank to use this backend's configured default. Applies to api/hermes_cli/hermes_gateway only.</div>
+          <div class="help">Leave blank to use this backend's configured default. Options are live models actually available to this backend.</div>
           <div class="row"><input type="text" id="bot-new-model" list="bot-new-model-options" placeholder="e.g. claude-opus-5" autocomplete="off" spellcheck="false"></div>
           <datalist id="bot-new-model-options"></datalist>
+        </div>
+        <div class="wizard-field">
+          <label>Persona</label>
+          <div class="help" id="bot-new-persona-desc">General-purpose helper for whoever messages this bot.</div>
+          <div class="row" id="bot-new-persona-list"></div>
         </div>
         <div class="wizard-field">
           <label>Bot token</label>
@@ -925,9 +980,9 @@
           <div class="help">Comma-separated. Numeric IDs for Telegram/Discord, Slack member IDs (U.../W...) for Slack.</div>
           <div class="row"><input type="text" id="bot-new-allowed" placeholder="123456789, 987654321" autocomplete="off" spellcheck="false"></div>
         </div>
-        <div class="wizard-field hidden" id="bot-new-cantarget-field">
-          <label>Can target</label>
-          <div class="help">Under Control Center's "Allowlist" agent-control mode, this bot may only ask/command the instances checked below.</div>
+        <div class="wizard-field" id="bot-new-cantarget-field">
+          <label id="bot-new-cantarget-label">Manages / can target</label>
+          <div class="help" id="bot-new-cantarget-help">Bots this one manages as assistants. Under Control Center's "Allowlist" agent-control mode, this also restricts which instances it may command.</div>
           <div class="row" id="bot-new-cantarget-list"></div>
         </div>
         <div class="wizard-foot">
@@ -938,12 +993,7 @@
 
       <div class="card" style="margin-top:14px;">
         <h3>Configured bots</h3>
-        <div class="tablewrap" style="margin-top:6px;">
-          <table>
-            <thead><tr><th>Name</th><th>Platform</th><th>Backend</th><th>Enabled</th><th></th></tr></thead>
-            <tbody id="bots-tbody"><tr class="emptyrow"><td colspan="5">Unlock with the dashboard token to view.</td></tr></tbody>
-          </table>
-        </div>
+        <div class="botgrid" id="bots-grid"></div>
       </div>
 
       <div class="card" style="margin-top:14px;">

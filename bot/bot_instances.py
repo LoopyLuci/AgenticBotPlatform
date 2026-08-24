@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from bot import db, envfile
+from bot.personas import DEFAULT_PERSONA
 from bot.validators import PLATFORM_TOKEN_VALIDATORS, validate_user_ids
 
 PLATFORMS = ("telegram", "discord", "slack")
@@ -106,6 +107,7 @@ def create_instance(
     enabled: bool = True,
     model: Optional[str] = None,
     custom_instructions: Optional[str] = None,
+    persona: Optional[str] = None,
     actor: str = "dashboard",
 ) -> int:
     name = (name or "").strip()
@@ -119,8 +121,8 @@ def create_instance(
         try:
             cur = conn.execute(
                 "INSERT INTO bot_instances "
-                "(name, platform, backend, enabled, credentials, allowed_user_ids, action_overrides, can_target, model, custom_instructions, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "(name, platform, backend, enabled, credentials, allowed_user_ids, action_overrides, can_target, model, custom_instructions, persona, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     name,
                     platform,
@@ -132,6 +134,7 @@ def create_instance(
                     json.dumps(can_target or []),
                     model or None,
                     (custom_instructions or "").strip() or None,
+                    (persona or "").strip() or DEFAULT_PERSONA,
                     _now(),
                     _now(),
                 ),
@@ -162,7 +165,7 @@ def update_instance(instance_id: int, actor: str = "dashboard", **fields: Any) -
 
     columns: list[str] = []
     params: list[Any] = []
-    for key in ("name", "platform", "backend", "enabled", "model", "custom_instructions"):
+    for key in ("name", "platform", "backend", "enabled", "model", "custom_instructions", "persona"):
         if key in fields:
             columns.append(f"{key}=?")
             params.append(1 if key == "enabled" and fields[key] else (0 if key == "enabled" else fields[key]))
@@ -306,12 +309,13 @@ def restore_backup(name: str, actor: str = "dashboard") -> None:
             conn.execute(
                 "INSERT INTO bot_instances "
                 "(id, name, platform, backend, enabled, credentials, allowed_user_ids, action_overrides, can_target, model, "
-                "created_at, updated_at, last_started_at, last_error) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "persona, created_at, updated_at, last_started_at, last_error) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     row["id"], row["name"], row["platform"], row["backend"], row["enabled"],
                     row["credentials"], row["allowed_user_ids"], row["action_overrides"], row.get("can_target", "[]"),
                     row.get("model"),
+                    row.get("persona") or "assistant",
                     row["created_at"], row["updated_at"], row.get("last_started_at"), row.get("last_error"),
                 ),
             )

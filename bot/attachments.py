@@ -96,15 +96,18 @@ def create_upload_session(
     filename: str,
     total_size: int,
     mime: Optional[str],
-    instance_id: int,
-    chat_id: str,
-    text: str,
     max_bytes: int,
+    **context: Any,
 ) -> dict[str, Any]:
     """Registers a new chunked upload and returns the session id + the
     chunk size the client should send. Raises ValueError if the declared
     size already exceeds the configured ceiling — reject before a single
-    byte is transferred, not partway through."""
+    byte is transferred, not partway through.
+
+    `context` is opaque here — whatever the caller passes (e.g.
+    instance_id/chat_id/text for a platform chat send, or conversation_id
+    for a Server Chat send) comes back unchanged from assemble_upload(),
+    so this module never needs to know about either caller's shape."""
     if total_size <= 0:
         raise ValueError("total_size must be positive")
     if total_size > max_bytes:
@@ -118,9 +121,7 @@ def create_upload_session(
             "filename": filename,
             "mime": mime,
             "total_size": total_size,
-            "instance_id": instance_id,
-            "chat_id": chat_id,
-            "text": text,
+            "context": context,
             "chunk_dir": chunk_dir,
             "created_at": time.time(),
         }
@@ -184,7 +185,5 @@ def assemble_upload(session_id: str) -> dict[str, Any]:
         "display_name": display_name,
         "mime": session["mime"],
         "size": total,
-        "instance_id": session["instance_id"],
-        "chat_id": session["chat_id"],
-        "text": session["text"],
+        **session["context"],
     }

@@ -217,6 +217,25 @@ def _caller_thread_identity(
     raise HTTPException(status_code=401, detail="invalid dashboard token or api key")
 
 
+def _require_device_id(x_dashboard_token: Optional[str] = Header(default=None)) -> int:
+    """Resolves the caller to a Server Chat device id: 0 (the reserved
+    desktop sentinel — see db.SERVER_CHAT_DESKTOP_DEVICE_ID) for the
+    desktop's own DASHBOARD_TOKEN, or the caller's own api_keys.id for a
+    paired phone's mobile key. Used only by /api/server-chat/* — every
+    other mobile-reachable route treats "desktop or any paired device"
+    as one undifferentiated tier (_require_token_or_api_key); Server Chat
+    is the one place that actually needs to know *which* device is asking."""
+    expected = os.environ.get("DASHBOARD_TOKEN")
+    if expected and x_dashboard_token == expected:
+        return db.SERVER_CHAT_DESKTOP_DEVICE_ID
+    key_id = db.verify_api_key(x_dashboard_token or "")
+    if key_id is not None:
+        return key_id
+    if not expected:
+        raise HTTPException(status_code=503, detail="DASHBOARD_TOKEN is not set in .env")
+    raise HTTPException(status_code=401, detail="invalid dashboard token or api key")
+
+
 def _require_mobile_key_id(x_dashboard_token: Optional[str] = Header(default=None)) -> int:
     """Used only by /api/push/register — a push registration is meaningless
     without knowing which device's api_keys row to attach the FCM token to,
@@ -374,6 +393,12 @@ def build_app() -> FastAPI:
             },
         }
 
+    @app.get("/api/personas")
+    async def api_personas():
+        from bot.personas import list_personas
+
+        return list_personas()
+
     @app.get("/api/mcp")
     async def api_mcp():
         return desktop.list_mcp_servers()
@@ -522,9 +547,11 @@ def build_app() -> FastAPI:
                 credentials=payload.get("credentials") or {},
                 allowed_user_ids=payload.get("allowed_user_ids") or [],
                 action_overrides=payload.get("action_overrides") or {},
+                can_target=payload.get("can_target") or [],
                 enabled=bool(payload.get("enabled", True)),
                 model=payload.get("model") or None,
                 custom_instructions=payload.get("custom_instructions") or None,
+                persona=payload.get("persona") or None,
                 actor="dashboard",
             )
         except bot_instances.ValidationError as exc:
@@ -545,7 +572,7 @@ def build_app() -> FastAPI:
         fields = {
             k: v
             for k, v in payload.items()
-            if k in ("name", "platform", "backend", "enabled", "credentials", "allowed_user_ids", "action_overrides", "can_target", "model", "custom_instructions")
+            if k in ("name", "platform", "backend", "enabled", "credentials", "allowed_user_ids", "action_overrides", "can_target", "model", "custom_instructions", "persona")
         }
         try:
             bot_instances.update_instance(instance_id, actor="dashboard", **fields)
@@ -1114,7 +1141,8 @@ def build_app() -> FastAPI:
             raise HTTPException(status_code=404, detail=f"bot instance {instance_id} not found")
         try:
             session = attachments.create_upload_session(
-                filename, total_size, mime, int(instance_id), str(chat_id), text, MAX_ATTACHMENT_BYTES
+                filename, total_size, mime, MAX_ATTACHMENT_BYTES,
+                instance_id=int(instance_id), chat_id=str(chat_id), text=text,
             )
         except ValueError as exc:
             raise HTTPException(status_code=413, detail=str(exc))
@@ -1200,6 +1228,145 @@ def build_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="thumbnail file missing")
         return FileResponse(full_path, media_type="image/jpeg")
 
+    # -------------------------------------------------------- server chat --
+    # A permanent, bot-independent messaging/file channel between the
+    # devices themselves — the desktop app and every paired Android phone —
+    # separate from the platform-facing /api/chat/* routes above (those go
+    # through a bot_instance and an external platform SDK; this never
+    # does). One shared "Server Chat" group room plus a private 1:1 with
+    # every other device, auto-opened the moment a device is paired — see
+    # bot/db.py's server_chat_conversations comment and
+    # create_conversations_for_new_device().
+
+    @app.get("/api/server-chat/whoami")
+    async def api_server_chat_whoami(device_id: int = Depends(_require_device_id)):
+        return {"device_id": device_id}
+
+    @app.get("/api/server-chat/conversations")
+    async def api_server_chat_conversations(device_id: int = Depends(_require_device_id)):
+        return db.list_server_chat_conversations(device_id)
+
+    @app.get("/api/server-chat/messages")
+    async def api_server_chat_messages(
+        conversation_id: int,
+        after_id: int = 0,
+        limit: int = 100,
+        device_id: int = Depends(_require_device_id),
+    ):
+        if not db.is_conversation_participant(conversation_id, device_id):
+            raise HTTPException(status_code=404, detail="no such conversation")
+        return [dict(r) for r in db.list_server_chat_messages(conversation_id, after_id=after_id, limit=limit)]
+
+    @app.post("/api/server-chat/send")
+    async def api_server_chat_send(payload: dict = Body(...), device_id: int = Depends(_require_device_id)):
+        conversation_id = payload.get("conversation_id")
+        text = (payload.get("text") or "").strip()
+        if not isinstance(conversation_id, int) or not text:
+            raise HTTPException(status_code=400, detail="payload must be {conversation_id: <int>, text: <str>}")
+        if not db.is_conversation_participant(conversation_id, device_id):
+            raise HTTPException(status_code=404, detail="no such conversation")
+        msg_id = db.create_server_chat_message(conversation_id, device_id, text)
+        return {"ok": True, "id": msg_id}
+
+    @app.post("/api/server-chat/send-file")
+    async def api_server_chat_send_file(
+        conversation_id: int = Form(...),
+        text: str = Form(""),
+        file: UploadFile = File(...),
+        device_id: int = Depends(_require_device_id),
+    ):
+        if not db.is_conversation_participant(conversation_id, device_id):
+            raise HTTPException(status_code=404, detail="no such conversation")
+        try:
+            rel_path, orig_name = await attachments.safe_store_stream(file.filename, file, MAX_ATTACHMENT_BYTES)
+        except ValueError as exc:
+            raise HTTPException(status_code=413, detail=str(exc))
+        mime = file.content_type or mimetypes.guess_type(orig_name)[0]
+        size = (attachments.ATTACHMENTS_DIR / rel_path).stat().st_size
+        thumb_path = await asyncio.get_running_loop().run_in_executor(
+            None, thumbnails.generate_thumbnail, attachments.ATTACHMENTS_DIR / rel_path, mime, attachments.THUMBS_DIR
+        )
+        msg_id = db.create_server_chat_message(
+            conversation_id, device_id, (text or "").strip(),
+            attachment_path=rel_path, attachment_name=orig_name, attachment_mime=mime,
+            attachment_size=size, thumbnail_path=thumb_path.name if thumb_path else None,
+        )
+        return {"ok": True, "id": msg_id}
+
+    @app.post("/api/server-chat/uploads/init")
+    async def api_server_chat_uploads_init(payload: dict = Body(...), device_id: int = Depends(_require_device_id)):
+        conversation_id = payload.get("conversation_id")
+        filename = payload.get("filename") or "file"
+        total_size = int(payload.get("total_size") or 0)
+        mime = payload.get("mime")
+        text = (payload.get("text") or "").strip()
+        if not isinstance(conversation_id, int):
+            raise HTTPException(status_code=400, detail="payload must include conversation_id")
+        if not db.is_conversation_participant(conversation_id, device_id):
+            raise HTTPException(status_code=404, detail="no such conversation")
+        try:
+            session = attachments.create_upload_session(
+                filename, total_size, mime, MAX_ATTACHMENT_BYTES,
+                conversation_id=conversation_id, sender_device_id=device_id, text=text,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=413, detail=str(exc))
+        return session
+
+    @app.put("/api/server-chat/uploads/{session_id}/chunk/{index}")
+    async def api_server_chat_uploads_chunk(session_id: str, index: int, request: Request, device_id: int = Depends(_require_device_id)):
+        try:
+            await attachments.write_chunk(session_id, index, request)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="unknown or expired upload session")
+        return {"ok": True}
+
+    @app.post("/api/server-chat/uploads/{session_id}/complete")
+    async def api_server_chat_uploads_complete(session_id: str, device_id: int = Depends(_require_device_id)):
+        try:
+            assembled = await asyncio.get_running_loop().run_in_executor(
+                None, attachments.assemble_upload, session_id
+            )
+        except KeyError:
+            raise HTTPException(status_code=404, detail="unknown or expired upload session")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        conversation_id = assembled["conversation_id"]
+        rel_path = assembled["rel_path"]
+        display_name = assembled["display_name"]
+        mime = assembled["mime"]
+        size = assembled["size"]
+        text = assembled["text"]
+        thumb_path = await asyncio.get_running_loop().run_in_executor(
+            None, thumbnails.generate_thumbnail, attachments.ATTACHMENTS_DIR / rel_path, mime, attachments.THUMBS_DIR
+        )
+        msg_id = db.create_server_chat_message(
+            conversation_id, assembled["sender_device_id"], text,
+            attachment_path=rel_path, attachment_name=display_name, attachment_mime=mime,
+            attachment_size=size, thumbnail_path=thumb_path.name if thumb_path else None,
+        )
+        return {"ok": True, "id": msg_id}
+
+    @app.get("/api/server-chat/attachments/{message_id}")
+    async def api_server_chat_attachment(message_id: int, device_id: int = Depends(_require_device_id)):
+        row = db.get_server_chat_message(message_id)
+        if row is None or not row["attachment_path"] or not db.is_conversation_participant(row["conversation_id"], device_id):
+            raise HTTPException(status_code=404, detail="no such attachment")
+        full_path = attachments.ATTACHMENTS_DIR / row["attachment_path"]
+        if not full_path.resolve().is_relative_to(attachments.ATTACHMENTS_DIR.resolve()) or not full_path.is_file():
+            raise HTTPException(status_code=404, detail="attachment file missing")
+        return FileResponse(full_path, media_type=row["attachment_mime"] or "application/octet-stream", filename=row["attachment_name"] or full_path.name)
+
+    @app.get("/api/server-chat/attachments/{message_id}/thumbnail")
+    async def api_server_chat_attachment_thumbnail(message_id: int, device_id: int = Depends(_require_device_id)):
+        row = db.get_server_chat_message(message_id)
+        if row is None or not row["thumbnail_path"] or not db.is_conversation_participant(row["conversation_id"], device_id):
+            raise HTTPException(status_code=404, detail="no such thumbnail")
+        full_path = attachments.THUMBS_DIR / row["thumbnail_path"]
+        if not full_path.resolve().is_relative_to(attachments.THUMBS_DIR.resolve()) or not full_path.is_file():
+            raise HTTPException(status_code=404, detail="thumbnail file missing")
+        return FileResponse(full_path, media_type="image/jpeg")
+
     @app.get("/api/sessions", dependencies=[Depends(_require_token_or_api_key)])
     async def api_sessions(
         instance_id: Optional[int] = None,
@@ -1269,6 +1436,7 @@ def build_app() -> FastAPI:
     async def api_mobile_keys_create(payload: dict = Body(...), caller: str = Depends(_identify_caller)):
         label = (payload.get("label") or "").strip() or "Unnamed device"
         key_id, plaintext = db.create_api_key(label)
+        db.create_conversations_for_new_device(key_id)
         host = (payload.get("host") or "").strip()
         # host2 is an optional second, independent path to the same server
         # (e.g. a Tailscale hostname alongside a LAN IP) — the Android app

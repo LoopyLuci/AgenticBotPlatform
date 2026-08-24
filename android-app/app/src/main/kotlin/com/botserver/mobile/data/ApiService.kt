@@ -13,6 +13,12 @@ import com.botserver.mobile.data.dto.JobSummary
 import com.botserver.mobile.data.dto.ModelsResponse
 import com.botserver.mobile.data.dto.OkResponse
 import com.botserver.mobile.data.dto.PendingApkResponse
+import com.botserver.mobile.data.dto.PersonaPreset
+import com.botserver.mobile.data.dto.ServerChatConversation
+import com.botserver.mobile.data.dto.ServerChatMessage
+import com.botserver.mobile.data.dto.ServerChatSendRequest
+import com.botserver.mobile.data.dto.ServerChatSendResponse
+import com.botserver.mobile.data.dto.ServerChatWhoAmI
 import com.botserver.mobile.data.dto.RegisterPushTokenRequest
 import com.botserver.mobile.data.dto.SendMessageRequest
 import com.botserver.mobile.data.dto.SendToBotRequest
@@ -25,13 +31,16 @@ import com.botserver.mobile.data.dto.SupportBotReply
 import com.botserver.mobile.data.dto.UploadCompleteResponse
 import com.botserver.mobile.data.dto.UploadInitRequest
 import com.botserver.mobile.data.dto.UploadInitResponse
+import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Multipart
 import retrofit2.http.POST
 import retrofit2.http.PUT
+import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
 import retrofit2.http.Streaming
@@ -100,6 +109,38 @@ interface ApiService {
     @GET("/api/android/apk/download/{pushId}")
     suspend fun downloadApk(@Path("pushId") pushId: Int): ResponseBody
 
+    // ---------------------------------------------------------- server chat
+    // A permanent, bot-independent channel between this server's own
+    // devices (desktop + every paired phone) — see bot/db.py's
+    // server_chat_conversations table comment.
+    @GET("/api/server-chat/whoami")
+    suspend fun serverChatWhoAmI(): ServerChatWhoAmI
+
+    @GET("/api/server-chat/conversations")
+    suspend fun serverChatConversations(): List<ServerChatConversation>
+
+    @GET("/api/server-chat/messages")
+    suspend fun serverChatMessages(
+        @Query("conversation_id") conversationId: Int,
+        @Query("after_id") afterId: Int = 0,
+        @Query("limit") limit: Int = 200,
+    ): List<ServerChatMessage>
+
+    @POST("/api/server-chat/send")
+    suspend fun serverChatSend(@Body request: ServerChatSendRequest): ServerChatSendResponse
+
+    @Multipart
+    @POST("/api/server-chat/send-file")
+    suspend fun serverChatSendFile(
+        @Part("conversation_id") conversationId: RequestBody,
+        @Part("text") text: RequestBody,
+        @Part file: MultipartBody.Part,
+    ): ServerChatSendResponse
+
+    @Streaming
+    @GET("/api/server-chat/attachments/{messageId}")
+    suspend fun downloadServerChatAttachment(@Path("messageId") messageId: Int): ResponseBody
+
     @GET("/api/sessions")
     suspend fun sessions(
         @Query("instance_id") instanceId: Int? = null,
@@ -158,6 +199,9 @@ interface ApiService {
 
     @GET("/api/models")
     suspend fun models(): ModelsResponse
+
+    @GET("/api/personas")
+    suspend fun personas(): List<PersonaPreset>
 
     @POST("/api/config/set")
     suspend fun setConfig(@Body request: ConfigSetRequest): OkResponse

@@ -239,6 +239,24 @@
   .wizard-field .msg.bad { color:var(--critical); }
   .wizard-foot { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:6px; padding-top:16px; border-top:1px solid var(--line); flex-wrap:wrap; }
   .wizard-foot .cardnote { max-width:280px; }
+
+  .persona-pick { display:flex; gap:8px; flex-wrap:wrap; }
+  .persona-opt { display:flex; align-items:center; gap:6px; padding:7px 12px; border-radius:9px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink-soft); font-size:12.5px; font-weight:600; cursor:pointer; user-select:none; }
+  .persona-opt .ic { font-size:14px; }
+  .persona-opt.active { border-color:var(--accent, #6d5efc); background:var(--surface-3, var(--surface-2)); color:var(--ink); box-shadow:0 0 0 1px var(--accent, #6d5efc) inset; }
+
+  .botgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:12px; margin-top:10px; }
+  .botcard { border:1px solid var(--line); border-radius:12px; padding:14px; background:var(--surface-2); display:flex; flex-direction:column; gap:9px; }
+  .botcard .bc-head { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+  .botcard .bc-title { display:flex; align-items:center; gap:8px; font-weight:700; font-size:13.5px; }
+  .botcard .bc-persona-ic { font-size:18px; line-height:1; }
+  .botcard .bc-meta { font-size:11.5px; color:var(--muted); display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  .botcard .bc-manages { font-size:11.5px; color:var(--ink-soft); display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
+  .botcard .bc-manages .chip.neutral { font-weight:600; }
+  .botcard .bc-model { font-size:11.5px; }
+  .botcard .bc-model select { width:100%; padding:5px 8px; border-radius:6px; border:1px solid var(--line); background:var(--surface); color:var(--ink); font-family:var(--font-mono); font-size:11.5px; }
+  .botcard .bc-actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:auto; padding-top:8px; border-top:1px solid var(--line); }
+  .botcard .bc-error { font-size:11px; color:var(--critical); }
 </style>
 </head>
 <body>
@@ -291,6 +309,7 @@
       <a href="#resilience"><span class="ic">↻</span>Resilience</a>
       <a href="#logs"><span class="ic">▦</span>Live Logs</a>
       <a href="#chat"><span class="ic">💬</span>Chat</a>
+      <a href="#server-chat"><span class="ic">🖥</span>Server Chat</a>
       <a href="#support"><span class="ic">🛟</span>Support Bot</a>
       <a href="#sessions"><span class="ic">🗂</span>Sessions</a>
       <a href="#bots"><span class="ic">🤖</span>Bots</a>
@@ -615,6 +634,28 @@
       </div>
     </section>
 
+    <section id="server-chat">
+      <div class="sec-head"><h2>Server Chat</h2><span class="desc">A permanent channel between this server's own devices — the desktop app and every paired phone — for sending messages and files directly between them, no bot involved</span></div>
+      <div class="card chat-card">
+        <div class="chat-toolbar">
+          <label for="serverchat-conversation" class="chat-toolbar-label">Conversation</label>
+          <select id="serverchat-conversation"></select>
+        </div>
+        <div class="chat-window" id="serverchat-window"></div>
+        <div class="chat-pending-attachment hidden" id="serverchat-pending-attachment">
+          <span id="serverchat-pending-name"></span>
+          <button class="btn" id="btn-serverchat-attach-clear">✕</button>
+        </div>
+        <div class="chat-composer">
+          <textarea id="serverchat-input" placeholder="Message…" rows="1"></textarea>
+          <button class="btn" id="btn-serverchat-attach" title="Attach file">📎</button>
+          <input type="file" id="serverchat-file-input" hidden>
+          <button class="btn primary" id="btn-serverchat-send">Send</button>
+        </div>
+        <div class="cardnote" id="serverchat-status"></div>
+      </div>
+    </section>
+
     <section id="support">
       <div class="sec-head"><h2>Support Bot</h2><span class="desc">A local, dependency-free assistant for managing this server — plain English or slash commands, same engine the Android app's Support tab uses</span></div>
       <div class="card chat-card">
@@ -686,6 +727,17 @@
             </select>
           </div>
         </div>
+        <div class="wizard-field" id="bot-new-model-field">
+          <label>Model override (optional)</label>
+          <div class="help">Leave blank to use this backend's configured default. Options are live models actually available to this backend.</div>
+          <div class="row"><input type="text" id="bot-new-model" list="bot-new-model-options" placeholder="e.g. claude-opus-5" autocomplete="off" spellcheck="false"></div>
+          <datalist id="bot-new-model-options"></datalist>
+        </div>
+        <div class="wizard-field">
+          <label>Persona</label>
+          <div class="help" id="bot-new-persona-desc">General-purpose helper for whoever messages this bot.</div>
+          <div class="row" id="bot-new-persona-list"></div>
+        </div>
         <div class="wizard-field">
           <label>Bot token</label>
           <div class="row"><input type="text" id="bot-new-token" placeholder="platform bot token" autocomplete="off" spellcheck="false"></div>
@@ -699,9 +751,9 @@
           <div class="help">Comma-separated. Numeric IDs for Telegram/Discord, Slack member IDs (U.../W...) for Slack.</div>
           <div class="row"><input type="text" id="bot-new-allowed" placeholder="123456789, 987654321" autocomplete="off" spellcheck="false"></div>
         </div>
-        <div class="wizard-field hidden" id="bot-new-cantarget-field">
-          <label>Can target</label>
-          <div class="help">Under Control Center's "Allowlist" agent-control mode, this bot may only ask/command the instances checked below.</div>
+        <div class="wizard-field" id="bot-new-cantarget-field">
+          <label id="bot-new-cantarget-label">Manages / can target</label>
+          <div class="help" id="bot-new-cantarget-help">Bots this one manages as assistants. Under Control Center's "Allowlist" agent-control mode, this also restricts which instances it may command.</div>
           <div class="row" id="bot-new-cantarget-list"></div>
         </div>
         <div class="wizard-foot">
@@ -712,12 +764,7 @@
 
       <div class="card" style="margin-top:14px;">
         <h3>Configured bots</h3>
-        <div class="tablewrap" style="margin-top:6px;">
-          <table>
-            <thead><tr><th>Name</th><th>Platform</th><th>Backend</th><th>Enabled</th><th></th></tr></thead>
-            <tbody id="bots-tbody"><tr class="emptyrow"><td colspan="5">Unlock with the dashboard token to view.</td></tr></tbody>
-          </table>
-        </div>
+        <div class="botgrid" id="bots-grid"></div>
       </div>
 
       <div class="card" style="margin-top:14px;">
@@ -1124,8 +1171,11 @@ async function refreshConfig() {
 // inputs with a <datalist> rather than <select>: Hermes accepts any
 // string, and a currently-set model that's fallen out of the live list
 // (stale config, offline) must stay visible and editable either way.
+let modelsCache = null;
+
 async function refreshModels() {
   const m = await api('/api/models');
+  modelsCache = m;
 
   const apiOptions = (m.live && m.live.api) || m.known.api || [];
   document.getElementById('model-api-options').innerHTML = apiOptions.map(name => `<option value="${esc(name)}"></option>`).join('');
@@ -1142,6 +1192,29 @@ async function refreshModels() {
   document.getElementById('model-hermes-note').textContent = hermesGrouped
     ? `Live from Hermes's own provider cache — ${hermesOptions.length} models across ${Object.keys(hermesGrouped).length} providers.`
     : 'Hermes not detected on this machine — type a model name manually.';
+
+  refreshBotModelOptions();
+  refreshBots();
+}
+
+// A given bot instance can only ever reach the models its own backend's
+// family exposes (Claude vs Hermes Agent) — see bot/models.py's
+// BACKEND_FAMILY. Used both by the Add/Edit form's datalist and by each
+// bot card's own quick-pick model <select>.
+function modelOptionsForBackend(backend) {
+  if (!modelsCache) return [];
+  const family = (modelsCache.family || {})[backend] || 'claude';
+  if (family === 'hermes') {
+    const grouped = (modelsCache.live && modelsCache.live.hermes) || null;
+    return grouped ? [...new Set(Object.values(grouped).flat())].sort() : [];
+  }
+  return (modelsCache.live && modelsCache.live.api) || modelsCache.known.api || [];
+}
+
+function refreshBotModelOptions() {
+  const backend = document.getElementById('bot-new-backend').value;
+  const options = modelOptionsForBackend(backend);
+  document.getElementById('bot-new-model-options').innerHTML = options.map(name => `<option value="${esc(name)}"></option>`).join('');
 }
 
 document.getElementById('model-api').onchange = async (e) => {
@@ -1360,6 +1433,7 @@ function startDashboard() {
   startSessionsPolling();
   refreshPlatforms();
   setInterval(refreshPlatforms, 15000);
+  refreshPersonas();
   refreshBots();
   refreshBotsBackups();
   setInterval(refreshBots, 15000);
@@ -1374,6 +1448,7 @@ function startDashboard() {
   refreshTrainingHealth();
   setInterval(refreshTrainingPhrases, 20000);
   setInterval(refreshTrainingHealth, 10000);
+  startServerChatPolling();
 }
 
 // --------------------------------------------------------- support bot ---
@@ -1514,8 +1589,17 @@ async function refreshTrainingInstructions() {
     <div class="wizard-field" style="margin-top:${bots.indexOf(b) === 0 ? '0' : '14px'};">
       <label>${esc(b.name)} <span style="font-weight:400; color:var(--muted);">(${esc(b.platform)}/${esc(b.backend)})</span></label>
       <div class="row"><textarea data-instructions-for="${b.id}" rows="3" style="width:100%; font-family:var(--font-body); padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink);" placeholder="e.g. Always answer in a formal tone and cite sources when possible.">${esc(b.custom_instructions || '')}</textarea></div>
-      <div class="row" style="margin-top:6px;"><button class="btn primary" data-instructions-save="${b.id}" style="padding:5px 12px; font-size:12px;">Save</button><span class="cardnote" id="instructions-status-${b.id}"></span></div>
+      <div class="row" style="margin-top:6px;">
+        <button class="btn primary" data-instructions-save="${b.id}" style="padding:5px 12px; font-size:12px;">Save</button>
+        ${personaMeta(b.persona).instructions ? `<button class="btn" data-instructions-preset="${b.id}" style="padding:5px 12px; font-size:12px;" title="Fill in with this bot's ${esc(personaMeta(b.persona).label)} persona's default instructions">Insert ${esc(personaMeta(b.persona).label)} preset</button>` : ''}
+        <span class="cardnote" id="instructions-status-${b.id}"></span>
+      </div>
     </div>`).join('');
+  document.querySelectorAll('[data-instructions-preset]').forEach(btn => btn.onclick = () => {
+    const id = btn.dataset.instructionsPreset;
+    const bot = botsCache.find(b => String(b.id) === String(id));
+    if (bot) document.querySelector(`[data-instructions-for="${id}"]`).value = personaMeta(bot.persona).instructions || '';
+  });
   document.querySelectorAll('[data-instructions-save]').forEach(btn => btn.onclick = async () => {
     const id = btn.dataset.instructionsSave;
     const textarea = document.querySelector(`[data-instructions-for="${id}"]`);
@@ -1536,9 +1620,36 @@ let botEditingId = null;
 document.getElementById('bot-new-platform').onchange = (e) => {
   document.getElementById('bot-new-apptoken-field').style.display = e.target.value === 'slack' ? '' : 'none';
 };
+document.getElementById('bot-new-backend').onchange = refreshBotModelOptions;
 
 let botsCache = [];
+let personasCache = [];
+let selectedPersona = 'assistant';
 let lastAgentMode = 'trust_all';
+
+async function refreshPersonas() {
+  try {
+    personasCache = await api('/api/personas');
+  } catch (_e) { return; }
+  renderPersonaPicker(selectedPersona);
+}
+
+function renderPersonaPicker(active) {
+  selectedPersona = active;
+  const list = document.getElementById('bot-new-persona-list');
+  list.className = 'persona-pick';
+  list.innerHTML = personasCache.map(p => `
+    <div class="persona-opt${p.id === active ? ' active' : ''}" data-persona-id="${p.id}">
+      <span class="ic">${p.icon}</span>${esc(p.label)}
+    </div>`).join('');
+  const picked = personasCache.find(p => p.id === active);
+  document.getElementById('bot-new-persona-desc').textContent = picked ? picked.description : '';
+  list.querySelectorAll('[data-persona-id]').forEach(el => el.onclick = () => renderPersonaPicker(el.dataset.personaId));
+}
+
+function personaMeta(id) {
+  return personasCache.find(p => p.id === id) || { id, label: id || 'Assistant', icon: '💬' };
+}
 
 function renderCanTargetCheckboxes(excludeId, checkedIds) {
   const list = document.getElementById('bot-new-cantarget-list');
@@ -1555,7 +1666,9 @@ function renderCanTargetCheckboxes(excludeId, checkedIds) {
 
 function refreshBotsCanTargetVisibility(mode) {
   lastAgentMode = mode;
-  document.getElementById('bot-new-cantarget-field').classList.toggle('hidden', mode !== 'allowlist');
+  document.getElementById('bot-new-cantarget-help').textContent = mode === 'allowlist'
+    ? 'Bots this one manages as assistants. Control Center is in "Allowlist" agent-control mode, so this also restricts which instances it may command.'
+    : 'Bots this one manages as assistants, shown as an org chart on its card. (Control Center\'s agent-control mode isn\'t "Allowlist", so this list doesn\'t additionally restrict commanding.)';
 }
 
 function _resetBotForm() {
@@ -1563,11 +1676,14 @@ function _resetBotForm() {
   document.getElementById('bot-new-name').value = '';
   document.getElementById('bot-new-platform').value = 'telegram';
   document.getElementById('bot-new-backend').value = 'cli';
+  document.getElementById('bot-new-model').value = '';
   document.getElementById('bot-new-token').value = '';
   document.getElementById('bot-new-apptoken').value = '';
   document.getElementById('bot-new-allowed').value = '';
   document.getElementById('bot-new-apptoken-field').style.display = 'none';
   document.getElementById('btn-bot-create').textContent = 'Add bot';
+  renderPersonaPicker('assistant');
+  refreshBotModelOptions();
   renderCanTargetCheckboxes(null, []);
 }
 
@@ -1576,19 +1692,22 @@ function _loadBotIntoForm(bot) {
   document.getElementById('bot-new-name').value = bot.name;
   document.getElementById('bot-new-platform').value = bot.platform;
   document.getElementById('bot-new-backend').value = bot.backend;
+  document.getElementById('bot-new-model').value = bot.model || '';
   document.getElementById('bot-new-token').value = bot.credentials.bot_token || '';
   document.getElementById('bot-new-apptoken').value = bot.credentials.app_token || '';
   document.getElementById('bot-new-apptoken-field').style.display = bot.platform === 'slack' ? '' : 'none';
   document.getElementById('bot-new-allowed').value = (bot.allowed_user_ids || []).join(', ');
+  renderPersonaPicker(bot.persona || 'assistant');
+  refreshBotModelOptions();
   renderCanTargetCheckboxes(bot.id, bot.can_target || []);
   document.getElementById('btn-bot-create').textContent = 'Save changes';
   document.getElementById('bots').scrollIntoView({ behavior: 'smooth' });
 }
 
 async function refreshBots() {
-  const tbody = document.getElementById('bots-tbody');
+  const grid = document.getElementById('bots-grid');
   if (!getToken()) {
-    tbody.innerHTML = '<tr class="emptyrow"><td colspan="5">Unlock with the dashboard token to view.</td></tr>';
+    grid.innerHTML = '<p class="cardnote">Unlock with the dashboard token to view.</p>';
     return;
   }
   let bots;
@@ -1597,24 +1716,46 @@ async function refreshBots() {
   } catch (_e) { return; }
   botsCache = bots;
   if (botEditingId == null) renderCanTargetCheckboxes(null, []);
-  tbody.innerHTML = bots.length ? bots.map(b => `
-    <tr>
-      <td>${esc(b.name)}</td>
-      <td class="mono">${esc(b.platform)}</td>
-      <td class="mono">${esc(b.backend)}</td>
-      <td>
+
+  grid.innerHTML = bots.length ? bots.map(b => {
+    const persona = personaMeta(b.persona);
+    const manages = (b.can_target || []).map(id => bots.find(x => x.id === id)).filter(Boolean);
+    const modelOptions = modelOptionsForBackend(b.backend);
+    const currentModel = b.model || '';
+    const modelSelectOptions = [`<option value="">(backend default)</option>`]
+      .concat(currentModel && !modelOptions.includes(currentModel) ? [`<option value="${esc(currentModel)}" selected>${esc(currentModel)} (not in live list)</option>`] : [])
+      .concat(modelOptions.map(m => `<option value="${esc(m)}" ${m === currentModel ? 'selected' : ''}>${esc(m)}</option>`))
+      .join('');
+    return `
+    <div class="botcard">
+      <div class="bc-head">
+        <div class="bc-title"><span class="bc-persona-ic" title="${esc(persona.label)}">${persona.icon}</span>${esc(b.name)}</div>
         <span class="pill"><span class="dot ${b.enabled ? 'good' : ''}"></span>${b.enabled ? 'Enabled' : 'Disabled'}</span>
+      </div>
+      <div class="bc-meta">
+        <span class="mono">${esc(b.platform)}</span> · <span class="mono">${esc(b.backend)}</span>
         <span class="pill"><span class="dot ${b.live_running ? 'good' : (b.last_error ? 'critical' : '')}"></span>${b.live_running ? 'Running' : (b.last_error ? 'Crashed' : 'Stopped')}</span>
-      </td>
-      <td style="white-space:nowrap;">
+      </div>
+      <div class="bc-model">
+        <label style="font-weight:600; color:var(--muted);">Model</label>
+        <select data-bot-model="${b.id}">${modelSelectOptions}</select>
+      </div>
+      ${manages.length ? `<div class="bc-manages"><span style="font-weight:600; color:var(--muted);">Manages:</span> ${manages.map(m => `<span class="chip neutral">${personaMeta(m.persona).icon} ${esc(m.name)}</span>`).join('')}</div>` : ''}
+      ${b.last_error ? `<div class="bc-error">${esc(b.last_error)}</div>` : ''}
+      <div class="bc-actions">
         <button class="btn" data-bot-edit="${b.id}" style="padding:3px 8px; font-size:11px;">Edit</button>
         <button class="btn" data-bot-toggle="${b.id}" style="padding:3px 8px; font-size:11px;">${b.enabled ? 'Disable' : 'Enable'}</button>
         ${b.enabled ? `<button class="btn" data-bot-startstop="${b.id}" style="padding:3px 8px; font-size:11px;">${b.live_running ? 'Stop' : 'Start'}</button>
         <button class="btn" data-bot-restart="${b.id}" style="padding:3px 8px; font-size:11px;">Restart</button>` : ''}
         <button class="btn" data-bot-delete="${b.id}" style="padding:3px 8px; font-size:11px;">Delete</button>
-      </td>
-    </tr>${b.last_error ? `<tr><td colspan="5"><span class="cardnote" style="color:var(--critical);">${esc(b.name)}: ${esc(b.last_error)}</span></td></tr>` : ''}`).join('') : '<tr class="emptyrow"><td colspan="5">No bots yet — add one above.</td></tr>';
+      </div>
+    </div>`;
+  }).join('') : '<p class="cardnote">No bots yet — add one above.</p>';
 
+  document.querySelectorAll('[data-bot-model]').forEach(sel => sel.onchange = async () => {
+    const id = Number(sel.dataset.botModel);
+    await api(`/api/bots/${id}`, { method: 'PUT', body: JSON.stringify({ model: sel.value || null }) });
+  });
   document.querySelectorAll('[data-bot-edit]').forEach(btn => btn.onclick = () => {
     const bot = bots.find(b => b.id === Number(btn.dataset.botEdit));
     if (bot) _loadBotIntoForm(bot);
@@ -1660,6 +1801,8 @@ document.getElementById('btn-bot-create').onclick = async () => {
     name: document.getElementById('bot-new-name').value.trim(),
     platform,
     backend: document.getElementById('bot-new-backend').value,
+    model: document.getElementById('bot-new-model').value.trim() || null,
+    persona: selectedPersona,
     credentials,
     allowed_user_ids,
     can_target,
@@ -2247,6 +2390,178 @@ document.getElementById('chat-input').addEventListener('keydown', (e) => {
     sendChatMessage();
   }
 });
+
+// ----------------------------------------------------------- server chat
+// A permanent, bot-independent channel between this server's own devices
+// (desktop + every paired phone) — see bot/db.py's server_chat_conversations
+// comment. The desktop dashboard is always device id 0 (db.
+// SERVER_CHAT_DESKTOP_DEVICE_ID); every message not sent by us renders as
+// "in" regardless of which other device sent it.
+const SERVER_CHAT_MY_DEVICE_ID = 0;
+const serverChatState = { conversations: [], activeId: null, lastId: 0 };
+let serverChatPendingFile = null;
+
+async function refreshServerChatList() {
+  const select = document.getElementById('serverchat-conversation');
+  try {
+    serverChatState.conversations = await api('/api/server-chat/conversations');
+  } catch (_e) { return; }
+  const prevValue = select.value;
+  select.innerHTML = serverChatState.conversations.map(c => {
+    const preview = c.last_message ? (c.last_message.text || (c.last_message.attachment_name ? '📎 ' + c.last_message.attachment_name : '')) : '';
+    return `<option value="${c.id}">${esc(c.title)}${preview ? ' — ' + esc(preview.slice(0, 30)) : ''}</option>`;
+  }).join('');
+  if (serverChatState.conversations.some(c => String(c.id) === prevValue)) {
+    select.value = prevValue;
+  } else if (serverChatState.conversations.length) {
+    select.value = String(serverChatState.conversations[0].id);
+  }
+  const newActiveId = select.value ? Number(select.value) : null;
+  if (newActiveId !== serverChatState.activeId) {
+    activateServerChatConversation(newActiveId);
+  }
+}
+
+function activateServerChatConversation(id) {
+  serverChatState.activeId = id;
+  serverChatState.lastId = 0;
+  document.getElementById('serverchat-window').innerHTML = '';
+  refreshServerChatMessages();
+}
+
+document.getElementById('serverchat-conversation').onchange = (e) => {
+  activateServerChatConversation(e.target.value ? Number(e.target.value) : null);
+};
+
+async function downloadServerChatAttachment(messageId, name) {
+  try {
+    const headers = {};
+    const token = getToken();
+    if (token) headers['X-Dashboard-Token'] = token;
+    const res = await fetch(`/api/server-chat/attachments/${messageId}`, { headers });
+    if (!res.ok) throw new Error(await res.text());
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name || 'file';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert('Download failed — check the dashboard token.');
+  }
+}
+
+function appendServerChatMessages(rows) {
+  const win = document.getElementById('serverchat-window');
+  const atBottom = win.scrollHeight - win.scrollTop - win.clientHeight < 60;
+  rows.forEach(m => {
+    const row = document.createElement('div');
+    row.className = 'chat-row ' + (m.sender_device_id === SERVER_CHAT_MY_DEVICE_ID ? 'out' : 'in');
+    const bubble = document.createElement('div');
+    bubble.className = 'chat-bubble';
+    if (m.text) {
+      const textEl = document.createElement('div');
+      textEl.textContent = m.text;
+      bubble.appendChild(textEl);
+    }
+    if (m.attachment_path) {
+      const att = document.createElement('a');
+      att.className = 'chat-attachment';
+      att.textContent = '📎 ' + (m.attachment_name || 'file') + (m.attachment_size ? ` (${fmtBytes(m.attachment_size)})` : '');
+      att.href = '#';
+      att.onclick = (e) => { e.preventDefault(); downloadServerChatAttachment(m.id, m.attachment_name); };
+      bubble.appendChild(att);
+    }
+    const meta = document.createElement('span');
+    meta.className = 'chat-meta';
+    meta.textContent = fmtChatTime(m.ts);
+    bubble.appendChild(meta);
+    row.appendChild(bubble);
+    win.appendChild(row);
+    serverChatState.lastId = Math.max(serverChatState.lastId, m.id);
+  });
+  if (rows.length && atBottom) win.scrollTop = win.scrollHeight;
+}
+
+async function refreshServerChatMessages() {
+  if (serverChatState.activeId == null) return;
+  try {
+    const rows = await api(`/api/server-chat/messages?conversation_id=${serverChatState.activeId}&after_id=${serverChatState.lastId}&limit=200`);
+    if (rows.length) appendServerChatMessages(rows);
+  } catch (_e) { /* token not set yet, or server not ready — try again next tick */ }
+}
+
+async function sendServerChatMessage() {
+  const input = document.getElementById('serverchat-input');
+  const statusEl = document.getElementById('serverchat-status');
+  const text = input.value.trim();
+  if (!text && !serverChatPendingFile) return;
+  if (serverChatState.activeId == null) {
+    statusEl.textContent = 'Pick a conversation first.';
+    return;
+  }
+  const btn = document.getElementById('btn-serverchat-send');
+  btn.disabled = true;
+  statusEl.textContent = '';
+  try {
+    if (serverChatPendingFile) {
+      const fd = new FormData();
+      fd.append('conversation_id', serverChatState.activeId);
+      fd.append('text', text);
+      fd.append('file', serverChatPendingFile);
+      const headers = {};
+      const token = getToken();
+      if (token) headers['X-Dashboard-Token'] = token;
+      const res = await fetch('/api/server-chat/send-file', { method: 'POST', headers, body: fd });
+      if (!res.ok) throw new Error(await res.text());
+      serverChatPendingFile = null;
+      document.getElementById('serverchat-file-input').value = '';
+      document.getElementById('serverchat-pending-attachment').classList.add('hidden');
+    } else {
+      await api('/api/server-chat/send', { method: 'POST', body: JSON.stringify({ conversation_id: serverChatState.activeId, text }) });
+    }
+    input.value = '';
+    await refreshServerChatMessages();
+    await refreshServerChatList();
+  } catch (e) {
+    statusEl.textContent = 'Send failed — check the dashboard token.';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('btn-serverchat-send').onclick = sendServerChatMessage;
+document.getElementById('serverchat-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendServerChatMessage();
+  }
+});
+document.getElementById('btn-serverchat-attach').onclick = () => document.getElementById('serverchat-file-input').click();
+document.getElementById('serverchat-file-input').onchange = (e) => {
+  serverChatPendingFile = e.target.files[0] || null;
+  const box = document.getElementById('serverchat-pending-attachment');
+  if (serverChatPendingFile) {
+    document.getElementById('serverchat-pending-name').textContent = serverChatPendingFile.name;
+    box.classList.remove('hidden');
+  } else {
+    box.classList.add('hidden');
+  }
+};
+document.getElementById('btn-serverchat-attach-clear').onclick = () => {
+  serverChatPendingFile = null;
+  document.getElementById('serverchat-file-input').value = '';
+  document.getElementById('serverchat-pending-attachment').classList.add('hidden');
+};
+
+function startServerChatPolling() {
+  refreshServerChatList();
+  setInterval(refreshServerChatMessages, 2000);
+  setInterval(refreshServerChatList, 15000);
+}
 
 // --------------------------------------------------------------- sessions
 const sessionsState = { list: [], activeId: null };

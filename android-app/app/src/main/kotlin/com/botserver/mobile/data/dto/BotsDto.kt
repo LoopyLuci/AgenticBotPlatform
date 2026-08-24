@@ -30,6 +30,7 @@ data class BotInstance(
     val backend: String,
     val enabled: Boolean,
     val model: String? = null,
+    val persona: String = "assistant",
     val credentials: BotCredentials = BotCredentials(),
     @SerialName("allowed_user_ids") val allowedUserIdsRaw: JsonArray = JsonArray(emptyList()),
     @SerialName("can_target") val canTarget: List<Int> = emptyList(),
@@ -46,7 +47,17 @@ data class BotWriteRequest(
     val platform: String,
     val backend: String,
     val model: String? = null,
+    val persona: String? = null,
     val credentials: BotCredentials,
     @SerialName("allowed_user_ids") val allowedUserIds: List<String>,
     val enabled: Boolean = true,
+)
+
+/** Mirrors GET /api/personas — see bot/personas.py's PERSONA_PRESETS. */
+@Serializable
+data class PersonaPreset(
+    val id: String,
+    val label: String,
+    val icon: String,
+    val description: String,
 )

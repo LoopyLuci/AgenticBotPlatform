@@ -3,6 +3,7 @@ package com.botserver.mobile.data
 import com.botserver.mobile.data.dto.BotCredentials
 import com.botserver.mobile.data.dto.BotInstance
 import com.botserver.mobile.data.dto.BotWriteRequest
+import com.botserver.mobile.data.dto.PersonaPreset
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -16,11 +17,14 @@ class BotsRepository @Inject constructor(private val apiService: ApiService) {
 
     suspend fun get(id: Int): BotInstance = apiService.bot(id)
 
+    suspend fun personas(): List<PersonaPreset> = apiService.personas()
+
     suspend fun create(
         name: String,
         platform: String,
         backend: String,
         model: String?,
+        persona: String,
         botToken: String,
         appToken: String?,
         allowedUserIds: List<String>,
@@ -31,6 +35,7 @@ class BotsRepository @Inject constructor(private val apiService: ApiService) {
                 platform = platform,
                 backend = backend,
                 model = model?.takeIf { it.isNotBlank() },
+                persona = persona,
                 credentials = BotCredentials(botToken = botToken, appToken = appToken?.takeIf { it.isNotBlank() }),
                 allowedUserIds = allowedUserIds,
             ),
@@ -43,6 +48,7 @@ class BotsRepository @Inject constructor(private val apiService: ApiService) {
         platform: String,
         backend: String,
         model: String?,
+        persona: String,
         botToken: String,
         appToken: String?,
         allowedUserIds: List<String>,
@@ -55,6 +61,7 @@ class BotsRepository @Inject constructor(private val apiService: ApiService) {
                 platform = platform,
                 backend = backend,
                 model = model?.takeIf { it.isNotBlank() },
+                persona = persona,
                 credentials = BotCredentials(botToken = botToken, appToken = appToken?.takeIf { it.isNotBlank() }),
                 allowedUserIds = allowedUserIds,
                 enabled = enabled,
