@@ -156,6 +156,60 @@ async def cmd_model(ctx: CmdContext, args: list[str]) -> str:
     return "Usage: /model show | /model set <api|hermes_cli|hermes_gateway> <model>"
 
 
+# ------------------------------------- per-instance model (Telegram picker)
+# /model set <backend> <model> above changes a *global* per-backend-family
+# default (config.backends.<name>.model), shared by every bot instance that
+# doesn't override it — useful, but not what someone typing /model in a
+# specific bot's chat almost always means. Telegram's interactive /model
+# (no args, or the bare `/model <name>` shorthand — see handlers.py)
+# instead reads/writes bot_instances.model, the same per-instance override
+# field the dashboard's own per-bot Model dropdown already edits, scoped
+# to THIS bot's actual backend only — not a picker across all three model
+# backends regardless of what this bot is even connected to.
+
+INSTANCE_MODEL_PAGE_SIZE = 6
+
+
+async def instance_model_options(backend: str) -> list[str]:
+    from bot.models import BACKEND_FAMILY, live_api_models, live_hermes_models
+
+    family = BACKEND_FAMILY.get(backend, "claude")
+    if family == "hermes":
+        grouped = live_hermes_models()
+        return sorted({m for models in grouped.values() for m in models}) if grouped else []
+    live = await live_api_models()
+    return live or KNOWN_MODELS.get("api", [])
+
+
+async def instance_model_page(instance_id: int, page: int) -> Optional[dict]:
+    from bot import bot_instances
+
+    instance = bot_instances.get_instance(instance_id)
+    if instance is None:
+        return None
+    backend = instance["backend"]
+    models = await instance_model_options(backend)
+    current_model = instance.get("model")
+    total_pages = max(1, -(-len(models) // INSTANCE_MODEL_PAGE_SIZE))
+    page = max(0, min(page, total_pages - 1))
+    start = page * INSTANCE_MODEL_PAGE_SIZE
+    return {
+        "backend": backend,
+        "page": page,
+        "total_pages": total_pages,
+        "models": models[start : start + INSTANCE_MODEL_PAGE_SIZE],
+        "current_model": current_model,
+        "has_known_list": bool(models),
+    }
+
+
+def apply_instance_model(instance_id: int, model: str, actor: str) -> str:
+    from bot import bot_instances
+
+    bot_instances.update_instance(instance_id, model=(model or None), actor=actor)
+    return f"Model set for this bot -> {model or '(backend default)'}"
+
+
 # --------------------------------------------- interactive picker (Telegram)
 # Mirrors the real Hermes Agent Telegram bot's /model UX (confirmed against
 # NousResearch/hermes-agent's docs, not guessed): a two-level inline-keyboard

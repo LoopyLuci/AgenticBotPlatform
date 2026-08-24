@@ -256,7 +256,18 @@ document.getElementById('btn-vacuum').onclick = async () => { await api('/api/da
 // (stale config, offline) must stay visible and editable either way.
 let modelsCache = null;
 
+function _defaultModelInputFocused() {
+  const active = document.activeElement;
+  return active && ['model-api', 'model-hermes_cli', 'model-hermes_gateway'].includes(active.id);
+}
+
 async function refreshModels() {
+  // refreshConfig() runs every 5s via refreshAll() — rebuilding these
+  // inputs' backing <datalist> and resetting .value while the user has
+  // one of them focused (typing, or picking from the native suggestion
+  // popup) closes the popup and can stomp on what they were typing. Skip
+  // the whole cycle while any of the three has focus.
+  if (_defaultModelInputFocused()) return;
   const m = await api('/api/models');
   modelsCache = m;
 
@@ -773,6 +784,12 @@ async function refreshBots() {
     grid.innerHTML = '<p class="cardnote">Unlock with the dashboard token to view.</p>';
     return;
   }
+  // This runs on a 15s timer — rebuilding the grid's innerHTML while the
+  // user has a <select> (e.g. the per-bot Model picker) open force-closes
+  // it out from under them. Skip this cycle entirely while any control
+  // inside the grid has focus; the next tick (or their own action, which
+  // calls refreshBots() directly) picks up the real state once they're done.
+  if (grid.contains(document.activeElement)) return;
   let bots;
   try {
     bots = await api('/api/bots');

@@ -250,21 +250,16 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # -------------------------------------------------------------- models ----
-# /model with no args opens the same two-level inline-keyboard picker the
-# real Hermes Agent Telegram bot uses (backend list with a checkmark on the
-# current one -> paginated model list with Prev/Next/Back/Cancel -> tap to
-# set, editing the message in place at every step). Discord/Slack keep the
-# plain-text commands.cmd_model form (see bot/commands.py) since neither
-# platform integration here builds inline-keyboard widgets.
-
-def _model_root_text() -> str:
-    lines = ["Choose a backend to change its model:"]
-    for info in commands.model_backend_summary():
-        mark = "✓ " if info["is_default_backend"] else "  "
-        current = info["current_model"] or "(default)"
-        lines.append(f"{mark}{info['name']}: {current}")
-    return "\n".join(lines)
-
+# /model with no args opens an inline-keyboard picker scoped to THIS bot's
+# own connected backend only — not a chooser across every model backend
+# BotServer supports regardless of what this bot actually uses. Reads and
+# writes bot_instances.model (the same per-instance override field the
+# dashboard's own per-bot Model dropdown edits), via
+# commands.instance_model_page()/apply_instance_model(). Discord/Slack keep
+# the plain-text commands.cmd_model form (see bot/commands.py) — a
+# *global* per-backend-family default, a different and still-useful
+# setting, since neither platform integration here builds inline-keyboard
+# widgets anyway.
 
 def _paired_rows(buttons: list[InlineKeyboardButton]) -> list[list[InlineKeyboardButton]]:
     """2-per-row layout, matching the real Hermes Agent Telegram bot's
@@ -273,68 +268,76 @@ def _paired_rows(buttons: list[InlineKeyboardButton]) -> list[list[InlineKeyboar
     return [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
 
 
-def _model_root_keyboard() -> InlineKeyboardMarkup:
-    buttons = []
-    for info in commands.model_backend_summary():
-        label = ("✓ " if info["is_default_backend"] else "") + info["name"]
-        label += f" ({info['count']})" if info["count"] is not None else " (custom)"
-        buttons.append(InlineKeyboardButton(label, callback_data=f"modelpick:backend:{info['name']}:0"))
-    rows = _paired_rows(buttons)
-    rows.append([InlineKeyboardButton("Cancel", callback_data="modelpick:cancel")])
-    return InlineKeyboardMarkup(rows)
-
-
-def _model_page(backend: str, page: int) -> tuple[str, InlineKeyboardMarkup]:
-    data = commands.model_page(backend, page)
+async def _model_page(instance_id: int, page: int) -> tuple[str, InlineKeyboardMarkup]:
+    data = await commands.instance_model_page(instance_id, page)
     rows = []
+    if data is None:
+        return "This chat isn't linked to a bot instance.", InlineKeyboardMarkup(
+            [[InlineKeyboardButton("Cancel", callback_data="modelpick:cancel")]]
+        )
+    backend = data["backend"]
     if data["has_known_list"]:
         buttons = []
         for m in data["models"]:
             mark = "✓ " if m == data["current_model"] else ""
-            buttons.append(InlineKeyboardButton(f"{mark}{m}", callback_data=f"modelpick:set:{backend}:{m}"))
+            buttons.append(InlineKeyboardButton(f"{mark}{m}", callback_data=f"modelpick:set:{instance_id}:{m}"))
         rows.extend(_paired_rows(buttons))
         nav = []
         if data["page"] > 0:
-            nav.append(InlineKeyboardButton("< Prev", callback_data=f"modelpick:backend:{backend}:{data['page'] - 1}"))
+            nav.append(InlineKeyboardButton("< Prev", callback_data=f"modelpick:page:{instance_id}:{data['page'] - 1}"))
         if data["page"] < data["total_pages"] - 1:
-            nav.append(InlineKeyboardButton("Next >", callback_data=f"modelpick:backend:{backend}:{data['page'] + 1}"))
+            nav.append(InlineKeyboardButton("Next >", callback_data=f"modelpick:page:{instance_id}:{data['page'] + 1}"))
         if nav:
             rows.append(nav)
-        text = f"{backend} — pick a model (current: {data['current_model'] or '(default)'}):"
+        text = f"Model for this bot ({backend}) — current: {data['current_model'] or '(backend default)'}"
     else:
         text = (
-            f"{backend} has no known model list — Hermes CLI's own models aren't discoverable "
-            f"from here.\nReply with `/model set {backend} <name>` to set one directly.\n"
-            f"Current: {data['current_model'] or '(default)'}"
+            f"This bot's backend ({backend}) has no discoverable model list.\n"
+            f"Reply with `/model <name>` to set one directly.\n"
+            f"Current: {data['current_model'] or '(backend default)'}"
         )
-    rows.append([InlineKeyboardButton("< Back", callback_data="modelpick:root"), InlineKeyboardButton("Cancel", callback_data="modelpick:cancel")])
+    rows.append([InlineKeyboardButton("Cancel", callback_data="modelpick:cancel")])
     return text, InlineKeyboardMarkup(rows)
 
 
 async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ctx = _ctx_from(update, context)
     args = context.args or []
-    if not args:
-        await update.message.reply_text(_model_root_text(), reply_markup=_model_root_keyboard())
-        return
-    if len(args) == 1 and args[0] not in ("show", "set"):
-        # Hermes-style shorthand: `/model <name>` with no backend — infer it
-        # from the default backend, same as Hermes inferring the active
-        # provider. Only makes sense if the default backend even has a model
-        # setting (cli/ui don't).
-        default_backend = config.current.get("default_backend")
-        if default_backend not in commands.MODEL_BACKENDS:
-            await _reply_chunked(
-                update,
-                f"Default backend {default_backend!r} has no model setting — use "
-                f"/model set <api|hermes_cli|hermes_gateway> <name>, or /model to open the picker.",
-                context,
-            )
+
+    if not args or (len(args) == 1 and args[0] not in ("show", "set")):
+        if len(args) == 1:
+            # Bare `/model <name>` — sets this bot's model directly instead
+            # of opening the picker, same shorthand Hermes offers.
+            if ctx.instance_id is None:
+                await _reply_chunked(update, "This chat isn't linked to a bot instance.", context)
+                return
+            reply = commands.apply_instance_model(ctx.instance_id, args[0], actor=ctx.actor)
+            await _reply_chunked(update, reply, context)
             return
-        reply = await commands.cmd_model(_ctx_from(update, context), ["set", default_backend, args[0]])
+        if ctx.instance_id is None:
+            await _reply_chunked(update, "This chat isn't linked to a bot instance.", context)
+            return
+        text, kb = await _model_page(ctx.instance_id, 0)
+        await update.message.reply_text(text, reply_markup=kb)
+        return
+
+    if args[0] == "show":
+        if ctx.instance_id is None:
+            await _reply_chunked(update, "This chat isn't linked to a bot instance.", context)
+            return
+        instance = bot_instances.get_instance(ctx.instance_id)
+        await _reply_chunked(update, f"{instance['backend']}: {instance.get('model') or '(backend default)'}", context)
+        return
+    if args[0] == "set" and len(args) >= 2:
+        if ctx.instance_id is None:
+            await _reply_chunked(update, "This chat isn't linked to a bot instance.", context)
+            return
+        model = " ".join(args[1:]).strip()
+        reply = commands.apply_instance_model(ctx.instance_id, model, actor=ctx.actor)
         await _reply_chunked(update, reply, context)
         return
-    reply = await commands.cmd_model(_ctx_from(update, context), args)
-    await _reply_chunked(update, reply, context)
+
+    await _reply_chunked(update, "Usage: /model | /model <name> | /model show | /model set <name>", context)
 
 
 # ---------------------------------------------------------- desktop ctrl --
@@ -378,17 +381,14 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data in ("cancel", "modelpick:cancel"):
         await query.edit_message_text("Cancelled.")
         return
-    if data == "modelpick:root":
-        await query.edit_message_text(_model_root_text(), reply_markup=_model_root_keyboard())
-        return
-    if data.startswith("modelpick:backend:"):
-        _, _, backend, page = data.split(":", 3)
-        text, keyboard = _model_page(backend, int(page))
+    if data.startswith("modelpick:page:"):
+        _, _, instance_id_s, page = data.split(":", 3)
+        text, keyboard = await _model_page(int(instance_id_s), int(page))
         await query.edit_message_text(text, reply_markup=keyboard)
         return
     if data.startswith("modelpick:set:"):
-        _, _, backend, model = data.split(":", 3)
-        reply = commands.apply_model(backend, model, actor=str(update.effective_user.id))
+        _, _, instance_id_s, model = data.split(":", 3)
+        reply = commands.apply_instance_model(int(instance_id_s), model, actor=str(update.effective_user.id))
         await query.edit_message_text(reply)
         return
     if data.startswith("session:resume:"):
