@@ -71,9 +71,10 @@ async def build_telegram_instance(row: dict) -> "telegram.ext.Application":
     keeps each one alive). Public (not prefixed with _) since
     platform_supervisor imports it directly.
     """
+    from telegram import BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats, BotCommandScopeDefault
     from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
-    from bot import handlers, outbox
+    from bot import handlers, outbox, slash_commands
 
     token = row["credentials"]["bot_token"]
     application = Application.builder().token(token).build()
@@ -82,6 +83,12 @@ async def build_telegram_instance(row: dict) -> "telegram.ext.Application":
     application.bot_data["allowed_ids"] = {int(i) for i in row["allowed_user_ids"]}
 
     outbox.register(row["id"], lambda chat_id, text: application.bot.send_message(chat_id=chat_id, text=text))
+    outbox.register_threaded(
+        row["id"],
+        lambda chat_id, text, thread_id: application.bot.send_message(
+            chat_id=chat_id, text=text, message_thread_id=int(thread_id)
+        ),
+    )
 
     async def _send_file(chat_id, file_path, filename, caption):
         with open(file_path, "rb") as f:
@@ -89,22 +96,33 @@ async def build_telegram_instance(row: dict) -> "telegram.ext.Application":
 
     outbox.register_file_sender(row["id"], _send_file)
 
-    application.add_handler(CommandHandler("start", handlers.cmd_start))
-    application.add_handler(CommandHandler("help", handlers.cmd_start))
-    application.add_handler(CommandHandler("ask", handlers.cmd_ask))
-    application.add_handler(CommandHandler("status", handlers.cmd_status))
-    application.add_handler(CommandHandler("start_desktop", handlers.cmd_start_desktop))
-    application.add_handler(CommandHandler("stop_desktop", handlers.cmd_stop_desktop))
-    application.add_handler(CommandHandler("restart_desktop", handlers.cmd_restart_desktop))
-    application.add_handler(CommandHandler("backend", handlers.cmd_backend))
-    application.add_handler(CommandHandler("model", handlers.cmd_model))
-    application.add_handler(CommandHandler("mcp", handlers.cmd_mcp))
-    application.add_handler(CommandHandler("project", handlers.cmd_project))
+    # Table-driven registration: every command lives once in
+    # bot/slash_commands.py's registry (name + every alias), and one
+    # CommandHandler dispatches all of them through handlers.on_command,
+    # which resolves aliases and picks the right implementation — see that
+    # module's docstring for why (mirrors the real Hermes Agent's
+    # single-entry-point command dispatch instead of one PTB handler per
+    # command, which had let /new_session silently go unregistered here).
+    application.add_handler(CommandHandler(slash_commands.all_dispatchable_names(), handlers.on_command))
     application.add_handler(CallbackQueryHandler(handlers.on_callback))
     application.add_handler(MessageHandler(filters.Document.ALL, handlers.on_document))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.on_text))
 
     await application.initialize()
+
+    # Populates Telegram's native "/" command menu — nothing did this
+    # before, so the blue "/" button showed nothing. Registered across all
+    # three scopes so it shows up the same in DMs and groups.
+    menu_commands = [BotCommand(name, desc) for name, desc in slash_commands.telegram_menu_commands()]
+    for scope_cls in (BotCommandScopeDefault, BotCommandScopeAllPrivateChats, BotCommandScopeAllGroupChats):
+        try:
+            await application.bot.set_my_commands(menu_commands, scope=scope_cls())
+        except Exception:
+            logger.exception(
+                "failed to register Telegram command menu (scope=%s) for instance %r",
+                scope_cls.__name__, row["name"],
+            )
+
     await application.start()
     await application.updater.start_polling()
     logger.info("Telegram bot instance %r (id=%s) connected", row["name"], row["id"])
@@ -159,6 +177,10 @@ async def run() -> None:
     dashboard_task = asyncio.create_task(server.serve())
     watch_task = asyncio.create_task(config.watch_forever())
 
+    from bot import scheduler
+
+    scheduler_task = asyncio.create_task(scheduler.run_forever(stop_event))
+
     # server.serve() just got scheduled, not confirmed running — uvicorn
     # sets Server.started once it's actually bound and accepting
     # connections. Wait for that (bounded, so a real bind failure still
@@ -178,6 +200,7 @@ async def run() -> None:
     finally:
         logger.info("shutting down")
         watch_task.cancel()
+        await scheduler_task  # stop_event is already set; run_forever exits its own loop cleanly
         server.should_exit = True
         await dashboard_task
         await platform_supervisor.stop_all()

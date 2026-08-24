@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.botserver.mobile.data.BotsRepository
 import com.botserver.mobile.data.dto.BotInstance
+import com.botserver.mobile.data.dto.PairingRequest
 import com.botserver.mobile.data.dto.PersonaPreset
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,9 +33,11 @@ data class BotForm(
 data class BotsUiState(
     val bots: List<BotInstance> = emptyList(),
     val personas: List<PersonaPreset> = emptyList(),
+    val pendingPairings: List<PairingRequest> = emptyList(),
     val error: String? = null,
     val form: BotForm? = null,
     val busyId: Int? = null,
+    val busyPairingId: Int? = null,
 )
 
 @HiltViewModel
@@ -53,6 +56,26 @@ class BotsViewModel @Inject constructor(private val repository: BotsRepository) 
             viewModelScope.launch {
                 runCatching { repository.personas() }.onSuccess { list -> _uiState.update { it.copy(personas = list) } }
             }
+        }
+        viewModelScope.launch {
+            runCatching { repository.pendingPairings() }
+                .onSuccess { list -> _uiState.update { it.copy(pendingPairings = list) } }
+        }
+    }
+
+    fun approvePairing(request: PairingRequest) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(busyPairingId = request.id) }
+            runCatching { repository.approvePairing(request.id) }.onSuccess { refresh() }
+            _uiState.update { it.copy(busyPairingId = null) }
+        }
+    }
+
+    fun denyPairing(request: PairingRequest) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(busyPairingId = request.id) }
+            runCatching { repository.denyPairing(request.id) }.onSuccess { refresh() }
+            _uiState.update { it.copy(busyPairingId = null) }
         }
     }
 

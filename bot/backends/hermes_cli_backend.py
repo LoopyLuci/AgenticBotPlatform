@@ -69,6 +69,12 @@ class HermesCliBackend(Backend):
                 proc.kill()
                 await proc.wait()
                 raise BackendError(f"hermes_cli backend timed out after {timeout_s}s") from exc
+            except asyncio.CancelledError:
+                # /stop cancelling the task wrapping this call — see the
+                # matching comment in cli_backend.py.
+                proc.kill()
+                await proc.wait()
+                raise
 
             if proc.returncode != 0:
                 raise BackendError(

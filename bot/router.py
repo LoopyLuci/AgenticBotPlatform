@@ -159,6 +159,7 @@ class Router:
         instance_id: Optional[int] = None,
         swarm_run_id: Optional[str] = None,
         chat_id: Optional[Any] = None,
+        thread_id: Optional[Any] = None,
     ) -> BackendResult:
         cfg = config.current
         chain = self.resolve_chain(action_type, backend_override, instance_id=instance_id)
@@ -177,7 +178,19 @@ class Router:
             instance = bot_instances.get_instance(instance_id)
             if instance:
                 instance_model = instance.get("model")
-                desktop_session_key = instance.get("desktop_session_key")
+                # A chat-specific link (set by /new or /resume — see
+                # db.link_chat_session()) always wins over the instance-wide
+                # fallback bot_instances.desktop_session_key is used for:
+                # per-chat linking is the real routing unit now, the
+                # instance-level value only still matters for calls with no
+                # chat_id (the dashboard's own "New Session" button) or for
+                # a chat that's never linked its own session yet.
+                if chat_id is not None:
+                    chat_session = db.get_active_chat_session(instance_id, chat_id, thread_id=thread_id)
+                    if chat_session is not None:
+                        desktop_session_key = chat_session["desktop_session_key"]
+                if desktop_session_key is None:
+                    desktop_session_key = instance.get("desktop_session_key")
                 custom_instructions = (instance.get("custom_instructions") or "").strip()
                 if custom_instructions:
                     effective_prompt = f"{custom_instructions}\n\n{prompt}"
@@ -231,11 +244,20 @@ class Router:
                 db.log_connection_event(component=backend_name, event="request_ok")
                 db.mark_job_done(job_id, status="success", result=result.text, tokens=result.tokens)
                 if instance_id is not None and isinstance(result.raw, dict) and result.raw.get("desktop_session_key"):
-                    from bot import bot_instances
+                    reported_key = result.raw["desktop_session_key"]
+                    if chat_id is not None:
+                        # The backend lazily created a session because this
+                        # chat had none linked yet (see create_session()'s
+                        # docstring) — link it the same way an explicit
+                        # /new would, so future messages in this chat keep
+                        # reusing it instead of re-triggering this path.
+                        db.link_chat_session(instance_id, chat_id, reported_key, thread_id=thread_id)
+                    else:
+                        from bot import bot_instances
 
-                    bot_instances.set_desktop_session_key(
-                        instance_id, result.raw["desktop_session_key"], actor="system"
-                    )
+                        bot_instances.set_desktop_session_key(instance_id, reported_key, actor="system")
+                elif instance_id is not None and chat_id is not None and desktop_session_key is not None:
+                    db.touch_active_chat_session(instance_id, chat_id, thread_id=thread_id)
                 return result
             except BackendError as exc:
                 latency_ms = (time.monotonic() - t0) * 1000
@@ -247,15 +269,20 @@ class Router:
         db.mark_job_done(job_id, status="failed", error=str(last_error))
         raise last_error or BackendError("all backends in chain failed")
 
-    async def create_session(self, instance_id: int) -> str:
+    async def create_session(self, instance_id: int, chat_id: Optional[Any] = None, thread_id: Optional[Any] = None) -> str:
         """Explicitly opens a brand-new chat/session in the real desktop
         agent app (Claude Desktop for "ui", Hermes for "hermes_gateway")
         for this specific bot instance, persists the link, and returns the
-        new session key. This is the only way a bot instance's linked
-        session ever changes — ask() always reuses whatever is already
-        linked, never silently creates or switches one on its own (aside
-        from the very first call, which lazily creates one exactly like
-        this)."""
+        new session key. With chat_id given (the normal /new path), the
+        link is per-chat via db.link_chat_session() — that chat's future
+        ask() calls resolve to this key regardless of what any other chat
+        talking to the same instance is linked to. Without chat_id (the
+        dashboard's own "New Session" button, which isn't chat-scoped),
+        it falls back to the old instance-wide default. ask() always
+        reuses whatever is already linked, never silently creates or
+        switches one on its own (aside from the very first call for a
+        chat with nothing linked yet, which lazily creates one exactly
+        like this — see ask()'s own comment)."""
         from bot import bot_instances
 
         instance = bot_instances.get_instance(instance_id)
@@ -272,8 +299,26 @@ class Router:
                 f"backend {backend_name!r} does not support session linking — only ui/hermes_gateway do"
             )
         key = await create()
-        bot_instances.set_desktop_session_key(instance_id, key, actor="dashboard")
+        if chat_id is not None:
+            db.link_chat_session(instance_id, chat_id, key, thread_id=thread_id)
+        else:
+            bot_instances.set_desktop_session_key(instance_id, key, actor="dashboard")
         return key
+
+    async def resume_session(
+        self, instance_id: int, chat_id: Any, chat_session_id: int, thread_id: Optional[Any] = None
+    ) -> dict:
+        """Re-links this chat to a previously-created backend session (one
+        this instance made via create_session() at some point, for this
+        chat or any other one) instead of creating a new one — the actual
+        conversation on the backend side is whatever it was left as; this
+        only changes which key BotServer's ask() sends future messages to.
+        Raises BackendError if the id doesn't belong to this instance."""
+        target = db.get_chat_session(chat_session_id)
+        if target is None or target["instance_id"] != instance_id:
+            raise BackendError(f"session {chat_session_id} not found for this bot")
+        db.link_chat_session(instance_id, chat_id, target["desktop_session_key"], title=target["title"], thread_id=thread_id)
+        return dict(target)
 
 
 router = Router()

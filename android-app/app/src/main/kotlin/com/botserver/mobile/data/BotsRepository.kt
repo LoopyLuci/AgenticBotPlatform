@@ -3,6 +3,7 @@ package com.botserver.mobile.data
 import com.botserver.mobile.data.dto.BotCredentials
 import com.botserver.mobile.data.dto.BotInstance
 import com.botserver.mobile.data.dto.BotWriteRequest
+import com.botserver.mobile.data.dto.PairingRequest
 import com.botserver.mobile.data.dto.PersonaPreset
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -83,5 +84,15 @@ class BotsRepository @Inject constructor(private val apiService: ApiService) {
 
     suspend fun toggleRunning(bot: BotInstance) {
         if (bot.liveRunning) apiService.stopBot(bot.id) else apiService.startBot(bot.id)
+    }
+
+    suspend fun pendingPairings(): List<PairingRequest> = apiService.pairing().pending
+
+    suspend fun approvePairing(id: Int) {
+        apiService.approvePairing(id)
+    }
+
+    suspend fun denyPairing(id: Int) {
+        apiService.denyPairing(id)
     }
 }

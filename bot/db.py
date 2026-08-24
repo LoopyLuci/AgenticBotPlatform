@@ -10,6 +10,7 @@ fast as a connection pool, and avoids a second moving part.
 from __future__ import annotations
 
 import hashlib
+import json
 import secrets
 import sqlite3
 import threading
@@ -127,6 +128,7 @@ CREATE TABLE IF NOT EXISTS bot_instances (
     enabled            INTEGER NOT NULL DEFAULT 1,
     credentials        TEXT NOT NULL,                 -- JSON, shape depends on platform
     allowed_user_ids   TEXT NOT NULL DEFAULT '[]',    -- JSON array
+    admin_user_ids     TEXT NOT NULL DEFAULT '[]',    -- JSON array, subset of allowed_user_ids with the admin slash-command tier (bot/slash_access.py) — empty means the tier system is off entirely for this instance
     action_overrides   TEXT NOT NULL DEFAULT '{}',    -- JSON, same shape as backends.yaml's action_overrides
     can_target         TEXT NOT NULL DEFAULT '[]',    -- JSON array of bot_instances.id this instance may command (agent_control) — also doubles as "manages" for persona='manager'
     model              TEXT,                          -- optional per-instance model override, passed through to this instance's backend
@@ -137,6 +139,25 @@ CREATE TABLE IF NOT EXISTS bot_instances (
     updated_at         TEXT NOT NULL,
     last_started_at    TEXT,
     last_error         TEXT
+);
+
+-- Telegram (or other chat-platform) pairing codes for an unrecognized DM
+-- sender — see bot/pairing.py. A code is single-use: consumed by exactly
+-- one approve or expiry/lockout outcome, never reused. Approval appends
+-- the user id into the owning instance's allowed_user_ids; nothing here
+-- enforces auth itself, bot/handlers.py's require_auth still owns that.
+CREATE TABLE IF NOT EXISTS pairing_codes (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    instance_id  INTEGER NOT NULL,   -- bot_instances.id this code was requested against
+    code         TEXT NOT NULL UNIQUE,
+    user_id      TEXT NOT NULL,      -- platform-native user id, string either way (Telegram numeric, Slack U…)
+    user_name    TEXT,               -- best-effort display name/username at request time, for the approver's benefit
+    chat_id      TEXT NOT NULL,
+    created_at   TEXT NOT NULL,
+    expires_at   TEXT NOT NULL,
+    attempts     INTEGER NOT NULL DEFAULT 0,   -- failed approval attempts against this code (wrong code typed elsewhere) — see LOCKOUT constants in bot/pairing.py
+    approved_at  TEXT,
+    denied_at    TEXT
 );
 
 -- A named group of bot instances plus a chosen collaboration strategy.
@@ -186,6 +207,78 @@ CREATE TABLE IF NOT EXISTS sessions (
     last_activity_at  TEXT NOT NULL,
     item_count        INTEGER NOT NULL DEFAULT 0
 );
+
+-- A per-chat link to one real, resumable backend conversation (Claude
+-- Desktop's "ui" backend or Hermes's "hermes_gateway" — the two backends
+-- with their own create_session()). Distinct from `sessions` above:
+-- `sessions` is auto-bucketed message-activity history for the dashboard,
+-- this table is the actual routing pointer Router.ask() reads to know
+-- which backend conversation a given chat's next message continues.
+-- Exactly one row per (instance_id, chat_id) has archived_at NULL at a
+-- time — that's "current"; every /new or /resume archives whichever row
+-- was current and inserts a fresh one, so full history stays browsable
+-- via list_chat_sessions() instead of being overwritten in place.
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    instance_id          INTEGER NOT NULL,
+    chat_id              TEXT NOT NULL,
+    thread_id            TEXT,    -- Telegram forum-topic message_thread_id; NULL = the chat's root/non-topic session — see /topic
+    desktop_session_key  TEXT NOT NULL,
+    title                TEXT,
+    created_at           TEXT NOT NULL,
+    last_used_at         TEXT NOT NULL,
+    archived_at          TEXT
+);
+
+-- Real multi-turn conversation history for the agent-loop engine
+-- (bot/agent_runtime/) — keyed by chat_sessions.desktop_session_key (works
+-- transparently for the "api" backend's synthetic uuid4 session keys, see
+-- ApiBackend.create_session()). `content` is JSON: a plain string for a
+-- user prompt, or a list of Anthropic content blocks (text/tool_use/
+-- tool_result) for assistant turns and tool results — the shape the
+-- Anthropic Messages API itself uses, stored as-is so replaying history
+-- back into the next API call needs no reshaping.
+CREATE TABLE IF NOT EXISTS agent_messages (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_key  TEXT NOT NULL,
+    role         TEXT NOT NULL,   -- user | assistant
+    content      TEXT NOT NULL,   -- JSON
+    created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agent_messages_session ON agent_messages(session_key, id);
+
+-- One row per dangerous tool call awaiting a human's approve/deny — see
+-- bot/agent_runtime/approval.py. `status` starts 'pending' and ends in
+-- exactly one of approved_once/approved_session/approved_always/denied/
+-- expired; the in-memory asyncio.Event that actually wakes the waiting
+-- turn lives in approval.py's process-local registry (this row is the
+-- durable/audit side, and what a Telegram button edit reads back).
+CREATE TABLE IF NOT EXISTS pending_approvals (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    instance_id  INTEGER NOT NULL,
+    chat_id      TEXT NOT NULL,
+    session_key  TEXT NOT NULL,
+    tool_name    TEXT NOT NULL,
+    tool_input   TEXT NOT NULL,   -- JSON
+    status       TEXT NOT NULL DEFAULT 'pending',
+    created_at   TEXT NOT NULL,
+    resolved_at  TEXT,
+    resolved_by  TEXT
+);
+
+-- Standing "session" or "always" approvals granted via the ea:session /
+-- ea:always outcomes above, so the same tool doesn't re-prompt every call.
+-- session_key NULL means instance-wide ("always"); non-NULL scopes it to
+-- one linked conversation ("session" — cleared the moment that session is
+-- superseded by a fresh /new, since a new session_key won't match).
+CREATE TABLE IF NOT EXISTS tool_approvals (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    instance_id  INTEGER NOT NULL,
+    session_key  TEXT,
+    tool_name    TEXT NOT NULL,
+    granted_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tool_approvals_lookup ON tool_approvals(instance_id, tool_name, session_key);
 
 -- Mobile/device API keys — a growing multi-device credential set, unlike
 -- the single legacy DASHBOARD_TOKEN env value. Only a hash is ever stored;
@@ -295,6 +388,78 @@ CREATE TABLE IF NOT EXISTS server_chat_messages (
 -- the "update available" banner clears on its own without a separate ack
 -- round trip. One row per (device, send) — sending again to an already-
 -- pending device is fine, list_pending_apk_push() only returns the newest.
+-- A recurring prompt for one chat — /cron (arbitrary interval), /loop
+-- (interval + optional run cap), /heartbeat (re-enters the session when
+-- idle, so interval_s is a minimum gap rather than a strict clock — see
+-- bot/scheduler.py). One background task polls this table for due rows
+-- and dispatches each through the same agent-loop engine /background
+-- uses, so a scheduled prompt gets the same tool access, approval gating,
+-- and session history as a manually-typed one.
+CREATE TABLE IF NOT EXISTS scheduled_commands (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    instance_id   INTEGER NOT NULL,
+    chat_id       TEXT NOT NULL,
+    thread_id     TEXT,            -- Telegram forum-topic id, NULL outside a topic — see /topic
+    kind          TEXT NOT NULL,   -- cron | loop | heartbeat
+    prompt        TEXT NOT NULL,
+    interval_s    INTEGER NOT NULL,
+    next_run_at   TEXT NOT NULL,
+    last_run_at   TEXT,
+    enabled       INTEGER NOT NULL DEFAULT 1,
+    max_runs      INTEGER,         -- NULL = unlimited
+    run_count     INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL
+);
+
+-- A per-instance kanban board — see bot/kanban.py, /kanban.
+CREATE TABLE IF NOT EXISTS kanban_boards (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    instance_id   INTEGER NOT NULL,
+    name          TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    UNIQUE(instance_id, name)
+);
+CREATE TABLE IF NOT EXISTS kanban_cards (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    board_id      INTEGER NOT NULL,
+    column_name   TEXT NOT NULL DEFAULT 'todo',
+    text          TEXT NOT NULL,
+    position      INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+
+-- A long-term fact the agent loop asked to remember (via the save_memory
+-- tool — bot/agent_runtime/tools.py) or a human added directly, gated
+-- behind the same pending/approve/reject flow as a dangerous tool call
+-- unless action_overrides.memory_approval is turned off for that
+-- instance. Approved rows get folded into the api backend's system
+-- prompt on every turn — see bot/memory.py's approved_summary().
+CREATE TABLE IF NOT EXISTS memory_entries (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    instance_id   INTEGER NOT NULL,
+    content       TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'pending',  -- pending | approved | rejected
+    source        TEXT NOT NULL DEFAULT 'user',      -- user | tool
+    created_at    TEXT NOT NULL,
+    resolved_at   TEXT
+);
+
+-- A reusable instruction/snippet the agent loop can pull in on demand via
+-- the read_skill tool — see bot/skills.py. instance_id NULL means every
+-- instance can see and use it; non-NULL scopes it to one bot. This is a
+-- local file-backed store (/skills install <path>), not a networked
+-- marketplace — see bot/skills.py's module docstring for why.
+CREATE TABLE IF NOT EXISTS skills (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    instance_id   INTEGER,
+    name          TEXT NOT NULL,
+    description   TEXT NOT NULL DEFAULT '',
+    content       TEXT NOT NULL,
+    installed_at  TEXT NOT NULL,
+    UNIQUE(instance_id, name)
+);
+
 CREATE TABLE IF NOT EXISTS apk_pushes (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     api_key_id    INTEGER NOT NULL,
@@ -309,6 +474,8 @@ CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at);
 CREATE INDEX IF NOT EXISTS idx_telemetry_component ON telemetry_events(component, ts);
 CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(platform, chat_id, id);
 CREATE INDEX IF NOT EXISTS idx_bot_instances_platform ON bot_instances(platform);
+CREATE INDEX IF NOT EXISTS idx_pairing_codes_instance_user ON pairing_codes(instance_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_lookup ON chat_sessions(instance_id, chat_id, archived_at);
 CREATE INDEX IF NOT EXISTS idx_swarm_runs_swarm ON swarm_runs(swarm_id, id);
 CREATE INDEX IF NOT EXISTS idx_sessions_instance ON sessions(instance_id, last_activity_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_chat ON sessions(instance_id, chat_id, last_activity_at);
@@ -318,6 +485,10 @@ CREATE INDEX IF NOT EXISTS idx_apk_pushes_key ON apk_pushes(api_key_id, id);
 CREATE INDEX IF NOT EXISTS idx_server_chat_conv_participants ON server_chat_conversations(participant_a, participant_b);
 CREATE INDEX IF NOT EXISTS idx_server_chat_messages_conv ON server_chat_messages(conversation_id, id);
 CREATE INDEX IF NOT EXISTS idx_support_bot_classifications_ts ON support_bot_classifications(ts);
+CREATE INDEX IF NOT EXISTS idx_scheduled_commands_due ON scheduled_commands(enabled, next_run_at);
+CREATE INDEX IF NOT EXISTS idx_kanban_cards_board ON kanban_cards(board_id, column_name, position);
+CREATE INDEX IF NOT EXISTS idx_memory_entries_instance ON memory_entries(instance_id, status);
+CREATE INDEX IF NOT EXISTS idx_skills_instance ON skills(instance_id, name);
 """
 # idx_jobs_instance / idx_jobs_swarm_run / idx_messages_instance are created
 # in _migrate(), not here — on a pre-existing DB, jobs/messages get their
@@ -395,6 +566,16 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE bot_instances ADD COLUMN custom_instructions TEXT")
     if "persona" not in instance_cols:
         conn.execute("ALTER TABLE bot_instances ADD COLUMN persona TEXT NOT NULL DEFAULT 'assistant'")
+    if "admin_user_ids" not in instance_cols:
+        conn.execute("ALTER TABLE bot_instances ADD COLUMN admin_user_ids TEXT NOT NULL DEFAULT '[]'")
+
+    chat_session_cols = {row["name"] for row in conn.execute("PRAGMA table_info(chat_sessions)").fetchall()}
+    if "thread_id" not in chat_session_cols:
+        conn.execute("ALTER TABLE chat_sessions ADD COLUMN thread_id TEXT")
+
+    scheduled_cols = {row["name"] for row in conn.execute("PRAGMA table_info(scheduled_commands)").fetchall()}
+    if "thread_id" not in scheduled_cols:
+        conn.execute("ALTER TABLE scheduled_commands ADD COLUMN thread_id TEXT")
 
     presence_cols = {row["name"] for row in conn.execute("PRAGMA table_info(device_presence)").fetchall()}
     if "device_model" not in presence_cols:
@@ -499,6 +680,415 @@ def list_sessions(
     return conn.execute(
         f"SELECT * FROM sessions {where} ORDER BY last_activity_at DESC LIMIT ?", params
     ).fetchall()
+
+
+# ---------------------------------------------------------- chat sessions --
+# The real per-chat backend-session link — see chat_sessions' schema
+# comment above for how this differs from `sessions`.
+
+def link_chat_session(
+    instance_id: int, chat_id: Any, key: str, title: Optional[str] = None, thread_id: Optional[Any] = None
+) -> int:
+    """Archives whichever chat_sessions row is currently active for this
+    (instance_id, chat_id, thread_id) and inserts a fresh active row
+    pointing at `key`. Used by both /new (a freshly created backend key)
+    and /resume (an old key pulled back out of history) — the only
+    difference between them is where `key` came from. thread_id is a
+    Telegram forum-topic id (see /topic) — None means the chat's root
+    session, same as before that feature existed, so every non-topic chat
+    is unaffected."""
+    conn = get_conn()
+    now = _now()
+    tid = str(thread_id) if thread_id is not None else None
+    with _lock:
+        conn.execute(
+            "UPDATE chat_sessions SET archived_at=? WHERE instance_id=? AND chat_id=? AND thread_id IS ? AND archived_at IS NULL",
+            (now, instance_id, str(chat_id), tid),
+        )
+        cur = conn.execute(
+            "INSERT INTO chat_sessions (instance_id, chat_id, thread_id, desktop_session_key, title, created_at, last_used_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (instance_id, str(chat_id), tid, key, title, now, now),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def get_active_chat_session(instance_id: int, chat_id: Any, thread_id: Optional[Any] = None) -> Optional[sqlite3.Row]:
+    conn = get_conn()
+    tid = str(thread_id) if thread_id is not None else None
+    return conn.execute(
+        "SELECT * FROM chat_sessions WHERE instance_id=? AND chat_id=? AND thread_id IS ? AND archived_at IS NULL",
+        (instance_id, str(chat_id), tid),
+    ).fetchone()
+
+
+def touch_active_chat_session(instance_id: int, chat_id: Any, thread_id: Optional[Any] = None) -> None:
+    conn = get_conn()
+    tid = str(thread_id) if thread_id is not None else None
+    with _lock:
+        conn.execute(
+            "UPDATE chat_sessions SET last_used_at=? WHERE instance_id=? AND chat_id=? AND thread_id IS ? AND archived_at IS NULL",
+            (_now(), instance_id, str(chat_id), tid),
+        )
+        conn.commit()
+
+
+def get_chat_session(chat_session_id: int) -> Optional[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute("SELECT * FROM chat_sessions WHERE id=?", (chat_session_id,)).fetchone()
+
+
+def list_chat_sessions(
+    instance_id: int, chat_id: Optional[Any] = None, limit: int = 20, thread_id: Optional[Any] = None
+) -> list[sqlite3.Row]:
+    """Every link ever made for this instance (optionally narrowed to one
+    chat, and further to one forum topic within it) — active one first
+    (it's always most recent), then history."""
+    conn = get_conn()
+    if chat_id is not None and thread_id is not None:
+        return conn.execute(
+            "SELECT * FROM chat_sessions WHERE instance_id=? AND chat_id=? AND thread_id IS ? ORDER BY created_at DESC LIMIT ?",
+            (instance_id, str(chat_id), str(thread_id), limit),
+        ).fetchall()
+    if chat_id is not None:
+        return conn.execute(
+            "SELECT * FROM chat_sessions WHERE instance_id=? AND chat_id=? ORDER BY created_at DESC LIMIT ?",
+            (instance_id, str(chat_id), limit),
+        ).fetchall()
+    return conn.execute(
+        "SELECT * FROM chat_sessions WHERE instance_id=? ORDER BY created_at DESC LIMIT ?",
+        (instance_id, limit),
+    ).fetchall()
+
+
+def list_topic_sessions(instance_id: int, chat_id: Any) -> list[sqlite3.Row]:
+    """Every forum topic in this group that has its own active session —
+    for /topic list."""
+    conn = get_conn()
+    return conn.execute(
+        "SELECT * FROM chat_sessions WHERE instance_id=? AND chat_id=? AND thread_id IS NOT NULL AND archived_at IS NULL "
+        "ORDER BY last_used_at DESC",
+        (instance_id, str(chat_id)),
+    ).fetchall()
+
+
+def set_chat_session_title(chat_session_id: int, title: str) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute("UPDATE chat_sessions SET title=? WHERE id=?", (title, chat_session_id))
+        conn.commit()
+
+
+# ------------------------------------------------------- agent messages ---
+
+def append_agent_message(session_key: str, role: str, content: Any) -> int:
+    conn = get_conn()
+    with _lock:
+        cur = conn.execute(
+            "INSERT INTO agent_messages (session_key, role, content, created_at) VALUES (?, ?, ?, ?)",
+            (session_key, role, json.dumps(content), _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def list_agent_messages(session_key: str, limit: int = 200) -> list[dict]:
+    """Oldest-first, ready to feed straight into the Anthropic Messages API
+    as the `messages` list (each row's content is already in that shape —
+    see agent_messages' schema comment)."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT role, content FROM agent_messages WHERE session_key=? ORDER BY id ASC LIMIT ?",
+        (session_key, limit),
+    ).fetchall()
+    return [{"role": r["role"], "content": json.loads(r["content"])} for r in rows]
+
+
+def clear_agent_messages(session_key: str) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute("DELETE FROM agent_messages WHERE session_key=?", (session_key,))
+        conn.commit()
+
+
+# ------------------------------------------------------ tool approvals ----
+
+def create_pending_approval(instance_id: int, chat_id: Any, session_key: str, tool_name: str, tool_input: dict) -> int:
+    conn = get_conn()
+    with _lock:
+        cur = conn.execute(
+            "INSERT INTO pending_approvals (instance_id, chat_id, session_key, tool_name, tool_input, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (instance_id, str(chat_id), session_key, tool_name, json.dumps(tool_input), _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def get_pending_approval(approval_id: int) -> Optional[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute("SELECT * FROM pending_approvals WHERE id=?", (approval_id,)).fetchone()
+
+
+def list_pending_approvals(instance_id: int, chat_id: Optional[Any] = None) -> list[sqlite3.Row]:
+    conn = get_conn()
+    if chat_id is not None:
+        return conn.execute(
+            "SELECT * FROM pending_approvals WHERE instance_id=? AND chat_id=? AND status='pending' ORDER BY id ASC",
+            (instance_id, str(chat_id)),
+        ).fetchall()
+    return conn.execute(
+        "SELECT * FROM pending_approvals WHERE instance_id=? AND status='pending' ORDER BY id ASC", (instance_id,)
+    ).fetchall()
+
+
+def resolve_pending_approval(approval_id: int, status: str, resolved_by: Optional[str]) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute(
+            "UPDATE pending_approvals SET status=?, resolved_at=?, resolved_by=? WHERE id=?",
+            (status, _now(), resolved_by, approval_id),
+        )
+        conn.commit()
+
+
+def grant_tool_approval(instance_id: int, tool_name: str, session_key: Optional[str]) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute(
+            "INSERT INTO tool_approvals (instance_id, session_key, tool_name, granted_at) VALUES (?, ?, ?, ?)",
+            (instance_id, session_key, tool_name, _now()),
+        )
+        conn.commit()
+
+
+def has_tool_approval(instance_id: int, session_key: str, tool_name: str) -> bool:
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT 1 FROM tool_approvals WHERE instance_id=? AND tool_name=? AND (session_key IS NULL OR session_key=?) LIMIT 1",
+        (instance_id, tool_name, session_key),
+    ).fetchone()
+    return row is not None
+
+
+# ------------------------------------------------------ scheduled commands
+
+def create_scheduled_command(
+    instance_id: int, chat_id: Any, kind: str, prompt: str, interval_s: int,
+    next_run_at: str, max_runs: Optional[int] = None, thread_id: Optional[Any] = None,
+) -> int:
+    conn = get_conn()
+    with _lock:
+        cur = conn.execute(
+            "INSERT INTO scheduled_commands (instance_id, chat_id, thread_id, kind, prompt, interval_s, next_run_at, max_runs, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (instance_id, str(chat_id), str(thread_id) if thread_id is not None else None,
+             kind, prompt, interval_s, next_run_at, max_runs, _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def get_scheduled_command(sched_id: int) -> Optional[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute("SELECT * FROM scheduled_commands WHERE id=?", (sched_id,)).fetchone()
+
+
+def list_scheduled_commands(
+    instance_id: int, chat_id: Optional[Any] = None, thread_id: Optional[Any] = None
+) -> list[sqlite3.Row]:
+    conn = get_conn()
+    if chat_id is not None and thread_id is not None:
+        return conn.execute(
+            "SELECT * FROM scheduled_commands WHERE instance_id=? AND chat_id=? AND thread_id IS ? ORDER BY id",
+            (instance_id, str(chat_id), str(thread_id)),
+        ).fetchall()
+    if chat_id is not None:
+        return conn.execute(
+            "SELECT * FROM scheduled_commands WHERE instance_id=? AND chat_id=? ORDER BY id", (instance_id, str(chat_id))
+        ).fetchall()
+    return conn.execute("SELECT * FROM scheduled_commands WHERE instance_id=? ORDER BY id", (instance_id,)).fetchall()
+
+
+def list_due_scheduled_commands(now_iso: str) -> list[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute(
+        "SELECT * FROM scheduled_commands WHERE enabled=1 AND next_run_at<=? "
+        "AND (max_runs IS NULL OR run_count<max_runs)",
+        (now_iso,),
+    ).fetchall()
+
+
+def mark_scheduled_command_ran(sched_id: int, next_run_at: str) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute(
+            "UPDATE scheduled_commands SET last_run_at=?, next_run_at=?, run_count=run_count+1 WHERE id=?",
+            (_now(), next_run_at, sched_id),
+        )
+        conn.commit()
+
+
+def set_scheduled_command_enabled(sched_id: int, enabled: bool) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute("UPDATE scheduled_commands SET enabled=? WHERE id=?", (1 if enabled else 0, sched_id))
+        conn.commit()
+
+
+def delete_scheduled_command(sched_id: int) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute("DELETE FROM scheduled_commands WHERE id=?", (sched_id,))
+        conn.commit()
+
+
+# ------------------------------------------------------------------ kanban
+
+def get_or_create_kanban_board(instance_id: int, name: str) -> int:
+    conn = get_conn()
+    with _lock:
+        row = conn.execute(
+            "SELECT id FROM kanban_boards WHERE instance_id=? AND name=?", (instance_id, name)
+        ).fetchone()
+        if row:
+            return row["id"]
+        cur = conn.execute(
+            "INSERT INTO kanban_boards (instance_id, name, created_at) VALUES (?, ?, ?)",
+            (instance_id, name, _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def list_kanban_boards(instance_id: int) -> list[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute("SELECT * FROM kanban_boards WHERE instance_id=? ORDER BY name", (instance_id,)).fetchall()
+
+
+def get_kanban_board(board_id: int) -> Optional[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute("SELECT * FROM kanban_boards WHERE id=?", (board_id,)).fetchone()
+
+
+def create_kanban_card(board_id: int, column_name: str, text: str) -> int:
+    conn = get_conn()
+    with _lock:
+        pos_row = conn.execute(
+            "SELECT COALESCE(MAX(position), -1) + 1 AS p FROM kanban_cards WHERE board_id=? AND column_name=?",
+            (board_id, column_name),
+        ).fetchone()
+        cur = conn.execute(
+            "INSERT INTO kanban_cards (board_id, column_name, text, position, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (board_id, column_name, text, pos_row["p"], _now(), _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def list_kanban_cards(board_id: int) -> list[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute(
+        "SELECT * FROM kanban_cards WHERE board_id=? ORDER BY column_name, position", (board_id,)
+    ).fetchall()
+
+
+def get_kanban_card(card_id: int) -> Optional[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute("SELECT * FROM kanban_cards WHERE id=?", (card_id,)).fetchone()
+
+
+def move_kanban_card(card_id: int, column_name: str) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute(
+            "UPDATE kanban_cards SET column_name=?, updated_at=? WHERE id=?", (column_name, _now(), card_id)
+        )
+        conn.commit()
+
+
+def delete_kanban_card(card_id: int) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute("DELETE FROM kanban_cards WHERE id=?", (card_id,))
+        conn.commit()
+
+
+# ------------------------------------------------------------------ memory
+
+def create_memory_entry(instance_id: int, content: str, source: str = "user", status: str = "pending") -> int:
+    conn = get_conn()
+    with _lock:
+        cur = conn.execute(
+            "INSERT INTO memory_entries (instance_id, content, status, source, created_at) VALUES (?, ?, ?, ?, ?)",
+            (instance_id, content, status, source, _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def get_memory_entry(entry_id: int) -> Optional[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute("SELECT * FROM memory_entries WHERE id=?", (entry_id,)).fetchone()
+
+
+def list_memory_entries(instance_id: int, status: Optional[str] = None) -> list[sqlite3.Row]:
+    conn = get_conn()
+    if status is not None:
+        return conn.execute(
+            "SELECT * FROM memory_entries WHERE instance_id=? AND status=? ORDER BY id DESC", (instance_id, status)
+        ).fetchall()
+    return conn.execute("SELECT * FROM memory_entries WHERE instance_id=? ORDER BY id DESC", (instance_id,)).fetchall()
+
+
+def resolve_memory_entry(entry_id: int, status: str) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute(
+            "UPDATE memory_entries SET status=?, resolved_at=? WHERE id=?", (status, _now(), entry_id)
+        )
+        conn.commit()
+
+
+# ------------------------------------------------------------------ skills
+
+def install_skill(instance_id: Optional[int], name: str, description: str, content: str) -> int:
+    conn = get_conn()
+    with _lock:
+        conn.execute("DELETE FROM skills WHERE instance_id IS ? AND name=?", (instance_id, name))
+        cur = conn.execute(
+            "INSERT INTO skills (instance_id, name, description, content, installed_at) VALUES (?, ?, ?, ?, ?)",
+            (instance_id, name, description, content, _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def list_skills(instance_id: Optional[int]) -> list[sqlite3.Row]:
+    """Skills visible to this instance: its own plus every global
+    (instance_id IS NULL) one."""
+    conn = get_conn()
+    return conn.execute(
+        "SELECT * FROM skills WHERE instance_id IS NULL OR instance_id=? ORDER BY name", (instance_id,)
+    ).fetchall()
+
+
+def get_skill(instance_id: Optional[int], name: str) -> Optional[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute(
+        "SELECT * FROM skills WHERE (instance_id IS NULL OR instance_id=?) AND name=? "
+        "ORDER BY instance_id IS NULL LIMIT 1",
+        (instance_id, name),
+    ).fetchone()
+
+
+def delete_skill(instance_id: Optional[int], name: str) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute("DELETE FROM skills WHERE instance_id IS ? AND name=?", (instance_id, name))
+        conn.commit()
 
 
 def count_legacy_items(instance_id: int) -> int:
@@ -722,6 +1312,83 @@ def remove_allowed_user(telegram_id: int) -> None:
 def list_allowed_users() -> list[sqlite3.Row]:
     conn = get_conn()
     return conn.execute("SELECT * FROM allowed_users ORDER BY added_at").fetchall()
+
+
+# --------------------------------------------------------------- pairing --
+# See bot/pairing.py for the rate-limiting/expiry constants and policy —
+# this layer is pure storage.
+
+def create_pairing_code(
+    instance_id: int, code: str, user_id: str, user_name: str, chat_id: str, expires_at: str
+) -> int:
+    conn = get_conn()
+    with _lock:
+        cur = conn.execute(
+            "INSERT INTO pairing_codes (instance_id, code, user_id, user_name, chat_id, created_at, expires_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (instance_id, code, str(user_id), user_name or "", str(chat_id), _now(), expires_at),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def get_pairing_code(code: str) -> Optional[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute("SELECT * FROM pairing_codes WHERE code=?", (code,)).fetchone()
+
+
+def get_pairing_code_by_id(pairing_id: int) -> Optional[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute("SELECT * FROM pairing_codes WHERE id=?", (pairing_id,)).fetchone()
+
+
+def count_recent_pairing_requests(instance_id: int, user_id: str, since_iso: str) -> int:
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT COUNT(*) AS n FROM pairing_codes WHERE instance_id=? AND user_id=? AND created_at>?",
+        (instance_id, str(user_id), since_iso),
+    ).fetchone()
+    return row["n"] if row else 0
+
+
+def count_pending_pairing_codes(instance_id: int, user_id: Optional[str] = None) -> int:
+    conn = get_conn()
+    clauses = ["instance_id=?", "approved_at IS NULL", "denied_at IS NULL", "expires_at>?"]
+    params: list[Any] = [instance_id, _now()]
+    if user_id is not None:
+        clauses.append("user_id=?")
+        params.append(str(user_id))
+    row = conn.execute(f"SELECT COUNT(*) AS n FROM pairing_codes WHERE {' AND '.join(clauses)}", params).fetchone()
+    return row["n"] if row else 0
+
+
+def list_pending_pairing_codes(instance_id: Optional[int] = None) -> list[sqlite3.Row]:
+    conn = get_conn()
+    if instance_id is not None:
+        return conn.execute(
+            "SELECT * FROM pairing_codes WHERE instance_id=? AND approved_at IS NULL AND denied_at IS NULL "
+            "AND expires_at>? ORDER BY created_at DESC",
+            (instance_id, _now()),
+        ).fetchall()
+    return conn.execute(
+        "SELECT * FROM pairing_codes WHERE approved_at IS NULL AND denied_at IS NULL AND expires_at>? "
+        "ORDER BY created_at DESC",
+        (_now(),),
+    ).fetchall()
+
+
+def approve_pairing_code(pairing_id: int) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute("UPDATE pairing_codes SET approved_at=? WHERE id=?", (_now(), pairing_id))
+        conn.commit()
+
+
+def deny_pairing_code(pairing_id: int) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute("UPDATE pairing_codes SET denied_at=? WHERE id=?", (_now(), pairing_id))
+        conn.commit()
 
 
 # ------------------------------------------------- support bot training ---
@@ -1241,6 +1908,50 @@ def get_overview() -> dict[str, Any]:
         "avg_duration_ms": round(avg_dur) if avg_dur else 0,
         "tokens_today": tokens_today,
     }
+
+
+def get_usage_summary(instance_id: int) -> dict[str, Any]:
+    """Per-instance token/job usage for /usage — get_overview() above is
+    global, this is the one bot's own numbers."""
+    conn = get_conn()
+    row_today = conn.execute(
+        "SELECT COALESCE(SUM(tokens),0) tok, COUNT(*) n FROM jobs WHERE instance_id=? AND date(created_at)=date('now')",
+        (instance_id,),
+    ).fetchone()
+    row_total = conn.execute(
+        "SELECT COALESCE(SUM(tokens),0) tok, COUNT(*) n FROM jobs WHERE instance_id=?", (instance_id,)
+    ).fetchone()
+    return {
+        "tokens_today": row_today["tok"],
+        "jobs_today": row_today["n"],
+        "tokens_total": row_total["tok"],
+        "jobs_total": row_total["n"],
+    }
+
+
+def get_insights(instance_id: int, days: int = 7) -> dict[str, Any]:
+    """Daily job counts/success-rate/tokens for /insights [days]."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT date(created_at) d, status, COUNT(*) n, COALESCE(SUM(tokens),0) tok "
+        "FROM jobs WHERE instance_id=? AND created_at >= datetime('now', ?) GROUP BY d, status ORDER BY d",
+        (instance_id, f"-{days} days"),
+    ).fetchall()
+    by_day: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        entry = by_day.setdefault(r["d"], {"success": 0, "failed": 0, "other": 0, "tokens": 0})
+        entry["tokens"] += r["tok"]
+        if r["status"] == "success":
+            entry["success"] = r["n"]
+        elif r["status"] == "failed":
+            entry["failed"] = r["n"]
+        else:
+            entry["other"] += r["n"]
+    messages_row = conn.execute(
+        "SELECT COUNT(*) n FROM messages WHERE instance_id=? AND direction='in' AND ts >= datetime('now', ?)",
+        (instance_id, f"-{days} days"),
+    ).fetchone()
+    return {"days": days, "by_day": by_day, "messages_in": messages_row["n"]}
 
 
 def get_jobs_timeseries_24h() -> list[dict[str, Any]]:

@@ -313,6 +313,7 @@
       <a href="#support"><span class="ic">🛟</span>Support Bot</a>
       <a href="#sessions"><span class="ic">🗂</span>Sessions</a>
       <a href="#bots"><span class="ic">🤖</span>Bots</a>
+      <a href="#kanban"><span class="ic">🗒</span>Kanban</a>
       <a href="#swarms"><span class="ic">🐝</span>Swarms</a>
       <a href="#training"><span class="ic">🎓</span>Training</a>
       <a href="#platforms"><span class="ic">🔌</span>Platforms</a>
@@ -756,9 +757,25 @@
           <div class="help" id="bot-new-cantarget-help">Bots this one manages as assistants. Under Control Center's "Allowlist" agent-control mode, this also restricts which instances it may command.</div>
           <div class="row" id="bot-new-cantarget-list"></div>
         </div>
+        <div class="wizard-field">
+          <label>Admin user ID(s)</label>
+          <div class="help">Optional, subset of the allowed IDs above. Leave empty to leave slash-command permission tiers off (everyone allowed can run every command). Set at least one to turn tiers on — non-admins then only get /help and /whoami plus whatever's configured in action_overrides.slash_access.</div>
+          <div class="row"><input type="text" id="bot-new-admins" placeholder="123456789" autocomplete="off" spellcheck="false"></div>
+        </div>
         <div class="wizard-foot">
           <span class="cardnote" id="bot-new-status"></span>
           <button class="btn primary" id="btn-bot-create">Add bot</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;" id="pairing-card">
+        <h3>Pending pairings</h3>
+        <p class="cardnote">Someone messaged a bot from an unrecognized chat ID and got a one-time code — approve here to add them to that bot's allowed users.</p>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Bot</th><th>User</th><th>Code</th><th>Requested</th><th>Expires</th><th></th></tr></thead>
+            <tbody id="pairing-tbody"></tbody>
+          </table>
         </div>
       </div>
 
@@ -776,6 +793,31 @@
             <tbody id="bots-backups-tbody"><tr class="emptyrow"><td colspan="4">Unlock with the dashboard token to view.</td></tr></tbody>
           </table>
         </div>
+      </div>
+    </section>
+
+    <section id="kanban">
+      <div class="sec-head"><h2>Kanban</h2><span class="desc">One board per bot — cards a bot adds via /kanban show up here too, and vice versa.</span></div>
+      <div class="card">
+        <div class="row" style="gap:10px; align-items:center;">
+          <label style="font-size:12.5px; font-weight:600;">Bot</label>
+          <select id="kanban-bot-select" style="min-width:220px;"></select>
+          <label style="font-size:12.5px; font-weight:600;">Board</label>
+          <input type="text" id="kanban-board-name" value="default" style="width:140px;">
+          <button class="btn" id="btn-kanban-refresh">Refresh</button>
+        </div>
+        <div class="row" style="gap:8px; margin-top:10px;">
+          <input type="text" id="kanban-new-text" placeholder="New card text..." style="flex:1;">
+          <select id="kanban-new-column" style="width:120px;">
+            <option value="todo">todo</option>
+            <option value="doing">doing</option>
+            <option value="done">done</option>
+          </select>
+          <button class="btn primary" id="btn-kanban-add">Add card</button>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <div class="kanban-columns" id="kanban-columns" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:12px;"></div>
       </div>
     </section>
 
@@ -1437,6 +1479,10 @@ function startDashboard() {
   refreshBots();
   refreshBotsBackups();
   setInterval(refreshBots, 15000);
+  refreshPairing();
+  setInterval(refreshPairing, 15000);
+  refreshKanban();
+  setInterval(refreshKanban, 15000);
   refreshSwarmInstanceLegend();
   refreshSwarms();
   refreshSwarmRuns();
@@ -1680,6 +1726,7 @@ function _resetBotForm() {
   document.getElementById('bot-new-token').value = '';
   document.getElementById('bot-new-apptoken').value = '';
   document.getElementById('bot-new-allowed').value = '';
+  document.getElementById('bot-new-admins').value = '';
   document.getElementById('bot-new-apptoken-field').style.display = 'none';
   document.getElementById('btn-bot-create').textContent = 'Add bot';
   renderPersonaPicker('assistant');
@@ -1697,11 +1744,118 @@ function _loadBotIntoForm(bot) {
   document.getElementById('bot-new-apptoken').value = bot.credentials.app_token || '';
   document.getElementById('bot-new-apptoken-field').style.display = bot.platform === 'slack' ? '' : 'none';
   document.getElementById('bot-new-allowed').value = (bot.allowed_user_ids || []).join(', ');
+  document.getElementById('bot-new-admins').value = (bot.admin_user_ids || []).join(', ');
   renderPersonaPicker(bot.persona || 'assistant');
   refreshBotModelOptions();
   renderCanTargetCheckboxes(bot.id, bot.can_target || []);
   document.getElementById('btn-bot-create').textContent = 'Save changes';
   document.getElementById('bots').scrollIntoView({ behavior: 'smooth' });
+}
+
+let kanbanBotPopulated = false;
+
+function _kanbanSelectedBot() {
+  const sel = document.getElementById('kanban-bot-select');
+  return sel.value ? Number(sel.value) : null;
+}
+
+async function refreshKanban() {
+  const sel = document.getElementById('kanban-bot-select');
+  const cols = document.getElementById('kanban-columns');
+  if (!getToken() || !sel || !cols) return;
+  if ((botsCache || []).length && (!kanbanBotPopulated || sel.options.length !== botsCache.length)) {
+    const prev = sel.value;
+    sel.innerHTML = botsCache.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('');
+    if (prev && botsCache.some(b => String(b.id) === prev)) sel.value = prev;
+    kanbanBotPopulated = true;
+  }
+  const instanceId = _kanbanSelectedBot();
+  if (!instanceId) {
+    cols.innerHTML = '<p class="cardnote">No bots configured yet.</p>';
+    return;
+  }
+  const board = document.getElementById('kanban-board-name').value.trim() || 'default';
+  let data;
+  try {
+    data = await api(`/api/kanban/cards?instance_id=${instanceId}&board=${encodeURIComponent(board)}`);
+  } catch (_e) { return; }
+  const cards = data.cards || [];
+  const columns = ['todo', 'doing', 'done'];
+  for (const c of cards) if (!columns.includes(c.column_name)) columns.push(c.column_name);
+  cols.style.gridTemplateColumns = `repeat(${columns.length}, 1fr)`;
+  cols.innerHTML = columns.map(col => {
+    const colCards = cards.filter(c => c.column_name === col);
+    return `<div>
+      <h4 style="margin:0 0 8px; font-size:12.5px; text-transform:uppercase; color:var(--ink-soft);">${esc(col)} (${colCards.length})</h4>
+      ${colCards.map(c => `
+        <div class="card" style="padding:8px 10px; margin-bottom:8px;">
+          <div style="font-size:13px;">${esc(c.text)}</div>
+          <div class="row" style="gap:4px; margin-top:6px;">
+            ${columns.filter(x => x !== col).map(x => `<button class="btn small" data-kanban-move="${c.id}" data-col="${esc(x)}">→ ${esc(x)}</button>`).join('')}
+            <button class="btn small" data-kanban-delete="${c.id}">Delete</button>
+          </div>
+        </div>`).join('') || '<p class="cardnote">Empty</p>'}
+    </div>`;
+  }).join('');
+
+  cols.querySelectorAll('[data-kanban-move]').forEach(btn => btn.onclick = async () => {
+    await api(`/api/kanban/cards/${btn.dataset.kanbanMove}/move`, {
+      method: 'POST', body: JSON.stringify({ instance_id: instanceId, column: btn.dataset.col }),
+    });
+    refreshKanban();
+  });
+  cols.querySelectorAll('[data-kanban-delete]').forEach(btn => btn.onclick = async () => {
+    await api(`/api/kanban/cards/${btn.dataset.kanbanDelete}?instance_id=${instanceId}`, { method: 'DELETE' });
+    refreshKanban();
+  });
+}
+
+document.getElementById('btn-kanban-refresh').onclick = refreshKanban;
+document.getElementById('kanban-bot-select').onchange = refreshKanban;
+document.getElementById('kanban-board-name').onchange = refreshKanban;
+document.getElementById('btn-kanban-add').onclick = async () => {
+  const instanceId = _kanbanSelectedBot();
+  const text = document.getElementById('kanban-new-text').value.trim();
+  if (!instanceId || !text) return;
+  const board = document.getElementById('kanban-board-name').value.trim() || 'default';
+  const column = document.getElementById('kanban-new-column').value;
+  await api('/api/kanban/cards', {
+    method: 'POST', body: JSON.stringify({ instance_id: instanceId, board, column, text }),
+  });
+  document.getElementById('kanban-new-text').value = '';
+  refreshKanban();
+};
+
+async function refreshPairing() {
+  const tbody = document.getElementById('pairing-tbody');
+  if (!getToken() || !tbody) return;
+  let data;
+  try {
+    data = await api('/api/pairing');
+  } catch (_e) { return; }
+  const pending = data.pending || [];
+  const byId = Object.fromEntries((botsCache || []).map(b => [b.id, b.name]));
+  tbody.innerHTML = pending.length ? pending.map(p => `
+    <tr>
+      <td>${esc(byId[p.instance_id] || ('#' + p.instance_id))}</td>
+      <td>${esc(p.user_name || p.user_id)} (${esc(p.user_id)})</td>
+      <td><code>${esc(p.code)}</code></td>
+      <td>${esc(p.created_at)}</td>
+      <td>${esc(p.expires_at)}</td>
+      <td>
+        <button class="btn small" data-pairing-approve="${p.id}">Approve</button>
+        <button class="btn small" data-pairing-deny="${p.id}">Deny</button>
+      </td>
+    </tr>`).join('') : '<tr><td colspan="6" class="cardnote">No pending pairing requests.</td></tr>';
+  tbody.querySelectorAll('[data-pairing-approve]').forEach(btn => btn.onclick = async () => {
+    await api(`/api/pairing/${btn.dataset.pairingApprove}/approve`, { method: 'POST' });
+    refreshPairing();
+    refreshBots();
+  });
+  tbody.querySelectorAll('[data-pairing-deny]').forEach(btn => btn.onclick = async () => {
+    await api(`/api/pairing/${btn.dataset.pairingDeny}/deny`, { method: 'POST' });
+    refreshPairing();
+  });
 }
 
 async function refreshBots() {
@@ -1795,6 +1949,9 @@ document.getElementById('btn-bot-create').onclick = async () => {
   const allowed_user_ids = document.getElementById('bot-new-allowed').value
     .split(',').map(s => s.trim()).filter(Boolean)
     .map(s => (platform === 'slack' ? s : Number(s)));
+  const admin_user_ids = document.getElementById('bot-new-admins').value
+    .split(',').map(s => s.trim()).filter(Boolean)
+    .map(s => (platform === 'slack' ? s : Number(s)));
   const can_target = Array.from(document.querySelectorAll('#bot-new-cantarget-list [data-cantarget-id]'))
     .filter(cb => cb.checked).map(cb => Number(cb.dataset.cantargetId));
   const payload = {
@@ -1805,6 +1962,7 @@ document.getElementById('btn-bot-create').onclick = async () => {
     persona: selectedPersona,
     credentials,
     allowed_user_ids,
+    admin_user_ids,
     can_target,
   };
   statusEl.textContent = 'Saving…';

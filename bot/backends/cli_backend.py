@@ -67,6 +67,13 @@ class CliBackend(Backend):
             proc.kill()
             await proc.wait()
             raise BackendError(f"cli backend timed out after {timeout_s}s") from exc
+        except asyncio.CancelledError:
+            # /stop cancelling the task wrapping this call — without this,
+            # the subprocess would keep running orphaned after we stop
+            # waiting on it, which defeats the point of /stop.
+            proc.kill()
+            await proc.wait()
+            raise
 
         if proc.returncode != 0:
             detail = stderr.decode(errors="replace").strip()

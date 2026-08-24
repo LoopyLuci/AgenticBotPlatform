@@ -70,6 +70,7 @@ def _row_to_dict(row) -> dict[str, Any]:
     d = dict(row)
     d["credentials"] = json.loads(d["credentials"])
     d["allowed_user_ids"] = json.loads(d["allowed_user_ids"])
+    d["admin_user_ids"] = json.loads(d["admin_user_ids"])
     d["action_overrides"] = json.loads(d["action_overrides"])
     d["can_target"] = json.loads(d["can_target"])
     d["enabled"] = bool(d["enabled"])
@@ -102,6 +103,7 @@ def create_instance(
     backend: str,
     credentials: dict[str, Any],
     allowed_user_ids: list[Any],
+    admin_user_ids: Optional[list[Any]] = None,
     action_overrides: Optional[dict[str, Any]] = None,
     can_target: Optional[list[int]] = None,
     enabled: bool = True,
@@ -121,8 +123,8 @@ def create_instance(
         try:
             cur = conn.execute(
                 "INSERT INTO bot_instances "
-                "(name, platform, backend, enabled, credentials, allowed_user_ids, action_overrides, can_target, model, custom_instructions, persona, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "(name, platform, backend, enabled, credentials, allowed_user_ids, admin_user_ids, action_overrides, can_target, model, custom_instructions, persona, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     name,
                     platform,
@@ -130,6 +132,7 @@ def create_instance(
                     1 if enabled else 0,
                     json.dumps(credentials),
                     json.dumps(allowed_user_ids),
+                    json.dumps(admin_user_ids or []),
                     json.dumps(action_overrides or {}),
                     json.dumps(can_target or []),
                     model or None,
@@ -169,7 +172,7 @@ def update_instance(instance_id: int, actor: str = "dashboard", **fields: Any) -
         if key in fields:
             columns.append(f"{key}=?")
             params.append(1 if key == "enabled" and fields[key] else (0 if key == "enabled" else fields[key]))
-    for key in ("credentials", "allowed_user_ids", "action_overrides", "can_target"):
+    for key in ("credentials", "allowed_user_ids", "admin_user_ids", "action_overrides", "can_target"):
         if key in fields:
             columns.append(f"{key}=?")
             params.append(json.dumps(fields[key]))
@@ -308,12 +311,13 @@ def restore_backup(name: str, actor: str = "dashboard") -> None:
         for row in snapshot["instances"]:
             conn.execute(
                 "INSERT INTO bot_instances "
-                "(id, name, platform, backend, enabled, credentials, allowed_user_ids, action_overrides, can_target, model, "
+                "(id, name, platform, backend, enabled, credentials, allowed_user_ids, admin_user_ids, action_overrides, can_target, model, "
                 "persona, created_at, updated_at, last_started_at, last_error) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     row["id"], row["name"], row["platform"], row["backend"], row["enabled"],
-                    row["credentials"], row["allowed_user_ids"], row["action_overrides"], row.get("can_target", "[]"),
+                    row["credentials"], row["allowed_user_ids"], row.get("admin_user_ids", "[]"),
+                    row["action_overrides"], row.get("can_target", "[]"),
                     row.get("model"),
                     row.get("persona") or "assistant",
                     row["created_at"], row["updated_at"], row.get("last_started_at"), row.get("last_error"),

@@ -33,12 +33,21 @@ data class BotInstance(
     val persona: String = "assistant",
     val credentials: BotCredentials = BotCredentials(),
     @SerialName("allowed_user_ids") val allowedUserIdsRaw: JsonArray = JsonArray(emptyList()),
+    // Read-only here (deliberately absent from BotWriteRequest below, same
+    // reasoning as can_target's omission there — see that field's comment):
+    // this app can show who's an admin, but editing the tier list stays a
+    // dashboard/desktop action so an unrelated mobile edit can never
+    // silently wipe it via kotlinx's default-encoding of an omitted field.
+    @SerialName("admin_user_ids") val adminUserIdsRaw: JsonArray = JsonArray(emptyList()),
     @SerialName("can_target") val canTarget: List<Int> = emptyList(),
     @SerialName("last_error") val lastError: String? = null,
     @SerialName("live_running") val liveRunning: Boolean = false,
 ) {
     val allowedUserIds: List<String>
         get() = allowedUserIdsRaw.map { it.jsonPrimitive.content }
+
+    val adminUserIds: List<String>
+        get() = adminUserIdsRaw.map { it.jsonPrimitive.content }
 }
 
 @Serializable
@@ -52,6 +61,23 @@ data class BotWriteRequest(
     @SerialName("allowed_user_ids") val allowedUserIds: List<String>,
     val enabled: Boolean = true,
 )
+
+/** Mirrors one row from GET /api/pairing — see bot/pairing.py and
+ * bot/db.py's pairing_codes table. A pending request from an unrecognized
+ * chat-platform sender, waiting for an admin to approve or deny it. */
+@Serializable
+data class PairingRequest(
+    val id: Int,
+    @SerialName("instance_id") val instanceId: Int,
+    val code: String,
+    @SerialName("user_id") val userId: String,
+    @SerialName("user_name") val userName: String? = null,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("expires_at") val expiresAt: String,
+)
+
+@Serializable
+data class PairingListResponse(val pending: List<PairingRequest> = emptyList())
 
 /** Mirrors GET /api/personas — see bot/personas.py's PERSONA_PRESETS. */
 @Serializable

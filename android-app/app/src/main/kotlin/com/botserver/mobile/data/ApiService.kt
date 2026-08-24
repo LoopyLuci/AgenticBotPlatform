@@ -12,6 +12,7 @@ import com.botserver.mobile.data.dto.DeviceInfo
 import com.botserver.mobile.data.dto.JobSummary
 import com.botserver.mobile.data.dto.ModelsResponse
 import com.botserver.mobile.data.dto.OkResponse
+import com.botserver.mobile.data.dto.PairingListResponse
 import com.botserver.mobile.data.dto.PendingApkResponse
 import com.botserver.mobile.data.dto.PersonaPreset
 import com.botserver.mobile.data.dto.ServerChatConversation
@@ -190,6 +191,19 @@ interface ApiService {
 
     @POST("/api/bots/{instanceId}/restart")
     suspend fun restartBot(@Path("instanceId") instanceId: Int): OkResponse
+
+    // ---------------------------------------------------------- pairing ---
+    // Someone messaged a bot from an unrecognized chat id and got a
+    // one-time code back — see bot/pairing.py. Approving here appends
+    // their id into that instance's allowed_user_ids.
+    @GET("/api/pairing")
+    suspend fun pairing(@Query("instance_id") instanceId: Int? = null): PairingListResponse
+
+    @POST("/api/pairing/{pairingId}/approve")
+    suspend fun approvePairing(@Path("pairingId") pairingId: Int): OkResponse
+
+    @POST("/api/pairing/{pairingId}/deny")
+    suspend fun denyPairing(@Path("pairingId") pairingId: Int): OkResponse
 
     // ---------------------------------------------------------- settings --
     // Mirrors the desktop dashboard's Control Center — see ConfigDto.kt for

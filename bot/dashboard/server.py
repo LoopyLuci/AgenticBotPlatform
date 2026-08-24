@@ -26,7 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from bot import agent_control, attachments, bot_instances, db, desktop, envfile, outbox, platform_supervisor, setup_wizard, thumbnails
+from bot import agent_control, attachments, bot_instances, db, desktop, envfile, kanban, outbox, pairing, platform_supervisor, setup_wizard, thumbnails
 from bot.backends.base import BackendError
 from bot.commands import CmdContext, dispatch_command
 from bot.config import config
@@ -546,6 +546,7 @@ def build_app() -> FastAPI:
                 backend=payload.get("backend", "cli"),
                 credentials=payload.get("credentials") or {},
                 allowed_user_ids=payload.get("allowed_user_ids") or [],
+                admin_user_ids=payload.get("admin_user_ids") or [],
                 action_overrides=payload.get("action_overrides") or {},
                 can_target=payload.get("can_target") or [],
                 enabled=bool(payload.get("enabled", True)),
@@ -572,7 +573,7 @@ def build_app() -> FastAPI:
         fields = {
             k: v
             for k, v in payload.items()
-            if k in ("name", "platform", "backend", "enabled", "credentials", "allowed_user_ids", "action_overrides", "can_target", "model", "custom_instructions", "persona")
+            if k in ("name", "platform", "backend", "enabled", "credentials", "allowed_user_ids", "admin_user_ids", "action_overrides", "can_target", "model", "custom_instructions", "persona")
         }
         try:
             bot_instances.update_instance(instance_id, actor="dashboard", **fields)
@@ -645,6 +646,69 @@ def build_app() -> FastAPI:
         except BackendError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         return {"ok": True, "desktop_session_key": key}
+
+    # ----------------------------------------------------------- pairing --
+    # Approving/denying a pending chat-platform pairing request — see
+    # bot/pairing.py. Listing is scoped to one instance when instance_id is
+    # given, otherwise every pending request across every bot (for a
+    # dashboard-wide "Pending Pairings" panel).
+
+    @app.get("/api/pairing", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_pairing_list(instance_id: Optional[int] = None):
+        return {"pending": pairing.list_pending(instance_id)}
+
+    @app.post("/api/pairing/{pairing_id}/approve", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_pairing_approve(pairing_id: int):
+        try:
+            row = pairing.approve(pairing_id, actor="dashboard")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True, "pairing": row}
+
+    @app.post("/api/pairing/{pairing_id}/deny", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_pairing_deny(pairing_id: int):
+        try:
+            row = pairing.deny(pairing_id, actor="dashboard")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True, "pairing": row}
+
+    # ------------------------------------------------------------ kanban --
+    # A per-bot-instance kanban board — see bot/kanban.py, /kanban.
+
+    @app.get("/api/kanban/boards", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_kanban_boards(instance_id: int):
+        return {"boards": kanban.list_boards(instance_id)}
+
+    @app.get("/api/kanban/cards", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_kanban_cards(instance_id: int, board: str = "default"):
+        return {"cards": kanban.list_cards(instance_id, board)}
+
+    @app.post("/api/kanban/cards", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_kanban_add_card(payload: dict = Body(...)):
+        try:
+            card = kanban.add_card(
+                int(payload["instance_id"]), payload.get("board", "default"),
+                payload.get("column", "todo"), payload.get("text", ""),
+            )
+        except kanban.KanbanError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True, "card": card}
+
+    @app.post("/api/kanban/cards/{card_id}/move", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_kanban_move_card(card_id: int, payload: dict = Body(...)):
+        try:
+            card = kanban.move_card(int(payload["instance_id"]), card_id, payload.get("column", "todo"))
+        except kanban.KanbanError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True, "card": card}
+
+    @app.delete("/api/kanban/cards/{card_id}", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_kanban_delete_card(card_id: int, instance_id: int):
+        ok = kanban.delete_card(instance_id, card_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="card not found")
+        return {"ok": True}
 
     # ------------------------------------------------------------ swarms --
     # A swarm is a named group of bot instances plus a strategy for how

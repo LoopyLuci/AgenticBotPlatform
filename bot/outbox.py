@@ -20,14 +20,24 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable, Optional
 
 _senders: dict[int, Callable[[Any, str], Awaitable[None]]] = {}
+# A second, optional registration for platforms that support sub-chat
+# addressing (Telegram forum topics) — see bot/main.py's registration.
+# Falls back to the plain sender (dropping thread_id) when a platform
+# hasn't registered one, so this is purely additive.
+_threaded_senders: dict[int, Callable[[Any, str, Any], Awaitable[None]]] = {}
 
 
 def register(instance_id: int, sender: Callable[[Any, str], Awaitable[None]]) -> None:
     _senders[instance_id] = sender
 
 
+def register_threaded(instance_id: int, sender: Callable[[Any, str, Any], Awaitable[None]]) -> None:
+    _threaded_senders[instance_id] = sender
+
+
 def unregister(instance_id: int) -> None:
     _senders.pop(instance_id, None)
+    _threaded_senders.pop(instance_id, None)
 
 
 def is_ready(instance_id: int) -> bool:
@@ -38,7 +48,12 @@ def available_instances() -> list[int]:
     return sorted(_senders.keys())
 
 
-async def send_message(instance_id: int, chat_id: Any, text: str) -> None:
+async def send_message(instance_id: int, chat_id: Any, text: str, thread_id: Optional[Any] = None) -> None:
+    if thread_id is not None:
+        threaded = _threaded_senders.get(instance_id)
+        if threaded is not None:
+            await threaded(chat_id, text, thread_id)
+            return
     sender = _senders.get(instance_id)
     if sender is None:
         raise RuntimeError(

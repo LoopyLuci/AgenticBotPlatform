@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.botserver.mobile.data.dto.BotInstance
+import com.botserver.mobile.data.dto.PairingRequest
 import com.botserver.mobile.data.dto.PersonaPreset
 
 private val PLATFORMS = listOf("telegram", "discord", "slack")
@@ -58,13 +59,34 @@ fun BotsScreen(viewModel: BotsViewModel = hiltViewModel()) {
         },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
-            if (state.bots.isEmpty()) {
+            if (state.bots.isEmpty() && state.pendingPairings.isEmpty()) {
                 Text(
                     state.error ?: "No bots configured yet — tap + to add one.",
                     modifier = Modifier.align(Alignment.Center).padding(24.dp),
                 )
             } else {
                 LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (state.pendingPairings.isNotEmpty()) {
+                        item {
+                            Text(
+                                "Pending pairings",
+                                style = MaterialTheme.typography.labelLarge,
+                                modifier = Modifier.padding(bottom = 4.dp),
+                            )
+                        }
+                        items(state.pendingPairings, key = { "pairing-${it.id}" }) { request ->
+                            PairingRow(
+                                request,
+                                botName = state.bots.find { it.id == request.instanceId }?.name ?: "#${request.instanceId}",
+                                busy = state.busyPairingId == request.id,
+                                onApprove = { viewModel.approvePairing(request) },
+                                onDeny = { viewModel.denyPairing(request) },
+                            )
+                        }
+                        if (state.bots.isNotEmpty()) {
+                            item { Spacer(Modifier.height(4.dp)) }
+                        }
+                    }
                     items(state.bots, key = { it.id }) { bot ->
                         BotRow(
                             bot,
@@ -156,6 +178,35 @@ private fun BotRow(
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
         )
+    }
+}
+
+@Composable
+private fun PairingRow(
+    request: PairingRequest,
+    botName: String,
+    busy: Boolean,
+    onApprove: () -> Unit,
+    onDeny: () -> Unit,
+) {
+    Surface(shape = RoundedCornerShape(14.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp)) {
+            Text("${request.userName ?: request.userId} → $botName", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(
+                "Code ${request.code} · requested ${request.createdAt}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            )
+            Spacer(Modifier.height(8.dp))
+            if (busy) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = onApprove) { Text("Approve") }
+                    OutlinedButton(onClick = onDeny) { Text("Deny") }
+                }
+            }
+        }
     }
 }
 

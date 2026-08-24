@@ -550,6 +550,10 @@ function startDashboardPolling() {
   refreshBots();
   refreshBotsBackups();
   setInterval(refreshBots, 15000);
+  refreshPairing();
+  setInterval(refreshPairing, 15000);
+  refreshKanban();
+  setInterval(refreshKanban, 15000);
   refreshSwarmInstanceLegend();
   refreshSwarms();
   refreshSwarmRuns();
@@ -631,6 +635,7 @@ function _resetBotForm() {
   document.getElementById('bot-new-token').value = '';
   document.getElementById('bot-new-apptoken').value = '';
   document.getElementById('bot-new-allowed').value = '';
+  document.getElementById('bot-new-admins').value = '';
   document.getElementById('bot-new-apptoken-field').style.display = 'none';
   document.getElementById('btn-bot-create').textContent = 'Add bot';
   renderPersonaPicker('assistant');
@@ -648,11 +653,118 @@ function _loadBotIntoForm(bot) {
   document.getElementById('bot-new-apptoken').value = bot.credentials.app_token || '';
   document.getElementById('bot-new-apptoken-field').style.display = bot.platform === 'slack' ? '' : 'none';
   document.getElementById('bot-new-allowed').value = (bot.allowed_user_ids || []).join(', ');
+  document.getElementById('bot-new-admins').value = (bot.admin_user_ids || []).join(', ');
   renderPersonaPicker(bot.persona || 'assistant');
   refreshBotModelOptions();
   renderCanTargetCheckboxes(bot.id, bot.can_target || []);
   document.getElementById('btn-bot-create').textContent = 'Save changes';
   document.getElementById('bots').scrollIntoView({ behavior: 'smooth' });
+}
+
+let kanbanBotPopulated = false;
+
+function _kanbanSelectedBot() {
+  const sel = document.getElementById('kanban-bot-select');
+  return sel.value ? Number(sel.value) : null;
+}
+
+async function refreshKanban() {
+  const sel = document.getElementById('kanban-bot-select');
+  const cols = document.getElementById('kanban-columns');
+  if (!getToken() || !sel || !cols) return;
+  if ((botsCache || []).length && (!kanbanBotPopulated || sel.options.length !== botsCache.length)) {
+    const prev = sel.value;
+    sel.innerHTML = botsCache.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('');
+    if (prev && botsCache.some(b => String(b.id) === prev)) sel.value = prev;
+    kanbanBotPopulated = true;
+  }
+  const instanceId = _kanbanSelectedBot();
+  if (!instanceId) {
+    cols.innerHTML = '<p class="cardnote">No bots configured yet.</p>';
+    return;
+  }
+  const board = document.getElementById('kanban-board-name').value.trim() || 'default';
+  let data;
+  try {
+    data = await api(`/api/kanban/cards?instance_id=${instanceId}&board=${encodeURIComponent(board)}`);
+  } catch (_e) { return; }
+  const cards = data.cards || [];
+  const columns = ['todo', 'doing', 'done'];
+  for (const c of cards) if (!columns.includes(c.column_name)) columns.push(c.column_name);
+  cols.style.gridTemplateColumns = `repeat(${columns.length}, 1fr)`;
+  cols.innerHTML = columns.map(col => {
+    const colCards = cards.filter(c => c.column_name === col);
+    return `<div>
+      <h4 style="margin:0 0 8px; font-size:12.5px; text-transform:uppercase; color:var(--ink-soft);">${esc(col)} (${colCards.length})</h4>
+      ${colCards.map(c => `
+        <div class="card" style="padding:8px 10px; margin-bottom:8px;">
+          <div style="font-size:13px;">${esc(c.text)}</div>
+          <div class="row" style="gap:4px; margin-top:6px;">
+            ${columns.filter(x => x !== col).map(x => `<button class="btn small" data-kanban-move="${c.id}" data-col="${esc(x)}">→ ${esc(x)}</button>`).join('')}
+            <button class="btn small" data-kanban-delete="${c.id}">Delete</button>
+          </div>
+        </div>`).join('') || '<p class="cardnote">Empty</p>'}
+    </div>`;
+  }).join('');
+
+  cols.querySelectorAll('[data-kanban-move]').forEach(btn => btn.onclick = async () => {
+    await api(`/api/kanban/cards/${btn.dataset.kanbanMove}/move`, {
+      method: 'POST', body: JSON.stringify({ instance_id: instanceId, column: btn.dataset.col }),
+    });
+    refreshKanban();
+  });
+  cols.querySelectorAll('[data-kanban-delete]').forEach(btn => btn.onclick = async () => {
+    await api(`/api/kanban/cards/${btn.dataset.kanbanDelete}?instance_id=${instanceId}`, { method: 'DELETE' });
+    refreshKanban();
+  });
+}
+
+document.getElementById('btn-kanban-refresh').onclick = refreshKanban;
+document.getElementById('kanban-bot-select').onchange = refreshKanban;
+document.getElementById('kanban-board-name').onchange = refreshKanban;
+document.getElementById('btn-kanban-add').onclick = async () => {
+  const instanceId = _kanbanSelectedBot();
+  const text = document.getElementById('kanban-new-text').value.trim();
+  if (!instanceId || !text) return;
+  const board = document.getElementById('kanban-board-name').value.trim() || 'default';
+  const column = document.getElementById('kanban-new-column').value;
+  await api('/api/kanban/cards', {
+    method: 'POST', body: JSON.stringify({ instance_id: instanceId, board, column, text }),
+  });
+  document.getElementById('kanban-new-text').value = '';
+  refreshKanban();
+};
+
+async function refreshPairing() {
+  const tbody = document.getElementById('pairing-tbody');
+  if (!getToken() || !tbody) return;
+  let data;
+  try {
+    data = await api('/api/pairing');
+  } catch (_e) { return; }
+  const pending = data.pending || [];
+  const byId = Object.fromEntries((botsCache || []).map(b => [b.id, b.name]));
+  tbody.innerHTML = pending.length ? pending.map(p => `
+    <tr>
+      <td>${esc(byId[p.instance_id] || ('#' + p.instance_id))}</td>
+      <td>${esc(p.user_name || p.user_id)} (${esc(p.user_id)})</td>
+      <td><code>${esc(p.code)}</code></td>
+      <td>${esc(p.created_at)}</td>
+      <td>${esc(p.expires_at)}</td>
+      <td>
+        <button class="btn small" data-pairing-approve="${p.id}">Approve</button>
+        <button class="btn small" data-pairing-deny="${p.id}">Deny</button>
+      </td>
+    </tr>`).join('') : '<tr><td colspan="6" class="cardnote">No pending pairing requests.</td></tr>';
+  tbody.querySelectorAll('[data-pairing-approve]').forEach(btn => btn.onclick = async () => {
+    await api(`/api/pairing/${btn.dataset.pairingApprove}/approve`, { method: 'POST' });
+    refreshPairing();
+    refreshBots();
+  });
+  tbody.querySelectorAll('[data-pairing-deny]').forEach(btn => btn.onclick = async () => {
+    await api(`/api/pairing/${btn.dataset.pairingDeny}/deny`, { method: 'POST' });
+    refreshPairing();
+  });
 }
 
 async function refreshBots() {
@@ -763,6 +875,9 @@ document.getElementById('btn-bot-create').onclick = async () => {
   const allowed_user_ids = document.getElementById('bot-new-allowed').value
     .split(',').map(s => s.trim()).filter(Boolean)
     .map(s => (platform === 'slack' ? s : Number(s)));
+  const admin_user_ids = document.getElementById('bot-new-admins').value
+    .split(',').map(s => s.trim()).filter(Boolean)
+    .map(s => (platform === 'slack' ? s : Number(s)));
   const can_target = Array.from(document.querySelectorAll('#bot-new-cantarget-list [data-cantarget-id]'))
     .filter(cb => cb.checked).map(cb => Number(cb.dataset.cantargetId));
   const payload = {
@@ -773,6 +888,7 @@ document.getElementById('btn-bot-create').onclick = async () => {
     persona: selectedPersona,
     credentials,
     allowed_user_ids,
+    admin_user_ids,
     can_target,
   };
   statusEl.textContent = 'Saving…';
