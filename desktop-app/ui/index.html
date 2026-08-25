@@ -693,6 +693,15 @@
       </div>
 
       <div class="card" style="margin-top:14px;">
+        <h3>TURN Server (WebRTC mesh relay)</h3>
+        <p class="cardnote">Used by the Android app's WebRTC fallback for mesh APK transfers, when two devices can't reach each other directly (symmetric NAT, restrictive firewalls). BotServer never runs the relay itself — this only mints short-lived credentials for a real TURN server (coturn) you run separately with the same shared secret. See docs/turn-server-setup.md.</p>
+        <div class="settingrow"><div><div class="st">Enabled</div><div class="sd">Turn on once a coturn server is actually running and reachable</div></div><div class="toggle" id="tg-turn-enabled" data-path="turn,enabled"></div></div>
+        <div class="settingrow"><div><div class="st">Shared secret</div><div class="sd">Must exactly match coturn's static-auth-secret</div></div><input type="password" id="turn-secret" placeholder="(not set) — leave blank to keep unchanged" style="min-width:260px;"></div>
+        <div class="settingrow"><div><div class="st">TURN URLs</div><div class="sd">Comma-separated, e.g. turn:host:3478?transport=udp, turn:host:3478?transport=tcp</div></div><input type="text" id="turn-urls" placeholder="turn:host:3478?transport=udp" style="min-width:320px;"></div>
+        <div class="settingrow"><div><div class="st">Credential lifetime (seconds)</div><div class="sd">How long a minted credential stays valid</div></div><input type="number" id="turn-ttl" min="60" style="width:100px;"></div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
           <div>
             <h3>Environment</h3>

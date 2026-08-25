@@ -39,7 +39,15 @@ def _diff_summary(old: dict, new: dict) -> str:
             if isinstance(ov, dict) and isinstance(nv, dict):
                 walk(ov, nv, prefix=f"{path}.")
             elif ov != nv:
-                changes.append(f"{path}: {ov!r} -> {nv!r}")
+                # Never write a secret's actual value into the audit
+                # trail/config_history — both are served back verbatim by
+                # GET /api/config, which (like most reads here) has no auth
+                # gate, so a raw value in the diff summary would leak it
+                # just as much as putting it in the config dict itself.
+                if k == "secret":
+                    changes.append(f"{path}: changed")
+                else:
+                    changes.append(f"{path}: {ov!r} -> {nv!r}")
 
     try:
         walk(old, new)

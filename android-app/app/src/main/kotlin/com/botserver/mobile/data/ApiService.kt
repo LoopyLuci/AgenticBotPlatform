@@ -35,6 +35,7 @@ import com.botserver.mobile.data.dto.SessionSummary
 import com.botserver.mobile.data.dto.SupportBotAskRequest
 import com.botserver.mobile.data.dto.SupportBotConfirmRequest
 import com.botserver.mobile.data.dto.SupportBotReply
+import com.botserver.mobile.data.dto.TurnCredentialsResponse
 import com.botserver.mobile.data.dto.UploadCompleteResponse
 import com.botserver.mobile.data.dto.UploadInitRequest
 import com.botserver.mobile.data.dto.UploadInitResponse
@@ -130,6 +131,13 @@ interface ApiService {
     // before streaming this device's APK to it.
     @POST("/api/android/apk/mesh/redeem")
     suspend fun redeemMeshToken(@Body request: MeshRedeemRequest): MeshRedeemResponse
+
+    // Short-lived TURN relay credentials for WebRtcMeshClient's ICE server
+    // list (bot/turn.py) — fetched fresh per PeerConnection since a single
+    // transfer is far shorter than the credential's ttl. {enabled: false}
+    // when no TURN server is configured is the normal "STUN-only" case.
+    @GET("/api/turn/credentials")
+    suspend fun turnCredentials(): TurnCredentialsResponse
 
     // ---------------------------------------------------------- server chat
     // A permanent, bot-independent channel between this server's own

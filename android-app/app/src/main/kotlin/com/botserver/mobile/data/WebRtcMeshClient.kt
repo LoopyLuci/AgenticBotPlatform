@@ -121,12 +121,14 @@ private class Negotiation(val peerConnection: PeerConnection) {
  * server's existing /api/ws socket (pure relay — the server never sees a
  * byte of the actual transfer) and, once a PeerConnection is up, run the
  * exact same push_id/token request-and-stream protocol over a DataChannel
- * that MeshServer runs over a raw TCP socket. Uses a public STUN server
- * for NAT traversal only — there's no TURN relay configured, so this still
- * won't succeed against a symmetric NAT/restrictive firewall on either
- * side; that's a real, documented limit of this first version, not a
- * silent failure (the caller falls back to nothing further and reports a
- * clear error). */
+ * that MeshServer runs over a raw TCP socket. ICE servers are STUN plus,
+ * when the operator has configured one (bot/turn.py), a real TURN relay
+ * fetched fresh per connection via GET /api/turn/credentials — see
+ * docs/turn-server-setup.md for standing up the coturn side. Without a
+ * TURN server configured, this still won't succeed against a symmetric
+ * NAT/restrictive firewall on either side; that's a real, documented limit,
+ * not a silent failure (the caller falls back to nothing further and
+ * reports a clear error). */
 @Singleton
 class WebRtcMeshClient @Inject constructor(
     private val apiService: ApiService,
@@ -147,10 +149,28 @@ class WebRtcMeshClient @Inject constructor(
         PeerConnectionFactory.builder().createPeerConnectionFactory()
     }
 
-    private val rtcConfig: PeerConnection.RTCConfiguration
-        get() = PeerConnection.RTCConfiguration(
-            listOf(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()),
-        ).apply { sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN }
+    /** STUN always; TURN too when the server has one configured — fetched
+     * fresh (not cached) since this only runs once per PeerConnection and a
+     * transfer is far shorter than the credential's ttl, so there's no
+     * benefit to caching that would outweigh the risk of using a stale/
+     * expired credential. A TURN fetch failure (server has none configured,
+     * or the request itself fails) just falls back to STUN-only rather than
+     * failing the whole connection attempt. */
+    private suspend fun iceServers(): List<PeerConnection.IceServer> {
+        val stun = PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
+        val turn = runCatching { apiService.turnCredentials() }.getOrNull()
+        if (turn == null || !turn.enabled || turn.urls.isEmpty() || turn.username == null || turn.credential == null) {
+            return listOf(stun)
+        }
+        val turnServer = PeerConnection.IceServer.builder(turn.urls)
+            .setUsername(turn.username)
+            .setPassword(turn.credential)
+            .createIceServer()
+        return listOf(stun, turnServer)
+    }
+
+    private suspend fun buildRtcConfig(): PeerConnection.RTCConfiguration =
+        PeerConnection.RTCConfiguration(iceServers()).apply { sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN }
 
     /** Opens the signaling relay and starts answering any incoming offer —
      * called alongside MeshServer.start() so this device can serve its own
@@ -205,7 +225,7 @@ class WebRtcMeshClient @Inject constructor(
 
     private suspend fun onOfferReceived(fromId: Int, data: JsonObject) {
         val sdp = data["sdp"]?.jsonPrimitive?.contentOrNull ?: return
-        val pc = factory.createPeerConnection(rtcConfig, object : SimplePeerConnectionObserver() {
+        val pc = factory.createPeerConnection(buildRtcConfig(), object : SimplePeerConnectionObserver() {
             override fun onIceCandidate(candidate: IceCandidate?) {
                 candidate ?: return
                 sendSignal(fromId, iceToJson(candidate))
@@ -286,8 +306,9 @@ class WebRtcMeshClient @Inject constructor(
         }
     }
 
-    private suspend fun downloadInternal(originApiKeyId: Int, pushId: Int, token: String, destFile: File): File =
-        suspendCancellableCoroutine { cont ->
+    private suspend fun downloadInternal(originApiKeyId: Int, pushId: Int, token: String, destFile: File): File {
+        val rtcConfig = buildRtcConfig() // must happen before suspendCancellableCoroutine — its lambda isn't a suspend context
+        return suspendCancellableCoroutine { cont ->
             var expectedLength = -1L
             val received = java.io.ByteArrayOutputStream()
 
@@ -342,6 +363,7 @@ class WebRtcMeshClient @Inject constructor(
                 sendSignal(originApiKeyId, buildJsonObject { put("kind", "offer"); put("sdp", offer.description) })
             }
         }
+    }
 
     private fun onAnswerReceived(fromId: Int, data: JsonObject) {
         val sdp = data["sdp"]?.jsonPrimitive?.contentOrNull ?: return

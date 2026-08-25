@@ -46,3 +46,16 @@ features:
   verbose_telemetry: true
 agent_control:
   mode: trust_all
+turn:
+  # Real TURN relay for the Android mesh transport's WebRTC fallback (see
+  # bot/turn.py) — used when two devices can't reach each other directly
+  # (symmetric NAT, restrictive firewalls) even with STUN's help. Off by
+  # default: enabling it requires an actual TURN server (coturn is the
+  # standard choice) running with the same shared secret configured below
+  # (coturn's `use-auth-secret` + `static-auth-secret`) — see
+  # docs/turn-server-setup.md. BotServer only ever mints short-lived
+  # HMAC credentials from this secret; it never runs the relay itself.
+  enabled: false
+  secret: null
+  urls: []
+  ttl_s: 3600

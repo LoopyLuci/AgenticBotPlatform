@@ -459,9 +459,17 @@ def build_app() -> FastAPI:
 
     @app.get("/api/config")
     async def api_config():
+        # This read (like most GET endpoints in this section) has no auth
+        # gate, so the TURN shared secret must never appear in it verbatim
+        # — same reasoning as never echoing it back after it's set. The
+        # dashboard UI only needs to know whether one is configured at all.
+        current = config.current
+        turn_cfg = current.get("turn")
+        if isinstance(turn_cfg, dict) and turn_cfg.get("secret"):
+            current["turn"] = {**turn_cfg, "secret": None, "secret_set": True}
         return {
             "version": config.version,
-            "current": config.current,
+            "current": current,
             "history": [dict(r) for r in db.list_config_history(limit=20)],
         }
 
@@ -1820,6 +1828,22 @@ def build_app() -> FastAPI:
         if row is None or row["origin_api_key_id"] != caller_device_id:
             raise HTTPException(status_code=404, detail="no such mesh push originating from this device")
         return {"ok": db.redeem_mesh_token(push_id, token)}
+
+    @app.get("/api/turn/credentials", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_turn_credentials(caller_device_id: Optional[int] = Depends(_caller_device_id)):
+        """Short-lived TURN relay credentials for the WebRTC mesh fallback
+        (see bot/turn.py) — minted fresh per call, never stored, so there's
+        nothing here to revoke beyond letting the ttl expire. Returns
+        {"enabled": false} rather than 404/403 when TURN isn't configured,
+        since "no TURN available" is an expected, non-error state the
+        client falls back to STUN-only for."""
+        from bot import turn
+
+        label = str(caller_device_id) if caller_device_id is not None else "desktop"
+        creds = turn.credentials(user_label=label)
+        if creds is None:
+            return {"enabled": False}
+        return {"enabled": True, **creds}
 
     @app.get("/api/android/apk/pending")
     async def api_android_apk_pending(api_key_id: int = Depends(_require_mobile_key_id)):

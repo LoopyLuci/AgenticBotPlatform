@@ -56,3 +56,18 @@ data class MeshRedeemRequest(@SerialName("push_id") val pushId: Int, val token: 
 
 @Serializable
 data class MeshRedeemResponse(val ok: Boolean = false)
+
+/** Mirrors GET /api/turn/credentials (bot/turn.py) — short-lived TURN relay
+ * credentials for WebRtcMeshClient's ICE server list, refreshed on every
+ * PeerConnection since the ttl is much longer than one transfer takes.
+ * `enabled=false` (with every other field absent) is the expected shape
+ * when no TURN server is configured server-side — not an error, just
+ * "STUN-only for this connection." */
+@Serializable
+data class TurnCredentialsResponse(
+    val enabled: Boolean = false,
+    val urls: List<String> = emptyList(),
+    val username: String? = null,
+    val credential: String? = null,
+    val ttl: Int? = null,
+)

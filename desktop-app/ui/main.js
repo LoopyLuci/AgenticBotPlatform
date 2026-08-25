@@ -295,6 +295,11 @@ function _defaultModelInputFocused() {
   return active && ['model-api', 'model-hermes_cli', 'model-hermes_gateway'].includes(active.id);
 }
 
+function _turnInputsFocused() {
+  const active = document.activeElement;
+  return active && ['turn-secret', 'turn-urls', 'turn-ttl'].includes(active.id);
+}
+
 async function refreshModels() {
   // refreshConfig() runs every 5s via refreshAll() — rebuilding these
   // inputs' backing <datalist> and resetting .value while the user has
@@ -439,6 +444,15 @@ async function refreshConfig() {
   setToggle('tg-confirm', !!(current.security || {}).confirm_destructive);
   setToggle('tg-verbose', !!(current.features || {}).verbose_telemetry);
 
+  setToggle('tg-turn-enabled', !!(current.turn || {}).enabled);
+  if (!_turnInputsFocused()) {
+    document.getElementById('turn-urls').value = ((current.turn || {}).urls || []).join(', ');
+    document.getElementById('turn-ttl').value = (current.turn || {}).ttl_s ?? 3600;
+    document.getElementById('turn-secret').placeholder = (current.turn || {}).secret_set
+      ? '(set) — leave blank to keep unchanged'
+      : '(not set) — leave blank to keep unchanged';
+  }
+
   document.getElementById('config-history').innerHTML = cfg.history.map(h => `
     <div class="tlitem"><div class="v">v${h.version}</div><div class="d">${esc(h.summary)}</div><div class="m">${fmtTime(h.ts)} · ${esc(h.actor)}</div></div>`).join('')
     || '<p class="cardnote">No reloads recorded yet.</p>';
@@ -461,6 +475,24 @@ document.querySelectorAll('.toggle[data-path]').forEach(el => {
 document.querySelectorAll('.default-backend-seg button').forEach(btn => {
   btn.onclick = async () => { await api(`/api/backend/default/${btn.dataset.b}`, { method: 'POST' }); refreshConfig(); refreshOverview(); };
 });
+
+document.getElementById('turn-secret').onchange = async (e) => {
+  const value = e.target.value; // blank means "leave unchanged" — never clears an existing secret by accident
+  e.target.value = '';
+  if (!value) return;
+  await api('/api/config/set', { method: 'POST', body: JSON.stringify({ path: ['turn', 'secret'], value }) });
+  refreshConfig();
+};
+document.getElementById('turn-urls').onchange = async (e) => {
+  const urls = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+  await api('/api/config/set', { method: 'POST', body: JSON.stringify({ path: ['turn', 'urls'], value: urls }) });
+  refreshConfig();
+};
+document.getElementById('turn-ttl').onchange = async (e) => {
+  const value = Math.max(60, parseInt(e.target.value, 10) || 3600);
+  await api('/api/config/set', { method: 'POST', body: JSON.stringify({ path: ['turn', 'ttl_s'], value }) });
+  refreshConfig();
+};
 
 document.querySelectorAll('#agent-control-seg button').forEach(btn => {
   btn.onclick = async () => {
