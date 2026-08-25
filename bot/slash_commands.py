@@ -61,6 +61,11 @@ COMMAND_DEFS: tuple[CommandDef, ...] = (
     CommandDef("agents", "Show what's currently running for this bot", category="Session"),
     CommandDef("approve", "Approve the oldest pending tool call", category="Session", args_hint="[session|always]"),
     CommandDef("deny", "Deny the oldest pending tool call", category="Session"),
+    CommandDef("rollback", "Reset the workspace back N checkpoints (git)", category="Checkpoints", args_hint="[n]"),
+    CommandDef("undo", "Reset the workspace back one checkpoint", category="Checkpoints"),
+    CommandDef("branch", "Create and switch to a new workspace branch", category="Checkpoints", args_hint="<name>"),
+    CommandDef("compress", "Squash this session's checkpoints into one commit", category="Checkpoints"),
+    CommandDef("worktree", "Create a linked worktree for parallel work", category="Checkpoints", args_hint="<name>"),
     CommandDef("cron", "Manage scheduled prompts", category="Tools",
                args_hint="list | add <interval> <prompt> | pause <id> | resume <id> | remove <id>", raw_args=True),
     CommandDef("loop", "Re-run a prompt on a recurring interval", category="Tools",
@@ -93,6 +98,7 @@ ALIASES: dict[str, str] = {
 _TELEGRAM_MENU_PRIORITY: tuple[str, ...] = (
     "help", "ask", "stop", "status", "new", "sessions", "resume", "model", "backend", "mcp", "project",
     "background", "queue", "steer", "pause", "agents", "approve", "deny",
+    "rollback", "undo", "branch", "compress", "worktree",
     "cron", "loop", "heartbeat", "kanban", "memory", "skills", "usage", "insights", "topic", "commands",
     "title", "profile", "whoami", "start_desktop", "stop_desktop", "restart_desktop", "start",
 )

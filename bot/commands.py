@@ -592,6 +592,100 @@ async def cmd_deny(ctx: CmdContext, args: list[str]) -> str:
     return "Denied." if ok else "That approval was already resolved."
 
 
+# ------------------------------------------------------------ checkpoints -
+# Real git snapshots of the api-backend workspace (see
+# bot/agent_runtime/checkpoints.py and api_backend.py's auto-checkpoint
+# after each dangerous tool call) — /rollback, /undo, /branch, /compress,
+# /worktree. All five refuse to run while a turn is actively running for
+# this chat, since resetting the working directory out from under a
+# tool-call loop mid-flight would be actively dangerous, not just confusing.
+
+def _checkpoint_workspace(ctx: CmdContext):
+    from bot.agent_runtime import tools as agent_tools
+
+    if ctx.instance_id is None:
+        return None
+    return agent_tools.resolve_workspace(ctx.instance_id, ctx.session.get("project_cwd"))
+
+
+def _checkpoint_busy_guard(ctx: CmdContext) -> Optional[str]:
+    if ctx.instance_id is None:
+        return "This chat isn't linked to a bot instance."
+    if agent_engine.is_running(ctx.instance_id, ctx.chat_id, ctx.thread_id):
+        return "A turn is running for this chat — /stop it first before touching checkpoints."
+    return None
+
+
+async def cmd_rollback(ctx: CmdContext, args: list[str]) -> str:
+    from bot.agent_runtime import checkpoints
+
+    guard = _checkpoint_busy_guard(ctx)
+    if guard:
+        return guard
+    steps = int(args[0]) if args and args[0].isdigit() else 1
+    workspace = _checkpoint_workspace(ctx)
+    try:
+        return checkpoints.rollback(workspace, steps=steps)
+    except checkpoints.CheckpointError as exc:
+        return f"Rollback failed: {exc}"
+
+
+async def cmd_undo(ctx: CmdContext, args: list[str]) -> str:
+    from bot.agent_runtime import checkpoints
+
+    guard = _checkpoint_busy_guard(ctx)
+    if guard:
+        return guard
+    workspace = _checkpoint_workspace(ctx)
+    try:
+        return checkpoints.undo(workspace)
+    except checkpoints.CheckpointError as exc:
+        return f"Undo failed: {exc}"
+
+
+async def cmd_branch(ctx: CmdContext, args: list[str]) -> str:
+    from bot.agent_runtime import checkpoints
+
+    guard = _checkpoint_busy_guard(ctx)
+    if guard:
+        return guard
+    if not args:
+        return "Usage: /branch <name>"
+    workspace = _checkpoint_workspace(ctx)
+    try:
+        return checkpoints.branch(workspace, args[0])
+    except checkpoints.CheckpointError as exc:
+        return f"Branch failed: {exc}"
+
+
+async def cmd_compress(ctx: CmdContext, args: list[str]) -> str:
+    from bot.agent_runtime import checkpoints
+
+    guard = _checkpoint_busy_guard(ctx)
+    if guard:
+        return guard
+    workspace = _checkpoint_workspace(ctx)
+    try:
+        return checkpoints.compress(workspace)
+    except checkpoints.CheckpointError as exc:
+        return f"Compress failed: {exc}"
+
+
+async def cmd_worktree(ctx: CmdContext, args: list[str]) -> str:
+    from bot.agent_runtime import checkpoints
+
+    guard = _checkpoint_busy_guard(ctx)
+    if guard:
+        return guard
+    if not args:
+        return "Usage: /worktree <name>"
+    workspace = _checkpoint_workspace(ctx)
+    try:
+        return checkpoints.worktree(workspace, args[0])
+    except checkpoints.CheckpointError as exc:
+        return f"Worktree failed: {exc}"
+
+
 async def cmd_new_session(ctx: CmdContext, args: list[str]) -> str:
     """Opens a brand-new linked chat/session in the real Claude Desktop or
     Hermes app, for THIS chat specifically — see Router.create_session()
@@ -973,6 +1067,11 @@ COMMANDS: dict[str, Callable[[CmdContext, list[str]], Any]] = {
     "agents": cmd_agents,
     "approve": cmd_approve,
     "deny": cmd_deny,
+    "rollback": cmd_rollback,
+    "undo": cmd_undo,
+    "branch": cmd_branch,
+    "compress": cmd_compress,
+    "worktree": cmd_worktree,
     "kanban": cmd_kanban,
     "topic": cmd_topic,
     "skills": cmd_skills,

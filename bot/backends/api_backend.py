@@ -189,9 +189,26 @@ async def _run_one_tool(name, tool_input, *, workspace, instance_id, chat_id, se
             )
             if outcome == "deny":
                 return "Denied by user."
-        return await agent_tools.execute_tool(name, tool_input, workspace=workspace, instance_id=instance_id)
+        output = await agent_tools.execute_tool(name, tool_input, workspace=workspace, instance_id=instance_id)
+        if name in agent_tools.DANGEROUS_TOOLS:
+            _try_checkpoint(workspace, name, tool_input)
+        return output
     except agent_tools.ToolError as exc:
         return f"Error: {exc}"
+
+
+def _try_checkpoint(workspace, name: str, tool_input: dict) -> None:
+    """Best-effort auto-checkpoint after a tool call that may have changed
+    the workspace — git failures here (no git installed, a workspace
+    outside any writable filesystem, etc.) must never break the tool call
+    that already succeeded, so this only logs."""
+    from bot.agent_runtime import checkpoints
+
+    label = tool_input.get("command") if name == "run_shell" else tool_input.get("path", name)
+    try:
+        checkpoints.create_checkpoint(workspace, str(label)[:100])
+    except checkpoints.CheckpointError:
+        logger.warning("auto-checkpoint failed for %s in %s", name, workspace, exc_info=True)
 
 
 def _serialize_blocks(content) -> list[dict]:
