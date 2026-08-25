@@ -23,6 +23,7 @@ import javax.inject.Singleton
 @Singleton
 class UpdateRepository @Inject constructor(
     private val apiService: ApiService,
+    private val webRtcMeshClient: WebRtcMeshClient,
     @ApplicationContext private val context: Context,
 ) {
 
@@ -40,16 +41,24 @@ class UpdateRepository @Inject constructor(
 
     suspend fun sendToAll(): Int = apiService.sendApkToAll(ApkSendAllRequest(mesh = true)).sentTo
 
-    /** Tries a direct LAN connection to the origin device first (see
-     * MeshServer.kt's connectToMeshPeer) when the pending push carries mesh
-     * info, then falls back to the server-relay download — the "hybrid"
-     * part: whichever path actually works, transparently to the caller. */
+    /** The full hybrid chain: a direct LAN socket first (MeshServer.kt's
+     * connectToMeshPeer, only tried when the origin reported a usable LAN
+     * address), then a WebRTC data channel negotiated through the server's
+     * signaling relay (WebRtcMeshClient — works across networks, but still
+     * needs a public STUN server's help and can fail against a restrictive
+     * NAT/firewall), then finally the server-relay download. Each step
+     * only runs if the previous one couldn't even connect — whichever
+     * actually works, transparently to the caller. */
     suspend fun downloadApk(pushId: Int, mesh: MeshOrigin? = null): File = withContext(Dispatchers.IO) {
         val dir = File(context.cacheDir, "updates").apply { mkdirs() }
         val dest = File(dir, "BotServer.apk")
         if (mesh != null) {
-            val direct = connectToMeshPeer(mesh.host, mesh.port, pushId, mesh.token, dest)
-            if (direct != null) return@withContext direct
+            if (mesh.host != null && mesh.port != null) {
+                val direct = connectToMeshPeer(mesh.host, mesh.port, pushId, mesh.token, dest)
+                if (direct != null) return@withContext direct
+            }
+            val viaWebRtc = webRtcMeshClient.download(mesh.originApiKeyId, pushId, mesh.token, dest)
+            if (viaWebRtc != null) return@withContext viaWebRtc
         }
         val body = apiService.downloadApk(pushId)
         body.byteStream().use { input ->

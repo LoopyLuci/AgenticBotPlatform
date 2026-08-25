@@ -6,6 +6,7 @@ import com.botserver.mobile.data.DevicesRepository
 import com.botserver.mobile.data.MeshServer
 import com.botserver.mobile.data.NewDevicePairing
 import com.botserver.mobile.data.UpdateRepository
+import com.botserver.mobile.data.WebRtcMeshClient
 import com.botserver.mobile.data.dto.DeviceInfo
 import com.botserver.mobile.data.dto.MeshOrigin
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -43,6 +44,7 @@ class DevicesViewModel @Inject constructor(
     private val repository: DevicesRepository,
     private val updateRepository: UpdateRepository,
     private val meshServer: MeshServer,
+    private val webRtcMeshClient: WebRtcMeshClient,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<GenerateState>(GenerateState.Idle)
@@ -127,9 +129,15 @@ class DevicesViewModel @Inject constructor(
      * separate, larger change (persistent notification, battery exemption
      * prompts) left for a later pass if this proves useful enough to want
      * always-on. */
-    fun startMesh() = meshServer.start()
+    fun startMesh() {
+        meshServer.start()
+        webRtcMeshClient.start()
+    }
 
-    fun stopMesh() = meshServer.stop()
+    fun stopMesh() {
+        meshServer.stop()
+        webRtcMeshClient.stop()
+    }
 
     fun dismissUpdate() {
         _updateState.value = UpdateState.None

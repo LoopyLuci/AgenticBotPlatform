@@ -91,6 +91,14 @@ dependencies {
     // rest of the app already uses, see di/NetworkModule.kt's ImageLoader.
     implementation("io.coil-kt:coil-compose:2.6.0")
 
+    // WebRTC data channels — the cross-network half of the mesh APK
+    // transfer (see data/WebRtcMeshClient.kt): used purely for a
+    // PeerConnection + DataChannel, no audio/video capture, as the fallback
+    // when two devices aren't on the same LAN for MeshServer.kt's direct
+    // socket path. Google stopped publishing org.webrtc:google-webrtc to
+    // Maven Central; this is the actively maintained community build.
+    implementation("io.getstream:stream-webrtc-android:1.3.10")
+
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     debugImplementation("androidx.compose.ui:ui-tooling")

@@ -86,12 +86,20 @@ def _annotate_online(devices: list[dict]) -> list[dict]:
 
 
 class _ConnectionManager:
-    """Tracks live /api/ws sockets for broadcasting device-presence deltas.
-    A plain in-process set is enough — this is a single-process server, no
-    need for pub/sub across workers."""
+    """Tracks live /api/ws sockets for broadcasting device-presence deltas,
+    and (see register_device/send_to_device) for relaying WebRTC signaling
+    messages directly between two specific devices' sockets — the
+    rendezvous point mesh transport phase 2 needs when two devices aren't
+    on the same LAN for MeshServer's direct-socket path (phase 1) to work.
+    This server never looks at what's inside a signal payload; it only
+    routes it to the named device's live socket, same as a STUN/TURN
+    provider's signaling channel would, just built on the connection this
+    server already has open. A plain in-process set is enough — this is a
+    single-process server, no need for pub/sub across workers."""
 
     def __init__(self) -> None:
         self._sockets: set[WebSocket] = set()
+        self._device_of: dict[WebSocket, int] = {}
         self._lock = asyncio.Lock()
 
     async def connect(self, ws: WebSocket) -> None:
@@ -99,9 +107,14 @@ class _ConnectionManager:
         async with self._lock:
             self._sockets.add(ws)
 
+    async def register_device(self, ws: WebSocket, api_key_id: int) -> None:
+        async with self._lock:
+            self._device_of[ws] = api_key_id
+
     async def disconnect(self, ws: WebSocket) -> None:
         async with self._lock:
             self._sockets.discard(ws)
+            self._device_of.pop(ws, None)
 
     async def broadcast(self, payload: dict) -> None:
         async with self._lock:
@@ -111,6 +124,23 @@ class _ConnectionManager:
                 await ws.send_json(payload)
             except Exception:
                 await self.disconnect(ws)
+
+    async def send_to_device(self, api_key_id: int, payload: dict) -> bool:
+        """Best-effort, fire-and-forget: True only if that device currently
+        has a live socket open. No queuing for an offline device — a
+        WebRTC handshake that can't reach its peer right now has nothing
+        to resume later anyway; the caller falls back to the server-relay
+        download instead."""
+        async with self._lock:
+            targets = [ws for ws, dev_id in self._device_of.items() if dev_id == api_key_id]
+        sent = False
+        for ws in targets:
+            try:
+                await ws.send_json(payload)
+                sent = True
+            except Exception:
+                await self.disconnect(ws)
+        return sent
 
 
 _manager = _ConnectionManager()
@@ -1805,11 +1835,19 @@ def build_app() -> FastAPI:
         origin_id = row["origin_api_key_id"]
         if origin_id:
             presence = db.get_device_presence(origin_id)
+            mesh: dict = {"origin_api_key_id": origin_id, "token": row["mesh_token"]}
             if presence and presence["local_ip"] and presence["mesh_port"]:
                 # Handed to this device only — it's the sole party the
                 # server ever tells about another device's LAN address, and
                 # only for the one push actually addressed to it.
-                result["mesh"] = {"host": presence["local_ip"], "port": presence["mesh_port"], "token": row["mesh_token"]}
+                mesh["host"] = presence["local_ip"]
+                mesh["port"] = presence["mesh_port"]
+            # origin_api_key_id + token are always included even without a
+            # usable LAN address — they're what the WebRTC fallback needs to
+            # address a signaling offer at the origin device (see
+            # WebRtcMeshClient.kt) when the two devices aren't on the same
+            # network for the direct-socket path above to work at all.
+            result["mesh"] = mesh
         return result
 
     @app.get("/api/android/apk/download/{push_id}")
@@ -1845,17 +1883,34 @@ def build_app() -> FastAPI:
         # to this API's usual header-based auth.
         expected = os.environ.get("DASHBOARD_TOKEN")
         authed = bool(expected and token == expected)
-        if not authed:
-            authed = db.verify_api_key(token or "") is not None
-        if not authed:
+        device_id = None if authed else db.verify_api_key(token or "")
+        if not authed and device_id is None:
             await websocket.close(code=4401)
             return
         await _manager.connect(websocket)
+        if device_id is not None:
+            # Only a real paired device (not the desktop dashboard token) can
+            # be a WebRTC signaling target/source — see send_to_device above.
+            await _manager.register_device(websocket, device_id)
         try:
             devices = await asyncio.get_running_loop().run_in_executor(None, db.list_devices)
             await websocket.send_json({"type": "device_list", "devices": _annotate_online([dict(d) for d in devices])})
             while True:
-                await websocket.receive_text()
+                raw = await websocket.receive_text()
+                if device_id is None:
+                    continue  # dashboard connections don't originate signals
+                try:
+                    message = json.loads(raw) if raw else {}
+                    if message.get("type") != "webrtc_signal":
+                        continue
+                    to_id = message.get("to_api_key_id")
+                    if not isinstance(to_id, int):
+                        continue
+                    await _manager.send_to_device(
+                        to_id, {"type": "webrtc_signal", "from_api_key_id": device_id, "data": message.get("data")},
+                    )
+                except (ValueError, TypeError, AttributeError):
+                    continue  # malformed signaling message — drop it, keep the socket's device_list duty alive
         except WebSocketDisconnect:
             pass
         finally:

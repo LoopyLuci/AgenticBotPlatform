@@ -18,11 +18,18 @@ data class PendingApkResponse(
     val mesh: MeshOrigin? = null,
 )
 
+/** `host`/`port` are only present when the origin also reported a LAN
+ * address the server observed directly — try MeshServer.kt's direct socket
+ * first when they're there. `originApiKeyId` is always present: it's what
+ * WebRtcMeshClient needs to address a signaling offer at the origin device
+ * when direct LAN connection isn't possible (or those fields are absent
+ * entirely, meaning the server never saw a usable LAN address for it). */
 @Serializable
 data class MeshOrigin(
-    val host: String,
-    val port: Int,
+    @SerialName("origin_api_key_id") val originApiKeyId: Int,
     val token: String,
+    val host: String? = null,
+    val port: Int? = null,
 )
 
 /** Body for POST /api/android/apk/send — same request the desktop
