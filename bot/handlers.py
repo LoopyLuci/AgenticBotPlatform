@@ -295,7 +295,8 @@ async def _model_providers_page(instance_id: int) -> tuple[str, InlineKeyboardMa
         ))
     rows = [[b] for b in buttons]
     rows.append([InlineKeyboardButton("Cancel", callback_data="modelpick:cancel")])
-    text = f"Model provider for this bot ({data['backend']}) — current: {data['current_model'] or '(backend default)'}"
+    current_label = await commands.format_model_label(data["backend"], data["current_model"])
+    text = f"Model provider for this bot ({data['backend']}) — current: {current_label}"
     return text, InlineKeyboardMarkup(rows)
 
 
@@ -327,12 +328,14 @@ async def _model_page(instance_id: int, provider_idx: int, page: int) -> tuple[s
         if data.get("multi_provider"):
             rows.append([InlineKeyboardButton("< Providers", callback_data=f"modelpick:providers:{instance_id}")])
         provider_label = f" — {data['provider']}" if data.get("provider") else ""
-        text = f"Model for this bot ({backend}{provider_label}) — current: {data['current_model'] or '(backend default)'}"
+        current_label = await commands.format_model_label(backend, data["current_model"])
+        text = f"Model for this bot ({backend}{provider_label}) — current: {current_label}"
     else:
+        current_label = await commands.format_model_label(backend, data["current_model"])
         text = (
             f"This bot's backend ({backend}) has no discoverable model list.\n"
             f"Reply with `/model <name>` to set one directly.\n"
-            f"Current: {data['current_model'] or '(backend default)'}"
+            f"Current: {current_label}"
         )
     rows.append([InlineKeyboardButton("Cancel", callback_data="modelpick:cancel")])
     return text, InlineKeyboardMarkup(rows)
@@ -349,7 +352,7 @@ async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if ctx.instance_id is None:
                 await _reply_chunked(update, "This chat isn't linked to a bot instance.", context)
                 return
-            reply = commands.apply_instance_model(ctx.instance_id, args[0], actor=ctx.actor)
+            reply = await commands.apply_instance_model(ctx.instance_id, args[0], actor=ctx.actor)
             await _reply_chunked(update, reply, context)
             return
         if ctx.instance_id is None:
@@ -364,14 +367,15 @@ async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await _reply_chunked(update, "This chat isn't linked to a bot instance.", context)
             return
         instance = bot_instances.get_instance(ctx.instance_id)
-        await _reply_chunked(update, f"{instance['backend']}: {instance.get('model') or '(backend default)'}", context)
+        label = await commands.format_model_label(instance["backend"], instance.get("model"))
+        await _reply_chunked(update, f"{instance['backend']}: {label}", context)
         return
     if args[0] == "set" and len(args) >= 2:
         if ctx.instance_id is None:
             await _reply_chunked(update, "This chat isn't linked to a bot instance.", context)
             return
         model = " ".join(args[1:]).strip()
-        reply = commands.apply_instance_model(ctx.instance_id, model, actor=ctx.actor)
+        reply = await commands.apply_instance_model(ctx.instance_id, model, actor=ctx.actor)
         await _reply_chunked(update, reply, context)
         return
 
@@ -436,7 +440,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if data.startswith("modelpick:set:"):
         _, _, instance_id_s, model = data.split(":", 3)
-        reply = commands.apply_instance_model(int(instance_id_s), model, actor=str(update.effective_user.id))
+        reply = await commands.apply_instance_model(int(instance_id_s), model, actor=str(update.effective_user.id))
         await query.edit_message_text(reply)
         return
     if data.startswith("session:resume:"):

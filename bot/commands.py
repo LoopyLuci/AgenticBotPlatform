@@ -87,6 +87,18 @@ async def cmd_help(ctx: CmdContext, args: list[str]) -> str:
     return "\n".join(out)
 
 
+# Qualified display names for the backend-readiness list — "cli"/"ui" alone
+# don't say which model family they run, unlike hermes_cli/hermes_gateway
+# which already carry it.
+_BACKEND_DISPLAY_NAMES = {
+    "api": "claude_api",
+    "cli": "claude_cli",
+    "ui": "claude_ui",
+    "hermes_cli": "hermes_cli",
+    "hermes_gateway": "hermes_gateway",
+}
+
+
 async def cmd_status(ctx: CmdContext, args: list[str]) -> str:
     ov = db.get_overview()
     d = desktop.status()
@@ -97,18 +109,26 @@ async def cmd_status(ctx: CmdContext, args: list[str]) -> str:
         info = readiness[name]
         mark = "ready" if info["ready"] else f"not set up ({info['reason']})"
         used = " · in use" if info["in_use"] else ""
-        backend_lines.append(f"  {name}: {mark}{used}")
+        backend_lines.append(f"  {_BACKEND_DISPLAY_NAMES[name]}: {mark}{used}")
     lines = [
         f"Desktop: {'running' if d.get('running') else 'stopped'}" + (f" (pid {d['pid']})" if d.get("pid") else ""),
         f"Default backend: {cfg.get('default_backend')}",
         "Backends:",
         *backend_lines,
+    ]
+    if ctx.instance_id is not None:
+        from bot import bot_instances
+
+        instance = bot_instances.get_instance(ctx.instance_id)
+        if instance is not None:
+            label = await format_model_label(instance["backend"], instance.get("model"))
+            lines.append(f"Model: {label}")
+    lines.extend([
         f"Jobs running: {ov['jobs_running']} · queued: {ov['jobs_queued']}",
         f"Completed today: {ov['completed_today']} · failed: {ov['failed_today']}",
         f"Success rate (7d): {ov['success_rate_7d']}%",
         f"Avg duration: {ov['avg_duration_ms']}ms",
-        f"Config version: v{config.version}",
-    ]
+    ])
     return "\n".join(lines)
 
 
@@ -209,7 +229,7 @@ async def instance_model_groups(backend: str) -> list[dict]:
         ]
     live = await live_api_models()
     models = live or KNOWN_MODELS.get("api", [])
-    return [{"provider": "Anthropic", "models": _sort_group(models)}] if models else []
+    return [{"provider": "anthropic", "models": _sort_group(models)}] if models else []
 
 
 async def instance_model_page(instance_id: int, provider: Optional[int], page: int) -> Optional[dict]:
@@ -266,11 +286,28 @@ async def instance_model_page(instance_id: int, provider: Optional[int], page: i
     }
 
 
-def apply_instance_model(instance_id: int, model: str, actor: str) -> str:
+async def format_model_label(backend: str, model: Optional[str]) -> str:
+    """"(backend default)" for no override, "provider/model" when `model`
+    is found in one of this backend's live provider groups, or the bare
+    model id as a last resort (a manually-typed model that isn't in the
+    live list — still worth showing, just without a provider we can't
+    determine)."""
+    if not model:
+        return "(backend default)"
+    for group in await instance_model_groups(backend):
+        if model in group["models"]:
+            return f"{group['provider']}/{model}"
+    return model
+
+
+async def apply_instance_model(instance_id: int, model: str, actor: str) -> str:
     from bot import bot_instances
 
+    instance = bot_instances.get_instance(instance_id)
+    backend = instance["backend"] if instance else "api"
     bot_instances.update_instance(instance_id, model=(model or None), actor=actor)
-    return f"Model set for this bot -> {model or '(backend default)'}"
+    label = await format_model_label(backend, model)
+    return f"Model set for this bot -> {label}"
 
 
 # --------------------------------------------- interactive picker (Telegram)
