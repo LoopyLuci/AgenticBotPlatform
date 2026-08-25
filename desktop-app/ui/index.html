@@ -801,6 +801,8 @@
                 <label for="chat-recipient" class="chat-toolbar-label" id="chat-recipient-label">Send to</label>
                 <select id="chat-recipient"></select>
               </div>
+              <button class="btn" id="btn-chat-export" title="Download this bot's full chat history as JSON">⬇</button>
+              <button class="btn" id="btn-chat-clear" title="Delete this bot's full chat history" style="color:var(--critical);">🗑</button>
             </div>
             <div class="chat-mode-banner" id="chat-mode-banner"></div>
             <span class="cardnote hidden" id="chat-recipient-note"></span>
@@ -839,6 +841,8 @@
               <div class="chat-header-txt">
                 <div class="chat-header-name" id="serverchat-header-name">Select a conversation</div>
               </div>
+              <button class="btn" id="btn-serverchat-export" title="Download this conversation's history as JSON">⬇</button>
+              <button class="btn" id="btn-serverchat-clear" title="Delete this conversation's history" style="color:var(--critical);">🗑</button>
             </div>
             <div class="chat-panels" id="serverchat-panels"></div>
             <div class="chat-pending-attachment hidden" id="serverchat-pending-attachment">
@@ -921,11 +925,19 @@
           <input type="date" id="sessions-since">
           <label for="sessions-until" class="chat-toolbar-label">Until</label>
           <input type="date" id="sessions-until">
+          <button class="btn" id="btn-sessions-export-all" title="Download every listed session as one JSON backup file">⬇ Export all</button>
         </div>
         <div id="sessions-list"><p class="cardnote">Loading…</p></div>
       </div>
       <div class="card hidden" id="session-detail">
-        <div class="sec-head"><h2 id="session-detail-title">Session</h2><button class="btn" id="btn-session-close">✕ Close</button></div>
+        <div class="sec-head">
+          <h2 id="session-detail-title">Session</h2>
+          <div style="display:flex; gap:6px;">
+            <button class="btn" id="btn-session-export">⬇ Export</button>
+            <button class="btn" id="btn-session-delete" style="color:var(--critical);">🗑 Delete</button>
+            <button class="btn" id="btn-session-close">✕ Close</button>
+          </div>
+        </div>
         <div class="cardnote" id="session-detail-meta"></div>
         <div class="chat-panels" id="session-detail-items"></div>
         <button class="btn primary" id="btn-session-continue">Continue in Chat →</button>

@@ -12,6 +12,12 @@ import com.botserver.mobile.data.dto.DeviceInfo
 import com.botserver.mobile.data.dto.JobSummary
 import com.botserver.mobile.data.dto.ModelsResponse
 import com.botserver.mobile.data.dto.OkResponse
+import com.botserver.mobile.data.dto.ApkSendAllRequest
+import com.botserver.mobile.data.dto.ApkSendAllResponse
+import com.botserver.mobile.data.dto.ApkSendRequest
+import com.botserver.mobile.data.dto.ApkSendResponse
+import com.botserver.mobile.data.dto.MeshRedeemRequest
+import com.botserver.mobile.data.dto.MeshRedeemResponse
 import com.botserver.mobile.data.dto.PairingListResponse
 import com.botserver.mobile.data.dto.PendingApkResponse
 import com.botserver.mobile.data.dto.PersonaPreset
@@ -109,6 +115,21 @@ interface ApiService {
     @Streaming
     @GET("/api/android/apk/download/{pushId}")
     suspend fun downloadApk(@Path("pushId") pushId: Int): ResponseBody
+
+    // This device pushing an update to one/every other paired device — the
+    // Devices screen's own "Send" and "Send to all devices" buttons,
+    // mirroring the desktop dashboard's Mobile tab.
+    @POST("/api/android/apk/send")
+    suspend fun sendApk(@Body request: ApkSendRequest): ApkSendResponse
+
+    @POST("/api/android/apk/send-all")
+    suspend fun sendApkToAll(@Body request: ApkSendAllRequest = ApkSendAllRequest()): ApkSendAllResponse
+
+    // Called by this device's own MeshServer after accepting an incoming
+    // mesh connection, to validate the token the connecting peer presented
+    // before streaming this device's APK to it.
+    @POST("/api/android/apk/mesh/redeem")
+    suspend fun redeemMeshToken(@Body request: MeshRedeemRequest): MeshRedeemResponse
 
     // ---------------------------------------------------------- server chat
     // A permanent, bot-independent channel between this server's own

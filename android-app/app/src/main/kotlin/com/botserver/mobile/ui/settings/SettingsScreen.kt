@@ -44,7 +44,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 12.dp))
             }
 
-            SettingsCard(title = "Backend router") {
+            SettingsCard(title = "Backend router — Claude") {
                 SettingsRow("Default backend", "Used when no action-type override matches") {
                     SegmentedPicker(
                         options = listOf("ui", "cli", "api"),
@@ -57,7 +57,20 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
 
             Spacer(Modifier.height(14.dp))
 
-            SettingsCard(title = "Models") {
+            SettingsCard(title = "Backend router — Hermes Agent") {
+                SettingsRow("Default backend", "Its own slot, separate from Claude's — picking one here never changes Claude's default") {
+                    SegmentedPicker(
+                        options = listOf("hermes_cli", "hermes_gateway"),
+                        selected = state.defaultHermesBackend,
+                        busy = state.savingKey == "default_hermes_backend",
+                        onSelect = viewModel::setDefaultHermesBackend,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            SettingsCard(title = "Models — Claude") {
                 SettingsRow("api (Anthropic API)", "Model used for every request routed to the api backend") {
                     ModelField(
                         value = state.apiModel,
@@ -66,7 +79,11 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                         onCommit = viewModel::setApiModel,
                     )
                 }
-                Spacer(Modifier.height(10.dp))
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            SettingsCard(title = "Models — Hermes Agent") {
                 SettingsRow("hermes_cli", "Blank uses Hermes's own default") {
                     ModelField(value = state.hermesCliModel, knownOptions = emptyList(), busy = state.savingKey == "model_hermes_cli", onCommit = viewModel::setHermesCliModel)
                 }

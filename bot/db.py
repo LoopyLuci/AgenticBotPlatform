@@ -314,6 +314,8 @@ CREATE TABLE IF NOT EXISTS device_presence (
     app_version   TEXT,
     device_model  TEXT,   -- e.g. "Pixel 8 Pro" — real hardware model, not the user-typed pairing label
     os_version    TEXT,   -- e.g. "Android 14"
+    local_ip      TEXT,   -- as this server observed it — only useful when caller shares the server's LAN
+    mesh_port     INTEGER,-- self-reported: which TCP port this device's own mesh listener is bound to right now, if any
     last_seen     TEXT NOT NULL
 );
 
@@ -461,12 +463,15 @@ CREATE TABLE IF NOT EXISTS skills (
 );
 
 CREATE TABLE IF NOT EXISTS apk_pushes (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    api_key_id    INTEGER NOT NULL,
-    apk_path      TEXT NOT NULL,
-    version_label TEXT,
-    created_at    TEXT NOT NULL,
-    downloaded_at TEXT
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    api_key_id          INTEGER NOT NULL,
+    apk_path            TEXT NOT NULL,   -- "" for a mesh-origin push — see origin_api_key_id
+    version_label       TEXT,
+    created_at          TEXT NOT NULL,
+    downloaded_at       TEXT,
+    origin_api_key_id   INTEGER,         -- NULL = server disk; set = a device is serving its own installed APK directly
+    mesh_token          TEXT,            -- single-use secret the target redeems against the origin device's mesh listener
+    mesh_token_used_at  TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
@@ -582,6 +587,23 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE device_presence ADD COLUMN device_model TEXT")
     if "os_version" not in presence_cols:
         conn.execute("ALTER TABLE device_presence ADD COLUMN os_version TEXT")
+    if "local_ip" not in presence_cols:
+        conn.execute("ALTER TABLE device_presence ADD COLUMN local_ip TEXT")
+    if "mesh_port" not in presence_cols:
+        conn.execute("ALTER TABLE device_presence ADD COLUMN mesh_port INTEGER")
+
+    apk_push_cols = {row["name"] for row in conn.execute("PRAGMA table_info(apk_pushes)").fetchall()}
+    if "origin_api_key_id" not in apk_push_cols:
+        # NULL means the file lives on the server's own disk (today's
+        # behavior — desktop-built APK). Non-NULL means a *device* is the
+        # source: its bytes are its own installed app, served directly over
+        # the mesh listener at that device's device_presence.local_ip —
+        # this server never touches the file in that case.
+        conn.execute("ALTER TABLE apk_pushes ADD COLUMN origin_api_key_id INTEGER")
+    if "mesh_token" not in apk_push_cols:
+        conn.execute("ALTER TABLE apk_pushes ADD COLUMN mesh_token TEXT")
+    if "mesh_token_used_at" not in apk_push_cols:
+        conn.execute("ALTER TABLE apk_pushes ADD COLUMN mesh_token_used_at TEXT")
 
     # Safe to create now — the columns above are guaranteed to exist by
     # this point, whether this is a fresh install (created in SCHEMA) or an
@@ -1132,6 +1154,167 @@ def get_session_items(session_id: int) -> dict[str, list[sqlite3.Row]]:
     }
 
 
+def _delete_attachment_files(rows) -> None:
+    """Best-effort cleanup of the attachment/thumbnail files backing a set
+    of message rows about to be deleted — avoids leaving orphaned files
+    under data/attachments behind every chat delete. Never raises: a
+    missing or already-gone file just means there's nothing to clean up."""
+    from bot import attachments
+
+    for row in rows:
+        keys = row.keys() if hasattr(row, "keys") else row
+        for col, root in (("attachment_path", attachments.ATTACHMENTS_DIR), ("thumbnail_path", attachments.THUMBS_DIR)):
+            rel = row[col] if col in keys and row[col] else None
+            if not rel:
+                continue
+            try:
+                full = (root / rel).resolve()
+                if full.is_relative_to(root.resolve()) and full.is_file():
+                    full.unlink()
+            except OSError:
+                pass
+
+
+def delete_session(session_id: int) -> bool:
+    """Permanently deletes one Sessions-tab bucket and every message/job
+    filed under it (plus their attachment files). Returns False if the
+    session doesn't exist."""
+    conn = get_conn()
+    with _lock:
+        if conn.execute("SELECT 1 FROM sessions WHERE id=?", (session_id,)).fetchone() is None:
+            return False
+        msg_rows = conn.execute(
+            "SELECT attachment_path, thumbnail_path FROM messages WHERE session_id=?", (session_id,)
+        ).fetchall()
+        _delete_attachment_files(msg_rows)
+        conn.execute("DELETE FROM messages WHERE session_id=?", (session_id,))
+        conn.execute("DELETE FROM jobs WHERE session_id=?", (session_id,))
+        conn.execute("DELETE FROM sessions WHERE id=?", (session_id,))
+        conn.commit()
+        return True
+
+
+def clear_legacy_items(instance_id: int) -> int:
+    """Deletes every pre-sessions-feature message/job for `instance_id`
+    (session_id IS NULL — the "Before sessions" bucket) plus their
+    attachment files. Returns the number of messages removed."""
+    conn = get_conn()
+    with _lock:
+        msg_rows = conn.execute(
+            "SELECT attachment_path, thumbnail_path FROM messages WHERE instance_id=? AND session_id IS NULL",
+            (instance_id,),
+        ).fetchall()
+        _delete_attachment_files(msg_rows)
+        cur = conn.execute("DELETE FROM messages WHERE instance_id=? AND session_id IS NULL", (instance_id,))
+        conn.execute("DELETE FROM jobs WHERE instance_id=? AND session_id IS NULL", (instance_id,))
+        conn.commit()
+        return cur.rowcount
+
+
+def export_session_data(session_id: int) -> Optional[dict]:
+    """One session's full backup document — metadata plus every message
+    and job filed under it, plain-dict rows ready to JSON-serialize."""
+    session = get_session(session_id)
+    if session is None:
+        return None
+    items = get_session_items(session_id)
+    return {
+        "session": dict(session),
+        "messages": [dict(r) for r in items["messages"]],
+        "jobs": [dict(r) for r in items["jobs"]],
+    }
+
+
+def export_legacy_data(instance_id: int) -> dict:
+    items = get_legacy_items(instance_id)
+    return {
+        "session": {"id": f"legacy-{instance_id}", "instance_id": instance_id, "title": "Before sessions"},
+        "messages": [dict(r) for r in items["messages"]],
+        "jobs": [dict(r) for r in items["jobs"]],
+    }
+
+
+def delete_chat_messages(instance_id: int, chat_id: Any, platform: Optional[str] = None) -> int:
+    """Deletes every logged message for one Chat-tab conversation (a given
+    bot instance + platform-native chat id), plus their attachment files.
+    Scoped to `messages` only — the Sessions/Jobs history for that same
+    chat is a separate view (Sessions tab) and is left untouched, matching
+    exactly what the Chat tab itself displays. Returns the number removed."""
+    conn = get_conn()
+    with _lock:
+        clauses = ["instance_id=?", "chat_id=?"]
+        params: list[Any] = [instance_id, str(chat_id)]
+        if platform is not None:
+            clauses.append("platform=?")
+            params.append(platform)
+        where = " AND ".join(clauses)
+        msg_rows = conn.execute(f"SELECT attachment_path, thumbnail_path FROM messages WHERE {where}", params).fetchall()
+        _delete_attachment_files(msg_rows)
+        cur = conn.execute(f"DELETE FROM messages WHERE {where}", params)
+        conn.commit()
+        return cur.rowcount
+
+
+def delete_instance_messages(instance_id: int) -> int:
+    """Deletes every logged message for one bot instance across every chat
+    it's ever talked to, plus their attachment files — the Chat tab shows
+    one merged timeline per instance regardless of chat_id, so "clear this
+    bot's history" means all of it, not one chat_id. Returns the number
+    removed."""
+    conn = get_conn()
+    with _lock:
+        msg_rows = conn.execute(
+            "SELECT attachment_path, thumbnail_path FROM messages WHERE instance_id=?", (instance_id,)
+        ).fetchall()
+        _delete_attachment_files(msg_rows)
+        cur = conn.execute("DELETE FROM messages WHERE instance_id=?", (instance_id,))
+        conn.commit()
+        return cur.rowcount
+
+
+def export_instance_messages_data(instance_id: int) -> list[dict]:
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM messages WHERE instance_id=? ORDER BY id ASC", (instance_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def export_chat_messages_data(instance_id: int, chat_id: Any, platform: Optional[str] = None) -> list[dict]:
+    conn = get_conn()
+    clauses = ["instance_id=?", "chat_id=?"]
+    params: list[Any] = [instance_id, str(chat_id)]
+    if platform is not None:
+        clauses.append("platform=?")
+        params.append(platform)
+    where = " AND ".join(clauses)
+    rows = conn.execute(f"SELECT * FROM messages WHERE {where} ORDER BY id ASC", params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def clear_server_chat_messages(conversation_id: int) -> int:
+    """Deletes every message in one Server Chat conversation, plus their
+    attachment/thumbnail files. The conversation row itself stays — group
+    and direct rooms are structural (auto-recreated on device pairing),
+    only their history is being cleared. Returns the number removed."""
+    conn = get_conn()
+    with _lock:
+        msg_rows = conn.execute(
+            "SELECT attachment_path, thumbnail_path FROM server_chat_messages WHERE conversation_id=?",
+            (conversation_id,),
+        ).fetchall()
+        _delete_attachment_files(msg_rows)
+        cur = conn.execute("DELETE FROM server_chat_messages WHERE conversation_id=?", (conversation_id,))
+        conn.commit()
+        return cur.rowcount
+
+
+def export_server_chat_data(conversation_id: int) -> list[dict]:
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM server_chat_messages WHERE conversation_id=? ORDER BY id ASC", (conversation_id,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 # ---------------------------------------------------------------- jobs ----
 
 def create_job(
@@ -1568,12 +1751,19 @@ def list_push_tokens() -> list[sqlite3.Row]:
     ).fetchall()
 
 
-def create_apk_push(api_key_id: int, apk_path: str, version_label: Optional[str] = None) -> int:
+def create_apk_push(
+    api_key_id: int,
+    apk_path: str,
+    version_label: Optional[str] = None,
+    origin_api_key_id: Optional[int] = None,
+    mesh_token: Optional[str] = None,
+) -> int:
     conn = get_conn()
     with _lock:
         cur = conn.execute(
-            "INSERT INTO apk_pushes (api_key_id, apk_path, version_label, created_at) VALUES (?, ?, ?, ?)",
-            (api_key_id, apk_path, version_label, _now()),
+            "INSERT INTO apk_pushes (api_key_id, apk_path, version_label, created_at, origin_api_key_id, mesh_token) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (api_key_id, apk_path, version_label, _now(), origin_api_key_id, mesh_token),
         )
         conn.commit()
         return cur.lastrowid
@@ -1601,6 +1791,39 @@ def mark_apk_push_downloaded(push_id: int) -> None:
     with _lock:
         conn.execute("UPDATE apk_pushes SET downloaded_at=? WHERE id=?", (_now(), push_id))
         conn.commit()
+
+
+def get_device_presence(api_key_id: int) -> Optional[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute("SELECT * FROM device_presence WHERE api_key_id=?", (api_key_id,)).fetchone()
+
+
+def redeem_mesh_token(push_id: int, token: str) -> bool:
+    """Single-use check for a mesh transfer: the token must match the one
+    minted for this exact push and not have been redeemed before. Called by
+    the *origin* device's own mesh listener (via the server, since that's
+    the only party who knows what token it handed out) before it starts
+    streaming its APK to whoever presents the token — without this, any
+    device that guessed or replayed a push_id could pull another device's
+    installed APK indefinitely."""
+    conn = get_conn()
+    with _lock:
+        row = conn.execute(
+            "SELECT mesh_token, mesh_token_used_at FROM apk_pushes WHERE id=?", (push_id,)
+        ).fetchone()
+        if row is None or not row["mesh_token"] or row["mesh_token"] != token or row["mesh_token_used_at"]:
+            return False
+        now = _now()
+        # Redemption *is* the transfer starting — there's no separate
+        # "download complete" signal in pure P2P mode (this server never
+        # sees the bytes), so downloaded_at is stamped here too, same as
+        # mark_apk_push_downloaded() does for the server-relay path.
+        conn.execute(
+            "UPDATE apk_pushes SET mesh_token_used_at=?, downloaded_at=? WHERE id=?",
+            (now, now, push_id),
+        )
+        conn.commit()
+        return True
 
 
 SERVER_CHAT_DESKTOP_DEVICE_ID = 0
@@ -1762,6 +1985,8 @@ def verify_api_key(
     app_version: Optional[str] = None,
     device_model: Optional[str] = None,
     os_version: Optional[str] = None,
+    local_ip: Optional[str] = None,
+    mesh_port: Optional[int] = None,
 ) -> Optional[int]:
     """Also upserts device_presence on every successful call — piggybacking
     presence tracking on the auth check every mobile request already makes,
@@ -1771,7 +1996,14 @@ def verify_api_key(
     headers through. `device_model`/`os_version` are the real hardware model
     and OS release (e.g. "Pixel 8 Pro" / "Android 14") — distinct from the
     user-typed pairing label, so devices are identifiable even when someone
-    left the label as something generic."""
+    left the label as something generic. `local_ip` is the caller's address
+    as this server itself observed it (request.client.host) — only
+    meaningful when the caller is actually on the same LAN as the server,
+    which is exactly the case the mesh transfer feature needs: it's used to
+    let a *different* device dial this one directly instead of relaying
+    through the server. `mesh_port` is which local TCP port this device's
+    own mesh listener (if any) is currently bound to, self-reported since
+    the server has no other way to know it."""
     if not plaintext:
         return None
     key_hash = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
@@ -1784,15 +2016,18 @@ def verify_api_key(
             return None
         conn.execute("UPDATE api_keys SET last_used_at=? WHERE id=?", (_now(), row["id"]))
         conn.execute(
-            "INSERT INTO device_presence (api_key_id, platform, app_version, device_model, os_version, last_seen) "
-            "VALUES (?, ?, ?, ?, ?, ?) "
+            "INSERT INTO device_presence "
+            "(api_key_id, platform, app_version, device_model, os_version, local_ip, mesh_port, last_seen) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(api_key_id) DO UPDATE SET "
             "platform=COALESCE(excluded.platform, device_presence.platform), "
             "app_version=COALESCE(excluded.app_version, device_presence.app_version), "
             "device_model=COALESCE(excluded.device_model, device_presence.device_model), "
             "os_version=COALESCE(excluded.os_version, device_presence.os_version), "
+            "local_ip=COALESCE(excluded.local_ip, device_presence.local_ip), "
+            "mesh_port=excluded.mesh_port, "
             "last_seen=excluded.last_seen",
-            (row["id"], platform, app_version, device_model, os_version, _now()),
+            (row["id"], platform, app_version, device_model, os_version, local_ip, mesh_port, _now()),
         )
         conn.commit()
         return row["id"]

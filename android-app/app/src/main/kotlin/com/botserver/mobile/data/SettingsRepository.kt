@@ -21,6 +21,10 @@ class SettingsRepository @Inject constructor(private val apiService: ApiService)
         apiService.setConfig(configSetRequest(listOf("default_backend"), backend))
     }
 
+    suspend fun setDefaultHermesBackend(backend: String) {
+        apiService.setConfig(configSetRequest(listOf("default_hermes_backend"), backend))
+    }
+
     suspend fun setAgentControlMode(mode: String) {
         apiService.setConfig(configSetRequest(listOf("agent_control", "mode"), mode))
     }

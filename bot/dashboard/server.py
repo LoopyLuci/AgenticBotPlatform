@@ -15,6 +15,7 @@ import io
 import json
 import mimetypes
 import os
+import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -23,6 +24,7 @@ import qrcode
 from qrcode.image.pure import PyPNGImage
 from fastapi import Body, Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -39,6 +41,10 @@ from bot.swarm import strategies as swarm_strategies
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 LOG_FILE = envfile.PROJECT_ROOT / "logs" / "bot.log"
+
+
+def _ts_stamp() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
 
 # 25MB — Telegram bot-API's document limit, the tightest of the 3 platforms
 # — the ceiling for actually relaying a file out through a bot. Above this,
@@ -138,12 +144,18 @@ def _require_token_or_bootstrap(x_dashboard_token: Optional[str] = Header(defaul
         raise HTTPException(status_code=401, detail="invalid dashboard token")
 
 
+def _mesh_port_header(x_mesh_port: Optional[str] = Header(default=None)) -> Optional[int]:
+    return int(x_mesh_port) if x_mesh_port and x_mesh_port.isdigit() else None
+
+
 def _identify_caller(
+    request: Request,
     x_dashboard_token: Optional[str] = Header(default=None),
     x_device_platform: Optional[str] = Header(default=None),
     x_device_app_version: Optional[str] = Header(default=None),
     x_device_model: Optional[str] = Header(default=None),
     x_device_os_version: Optional[str] = Header(default=None),
+    mesh_port: Optional[int] = Depends(_mesh_port_header),
 ) -> str:
     """Accepts either the legacy single DASHBOARD_TOKEN (desktop/dashboard)
     or a valid unrevoked mobile api_keys hash, returning which kind
@@ -161,16 +173,23 @@ def _identify_caller(
     X-Device-OS-Version headers (sent by the Android app on every request)
     feed device_presence so the Devices view can show what's actually
     connected — real hardware model and OS release, not just the user-typed
-    pairing label — instead of just proving that something is."""
+    pairing label — instead of just proving that something is. X-Mesh-Port,
+    if present, is that device's own self-reported mesh-listener port (see
+    MeshServer.kt) — recorded alongside request.client.host so another
+    device on the same LAN can be told exactly where to dial this one for a
+    direct APK transfer, without this server ever brokering the bytes."""
     expected = os.environ.get("DASHBOARD_TOKEN")
     if expected and x_dashboard_token == expected:
         return "dashboard"
+    client_host = request.client.host if request.client else None
     if db.verify_api_key(
         x_dashboard_token or "",
         platform=x_device_platform,
         app_version=x_device_app_version,
         device_model=x_device_model,
         os_version=x_device_os_version,
+        local_ip=client_host,
+        mesh_port=mesh_port,
     ) is not None:
         return "mobile"
     if not expected:
@@ -180,6 +199,40 @@ def _identify_caller(
 
 def _require_token_or_api_key(caller: str = Depends(_identify_caller)) -> None:
     return None
+
+
+def _caller_device_id(
+    request: Request,
+    x_dashboard_token: Optional[str] = Header(default=None),
+    x_device_platform: Optional[str] = Header(default=None),
+    x_device_app_version: Optional[str] = Header(default=None),
+    x_device_model: Optional[str] = Header(default=None),
+    x_device_os_version: Optional[str] = Header(default=None),
+    mesh_port: Optional[int] = Depends(_mesh_port_header),
+) -> Optional[int]:
+    """Like _require_token_or_api_key, but resolves to *which* device is
+    calling instead of just "someone valid is." Returns None for the
+    desktop DASHBOARD_TOKEN (not tied to any one device row) and raises 401
+    for anything else invalid — so a route depending on this both
+    authenticates and learns the caller's own api_keys id in one step.
+    Used by the mesh APK-push routes, which need to know whose device is
+    volunteering to be the transfer's origin."""
+    expected = os.environ.get("DASHBOARD_TOKEN")
+    if expected and x_dashboard_token == expected:
+        return None
+    client_host = request.client.host if request.client else None
+    key_id = db.verify_api_key(
+        x_dashboard_token or "",
+        platform=x_device_platform,
+        app_version=x_device_app_version,
+        device_model=x_device_model,
+        os_version=x_device_os_version,
+        local_ip=client_host,
+        mesh_port=mesh_port,
+    )
+    if key_id is None:
+        raise HTTPException(status_code=401, detail="invalid dashboard token or api key")
+    return key_id
 
 
 def _caller_thread_identity(
@@ -249,6 +302,13 @@ def _require_mobile_key_id(x_dashboard_token: Optional[str] = Header(default=Non
 
 def build_app() -> FastAPI:
     app = FastAPI(title="Bot Control Dashboard API")
+
+    def _json_download(data, filename: str) -> Response:
+        body = json.dumps(data, indent=2, default=str).encode("utf-8")
+        return Response(
+            content=body, media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
 
     # The Tauri desktop shell loads its UI from an origin that fetch()es
     # this API cross-origin — that's the one real cross-origin browser
@@ -326,6 +386,7 @@ def build_app() -> FastAPI:
         overview["db_size_mb"] = round(db.get_db_size_bytes() / (1024 * 1024), 2)
         overview["config_version"] = config.version
         overview["default_backend"] = config.current.get("default_backend")
+        overview["default_hermes_backend"] = config.current.get("default_hermes_backend")
         return overview
 
     @app.get("/api/jobs", dependencies=[Depends(_require_token_or_api_key)])
@@ -924,7 +985,16 @@ def build_app() -> FastAPI:
         if backend not in VALID_BACKENDS:
             raise HTTPException(status_code=400, detail=f"unknown backend {backend!r}")
         if action_or_default == "default":
-            config.set_value(["default_backend"], backend, actor="dashboard")
+            # Claude and Hermes each keep their own default-backend slot —
+            # the two are shown as separate segmented pickers in the
+            # dashboard, and must stay separate in storage too: they used to
+            # share config["default_backend"], so picking a Hermes default
+            # silently overwrote the global Claude-oriented fallback every
+            # action_type without its own override falls back to.
+            from bot.models import BACKEND_FAMILY
+
+            key = "default_hermes_backend" if BACKEND_FAMILY.get(backend) == "hermes" else "default_backend"
+            config.set_value([key], backend, actor="dashboard")
         else:
             config.set_value(["action_overrides", action_or_default, "backend"], backend, actor="dashboard")
         return {"ok": True, "version": config.version}
@@ -1068,6 +1138,29 @@ def build_app() -> FastAPI:
             limit=limit, platform=platform, chat_id=chat_id, after_id=after_id, instance_id=instance_id
         )
         return [dict(r) for r in rows]
+
+    @app.get("/api/chat/messages/export", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_chat_messages_export(instance_id: int, chat_id: Optional[str] = None, platform: Optional[str] = None):
+        # No chat_id: the whole bot's merged history, matching what the
+        # Chat tab itself displays (one timeline per instance, every
+        # chat_id combined) — see refreshChat() in dashboard.html.
+        if chat_id is None:
+            data = db.export_instance_messages_data(instance_id)
+        else:
+            data = db.export_chat_messages_data(instance_id, chat_id, platform=platform)
+        suffix = f"-{chat_id}" if chat_id else ""
+        return _json_download(
+            {"instance_id": instance_id, "chat_id": chat_id, "messages": data},
+            f"chat-{instance_id}{suffix}-{_ts_stamp()}.json",
+        )
+
+    @app.delete("/api/chat/messages", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_chat_messages_delete(instance_id: int = Body(...), chat_id: Optional[str] = Body(None), platform: Optional[str] = Body(None)):
+        if chat_id is None:
+            count = db.delete_instance_messages(instance_id)
+        else:
+            count = db.delete_chat_messages(instance_id, chat_id, platform=platform)
+        return {"ok": True, "deleted": count}
 
     @app.post("/api/chat/send", dependencies=[Depends(_require_token_or_api_key)])
     async def api_chat_send(payload: dict = Body(...)):
@@ -1321,6 +1414,23 @@ def build_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="no such conversation")
         return [dict(r) for r in db.list_server_chat_messages(conversation_id, after_id=after_id, limit=limit)]
 
+    @app.get("/api/server-chat/conversations/{conversation_id}/export")
+    async def api_server_chat_export(conversation_id: int, device_id: int = Depends(_require_device_id)):
+        if not db.is_conversation_participant(conversation_id, device_id):
+            raise HTTPException(status_code=404, detail="no such conversation")
+        data = db.export_server_chat_data(conversation_id)
+        return _json_download(
+            {"conversation_id": conversation_id, "messages": data},
+            f"server-chat-{conversation_id}-{_ts_stamp()}.json",
+        )
+
+    @app.delete("/api/server-chat/conversations/{conversation_id}")
+    async def api_server_chat_clear(conversation_id: int, device_id: int = Depends(_require_device_id)):
+        if not db.is_conversation_participant(conversation_id, device_id):
+            raise HTTPException(status_code=404, detail="no such conversation")
+        count = db.clear_server_chat_messages(conversation_id)
+        return {"ok": True, "deleted": count}
+
     @app.post("/api/server-chat/send")
     async def api_server_chat_send(payload: dict = Body(...), device_id: int = Depends(_require_device_id)):
         conversation_id = payload.get("conversation_id")
@@ -1487,6 +1597,40 @@ def build_app() -> FastAPI:
             "jobs": [dict(r) for r in items["jobs"]],
         }
 
+    @app.get("/api/sessions/{session_id}/export", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_session_export(session_id: str):
+        if session_id.startswith("legacy-"):
+            data = db.export_legacy_data(int(session_id.removeprefix("legacy-")))
+        else:
+            data = db.export_session_data(int(session_id))
+            if data is None:
+                raise HTTPException(status_code=404, detail=f"session {session_id} not found")
+        return _json_download(data, f"session-{session_id}-{_ts_stamp()}.json")
+
+    @app.get("/api/sessions/export", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_sessions_export_all(instance_id: Optional[int] = None):
+        # One combined file rather than one download per session — every
+        # real session plus each affected bot's legacy ("Before sessions")
+        # bucket, matching exactly what GET /api/sessions itself lists.
+        rows = db.list_sessions(instance_id=instance_id, limit=1_000_000)
+        bundle = [db.export_session_data(row["id"]) for row in rows]
+        instance_ids = [instance_id] if instance_id is not None else [inst["id"] for inst in bot_instances.list_instances()]
+        for iid in instance_ids:
+            if db.count_legacy_items(iid):
+                bundle.append(db.export_legacy_data(iid))
+        suffix = f"-bot{instance_id}" if instance_id is not None else ""
+        return _json_download({"sessions": bundle}, f"sessions-backup{suffix}-{_ts_stamp()}.json")
+
+    @app.delete("/api/sessions/{session_id}", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_session_delete(session_id: str):
+        if session_id.startswith("legacy-"):
+            count = db.clear_legacy_items(int(session_id.removeprefix("legacy-")))
+            return {"ok": True, "deleted_messages": count}
+        ok = db.delete_session(int(session_id))
+        if not ok:
+            raise HTTPException(status_code=404, detail=f"session {session_id} not found")
+        return {"ok": True}
+
     # -------------------------------------------------------- mobile keys --
     # Per-device credentials the Android app pairs with. Creating a key
     # accepts either the desktop token or an existing mobile key — an
@@ -1551,12 +1695,15 @@ def build_app() -> FastAPI:
         return {"ok": True, "purged": n}
 
     # ------------------------------------------------------- android apk ---
-    # Sends the last APK the desktop app's Android panel built to one or
-    # every paired device. Pull-based, deliberately: there's no reliable way
-    # to wake a backgrounded phone without FCM (optional, often
-    # unconfigured), so "send" just queues an apk_pushes row and the phone
-    # picks it up on its own next /api/android/apk/pending poll — see
-    # bot/db.py's apk_pushes table comment.
+    # Sends the last APK built on this server to one or every paired device.
+    # Callable from the desktop dashboard OR from any already-paired phone
+    # (Devices screen's own Send / Send to all devices buttons) — either way
+    # it's the same server-mediated queue, not a direct device-to-device
+    # transfer. Pull-based, deliberately: there's no reliable way to wake a
+    # backgrounded phone without FCM (optional, often unconfigured), so
+    # "send" just queues an apk_pushes row and the phone picks it up on its
+    # own next /api/android/apk/pending poll — see bot/db.py's apk_pushes
+    # table comment.
 
     def _latest_apk_path() -> Path:
         return envfile.PROJECT_ROOT / "android-app" / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
@@ -1576,11 +1723,25 @@ def build_app() -> FastAPI:
             "size_bytes": stat.st_size,
         }
 
-    @app.post("/api/android/apk/send", dependencies=[Depends(_require_token)])
-    async def api_android_apk_send(payload: dict = Body(...)):
+    @app.post("/api/android/apk/send")
+    async def api_android_apk_send(payload: dict = Body(...), caller_device_id: Optional[int] = Depends(_caller_device_id)):
         api_key_id = payload.get("api_key_id")
         if not isinstance(api_key_id, int):
             raise HTTPException(status_code=400, detail="payload must be {api_key_id: <int>}")
+        mesh = bool(payload.get("mesh"))
+        if mesh:
+            # The caller itself is the source — its own installed APK,
+            # served directly to the target over the LAN by its own mesh
+            # listener. This server never touches the bytes; it only mints
+            # the one-time token the target will present to that listener.
+            if caller_device_id is None:
+                raise HTTPException(status_code=400, detail="mesh sends must come from a paired device, not the desktop dashboard")
+            token = secrets.token_urlsafe(24)
+            push_id = db.create_apk_push(
+                api_key_id, "", version_label="mesh", origin_api_key_id=caller_device_id, mesh_token=token,
+            )
+            db.log_audit(actor="dashboard", action="apk_send_mesh", detail=f"queued mesh apk push {push_id} from device {caller_device_id} to {api_key_id}")
+            return {"ok": True, "push_id": push_id}
         path = _latest_apk_path()
         if not path.is_file():
             raise HTTPException(status_code=400, detail="no built APK found — build one first")
@@ -1588,34 +1749,76 @@ def build_app() -> FastAPI:
         db.log_audit(actor="dashboard", action="apk_send", detail=f"queued apk push {push_id} for device {api_key_id}")
         return {"ok": True, "push_id": push_id}
 
-    @app.post("/api/android/apk/send-all", dependencies=[Depends(_require_token)])
-    async def api_android_apk_send_all():
+    @app.post("/api/android/apk/send-all")
+    async def api_android_apk_send_all(payload: Optional[dict] = Body(default=None), caller_device_id: Optional[int] = Depends(_caller_device_id)):
+        mesh = bool((payload or {}).get("mesh"))
+        keys = [r for r in db.list_api_keys() if not r["revoked_at"]]
+        if mesh:
+            if caller_device_id is None:
+                raise HTTPException(status_code=400, detail="mesh sends must come from a paired device, not the desktop dashboard")
+            push_ids = []
+            for r in keys:
+                if r["id"] == caller_device_id:
+                    continue  # don't queue a push to yourself
+                token = secrets.token_urlsafe(24)
+                push_ids.append(db.create_apk_push(
+                    r["id"], "", version_label="mesh", origin_api_key_id=caller_device_id, mesh_token=token,
+                ))
+            db.log_audit(actor="dashboard", action="apk_send_all_mesh", detail=f"queued mesh apk push from device {caller_device_id} for {len(push_ids)} device(s)")
+            return {"ok": True, "sent_to": len(push_ids)}
         path = _latest_apk_path()
         if not path.is_file():
             raise HTTPException(status_code=400, detail="no built APK found — build one first")
-        keys = [r for r in db.list_api_keys() if not r["revoked_at"]]
         version_label = _apk_version_label(path)
         push_ids = [db.create_apk_push(r["id"], str(path), version_label=version_label) for r in keys]
         db.log_audit(actor="dashboard", action="apk_send_all", detail=f"queued apk push for {len(push_ids)} device(s)")
         return {"ok": True, "sent_to": len(push_ids)}
+
+    @app.post("/api/android/apk/mesh/redeem", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_android_apk_mesh_redeem(payload: dict = Body(...), caller_device_id: Optional[int] = Depends(_caller_device_id)):
+        """Called by the *origin* device's own mesh listener (not the
+        target) right after it accepts an incoming socket connection and
+        reads the token the target presented — this confirms with the
+        server that the token is real, matches this exact push, was minted
+        for this device to hand out, and hasn't already been spent, before
+        the origin streams a single byte of its APK to whoever's asking."""
+        push_id = payload.get("push_id")
+        token = payload.get("token")
+        if not isinstance(push_id, int) or not isinstance(token, str):
+            raise HTTPException(status_code=400, detail="payload must be {push_id: <int>, token: <str>}")
+        row = db.get_apk_push(push_id)
+        if row is None or row["origin_api_key_id"] != caller_device_id:
+            raise HTTPException(status_code=404, detail="no such mesh push originating from this device")
+        return {"ok": db.redeem_mesh_token(push_id, token)}
 
     @app.get("/api/android/apk/pending")
     async def api_android_apk_pending(api_key_id: int = Depends(_require_mobile_key_id)):
         row = db.get_pending_apk_push(api_key_id)
         if row is None:
             return {"available": False}
-        return {
+        result = {
             "available": True,
             "push_id": row["id"],
             "version_label": row["version_label"],
             "created_at": row["created_at"],
         }
+        origin_id = row["origin_api_key_id"]
+        if origin_id:
+            presence = db.get_device_presence(origin_id)
+            if presence and presence["local_ip"] and presence["mesh_port"]:
+                # Handed to this device only — it's the sole party the
+                # server ever tells about another device's LAN address, and
+                # only for the one push actually addressed to it.
+                result["mesh"] = {"host": presence["local_ip"], "port": presence["mesh_port"], "token": row["mesh_token"]}
+        return result
 
     @app.get("/api/android/apk/download/{push_id}")
     async def api_android_apk_download(push_id: int, api_key_id: int = Depends(_require_mobile_key_id)):
         row = db.get_apk_push(push_id)
         if row is None or row["api_key_id"] != api_key_id:
             raise HTTPException(status_code=404, detail="no such pending push for this device")
+        if row["origin_api_key_id"]:
+            raise HTTPException(status_code=409, detail="this push is mesh-only — no server-side copy exists, retry the direct transfer")
         path = Path(row["apk_path"])
         if not path.is_file():
             raise HTTPException(status_code=404, detail="APK file no longer available — ask the desktop app to send again")

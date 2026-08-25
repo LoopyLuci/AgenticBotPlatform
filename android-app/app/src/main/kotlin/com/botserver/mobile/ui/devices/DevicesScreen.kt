@@ -39,10 +39,15 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel()) {
     val devices by viewModel.devices.collectAsState()
     val refreshing by viewModel.refreshing.collectAsState()
     val updateState by viewModel.updateState.collectAsState()
+    val sendState by viewModel.sendState.collectAsState()
     var label by remember { mutableStateOf("") }
     var apkShareError by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) { viewModel.startPresence() }
     LaunchedEffect(Unit) { viewModel.checkForUpdate() }
+    DisposableEffect(Unit) {
+        viewModel.startMesh()
+        onDispose { viewModel.stopMesh() }
+    }
     LaunchedEffect(updateState) {
         val downloaded = updateState as? UpdateState.Downloaded ?: return@LaunchedEffect
         context.startActivity(viewModel.installIntent(downloaded.file))
@@ -74,7 +79,30 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel()) {
                     if (devices.isEmpty()) {
                         Text("No other devices paired yet.", style = MaterialTheme.typography.bodySmall)
                     } else {
-                        devices.forEach { device -> DeviceRow(device) }
+                        devices.forEach { device ->
+                            DeviceRow(
+                                device = device,
+                                sending = (sendState as? SendState.Sending)?.targetId == device.id,
+                                onSend = { viewModel.sendUpdateTo(device) },
+                            )
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedButton(
+                            onClick = { viewModel.sendUpdateToAll() },
+                            enabled = sendState !is SendState.Sending,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            if (sendState is SendState.Sending && (sendState as SendState.Sending).targetId == null) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            } else {
+                                Text("Send update to all devices")
+                            }
+                        }
+                        when (val s = sendState) {
+                            is SendState.Sent -> Text(s.message, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(top = 6.dp))
+                            is SendState.Error -> Text(s.message, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 6.dp))
+                            else -> {}
+                        }
                     }
                 }
             }
@@ -92,7 +120,8 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel()) {
                         when (val s = updateState) {
                             is UpdateState.Available -> {
                                 Text(
-                                    "Sent from the desktop app — download and install now?",
+                                    if (s.mesh != null) "Offered directly by another device on your network — download and install now?"
+                                    else "Sent from the desktop app — download and install now?",
                                     style = MaterialTheme.typography.bodySmall,
                                     modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
                                 )
@@ -215,7 +244,7 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel()) {
 }
 
 @Composable
-private fun DeviceRow(device: DeviceInfo) {
+private fun DeviceRow(device: DeviceInfo, sending: Boolean, onSend: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -243,6 +272,10 @@ private fun DeviceRow(device: DeviceInfo) {
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+        TextButton(onClick = onSend, enabled = !sending) {
+            if (sending) CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+            else Text("Send")
         }
     }
 }

@@ -6,6 +6,7 @@ import com.botserver.mobile.data.SettingsRepository
 import com.botserver.mobile.data.dto.agentControlMode
 import com.botserver.mobile.data.dto.confirmDestructive
 import com.botserver.mobile.data.dto.defaultBackend
+import com.botserver.mobile.data.dto.defaultHermesBackend
 import com.botserver.mobile.data.dto.uiAutomationEnabled
 import com.botserver.mobile.data.dto.verboseTelemetry
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -19,6 +20,7 @@ data class SettingsUiState(
     val loading: Boolean = true,
     val error: String? = null,
     val defaultBackend: String = "cli",
+    val defaultHermesBackend: String = "hermes_gateway",
     val agentControlMode: String = "trust_all",
     val uiAutomationEnabled: Boolean = true,
     val confirmDestructive: Boolean = true,
@@ -56,6 +58,7 @@ class SettingsViewModel @Inject constructor(private val repository: SettingsRepo
                     loading = false,
                     error = null,
                     defaultBackend = config.defaultBackend ?: it.defaultBackend,
+                    defaultHermesBackend = config.defaultHermesBackend ?: it.defaultHermesBackend,
                     agentControlMode = config.agentControlMode ?: it.agentControlMode,
                     uiAutomationEnabled = config.uiAutomationEnabled ?: it.uiAutomationEnabled,
                     confirmDestructive = config.confirmDestructive ?: it.confirmDestructive,
@@ -81,6 +84,9 @@ class SettingsViewModel @Inject constructor(private val repository: SettingsRepo
 
     fun setDefaultBackend(backend: String) =
         apply("default_backend", { it.copy(defaultBackend = backend) }) { repository.setDefaultBackend(backend) }
+
+    fun setDefaultHermesBackend(backend: String) =
+        apply("default_hermes_backend", { it.copy(defaultHermesBackend = backend) }) { repository.setDefaultHermesBackend(backend) }
 
     fun setAgentControlMode(mode: String) =
         apply("agent_control", { it.copy(agentControlMode = mode) }) { repository.setAgentControlMode(mode) }

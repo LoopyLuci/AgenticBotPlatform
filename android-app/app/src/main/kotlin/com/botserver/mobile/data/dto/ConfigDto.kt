@@ -35,6 +35,7 @@ private fun JsonObject.boolAt(vararg path: String): Boolean? =
     (at(*path) as? JsonPrimitive)?.booleanOrNull
 
 val ConfigResponse.defaultBackend: String? get() = current.stringAt("default_backend")
+val ConfigResponse.defaultHermesBackend: String? get() = current.stringAt("default_hermes_backend")
 val ConfigResponse.agentControlMode: String? get() = current.stringAt("agent_control", "mode")
 val ConfigResponse.uiAutomationEnabled: Boolean? get() = current.boolAt("features", "ui_automation_enabled")
 val ConfigResponse.confirmDestructive: Boolean? get() = current.boolAt("security", "confirm_destructive")

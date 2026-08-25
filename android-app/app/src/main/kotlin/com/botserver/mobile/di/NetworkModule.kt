@@ -5,6 +5,7 @@ import android.os.Build
 import coil.ImageLoader
 import com.botserver.mobile.data.ApiService
 import com.botserver.mobile.data.CredentialStore
+import com.botserver.mobile.data.MeshPortHolder
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -82,6 +83,10 @@ private class DynamicHostInterceptor(private val credentials: CredentialStore) :
         builder.header("X-Device-App-Version", DEVICE_APP_VERSION)
         builder.header("X-Device-Model", DEVICE_MODEL)
         builder.header("X-Device-OS-Version", DEVICE_OS_VERSION)
+        // Self-reported, live: whatever port MeshServer is bound to right
+        // now (0/absent when it isn't running), so the server always knows
+        // exactly where another device could reach this one directly.
+        MeshPortHolder.port.takeIf { it > 0 }?.let { builder.header("X-Mesh-Port", it.toString()) }
         return builder.build()
     }
 

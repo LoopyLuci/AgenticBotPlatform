@@ -3,9 +3,11 @@ package com.botserver.mobile.ui.devices
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.botserver.mobile.data.DevicesRepository
+import com.botserver.mobile.data.MeshServer
 import com.botserver.mobile.data.NewDevicePairing
 import com.botserver.mobile.data.UpdateRepository
 import com.botserver.mobile.data.dto.DeviceInfo
+import com.botserver.mobile.data.dto.MeshOrigin
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,16 +25,24 @@ sealed interface GenerateState {
 
 sealed interface UpdateState {
     data object None : UpdateState
-    data class Available(val pushId: Int, val versionLabel: String?) : UpdateState
+    data class Available(val pushId: Int, val versionLabel: String?, val mesh: MeshOrigin?) : UpdateState
     data object Downloading : UpdateState
     data class Downloaded(val file: File) : UpdateState
     data class Error(val message: String) : UpdateState
+}
+
+sealed interface SendState {
+    data object Idle : SendState
+    data class Sending(val targetId: Int?) : SendState
+    data class Sent(val message: String) : SendState
+    data class Error(val message: String) : SendState
 }
 
 @HiltViewModel
 class DevicesViewModel @Inject constructor(
     private val repository: DevicesRepository,
     private val updateRepository: UpdateRepository,
+    private val meshServer: MeshServer,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<GenerateState>(GenerateState.Idle)
@@ -49,6 +59,37 @@ class DevicesViewModel @Inject constructor(
     private val _updateState = MutableStateFlow<UpdateState>(UpdateState.None)
     val updateState: StateFlow<UpdateState> = _updateState
 
+    private val _sendState = MutableStateFlow<SendState>(SendState.Idle)
+    val sendState: StateFlow<SendState> = _sendState
+
+    /** Push the server's latest built APK to one other device — mirrors the
+     * desktop dashboard's per-row "Send APK" button. */
+    fun sendUpdateTo(device: DeviceInfo) {
+        _sendState.value = SendState.Sending(device.id)
+        viewModelScope.launch {
+            _sendState.value = runCatching { updateRepository.sendTo(device.id) }
+                .fold(
+                    onSuccess = { SendState.Sent("Sent to ${device.label}.") },
+                    onFailure = { e -> SendState.Error(e.message ?: "Couldn't send to ${device.label}.") },
+                )
+        }
+    }
+
+    fun sendUpdateToAll() {
+        _sendState.value = SendState.Sending(null)
+        viewModelScope.launch {
+            _sendState.value = runCatching { updateRepository.sendToAll() }
+                .fold(
+                    onSuccess = { count -> SendState.Sent("Queued for $count device(s).") },
+                    onFailure = { e -> SendState.Error(e.message ?: "Couldn't send to all devices.") },
+                )
+        }
+    }
+
+    fun dismissSendState() {
+        _sendState.value = SendState.Idle
+    }
+
     /** Checked once per screen visit (see LaunchedEffect in DevicesScreen)
      * — cheap enough (one small GET) that there's no need for a background
      * schedule beyond "whenever this screen is opened." */
@@ -56,7 +97,7 @@ class DevicesViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { updateRepository.checkPending() }.onSuccess { resp ->
                 _updateState.value = if (resp.available && resp.pushId != null) {
-                    UpdateState.Available(resp.pushId, resp.versionLabel)
+                    UpdateState.Available(resp.pushId, resp.versionLabel, resp.mesh)
                 } else {
                     UpdateState.None
                 }
@@ -69,13 +110,26 @@ class DevicesViewModel @Inject constructor(
         if (current !is UpdateState.Available) return
         viewModelScope.launch {
             _updateState.value = UpdateState.Downloading
-            _updateState.value = runCatching { updateRepository.downloadApk(current.pushId) }
+            _updateState.value = runCatching { updateRepository.downloadApk(current.pushId, current.mesh) }
                 .fold(
                     onSuccess = { UpdateState.Downloaded(it) },
                     onFailure = { e -> UpdateState.Error(e.message ?: "Download failed.") },
                 )
         }
     }
+
+    /** Runs only while the Devices screen is visible (see DevicesScreen's
+     * DisposableEffect) — lets other paired devices on the same network
+     * pull this device's own installed APK directly for the lifetime of
+     * that visit. Stopping when the screen closes is a deliberate,
+     * documented scope limit for this first version, not an oversight: a
+     * true always-on listener would need a foreground Service, which is a
+     * separate, larger change (persistent notification, battery exemption
+     * prompts) left for a later pass if this proves useful enough to want
+     * always-on. */
+    fun startMesh() = meshServer.start()
+
+    fun stopMesh() = meshServer.stop()
 
     fun dismissUpdate() {
         _updateState.value = UpdateState.None

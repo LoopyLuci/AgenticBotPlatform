@@ -421,7 +421,8 @@ async function refreshConfig() {
   const current = cfg.current;
   refreshModels();
 
-  document.querySelectorAll('.default-backend-seg button').forEach(b => b.classList.toggle('active', b.dataset.b === current.default_backend));
+  document.querySelectorAll('#default-backend-seg-claude button').forEach(b => b.classList.toggle('active', b.dataset.b === current.default_backend));
+  document.querySelectorAll('#default-backend-seg-hermes button').forEach(b => b.classList.toggle('active', b.dataset.b === current.default_hermes_backend));
 
   const agentMode = (current.agent_control || {}).mode || 'trust_all';
   document.querySelectorAll('#agent-control-seg button').forEach(b => b.classList.toggle('active', b.dataset.m === agentMode));
@@ -1297,6 +1298,33 @@ function fmtChatTime(ts) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+// Generic authenticated-download helper for the JSON backup/export
+// endpoints (sessions, chat, server chat) — same pattern as
+// downloadAttachment below, since a plain <a href> can't carry the
+// dashboard token header these endpoints require.
+async function downloadUrl(path) {
+  try {
+    const headers = {};
+    const token = getToken();
+    if (token) headers['X-Dashboard-Token'] = token;
+    const res = await fetch(API_BASE + path, { headers });
+    if (!res.ok) throw new Error(await res.text());
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="([^"]+)"/);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = match ? match[1] : 'export.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert('Export failed — check the dashboard token.');
+  }
+}
+
 async function downloadAttachment(messageId, name) {
   try {
     const headers = {};
@@ -1553,6 +1581,22 @@ document.getElementById('chat-instance').onchange = (e) => {
 document.getElementById('chat-recipient').onchange = (e) => {
   panelFor(chatState.activeInstanceId).recipient = e.target.value;
 };
+document.getElementById('btn-chat-export').onclick = () => {
+  if (!chatState.activeInstanceId) return;
+  downloadUrl(`/api/chat/messages/export?instance_id=${chatState.activeInstanceId}`);
+};
+document.getElementById('btn-chat-clear').onclick = async () => {
+  const instanceId = chatState.activeInstanceId;
+  if (!instanceId) return;
+  const inst = (chatState.instances || []).find(i => i.id === instanceId);
+  if (!confirm(`Delete this bot's entire chat history (every chat, every platform message logged for "${inst ? inst.name : instanceId}")? This permanently removes it — export first if you want a copy.`)) return;
+  await api('/api/chat/messages', { method: 'DELETE', body: JSON.stringify({ instance_id: instanceId }) });
+  const panel = panelFor(instanceId);
+  panel.loaded = false;
+  panel.lastId = 0;
+  ensurePanel(instanceId).innerHTML = '';
+  refreshChat(instanceId);
+};
 
 let chatPendingFile = null;
 document.getElementById('btn-chat-attach').onclick = () => document.getElementById('chat-file-input').click();
@@ -1750,6 +1794,20 @@ function activateServerChatConversation(id) {
   refreshServerChatMessages();
 }
 
+document.getElementById('btn-serverchat-export').onclick = () => {
+  if (!serverChatState.activeId) return;
+  downloadUrl(`/api/server-chat/conversations/${serverChatState.activeId}/export`);
+};
+document.getElementById('btn-serverchat-clear').onclick = async () => {
+  if (!serverChatState.activeId) return;
+  const conv = serverChatState.conversations.find(c => c.id === serverChatState.activeId);
+  if (!confirm(`Delete all history in "${conv ? conv.title : 'this conversation'}"? This permanently removes its messages and attachments — export first if you want a copy.`)) return;
+  await api(`/api/server-chat/conversations/${serverChatState.activeId}`, { method: 'DELETE' });
+  document.getElementById('serverchat-panels').innerHTML = '';
+  serverChatState.lastId = 0;
+  refreshServerChatList();
+};
+
 async function downloadServerChatAttachment(messageId, name) {
   try {
     const headers = {};
@@ -1915,11 +1973,28 @@ function renderSessionsList() {
         <div class="st">${esc(s.title || 'Untitled')}</div>
         <div class="sm">${esc(instanceNameFor(s.instance_id))} · ${s.item_count} item${s.item_count === 1 ? '' : 's'}</div>
       </div>
-      <div class="sm">${esc(fmtSessionTime(s.last_activity_at))}</div>
+      <div class="sm" style="display:flex; align-items:center; gap:10px;">
+        ${esc(fmtSessionTime(s.last_activity_at))}
+        <button class="btn small" data-session-row-export="${esc(String(s.id))}" title="Download this session as JSON">⬇</button>
+        <button class="btn small" data-session-row-delete="${esc(String(s.id))}" title="Delete this session permanently" style="color:var(--critical);">🗑</button>
+      </div>
     </div>
   `).join('');
   list.querySelectorAll('.session-row').forEach(row => {
     row.onclick = () => openSession(row.dataset.sessionId);
+  });
+  list.querySelectorAll('[data-session-row-export]').forEach(btn => btn.onclick = (e) => {
+    e.stopPropagation();
+    downloadUrl(`/api/sessions/${encodeURIComponent(btn.dataset.sessionRowExport)}/export`);
+  });
+  list.querySelectorAll('[data-session-row-delete]').forEach(btn => btn.onclick = async (e) => {
+    e.stopPropagation();
+    const id = btn.dataset.sessionRowDelete;
+    const row = sessionsState.list.find(s => String(s.id) === id);
+    if (!confirm(`Delete session "${row ? (row.title || 'Untitled') : id}"? This permanently removes its messages and jobs — export first if you want a copy.`)) return;
+    await api(`/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (sessionsState.activeId === id) document.getElementById('session-detail').classList.add('hidden');
+    refreshSessions();
   });
 }
 
@@ -2000,6 +2075,13 @@ async function openSession(sessionId) {
   items.appendChild(win);
   card.classList.remove('hidden');
   card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('btn-session-export').onclick = () => downloadUrl(`/api/sessions/${encodeURIComponent(sessionId)}/export`);
+  document.getElementById('btn-session-delete').onclick = async () => {
+    if (!confirm(`Delete session "${detail.session.title || 'Untitled'}"? This permanently removes its messages and jobs — export first if you want a copy.`)) return;
+    await api(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+    card.classList.add('hidden');
+    refreshSessions();
+  };
   document.getElementById('btn-session-continue').onclick = () => {
     const instanceId = detail.session.instance_id;
     if (!instanceId) return;
@@ -2017,6 +2099,11 @@ async function openSession(sessionId) {
 
 document.getElementById('btn-session-close').onclick = () => {
   document.getElementById('session-detail').classList.add('hidden');
+};
+document.getElementById('btn-sessions-export-all').onclick = () => {
+  const instanceId = document.getElementById('sessions-instance').value;
+  const params = instanceId ? `?instance_id=${encodeURIComponent(instanceId)}` : '';
+  downloadUrl(`/api/sessions/export${params}`);
 };
 document.getElementById('sessions-instance').onchange = refreshSessions;
 document.getElementById('sessions-since').onchange = refreshSessions;
