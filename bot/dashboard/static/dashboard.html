@@ -328,6 +328,7 @@
       <a href="#training"><span class="ic">🎓</span>Training</a>
       <a href="#platforms"><span class="ic">🔌</span>Platforms</a>
       <a href="#mobile"><span class="ic">📱</span>Mobile</a>
+      <a href="#servers"><span class="ic">🌐</span>Linked Servers</a>
     </nav>
     <div class="side-status">
       <div class="row"><span>Desktop</span><b id="s-desktop">—</b></div>
@@ -1011,6 +1012,48 @@
       </div>
     </section>
 
+    <section id="servers">
+      <div class="sec-head"><h2>Linked Servers</h2><span class="desc">Other BotServer installations you run — each keeps its own database and Telegram bot, linked here so you can see and manage them from one place</span></div>
+      <div class="card">
+        <h3>Link a server</h3>
+        <p class="cardnote">On the other server's dashboard, copy its dashboard token (Set token, or from its .env) and paste it below along with its address. This runs once — both servers end up with their own independent credential for calling the other, and neither dashboard token is stored beyond this one request.</p>
+        <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px;">
+          <input type="text" id="peer-new-name" placeholder="Name, e.g. \"Laptop\"" style="flex:1; min-width:140px;">
+          <input type="text" id="peer-new-url" placeholder="Its address, e.g. http://192.168.1.20:8787" style="flex:2; min-width:220px;">
+          <input type="password" id="peer-new-token" placeholder="Its dashboard token" style="flex:1; min-width:160px;">
+        </div>
+        <div class="row" style="gap:8px; align-items:center; margin-top:8px;">
+          <input type="text" id="peer-my-url" placeholder="This server's own reachable address (optional — lets it call you back)" style="flex:1;">
+          <button class="btn primary" id="btn-peer-link">Link server</button>
+        </div>
+        <p class="cardnote" id="peer-link-status"></p>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Linked servers</h3>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Name</th><th>Address</th><th>Linked</th><th>Status</th><th></th></tr></thead>
+            <tbody id="peers-tbody"><tr class="emptyrow"><td colspan="5">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card hidden" id="peer-bots-card" style="margin-top:14px;">
+        <div class="row" style="justify-content:space-between; align-items:center;">
+          <h3 style="margin:0;">Bots on <span id="peer-bots-server-name"></span></h3>
+          <button class="btn" id="btn-peer-bots-close">Close</button>
+        </div>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Name</th><th>Platform</th><th>Backend</th><th>Status</th><th></th></tr></thead>
+            <tbody id="peer-bots-tbody"><tr class="emptyrow"><td colspan="5">Loading…</td></tr></tbody>
+          </table>
+        </div>
+        <p class="cardnote" id="peer-bots-status"></p>
+      </div>
+    </section>
+
     <footer class="dashfoot">Bot Control Dashboard · local-only · single-user allowlist enforced</footer>
   </main>
 </div>
@@ -1654,6 +1697,8 @@ function startDashboard() {
   setInterval(refreshSwarms, 15000);
   refreshMobileKeys();
   setInterval(refreshMobileKeys, 15000);
+  refreshPeers();
+  setInterval(refreshPeers, 15000);
   refreshTrainingPhrases();
   refreshTrainingInstructions();
   refreshTrainingHealth();
@@ -3248,6 +3293,113 @@ document.getElementById('btn-mobile-generate').onclick = async () => {
     refreshMobileKeys();
   } catch (e) {
     alert('Failed to generate key — check the dashboard token.');
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+// ---------------------------------------------------------- linked servers
+let peersCache = [];
+
+async function refreshPeers() {
+  const tbody = document.getElementById('peers-tbody');
+  try {
+    peersCache = await api('/api/peers');
+  } catch (_e) { return; }
+  tbody.innerHTML = peersCache.length ? peersCache.map(p => `
+    <tr>
+      <td>${esc(p.name)}</td>
+      <td class="mono">${esc(p.base_url) || '<em>unknown (can\'t call back)</em>'}</td>
+      <td class="mono">${fmtMobileTime(p.linked_at)}</td>
+      <td>${p.last_error
+        ? `<span class="pill"><span class="dot critical"></span>Unreachable</span>`
+        : `<span class="pill"><span class="dot good"></span>Online</span>`}</td>
+      <td>
+        <button class="btn" data-peer-view="${p.id}" style="padding:3px 8px; font-size:11px;" ${p.base_url ? '' : 'disabled title="no known address"'}>Manage bots</button>
+        <button class="btn danger" data-peer-unlink="${p.id}" style="padding:3px 8px; font-size:11px;">Unlink</button>
+      </td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="5">No linked servers yet.</td></tr>';
+
+  tbody.querySelectorAll('[data-peer-unlink]').forEach(btn => btn.onclick = async () => {
+    if (!confirm('Unlink this server? It will no longer be able to reach this dashboard, and you\'ll no longer be able to manage its bots from here.')) return;
+    await api(`/api/peers/${btn.dataset.peerUnlink}`, { method: 'DELETE' });
+    refreshPeers();
+  });
+
+  tbody.querySelectorAll('[data-peer-view]').forEach(btn => btn.onclick = () => openPeerBots(Number(btn.dataset.peerView)));
+}
+
+async function openPeerBots(peerId) {
+  const peer = peersCache.find(p => p.id === peerId);
+  if (!peer) return;
+  const card = document.getElementById('peer-bots-card');
+  const tbody = document.getElementById('peer-bots-tbody');
+  const statusEl = document.getElementById('peer-bots-status');
+  document.getElementById('peer-bots-server-name').textContent = peer.name;
+  card.classList.remove('hidden');
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  tbody.innerHTML = '<tr class="emptyrow"><td colspan="5">Loading…</td></tr>';
+  statusEl.textContent = '';
+
+  let bots;
+  try {
+    bots = await api(`/api/peers/${peerId}/bots`);
+  } catch (e) {
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="5">Could not reach this server.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = bots.length ? bots.map(b => `
+    <tr>
+      <td>${esc(b.name)}</td>
+      <td>${esc(b.platform)}</td>
+      <td>${esc(b.backend)}</td>
+      <td><span class="pill"><span class="dot ${b.enabled ? 'good' : ''}"></span>${b.enabled ? 'Enabled' : 'Disabled'}</span></td>
+      <td>
+        <button class="btn" data-peer-bot-action="${peerId}:${b.id}:${b.enabled ? 'disable' : 'enable'}" style="padding:3px 8px; font-size:11px;">${b.enabled ? 'Disable' : 'Enable'}</button>
+        <button class="btn" data-peer-bot-action="${peerId}:${b.id}:restart" style="padding:3px 8px; font-size:11px;">Restart</button>
+      </td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="5">No bots on this server yet.</td></tr>';
+
+  tbody.querySelectorAll('[data-peer-bot-action]').forEach(btn => btn.onclick = async () => {
+    const [pid, bid, action] = btn.dataset.peerBotAction.split(':');
+    btn.disabled = true;
+    try {
+      await api(`/api/peers/${pid}/bots/${bid}/${action}`, { method: 'POST' });
+      openPeerBots(Number(pid));
+    } catch (e) {
+      statusEl.textContent = `Failed: ${e.message}`;
+      btn.disabled = false;
+    }
+  });
+}
+
+document.getElementById('btn-peer-bots-close').onclick = () => {
+  document.getElementById('peer-bots-card').classList.add('hidden');
+};
+
+document.getElementById('btn-peer-link').onclick = async () => {
+  const name = document.getElementById('peer-new-name').value.trim();
+  const base_url = document.getElementById('peer-new-url').value.trim();
+  const remote_dashboard_token = document.getElementById('peer-new-token').value;
+  const my_base_url = document.getElementById('peer-my-url').value.trim() || undefined;
+  const statusEl = document.getElementById('peer-link-status');
+  if (!name || !base_url || !remote_dashboard_token) {
+    statusEl.textContent = 'Name, address, and its dashboard token are all required.';
+    return;
+  }
+  const btn = document.getElementById('btn-peer-link');
+  btn.disabled = true;
+  statusEl.textContent = 'Linking…';
+  try {
+    const res = await api('/api/peers/link', { method: 'POST', body: JSON.stringify({ name, base_url, remote_dashboard_token, my_base_url }) });
+    statusEl.textContent = `Linked to ${res.peer.name}.`;
+    document.getElementById('peer-new-name').value = '';
+    document.getElementById('peer-new-url').value = '';
+    document.getElementById('peer-new-token').value = '';
+    document.getElementById('peer-my-url').value = '';
+    refreshPeers();
+  } catch (e) {
+    statusEl.textContent = `Failed to link: ${e.message}`;
   } finally {
     btn.disabled = false;
   }

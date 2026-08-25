@@ -160,6 +160,31 @@ CREATE TABLE IF NOT EXISTS pairing_codes (
     denied_at    TEXT
 );
 
+-- Another BotServer installation this one is linked to (see bot/peers.py)
+-- — e.g. a home PC and a laptop each running their own independent bot
+-- fleet, linked so either admin can see and manage the other's bots from
+-- their own dashboard, without merging databases or sharing one Telegram
+-- bot. `outbound_api_key` is the plaintext credential THIS server presents
+-- when calling THAT one (kept plaintext, same trust boundary as .env's
+-- DASHBOARD_TOKEN — needed on every outbound call, unlike api_keys.key_hash
+-- which only ever needs comparing). `inbound_api_key_id` is the api_keys
+-- row (kind='peer_server') THIS server minted for THAT one to call back —
+-- unlinking revokes it so the peer's old credential stops working
+-- immediately. `base_url` is only known when the admin typed it in (either
+-- as the link target, or the peer voluntarily shared it during handshake)
+-- — a peer that never shared a reachable address can still call us, just
+-- not be called back.
+CREATE TABLE IF NOT EXISTS peer_servers (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    name                TEXT NOT NULL,
+    base_url            TEXT NOT NULL DEFAULT '',
+    outbound_api_key    TEXT NOT NULL,
+    inbound_api_key_id  INTEGER NOT NULL,
+    linked_at           TEXT NOT NULL,
+    last_seen_at        TEXT,
+    last_error          TEXT
+);
+
 -- A named group of bot instances plus a chosen collaboration strategy.
 -- `config` is JSON, strategy-specific (member instance ids, roles, or for
 -- strategy='custom' a full step graph) — see bot/swarm/strategies.py.
@@ -604,6 +629,16 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE apk_pushes ADD COLUMN mesh_token TEXT")
     if "mesh_token_used_at" not in apk_push_cols:
         conn.execute("ALTER TABLE apk_pushes ADD COLUMN mesh_token_used_at TEXT")
+
+    api_key_cols = {row["name"] for row in conn.execute("PRAGMA table_info(api_keys)").fetchall()}
+    if "kind" not in api_key_cols:
+        # 'device' (default, every key minted before this column existed)
+        # vs 'peer_server' — a credential a linked BotServer installation
+        # uses to call this one (see bot/peers.py). Same auth check either
+        # way (verify_api_key doesn't care), but keeping them tagged lets
+        # the dashboard show "Paired Devices" and "Linked Servers" as
+        # separate lists instead of one confusing mixed table.
+        conn.execute("ALTER TABLE api_keys ADD COLUMN kind TEXT NOT NULL DEFAULT 'device'")
 
     # Safe to create now — the columns above are guaranteed to exist by
     # this point, whether this is a fresh install (created in SCHEMA) or an
@@ -1663,22 +1698,27 @@ def get_support_bot_classification_stats(limit: int = 500) -> dict[str, Any]:
 # ever exists in create_api_key()'s return value; every other accessor sees
 # hashes/metadata only.
 
-def create_api_key(label: str) -> tuple[int, str]:
+def create_api_key(label: str, kind: str = "device") -> tuple[int, str]:
     plaintext = secrets.token_urlsafe(32)
     key_hash = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
     conn = get_conn()
     with _lock:
         cur = conn.execute(
-            "INSERT INTO api_keys (label, key_hash, created_at) VALUES (?, ?, ?)",
-            (label, key_hash, _now()),
+            "INSERT INTO api_keys (label, key_hash, created_at, kind) VALUES (?, ?, ?, ?)",
+            (label, key_hash, _now(), kind),
         )
         conn.commit()
         return cur.lastrowid, plaintext
 
 
-def list_api_keys() -> list[sqlite3.Row]:
+def list_api_keys(kind: Optional[str] = None) -> list[sqlite3.Row]:
     conn = get_conn()
-    return conn.execute("SELECT id, label, created_at, last_used_at, revoked_at FROM api_keys ORDER BY created_at DESC").fetchall()
+    if kind is not None:
+        return conn.execute(
+            "SELECT id, label, created_at, last_used_at, revoked_at, kind FROM api_keys WHERE kind=? ORDER BY created_at DESC",
+            (kind,),
+        ).fetchall()
+    return conn.execute("SELECT id, label, created_at, last_used_at, revoked_at, kind FROM api_keys ORDER BY created_at DESC").fetchall()
 
 
 def update_api_key_label(key_id: int, label: str) -> None:
@@ -1706,6 +1746,73 @@ def revoke_api_key(key_id: int) -> None:
         conn.commit()
 
 
+def get_api_key(key_id: int) -> Optional[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute(
+        "SELECT id, label, created_at, last_used_at, revoked_at, kind FROM api_keys WHERE id=?", (key_id,)
+    ).fetchone()
+
+
+# ------------------------------------------------------- peer servers -----
+# Other BotServer installations this one is linked to — see SCHEMA's
+# peer_servers comment and bot/peers.py for the linking handshake.
+
+def create_peer_server(name: str, base_url: str, outbound_api_key: str, inbound_api_key_id: int) -> int:
+    conn = get_conn()
+    with _lock:
+        cur = conn.execute(
+            "INSERT INTO peer_servers (name, base_url, outbound_api_key, inbound_api_key_id, linked_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (name, base_url, outbound_api_key, inbound_api_key_id, _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def list_peer_servers() -> list[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute("SELECT * FROM peer_servers ORDER BY linked_at DESC").fetchall()
+
+
+def get_peer_server(peer_id: int) -> Optional[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute("SELECT * FROM peer_servers WHERE id=?", (peer_id,)).fetchone()
+
+
+def mark_peer_server_ok(peer_id: int) -> None:
+    """Called after every successful proxied call to a peer (see
+    bot/peers.py) so the dashboard can show whether a linked server is
+    actually reachable right now without a separate polling loop."""
+    conn = get_conn()
+    with _lock:
+        conn.execute("UPDATE peer_servers SET last_seen_at=?, last_error=NULL WHERE id=?", (_now(), peer_id))
+        conn.commit()
+
+
+def mark_peer_server_error(peer_id: int, error: str) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute("UPDATE peer_servers SET last_error=? WHERE id=?", (error, peer_id))
+        conn.commit()
+
+
+def delete_peer_server(peer_id: int) -> Optional[sqlite3.Row]:
+    """Unlinks a peer: revokes the credential it used to call us (so it
+    can't reach us again with the old key) and removes our record of it.
+    Returns the deleted row (the caller may still want its outbound_api_key
+    to attempt a courtesy unlink call to the peer itself) or None if it
+    didn't exist."""
+    conn = get_conn()
+    with _lock:
+        row = conn.execute("SELECT * FROM peer_servers WHERE id=?", (peer_id,)).fetchone()
+        if row is None:
+            return None
+        conn.execute("UPDATE api_keys SET revoked_at=? WHERE id=?", (_now(), row["inbound_api_key_id"]))
+        conn.execute("DELETE FROM peer_servers WHERE id=?", (peer_id,))
+        conn.commit()
+        return row
+
+
 def purge_revoked_keys() -> int:
     """Permanently deletes every already-revoked api_keys row — the
     dashboard's "Clear Revoked Devices" action. Revoking already tears down
@@ -1729,7 +1836,7 @@ def list_devices() -> list[sqlite3.Row]:
         "SELECT ak.id, ak.label, ak.created_at, ak.last_used_at, "
         "dp.platform, dp.app_version, dp.device_model, dp.os_version, dp.last_seen "
         "FROM api_keys ak LEFT JOIN device_presence dp ON dp.api_key_id = ak.id "
-        "WHERE ak.revoked_at IS NULL ORDER BY ak.created_at DESC"
+        "WHERE ak.revoked_at IS NULL AND ak.kind='device' ORDER BY ak.created_at DESC"
     ).fetchall()
 
 
@@ -1883,7 +1990,7 @@ def backfill_server_chat_conversations() -> None:
     existed — a full mesh across desktop + every non-revoked device.
     ensure_direct_conversation() is idempotent, so this is safe to call on
     every startup, not just once."""
-    keys = [r["id"] for r in list_api_keys() if not r["revoked_at"]]
+    keys = [r["id"] for r in list_api_keys(kind="device") if not r["revoked_at"]]
     devices = [SERVER_CHAT_DESKTOP_DEVICE_ID] + keys
     for i, a in enumerate(devices):
         for b in devices[i + 1:]:
@@ -1897,7 +2004,7 @@ def create_conversations_for_new_device(device_id: int) -> None:
     reach every other device from the moment it's added without anyone
     having to manually start a chat."""
     ensure_direct_conversation(device_id, SERVER_CHAT_DESKTOP_DEVICE_ID)
-    for row in list_api_keys():
+    for row in list_api_keys(kind="device"):
         if row["id"] != device_id and not row["revoked_at"]:
             ensure_direct_conversation(device_id, row["id"])
 

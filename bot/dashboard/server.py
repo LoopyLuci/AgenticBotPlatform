@@ -16,6 +16,7 @@ import json
 import mimetypes
 import os
 import secrets
+import socket
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -83,6 +84,14 @@ def _annotate_online(devices: list[dict]) -> list[dict]:
                 online = False
         out.append({**d, "online": online})
     return out
+
+
+def _peer_public(row: dict) -> dict:
+    """Strips the two fields no API response should ever echo back:
+    outbound_api_key (the credential THIS server uses to call that peer —
+    equivalent to a password) and inbound_api_key_id (an internal api_keys
+    row id with no meaning to a client)."""
+    return {k: v for k, v in row.items() if k not in ("outbound_api_key", "inbound_api_key_id")}
 
 
 class _ConnectionManager:
@@ -1705,7 +1714,7 @@ def build_app() -> FastAPI:
 
     @app.get("/api/mobile-keys", dependencies=[Depends(_require_token)])
     async def api_mobile_keys_list():
-        return [dict(r) for r in db.list_api_keys()]
+        return [dict(r) for r in db.list_api_keys(kind="device")]
 
     @app.put("/api/mobile-keys/{key_id}", dependencies=[Depends(_require_token)])
     async def api_mobile_keys_update(key_id: int, payload: dict = Body(...)):
@@ -1731,6 +1740,102 @@ def build_app() -> FastAPI:
         n = db.purge_revoked_keys()
         db.log_audit(actor="dashboard", action="mobile_keys_purge_revoked", detail=f"removed {n} revoked key(s)")
         return {"ok": True, "purged": n}
+
+    # ------------------------------------------------------------ peers ----
+    # Linking this BotServer installation to another one (see bot/peers.py)
+    # so an admin running several boxes (a home PC, a laptop, a VPS) can
+    # see and manage every one of them from any single dashboard. Linking/
+    # unlinking establishes or removes trust between two whole servers, so
+    # both require the strict dashboard token, not any paired key — same
+    # bar as every other trust-establishing action in this file. Reading
+    # the list and proxying a peer's own overview/bots/actions stay on
+    # _require_token_or_api_key, matching every other bot-management route
+    # a paired device can already reach.
+
+    @app.post("/api/peers/link", dependencies=[Depends(_require_token)])
+    async def api_peers_link(payload: dict = Body(...)):
+        from bot import peers
+
+        name = (payload.get("name") or "").strip()
+        base_url = (payload.get("base_url") or "").strip()
+        remote_token = payload.get("remote_dashboard_token") or ""
+        my_base_url = (payload.get("my_base_url") or "").strip() or None
+        if not name or not base_url or not remote_token:
+            raise HTTPException(status_code=400, detail="payload must be {name, base_url, remote_dashboard_token, my_base_url?}")
+        my_name = os.environ.get("BOTSERVER_NAME") or socket.gethostname()
+        try:
+            peer = await peers.link_peer(name, base_url, remote_token, my_name, my_base_url)
+        except peers.PeerError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        db.log_audit(actor="dashboard", action="peer_link", detail=f"linked peer {peer['id']} ({peer['name']!r})")
+        return {"ok": True, "peer": _peer_public(peer)}
+
+    @app.post("/api/peers/handshake", dependencies=[Depends(_require_token)])
+    async def api_peers_handshake(payload: dict = Body(...)):
+        from bot import peers
+
+        name = (payload.get("name") or "").strip()
+        api_key = payload.get("api_key") or ""
+        base_url = payload.get("base_url")
+        my_name = os.environ.get("BOTSERVER_NAME") or socket.gethostname()
+        try:
+            result = peers.accept_handshake(name, api_key, base_url, my_name)
+        except peers.PeerError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        db.log_audit(actor="dashboard", action="peer_handshake", detail=f"accepted handshake from {name!r}")
+        return result
+
+    @app.get("/api/peers", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_peers_list():
+        return [_peer_public(dict(r)) for r in db.list_peer_servers()]
+
+    @app.delete("/api/peers/{peer_id}", dependencies=[Depends(_require_token)])
+    async def api_peers_unlink(peer_id: int):
+        from bot import peers
+
+        row = peers.unlink_peer(peer_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="no such linked server")
+        db.log_audit(actor="dashboard", action="peer_unlink", detail=f"unlinked peer {peer_id} ({row['name']!r})")
+        return {"ok": True}
+
+    @app.get("/api/peers/{peer_id}/overview", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_peers_overview(peer_id: int):
+        from bot import peers
+
+        row = db.get_peer_server(peer_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="no such linked server")
+        try:
+            return await peers.fetch_overview(row)
+        except peers.PeerError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+
+    @app.get("/api/peers/{peer_id}/bots", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_peers_bots(peer_id: int):
+        from bot import peers
+
+        row = db.get_peer_server(peer_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="no such linked server")
+        try:
+            return await peers.fetch_bots(row)
+        except peers.PeerError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+
+    @app.post("/api/peers/{peer_id}/bots/{instance_id}/{action}", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_peers_bot_action(peer_id: int, instance_id: int, action: str):
+        from bot import peers
+
+        row = db.get_peer_server(peer_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="no such linked server")
+        try:
+            result = await peers.run_bot_action(row, instance_id, action)
+        except peers.PeerError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+        db.log_audit(actor="dashboard", action="peer_bot_action", detail=f"{action} on peer {peer_id}'s bot {instance_id}")
+        return result
 
     # ------------------------------------------------------- android apk ---
     # Sends the last APK built on this server to one or every paired device.
@@ -1790,7 +1895,7 @@ def build_app() -> FastAPI:
     @app.post("/api/android/apk/send-all")
     async def api_android_apk_send_all(payload: Optional[dict] = Body(default=None), caller_device_id: Optional[int] = Depends(_caller_device_id)):
         mesh = bool((payload or {}).get("mesh"))
-        keys = [r for r in db.list_api_keys() if not r["revoked_at"]]
+        keys = [r for r in db.list_api_keys(kind="device") if not r["revoked_at"]]
         if mesh:
             if caller_device_id is None:
                 raise HTTPException(status_code=400, detail="mesh sends must come from a paired device, not the desktop dashboard")
