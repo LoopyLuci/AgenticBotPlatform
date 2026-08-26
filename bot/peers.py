@@ -34,18 +34,59 @@ the other, from one action — no manual two-way credential copy-paste.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import Optional
+from urllib.parse import urlparse
 
 import httpx
 
 from bot import db
 
+logger = logging.getLogger("bot.peers")
+
 HANDSHAKE_TIMEOUT_S = 15
 PROXY_TIMEOUT_S = 20
+
+# Two servers being linked are often being set up at the same time (one may
+# still be mid-boot) or talking over a home LAN — a single failed connection
+# attempt shouldn't force the admin to just click "Link" again and hope.
+# Retried only for connection-level failures (refused/timed out/DNS), never
+# for an HTTP error response (a real 401/500 answering means the server is
+# up and its answer is authoritative, not worth retrying).
+_RETRY_DELAYS_S = (1.0, 3.0)
 
 
 class PeerError(Exception):
     pass
+
+
+def normalize_base_url(base_url: str) -> str:
+    """Validates and normalizes a peer's address: requires an explicit
+    http(s) scheme (so a bare "192.168.1.20:8787" doesn't silently resolve
+    to something unintended) and strips any trailing slash. Raises
+    PeerError with a message the dashboard form can show directly."""
+    base_url = (base_url or "").strip().rstrip("/")
+    if not base_url:
+        raise PeerError("address can't be empty")
+    parsed = urlparse(base_url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise PeerError(f"{base_url!r} needs a scheme, e.g. http://192.168.1.20:8787")
+    return base_url
+
+
+async def _post_with_retry(client: httpx.AsyncClient, url: str, **kwargs) -> httpx.Response:
+    last_exc: Optional[Exception] = None
+    for attempt, delay in enumerate((0.0, *_RETRY_DELAYS_S)):
+        if delay:
+            logger.info("retrying %s in %.0fs after a connection error: %s", url, delay, last_exc)
+            await asyncio.sleep(delay)
+        try:
+            return await client.post(url, **kwargs)
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as exc:
+            last_exc = exc
+            continue
+    raise last_exc  # type: ignore[misc]
 
 
 async def link_peer(name: str, base_url: str, remote_dashboard_token: str, my_name: str, my_base_url: Optional[str] = None) -> dict:
@@ -53,14 +94,15 @@ async def link_peer(name: str, base_url: str, remote_dashboard_token: str, my_na
     handshake. Raises PeerError on any failure — the fresh credential
     minted for the (possibly unreachable) other side is revoked again so a
     failed link attempt never leaves a dangling, never-used api_keys row."""
-    base_url = base_url.rstrip("/")
-    if not base_url:
-        raise PeerError("base_url can't be empty")
+    base_url = normalize_base_url(base_url)
+    if my_base_url:
+        my_base_url = normalize_base_url(my_base_url)
 
     inbound_key_id, inbound_plaintext = db.create_api_key(f"peer: {name}", kind="peer_server")
     try:
         async with httpx.AsyncClient(timeout=HANDSHAKE_TIMEOUT_S) as client:
-            resp = await client.post(
+            resp = await _post_with_retry(
+                client,
                 f"{base_url}/api/peers/handshake",
                 headers={"X-Dashboard-Token": remote_dashboard_token},
                 json={"name": my_name, "base_url": my_base_url, "api_key": inbound_plaintext},
@@ -95,8 +137,9 @@ def accept_handshake(name: str, api_key: str, base_url: Optional[str], my_name: 
     name = (name or "unnamed server").strip() or "unnamed server"
     if not api_key:
         raise PeerError("handshake payload missing api_key")
+    normalized_base_url = normalize_base_url(base_url) if base_url else ""
     inbound_key_id, inbound_plaintext = db.create_api_key(f"peer: {name}", kind="peer_server")
-    peer_id = db.create_peer_server(name, (base_url or "").rstrip("/"), api_key, inbound_key_id)
+    peer_id = db.create_peer_server(name, normalized_base_url, api_key, inbound_key_id)
     db.mark_peer_server_ok(peer_id)
     return {"api_key": inbound_plaintext, "name": my_name}
 
@@ -107,12 +150,27 @@ def unlink_peer(peer_id: int) -> Optional[dict]:
 
 
 async def _proxy_get(peer_row, path: str) -> dict:
+    # GET is safe to retry (idempotent) — a flaky LAN or a peer mid-restart
+    # shouldn't turn into a hard failure the admin has to notice and retry
+    # by hand. POST (run_bot_action) deliberately does NOT retry: a dropped
+    # response after a "restart" actually landed would otherwise risk
+    # restarting the target bot twice.
     try:
         async with httpx.AsyncClient(timeout=PROXY_TIMEOUT_S) as client:
-            resp = await client.get(
-                f"{peer_row['base_url'].rstrip('/')}{path}",
-                headers={"X-Dashboard-Token": peer_row["outbound_api_key"]},
-            )
+            last_exc: Optional[Exception] = None
+            for attempt, delay in enumerate((0.0, *_RETRY_DELAYS_S)):
+                if delay:
+                    await asyncio.sleep(delay)
+                try:
+                    resp = await client.get(
+                        f"{peer_row['base_url'].rstrip('/')}{path}",
+                        headers={"X-Dashboard-Token": peer_row["outbound_api_key"]},
+                    )
+                    break
+                except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as exc:
+                    last_exc = exc
+            else:
+                raise last_exc  # type: ignore[misc]
         resp.raise_for_status()
         db.mark_peer_server_ok(peer_row["id"])
         return resp.json()
@@ -158,3 +216,39 @@ async def run_bot_action(peer_row, instance_id: int, action: str) -> dict:
     if not peer_row["base_url"]:
         raise PeerError("this peer never shared a reachable base_url — it can call us, but we can't call it back")
     return await _proxy_post(peer_row, f"/api/bots/{instance_id}/{action}")
+
+
+HEALTH_CHECK_INTERVAL_S = 60
+
+
+async def health_check_all() -> None:
+    """Pings every linked peer that has a known base_url and records
+    whether it answered — the same db.mark_peer_server_ok/_error a real
+    proxied call already triggers, just run proactively instead of only
+    ever updating when an admin happens to click into a peer. Without
+    this, the dashboard's Online/Unreachable status only reflects the last
+    time someone opened "Manage bots" for that server, which could be
+    stale for hours after a link actually broke."""
+    for row in db.list_peer_servers():
+        if not row["base_url"]:
+            continue
+        try:
+            await _proxy_get(dict(row), "/api/overview")
+        except PeerError:
+            pass  # already recorded via mark_peer_server_error inside _proxy_get
+
+
+async def health_check_forever(stop_event: asyncio.Event) -> None:
+    """Background loop, one iteration per HEALTH_CHECK_INTERVAL_S, started
+    alongside the other always-on tasks in bot/main.py. Exits cleanly as
+    soon as stop_event is set, same shutdown contract bot/scheduler.py's
+    run_forever already uses."""
+    while not stop_event.is_set():
+        try:
+            await health_check_all()
+        except Exception:
+            logger.exception("peer health check pass failed")
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=HEALTH_CHECK_INTERVAL_S)
+        except asyncio.TimeoutError:
+            pass

@@ -50,6 +50,7 @@ this is just the map:
 | **Training** | Add phrasings to teach the Support Bot's hybrid classifier (retrains both sub-models live), view its self-monitoring "Model health" panel, and give any bot instance persistent custom instructions/persona. |
 | **Platforms** | Legacy single-bot-per-platform `.env` fields — superseded by the Bots tab, kept for transparency. |
 | **Mobile** | Mobile pairing keys + QR codes, paired-device list with live online/offline status, and the Android one-click build/install/pair panel. |
+| **Linked Servers** | Link another BotServer install (a laptop, a home PC, a VPS) to see and manage its bots from here — see "Linking servers" below. |
 
 ## Documentation
 
@@ -841,6 +842,55 @@ before it can send anything:
 See **[docs/sessions.md](docs/sessions.md)** for the full mechanics,
 config knobs for tuning Claude Desktop's UI automation, and
 troubleshooting.
+
+## Linking servers — manage several BotServer installs from one dashboard
+
+If you run BotServer on more than one machine (a home PC and a laptop, say,
+each with its own database and its own Telegram bot), the **Linked
+Servers** tab lets either admin see and manage the other's bots from their
+own dashboard — without merging databases, sharing one bot, or standing up
+any new infrastructure.
+
+**Setup is one action on one side.** On server A's Linked Servers tab:
+
+1. Get server B's dashboard token (its own **Set token** button, or
+   `DASHBOARD_TOKEN` in its `.env`) and its reachable address (e.g.
+   `http://192.168.1.20:8787` — an explicit `http://` or `https://` is
+   required, so a bare `host:port` is rejected immediately with a clear
+   message rather than failing later).
+2. Fill in **Link a server**: a name for B, B's address, B's dashboard
+   token, and (optionally) A's own reachable address so B can call A back
+   too. Click **Link server**.
+3. That one call does the whole handshake: A mints a fresh, independently-
+   revocable credential for B, sends it to B (authenticating with the
+   token you just pasted), and B mints its own credential back for A —
+   both servers end up linked with their own working credential for the
+   other, and neither dashboard token is stored anywhere beyond that one
+   request.
+
+From then on, either admin can see the other's bots (Manage bots) and
+enable/disable/start/stop/restart them remotely, exactly as if browsing
+that server's own Bots tab.
+
+**Built to stay working, not just to work once:**
+- **Status is live, not stale.** A background check pings every linked
+  server with a known address roughly once a minute and records whether it
+  answered — Online/Unreachable in the table reflects real, current
+  reachability, not just whatever the last manual click happened to see.
+- **Re-linking is safe.** Running the link form again for the same address
+  (after a restart, a database reset on one side, or just clicking twice)
+  replaces the old credential in place instead of piling up duplicate,
+  half-dead entries.
+- **Transient network hiccups don't need a manual retry.** Read-only calls
+  (status checks, fetching the other server's bot list) retry automatically
+  through a couple of short backoffs before giving up — useful since two
+  servers are often linked while one is still finishing booting, or talking
+  over a home Wi-Fi network that occasionally drops a packet. Bot actions
+  (start/stop/restart) deliberately do **not** auto-retry, since retrying a
+  "restart" that actually landed the first time would restart it twice.
+
+Unlink from either side any time — it revokes that side's credential
+immediately, so the other side can no longer call back with it.
 
 ## Android app
 

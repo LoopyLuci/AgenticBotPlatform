@@ -1758,8 +1758,30 @@ def get_api_key(key_id: int) -> Optional[sqlite3.Row]:
 # peer_servers comment and bot/peers.py for the linking handshake.
 
 def create_peer_server(name: str, base_url: str, outbound_api_key: str, inbound_api_key_id: int) -> int:
+    """Upserts by base_url when it's non-empty: re-linking the same address
+    (the admin re-runs the link form after a restart, a DB reset on one
+    side, or just clicking it twice) replaces the stale row in place —
+    revoking the credential it's replacing — instead of accumulating
+    duplicate rows with one dangling, never-used api_keys credential each
+    time. An empty base_url (a peer that can't call us back) can't be
+    deduped this way and always inserts a fresh row."""
     conn = get_conn()
     with _lock:
+        existing = None
+        if base_url:
+            existing = conn.execute(
+                "SELECT id, inbound_api_key_id FROM peer_servers WHERE base_url=?", (base_url,)
+            ).fetchone()
+        if existing is not None:
+            if existing["inbound_api_key_id"] != inbound_api_key_id:
+                conn.execute("UPDATE api_keys SET revoked_at=? WHERE id=?", (_now(), existing["inbound_api_key_id"]))
+            conn.execute(
+                "UPDATE peer_servers SET name=?, outbound_api_key=?, inbound_api_key_id=?, "
+                "linked_at=?, last_seen_at=NULL, last_error=NULL WHERE id=?",
+                (name, outbound_api_key, inbound_api_key_id, _now(), existing["id"]),
+            )
+            conn.commit()
+            return existing["id"]
         cur = conn.execute(
             "INSERT INTO peer_servers (name, base_url, outbound_api_key, inbound_api_key_id, linked_at) "
             "VALUES (?, ?, ?, ?, ?)",

@@ -2368,6 +2368,18 @@ document.getElementById('btn-mobile-generate').onclick = async () => {
 // ---------------------------------------------------------- linked servers
 let peersCache = [];
 
+// api()'s thrown Error carries the raw response body (FastAPI's
+// {"detail": "..."} JSON), not a plain message — unwrap it so the peer
+// link form's status line reads as a real sentence instead of raw JSON.
+function _peerErrorDetail(raw) {
+  try {
+    const parsed = JSON.parse(raw);
+    return (parsed && parsed.detail) || raw;
+  } catch (_e) {
+    return raw;
+  }
+}
+
 async function refreshPeers() {
   const tbody = document.getElementById('peers-tbody');
   try {
@@ -2434,7 +2446,7 @@ async function openPeerBots(peerId) {
       await api(`/api/peers/${pid}/bots/${bid}/${action}`, { method: 'POST' });
       openPeerBots(Number(pid));
     } catch (e) {
-      statusEl.textContent = `Failed: ${e.message}`;
+      statusEl.textContent = `Failed: ${_peerErrorDetail(e.message)}`;
       btn.disabled = false;
     }
   });
@@ -2466,7 +2478,7 @@ document.getElementById('btn-peer-link').onclick = async () => {
     document.getElementById('peer-my-url').value = '';
     refreshPeers();
   } catch (e) {
-    statusEl.textContent = `Failed to link: ${e.message}`;
+    statusEl.textContent = `Failed to link: ${_peerErrorDetail(e.message)}`;
   } finally {
     btn.disabled = false;
   }
