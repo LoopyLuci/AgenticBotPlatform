@@ -41,13 +41,22 @@ val ConfigResponse.uiAutomationEnabled: Boolean? get() = current.boolAt("feature
 val ConfigResponse.confirmDestructive: Boolean? get() = current.boolAt("security", "confirm_destructive")
 val ConfigResponse.verboseTelemetry: Boolean? get() = current.boolAt("features", "verbose_telemetry")
 
-/** Mirrors GET /api/models — see bot/dashboard/server.py's api_models()
- * and bot/models.py's KNOWN_MODELS. `known` only has a closed list for the
- * "api" backend; hermes_cli/hermes_gateway accept free-form model names. */
+/** Mirrors GET /api/models — see bot/dashboard/server.py's api_models() and
+ * bot/models.py. No hardcoded model list exists server-side: `live.api` is
+ * null unless a real ANTHROPIC_API_KEY is configured (in which case it's
+ * that account's actual /v1/models), and `live.hermes` is null unless
+ * Hermes Agent is installed and has its own live provider cache. Null/empty
+ * means "no models to offer right now", never a stale built-in fallback. */
+@Serializable
+data class LiveModels(
+    val api: List<String>? = null,
+    val hermes: Map<String, List<String>>? = null,
+)
+
 @Serializable
 data class ModelsResponse(
-    val known: Map<String, List<String>> = emptyMap(),
     val current: Map<String, String?> = emptyMap(),
+    val live: LiveModels = LiveModels(),
 )
 
 /** Body for POST /api/config/set — {path: [...], value: ...}, same generic

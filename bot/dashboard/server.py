@@ -484,12 +484,11 @@ def build_app() -> FastAPI:
 
     @app.get("/api/models")
     async def api_models():
-        from bot.models import BACKEND_FAMILY, KNOWN_MODELS, live_api_models, live_hermes_models
+        from bot.models import BACKEND_FAMILY, live_api_models, live_hermes_models
 
         live_api = await live_api_models()
         live_hermes = live_hermes_models()
         return {
-            "known": KNOWN_MODELS,
             "family": BACKEND_FAMILY,
             "current": {
                 name: (config.current.get("backends", {}).get(name) or {}).get("model")

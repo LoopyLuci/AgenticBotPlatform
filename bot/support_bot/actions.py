@@ -16,7 +16,6 @@ from typing import Any, Callable, Optional
 
 from bot import bot_instances, db, desktop, envfile, platform_supervisor
 from bot.config import config
-from bot.models import KNOWN_MODELS
 from bot.router import VALID_BACKENDS
 from bot.setup_wizard import backend_readiness
 from bot.support_bot import slots
@@ -144,16 +143,21 @@ def _model_show(text: str, actor: str) -> str:
     return "\n".join(lines)
 
 
-def _model_set(text: str, actor: str) -> str:
+async def _model_set(text: str, actor: str) -> str:
+    from bot.models import known_models_for
+
     backend = slots.find_backend(text) or "api"
     if backend not in ("api", "hermes_cli", "hermes_gateway"):
         raise ActionError("Only api, hermes_cli, and hermes_gateway backends have a model setting.")
-    model = slots.find_model(text, backend)
+    model = await slots.find_model(text, backend)
     if model is None:
-        raise ActionError("Which model? Say the model name, e.g. \"set the api model to claude-opus-5\".")
-    known = KNOWN_MODELS.get(backend)
+        raise ActionError(
+            "Which model? Say the exact model name (quoting it works best), "
+            f"or check what's actually available for {backend} first."
+        )
+    known = await known_models_for(backend)
     if known and model not in known:
-        raise ActionError(f"{model!r} isn't one of {backend}'s known models: {', '.join(known)}.")
+        raise ActionError(f"{model!r} isn't one of {backend}'s currently available models: {', '.join(known)}.")
     config.set_value(["backends", backend, "model"], model, actor=actor)
     return f"{backend} model set to {model} (v{config.version})."
 
@@ -532,9 +536,10 @@ def _help(text: str, actor: str) -> str:
     )
 
 
-# Handlers that don't touch a running process are plain sync functions;
-# bot_restart needs the async platform_supervisor call, so it's registered
-# separately in engine.py's ASYNC_INTENT_HANDLERS.
+# Handlers that don't need an async call are plain sync functions;
+# bot_restart (async platform_supervisor call) and model_set (async live
+# model lookup, no hardcoded fallback) are registered separately below in
+# ASYNC_INTENT_HANDLERS instead.
 INTENT_HANDLERS: dict[str, Callable[[str, str], str]] = {
     "status": _status,
     "list_bots": _list_bots,
@@ -546,7 +551,6 @@ INTENT_HANDLERS: dict[str, Callable[[str, str], str]] = {
     "backend_show": _backend_show,
     "backend_set": _backend_set,
     "model_show": _model_show,
-    "model_set": _model_set,
     "mcp_list": _mcp_list,
     "mcp_enable": _mcp_enable,
     "mcp_disable": _mcp_disable,
@@ -580,4 +584,5 @@ INTENT_HANDLERS: dict[str, Callable[[str, str], str]] = {
 
 ASYNC_INTENT_HANDLERS: dict[str, Callable[[str, str], Any]] = {
     "bot_restart": _bot_restart_async,
+    "model_set": _model_set,
 }

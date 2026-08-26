@@ -22,7 +22,6 @@ from bot.agent_runtime import approval as agent_approval
 from bot.agent_runtime import engine as agent_engine
 from bot.backends.base import BackendError
 from bot.config import config
-from bot.models import KNOWN_MODELS
 from bot.router import VALID_BACKENDS, router
 
 
@@ -169,7 +168,9 @@ async def cmd_model(ctx: CmdContext, args: list[str]) -> str:
             return f"unknown backend {name!r} — expected one of {MODEL_BACKENDS}"
         if not model:
             return "model name can't be empty"
-        known = KNOWN_MODELS.get(name)
+        from bot.models import known_models_for
+
+        known = await known_models_for(name)
         if known and model not in known:
             return f"unknown model {model!r} for {name} — expected one of {known}"
         config.set_value(["backends", name, "model"], model, actor=ctx.actor)
@@ -228,8 +229,7 @@ async def instance_model_groups(backend: str) -> list[dict]:
             if models
         ]
     live = await live_api_models()
-    models = live or KNOWN_MODELS.get("api", [])
-    return [{"provider": "anthropic", "models": _sort_group(models)}] if models else []
+    return [{"provider": "anthropic", "models": _sort_group(live)}] if live else []
 
 
 async def instance_model_page(instance_id: int, provider: Optional[int], page: int) -> Optional[dict]:
@@ -308,60 +308,6 @@ async def apply_instance_model(instance_id: int, model: str, actor: str) -> str:
     bot_instances.update_instance(instance_id, model=(model or None), actor=actor)
     label = await format_model_label(backend, model)
     return f"Model set for this bot -> {label}"
-
-
-# --------------------------------------------- interactive picker (Telegram)
-# Mirrors the real Hermes Agent Telegram bot's /model UX (confirmed against
-# NousResearch/hermes-agent's docs, not guessed): a two-level inline-keyboard
-# drill-down — provider list with model counts and a checkmark on the
-# current one, then a paginated model list with Prev/Next/Back/Cancel,
-# editing the same message in place at every step. Adapted here since we
-# don't have Hermes's "providers with many models" shape: our "provider"
-# level is a backend (api/hermes_cli/hermes_gateway), and only `api` has an
-# enumerable model list — the two hermes backends are free text (no way to
-# discover what a given Hermes install actually offers), so their picker
-# page says so instead of pretending to list something we can't see.
-# The keyboard widgets themselves are Telegram-specific (InlineKeyboardButton
-# isn't a concept the other platforms have here) and stay in bot/handlers.py
-# — this module only computes the data those widgets render.
-
-MODEL_PAGE_SIZE = 6
-
-
-def model_backend_summary() -> list[dict]:
-    cfg = config.current
-    default_backend = cfg.get("default_backend")
-    out = []
-    for name in MODEL_BACKENDS:
-        known = KNOWN_MODELS.get(name)
-        out.append({
-            "name": name,
-            "count": len(known) if known else None,
-            "is_default_backend": name == default_backend,
-            "current_model": (cfg.get("backends", {}).get(name) or {}).get("model"),
-        })
-    return out
-
-
-def model_page(backend: str, page: int) -> dict:
-    known = KNOWN_MODELS.get(backend) or []
-    current_model = (config.current.get("backends", {}).get(backend) or {}).get("model")
-    total_pages = max(1, -(-len(known) // MODEL_PAGE_SIZE))
-    page = max(0, min(page, total_pages - 1))
-    start = page * MODEL_PAGE_SIZE
-    return {
-        "backend": backend,
-        "page": page,
-        "total_pages": total_pages,
-        "models": known[start : start + MODEL_PAGE_SIZE],
-        "current_model": current_model,
-        "has_known_list": bool(known),
-    }
-
-
-def apply_model(backend: str, model: str, actor: str) -> str:
-    config.set_value(["backends", backend, "model"], model, actor=actor)
-    return f"Model set: {backend} -> {model} (v{config.version})"
 
 
 async def cmd_mcp(ctx: CmdContext, args: list[str]) -> str:

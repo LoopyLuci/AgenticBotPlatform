@@ -1,10 +1,12 @@
-"""Known model choices per backend, for validation and dashboard dropdowns.
+"""Live model choices per backend, for validation and dashboard dropdowns.
 
-Static fallback lives in KNOWN_MODELS below. Prefer the live_* functions —
-they fetch what's actually available right now (Anthropic's own /v1/models
-for the api backend, Hermes Agent's own live provider model cache for the
-two Hermes backends) and only fall back to the static list when a live
-fetch isn't possible (no API key, no Hermes install, network error).
+No hardcoded model list exists here on purpose: every model shown anywhere
+in the app (Telegram picker, dashboard, desktop app, Support Bot) comes
+from a live fetch against a provider actually configured on this machine —
+Anthropic's own /v1/models (via ANTHROPIC_API_KEY) for the api backend, or
+Hermes Agent's own live provider model cache for the two Hermes backends.
+No key/install configured means no models offered, not a stale built-in
+list masquerading as real choices.
 """
 
 from __future__ import annotations
@@ -17,15 +19,6 @@ from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger("bot.models")
-
-KNOWN_MODELS: dict[str, list[str]] = {
-    "api": [
-        "claude-opus-5",
-        "claude-sonnet-5",
-        "claude-fable-5",
-        "claude-haiku-4-5-20251001",
-    ],
-}
 
 # Which of the two model "families" each backend belongs to — used by the
 # dashboard to group model/backend pickers into a Claude section and a
@@ -46,9 +39,8 @@ _api_cache: dict = {"at": 0.0, "models": None}
 async def live_api_models() -> Optional[list[str]]:
     """Live model IDs from Anthropic's own /v1/models, via the same
     ANTHROPIC_API_KEY the api backend already uses. Returns None (never
-    raises) if there's no key configured or the call fails, so callers can
-    fall back to KNOWN_MODELS["api"] — this is a nice-to-have, not a
-    dependency anything else should break on."""
+    raises) if there's no key configured or the call fails — callers show
+    "no models available" in that case, never a hardcoded fallback list."""
     now = time.monotonic()
     if _api_cache["models"] is not None and (now - _api_cache["at"]) < _API_CACHE_TTL_S:
         return _api_cache["models"]
@@ -71,6 +63,34 @@ async def live_api_models() -> Optional[list[str]]:
     _api_cache["models"] = models
     _api_cache["at"] = now
     return models
+
+
+async def known_models_for(backend: str) -> Optional[list[str]]:
+    """Every model id currently reachable for `backend`, or None if nothing
+    live is available (no API key/Hermes install/cache) — the caller's
+    signal to skip validation rather than fall back to a hardcoded list.
+    Used wherever a model name needs checking against "does this actually
+    exist right now" (e.g. /model set), as opposed to instance_model_groups'
+    provider-grouped shape used by the picker UI."""
+    family = BACKEND_FAMILY.get(backend, "claude")
+    if family == "hermes":
+        grouped = live_hermes_models()
+        if not grouped:
+            return None
+        ids: set[str] = set()
+        for models in grouped.values():
+            ids.update(models)
+        return sorted(ids) or None
+    return await live_api_models()
+
+
+def cached_api_models() -> Optional[list[str]]:
+    """Whatever live_api_models() last fetched, without triggering a new
+    network call — for synchronous callers (Support Bot slot-matching) that
+    can't await. Returns None until the async fetch has run at least once
+    since startup (or if it found no key), same as live_api_models() itself
+    would in that case — no hardcoded fallback here either."""
+    return _api_cache["models"]
 
 
 def _hermes_cache_path() -> Optional[Path]:

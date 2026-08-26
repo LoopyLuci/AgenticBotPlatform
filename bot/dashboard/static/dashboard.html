@@ -1353,12 +1353,12 @@ async function refreshModels() {
   const m = await api('/api/models');
   modelsCache = m;
 
-  const apiOptions = (m.live && m.live.api) || m.known.api || [];
+  const apiOptions = (m.live && m.live.api) || [];
   document.getElementById('model-api-options').innerHTML = apiOptions.map(name => `<option value="${esc(name)}"></option>`).join('');
   document.getElementById('model-api').value = m.current.api || '';
   document.getElementById('model-api-note').textContent = (m.live && m.live.api)
     ? `Live from your Anthropic account — ${apiOptions.length} models.`
-    : `No ANTHROPIC_API_KEY configured — showing the built-in list (${apiOptions.length} models).`;
+    : 'No ANTHROPIC_API_KEY configured — no models to show. Set one to see live options.';
 
   const hermesGrouped = (m.live && m.live.hermes) || null;
   const hermesOptions = hermesGrouped ? [...new Set(Object.values(hermesGrouped).flat())].sort() : [];
@@ -1384,7 +1384,7 @@ function modelOptionsForBackend(backend) {
     const grouped = (modelsCache.live && modelsCache.live.hermes) || null;
     return grouped ? [...new Set(Object.values(grouped).flat())].sort() : [];
   }
-  return (modelsCache.live && modelsCache.live.api) || modelsCache.known.api || [];
+  return (modelsCache.live && modelsCache.live.api) || [];
 }
 
 // Free-tier model ids follow a "…-free" or "…:free" suffix convention
@@ -1415,7 +1415,7 @@ function modelGroupsForBackend(backend) {
       .map(provider => ({ provider, models: sortGroup(grouped[provider]) }))
       .filter(g => g.models.length);
   }
-  const apiOptions = (modelsCache.live && modelsCache.live.api) || modelsCache.known.api || [];
+  const apiOptions = (modelsCache.live && modelsCache.live.api) || [];
   return apiOptions.length ? [{ provider: 'Anthropic', models: sortGroup(apiOptions) }] : [];
 }
 

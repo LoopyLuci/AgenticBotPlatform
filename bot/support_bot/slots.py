@@ -14,7 +14,7 @@ from difflib import get_close_matches
 from typing import Any, Optional
 
 from bot import bot_instances, db, desktop, envfile
-from bot.models import KNOWN_MODELS
+from bot.models import known_models_for
 from bot.router import VALID_BACKENDS
 
 _QUOTED_RE = re.compile(r"[\"']([^\"']+)[\"']")
@@ -73,17 +73,22 @@ def find_backend(text: str) -> Optional[str]:
     return None
 
 
-def find_model(text: str, backend: Optional[str]) -> Optional[str]:
+async def find_model(text: str, backend: Optional[str]) -> Optional[str]:
+    """A quoted model name is always trusted verbatim. Without quotes, this
+    only matches against models actually live right now for `backend` (a
+    real ANTHROPIC_API_KEY's /v1/models, or Hermes's own cache) — there is
+    no hardcoded model list to fall back on, so unquoted shorthand simply
+    finds nothing if no provider is currently configured."""
     quoted = _QUOTED_RE.findall(text)
     if quoted:
         return quoted[0]
-    known = KNOWN_MODELS.get(backend or "", [])
+    known = await known_models_for(backend or "") or []
     lowered = text.lower()
     for name in known:
         if name.lower() in lowered:
             return name
-    # Common shorthand ("opus", "sonnet", "haiku", "fable") for the api
-    # backend's closed model list.
+    # Common shorthand ("opus", "sonnet", "haiku") against whatever's
+    # actually live, not a fixed model-family assumption.
     for name in known:
         short = name.split("-")[1] if "-" in name else name
         if short and short in lowered:

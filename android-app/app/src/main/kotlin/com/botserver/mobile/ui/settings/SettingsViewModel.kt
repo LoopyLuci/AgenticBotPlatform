@@ -63,7 +63,10 @@ class SettingsViewModel @Inject constructor(private val repository: SettingsRepo
                     uiAutomationEnabled = config.uiAutomationEnabled ?: it.uiAutomationEnabled,
                     confirmDestructive = config.confirmDestructive ?: it.confirmDestructive,
                     verboseTelemetry = config.verboseTelemetry ?: it.verboseTelemetry,
-                    knownApiModels = models?.known?.get("api") ?: it.knownApiModels,
+                    // No hardcoded fallback: a successful fetch with no live
+                    // API models (no ANTHROPIC_API_KEY configured) clears the
+                    // list to empty rather than keeping a stale/fake one.
+                    knownApiModels = models?.let { m -> m.live.api ?: emptyList() } ?: it.knownApiModels,
                     apiModel = models?.current?.get("api") ?: it.apiModel,
                     hermesCliModel = models?.current?.get("hermes_cli") ?: it.hermesCliModel,
                     hermesGatewayModel = models?.current?.get("hermes_gateway") ?: it.hermesGatewayModel,
