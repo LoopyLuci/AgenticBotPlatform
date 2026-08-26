@@ -335,7 +335,6 @@ def ensure_venv_and_requirements(args) -> bool:
     Step.head("Python virtual environment + dependencies")
     venv_dir = ROOT / ".venv"
     py = venv_dir / ("Scripts/python.exe" if IS_WINDOWS else "bin/python")
-    pip = venv_dir / ("Scripts/pip.exe" if IS_WINDOWS else "bin/pip")
 
     if venv_dir.exists() and py.exists():
         Step.ok(f".venv already exists at {venv_dir}")
@@ -350,9 +349,13 @@ def ensure_venv_and_requirements(args) -> bool:
         Step.ok("(skipping pip install in --check mode)")
         return True
 
+    # `python -m pip`, not pip.exe directly — on Windows, pip.exe upgrading
+    # itself while it's the running process can fail (it can't replace its
+    # own locked executable), whereas `python -m pip` doesn't have that
+    # problem since python.exe isn't the thing being replaced.
     Step.doing("pip install -r requirements.txt")
-    subprocess.run([str(pip), "install", "-q", "--upgrade", "pip"], check=True)
-    subprocess.run([str(pip), "install", "-q", "-r", str(ROOT / "requirements.txt")], check=True)
+    subprocess.run([str(py), "-m", "pip", "install", "-q", "--upgrade", "pip"], check=False)
+    subprocess.run([str(py), "-m", "pip", "install", "-q", "-r", str(ROOT / "requirements.txt")], check=True)
     Step.ok("Python dependencies installed")
     return True
 
