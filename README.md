@@ -136,6 +136,55 @@ data/bot_instances_backups/  timestamped JSON snapshots of the bot_instances tab
 logs/bot.log              rotating log file, also tailed by the dashboard
 ```
 
+## Installer — one command, any machine
+
+The fastest path on a fresh machine is the installer, which is aware of
+*this specific machine's* hardware and software rather than assuming a
+fixed checklist: it detects the OS, CPU architecture, and (on Linux) the
+distro family and its package manager, then installs exactly what that
+combination needs — Python itself if missing, Rust + Cargo, the Tauri CLI,
+and (Linux only) the native WebKitGTK/GTK3/AppIndicator/librsvg/OpenSSL
+dev packages Tauri's window needs to build — before creating the venv,
+installing `requirements.txt`, and walking the same setup wizard described
+below. It then offers to run a production `cargo tauri build` and to
+register autostart at login.
+
+```powershell
+# Windows
+.\scripts\install.ps1
+```
+```bash
+# Linux / macOS
+./scripts/install.sh
+```
+
+Both are thin bootstraps whose only job is guaranteeing a real Python
+3.11+ exists (installing one via winget/Homebrew/apt/dnf/pacman/zypper/apk
+if it doesn't) before handing off to `scripts/install.py`, which does the
+actual detection and installation work and is safe to re-run any time —
+every step checks what's already present/valid before changing anything,
+same re-run safety as `scripts/setup.py`. Useful flags (pass to either
+bootstrap, or straight to `python scripts/install.py`):
+
+- `--check` (`-Check` on Windows) — report what's missing and exit, no changes
+- `--yes` / `-y` (`-Yes`) — don't prompt for confirmation (unattended/CI use)
+- `--no-system-deps` (`-NoSystemDeps`) — skip Rust/Tauri CLI/Linux native libs,
+  assume they're already present
+- `--no-build` (`-NoBuild`) — skip the offer to build the production app
+- `--no-autostart` (`-NoAutostart`) — skip the offer to register login autostart
+- `--dev` (`-Dev`) — dev-only, never offers a production build
+
+On NixOS the installer detects it and skips the system-package step
+entirely, pointing you at `nix develop` (see the NixOS section below)
+instead — installing packages outside the Nix store wouldn't do anything
+useful there. Login autostart is registered via Windows Task Scheduler,
+launchd (macOS, `scripts/install_service_macos.sh`), or `systemd --user`
+(Linux, `scripts/install_service.sh`) — the same mechanisms documented
+under "Using the desktop app" below, just wired up automatically.
+
+If you'd rather do each step yourself (or the installer can't fully
+provision your setup), the manual steps it automates are documented next.
+
 ## Setup
 
 1. **Python 3.11+**, **Rust + Cargo**, and the **Tauri CLI**
@@ -362,6 +411,14 @@ to change). On Linux, the equivalent is a `systemd --user` service:
 ```
 Same behavior (runs at login, restarts on failure) via the Linux-native
 mechanism instead — see the script's own comments for what it registers.
+On macOS, the equivalent is a launchd LaunchAgent:
+```bash
+./scripts/install_service_macos.sh
+```
+Registers `~/Library/LaunchAgents/com.botserver.app.plist` (no sudo
+needed — a per-user agent); unregister with `launchctl unload` (the
+script prints the exact command). All three are also offered
+automatically at the end of `scripts/install.ps1` / `scripts/install.sh`.
 
 ## The setup wizard
 
