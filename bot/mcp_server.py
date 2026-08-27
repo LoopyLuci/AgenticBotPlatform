@@ -9,6 +9,14 @@ same DASHBOARD_TOKEN the GUI uses. That keeps one source of truth: a tool
 added to the dashboard API shows up here by adding one proxy function, not
 by re-deriving business logic.
 
+Every tool call shares one long-lived httpx.AsyncClient (connection pooling
+across calls instead of a fresh TCP handshake each time), retries briefly
+on connection-level failures (the dashboard mid hot-reload, or this
+process racing the dashboard's own startup — never on an actual HTTP error
+response, which is authoritative), and logs to logs/mcp_server.log — the
+only place it safely can, since stdout is the MCP/JSON-RPC transport
+itself and would be corrupted by any print/console logging.
+
 Run standalone for testing:
     python -m bot.mcp_server
 
@@ -24,6 +32,9 @@ process is a thin client, not a second copy of the server.
 
 from __future__ import annotations
 
+import asyncio
+import logging
+import logging.handlers
 import os
 from typing import Any, Optional
 
@@ -36,7 +47,47 @@ HOST = os.environ.get("DASHBOARD_HOST", "127.0.0.1")
 PORT = os.environ.get("DASHBOARD_PORT", "8787")
 BASE_URL = f"http://{HOST}:{PORT}"
 
+# stdio *is* the MCP transport here — anything written to stdout would
+# corrupt the JSON-RPC stream, so logging can only ever go to a file, never
+# a console handler. Shares the same logs/ directory bot/main.py's own
+# rotating log lives in, just a different file, since this runs as a
+# separate process (spawned by Claude Desktop/Code, not by bot/main.py).
+_LOG_DIR = envfile.PROJECT_ROOT / "logs"
+_LOG_DIR.mkdir(exist_ok=True)
+_file_handler = logging.handlers.RotatingFileHandler(
+    _LOG_DIR / "mcp_server.log", maxBytes=2_000_000, backupCount=3, encoding="utf-8"
+)
+_file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s", "%H:%M:%S"))
+logging.getLogger().addHandler(_file_handler)
+logging.getLogger().setLevel(logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logger = logging.getLogger("bot.mcp_server")
+
 mcp = MCPServer("bot-server")
+
+# A single long-lived client instead of one per tool call: this process
+# lives for the whole Claude Desktop/Code session, so paying connection
+# setup cost on every single tool invocation was pure overhead — httpx
+# already pools/reuses the underlying TCP connection across requests made
+# on the same client. Created lazily (not at import time) since MCPServer
+# tools all run inside an event loop that doesn't exist yet at import.
+_client: Optional[httpx.AsyncClient] = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    global _client
+    if _client is None:
+        _client = httpx.AsyncClient(base_url=BASE_URL)
+    return _client
+
+
+# A single failed request to the dashboard (it's mid hot-reload, or this
+# tool call raced the dashboard's own startup) shouldn't surface as a hard
+# tool failure — retried only for connection-level failures, never an
+# actual HTTP error response (the dashboard answering with a real 4xx/5xx
+# is authoritative, not worth retrying). Mirrors the same pattern already
+# used for peer-server linking (bot/peers.py) and the desktop updater.
+_RETRY_DELAYS_S = (0.5, 1.5)
 
 
 def _token() -> Optional[str]:
@@ -51,19 +102,38 @@ async def _request(method: str, path: str, timeout: float = 15.0, **kwargs: Any)
     token = _token()
     if token:
         headers["X-Dashboard-Token"] = token
-    async with httpx.AsyncClient(base_url=BASE_URL, timeout=timeout) as client:
-        resp = await client.request(method, path, headers=headers, **kwargs)
-        if resp.status_code == 401:
-            return {"error": "invalid or missing DASHBOARD_TOKEN — check .env"}
-        if resp.status_code == 503:
-            return {"error": "dashboard reports DASHBOARD_TOKEN is not set yet — run the setup wizard first"}
-        if resp.status_code >= 400:
-            try:
-                detail = resp.json().get("detail", resp.text)
-            except Exception:
-                detail = resp.text
-            return {"error": str(detail)}
-        return resp.json()
+    client = _get_client()
+
+    resp = None
+    last_exc: Optional[Exception] = None
+    for delay in (0.0, *_RETRY_DELAYS_S):
+        if delay:
+            logger.warning("retrying %s %s in %.1fs after a connection error: %s", method, path, delay, last_exc)
+            await asyncio.sleep(delay)
+        try:
+            resp = await client.request(method, path, headers=headers, timeout=timeout, **kwargs)
+            break
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as exc:
+            last_exc = exc
+    if resp is None:
+        logger.error("giving up on %s %s: %s", method, path, last_exc)
+        return {"error": f"couldn't reach the dashboard at {BASE_URL} — is it running? ({last_exc})"}
+
+    if resp.status_code == 401:
+        logger.warning("%s %s -> 401", method, path)
+        return {"error": "invalid or missing DASHBOARD_TOKEN — check .env"}
+    if resp.status_code == 503:
+        logger.warning("%s %s -> 503", method, path)
+        return {"error": "dashboard reports DASHBOARD_TOKEN is not set yet — run the setup wizard first"}
+    if resp.status_code >= 400:
+        try:
+            detail = resp.json().get("detail", resp.text)
+        except Exception:
+            detail = resp.text
+        logger.warning("%s %s -> %s: %s", method, path, resp.status_code, detail)
+        return {"error": str(detail)}
+    logger.info("%s %s -> %s", method, path, resp.status_code)
+    return resp.json()
 
 
 @mcp.tool()
@@ -176,4 +246,23 @@ async def run_swarm(source_instance: str, swarm: str, prompt: str) -> dict:
 
 
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
+    logger.info("bot-server MCP server starting (dashboard at %s)", BASE_URL)
+    try:
+        mcp.run(transport="stdio")
+    finally:
+        if _client is not None:
+            try:
+                # mcp.run() already ran (and closed) its own event loop, so
+                # this has to spin up a fresh one just to close the client's
+                # sockets — which on Windows' Proactor loop reliably raises
+                # "Event loop is closed" from libuv/IOCP cleanup tied to the
+                # now-gone original loop. Harmless at process-exit time (the
+                # OS reclaims the sockets regardless) and not worth a scary
+                # traceback every time Claude Desktop/Code spawns and kills
+                # this short-lived process, so it's swallowed here rather
+                # than fixed "properly" — there is no clean fix for a
+                # cross-event-loop close on this platform.
+                asyncio.run(_client.aclose())
+            except Exception:
+                pass
+        logger.info("bot-server MCP server exiting")
