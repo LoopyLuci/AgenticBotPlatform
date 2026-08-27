@@ -1017,15 +1017,18 @@
 
       <div class="card">
         <h3>1. Generate a pairing token (for someone linking into THIS server)</h3>
-        <p class="cardnote">This server's own address is baked into the token below, so whoever links in never needs to know or type it separately. Share the token — never your dashboard token — with them; it works once and expires in 10 minutes, so it's safe to send over chat.</p>
-        <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px;">
-          <input type="text" id="peer-gen-token-address" placeholder="This server's reachable address, e.g. http://192.168.1.20:8787" style="flex:1; min-width:260px;">
-          <button class="btn" id="btn-peer-gen-token">Generate pairing token</button>
-        </div>
+        <p class="cardnote">One click — this server auto-detects its own reachable address and bakes it into the token, so whoever links in never needs to know or type it. Share the token — never your dashboard token — with them; it works once and expires in 10 minutes, so it's safe to send over chat.</p>
         <div class="row" style="gap:8px; align-items:center; margin-top:8px;">
+          <button class="btn" id="btn-peer-gen-token">Generate pairing token</button>
           <input type="text" id="peer-gen-token-value" readonly placeholder="(not generated yet)" style="flex:1; min-width:220px; font-family:monospace;" onclick="this.select();">
           <span class="cardnote" id="peer-gen-token-expiry" style="margin:0;"></span>
         </div>
+        <details style="margin-top:8px;">
+          <summary class="cardnote" style="cursor:pointer;">Advanced: override the auto-detected address</summary>
+          <div class="row" style="gap:8px; align-items:center; margin-top:8px;">
+            <input type="text" id="peer-gen-token-address" placeholder="Only if auto-detection is wrong, e.g. behind a reverse proxy" style="flex:1; min-width:260px;">
+          </div>
+        </details>
       </div>
 
       <div class="card" style="margin-top:14px;">
@@ -1037,7 +1040,7 @@
           <button class="btn primary" id="btn-peer-link">Link server</button>
         </div>
         <details style="margin-top:8px;">
-          <summary class="cardnote" style="cursor:pointer;">Advanced: let it call you back too</summary>
+          <summary class="cardnote" style="cursor:pointer;">Advanced: let it call you back too (auto-detected)</summary>
           <div class="row" style="gap:8px; align-items:center; margin-top:8px;">
             <input type="text" id="peer-my-url" placeholder="This server's own reachable address (optional)" style="flex:1;">
           </div>
@@ -3436,34 +3439,31 @@ document.getElementById('btn-peer-link').onclick = async () => {
 // been superseded (server only ever keeps one pending token alive too).
 let _peerTokenCountdownTimer = null;
 
-// Pre-fill both "this server's address" fields with the address actually
-// used to load this page — correct when that's a real LAN IP or hostname
-// (browsed to from this network) and still editable for anything fancier
-// (reverse proxy, port forwarding, a different external hostname). Never
-// prefilled from 127.0.0.1/localhost: that's exactly the address a peer on
-// a DIFFERENT machine could never reach, so guessing it here would bake a
-// silently broken address into the token instead of the address genuinely
-// unknown/blank being obviously something to fill in.
-(function prefillOwnAddress() {
-  const origin = window.location.origin;
-  if (!origin || !origin.startsWith('http')) return;
-  if (/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/i.test(origin)) return;
-  const addrEl = document.getElementById('peer-gen-token-address');
-  const myUrlEl = document.getElementById('peer-my-url');
-  if (addrEl && !addrEl.value) addrEl.value = origin;
-  if (myUrlEl && !myUrlEl.value) myUrlEl.value = origin;
+// Pre-fill the optional "let it call you back" field with this server's
+// own auto-detected address — a real query to the backend (which knows
+// its actual outbound-facing LAN IP), not a guess from the page's own URL,
+// so it's correct even when the dashboard was opened via 127.0.0.1 or
+// (in the desktop app) isn't served from that address at all. Silently
+// left blank if detection fails (offline machine) — the field is optional.
+(async function prefillOwnAddress() {
+  try {
+    const res = await api('/api/peers/self-address');
+    if (res.base_url) {
+      const myUrlEl = document.getElementById('peer-my-url');
+      if (myUrlEl && !myUrlEl.value) myUrlEl.value = res.base_url;
+    }
+  } catch (_e) { /* not logged in yet, or detection failed — leave blank */ }
 })();
 
 document.getElementById('btn-peer-gen-token').onclick = async () => {
   const btn = document.getElementById('btn-peer-gen-token');
   const valueEl = document.getElementById('peer-gen-token-value');
   const expiryEl = document.getElementById('peer-gen-token-expiry');
-  const base_url = document.getElementById('peer-gen-token-address').value.trim();
-  if (!base_url) {
-    expiryEl.textContent = 'This server\'s address is required to generate a token.';
-    return;
-  }
+  // Blank unless the Advanced override is filled in — the server
+  // auto-detects its own address when none is given.
+  const base_url = document.getElementById('peer-gen-token-address').value.trim() || undefined;
   btn.disabled = true;
+  expiryEl.textContent = 'Generating…';
   try {
     const res = await api('/api/peers/pairing-token', { method: 'POST', body: JSON.stringify({ base_url }) });
     valueEl.value = res.pairing_token;
@@ -3473,13 +3473,13 @@ document.getElementById('btn-peer-gen-token').onclick = async () => {
     const tick = () => {
       const remainingMs = expiresAt - Date.now();
       if (remainingMs <= 0) {
-        expiryEl.textContent = 'expired — generate a new one';
+        expiryEl.textContent = `for ${res.base_url} — expired, generate a new one`;
         clearInterval(_peerTokenCountdownTimer);
         return;
       }
       const m = Math.floor(remainingMs / 60000);
       const s = Math.floor((remainingMs % 60000) / 1000).toString().padStart(2, '0');
-      expiryEl.textContent = `expires in ${m}:${s} or as soon as it's used`;
+      expiryEl.textContent = `for ${res.base_url} — expires in ${m}:${s} or as soon as it's used`;
     };
     tick();
     _peerTokenCountdownTimer = setInterval(tick, 1000);

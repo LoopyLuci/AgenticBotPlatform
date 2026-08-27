@@ -1757,13 +1757,17 @@ def build_app() -> FastAPI:
     # _require_token_or_api_key, matching every other bot-management route
     # a paired device can already reach.
 
-    @app.post("/api/peers/pairing-token", dependencies=[Depends(_require_token)])
-    async def api_peers_pairing_token(payload: dict = Body(...)):
+    @app.get("/api/peers/self-address", dependencies=[Depends(_require_token)])
+    async def api_peers_self_address():
         from bot import peers
 
-        base_url = (payload.get("base_url") or "").strip()
-        if not base_url:
-            raise HTTPException(status_code=400, detail="payload must be {base_url}")
+        return {"base_url": peers.detect_own_base_url()}
+
+    @app.post("/api/peers/pairing-token", dependencies=[Depends(_require_token)])
+    async def api_peers_pairing_token(payload: dict = Body(default={})):
+        from bot import peers
+
+        base_url = (payload.get("base_url") or "").strip() or None
         try:
             result = peers.generate_pairing_token(base_url)
         except peers.PeerError as exc:

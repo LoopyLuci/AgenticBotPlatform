@@ -852,24 +852,27 @@ own dashboard — without merging databases, sharing one bot, or standing up
 any new infrastructure.
 
 **Two different tokens for two different jobs — your dashboard token never
-leaves your machine, and linking in needs nothing but a name and a
-token.** Linking uses a dedicated, short-lived **server pairing token**
-for the one moment two servers actually talk to each other, and that
-token carries the target server's own address baked in — so the admin
-linking in never has to know or type an IP address at all:
+leaves your machine, and the whole flow needs zero IP addresses typed by
+anyone.** Linking uses a dedicated, short-lived **server pairing token**
+for the one moment two servers actually talk to each other, and every
+server auto-detects its own reachable address and bakes it into that
+token — so nobody, on either side, ever has to look up or type an IP:
 
-1. On server B's Linked Servers tab, step 1, enter B's own reachable
-   address (pre-filled automatically from the address the dashboard was
-   loaded from, when that's a real LAN address rather than
-   `127.0.0.1`/`localhost`) and click **Generate pairing token**. This
-   mints a random code — B's address baked in, valid for 10 minutes,
+1. On server B's Linked Servers tab, step 1, click **Generate pairing
+   token** — that's it, no fields to fill in. B auto-detects its own LAN
+   address (the same "which interface has a route out" trick a browser or
+   OS uses, not a guess from whatever URL the dashboard happens to be
+   open at) and bakes it into a random code, valid for 10 minutes and
    usable exactly once — safe to paste into a chat message to whoever's
-   linking in, unlike B's real dashboard token.
+   linking in, unlike B's real dashboard token. (An "Advanced" disclosure
+   holds a manual override for the one real edge case auto-detection
+   can't cover — a reverse proxy or port forwarding.)
 2. On server A's Linked Servers tab, step 2, fill in **Link a server**:
    just a name for B and that one pairing token — no address field at
-   all. Click **Link server**. (An "Advanced" disclosure holds the one
-   genuinely optional field, A's own reachable address, for if you also
-   want B able to call A back.)
+   all. Click **Link server**. (Its own "Advanced" disclosure holds the
+   one genuinely optional field, A's own reachable address — also
+   auto-detected and pre-filled — for if you want B able to call A back
+   too.)
 3. That one call does the whole handshake: A decodes B's address straight
    out of the pairing token, mints a fresh, independently-revocable
    credential for B, and sends it to B along with the pairing token; B

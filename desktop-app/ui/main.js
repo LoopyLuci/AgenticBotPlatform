@@ -2482,24 +2482,22 @@ document.getElementById('btn-peer-link').onclick = async () => {
   }
 };
 
-// Pre-fill both "this server's address" fields with the address actually
-// used to load this page — correct when that's a real LAN IP or hostname
-// and still editable for anything fancier (reverse proxy, port forwarding,
-// a different external hostname). Skipped entirely in the Tauri desktop
-// app: its webview always talks to its own dashboard over 127.0.0.1
-// (API_BASE above), which is exactly the address a peer on a DIFFERENT
-// machine could never reach — there's no way to guess this machine's real
-// LAN address from inside the app, so leaving the field blank (obviously
-// something to fill in) beats silently baking in a broken one.
-(function prefillOwnAddress() {
-  if (IS_TAURI) return;
-  const origin = window.location.origin;
-  if (!origin || !origin.startsWith('http')) return;
-  if (/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/i.test(origin)) return;
-  const addrEl = document.getElementById('peer-gen-token-address');
-  const myUrlEl = document.getElementById('peer-my-url');
-  if (addrEl && !addrEl.value) addrEl.value = origin;
-  if (myUrlEl && !myUrlEl.value) myUrlEl.value = origin;
+// Pre-fill the optional "let it call you back" field with this server's
+// own auto-detected address — a real query to the backend (which knows
+// its actual outbound-facing LAN IP), not a guess from the page's own URL.
+// This works correctly even in the Tauri desktop app, where the webview's
+// own origin is meaningless for this (it always talks to its own dashboard
+// over 127.0.0.1 via API_BASE) but the query itself still reaches the real
+// backend process and gets its real LAN IP back. Silently left blank if
+// detection fails (offline machine) — the field is optional.
+(async function prefillOwnAddress() {
+  try {
+    const res = await api('/api/peers/self-address');
+    if (res.base_url) {
+      const myUrlEl = document.getElementById('peer-my-url');
+      if (myUrlEl && !myUrlEl.value) myUrlEl.value = res.base_url;
+    }
+  } catch (_e) { /* not logged in yet, or detection failed — leave blank */ }
 })();
 
 // One shared countdown so re-clicking "Generate" replaces the old timer
@@ -2511,12 +2509,11 @@ document.getElementById('btn-peer-gen-token').onclick = async () => {
   const btn = document.getElementById('btn-peer-gen-token');
   const valueEl = document.getElementById('peer-gen-token-value');
   const expiryEl = document.getElementById('peer-gen-token-expiry');
-  const base_url = document.getElementById('peer-gen-token-address').value.trim();
-  if (!base_url) {
-    expiryEl.textContent = 'This server\'s address is required to generate a token.';
-    return;
-  }
+  // Blank unless the Advanced override is filled in — the server
+  // auto-detects its own address when none is given.
+  const base_url = document.getElementById('peer-gen-token-address').value.trim() || undefined;
   btn.disabled = true;
+  expiryEl.textContent = 'Generating…';
   try {
     const res = await api('/api/peers/pairing-token', { method: 'POST', body: JSON.stringify({ base_url }) });
     valueEl.value = res.pairing_token;
@@ -2526,13 +2523,13 @@ document.getElementById('btn-peer-gen-token').onclick = async () => {
     const tick = () => {
       const remainingMs = expiresAt - Date.now();
       if (remainingMs <= 0) {
-        expiryEl.textContent = 'expired — generate a new one';
+        expiryEl.textContent = `for ${res.base_url} — expired, generate a new one`;
         clearInterval(_peerTokenCountdownTimer);
         return;
       }
       const m = Math.floor(remainingMs / 60000);
       const s = Math.floor((remainingMs % 60000) / 1000).toString().padStart(2, '0');
-      expiryEl.textContent = `expires in ${m}:${s} or as soon as it's used`;
+      expiryEl.textContent = `for ${res.base_url} — expires in ${m}:${s} or as soon as it's used`;
     };
     tick();
     _peerTokenCountdownTimer = setInterval(tick, 1000);

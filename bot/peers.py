@@ -42,11 +42,13 @@ changes) with exactly the same restriction (can't mint/revoke other
 keys) — no new permission model to design, audit, or get wrong.
 
 Linking is a two-step, single-admin-action-per-side handshake:
-  0. The admin of server B types B's own reachable address once and clicks
-     "Generate pairing token" in B's own dashboard (DASHBOARD_TOKEN-gated)
-     — the address gets baked into the token itself — and shares the
-     resulting code with whoever is linking in (chat, in person, however —
-     it's short-lived and single-use, so casual sharing is fine).
+  0. The admin of server B clicks "Generate pairing token" in B's own
+     dashboard (DASHBOARD_TOKEN-gated) — nothing else required. B
+     auto-detects its own LAN-reachable address (detect_own_base_url())
+     and bakes it into the token itself, so the admin never has to look up
+     or type an IP either. They share the resulting code with whoever is
+     linking in (chat, in person, however — it's short-lived and
+     single-use, so casual sharing is fine).
   1. The admin of server A pastes just that one pairing token (no address
      to look up or type) into A's "Link a server" form, along with
      whatever name A wants to call B. A mints a fresh api_keys row
@@ -72,6 +74,8 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import os
+import socket
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -109,6 +113,28 @@ def normalize_base_url(base_url: str) -> str:
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise PeerError(f"{base_url!r} needs a scheme, e.g. http://192.168.1.20:8787")
     return base_url
+
+
+def detect_own_base_url() -> Optional[str]:
+    """Best-effort auto-detection of this machine's own LAN-reachable
+    address, so generating a pairing token never requires an admin to look
+    up or type an IP either — the whole flow becomes one click on both
+    sides. Uses the standard "open a UDP socket toward some public
+    address, ask the OS which local interface it picked" trick: no packet
+    actually leaves the machine (UDP connect() is pure local route
+    resolution), it just reveals which of this machine's own IPs has a
+    route out, which is normally also the LAN IP another device on the
+    same network would use to reach it. Returns None if there's no route
+    at all (offline machine, no NIC) — the one case that still needs a
+    manually-provided address."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+    except OSError:
+        return None
+    port = os.environ.get("DASHBOARD_PORT", "8787")
+    return f"http://{ip}:{port}"
 
 
 _PAIRING_TOKEN_PREFIX = "bsp1"
@@ -150,18 +176,25 @@ async def _post_with_retry(client: httpx.AsyncClient, url: str, **kwargs) -> htt
     raise last_exc  # type: ignore[misc]
 
 
-def generate_pairing_token(base_url: str) -> dict:
-    """Runs on the receiving side, one DASHBOARD_TOKEN-gated local action
-    (see the module docstring's step 0). `base_url` is THIS server's own
-    reachable address — the one thing an address has to be typed for in
-    the whole flow, and it's typed by the admin who actually knows it
-    (their own machine), not guessed at by whoever's linking in. Baked
-    into the returned token so the other side never needs it separately.
-    The result is what the admin shares with whoever is linking in —
-    never the real dashboard token."""
-    base_url = normalize_base_url(base_url)
+def generate_pairing_token(base_url: Optional[str] = None) -> dict:
+    """Runs on the receiving side, one DASHBOARD_TOKEN-gated local action,
+    one click (see the module docstring's step 0). `base_url` is THIS
+    server's own reachable address, baked into the returned token so the
+    other side never needs it separately — auto-detected via
+    detect_own_base_url() when not given, so nobody has to look up or type
+    an address at all in the normal case. An explicit `base_url` still
+    works, for the one real edge case auto-detection can't cover (a
+    reverse proxy, port forwarding, an address that differs from this
+    machine's own outbound-facing IP). The result is what the admin shares
+    with whoever is linking in — never the real dashboard token."""
+    if base_url:
+        base_url = normalize_base_url(base_url)
+    else:
+        base_url = detect_own_base_url()
+        if not base_url:
+            raise PeerError("couldn't auto-detect this server's address (no network route) — provide one manually")
     secret, expires_at = db.create_server_pairing_token()
-    return {"pairing_token": _encode_pairing_token(base_url, secret), "expires_at": expires_at}
+    return {"pairing_token": _encode_pairing_token(base_url, secret), "expires_at": expires_at, "base_url": base_url}
 
 
 async def link_peer(name: str, pairing_token: str, my_name: str, my_base_url: Optional[str] = None) -> dict:
