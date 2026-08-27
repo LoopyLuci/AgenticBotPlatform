@@ -433,6 +433,16 @@ def run_setup_wizard(args) -> bool:
     if args.check:
         Step.missing("Setup is incomplete")
         return False
+    if args.yes:
+        # The wizard is fully interactive by design (it needs a human to
+        # type a platform token) — there's no sane "auto-yes" for launching
+        # something that then blocks on stdin with no one there to answer
+        # it. This matters for both a scripted --yes run and the GUI
+        # installer, which has no console attached for input() to read at
+        # all (that's what produced the "Aborted." seen when this used to
+        # fall through to confirm()'s own assume_yes shortcut).
+        Step.warn("Skipped (unattended run) — run `scripts\\setup.py` (or `scripts/setup.py`) afterward to finish configuration")
+        return False
     if not confirm("Run the interactive setup wizard now?", args.yes):
         Step.warn("Skipped — run `scripts\\setup.py` (or `scripts/setup.py`) later")
         return False
@@ -440,10 +450,14 @@ def run_setup_wizard(args) -> bool:
     return True
 
 
-def offer_build(args) -> None:
+def offer_build(args, results: dict) -> None:
     if args.check or args.no_build or args.dev:
         return
     Step.head("Production build")
+    if not results.get("rust") or not results.get("tauri_cli"):
+        Step.warn("Skipping — Rust and/or the Tauri CLI aren't available yet (see above). "
+                   "Install them, then run `cargo tauri build` from desktop-app/src-tauri yourself.")
+        return
     if not confirm("Build the standalone desktop app now (cargo tauri build)? "
                     "This bundles the venv + code into a single installer/executable. "
                     "Can take several minutes.", args.yes):
@@ -452,7 +466,15 @@ def offer_build(args) -> None:
         print("    cargo tauri build")
         return
     Step.doing("cargo tauri build")
-    subprocess.run(["cargo", "tauri", "build"], cwd=str(ROOT / "desktop-app" / "src-tauri"), check=True)
+    try:
+        subprocess.run(["cargo", "tauri", "build"], cwd=str(ROOT / "desktop-app" / "src-tauri"), check=True)
+    except (subprocess.CalledProcessError, OSError) as e:
+        # Never let a failed build take down the whole installer with an
+        # unhandled traceback — everything before this point (venv,
+        # config) already succeeded and shouldn't be reported as a hard
+        # failure just because the optional build step didn't work.
+        Step.err(f"Build failed: {e}")
+        return
     Step.ok("Build complete — see desktop-app/src-tauri/target/release/ and .../bundle/")
 
 
@@ -516,8 +538,18 @@ def main() -> None:
             _emit({"type": "summary", "results": results, "all_ok": False})
         sys.exit(1)
 
-    offer_build(args)
-    offer_autostart(args)
+    try:
+        offer_build(args, results)
+        offer_autostart(args)
+    except Exception as e:
+        # Defense in depth on top of offer_build's own try/except: nothing
+        # past this point (venv + config already succeeded) should ever
+        # surface as a raw, unhandled traceback — especially in --json
+        # mode, where a GUI is trying to parse every line as an event.
+        Step.err(f"unexpected error: {e}")
+        if JSON_MODE:
+            _emit({"type": "summary", "results": results, "all_ok": False})
+        sys.exit(1)
 
     Step.head("Done")
     next_step = (
