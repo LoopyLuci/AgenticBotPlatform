@@ -46,6 +46,19 @@ features:
   verbose_telemetry: true
 agent_control:
   mode: trust_all
+retention:
+  # Automatic pruning for the highest-volume, lowest-long-term-value
+  # tables — job attempts, telemetry samples, connection-health events,
+  # and Support Bot classification logs. None of these grow forever for
+  # free: left unmanaged, a long-running server's database only gets
+  # bigger and slower to query, with no way to reclaim it short of
+  # someone finding the dashboard's manual Vacuum button. Deliberately
+  # does NOT touch audit_log (a security trail, kept longer by design),
+  # chat/session history, or config_history — those have real long-term
+  # value at a fraction of the row volume. Runs once a day; see
+  # bot/retention.py.
+  enabled: true
+  days: 90
 turn:
   # Real TURN relay for the Android mesh transport's WebRTC fallback (see
   # bot/turn.py) — used when two devices can't reach each other directly

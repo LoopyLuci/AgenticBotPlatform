@@ -75,9 +75,25 @@ def remove(sched_id: int) -> None:
 
 
 async def _fire(row) -> None:
+    from bot import bot_instances
     from bot.agent_runtime import engine as agent_engine  # deferred: avoids an import cycle at module load
 
     instance_id, chat_id, thread_id = row["instance_id"], row["chat_id"], row["thread_id"]
+
+    if bot_instances.get_instance(instance_id) is None:
+        # The instance was deleted through some path that predates
+        # delete_instance's own cleanup (a direct DB edit, a restore from
+        # an old backup, or simply a row created before this check
+        # existed) — nothing this schedule could ever run against again.
+        # Disabling instead of deleting leaves a visible trace of what
+        # happened rather than silently vanishing a row someone might
+        # otherwise wonder about.
+        logger.warning(
+            "scheduled command %s targets instance %s, which no longer exists — disabling it",
+            row["id"], instance_id,
+        )
+        db.set_scheduled_command_enabled(row["id"], False)
+        return
 
     if row["kind"] == "heartbeat" and agent_engine.is_running(instance_id, chat_id, thread_id):
         # "re-enters the session when idle" — if it's busy right now, just

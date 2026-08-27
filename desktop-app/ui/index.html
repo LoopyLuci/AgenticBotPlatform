@@ -673,6 +673,13 @@
           <div class="settingrow"><div><div class="st">Confirm destructive actions</div><div class="sd">Restart / stop / MCP changes need a tap</div></div><div class="toggle" id="tg-confirm" data-path="security,confirm_destructive"></div></div>
           <div class="settingrow"><div><div class="st">Verbose telemetry</div><div class="sd">Log every backend call, not just failures</div></div><div class="toggle" id="tg-verbose" data-path="features,verbose_telemetry"></div></div>
         </div>
+
+        <div class="card">
+          <h3>Data retention</h3>
+          <p class="cardnote">Automatically prunes old rows from the jobs, telemetry, connection-log, and Support Bot classification tables once a day — the tables that otherwise just grow forever. Never touches audit log, chat/session history, or config history, and never deletes a job that isn't finished yet regardless of age.</p>
+          <div class="settingrow"><div><div class="st">Enabled</div><div class="sd">Turn off to keep every row forever (not recommended for a long-running server)</div></div><div class="toggle" id="tg-retention" data-path="retention,enabled"></div></div>
+          <div class="settingrow"><div><div class="st">Keep for (days)</div><div class="sd">Rows older than this are removed on the next daily pass</div></div><input type="number" id="retention-days" min="1" style="width:100px;"></div>
+        </div>
       </div>
 
       <div class="grid g2" style="margin-top:14px;">

@@ -443,6 +443,10 @@ async function refreshConfig() {
   setToggle('tg-ui-automation', !!(current.features || {}).ui_automation_enabled);
   setToggle('tg-confirm', !!(current.security || {}).confirm_destructive);
   setToggle('tg-verbose', !!(current.features || {}).verbose_telemetry);
+  setToggle('tg-retention', (current.retention || {}).enabled !== false);
+  if (document.activeElement.id !== 'retention-days') {
+    document.getElementById('retention-days').value = (current.retention || {}).days ?? 90;
+  }
 
   setToggle('tg-turn-enabled', !!(current.turn || {}).enabled);
   if (!_turnInputsFocused()) {
@@ -491,6 +495,11 @@ document.getElementById('turn-urls').onchange = async (e) => {
 document.getElementById('turn-ttl').onchange = async (e) => {
   const value = Math.max(60, parseInt(e.target.value, 10) || 3600);
   await api('/api/config/set', { method: 'POST', body: JSON.stringify({ path: ['turn', 'ttl_s'], value }) });
+  refreshConfig();
+};
+document.getElementById('retention-days').onchange = async (e) => {
+  const value = Math.max(1, parseInt(e.target.value, 10) || 90);
+  await api('/api/config/set', { method: 'POST', body: JSON.stringify({ path: ['retention', 'days'], value }) });
   refreshConfig();
 };
 

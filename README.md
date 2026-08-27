@@ -37,7 +37,7 @@ this is just the map:
 | **Overview** | KPIs at a glance: job counts, desktop process state, DB size, config version, default backend. |
 | **Jobs** | Every `/ask` attempt, filterable by status, with a completed/failed timeseries and per-backend breakdown charts. |
 | **Connections & Telemetry** | Live desktop/backend/MCP status, per-backend latency, recent errors, connection event log. |
-| **Database** | Storage size and per-table row counts, plus a **Vacuum** button (`POST /api/database/vacuum`) for reclaiming space. |
+| **Database** | Storage size and per-table row counts, plus a **Vacuum** button (`POST /api/database/vacuum`) for reclaiming space. Control Center's **Data retention** card controls automatic daily pruning of old jobs/telemetry/connection-log/classification rows — see below. |
 | **Control Center** | The router config editor (backends, action overrides, models, timeouts), agent-control mode, feature toggles, security settings, desktop process controls, the **Environment** card (`.env` editor + backups + setup wizard + MCP self-register), and the **MCP servers** card. |
 | **Resilience** | Health checks, hot-reload status, and the full `config_history` change timeline with diffs. |
 | **Live Logs** | Streaming tail of `logs/bot.log`, filterable by level. |
@@ -765,9 +765,11 @@ server, with no external AI service involved at all.
 genuinely trained neural network, running together.** Every message goes
 through *both* `model.py`'s TF-IDF nearest-centroid classifier (stdlib
 only — `math`/`re`/`collections`) and `nn_model.py`'s neural network (a
-real backprop-trained multi-layer perceptron, `scikit-learn`, the one ML
-dependency this specific feature adds) at once. `hybrid.py` combines
-them: if both agree, that's the strongest possible signal; if they
+real backprop-trained multi-layer perceptron — one hidden ReLU layer,
+softmax output, trained by plain gradient descent on cross-entropy loss,
+implemented directly on top of `numpy`, the one numeric dependency this
+feature needs) at once. `hybrid.py` combines them: if both agree, that's
+the strongest possible signal; if they
 disagree, it trusts whichever is more confident; if neither is confident,
 it says so honestly ("not sure what you mean") instead of guessing.
 `training_data.py` has ~190 hand-authored example phrasings across 40
@@ -1000,6 +1002,25 @@ Desktop version exposes different control names, set
 `config/backends.yaml` rather than editing the code. The router never
 routes to `ui` as a silent default — only via an explicit `--backend=ui`
 flag or an explicit `action_overrides` entry — by design.
+
+## Data retention — keeping a long-running server light and fast
+
+Left alone, `data/bot.db` only ever grows: every request appends a job
+row, telemetry samples, connection-health events, and (if you use the
+Support Bot) a classification log entry, and nothing ever removes one.
+Control Center's **Data retention** card runs an automatic daily pass
+that prunes rows older than a configurable window (`retention.days` in
+`config/backends.yaml`, default 90) from exactly those four tables —
+`jobs` (only finished ones; a queued/running/retrying job is never
+touched regardless of age), `telemetry_events`, `connections_log`, and
+`support_bot_classifications`. It deliberately never touches `audit_log`
+(a security trail, kept by design), chat/session history, or
+`config_history` — those have real long-term value at a fraction of the
+row volume the pruned tables see. Turn it off entirely with the card's
+toggle if you want to keep every row forever. Pruning only deletes rows;
+run the Database tab's **Vacuum** afterward if you want to reclaim the
+freed disk space immediately rather than waiting for SQLite's own
+incremental reuse of that space.
 
 ## Security
 

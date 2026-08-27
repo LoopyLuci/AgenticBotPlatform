@@ -203,7 +203,16 @@ def delete_instance(instance_id: int, actor: str = "dashboard") -> None:
     with db._lock:
         conn.execute("DELETE FROM bot_instances WHERE id=?", (instance_id,))
         conn.commit()
-    db.log_audit(actor=actor, action="bot_instance_delete", detail=f"deleted {current['name']!r} ({current['platform']})")
+    # Jobs/messages deliberately stay (see README — tagged history, not
+    # live state), but a scheduled command is a live recurring task with
+    # nothing left to run against once its instance is gone. Left behind,
+    # it just keeps coming due forever, silently wasting a job attempt on
+    # every scheduler poll — see bot/scheduler.py's run_forever.
+    removed = db.delete_scheduled_commands_for_instance(instance_id)
+    detail = f"deleted {current['name']!r} ({current['platform']})"
+    if removed:
+        detail += f"; removed {removed} orphaned scheduled command(s)"
+    db.log_audit(actor=actor, action="bot_instance_delete", detail=detail)
     backup_instances(reason=f"after delete: {current['name']}")
 
 

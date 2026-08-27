@@ -1015,6 +1015,21 @@ def delete_scheduled_command(sched_id: int) -> None:
         conn.commit()
 
 
+def delete_scheduled_commands_for_instance(instance_id: int) -> int:
+    """Called when a bot instance is deleted — unlike jobs/messages (kept
+    intentionally as history), a scheduled command is a *live* recurring
+    task with nothing left to run against once its instance is gone, so it
+    has to be cleaned up rather than preserved. Without this, an orphaned
+    row keeps coming due forever: the scheduler has no natural reason to
+    ever stop polling a row that still says enabled=1. Returns how many
+    were removed, for the caller's audit log."""
+    conn = get_conn()
+    with _lock:
+        cur = conn.execute("DELETE FROM scheduled_commands WHERE instance_id=?", (instance_id,))
+        conn.commit()
+        return cur.rowcount
+
+
 # ------------------------------------------------------------------ kanban
 
 def get_or_create_kanban_board(instance_id: int, name: str) -> int:
@@ -1904,6 +1919,36 @@ def consume_server_pairing_token(plaintext: str) -> bool:
         )
         conn.commit()
         return cur.rowcount == 1
+
+
+def prune_old_data(days: int) -> dict[str, int]:
+    """Deletes rows older than `days` from the highest-volume,
+    lowest-long-term-value tables — see config/backends.yaml's `retention`
+    comment for the reasoning and bot/retention.py for the daily
+    background task that calls this. Deliberately narrow: audit_log (a
+    security trail), chat/session history, and config_history are never
+    touched here — this is only for tables that exist to answer "what
+    happened recently," not "what happened ever." `jobs` additionally
+    excludes anything not yet in a terminal state, so a long-running or
+    stuck job can never be deleted out from under itself regardless of
+    its age. Returns {table: rows_deleted}."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
+    conn = get_conn()
+    removed: dict[str, int] = {}
+    with _lock:
+        cur = conn.execute(
+            "DELETE FROM jobs WHERE created_at<? AND status NOT IN ('queued','running','retrying')",
+            (cutoff,),
+        )
+        removed["jobs"] = cur.rowcount
+        cur = conn.execute("DELETE FROM telemetry_events WHERE ts<?", (cutoff,))
+        removed["telemetry_events"] = cur.rowcount
+        cur = conn.execute("DELETE FROM connections_log WHERE ts<?", (cutoff,))
+        removed["connections_log"] = cur.rowcount
+        cur = conn.execute("DELETE FROM support_bot_classifications WHERE ts<?", (cutoff,))
+        removed["support_bot_classifications"] = cur.rowcount
+        conn.commit()
+    return removed
 
 
 def purge_revoked_keys() -> int:

@@ -185,6 +185,10 @@ async def run() -> None:
 
     peers_health_task = asyncio.create_task(peers.health_check_forever(stop_event))
 
+    from bot import retention
+
+    retention_task = asyncio.create_task(retention.run_forever(stop_event))
+
     # server.serve() just got scheduled, not confirmed running — uvicorn
     # sets Server.started once it's actually bound and accepting
     # connections. Wait for that (bounded, so a real bind failure still
@@ -206,6 +210,7 @@ async def run() -> None:
         watch_task.cancel()
         await scheduler_task  # stop_event is already set; run_forever exits its own loop cleanly
         await peers_health_task  # same shutdown contract as scheduler_task
+        await retention_task  # same shutdown contract as scheduler_task
         server.should_exit = True
         await dashboard_task
         await platform_supervisor.stop_all()

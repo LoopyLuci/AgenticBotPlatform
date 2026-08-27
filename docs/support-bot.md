@@ -22,12 +22,17 @@ tier of logic decides which one to trust:
    pure Python stdlib (`math`, `re`, `collections`), sub-millisecond,
    fully explainable. See "Why it's dependency-free" below.
 2. **`nn_model.py`'s `NeuralIntentClassifier`** — a genuine neural
-   network: a one-hidden-layer, 64-unit ReLU multi-layer perceptron
-   (scikit-learn's `MLPClassifier`), trained by real backpropagation over
-   TF-IDF unigram+bigram features. This is the one place in this project
-   that *does* pull in an ML dependency (`scikit-learn`, see
-   `requirements.txt`) — deliberately isolated to this module so nothing
-   else in the codebase depends on it.
+   network: a one-hidden-layer, 64-unit ReLU multi-layer perceptron with a
+   softmax output, trained by real backpropagation (plain full-batch
+   gradient descent on cross-entropy loss) over TF-IDF unigram+bigram
+   features. Originally built on scikit-learn's `MLPClassifier`, rewritten
+   directly on top of `numpy` alone — scikit-learn's own dependency tree
+   (scipy plus its compiled libs) was over 100MB just to run a single
+   small hidden layer over a few hundred short training phrases, more than
+   half of this app's entire bundled Python environment. `numpy` (see
+   `requirements.txt`) is the one numeric dependency this project pulls
+   in — deliberately isolated to this module so nothing else in the
+   codebase depends on it.
 3. **`hybrid.py`'s `classify()`** — runs both, every time, and combines
    them:
    - Both agree on a real intent → **`"ensemble"`**, the strongest
