@@ -23,6 +23,13 @@ purpose — this is the whole design, not an incidental detail:
   ever be used to register one new peer link — never to read the dashboard
   token itself, view its config, or touch anything else.
 
+The pairing token is also self-describing: it has B's own reachable
+address baked in (supplied once, by B's admin, when generating it — see
+_encode_pairing_token/_decode_pairing_token), so the admin linking in on A
+never has to separately know or type B's address at all. Pasting the one
+pairing token string into A's "Link a server" form is the entire input —
+just a name (A's own label for B) and that one token.
+
 Once the handshake completes, ongoing authentication reuses the api_keys
 mechanism a paired mobile device already uses unchanged: a linked peer
 server is, from the auth layer's point of view, just another api_keys
@@ -35,13 +42,16 @@ changes) with exactly the same restriction (can't mint/revoke other
 keys) — no new permission model to design, audit, or get wrong.
 
 Linking is a two-step, single-admin-action-per-side handshake:
-  0. The admin of server B clicks "Generate pairing token" in B's own
-     dashboard (DASHBOARD_TOKEN-gated) and shares the resulting short code
-     with whoever is linking in (chat, in person, however — it's short-
-     lived and single-use, so casual sharing is fine).
-  1. The admin of server A pastes B's base URL and that pairing token into
-     A's "Link a server" form. A mints a fresh api_keys row
-     (kind='peer_server') for B to call A with.
+  0. The admin of server B types B's own reachable address once and clicks
+     "Generate pairing token" in B's own dashboard (DASHBOARD_TOKEN-gated)
+     — the address gets baked into the token itself — and shares the
+     resulting code with whoever is linking in (chat, in person, however —
+     it's short-lived and single-use, so casual sharing is fine).
+  1. The admin of server A pastes just that one pairing token (no address
+     to look up or type) into A's "Link a server" form, along with
+     whatever name A wants to call B. A mints a fresh api_keys row
+     (kind='peer_server') for B to call A with, and decodes B's address
+     straight out of the token.
   2. A POSTs that credential (plus A's own name and, if known, its own
      reachable base_url) and B's pairing token to B's
      /api/peers/handshake. B validates and consumes the pairing token —
@@ -60,6 +70,7 @@ copy-paste, and no long-lived secret ever crosses the network.
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 from typing import Optional
 from urllib.parse import urlparse
@@ -100,6 +111,31 @@ def normalize_base_url(base_url: str) -> str:
     return base_url
 
 
+_PAIRING_TOKEN_PREFIX = "bsp1"
+
+
+def _encode_pairing_token(base_url: str, secret: str) -> str:
+    """Bundles this server's own address into the token handed to the
+    admin, so linking in never requires separately knowing or typing it —
+    see the module docstring. `.` is a safe delimiter: base64url and
+    secrets.token_urlsafe's alphabets both exclude it."""
+    address_part = base64.urlsafe_b64encode(base_url.encode("utf-8")).decode("ascii").rstrip("=")
+    return f"{_PAIRING_TOKEN_PREFIX}.{address_part}.{secret}"
+
+
+def _decode_pairing_token(token: str) -> tuple[str, str]:
+    parts = (token or "").strip().split(".", 2)
+    if len(parts) != 3 or parts[0] != _PAIRING_TOKEN_PREFIX or not parts[1] or not parts[2]:
+        raise PeerError("that doesn't look like a valid pairing token")
+    address_part, secret = parts[1], parts[2]
+    padded = address_part + "=" * (-len(address_part) % 4)
+    try:
+        base_url = base64.urlsafe_b64decode(padded).decode("utf-8")
+    except Exception as exc:
+        raise PeerError("that doesn't look like a valid pairing token") from exc
+    return base_url, secret
+
+
 async def _post_with_retry(client: httpx.AsyncClient, url: str, **kwargs) -> httpx.Response:
     last_exc: Optional[Exception] = None
     for attempt, delay in enumerate((0.0, *_RETRY_DELAYS_S)):
@@ -114,24 +150,29 @@ async def _post_with_retry(client: httpx.AsyncClient, url: str, **kwargs) -> htt
     raise last_exc  # type: ignore[misc]
 
 
-def generate_pairing_token() -> dict:
+def generate_pairing_token(base_url: str) -> dict:
     """Runs on the receiving side, one DASHBOARD_TOKEN-gated local action
-    (see the module docstring's step 0). The result is what the admin
-    shares with whoever is linking in — never the real dashboard token."""
-    plaintext, expires_at = db.create_server_pairing_token()
-    return {"pairing_token": plaintext, "expires_at": expires_at}
+    (see the module docstring's step 0). `base_url` is THIS server's own
+    reachable address — the one thing an address has to be typed for in
+    the whole flow, and it's typed by the admin who actually knows it
+    (their own machine), not guessed at by whoever's linking in. Baked
+    into the returned token so the other side never needs it separately.
+    The result is what the admin shares with whoever is linking in —
+    never the real dashboard token."""
+    base_url = normalize_base_url(base_url)
+    secret, expires_at = db.create_server_pairing_token()
+    return {"pairing_token": _encode_pairing_token(base_url, secret), "expires_at": expires_at}
 
 
-async def link_peer(name: str, base_url: str, remote_pairing_token: str, my_name: str, my_base_url: Optional[str] = None) -> dict:
+async def link_peer(name: str, pairing_token: str, my_name: str, my_base_url: Optional[str] = None) -> dict:
     """Runs on the initiating side. See module docstring for the full
     handshake. Raises PeerError on any failure — the fresh credential
     minted for the (possibly unreachable) other side is revoked again so a
     failed link attempt never leaves a dangling, never-used api_keys row."""
+    base_url, remote_pairing_token = _decode_pairing_token(pairing_token)
     base_url = normalize_base_url(base_url)
     if my_base_url:
         my_base_url = normalize_base_url(my_base_url)
-    if not remote_pairing_token:
-        raise PeerError("that server's pairing token is required")
 
     inbound_key_id, inbound_plaintext = db.create_api_key(f"peer: {name}", kind="peer_server")
     try:

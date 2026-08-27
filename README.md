@@ -852,25 +852,29 @@ own dashboard — without merging databases, sharing one bot, or standing up
 any new infrastructure.
 
 **Two different tokens for two different jobs — your dashboard token never
-leaves your machine.** Linking uses a dedicated, short-lived **server
-pairing token** for the one moment two servers actually talk to each
-other, so you never paste a real `DASHBOARD_TOKEN` into a different
-server's UI or send it over the network:
+leaves your machine, and linking in needs nothing but a name and a
+token.** Linking uses a dedicated, short-lived **server pairing token**
+for the one moment two servers actually talk to each other, and that
+token carries the target server's own address baked in — so the admin
+linking in never has to know or type an IP address at all:
 
-1. On server B's Linked Servers tab, step 1, click **Generate pairing
-   token**. This mints a random code, valid for 10 minutes and usable
-   exactly once — safe to paste into a chat message to whoever's linking
-   in, unlike B's real dashboard token.
-2. On server A's Linked Servers tab, step 2, fill in **Link a server**: a
-   name for B, B's address (e.g. `http://192.168.1.20:8787` — an explicit
-   `http://` or `https://` is required, so a bare `host:port` is rejected
-   immediately with a clear message rather than failing later), the
-   pairing token from step 1, and (optionally) A's own reachable address
-   so B can call A back too. Click **Link server**.
-3. That one call does the whole handshake: A mints a fresh, independently-
-   revocable credential for B and sends it to B along with the pairing
-   token; B checks the pairing token (rejecting anything wrong, expired,
-   or already used — including B's own real dashboard token, which was
+1. On server B's Linked Servers tab, step 1, enter B's own reachable
+   address (pre-filled automatically from the address the dashboard was
+   loaded from, when that's a real LAN address rather than
+   `127.0.0.1`/`localhost`) and click **Generate pairing token**. This
+   mints a random code — B's address baked in, valid for 10 minutes,
+   usable exactly once — safe to paste into a chat message to whoever's
+   linking in, unlike B's real dashboard token.
+2. On server A's Linked Servers tab, step 2, fill in **Link a server**:
+   just a name for B and that one pairing token — no address field at
+   all. Click **Link server**. (An "Advanced" disclosure holds the one
+   genuinely optional field, A's own reachable address, for if you also
+   want B able to call A back.)
+3. That one call does the whole handshake: A decodes B's address straight
+   out of the pairing token, mints a fresh, independently-revocable
+   credential for B, and sends it to B along with the pairing token; B
+   checks the pairing token (rejecting anything wrong, expired, or
+   already used — including B's own real dashboard token, which was
    never a valid pairing token in the first place) and, only if it
    checks out, mints its own credential back for A. Both servers end up
    linked with their own working credential for the other — the pairing

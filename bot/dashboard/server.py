@@ -1758,10 +1758,16 @@ def build_app() -> FastAPI:
     # a paired device can already reach.
 
     @app.post("/api/peers/pairing-token", dependencies=[Depends(_require_token)])
-    async def api_peers_pairing_token():
+    async def api_peers_pairing_token(payload: dict = Body(...)):
         from bot import peers
 
-        result = peers.generate_pairing_token()
+        base_url = (payload.get("base_url") or "").strip()
+        if not base_url:
+            raise HTTPException(status_code=400, detail="payload must be {base_url}")
+        try:
+            result = peers.generate_pairing_token(base_url)
+        except peers.PeerError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         db.log_audit(actor="dashboard", action="peer_pairing_token_generated", detail="generated a server pairing token")
         return result
 
@@ -1770,14 +1776,13 @@ def build_app() -> FastAPI:
         from bot import peers
 
         name = (payload.get("name") or "").strip()
-        base_url = (payload.get("base_url") or "").strip()
-        remote_pairing_token = payload.get("remote_pairing_token") or ""
+        pairing_token = payload.get("pairing_token") or ""
         my_base_url = (payload.get("my_base_url") or "").strip() or None
-        if not name or not base_url or not remote_pairing_token:
-            raise HTTPException(status_code=400, detail="payload must be {name, base_url, remote_pairing_token, my_base_url?}")
+        if not name or not pairing_token:
+            raise HTTPException(status_code=400, detail="payload must be {name, pairing_token, my_base_url?}")
         my_name = os.environ.get("BOTSERVER_NAME") or socket.gethostname()
         try:
-            peer = await peers.link_peer(name, base_url, remote_pairing_token, my_name, my_base_url)
+            peer = await peers.link_peer(name, pairing_token, my_name, my_base_url)
         except peers.PeerError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         db.log_audit(actor="dashboard", action="peer_link", detail=f"linked peer {peer['id']} ({peer['name']!r})")

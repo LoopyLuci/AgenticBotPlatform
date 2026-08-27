@@ -2458,22 +2458,20 @@ document.getElementById('btn-peer-bots-close').onclick = () => {
 
 document.getElementById('btn-peer-link').onclick = async () => {
   const name = document.getElementById('peer-new-name').value.trim();
-  const base_url = document.getElementById('peer-new-url').value.trim();
-  const remote_pairing_token = document.getElementById('peer-new-token').value.trim();
+  const pairing_token = document.getElementById('peer-new-token').value.trim();
   const my_base_url = document.getElementById('peer-my-url').value.trim() || undefined;
   const statusEl = document.getElementById('peer-link-status');
-  if (!name || !base_url || !remote_pairing_token) {
-    statusEl.textContent = 'Name, address, and its pairing token are all required.';
+  if (!name || !pairing_token) {
+    statusEl.textContent = 'Name and its pairing token are both required.';
     return;
   }
   const btn = document.getElementById('btn-peer-link');
   btn.disabled = true;
   statusEl.textContent = 'Linking…';
   try {
-    const res = await api('/api/peers/link', { method: 'POST', body: JSON.stringify({ name, base_url, remote_pairing_token, my_base_url }) });
+    const res = await api('/api/peers/link', { method: 'POST', body: JSON.stringify({ name, pairing_token, my_base_url }) });
     statusEl.textContent = `Linked to ${res.peer.name}.`;
     document.getElementById('peer-new-name').value = '';
-    document.getElementById('peer-new-url').value = '';
     document.getElementById('peer-new-token').value = '';
     document.getElementById('peer-my-url').value = '';
     refreshPeers();
@@ -2484,6 +2482,26 @@ document.getElementById('btn-peer-link').onclick = async () => {
   }
 };
 
+// Pre-fill both "this server's address" fields with the address actually
+// used to load this page — correct when that's a real LAN IP or hostname
+// and still editable for anything fancier (reverse proxy, port forwarding,
+// a different external hostname). Skipped entirely in the Tauri desktop
+// app: its webview always talks to its own dashboard over 127.0.0.1
+// (API_BASE above), which is exactly the address a peer on a DIFFERENT
+// machine could never reach — there's no way to guess this machine's real
+// LAN address from inside the app, so leaving the field blank (obviously
+// something to fill in) beats silently baking in a broken one.
+(function prefillOwnAddress() {
+  if (IS_TAURI) return;
+  const origin = window.location.origin;
+  if (!origin || !origin.startsWith('http')) return;
+  if (/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/i.test(origin)) return;
+  const addrEl = document.getElementById('peer-gen-token-address');
+  const myUrlEl = document.getElementById('peer-my-url');
+  if (addrEl && !addrEl.value) addrEl.value = origin;
+  if (myUrlEl && !myUrlEl.value) myUrlEl.value = origin;
+})();
+
 // One shared countdown so re-clicking "Generate" replaces the old timer
 // instead of stacking a second one ticking against a token that's already
 // been superseded (server only ever keeps one pending token alive too).
@@ -2493,9 +2511,14 @@ document.getElementById('btn-peer-gen-token').onclick = async () => {
   const btn = document.getElementById('btn-peer-gen-token');
   const valueEl = document.getElementById('peer-gen-token-value');
   const expiryEl = document.getElementById('peer-gen-token-expiry');
+  const base_url = document.getElementById('peer-gen-token-address').value.trim();
+  if (!base_url) {
+    expiryEl.textContent = 'This server\'s address is required to generate a token.';
+    return;
+  }
   btn.disabled = true;
   try {
-    const res = await api('/api/peers/pairing-token', { method: 'POST' });
+    const res = await api('/api/peers/pairing-token', { method: 'POST', body: JSON.stringify({ base_url }) });
     valueEl.value = res.pairing_token;
     valueEl.select();
     const expiresAt = new Date(res.expires_at).getTime();

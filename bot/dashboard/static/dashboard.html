@@ -1017,9 +1017,12 @@
 
       <div class="card">
         <h3>1. Generate a pairing token (for someone linking into THIS server)</h3>
-        <p class="cardnote">Share this short code with whoever is linking their server to this one — never your dashboard token. It works once and expires in 10 minutes, so it's safe to send over chat.</p>
-        <div class="row" style="gap:8px; align-items:center; margin-top:8px;">
+        <p class="cardnote">This server's own address is baked into the token below, so whoever links in never needs to know or type it separately. Share the token — never your dashboard token — with them; it works once and expires in 10 minutes, so it's safe to send over chat.</p>
+        <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px;">
+          <input type="text" id="peer-gen-token-address" placeholder="This server's reachable address, e.g. http://192.168.1.20:8787" style="flex:1; min-width:260px;">
           <button class="btn" id="btn-peer-gen-token">Generate pairing token</button>
+        </div>
+        <div class="row" style="gap:8px; align-items:center; margin-top:8px;">
           <input type="text" id="peer-gen-token-value" readonly placeholder="(not generated yet)" style="flex:1; min-width:220px; font-family:monospace;" onclick="this.select();">
           <span class="cardnote" id="peer-gen-token-expiry" style="margin:0;"></span>
         </div>
@@ -1027,16 +1030,18 @@
 
       <div class="card" style="margin-top:14px;">
         <h3>2. Link a server (using ITS pairing token)</h3>
-        <p class="cardnote">On the other server's own Linked Servers tab, have its admin generate a pairing token (step 1 above, done on their side) and paste it below along with its address. Your own dashboard token never leaves this machine — the pairing token is the only thing sent over the network, and it stops working the instant it's used.</p>
+        <p class="cardnote">Just a name and a token — no address to look up. On the other server's own Linked Servers tab, have its admin generate a pairing token (step 1 above, done on their side) and paste it below. Your own dashboard token never leaves this machine — the pairing token is the only thing sent over the network, and it stops working the instant it's used.</p>
         <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px;">
           <input type="text" id="peer-new-name" placeholder="Name, e.g. \"Laptop\"" style="flex:1; min-width:140px;">
-          <input type="text" id="peer-new-url" placeholder="Its address, e.g. http://192.168.1.20:8787" style="flex:2; min-width:220px;">
-          <input type="text" id="peer-new-token" placeholder="Its pairing token (from step 1 on ITS dashboard)" style="flex:1; min-width:200px; font-family:monospace;">
-        </div>
-        <div class="row" style="gap:8px; align-items:center; margin-top:8px;">
-          <input type="text" id="peer-my-url" placeholder="This server's own reachable address (optional — lets it call you back)" style="flex:1;">
+          <input type="text" id="peer-new-token" placeholder="Its pairing token (from step 1 on ITS dashboard)" style="flex:2; min-width:260px; font-family:monospace;">
           <button class="btn primary" id="btn-peer-link">Link server</button>
         </div>
+        <details style="margin-top:8px;">
+          <summary class="cardnote" style="cursor:pointer;">Advanced: let it call you back too</summary>
+          <div class="row" style="gap:8px; align-items:center; margin-top:8px;">
+            <input type="text" id="peer-my-url" placeholder="This server's own reachable address (optional)" style="flex:1;">
+          </div>
+        </details>
         <p class="cardnote" id="peer-link-status"></p>
       </div>
 
@@ -3402,22 +3407,20 @@ document.getElementById('btn-peer-bots-close').onclick = () => {
 
 document.getElementById('btn-peer-link').onclick = async () => {
   const name = document.getElementById('peer-new-name').value.trim();
-  const base_url = document.getElementById('peer-new-url').value.trim();
-  const remote_pairing_token = document.getElementById('peer-new-token').value.trim();
+  const pairing_token = document.getElementById('peer-new-token').value.trim();
   const my_base_url = document.getElementById('peer-my-url').value.trim() || undefined;
   const statusEl = document.getElementById('peer-link-status');
-  if (!name || !base_url || !remote_pairing_token) {
-    statusEl.textContent = 'Name, address, and its pairing token are all required.';
+  if (!name || !pairing_token) {
+    statusEl.textContent = 'Name and its pairing token are both required.';
     return;
   }
   const btn = document.getElementById('btn-peer-link');
   btn.disabled = true;
   statusEl.textContent = 'Linking…';
   try {
-    const res = await api('/api/peers/link', { method: 'POST', body: JSON.stringify({ name, base_url, remote_pairing_token, my_base_url }) });
+    const res = await api('/api/peers/link', { method: 'POST', body: JSON.stringify({ name, pairing_token, my_base_url }) });
     statusEl.textContent = `Linked to ${res.peer.name}.`;
     document.getElementById('peer-new-name').value = '';
-    document.getElementById('peer-new-url').value = '';
     document.getElementById('peer-new-token').value = '';
     document.getElementById('peer-my-url').value = '';
     refreshPeers();
@@ -3433,13 +3436,36 @@ document.getElementById('btn-peer-link').onclick = async () => {
 // been superseded (server only ever keeps one pending token alive too).
 let _peerTokenCountdownTimer = null;
 
+// Pre-fill both "this server's address" fields with the address actually
+// used to load this page — correct when that's a real LAN IP or hostname
+// (browsed to from this network) and still editable for anything fancier
+// (reverse proxy, port forwarding, a different external hostname). Never
+// prefilled from 127.0.0.1/localhost: that's exactly the address a peer on
+// a DIFFERENT machine could never reach, so guessing it here would bake a
+// silently broken address into the token instead of the address genuinely
+// unknown/blank being obviously something to fill in.
+(function prefillOwnAddress() {
+  const origin = window.location.origin;
+  if (!origin || !origin.startsWith('http')) return;
+  if (/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/i.test(origin)) return;
+  const addrEl = document.getElementById('peer-gen-token-address');
+  const myUrlEl = document.getElementById('peer-my-url');
+  if (addrEl && !addrEl.value) addrEl.value = origin;
+  if (myUrlEl && !myUrlEl.value) myUrlEl.value = origin;
+})();
+
 document.getElementById('btn-peer-gen-token').onclick = async () => {
   const btn = document.getElementById('btn-peer-gen-token');
   const valueEl = document.getElementById('peer-gen-token-value');
   const expiryEl = document.getElementById('peer-gen-token-expiry');
+  const base_url = document.getElementById('peer-gen-token-address').value.trim();
+  if (!base_url) {
+    expiryEl.textContent = 'This server\'s address is required to generate a token.';
+    return;
+  }
   btn.disabled = true;
   try {
-    const res = await api('/api/peers/pairing-token', { method: 'POST' });
+    const res = await api('/api/peers/pairing-token', { method: 'POST', body: JSON.stringify({ base_url }) });
     valueEl.value = res.pairing_token;
     valueEl.select();
     const expiresAt = new Date(res.expires_at).getTime();
