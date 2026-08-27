@@ -30,6 +30,40 @@ use crate::no_window;
 const REPO: &str = "LoopyLuci/BotServer";
 const USER_AGENT: &str = "BotServer-Updater";
 
+// A single failed GET to GitHub — a momentary DNS hiccup, a corporate
+// proxy/AV product intercepting HTTPS and stalling the handshake, a
+// dropped Wi-Fi packet — shouldn't surface as a hard error the user has to
+// notice and retry by hand. Retried only for connection/timeout-level
+// failures (an actual HTTP error response, e.g. a real 404/500, means
+// GitHub answered and retrying won't change that). Mirrors the same
+// retry-on-transient-failure pattern used for peer-server linking
+// (bot/peers.py) for the same reason.
+const RETRY_DELAYS: &[Duration] = &[Duration::from_secs(1), Duration::from_secs(3)];
+
+fn get_with_retry(url: &str, timeout: Duration) -> Result<ureq::Response, String> {
+    let mut last_err: Option<ureq::Error> = None;
+    for delay in std::iter::once(Duration::ZERO).chain(RETRY_DELAYS.iter().copied()) {
+        if !delay.is_zero() {
+            std::thread::sleep(delay);
+        }
+        match ureq::get(url)
+            .set("User-Agent", USER_AGENT)
+            .set("Accept", "application/vnd.github+json")
+            .timeout(timeout)
+            .call()
+        {
+            Ok(resp) => return Ok(resp),
+            Err(err @ ureq::Error::Transport(_)) => last_err = Some(err),
+            Err(err) => return Err(format!("GitHub returned an error: {err}")),
+        }
+    }
+    let err = last_err.expect("at least one attempt was made");
+    Err(format!(
+        "couldn't reach GitHub after {} attempts: {err} — check your internet connection, or a firewall/VPN/antivirus product intercepting HTTPS",
+        RETRY_DELAYS.len() + 1
+    ))
+}
+
 #[derive(Clone, Serialize)]
 pub struct UpdateInfo {
     pub current_version: String,
@@ -74,12 +108,7 @@ pub fn check_for_update() -> Result<UpdateInfo, String> {
     let current_version = env!("CARGO_PKG_VERSION").to_string();
 
     let url = format!("https://api.github.com/repos/{REPO}/releases/latest");
-    let response = ureq::get(&url)
-        .set("User-Agent", USER_AGENT)
-        .set("Accept", "application/vnd.github+json")
-        .timeout(Duration::from_secs(15))
-        .call()
-        .map_err(|e| format!("couldn't reach GitHub: {e}"))?;
+    let response = get_with_retry(&url, Duration::from_secs(15))?;
 
     let release: GithubRelease = serde_json::from_reader(response.into_reader())
         .map_err(|e| format!("couldn't parse GitHub's response: {e}"))?;
