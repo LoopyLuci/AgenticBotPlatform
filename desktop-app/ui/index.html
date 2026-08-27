@@ -679,6 +679,7 @@
           <p class="cardnote">Automatically prunes old rows from the jobs, telemetry, connection-log, and Support Bot classification tables once a day — the tables that otherwise just grow forever. Never touches audit log, chat/session history, or config history, and never deletes a job that isn't finished yet regardless of age.</p>
           <div class="settingrow"><div><div class="st">Enabled</div><div class="sd">Turn off to keep every row forever (not recommended for a long-running server)</div></div><div class="toggle" id="tg-retention" data-path="retention,enabled"></div></div>
           <div class="settingrow"><div><div class="st">Keep for (days)</div><div class="sd">Rows older than this are removed on the next daily pass</div></div><input type="number" id="retention-days" min="1" style="width:100px;"></div>
+          <div class="settingrow"><div><div class="st">Auto-VACUUM every (days)</div><div class="sd">Reclaims the disk space pruning frees up; briefly locks writes. 0 = never (manual Vacuum button only)</div></div><input type="number" id="retention-vacuum-days" min="0" style="width:100px;"></div>
         </div>
       </div>
 
@@ -1315,6 +1316,11 @@
           <button class="btn primary hidden" id="btn-update-install">Update now</button>
         </div>
         <p class="cardnote" id="update-status" style="margin-top:10px;"></p>
+        <div id="update-progress-wrap" class="hidden" style="margin-top:8px;">
+          <div style="background:var(--surface-2); border:1px solid var(--line); border-radius:8px; height:10px; overflow:hidden;">
+            <div id="update-progress-bar" style="height:100%; width:0%; background:var(--accent, #4f8cff); transition:width 0.2s;"></div>
+          </div>
+        </div>
         <div id="update-notes-wrap" class="hidden" style="margin-top:10px;">
           <div class="cardnote">Release notes</div>
           <div id="update-notes" style="background:var(--surface-2); border:1px solid var(--line); border-radius:8px; padding:10px 12px; font-size:12.5px; white-space:pre-wrap; max-height:300px; overflow-y:auto; margin-top:6px;"></div>

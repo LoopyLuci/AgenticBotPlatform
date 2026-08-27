@@ -447,6 +447,9 @@ async function refreshConfig() {
   if (document.activeElement.id !== 'retention-days') {
     document.getElementById('retention-days').value = (current.retention || {}).days ?? 90;
   }
+  if (document.activeElement.id !== 'retention-vacuum-days') {
+    document.getElementById('retention-vacuum-days').value = (current.retention || {}).auto_vacuum_every_days ?? 0;
+  }
 
   setToggle('tg-turn-enabled', !!(current.turn || {}).enabled);
   if (!_turnInputsFocused()) {
@@ -500,6 +503,11 @@ document.getElementById('turn-ttl').onchange = async (e) => {
 document.getElementById('retention-days').onchange = async (e) => {
   const value = Math.max(1, parseInt(e.target.value, 10) || 90);
   await api('/api/config/set', { method: 'POST', body: JSON.stringify({ path: ['retention', 'days'], value }) });
+  refreshConfig();
+};
+document.getElementById('retention-vacuum-days').onchange = async (e) => {
+  const value = Math.max(0, parseInt(e.target.value, 10) || 0);
+  await api('/api/config/set', { method: 'POST', body: JSON.stringify({ path: ['retention', 'auto_vacuum_every_days'], value }) });
   refreshConfig();
 };
 
@@ -675,6 +683,17 @@ document.querySelectorAll('#log-filter button').forEach(btn => btn.onclick = () 
 });
 
 // ------------------------------------------------------------------- boot
+// Skips a poll tick while the window isn't visible (backgrounded or
+// minimized) instead of hitting the server every few seconds for no one
+// to see — the interval itself keeps running (so it fires immediately on
+// return, no separate "resume" wiring needed), it just no-ops while hidden.
+function pollWhenVisible(fn, ms) {
+  return setInterval(() => {
+    if (document.hidden) return;
+    fn();
+  }, ms);
+}
+
 async function refreshAll() {
   const tasks = [refreshOverview(), refreshJobsTable(), refreshJobsCharts(), refreshTelemetry(), refreshDatabase(), refreshConfig(), refreshMcp(), refreshAllowedUsers(), refreshLogs(), refreshEnv()];
   await Promise.allSettled(tasks);
@@ -682,35 +701,35 @@ async function refreshAll() {
 
 function startDashboardPolling() {
   refreshAll();
-  setInterval(refreshAll, 5000);
+  pollWhenVisible(refreshAll, 5000);
   refreshEnvEditor();
   refreshEnvBackups();
   startChatPolling();
   startSessionsPolling();
   refreshPlatforms();
-  setInterval(refreshPlatforms, 15000);
+  pollWhenVisible(refreshPlatforms, 15000);
   refreshPersonas();
   refreshBots();
   refreshBotsBackups();
-  setInterval(refreshBots, 15000);
+  pollWhenVisible(refreshBots, 15000);
   refreshPairing();
-  setInterval(refreshPairing, 15000);
+  pollWhenVisible(refreshPairing, 15000);
   refreshKanban();
-  setInterval(refreshKanban, 15000);
+  pollWhenVisible(refreshKanban, 15000);
   refreshSwarmInstanceLegend();
   refreshSwarms();
   refreshSwarmRuns();
-  setInterval(refreshSwarms, 15000);
+  pollWhenVisible(refreshSwarms, 15000);
   refreshMobileKeys();
-  setInterval(refreshMobileKeys, 15000);
+  pollWhenVisible(refreshMobileKeys, 15000);
   refreshPeers();
-  setInterval(refreshPeers, 15000);
+  pollWhenVisible(refreshPeers, 15000);
   connectDevicesSocket();
   refreshTrainingPhrases();
   refreshTrainingInstructions();
   refreshTrainingHealth();
-  setInterval(refreshTrainingPhrases, 20000);
-  setInterval(refreshTrainingHealth, 10000);
+  pollWhenVisible(refreshTrainingPhrases, 20000);
+  pollWhenVisible(refreshTrainingHealth, 10000);
   startServerChatPolling();
 }
 
@@ -1246,7 +1265,7 @@ async function pollSwarmRun(runId) {
     }
   };
   await tick();
-  swarmRunPollTimer = setInterval(tick, 2500);
+  swarmRunPollTimer = pollWhenVisible(tick, 2500);
 }
 
 document.getElementById('btn-swarm-run').onclick = async () => {
@@ -1598,8 +1617,8 @@ async function refreshChat(instanceId) {
 
 function startChatPolling() {
   refreshChatRecipients();
-  setInterval(() => refreshChat(chatState.activeInstanceId), 2000);
-  setInterval(refreshChatRecipients, 15000);
+  pollWhenVisible(() => refreshChat(chatState.activeInstanceId), 2000);
+  pollWhenVisible(refreshChatRecipients, 15000);
 }
 
 function switchToInstance(instanceId) {
@@ -1977,8 +1996,8 @@ document.getElementById('btn-serverchat-attach-clear').onclick = () => {
 
 function startServerChatPolling() {
   refreshServerChatList();
-  setInterval(refreshServerChatMessages, 2000);
-  setInterval(refreshServerChatList, 15000);
+  pollWhenVisible(refreshServerChatMessages, 2000);
+  pollWhenVisible(refreshServerChatList, 15000);
 }
 
 // --------------------------------------------------------------- sessions
@@ -2160,7 +2179,7 @@ document.getElementById('sessions-search').oninput = () => {
 async function startSessionsPolling() {
   await refreshSessionsInstanceFilter();
   refreshSessions();
-  setInterval(refreshSessions, 15000);
+  pollWhenVisible(refreshSessions, 15000);
 }
 
 // -------------------------------------------------------------- platforms
@@ -2726,6 +2745,21 @@ async function checkForUpdate(showBusyState) {
   }
 }
 
+function formatMB(bytes) {
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function setUpdateProgress(percent) {
+  const wrap = document.getElementById('update-progress-wrap');
+  const bar = document.getElementById('update-progress-bar');
+  if (percent === null) {
+    wrap.classList.add('hidden');
+    return;
+  }
+  wrap.classList.remove('hidden');
+  bar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+}
+
 async function installUpdateFlow() {
   if (!latestUpdateInfo || !latestUpdateInfo.download_url) return;
   const proceed = confirm(
@@ -2735,11 +2769,28 @@ async function installUpdateFlow() {
   );
   if (!proceed) return;
   const { invoke } = window.__TAURI__.core;
+  const { listen } = window.__TAURI__.event;
   const statusEl = document.getElementById('update-status');
   const installBtn = document.getElementById('btn-update-install');
   installBtn.disabled = true;
+
+  const unlistenProgress = await listen('update-download-progress', (event) => {
+    const { downloaded_bytes, total_bytes, percent } = event.payload;
+    setUpdateProgress(percent !== null && percent !== undefined ? percent : null);
+    statusEl.textContent = total_bytes
+      ? `Downloading installer… ${formatMB(downloaded_bytes)} / ${formatMB(total_bytes)} (${Math.round(percent)}%)`
+      : `Downloading installer… ${formatMB(downloaded_bytes)}`;
+  });
+  const unlistenPhase = await listen('update-phase', (event) => {
+    if (event.payload === 'installing') {
+      setUpdateProgress(null);
+      statusEl.textContent = 'Running the installer and restarting…';
+    }
+  });
+
   try {
     statusEl.textContent = 'Downloading installer…';
+    setUpdateProgress(0);
     const installerPath = await invoke('download_update', { url: latestUpdateInfo.download_url });
     statusEl.textContent = 'Installing and restarting…';
     await invoke('install_update', { installerPath });
@@ -2748,6 +2799,10 @@ async function installUpdateFlow() {
   } catch (e) {
     statusEl.textContent = 'Update failed: ' + e;
     installBtn.disabled = false;
+    setUpdateProgress(null);
+  } finally {
+    unlistenProgress();
+    unlistenPhase();
   }
 }
 

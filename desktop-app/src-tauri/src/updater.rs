@@ -24,6 +24,7 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use serde::Serialize;
+use tauri::{AppHandle, Emitter};
 
 use crate::no_window;
 
@@ -138,23 +139,64 @@ pub fn check_for_update() -> Result<UpdateInfo, String> {
     })
 }
 
+#[derive(Clone, Serialize)]
+struct DownloadProgress {
+    downloaded_bytes: u64,
+    total_bytes: Option<u64>,
+    percent: Option<f32>,
+}
+
 /// Downloads the installer to a temp file and returns its local path.
 /// Blocking (this app's HTTP needs are small enough that a dedicated
 /// async runtime isn't worth the dependency weight) — called from the
 /// frontend as a plain `invoke()`, which already runs off the UI thread.
+/// Emits "update-download-progress" events as it goes so the frontend can
+/// show a real, live progress bar instead of an indefinite spinner for
+/// what can otherwise be a multi-minute wait on a slow connection.
 #[tauri::command]
-pub fn download_update(url: String) -> Result<String, String> {
+pub fn download_update(app: AppHandle, url: String) -> Result<String, String> {
     let response = ureq::get(&url)
         .set("User-Agent", USER_AGENT)
         .timeout(Duration::from_secs(300))
         .call()
         .map_err(|e| format!("download failed: {e}"))?;
 
+    let total_bytes: Option<u64> = response
+        .header("Content-Length")
+        .and_then(|v| v.parse::<u64>().ok());
+
+    let mut reader = response.into_reader();
     let mut bytes = Vec::new();
-    response
-        .into_reader()
-        .read_to_end(&mut bytes)
-        .map_err(|e| format!("download failed while reading: {e}"))?;
+    let mut buf = [0u8; 64 * 1024];
+    let mut downloaded: u64 = 0;
+    let mut last_emit_kb = 0u64;
+    loop {
+        let n = reader
+            .read(&mut buf)
+            .map_err(|e| format!("download failed while reading: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&buf[..n]);
+        downloaded += n as u64;
+        // Emitting on every 64KB chunk would flood the frontend with
+        // events for a large file; coalesce to roughly once per 256KB.
+        if downloaded / (256 * 1024) != last_emit_kb {
+            last_emit_kb = downloaded / (256 * 1024);
+            let _ = app.emit(
+                "update-download-progress",
+                DownloadProgress {
+                    downloaded_bytes: downloaded,
+                    total_bytes,
+                    percent: total_bytes.map(|t| (downloaded as f32 / t as f32) * 100.0),
+                },
+            );
+        }
+    }
+    let _ = app.emit(
+        "update-download-progress",
+        DownloadProgress { downloaded_bytes: downloaded, total_bytes, percent: Some(100.0) },
+    );
 
     let dest = std::env::temp_dir().join("BotServer-update-setup.exe");
     std::fs::write(&dest, &bytes).map_err(|e| format!("couldn't save installer: {e}"))?;
@@ -165,12 +207,13 @@ pub fn download_update(url: String) -> Result<String, String> {
 /// relaunch of this app, then exits so the installer can replace files
 /// this process would otherwise be holding open.
 #[tauri::command]
-pub fn install_update(installer_path: String) -> Result<(), String> {
+pub fn install_update(app: AppHandle, installer_path: String) -> Result<(), String> {
     let installer = PathBuf::from(&installer_path);
     if !installer.exists() {
         return Err(format!("installer not found at {installer_path}"));
     }
     let current_exe = std::env::current_exe().map_err(|e| format!("couldn't resolve own path: {e}"))?;
+    let _ = app.emit("update-phase", "installing");
 
     #[cfg(target_os = "windows")]
     {

@@ -8,8 +8,12 @@ request appends a job/telemetry/connection-log row, nothing ever removes
 one, and the only way to reclaim space today is a human finding the
 dashboard's manual Vacuum button — which reclaims disk space after a
 delete, but doesn't decide what to delete in the first place. This task
-is the "what to delete" half; Vacuum (still manual, since it briefly locks
-writes) stays a deliberate choice, not automated here.
+is the "what to delete" half.
+
+VACUUM itself (reclaiming the disk space those deletes free up) stays
+opt-in via `retention.auto_vacuum_every_days` (0/unset = never, matching
+prior behavior) — it briefly locks writes, so defaulting it to "on" isn't
+a clear win, only a tradeoff a specific deployment can choose to make.
 """
 
 from __future__ import annotations
@@ -37,6 +41,13 @@ async def run_once() -> None:
     total = sum(removed.values())
     if total:
         logger.info("pruned %d row(s) older than %d days: %s", total, days, removed)
+
+    vacuum_every = int(retention_cfg.get("auto_vacuum_every_days", 0))
+    if vacuum_every > 0:
+        since = db.days_since_last_vacuum()
+        if since is None or since >= vacuum_every:
+            logger.info("running automatic VACUUM (last one was %s)", "never" if since is None else f"{since:.1f}d ago")
+            db.vacuum(actor="retention", detail=f"automatic VACUUM (every {vacuum_every}d)")
 
 
 async def run_forever(stop_event: asyncio.Event) -> None:

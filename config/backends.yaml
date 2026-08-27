@@ -59,6 +59,10 @@ retention:
   # bot/retention.py.
   enabled: true
   days: 90
+  # 0 = never (default) — VACUUM reclaims the disk space pruning above
+  # frees up, but briefly locks writes, so it's opt-in rather than always
+  # on. Set to e.g. 7 to run it automatically at most once a week.
+  auto_vacuum_every_days: 0
 turn:
   # Real TURN relay for the Android mesh transport's WebRTC fallback (see
   # bot/turn.py) — used when two devices can't reach each other directly

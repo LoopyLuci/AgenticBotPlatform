@@ -11,11 +11,16 @@
 # another .py file.
 #
 # Usage:
-#   ./scripts/install.sh                  interactive, installs what's missing
-#   ./scripts/install.sh --yes            non-interactive (assume yes to prompts)
-#   ./scripts/install.sh --check          report status only, no changes
+#   ./scripts/install.sh                  visual GUI installer (default for a plain interactive run)
+#   ./scripts/install.sh --cli            text installer instead of the GUI, installs what's missing
+#   ./scripts/install.sh --yes            non-interactive (assume yes to prompts) — always text mode
+#   ./scripts/install.sh --check          report status only, no changes — always text mode
 #   ./scripts/install.sh --no-build       skip offering a production build
 #   ./scripts/install.sh --no-autostart   skip offering login autostart
+#
+# The GUI (scripts/install_gui.py) falls back to this same text installer
+# on its own if there's no display or tkinter isn't available — headless
+# servers and SSH sessions work with either invocation.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -92,4 +97,23 @@ if [ -z "$PYTHON_CMD" ]; then
 fi
 echo "Using $PYTHON_CMD ($("$PYTHON_CMD" --version 2>&1))"
 
-exec "$PYTHON_CMD" scripts/install.py "$@"
+# Automation flags imply a scripted/CI caller, not a human watching a
+# screen — always use the text installer for those, and for an explicit
+# --cli. Otherwise default to the visual GUI installer (it detects a
+# missing display/tkinter itself and falls back to text mode).
+use_gui=1
+for arg in "$@"; do
+    case "$arg" in
+        --cli|--yes|--check) use_gui=0 ;;
+    esac
+done
+
+if [ "$use_gui" = "1" ]; then
+    exec "$PYTHON_CMD" scripts/install_gui.py
+else
+    args=()
+    for arg in "$@"; do
+        [ "$arg" = "--cli" ] || args+=("$arg")
+    done
+    exec "$PYTHON_CMD" scripts/install.py "${args[@]}"
+fi

@@ -2505,12 +2505,27 @@ def get_recent_connection_events(limit: int = 20) -> list[sqlite3.Row]:
     ).fetchall()
 
 
-def vacuum() -> None:
+def vacuum(actor: str = "dashboard", detail: str = "manual VACUUM triggered") -> None:
     conn = get_conn()
     with _lock:
         conn.execute("VACUUM;")
         conn.commit()
-    log_audit(actor="dashboard", action="vacuum", detail="manual VACUUM triggered")
+    log_audit(actor=actor, action="vacuum", detail=detail)
+
+
+def days_since_last_vacuum() -> Optional[float]:
+    """None if a VACUUM has never been logged (manual or automatic) —
+    callers should treat that as "due", not "recent"."""
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT ts FROM audit_log WHERE action='vacuum' ORDER BY ts DESC LIMIT 1"
+    ).fetchone()
+    if row is None:
+        return None
+    last = datetime.fromisoformat(row["ts"])
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - last).total_seconds() / 86400
 
 
 # -------------------------------------------------------------- swarms ----

@@ -8,12 +8,14 @@
 # is why this bootstrap step is a .ps1 and not another .py file.
 #
 # Usage:
-#   .\scripts\install.ps1                 interactive, installs what's missing
-#   .\scripts\install.ps1 -Yes            non-interactive (assume yes to prompts)
-#   .\scripts\install.ps1 -Check          report status only, no changes
+#   .\scripts\install.ps1                 visual GUI installer (default for a plain interactive run)
+#   .\scripts\install.ps1 -Cli            text installer instead of the GUI, installs what's missing
+#   .\scripts\install.ps1 -Yes            non-interactive (assume yes to prompts) — always text mode
+#   .\scripts\install.ps1 -Check          report status only, no changes — always text mode
 #   .\scripts\install.ps1 -NoBuild        skip offering a production build
 #   .\scripts\install.ps1 -NoAutostart    skip offering login autostart
 param(
+    [switch]$Cli,
     [switch]$Yes,
     [switch]$Check,
     [switch]$NoSystemDeps,
@@ -68,13 +70,22 @@ if (-not $pythonCmd) {
 }
 Write-Host "Using $pythonCmd ($(& $pythonCmd --version))" -ForegroundColor Green
 
-$pyArgs = @("scripts\install.py")
-if ($Yes) { $pyArgs += "--yes" }
-if ($Check) { $pyArgs += "--check" }
-if ($NoSystemDeps) { $pyArgs += "--no-system-deps" }
-if ($NoBuild) { $pyArgs += "--no-build" }
-if ($NoAutostart) { $pyArgs += "--no-autostart" }
-if ($Dev) { $pyArgs += "--dev" }
+# Automation flags (-Yes/-Check) imply a scripted/CI caller, not a human
+# watching a screen — always use the text installer for those, regardless
+# of -Cli. Otherwise default to the visual GUI installer; -Cli opts out.
+$useGui = -not ($Cli -or $Yes -or $Check)
+
+if ($useGui) {
+    $pyArgs = @("scripts\install_gui.py")
+} else {
+    $pyArgs = @("scripts\install.py")
+    if ($Yes) { $pyArgs += "--yes" }
+    if ($Check) { $pyArgs += "--check" }
+    if ($NoSystemDeps) { $pyArgs += "--no-system-deps" }
+    if ($NoBuild) { $pyArgs += "--no-build" }
+    if ($NoAutostart) { $pyArgs += "--no-autostart" }
+    if ($Dev) { $pyArgs += "--dev" }
+}
 
 & $pythonCmd @pyArgs
 exit $LASTEXITCODE

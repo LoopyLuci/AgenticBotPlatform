@@ -490,6 +490,7 @@
           <p class="cardnote">Automatically prunes old rows from the jobs, telemetry, connection-log, and Support Bot classification tables once a day — the tables that otherwise just grow forever. Never touches audit log, chat/session history, or config history, and never deletes a job that isn't finished yet regardless of age.</p>
           <div class="settingrow"><div><div class="st">Enabled</div><div class="sd">Turn off to keep every row forever (not recommended for a long-running server)</div></div><div class="toggle" id="tg-retention" data-path="retention,enabled"></div></div>
           <div class="settingrow"><div><div class="st">Keep for (days)</div><div class="sd">Rows older than this are removed on the next daily pass</div></div><input type="number" id="retention-days" min="1" style="width:100px;"></div>
+          <div class="settingrow"><div><div class="st">Auto-VACUUM every (days)</div><div class="sd">Reclaims the disk space pruning frees up; briefly locks writes. 0 = never (manual Vacuum button only)</div></div><input type="number" id="retention-vacuum-days" min="0" style="width:100px;"></div>
         </div>
       </div>
 
@@ -1342,6 +1343,9 @@ async function refreshConfig() {
   if (document.activeElement.id !== 'retention-days') {
     document.getElementById('retention-days').value = (current.retention || {}).days ?? 90;
   }
+  if (document.activeElement.id !== 'retention-vacuum-days') {
+    document.getElementById('retention-vacuum-days').value = (current.retention || {}).auto_vacuum_every_days ?? 0;
+  }
 
   setToggle('tg-turn-enabled', !!(current.turn || {}).enabled);
   if (!_turnInputsFocused()) {
@@ -1533,6 +1537,11 @@ document.getElementById('retention-days').onchange = async (e) => {
   await api('/api/config/set', { method: 'POST', body: JSON.stringify({ path: ['retention', 'days'], value }) });
   refreshConfig();
 };
+document.getElementById('retention-vacuum-days').onchange = async (e) => {
+  const value = Math.max(0, parseInt(e.target.value, 10) || 0);
+  await api('/api/config/set', { method: 'POST', body: JSON.stringify({ path: ['retention', 'auto_vacuum_every_days'], value }) });
+  refreshConfig();
+};
 
 document.querySelectorAll('.default-backend-seg button').forEach(btn => {
   btn.onclick = async () => { await api(`/api/backend/default/${btn.dataset.b}`, { method: 'POST' }); refreshConfig(); refreshOverview(); };
@@ -1710,40 +1719,51 @@ document.querySelectorAll('#log-filter button').forEach(btn => btn.onclick = () 
 });
 
 // ------------------------------------------------------------------- boot
+// Skips a poll tick while the tab/window isn't visible (backgrounded or
+// minimized) instead of hitting the server every few seconds for no one
+// to see — the interval itself keeps running (so it fires immediately on
+// return, no separate "resume" wiring needed), it just no-ops while hidden.
+function pollWhenVisible(fn, ms) {
+  return setInterval(() => {
+    if (document.hidden) return;
+    fn();
+  }, ms);
+}
+
 async function refreshAll() {
   const tasks = [refreshOverview(), refreshJobsTable(), refreshJobsCharts(), refreshTelemetry(), refreshDatabase(), refreshConfig(), refreshMcp(), refreshAllowedUsers(), refreshLogs(), refreshEnv()];
   await Promise.allSettled(tasks);
 }
 function startDashboard() {
   refreshAll();
-  setInterval(refreshAll, 5000);
+  pollWhenVisible(refreshAll, 5000);
   refreshEnvEditor();
   refreshEnvBackups();
   startChatPolling();
   startSessionsPolling();
   refreshPlatforms();
-  setInterval(refreshPlatforms, 15000);
+  pollWhenVisible(refreshPlatforms, 15000);
   refreshPersonas();
   refreshBots();
   refreshBotsBackups();
-  setInterval(refreshBots, 15000);
+  pollWhenVisible(refreshBots, 15000);
   refreshPairing();
-  setInterval(refreshPairing, 15000);
+  pollWhenVisible(refreshPairing, 15000);
   refreshKanban();
-  setInterval(refreshKanban, 15000);
+  pollWhenVisible(refreshKanban, 15000);
   refreshSwarmInstanceLegend();
   refreshSwarms();
   refreshSwarmRuns();
-  setInterval(refreshSwarms, 15000);
+  pollWhenVisible(refreshSwarms, 15000);
   refreshMobileKeys();
-  setInterval(refreshMobileKeys, 15000);
+  pollWhenVisible(refreshMobileKeys, 15000);
   refreshPeers();
-  setInterval(refreshPeers, 15000);
+  pollWhenVisible(refreshPeers, 15000);
   refreshTrainingPhrases();
   refreshTrainingInstructions();
   refreshTrainingHealth();
-  setInterval(refreshTrainingPhrases, 20000);
-  setInterval(refreshTrainingHealth, 10000);
+  pollWhenVisible(refreshTrainingPhrases, 20000);
+  pollWhenVisible(refreshTrainingHealth, 10000);
   startServerChatPolling();
 }
 
@@ -2425,7 +2445,7 @@ async function pollSwarmRun(runId) {
     }
   };
   await tick();
-  swarmRunPollTimer = setInterval(tick, 2500);
+  swarmRunPollTimer = pollWhenVisible(tick, 2500);
 }
 
 document.getElementById('btn-swarm-run').onclick = async () => {
@@ -2705,8 +2725,8 @@ async function refreshChat(instanceId) {
 
 function startChatPolling() {
   refreshChatRecipients();
-  setInterval(() => refreshChat(chatState.activeInstanceId), 2000);
-  setInterval(refreshChatRecipients, 15000);
+  pollWhenVisible(() => refreshChat(chatState.activeInstanceId), 2000);
+  pollWhenVisible(refreshChatRecipients, 15000);
 }
 
 function switchToInstance(instanceId) {
@@ -3029,8 +3049,8 @@ document.getElementById('btn-serverchat-attach-clear').onclick = () => {
 
 function startServerChatPolling() {
   refreshServerChatList();
-  setInterval(refreshServerChatMessages, 2000);
-  setInterval(refreshServerChatList, 15000);
+  pollWhenVisible(refreshServerChatMessages, 2000);
+  pollWhenVisible(refreshServerChatList, 15000);
 }
 
 // --------------------------------------------------------------- sessions
@@ -3204,7 +3224,7 @@ document.getElementById('sessions-search').oninput = () => {
 async function startSessionsPolling() {
   await refreshSessionsInstanceFilter();
   refreshSessions();
-  setInterval(refreshSessions, 15000);
+  pollWhenVisible(refreshSessions, 15000);
 }
 
 // -------------------------------------------------------------- platforms

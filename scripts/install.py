@@ -34,11 +34,18 @@ Options:
 
 Safe to re-run any time — every step checks what's already present/valid
 before doing anything, mirroring scripts/setup.py's own re-run safety.
+
+Pass --json to emit one JSON object per line on stdout instead of the
+human-readable text above (one line per Step.* call, plus "env" and
+"summary" events) — this is what scripts/install_gui.py consumes to drive
+a live visual installer. The text output is unchanged when --json isn't
+passed, so this is purely additive.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import platform
 import shutil
@@ -52,39 +59,81 @@ IS_WINDOWS = platform.system() == "Windows"
 IS_MACOS = platform.system() == "Darwin"
 IS_LINUX = platform.system() == "Linux"
 
+# Total number of Step.head() sections a full run produces, in order —
+# lets a consumer (scripts/install_gui.py) render a determinate progress
+# bar instead of a spinner, without hardcoding this list a second time.
+SECTIONS = [
+    "Detected environment", "Python", "Rust + Cargo", "Tauri CLI",
+    "Linux native GUI libraries (WebKitGTK, GTK3, AppIndicator, ...)",
+    "Python virtual environment + dependencies",
+    "Bot Server configuration (.env, at least one bot instance)",
+    "Production build", "Start at login", "Summary", "Done",
+]
+
+JSON_MODE = False
+
+
+def _emit(obj: dict) -> None:
+    print(json.dumps(obj), flush=True)
+
 
 class Step:
-    """One line of installer output, consistently formatted."""
+    """One line of installer output — human-readable text, or one JSON
+    object per line when JSON_MODE is on (see module docstring)."""
 
     @staticmethod
     def head(text: str) -> None:
-        print(f"\n=== {text} ===")
+        if JSON_MODE:
+            _emit({"type": "head", "text": text})
+        else:
+            print(f"\n=== {text} ===")
 
     @staticmethod
     def ok(text: str) -> None:
-        print(f"  [ok]   {text}")
+        if JSON_MODE:
+            _emit({"type": "ok", "text": text})
+        else:
+            print(f"  [ok]   {text}")
 
     @staticmethod
     def missing(text: str) -> None:
-        print(f"  [--]   {text}")
+        if JSON_MODE:
+            _emit({"type": "missing", "text": text})
+        else:
+            print(f"  [--]   {text}")
 
     @staticmethod
     def doing(text: str) -> None:
-        print(f"  ->     {text}")
+        if JSON_MODE:
+            _emit({"type": "doing", "text": text})
+        else:
+            print(f"  ->     {text}")
 
     @staticmethod
     def warn(text: str) -> None:
-        print(f"  [!]    {text}")
+        if JSON_MODE:
+            _emit({"type": "warn", "text": text})
+        else:
+            print(f"  [!]    {text}")
 
     @staticmethod
     def err(text: str) -> None:
-        print(f"  [ERR]  {text}", file=sys.stderr)
+        if JSON_MODE:
+            _emit({"type": "err", "text": text})
+        else:
+            print(f"  [ERR]  {text}", file=sys.stderr)
 
 
 def confirm(prompt: str, assume_yes: bool) -> bool:
     if assume_yes:
-        print(f"  -> {prompt} [auto-yes]")
+        Step.doing(f"{prompt} [auto-yes]")
         return True
+    if JSON_MODE:
+        # The GUI never runs interactively — it shows --check results up
+        # front and only invokes a real run with --yes once the user has
+        # already confirmed via the GUI's own "Start" button.
+        Step.warn(f"{prompt} [no TTY in --json mode — treating as no; pass --yes]")
+        return False
     try:
         return input(f"  {prompt} [y/N] ").strip().lower() in ("y", "yes")
     except (KeyboardInterrupt, EOFError):
@@ -205,20 +254,29 @@ def print_environment_report() -> dict:
     arch = platform.machine() or "unknown"
     system = platform.system()
     report = {"system": system, "arch": arch}
-    print(f"  OS:           {system} ({platform.platform()})")
-    print(f"  Architecture: {arch}")
-    print(f"  Python:       {sys.version.split()[0]} at {sys.executable}")
+    if not JSON_MODE:
+        print(f"  OS:           {system} ({platform.platform()})")
+        print(f"  Architecture: {arch}")
+        print(f"  Python:       {sys.version.split()[0]} at {sys.executable}")
     if IS_LINUX:
         info = read_os_release()
         distro = info.get("PRETTY_NAME", "unknown Linux")
-        print(f"  Distro:       {distro}")
+        if not JSON_MODE:
+            print(f"  Distro:       {distro}")
         report["nixos"] = is_nixos()
         report["wsl"] = is_wsl()
-        if report["nixos"]:
+        if report["nixos"] and not JSON_MODE:
             print("  Note:         NixOS detected — system package steps are skipped;")
             print("                use `nix develop` (see flake.nix) instead.")
-        if report["wsl"]:
+        if report["wsl"] and not JSON_MODE:
             print("  Note:         Running under WSL.")
+    report["python_version"] = sys.version.split()[0]
+    report["python_executable"] = sys.executable
+    report["platform"] = platform.platform()
+    if IS_LINUX:
+        report["distro"] = read_os_release().get("PRETTY_NAME", "unknown Linux")
+    if JSON_MODE:
+        _emit({"type": "env", "report": report})
     return report
 
 
@@ -425,9 +483,14 @@ def main() -> None:
     parser.add_argument("--no-build", action="store_true", help="skip offering a production build")
     parser.add_argument("--no-autostart", action="store_true", help="skip offering login autostart")
     parser.add_argument("--dev", action="store_true", help="dev-only: never offer a production build")
+    parser.add_argument("--json", action="store_true", help="emit one JSON event per line on stdout instead of formatted text (for scripts/install_gui.py)")
     args = parser.parse_args()
 
-    print("Bot Server — installer")
+    global JSON_MODE
+    JSON_MODE = args.json
+
+    if not JSON_MODE:
+        print("Bot Server — installer")
     print_environment_report()
 
     results = {
@@ -443,20 +506,29 @@ def main() -> None:
         Step.head("Summary")
         for name, ok in results.items():
             (Step.ok if ok else Step.missing)(name)
+        if JSON_MODE:
+            _emit({"type": "summary", "results": results, "all_ok": all(results.values())})
         sys.exit(0 if all(results.values()) else 1)
 
     if not results["venv"]:
         Step.err("Python environment setup failed — fix the error above and re-run.")
+        if JSON_MODE:
+            _emit({"type": "summary", "results": results, "all_ok": False})
         sys.exit(1)
 
     offer_build(args)
     offer_autostart(args)
 
     Step.head("Done")
-    if IS_WINDOWS:
-        print("  Next: .\\scripts\\run.ps1  (dev mode) or the built .exe under desktop-app\\src-tauri\\target\\release\\")
+    next_step = (
+        "Next: .\\scripts\\run.ps1  (dev mode) or the built .exe under desktop-app\\src-tauri\\target\\release\\"
+        if IS_WINDOWS else
+        "Next: ./scripts/run.sh  (dev mode) or the built binary under desktop-app/src-tauri/target/release/"
+    )
+    if JSON_MODE:
+        _emit({"type": "summary", "results": results, "all_ok": all(results.values()), "next_step": next_step})
     else:
-        print("  Next: ./scripts/run.sh  (dev mode) or the built binary under desktop-app/src-tauri/target/release/")
+        print(f"  {next_step}")
 
 
 if __name__ == "__main__":
