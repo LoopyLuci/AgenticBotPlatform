@@ -1763,6 +1763,23 @@ def build_app() -> FastAPI:
 
         return {"base_url": peers.detect_own_base_url()}
 
+    @app.get("/api/peers/firewall-status", dependencies=[Depends(_require_token)])
+    async def api_peers_firewall_status():
+        from bot import firewall
+
+        port = int(os.environ.get("DASHBOARD_PORT", "8787"))
+        return firewall.status(port)
+
+    @app.post("/api/peers/firewall-open", dependencies=[Depends(_require_token)])
+    async def api_peers_firewall_open():
+        from bot import firewall
+
+        port = int(os.environ.get("DASHBOARD_PORT", "8787"))
+        ok, message = firewall.open_inbound_port(port)
+        if ok:
+            db.log_audit(actor="dashboard", action="firewall_rule_added", detail=message)
+        return {"ok": ok, "message": message}
+
     @app.post("/api/peers/pairing-token", dependencies=[Depends(_require_token)])
     async def api_peers_pairing_token(payload: dict = Body(default={})):
         from bot import peers

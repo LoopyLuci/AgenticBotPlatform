@@ -1029,6 +1029,11 @@
             <input type="text" id="peer-gen-token-address" placeholder="Only if auto-detection is wrong, e.g. behind a reverse proxy" style="flex:1; min-width:260px;">
           </div>
         </details>
+        <div class="row" id="peer-firewall-row" style="gap:8px; align-items:center; margin-top:10px; display:none;">
+          <span class="pill" id="peer-firewall-pill"></span>
+          <span class="cardnote" id="peer-firewall-note" style="margin:0;"></span>
+          <button class="btn" id="btn-peer-firewall-open" style="display:none; padding:3px 10px; font-size:12px;">Open this port</button>
+        </div>
       </div>
 
       <div class="card" style="margin-top:14px;">
@@ -3454,6 +3459,54 @@ let _peerTokenCountdownTimer = null;
     }
   } catch (_e) { /* not logged in yet, or detection failed — leave blank */ }
 })();
+
+// Surfaces the single most common reason linking silently fails:
+// DASHBOARD_HOST=0.0.0.0 makes the app itself listen on every interface,
+// but does nothing to the OS firewall, which drops unsolicited inbound
+// connections by default — a timeout on the OTHER end, not a clean error
+// here, which is exactly what made this hard to diagnose the first time.
+// Windows-only (see bot/firewall.py); silently hidden elsewhere.
+async function refreshFirewallStatus() {
+  const row = document.getElementById('peer-firewall-row');
+  const pill = document.getElementById('peer-firewall-pill');
+  const note = document.getElementById('peer-firewall-note');
+  const btn = document.getElementById('btn-peer-firewall-open');
+  try {
+    const res = await api('/api/peers/firewall-status');
+    if (!res.supported) { row.style.display = 'none'; return; }
+    row.style.display = '';
+    if (res.rule_present === true) {
+      pill.innerHTML = '<span class="dot good"></span>Firewall OK';
+      note.textContent = `An inbound rule for TCP ${res.port} is present.`;
+      btn.style.display = 'none';
+    } else if (res.rule_present === false) {
+      pill.innerHTML = '<span class="dot critical"></span>Firewall blocking';
+      note.textContent = `No inbound rule found for TCP ${res.port} — other devices on your network likely can't reach you.`;
+      btn.style.display = '';
+    } else {
+      pill.innerHTML = '<span class="dot warning"></span>Firewall unknown';
+      note.textContent = `Couldn't determine whether TCP ${res.port} is open.`;
+      btn.style.display = '';
+    }
+  } catch (_e) { row.style.display = 'none'; }
+}
+refreshFirewallStatus();
+
+document.getElementById('btn-peer-firewall-open').onclick = async () => {
+  const btn = document.getElementById('btn-peer-firewall-open');
+  const note = document.getElementById('peer-firewall-note');
+  btn.disabled = true;
+  note.textContent = 'Waiting for the Windows UAC prompt — approve it to add the rule…';
+  try {
+    const res = await api('/api/peers/firewall-open', { method: 'POST' });
+    note.textContent = res.ok ? res.message : `Failed: ${res.message}`;
+  } catch (e) {
+    note.textContent = `Failed: ${_peerErrorDetail(e.message)}`;
+  } finally {
+    btn.disabled = false;
+    refreshFirewallStatus();
+  }
+};
 
 document.getElementById('btn-peer-gen-token').onclick = async () => {
   const btn = document.getElementById('btn-peer-gen-token');

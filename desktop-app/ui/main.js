@@ -2500,6 +2500,54 @@ document.getElementById('btn-peer-link').onclick = async () => {
   } catch (_e) { /* not logged in yet, or detection failed — leave blank */ }
 })();
 
+// Surfaces the single most common reason linking silently fails:
+// DASHBOARD_HOST=0.0.0.0 makes the app itself listen on every interface,
+// but does nothing to the OS firewall, which drops unsolicited inbound
+// connections by default — a timeout on the OTHER end, not a clean error
+// here, which is exactly what made this hard to diagnose the first time.
+// Windows-only (see bot/firewall.py); silently hidden elsewhere.
+async function refreshFirewallStatus() {
+  const row = document.getElementById('peer-firewall-row');
+  const pill = document.getElementById('peer-firewall-pill');
+  const note = document.getElementById('peer-firewall-note');
+  const btn = document.getElementById('btn-peer-firewall-open');
+  try {
+    const res = await api('/api/peers/firewall-status');
+    if (!res.supported) { row.style.display = 'none'; return; }
+    row.style.display = '';
+    if (res.rule_present === true) {
+      pill.innerHTML = '<span class="dot good"></span>Firewall OK';
+      note.textContent = `An inbound rule for TCP ${res.port} is present.`;
+      btn.style.display = 'none';
+    } else if (res.rule_present === false) {
+      pill.innerHTML = '<span class="dot critical"></span>Firewall blocking';
+      note.textContent = `No inbound rule found for TCP ${res.port} — other devices on your network likely can't reach you.`;
+      btn.style.display = '';
+    } else {
+      pill.innerHTML = '<span class="dot warning"></span>Firewall unknown';
+      note.textContent = `Couldn't determine whether TCP ${res.port} is open.`;
+      btn.style.display = '';
+    }
+  } catch (_e) { row.style.display = 'none'; }
+}
+refreshFirewallStatus();
+
+document.getElementById('btn-peer-firewall-open').onclick = async () => {
+  const btn = document.getElementById('btn-peer-firewall-open');
+  const note = document.getElementById('peer-firewall-note');
+  btn.disabled = true;
+  note.textContent = 'Waiting for the Windows UAC prompt — approve it to add the rule…';
+  try {
+    const res = await api('/api/peers/firewall-open', { method: 'POST' });
+    note.textContent = res.ok ? res.message : `Failed: ${res.message}`;
+  } catch (e) {
+    note.textContent = `Failed: ${_peerErrorDetail(e.message)}`;
+  } finally {
+    btn.disabled = false;
+    refreshFirewallStatus();
+  }
+};
+
 // One shared countdown so re-clicking "Generate" replaces the old timer
 // instead of stacking a second one ticking against a token that's already
 // been superseded (server only ever keeps one pending token alive too).

@@ -887,6 +887,17 @@ From then on, either admin can see the other's bots (Manage bots) and
 enable/disable/start/stop/restart them remotely, exactly as if browsing
 that server's own Bots tab.
 
+**Windows Firewall check, right where you generate the token.** Binding to
+every interface (`DASHBOARD_HOST=0.0.0.0`) doesn't open the OS firewall —
+Windows silently drops unsolicited inbound connections by default, which
+shows up as a *timeout on the other machine*, not a clean error here,
+making it genuinely hard to diagnose blind. The "Generate a pairing token"
+card checks for an inbound rule on the dashboard's port and shows a clear
+Firewall OK / Firewall blocking pill; if it's blocking, an **Open this
+port** button adds the rule via a single Windows UAC prompt you approve —
+no manual Firewall UI navigation required. Windows-only for now
+(`bot/firewall.py`); hidden entirely on Linux/macOS.
+
 **Built to stay working, not just to work once:**
 - **Status is live, not stale.** A background check pings every linked
   server with a known address roughly once a minute and records whether it
