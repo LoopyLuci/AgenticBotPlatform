@@ -15,13 +15,31 @@ android {
         applicationId = "com.botserver.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 3
+        versionName = "1.1.0"
+    }
+
+    signingConfigs {
+        create("release") {
+            // The same debug keystore Android Studio/the SDK generates by
+            // default (~/.android/debug.keystore, standard "androiddebugkey"
+            // / "android" credentials) — not a Play Store signing identity.
+            // This app is sideloaded, not published through Play, so a
+            // debug-keyed release build is the actual distribution model,
+            // not a placeholder; using it here makes `assembleRelease`
+            // reproducibly produce a signed, installable APK on its own
+            // instead of needing a manual signing step after every build.
+            storeFile = file(System.getProperty("user.home") + "/.android/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
