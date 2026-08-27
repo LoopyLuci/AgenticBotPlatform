@@ -224,7 +224,13 @@ async def link_peer(name: str, pairing_token: str, my_name: str, my_base_url: Op
         data = resp.json()
     except httpx.HTTPError as exc:
         db.revoke_api_key(inbound_key_id)
-        raise PeerError(f"could not reach {base_url}: {exc}") from exc
+        raise PeerError(
+            f"could not reach {base_url}: {exc} — if that address looks right, the other machine's "
+            "firewall is the most common culprit: binding to 0.0.0.0 only makes the app itself listen "
+            "on every interface, it doesn't open the OS firewall for other devices on the network. "
+            "Add an inbound rule allowing that port (Windows: Windows Defender Firewall -> Advanced "
+            "Settings -> Inbound Rules -> New Rule -> Port), then try again."
+        ) from exc
     except PeerError:
         db.revoke_api_key(inbound_key_id)
         raise
