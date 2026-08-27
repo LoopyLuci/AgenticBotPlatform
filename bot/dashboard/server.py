@@ -1743,13 +1743,27 @@ def build_app() -> FastAPI:
     # ------------------------------------------------------------ peers ----
     # Linking this BotServer installation to another one (see bot/peers.py)
     # so an admin running several boxes (a home PC, a laptop, a VPS) can
-    # see and manage every one of them from any single dashboard. Linking/
-    # unlinking establishes or removes trust between two whole servers, so
-    # both require the strict dashboard token, not any paired key — same
-    # bar as every other trust-establishing action in this file. Reading
+    # see and manage every one of them from any single dashboard.
+    #
+    # Two different tokens for two different jobs (see bot/peers.py's
+    # module docstring for the full rationale): generating a pairing token
+    # and link/unlink all require the strict local DASHBOARD_TOKEN, same
+    # bar as every other trust-establishing action in this file — but
+    # /api/peers/handshake deliberately does NOT, since its entire job is
+    # to be the one endpoint a *different* server's admin calls into. Its
+    # auth is the short-lived, single-use pairing token in the payload
+    # itself, checked first thing inside peers.accept_handshake(). Reading
     # the list and proxying a peer's own overview/bots/actions stay on
     # _require_token_or_api_key, matching every other bot-management route
     # a paired device can already reach.
+
+    @app.post("/api/peers/pairing-token", dependencies=[Depends(_require_token)])
+    async def api_peers_pairing_token():
+        from bot import peers
+
+        result = peers.generate_pairing_token()
+        db.log_audit(actor="dashboard", action="peer_pairing_token_generated", detail="generated a server pairing token")
+        return result
 
     @app.post("/api/peers/link", dependencies=[Depends(_require_token)])
     async def api_peers_link(payload: dict = Body(...)):
@@ -1757,30 +1771,31 @@ def build_app() -> FastAPI:
 
         name = (payload.get("name") or "").strip()
         base_url = (payload.get("base_url") or "").strip()
-        remote_token = payload.get("remote_dashboard_token") or ""
+        remote_pairing_token = payload.get("remote_pairing_token") or ""
         my_base_url = (payload.get("my_base_url") or "").strip() or None
-        if not name or not base_url or not remote_token:
-            raise HTTPException(status_code=400, detail="payload must be {name, base_url, remote_dashboard_token, my_base_url?}")
+        if not name or not base_url or not remote_pairing_token:
+            raise HTTPException(status_code=400, detail="payload must be {name, base_url, remote_pairing_token, my_base_url?}")
         my_name = os.environ.get("BOTSERVER_NAME") or socket.gethostname()
         try:
-            peer = await peers.link_peer(name, base_url, remote_token, my_name, my_base_url)
+            peer = await peers.link_peer(name, base_url, remote_pairing_token, my_name, my_base_url)
         except peers.PeerError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         db.log_audit(actor="dashboard", action="peer_link", detail=f"linked peer {peer['id']} ({peer['name']!r})")
         return {"ok": True, "peer": _peer_public(peer)}
 
-    @app.post("/api/peers/handshake", dependencies=[Depends(_require_token)])
+    @app.post("/api/peers/handshake")
     async def api_peers_handshake(payload: dict = Body(...)):
         from bot import peers
 
         name = (payload.get("name") or "").strip()
         api_key = payload.get("api_key") or ""
         base_url = payload.get("base_url")
+        pairing_token = payload.get("pairing_token") or ""
         my_name = os.environ.get("BOTSERVER_NAME") or socket.gethostname()
         try:
-            result = peers.accept_handshake(name, api_key, base_url, my_name)
+            result = peers.accept_handshake(name, api_key, base_url, my_name, pairing_token)
         except peers.PeerError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=401, detail=str(exc))
         db.log_audit(actor="dashboard", action="peer_handshake", detail=f"accepted handshake from {name!r}")
         return result
 

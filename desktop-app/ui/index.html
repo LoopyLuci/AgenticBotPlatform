@@ -1232,13 +1232,24 @@
 
     <section id="servers">
       <div class="sec-head"><h2>Linked Servers</h2><span class="desc">Other BotServer installations you run — each keeps its own database and Telegram bot, linked here so you can see and manage them from one place</span></div>
+
       <div class="card">
-        <h3>Link a server</h3>
-        <p class="cardnote">On the other server's dashboard, copy its dashboard token (Set token, or from its .env) and paste it below along with its address. This runs once — both servers end up with their own independent credential for calling the other, and neither dashboard token is stored beyond this one request.</p>
+        <h3>1. Generate a pairing token (for someone linking into THIS server)</h3>
+        <p class="cardnote">Share this short code with whoever is linking their server to this one — never your dashboard token. It works once and expires in 10 minutes, so it's safe to send over chat.</p>
+        <div class="row" style="gap:8px; align-items:center; margin-top:8px;">
+          <button class="btn" id="btn-peer-gen-token">Generate pairing token</button>
+          <input type="text" id="peer-gen-token-value" readonly placeholder="(not generated yet)" style="flex:1; min-width:220px; font-family:monospace;" onclick="this.select();">
+          <span class="cardnote" id="peer-gen-token-expiry" style="margin:0;"></span>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>2. Link a server (using ITS pairing token)</h3>
+        <p class="cardnote">On the other server's own Linked Servers tab, have its admin generate a pairing token (step 1 above, done on their side) and paste it below along with its address. Your own dashboard token never leaves this machine — the pairing token is the only thing sent over the network, and it stops working the instant it's used.</p>
         <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px;">
           <input type="text" id="peer-new-name" placeholder="Name, e.g. \"Home PC\"" style="flex:1; min-width:140px;">
           <input type="text" id="peer-new-url" placeholder="Its address, e.g. http://192.168.1.20:8787" style="flex:2; min-width:220px;">
-          <input type="password" id="peer-new-token" placeholder="Its dashboard token" style="flex:1; min-width:160px;">
+          <input type="text" id="peer-new-token" placeholder="Its pairing token (from step 1 on ITS dashboard)" style="flex:1; min-width:200px; font-family:monospace;">
         </div>
         <div class="row" style="gap:8px; align-items:center; margin-top:8px;">
           <input type="text" id="peer-my-url" placeholder="This server's own reachable address (optional — lets it call you back)" style="flex:1;">

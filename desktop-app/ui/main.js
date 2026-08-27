@@ -2459,18 +2459,18 @@ document.getElementById('btn-peer-bots-close').onclick = () => {
 document.getElementById('btn-peer-link').onclick = async () => {
   const name = document.getElementById('peer-new-name').value.trim();
   const base_url = document.getElementById('peer-new-url').value.trim();
-  const remote_dashboard_token = document.getElementById('peer-new-token').value;
+  const remote_pairing_token = document.getElementById('peer-new-token').value.trim();
   const my_base_url = document.getElementById('peer-my-url').value.trim() || undefined;
   const statusEl = document.getElementById('peer-link-status');
-  if (!name || !base_url || !remote_dashboard_token) {
-    statusEl.textContent = 'Name, address, and its dashboard token are all required.';
+  if (!name || !base_url || !remote_pairing_token) {
+    statusEl.textContent = 'Name, address, and its pairing token are all required.';
     return;
   }
   const btn = document.getElementById('btn-peer-link');
   btn.disabled = true;
   statusEl.textContent = 'Linking…';
   try {
-    const res = await api('/api/peers/link', { method: 'POST', body: JSON.stringify({ name, base_url, remote_dashboard_token, my_base_url }) });
+    const res = await api('/api/peers/link', { method: 'POST', body: JSON.stringify({ name, base_url, remote_pairing_token, my_base_url }) });
     statusEl.textContent = `Linked to ${res.peer.name}.`;
     document.getElementById('peer-new-name').value = '';
     document.getElementById('peer-new-url').value = '';
@@ -2479,6 +2479,42 @@ document.getElementById('btn-peer-link').onclick = async () => {
     refreshPeers();
   } catch (e) {
     statusEl.textContent = `Failed to link: ${_peerErrorDetail(e.message)}`;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+// One shared countdown so re-clicking "Generate" replaces the old timer
+// instead of stacking a second one ticking against a token that's already
+// been superseded (server only ever keeps one pending token alive too).
+let _peerTokenCountdownTimer = null;
+
+document.getElementById('btn-peer-gen-token').onclick = async () => {
+  const btn = document.getElementById('btn-peer-gen-token');
+  const valueEl = document.getElementById('peer-gen-token-value');
+  const expiryEl = document.getElementById('peer-gen-token-expiry');
+  btn.disabled = true;
+  try {
+    const res = await api('/api/peers/pairing-token', { method: 'POST' });
+    valueEl.value = res.pairing_token;
+    valueEl.select();
+    const expiresAt = new Date(res.expires_at).getTime();
+    if (_peerTokenCountdownTimer) clearInterval(_peerTokenCountdownTimer);
+    const tick = () => {
+      const remainingMs = expiresAt - Date.now();
+      if (remainingMs <= 0) {
+        expiryEl.textContent = 'expired — generate a new one';
+        clearInterval(_peerTokenCountdownTimer);
+        return;
+      }
+      const m = Math.floor(remainingMs / 60000);
+      const s = Math.floor((remainingMs % 60000) / 1000).toString().padStart(2, '0');
+      expiryEl.textContent = `expires in ${m}:${s} or as soon as it's used`;
+    };
+    tick();
+    _peerTokenCountdownTimer = setInterval(tick, 1000);
+  } catch (e) {
+    expiryEl.textContent = `Failed: ${_peerErrorDetail(e.message)}`;
   } finally {
     btn.disabled = false;
   }

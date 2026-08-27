@@ -851,22 +851,30 @@ Servers** tab lets either admin see and manage the other's bots from their
 own dashboard — without merging databases, sharing one bot, or standing up
 any new infrastructure.
 
-**Setup is one action on one side.** On server A's Linked Servers tab:
+**Two different tokens for two different jobs — your dashboard token never
+leaves your machine.** Linking uses a dedicated, short-lived **server
+pairing token** for the one moment two servers actually talk to each
+other, so you never paste a real `DASHBOARD_TOKEN` into a different
+server's UI or send it over the network:
 
-1. Get server B's dashboard token (its own **Set token** button, or
-   `DASHBOARD_TOKEN` in its `.env`) and its reachable address (e.g.
-   `http://192.168.1.20:8787` — an explicit `http://` or `https://` is
-   required, so a bare `host:port` is rejected immediately with a clear
-   message rather than failing later).
-2. Fill in **Link a server**: a name for B, B's address, B's dashboard
-   token, and (optionally) A's own reachable address so B can call A back
-   too. Click **Link server**.
+1. On server B's Linked Servers tab, step 1, click **Generate pairing
+   token**. This mints a random code, valid for 10 minutes and usable
+   exactly once — safe to paste into a chat message to whoever's linking
+   in, unlike B's real dashboard token.
+2. On server A's Linked Servers tab, step 2, fill in **Link a server**: a
+   name for B, B's address (e.g. `http://192.168.1.20:8787` — an explicit
+   `http://` or `https://` is required, so a bare `host:port` is rejected
+   immediately with a clear message rather than failing later), the
+   pairing token from step 1, and (optionally) A's own reachable address
+   so B can call A back too. Click **Link server**.
 3. That one call does the whole handshake: A mints a fresh, independently-
-   revocable credential for B, sends it to B (authenticating with the
-   token you just pasted), and B mints its own credential back for A —
-   both servers end up linked with their own working credential for the
-   other, and neither dashboard token is stored anywhere beyond that one
-   request.
+   revocable credential for B and sends it to B along with the pairing
+   token; B checks the pairing token (rejecting anything wrong, expired,
+   or already used — including B's own real dashboard token, which was
+   never a valid pairing token in the first place) and, only if it
+   checks out, mints its own credential back for A. Both servers end up
+   linked with their own working credential for the other — the pairing
+   token is now spent and cannot be reused even if someone intercepted it.
 
 From then on, either admin can see the other's bots (Manage bots) and
 enable/disable/start/stop/restart them remotely, exactly as if browsing

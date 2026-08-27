@@ -185,6 +185,20 @@ CREATE TABLE IF NOT EXISTS peer_servers (
     last_error          TEXT
 );
 
+-- Short-lived, single-use tokens minted specifically to authenticate the
+-- /api/peers/handshake bootstrap call — see bot/peers.py. This is the
+-- credential that actually crosses the network when linking two servers;
+-- the real DASHBOARD_TOKEN never does. Only one is ever valid at a time
+-- (generating a new one invalidates whatever was pending), so there's
+-- nothing stale left lying around to worry about revoking later.
+CREATE TABLE IF NOT EXISTS server_pairing_tokens (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    token_hash  TEXT NOT NULL UNIQUE,
+    created_at  TEXT NOT NULL,
+    expires_at  TEXT NOT NULL,
+    used_at     TEXT
+);
+
 -- A named group of bot instances plus a chosen collaboration strategy.
 -- `config` is JSON, strategy-specific (member instance ids, roles, or for
 -- strategy='custom' a full step graph) — see bot/swarm/strategies.py.
@@ -1833,6 +1847,63 @@ def delete_peer_server(peer_id: int) -> Optional[sqlite3.Row]:
         conn.execute("DELETE FROM peer_servers WHERE id=?", (peer_id,))
         conn.commit()
         return row
+
+
+# ---------------------------------------------------- server pairing tokens
+# See server_pairing_tokens' SCHEMA comment and bot/peers.py: the one
+# secret that actually crosses the network to link two servers, instead of
+# the real DASHBOARD_TOKEN. Plaintext only ever exists in
+# create_server_pairing_token()'s return value, same discipline as
+# create_api_key().
+
+def create_server_pairing_token(ttl_s: int = 600) -> tuple[str, str]:
+    """Mints a fresh pairing token, invalidating whatever was still pending
+    — only one is ever meant to be outstanding at a time, so an admin who
+    generates a new one doesn't have to remember to separately revoke the
+    old one too. Returns (plaintext, expires_at)."""
+    plaintext = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+    now = _now()
+    expires_at = (datetime.now(timezone.utc) + timedelta(seconds=ttl_s)).isoformat(timespec="seconds")
+    conn = get_conn()
+    with _lock:
+        conn.execute("DELETE FROM server_pairing_tokens WHERE used_at IS NULL")
+        conn.execute(
+            "INSERT INTO server_pairing_tokens (token_hash, created_at, expires_at) VALUES (?, ?, ?)",
+            (token_hash, now, expires_at),
+        )
+        conn.commit()
+    return plaintext, expires_at
+
+
+def consume_server_pairing_token(plaintext: str) -> bool:
+    """Validates a pairing token and marks it used in one atomic step —
+    it's either accepted exactly once or not at all, closing the window a
+    separate check-then-use would leave for a replay. Also opportunistically
+    clears out old used/expired rows so the table never grows unbounded."""
+    if not plaintext:
+        return False
+    token_hash = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.isoformat(timespec="seconds")
+    conn = get_conn()
+    with _lock:
+        row = conn.execute(
+            "SELECT id, expires_at FROM server_pairing_tokens WHERE token_hash=? AND used_at IS NULL",
+            (token_hash,),
+        ).fetchone()
+        if row is None:
+            return False
+        if datetime.fromisoformat(row["expires_at"]) < now_dt:
+            return False
+        cur = conn.execute(
+            "UPDATE server_pairing_tokens SET used_at=? WHERE id=? AND used_at IS NULL", (now, row["id"])
+        )
+        conn.execute(
+            "DELETE FROM server_pairing_tokens WHERE used_at IS NOT NULL OR expires_at < ?", (now,)
+        )
+        conn.commit()
+        return cur.rowcount == 1
 
 
 def purge_revoked_keys() -> int:

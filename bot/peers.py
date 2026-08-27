@@ -4,32 +4,57 @@ config, and Telegram bot) so either admin can see and manage the other's
 bots and status from their own dashboard — without merging databases,
 sharing one Telegram bot, or standing up any new infrastructure.
 
-Authentication reuses the api_keys mechanism a paired mobile device
-already uses unchanged: a linked peer server is, from the auth layer's
-point of view, just another api_keys row — tagged kind='peer_server' only
-so the dashboard can list "Linked Servers" separately from "Paired
-Devices" (see db.py's api_keys.kind column and list_api_keys/list_devices
-filtering). That reuse is deliberate: it means a peer server already has
-exactly the same management surface a paired phone does (bot
-start/stop/restart, config changes) with exactly the same restriction
-(can't mint/revoke other keys) — no new permission model to design,
-audit, or get wrong.
+Authentication uses two different tokens for two different jobs, on
+purpose — this is the whole design, not an incidental detail:
 
-Linking is a single-admin-action handshake: the admin of server A pastes
-server B's base URL and B's own dashboard token into A's "Link a server"
-form. That one call:
-  1. A mints a fresh api_keys row (kind='peer_server') for B to call A with.
+- **DASHBOARD_TOKEN** never leaves the machine it belongs to. It gates the
+  one local action that starts a link (minting a pairing token) and every
+  other admin action in this file (link/unlink), exactly like it already
+  gates everything else in the dashboard. It is never pasted into another
+  server's UI and never sent over the network to a peer.
+- **Server pairing token** is the only secret that actually crosses the
+  network. It's short-lived (10 minutes), single-use, and purpose-built
+  for exactly one thing: proving to server B, once, that whoever is
+  calling /api/peers/handshake was handed a code B's own admin just
+  generated — the same "generate on the target, type into the initiator"
+  shape as the existing mobile pairing flow, applied to servers instead of
+  phones. A leaked pairing token is far less dangerous than a leaked
+  dashboard token: it expires in minutes, works exactly once, and can only
+  ever be used to register one new peer link — never to read the dashboard
+  token itself, view its config, or touch anything else.
+
+Once the handshake completes, ongoing authentication reuses the api_keys
+mechanism a paired mobile device already uses unchanged: a linked peer
+server is, from the auth layer's point of view, just another api_keys
+row — tagged kind='peer_server' only so the dashboard can list "Linked
+Servers" separately from "Paired Devices" (see db.py's api_keys.kind
+column and list_api_keys/list_devices filtering). That reuse is
+deliberate: it means a peer server already has exactly the same
+management surface a paired phone does (bot start/stop/restart, config
+changes) with exactly the same restriction (can't mint/revoke other
+keys) — no new permission model to design, audit, or get wrong.
+
+Linking is a two-step, single-admin-action-per-side handshake:
+  0. The admin of server B clicks "Generate pairing token" in B's own
+     dashboard (DASHBOARD_TOKEN-gated) and shares the resulting short code
+     with whoever is linking in (chat, in person, however — it's short-
+     lived and single-use, so casual sharing is fine).
+  1. The admin of server A pastes B's base URL and that pairing token into
+     A's "Link a server" form. A mints a fresh api_keys row
+     (kind='peer_server') for B to call A with.
   2. A POSTs that credential (plus A's own name and, if known, its own
-     reachable base_url) to B's /api/peers/handshake, authenticating with
-     B's dashboard token — proving the admin controls both boxes, the same
-     trust bar every other dashboard-token-gated action already uses.
+     reachable base_url) and B's pairing token to B's
+     /api/peers/handshake. B validates and consumes the pairing token —
+     wrong or expired or already-used token means the request goes no
+     further, regardless of anything else in the payload.
   3. B mints its own fresh api_keys row (kind='peer_server') for A to call
      B with, records A as a peer using the credential A just sent, and
      returns that new credential in the response.
   4. A records B as a peer using the credential B just returned.
 
 Both sides end up with a working, independently-revocable credential for
-the other, from one action — no manual two-way credential copy-paste.
+the other, from one action per side — no manual two-way credential
+copy-paste, and no long-lived secret ever crosses the network.
 """
 
 from __future__ import annotations
@@ -89,7 +114,15 @@ async def _post_with_retry(client: httpx.AsyncClient, url: str, **kwargs) -> htt
     raise last_exc  # type: ignore[misc]
 
 
-async def link_peer(name: str, base_url: str, remote_dashboard_token: str, my_name: str, my_base_url: Optional[str] = None) -> dict:
+def generate_pairing_token() -> dict:
+    """Runs on the receiving side, one DASHBOARD_TOKEN-gated local action
+    (see the module docstring's step 0). The result is what the admin
+    shares with whoever is linking in — never the real dashboard token."""
+    plaintext, expires_at = db.create_server_pairing_token()
+    return {"pairing_token": plaintext, "expires_at": expires_at}
+
+
+async def link_peer(name: str, base_url: str, remote_pairing_token: str, my_name: str, my_base_url: Optional[str] = None) -> dict:
     """Runs on the initiating side. See module docstring for the full
     handshake. Raises PeerError on any failure — the fresh credential
     minted for the (possibly unreachable) other side is revoked again so a
@@ -97,6 +130,8 @@ async def link_peer(name: str, base_url: str, remote_dashboard_token: str, my_na
     base_url = normalize_base_url(base_url)
     if my_base_url:
         my_base_url = normalize_base_url(my_base_url)
+    if not remote_pairing_token:
+        raise PeerError("that server's pairing token is required")
 
     inbound_key_id, inbound_plaintext = db.create_api_key(f"peer: {name}", kind="peer_server")
     try:
@@ -104,11 +139,13 @@ async def link_peer(name: str, base_url: str, remote_dashboard_token: str, my_na
             resp = await _post_with_retry(
                 client,
                 f"{base_url}/api/peers/handshake",
-                headers={"X-Dashboard-Token": remote_dashboard_token},
-                json={"name": my_name, "base_url": my_base_url, "api_key": inbound_plaintext},
+                json={
+                    "name": my_name, "base_url": my_base_url, "api_key": inbound_plaintext,
+                    "pairing_token": remote_pairing_token,
+                },
             )
         if resp.status_code == 401:
-            raise PeerError("that server rejected the dashboard token")
+            raise PeerError("that server rejected the pairing token — it may be wrong, expired (10 minutes), or already used")
         resp.raise_for_status()
         data = resp.json()
     except httpx.HTTPError as exc:
@@ -129,11 +166,16 @@ async def link_peer(name: str, base_url: str, remote_dashboard_token: str, my_na
     return dict(db.get_peer_server(peer_id))
 
 
-def accept_handshake(name: str, api_key: str, base_url: Optional[str], my_name: str) -> dict:
-    """Runs on the receiving side, inside the /api/peers/handshake route
-    (already gated by _require_token — only the real admin's dashboard
-    token gets here). Mints our own credential for the caller to store and
-    records them as a peer using the credential they sent us."""
+def accept_handshake(name: str, api_key: str, base_url: Optional[str], my_name: str, pairing_token: str) -> dict:
+    """Runs on the receiving side, inside the /api/peers/handshake route —
+    which deliberately does NOT require DASHBOARD_TOKEN. Auth here is the
+    pairing_token instead: it's checked and atomically consumed first,
+    before anything else in the payload is trusted, so a wrong/expired/
+    reused token rejects the whole request regardless of what else was
+    sent. Mints our own credential for the caller to store and records
+    them as a peer using the credential they sent us."""
+    if not db.consume_server_pairing_token(pairing_token):
+        raise PeerError("invalid, expired, or already-used pairing token")
     name = (name or "unnamed server").strip() or "unnamed server"
     if not api_key:
         raise PeerError("handshake payload missing api_key")
