@@ -54,11 +54,19 @@ pub struct AdbDevice {
 /// `resource_dir()`: the Android project isn't bundled into the installer
 /// (see module docs), so there's nothing to find there.
 fn gradlew_name() -> &'static str {
-    if cfg!(target_os = "windows") { "gradlew.bat" } else { "gradlew" }
+    if cfg!(target_os = "windows") {
+        "gradlew.bat"
+    } else {
+        "gradlew"
+    }
 }
 
 fn adb_name() -> &'static str {
-    if cfg!(target_os = "windows") { "adb.exe" } else { "adb" }
+    if cfg!(target_os = "windows") {
+        "adb.exe"
+    } else {
+        "adb"
+    }
 }
 
 fn find_android_project_dir() -> Option<PathBuf> {
@@ -122,15 +130,22 @@ fn require_adb() -> Result<PathBuf, String> {
     let project_dir = find_android_project_dir();
     let sdk = find_android_sdk(project_dir.as_deref())
         .ok_or_else(|| "Android SDK not found (checked ANDROID_HOME/ANDROID_SDK_ROOT and android-app/local.properties).".to_string())?;
-    adb_path_from_sdk(&sdk)
-        .ok_or_else(|| format!("{} not found under {} — is platform-tools installed?", adb_name(), sdk.display()))
+    adb_path_from_sdk(&sdk).ok_or_else(|| {
+        format!(
+            "{} not found under {} — is platform-tools installed?",
+            adb_name(),
+            sdk.display()
+        )
+    })
 }
 
 #[tauri::command]
 pub fn list_adb_devices() -> Result<Vec<AdbDevice>, String> {
     let adb = require_adb()?;
     let mut cmd = Command::new(&adb);
-    cmd.args(["devices", "-l"]).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.args(["devices", "-l"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     let output = no_window(&mut cmd)
         .output()
         .map_err(|e| format!("failed to run adb: {e}"))?;
@@ -151,7 +166,11 @@ pub fn list_adb_devices() -> Result<Vec<AdbDevice>, String> {
             .find_map(|p| p.strip_prefix("model:"))
             .unwrap_or("unknown model")
             .replace('_', " ");
-        devices.push(AdbDevice { serial, model, state });
+        devices.push(AdbDevice {
+            serial,
+            model,
+            state,
+        });
     }
     Ok(devices)
 }
@@ -177,7 +196,13 @@ pub fn build_android_apk(app: AppHandle) -> Result<(), String> {
         let handle = app.clone();
         thread::spawn(move || {
             for line in BufReader::new(out).lines().map_while(Result::ok) {
-                let _ = handle.emit("android-build-log", BuildLogLine { stream: "stdout".into(), line });
+                let _ = handle.emit(
+                    "android-build-log",
+                    BuildLogLine {
+                        stream: "stdout".into(),
+                        line,
+                    },
+                );
             }
         });
     }
@@ -185,7 +210,13 @@ pub fn build_android_apk(app: AppHandle) -> Result<(), String> {
         let handle = app.clone();
         thread::spawn(move || {
             for line in BufReader::new(err).lines().map_while(Result::ok) {
-                let _ = handle.emit("android-build-log", BuildLogLine { stream: "stderr".into(), line });
+                let _ = handle.emit(
+                    "android-build-log",
+                    BuildLogLine {
+                        stream: "stderr".into(),
+                        line,
+                    },
+                );
             }
         });
     }
@@ -209,7 +240,9 @@ pub fn build_android_apk(app: AppHandle) -> Result<(), String> {
             Ok(s) => BuildDonePayload {
                 success: false,
                 apk_path: None,
-                error: Some(format!("gradlew exited with {s} — see the log above for the failing task.")),
+                error: Some(format!(
+                    "gradlew exited with {s} — see the log above for the failing task."
+                )),
             },
             Err(e) => BuildDonePayload {
                 success: false,
@@ -238,7 +271,14 @@ pub fn install_android_apk(serial: String, apk_path: String) -> Result<(), Strin
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
-        Err(format!("adb install failed: {}", if stderr.trim().is_empty() { stdout.trim() } else { stderr.trim() }))
+        Err(format!(
+            "adb install failed: {}",
+            if stderr.trim().is_empty() {
+                stdout.trim()
+            } else {
+                stderr.trim()
+            }
+        ))
     }
 }
 
@@ -250,9 +290,17 @@ pub fn install_android_apk(serial: String, apk_path: String) -> Result<(), Strin
 /// rather than left as separate argv entries where `&` would be
 /// (mis)interpreted as the device shell's background operator.
 #[tauri::command]
-pub fn pair_android_device(serial: String, host: String, key: String, host2: Option<String>) -> Result<(), String> {
+pub fn pair_android_device(
+    serial: String,
+    host: String,
+    key: String,
+    host2: Option<String>,
+) -> Result<(), String> {
     if host.trim().is_empty() {
-        return Err("Host is required — fill in the host:port field above (e.g. your-tailnet-host:8787).".to_string());
+        return Err(
+            "Host is required — fill in the host:port field above (e.g. your-tailnet-host:8787)."
+                .to_string(),
+        );
     }
     let adb = require_adb()?;
     let mut uri = format!("botserver://pair?host={}&key={}", host.trim(), key.trim());
@@ -273,7 +321,11 @@ pub fn pair_android_device(serial: String, host: String, key: String, host2: Opt
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!(
             "Couldn't trigger pairing on the device: {}",
-            if stderr.trim().is_empty() { stdout.trim() } else { stderr.trim() }
+            if stderr.trim().is_empty() {
+                stdout.trim()
+            } else {
+                stderr.trim()
+            }
         ));
     }
     Ok(())

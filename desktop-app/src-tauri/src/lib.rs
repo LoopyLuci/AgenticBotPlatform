@@ -19,11 +19,14 @@ use sysinfo::{Pid, ProcessesToUpdate, System};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 mod android;
-use android::{android_env_status, build_android_apk, install_android_apk, list_adb_devices, pair_android_device};
+use android::{
+    android_env_status, build_android_apk, install_android_apk, list_adb_devices,
+    pair_android_device,
+};
 mod network;
 mod updater;
-use updater::{check_for_update, download_update, install_update};
 use network::{detect_lan_host, detect_tailscale_host};
+use updater::{check_for_update, download_update, install_update};
 
 /// Passed to CreateProcess on Windows so spawning a console app (python.exe,
 /// taskkill.exe) never flashes its own console window on top of the GUI —
@@ -125,7 +128,10 @@ fn resolve_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf), String> {
 }
 
 fn spawn_internal(app: &AppHandle, state: &State<ServerState>) -> Result<(), String> {
-    let mut guard = state.child.lock().map_err(|_| "state poisoned".to_string())?;
+    let mut guard = state
+        .child
+        .lock()
+        .map_err(|_| "state poisoned".to_string())?;
     if guard.is_some() {
         return Ok(());
     }
@@ -163,7 +169,10 @@ fn spawn_internal(app: &AppHandle, state: &State<ServerState>) -> Result<(), Str
                 }
                 let _ = handle.emit(
                     "server-log",
-                    LogLine { stream: "stdout".into(), line },
+                    LogLine {
+                        stream: "stdout".into(),
+                        line,
+                    },
                 );
             }
         });
@@ -177,7 +186,10 @@ fn spawn_internal(app: &AppHandle, state: &State<ServerState>) -> Result<(), Str
                 }
                 let _ = handle.emit(
                     "server-log",
-                    LogLine { stream: "stderr".into(), line },
+                    LogLine {
+                        stream: "stderr".into(),
+                        line,
+                    },
                 );
             }
         });
@@ -188,7 +200,10 @@ fn spawn_internal(app: &AppHandle, state: &State<ServerState>) -> Result<(), Str
 
     let _ = app.emit(
         "server-status",
-        ServerStatusPayload { running: true, pid: Some(pid) },
+        ServerStatusPayload {
+            running: true,
+            pid: Some(pid),
+        },
     );
 
     let handle = app.clone();
@@ -211,7 +226,10 @@ fn spawn_internal(app: &AppHandle, state: &State<ServerState>) -> Result<(), Str
                 None => {
                     let _ = handle.emit(
                         "server-status",
-                        ServerStatusPayload { running: false, pid: None },
+                        ServerStatusPayload {
+                            running: false,
+                            pid: None,
+                        },
                     );
                     break;
                 }
@@ -230,14 +248,20 @@ fn start_server(app: AppHandle, state: State<ServerState>) -> Result<(), String>
 #[tauri::command]
 fn stop_server(app: AppHandle, state: State<ServerState>) -> Result<(), String> {
     {
-        let mut guard = state.child.lock().map_err(|_| "state poisoned".to_string())?;
+        let mut guard = state
+            .child
+            .lock()
+            .map_err(|_| "state poisoned".to_string())?;
         if let Some(child) = guard.take() {
             terminate_child(child);
         }
     }
     let _ = app.emit(
         "server-status",
-        ServerStatusPayload { running: false, pid: None },
+        ServerStatusPayload {
+            running: false,
+            pid: None,
+        },
     );
     Ok(())
 }
@@ -245,14 +269,20 @@ fn stop_server(app: AppHandle, state: State<ServerState>) -> Result<(), String> 
 #[tauri::command]
 fn restart_server(app: AppHandle, state: State<ServerState>) -> Result<(), String> {
     {
-        let mut guard = state.child.lock().map_err(|_| "state poisoned".to_string())?;
+        let mut guard = state
+            .child
+            .lock()
+            .map_err(|_| "state poisoned".to_string())?;
         if let Some(child) = guard.take() {
             terminate_child(child);
         }
     }
     let _ = app.emit(
         "server-status",
-        ServerStatusPayload { running: false, pid: None },
+        ServerStatusPayload {
+            running: false,
+            pid: None,
+        },
     );
     thread::sleep(Duration::from_millis(300));
     spawn_internal(&app, &state)
@@ -286,17 +316,28 @@ fn get_dashboard_token(app: AppHandle) -> Result<Option<String>, String> {
 
 #[tauri::command]
 fn server_status(state: State<ServerState>) -> Result<ServerStatusPayload, String> {
-    let guard = state.child.lock().map_err(|_| "state poisoned".to_string())?;
+    let guard = state
+        .child
+        .lock()
+        .map_err(|_| "state poisoned".to_string())?;
     Ok(match guard.as_ref() {
-        Some(c) => ServerStatusPayload { running: true, pid: Some(c.id()) },
-        None => ServerStatusPayload { running: false, pid: None },
+        Some(c) => ServerStatusPayload {
+            running: true,
+            pid: Some(c.id()),
+        },
+        None => ServerStatusPayload {
+            running: false,
+            pid: None,
+        },
     })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .manage(ServerState { child: Mutex::new(None) })
+        .manage(ServerState {
+            child: Mutex::new(None),
+        })
         .invoke_handler(tauri::generate_handler![
             start_server,
             stop_server,
@@ -323,7 +364,10 @@ pub fn run() {
                 }
                 let _ = handle.emit(
                     "server-log",
-                    LogLine { stream: "stderr".into(), line: format!("startup error: {e}") },
+                    LogLine {
+                        stream: "stderr".into(),
+                        line: format!("startup error: {e}"),
+                    },
                 );
             }
             Ok(())

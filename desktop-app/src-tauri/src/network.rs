@@ -30,7 +30,9 @@ pub fn detect_lan_host() -> Option<String> {
 #[tauri::command]
 pub fn detect_tailscale_host() -> Option<String> {
     let mut cmd = Command::new("tailscale");
-    cmd.args(["ip", "-4"]).stdout(Stdio::piped()).stderr(Stdio::null());
+    cmd.args(["ip", "-4"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
     let output = no_window(&mut cmd).output().ok()?;
     if !output.status.success() {
         return None;

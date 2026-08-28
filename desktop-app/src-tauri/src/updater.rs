@@ -195,7 +195,11 @@ pub fn download_update(app: AppHandle, url: String) -> Result<String, String> {
     }
     let _ = app.emit(
         "update-download-progress",
-        DownloadProgress { downloaded_bytes: downloaded, total_bytes, percent: Some(100.0) },
+        DownloadProgress {
+            downloaded_bytes: downloaded,
+            total_bytes,
+            percent: Some(100.0),
+        },
     );
 
     let dest = std::env::temp_dir().join("BotServer-update-setup.exe");
@@ -212,7 +216,8 @@ pub fn install_update(app: AppHandle, installer_path: String) -> Result<(), Stri
     if !installer.exists() {
         return Err(format!("installer not found at {installer_path}"));
     }
-    let current_exe = std::env::current_exe().map_err(|e| format!("couldn't resolve own path: {e}"))?;
+    let current_exe =
+        std::env::current_exe().map_err(|e| format!("couldn't resolve own path: {e}"))?;
     let _ = app.emit("update-phase", "installing");
 
     #[cfg(target_os = "windows")]

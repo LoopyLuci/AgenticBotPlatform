@@ -73,9 +73,12 @@ jobs:
       - name: Create placeholder .venv (tauri_build checks resource paths exist)
         run: New-Item -ItemType Directory -Force -Path ..\..\.venv | Out-Null
 
+      # The pre-existing formatting backlog (27 diff hunks across 4 files)
+      # was cleared with a real `cargo fmt` run on 2026-08-28 — verified
+      # cosmetic-only (line-wrapping, brace placement, no logic changes) by
+      # reviewing the diff, and `cargo fmt --check` now passes clean.
       - name: Check formatting
         run: cargo fmt --check
-        continue-on-error: true # advisory today — this project's Rust files predate a fmt pass
 
       # Verified clean locally on 2026-08-28 (cargo clippy --all-targets -- -D
       # warnings — zero warnings) before flipping this blocking. `fmt` above
