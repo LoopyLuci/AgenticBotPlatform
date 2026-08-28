@@ -11,4 +11,9 @@ py=".venv/Scripts/python.exe"
 [ -x "$py" ] || py=".venv/bin/python"
 [ -x "$py" ] || py="python"
 
+# Tells local_pipeline.py it's safe to read the pre-push protocol data git
+# feeds it on stdin (old/new SHAs per ref) to scope the run to what this
+# push actually changes. Only set here, never on a manual invocation, so a
+# developer running the script directly never risks blocking on stdin.
+export BOTSERVER_LOCAL_PIPELINE_HOOK=1
 exec "$py" scripts/local_pipeline.py

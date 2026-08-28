@@ -23,6 +23,15 @@ optional, never required" stance (see the README's "Headless server
 deployment" section) rather than forcing every contributor to have every
 toolchain installed just to push a Python-only change.
 
+It's also change-aware (see changed_files()): a push is diffed against
+origin/main, and the Rust check, Docker build, and the whole stop/rebuild/
+restart cycle are each skipped when the push doesn't touch anything that
+step cares about — a docs-only or tests-only push shouldn't pay a multi-
+minute Rust+Docker rebuild, or briefly kill the locally running instance,
+for a change that instance has nothing new to pick up anyway. When the
+changed scope can't be determined, everything runs — unknown always means
+"assume the worst," never "assume nothing changed."
+
 There's deliberately no attempt here to replicate the old "bare metal"
 GitHub Actions job (spin up a second bot process and hit /healthz) —
 doing that against this actual repo would either fight over the real
@@ -99,6 +108,57 @@ def _run(cmd: list[str], cwd: Optional[Path] = None, retries: int = 0) -> tuple[
         time.sleep(3)
     output = (result.stdout or "") + (result.stderr or "")
     return result.returncode == 0, output
+
+
+# Paths whose change actually requires each expensive step. Anything not
+# under one of these (README/CHANGELOG/docs/tests-only edits, for example)
+# doesn't need that step re-run — see changed_files() below.
+RUST_PREFIXES = ("desktop-app/src-tauri/",)
+DOCKER_PREFIXES = ("bot/", "requirements.txt", "Dockerfile", "docker-compose.yml",
+                   ".dockerignore", "scripts/docker-entrypoint.sh")
+# The running instance's bot code, config, and app binary all come from a
+# copy baked into desktop-app/src-tauri/target/release/ at build time (see
+# find_running_instance()'s docstring) — a push that doesn't touch any of
+# these has nothing new for a stop/rebuild/restart cycle to actually pick
+# up, so it's pure overhead to run one.
+DEPLOY_PREFIXES = ("bot/", "config/", "desktop-app/", "requirements.txt")
+
+
+def _matches(changed: set[str], prefixes: tuple[str, ...]) -> bool:
+    return any(f.startswith(prefixes) for f in changed)
+
+
+def changed_files() -> Optional[set[str]]:
+    """Files touched by this push, relative to ROOT with forward slashes,
+    or None if that can't be determined — an unknown scope always means
+    "run everything", never "assume nothing changed"."""
+    range_spec = None
+    if os.environ.get("BOTSERVER_LOCAL_PIPELINE_HOOK") == "1":
+        # git feeds a pre-push hook "<local ref> <local sha> <remote ref>
+        # <remote sha>" lines on stdin — only read it under this env var
+        # (set solely by scripts/git-hooks/pre-push) so a manual run of
+        # this script never risks blocking on an unrelated inherited stdin.
+        try:
+            stdin_data = sys.stdin.read()
+        except Exception:
+            stdin_data = ""
+        for line in stdin_data.splitlines():
+            parts = line.split()
+            if len(parts) != 4:
+                continue
+            _local_ref, local_sha, _remote_ref, remote_sha = parts
+            if set(remote_sha) == {"0"}:
+                continue  # new remote ref -- nothing to diff against, fall through
+            range_spec = f"{remote_sha}..{local_sha}"
+    if range_spec is None:
+        ok, base = _run(["git", "merge-base", "HEAD", "origin/main"], cwd=ROOT)
+        if not ok:
+            return None
+        range_spec = f"{base.strip()}..HEAD"
+    ok, out = _run(["git", "diff", "--name-only", range_spec], cwd=ROOT)
+    if not ok:
+        return None
+    return {line.strip().replace(os.sep, "/") for line in out.splitlines() if line.strip()}
 
 
 _EXE_NAME = "bot-server.exe" if IS_WINDOWS else "bot-server"
@@ -343,7 +403,25 @@ def main() -> int:
     try:
         print("BotServer local CI/CD pipeline")
 
-        running_pid = find_running_instance()
+        Step.head("Change detection")
+        changed = changed_files()
+        if changed is None:
+            Step.warn("couldn't determine which files changed — running the full pipeline")
+            rust_needed = docker_needed = deploy_needed = True
+        else:
+            rust_needed = _matches(changed, RUST_PREFIXES)
+            docker_needed = _matches(changed, DOCKER_PREFIXES)
+            deploy_needed = _matches(changed, DEPLOY_PREFIXES)
+            Step.ok(f"{len(changed)} file(s) changed since the last push")
+            if not rust_needed:
+                Step.skip("no desktop-app/src-tauri changes — skipping Rust fmt/clippy/check")
+            if not docker_needed:
+                Step.skip("no Docker-relevant changes — skipping the Docker image build")
+            if not deploy_needed:
+                Step.skip("no bot/config/desktop-app changes — nothing new for a "
+                          "stop/rebuild/restart cycle to pick up, skipping it entirely")
+
+        running_pid = find_running_instance() if deploy_needed else None
         was_running = running_pid is not None
         if was_running:
             Step.head("Stopping the running instance")
@@ -352,11 +430,9 @@ def main() -> int:
             stop_instance(running_pid)
             Step.ok("stopped")
 
-        results: dict[str, Optional[bool]] = {
-            "python": check_python(),
-            "rust": check_rust(),
-            "docker": check_docker(),
-        }
+        results: dict[str, Optional[bool]] = {"python": check_python()}
+        results["rust"] = check_rust() if rust_needed else None
+        results["docker"] = check_docker() if docker_needed else None
 
         failed = [name for name, ok in results.items() if ok is False]
         skipped = [name for name, ok in results.items() if ok is None]
@@ -371,11 +447,16 @@ def main() -> int:
             return 1
 
         if skipped:
-            Step.warn(f"ran with some checks skipped (tooling not installed): {', '.join(skipped)}")
+            Step.warn(f"ran with some checks skipped (not applicable to this change, "
+                      f"or tooling not installed): {', '.join(skipped)}")
 
         if args.no_deploy:
             Step.skip("--no-deploy passed — not rebuilding/restarting")
             restore_prior_state(was_running)
+            return 0
+
+        if not deploy_needed:
+            Step.skip("nothing deploy-relevant changed — leaving the running instance untouched")
             return 0
 
         if not deploy(was_running):

@@ -16,7 +16,10 @@ app's own version (the Android app versions independently — see its own
   your own machine, then rebuilds and redeploys the running instance on a
   green result. Installed as a `pre-push` git hook via
   `scripts/install_git_hooks.sh` / `.ps1`. Replaces an earlier GitHub
-  Actions workflow, which this project no longer uses at all.
+  Actions workflow, which this project no longer uses at all. Change-aware:
+  a push that doesn't touch `desktop-app/`, Docker files, or `bot/`/`config/`
+  skips the corresponding check (or the whole stop/rebuild/restart cycle)
+  instead of always paying the full multi-minute cost.
 - A per-instance circuit breaker: a bot instance whose backend fails 5
   times in a row now pauses for 5 minutes instead of retrying forever,
   with a "retry now" action in the dashboard.
