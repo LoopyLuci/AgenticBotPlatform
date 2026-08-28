@@ -33,9 +33,11 @@ jobs:
       - name: Run tests
         run: pytest -v
 
+      # Verified clean locally on 2026-08-28 (pip-audit -r requirements.txt
+      # --strict — no known vulnerabilities) before flipping this blocking;
+      # no pre-existing backlog was found to triage.
       - name: Dependency vulnerability scan
         run: pip-audit -r requirements.txt --strict
-        continue-on-error: true # advisory today — flip to blocking once the backlog of any pre-existing findings is triaged
 
   docker:
     name: Docker — image builds
@@ -75,9 +77,12 @@ jobs:
         run: cargo fmt --check
         continue-on-error: true # advisory today — this project's Rust files predate a fmt pass
 
+      # Verified clean locally on 2026-08-28 (cargo clippy --all-targets -- -D
+      # warnings — zero warnings) before flipping this blocking. `fmt` above
+      # stays advisory: it has a real pre-existing formatting backlog this
+      # doesn't touch, unlike clippy which had none.
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
-        continue-on-error: true # advisory today — flip to blocking once the current warning backlog is triaged
 
       - name: Build check (no bundling — no Python venv available in CI)
         run: cargo check --release
