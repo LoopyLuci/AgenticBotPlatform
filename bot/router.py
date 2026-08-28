@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from bot import db, setup_wizard
@@ -35,11 +36,34 @@ logger = logging.getLogger("bot.router")
 
 VALID_BACKENDS = ("api", "cli", "ui", "hermes_cli", "hermes_gateway")
 
+# A bot instance whose backend is crash-looping (every single request
+# fails — bad credentials, a dead binary, a revoked key) used to just keep
+# failing forever with nothing backing off, the same failure shape as the
+# orphaned-scheduled-command incident this project already hit once in a
+# different subsystem. OPEN_THRESHOLD consecutive failures trips the
+# breaker; it stays open for COOLDOWN_S, then allows exactly one
+# "half-open" trial call through before deciding whether to close (on
+# success) or re-open (on failure) — the standard circuit-breaker shape.
+CIRCUIT_OPEN_THRESHOLD = 5
+CIRCUIT_COOLDOWN_S = 300
+
+
+@dataclass
+class _CircuitState:
+    consecutive_failures: int = 0
+    opened_at: Optional[float] = None  # time.monotonic(), None while closed
+
+
+class CircuitOpenError(BackendError):
+    """Raised without ever attempting the backend — the whole point of a
+    breaker is to stop hammering something already known to be failing."""
+
 
 class Router:
     def __init__(self):
         self._backends: dict[str, Backend] = {}
         self._cfg_version = -1
+        self._circuits: dict[int, _CircuitState] = {}
         config.on_reload(lambda old, new: self._invalidate())
 
     async def shutdown_backends(self) -> None:
@@ -152,6 +176,57 @@ class Router:
             chain = ["api"]
         return chain
 
+    def circuit_status(self, instance_id: int) -> dict:
+        """For the dashboard: whether this instance's breaker is
+        currently open, and how many consecutive failures it's on."""
+        state = self._circuits.get(instance_id)
+        if state is None:
+            return {"open": False, "consecutive_failures": 0}
+        is_open = (
+            state.opened_at is not None
+            and time.monotonic() - state.opened_at < CIRCUIT_COOLDOWN_S
+        )
+        return {"open": is_open, "consecutive_failures": state.consecutive_failures}
+
+    def reset_circuit(self, instance_id: int) -> None:
+        """Manual override — a dashboard "retry now" action."""
+        self._circuits.pop(instance_id, None)
+
+    def _check_circuit(self, instance_id: int) -> None:
+        state = self._circuits.get(instance_id)
+        if state is None or state.opened_at is None:
+            return
+        elapsed = time.monotonic() - state.opened_at
+        if elapsed < CIRCUIT_COOLDOWN_S:
+            remaining = int(CIRCUIT_COOLDOWN_S - elapsed)
+            db.log_telemetry(component=f"instance_{instance_id}", metric="circuit_open_reject", value=1)
+            raise CircuitOpenError(
+                f"bot instance {instance_id} is temporarily paused after {state.consecutive_failures} "
+                f"consecutive failures — will automatically retry in {remaining}s, or fix the backend "
+                f"and use the dashboard's retry action to resume immediately."
+            )
+        # Cooldown elapsed: allow exactly one half-open trial through by
+        # falling through without raising. _record_circuit_result below
+        # decides whether that trial closes the breaker or re-opens it.
+
+    def _record_circuit_result(self, instance_id: int, *, success: bool) -> None:
+        state = self._circuits.setdefault(instance_id, _CircuitState())
+        if success:
+            if state.consecutive_failures or state.opened_at is not None:
+                logger.info("circuit breaker for instance %s closed (recovered)", instance_id)
+            self._circuits.pop(instance_id, None)
+            return
+        state.consecutive_failures += 1
+        if state.consecutive_failures >= CIRCUIT_OPEN_THRESHOLD:
+            if state.opened_at is None:
+                db.log_audit(
+                    actor="system", action="circuit_breaker_open",
+                    detail=f"instance {instance_id}: {state.consecutive_failures} consecutive failures",
+                )
+                logger.warning("circuit breaker for instance %s opened after %d consecutive failures",
+                                instance_id, state.consecutive_failures)
+            state.opened_at = time.monotonic()
+
     async def ask(
         self,
         prompt: str,
@@ -165,6 +240,9 @@ class Router:
         chat_id: Optional[Any] = None,
         thread_id: Optional[Any] = None,
     ) -> BackendResult:
+        if instance_id is not None:
+            self._check_circuit(instance_id)
+
         cfg = config.current
         chain = self.resolve_chain(action_type, backend_override, instance_id=instance_id)
         timeouts = cfg.get("timeouts", {})
@@ -262,6 +340,8 @@ class Router:
                         bot_instances.set_desktop_session_key(instance_id, reported_key, actor="system")
                 elif instance_id is not None and chat_id is not None and desktop_session_key is not None:
                     db.touch_active_chat_session(instance_id, chat_id, thread_id=thread_id)
+                if instance_id is not None:
+                    self._record_circuit_result(instance_id, success=True)
                 return result
             except BackendError as exc:
                 latency_ms = (time.monotonic() - t0) * 1000
@@ -271,6 +351,8 @@ class Router:
                 last_error = exc
 
         db.mark_job_done(job_id, status="failed", error=str(last_error))
+        if instance_id is not None:
+            self._record_circuit_result(instance_id, success=False)
         raise last_error or BackendError("all backends in chain failed")
 
     async def create_session(self, instance_id: int, chat_id: Optional[Any] = None, thread_id: Optional[Any] = None) -> str:

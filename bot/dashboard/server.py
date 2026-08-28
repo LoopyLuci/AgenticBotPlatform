@@ -617,11 +617,22 @@ def build_app() -> FastAPI:
 
     @app.get("/api/bots", dependencies=[Depends(_require_token_or_api_key)])
     async def api_bots_list():
+        from bot.router import router as _router
+
         live = platform_supervisor.status()
         rows = bot_instances.list_instances()
         for row in rows:
             row["live_running"] = live.get(row["id"], {}).get("running", False)
+            row["circuit"] = _router.circuit_status(row["id"])
         return rows
+
+    @app.post("/api/bots/{instance_id}/circuit/reset", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_bots_circuit_reset(instance_id: int):
+        from bot.router import router as _router
+
+        _router.reset_circuit(instance_id)
+        db.log_audit(actor="dashboard", action="circuit_breaker_reset", detail=f"instance {instance_id}")
+        return {"ok": True}
 
     @app.get("/api/bots/backups", dependencies=[Depends(_require_token)])
     async def api_bots_backups():

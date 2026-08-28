@@ -2172,6 +2172,7 @@ async function refreshBots() {
       </div>
       ${manages.length ? `<div class="bc-manages"><span style="font-weight:600; color:var(--muted);">Manages:</span> ${manages.map(m => `<span class="chip neutral">${personaMeta(m.persona).icon} ${esc(m.name)}</span>`).join('')}</div>` : ''}
       ${b.last_error ? `<div class="bc-error">${esc(b.last_error)}</div>` : ''}
+      ${b.circuit && b.circuit.open ? `<div class="bc-error">Paused after ${b.circuit.consecutive_failures} consecutive failures — retrying automatically, or <a href="#" data-bot-circuit-reset="${b.id}">retry now</a>.</div>` : ''}
       <div class="bc-actions">
         <button class="btn" data-bot-edit="${b.id}" style="padding:3px 8px; font-size:11px;">Edit</button>
         <button class="btn" data-bot-toggle="${b.id}" style="padding:3px 8px; font-size:11px;">${b.enabled ? 'Disable' : 'Enable'}</button>
@@ -2189,6 +2190,11 @@ async function refreshBots() {
   document.querySelectorAll('[data-bot-edit]').forEach(btn => btn.onclick = () => {
     const bot = bots.find(b => b.id === Number(btn.dataset.botEdit));
     if (bot) _loadBotIntoForm(bot);
+  });
+  document.querySelectorAll('[data-bot-circuit-reset]').forEach(a => a.onclick = async (e) => {
+    e.preventDefault();
+    await api(`/api/bots/${a.dataset.botCircuitReset}/circuit/reset`, { method: 'POST' });
+    refreshBots();
   });
   document.querySelectorAll('[data-bot-toggle]').forEach(btn => btn.onclick = async () => {
     const id = Number(btn.dataset.botToggle);
