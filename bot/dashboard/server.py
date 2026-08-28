@@ -410,6 +410,56 @@ def build_app() -> FastAPI:
 
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+    # ------------------------------------------------------ ops endpoints --
+    # Unauthenticated by design, like a load balancer's/orchestrator's health
+    # probe is expected to be — neither returns anything a token would need
+    # to protect (no secrets, no message content).
+
+    @app.get("/healthz")
+    async def healthz():
+        try:
+            db.get_conn().execute("SELECT 1")
+            db_ok = True
+        except Exception:
+            db_ok = False
+        status_code = 200 if db_ok else 503
+        return JSONResponse({"status": "ok" if db_ok else "degraded", "db_ok": db_ok}, status_code=status_code)
+
+    @app.get("/metrics")
+    async def metrics():
+        # Hand-rolled Prometheus text exposition format rather than the
+        # prometheus_client dependency — this project's bundled venv is
+        # deliberately kept minimal (see the NumPy-over-scikit-learn
+        # rewrite), and a handful of gauges/counters don't need a library.
+        overview = db.get_overview()
+        lines = [
+            "# HELP botserver_up Always 1 if this endpoint responded at all.",
+            "# TYPE botserver_up gauge",
+            "botserver_up 1",
+            "# HELP botserver_jobs_running Jobs currently running.",
+            "# TYPE botserver_jobs_running gauge",
+            f"botserver_jobs_running {overview.get('jobs_running', 0)}",
+            "# HELP botserver_jobs_queued Jobs currently queued.",
+            "# TYPE botserver_jobs_queued gauge",
+            f"botserver_jobs_queued {overview.get('jobs_queued', 0)}",
+            "# HELP botserver_jobs_completed_today Jobs completed successfully today (resets at midnight local time).",
+            "# TYPE botserver_jobs_completed_today counter",
+            f"botserver_jobs_completed_today {overview.get('completed_today', 0)}",
+            "# HELP botserver_jobs_failed_today Jobs failed today (resets at midnight local time).",
+            "# TYPE botserver_jobs_failed_today counter",
+            f"botserver_jobs_failed_today {overview.get('failed_today', 0)}",
+            "# HELP botserver_job_success_rate_7d Fraction of jobs that succeeded over the trailing 7 days.",
+            "# TYPE botserver_job_success_rate_7d gauge",
+            f"botserver_job_success_rate_7d {overview.get('success_rate_7d', 0.0)}",
+            "# HELP botserver_job_avg_duration_ms Average job duration in milliseconds.",
+            "# TYPE botserver_job_avg_duration_ms gauge",
+            f"botserver_job_avg_duration_ms {overview.get('avg_duration_ms', 0)}",
+            "# HELP botserver_db_size_bytes SQLite database file size in bytes.",
+            "# TYPE botserver_db_size_bytes gauge",
+            f"botserver_db_size_bytes {db.get_db_size_bytes()}",
+        ]
+        return Response("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
+
     # ------------------------------------------------------------- reads --
 
     @app.get("/api/overview")

@@ -104,10 +104,18 @@ def test_manual_reset_closes_an_open_breaker(router_with_failing_backend):
 
 
 def test_cooldown_elapsed_allows_one_half_open_trial(router_with_failing_backend, monkeypatch):
+    from bot.router import CIRCUIT_COOLDOWN_S
+
     r = router_with_failing_backend
     # Force the breaker into an already-open state whose cooldown has
-    # already elapsed (opened_at far enough in the past).
-    r._circuits[1] = _CircuitState(consecutive_failures=CIRCUIT_OPEN_THRESHOLD, opened_at=0.0)
+    # already elapsed. time.monotonic()'s zero-point is platform/uptime
+    # dependent (can be small on a freshly-booted CI runner) — offsetting
+    # from the current value, not hardcoding 0.0, is what makes "far
+    # enough in the past" true on every machine, not just this one.
+    r._circuits[1] = _CircuitState(
+        consecutive_failures=CIRCUIT_OPEN_THRESHOLD,
+        opened_at=time.monotonic() - CIRCUIT_COOLDOWN_S - 10,
+    )
 
     class _WorkingBackend:
         async def ask(self, prompt, *, context=None, timeout_s=30):
