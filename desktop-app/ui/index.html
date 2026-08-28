@@ -604,6 +604,15 @@
           <button class="btn" id="btn-vacuum" style="margin-top:10px;">Run VACUUM now</button>
         </div>
         <div class="card">
+          <h3>Export data</h3>
+          <p class="cardnote">Download a table's full contents as JSON or CSV.</p>
+          <select id="export-table" style="margin-top:10px; width:100%;"></select>
+          <div style="display:flex; gap:8px; margin-top:8px;">
+            <button class="btn" id="btn-export-json" style="flex:1;">Export JSON</button>
+            <button class="btn" id="btn-export-csv" style="flex:1;">Export CSV</button>
+          </div>
+        </div>
+        <div class="card">
           <h3>Recent writes</h3>
           <div class="term" style="margin-top:8px;"><div class="lines" id="db-recent" style="max-height:150px;">—</div></div>
         </div>

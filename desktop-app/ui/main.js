@@ -271,6 +271,12 @@ async function refreshDatabase() {
   document.getElementById('db-counts').innerHTML = Object.entries(dbInfo.table_counts)
     .map(([t, c]) => `<tr><td>${esc(t)}</td><td class="num mono">${c.toLocaleString()} rows</td></tr>`).join('');
 
+  const exportSel = document.getElementById('export-table');
+  if (!exportSel.options.length) {
+    exportSel.innerHTML = Object.keys(dbInfo.table_counts)
+      .map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+  }
+
   const t = await api('/api/telemetry');
   const events = t.connection_events.slice(0, 8);
   document.getElementById('db-recent').innerHTML = events.length
@@ -279,6 +285,8 @@ async function refreshDatabase() {
 }
 
 document.getElementById('btn-vacuum').onclick = async () => { await api('/api/database/vacuum', { method: 'POST' }); refreshDatabase(); };
+document.getElementById('btn-export-json').onclick = () => downloadUrl(`/api/export/${document.getElementById('export-table').value}?format=json`);
+document.getElementById('btn-export-csv').onclick = () => downloadUrl(`/api/export/${document.getElementById('export-table').value}?format=csv`);
 
 // ---------------------------------------------------------------- control
 // Live-fetched model lists: Claude models come from Anthropic's own

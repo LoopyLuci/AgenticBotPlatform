@@ -2498,6 +2498,21 @@ def get_db_size_bytes() -> int:
     return size
 
 
+# Same whitelist as get_table_counts() above — kept separate because this
+# one gates which table names api_export() will ever interpolate into SQL.
+EXPORTABLE_TABLES = [
+    "jobs", "connections_log", "telemetry_events", "mcp_events", "audit_log",
+    "messages", "bot_instances", "swarms", "swarm_runs",
+]
+
+
+def export_table(table: str) -> list[dict]:
+    if table not in EXPORTABLE_TABLES:
+        raise ValueError(f"unknown or non-exportable table: {table}")
+    conn = get_conn()
+    return [dict(r) for r in conn.execute(f"SELECT * FROM {table}").fetchall()]
+
+
 def get_recent_connection_events(limit: int = 20) -> list[sqlite3.Row]:
     conn = get_conn()
     return conn.execute(

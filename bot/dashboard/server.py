@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import csv
 import io
 import json
 import mimetypes
@@ -515,6 +516,29 @@ def build_app() -> FastAPI:
             "table_counts": db.get_table_counts(),
             "path": str(db.DB_PATH),
         }
+
+    @app.get("/api/export/tables", dependencies=[Depends(_require_token)])
+    async def api_export_tables():
+        return {"tables": db.EXPORTABLE_TABLES}
+
+    @app.get("/api/export/{table}", dependencies=[Depends(_require_token)])
+    async def api_export_table(table: str, format: str = "json"):
+        try:
+            rows = db.export_table(table)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        stamp = _ts_stamp()
+        if format == "csv":
+            buf = io.StringIO()
+            if rows:
+                writer = csv.DictWriter(buf, fieldnames=list(rows[0].keys()))
+                writer.writeheader()
+                writer.writerows(rows)
+            return Response(
+                content=buf.getvalue().encode("utf-8"), media_type="text/csv",
+                headers={"Content-Disposition": f'attachment; filename="{table}-{stamp}.csv"'},
+            )
+        return _json_download(rows, f"{table}-{stamp}.json")
 
     @app.get("/api/config")
     async def api_config():
