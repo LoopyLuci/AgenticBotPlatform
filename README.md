@@ -311,6 +311,55 @@ If any check fails, whatever was running beforehand is restored
 untouched, without deploying the broken build. Every run's full output is
 also saved under `logs/local_pipeline/` for later inspection.
 
+## Live-development safety net — config hot-reload + snapshots
+
+Two separate mechanisms make it safe for an agent (or you) to actively
+edit this codebase while it keeps running, and to recover cleanly if an
+edit turns out to be wrong:
+
+**Config hot-reload** (`bot/config.py`'s `ConfigManager`, backing both
+`config/backends.yaml` and `config/providers.yaml`) already applies
+every edit with zero downtime — no restart, no dropped requests — and is
+hardened against a bad edit taking the app down: a syntax error is
+caught and the previous good config stays live, and (as of this section)
+so is a file that parses fine but has the wrong shape (e.g. a list where
+a mapping belongs) — either way the edit is rejected and logged rather
+than silently swapped in to crash the first thing that reads it later.
+Every reload is recorded to the audit log/config history, visible in the
+dashboard's Control Center tab.
+
+**Snapshots** (`bot/snapshots.py`) cover what config hot-reload
+deliberately doesn't: bad *data*, not bad config — a migration that
+corrupts rows, a bug that writes garbage. `create_snapshot()` copies both
+config files plus a consistent point-in-time copy of the live database
+(via SQLite's own online backup API) into `data/snapshots/<timestamp>/`
+— safe to call at any moment, it never stops the app or blocks a request
+for more than the final commit. `restore_snapshot(name)` puts config and
+data back exactly as they were at that point — it briefly closes and
+reopens the shared database connection to swap the file safely, which is
+a few-millisecond in-process pause, not a process restart. Manage
+snapshots from the dashboard's Control Center tab, or directly:
+
+```bash
+curl -X POST -H "X-Dashboard-Token: $DASHBOARD_TOKEN" \
+  -d '{"label":"before-risky-edit"}' http://127.0.0.1:8080/api/snapshots
+curl -X POST -H "X-Dashboard-Token: $DASHBOARD_TOKEN" \
+  http://127.0.0.1:8080/api/snapshots/<name>/restore
+```
+
+An agent driving this app through the MCP server (see "Controlling this
+app over MCP" below) has the same two actions as tools —
+`create_snapshot`/`restore_snapshot`/`list_snapshots` — so the natural
+habit for an agent about to make a risky change to BotServer's own
+code/data is: snapshot first, make the change, restore if it goes wrong.
+
+**What this doesn't cover, honestly**: an edit to `bot/*.py` itself still
+needs a process restart to take effect — there's no live Python
+code-reload here (the app is one long-running asyncio process, not
+something with hot module-swapping), only config and data reload without
+downtime. That's the local CI/CD pipeline's job above, which already
+handles the rebuild-and-restart cycle safely.
+
 ## Setup
 
 1. **Python 3.11+**, **Rust + Cargo**, and the **Tauri CLI**
@@ -919,10 +968,14 @@ exposes the same control surface the dashboard GUI has, as MCP tools:
 `get_status`, `list_jobs`, `get_config`, `set_backend`, `reload_config`,
 `list_mcp_servers`, `enable_mcp_server`/`disable_mcp_server`,
 `start_claude_desktop`/`stop_claude_desktop`/`restart_claude_desktop`,
-`get_setup_status`, and two agent-to-agent tools — `ask_instance` (relay a
+`get_setup_status`, two agent-to-agent tools — `ask_instance` (relay a
 prompt to another registered bot instance and get its reply back) and
 `run_swarm` (trigger a swarm run by name or id) — both subject to the
-`agent_control` allowlist described below. It's a thin client: every tool
+`agent_control` allowlist described below, and three snapshot tools —
+`create_snapshot`, `list_snapshots`, `restore_snapshot` — for an agent
+(Claude, Hermes, or anything else driving this MCP server) to protect
+itself while editing BotServer's own code: see "Live-development safety
+net" below. It's a thin client: every tool
 call is just an HTTP request to the already-running dashboard API using
 the same `DASHBOARD_TOKEN`, so there's exactly one place
 (`bot/dashboard/server.py`) that actually implements any of this.

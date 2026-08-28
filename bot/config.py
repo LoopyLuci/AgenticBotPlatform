@@ -104,6 +104,18 @@ class ConfigManager:
             logger.error("config reload failed, keeping previous config: %s", exc)
             return False, f"reload failed: {exc}"
 
+        if not isinstance(new_data, dict):
+            # Syntactically valid YAML (so _read_yaml didn't raise) but the
+            # wrong shape — e.g. someone turned the top-level mapping into
+            # a list. Every reader in this app calls .get()/[] on this as
+            # a dict; swapping in anything else would parse cleanly here
+            # and then crash the first thing that touches it, possibly
+            # minutes later and far from this file. Reject it the same
+            # way a parse error is rejected: keep the previous good config.
+            msg = f"reload failed: root must be a mapping, got {type(new_data).__name__}"
+            logger.error("config reload failed, keeping previous config: %s", msg)
+            return False, msg
+
         with self._lock:
             old_data = self._data
             if new_data == old_data:

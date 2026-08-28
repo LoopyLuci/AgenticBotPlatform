@@ -1156,6 +1156,39 @@ def build_app() -> FastAPI:
         config.set_value(path, value, actor="dashboard")
         return {"ok": True, "version": config.version}
 
+    @app.get("/api/snapshots", dependencies=[Depends(_require_token)])
+    async def api_snapshots_list():
+        from bot import snapshots
+
+        return {"snapshots": snapshots.list_snapshots()}
+
+    @app.post("/api/snapshots", dependencies=[Depends(_require_token)])
+    async def api_snapshots_create(payload: dict = Body(default={})):
+        from bot import snapshots
+
+        manifest = snapshots.create_snapshot(label=(payload or {}).get("label") or None)
+        db.log_audit(actor="dashboard", action="snapshot_create", detail=manifest["name"])
+        return manifest
+
+    @app.post("/api/snapshots/{name}/restore", dependencies=[Depends(_require_token)])
+    async def api_snapshots_restore(name: str):
+        from bot import snapshots
+
+        try:
+            snapshots.restore_snapshot(name)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        db.log_audit(actor="dashboard", action="snapshot_restore", detail=name)
+        return {"ok": True}
+
+    @app.delete("/api/snapshots/{name}", dependencies=[Depends(_require_token)])
+    async def api_snapshots_delete(name: str):
+        from bot import snapshots
+
+        if not snapshots.delete_snapshot(name):
+            raise HTTPException(status_code=404, detail=f"no snapshot named {name!r}")
+        return {"ok": True}
+
     @app.post("/api/backend/{action_or_default}/{backend}", dependencies=[Depends(_require_token_or_api_key)])
     async def api_set_backend(action_or_default: str, backend: str):
         if backend not in VALID_BACKENDS:

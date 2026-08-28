@@ -4,6 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bot Control — Bot Server Dashboard</title>
+<script>
+  // Applied synchronously, before the stylesheet below paints anything, so
+  // a saved theme/scale preference never flashes the wrong look for one
+  // frame on load. Per-browser (localStorage), not server-side — this is a
+  // viewer preference, not bot configuration, so it doesn't belong in
+  // config/backends.yaml or need a dashboard-token round trip.
+  (function () {
+    try {
+      var theme = localStorage.getItem('bs-ui-theme');
+      if (theme === 'light' || theme === 'dark') document.documentElement.setAttribute('data-theme', theme);
+      var scale = localStorage.getItem('bs-ui-scale');
+      if (scale) document.documentElement.style.zoom = scale;
+    } catch (_e) { /* localStorage unavailable (private mode, etc.) — fall back to defaults */ }
+  })();
+</script>
 <style>
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -500,6 +515,41 @@
           <div class="settingrow"><div><div class="st">Enabled</div><div class="sd">Turn off to keep every row forever (not recommended for a long-running server)</div></div><div class="toggle" id="tg-retention" data-path="retention,enabled"></div></div>
           <div class="settingrow"><div><div class="st">Keep for (days)</div><div class="sd">Rows older than this are removed on the next daily pass</div></div><input type="number" id="retention-days" min="1" style="width:100px;"></div>
           <div class="settingrow"><div><div class="st">Auto-VACUUM every (days)</div><div class="sd">Reclaims the disk space pruning frees up; briefly locks writes. 0 = never (manual Vacuum button only)</div></div><input type="number" id="retention-vacuum-days" min="0" style="width:100px;"></div>
+        </div>
+
+        <div class="card">
+          <h3>Appearance</h3>
+          <p class="cardnote">Per-browser display preferences — saved on this device only, applied instantly, no server round trip.</p>
+          <div class="settingrow">
+            <div><div class="st">Theme</div><div class="sd">"System" follows your OS's light/dark setting</div></div>
+            <div class="segmented" id="appearance-theme-seg">
+              <button data-theme-choice="system">System</button><button data-theme-choice="light">Light</button><button data-theme-choice="dark">Dark</button>
+            </div>
+          </div>
+          <div class="settingrow">
+            <div><div class="st">Text &amp; UI size</div><div class="sd">Scales the whole interface, not just text</div></div>
+            <div class="segmented" id="appearance-scale-seg">
+              <button data-scale-choice="0.85">85%</button><button data-scale-choice="1">100%</button><button data-scale-choice="1.15">115%</button><button data-scale-choice="1.3">130%</button><button data-scale-choice="1.5">150%</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;" id="snapshots-card">
+        <h3>Snapshots</h3>
+        <p class="cardnote">A point-in-time copy of config + the database — take one before a risky change, restore it if the change turns out wrong. Creating one never stops the app; restoring briefly reopens the database connection, not a full restart.</p>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Snapshot</th><th>Label</th><th class="num">Size</th><th></th></tr></thead>
+            <tbody id="snapshots-tbody"></tbody>
+          </table>
+        </div>
+        <div class="wizard-field" style="margin-top:10px;">
+          <div class="row">
+            <input type="text" id="snapshot-new-label" placeholder="label (optional), e.g. before-db-migration" autocomplete="off" spellcheck="false">
+            <button class="btn" id="btn-snapshot-create">Take snapshot</button>
+          </div>
+          <span class="cardnote" id="snapshot-new-status"></span>
         </div>
       </div>
 
@@ -1625,6 +1675,95 @@ document.querySelectorAll('#agent-control-seg button').forEach(btn => {
   };
 });
 
+// Appearance (theme + UI scale) — per-browser, localStorage only, no
+// server round trip. The <head> inline script applies whatever's saved
+// here on the very next load, before first paint.
+function applyAppearanceTheme(theme) {
+  if (theme === 'light' || theme === 'dark') document.documentElement.setAttribute('data-theme', theme);
+  else document.documentElement.removeAttribute('data-theme');
+  document.querySelectorAll('#appearance-theme-seg button').forEach(b => b.classList.toggle('active', b.dataset.themeChoice === theme));
+}
+function applyAppearanceScale(scale) {
+  document.documentElement.style.zoom = scale;
+  document.querySelectorAll('#appearance-scale-seg button').forEach(b => b.classList.toggle('active', b.dataset.scaleChoice === String(scale)));
+}
+function initAppearance() {
+  let theme = 'system', scale = '1';
+  try {
+    theme = localStorage.getItem('bs-ui-theme') || 'system';
+    scale = localStorage.getItem('bs-ui-scale') || '1';
+  } catch (_e) { /* localStorage unavailable — defaults above stand */ }
+  applyAppearanceTheme(theme);
+  applyAppearanceScale(scale);
+}
+document.querySelectorAll('#appearance-theme-seg button').forEach(btn => {
+  btn.onclick = () => {
+    const theme = btn.dataset.themeChoice;
+    try { localStorage.setItem('bs-ui-theme', theme); } catch (_e) {}
+    applyAppearanceTheme(theme);
+  };
+});
+document.querySelectorAll('#appearance-scale-seg button').forEach(btn => {
+  btn.onclick = () => {
+    const scale = btn.dataset.scaleChoice;
+    try { localStorage.setItem('bs-ui-scale', scale); } catch (_e) {}
+    applyAppearanceScale(scale);
+  };
+});
+initAppearance();
+
+function _fmtBytes(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function refreshSnapshots() {
+  const tbody = document.getElementById('snapshots-tbody');
+  if (!getToken() || !tbody) return;
+  let data;
+  try {
+    data = await api('/api/snapshots');
+  } catch (_e) { return; }
+  const list = data.snapshots || [];
+  tbody.innerHTML = list.length ? list.map(s => `
+    <tr>
+      <td>${esc(s.name)}</td>
+      <td>${esc(s.label || '')}</td>
+      <td class="num">${_fmtBytes(s.size_bytes || 0)}</td>
+      <td>
+        <button class="btn small" data-snapshot-restore="${esc(s.name)}">Restore</button>
+        <button class="btn small" data-snapshot-delete="${esc(s.name)}">Delete</button>
+      </td>
+    </tr>`).join('') : '<tr><td colspan="4" class="cardnote">No snapshots taken yet.</td></tr>';
+  tbody.querySelectorAll('[data-snapshot-restore]').forEach(btn => btn.onclick = async () => {
+    const name = btn.dataset.snapshotRestore;
+    if (!confirm(`Restore snapshot "${name}"? This overwrites the current config and database with that snapshot's contents.`)) return;
+    await api(`/api/snapshots/${encodeURIComponent(name)}/restore`, { method: 'POST' });
+    refreshConfig();
+    refreshOverview();
+  });
+  tbody.querySelectorAll('[data-snapshot-delete]').forEach(btn => btn.onclick = async () => {
+    await api(`/api/snapshots/${encodeURIComponent(btn.dataset.snapshotDelete)}`, { method: 'DELETE' });
+    refreshSnapshots();
+  });
+}
+
+document.getElementById('btn-snapshot-create').onclick = async () => {
+  const status = document.getElementById('snapshot-new-status');
+  const label = document.getElementById('snapshot-new-label').value.trim();
+  status.textContent = 'Taking snapshot…';
+  try {
+    await api('/api/snapshots', { method: 'POST', body: JSON.stringify({ label: label || null }) });
+  } catch (e) {
+    status.textContent = e.message || 'Failed to take snapshot.';
+    return;
+  }
+  document.getElementById('snapshot-new-label').value = '';
+  status.textContent = '';
+  refreshSnapshots();
+};
+
 async function refreshEnv() {
   const e = await api('/api/env');
   document.getElementById('env-resolved').textContent = e.resolved_path + (e.resolved_exists ? '' : '  (missing)');
@@ -1822,6 +1961,8 @@ function startDashboard() {
   pollWhenVisible(refreshPairing, 15000);
   refreshProviders();
   pollWhenVisible(refreshProviders, 15000);
+  refreshSnapshots();
+  pollWhenVisible(refreshSnapshots, 15000);
   refreshKanban();
   pollWhenVisible(refreshKanban, 15000);
   refreshSwarmInstanceLegend();

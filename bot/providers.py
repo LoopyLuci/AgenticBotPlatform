@@ -31,6 +31,13 @@ def on_reload(callback) -> None:
     _manager.on_reload(callback)
 
 
+def reload(actor: str = "file-watch") -> tuple[bool, str]:
+    """Re-reads config/providers.yaml from disk — used after
+    bot/snapshots.py restores a previous copy of the file, same as
+    bot.config.config.reload() is used for backends.yaml."""
+    return _manager.reload(actor=actor)
+
+
 def list_providers() -> dict[str, dict]:
     """name -> {base_url, protocol, api_key_env?} — never includes a raw
     inline api_key's value beyond what's already in the file verbatim,

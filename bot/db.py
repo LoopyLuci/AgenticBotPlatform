@@ -560,6 +560,18 @@ def get_conn() -> sqlite3.Connection:
     return _conn
 
 
+def close_conn() -> None:
+    """Closes and drops the shared connection so the next get_conn() call
+    reopens fresh — used by bot/snapshots.py's restore_snapshot() to swap
+    the underlying file safely (a plain file copy while the old
+    connection is still open could either fail on Windows or leave a
+    stale WAL/SHM pointing at the replaced file)."""
+    global _conn
+    if _conn is not None:
+        _conn.close()
+        _conn = None
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
     """Additive, idempotent schema patches for databases created before a
     column existed — CREATE TABLE IF NOT EXISTS in SCHEMA only helps fresh

@@ -9,6 +9,19 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- Appearance settings (Control Center tab): theme (System/Light/Dark) and
+  a whole-UI text/scale control (85%-150%), per-browser via localStorage,
+  applied instantly with no server round trip or flash-of-wrong-theme on
+  load. Mirrored across the dashboard and desktop app.
+- A live-development safety net: `bot/config.py`'s hot-reload is now
+  hardened against a config file that parses but has the wrong shape
+  (rejected and logged, same as a syntax error, instead of getting
+  swapped in to crash later); a new snapshot/restore system
+  (`bot/snapshots.py`, a "Snapshots" dashboard card, and
+  `create_snapshot`/`list_snapshots`/`restore_snapshot` MCP tools) takes
+  a zero-downtime point-in-time copy of config + the database and can
+  restore it later, so an agent (or you) editing this codebase can
+  recover from a bad change without a full backup/rebuild.
 - Multi-provider model routing: a new `custom_model` backend that talks
   to any OpenAI-compatible endpoint (a local Ollama/LM Studio/vLLM/
   llama.cpp server, OpenRouter, or real OpenAI) via a named provider

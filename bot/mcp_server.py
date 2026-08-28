@@ -212,6 +212,33 @@ async def get_setup_status() -> dict:
 
 
 @mcp.tool()
+async def create_snapshot(label: Optional[str] = None) -> dict:
+    """Take a point-in-time snapshot of BotServer's own config (backends.yaml,
+    providers.yaml) and database — safe to call at any time, never stops
+    or interrupts the running app. Call this BEFORE making a risky change
+    to BotServer's own code/config/data (a migration, a bulk edit, an
+    experimental refactor) so restore_snapshot can undo it if something
+    goes wrong. `label` is an optional short tag (e.g. "before-db-migration")
+    to make the snapshot easier to find in list_snapshots later."""
+    return await _request("POST", "/api/snapshots", json={"label": label} if label else {})
+
+
+@mcp.tool()
+async def list_snapshots() -> dict:
+    """List every snapshot taken so far, newest first, with name/label/size."""
+    return await _request("GET", "/api/snapshots")
+
+
+@mcp.tool()
+async def restore_snapshot(name: str) -> dict:
+    """Restore config and database from a previous snapshot (see
+    list_snapshots for valid names) — reverts BOTH files and data rows to
+    that point in time. Briefly closes and reopens the database connection
+    to swap the file safely; does not restart the app."""
+    return await _request("POST", f"/api/snapshots/{name}/restore")
+
+
+@mcp.tool()
 async def ask_instance(source_instance: str, target_instance: str, prompt: str) -> dict:
     """Ask another registered bot instance (by its bot_instances name, see
     get_status/the Bots tab) a one-off question and get its reply back.

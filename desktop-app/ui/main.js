@@ -557,6 +557,95 @@ document.querySelectorAll('#agent-control-seg button').forEach(btn => {
   };
 });
 
+// Appearance (theme + UI scale) — per-browser, localStorage only, no
+// server round trip. The <head> inline script applies whatever's saved
+// here on the very next load, before first paint.
+function applyAppearanceTheme(theme) {
+  if (theme === 'light' || theme === 'dark') document.documentElement.setAttribute('data-theme', theme);
+  else document.documentElement.removeAttribute('data-theme');
+  document.querySelectorAll('#appearance-theme-seg button').forEach(b => b.classList.toggle('active', b.dataset.themeChoice === theme));
+}
+function applyAppearanceScale(scale) {
+  document.documentElement.style.zoom = scale;
+  document.querySelectorAll('#appearance-scale-seg button').forEach(b => b.classList.toggle('active', b.dataset.scaleChoice === String(scale)));
+}
+function initAppearance() {
+  let theme = 'system', scale = '1';
+  try {
+    theme = localStorage.getItem('bs-ui-theme') || 'system';
+    scale = localStorage.getItem('bs-ui-scale') || '1';
+  } catch (_e) { /* localStorage unavailable — defaults above stand */ }
+  applyAppearanceTheme(theme);
+  applyAppearanceScale(scale);
+}
+document.querySelectorAll('#appearance-theme-seg button').forEach(btn => {
+  btn.onclick = () => {
+    const theme = btn.dataset.themeChoice;
+    try { localStorage.setItem('bs-ui-theme', theme); } catch (_e) {}
+    applyAppearanceTheme(theme);
+  };
+});
+document.querySelectorAll('#appearance-scale-seg button').forEach(btn => {
+  btn.onclick = () => {
+    const scale = btn.dataset.scaleChoice;
+    try { localStorage.setItem('bs-ui-scale', scale); } catch (_e) {}
+    applyAppearanceScale(scale);
+  };
+});
+initAppearance();
+
+function _fmtBytes(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function refreshSnapshots() {
+  const tbody = document.getElementById('snapshots-tbody');
+  if (!getToken() || !tbody) return;
+  let data;
+  try {
+    data = await api('/api/snapshots');
+  } catch (_e) { return; }
+  const list = data.snapshots || [];
+  tbody.innerHTML = list.length ? list.map(s => `
+    <tr>
+      <td>${esc(s.name)}</td>
+      <td>${esc(s.label || '')}</td>
+      <td class="num">${_fmtBytes(s.size_bytes || 0)}</td>
+      <td>
+        <button class="btn small" data-snapshot-restore="${esc(s.name)}">Restore</button>
+        <button class="btn small" data-snapshot-delete="${esc(s.name)}">Delete</button>
+      </td>
+    </tr>`).join('') : '<tr><td colspan="4" class="cardnote">No snapshots taken yet.</td></tr>';
+  tbody.querySelectorAll('[data-snapshot-restore]').forEach(btn => btn.onclick = async () => {
+    const name = btn.dataset.snapshotRestore;
+    if (!confirm(`Restore snapshot "${name}"? This overwrites the current config and database with that snapshot's contents.`)) return;
+    await api(`/api/snapshots/${encodeURIComponent(name)}/restore`, { method: 'POST' });
+    refreshConfig();
+    refreshOverview();
+  });
+  tbody.querySelectorAll('[data-snapshot-delete]').forEach(btn => btn.onclick = async () => {
+    await api(`/api/snapshots/${encodeURIComponent(btn.dataset.snapshotDelete)}`, { method: 'DELETE' });
+    refreshSnapshots();
+  });
+}
+
+document.getElementById('btn-snapshot-create').onclick = async () => {
+  const status = document.getElementById('snapshot-new-status');
+  const label = document.getElementById('snapshot-new-label').value.trim();
+  status.textContent = 'Taking snapshot…';
+  try {
+    await api('/api/snapshots', { method: 'POST', body: JSON.stringify({ label: label || null }) });
+  } catch (e) {
+    status.textContent = e.message || 'Failed to take snapshot.';
+    return;
+  }
+  document.getElementById('snapshot-new-label').value = '';
+  status.textContent = '';
+  refreshSnapshots();
+};
+
 async function refreshEnv() {
   const e = await api('/api/env');
   document.getElementById('env-resolved').textContent = e.resolved_path + (e.resolved_exists ? '' : '  (missing)');
@@ -755,6 +844,8 @@ function startDashboardPolling() {
   pollWhenVisible(refreshPairing, 15000);
   refreshProviders();
   pollWhenVisible(refreshProviders, 15000);
+  refreshSnapshots();
+  pollWhenVisible(refreshSnapshots, 15000);
   refreshKanban();
   pollWhenVisible(refreshKanban, 15000);
   refreshSwarmInstanceLegend();
