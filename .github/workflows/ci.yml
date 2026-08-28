@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  python:
+    name: Python — compile, tests, audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      # Every .py file must at least parse — this is what would have
+      # caught the raw r"...\" string-literal syntax error this project
+      # shipped once before a human noticed, before any test even runs.
+      - name: Byte-compile every source file
+        run: python -m compileall -q bot scripts
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest -v
+
+      - name: Dependency vulnerability scan
+        run: pip-audit -r requirements.txt --strict
+        continue-on-error: true # advisory today — flip to blocking once the backlog of any pre-existing findings is triaged
+
+  rust:
+    name: Rust — format, clippy, build check
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop-app/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --check
+        continue-on-error: true # advisory today — this project's Rust files predate a fmt pass
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+        continue-on-error: true # advisory today — flip to blocking once the current warning backlog is triaged
+
+      - name: Build check (no bundling — no Python venv available in CI)
+        run: cargo check --release

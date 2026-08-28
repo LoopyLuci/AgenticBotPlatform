@@ -168,10 +168,18 @@ def find_setting(text: str) -> Optional[tuple[list[str], str]]:
 
 
 def find_bool(text: str) -> Optional[bool]:
+    # Whole-word matching, not bare substring containment — "on"/"off"/"no"
+    # are short enough to false-positive inside ordinary words ("turn off
+    # notifications" contains "on" inside "notifications", which used to
+    # match the *enable* branch before "off" was ever checked).
     lowered = text.lower()
-    if any(w in lowered for w in ("enable", "turn on", "on", "true", "yes", "activate")):
+
+    def has_any(words: tuple[str, ...]) -> bool:
+        return any(re.search(rf"\b{re.escape(w)}\b", lowered) for w in words)
+
+    if has_any(("enable", "turn on", "on", "true", "yes", "activate")):
         return True
-    if any(w in lowered for w in ("disable", "turn off", "off", "false", "no", "deactivate")):
+    if has_any(("disable", "turn off", "off", "false", "no", "deactivate")):
         return False
     return None
 

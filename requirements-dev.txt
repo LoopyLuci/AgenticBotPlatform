@@ -1,0 +1,7 @@
+# Development/CI-only dependencies — never installed into the venv that
+# desktop-app/src-tauri/tauri.conf.json bundles into the shipped app
+# (see requirements.txt for that). Install with:
+#   pip install -r requirements.txt -r requirements-dev.txt
+-r requirements.txt
+pytest>=8.0
+pip-audit>=2.7

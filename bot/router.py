@@ -143,9 +143,13 @@ class Router:
 
         # ui never gets a silent default — only an explicit flag, an
         # explicit action_override, or an instance's own backend may route
-        # to it.
+        # to it. The substitute is hardcoded to "api", not re-read from
+        # cfg.get("default_backend") — if the user set default_backend
+        # itself to "ui" (a one-click option in the dashboard), re-reading
+        # it here would just hand back "ui" again, silently defeating this
+        # exact guard.
         if not backend_override and chain and chain[0] == "ui" and not entry:
-            chain = [cfg.get("default_backend", "api")]
+            chain = ["api"]
         return chain
 
     async def ask(
