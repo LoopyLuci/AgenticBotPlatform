@@ -50,6 +50,10 @@ jobs:
         with:
           components: clippy, rustfmt
 
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop-app/src-tauri
+
       # tauri.conf.json's bundle.resources lists ../../.venv — tauri_build
       # checks that every resource path actually exists even for a plain
       # `cargo check`/`clippy` (not just real bundling), so a fresh CI
