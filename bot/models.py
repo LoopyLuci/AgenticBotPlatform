@@ -32,6 +32,14 @@ BACKEND_FAMILY: dict[str, str] = {
     "hermes_gateway": "hermes",
 }
 
+# The one hardcoded model id in this module — not a "list of choices" (the
+# module docstring's promise stays intact: every choice offered anywhere
+# still comes from a live fetch), just the same fallback bot.backends.
+# api_backend.ApiBackend and bot.router already fell back to before this
+# constant existed, given one name so both agree and so /status can report
+# it accurately when nothing overrides it.
+DEFAULT_API_MODEL = "claude-sonnet-5"
+
 _API_CACHE_TTL_S = 300.0
 _api_cache: dict = {"at": 0.0, "models": None}
 
@@ -146,3 +154,70 @@ def live_hermes_models() -> Optional[dict[str, list[str]]]:
     _hermes_cache["mtime"] = mtime
     _hermes_cache["models"] = grouped
     return grouped
+
+
+# ---------------------------------------------------- real-time default model
+# The `cli` and `ui` backends never get told which model to use (see
+# bot/router.py's _build_backend — CliBackend/UiBackend take no `model`
+# kwarg at all), so whatever they end up using is decided entirely by the
+# external program, not by us. For `cli` that's genuinely readable: the
+# `claude` binary this bot shells out to reads its own default model from
+# this same settings file (same OS user, so the same file) whenever we
+# don't pass --model. There's no equivalent for `ui` (Claude Desktop's
+# currently-selected model lives in its own account-synced UI state, not
+# any local file this process can read) — callers should say so plainly
+# rather than invent a value here.
+_cli_settings_cache: dict = {"mtime": None, "model": None}
+
+
+def local_cli_default_model() -> Optional[str]:
+    """Claude Code CLI's own configured default model (its settings.json
+    "model" field — e.g. "sonnet"), or None if the file/field doesn't
+    exist. Re-read only when the file's mtime changes."""
+    path = Path.home() / ".claude" / "settings.json"
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return None
+    if _cli_settings_cache["mtime"] == mtime:
+        return _cli_settings_cache["model"]
+    try:
+        with path.open(encoding="utf-8") as f:
+            data = json.load(f)
+        model = data.get("model") or None
+    except (OSError, json.JSONDecodeError, AttributeError) as exc:
+        logger.warning("local_cli_default_model: failed to read %s: %s", path, exc)
+        return None
+    _cli_settings_cache["mtime"] = mtime
+    _cli_settings_cache["model"] = model
+    return model
+
+
+_hermes_config_cache: dict = {"mtime": None, "model": None}
+
+
+def local_hermes_default_model() -> Optional[str]:
+    """Hermes Agent's own configured default model (~/.hermes/config.yaml's
+    top-level "model" key), or None if the file/field doesn't exist or is
+    left blank — Hermes then decides its own default at runtime with
+    nothing local for us to read. Re-read only when the file's mtime
+    changes."""
+    path = Path.home() / ".hermes" / "config.yaml"
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return None
+    if _hermes_config_cache["mtime"] == mtime:
+        return _hermes_config_cache["model"]
+    try:
+        import yaml
+
+        with path.open(encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        model = (data.get("model") or "").strip() or None
+    except (OSError, AttributeError, yaml.YAMLError) as exc:
+        logger.warning("local_hermes_default_model: failed to read %s: %s", path, exc)
+        return None
+    _hermes_config_cache["mtime"] = mtime
+    _hermes_config_cache["model"] = model
+    return model

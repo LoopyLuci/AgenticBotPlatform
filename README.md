@@ -736,7 +736,12 @@ platform (and Discord/Slack, and Support Bot) uses the plain-text
 
 - `/ask <text> [--backend=api|cli|ui|hermes_cli|hermes_gateway]` — send a
   prompt. Plain text messages (no leading `/`) are treated as `/ask` too.
-- `/status` — health snapshot.
+- `/status` — health/activity snapshot for this bot, including the real
+  model actually in effect right now (not just "(backend default)") —
+  resolved live wherever that's knowable; see "Notes on the `ui` backend"
+  below for the one case it isn't.
+- `/gateway` — backend readiness, scoped to this bot's own family (Claude:
+  `api`/`cli`/`ui`, or Hermes: `hermes_cli`/`hermes_gateway`).
 - `/backend show` / `/backend set <action|default> <api|cli|ui|hermes_cli|hermes_gateway>` —
   view or edit routing without touching the YAML.
 - `/model show` / `/model set <api|hermes_cli|hermes_gateway> <model>` —
@@ -1021,8 +1026,10 @@ it's about to call *before* attempting it — a message routed to a backend
 that isn't ready fails immediately with what's missing and where to fix
 it ("open the setup wizard"), rather than a raw exception three layers
 down, and still falls through to that action's `backup` chain exactly
-like a runtime failure would. `/status` in Telegram lists all five
-backends' readiness too.
+like a runtime failure would. `/gateway` in Telegram lists backend
+readiness, scoped to whichever family (Claude or Hermes) the chat's own
+bot is actually wired to — a Hermes-backed bot has no reason to see
+Claude readiness info and vice versa.
 
 ## Notes on the `ui` backend
 
@@ -1035,6 +1042,13 @@ Desktop version exposes different control names, set
 `config/backends.yaml` rather than editing the code. The router never
 routes to `ui` as a silent default — only via an explicit `--backend=ui`
 flag or an explicit `action_overrides` entry — by design.
+
+It's also the one backend `/status`'s Model line can't resolve to an
+actual model id: Claude Desktop's currently-selected model lives in its
+own account-synced UI state, not any local file this process can read
+(unlike `cli`, whose default this bot reads straight from Claude Code
+CLI's own `~/.claude/settings.json`). `/status` says so plainly rather
+than guessing.
 
 ## Data retention — keeping a long-running server light and fast
 

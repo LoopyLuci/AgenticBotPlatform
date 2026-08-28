@@ -84,8 +84,10 @@ class Router:
     def _build_backend(self, name: str, cfg: dict, model_override: Optional[str] = None) -> Backend:
         b_cfg = (cfg.get("backends") or {}).get(name, {})
         if name == "api":
+            from bot.models import DEFAULT_API_MODEL
+
             return ApiBackend(
-                model=model_override or b_cfg.get("model", "claude-sonnet-5"),
+                model=model_override or b_cfg.get("model", DEFAULT_API_MODEL),
                 max_tokens=b_cfg.get("max_tokens", 4096),
             )
         if name == "cli":

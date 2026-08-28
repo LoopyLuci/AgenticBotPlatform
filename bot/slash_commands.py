@@ -39,6 +39,7 @@ COMMAND_DEFS: tuple[CommandDef, ...] = (
     CommandDef("ask", "Send a prompt to the bot", category="Session",
                args_hint="<text> [--backend=api|cli|ui|hermes_cli|hermes_gateway]", raw_args=True),
     CommandDef("status", "Show a health/status snapshot", category="Info"),
+    CommandDef("gateway", "Show backend readiness for this bot's model family", category="Config"),
     CommandDef("backend", "Show or change the router backend", category="Config",
                args_hint="show | set <action|default> <backend>"),
     CommandDef("model", "Show or change the model (interactive picker)", category="Config",
@@ -96,7 +97,7 @@ ALIASES: dict[str, str] = {
 # isn't room for everything (mirrors the intent of Hermes's
 # _TELEGRAM_MENU_PRIORITY, sized down to what BotServer actually has).
 _TELEGRAM_MENU_PRIORITY: tuple[str, ...] = (
-    "help", "ask", "stop", "status", "new", "sessions", "resume", "model", "backend", "mcp", "project",
+    "help", "ask", "stop", "status", "gateway", "new", "sessions", "resume", "model", "backend", "mcp", "project",
     "background", "queue", "steer", "pause", "agents", "approve", "deny",
     "rollback", "undo", "branch", "compress", "worktree",
     "cron", "loop", "heartbeat", "kanban", "memory", "skills", "usage", "insights", "topic", "commands",

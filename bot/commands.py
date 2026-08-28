@@ -99,28 +99,22 @@ _BACKEND_DISPLAY_NAMES = {
 
 
 async def cmd_status(ctx: CmdContext, args: list[str]) -> str:
+    """Health/activity snapshot for this bot only — backend/model *setup*
+    info (which backends are ready, what the default is) moved to
+    /gateway, since that's about the whole install, not this one bot's
+    current state, and needs family-filtering /status has no reason to
+    do. See cmd_gateway below."""
     ov = db.get_overview()
     d = desktop.status()
-    cfg = config.current
-    readiness = setup_wizard.backend_readiness()
-    backend_lines = []
-    for name in ("api", "cli", "ui", "hermes_cli", "hermes_gateway"):
-        info = readiness[name]
-        mark = "ready" if info["ready"] else f"not set up ({info['reason']})"
-        used = " · in use" if info["in_use"] else ""
-        backend_lines.append(f"  {_BACKEND_DISPLAY_NAMES[name]}: {mark}{used}")
     lines = [
         f"Desktop: {'running' if d.get('running') else 'stopped'}" + (f" (pid {d['pid']})" if d.get("pid") else ""),
-        f"Default backend: {cfg.get('default_backend')}",
-        "Backends:",
-        *backend_lines,
     ]
     if ctx.instance_id is not None:
         from bot import bot_instances
 
         instance = bot_instances.get_instance(ctx.instance_id)
         if instance is not None:
-            label = await format_model_label(instance["backend"], instance.get("model"))
+            label = await real_time_model_label(instance)
             lines.append(f"Model: {label}")
     lines.extend([
         f"Jobs running: {ov['jobs_running']} · queued: {ov['jobs_queued']}",
@@ -128,6 +122,45 @@ async def cmd_status(ctx: CmdContext, args: list[str]) -> str:
         f"Success rate (7d): {ov['success_rate_7d']}%",
         f"Avg duration: {ov['avg_duration_ms']}ms",
     ])
+    return "\n".join(lines)
+
+
+async def cmd_gateway(ctx: CmdContext, args: list[str]) -> str:
+    """Backend readiness — scoped to this bot's own model family (Claude:
+    api/cli/ui, or Hermes: hermes_cli/hermes_gateway), the same real
+    boundary /model's picker already enforces via bot.models.BACKEND_FAMILY
+    (a Hermes-backed bot has no live Claude models to show, and vice
+    versa — showing the other family's readiness here would be just as
+    misleading). Outside a linked chat (no bound instance) there's no
+    family to scope to, so everything is shown."""
+    from bot import bot_instances
+    from bot.models import BACKEND_FAMILY
+
+    cfg = config.current
+    readiness = setup_wizard.backend_readiness()
+
+    family = None
+    if ctx.instance_id is not None:
+        instance = bot_instances.get_instance(ctx.instance_id)
+        if instance is not None:
+            family = BACKEND_FAMILY.get(instance["backend"])
+
+    if family == "hermes":
+        names = ("hermes_cli", "hermes_gateway")
+        default = cfg.get("default_hermes_backend") or "(not set)"
+    elif family == "claude":
+        names = ("api", "cli", "ui")
+        default = cfg.get("default_backend")
+    else:
+        names = ("api", "cli", "ui", "hermes_cli", "hermes_gateway")
+        default = cfg.get("default_backend")
+
+    lines = [f"Default backend: {default}", "Backends:"]
+    for name in names:
+        info = readiness[name]
+        mark = "ready" if info["ready"] else f"not set up ({info['reason']})"
+        used = " · in use" if info["in_use"] else ""
+        lines.append(f"  {_BACKEND_DISPLAY_NAMES[name]}: {mark}{used}")
     return "\n".join(lines)
 
 
@@ -298,6 +331,42 @@ async def format_model_label(backend: str, model: Optional[str]) -> str:
         if model in group["models"]:
             return f"{group['provider']}/{model}"
     return model
+
+
+async def real_time_model_label(instance: dict) -> str:
+    """The model actually in effect for `instance` right now — an explicit
+    per-instance override if one is set, otherwise the real default this
+    backend will use, resolved live wherever that's genuinely knowable
+    (never a generic "(backend default)" placeholder). `api`/`hermes_cli`/
+    `hermes_gateway` resolve to a config value or that backend's own
+    on-disk default, both real. `cli` reads the same settings.json the
+    `claude` subprocess itself reads for its default model. `ui` (Claude
+    Desktop's UI-selected model) has no local, readable source at all —
+    that's stated plainly rather than guessed."""
+    backend = instance["backend"]
+    override = instance.get("model")
+    if override:
+        return await format_model_label(backend, override)
+
+    from bot import models
+
+    if backend == "api":
+        cfg_model = (config.current.get("backends", {}).get("api") or {}).get("model")
+        return await format_model_label("api", cfg_model or models.DEFAULT_API_MODEL)
+
+    if backend == "cli":
+        model = models.local_cli_default_model()
+        return f"{model} (Claude Code CLI's own default)" if model else "(Claude Code CLI's own default — not detected)"
+
+    if backend == "ui":
+        return "(selected in Claude Desktop — not visible to BotServer)"
+
+    # hermes_cli / hermes_gateway
+    cfg_model = (config.current.get("backends", {}).get(backend) or {}).get("model")
+    if cfg_model:
+        return await format_model_label(backend, cfg_model)
+    model = models.local_hermes_default_model()
+    return f"{model} (Hermes's own default)" if model else "(Hermes's own default — not set)"
 
 
 async def apply_instance_model(instance_id: int, model: str, actor: str) -> str:
@@ -999,6 +1068,7 @@ COMMANDS: dict[str, Callable[[CmdContext, list[str]], Any]] = {
     "start": cmd_help,
     "help": cmd_help,
     "status": cmd_status,
+    "gateway": cmd_gateway,
     "backend": cmd_backend,
     "model": cmd_model,
     "mcp": cmd_mcp,
