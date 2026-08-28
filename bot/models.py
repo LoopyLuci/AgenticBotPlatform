@@ -30,6 +30,7 @@ BACKEND_FAMILY: dict[str, str] = {
     "ui": "claude",
     "hermes_cli": "hermes",
     "hermes_gateway": "hermes",
+    "custom_model": "custom",
 }
 
 # The one hardcoded model id in this module — not a "list of choices" (the
@@ -86,6 +87,14 @@ async def known_models_for(backend: str) -> Optional[list[str]]:
         if not grouped:
             return None
         ids: set[str] = set()
+        for models in grouped.values():
+            ids.update(models)
+        return sorted(ids) or None
+    if family == "custom":
+        grouped = await live_custom_models()
+        if not grouped:
+            return None
+        ids = set()
         for models in grouped.values():
             ids.update(models)
         return sorted(ids) or None
@@ -154,6 +163,60 @@ def live_hermes_models() -> Optional[dict[str, list[str]]]:
     _hermes_cache["mtime"] = mtime
     _hermes_cache["models"] = grouped
     return grouped
+
+
+_CUSTOM_CACHE_TTL_S = 300.0
+_custom_cache: dict[str, dict] = {}  # provider_name -> {"at": float, "models": Optional[list[str]]}
+
+
+async def live_custom_models() -> Optional[dict[str, list[str]]]:
+    """{provider_name: [model_ids]} for every provider configured in
+    config/providers.yaml, fetched live from that provider's own
+    OpenAI-compatible /models endpoint (Ollama, LM Studio, vLLM, and
+    llama.cpp's server all implement this) — same "no hardcoded catalog,
+    ever" rule live_api_models() follows, just for custom endpoints.
+    A provider whose fetch fails is simply omitted, not treated as a
+    reason to fail the whole call — one dead local server shouldn't hide
+    every other configured provider's models."""
+    from bot import providers as provider_registry
+
+    configured = provider_registry.list_providers()
+    if not configured:
+        return None
+
+    now = time.monotonic()
+    grouped: dict[str, list[str]] = {}
+    for name, entry in configured.items():
+        cached = _custom_cache.get(name)
+        if cached is not None and (now - cached["at"]) < _CUSTOM_CACHE_TTL_S:
+            if cached["models"] is not None:
+                grouped[name] = cached["models"]
+            continue
+        models = await _fetch_custom_models(name, entry, provider_registry)
+        _custom_cache[name] = {"at": now, "models": models}
+        if models is not None:
+            grouped[name] = models
+    return grouped or None
+
+
+async def _fetch_custom_models(name: str, entry: dict, provider_registry) -> Optional[list[str]]:
+    try:
+        import httpx
+
+        base_url = entry["base_url"].rstrip("/")
+        headers = {}
+        api_key = provider_registry.get_api_key(name)
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"{base_url}/models", headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+        ids = sorted(m["id"] for m in data.get("data", []) if m.get("id"))
+        return ids or None
+    except Exception as exc:
+        logger.warning("live_custom_models: fetch failed for provider %r: %s", name, exc)
+        return None
 
 
 # ---------------------------------------------------- real-time default model

@@ -95,6 +95,7 @@ _BACKEND_DISPLAY_NAMES = {
     "ui": "claude_ui",
     "hermes_cli": "hermes_cli",
     "hermes_gateway": "hermes_gateway",
+    "custom_model": "custom_model",
 }
 
 
@@ -151,8 +152,15 @@ async def cmd_gateway(ctx: CmdContext, args: list[str]) -> str:
     elif family == "claude":
         names = ("api", "cli", "ui")
         default = cfg.get("default_backend")
+    elif family == "custom":
+        # Only one backend in this family — "default" isn't a meaningful
+        # concept the way it is for Claude/Hermes's multiple backends, so
+        # it's just named directly rather than read from a config key that
+        # doesn't exist.
+        names = ("custom_model",)
+        default = "custom_model"
     else:
-        names = ("api", "cli", "ui", "hermes_cli", "hermes_gateway")
+        names = ("api", "cli", "ui", "hermes_cli", "hermes_gateway", "custom_model")
         default = cfg.get("default_backend")
 
     lines = [f"Default backend: {default}", "Backends:"]
@@ -249,11 +257,11 @@ async def instance_model_groups(backend: str) -> list[dict]:
     instance_model_options() list, which discarded the provider structure
     Hermes's cache already gives us and interleaved every provider's models
     together."""
-    from bot.models import BACKEND_FAMILY, live_api_models, live_hermes_models
+    from bot.models import BACKEND_FAMILY, live_api_models, live_custom_models, live_hermes_models
 
     family = BACKEND_FAMILY.get(backend, "claude")
-    if family == "hermes":
-        grouped = live_hermes_models()
+    if family in ("hermes", "custom"):
+        grouped = live_hermes_models() if family == "hermes" else await live_custom_models()
         if not grouped:
             return []
         return [
@@ -360,6 +368,9 @@ async def real_time_model_label(instance: dict) -> str:
 
     if backend == "ui":
         return "(selected in Claude Desktop — not visible to BotServer)"
+
+    if backend == "custom_model":
+        return "(no model configured — set one with /model, as '<provider>/<model_id>')"
 
     # hermes_cli / hermes_gateway
     cfg_model = (config.current.get("backends", {}).get(backend) or {}).get("model")

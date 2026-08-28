@@ -717,6 +717,7 @@ per-action overrides), independent of every other instance:
 | `ui` | pywinauto automation of the Claude Desktop window | Claude Desktop installed |
 | `hermes_cli` | Hermes Agent one-shot CLI (`hermes -z "<prompt>"`) | `hermes` on PATH |
 | `hermes_gateway` | Hermes Agent's JSON-RPC/WebSocket gateway | `hermes` on PATH |
+| `custom_model` | Any OpenAI-compatible endpoint — local or cloud | a provider registered in **Model Providers** (below) |
 
 ### Hermes Agent backends
 
@@ -751,6 +752,57 @@ still Hermes's single machine-wide "gateway" — there's currently no flag
 that fully sandboxes agent state per caller. A prompt sent through
 `hermes_gateway` can see the same sessions/MCP servers as your own
 interactive `hermes` usage.
+
+### Multi-provider model routing — "any model from anywhere"
+
+There are two independent ways to point a bot at a model Bot Server has no
+built-in knowledge of, and they solve different problems:
+
+**Direct, no Hermes required — the `custom_model` backend.** Register a
+named provider (dashboard **Bots** tab → **Model providers** card, or
+edit `config/providers.yaml` directly) pointing at any server that speaks
+the OpenAI-compatible `/chat/completions` wire format — a local
+[Ollama](https://ollama.com), [LM Studio](https://lmstudio.ai), vLLM, or
+llama.cpp server instance, an internal gateway, OpenRouter, or real
+OpenAI:
+
+```yaml
+# config/providers.yaml
+providers:
+  local_ollama:
+    base_url: "http://127.0.0.1:11434/v1"
+    protocol: openai
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    api_key_env: OPENROUTER_API_KEY
+    protocol: openai
+```
+
+Then set a bot instance's backend to `custom_model` and its model to
+`<provider_name>/<model_id>` (e.g. `local_ollama/llama3.1`) — either in
+the Add/Edit Bot form's Model field, or via `/model` in that bot's chat.
+This backend runs Bot Server's **own** tool-use loop against it (real
+shell/file/git access, the same one the `api` backend uses for Anthropic
+— see `bot/agent_runtime/`), so a local model gets genuine agentic
+capability, not just a passthrough chat. `/gateway` and the dashboard's
+model picker both treat `custom_model` as its own family, listing every
+configured provider's live models (fetched from that provider's own
+`/v1/models` endpoint) the same way the Claude/Hermes pickers already do.
+
+**Through Hermes Agent instead — for "used as an agent inside Hermes."**
+Hermes Agent already has rich native multi-provider support of its own
+(`~/.hermes/config.yaml`'s `provider: custom` and `providers:` map,
+including `lmstudio`/`ollama`/`vllm`/`llamacpp` aliases) — see Hermes's
+own `cli-config.yaml.example` for the full schema. Point Hermes itself at
+a local or custom model server there, then set a Bot Server instance's
+backend to `hermes_cli` or `hermes_gateway` with `model` matching that
+Hermes-side provider/model name. Hermes then runs the model as a full
+agent using **its own** tool loop (not Bot Server's) — this is the path
+to reach for when you specifically want Hermes's own agent behavior
+layered on top of a model it doesn't natively ship a name for, rather
+than Bot Server's simpler tool set. Bot Server passes the `model` string
+through to Hermes verbatim and does no provider logic of its own here —
+nothing on Bot Server's side needs to change for this path to work.
 
 ## Swarms — multi-bot collaboration
 
@@ -826,18 +878,23 @@ inline-keyboard confirm flow for destructive actions; every other
 platform (and Discord/Slack, and Support Bot) uses the plain-text
 "reply `confirm`" form shown below.
 
-- `/ask <text> [--backend=api|cli|ui|hermes_cli|hermes_gateway]` — send a
-  prompt. Plain text messages (no leading `/`) are treated as `/ask` too.
+- `/ask <text> [--backend=api|cli|ui|hermes_cli|hermes_gateway|custom_model]` —
+  send a prompt. Plain text messages (no leading `/`) are treated as
+  `/ask` too.
 - `/status` — health/activity snapshot for this bot, including the real
   model actually in effect right now (not just "(backend default)") —
   resolved live wherever that's knowable; see "Notes on the `ui` backend"
   below for the one case it isn't.
 - `/gateway` — backend readiness, scoped to this bot's own family (Claude:
-  `api`/`cli`/`ui`, or Hermes: `hermes_cli`/`hermes_gateway`).
-- `/backend show` / `/backend set <action|default> <api|cli|ui|hermes_cli|hermes_gateway>` —
+  `api`/`cli`/`ui`, Hermes: `hermes_cli`/`hermes_gateway`, or the
+  standalone `custom_model` family).
+- `/backend show` / `/backend set <action|default> <api|cli|ui|hermes_cli|hermes_gateway|custom_model>` —
   view or edit routing without touching the YAML.
 - `/model show` / `/model set <api|hermes_cli|hermes_gateway> <model>` —
-  view or change the model a backend uses.
+  view or change the global default model for a backend. For a specific
+  bot instance's own model (including `custom_model`, where it's
+  required — see "Multi-provider model routing" above), send bare
+  `/model` in that bot's own chat for the interactive picker instead.
 - `/mcp list` / `/mcp enable <name>` / `/mcp disable <name>` / `/mcp logs <name>`
 - `/start_desktop` / `/stop_desktop` / `/restart_desktop` — the latter two
   ask for a confirm tap when `security.confirm_destructive` is on.

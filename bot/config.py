@@ -73,6 +73,12 @@ class ConfigManager:
         with open(self.path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
 
+    def read_raw(self) -> dict:
+        """Fresh read straight from disk, bypassing the in-memory cache —
+        for a caller (bot/providers.py) that needs to read-modify-write a
+        section of the file this manager doesn't otherwise interpret."""
+        return self._read_yaml()
+
     def _load_initial(self) -> None:
         data = self._read_yaml()
         with self._lock:

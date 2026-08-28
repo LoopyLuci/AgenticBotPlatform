@@ -564,10 +564,11 @@ def build_app() -> FastAPI:
 
     @app.get("/api/models")
     async def api_models():
-        from bot.models import BACKEND_FAMILY, live_api_models, live_hermes_models
+        from bot.models import BACKEND_FAMILY, live_api_models, live_custom_models, live_hermes_models
 
         live_api = await live_api_models()
         live_hermes = live_hermes_models()
+        live_custom = await live_custom_models()
         return {
             "family": BACKEND_FAMILY,
             "current": {
@@ -577,8 +578,46 @@ def build_app() -> FastAPI:
             "live": {
                 "api": live_api,
                 "hermes": live_hermes,
+                "custom": live_custom,
             },
         }
+
+    @app.get("/api/providers", dependencies=[Depends(_require_token)])
+    async def api_providers_list():
+        from bot import providers
+
+        return {
+            "providers": [
+                {"name": name, "base_url": entry.get("base_url"), "protocol": entry.get("protocol", "openai"),
+                 "api_key_env": entry.get("api_key_env"), "has_inline_key": bool(entry.get("api_key"))}
+                for name, entry in sorted(providers.list_providers().items())
+            ]
+        }
+
+    @app.post("/api/providers", dependencies=[Depends(_require_token)])
+    async def api_providers_set(payload: dict = Body(...)):
+        from bot import providers
+
+        try:
+            providers.set_provider(
+                payload.get("name", ""),
+                payload.get("base_url", ""),
+                protocol=payload.get("protocol", "openai"),
+                api_key_env=payload.get("api_key_env") or None,
+                api_key=payload.get("api_key") or None,
+                actor="dashboard",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True}
+
+    @app.delete("/api/providers/{name}", dependencies=[Depends(_require_token)])
+    async def api_providers_delete(name: str):
+        from bot import providers
+
+        if not providers.delete_provider(name, actor="dashboard"):
+            raise HTTPException(status_code=404, detail=f"no provider named {name!r}")
+        return {"ok": True}
 
     @app.get("/api/personas")
     async def api_personas():

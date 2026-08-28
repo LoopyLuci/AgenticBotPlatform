@@ -9,6 +9,15 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- Multi-provider model routing: a new `custom_model` backend that talks
+  to any OpenAI-compatible endpoint (a local Ollama/LM Studio/vLLM/
+  llama.cpp server, OpenRouter, or real OpenAI) via a named provider
+  registry (`config/providers.yaml`, managed from the dashboard's new
+  "Model providers" card) — runs Bot Server's own shell/file/git tool
+  loop against it, the same one the `api` backend already uses for
+  Anthropic. `/gateway`, `/model`, and the dashboard's model picker all
+  treat it as its own family. Phase A of a larger roadmap (plugin API,
+  WhatsApp/Matrix platforms) — see `docs/adr/` and the project's plan log.
 - A real `pytest` suite (`tests/`).
 - A 100%-local CI/CD pipeline (`scripts/local_pipeline.py`) — byte-compiles
   every source file, runs the test suite, audits dependencies, checks the

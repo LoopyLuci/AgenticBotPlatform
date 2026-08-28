@@ -1003,12 +1003,15 @@
                 <option value="hermes_cli">hermes_cli (Hermes Agent CLI)</option>
                 <option value="hermes_gateway">hermes_gateway (Hermes Agent gateway)</option>
               </optgroup>
+              <optgroup label="Custom / local">
+                <option value="custom_model">custom_model (any OpenAI-compatible endpoint)</option>
+              </optgroup>
             </select>
           </div>
         </div>
         <div class="wizard-field" id="bot-new-model-field">
           <label>Model override (optional)</label>
-          <div class="help">Leave blank to use this backend's configured default. Options are live models actually available to this backend.</div>
+          <div class="help" id="bot-new-model-help">Leave blank to use this backend's configured default. Options are live models actually available to this backend.</div>
           <div class="row"><input type="text" id="bot-new-model" list="bot-new-model-options" placeholder="e.g. claude-opus-5" autocomplete="off" spellcheck="false"></div>
           <datalist id="bot-new-model-options"></datalist>
         </div>
@@ -1043,6 +1046,26 @@
         <div class="wizard-foot">
           <span class="cardnote" id="bot-new-status"></span>
           <button class="btn primary" id="btn-bot-create">Add bot</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;" id="providers-card">
+        <h3>Model providers</h3>
+        <p class="cardnote">Named endpoints for the "custom_model" backend — any OpenAI-compatible server (a local Ollama/LM Studio/vLLM/llama.cpp instance, OpenRouter, or real OpenAI). A bot instance points at one with a model of the form "&lt;name&gt;/&lt;model_id&gt;".</p>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Name</th><th>Base URL</th><th>API key</th><th></th></tr></thead>
+            <tbody id="providers-tbody"></tbody>
+          </table>
+        </div>
+        <div class="wizard-field" style="margin-top:10px;">
+          <div class="row">
+            <input type="text" id="provider-new-name" placeholder="name, e.g. local_ollama" autocomplete="off" spellcheck="false" style="max-width:180px;">
+            <input type="text" id="provider-new-url" placeholder="base URL, e.g. http://127.0.0.1:11434/v1" autocomplete="off" spellcheck="false">
+            <input type="text" id="provider-new-key" placeholder="API key (optional)" autocomplete="off" spellcheck="false">
+            <button class="btn" id="btn-provider-add">Add</button>
+          </div>
+          <span class="cardnote" id="provider-new-status"></span>
         </div>
       </div>
 

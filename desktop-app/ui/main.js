@@ -350,6 +350,18 @@ function modelOptionsForBackend(backend) {
     const grouped = (modelsCache.live && modelsCache.live.hermes) || null;
     return grouped ? [...new Set(Object.values(grouped).flat())].sort() : [];
   }
+  if (family === 'custom') {
+    // Flattened as "<provider>/<model_id>" — matches the exact string
+    // custom_model expects in bot_instances.model (see bot/providers.py's
+    // parse_model_ref), unlike Claude/Hermes's bare model ids.
+    const grouped = (modelsCache.live && modelsCache.live.custom) || null;
+    if (!grouped) return [];
+    const out = [];
+    for (const [provider, models] of Object.entries(grouped)) {
+      for (const m of models) out.push(`${provider}/${m}`);
+    }
+    return out.sort();
+  }
   return (modelsCache.live && modelsCache.live.api) || [];
 }
 
@@ -379,6 +391,16 @@ function modelGroupsForBackend(backend) {
     if (!grouped) return [];
     return Object.keys(grouped).sort((a, b) => a.localeCompare(b))
       .map(provider => ({ provider, models: sortGroup(grouped[provider]) }))
+      .filter(g => g.models.length);
+  }
+  if (family === 'custom') {
+    const grouped = (modelsCache.live && modelsCache.live.custom) || null;
+    if (!grouped) return [];
+    // Each model id is stored/shown as "<provider>/<model_id>" (the exact
+    // string custom_model expects — see bot/providers.py's
+    // parse_model_ref), not the bare id hermes/claude groups use.
+    return Object.keys(grouped).sort((a, b) => a.localeCompare(b))
+      .map(provider => ({ provider, models: sortGroup(grouped[provider].map(m => `${provider}/${m}`)) }))
       .filter(g => g.models.length);
   }
   const apiOptions = (modelsCache.live && modelsCache.live.api) || [];
@@ -413,6 +435,15 @@ function refreshBotModelOptions() {
   const backend = document.getElementById('bot-new-backend').value;
   const options = modelOptionsForBackend(backend);
   document.getElementById('bot-new-model-options').innerHTML = options.map(name => `<option value="${esc(name)}"></option>`).join('');
+  const help = document.getElementById('bot-new-model-help');
+  const input = document.getElementById('bot-new-model');
+  if (backend === 'custom_model') {
+    help.textContent = 'Required for this backend: "<provider>/<model_id>", where <provider> is one configured below in Model Providers.';
+    input.placeholder = 'e.g. local_ollama/llama3.1';
+  } else {
+    help.textContent = "Leave blank to use this backend's configured default. Options are live models actually available to this backend.";
+    input.placeholder = 'e.g. claude-opus-5';
+  }
 }
 
 document.getElementById('model-api').onchange = async (e) => {
@@ -722,6 +753,8 @@ function startDashboardPolling() {
   pollWhenVisible(refreshBots, 15000);
   refreshPairing();
   pollWhenVisible(refreshPairing, 15000);
+  refreshProviders();
+  pollWhenVisible(refreshProviders, 15000);
   refreshKanban();
   pollWhenVisible(refreshKanban, 15000);
   refreshSwarmInstanceLegend();
@@ -938,6 +971,47 @@ async function refreshPairing() {
     refreshPairing();
   });
 }
+
+async function refreshProviders() {
+  const tbody = document.getElementById('providers-tbody');
+  if (!getToken() || !tbody) return;
+  let data;
+  try {
+    data = await api('/api/providers');
+  } catch (_e) { return; }
+  const list = data.providers || [];
+  tbody.innerHTML = list.length ? list.map(p => `
+    <tr>
+      <td>${esc(p.name)}</td>
+      <td><code>${esc(p.base_url)}</code></td>
+      <td>${p.api_key_env ? 'env: ' + esc(p.api_key_env) : (p.has_inline_key ? 'set' : '(none)')}</td>
+      <td><button class="btn small" data-provider-delete="${esc(p.name)}">Remove</button></td>
+    </tr>`).join('') : '<tr><td colspan="4" class="cardnote">No custom providers configured yet.</td></tr>';
+  tbody.querySelectorAll('[data-provider-delete]').forEach(btn => btn.onclick = async () => {
+    await api(`/api/providers/${encodeURIComponent(btn.dataset.providerDelete)}`, { method: 'DELETE' });
+    refreshProviders();
+    refreshModels();
+  });
+}
+
+document.getElementById('btn-provider-add').onclick = async () => {
+  const status = document.getElementById('provider-new-status');
+  const name = document.getElementById('provider-new-name').value.trim();
+  const base_url = document.getElementById('provider-new-url').value.trim();
+  const api_key = document.getElementById('provider-new-key').value.trim();
+  status.textContent = '';
+  try {
+    await api('/api/providers', { method: 'POST', body: JSON.stringify({ name, base_url, api_key: api_key || null }) });
+  } catch (e) {
+    status.textContent = e.message || 'Failed to add provider.';
+    return;
+  }
+  document.getElementById('provider-new-name').value = '';
+  document.getElementById('provider-new-url').value = '';
+  document.getElementById('provider-new-key').value = '';
+  refreshProviders();
+  refreshModels();
+};
 
 async function refreshBots() {
   const grid = document.getElementById('bots-grid');

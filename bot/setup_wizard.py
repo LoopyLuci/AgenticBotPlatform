@@ -227,12 +227,20 @@ def _ui_ready() -> tuple[bool, str]:
     return ok, "" if ok else "Claude Desktop wasn't found — set CLAUDE_DESKTOP_EXE, or install Claude Desktop"
 
 
+def _custom_model_ready() -> tuple[bool, str]:
+    from bot import providers
+
+    ok = bool(providers.list_providers())
+    return ok, "" if ok else "no providers configured in config/providers.yaml"
+
+
 _READINESS_CHECKS: dict[str, Callable[[], tuple[bool, str]]] = {
     "api": _api_ready,
     "cli": _cli_ready,
     "ui": _ui_ready,
     "hermes_cli": _hermes_cli_ready,
     "hermes_gateway": _hermes_gateway_ready,
+    "custom_model": _custom_model_ready,
 }
 
 

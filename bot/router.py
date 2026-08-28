@@ -27,6 +27,7 @@ from bot import db, setup_wizard
 from bot.backends.api_backend import ApiBackend
 from bot.backends.base import Backend, BackendError, BackendResult
 from bot.backends.cli_backend import CliBackend
+from bot.backends.custom_model_backend import CustomModelBackend
 from bot.backends.hermes_cli_backend import HermesCliBackend
 from bot.backends.hermes_gateway_backend import HermesGatewayBackend
 from bot.backends.ui_backend import UiBackend
@@ -34,7 +35,7 @@ from bot.config import config
 
 logger = logging.getLogger("bot.router")
 
-VALID_BACKENDS = ("api", "cli", "ui", "hermes_cli", "hermes_gateway")
+VALID_BACKENDS = ("api", "cli", "ui", "hermes_cli", "hermes_gateway", "custom_model")
 
 # A bot instance whose backend is crash-looping (every single request
 # fails — bad credentials, a dead binary, a revoked key) used to just keep
@@ -120,6 +121,26 @@ class Router:
                 binary=b_cfg.get("binary", "hermes"),
                 port=b_cfg.get("port", 8799),
                 model=model_override or b_cfg.get("model"),
+            )
+        if name == "custom_model":
+            from bot import providers
+
+            model_ref = model_override or b_cfg.get("model")
+            if not model_ref:
+                raise ValueError(
+                    "custom_model backend needs a model of the form '<provider>/<model_id>' "
+                    "(set it on the bot instance, or as backends.custom_model.model)"
+                )
+            provider_name, model_id = providers.parse_model_ref(model_ref)
+            provider = providers.get_provider(provider_name)
+            if provider is None:
+                raise ValueError(f"no provider named {provider_name!r} configured in config/providers.yaml")
+            return CustomModelBackend(
+                provider_name=provider_name,
+                model_id=model_id,
+                base_url=provider["base_url"],
+                api_key=providers.get_api_key(provider_name),
+                max_tokens=b_cfg.get("max_tokens", 4096),
             )
         raise ValueError(f"unknown backend {name!r}")
 
