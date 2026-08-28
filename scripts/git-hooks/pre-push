@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# BotServer's local CI/CD gate — runs before every `git push`, the same
+# trigger point (push to main) the retired GitHub Actions workflow used to
+# fire on, except entirely on this machine. See scripts/local_pipeline.py
+# for what actually runs. Installed via scripts/install_git_hooks.sh/.ps1
+# (this file is the tracked source; .git/hooks isn't version-controlled,
+# so it's copied there, not run from here directly).
+set -e
+
+py=".venv/Scripts/python.exe"
+[ -x "$py" ] || py=".venv/bin/python"
+[ -x "$py" ] || py="python"
+
+exec "$py" scripts/local_pipeline.py

@@ -260,6 +260,47 @@ equivalents — see `.env.example`) in `.env` before first boot so the
 legacy-migration path creates the instance automatically, or start with
 an already-populated `data/bot.db` from a prior install.
 
+## Local CI/CD — no cloud runner involved
+
+Every check (Python tests + `pip-audit`, Rust `fmt`/`clippy`/build, a
+Docker image build) plus deployment runs entirely on your own machine via
+`scripts/local_pipeline.py` — there is no GitHub Actions workflow or any
+other cloud CI in this repo. Install the gate once:
+
+```bash
+./scripts/install_git_hooks.sh    # Linux/macOS/Git Bash
+```
+```powershell
+.\scripts\install_git_hooks.ps1   # Windows PowerShell
+```
+
+From then on, every `git push` runs the full pipeline first (via a
+`pre-push` hook) and only lets the push through if it's green — the same
+trigger point (push to `main`) the retired GitHub Actions workflow used to
+fire on, just local. Run it directly any time without pushing:
+
+```bash
+python scripts/local_pipeline.py             # checks + rebuild + redeploy
+python scripts/local_pipeline.py --no-deploy # checks only
+```
+
+Tool-specific checks are best-effort: if `cargo` or `docker` aren't on
+PATH (or the Docker daemon isn't running), that check is skipped with a
+clear note rather than failing the whole pipeline — matching this
+project's own "Docker is optional" stance above. Python checks always run.
+
+If a build of this app is already running when the pipeline starts, it's
+stopped first (gracefully, then forcefully if needed) — Tauri's own build
+step re-copies the bundled `.venv` into `target/release/` on every check,
+and that can never succeed while a running instance still has its own
+copy of those files loaded. On a fully green pipeline, the app is rebuilt
+and the same instance is brought back — a registered OS service (see
+"Bare metal" above) is restarted through its own service manager;
+otherwise the plain executable that was running is relaunched directly.
+If any check fails, whatever was running beforehand is restored
+untouched, without deploying the broken build. Every run's full output is
+also saved under `logs/local_pipeline/` for later inspection.
+
 ## Setup
 
 1. **Python 3.11+**, **Rust + Cargo**, and the **Tauri CLI**

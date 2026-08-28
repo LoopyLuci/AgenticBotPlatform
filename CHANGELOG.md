@@ -9,14 +9,29 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
-- A real `pytest` suite (`tests/`) and GitHub Actions CI — byte-compiles
-  every source file, runs the test suite, audits dependencies, and
-  checks the Rust side (format/clippy/compile) on every push.
+- A real `pytest` suite (`tests/`).
+- A 100%-local CI/CD pipeline (`scripts/local_pipeline.py`) — byte-compiles
+  every source file, runs the test suite, audits dependencies, checks the
+  Rust side (format/clippy/compile), and builds the Docker image, all on
+  your own machine, then rebuilds and redeploys the running instance on a
+  green result. Installed as a `pre-push` git hook via
+  `scripts/install_git_hooks.sh` / `.ps1`. Replaces an earlier GitHub
+  Actions workflow, which this project no longer uses at all.
 - A per-instance circuit breaker: a bot instance whose backend fails 5
   times in a row now pauses for 5 minutes instead of retrying forever,
   with a "retry now" action in the dashboard.
 - `/healthz` (unauthenticated liveness probe) and `/metrics`
   (Prometheus-format gauges/counters) for real deployment monitoring.
+- Per-table data export (`/api/export/{table}`, JSON or CSV) from the
+  dashboard's Database panel.
+- A `/gateway` command (Telegram/Discord/Slack) showing backend readiness
+  scoped to a bot's own model family (Claude or Hermes); `/status`'s
+  Model line now resolves the real live model in effect instead of a
+  generic placeholder.
+- A Dockerfile/`docker-compose.yml` for headless server-only deployment,
+  and a documented, equally-capable bare-metal path for machines without
+  Docker (`scripts/run.sh`/`run.ps1` plus the existing
+  `install_service*`/`install_task.ps1` autostart scripts).
 - This changelog, and an [architecture decision record log](docs/adr/).
 
 ### Fixed

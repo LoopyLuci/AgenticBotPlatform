@@ -12,6 +12,7 @@ data/pre_migration_backup/
 data/inbox/
 data/attachments/
 logs/*.log
+logs/local_pipeline/
 
 # Tauri desktop shell build output (target/ also holds a copy of bot/,
 # config/, and .venv/ per tauri.conf.json's bundle.resources — regenerated
