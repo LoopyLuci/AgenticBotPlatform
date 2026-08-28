@@ -186,6 +186,39 @@ under "Using the desktop app" below, just wired up automatically.
 If you'd rather do each step yourself (or the installer can't fully
 provision your setup), the manual steps it automates are documented next.
 
+## Docker — headless server-only deployment
+
+For running just the bot/dashboard on a Linux server (a VPS, a home
+server, a NAS) with no desktop at all. This runs the **`api` backend**
+only (raw Claude API calls) plus the Telegram/Discord/Slack adapters and
+the dashboard's REST API — the `cli` and `ui` backends need a real,
+locally-installed Claude Code CLI or Claude Desktop, which only exist on
+Windows/macOS/Linux desktops, not inside a container.
+
+```bash
+cp .env.example .env
+# edit .env: at minimum ANTHROPIC_API_KEY, DASHBOARD_TOKEN, and either
+# TELEGRAM_BOT_TOKEN+ALLOWED_TELEGRAM_USER_IDS or a platform you'll add
+# from the dashboard afterward (see "Bots" below)
+docker compose up -d --build
+```
+
+`DASHBOARD_HOST` is already set to `0.0.0.0` inside the image — the
+container boundary is what keeps this off the public internet, so put a
+real reverse proxy in front of it (same as any other DASHBOARD_TOKEN
+deployment) if you expose the port beyond your own network. `data/` and
+`config/` are named volumes so upgrades (`docker compose up -d --build`
+again) don't lose bot instances, sessions, or config edits made from the
+dashboard; `.env` is bind-mounted from the host so secrets never end up
+baked into the image.
+
+A container with zero bot instances configured refuses to even start the
+dashboard (same behavior as a fresh native install) — either populate
+`TELEGRAM_BOT_TOKEN`/`ALLOWED_TELEGRAM_USER_IDS` (or the Discord/Slack
+equivalents — see `.env.example`) in `.env` before first boot so the
+legacy-migration path creates the instance automatically, or start with
+an already-populated `data/bot.db` volume from a prior install.
+
 ## Setup
 
 1. **Python 3.11+**, **Rust + Cargo**, and the **Tauri CLI**

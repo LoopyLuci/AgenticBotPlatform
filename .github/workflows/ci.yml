@@ -37,6 +37,15 @@ jobs:
         run: pip-audit -r requirements.txt --strict
         continue-on-error: true # advisory today — flip to blocking once the backlog of any pre-existing findings is triaged
 
+  docker:
+    name: Docker — image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t botserver:ci .
+
   rust:
     name: Rust — format, clippy, build check
     runs-on: windows-latest

@@ -1,0 +1,14 @@
+services:
+  botserver:
+    build: .
+    ports:
+      - "8787:8787"
+    volumes:
+      - ./.env:/app/.env
+      - botserver-data:/app/data
+      - botserver-config:/app/config
+    restart: unless-stopped
+
+volumes:
+  botserver-data:
+  botserver-config:

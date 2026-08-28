@@ -1,0 +1,13 @@
+.git
+.venv
+data
+android-app
+desktop-app
+docs
+tests
+scripts
+!scripts/docker-entrypoint.sh
+*.md
+.env
+__pycache__
+*.pyc
