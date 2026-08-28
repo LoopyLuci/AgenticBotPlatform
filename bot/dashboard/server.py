@@ -341,7 +341,17 @@ def _require_mobile_key_id(x_dashboard_token: Optional[str] = Header(default=Non
 
 
 def build_app() -> FastAPI:
-    app = FastAPI(title="Bot Control Dashboard API")
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def _lifespan(app: FastAPI):
+        task = asyncio.create_task(_presence_broadcaster())
+        try:
+            yield
+        finally:
+            task.cancel()
+
+    app = FastAPI(title="Bot Control Dashboard API", lifespan=_lifespan)
 
     def _json_download(data, filename: str) -> Response:
         body = json.dumps(data, indent=2, default=str).encode("utf-8")
@@ -382,10 +392,6 @@ def build_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    @app.on_event("startup")
-    async def _on_startup():
-        asyncio.create_task(_presence_broadcaster())
 
     async def _presence_broadcaster():
         """Periodically diffs the device-presence snapshot and pushes it to
