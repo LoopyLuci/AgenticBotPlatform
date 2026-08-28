@@ -186,14 +186,20 @@ under "Using the desktop app" below, just wired up automatically.
 If you'd rather do each step yourself (or the installer can't fully
 provision your setup), the manual steps it automates are documented next.
 
-## Docker — headless server-only deployment
+## Headless server deployment — Docker is optional, never required
 
-For running just the bot/dashboard on a Linux server (a VPS, a home
-server, a NAS) with no desktop at all. This runs the **`api` backend**
-only (raw Claude API calls) plus the Telegram/Discord/Slack adapters and
-the dashboard's REST API — the `cli` and `ui` backends need a real,
-locally-installed Claude Code CLI or Claude Desktop, which only exist on
-Windows/macOS/Linux desktops, not inside a container.
+Everything below runs just the bot/dashboard with no desktop at all — the
+**`api` backend** (raw Claude API calls) plus the Telegram/Discord/Slack
+adapters and the dashboard's REST API. (The `cli` and `ui` backends need a
+real, locally-installed Claude Code CLI or Claude Desktop, so they're
+Windows/macOS/Linux-desktop-only regardless of which path below you use.)
+Docker is one convenient way to run this, not a dependency the app has —
+if Docker is down, missing, or you'd rather not use it, the **bare metal**
+path two sections down does exactly the same thing with the same
+`.env`/`data`/`config` layout, using nothing but Python and the scripts
+this repo already ships.
+
+### Docker
 
 ```bash
 cp .env.example .env
@@ -212,12 +218,47 @@ again) don't lose bot instances, sessions, or config edits made from the
 dashboard; `.env` is bind-mounted from the host so secrets never end up
 baked into the image.
 
-A container with zero bot instances configured refuses to even start the
-dashboard (same behavior as a fresh native install) — either populate
+### Bare metal (no Docker, no desktop app)
+
+The exact same deployment without a container — same `.env`, same
+`data/bot.db`, same dashboard, same real code path (`bot/main.py`), just
+run directly by a plain Python interpreter instead of inside an image:
+
+```bash
+cp .env.example .env
+# edit .env the same way as the Docker path above
+python scripts/install.py --no-system-deps --no-build --yes
+# creates the venv, installs requirements.txt, walks setup if needed —
+# --no-system-deps skips Rust/Tauri/native GUI libs entirely, since a
+# headless server never builds or runs the desktop shell
+./scripts/run.sh        # Linux/macOS — or scripts\run.ps1 on Windows
+```
+
+For it to survive a reboot or an unhandled crash the way `docker compose`'s
+`restart: unless-stopped` does, register it as a real OS service instead of
+leaving it in a foreground terminal — same restart-on-failure guarantee,
+different mechanism per OS, no elevation required for any of them:
+
+```bash
+./scripts/install_service.sh          # Linux — systemd --user, restarts on failure
+./scripts/install_service_macos.sh    # macOS — a launchd LaunchAgent
+```
+```powershell
+.\scripts\install_task.ps1            # Windows — a Task Scheduler task
+```
+
+(`scripts/install.py`'s own autostart offer runs one of these three for
+you automatically, unless `--no-autostart` was passed.) On Linux, a
+service registered this way only starts without an active login session
+once you also run `sudo loginctl enable-linger $USER` — the script prints
+this reminder itself.
+
+A fresh install with zero bot instances configured refuses to even start
+the dashboard, identically on both paths — either populate
 `TELEGRAM_BOT_TOKEN`/`ALLOWED_TELEGRAM_USER_IDS` (or the Discord/Slack
 equivalents — see `.env.example`) in `.env` before first boot so the
 legacy-migration path creates the instance automatically, or start with
-an already-populated `data/bot.db` volume from a prior install.
+an already-populated `data/bot.db` from a prior install.
 
 ## Setup
 

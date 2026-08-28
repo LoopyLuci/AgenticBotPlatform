@@ -48,6 +48,44 @@ jobs:
       - name: Build image
         run: docker build -t botserver:ci .
 
+  bare-metal:
+    name: Bare metal — headless run works without Docker or a desktop build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Proves the README's "Bare metal (no Docker, no desktop app)"
+      # quickstart actually works on a clean checkout — same kind of real
+      # verification the docker job above does for the container path, not
+      # just documentation nobody's run.
+      - name: Write a minimal .env
+        run: |
+          cat > .env <<'EOF'
+          ANTHROPIC_API_KEY=sk-ci-placeholder
+          DASHBOARD_TOKEN=ci-placeholder-token
+          TELEGRAM_BOT_TOKEN=123456789:CIPlaceholderTokenPaddingXXXXXXXXXX
+          ALLOWED_TELEGRAM_USER_IDS=1
+          EOF
+
+      - name: Install (no Rust/Tauri, no build offer, non-interactive)
+        run: python scripts/install.py --no-system-deps --no-build --no-autostart --yes
+
+      - name: Boot headlessly and confirm the dashboard answers
+        run: |
+          .venv/bin/python -m bot.main &
+          pid=$!
+          ok=""
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8787/healthz >/dev/null 2>&1; then ok=1; break; fi
+            sleep 1
+          done
+          kill "$pid" 2>/dev/null || true
+          [ -n "$ok" ] || { echo "dashboard never became healthy"; exit 1; }
+
   rust:
     name: Rust — format, clippy, build check
     runs-on: windows-latest
@@ -81,9 +119,7 @@ jobs:
         run: cargo fmt --check
 
       # Verified clean locally on 2026-08-28 (cargo clippy --all-targets -- -D
-      # warnings — zero warnings) before flipping this blocking. `fmt` above
-      # stays advisory: it has a real pre-existing formatting backlog this
-      # doesn't touch, unlike clippy which had none.
+      # warnings — zero warnings) before flipping this blocking.
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 
