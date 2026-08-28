@@ -50,6 +50,14 @@ jobs:
         with:
           components: clippy, rustfmt
 
+      # tauri.conf.json's bundle.resources lists ../../.venv — tauri_build
+      # checks that every resource path actually exists even for a plain
+      # `cargo check`/`clippy` (not just real bundling), so a fresh CI
+      # checkout (which has no venv at all) needs a placeholder here. Its
+      # contents are never inspected outside a real `tauri build`.
+      - name: Create placeholder .venv (tauri_build checks resource paths exist)
+        run: New-Item -ItemType Directory -Force -Path ..\..\.venv | Out-Null
+
       - name: Check formatting
         run: cargo fmt --check
         continue-on-error: true # advisory today — this project's Rust files predate a fmt pass
