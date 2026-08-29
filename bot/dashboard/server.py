@@ -619,6 +619,54 @@ def build_app() -> FastAPI:
             raise HTTPException(status_code=404, detail=f"no provider named {name!r}")
         return {"ok": True}
 
+    @app.get("/api/plugins", dependencies=[Depends(_require_token)])
+    async def api_plugins_list():
+        from bot import plugins as plugin_registry
+
+        return {"plugins": plugin_registry.list_plugins()}
+
+    @app.post("/api/plugins", dependencies=[Depends(_require_token)])
+    async def api_plugins_install(payload: dict = Body(...)):
+        from bot import plugins as plugin_registry
+
+        try:
+            info = plugin_registry.install(payload.get("path", ""))
+        except plugin_registry.PluginError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        db.log_audit(actor="dashboard", action="plugin_install", detail=info["name"])
+        return info
+
+    @app.post("/api/plugins/{name}/enable", dependencies=[Depends(_require_token)])
+    async def api_plugins_enable(name: str):
+        from bot import plugins as plugin_registry
+
+        try:
+            info = plugin_registry.enable(name)
+        except plugin_registry.PluginError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        db.log_audit(actor="dashboard", action="plugin_enable", detail=name)
+        return info
+
+    @app.post("/api/plugins/{name}/disable", dependencies=[Depends(_require_token)])
+    async def api_plugins_disable(name: str):
+        from bot import plugins as plugin_registry
+
+        try:
+            info = plugin_registry.disable(name)
+        except plugin_registry.PluginError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        db.log_audit(actor="dashboard", action="plugin_disable", detail=name)
+        return info
+
+    @app.delete("/api/plugins/{name}", dependencies=[Depends(_require_token)])
+    async def api_plugins_delete(name: str):
+        from bot import plugins as plugin_registry
+
+        if not plugin_registry.remove(name):
+            raise HTTPException(status_code=404, detail=f"no plugin named {name!r}")
+        db.log_audit(actor="dashboard", action="plugin_remove", detail=name)
+        return {"ok": True}
+
     @app.get("/api/personas")
     async def api_personas():
         from bot.personas import list_personas

@@ -99,7 +99,7 @@ class ApiBackend(Backend):
                 create_kwargs = dict(
                     model=self.model,
                     max_tokens=self.max_tokens,
-                    tools=agent_tools.TOOL_SCHEMAS,
+                    tools=agent_tools.all_tool_schemas(),
                     messages=messages,
                 )
                 if system_prompt:

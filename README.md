@@ -360,6 +360,58 @@ something with hot module-swapping), only config and data reload without
 downtime. That's the local CI/CD pipeline's job above, which already
 handles the rebuild-and-restart cycle safely.
 
+## Plugin API — extend BotServer without editing core code
+
+A plugin is a single local `plugin.py` file that registers new agent
+tools and/or new slash commands. Install one from the dashboard's
+Bots tab ("Plugins" card) or directly:
+
+```bash
+curl -X POST -H "X-Dashboard-Token: $DASHBOARD_TOKEN" \
+  -d '{"path":"/path/to/my_plugin.py"}' http://127.0.0.1:8080/api/plugins
+```
+
+A plugin file defines one function, `setup(api)`:
+
+```python
+PLUGIN_DESCRIPTION = "Looks up the weather"
+
+async def _get_weather(tool_input, *, workspace, instance_id):
+    city = tool_input["city"]
+    ...
+    return f"It's sunny in {city}."
+
+async def _cmd_weather(ctx, args):
+    return f"Try asking me to check the weather in {' '.join(args) or 'your city'}."
+
+def setup(api):
+    api.register_tool(
+        "get_weather", "Look up the current weather for a city",
+        {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]},
+        _get_weather,
+    )
+    api.register_command("weather", "Check the weather", _cmd_weather, args_hint="<city>")
+```
+
+Registered tools show up in every backend's tool list exactly like the
+built-in ones (`read_file`, `run_shell`, …) — the `api` and `custom_model`
+backends' own tool-use loop calls a plugin's handler the same way it
+calls a built-in one. `dangerous=True` on `register_tool` routes it
+through the same human-approval gate `run_shell`/`write_file` already
+use. Registered commands show up in `/help`, `/commands`, and Telegram's
+native "/" menu alongside built-in ones. Manage installs from the
+dashboard's "Plugins" card (enable/disable/remove) or the matching
+`/api/plugins` endpoints.
+
+**Trust model, stated plainly** (see
+[ADR-0007](docs/adr/0007-plugins-are-trusted-local-code.md)): a plugin
+runs in-process with the full privileges of the BotServer process — the
+same trust level `run_shell` already has, no sandbox, no code review, no
+signature check. `install()` only ever loads a file already on this
+machine's disk; nothing here fetches code from a network, so this is
+explicitly *not* a marketplace. Only install a plugin you've read and
+trust, exactly as you would before approving a shell command.
+
 ## Setup
 
 1. **Python 3.11+**, **Rust + Cargo**, and the **Tauri CLI**

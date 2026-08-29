@@ -844,6 +844,8 @@ function startDashboardPolling() {
   pollWhenVisible(refreshPairing, 15000);
   refreshProviders();
   pollWhenVisible(refreshProviders, 15000);
+  refreshPlugins();
+  pollWhenVisible(refreshPlugins, 15000);
   refreshSnapshots();
   pollWhenVisible(refreshSnapshots, 15000);
   refreshKanban();
@@ -1084,6 +1086,55 @@ async function refreshProviders() {
     refreshModels();
   });
 }
+
+async function refreshPlugins() {
+  const tbody = document.getElementById('plugins-tbody');
+  if (!getToken() || !tbody) return;
+  let data;
+  try {
+    data = await api('/api/plugins');
+  } catch (_e) { return; }
+  const list = data.plugins || [];
+  tbody.innerHTML = list.length ? list.map(p => `
+    <tr>
+      <td>${esc(p.name)}</td>
+      <td>${esc(p.description)}</td>
+      <td>${p.tools.length ? esc(p.tools.join(', ')) : '(none)'}</td>
+      <td>${p.commands.length ? esc(p.commands.map(c => '/' + c).join(', ')) : '(none)'}</td>
+      <td>${p.enabled ? 'enabled' : 'disabled'}</td>
+      <td>
+        <button class="btn small" data-plugin-toggle="${esc(p.name)}" data-plugin-enabled="${p.enabled ? '1' : '0'}">${p.enabled ? 'Disable' : 'Enable'}</button>
+        <button class="btn small" data-plugin-delete="${esc(p.name)}">Remove</button>
+      </td>
+    </tr>`).join('') : '<tr><td colspan="6" class="cardnote">No plugins installed yet.</td></tr>';
+  tbody.querySelectorAll('[data-plugin-toggle]').forEach(btn => btn.onclick = async () => {
+    const action = btn.dataset.pluginEnabled === '1' ? 'disable' : 'enable';
+    try {
+      await api(`/api/plugins/${encodeURIComponent(btn.dataset.pluginToggle)}/${action}`, { method: 'POST' });
+    } catch (e) {
+      alert(e.message || `Failed to ${action} plugin.`);
+    }
+    refreshPlugins();
+  });
+  tbody.querySelectorAll('[data-plugin-delete]').forEach(btn => btn.onclick = async () => {
+    await api(`/api/plugins/${encodeURIComponent(btn.dataset.pluginDelete)}`, { method: 'DELETE' });
+    refreshPlugins();
+  });
+}
+
+document.getElementById('btn-plugin-add').onclick = async () => {
+  const status = document.getElementById('plugin-new-status');
+  const path = document.getElementById('plugin-new-path').value.trim();
+  status.textContent = '';
+  try {
+    await api('/api/plugins', { method: 'POST', body: JSON.stringify({ path }) });
+  } catch (e) {
+    status.textContent = e.message || 'Failed to install plugin.';
+    return;
+  }
+  document.getElementById('plugin-new-path').value = '';
+  refreshPlugins();
+};
 
 document.getElementById('btn-provider-add').onclick = async () => {
   const status = document.getElementById('provider-new-status');

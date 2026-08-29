@@ -82,7 +82,7 @@ class CustomModelBackend(Backend):
         messages.append({"role": "user", "content": prompt})
         db.append_agent_message(session_key, "user", prompt)
 
-        openai_tools = to_openai_tools(agent_tools.TOOL_SCHEMAS)
+        openai_tools = to_openai_tools(agent_tools.all_tool_schemas())
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"

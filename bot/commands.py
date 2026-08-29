@@ -1149,6 +1149,14 @@ async def dispatch_command(text: str, ctx: CmdContext) -> Optional[str]:
     if cmd in _DESKTOP_COMMANDS:
         return await cmd_desktop(ctx, _DESKTOP_COMMANDS[cmd], args)
     handler = COMMANDS.get(cmd)
-    if handler is None:
-        return None
-    return await handler(ctx, args)
+    if handler is not None:
+        return await handler(ctx, args)
+
+    from bot import plugins as plugin_registry
+
+    plugin_cmd = plugin_registry.get_command(cmd)
+    if plugin_cmd is not None:
+        if plugin_cmd["raw_args"]:
+            return await plugin_cmd["handler"](ctx, args_text)
+        return await plugin_cmd["handler"](ctx, args)
+    return None

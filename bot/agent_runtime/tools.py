@@ -107,6 +107,24 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 ]
 
 
+TOOL_SCHEMA_NAMES = frozenset(t["name"] for t in TOOL_SCHEMAS)
+
+
+def all_tool_schemas() -> list[dict[str, Any]]:
+    """Built-in tool schemas plus every tool a loaded plugin has
+    registered (bot/plugins.py) — what a backend should actually offer
+    the model this turn."""
+    from bot import plugins as plugin_registry
+
+    return TOOL_SCHEMAS + plugin_registry.tool_schemas()
+
+
+def is_dangerous(name: str) -> bool:
+    from bot import plugins as plugin_registry
+
+    return name in DANGEROUS_TOOLS or plugin_registry.is_dangerous_tool(name)
+
+
 class ToolError(Exception):
     pass
 
@@ -219,5 +237,13 @@ async def execute_tool(name: str, tool_input: dict, *, workspace: Path, instance
         if content is None:
             raise ToolError(f"no skill named {skill_name!r} — see the system prompt's skill list")
         return content
+
+    from bot import plugins as plugin_registry
+
+    if plugin_registry.has_tool(name):
+        try:
+            return await plugin_registry.execute_tool(name, tool_input, workspace=workspace, instance_id=instance_id)
+        except KeyError:
+            pass
 
     raise ToolError(f"unknown tool {name!r}")

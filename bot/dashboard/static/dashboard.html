@@ -890,6 +890,24 @@
         </div>
       </div>
 
+      <div class="card" style="margin-top:14px;" id="plugins-card">
+        <h3>Plugins</h3>
+        <p class="cardnote">Local Python files that register extra agent tools and/or slash commands — trusted local code with the same privileges the app already has (not sandboxed, not fetched from a network). Enter the path to a <code>plugin.py</code> already on this machine's disk.</p>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Name</th><th>Description</th><th>Tools</th><th>Commands</th><th>Status</th><th></th></tr></thead>
+            <tbody id="plugins-tbody"></tbody>
+          </table>
+        </div>
+        <div class="wizard-field" style="margin-top:10px;">
+          <div class="row">
+            <input type="text" id="plugin-new-path" placeholder="path to plugin.py" autocomplete="off" spellcheck="false" style="flex:1;">
+            <button class="btn" id="btn-plugin-add">Install</button>
+          </div>
+          <span class="cardnote" id="plugin-new-status"></span>
+        </div>
+      </div>
+
       <div class="card" style="margin-top:14px;" id="pairing-card">
         <h3>Pending pairings</h3>
         <p class="cardnote">Someone messaged a bot from an unrecognized chat ID and got a one-time code — approve here to add them to that bot's allowed users.</p>
@@ -1961,6 +1979,8 @@ function startDashboard() {
   pollWhenVisible(refreshPairing, 15000);
   refreshProviders();
   pollWhenVisible(refreshProviders, 15000);
+  refreshPlugins();
+  pollWhenVisible(refreshPlugins, 15000);
   refreshSnapshots();
   pollWhenVisible(refreshSnapshots, 15000);
   refreshKanban();
@@ -2363,6 +2383,55 @@ async function refreshProviders() {
     refreshModels();
   });
 }
+
+async function refreshPlugins() {
+  const tbody = document.getElementById('plugins-tbody');
+  if (!getToken() || !tbody) return;
+  let data;
+  try {
+    data = await api('/api/plugins');
+  } catch (_e) { return; }
+  const list = data.plugins || [];
+  tbody.innerHTML = list.length ? list.map(p => `
+    <tr>
+      <td>${esc(p.name)}</td>
+      <td>${esc(p.description)}</td>
+      <td>${p.tools.length ? esc(p.tools.join(', ')) : '(none)'}</td>
+      <td>${p.commands.length ? esc(p.commands.map(c => '/' + c).join(', ')) : '(none)'}</td>
+      <td>${p.enabled ? 'enabled' : 'disabled'}</td>
+      <td>
+        <button class="btn small" data-plugin-toggle="${esc(p.name)}" data-plugin-enabled="${p.enabled ? '1' : '0'}">${p.enabled ? 'Disable' : 'Enable'}</button>
+        <button class="btn small" data-plugin-delete="${esc(p.name)}">Remove</button>
+      </td>
+    </tr>`).join('') : '<tr><td colspan="6" class="cardnote">No plugins installed yet.</td></tr>';
+  tbody.querySelectorAll('[data-plugin-toggle]').forEach(btn => btn.onclick = async () => {
+    const action = btn.dataset.pluginEnabled === '1' ? 'disable' : 'enable';
+    try {
+      await api(`/api/plugins/${encodeURIComponent(btn.dataset.pluginToggle)}/${action}`, { method: 'POST' });
+    } catch (e) {
+      alert(e.message || `Failed to ${action} plugin.`);
+    }
+    refreshPlugins();
+  });
+  tbody.querySelectorAll('[data-plugin-delete]').forEach(btn => btn.onclick = async () => {
+    await api(`/api/plugins/${encodeURIComponent(btn.dataset.pluginDelete)}`, { method: 'DELETE' });
+    refreshPlugins();
+  });
+}
+
+document.getElementById('btn-plugin-add').onclick = async () => {
+  const status = document.getElementById('plugin-new-status');
+  const path = document.getElementById('plugin-new-path').value.trim();
+  status.textContent = '';
+  try {
+    await api('/api/plugins', { method: 'POST', body: JSON.stringify({ path }) });
+  } catch (e) {
+    status.textContent = e.message || 'Failed to install plugin.';
+    return;
+  }
+  document.getElementById('plugin-new-path').value = '';
+  refreshPlugins();
+};
 
 document.getElementById('btn-provider-add').onclick = async () => {
   const status = document.getElementById('provider-new-status');

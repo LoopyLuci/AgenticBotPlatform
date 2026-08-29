@@ -18,6 +18,7 @@ editing history.
 | [0004](0004-debug-signed-android-release.md) | Android release builds are signed with the debug key, not a Play identity | Accepted |
 | [0005](0005-circuit-breaker-in-memory.md) | The per-instance circuit breaker's state is in-memory, not persisted | Accepted |
 | [0006](0006-local-cicd-not-cloud.md) | CI/CD runs 100% locally, not on a cloud runner | Accepted |
+| [0007](0007-plugins-are-trusted-local-code.md) | Plugins are trusted local code, not sandboxed, not a marketplace | Accepted |
 
 ## Template for a new ADR
 

@@ -137,6 +137,10 @@ async def run() -> None:
     logger.info("secrets loaded from %s (exists=%s)", _env_path, _env_path.exists())
     db.log_audit(actor="system", action="startup", detail=f"env: {_env_path}")
 
+    from bot import plugins as plugin_registry
+
+    plugin_registry.load_enabled()
+
     migrated_id = bot_instances.migrate_legacy_env_instance()
     if migrated_id is not None:
         logger.info("migrated legacy .env Telegram config into bot instance #%s", migrated_id)

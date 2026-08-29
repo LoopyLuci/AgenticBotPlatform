@@ -9,6 +9,17 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- A plugin API: a single local `plugin.py` file can register new agent
+  tools and/or slash commands (`bot/plugins.py`) without touching core
+  code — they show up in every backend's tool list and in `/help`/
+  `/commands`/Telegram's native menu exactly like built-in ones. Managed
+  from a new dashboard "Plugins" card (install/enable/disable/remove),
+  mirrored into the desktop app. Local-install only, deliberately not a
+  networked marketplace — see
+  [ADR-0007](docs/adr/0007-plugins-are-trusted-local-code.md) for the
+  trust model (a plugin is trusted local code with full process
+  privileges, the same boundary `run_shell` already accepts). Phase B of
+  the multi-provider/plugin/platforms roadmap.
 - Appearance settings (Control Center tab): theme (System/Light/Dark) and
   a whole-UI text/scale control (85%-150%), per-browser via localStorage,
   applied instantly with no server round trip or flash-of-wrong-theme on

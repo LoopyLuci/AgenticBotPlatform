@@ -13,7 +13,7 @@ logger = logging.getLogger("bot.agent_runtime.tool_loop")
 
 async def run_one_tool(name, tool_input, *, workspace, instance_id, chat_id, session_key, notify, agent_tools, agent_approval) -> str:
     try:
-        if name in agent_tools.DANGEROUS_TOOLS:
+        if agent_tools.is_dangerous(name):
             if notify is None:
                 # No chat to ask (e.g. a call with no Telegram context at
                 # all) — approval.request_approval still waits out its
@@ -31,7 +31,7 @@ async def run_one_tool(name, tool_input, *, workspace, instance_id, chat_id, ses
             if outcome == "deny":
                 return "Denied by user."
         output = await agent_tools.execute_tool(name, tool_input, workspace=workspace, instance_id=instance_id)
-        if name in agent_tools.DANGEROUS_TOOLS:
+        if agent_tools.is_dangerous(name):
             try_checkpoint(workspace, name, tool_input)
         return output
     except agent_tools.ToolError as exc:

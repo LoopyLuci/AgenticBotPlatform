@@ -109,25 +109,48 @@ _MENU_DESCRIPTION_MAX = 60
 
 def resolve_command(raw: str) -> str | None:
     """Canonical name for a typed command word (case-insensitive), or None
-    if it isn't a known command or alias."""
+    if it isn't a known command, built-in alias, or plugin-registered
+    command/alias (bot/plugins.py)."""
     raw = (raw or "").strip().lower()
     if raw in COMMAND_REGISTRY:
         return raw
-    return ALIASES.get(raw)
+    canonical = ALIASES.get(raw)
+    if canonical:
+        return canonical
+    from bot import plugins as plugin_registry
+
+    return plugin_registry.resolve_command(raw)
 
 
 def get(name: str) -> CommandDef | None:
     canonical = resolve_command(name)
-    return COMMAND_REGISTRY.get(canonical) if canonical else None
+    if canonical is None:
+        return None
+    if canonical in COMMAND_REGISTRY:
+        return COMMAND_REGISTRY[canonical]
+    from bot import plugins as plugin_registry
+
+    plugin_cmd = plugin_registry.get_command(canonical)
+    return plugin_cmd["def"] if plugin_cmd else None
 
 
 def all_dispatchable_names() -> list[str]:
     """Every canonical command name plus every alias — the full list of
     strings Telegram's CommandHandler should match, so `/new` and
-    `/new_session` both reach the same command."""
+    `/new_session` both reach the same command. Includes plugin-registered
+    commands/aliases so a plugin's own commands work in Telegram too."""
+    from bot import plugins as plugin_registry
+
     names = list(COMMAND_REGISTRY.keys())
     names.extend(ALIASES.keys())
+    names.extend(plugin_registry.all_dispatchable_names())
     return names
+
+
+def _all_defs() -> list[CommandDef]:
+    from bot import plugins as plugin_registry
+
+    return list(COMMAND_DEFS) + plugin_registry.list_command_defs()
 
 
 def telegram_menu_commands(max_commands: int = 60) -> list[tuple[str, str]]:
@@ -136,13 +159,14 @@ def telegram_menu_commands(max_commands: int = 60) -> list[tuple[str, str]]:
     alphabetically, capped at max_commands. Aliases never appear — one
     entry per canonical command, matching Hermes's behavior."""
     max_commands = max(1, min(max_commands, 100))  # Telegram's own setMyCommands cap
-    ordered: list[str] = [n for n in _TELEGRAM_MENU_PRIORITY if n in COMMAND_REGISTRY]
-    rest = sorted(n for n in COMMAND_REGISTRY if n not in ordered)
+    registry = {c.name: c for c in _all_defs()}
+    ordered: list[str] = [n for n in _TELEGRAM_MENU_PRIORITY if n in registry]
+    rest = sorted(n for n in registry if n not in ordered)
     ordered.extend(rest)
     ordered = ordered[:max_commands]
     out = []
     for name in ordered:
-        desc = COMMAND_REGISTRY[name].description
+        desc = registry[name].description
         if len(desc) > _MENU_DESCRIPTION_MAX:
             desc = desc[: _MENU_DESCRIPTION_MAX - 1].rstrip() + "…"
         out.append((name, desc))
@@ -157,7 +181,8 @@ def commands_page(page: int, page_size: int = COMMANDS_PAGE_SIZE) -> str:
     same shape Hermes uses (header with page count, a nav-hint footer),
     since a flat alphabetical list scales to however many commands exist
     without needing inline-keyboard state."""
-    names = sorted(COMMAND_REGISTRY.keys())
+    registry = {c.name: c for c in _all_defs()}
+    names = sorted(registry.keys())
     total = len(names)
     total_pages = max(1, -(-total // page_size))
     page = max(1, min(page, total_pages))
@@ -166,7 +191,7 @@ def commands_page(page: int, page_size: int = COMMANDS_PAGE_SIZE) -> str:
 
     lines = [f"Commands ({total} total, page {page}/{total_pages})", ""]
     for name in chunk:
-        c = COMMAND_REGISTRY[name]
+        c = registry[name]
         hint = f" {c.args_hint}" if c.args_hint else ""
         lines.append(f"/{name}{hint} — {c.description}")
     nav = []
@@ -183,7 +208,7 @@ def commands_page(page: int, page_size: int = COMMANDS_PAGE_SIZE) -> str:
 def help_lines() -> list[str]:
     """One line per canonical command, grouped by category, for /help."""
     by_category: dict[str, list[CommandDef]] = {}
-    for c in COMMAND_DEFS:
+    for c in _all_defs():
         by_category.setdefault(c.category, []).append(c)
     lines: list[str] = []
     for category in sorted(by_category):

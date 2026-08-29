@@ -533,6 +533,21 @@ CREATE INDEX IF NOT EXISTS idx_scheduled_commands_due ON scheduled_commands(enab
 CREATE INDEX IF NOT EXISTS idx_kanban_cards_board ON kanban_cards(board_id, column_name, position);
 CREATE INDEX IF NOT EXISTS idx_memory_entries_instance ON memory_entries(instance_id, status);
 CREATE INDEX IF NOT EXISTS idx_skills_instance ON skills(instance_id, name);
+
+-- A user-installed local Python plugin (bot/plugins.py) that registers
+-- extra agent tools and/or slash commands. `path` points at the
+-- plugin.py file on this machine's disk — nothing here ever fetches code
+-- over a network (see docs/adr/0007-plugins-are-trusted-local-code.md).
+-- `enabled=0` keeps the row (and its install history) without loading
+-- the plugin's code at startup.
+CREATE TABLE IF NOT EXISTS plugins (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT NOT NULL UNIQUE,
+    path          TEXT NOT NULL,
+    description   TEXT NOT NULL DEFAULT '',
+    enabled       INTEGER NOT NULL DEFAULT 1,
+    installed_at  TEXT NOT NULL
+);
 """
 # idx_jobs_instance / idx_jobs_swarm_run / idx_messages_instance are created
 # in _migrate(), not here — on a pre-existing DB, jobs/messages get their
@@ -1186,6 +1201,46 @@ def delete_skill(instance_id: Optional[int], name: str) -> None:
     conn = get_conn()
     with _lock:
         conn.execute("DELETE FROM skills WHERE instance_id IS ? AND name=?", (instance_id, name))
+        conn.commit()
+
+
+# ----------------------------------------------------------------- plugins
+
+def install_plugin_row(name: str, path: str, description: str) -> int:
+    conn = get_conn()
+    with _lock:
+        conn.execute("DELETE FROM plugins WHERE name=?", (name,))
+        cur = conn.execute(
+            "INSERT INTO plugins (name, path, description, enabled, installed_at) VALUES (?, ?, ?, 1, ?)",
+            (name, path, description, _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def list_plugin_rows() -> list[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute("SELECT * FROM plugins ORDER BY name").fetchall()
+
+
+def get_plugin_row(name: str) -> Optional[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute("SELECT * FROM plugins WHERE name=?", (name,)).fetchone()
+
+
+def set_plugin_enabled(name: str, enabled: bool) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute("UPDATE plugins SET enabled=? WHERE name=?", (1 if enabled else 0, name))
+        conn.commit()
+
+
+def delete_plugin_row(name: str) -> bool:
+    conn = get_conn()
+    with _lock:
+        cur = conn.execute("DELETE FROM plugins WHERE name=?", (name,))
+        conn.commit()
+        return cur.rowcount > 0
         conn.commit()
 
 
