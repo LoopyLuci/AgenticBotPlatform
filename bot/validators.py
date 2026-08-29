@@ -88,6 +88,30 @@ def validate_matrix_access_token(v: str) -> tuple[bool, str]:
     return False, "should be an access token (Element -> Advanced -> Access Token, or POST /_matrix/client/v3/login)"
 
 
+def validate_whatsapp_phone_number_id(v: str) -> tuple[bool, str]:
+    if v.isdigit() and len(v) >= 5:
+        return True, "looks like a valid Phone Number ID"
+    return False, "should be the numeric Phone Number ID from the Cloud API dashboard, not the phone number itself"
+
+
+def validate_whatsapp_access_token(v: str) -> tuple[bool, str]:
+    if len(v) > 20:
+        return True, "looks good"
+    return False, "should be a permanent System User access token with the whatsapp_business_messaging permission"
+
+
+def validate_whatsapp_app_secret(v: str) -> tuple[bool, str]:
+    if len(v) >= 16:
+        return True, "looks good"
+    return False, "should be the App Secret from Settings -> Basic"
+
+
+def validate_whatsapp_verify_token(v: str) -> tuple[bool, str]:
+    if len(v) >= 6:
+        return True, "looks good"
+    return False, "pick any string at least 6 characters — you'll enter this same value in Meta's webhook config"
+
+
 def validate_port(v: str) -> tuple[bool, str]:
     if v.isdigit() and 1 <= int(v) <= 65535:
         return True, "valid port"
@@ -106,5 +130,11 @@ PLATFORM_TOKEN_VALIDATORS = {
         "homeserver": validate_matrix_homeserver,
         "user_id": validate_matrix_user_id,
         "access_token": validate_matrix_access_token,
+    },
+    "whatsapp": {
+        "phone_number_id": validate_whatsapp_phone_number_id,
+        "access_token": validate_whatsapp_access_token,
+        "app_secret": validate_whatsapp_app_secret,
+        "verify_token": validate_whatsapp_verify_token,
     },
 }

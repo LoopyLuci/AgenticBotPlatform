@@ -1038,6 +1038,7 @@
               <option value="discord">Discord</option>
               <option value="slack">Slack</option>
               <option value="matrix">Matrix</option>
+              <option value="whatsapp">WhatsApp</option>
             </select>
           </div>
         </div>
@@ -1088,9 +1089,19 @@
           <label style="margin-top:8px; display:block;">Device ID (optional)</label>
           <div class="row"><input type="text" id="bot-new-matrix-device" placeholder="leave blank to auto-assign" autocomplete="off" spellcheck="false"></div>
         </div>
+        <div class="wizard-field" id="bot-new-whatsapp-fields" style="display:none;">
+          <label>Phone Number ID</label>
+          <div class="row"><input type="text" id="bot-new-whatsapp-phoneid" placeholder="1234567890" autocomplete="off" spellcheck="false"></div>
+          <div class="help">The access token goes in the "Access token" field above — a permanent System User token with the whatsapp_business_messaging permission.</div>
+          <label style="margin-top:8px; display:block;">App secret</label>
+          <div class="row"><input type="text" id="bot-new-whatsapp-appsecret" placeholder="from Settings → Basic" autocomplete="off" spellcheck="false"></div>
+          <label style="margin-top:8px; display:block;">Verify token</label>
+          <div class="row"><input type="text" id="bot-new-whatsapp-verifytoken" placeholder="pick any string, 6+ chars" autocomplete="off" spellcheck="false"></div>
+          <div class="help">Webhook URL to paste into Meta's App Dashboard → WhatsApp → Configuration: <code>&lt;your public HTTPS domain&gt;/webhooks/whatsapp</code> — same URL and verify token for every WhatsApp instance on this install, since Meta allows only one webhook per App.</div>
+        </div>
         <div class="wizard-field">
           <label>Allowed user ID(s)</label>
-          <div class="help">Comma-separated. Numeric IDs for Telegram/Discord, Slack member IDs (U.../W...) for Slack, full Matrix user IDs (@name:server) for Matrix.</div>
+          <div class="help">Comma-separated. Numeric IDs for Telegram/Discord, Slack member IDs (U.../W...) for Slack, full Matrix user IDs (@name:server) for Matrix, phone numbers with country code and no "+" for WhatsApp.</div>
           <div class="row"><input type="text" id="bot-new-allowed" placeholder="123456789, 987654321" autocomplete="off" spellcheck="false"></div>
         </div>
         <div class="wizard-field" id="bot-new-cantarget-field">

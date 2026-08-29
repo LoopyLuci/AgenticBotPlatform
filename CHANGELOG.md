@@ -19,6 +19,18 @@ app's own version (the Android app versions independently — see its own
   already handles `bot-server.exe` itself.
 
 ### Added
+- WhatsApp Cloud API as a fifth chat platform
+  (`bot/platforms/whatsapp_platform.py`) — architecturally different from
+  the others: messages arrive via a webhook Meta calls
+  (`POST /webhooks/whatsapp` on the dashboard's own FastAPI app, verified
+  with a real X-Hub-Signature-256 HMAC check since that route can't
+  require a dashboard token), not an outbound-connecting client. Full
+  two-way messaging including media (images, documents, audio, video) via
+  the Graph API's upload/download endpoints, and the same slash-command/
+  allowlist/dashboard-Chat-tab integration every other platform gets.
+  Requires a real Meta Business/WhatsApp Cloud API app and a public HTTPS
+  URL — see the module's docstring. Phase D of the multi-provider/
+  plugin/platforms roadmap — completes it.
 - Matrix as a fourth chat platform (`bot/platforms/matrix_platform.py`,
   via matrix-nio): a bot instance can now be Telegram, Discord, Slack, or
   Matrix. Full messaging (text + incoming/outgoing images, files, audio,

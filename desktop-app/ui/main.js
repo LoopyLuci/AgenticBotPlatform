@@ -874,7 +874,8 @@ document.getElementById('bot-new-platform').onchange = (e) => {
   const p = e.target.value;
   document.getElementById('bot-new-apptoken-field').style.display = p === 'slack' ? '' : 'none';
   document.getElementById('bot-new-matrix-fields').style.display = p === 'matrix' ? '' : 'none';
-  document.getElementById('bot-new-token-label').textContent = p === 'matrix' ? 'Access token' : 'Bot token';
+  document.getElementById('bot-new-whatsapp-fields').style.display = p === 'whatsapp' ? '' : 'none';
+  document.getElementById('bot-new-token-label').textContent = (p === 'matrix' || p === 'whatsapp') ? 'Access token' : 'Bot token';
 };
 document.getElementById('bot-new-backend').onchange = refreshBotModelOptions;
 
@@ -938,10 +939,14 @@ function _resetBotForm() {
   document.getElementById('bot-new-matrix-homeserver').value = '';
   document.getElementById('bot-new-matrix-userid').value = '';
   document.getElementById('bot-new-matrix-device').value = '';
+  document.getElementById('bot-new-whatsapp-phoneid').value = '';
+  document.getElementById('bot-new-whatsapp-appsecret').value = '';
+  document.getElementById('bot-new-whatsapp-verifytoken').value = '';
   document.getElementById('bot-new-allowed').value = '';
   document.getElementById('bot-new-admins').value = '';
   document.getElementById('bot-new-apptoken-field').style.display = 'none';
   document.getElementById('bot-new-matrix-fields').style.display = 'none';
+  document.getElementById('bot-new-whatsapp-fields').style.display = 'none';
   document.getElementById('bot-new-token-label').textContent = 'Bot token';
   document.getElementById('btn-bot-create').textContent = 'Add bot';
   renderPersonaPicker('assistant');
@@ -955,15 +960,20 @@ function _loadBotIntoForm(bot) {
   document.getElementById('bot-new-platform').value = bot.platform;
   document.getElementById('bot-new-backend').value = bot.backend;
   document.getElementById('bot-new-model').value = bot.model || '';
-  document.getElementById('bot-new-token').value = bot.platform === 'matrix'
+  document.getElementById('bot-new-token').value = (bot.platform === 'matrix' || bot.platform === 'whatsapp')
     ? (bot.credentials.access_token || '') : (bot.credentials.bot_token || '');
   document.getElementById('bot-new-apptoken').value = bot.credentials.app_token || '';
   document.getElementById('bot-new-apptoken-field').style.display = bot.platform === 'slack' ? '' : 'none';
   document.getElementById('bot-new-matrix-fields').style.display = bot.platform === 'matrix' ? '' : 'none';
-  document.getElementById('bot-new-token-label').textContent = bot.platform === 'matrix' ? 'Access token' : 'Bot token';
+  document.getElementById('bot-new-whatsapp-fields').style.display = bot.platform === 'whatsapp' ? '' : 'none';
+  document.getElementById('bot-new-token-label').textContent =
+    (bot.platform === 'matrix' || bot.platform === 'whatsapp') ? 'Access token' : 'Bot token';
   document.getElementById('bot-new-matrix-homeserver').value = bot.credentials.homeserver || '';
   document.getElementById('bot-new-matrix-userid').value = bot.credentials.user_id || '';
   document.getElementById('bot-new-matrix-device').value = bot.credentials.device_id || '';
+  document.getElementById('bot-new-whatsapp-phoneid').value = bot.credentials.phone_number_id || '';
+  document.getElementById('bot-new-whatsapp-appsecret').value = bot.credentials.app_secret || '';
+  document.getElementById('bot-new-whatsapp-verifytoken').value = bot.credentials.verify_token || '';
   document.getElementById('bot-new-allowed').value = (bot.allowed_user_ids || []).join(', ');
   document.getElementById('bot-new-admins').value = (bot.admin_user_ids || []).join(', ');
   renderPersonaPicker(bot.persona || 'assistant');
@@ -1293,11 +1303,18 @@ document.getElementById('btn-bot-create').onclick = async () => {
     };
     const deviceId = document.getElementById('bot-new-matrix-device').value.trim();
     if (deviceId) credentials.device_id = deviceId;
+  } else if (platform === 'whatsapp') {
+    credentials = {
+      phone_number_id: document.getElementById('bot-new-whatsapp-phoneid').value.trim(),
+      access_token: document.getElementById('bot-new-token').value.trim(),
+      app_secret: document.getElementById('bot-new-whatsapp-appsecret').value.trim(),
+      verify_token: document.getElementById('bot-new-whatsapp-verifytoken').value.trim(),
+    };
   } else {
     credentials = { bot_token: document.getElementById('bot-new-token').value.trim() };
     if (platform === 'slack') credentials.app_token = document.getElementById('bot-new-apptoken').value.trim();
   }
-  const isStringId = platform === 'slack' || platform === 'matrix';
+  const isStringId = platform === 'slack' || platform === 'matrix' || platform === 'whatsapp';
   const allowed_user_ids = document.getElementById('bot-new-allowed').value
     .split(',').map(s => s.trim()).filter(Boolean)
     .map(s => (isStringId ? s : Number(s)));

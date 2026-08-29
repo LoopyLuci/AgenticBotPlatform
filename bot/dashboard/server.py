@@ -27,7 +27,7 @@ from qrcode.image.pure import PyPNGImage
 from fastapi import Body, Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Response
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from bot import agent_control, attachments, bot_instances, db, desktop, envfile, kanban, outbox, pairing, platform_supervisor, setup_wizard, thumbnails
@@ -466,6 +466,43 @@ def build_app() -> FastAPI:
             f"botserver_db_size_bytes {db.get_db_size_bytes()}",
         ]
         return Response("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
+
+    # WhatsApp Cloud API delivers messages via a webhook Meta calls
+    # directly — it can't send a dashboard token, so these two routes are
+    # deliberately unauthenticated (same posture as /healthz above). The
+    # POST route's real security boundary is the X-Hub-Signature-256 HMAC
+    # check in whatsapp_platform.verify_signature(), not a header token.
+    # See bot/platforms/whatsapp_platform.py's module docstring for setup.
+    @app.get("/webhooks/whatsapp")
+    async def whatsapp_verify(request: Request):
+        from bot.platforms import whatsapp_platform
+
+        params = request.query_params
+        challenge = whatsapp_platform.verify_challenge(
+            params.get("hub.mode", ""), params.get("hub.verify_token", ""), params.get("hub.challenge", "")
+        )
+        if challenge is None:
+            raise HTTPException(status_code=403, detail="verification failed")
+        return PlainTextResponse(challenge)
+
+    @app.post("/webhooks/whatsapp")
+    async def whatsapp_webhook(request: Request):
+        from bot.platforms import whatsapp_platform
+
+        raw = await request.body()
+        if not whatsapp_platform.verify_signature(raw, request.headers.get("x-hub-signature-256", "")):
+            raise HTTPException(status_code=403, detail="invalid signature")
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            return {"ok": True}
+        # Ack immediately — Meta retries aggressively if this endpoint is
+        # slow, and a real agent turn can easily take longer than its
+        # timeout. The reply goes out separately via the Graph API once
+        # router.ask()/dispatch_command() finish, same as every other
+        # platform's outbound path.
+        asyncio.create_task(whatsapp_platform.handle_webhook_payload(payload))
+        return {"ok": True}
 
     # ------------------------------------------------------------- reads --
 

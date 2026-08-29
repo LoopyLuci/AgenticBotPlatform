@@ -1,8 +1,8 @@
 # Bot Server
 
 Run any number of independent bots at once — a Claude bot and a separate
-Hermes Agent bot, each on Telegram, Discord, Slack, and/or Matrix, all
-simultaneously, each with its own fully separate chat history and job
+Hermes Agent bot, each on Telegram, Discord, Slack, Matrix, and/or
+WhatsApp, all simultaneously, each with its own fully separate chat history and job
 queue. Every bot routes through one of five interchangeable backends
 (Anthropic API, Claude Code CLI, best-effort UI automation of Claude
 Desktop, or Hermes Agent via its CLI or its JSON-RPC gateway), and any
@@ -103,6 +103,7 @@ bot/                   the Python server (multi-bot engine + dashboard API)
     discord_platform.py     DiscordPlatformInstance — one per enabled Discord bot instance
     slack_platform.py        SlackPlatformInstance — one per enabled Slack bot instance (Socket Mode)
     matrix_platform.py       MatrixPlatformInstance — one per enabled Matrix bot instance (matrix-nio)
+    whatsapp_platform.py     inbound webhook handling + outbound Graph API calls (no persistent connection)
   backends/
     api_backend.py          Anthropic API
     cli_backend.py           Claude Code CLI (headless)
@@ -115,7 +116,7 @@ bot/                   the Python server (multi-bot engine + dashboard API)
     slots.py                    fuzzy argument extraction (bot/MCP-server/backend/model names)
     actions.py                   one handler per intent, thin wrappers over existing bot/* functions
     engine.py                    SupportBot.handle()/confirm() — classify, confirm-gate, execute
-  commands.py              platform-agnostic slash commands, shared by Telegram/Discord/Slack/Matrix/Support Bot
+  commands.py              platform-agnostic slash commands, shared by every chat platform + Support Bot
   swarm/
     base.py                  SwarmStrategy interface + SwarmRunResult, mirrors backends/base.py
     engine.py                 dispatches a run to its strategy, owns the swarm_runs row lifecycle
@@ -757,6 +758,20 @@ instances you create):
   `bot/platforms/matrix_platform.py`'s module docstring for why; invite
   the bot into an unencrypted room instead. It auto-joins any room it's
   invited to.
+- **WhatsApp** — architecturally different from the other three: Meta
+  delivers messages via a webhook POST to this server, not an
+  outbound-connecting client, so it needs a real Meta Business app
+  already set up (developers.facebook.com → add the WhatsApp product),
+  a permanent System User access token (`whatsapp_business_messaging`
+  permission — not the 24-hour test token), the numeric Phone Number ID,
+  the App Secret (Settings → Basic), and a verify token you invent
+  yourself. Register `<your public HTTPS domain>/webhooks/whatsapp` as
+  the webhook URL in Meta's App Dashboard with that same verify token —
+  this server must be reachable over real HTTPS from Meta's servers (a
+  reverse proxy or tunnel for local testing; a bare `http://localhost`
+  URL will not work). Allowed IDs are phone numbers with country code
+  and no `+`. See `bot/platforms/whatsapp_platform.py`'s module
+  docstring for the full walkthrough.
 
 The dashboard's **Chat** tab is bot-aware — pick a bot from its own
 dropdown (not just a platform), see the real conversation for whichever

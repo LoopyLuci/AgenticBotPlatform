@@ -12,10 +12,11 @@ so credentials get the same safety net without forcing them into .env's
 one-secret-per-line format.
 
 Platform-specific `credentials` JSON shapes:
-  telegram: {"bot_token": "..."}
-  discord:  {"bot_token": "..."}
-  slack:    {"bot_token": "...", "app_token": "..."}
-  matrix:   {"homeserver": "...", "user_id": "...", "access_token": "...", "device_id": "..." (optional)}
+  telegram:  {"bot_token": "..."}
+  discord:   {"bot_token": "..."}
+  slack:     {"bot_token": "...", "app_token": "..."}
+  matrix:    {"homeserver": "...", "user_id": "...", "access_token": "...", "device_id": "..." (optional)}
+  whatsapp:  {"phone_number_id": "...", "access_token": "...", "app_secret": "...", "verify_token": "..."}
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ from bot import db, envfile
 from bot.personas import DEFAULT_PERSONA
 from bot.validators import PLATFORM_TOKEN_VALIDATORS, validate_user_ids
 
-PLATFORMS = ("telegram", "discord", "slack", "matrix")
+PLATFORMS = ("telegram", "discord", "slack", "matrix", "whatsapp")
 
 BACKUP_DIR = envfile.PROJECT_ROOT / "data" / "bot_instances_backups"
 
