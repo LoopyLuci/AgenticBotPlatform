@@ -42,9 +42,11 @@ _handles: dict[int, _Handle] = {}
 
 def _build_credentials_set(row: dict[str, Any]) -> Any:
     """allowed_user_ids as the right type for each platform's comparisons —
-    Telegram/Discord compare against ints, Slack against strings."""
+    Telegram/Discord compare against ints, Slack/Matrix against strings
+    (Slack member IDs and Matrix user IDs like @name:server are never
+    numeric)."""
     ids = row["allowed_user_ids"]
-    if row["platform"] == "slack":
+    if row["platform"] in ("slack", "matrix"):
         return {str(i) for i in ids}
     return {int(i) for i in ids}
 
@@ -82,7 +84,20 @@ async def _run_telegram(row: dict[str, Any]) -> None:
         await application.shutdown()
 
 
-_RUNNERS = {"discord": _run_discord, "slack": _run_slack, "telegram": _run_telegram}
+async def _run_matrix(row: dict[str, Any]) -> None:
+    from bot.platforms.matrix_platform import MatrixPlatformInstance
+
+    creds = row["credentials"]
+    instance = MatrixPlatformInstance(
+        instance_id=row["id"], name=row["name"],
+        homeserver=creds["homeserver"], user_id=creds["user_id"],
+        access_token=creds["access_token"], device_id=creds.get("device_id") or "",
+        allowed_ids=_build_credentials_set(row),
+    )
+    await instance.start()  # runs until cancelled
+
+
+_RUNNERS = {"discord": _run_discord, "slack": _run_slack, "telegram": _run_telegram, "matrix": _run_matrix}
 
 
 def _done_callback(instance_id: int, name: str) -> Any:

@@ -1,7 +1,7 @@
 # Bot Server
 
 Run any number of independent bots at once — a Claude bot and a separate
-Hermes Agent bot, each on Telegram, Discord, and/or Slack, all
+Hermes Agent bot, each on Telegram, Discord, Slack, and/or Matrix, all
 simultaneously, each with its own fully separate chat history and job
 queue. Every bot routes through one of five interchangeable backends
 (Anthropic API, Claude Code CLI, best-effort UI automation of Claude
@@ -102,6 +102,7 @@ bot/                   the Python server (multi-bot engine + dashboard API)
   platforms/
     discord_platform.py     DiscordPlatformInstance — one per enabled Discord bot instance
     slack_platform.py        SlackPlatformInstance — one per enabled Slack bot instance (Socket Mode)
+    matrix_platform.py       MatrixPlatformInstance — one per enabled Matrix bot instance (matrix-nio)
   backends/
     api_backend.py          Anthropic API
     cli_backend.py           Claude Code CLI (headless)
@@ -114,7 +115,7 @@ bot/                   the Python server (multi-bot engine + dashboard API)
     slots.py                    fuzzy argument extraction (bot/MCP-server/backend/model names)
     actions.py                   one handler per intent, thin wrappers over existing bot/* functions
     engine.py                    SupportBot.handle()/confirm() — classify, confirm-gate, execute
-  commands.py              platform-agnostic slash commands, shared by Telegram/Discord/Slack/Support Bot
+  commands.py              platform-agnostic slash commands, shared by Telegram/Discord/Slack/Matrix/Support Bot
   swarm/
     base.py                  SwarmStrategy interface + SwarmRunResult, mirrors backends/base.py
     engine.py                 dispatches a run to its strategy, owns the swarm_runs row lifecycle
@@ -748,6 +749,14 @@ instances you create):
   local-first): a bot token (`xoxb-...`) and an app-level token
   (`xapp-...`) from [api.slack.com/apps](https://api.slack.com/apps), plus
   Slack member ID(s).
+- **Matrix** — a dedicated account for the bot on any homeserver (its own
+  user, not your personal one), its access token (Element → Settings →
+  Help & About → Advanced → Access Token, or `POST
+  /_matrix/client/v3/login`), plus the invited-in users' full Matrix IDs
+  (`@name:server`). Encrypted rooms aren't supported — see
+  `bot/platforms/matrix_platform.py`'s module docstring for why; invite
+  the bot into an unencrypted room instead. It auto-joins any room it's
+  invited to.
 
 The dashboard's **Chat** tab is bot-aware — pick a bot from its own
 dropdown (not just a platform), see the real conversation for whichever

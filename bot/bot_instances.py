@@ -15,6 +15,7 @@ Platform-specific `credentials` JSON shapes:
   telegram: {"bot_token": "..."}
   discord:  {"bot_token": "..."}
   slack:    {"bot_token": "...", "app_token": "..."}
+  matrix:   {"homeserver": "...", "user_id": "...", "access_token": "...", "device_id": "..." (optional)}
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ from bot import db, envfile
 from bot.personas import DEFAULT_PERSONA
 from bot.validators import PLATFORM_TOKEN_VALIDATORS, validate_user_ids
 
-PLATFORMS = ("telegram", "discord", "slack")
+PLATFORMS = ("telegram", "discord", "slack", "matrix")
 
 BACKUP_DIR = envfile.PROJECT_ROOT / "data" / "bot_instances_backups"
 

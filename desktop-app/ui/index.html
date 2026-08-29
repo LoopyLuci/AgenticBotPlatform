@@ -1037,6 +1037,7 @@
               <option value="telegram">Telegram</option>
               <option value="discord">Discord</option>
               <option value="slack">Slack</option>
+              <option value="matrix">Matrix</option>
             </select>
           </div>
         </div>
@@ -1070,17 +1071,26 @@
           <div class="help" id="bot-new-persona-desc">General-purpose helper for whoever messages this bot.</div>
           <div class="row" id="bot-new-persona-list"></div>
         </div>
-        <div class="wizard-field">
-          <label>Bot token</label>
+        <div class="wizard-field" id="bot-new-token-field">
+          <label id="bot-new-token-label">Bot token</label>
           <div class="row"><input type="text" id="bot-new-token" placeholder="platform bot token" autocomplete="off" spellcheck="false"></div>
         </div>
         <div class="wizard-field" id="bot-new-apptoken-field" style="display:none;">
           <label>App token (Slack only, xapp-...)</label>
           <div class="row"><input type="text" id="bot-new-apptoken" placeholder="xapp-..." autocomplete="off" spellcheck="false"></div>
         </div>
+        <div class="wizard-field" id="bot-new-matrix-fields" style="display:none;">
+          <label>Homeserver URL</label>
+          <div class="row"><input type="text" id="bot-new-matrix-homeserver" placeholder="https://matrix.org" autocomplete="off" spellcheck="false"></div>
+          <label style="margin-top:8px; display:block;">Matrix user ID</label>
+          <div class="row"><input type="text" id="bot-new-matrix-userid" placeholder="@mybot:matrix.org" autocomplete="off" spellcheck="false"></div>
+          <div class="help">The access token goes in the "Access token" field above — get one via Element → Settings → Help &amp; About → Advanced → Access Token, or <code>POST /_matrix/client/v3/login</code>. Encrypted rooms aren't supported; invite this bot into an unencrypted room.</div>
+          <label style="margin-top:8px; display:block;">Device ID (optional)</label>
+          <div class="row"><input type="text" id="bot-new-matrix-device" placeholder="leave blank to auto-assign" autocomplete="off" spellcheck="false"></div>
+        </div>
         <div class="wizard-field">
           <label>Allowed user ID(s)</label>
-          <div class="help">Comma-separated. Numeric IDs for Telegram/Discord, Slack member IDs (U.../W...) for Slack.</div>
+          <div class="help">Comma-separated. Numeric IDs for Telegram/Discord, Slack member IDs (U.../W...) for Slack, full Matrix user IDs (@name:server) for Matrix.</div>
           <div class="row"><input type="text" id="bot-new-allowed" placeholder="123456789, 987654321" autocomplete="off" spellcheck="false"></div>
         </div>
         <div class="wizard-field" id="bot-new-cantarget-field">

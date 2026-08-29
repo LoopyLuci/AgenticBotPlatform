@@ -19,6 +19,14 @@ app's own version (the Android app versions independently — see its own
   already handles `bot-server.exe` itself.
 
 ### Added
+- Matrix as a fourth chat platform (`bot/platforms/matrix_platform.py`,
+  via matrix-nio): a bot instance can now be Telegram, Discord, Slack, or
+  Matrix. Full messaging (text + incoming/outgoing images, files, audio,
+  video), automatic room-invite acceptance, and the same slash-command/
+  allowlist/dashboard-Chat-tab integration every other platform gets.
+  Encrypted rooms aren't supported (no Olm/Megolm store) — use an
+  unencrypted room. Phase C of the multi-provider/plugin/platforms
+  roadmap.
 - A plugin API: a single local `plugin.py` file can register new agent
   tools and/or slash commands (`bot/plugins.py`) without touching core
   code — they show up in every backend's tool list and in `/help`/
