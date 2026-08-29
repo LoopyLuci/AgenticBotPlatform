@@ -217,6 +217,42 @@ def stop_instance(pid: int) -> None:
     time.sleep(1)
 
 
+def find_mcp_server_pids() -> list[int]:
+    """PIDs of any `python -m bot.mcp_server` process — a real,
+    previously-undiagnosed second cause of the exact same "can't
+    overwrite the bundled venv" build failure find_running_instance()
+    already documents above. An MCP client (e.g. an editor/agent
+    integration) can keep this running from the same
+    target/release/.venv a cargo build needs to overwrite, holding its
+    compiled extension modules (cryptography's _rust.pyd, etc.) mapped
+    into memory — Tauri's build script then fails with a locked-file
+    error that looks identical to, but has a different root cause than,
+    bot-server.exe still running."""
+    if IS_WINDOWS:
+        out = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command",
+             "(Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
+             "Where-Object { $_.CommandLine -like '*bot.mcp_server*' }).ProcessId"],
+            capture_output=True, text=True,
+        )
+    else:
+        out = subprocess.run(["pgrep", "-f", "bot.mcp_server"], capture_output=True, text=True)
+    return [int(p) for p in out.stdout.split() if p.strip().isdigit()]
+
+
+def stop_mcp_servers(pids: list[int]) -> None:
+    """Tree-kills each one found by find_mcp_server_pids(). No graceful
+    shutdown attempt and no restore-on-failure the way stop_instance()
+    has for the user-facing app: an MCP client reconnects and respawns
+    this on its own next tool call, so there's no real downtime to
+    protect here."""
+    for pid in pids:
+        if IS_WINDOWS:
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
+        else:
+            subprocess.run(["kill", "-9", str(pid)], capture_output=True)
+
+
 def relaunch_bare() -> None:
     if not _EXE_PATH.exists():
         return
@@ -429,6 +465,17 @@ def main() -> int:
                        f"use — stopping bot-server (pid {running_pid})")
             stop_instance(running_pid)
             Step.ok("stopped")
+
+        if rust_needed or deploy_needed:
+            mcp_pids = find_mcp_server_pids()
+            if mcp_pids:
+                if not was_running:
+                    Step.head("Stopping processes holding the bundled venv open")
+                Step.doing(f"an MCP client is holding the same bundled venv open "
+                           f"(bot.mcp_server, pid {', '.join(map(str, mcp_pids))}) — stopping it too; "
+                           f"it respawns on its own next tool call")
+                stop_mcp_servers(mcp_pids)
+                Step.ok("stopped")
 
         results: dict[str, Optional[bool]] = {"python": check_python()}
         results["rust"] = check_rust() if rust_needed else None

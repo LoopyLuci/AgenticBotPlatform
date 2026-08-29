@@ -8,6 +8,16 @@ app's own version (the Android app versions independently — see its own
 
 ## [Unreleased]
 
+### Fixed
+- `scripts/local_pipeline.py`'s deploy step could fail with a Windows
+  "file in use" error even after correctly stopping `bot-server.exe`,
+  because a separate `python -m bot.mcp_server` process (spawned by an
+  MCP client from the same bundled `target/release/.venv` a Rust
+  check/build needs to overwrite) could independently hold the same
+  compiled extension modules memory-mapped. The pipeline now finds and
+  stops any such process before a Rust check or deploy, the same way it
+  already handles `bot-server.exe` itself.
+
 ### Added
 - A plugin API: a single local `plugin.py` file can register new agent
   tools and/or slash commands (`bot/plugins.py`) without touching core
