@@ -8,6 +8,8 @@ app's own version (the Android app versions independently — see its own
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-08-30
+
 ### Fixed
 - `Router._invalidate()` (fired on every config hot-reload) dropped its
   cached backend dict with no shutdown call, silently leaking any
@@ -153,6 +155,13 @@ app's own version (the Android app versions independently — see its own
   `install_service*`/`install_task.ps1` autostart scripts).
 - This changelog, and an [architecture decision record log](docs/adr/).
 
+### Changed
+- Removed the separate "Custom bot instructions" card now that
+  `custom_instructions` is editable inline in the Add-a-bot/edit form;
+  its one genuinely useful feature (inserting a persona's default
+  instructions) moved into that form as an "Insert `<persona>` preset"
+  button.
+
 ### Fixed
 - `router.resolve_chain()`'s "ui never gets a silent default" guard was
   a no-op if `default_backend` was itself set to `"ui"` (a one-click
@@ -242,7 +251,8 @@ First public release. One desktop app running any number of independent
 Claude/Hermes Agent bots across Telegram, Discord, and Slack at once,
 plus a native Android companion.
 
-[Unreleased]: https://github.com/LoopyLuci/BotServer/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/LoopyLuci/BotServer/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/LoopyLuci/BotServer/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/LoopyLuci/BotServer/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/LoopyLuci/BotServer/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/LoopyLuci/BotServer/compare/v0.2.0...v0.2.1
