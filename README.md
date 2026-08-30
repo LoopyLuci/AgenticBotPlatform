@@ -683,6 +683,31 @@ needed — a per-user agent); unregister with `launchctl unload` (the
 script prints the exact command). All three are also offered
 automatically at the end of `scripts/install.ps1` / `scripts/install.sh`.
 
+## Using the terminal UI
+
+For headless boxes, SSH sessions, or anyone who'd rather not leave the
+terminal, `bot/tui/` is a full Textual-based terminal app with the same
+bot-management capability as the browser dashboard — add/edit/delete
+bots for all 5 platforms, start/stop/restart/enable/disable, live field
+validation and setup help per platform, and a schedules panel — talking
+to an **already-running** BotServer's dashboard HTTP API rather than
+the database directly, so it works against a remote/federated install
+exactly like the desktop app does, not just a local one.
+
+```bash
+./scripts/tui.sh      # Linux/macOS
+./scripts/tui.ps1     # Windows
+```
+
+or directly: `python -m bot.tui`. On first launch it asks for a
+host:port (defaults to `127.0.0.1:8787`) and a dashboard token
+(auto-filled from the local `.env` when run on the same machine that's
+running BotServer). Bootstrapping the `.env` itself (the Anthropic key,
+`DASHBOARD_TOKEN`) is still `scripts/setup.py`'s job — that has to work
+before any server or API exists to connect to; the TUI is the ongoing
+"manage bots" tool used once one is already up, the terminal-world
+equivalent of the dashboard.
+
 ## The setup wizard
 
 Both the terminal (`scripts\setup.py`) and the GUI (shown automatically by
@@ -690,10 +715,11 @@ the desktop app, or reopen it any time from Control Center -> Environment
 -> "Open setup wizard") walk the same core fields — Anthropic API key,
 dashboard token, plus the optional Claude Desktop path — and share one
 validator (`bot/setup_wizard.py`) so a field that passes in one passes in
-the other. Platform/bot credentials are separate: at least one enabled
-**bot instance** (Bots tab) or, for the legacy single-bot-per-platform
-fields, one configured **Platforms** entry has to exist before the wizard
-reports "Ready" — see the Bots section below.
+the other. Platform/bot credentials are separate and not part of this
+wizard at all: the wizard only gates on the core fields above, and
+BotServer starts and the dashboard/desktop UI is fully usable with zero
+bots configured — add your first one afterward from the **Bots** tab
+(or the terminal UI), see the section below.
 
 What "as easy as possible" means concretely here:
 - **Format validation, not just presence.** A pasted value that doesn't

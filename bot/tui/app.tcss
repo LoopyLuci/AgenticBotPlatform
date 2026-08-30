@@ -1,0 +1,34 @@
+Screen {
+    align: center middle;
+}
+
+#connect-form, #add-bot-form, #bot-detail-form {
+    width: 70;
+    height: auto;
+    border: round $accent;
+    padding: 1 2;
+}
+
+.field-label {
+    color: $text-muted;
+    margin-top: 1;
+}
+
+.field-help {
+    color: $text-muted;
+    text-style: italic;
+}
+
+.status-line {
+    color: $warning;
+    margin-top: 1;
+}
+
+#bot-list-view {
+    width: 100%;
+    height: 100%;
+}
+
+DataTable {
+    height: 1fr;
+}

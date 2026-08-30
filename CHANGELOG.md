@@ -9,6 +9,14 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Fixed
+- **Critical**: `bot/main.py` crashed on startup (`SystemExit`) whenever
+  zero bot instances were configured, and it did this *before* the
+  dashboard/API server was even built — a fresh install could never
+  reach the "Add a bot" UI needed to fix itself. BotServer now starts
+  and the dashboard/desktop UI is fully usable with zero bots; adding
+  the first one is just a normal Bots-tab action, not a precondition.
+  The setup wizard's own "Ready" gate no longer requires a bot/platform
+  to already exist either, for the same reason.
 - `scripts/local_pipeline.py`'s deploy step could fail with a Windows
   "file in use" error even after correctly stopping `bot-server.exe`,
   because a separate `python -m bot.mcp_server` process (spawned by an
@@ -19,6 +27,26 @@ app's own version (the Android app versions independently — see its own
   already handles `bot-server.exe` itself.
 
 ### Added
+- A Textual-based terminal UI (`bot/tui/`, launch via `scripts/tui.sh`/
+  `scripts/tui.ps1` or `python -m bot.tui`): add/edit/delete bots across
+  all 5 platforms, start/stop/restart/enable/disable, live per-field
+  validation and setup help, and a schedules panel — talking to an
+  already-running BotServer's dashboard HTTP API, so it manages a
+  remote/federated install exactly like the desktop app does. A third
+  way to manage bots alongside the browser dashboard and desktop app,
+  for headless machines, SSH sessions, or terminal-first workflows.
+- Completed the Add-a-bot form: inline help and step-by-step setup
+  guidance for all 5 platforms (previously only Matrix/WhatsApp had
+  any), live green/red field validation as you type (`GET
+  /api/platform-guides`, `POST /api/validate-field`) instead of only
+  failing after submit, `custom_instructions`/`enabled` settable at
+  creation time, and an "Advanced" editor for per-instance
+  `action_overrides` (accepted by the API since Matrix/WhatsApp shipped
+  but previously had no UI anywhere).
+- Scheduled commands (`bot/scheduler.py`, previously chat-only via
+  `/cron`/`/loop`/`/heartbeat`) now have a dashboard API
+  (`/api/bots/{id}/schedules`) and a "Schedules" card in the Bots tab,
+  mirrored into the desktop app.
 - Python code hot-reload (`bot/hotreload.py`): most edits to `bot/*.py`
   now apply to the already-running process instead of needing the full
   local-CI/CD stop/rebuild/relaunch cycle — business logic and backends

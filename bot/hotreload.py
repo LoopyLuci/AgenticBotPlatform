@@ -69,6 +69,8 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.envfile", "bot.handlers", "bot.outbox", "bot.plugins", "bot.attachments",
     "bot.hotreload",  # never reload the reloader mid-cycle
     "bot.mcp_server",  # a separate process (python -m bot.mcp_server); not part of this one anyway
+    "bot.tui.app", "bot.tui.client", "bot.tui.__main__",  # a separate process (python -m bot.tui); not part of this one anyway
+    "bot.tui.screens.connect", "bot.tui.screens.bot_list", "bot.tui.screens.add_bot", "bot.tui.screens.bot_detail",
     "bot.swarm.base", "bot.swarm.strategies", "bot.swarm.engine",
     "bot.support_bot.model", "bot.support_bot.training_data", "bot.support_bot.hybrid",
     "bot.support_bot.actions", "bot.support_bot.nn_model", "bot.support_bot.slots",
