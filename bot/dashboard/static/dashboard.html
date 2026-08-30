@@ -911,8 +911,11 @@
         </div>
         <div class="wizard-field">
           <label>Custom instructions <span class="optional-tag">optional</span></label>
-          <div class="help">A system-prompt-style customization prepended to every prompt this bot routes, independent of backend. Leave blank for default behavior — can also be edited later below, in "Custom bot instructions."</div>
+          <div class="help">A system-prompt-style customization prepended to every prompt this bot routes, independent of backend. Leave blank for default behavior — edit any time by re-opening this bot with Edit.</div>
           <div class="row"><textarea id="bot-new-instructions" rows="2" style="width:100%; font-family:var(--font-body); padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink);" placeholder="e.g. Always answer in a formal tone and cite sources when possible."></textarea></div>
+          <div class="row" id="bot-new-instructions-preset-row" style="margin-top:6px; display:none;">
+            <button class="btn" id="btn-instructions-preset" type="button" style="padding:5px 12px; font-size:12px;"></button>
+          </div>
         </div>
         <div class="wizard-field">
           <label style="display:flex; align-items:center; gap:8px;"><input type="checkbox" id="bot-new-enabled" checked style="width:auto;"> Enabled</label>
@@ -1162,11 +1165,6 @@
         </div>
       </div>
 
-      <div class="card" style="margin-top:14px;">
-        <h3>Custom bot instructions</h3>
-        <p class="cardnote">Optional persona/instructions prepended to every prompt a bot instance routes through <code>router.ask()</code> — a system-prompt-style customization, independent of which backend it uses. Leave blank for default behavior.</p>
-        <div id="training-instructions-list"><p class="cardnote">Loading…</p></div>
-      </div>
     </section>
 
     <section id="platforms">
@@ -2127,7 +2125,6 @@ function startDashboard() {
   refreshPeers();
   pollWhenVisible(refreshPeers, 15000);
   refreshTrainingPhrases();
-  refreshTrainingInstructions();
   refreshTrainingHealth();
   pollWhenVisible(refreshTrainingPhrases, 20000);
   pollWhenVisible(refreshTrainingHealth, 10000);
@@ -2254,49 +2251,6 @@ document.getElementById('btn-training-add').onclick = async () => {
   }
 };
 
-async function refreshTrainingInstructions() {
-  const list = document.getElementById('training-instructions-list');
-  if (!getToken()) {
-    list.innerHTML = '<p class="cardnote">Unlock with the dashboard token to view.</p>';
-    return;
-  }
-  let bots;
-  try {
-    bots = botsCache && botsCache.length ? botsCache : await api('/api/bots');
-  } catch (_e) { return; }
-  if (!bots.length) {
-    list.innerHTML = '<p class="cardnote">No bot instances yet — add one in the Bots tab.</p>';
-    return;
-  }
-  list.innerHTML = bots.map(b => `
-    <div class="wizard-field" style="margin-top:${bots.indexOf(b) === 0 ? '0' : '14px'};">
-      <label>${esc(b.name)} <span style="font-weight:400; color:var(--muted);">(${esc(b.platform)}/${esc(b.backend)})</span></label>
-      <div class="row"><textarea data-instructions-for="${b.id}" rows="3" style="width:100%; font-family:var(--font-body); padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink);" placeholder="e.g. Always answer in a formal tone and cite sources when possible.">${esc(b.custom_instructions || '')}</textarea></div>
-      <div class="row" style="margin-top:6px;">
-        <button class="btn primary" data-instructions-save="${b.id}" style="padding:5px 12px; font-size:12px;">Save</button>
-        ${personaMeta(b.persona).instructions ? `<button class="btn" data-instructions-preset="${b.id}" style="padding:5px 12px; font-size:12px;" title="Fill in with this bot's ${esc(personaMeta(b.persona).label)} persona's default instructions">Insert ${esc(personaMeta(b.persona).label)} preset</button>` : ''}
-        <span class="cardnote" id="instructions-status-${b.id}"></span>
-      </div>
-    </div>`).join('');
-  document.querySelectorAll('[data-instructions-preset]').forEach(btn => btn.onclick = () => {
-    const id = btn.dataset.instructionsPreset;
-    const bot = botsCache.find(b => String(b.id) === String(id));
-    if (bot) document.querySelector(`[data-instructions-for="${id}"]`).value = personaMeta(bot.persona).instructions || '';
-  });
-  document.querySelectorAll('[data-instructions-save]').forEach(btn => btn.onclick = async () => {
-    const id = btn.dataset.instructionsSave;
-    const textarea = document.querySelector(`[data-instructions-for="${id}"]`);
-    const statusEl = document.getElementById(`instructions-status-${id}`);
-    try {
-      await api(`/api/bots/${id}`, { method: 'PUT', body: JSON.stringify({ custom_instructions: textarea.value }) });
-      statusEl.textContent = 'Saved.';
-      setTimeout(() => { statusEl.textContent = ''; }, 2000);
-    } catch (e) {
-      statusEl.textContent = 'Failed to save.';
-    }
-  });
-}
-
 // ---------------------------------------------------------------- bots ---
 let botEditingId = null;
 
@@ -2401,6 +2355,16 @@ function renderPersonaPicker(active) {
   const picked = personasCache.find(p => p.id === active);
   document.getElementById('bot-new-persona-desc').textContent = picked ? picked.description : '';
   list.querySelectorAll('[data-persona-id]').forEach(el => el.onclick = () => renderPersonaPicker(el.dataset.personaId));
+
+  const presetRow = document.getElementById('bot-new-instructions-preset-row');
+  const presetBtn = document.getElementById('btn-instructions-preset');
+  if (picked && picked.instructions) {
+    presetRow.style.display = '';
+    presetBtn.textContent = `Insert ${picked.label} preset`;
+    presetBtn.onclick = () => { document.getElementById('bot-new-instructions').value = picked.instructions; };
+  } else {
+    presetRow.style.display = 'none';
+  }
 }
 
 function personaMeta(id) {

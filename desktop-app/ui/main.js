@@ -901,7 +901,6 @@ function startDashboardPolling() {
   pollWhenVisible(refreshPeers, 15000);
   connectDevicesSocket();
   refreshTrainingPhrases();
-  refreshTrainingInstructions();
   refreshTrainingHealth();
   pollWhenVisible(refreshTrainingPhrases, 20000);
   pollWhenVisible(refreshTrainingHealth, 10000);
@@ -1011,6 +1010,16 @@ function renderPersonaPicker(active) {
   const picked = personasCache.find(p => p.id === active);
   document.getElementById('bot-new-persona-desc').textContent = picked ? picked.description : '';
   list.querySelectorAll('[data-persona-id]').forEach(el => el.onclick = () => renderPersonaPicker(el.dataset.personaId));
+
+  const presetRow = document.getElementById('bot-new-instructions-preset-row');
+  const presetBtn = document.getElementById('btn-instructions-preset');
+  if (picked && picked.instructions) {
+    presetRow.style.display = '';
+    presetBtn.textContent = `Insert ${picked.label} preset`;
+    presetBtn.onclick = () => { document.getElementById('bot-new-instructions').value = picked.instructions; };
+  } else {
+    presetRow.style.display = 'none';
+  }
 }
 
 function personaMeta(id) {
@@ -3165,45 +3174,6 @@ document.getElementById('btn-training-add').onclick = async () => {
     statusEl.textContent = 'Failed to add phrase — check the dashboard token.';
   }
 };
-
-async function refreshTrainingInstructions() {
-  const list = document.getElementById('training-instructions-list');
-  let bots;
-  try {
-    bots = botsCache && botsCache.length ? botsCache : await api('/api/bots');
-  } catch (_e) { return; }
-  if (!bots.length) {
-    list.innerHTML = '<p class="cardnote">No bot instances yet — add one in the Bots tab.</p>';
-    return;
-  }
-  list.innerHTML = bots.map(b => `
-    <div class="wizard-field" style="margin-top:${bots.indexOf(b) === 0 ? '0' : '14px'};">
-      <label>${esc(b.name)} <span style="font-weight:400; color:var(--muted);">(${esc(b.platform)}/${esc(b.backend)})</span></label>
-      <div class="row"><textarea data-instructions-for="${b.id}" rows="3" style="width:100%; font-family:var(--font-body); padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink);" placeholder="e.g. Always answer in a formal tone and cite sources when possible.">${esc(b.custom_instructions || '')}</textarea></div>
-      <div class="row" style="margin-top:6px;">
-        <button class="btn primary" data-instructions-save="${b.id}" style="padding:5px 12px; font-size:12px;">Save</button>
-        ${personaMeta(b.persona).instructions ? `<button class="btn" data-instructions-preset="${b.id}" style="padding:5px 12px; font-size:12px;" title="Fill in with this bot's ${esc(personaMeta(b.persona).label)} persona's default instructions">Insert ${esc(personaMeta(b.persona).label)} preset</button>` : ''}
-        <span class="cardnote" id="instructions-status-${b.id}"></span>
-      </div>
-    </div>`).join('');
-  document.querySelectorAll('[data-instructions-preset]').forEach(btn => btn.onclick = () => {
-    const id = btn.dataset.instructionsPreset;
-    const bot = botsCache.find(b => String(b.id) === String(id));
-    if (bot) document.querySelector(`[data-instructions-for="${id}"]`).value = personaMeta(bot.persona).instructions || '';
-  });
-  document.querySelectorAll('[data-instructions-save]').forEach(btn => btn.onclick = async () => {
-    const id = btn.dataset.instructionsSave;
-    const textarea = document.querySelector(`[data-instructions-for="${id}"]`);
-    const statusEl = document.getElementById(`instructions-status-${id}`);
-    try {
-      await api(`/api/bots/${id}`, { method: 'PUT', body: JSON.stringify({ custom_instructions: textarea.value }) });
-      statusEl.textContent = 'Saved.';
-      setTimeout(() => { statusEl.textContent = ''; }, 2000);
-    } catch (e) {
-      statusEl.textContent = 'Failed to save.';
-    }
-  });
-}
 
 // ------------------------------------------------------------ updates ----
 let latestUpdateInfo = null;
