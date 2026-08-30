@@ -18,6 +18,7 @@ what actually happened, not just what was configured to happen.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass
@@ -71,7 +72,11 @@ class Router:
         """Tears down any backend holding a live external process/connection
         — currently just HermesGatewayBackend's spawned `hermes serve`.
         Called from bot/main.py's shutdown path."""
-        for backend in self._backends.values():
+        await self._shutdown_backend_set(self._backends)
+
+    @staticmethod
+    async def _shutdown_backend_set(backends: dict[str, Backend]) -> None:
+        for backend in backends.values():
             shutdown = getattr(backend, "shutdown", None)
             if shutdown is not None:
                 try:
@@ -80,7 +85,27 @@ class Router:
                     logger.warning("error shutting down backend %r: %s", backend, exc)
 
     def _invalidate(self) -> None:
+        # A config reload used to just drop the cache here with no shutdown
+        # call, silently leaking anything holding a live external
+        # process/connection (HermesGatewayBackend's spawned `hermes serve`,
+        # confirmed to leak this way on every backends.yaml edit) — the
+        # dashboard's own restore-backup path calls shutdown_backends()
+        # properly; this hot-reload path just never did. Cache is swapped
+        # first so a request landing mid-shutdown builds a fresh backend
+        # immediately rather than waiting on the old one's teardown.
+        old_backends = self._backends
         self._backends = {}
+        if not old_backends:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            logger.warning(
+                "config reload discarded %d backend(s) with no running event loop to shut them down cleanly",
+                len(old_backends),
+            )
+            return
+        loop.create_task(self._shutdown_backend_set(old_backends))
 
     def _build_backend(self, name: str, cfg: dict, model_override: Optional[str] = None) -> Backend:
         b_cfg = (cfg.get("backends") or {}).get(name, {})

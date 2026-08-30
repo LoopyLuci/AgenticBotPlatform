@@ -9,6 +9,12 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Fixed
+- `Router._invalidate()` (fired on every config hot-reload) dropped its
+  cached backend dict with no shutdown call, silently leaking any
+  backend holding a live external process — `HermesGatewayBackend`'s
+  spawned `hermes serve`, in practice, on every `backends.yaml` edit.
+  Now schedules a proper `shutdown()` on the old backend set (flagged
+  during this session's hot-reload work, fixed as its own follow-up).
 - **Critical**: `bot/main.py` crashed on startup (`SystemExit`) whenever
   zero bot instances were configured, and it did this *before* the
   dashboard/API server was even built — a fresh install could never
