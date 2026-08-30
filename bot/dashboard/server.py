@@ -831,6 +831,19 @@ def build_app() -> FastAPI:
     # Bots tab, including submitting/editing platform bot tokens from the
     # phone. See _identify_caller()'s docstring for the tradeoff.
 
+    @app.get("/api/platform-guides")
+    async def api_platform_guides():
+        from bot.platform_guides import PLATFORM_GUIDES
+
+        return PLATFORM_GUIDES
+
+    @app.post("/api/validate-field", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_validate_field(payload: dict = Body(...)):
+        from bot.validators import validate_field
+
+        ok, message = validate_field(payload.get("platform", ""), payload.get("field", ""), payload.get("value", ""))
+        return {"ok": ok, "message": message}
+
     @app.get("/api/bots", dependencies=[Depends(_require_token_or_api_key)])
     async def api_bots_list():
         from bot.router import router as _router

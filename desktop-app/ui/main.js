@@ -873,6 +873,7 @@ function startDashboardPolling() {
   refreshPlatforms();
   pollWhenVisible(refreshPlatforms, 15000);
   refreshPersonas();
+  refreshPlatformGuides();
   refreshBots();
   refreshBotsBackups();
   pollWhenVisible(refreshBots, 15000);
@@ -908,13 +909,81 @@ function startDashboardPolling() {
 // ---------------------------------------------------------------- bots ---
 let botEditingId = null;
 
+let platformGuidesCache = {};
+async function refreshPlatformGuides() {
+  try {
+    platformGuidesCache = await api('/api/platform-guides');
+  } catch (_e) { return; }
+  renderPlatformGuide(document.getElementById('bot-new-platform').value);
+}
+
+// The one field shared by every platform (labeled "Bot token" or "Access
+// token" depending on which) maps to a different credential key per
+// platform — matches the mapping the create/edit handlers below build.
+function _tokenFieldKey(platform) {
+  return (platform === 'matrix' || platform === 'whatsapp') ? 'access_token' : 'bot_token';
+}
+
+function renderPlatformGuide(platform) {
+  const guide = platformGuidesCache[platform];
+  if (!guide) return;
+  const tokenField = guide.fields[_tokenFieldKey(platform)];
+  document.getElementById('bot-new-token-help').textContent = tokenField ? tokenField.help : '';
+  const apptokenField = guide.fields.app_token;
+  document.getElementById('bot-new-apptoken-help').textContent = apptokenField ? apptokenField.help : '';
+  const guideField = document.getElementById('bot-new-setupguide-field');
+  const guideList = document.getElementById('bot-new-setupguide-list');
+  if (guide.setup_guide && guide.setup_guide.length) {
+    guideField.style.display = '';
+    guideList.innerHTML = guide.setup_guide.map(step => `<li>${esc(step)}</li>`).join('');
+  } else {
+    guideField.style.display = 'none';
+  }
+}
+
+// Debounced live validation for one credential input — reuses the same
+// .ok/.bad/.msg CSS the setup wizard's own fields already use.
+function wireCredentialValidation(inputEl, platformGetter, fieldGetter) {
+  let timer = null;
+  inputEl.addEventListener('input', () => {
+    clearTimeout(timer);
+    const value = inputEl.value.trim();
+    inputEl.classList.remove('ok', 'bad');
+    let msgEl = inputEl.closest('.row').nextElementSibling;
+    if (!msgEl || !msgEl.classList.contains('msg')) {
+      msgEl = document.createElement('div');
+      msgEl.className = 'msg';
+      inputEl.closest('.row').insertAdjacentElement('afterend', msgEl);
+    }
+    if (!value) { msgEl.textContent = ''; msgEl.className = 'msg'; return; }
+    timer = setTimeout(async () => {
+      let res;
+      try {
+        res = await api('/api/validate-field', { method: 'POST', body: JSON.stringify({ platform: platformGetter(), field: fieldGetter(), value }) });
+      } catch (_e) { return; }
+      inputEl.classList.add(res.ok ? 'ok' : 'bad');
+      msgEl.textContent = res.message;
+      msgEl.className = 'msg ' + (res.ok ? 'good' : 'bad');
+    }, 400);
+  });
+}
+
 document.getElementById('bot-new-platform').onchange = (e) => {
   const p = e.target.value;
   document.getElementById('bot-new-apptoken-field').style.display = p === 'slack' ? '' : 'none';
   document.getElementById('bot-new-matrix-fields').style.display = p === 'matrix' ? '' : 'none';
   document.getElementById('bot-new-whatsapp-fields').style.display = p === 'whatsapp' ? '' : 'none';
   document.getElementById('bot-new-token-label').textContent = (p === 'matrix' || p === 'whatsapp') ? 'Access token' : 'Bot token';
+  document.getElementById('bot-new-token').classList.remove('ok', 'bad');
+  renderPlatformGuide(p);
 };
+wireCredentialValidation(document.getElementById('bot-new-token'), () => document.getElementById('bot-new-platform').value, () => _tokenFieldKey(document.getElementById('bot-new-platform').value));
+wireCredentialValidation(document.getElementById('bot-new-apptoken'), () => 'slack', () => 'app_token');
+wireCredentialValidation(document.getElementById('bot-new-matrix-homeserver'), () => 'matrix', () => 'homeserver');
+wireCredentialValidation(document.getElementById('bot-new-matrix-userid'), () => 'matrix', () => 'user_id');
+wireCredentialValidation(document.getElementById('bot-new-whatsapp-phoneid'), () => 'whatsapp', () => 'phone_number_id');
+wireCredentialValidation(document.getElementById('bot-new-whatsapp-appsecret'), () => 'whatsapp', () => 'app_secret');
+wireCredentialValidation(document.getElementById('bot-new-whatsapp-verifytoken'), () => 'whatsapp', () => 'verify_token');
 document.getElementById('bot-new-backend').onchange = refreshBotModelOptions;
 
 let botsCache = [];
@@ -982,6 +1051,11 @@ function _resetBotForm() {
   document.getElementById('bot-new-whatsapp-verifytoken').value = '';
   document.getElementById('bot-new-allowed').value = '';
   document.getElementById('bot-new-admins').value = '';
+  document.getElementById('bot-new-instructions').value = '';
+  document.getElementById('bot-new-enabled').checked = true;
+  document.getElementById('bot-new-overrides').value = '{}';
+  document.getElementById('bot-new-overrides-msg').textContent = '';
+  document.getElementById('bot-new-advanced').open = false;
   document.getElementById('bot-new-apptoken-field').style.display = 'none';
   document.getElementById('bot-new-matrix-fields').style.display = 'none';
   document.getElementById('bot-new-whatsapp-fields').style.display = 'none';
@@ -989,6 +1063,7 @@ function _resetBotForm() {
   document.getElementById('btn-bot-create').textContent = 'Add bot';
   renderPersonaPicker('assistant');
   refreshBotModelOptions();
+  renderPlatformGuide(document.getElementById('bot-new-platform').value);
   renderCanTargetCheckboxes(null, []);
 }
 
@@ -1014,8 +1089,15 @@ function _loadBotIntoForm(bot) {
   document.getElementById('bot-new-whatsapp-verifytoken').value = bot.credentials.verify_token || '';
   document.getElementById('bot-new-allowed').value = (bot.allowed_user_ids || []).join(', ');
   document.getElementById('bot-new-admins').value = (bot.admin_user_ids || []).join(', ');
+  document.getElementById('bot-new-instructions').value = bot.custom_instructions || '';
+  document.getElementById('bot-new-enabled').checked = !!bot.enabled;
+  const overrides = bot.action_overrides && Object.keys(bot.action_overrides).length ? bot.action_overrides : {};
+  document.getElementById('bot-new-overrides').value = JSON.stringify(overrides, null, 2);
+  document.getElementById('bot-new-overrides-msg').textContent = '';
+  document.getElementById('bot-new-advanced').open = Object.keys(overrides).length > 0;
   renderPersonaPicker(bot.persona || 'assistant');
   refreshBotModelOptions();
+  renderPlatformGuide(bot.platform);
   renderCanTargetCheckboxes(bot.id, bot.can_target || []);
   document.getElementById('btn-bot-create').textContent = 'Save changes';
   document.getElementById('bots').scrollIntoView({ behavior: 'smooth' });
@@ -1368,6 +1450,18 @@ document.getElementById('btn-bot-create').onclick = async () => {
     .map(s => (isStringId ? s : Number(s)));
   const can_target = Array.from(document.querySelectorAll('#bot-new-cantarget-list [data-cantarget-id]'))
     .filter(cb => cb.checked).map(cb => Number(cb.dataset.cantargetId));
+  const overridesText = document.getElementById('bot-new-overrides').value.trim() || '{}';
+  const overridesMsg = document.getElementById('bot-new-overrides-msg');
+  let action_overrides;
+  try {
+    action_overrides = JSON.parse(overridesText);
+    overridesMsg.textContent = '';
+  } catch (e) {
+    overridesMsg.textContent = 'Advanced: backend overrides isn\'t valid JSON — ' + e.message;
+    overridesMsg.className = 'msg bad';
+    document.getElementById('bot-new-advanced').open = true;
+    return;
+  }
   const payload = {
     name: document.getElementById('bot-new-name').value.trim(),
     platform,
@@ -1378,6 +1472,9 @@ document.getElementById('btn-bot-create').onclick = async () => {
     allowed_user_ids,
     admin_user_ids,
     can_target,
+    custom_instructions: document.getElementById('bot-new-instructions').value.trim() || null,
+    enabled: document.getElementById('bot-new-enabled').checked,
+    action_overrides,
   };
   statusEl.textContent = 'Saving…';
   try {

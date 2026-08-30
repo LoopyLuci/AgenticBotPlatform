@@ -138,3 +138,18 @@ PLATFORM_TOKEN_VALIDATORS = {
         "verify_token": validate_whatsapp_verify_token,
     },
 }
+
+
+def validate_field(platform: str, field: str, value: str) -> tuple[bool, str]:
+    """Look up and run the one validator for platform+field — lets a
+    live-typing UI (the web Add-a-bot form, or bot/tui/) check a single
+    field without indexing PLATFORM_TOKEN_VALIDATORS itself. Unknown
+    platform/field is reported, not raised, since it's driven by whatever
+    a client sends."""
+    platform_validators = PLATFORM_TOKEN_VALIDATORS.get(platform)
+    if platform_validators is None:
+        return False, f"unknown platform {platform!r}"
+    validator = platform_validators.get(field)
+    if validator is None:
+        return False, f"{platform!r} has no field {field!r}"
+    return validator(value)

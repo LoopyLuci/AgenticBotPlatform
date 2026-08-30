@@ -91,6 +91,7 @@ PLATFORM_MODULES: dict[str, str] = {
 # holding X's pre-reload value for the rest of the cycle.
 _TIER3_LEAVES: tuple[str, ...] = (
     "bot.validators",
+    "bot.platform_guides",
     "bot.personas",
     "bot.bot_instances",  # depends only on validators/personas — before pairing/memory, which import it at module scope
     "bot.models",
