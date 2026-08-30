@@ -1272,7 +1272,14 @@ async function refreshBots() {
         <button class="btn" data-bot-delete="${b.id}" style="padding:3px 8px; font-size:11px;">Delete</button>
       </div>
     </div>`;
-  }).join('') : '<p class="cardnote">No bots yet — add one above.</p>';
+  }).join('') : `<div class="card" style="text-align:center; padding:28px 20px;">
+      <h3 style="margin-bottom:6px;">No bots yet</h3>
+      <p class="cardnote">A "bot" here is one connection to a chat platform (Telegram, Discord, Slack, Matrix, or WhatsApp) paired with a backend that answers it (Claude, Hermes Agent, or any custom model). Fill in the form above and click "Add bot" to create your first one — nothing else needs to be set up first.</p>
+    </div>`;
+  if (!bots.length) {
+    const nameField = document.getElementById('bot-new-name');
+    if (document.activeElement === document.body) nameField.focus();
+  }
 
   wireCustomSelects(grid, async (el, value) => {
     const id = Number(el.dataset.botModel);

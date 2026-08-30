@@ -297,6 +297,7 @@
     </div>
     <p class="wizard-intro">A few things this bot needs before it can run. Anything already valid is pre-filled and skippable — nothing here blocks you from the dashboard, it's just where you'd come back to finish later.</p>
     <p class="wizard-intro">You don't need all five backends — only set up the ones you actually route to. A field only becomes required here once <code class="mono">config/backends.yaml</code> is actually sending something to that backend.</p>
+    <p class="wizard-intro">This step is just the core settings above — once they're valid, continue to the dashboard's <b>Bots</b> tab to add your first Telegram/Discord/Slack/Matrix/WhatsApp bot.</p>
     <div id="wizard-backends"></div>
     <div id="wizard-fields"></div>
     <div class="wizard-foot">
@@ -2603,7 +2604,14 @@ async function refreshBots() {
         <button class="btn" data-bot-delete="${b.id}" style="padding:3px 8px; font-size:11px;">Delete</button>
       </div>
     </div>`;
-  }).join('') : '<p class="cardnote">No bots yet — add one above.</p>';
+  }).join('') : `<div class="card" style="text-align:center; padding:28px 20px;">
+      <h3 style="margin-bottom:6px;">No bots yet</h3>
+      <p class="cardnote">A "bot" here is one connection to a chat platform (Telegram, Discord, Slack, Matrix, or WhatsApp) paired with a backend that answers it (Claude, Hermes Agent, or any custom model). Fill in the form above and click "Add bot" to create your first one — nothing else needs to be set up first.</p>
+    </div>`;
+  if (!bots.length) {
+    const nameField = document.getElementById('bot-new-name');
+    if (document.activeElement === document.body) nameField.focus();
+  }
 
   wireCustomSelects(grid, async (el, value) => {
     const id = Number(el.dataset.botModel);

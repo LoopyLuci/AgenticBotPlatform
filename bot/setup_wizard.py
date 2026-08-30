@@ -374,7 +374,11 @@ def check_status() -> dict[str, Any]:
         has_bot = bool(bot_instances.list_instances(enabled_only=True))
     except Exception:
         pass  # DB not initialized yet (e.g. called very early at boot)
-    ready = core_ready and (has_bot or any(p["configured"] for p in platforms.values()))
+    # Core settings (Anthropic key, dashboard token) are all this wizard
+    # gates on — adding a bot is a separate, later step in the dashboard's
+    # Bots tab, not a precondition for leaving the wizard. has_bot/platforms
+    # are still reported for the UI's own informational use.
+    ready = core_ready
     return {
         "fields": fields,
         "backends": backend_readiness(),

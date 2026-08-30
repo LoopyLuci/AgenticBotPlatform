@@ -149,9 +149,9 @@ async def run() -> None:
     await platform_supervisor.start_all_enabled(instances)
 
     if not instances:
-        raise SystemExit(
-            "No bot is configured — add one from the dashboard's Bots tab "
-            "(or scripts/setup.py) and restart."
+        logger.info(
+            "no bot instances configured yet — dashboard/desktop UI is still "
+            "available to add one from the Bots tab"
         )
 
     # dashboard app, sharing this process/loop
