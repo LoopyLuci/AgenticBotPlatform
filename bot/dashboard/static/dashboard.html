@@ -987,6 +987,36 @@
       </div>
 
       <div class="card" style="margin-top:14px;">
+        <h3>Schedules</h3>
+        <p class="cardnote">Recurring prompts a bot runs on its own — the same store <code>/cron</code>, <code>/loop</code>, and <code>/heartbeat</code> already write to in chat, now visible and manageable here too.</p>
+        <div class="row" style="gap:10px; align-items:center; margin-top:8px;">
+          <select id="schedules-bot-select" style="flex:1;"></select>
+        </div>
+        <div class="tablewrap" style="margin-top:10px;">
+          <table>
+            <thead><tr><th>Chat</th><th>Kind</th><th>Prompt</th><th>Interval</th><th>Next run</th><th></th></tr></thead>
+            <tbody id="schedules-tbody"><tr class="emptyrow"><td colspan="6">Select a bot above.</td></tr></tbody>
+          </table>
+        </div>
+        <div class="wizard-field" style="margin-top:12px;">
+          <label>New schedule</label>
+          <div class="help">Interval accepts "30s", "10m", "2h", "1d", or a bare number of seconds. Chat/thread ID must match a real chat this bot is in — the same ID shown in the Chat tab or a platform's own UI.</div>
+          <div class="row" style="gap:8px; flex-wrap:wrap;">
+            <input type="text" id="schedule-new-chatid" placeholder="chat ID" style="flex:1; min-width:120px;">
+            <select id="schedule-new-kind" style="min-width:100px;">
+              <option value="cron">cron</option>
+              <option value="loop">loop</option>
+              <option value="heartbeat">heartbeat</option>
+            </select>
+            <input type="text" id="schedule-new-interval" placeholder="10m" style="width:90px;">
+            <input type="text" id="schedule-new-prompt" placeholder="prompt to send" style="flex:2; min-width:200px;">
+            <button class="btn primary" id="btn-schedule-create">Add</button>
+          </div>
+          <span class="cardnote" id="schedule-new-status"></span>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
         <h3>Backups</h3>
         <p class="cardnote">Every create/update/delete snapshots the full bot list first — kept indefinitely, nothing here is auto-deleted.</p>
         <div class="tablewrap" style="margin-top:6px;">
@@ -2086,6 +2116,8 @@ function startDashboard() {
   pollWhenVisible(refreshHotReload, 15000);
   refreshKanban();
   pollWhenVisible(refreshKanban, 15000);
+  refreshSchedules();
+  pollWhenVisible(refreshSchedules, 15000);
   refreshSwarmInstanceLegend();
   refreshSwarms();
   refreshSwarmRuns();
@@ -2535,6 +2567,80 @@ document.getElementById('btn-kanban-add').onclick = async () => {
   });
   document.getElementById('kanban-new-text').value = '';
   refreshKanban();
+};
+
+let schedulesBotPopulated = false;
+
+function _schedulesSelectedBot() {
+  const sel = document.getElementById('schedules-bot-select');
+  return sel.value ? Number(sel.value) : null;
+}
+
+async function refreshSchedules() {
+  const sel = document.getElementById('schedules-bot-select');
+  const tbody = document.getElementById('schedules-tbody');
+  if (!getToken() || !sel || !tbody) return;
+  if ((botsCache || []).length && (!schedulesBotPopulated || sel.options.length !== botsCache.length)) {
+    const prev = sel.value;
+    sel.innerHTML = botsCache.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('');
+    if (prev && botsCache.some(b => String(b.id) === prev)) sel.value = prev;
+    schedulesBotPopulated = true;
+  }
+  const instanceId = _schedulesSelectedBot();
+  if (!instanceId) {
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="6">No bots configured yet.</td></tr>';
+    return;
+  }
+  let rows;
+  try {
+    rows = await api(`/api/bots/${instanceId}/schedules`);
+  } catch (_e) { return; }
+  tbody.innerHTML = rows.length ? rows.map(r => `
+    <tr>
+      <td class="mono">${esc(r.chat_id)}</td>
+      <td>${esc(r.kind)}</td>
+      <td>${esc(r.prompt)}</td>
+      <td class="mono">${r.interval_s}s</td>
+      <td class="mono">${esc(r.next_run_at || '')}</td>
+      <td>
+        <button class="btn" data-schedule-toggle="${r.id}" style="padding:3px 8px; font-size:11px;">${r.enabled ? 'Pause' : 'Resume'}</button>
+        <button class="btn" data-schedule-delete="${r.id}" style="padding:3px 8px; font-size:11px;">Delete</button>
+      </td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="6">No schedules for this bot yet.</td></tr>';
+  tbody.querySelectorAll('[data-schedule-toggle]').forEach(btn => btn.onclick = async () => {
+    const id = btn.dataset.scheduleToggle;
+    const row = rows.find(r => String(r.id) === id);
+    await api(`/api/bots/${instanceId}/schedules/${id}/${row.enabled ? 'pause' : 'resume'}`, { method: 'POST' });
+    refreshSchedules();
+  });
+  tbody.querySelectorAll('[data-schedule-delete]').forEach(btn => btn.onclick = async () => {
+    if (!confirm('Delete this schedule?')) return;
+    await api(`/api/bots/${instanceId}/schedules/${btn.dataset.scheduleDelete}`, { method: 'DELETE' });
+    refreshSchedules();
+  });
+}
+
+document.getElementById('schedules-bot-select').onchange = refreshSchedules;
+document.getElementById('btn-schedule-create').onclick = async () => {
+  const instanceId = _schedulesSelectedBot();
+  const statusEl = document.getElementById('schedule-new-status');
+  if (!instanceId) { statusEl.textContent = 'Select a bot first.'; return; }
+  const chat_id = document.getElementById('schedule-new-chatid').value.trim();
+  const kind = document.getElementById('schedule-new-kind').value;
+  const interval = document.getElementById('schedule-new-interval').value.trim();
+  const prompt = document.getElementById('schedule-new-prompt').value.trim();
+  if (!chat_id || !interval || !prompt) { statusEl.textContent = 'Chat ID, interval, and prompt are all required.'; return; }
+  statusEl.textContent = 'Adding…';
+  try {
+    await api(`/api/bots/${instanceId}/schedules`, { method: 'POST', body: JSON.stringify({ chat_id, kind, interval, prompt }) });
+    statusEl.textContent = 'Added.';
+    document.getElementById('schedule-new-chatid').value = '';
+    document.getElementById('schedule-new-interval').value = '';
+    document.getElementById('schedule-new-prompt').value = '';
+    refreshSchedules();
+  } catch (e) {
+    statusEl.textContent = `Failed: ${e.message}`;
+  }
 };
 
 async function refreshPairing() {

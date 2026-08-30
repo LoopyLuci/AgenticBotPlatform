@@ -889,6 +889,8 @@ function startDashboardPolling() {
   pollWhenVisible(refreshHotReload, 15000);
   refreshKanban();
   pollWhenVisible(refreshKanban, 15000);
+  refreshSchedules();
+  pollWhenVisible(refreshSchedules, 15000);
   refreshSwarmInstanceLegend();
   refreshSwarms();
   refreshSwarmRuns();
@@ -1175,6 +1177,80 @@ document.getElementById('btn-kanban-add').onclick = async () => {
   });
   document.getElementById('kanban-new-text').value = '';
   refreshKanban();
+};
+
+let schedulesBotPopulated = false;
+
+function _schedulesSelectedBot() {
+  const sel = document.getElementById('schedules-bot-select');
+  return sel.value ? Number(sel.value) : null;
+}
+
+async function refreshSchedules() {
+  const sel = document.getElementById('schedules-bot-select');
+  const tbody = document.getElementById('schedules-tbody');
+  if (!getToken() || !sel || !tbody) return;
+  if ((botsCache || []).length && (!schedulesBotPopulated || sel.options.length !== botsCache.length)) {
+    const prev = sel.value;
+    sel.innerHTML = botsCache.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('');
+    if (prev && botsCache.some(b => String(b.id) === prev)) sel.value = prev;
+    schedulesBotPopulated = true;
+  }
+  const instanceId = _schedulesSelectedBot();
+  if (!instanceId) {
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="6">No bots configured yet.</td></tr>';
+    return;
+  }
+  let rows;
+  try {
+    rows = await api(`/api/bots/${instanceId}/schedules`);
+  } catch (_e) { return; }
+  tbody.innerHTML = rows.length ? rows.map(r => `
+    <tr>
+      <td class="mono">${esc(r.chat_id)}</td>
+      <td>${esc(r.kind)}</td>
+      <td>${esc(r.prompt)}</td>
+      <td class="mono">${r.interval_s}s</td>
+      <td class="mono">${esc(r.next_run_at || '')}</td>
+      <td>
+        <button class="btn" data-schedule-toggle="${r.id}" style="padding:3px 8px; font-size:11px;">${r.enabled ? 'Pause' : 'Resume'}</button>
+        <button class="btn" data-schedule-delete="${r.id}" style="padding:3px 8px; font-size:11px;">Delete</button>
+      </td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="6">No schedules for this bot yet.</td></tr>';
+  tbody.querySelectorAll('[data-schedule-toggle]').forEach(btn => btn.onclick = async () => {
+    const id = btn.dataset.scheduleToggle;
+    const row = rows.find(r => String(r.id) === id);
+    await api(`/api/bots/${instanceId}/schedules/${id}/${row.enabled ? 'pause' : 'resume'}`, { method: 'POST' });
+    refreshSchedules();
+  });
+  tbody.querySelectorAll('[data-schedule-delete]').forEach(btn => btn.onclick = async () => {
+    if (!confirm('Delete this schedule?')) return;
+    await api(`/api/bots/${instanceId}/schedules/${btn.dataset.scheduleDelete}`, { method: 'DELETE' });
+    refreshSchedules();
+  });
+}
+
+document.getElementById('schedules-bot-select').onchange = refreshSchedules;
+document.getElementById('btn-schedule-create').onclick = async () => {
+  const instanceId = _schedulesSelectedBot();
+  const statusEl = document.getElementById('schedule-new-status');
+  if (!instanceId) { statusEl.textContent = 'Select a bot first.'; return; }
+  const chat_id = document.getElementById('schedule-new-chatid').value.trim();
+  const kind = document.getElementById('schedule-new-kind').value;
+  const interval = document.getElementById('schedule-new-interval').value.trim();
+  const prompt = document.getElementById('schedule-new-prompt').value.trim();
+  if (!chat_id || !interval || !prompt) { statusEl.textContent = 'Chat ID, interval, and prompt are all required.'; return; }
+  statusEl.textContent = 'Adding…';
+  try {
+    await api(`/api/bots/${instanceId}/schedules`, { method: 'POST', body: JSON.stringify({ chat_id, kind, interval, prompt }) });
+    statusEl.textContent = 'Added.';
+    document.getElementById('schedule-new-chatid').value = '';
+    document.getElementById('schedule-new-interval').value = '';
+    document.getElementById('schedule-new-prompt').value = '';
+    refreshSchedules();
+  } catch (e) {
+    statusEl.textContent = `Failed: ${e.message}`;
+  }
 };
 
 async function refreshPairing() {
