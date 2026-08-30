@@ -19,6 +19,25 @@ app's own version (the Android app versions independently — see its own
   already handles `bot-server.exe` itself.
 
 ### Added
+- Python code hot-reload (`bot/hotreload.py`): most edits to `bot/*.py`
+  now apply to the already-running process instead of needing the full
+  local-CI/CD stop/rebuild/relaunch cycle — business logic and backends
+  apply on the very next call, Discord/Slack/Matrix code gets a brief
+  automatic reconnect, and a documented set of core files (routing, the
+  DB connection, the dashboard, Telegram's handler registration, and a
+  few others confirmed to hold live singleton/subprocess/socket state)
+  still require the existing full restart, reported as "restart
+  required" rather than silently skipped or half-applied. A failed
+  reload enters a degraded state that blocks further cycles until an
+  actual restart, rather than risk compounding a broken module. New
+  dashboard "Hot Reload" card (status, recent events, manual "reload
+  now"), mirrored into the desktop app, plus `hot_reload_status`/
+  `trigger_hot_reload` MCP tools. Toggle: `hot_reload_enabled` in
+  `config/backends.yaml`. See `bot/hotreload.py`'s module docstring for
+  the full reasoning; the classification is guarded by a test that
+  parses every file's real imports so it can't silently rot as the
+  codebase grows. Second half of an earlier request (the first half —
+  config hot-reload hardening + snapshot/restore — shipped separately).
 - WhatsApp Cloud API as a fifth chat platform
   (`bot/platforms/whatsapp_platform.py`) — architecturally different from
   the others: messages arrive via a webhook Meta calls

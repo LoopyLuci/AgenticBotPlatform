@@ -239,6 +239,27 @@ async def restore_snapshot(name: str) -> dict:
 
 
 @mcp.tool()
+async def hot_reload_status() -> dict:
+    """Current hot-reload status: whether it's enabled, whether it's
+    degraded (a previous reload failed partway through and a full
+    process restart is now required — see restore_snapshot/a manual
+    restart, not this), and the most recent reload events."""
+    return await _request("GET", "/api/hotreload/status")
+
+
+@mcp.tool()
+async def trigger_hot_reload() -> dict:
+    """Force a full hot-reload cycle right now over every hot-reloadable
+    bot/*.py module, regardless of whether anything actually changed on
+    disk — useful right after editing BotServer's own code to confirm it
+    applied instead of waiting for the file watcher. Does nothing (and
+    reports "restart_required"/"degraded") if the change touched a file
+    that can't be safely hot-reloaded — see bot/hotreload.py's module
+    docstring for exactly which files those are and why."""
+    return await _request("POST", "/api/hotreload/run")
+
+
+@mcp.tool()
 async def ask_instance(source_instance: str, target_instance: str, prompt: str) -> dict:
     """Ask another registered bot instance (by its bot_instances name, see
     get_status/the Bots tab) a one-off question and get its reply back.

@@ -646,6 +646,42 @@ document.getElementById('btn-snapshot-create').onclick = async () => {
   refreshSnapshots();
 };
 
+async function refreshHotReload() {
+  const textEl = document.getElementById('hotreload-status-text');
+  const tbody = document.getElementById('hotreload-events-tbody');
+  if (!getToken() || !textEl) return;
+  let data;
+  try {
+    data = await api('/api/hotreload/status');
+  } catch (_e) { return; }
+  if (data.degraded) {
+    textEl.textContent = 'Degraded — restart required';
+    document.getElementById('hotreload-status-detail').textContent = data.degraded;
+  } else {
+    textEl.textContent = data.enabled ? 'Watching for changes' : 'Disabled (hot_reload_enabled: false)';
+    document.getElementById('hotreload-status-detail').textContent = '';
+  }
+  const events = data.recent_events || [];
+  tbody.innerHTML = events.length ? events.map(e => `
+    <tr>
+      <td>${fmtTime(e.ts)}</td>
+      <td>${esc(e.status)}</td>
+      <td>${esc(e.detail)}</td>
+    </tr>`).join('') : '<tr><td colspan="3" class="cardnote">No hot-reload events yet.</td></tr>';
+}
+
+document.getElementById('btn-hotreload-run').onclick = async () => {
+  const btn = document.getElementById('btn-hotreload-run');
+  btn.disabled = true;
+  try {
+    await api('/api/hotreload/run', { method: 'POST' });
+  } catch (e) {
+    alert(e.message || 'Reload failed.');
+  }
+  btn.disabled = false;
+  refreshHotReload();
+};
+
 async function refreshEnv() {
   const e = await api('/api/env');
   document.getElementById('env-resolved').textContent = e.resolved_path + (e.resolved_exists ? '' : '  (missing)');
@@ -848,6 +884,8 @@ function startDashboardPolling() {
   pollWhenVisible(refreshPlugins, 15000);
   refreshSnapshots();
   pollWhenVisible(refreshSnapshots, 15000);
+  refreshHotReload();
+  pollWhenVisible(refreshHotReload, 15000);
   refreshKanban();
   pollWhenVisible(refreshKanban, 15000);
   refreshSwarmInstanceLegend();

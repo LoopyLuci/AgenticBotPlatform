@@ -181,6 +181,10 @@ async def run() -> None:
     dashboard_task = asyncio.create_task(server.serve())
     watch_task = asyncio.create_task(config.watch_forever())
 
+    from bot import hotreload
+
+    hotreload_task = asyncio.create_task(hotreload.watch_forever())
+
     from bot import scheduler
 
     scheduler_task = asyncio.create_task(scheduler.run_forever(stop_event))
@@ -212,6 +216,7 @@ async def run() -> None:
     finally:
         logger.info("shutting down")
         watch_task.cancel()
+        hotreload_task.cancel()
         await scheduler_task  # stop_event is already set; run_forever exits its own loop cleanly
         await peers_health_task  # same shutdown contract as scheduler_task
         await retention_task  # same shutdown contract as scheduler_task

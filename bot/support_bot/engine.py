@@ -10,7 +10,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Optional
 
-from bot.commands import CmdContext, dispatch_command
+from bot import commands as bot_commands
 from bot.config import config
 from bot.support_bot import actions
 from bot.support_bot import hybrid
@@ -57,7 +57,7 @@ class SupportBot:
             return SupportBotReply(text="Say something and I'll help — try \"help\" for what I can do.", intent="unknown")
 
         if text.startswith("/"):
-            ctx = CmdContext(
+            ctx = bot_commands.CmdContext(
                 instance_id=None,
                 instance_name="Support Bot",
                 user_id="dashboard",
@@ -65,7 +65,7 @@ class SupportBot:
                 actor=actor,
                 session=self._cmd_session,
             )
-            reply_text = await dispatch_command(text, ctx)
+            reply_text = await bot_commands.dispatch_command(text, ctx)
             if reply_text is not None:
                 cmd = text[1:].split(None, 1)[0].lower()
                 return SupportBotReply(text=reply_text, intent=f"slash:{cmd}", applied=True)

@@ -742,6 +742,21 @@
         </div>
       </div>
 
+      <div class="card" style="margin-top:14px;" id="hotreload-card">
+        <h3>Hot Reload</h3>
+        <p class="cardnote">Applies an edit to BotServer's own <code>bot/*.py</code> to this already-running process — most files take effect on the very next call; Discord/Slack/Matrix code gets a brief reconnect; a documented set of core files (routing, the database connection, the dashboard itself) still need a full restart, reported here as "restart required" rather than silently skipped.</p>
+        <div class="settingrow">
+          <div><div class="st" id="hotreload-status-text">Checking…</div><div class="sd" id="hotreload-status-detail"></div></div>
+          <button class="btn" id="btn-hotreload-run">Reload now</button>
+        </div>
+        <div class="tablewrap" style="margin-top:10px;">
+          <table>
+            <thead><tr><th>When</th><th>Outcome</th><th>Detail</th></tr></thead>
+            <tbody id="hotreload-events-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="grid g2" style="margin-top:14px;">
         <div class="card">
           <h3>Security — allowlisted users</h3>

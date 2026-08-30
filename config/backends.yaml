@@ -46,6 +46,12 @@ features:
   verbose_telemetry: true
 agent_control:
   mode: trust_all
+# Applies an edit to bot/*.py to this already-running process instead of
+# needing the full stop/rebuild/relaunch cycle — see bot/hotreload.py's
+# module docstring for exactly what can and can't hot-reload. Checked
+# live on every detected file change, so toggling this takes effect
+# immediately, the same as every other key in this file.
+hot_reload_enabled: true
 retention:
   # Automatic pruning for the highest-volume, lowest-long-term-value
   # tables — job attempts, telemetry samples, connection-health events,

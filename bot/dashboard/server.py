@@ -32,7 +32,7 @@ from fastapi.staticfiles import StaticFiles
 
 from bot import agent_control, attachments, bot_instances, db, desktop, envfile, kanban, outbox, pairing, platform_supervisor, setup_wizard, thumbnails
 from bot.backends.base import BackendError
-from bot.commands import CmdContext, dispatch_command
+from bot import commands as bot_commands
 from bot.config import config
 from bot.router import VALID_BACKENDS, router
 from bot.support_bot import hybrid as support_bot_hybrid
@@ -503,6 +503,18 @@ def build_app() -> FastAPI:
         # platform's outbound path.
         asyncio.create_task(whatsapp_platform.handle_webhook_payload(payload))
         return {"ok": True}
+
+    @app.get("/api/hotreload/status", dependencies=[Depends(_require_token)])
+    async def api_hotreload_status():
+        from bot import hotreload
+
+        return hotreload.status()
+
+    @app.post("/api/hotreload/run", dependencies=[Depends(_require_token)])
+    async def api_hotreload_run():
+        from bot import hotreload
+
+        return await hotreload.trigger_manual_reload()
 
     # ------------------------------------------------------------- reads --
 
@@ -1510,12 +1522,12 @@ def build_app() -> FastAPI:
             direction="in", source=source, text=text, instance_id=int(instance_id),
         )
         session = _app_chat_sessions.setdefault((int(instance_id), chat_id), {})
-        cmd_ctx = CmdContext(
+        cmd_ctx = bot_commands.CmdContext(
             instance_id=int(instance_id), instance_name=instance["name"], user_id=chat_id,
             chat_id=chat_id, actor=f"{source}:{chat_id}", session=session,
         )
         try:
-            cmd_reply = await dispatch_command(text, cmd_ctx)
+            cmd_reply = await bot_commands.dispatch_command(text, cmd_ctx)
             if cmd_reply is not None:
                 reply_text = cmd_reply
             else:

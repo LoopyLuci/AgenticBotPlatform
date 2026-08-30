@@ -313,11 +313,11 @@ If any check fails, whatever was running beforehand is restored
 untouched, without deploying the broken build. Every run's full output is
 also saved under `logs/local_pipeline/` for later inspection.
 
-## Live-development safety net — config hot-reload + snapshots
+## Live-development safety net — config + code hot-reload, and snapshots
 
-Two separate mechanisms make it safe for an agent (or you) to actively
-edit this codebase while it keeps running, and to recover cleanly if an
-edit turns out to be wrong:
+Three separate mechanisms make it safe (and fast) for an agent (or you)
+to actively edit this codebase while it keeps running, and to recover
+cleanly if an edit turns out to be wrong:
 
 **Config hot-reload** (`bot/config.py`'s `ConfigManager`, backing both
 `config/backends.yaml` and `config/providers.yaml`) already applies
@@ -355,12 +355,46 @@ app over MCP" below) has the same two actions as tools —
 habit for an agent about to make a risky change to BotServer's own
 code/data is: snapshot first, make the change, restore if it goes wrong.
 
-**What this doesn't cover, honestly**: an edit to `bot/*.py` itself still
-needs a process restart to take effect — there's no live Python
-code-reload here (the app is one long-running asyncio process, not
-something with hot module-swapping), only config and data reload without
-downtime. That's the local CI/CD pipeline's job above, which already
-handles the rebuild-and-restart cycle safely.
+**Python code hot-reload** (`bot/hotreload.py`) applies most edits to
+`bot/*.py` itself to this already-running process, without the local
+CI/CD pipeline's full stop/rebuild/relaunch cycle. This is deliberately
+conservative, not a generic "reload anything safely" claim — every file
+under `bot/` is classified once, in `bot/hotreload.py`'s own
+`DENYLIST`/`RELOAD_ORDER`:
+
+- **Most of the codebase** (slash commands, validators, every backend
+  adapter, WhatsApp) reloads with **zero disruption** — the edit is live
+  on the very next call.
+- **Discord/Slack/Matrix** code reloads, then that platform's live
+  connections get a brief, automatic reconnect (the existing
+  `platform_supervisor.restart_instance()`) — required because each
+  registers a callback object with its client library that, once
+  registered, is never looked up by name again.
+- **A documented set of core files** — `bot/main.py`, `bot/router.py`,
+  `bot/db.py`, `bot/dashboard/server.py`, the agent-loop engine and
+  approval queue, `bot/handlers.py` (Telegram), and a few others that
+  hold live singleton/subprocess/socket state or hand raw function
+  objects to an external library — still need the existing full-process
+  restart. A change here is detected and reported as "restart required,"
+  not silently skipped or half-applied. If a reload genuinely fails
+  partway through (a bad edit slipping past the syntax check), hot-reload
+  enters a degraded state and refuses further cycles until the process
+  is actually restarted, rather than risk compounding a broken module.
+
+Toggle it with `hot_reload_enabled` in `config/backends.yaml` (on by
+default — itself already hot-reloaded, so flipping it takes effect
+immediately), or from the dashboard's new "Hot Reload" card (Control
+Center tab), which also shows recent reload events and a manual
+"Reload now" button. An agent driving this app over MCP has
+`hot_reload_status`/`trigger_hot_reload` as tools — the natural habit
+after editing BotServer's own code is to call `trigger_hot_reload` and
+confirm it applied instead of guessing.
+
+See `bot/hotreload.py`'s module docstring for the full reasoning behind
+each tier, and `tests/test_hotreload_classification.py` for the check
+that keeps the classification from silently rotting as the codebase
+grows (parses every file's real imports and asserts nothing is missing
+and the fixed reload order is genuinely valid).
 
 ## Plugin API — extend BotServer without editing core code
 
@@ -1047,11 +1081,13 @@ exposes the same control surface the dashboard GUI has, as MCP tools:
 `get_setup_status`, two agent-to-agent tools — `ask_instance` (relay a
 prompt to another registered bot instance and get its reply back) and
 `run_swarm` (trigger a swarm run by name or id) — both subject to the
-`agent_control` allowlist described below, and three snapshot tools —
+`agent_control` allowlist described below, three snapshot tools —
 `create_snapshot`, `list_snapshots`, `restore_snapshot` — for an agent
 (Claude, Hermes, or anything else driving this MCP server) to protect
-itself while editing BotServer's own code: see "Live-development safety
-net" below. It's a thin client: every tool
+itself while editing BotServer's own code, and two hot-reload tools —
+`hot_reload_status`, `trigger_hot_reload` — to confirm an edit actually
+applied instead of guessing: see "Live-development safety net" below.
+It's a thin client: every tool
 call is just an HTTP request to the already-running dashboard API using
 the same `DASHBOARD_TOKEN`, so there's exactly one place
 (`bot/dashboard/server.py`) that actually implements any of this.
