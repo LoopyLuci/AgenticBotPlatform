@@ -3,6 +3,7 @@ package com.botserver.mobile.di
 import android.content.Context
 import android.os.Build
 import coil.ImageLoader
+import com.botserver.mobile.BuildConfig
 import com.botserver.mobile.data.ApiService
 import com.botserver.mobile.data.CredentialStore
 import com.botserver.mobile.data.MeshPortHolder
@@ -27,10 +28,8 @@ import javax.inject.Singleton
 // Sent on every request so the server's device_presence can show what kind
 // of device is connected, not just that one is — see bot/db.py's
 // verify_api_key() and the X-Device-Platform/X-Device-App-Version headers
-// it reads. Not sourced from BuildConfig (buildConfig generation isn't
-// enabled) — kept as a plain constant next to defaultConfig's versionName.
+// it reads.
 private const val DEVICE_PLATFORM = "android"
-private const val DEVICE_APP_VERSION = "1.0.0"
 
 // Real hardware identity — distinct from the user-typed pairing label, so
 // the dashboard's Devices view can show "Pixel 8 Pro (Android 14)" instead
@@ -80,7 +79,7 @@ private class DynamicHostInterceptor(private val credentials: CredentialStore) :
         val builder = original.newBuilder().url(newUrl)
         credentials.apiKey?.let { builder.header("X-Dashboard-Token", it) }
         builder.header("X-Device-Platform", DEVICE_PLATFORM)
-        builder.header("X-Device-App-Version", DEVICE_APP_VERSION)
+        builder.header("X-Device-App-Version", BuildConfig.VERSION_NAME)
         builder.header("X-Device-Model", DEVICE_MODEL)
         builder.header("X-Device-OS-Version", DEVICE_OS_VERSION)
         // Self-reported, live: whatever port MeshServer is bound to right

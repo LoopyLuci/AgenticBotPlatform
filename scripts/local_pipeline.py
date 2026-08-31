@@ -3,8 +3,9 @@
 
 Replaces the GitHub Actions workflow this project used to push every
 commit's checks to GitHub's own servers for. This runs the same checks
-(Python tests/audit, Rust fmt/clippy/build, Docker image build) directly
-on your machine, then — only if every check that actually ran passed —
+(Python tests/audit, Rust fmt/clippy/build, Android unit tests, Docker
+image build) directly on your machine, then — only if every check that
+actually ran passed —
 rebuilds the production app and restarts whichever local OS service is
 registered to run it, so a green pipeline means the change is both
 verified and already live on this install.
@@ -114,6 +115,7 @@ def _run(cmd: list[str], cwd: Optional[Path] = None, retries: int = 0) -> tuple[
 # under one of these (README/CHANGELOG/docs/tests-only edits, for example)
 # doesn't need that step re-run — see changed_files() below.
 RUST_PREFIXES = ("desktop-app/src-tauri/",)
+ANDROID_PREFIXES = ("android-app/",)
 DOCKER_PREFIXES = ("bot/", "requirements.txt", "Dockerfile", "docker-compose.yml",
                    ".dockerignore", "scripts/docker-entrypoint.sh")
 # The running instance's bot code, config, and app binary all come from a
@@ -334,6 +336,24 @@ def check_rust() -> Optional[bool]:
     return True
 
 
+def check_android() -> Optional[bool]:
+    Step.head("Android — unit tests")
+    android_dir = ROOT / "android-app"
+    gradlew = android_dir / ("gradlew.bat" if IS_WINDOWS else "gradlew")
+    if not gradlew.exists():
+        Step.skip("android-app/gradlew not found — skipping")
+        return None
+    if not (shutil.which("java") or os.environ.get("JAVA_HOME")):
+        Step.skip("no JDK on PATH/JAVA_HOME — skipping (install a JDK to enable this check)")
+        return None
+    ok, out = _run([str(gradlew), "testDebugUnitTest", "--console=plain"], cwd=android_dir)
+    if not ok:
+        Step.err("./gradlew testDebugUnitTest failed:\n" + out[-4000:])
+        return False
+    Step.ok("unit tests passed")
+    return True
+
+
 def check_docker() -> Optional[bool]:
     Step.head("Docker — image builds")
     if not shutil.which("docker"):
@@ -443,16 +463,19 @@ def main() -> int:
         changed = changed_files()
         if changed is None:
             Step.warn("couldn't determine which files changed — running the full pipeline")
-            rust_needed = docker_needed = deploy_needed = True
+            rust_needed = docker_needed = android_needed = deploy_needed = True
         else:
             rust_needed = _matches(changed, RUST_PREFIXES)
             docker_needed = _matches(changed, DOCKER_PREFIXES)
+            android_needed = _matches(changed, ANDROID_PREFIXES)
             deploy_needed = _matches(changed, DEPLOY_PREFIXES)
             Step.ok(f"{len(changed)} file(s) changed since the last push")
             if not rust_needed:
                 Step.skip("no desktop-app/src-tauri changes — skipping Rust fmt/clippy/check")
             if not docker_needed:
                 Step.skip("no Docker-relevant changes — skipping the Docker image build")
+            if not android_needed:
+                Step.skip("no android-app changes — skipping Android unit tests")
             if not deploy_needed:
                 Step.skip("no bot/config/desktop-app changes — nothing new for a "
                           "stop/rebuild/restart cycle to pick up, skipping it entirely")
@@ -479,6 +502,7 @@ def main() -> int:
 
         results: dict[str, Optional[bool]] = {"python": check_python()}
         results["rust"] = check_rust() if rust_needed else None
+        results["android"] = check_android() if android_needed else None
         results["docker"] = check_docker() if docker_needed else None
 
         failed = [name for name, ok in results.items() if ok is False]
