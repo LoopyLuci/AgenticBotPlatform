@@ -301,18 +301,24 @@ private fun BotFormScreen(
                 Text(it.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
             }
             Spacer(Modifier.height(14.dp))
-            SecretTextField(
-                value = form.botToken,
-                onValueChange = { v -> onChange { it.copy(botToken = v) } },
-                label = "Bot token",
-            )
-            if (form.platform == "slack") {
-                Spacer(Modifier.height(14.dp))
+            if (form.loadingCredentials) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(6.dp))
+                Text("Loading this bot's saved credentials…", style = MaterialTheme.typography.bodySmall)
+            } else {
                 SecretTextField(
-                    value = form.appToken,
-                    onValueChange = { v -> onChange { it.copy(appToken = v) } },
-                    label = "App token (xapp-...)",
+                    value = form.botToken,
+                    onValueChange = { v -> onChange { it.copy(botToken = v) } },
+                    label = "Bot token",
                 )
+                if (form.platform == "slack") {
+                    Spacer(Modifier.height(14.dp))
+                    SecretTextField(
+                        value = form.appToken,
+                        onValueChange = { v -> onChange { it.copy(appToken = v) } },
+                        label = "App token (xapp-...)",
+                    )
+                }
             }
             Spacer(Modifier.height(14.dp))
             OutlinedTextField(
@@ -335,7 +341,7 @@ private fun BotFormScreen(
                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
             Spacer(Modifier.height(20.dp))
-            Button(onClick = onSave, enabled = !form.saving, modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = onSave, enabled = !form.saving && !form.loadingCredentials, modifier = Modifier.fillMaxWidth()) {
                 if (form.saving) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
                 else Text(if (form.isEditing) "Save changes" else "Add bot")
             }

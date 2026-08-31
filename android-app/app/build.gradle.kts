@@ -87,6 +87,14 @@ dependencies {
     ksp(libs.hilt.android.compiler)
     implementation(libs.androidx.hilt.navigation.compose)
 
+    // Offline cache — bot list is the source of truth for the UI, refreshed
+    // from the network rather than fetched fresh on every screen visit. See
+    // data/db/AppDatabase.kt for why credentials are deliberately excluded
+    // from what gets persisted here.
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+
     // Encrypted, Keystore-backed credential storage — the mobile analog of
     // the web frontends' localStorage token, but with real encryption at
     // rest, appropriate for a device that leaves the house.

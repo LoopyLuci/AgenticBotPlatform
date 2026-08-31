@@ -9,6 +9,8 @@ import com.botserver.mobile.data.dto.PersonaPreset
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -25,6 +27,7 @@ data class BotForm(
     val allowedIds: String = "",
     val enabled: Boolean = true,
     val saving: Boolean = false,
+    val loadingCredentials: Boolean = false,
     val error: String? = null,
 ) {
     val isEditing get() = editingId != null
@@ -47,10 +50,17 @@ class BotsViewModel @Inject constructor(private val repository: BotsRepository) 
     private val _uiState = MutableStateFlow(BotsUiState())
     val uiState: StateFlow<BotsUiState> = _uiState
 
+    init {
+        // Room is the source of truth for the list — this collects it for
+        // as long as the ViewModel lives, independent of how many times
+        // refresh() below is called to repopulate it.
+        repository.observeBots().onEach { list -> _uiState.update { it.copy(bots = list) } }.launchIn(viewModelScope)
+    }
+
     fun refresh() {
         viewModelScope.launch {
-            runCatching { repository.list() }
-                .onSuccess { list -> _uiState.update { it.copy(bots = list, error = null, loading = false) } }
+            repository.refresh()
+                .onSuccess { _uiState.update { it.copy(error = null, loading = false) } }
                 .onFailure { e -> _uiState.update { it.copy(error = e.message, loading = false) } }
         }
         if (_uiState.value.personas.isEmpty()) {
@@ -116,6 +126,10 @@ class BotsViewModel @Inject constructor(private val repository: BotsRepository) 
         _uiState.update { it.copy(form = BotForm()) }
     }
 
+    /** The list's own [bot] never carries a real credential (see
+     * BotsRepository's doc on why Room excludes it) — this fetches it
+     * fresh from the network the moment the (already biometric-gated) edit
+     * form opens, rather than reading a cached one that doesn't exist. */
     fun startEdit(bot: BotInstance) {
         _uiState.update {
             it.copy(
@@ -126,12 +140,26 @@ class BotsViewModel @Inject constructor(private val repository: BotsRepository) 
                     backend = bot.backend,
                     model = bot.model ?: "",
                     persona = bot.persona,
-                    botToken = bot.credentials.botToken ?: "",
-                    appToken = bot.credentials.appToken ?: "",
                     allowedIds = bot.allowedUserIds.joinToString(", "),
                     enabled = bot.enabled,
+                    loadingCredentials = true,
                 ),
             )
+        }
+        viewModelScope.launch {
+            runCatching { repository.getForEdit(bot.id) }
+                .onSuccess { fresh ->
+                    updateForm {
+                        it.copy(
+                            botToken = fresh.credentials.botToken ?: "",
+                            appToken = fresh.credentials.appToken ?: "",
+                            loadingCredentials = false,
+                        )
+                    }
+                }
+                .onFailure { e ->
+                    updateForm { it.copy(error = "Couldn't load this bot's credentials: ${e.message}", loadingCredentials = false) }
+                }
         }
     }
 
