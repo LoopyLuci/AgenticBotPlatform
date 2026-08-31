@@ -1,5 +1,6 @@
 package com.botserver.mobile.ui.jobs
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -8,12 +9,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.botserver.mobile.data.dto.JobSummary
 import com.botserver.mobile.ui.components.EmptyState
 import com.botserver.mobile.ui.components.ErrorState
 import com.botserver.mobile.ui.components.LoadingState
+import com.botserver.mobile.ui.components.PullRefreshBox
 
 private fun statusColor(status: String) = when (status) {
     "success" -> androidx.compose.ui.graphics.Color(0xFF2E7D32)
@@ -22,7 +25,7 @@ private fun statusColor(status: String) = when (status) {
     else -> androidx.compose.ui.graphics.Color.Gray
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun JobsScreen(viewModel: JobsViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsState()
@@ -37,8 +40,14 @@ fun JobsScreen(viewModel: JobsViewModel = hiltViewModel()) {
             } else if (state.jobs.isEmpty()) {
                 EmptyState("No jobs yet.")
             } else {
-                LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(state.jobs, key = { it.id }) { job -> JobRow(job) }
+                PullRefreshBox(refreshing = state.loading, onRefresh = { viewModel.refreshNow() }, modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        modifier = Modifier.testTag("jobs-list"),
+                        contentPadding = PaddingValues(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(state.jobs, key = { it.id }) { job -> JobRow(job, modifier = Modifier.animateItemPlacement()) }
+                    }
                 }
             }
         }
@@ -46,8 +55,8 @@ fun JobsScreen(viewModel: JobsViewModel = hiltViewModel()) {
 }
 
 @Composable
-private fun JobRow(job: JobSummary) {
-    Surface(shape = RoundedCornerShape(12.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+private fun JobRow(job: JobSummary, modifier: Modifier = Modifier) {
+    Surface(shape = RoundedCornerShape(12.dp), tonalElevation = 1.dp, modifier = modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
             Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                 Text(job.actionType, style = MaterialTheme.typography.titleSmall)

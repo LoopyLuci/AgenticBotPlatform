@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.botserver.mobile.data.dto.BotInstance
@@ -31,6 +32,7 @@ import com.botserver.mobile.data.dto.PersonaPreset
 import com.botserver.mobile.ui.components.EmptyState
 import com.botserver.mobile.ui.components.ErrorState
 import com.botserver.mobile.ui.components.LoadingState
+import com.botserver.mobile.ui.components.PullRefreshBox
 import com.botserver.mobile.security.rememberFragmentActivity
 import com.botserver.mobile.security.requireBiometricAuth
 import kotlinx.coroutines.launch
@@ -38,7 +40,7 @@ import kotlinx.coroutines.launch
 private val PLATFORMS = listOf("telegram", "discord", "slack")
 private val BACKENDS = listOf("cli", "api", "ui", "hermes_cli", "hermes_gateway")
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun BotsScreen(viewModel: BotsViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsState()
@@ -75,7 +77,7 @@ fun BotsScreen(viewModel: BotsViewModel = hiltViewModel()) {
             TopAppBar(
                 title = { Text("Bots", fontWeight = FontWeight.Bold) },
                 actions = {
-                    IconButton(onClick = { viewModel.startCreate() }) {
+                    IconButton(onClick = { viewModel.startCreate() }, modifier = Modifier.testTag("bots-add-fab")) {
                         Icon(Icons.Filled.Add, contentDescription = "Add bot")
                     }
                 },
@@ -90,39 +92,46 @@ fun BotsScreen(viewModel: BotsViewModel = hiltViewModel()) {
             } else if (state.bots.isEmpty() && state.pendingPairings.isEmpty()) {
                 EmptyState("No bots configured yet — tap + to add one.")
             } else {
-                LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (state.pendingPairings.isNotEmpty()) {
-                        item {
-                            Text(
-                                "Pending pairings",
-                                style = MaterialTheme.typography.labelLarge,
-                                modifier = Modifier.padding(bottom = 4.dp),
+                PullRefreshBox(refreshing = state.loading, onRefresh = { viewModel.refresh() }, modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        modifier = Modifier.testTag("bots-list"),
+                        contentPadding = PaddingValues(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (state.pendingPairings.isNotEmpty()) {
+                            item {
+                                Text(
+                                    "Pending pairings",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    modifier = Modifier.padding(bottom = 4.dp),
+                                )
+                            }
+                            items(state.pendingPairings, key = { "pairing-${it.id}" }) { request ->
+                                PairingRow(
+                                    request,
+                                    botName = state.bots.find { it.id == request.instanceId }?.name ?: "#${request.instanceId}",
+                                    busy = state.busyPairingId == request.id,
+                                    onApprove = { gated("Confirm it's you to approve this device") { viewModel.approvePairing(request) } },
+                                    onDeny = { viewModel.denyPairing(request) },
+                                )
+                            }
+                            if (state.bots.isNotEmpty()) {
+                                item { Spacer(Modifier.height(4.dp)) }
+                            }
+                        }
+                        items(state.bots, key = { it.id }) { bot ->
+                            BotRow(
+                                bot,
+                                personaIcon = state.personas.find { it.id == bot.persona }?.icon ?: "💬",
+                                busy = state.busyId == bot.id,
+                                onEdit = { gated("Confirm it's you to view \"${bot.name}\"'s credentials") { viewModel.startEdit(bot) } },
+                                onToggleEnabled = { viewModel.toggleEnabled(bot) },
+                                onToggleRunning = { viewModel.toggleRunning(bot) },
+                                onRestart = { viewModel.restart(bot) },
+                                onDelete = { gated("Confirm it's you to delete \"${bot.name}\"") { viewModel.delete(bot) } },
+                                modifier = Modifier.animateItemPlacement(),
                             )
                         }
-                        items(state.pendingPairings, key = { "pairing-${it.id}" }) { request ->
-                            PairingRow(
-                                request,
-                                botName = state.bots.find { it.id == request.instanceId }?.name ?: "#${request.instanceId}",
-                                busy = state.busyPairingId == request.id,
-                                onApprove = { gated("Confirm it's you to approve this device") { viewModel.approvePairing(request) } },
-                                onDeny = { viewModel.denyPairing(request) },
-                            )
-                        }
-                        if (state.bots.isNotEmpty()) {
-                            item { Spacer(Modifier.height(4.dp)) }
-                        }
-                    }
-                    items(state.bots, key = { it.id }) { bot ->
-                        BotRow(
-                            bot,
-                            personaIcon = state.personas.find { it.id == bot.persona }?.icon ?: "💬",
-                            busy = state.busyId == bot.id,
-                            onEdit = { gated("Confirm it's you to view \"${bot.name}\"'s credentials") { viewModel.startEdit(bot) } },
-                            onToggleEnabled = { viewModel.toggleEnabled(bot) },
-                            onToggleRunning = { viewModel.toggleRunning(bot) },
-                            onRestart = { viewModel.restart(bot) },
-                            onDelete = { gated("Confirm it's you to delete \"${bot.name}\"") { viewModel.delete(bot) } },
-                        )
                     }
                 }
             }
@@ -140,11 +149,12 @@ private fun BotRow(
     onToggleRunning: () -> Unit,
     onRestart: () -> Unit,
     onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
 
-    Surface(shape = RoundedCornerShape(14.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+    Surface(shape = RoundedCornerShape(14.dp), tonalElevation = 1.dp, modifier = modifier.fillMaxWidth().testTag("bot-row-${bot.id}")) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f)) {
@@ -265,7 +275,7 @@ private fun BotFormScreen(
                 value = form.name,
                 onValueChange = { v -> onChange { it.copy(name = v) } },
                 label = { Text("Name") },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().testTag("bot-form-name"),
                 singleLine = true,
             )
             Spacer(Modifier.height(14.dp))
@@ -310,6 +320,7 @@ private fun BotFormScreen(
                     value = form.botToken,
                     onValueChange = { v -> onChange { it.copy(botToken = v) } },
                     label = "Bot token",
+                    modifier = Modifier.testTag("bot-form-token"),
                 )
                 if (form.platform == "slack") {
                     Spacer(Modifier.height(14.dp))
@@ -341,7 +352,11 @@ private fun BotFormScreen(
                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
             Spacer(Modifier.height(20.dp))
-            Button(onClick = onSave, enabled = !form.saving && !form.loadingCredentials, modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = onSave,
+                enabled = !form.saving && !form.loadingCredentials,
+                modifier = Modifier.fillMaxWidth().testTag("bot-form-save"),
+            ) {
                 if (form.saving) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
                 else Text(if (form.isEditing) "Save changes" else "Add bot")
             }
@@ -351,13 +366,13 @@ private fun BotFormScreen(
 }
 
 @Composable
-private fun SecretTextField(value: String, onValueChange: (String) -> Unit, label: String) {
+private fun SecretTextField(value: String, onValueChange: (String) -> Unit, label: String, modifier: Modifier = Modifier) {
     var visible by rememberSaveable { mutableStateOf(false) }
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         label = { Text(label) },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         singleLine = true,
         visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
         trailingIcon = {

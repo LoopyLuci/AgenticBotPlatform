@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -456,7 +457,7 @@ private fun Composer(
             TextField(
                 value = text,
                 onValueChange = { text = it },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).testTag("chat-message-input"),
                 placeholder = { Text(if (isBot) "Message the bot…" else "Message…") },
                 maxLines = 4,
                 enabled = !sending,
@@ -473,6 +474,7 @@ private fun Composer(
             FilledIconButton(
                 enabled = !sending && (text.isNotBlank() || pickedUri != null),
                 shape = RoundedCornerShape(50),
+                modifier = Modifier.testTag("chat-send"),
                 onClick = {
                     val uri = pickedUri
                     if (uri != null) {

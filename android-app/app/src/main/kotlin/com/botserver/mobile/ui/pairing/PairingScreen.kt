@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -103,7 +104,7 @@ fun PairingScreen(
                         value = manualHost,
                         onValueChange = { manualHost = it },
                         label = { Text("Host:port (e.g. your-tailnet-host:8787)") },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().testTag("pairing-host"),
                         singleLine = true,
                     )
                     Spacer(Modifier.height(8.dp))
@@ -111,7 +112,7 @@ fun PairingScreen(
                         value = manualHost2,
                         onValueChange = { manualHost2 = it },
                         label = { Text("Fallback host:port (optional)") },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().testTag("pairing-host2"),
                         singleLine = true,
                     )
                     Spacer(Modifier.height(8.dp))
@@ -119,14 +120,14 @@ fun PairingScreen(
                         value = manualKey,
                         onValueChange = { manualKey = it },
                         label = { Text("Key") },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().testTag("pairing-key"),
                         singleLine = true,
                     )
                     Spacer(Modifier.height(12.dp))
                     Button(
                         onClick = { viewModel.onManualSubmit(manualHost, manualKey, manualHost2) },
                         enabled = state !is PairingState.Verifying,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().testTag("pairing-submit"),
                     ) {
                         Text("Pair", fontWeight = FontWeight.Bold)
                     }

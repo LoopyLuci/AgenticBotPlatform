@@ -1,5 +1,6 @@
 package com.botserver.mobile.ui.sessions
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,11 +12,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.botserver.mobile.data.dto.SessionSummary
+import com.botserver.mobile.ui.components.EmptyState
+import com.botserver.mobile.ui.components.ErrorState
+import com.botserver.mobile.ui.components.LoadingState
+import com.botserver.mobile.ui.components.PullRefreshBox
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SessionsScreen(viewModel: SessionsViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsState()
@@ -28,14 +34,22 @@ fun SessionsScreen(viewModel: SessionsViewModel = hiltViewModel()) {
         }
         Box(Modifier.fillMaxSize().padding(padding)) {
             when {
-                state.loading && state.sessions.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                state.sessions.isEmpty() -> Text(
-                    state.error ?: "No sessions yet — start a conversation from the Chat tab.",
-                    modifier = Modifier.align(Alignment.Center).padding(24.dp),
-                )
-                else -> LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(state.sessions, key = { it.sessionIdString() }) { session ->
-                        SessionRow(session, onClick = { viewModel.open(session.sessionIdString()) })
+                state.loading && state.sessions.isEmpty() -> LoadingState()
+                state.error != null && state.sessions.isEmpty() -> ErrorState(state.error!!, onRetry = { viewModel.refresh() })
+                state.sessions.isEmpty() -> EmptyState("No sessions yet — start a conversation from the Chat tab.")
+                else -> PullRefreshBox(refreshing = state.loading, onRefresh = { viewModel.refresh() }, modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        modifier = Modifier.testTag("sessions-list"),
+                        contentPadding = PaddingValues(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(state.sessions, key = { it.sessionIdString() }) { session ->
+                            SessionRow(
+                                session,
+                                onClick = { viewModel.open(session.sessionIdString()) },
+                                modifier = Modifier.animateItemPlacement(),
+                            )
+                        }
                     }
                 }
             }
@@ -44,11 +58,11 @@ fun SessionsScreen(viewModel: SessionsViewModel = hiltViewModel()) {
 }
 
 @Composable
-private fun SessionRow(session: SessionSummary, onClick: () -> Unit) {
+private fun SessionRow(session: SessionSummary, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Surface(
         shape = RoundedCornerShape(12.dp),
         tonalElevation = 1.dp,
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(14.dp),
