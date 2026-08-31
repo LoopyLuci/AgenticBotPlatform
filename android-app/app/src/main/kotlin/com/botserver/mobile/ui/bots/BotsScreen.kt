@@ -12,6 +12,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -19,11 +21,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.botserver.mobile.data.dto.BotInstance
 import com.botserver.mobile.data.dto.PairingRequest
 import com.botserver.mobile.data.dto.PersonaPreset
+import com.botserver.mobile.security.rememberFragmentActivity
+import com.botserver.mobile.security.requireBiometricAuth
+import kotlinx.coroutines.launch
 
 private val PLATFORMS = listOf("telegram", "discord", "slack")
 private val BACKENDS = listOf("cli", "api", "ui", "hermes_cli", "hermes_gateway")
@@ -35,7 +42,21 @@ fun BotsScreen(viewModel: BotsViewModel = hiltViewModel()) {
     LaunchedEffect(Unit) { viewModel.refresh() }
     BackHandler(enabled = state.form != null) { viewModel.cancelForm() }
 
+    val activity = rememberFragmentActivity()
+    val scope = rememberCoroutineScope()
+    // Gates a sensitive action behind the device's own lock-screen check —
+    // see security/BiometricGate.kt. Falls through ungated if this
+    // composable somehow isn't hosted in a FragmentActivity.
+    fun gated(title: String, action: () -> Unit) {
+        val host = activity
+        if (host == null) { action(); return }
+        scope.launch { if (requireBiometricAuth(host, title)) action() }
+    }
+
     if (state.form != null) {
+        // Viewing an existing bot's form is already gated at the onEdit
+        // call site below (once, on open) — creating a new bot has no
+        // prior secret to expose, so onSave itself isn't gated again here.
         BotFormScreen(
             form = state.form!!,
             personas = state.personas,
@@ -79,7 +100,7 @@ fun BotsScreen(viewModel: BotsViewModel = hiltViewModel()) {
                                 request,
                                 botName = state.bots.find { it.id == request.instanceId }?.name ?: "#${request.instanceId}",
                                 busy = state.busyPairingId == request.id,
-                                onApprove = { viewModel.approvePairing(request) },
+                                onApprove = { gated("Confirm it's you to approve this device") { viewModel.approvePairing(request) } },
                                 onDeny = { viewModel.denyPairing(request) },
                             )
                         }
@@ -92,11 +113,11 @@ fun BotsScreen(viewModel: BotsViewModel = hiltViewModel()) {
                             bot,
                             personaIcon = state.personas.find { it.id == bot.persona }?.icon ?: "💬",
                             busy = state.busyId == bot.id,
-                            onEdit = { viewModel.startEdit(bot) },
+                            onEdit = { gated("Confirm it's you to view \"${bot.name}\"'s credentials") { viewModel.startEdit(bot) } },
                             onToggleEnabled = { viewModel.toggleEnabled(bot) },
                             onToggleRunning = { viewModel.toggleRunning(bot) },
                             onRestart = { viewModel.restart(bot) },
-                            onDelete = { viewModel.delete(bot) },
+                            onDelete = { gated("Confirm it's you to delete \"${bot.name}\"") { viewModel.delete(bot) } },
                         )
                     }
                 }
@@ -276,21 +297,17 @@ private fun BotFormScreen(
                 Text(it.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
             }
             Spacer(Modifier.height(14.dp))
-            OutlinedTextField(
+            SecretTextField(
                 value = form.botToken,
                 onValueChange = { v -> onChange { it.copy(botToken = v) } },
-                label = { Text("Bot token") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
+                label = "Bot token",
             )
             if (form.platform == "slack") {
                 Spacer(Modifier.height(14.dp))
-                OutlinedTextField(
+                SecretTextField(
                     value = form.appToken,
                     onValueChange = { v -> onChange { it.copy(appToken = v) } },
-                    label = { Text("App token (xapp-...)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
+                    label = "App token (xapp-...)",
                 )
             }
             Spacer(Modifier.height(14.dp))
@@ -321,6 +338,27 @@ private fun BotFormScreen(
             Spacer(Modifier.height(24.dp))
         }
     }
+}
+
+@Composable
+private fun SecretTextField(value: String, onValueChange: (String) -> Unit, label: String) {
+    var visible by rememberSaveable { mutableStateOf(false) }
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+        trailingIcon = {
+            IconButton(onClick = { visible = !visible }) {
+                Icon(
+                    if (visible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                    contentDescription = if (visible) "Hide $label" else "Show $label",
+                )
+            }
+        },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -7,6 +7,7 @@ import com.botserver.mobile.BuildConfig
 import com.botserver.mobile.data.ApiService
 import com.botserver.mobile.data.CredentialStore
 import com.botserver.mobile.data.MeshPortHolder
+import com.botserver.mobile.data.PrivateNetworkGuard
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -71,6 +72,14 @@ const val PLACEHOLDER_BASE_URL = "http://127.0.0.1:8787"
 private class DynamicHostInterceptor(private val credentials: CredentialStore) : Interceptor {
     private fun rebuild(original: Request, base: String): Request? {
         val target = base.toHttpUrlOrNull() ?: return null
+        if (target.scheme == "http" && !PrivateNetworkGuard.isAllowedHost(target.host)) {
+            // Refuse to send the auth token in cleartext to anything outside
+            // Tailscale/private-LAN ranges — see PrivateNetworkGuard's doc.
+            // Thrown as IOException so intercept()'s existing fallback path
+            // treats this exactly like an unreachable host and tries the
+            // other paired host instead of silently leaking the token.
+            throw IOException("refusing cleartext request to non-private host: ${target.host}")
+        }
         val newUrl = original.url.newBuilder()
             .scheme(target.scheme)
             .host(target.host)
@@ -92,8 +101,8 @@ private class DynamicHostInterceptor(private val credentials: CredentialStore) :
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
         val primaryBase = credentials.preferredBaseUrl()
-        val primaryReq = rebuild(original, primaryBase) ?: original
         try {
+            val primaryReq = rebuild(original, primaryBase) ?: original
             val response = chain.proceed(primaryReq)
             credentials.markGood(primaryBase)
             return response

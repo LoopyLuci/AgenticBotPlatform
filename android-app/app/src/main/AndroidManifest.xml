@@ -21,9 +21,19 @@
         <!--
           Cleartext (plain HTTP) is required: BotServer has no TLS of its
           own by design (see docs/mobile-access.md) — the intended transport
-          is a Tailscale tunnel, which is already encrypted at the network
-          layer, so this app talks plain HTTP *to a private tailnet address*,
-          never to the open internet directly.
+          is a Tailscale tunnel or a trusted LAN, both already private, so
+          this app talks plain HTTP *to a private address*, never to the
+          open internet directly.
+
+          This is declared broadly here (rather than scoped via a
+          network_security_config domain allow-list) because the actual
+          host is whatever the user pairs to at runtime — unknown at build
+          time, and Android's declarative config can only allow-list exact
+          domains, not IP/CIDR ranges. The real enforcement of "private
+          only" happens per-request instead, in
+          di/NetworkModule.kt's DynamicHostInterceptor, which refuses to
+          send the auth token in cleartext to any host that doesn't resolve
+          into PrivateNetworkGuard's allowed Tailscale/RFC1918 ranges.
         -->
 
         <activity

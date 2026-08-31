@@ -2372,14 +2372,23 @@ def build_app() -> FastAPI:
         return _annotate_online([dict(d) for d in devices])
 
     @app.websocket("/api/ws")
-    async def ws_devices(websocket: WebSocket, token: Optional[str] = None):
-        # Browser WebSocket/OkHttp can't set a custom header on the
-        # handshake the way fetch() can, so auth travels as a query param
-        # here instead of X-Dashboard-Token — the one deliberate exception
-        # to this API's usual header-based auth.
+    async def ws_devices(
+        websocket: WebSocket,
+        token: Optional[str] = None,
+        x_dashboard_token: Optional[str] = Header(default=None, alias="X-Dashboard-Token"),
+    ):
+        # A browser's native WebSocket API can't set a custom header on the
+        # handshake the way fetch() can, so the desktop Electron client's
+        # auth travels as a query param here instead of X-Dashboard-Token —
+        # kept for that client. OkHttp *can* set handshake headers, so the
+        # Android client sends the real header instead (via the shared
+        # DynamicHostInterceptor every other request already goes through)
+        # rather than putting its token in a URL, where it's more likely to
+        # be logged. Either is accepted; the header wins if both are present.
+        supplied = x_dashboard_token or token
         expected = os.environ.get("DASHBOARD_TOKEN")
-        authed = bool(expected and token == expected)
-        device_id = None if authed else db.verify_api_key(token or "")
+        authed = bool(expected and supplied == expected)
+        device_id = None if authed else db.verify_api_key(supplied or "")
         if not authed and device_id is None:
             await websocket.close(code=4401)
             return

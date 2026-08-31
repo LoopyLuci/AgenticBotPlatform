@@ -3,11 +3,11 @@ package com.botserver.mobile
 import android.Manifest
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
+import androidx.fragment.app.FragmentActivity
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -18,8 +18,13 @@ import com.botserver.mobile.ui.theme.BotServerTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
+// FragmentActivity (not plain ComponentActivity, which it extends) —
+// required by androidx.biometric.BiometricPrompt's constructor, used to
+// gate sensitive actions (bot delete, pairing approval, viewing/editing
+// tokens, mesh APK push) behind the device's own lock-screen/biometric
+// check. See security/BiometricGate.kt.
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
     @Inject lateinit var credentials: CredentialStore
 

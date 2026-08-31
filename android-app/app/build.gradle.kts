@@ -38,7 +38,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("release")
         }
     }
@@ -91,6 +92,11 @@ dependencies {
     // the web frontends' localStorage token, but with real encryption at
     // rest, appropriate for a device that leaves the house.
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    // Biometric/device-credential gate for sensitive actions (delete bot,
+    // approve pairing, view/edit tokens, mesh APK push) — see
+    // security/BiometricGate.kt.
+    implementation("androidx.biometric:biometric:1.1.0")
 
     // Push notifications (Phase B-5)
     implementation(platform("com.google.firebase:firebase-bom:33.1.2"))

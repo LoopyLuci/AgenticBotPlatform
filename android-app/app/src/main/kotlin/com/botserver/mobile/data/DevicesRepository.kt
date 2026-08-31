@@ -65,18 +65,18 @@ class DevicesRepository @Inject constructor(
     /** Live deltas over the same authenticated, host-failover-aware
      * OkHttpClient Retrofit uses (see di/NetworkModule.kt's
      * DynamicHostInterceptor, which rewrites this placeholder host to
-     * whichever of host/host2 last worked). The token travels as a query
-     * param, not a header — matching the server route, which accepts it
-     * that way for parity with browser WebSocket (desktop's main.js),
-     * which can't set custom headers on a handshake at all. Emits nothing
-     * further and completes if this device isn't paired yet. */
+     * whichever of host/host2 last worked, and attaches the
+     * X-Dashboard-Token header to every request including this one's
+     * handshake — no need to put the token in the URL, unlike the desktop
+     * client's browser WebSocket, which can't set a custom header). Emits
+     * nothing further and completes if this device isn't paired yet. */
     fun liveDevices(): Flow<List<DeviceInfo>> = callbackFlow {
         val apiKey = credentials.apiKey
         if (apiKey.isNullOrBlank()) {
             close()
             return@callbackFlow
         }
-        val url = "$PLACEHOLDER_BASE_URL/api/ws?token=$apiKey".toHttpUrlOrNull()
+        val url = "$PLACEHOLDER_BASE_URL/api/ws".toHttpUrlOrNull()
             ?: run { close(); return@callbackFlow }
         val request = Request.Builder().url(url).build()
         val listener = object : WebSocketListener() {

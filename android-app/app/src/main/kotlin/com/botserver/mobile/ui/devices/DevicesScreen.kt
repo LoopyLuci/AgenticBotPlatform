@@ -21,6 +21,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.botserver.mobile.data.dto.DeviceInfo
+import com.botserver.mobile.security.rememberFragmentActivity
+import com.botserver.mobile.security.requireBiometricAuth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -35,6 +37,12 @@ import java.io.File
 fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel()) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val activity = rememberFragmentActivity()
+    fun gated(title: String, action: () -> Unit) {
+        val host = activity
+        if (host == null) { action(); return }
+        scope.launch { if (requireBiometricAuth(host, title)) action() }
+    }
     val state by viewModel.state.collectAsState()
     val devices by viewModel.devices.collectAsState()
     val refreshing by viewModel.refreshing.collectAsState()
@@ -83,12 +91,12 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel()) {
                             DeviceRow(
                                 device = device,
                                 sending = (sendState as? SendState.Sending)?.targetId == device.id,
-                                onSend = { viewModel.sendUpdateTo(device) },
+                                onSend = { gated("Confirm it's you to send an update to ${device.label}") { viewModel.sendUpdateTo(device) } },
                             )
                         }
                         Spacer(Modifier.height(10.dp))
                         OutlinedButton(
-                            onClick = { viewModel.sendUpdateToAll() },
+                            onClick = { gated("Confirm it's you to send an update to all devices") { viewModel.sendUpdateToAll() } },
                             enabled = sendState !is SendState.Sending,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
