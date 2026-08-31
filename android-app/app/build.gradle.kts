@@ -17,6 +17,7 @@ android {
         targetSdk = 35
         versionCode = 3
         versionName = "1.1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -58,6 +59,18 @@ android {
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.14"
+    }
+
+    packaging {
+        // MockK's Android artifact pulls in byte-buddy-agent, which bundles
+        // native attach helpers under these paths — irrelevant on Android
+        // (nothing here uses JVM-agent attach), but without excluding them
+        // the androidTest APK fails to package with a duplicate-file error.
+        resources {
+            excludes += "META-INF/LICENSE*"
+            excludes += "win32-x86/attach_hotspot_windows.dll"
+            excludes += "win32-x86-64/attach_hotspot_windows.dll"
+        }
     }
 
     testOptions {
@@ -150,5 +163,15 @@ dependencies {
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.turbine)
     androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.rules)
+    // The compose-bom platform only applies within the configuration it's
+    // declared in — androidTest needs its own, matching the versions the
+    // main `implementation(platform(...))` above already pins.
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.mockk.android)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
