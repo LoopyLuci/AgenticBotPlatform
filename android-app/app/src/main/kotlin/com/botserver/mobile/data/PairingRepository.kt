@@ -1,8 +1,9 @@
 package com.botserver.mobile.data
 
-import android.net.Uri
 import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.tasks.await
+import java.net.URI
+import java.net.URLDecoder
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -24,15 +25,23 @@ class PairingRepository @Inject constructor(
     fun parse(raw: String): PairingPayload? {
         val trimmed = raw.trim()
         if (trimmed.startsWith("botserver://")) {
-            val uri = runCatching { Uri.parse(trimmed) }.getOrNull() ?: return null
-            val key = uri.getQueryParameter("key") ?: return null
-            val host = uri.getQueryParameter("host")
-            val host2 = uri.getQueryParameter("host2")
-            return PairingPayload(host, host2, key)
+            val query = runCatching { URI(trimmed).query }.getOrNull() ?: return null
+            val params = queryParams(query)
+            val key = params["key"] ?: return null
+            return PairingPayload(host = params["host"], host2 = params["host2"], key = key)
         }
         if (trimmed.isEmpty()) return null
         return PairingPayload(host = null, key = trimmed)
     }
+
+    private fun queryParams(query: String): Map<String, String> =
+        query.split("&").mapNotNull { part ->
+            val idx = part.indexOf('=')
+            if (idx < 0) return@mapNotNull null
+            val name = part.substring(0, idx)
+            val value = runCatching { URLDecoder.decode(part.substring(idx + 1), "UTF-8") }.getOrDefault("")
+            name to value
+        }.toMap()
 
     /** Stores the credential and confirms it actually works against the
      * real server before declaring pairing successful — a key that merely

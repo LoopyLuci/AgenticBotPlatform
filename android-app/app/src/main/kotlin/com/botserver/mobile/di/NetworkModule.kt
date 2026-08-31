@@ -39,11 +39,16 @@ private const val DEVICE_PLATFORM = "android"
 // folded in only when MODEL doesn't already start with it (most OEMs
 // already prefix their model strings — Samsung's don't) to avoid
 // "Samsung Samsung SM-S911U"-style duplication.
-private val DEVICE_MODEL: String = Build.MODEL.let { model ->
-    if (model.startsWith(Build.MANUFACTURER, ignoreCase = true)) model
-    else "${Build.MANUFACTURER} $model"
+// Null-tolerant: a plain JVM unit test (no emulator/Robolectric) sees
+// Build.MODEL/MANUFACTURER as null rather than throwing (see app/build.gradle.kts'
+// testOptions.unitTests.isReturnDefaultValues) — this must not crash class
+// init just from loading this file's other declarations under test.
+private val DEVICE_MODEL: String = (Build.MODEL ?: "unknown").let { model ->
+    val manufacturer = Build.MANUFACTURER ?: ""
+    if (manufacturer.isEmpty() || model.startsWith(manufacturer, ignoreCase = true)) model
+    else "$manufacturer $model"
 }
-private val DEVICE_OS_VERSION: String = "Android ${Build.VERSION.RELEASE}"
+private val DEVICE_OS_VERSION: String = "Android ${Build.VERSION.RELEASE ?: "unknown"}"
 
 // Every request (Retrofit, Coil, and any manually-built OkHttp Request
 // like the thumbnail loads in ChatScreen) is issued against this fixed
@@ -69,7 +74,9 @@ const val PLACEHOLDER_BASE_URL = "http://127.0.0.1:8787"
  * host before giving up, and the winner is remembered so later requests
  * don't keep re-probing a dead path.
  */
-private class DynamicHostInterceptor(private val credentials: CredentialStore) : Interceptor {
+// internal (not private) so tests in this module can drive its failover
+// logic directly — see DynamicHostInterceptorTest.
+internal class DynamicHostInterceptor(private val credentials: CredentialStore) : Interceptor {
     private fun rebuild(original: Request, base: String): Request? {
         val target = base.toHttpUrlOrNull() ?: return null
         if (target.scheme == "http" && !PrivateNetworkGuard.isAllowedHost(target.host)) {

@@ -59,6 +59,19 @@ android {
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.14"
     }
+
+    testOptions {
+        unitTests {
+            // Plain JVM unit tests (no emulator/Robolectric) — a few
+            // classes under test touch Android framework fields
+            // incidentally (e.g. android.os.Build.MODEL for a header
+            // value) without the test caring what they return. Without
+            // this, any unstubbed Android SDK call throws instead of
+            // returning a default, even where the test's actual
+            // assertions never depend on it.
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {
@@ -132,6 +145,10 @@ dependencies {
     implementation(libs.stream.webrtc.android)
 
     testImplementation(libs.junit)
+    testImplementation(libs.mockk)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.turbine)
     androidTestImplementation(libs.androidx.test.ext.junit)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
