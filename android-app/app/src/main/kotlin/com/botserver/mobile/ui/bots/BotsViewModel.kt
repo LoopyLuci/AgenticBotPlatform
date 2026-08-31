@@ -34,6 +34,7 @@ data class BotsUiState(
     val bots: List<BotInstance> = emptyList(),
     val personas: List<PersonaPreset> = emptyList(),
     val pendingPairings: List<PairingRequest> = emptyList(),
+    val loading: Boolean = true,
     val error: String? = null,
     val form: BotForm? = null,
     val busyId: Int? = null,
@@ -49,8 +50,8 @@ class BotsViewModel @Inject constructor(private val repository: BotsRepository) 
     fun refresh() {
         viewModelScope.launch {
             runCatching { repository.list() }
-                .onSuccess { list -> _uiState.update { it.copy(bots = list, error = null) } }
-                .onFailure { e -> _uiState.update { it.copy(error = e.message) } }
+                .onSuccess { list -> _uiState.update { it.copy(bots = list, error = null, loading = false) } }
+                .onFailure { e -> _uiState.update { it.copy(error = e.message, loading = false) } }
         }
         if (_uiState.value.personas.isEmpty()) {
             viewModelScope.launch {

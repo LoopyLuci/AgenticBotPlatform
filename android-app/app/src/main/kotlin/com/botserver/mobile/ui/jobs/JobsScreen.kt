@@ -11,6 +11,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.botserver.mobile.data.dto.JobSummary
+import com.botserver.mobile.ui.components.EmptyState
+import com.botserver.mobile.ui.components.ErrorState
+import com.botserver.mobile.ui.components.LoadingState
 
 private fun statusColor(status: String) = when (status) {
     "success" -> androidx.compose.ui.graphics.Color(0xFF2E7D32)
@@ -27,11 +30,12 @@ fun JobsScreen(viewModel: JobsViewModel = hiltViewModel()) {
 
     Scaffold(topBar = { TopAppBar(title = { Text("Jobs") }) }) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
-            if (state.jobs.isEmpty()) {
-                Text(
-                    state.error ?: "No jobs yet.",
-                    modifier = Modifier.align(Alignment.Center).padding(24.dp),
-                )
+            if (state.loading && state.jobs.isEmpty()) {
+                LoadingState()
+            } else if (state.error != null && state.jobs.isEmpty()) {
+                ErrorState(state.error!!, onRetry = { viewModel.refreshNow() })
+            } else if (state.jobs.isEmpty()) {
+                EmptyState("No jobs yet.")
             } else {
                 LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(state.jobs, key = { it.id }) { job -> JobRow(job) }

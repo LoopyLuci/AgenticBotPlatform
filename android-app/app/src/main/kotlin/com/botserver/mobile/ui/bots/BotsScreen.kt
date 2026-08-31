@@ -28,6 +28,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.botserver.mobile.data.dto.BotInstance
 import com.botserver.mobile.data.dto.PairingRequest
 import com.botserver.mobile.data.dto.PersonaPreset
+import com.botserver.mobile.ui.components.EmptyState
+import com.botserver.mobile.ui.components.ErrorState
+import com.botserver.mobile.ui.components.LoadingState
 import com.botserver.mobile.security.rememberFragmentActivity
 import com.botserver.mobile.security.requireBiometricAuth
 import kotlinx.coroutines.launch
@@ -80,11 +83,12 @@ fun BotsScreen(viewModel: BotsViewModel = hiltViewModel()) {
         },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
-            if (state.bots.isEmpty() && state.pendingPairings.isEmpty()) {
-                Text(
-                    state.error ?: "No bots configured yet — tap + to add one.",
-                    modifier = Modifier.align(Alignment.Center).padding(24.dp),
-                )
+            if (state.loading && state.bots.isEmpty() && state.pendingPairings.isEmpty()) {
+                LoadingState()
+            } else if (state.error != null && state.bots.isEmpty() && state.pendingPairings.isEmpty()) {
+                ErrorState(state.error!!, onRetry = { viewModel.refresh() })
+            } else if (state.bots.isEmpty() && state.pendingPairings.isEmpty()) {
+                EmptyState("No bots configured yet — tap + to add one.")
             } else {
                 LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (state.pendingPairings.isNotEmpty()) {

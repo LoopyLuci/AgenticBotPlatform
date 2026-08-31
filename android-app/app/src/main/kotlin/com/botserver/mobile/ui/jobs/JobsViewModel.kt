@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-data class JobsUiState(val jobs: List<JobSummary> = emptyList(), val error: String? = null)
+data class JobsUiState(val jobs: List<JobSummary> = emptyList(), val loading: Boolean = true, val error: String? = null)
 
 @HiltViewModel
 class JobsViewModel @Inject constructor(private val repository: JobsRepository) : ViewModel() {
@@ -21,14 +21,22 @@ class JobsViewModel @Inject constructor(private val repository: JobsRepository) 
     val uiState: StateFlow<JobsUiState> = _uiState
     private var polling = false
 
+    fun refreshNow() {
+        viewModelScope.launch {
+            runCatching { repository.list() }
+                .onSuccess { list -> _uiState.update { it.copy(jobs = list, error = null, loading = false) } }
+                .onFailure { e -> _uiState.update { it.copy(error = e.message, loading = false) } }
+        }
+    }
+
     fun start() {
         if (polling) return
         polling = true
         viewModelScope.launch {
             while (true) {
                 runCatching { repository.list() }
-                    .onSuccess { list -> _uiState.update { it.copy(jobs = list, error = null) } }
-                    .onFailure { e -> _uiState.update { it.copy(error = e.message) } }
+                    .onSuccess { list -> _uiState.update { it.copy(jobs = list, error = null, loading = false) } }
+                    .onFailure { e -> _uiState.update { it.copy(error = e.message, loading = false) } }
                 delay(5000)
             }
         }
