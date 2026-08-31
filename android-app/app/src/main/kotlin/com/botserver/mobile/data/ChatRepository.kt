@@ -3,6 +3,8 @@ package com.botserver.mobile.data
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import com.botserver.mobile.data.db.ChatDao
+import com.botserver.mobile.data.db.ChatMessageEntity
 import com.botserver.mobile.data.dto.BotInstanceSummary
 import com.botserver.mobile.data.dto.ChatMessage
 import com.botserver.mobile.data.dto.SendMessageRequest
@@ -10,6 +12,8 @@ import com.botserver.mobile.data.dto.SendToBotRequest
 import com.botserver.mobile.data.dto.UploadInitRequest
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -30,13 +34,67 @@ class AttachmentTooLargeException : Exception("That file is over 2GB — sending
 @Singleton
 class ChatRepository @Inject constructor(
     private val apiService: ApiService,
+    private val dao: ChatDao,
     @ApplicationContext private val context: Context,
 ) {
 
     suspend fun recipients(): List<BotInstanceSummary> = apiService.chatRecipients().instances
 
-    suspend fun messages(instanceId: Int, afterId: Int? = null): List<ChatMessage> =
-        apiService.chatMessages(instanceId = instanceId, afterId = afterId)
+    /** Room is the source of truth for what's shown — bounded to the most
+     * recent rows so a long-lived conversation can't grow this screen's
+     * memory usage forever the way the old plain in-memory list did. */
+    fun observeMessages(instanceId: Int): Flow<List<ChatMessage>> =
+        dao.observeRecent(instanceId).map { entities -> entities.map(::toDomain) }
+
+    /** Fetches only what's new since Room's own last-seen id for this
+     * instance (falling back to a full fetch the very first time), inserts
+     * it, and prunes anything beyond the retained window — this replaces
+     * the old panel.lastId bookkeeping the ViewModel used to carry in
+     * memory. */
+    suspend fun refreshMessages(instanceId: Int): Result<Unit> = runCatching {
+        val afterId = dao.maxId(instanceId)
+        val fresh = apiService.chatMessages(instanceId = instanceId, afterId = afterId)
+        if (fresh.isNotEmpty()) {
+            dao.insertAll(fresh.map { toEntity(instanceId, it) })
+            dao.pruneOld(instanceId)
+        }
+    }
+
+    private fun toEntity(instanceId: Int, m: ChatMessage) = ChatMessageEntity(
+        instanceId = instanceId,
+        id = m.id,
+        ts = m.ts,
+        platform = m.platform,
+        chatId = m.chatId,
+        userId = m.userId,
+        username = m.username,
+        direction = m.direction,
+        source = m.source,
+        text = m.text,
+        attachmentPath = m.attachmentPath,
+        attachmentName = m.attachmentName,
+        attachmentMime = m.attachmentMime,
+        attachmentSize = m.attachmentSize,
+        thumbnailPath = m.thumbnailPath,
+    )
+
+    private fun toDomain(e: ChatMessageEntity) = ChatMessage(
+        id = e.id,
+        ts = e.ts,
+        platform = e.platform,
+        chatId = e.chatId,
+        userId = e.userId,
+        username = e.username,
+        direction = e.direction,
+        source = e.source,
+        text = e.text,
+        instanceId = e.instanceId,
+        attachmentPath = e.attachmentPath,
+        attachmentName = e.attachmentName,
+        attachmentMime = e.attachmentMime,
+        attachmentSize = e.attachmentSize,
+        thumbnailPath = e.thumbnailPath,
+    )
 
     suspend fun send(instanceId: Int, chatId: String, text: String) {
         apiService.sendMessage(SendMessageRequest(instanceId, chatId, text))

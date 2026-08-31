@@ -8,20 +8,18 @@ import com.botserver.mobile.data.dto.BotInstanceSummary
 import com.botserver.mobile.data.dto.ChatMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-
-/** One panel's state — mirrors dashboard.html's chatState.panels[id] shape
- * (see the Chat tab work: panelFor(), refreshChat()). */
-data class ChatPanelState(
-    val messages: List<ChatMessage> = emptyList(),
-    val lastId: Int = 0,
-    val loaded: Boolean = false,
-)
 
 /** Per-message attachment-download state — pull-on-demand (see
  * ChatRepository.downloadAttachment): nothing downloads until the user
@@ -49,7 +47,7 @@ enum class ChatMode { SEND_FROM_SERVER, CHAT_WITH_BOT }
 data class ChatUiState(
     val instances: List<BotInstanceSummary> = emptyList(),
     val activeInstanceId: Int? = null,
-    val panels: Map<Int, ChatPanelState> = emptyMap(),
+    val messages: List<ChatMessage> = emptyList(),
     val loadError: String? = null,
     val downloads: Map<Int, DownloadState> = emptyMap(),
     val sendFileError: String? = null,
@@ -58,6 +56,7 @@ data class ChatUiState(
     val mode: ChatMode = ChatMode.SEND_FROM_SERVER,
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class ChatViewModel @Inject constructor(private val repository: ChatRepository) : ViewModel() {
 
@@ -66,13 +65,25 @@ class ChatViewModel @Inject constructor(private val repository: ChatRepository) 
 
     private var pollingStarted = false
 
+    init {
+        // Room is the source of truth for the active conversation's
+        // messages — this re-subscribes whenever activeInstanceId changes,
+        // so switching panels never needs to reach back into the network
+        // to show what's already cached.
+        _uiState
+            .map { it.activeInstanceId }
+            .flatMapLatest { id -> if (id == null) flowOf(emptyList()) else repository.observeMessages(id) }
+            .onEach { messages -> _uiState.update { it.copy(messages = messages) } }
+            .launchIn(viewModelScope)
+    }
+
     fun start() {
         if (pollingStarted) return
         pollingStarted = true
         viewModelScope.launch {
             while (true) {
                 refreshRecipients()
-                _uiState.value.activeInstanceId?.let { refreshMessages(it) }
+                _uiState.value.activeInstanceId?.let { repository.refreshMessages(it) }
                 delay(2000)
             }
         }
@@ -89,22 +100,9 @@ class ChatViewModel @Inject constructor(private val repository: ChatRepository) 
             .onFailure { e -> _uiState.update { it.copy(loadError = e.message) } }
     }
 
-    private suspend fun refreshMessages(instanceId: Int) {
-        val panel = _uiState.value.panels[instanceId] ?: ChatPanelState()
-        val newMessages = runCatching {
-            if (!panel.loaded) repository.messages(instanceId) else repository.messages(instanceId, afterId = panel.lastId)
-        }.getOrNull() ?: return
-        if (newMessages.isEmpty() && panel.loaded) return
-        val merged = if (panel.loaded) panel.messages + newMessages else newMessages
-        val newLastId = merged.maxOfOrNull { it.id } ?: panel.lastId
-        _uiState.update { s ->
-            s.copy(panels = s.panels + (instanceId to ChatPanelState(merged, newLastId, loaded = true)))
-        }
-    }
-
     fun switchInstance(instanceId: Int) {
         _uiState.update { it.copy(activeInstanceId = instanceId) }
-        viewModelScope.launch { refreshMessages(instanceId) }
+        viewModelScope.launch { repository.refreshMessages(instanceId) }
     }
 
     fun setMode(mode: ChatMode) {
@@ -116,7 +114,7 @@ class ChatViewModel @Inject constructor(private val repository: ChatRepository) 
         if (_uiState.value.mode == ChatMode.CHAT_WITH_BOT) {
             viewModelScope.launch {
                 runCatching { repository.sendToBot(instanceId, text) }
-                    .onSuccess { refreshMessages(instanceId) }
+                    .onSuccess { repository.refreshMessages(instanceId) }
             }
             return
         }
@@ -124,7 +122,7 @@ class ChatViewModel @Inject constructor(private val repository: ChatRepository) 
         val chatId = inst.allowedIds.firstOrNull() ?: return
         viewModelScope.launch {
             runCatching { repository.send(instanceId, chatId, text) }
-                .onSuccess { refreshMessages(instanceId) }
+                .onSuccess { repository.refreshMessages(instanceId) }
         }
     }
 
@@ -139,7 +137,7 @@ class ChatViewModel @Inject constructor(private val repository: ChatRepository) 
                     _uiState.update { it.copy(uploadProgress = progress) }
                 }
             }
-                .onSuccess { refreshMessages(instanceId) }
+                .onSuccess { repository.refreshMessages(instanceId) }
                 .onFailure { e -> _uiState.update { it.copy(sendFileError = e.message ?: "Couldn't send that file.") } }
             _uiState.update { it.copy(sendingFile = false, uploadProgress = 0f) }
         }

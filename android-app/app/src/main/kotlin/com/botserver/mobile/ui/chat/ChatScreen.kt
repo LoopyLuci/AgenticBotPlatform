@@ -205,12 +205,11 @@ private fun ConversationScreen(
                 .background(MaterialTheme.colorScheme.background),
         ) {
             ModeBanner(mode = state.mode)
-            val activePanel = state.panels[state.activeInstanceId]
             val listState = rememberLazyListState()
             val scope = rememberCoroutineScope()
 
-            LaunchedEffect(activePanel?.messages?.size) {
-                val count = activePanel?.messages?.size ?: 0
+            LaunchedEffect(state.messages.size) {
+                val count = state.messages.size
                 if (count > 0) scope.launch { listState.animateScrollToItem(count - 1) }
             }
 
@@ -220,7 +219,7 @@ private fun ConversationScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(vertical = 12.dp),
             ) {
-                items(activePanel?.messages.orEmpty(), key = { it.id }) { message ->
+                items(state.messages, key = { it.id }) { message ->
                     MessageBubble(
                         message = message,
                         downloadState = state.downloads[message.id],
