@@ -11,15 +11,18 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import secrets
 import sqlite3
 import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from bot.envfile import PROJECT_ROOT
+
+logger = logging.getLogger(__name__)
 
 # Reuses envfile's canonical-root resolution rather than Path(__file__)
 # directly — a release build's bundled bot/ lives under a different folder
@@ -30,6 +33,44 @@ DB_PATH = PROJECT_ROOT / "data" / "bot.db"
 
 _lock = threading.Lock()
 _conn: Optional[sqlite3.Connection] = None
+
+# Lets a caller (the dashboard's WebSocket broadcaster — see
+# bot/dashboard/server.py) learn that a new chat message or job status
+# change was just written, without db.py importing anything from the
+# dashboard layer itself — same inverted-dependency shape as
+# ConfigManager.on_reload() elsewhere in this codebase. Each callback gets
+# just the row's id, not a payload shape db.py would have to own; the
+# listener re-reads whatever fields it actually needs via get_message()/
+# get_job(). A callback's own failure is logged and never allowed to break
+# the write that triggered it — logging/broadcasting a message must never
+# be why sending or receiving one fails.
+_message_listeners: list[Callable[[int], None]] = []
+_job_listeners: list[Callable[[int], None]] = []
+
+
+def on_message_logged(callback: Callable[[int], None]) -> None:
+    _message_listeners.append(callback)
+
+
+def on_job_changed(callback: Callable[[int], None]) -> None:
+    _job_listeners.append(callback)
+
+
+def _notify_message_logged(message_id: int) -> None:
+    for cb in _message_listeners:
+        try:
+            cb(message_id)
+        except Exception:
+            logger.exception("on_message_logged callback failed")
+
+
+def _notify_job_changed(job_id: int) -> None:
+    for cb in _job_listeners:
+        try:
+            cb(job_id)
+        except Exception:
+            logger.exception("on_job_changed callback failed")
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -1467,7 +1508,9 @@ def create_job(
             (action_type, backend, user_id, prompt, _now(), instance_id, swarm_run_id, chat_key, session_id),
         )
         conn.commit()
-        return cur.lastrowid
+        job_id = cur.lastrowid
+    _notify_job_changed(job_id)
+    return job_id
 
 
 def mark_job_running(job_id: int, backend: Optional[str] = None) -> None:
@@ -1483,6 +1526,7 @@ def mark_job_running(job_id: int, backend: Optional[str] = None) -> None:
                 "UPDATE jobs SET status='running', started_at=? WHERE id=?", (_now(), job_id)
             )
         conn.commit()
+    _notify_job_changed(job_id)
 
 
 def mark_job_retrying(job_id: int, backend: str) -> None:
@@ -1492,6 +1536,7 @@ def mark_job_retrying(job_id: int, backend: str) -> None:
             "UPDATE jobs SET status='retrying', backend=? WHERE id=?", (backend, job_id)
         )
         conn.commit()
+    _notify_job_changed(job_id)
 
 
 def mark_job_done(
@@ -1515,6 +1560,7 @@ def mark_job_done(
             (status, result, error, tokens, finished, duration_ms, job_id),
         )
         conn.commit()
+    _notify_job_changed(job_id)
 
 
 def get_job(job_id: int) -> Optional[sqlite3.Row]:
@@ -2373,7 +2419,9 @@ def log_message(
              attachment_path, attachment_name, attachment_mime, attachment_size, thumbnail_path, session_id),
         )
         conn.commit()
-        return cur.lastrowid
+        message_id = cur.lastrowid
+    _notify_message_logged(message_id)
+    return message_id
 
 
 def get_message(message_id: int) -> Optional[sqlite3.Row]:

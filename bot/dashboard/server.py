@@ -14,6 +14,7 @@ import base64
 import csv
 import io
 import json
+import logging
 import mimetypes
 import os
 import secrets
@@ -43,6 +44,7 @@ from bot.swarm import strategies as swarm_strategies
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 LOG_FILE = envfile.PROJECT_ROOT / "logs" / "bot.log"
+logger = logging.getLogger(__name__)
 
 
 def _ts_stamp() -> str:
@@ -154,6 +156,44 @@ class _ConnectionManager:
 
 
 _manager = _ConnectionManager()
+
+
+def _broadcast_soon(payload: dict) -> None:
+    """Schedules a broadcast from a plain synchronous call site (db.py's
+    on_message_logged/on_job_changed callbacks fire from inside a normal
+    function call, not a coroutine) — every real caller of db.log_message/
+    create_job/mark_job_* in this codebase runs on the event loop thread
+    itself (a direct sqlite call inside an async handler, same as this
+    file's own db.log_message call sites), so get_running_loop() succeeds
+    in practice. Falls back to a logged warning rather than raising if
+    that's ever not true, matching Router._invalidate()'s identical
+    degraded-callback precedent — a missed live update is a real but minor
+    gap (the client's own poll/reconnect logic still catches it up), not
+    worth crashing the write that triggered it over."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        logger.warning("no running event loop to broadcast %s — clients will catch up on their next poll", payload.get("type"))
+        return
+    loop.create_task(_manager.broadcast(payload))
+
+
+def _on_message_logged(message_id: int) -> None:
+    row = db.get_message(message_id)
+    if row is None:
+        return
+    _broadcast_soon({"type": "chat_message", "instance_id": row["instance_id"], "message": dict(row)})
+
+
+def _on_job_changed(job_id: int) -> None:
+    row = db.get_job(job_id)
+    if row is None:
+        return
+    _broadcast_soon({"type": "job_update", "job": dict(row)})
+
+
+db.on_message_logged(_on_message_logged)
+db.on_job_changed(_on_job_changed)
 
 
 def _require_token(x_dashboard_token: Optional[str] = Header(default=None)) -> None:
