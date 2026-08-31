@@ -75,6 +75,17 @@ class ChatViewModel @Inject constructor(private val repository: ChatRepository) 
             .flatMapLatest { id -> if (id == null) flowOf(emptyList()) else repository.observeMessages(id) }
             .onEach { messages -> _uiState.update { it.copy(messages = messages) } }
             .launchIn(viewModelScope)
+
+        // Real-time: a "chat_message" push writes straight into Room (see
+        // ChatRepository.persistPushedMessage), which the observeMessages()
+        // collection above then surfaces automatically — no poll needed for
+        // the common case. start()'s interval loop below still exists as a
+        // reconciliation backstop, at a much lower frequency than before,
+        // in case a push is ever missed (e.g. this device's socket was
+        // reconnecting when the server broadcast it).
+        repository.observeLiveMessages()
+            .onEach { push -> repository.persistPushedMessage(push) }
+            .launchIn(viewModelScope)
     }
 
     fun start() {
@@ -84,7 +95,7 @@ class ChatViewModel @Inject constructor(private val repository: ChatRepository) 
             while (true) {
                 refreshRecipients()
                 _uiState.value.activeInstanceId?.let { repository.refreshMessages(it) }
-                delay(2000)
+                delay(60_000)
             }
         }
     }

@@ -5,18 +5,7 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import com.botserver.mobile.data.dto.CreateMobileKeyRequest
 import com.botserver.mobile.data.dto.DeviceInfo
-import com.botserver.mobile.data.dto.DeviceListMessage
-import com.botserver.mobile.di.PLACEHOLDER_BASE_URL
-import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.serialization.json.Json
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.Response
-import okhttp3.WebSocket
-import okhttp3.WebSocketListener
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -45,8 +34,7 @@ data class NewDevicePairing(
 class DevicesRepository @Inject constructor(
     private val apiService: ApiService,
     private val credentials: CredentialStore,
-    private val client: OkHttpClient,
-    private val json: Json,
+    private val liveEvents: LiveEventsClient,
 ) {
     suspend fun createPairingForNewDevice(label: String): NewDevicePairing {
         val res = apiService.createMobileKey(
@@ -62,36 +50,8 @@ class DevicesRepository @Inject constructor(
      * bot/dashboard/server.py. */
     suspend fun devices(): List<DeviceInfo> = apiService.devices()
 
-    /** Live deltas over the same authenticated, host-failover-aware
-     * OkHttpClient Retrofit uses (see di/NetworkModule.kt's
-     * DynamicHostInterceptor, which rewrites this placeholder host to
-     * whichever of host/host2 last worked, and attaches the
-     * X-Dashboard-Token header to every request including this one's
-     * handshake — no need to put the token in the URL, unlike the desktop
-     * client's browser WebSocket, which can't set a custom header). Emits
-     * nothing further and completes if this device isn't paired yet. */
-    fun liveDevices(): Flow<List<DeviceInfo>> = callbackFlow {
-        val apiKey = credentials.apiKey
-        if (apiKey.isNullOrBlank()) {
-            close()
-            return@callbackFlow
-        }
-        val url = "$PLACEHOLDER_BASE_URL/api/ws".toHttpUrlOrNull()
-            ?: run { close(); return@callbackFlow }
-        val request = Request.Builder().url(url).build()
-        val listener = object : WebSocketListener() {
-            override fun onMessage(webSocket: WebSocket, text: String) {
-                runCatching { json.decodeFromString(DeviceListMessage.serializer(), text) }
-                    .onSuccess { msg -> if (msg.type == "device_list") trySend(msg.devices) }
-            }
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                close(t)
-            }
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                close()
-            }
-        }
-        val socket = client.newWebSocket(request, listener)
-        awaitClose { socket.close(1000, null) }
-    }
+    /** Live deltas — now just a filtered view of the app's one shared
+     * LiveEventsClient connection (see its doc) rather than this
+     * repository opening its own second socket. */
+    fun liveDevices(): Flow<List<DeviceInfo>> = liveEvents.deviceList
 }

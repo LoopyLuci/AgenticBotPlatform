@@ -7,6 +7,7 @@ import com.botserver.mobile.data.db.ChatDao
 import com.botserver.mobile.data.db.ChatMessageEntity
 import com.botserver.mobile.data.dto.BotInstanceSummary
 import com.botserver.mobile.data.dto.ChatMessage
+import com.botserver.mobile.data.dto.ChatMessagePush
 import com.botserver.mobile.data.dto.SendMessageRequest
 import com.botserver.mobile.data.dto.SendToBotRequest
 import com.botserver.mobile.data.dto.UploadInitRequest
@@ -35,10 +36,25 @@ class AttachmentTooLargeException : Exception("That file is over 2GB — sending
 class ChatRepository @Inject constructor(
     private val apiService: ApiService,
     private val dao: ChatDao,
+    private val liveEvents: LiveEventsClient,
     @ApplicationContext private val context: Context,
 ) {
 
     suspend fun recipients(): List<BotInstanceSummary> = apiService.chatRecipients().instances
+
+    /** The shared LiveEventsClient's "chat_message" pushes, raw — the
+     * ViewModel collects this and calls [persistPushedMessage] rather than
+     * this repository owning a collection scope of its own. */
+    fun observeLiveMessages(): Flow<ChatMessagePush> = liveEvents.chatMessages
+
+    /** Writes one pushed message straight into Room — no network round
+     * trip needed the way refreshMessages()'s poll-based catch-up requires,
+     * since the push already carries the full row. */
+    suspend fun persistPushedMessage(push: ChatMessagePush) {
+        val instanceId = push.instanceId ?: push.message.instanceId ?: return
+        dao.insertAll(listOf(toEntity(instanceId, push.message)))
+        dao.pruneOld(instanceId)
+    }
 
     /** Room is the source of truth for what's shown — bounded to the most
      * recent rows so a long-lived conversation can't grow this screen's

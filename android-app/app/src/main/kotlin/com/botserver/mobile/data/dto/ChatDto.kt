@@ -40,6 +40,18 @@ data class ChatMessage(
     @SerialName("thumbnail_path") val thumbnailPath: String? = null,
 )
 
+/** The "chat_message" push over /api/ws — see bot/dashboard/server.py's
+ * _on_message_logged(). Fired the moment any message (inbound from a
+ * platform, or outbound through this app or another client) is logged for
+ * any instance; consumers filter by instanceId themselves, matching the
+ * existing "device_list" broadcast's same broadcast-to-everyone shape. */
+@Serializable
+data class ChatMessagePush(
+    val type: String,
+    @SerialName("instance_id") val instanceId: Int? = null,
+    val message: ChatMessage,
+)
+
 @Serializable
 data class SendMessageRequest(
     @SerialName("instance_id") val instanceId: Int,

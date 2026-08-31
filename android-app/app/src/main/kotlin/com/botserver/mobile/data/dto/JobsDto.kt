@@ -21,3 +21,12 @@ data class JobSummary(
     @SerialName("duration_ms") val durationMs: Int? = null,
     @SerialName("instance_id") val instanceId: Int? = null,
 )
+
+/** The "job_update" push over /api/ws — see bot/dashboard/server.py's
+ * _on_job_changed(). Fired on create + every status transition
+ * (queued -> running -> retrying? -> success|failed). */
+@Serializable
+data class JobUpdatePush(
+    val type: String,
+    val job: JobSummary,
+)
