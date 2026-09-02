@@ -36,6 +36,15 @@ timeouts:
   api: 30
   cli: 60
   ui: 45
+  # Hermes backends legitimately run far longer than a single Claude
+  # turn — hermes_gateway's own delegate_task can fan out several
+  # sub-agents that each run their own multi-step tool loop before the
+  # parent synthesizes a final answer (see the Hermes-swarm plan's
+  # dispatch_swarm_goal). Without these, both fell back to the generic
+  # 30s default and a real swarm dispatch would time out almost
+  # immediately.
+  hermes_cli: 300
+  hermes_gateway: 900
 env_file: null
 desktop:
   exe_path: null

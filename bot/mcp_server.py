@@ -159,7 +159,12 @@ async def get_config() -> dict:
 
 @mcp.tool()
 async def set_backend(action_or_default: str, backend: str) -> dict:
-    """Set the backend for one action type (or 'default') to 'api', 'cli', or 'ui'."""
+    """Set the backend for one action type (or 'default') to any of
+    'api', 'cli', 'ui', 'hermes_cli', 'hermes_gateway', or 'custom_model'.
+    Claude/Hermes each keep their own 'default' slot under the hood — see
+    the dashboard's own segmented Claude/Hermes default pickers — this
+    tool routes to whichever slot matches the backend family
+    automatically."""
     return await _request("POST", f"/api/backend/{action_or_default}/{backend}")
 
 
@@ -272,6 +277,128 @@ async def ask_instance(source_instance: str, target_instance: str, prompt: str) 
     clear error, not a stack trace."""
     return await _request("POST", "/api/agent/ask", timeout=90.0, json={
         "source_instance": source_instance, "target_instance": target_instance, "prompt": prompt,
+    })
+
+
+@mcp.tool()
+async def create_bot_instance(
+    name: str,
+    platform: str,
+    backend: str,
+    credentials: Optional[dict] = None,
+    allowed_user_ids: Optional[list] = None,
+    model: Optional[str] = None,
+    persona: Optional[str] = None,
+    can_target: Optional[list] = None,
+    enabled: bool = True,
+) -> dict:
+    """Create a new bot instance — e.g. stand up a fresh Hermes-backed
+    worker on the fly rather than requiring the dashboard's Bots tab.
+    `backend` is any of 'api'/'cli'/'ui'/'hermes_cli'/'hermes_gateway'/
+    'custom_model'. `model` for a hermes_gateway instance is a bare model
+    id (see list_available_models); for custom_model it must be
+    '<provider>/<model_id>'. `can_target` (list of other instance ids)
+    matters only when agent_control.mode is 'allowlist' — see get_config.
+    `credentials`/`allowed_user_ids` may be omitted for a Hermes worker
+    with no direct platform connection of its own (it's only ever reached
+    via ask_instance/dispatch_swarm_goal, never a live chat platform) —
+    pass platform='telegram' with empty credentials/allowed_user_ids in
+    that case; it simply won't start a live connection until configured."""
+    return await _request("POST", "/api/bots", json={
+        "name": name, "platform": platform, "backend": backend,
+        "credentials": credentials or {}, "allowed_user_ids": allowed_user_ids or [],
+        "model": model, "persona": persona, "can_target": can_target or [],
+        "enabled": enabled,
+    })
+
+
+@mcp.tool()
+async def delete_bot_instance(instance_id: int) -> dict:
+    """Stop and permanently delete a bot instance by id (see get_status/
+    the Bots tab for ids). Irreversible — the instance's credentials,
+    session links, and history are gone; jobs/audit-log rows referencing
+    it are kept for history."""
+    return await _request("DELETE", f"/api/bots/{instance_id}")
+
+
+@mcp.tool()
+async def list_available_models(instance_id: Optional[int] = None) -> dict:
+    """The full model catalog Claude needs to pick an "optimal free model":
+    Claude's own live /v1/models, BotServer's custom_model provider
+    registry's live catalogs, and (pass instance_id for a specific
+    hermes_gateway-backed bot instance) that instance's own live,
+    pricing-annotated Hermes inventory — real `free: bool` per model, not
+    a naming-convention guess. The response's `pricing_source` tells you
+    whether that data is "live" (trust it), "cache_fallback" (Hermes's
+    stale disk cache — id-suffix heuristic only), or "unavailable"
+    (nothing reachable — omit instance_id or check the instance is
+    actually hermes_gateway-backed and its gateway can start)."""
+    params = {"instance_id": instance_id} if instance_id is not None else {}
+    return await _request("GET", "/api/models", params=params)
+
+
+@mcp.tool()
+async def configure_delegation(
+    instance_id: int,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    max_concurrent_children: Optional[int] = None,
+    max_spawn_depth: Optional[int] = None,
+    subagent_auto_approve: Optional[bool] = None,
+    confirm: bool = False,
+) -> dict:
+    """Sets defaults in a hermes_gateway-backed instance's own Hermes
+    delegation config — which provider/model delegate_task's children run
+    on (e.g. a free model while the parent stays on something stronger),
+    how many children can run in parallel, how deep orchestrator-role
+    recursion may go, and whether children may run dangerous shell
+    commands with no human approval.
+
+    IMPORTANT LIMITATION: until every Hermes instance gets its own
+    isolated HERMES_HOME, this writes to the ONE Hermes config every
+    hermes_gateway-backed instance on this machine shares — it affects
+    all of them, not just `instance_id`.
+
+    subagent_auto_approve=true is a real safety-relevant switch (children
+    run shell/file-write commands with zero human approval) — pass
+    confirm=true to acknowledge that explicitly, or the call is refused."""
+    if subagent_auto_approve is True and not confirm:
+        return {"error": "subagent_auto_approve=true requires confirm=true — see this tool's own docstring for why"}
+    return await _request("POST", f"/api/hermes/{instance_id}/delegation", json={
+        "provider": provider, "model": model,
+        "max_concurrent_children": max_concurrent_children, "max_spawn_depth": max_spawn_depth,
+        "subagent_auto_approve": subagent_auto_approve, "confirm": confirm,
+    })
+
+
+@mcp.tool()
+async def dispatch_swarm_goal(
+    instance_id: int,
+    goal: str,
+    worker_provider: Optional[str] = None,
+    worker_model: Optional[str] = None,
+    max_children: Optional[int] = None,
+) -> dict:
+    """The actual "use Hermes Agents with the optimal free models to work
+    on this" lever: configures this hermes_gateway-backed instance's
+    delegation defaults (auto-picking the cheapest currently-free model
+    from its own live inventory if worker_provider/worker_model aren't
+    given) then sends `goal` as a prompt instructing Hermes's own agent to
+    decompose it and fan it out via its delegate_task tool, waiting for
+    the synthesized final answer.
+
+    delegate_task cannot be invoked directly over MCP (it needs a live
+    Hermes agent-loop context) — this tool's real leverage is the config
+    + prompt it sends, trusting Hermes's own agent to do the delegating.
+    There is no external steer/stop for an individual sub-agent spawned
+    this way; cancelling only stops BotServer's own wait, not the
+    underlying Hermes task (see the Hermes-swarm plan's Phase 3 notes).
+    This call blocks until the whole swarm run (parent + every child)
+    finishes — call list_available_models first if you want to see what
+    "optimal free" actually resolved to before committing to a run."""
+    return await _request("POST", f"/api/hermes/{instance_id}/dispatch", timeout=900.0, json={
+        "goal": goal, "worker_provider": worker_provider, "worker_model": worker_model,
+        "max_children": max_children,
     })
 
 

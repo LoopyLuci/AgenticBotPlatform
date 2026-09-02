@@ -652,13 +652,13 @@ def build_app() -> FastAPI:
         }
 
     @app.get("/api/models")
-    async def api_models():
+    async def api_models(instance_id: Optional[int] = None):
         from bot.models import BACKEND_FAMILY, live_api_models, live_custom_models, live_hermes_models
 
         live_api = await live_api_models()
         live_hermes = live_hermes_models()
         live_custom = await live_custom_models()
-        return {
+        result = {
             "family": BACKEND_FAMILY,
             "current": {
                 name: (config.current.get("backends", {}).get(name) or {}).get("model")
@@ -670,6 +670,22 @@ def build_app() -> FastAPI:
                 "custom": live_custom,
             },
         }
+        # instance_id opts into real per-model pricing/free-tier data for
+        # that specific instance's own live Hermes gateway — see
+        # bot.models.hermes_models_with_pricing. This is the payload the
+        # bot-server MCP server's list_available_models tool proxies
+        # verbatim so Claude can make an actual "optimal free model"
+        # decision instead of guessing from the id-suffix heuristic the
+        # plain "live" section above still uses.
+        if instance_id is not None:
+            from bot.models import hermes_models_with_pricing
+
+            instance = bot_instances.get_instance(instance_id)
+            if instance and instance.get("backend") == "hermes_gateway":
+                priced, source = await hermes_models_with_pricing(instance_id)
+                result["pricing"] = priced
+                result["pricing_source"] = source
+        return result
 
     @app.get("/api/providers", dependencies=[Depends(_require_token)])
     async def api_providers_list():
@@ -1325,6 +1341,108 @@ def build_app() -> FastAPI:
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"ask failed: {exc}")
         return {"ok": True, "result": result.text}
+
+    # ------------------------------------------------- Hermes delegation --
+    # Configures and drives Hermes Agent's own delegate_task sub-agent
+    # system (see bot/hermes_config.py's module docstring for exactly why
+    # this can only ever set config + send a prompt, never invoke
+    # delegate_task directly). Until per-instance HERMES_HOME isolation
+    # lands, every hermes_gateway-backed instance shares one
+    # ~/.hermes/config.yaml — a real, documented limitation, not hidden.
+
+    def _require_hermes_gateway_instance(instance_id: int) -> dict:
+        instance = bot_instances.get_instance(instance_id)
+        if instance is None:
+            raise HTTPException(status_code=404, detail=f"bot instance {instance_id} not found")
+        if instance.get("backend") != "hermes_gateway":
+            raise HTTPException(
+                status_code=400,
+                detail=f"instance {instance_id} is backed by {instance.get('backend')!r}, not hermes_gateway — "
+                       "delegation configuration only applies to Hermes gateway-backed instances",
+            )
+        return instance
+
+    @app.get("/api/hermes/{instance_id}/delegation", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_hermes_delegation_get(instance_id: int):
+        from bot import hermes_config
+
+        _require_hermes_gateway_instance(instance_id)
+        return {"delegation": hermes_config.read_delegation_config()}
+
+    @app.post("/api/hermes/{instance_id}/delegation", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_hermes_delegation_set(instance_id: int, payload: dict = Body(...)):
+        from bot import hermes_config
+
+        _require_hermes_gateway_instance(instance_id)
+        if payload.get("subagent_auto_approve") is True and not payload.get("confirm"):
+            raise HTTPException(
+                status_code=400,
+                detail="subagent_auto_approve=true lets sub-agents run dangerous commands "
+                       "(shell, file writes) with no human approval — pass confirm=true to acknowledge this.",
+            )
+        delegation = hermes_config.set_delegation_config(
+            provider=payload.get("provider"),
+            model=payload.get("model"),
+            max_concurrent_children=payload.get("max_concurrent_children"),
+            max_spawn_depth=payload.get("max_spawn_depth"),
+            subagent_auto_approve=payload.get("subagent_auto_approve"),
+            actor="dashboard",
+        )
+        return {"ok": True, "delegation": delegation}
+
+    @app.post("/api/hermes/{instance_id}/dispatch", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_hermes_dispatch(instance_id: int, payload: dict = Body(...)):
+        """Configures delegation defaults for this instance (if a
+        worker_provider/worker_model was given, or one was auto-picked as
+        the currently-cheapest free model) then sends a goal prompt asking
+        Hermes's own agent to use delegate_task to fan it out — see
+        bot/swarm/prompts.py's module docstring for why the prompt itself,
+        not an external RPC, is the actual dispatch mechanism."""
+        from bot import hermes_config
+        from bot.models import hermes_models_with_pricing
+        from bot.swarm.prompts import hermes_delegation_goal
+
+        _require_hermes_gateway_instance(instance_id)
+        goal = (payload.get("goal") or "").strip()
+        if not goal:
+            raise HTTPException(status_code=400, detail="payload must include a non-empty 'goal'")
+
+        worker_provider = payload.get("worker_provider")
+        worker_model = payload.get("worker_model")
+        pricing_source = None
+        if not worker_provider or not worker_model:
+            priced, pricing_source = await hermes_models_with_pricing(instance_id)
+            for provider_name, entries in sorted(priced.items()):
+                free_entry = next((e for e in sorted(entries, key=lambda e: e["id"]) if e["free"]), None)
+                if free_entry:
+                    worker_provider, worker_model = provider_name, free_entry["id"]
+                    break
+
+        max_children = payload.get("max_children")
+        if worker_provider and worker_model:
+            hermes_config.set_delegation_config(
+                provider=worker_provider, model=worker_model,
+                max_concurrent_children=max_children, actor="dashboard",
+            )
+
+        prompt = hermes_delegation_goal(
+            goal, worker_provider=worker_provider, worker_model=worker_model, max_children=max_children,
+        )
+        db.log_audit(
+            actor="dashboard", action="swarm_dispatch",
+            detail=f"instance {instance_id} -> {worker_provider}/{worker_model}: {goal[:120]}",
+        )
+        try:
+            result = await router.ask(prompt, action_type="swarm_dispatch", instance_id=instance_id)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"dispatch failed: {exc}")
+        return {
+            "ok": True,
+            "result": result.text,
+            "worker_provider": worker_provider,
+            "worker_model": worker_model,
+            "worker_model_source": pricing_source,
+        }
 
     # --------------------------------------------------------- mutations --
 

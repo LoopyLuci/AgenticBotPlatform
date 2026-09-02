@@ -21,3 +21,4 @@ cryptography>=42.0
 numpy>=1.26
 matrix-nio>=0.24
 textual>=0.60
+ruamel.yaml>=0.18
