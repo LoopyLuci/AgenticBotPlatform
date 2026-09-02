@@ -1,5 +1,5 @@
 """Reads/writes the `delegation:` section of Hermes Agent's own
-~/.hermes/config.yaml — a third-party file BotServer does not own.
+config.yaml — a third-party file BotServer does not own.
 
 This is deliberately narrow: only the `delegation` mapping is ever
 touched, and only the keys explicitly passed to set_delegation() are
@@ -21,13 +21,36 @@ configure_delegation docstring).
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any, Optional
 
 logger = logging.getLogger("bot.hermes_config")
 
-HERMES_CONFIG_PATH = Path.home() / ".hermes" / "config.yaml"
+
+def _default_hermes_home() -> Path:
+    """Where Hermes itself resolves its home directory when no explicit
+    override is given — mirrors hermes_constants.py's own
+    get_hermes_home() resolution EXACTLY: HERMES_HOME env var first (this
+    process's own env, not a spawned child's — matches what Hermes's own
+    code does when nothing else overrides it), then the platform-native
+    default. Found the hard way: an earlier version of this module
+    hardcoded ~/.hermes/config.yaml unconditionally, which is Hermes's
+    *nix default but NOT its Windows default (%LOCALAPPDATA%\\hermes) —
+    a real config.yaml write on a Windows machine silently landed in a
+    file the real, already-running Hermes process never reads."""
+    env_home = os.environ.get("HERMES_HOME", "").strip()
+    if env_home:
+        return Path(env_home)
+    if sys.platform == "win32":
+        local_appdata = os.environ.get("LOCALAPPDATA", "").strip()
+        base = Path(local_appdata) if local_appdata else Path.home() / "AppData" / "Local"
+        return base / "hermes"
+    return Path.home() / ".hermes"
+
+
+HERMES_CONFIG_PATH = _default_hermes_home() / "config.yaml"
 
 _DELEGATION_KEYS = (
     "provider",

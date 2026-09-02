@@ -372,12 +372,25 @@ _hermes_config_cache: dict = {"mtime": None, "model": None}
 
 
 def local_hermes_default_model() -> Optional[str]:
-    """Hermes Agent's own configured default model (~/.hermes/config.yaml's
-    top-level "model" key), or None if the file/field doesn't exist or is
-    left blank — Hermes then decides its own default at runtime with
-    nothing local for us to read. Re-read only when the file's mtime
-    changes."""
-    path = Path.home() / ".hermes" / "config.yaml"
+    """Hermes Agent's own configured default model, or None if the
+    file/field doesn't exist or is left blank — Hermes then decides its
+    own default at runtime with nothing local for us to read. Re-read
+    only when the file's mtime changes. Path resolution matches Hermes's
+    own (HERMES_HOME env var, else the platform-native default —
+    %LOCALAPPDATA%\\hermes on Windows, ~/.hermes elsewhere), NOT a bare
+    ~/.hermes guess — see bot.hermes_config's own module docstring for
+    why that distinction is real, not pedantic (a previous version of
+    this exact bug silently read/wrote the wrong file on Windows).
+
+    The top-level `model` key itself has been observed in two real
+    shapes across real installs: a bare string (older/simpler configs,
+    e.g. `model: ''`) and a mapping with the actual default under
+    `default` (e.g. `model: {provider: nous, default: "...", ...}`,
+    confirmed against a real, actively-used config.yaml) — handled here
+    rather than assumed to be only one or the other."""
+    from bot.hermes_config import HERMES_CONFIG_PATH
+
+    path = HERMES_CONFIG_PATH
     try:
         mtime = path.stat().st_mtime
     except OSError:
@@ -389,7 +402,11 @@ def local_hermes_default_model() -> Optional[str]:
 
         with path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
-        model = (data.get("model") or "").strip() or None
+        raw_model = data.get("model")
+        if isinstance(raw_model, dict):
+            model = (raw_model.get("default") or "").strip() or None
+        else:
+            model = (raw_model or "").strip() or None
     except (OSError, AttributeError, yaml.YAMLError) as exc:
         logger.warning("local_hermes_default_model: failed to read %s: %s", path, exc)
         return None

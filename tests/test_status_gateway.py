@@ -130,10 +130,11 @@ def test_real_time_model_label_cli_missing_file_is_honest(temp_db, monkeypatch, 
 
 
 def test_real_time_model_label_hermes_reads_real_config_file(temp_db, monkeypatch, tmp_path):
-    hermes_dir = tmp_path / ".hermes"
-    hermes_dir.mkdir()
-    (hermes_dir / "config.yaml").write_text("model: grok-4.20-reasoning\n", encoding="utf-8")
-    monkeypatch.setattr(models.Path, "home", classmethod(lambda cls: tmp_path))
+    from bot import hermes_config
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("model: grok-4.20-reasoning\n", encoding="utf-8")
+    monkeypatch.setattr(hermes_config, "HERMES_CONFIG_PATH", config_path)
     monkeypatch.setattr(config, "_data", {"backends": {}})
     models._hermes_config_cache["mtime"] = None
     instance = {"backend": "hermes_gateway", "model": None}
@@ -141,11 +142,28 @@ def test_real_time_model_label_hermes_reads_real_config_file(temp_db, monkeypatc
     assert label == "grok-4.20-reasoning (Hermes's own default)"
 
 
+def test_real_time_model_label_hermes_dict_shaped_model_field(temp_db, monkeypatch, tmp_path):
+    # Real-world shape confirmed against an actual config.yaml: `model:`
+    # can be a mapping with the real default under `default`, not a bare
+    # string — see bot.models.local_hermes_default_model's docstring.
+    from bot import hermes_config
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("model:\n  provider: nous\n  default: meituan/longcat-2.0:free\n", encoding="utf-8")
+    monkeypatch.setattr(hermes_config, "HERMES_CONFIG_PATH", config_path)
+    monkeypatch.setattr(config, "_data", {"backends": {}})
+    models._hermes_config_cache["mtime"] = None
+    instance = {"backend": "hermes_gateway", "model": None}
+    label = _run(commands.real_time_model_label(instance))
+    assert label == "meituan/longcat-2.0:free (Hermes's own default)"
+
+
 def test_real_time_model_label_hermes_blank_field_is_honest(temp_db, monkeypatch, tmp_path):
-    hermes_dir = tmp_path / ".hermes"
-    hermes_dir.mkdir()
-    (hermes_dir / "config.yaml").write_text("model:\n", encoding="utf-8")
-    monkeypatch.setattr(models.Path, "home", classmethod(lambda cls: tmp_path))
+    from bot import hermes_config
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("model:\n", encoding="utf-8")
+    monkeypatch.setattr(hermes_config, "HERMES_CONFIG_PATH", config_path)
     monkeypatch.setattr(config, "_data", {"backends": {}})
     models._hermes_config_cache["mtime"] = None
     instance = {"backend": "hermes_gateway", "model": None}
