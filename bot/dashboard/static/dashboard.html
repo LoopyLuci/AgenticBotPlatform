@@ -1099,6 +1099,17 @@
       </div>
 
       <div class="card" style="margin-top:14px;">
+        <h3>Hermes swarm tools <span style="font-weight:400; color:var(--muted); font-size:12px;">— which Hermes agents can organize a swarm themselves</span></h3>
+        <p class="cardnote">A Hermes-backed instance can always spawn its own sub-agents via its native <code>delegate_task</code> tool. Enabling swarm tools additionally registers this app's own MCP server into that instance's Hermes config, so its agent can reach OTHER bot instances too — <code>ask_instance</code>, <code>run_swarm</code>, <code>dispatch_swarm_goal</code>, and more, mid-turn. Takes effect on that instance's next message, not immediately.</p>
+        <div class="tablewrap" style="margin-top:10px;">
+          <table>
+            <thead><tr><th>Instance</th><th>Hermes home</th><th>Swarm tools</th><th></th></tr></thead>
+            <tbody id="swarm-tools-tbody"><tr class="emptyrow"><td colspan="4">Unlock with the dashboard token to view.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
         <h3>Run a swarm</h3>
         <div class="wizard-field">
           <label>Swarm</label>
@@ -2120,6 +2131,8 @@ function startDashboard() {
   refreshSwarms();
   refreshSwarmRuns();
   pollWhenVisible(refreshSwarms, 15000);
+  refreshSwarmToolsPanel();
+  pollWhenVisible(refreshSwarmToolsPanel, 15000);
   refreshMobileKeys();
   pollWhenVisible(refreshMobileKeys, 15000);
   refreshPeers();
@@ -3024,6 +3037,39 @@ async function refreshSwarms() {
     await api(`/api/swarms/${id}`, { method: 'DELETE' });
     if (swarmEditingId === id) _resetSwarmForm();
     refreshSwarms();
+  });
+}
+
+async function refreshSwarmToolsPanel() {
+  const tbody = document.getElementById('swarm-tools-tbody');
+  if (!getToken()) {
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="4">Unlock with the dashboard token to view.</td></tr>';
+    return;
+  }
+  let data;
+  try {
+    data = await api('/api/hermes/swarm-tools-status');
+  } catch (_e) { return; }
+  const rows = data.instances || [];
+  tbody.innerHTML = rows.length ? rows.map(r => `
+    <tr>
+      <td>${esc(r.name)}</td>
+      <td class="mono" style="font-size:11px;">${r.hermes_home ? esc(r.hermes_home) : '<span style="color:var(--muted);">shared default</span>'}</td>
+      <td><span class="pill"><span class="dot ${r.swarm_tools_enabled ? 'good' : ''}"></span>${r.swarm_tools_enabled ? 'Enabled' : 'Disabled'}</span></td>
+      <td style="white-space:nowrap;">
+        <button class="btn" data-swarm-tools-toggle="${r.id}" data-enabled="${r.swarm_tools_enabled}" style="padding:3px 8px; font-size:11px;">${r.swarm_tools_enabled ? 'Disable' : 'Enable'}</button>
+      </td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="4">No Hermes-backed instances yet — add one in the Bots tab.</td></tr>';
+
+  document.querySelectorAll('[data-swarm-tools-toggle]').forEach(btn => btn.onclick = async () => {
+    const id = Number(btn.dataset.swarmToolsToggle);
+    const enabled = btn.dataset.enabled === 'true';
+    btn.disabled = true;
+    try {
+      await api(`/api/hermes/${id}/${enabled ? 'disable' : 'enable'}-swarm-tools`, { method: 'POST' });
+    } finally {
+      refreshSwarmToolsPanel();
+    }
   });
 }
 

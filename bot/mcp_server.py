@@ -439,6 +439,25 @@ async def enable_hermes_swarm_tools(instance_id: int) -> dict:
 
 
 @mcp.tool()
+async def disable_hermes_swarm_tools(instance_id: int) -> dict:
+    """Reverses enable_hermes_swarm_tools — removes bot-server's MCP
+    server from this Hermes instance's config, so its agent can no longer
+    call ask_instance/run_swarm/dispatch_swarm_goal/etc. itself. Also
+    takes effect on the instance's next message, not this call."""
+    return await _request("POST", f"/api/hermes/{instance_id}/disable-swarm-tools", timeout=30.0)
+
+
+@mcp.tool()
+async def hermes_swarm_tools_status() -> dict:
+    """Every hermes_gateway-backed bot instance and whether it currently
+    has bot-server's MCP server registered (enable_hermes_swarm_tools) —
+    the same data the dashboard's swarm-tools panel shows. A config-file
+    read, not a live check of whether the running gateway actually
+    connected — see the route's own docstring."""
+    return await _request("GET", "/api/hermes/swarm-tools-status")
+
+
+@mcp.tool()
 async def run_swarm(source_instance: str, swarm: str, prompt: str) -> dict:
     """Trigger a multi-step swarm run (see the dashboard's Swarms tab) as the
     given source persona, subject to the same agent_control allowlist as

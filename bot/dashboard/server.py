@@ -1487,6 +1487,41 @@ def build_app() -> FastAPI:
         )
         return {"ok": True, "registration": registration, "note": "takes effect on this instance's next message (fresh gateway spawn)"}
 
+    @app.post("/api/hermes/{instance_id}/disable-swarm-tools", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_hermes_disable_swarm_tools(instance_id: int):
+        from bot import hermes_config
+
+        instance = _require_hermes_gateway_instance(instance_id)
+        removed = hermes_config.unregister_botserver_mcp_server(hermes_home=instance.get("hermes_home"), actor="dashboard")
+        if removed:
+            await router.evict_backend(
+                "hermes_gateway", model_override=instance.get("model"), hermes_home=instance.get("hermes_home")
+            )
+        return {"ok": True, "removed": removed}
+
+    @app.get("/api/hermes/swarm-tools-status", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_hermes_swarm_tools_status():
+        """For the dashboard's swarm-tools panel: every hermes_gateway
+        instance with whether it currently has bot-server's MCP server
+        registered in its own config (see hermes_config.is_
+        botserver_mcp_registered) — a config-file read, not a live "is
+        the running gateway actually connected to it" check, since that
+        would require spawning/probing every instance's gateway just to
+        render a panel."""
+        from bot import hermes_config
+
+        rows = []
+        for instance in bot_instances.list_instances():
+            if instance.get("backend") != "hermes_gateway":
+                continue
+            rows.append({
+                "id": instance["id"],
+                "name": instance["name"],
+                "hermes_home": instance.get("hermes_home"),
+                "swarm_tools_enabled": hermes_config.is_botserver_mcp_registered(instance.get("hermes_home")),
+            })
+        return {"instances": rows}
+
     # --------------------------------------------------------- mutations --
 
     @app.post("/api/desktop/start", dependencies=[Depends(_require_token)])

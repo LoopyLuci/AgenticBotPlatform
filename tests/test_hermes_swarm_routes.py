@@ -367,3 +367,99 @@ def test_enable_swarm_tools_rejects_non_hermes_gateway_instance(temp_db, monkeyp
     resp = client.post(f"/api/hermes/{instance_id}/enable-swarm-tools", headers=_headers())
 
     assert resp.status_code == 400
+
+
+# --------------------------------------------------- swarm-tools status panel
+
+
+def test_is_botserver_mcp_registered_false_when_no_file(tmp_path, monkeypatch):
+    assert hermes_config.is_botserver_mcp_registered(str(tmp_path / "nope")) is False
+
+
+def test_is_botserver_mcp_registered_true_after_registering(tmp_path, monkeypatch, temp_db):
+    home = str(tmp_path)
+    assert hermes_config.is_botserver_mcp_registered(home) is False
+
+    hermes_config.register_botserver_mcp_server(hermes_home=home)
+
+    assert hermes_config.is_botserver_mcp_registered(home) is True
+
+
+def test_unregister_botserver_mcp_server_removes_entry(tmp_path, monkeypatch, temp_db):
+    home = str(tmp_path)
+    hermes_config.register_botserver_mcp_server(hermes_home=home)
+    assert hermes_config.is_botserver_mcp_registered(home) is True
+
+    removed = hermes_config.unregister_botserver_mcp_server(hermes_home=home)
+
+    assert removed is True
+    assert hermes_config.is_botserver_mcp_registered(home) is False
+
+
+def test_unregister_botserver_mcp_server_no_op_when_absent(tmp_path, monkeypatch, temp_db):
+    home = str(tmp_path)
+    removed = hermes_config.unregister_botserver_mcp_server(hermes_home=home)
+    assert removed is False
+
+
+def test_unregister_preserves_sibling_mcp_servers_and_comments(tmp_path, monkeypatch, temp_db):
+    home = str(tmp_path)
+    path = tmp_path / "config.yaml"
+    hermes_config.register_botserver_mcp_server(hermes_home=home)
+    # Hand-add a sibling entry + comment, simulating a real user's config.
+    text = path.read_text(encoding="utf-8")
+    path.write_text("# a real user comment\n" + text.replace(
+        "mcp_servers:\n", "mcp_servers:\n  agentic_toolkit:\n    command: some-python\n    args: [\"-m\", \"x\"]\n",
+    ), encoding="utf-8")
+
+    hermes_config.unregister_botserver_mcp_server(hermes_home=home)
+
+    final_text = path.read_text(encoding="utf-8")
+    assert "a real user comment" in final_text
+    assert "agentic_toolkit" in final_text
+    assert "some-python" in final_text
+    assert "botserver" not in final_text
+
+
+def test_disable_route_evicts_only_when_something_was_removed(temp_db, monkeypatch, tmp_path):
+    client = _client(monkeypatch)
+    instance_id = _create_hermes_instance(hermes_home=str(tmp_path / "home"))
+
+    from bot.router import router
+
+    evicted = []
+
+    async def fake_evict(name, model_override=None, hermes_home=None):
+        evicted.append((name, model_override, hermes_home))
+
+    monkeypatch.setattr(router, "evict_backend", fake_evict)
+
+    # Nothing registered yet -> no-op, no eviction.
+    resp = client.post(f"/api/hermes/{instance_id}/disable-swarm-tools", headers=_headers())
+    assert resp.status_code == 200
+    assert resp.json()["removed"] is False
+    assert evicted == []
+
+    hermes_config.register_botserver_mcp_server(hermes_home=str(tmp_path / "home"))
+    resp = client.post(f"/api/hermes/{instance_id}/disable-swarm-tools", headers=_headers())
+    assert resp.status_code == 200
+    assert resp.json()["removed"] is True
+    assert evicted == [("hermes_gateway", None, str(tmp_path / "home"))]
+
+
+def test_swarm_tools_status_lists_hermes_gateway_instances_with_flag(temp_db, monkeypatch, tmp_path):
+    client = _client(monkeypatch)
+    enabled_id = _create_hermes_instance(name="enabled-worker", hermes_home=str(tmp_path / "a"))
+    disabled_id = _create_hermes_instance(name="disabled-worker", hermes_home=str(tmp_path / "b"))
+    _create_cli_instance()  # non-hermes_gateway instance must be excluded
+
+    hermes_config.register_botserver_mcp_server(hermes_home=str(tmp_path / "a"))
+
+    resp = client.get("/api/hermes/swarm-tools-status", headers=_headers())
+
+    assert resp.status_code == 200
+    rows = {r["id"]: r for r in resp.json()["instances"]}
+    assert set(rows.keys()) == {enabled_id, disabled_id}
+    assert rows[enabled_id]["swarm_tools_enabled"] is True
+    assert rows[disabled_id]["swarm_tools_enabled"] is False
+    assert rows[enabled_id]["name"] == "enabled-worker"

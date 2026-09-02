@@ -205,6 +205,51 @@ def register_botserver_mcp_server(
     return {"name": "botserver", "command": python, "config_path": str(path)}
 
 
+def is_botserver_mcp_registered(hermes_home: Optional[str] = None) -> bool:
+    """Whether this instance's Hermes config currently has the
+    "botserver" entry under `mcp_servers:` — i.e. whether
+    register_botserver_mcp_server() has been run for it (and not since
+    unregistered). Read-only, no write, so safe to call on every
+    dashboard render. Does NOT reflect whether the instance's live
+    gateway process has actually picked up the change yet — mcp_servers
+    are read at gateway startup, so a freshly-registered entry only takes
+    effect after the next spawn (see register_botserver_mcp_server's
+    docstring); this only reports what the config FILE says."""
+    path = _config_path(hermes_home)
+    if not path.is_file():
+        return False
+    try:
+        yaml = _yaml()
+        with path.open(encoding="utf-8") as f:
+            data = yaml.load(f) or {}
+    except Exception as exc:
+        logger.warning("is_botserver_mcp_registered: failed to read %s: %s", path, exc)
+        return False
+    return "botserver" in (data.get("mcp_servers") or {})
+
+
+def unregister_botserver_mcp_server(hermes_home: Optional[str] = None, actor: str = "dashboard") -> bool:
+    """Removes the "botserver" entry from this instance's `mcp_servers:`
+    section, if present. Returns whether an entry was actually removed.
+    Same "takes effect on next gateway spawn" caveat as registering —
+    the caller is expected to evict/reconnect the backend afterward."""
+    from bot import db
+
+    path = _config_path(hermes_home)
+    if not path.is_file():
+        return False
+    yaml = _yaml()
+    data = _load_yaml_or_empty(path, yaml)
+    mcp_servers = data.get("mcp_servers") or {}
+    if "botserver" not in mcp_servers:
+        return False
+    del mcp_servers["botserver"]
+    _atomic_write_yaml(path, data, yaml)
+    db.log_audit(actor=actor, action="hermes_mcp_unregister", detail=f"{path}: removed botserver")
+    logger.info("unregistered botserver MCP server at %s", path)
+    return True
+
+
 def _project_root():
     from bot.envfile import PROJECT_ROOT
 
