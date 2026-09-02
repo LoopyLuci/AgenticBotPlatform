@@ -1466,6 +1466,27 @@ def build_app() -> FastAPI:
             "worker_model_source": pricing_source,
         }
 
+    @app.post("/api/hermes/{instance_id}/enable-swarm-tools", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_hermes_enable_swarm_tools(instance_id: int):
+        """Gives this Hermes instance's own agent the same cross-instance
+        organizing ability Claude gets via this MCP server and api-backend
+        agents get via delegate_to_instance: registers bot-server's own
+        MCP server into the instance's mcp_servers config, then evicts its
+        cached backend so the NEXT call spawns a fresh gateway process
+        that actually loads it (mcp_servers are read at gateway startup,
+        never hot-reloaded)."""
+        from bot import hermes_config
+
+        instance = _require_hermes_gateway_instance(instance_id)
+        token = os.environ.get("DASHBOARD_TOKEN") or envfile.get_var("DASHBOARD_TOKEN")
+        registration = hermes_config.register_botserver_mcp_server(
+            hermes_home=instance.get("hermes_home"), dashboard_token=token, actor="dashboard",
+        )
+        await router.evict_backend(
+            "hermes_gateway", model_override=instance.get("model"), hermes_home=instance.get("hermes_home")
+        )
+        return {"ok": True, "registration": registration, "note": "takes effect on this instance's next message (fresh gateway spawn)"}
+
     # --------------------------------------------------------- mutations --
 
     @app.post("/api/desktop/start", dependencies=[Depends(_require_token)])

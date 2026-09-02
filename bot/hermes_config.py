@@ -21,6 +21,7 @@ configure_delegation docstring).
 from __future__ import annotations
 
 import logging
+import sys
 from pathlib import Path
 from typing import Any, Optional
 
@@ -54,6 +55,21 @@ def _config_path(hermes_home: Optional[str] = None) -> Path:
     if hermes_home:
         return Path(hermes_home).expanduser() / "config.yaml"
     return HERMES_CONFIG_PATH
+
+
+def _load_yaml_or_empty(path: Path, yaml) -> dict[str, Any]:
+    if not path.is_file():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return {}
+    with path.open(encoding="utf-8") as f:
+        return yaml.load(f) or {}
+
+
+def _atomic_write_yaml(path: Path, data: dict, yaml) -> None:
+    tmp_path = path.with_suffix(".yaml.tmp")
+    with tmp_path.open("w", encoding="utf-8") as f:
+        yaml.dump(data, f)
+    tmp_path.replace(path)  # atomic on the same filesystem
 
 
 def read_delegation_config(hermes_home: Optional[str] = None) -> dict[str, Any]:
@@ -110,12 +126,7 @@ def set_delegation_config(
 
     path = _config_path(hermes_home)
     yaml = _yaml()
-    if path.is_file():
-        with path.open(encoding="utf-8") as f:
-            data = yaml.load(f) or {}
-    else:
-        data = {}
-        path.parent.mkdir(parents=True, exist_ok=True)
+    data = _load_yaml_or_empty(path, yaml)
 
     delegation = data.get("delegation")
     if delegation is None:
@@ -123,11 +134,78 @@ def set_delegation_config(
         data["delegation"] = delegation
     delegation.update(changes)
 
-    tmp_path = path.with_suffix(".yaml.tmp")
-    with tmp_path.open("w", encoding="utf-8") as f:
-        yaml.dump(data, f)
-    tmp_path.replace(path)  # atomic on the same filesystem
+    _atomic_write_yaml(path, data, yaml)
 
     db.log_audit(actor=actor, action="hermes_delegation_config", detail=f"{path}: {changes}")
     logger.info("delegation config updated at %s: %s", path, changes)
     return dict(delegation)
+
+
+def register_botserver_mcp_server(
+    *,
+    hermes_home: Optional[str] = None,
+    dashboard_token: Optional[str] = None,
+    actor: str = "dashboard",
+) -> dict[str, Any]:
+    """Registers BotServer's own MCP control server (bot/mcp_server.py)
+    into this Hermes instance's `mcp_servers:` section under the name
+    "botserver", pointing at the same interpreter this BotServer process
+    is running under — mirrors bot/desktop.py's register_self_mcp() for
+    Claude Desktop, adapted to Hermes's `mcp_servers:` (snake_case) config
+    key rather than Claude Desktop's `mcpServers` (camelCase)
+    claude_desktop_config.json.
+
+    This is what completes the "Hermes can organize swarms too" half of
+    the Hermes-swarm plan: a Hermes agent already gets its own delegate_task
+    for spawning its own children (Phase 3), but had no way to reach
+    OTHER BotServer bot_instances (a different Hermes worker, or a
+    Claude-backed one) the way Claude itself can via this same MCP
+    server, or an `api`-backend agent can via delegate_to_instance
+    (Phase 4). Registering this server gives a Hermes agent — mid-turn,
+    via its own native MCP client, the exact mechanism real installs
+    already use for the "agentic_toolkit" entry — direct access to
+    ask_instance/run_swarm/dispatch_swarm_goal/list_available_models/
+    create_bot_instance/configure_delegation, closing the loop in both
+    directions.
+
+    Idempotent — re-running overwrites the one "botserver" entry (so it
+    stays correct after a token rotation). Takes effect only once this
+    instance's Hermes gateway process is restarted — `mcp_servers` are
+    read at gateway startup, not hot-reloaded — so the caller is expected
+    to evict/reconnect the backend afterward (see the dashboard route
+    this backs, which does exactly that)."""
+    from bot import db
+
+    python = sys.executable
+    project_root = str(_project_root())
+    env_vars = {"PYTHONPATH": project_root}
+    if dashboard_token:
+        env_vars["DASHBOARD_TOKEN"] = dashboard_token
+
+    path = _config_path(hermes_home)
+    yaml = _yaml()
+    data = _load_yaml_or_empty(path, yaml)
+
+    mcp_servers = data.get("mcp_servers")
+    if mcp_servers is None:
+        mcp_servers = {}
+        data["mcp_servers"] = mcp_servers
+    mcp_servers["botserver"] = {
+        "command": python,
+        "args": ["-m", "bot.mcp_server"],
+        "env": env_vars,
+        "timeout": 180,
+        "connect_timeout": 60,
+    }
+
+    _atomic_write_yaml(path, data, yaml)
+
+    db.log_audit(actor=actor, action="hermes_mcp_register", detail=f"{path}: botserver -> {python}")
+    logger.info("registered botserver MCP server at %s -> %s", path, python)
+    return {"name": "botserver", "command": python, "config_path": str(path)}
+
+
+def _project_root():
+    from bot.envfile import PROJECT_ROOT
+
+    return PROJECT_ROOT

@@ -411,6 +411,34 @@ async def dispatch_swarm_goal(
 
 
 @mcp.tool()
+async def enable_hermes_swarm_tools(instance_id: int) -> dict:
+    """Gives a hermes_gateway-backed instance's own agent the SAME
+    cross-instance organizing ability you (Claude) have through this very
+    MCP server: registers bot-server's own MCP control server into that
+    Hermes instance's config, so its agent can call ask_instance,
+    run_swarm, dispatch_swarm_goal, list_available_models,
+    create_bot_instance, and configure_delegation itself, mid-turn —
+    reaching OTHER bot instances (Claude- or Hermes-backed), not just the
+    sub-agents it can already spawn via its own native delegate_task.
+    This is what lets a Hermes agent organize and use a swarm of
+    BotServer agents, not only a swarm of its own children.
+
+    Takes effect on that instance's NEXT message, not this call — Hermes
+    reads its mcp_servers config at gateway startup, so this evicts the
+    instance's currently-cached gateway connection to force a fresh spawn
+    that actually loads the new server.
+
+    NOTE: ask_instance/run_swarm require the caller to self-declare its
+    own bot_instances name as `source_instance` — this Hermes agent won't
+    know its own name unless told. Give it that context via its
+    custom_instructions (e.g. "your bot_instances name is 'worker-1' —
+    use the botserver MCP tools' source_instance='worker-1' to reach
+    other agents"), set through the dashboard's Bots tab or a direct
+    PUT /api/bots/{id} call."""
+    return await _request("POST", f"/api/hermes/{instance_id}/enable-swarm-tools", timeout=30.0)
+
+
+@mcp.tool()
 async def run_swarm(source_instance: str, swarm: str, prompt: str) -> dict:
     """Trigger a multi-step swarm run (see the dashboard's Swarms tab) as the
     given source persona, subject to the same agent_control allowlist as

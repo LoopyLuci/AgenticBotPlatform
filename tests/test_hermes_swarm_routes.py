@@ -94,6 +94,39 @@ def test_set_delegation_config_no_op_with_no_changes(tmp_path, monkeypatch, temp
     assert not path.exists()  # never created a file for a no-op call
 
 
+def test_register_botserver_mcp_server_preserves_existing_mcp_servers_and_comments(tmp_path, monkeypatch, temp_db):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "# a real user comment that must survive\n"
+        "mcp_servers:\n"
+        "  agentic_toolkit:\n"
+        "    command: some-other-python\n"
+        "    args: [\"-m\", \"agentic_mcp_toolkit.server\"]\n",
+        encoding="utf-8",
+    )
+
+    result = hermes_config.register_botserver_mcp_server(hermes_home=str(tmp_path), dashboard_token="tok-123")
+
+    assert result["name"] == "botserver"
+    text = path.read_text(encoding="utf-8")
+    assert "a real user comment that must survive" in text
+    assert "agentic_toolkit" in text  # untouched sibling entry survives
+    assert "some-other-python" in text
+    assert "botserver" in text
+    assert "bot.mcp_server" in text
+
+
+def test_register_botserver_mcp_server_is_idempotent(tmp_path, monkeypatch, temp_db):
+    path = tmp_path / "config.yaml"
+
+    first = hermes_config.register_botserver_mcp_server(hermes_home=str(tmp_path))
+    second = hermes_config.register_botserver_mcp_server(hermes_home=str(tmp_path))
+
+    assert first["name"] == second["name"] == "botserver"
+    text = path.read_text(encoding="utf-8")
+    assert text.count("botserver:") == 1  # overwritten in place, not duplicated
+
+
 # --------------------------------------------------------------------- routes
 
 
@@ -289,3 +322,48 @@ def test_deleting_hermes_gateway_instance_evicts_its_backend(temp_db, monkeypatc
 
     assert resp.status_code == 200
     assert evicted == [("hermes_gateway", "worker-model", "/tmp/worker-home")]
+
+
+# ------------------------------------------------ Hermes-organizes-swarms too
+# The reverse direction: giving a Hermes agent itself the same
+# cross-instance organizing ability Claude has via this MCP server, by
+# registering bot-server's own MCP server into the Hermes instance's own
+# config.yaml mcp_servers section.
+
+
+def test_enable_swarm_tools_registers_mcp_server_and_evicts_backend(temp_db, monkeypatch, tmp_path):
+    client = _client(monkeypatch)
+    instance_id = _create_hermes_instance(hermes_home=str(tmp_path / "home"))
+
+    from bot.router import router
+
+    evicted = []
+
+    async def fake_evict(name, model_override=None, hermes_home=None):
+        evicted.append((name, model_override, hermes_home))
+
+    monkeypatch.setattr(router, "evict_backend", fake_evict)
+
+    resp = client.post(f"/api/hermes/{instance_id}/enable-swarm-tools", headers=_headers())
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["registration"]["name"] == "botserver"
+    assert evicted == [("hermes_gateway", None, str(tmp_path / "home"))]
+
+    delegation = hermes_config.read_delegation_config(str(tmp_path / "home"))  # sanity: file is real YAML
+    config_path = tmp_path / "home" / "config.yaml"
+    assert config_path.is_file()
+    text = config_path.read_text(encoding="utf-8")
+    assert "mcp_servers" in text
+    assert "botserver" in text
+    assert "bot.mcp_server" in text
+
+
+def test_enable_swarm_tools_rejects_non_hermes_gateway_instance(temp_db, monkeypatch):
+    client = _client(monkeypatch)
+    instance_id = _create_cli_instance()
+
+    resp = client.post(f"/api/hermes/{instance_id}/enable-swarm-tools", headers=_headers())
+
+    assert resp.status_code == 400
