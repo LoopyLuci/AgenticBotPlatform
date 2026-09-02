@@ -132,6 +132,105 @@ def _hermes_cache_path() -> Optional[Path]:
     return None
 
 
+_hermes_gateway_cache: dict[int, dict] = {}  # instance_id -> {"at": float, "payload": dict}
+_HERMES_GATEWAY_CACHE_TTL_S = 300.0
+
+
+async def live_hermes_gateway_options(instance_id: int, refresh: bool = False) -> Optional[dict]:
+    """The raw `/api/model/options` payload from the specific Hermes
+    gateway process backing `instance_id`, or None if that instance isn't
+    hermes_gateway-backed or the call fails (gateway not installed/
+    reachable). Cached 300s per instance unless `refresh` is passed
+    through to the gateway itself (which does its own pricing-fetch
+    caching — this cache is just to avoid spawning/round-tripping on
+    every dashboard render)."""
+    from bot.backends.hermes_gateway_backend import HermesGatewayBackend
+    from bot.router import router
+
+    now = time.monotonic()
+    if not refresh:
+        cached = _hermes_gateway_cache.get(instance_id)
+        if cached is not None and (now - cached["at"]) < _HERMES_GATEWAY_CACHE_TTL_S:
+            return cached["payload"]
+
+    backend = router.get_backend_for_instance(instance_id)
+    if not isinstance(backend, HermesGatewayBackend):
+        return None
+    try:
+        payload = await backend.fetch_model_options(refresh=refresh)
+    except Exception as exc:
+        logger.warning("live_hermes_gateway_options: fetch failed for instance %s: %s", instance_id, exc)
+        return None
+    _hermes_gateway_cache[instance_id] = {"at": now, "payload": payload}
+    return payload
+
+
+def _rows_from_gateway_payload(payload: dict) -> dict[str, list[dict]]:
+    """Normalizes `/api/model/options`'s per-provider rows (see
+    hermes_cli.inventory.build_model_options_payload — each row carries
+    `models`, and a `pricing` map of model_id -> {"free": bool, "input":
+    ..., "output": ...} once `_apply_pricing` has run) into
+    {provider: [{"id", "free", "input", "output"}, ...]}. Tolerant of
+    whatever subset of fields a given payload actually has — this reads
+    a third-party process's live JSON, not a contract BotServer controls."""
+    grouped: dict[str, list[dict]] = {}
+    providers = payload.get("providers") if isinstance(payload, dict) else None
+    if not isinstance(providers, list):
+        return grouped
+    for row in providers:
+        if not isinstance(row, dict):
+            continue
+        name = row.get("provider") or row.get("name")
+        models = row.get("models")
+        if not name or not models:
+            continue
+        pricing = row.get("pricing") or {}
+        entries = []
+        for m in models:
+            model_id = m if isinstance(m, str) else (m or {}).get("id")
+            if not model_id:
+                continue
+            price = pricing.get(model_id) or {}
+            entries.append({
+                "id": model_id,
+                "free": bool(price.get("free", False)),
+                "input": price.get("input"),
+                "output": price.get("output"),
+            })
+        if entries:
+            grouped[name] = entries
+    return grouped
+
+
+async def hermes_models_with_pricing(instance_id: int, refresh: bool = False) -> tuple[dict[str, list[dict]], str]:
+    """{provider: [{"id","free","input","output"}, ...]} for `instance_id`,
+    plus a source label so callers (and Claude, via the MCP model-listing
+    tool) always know whether "free" is real pricing data or a fallback
+    guess: "live" (fetched from this instance's own running Hermes
+    gateway, real pricing), "cache_fallback" (Hermes's stale, possibly-
+    never-populated disk cache — model ids only, "free" is the
+    naming-convention regex from bot.commands.is_free_model_id), or
+    "unavailable" (neither worked — empty dict)."""
+    from bot.commands import is_free_model_id
+
+    payload = await live_hermes_gateway_options(instance_id, refresh=refresh)
+    if payload:
+        grouped = _rows_from_gateway_payload(payload)
+        if grouped:
+            return grouped, "live"
+
+    disk = live_hermes_models()
+    if disk:
+        return (
+            {
+                provider: [{"id": mid, "free": is_free_model_id(mid), "input": None, "output": None} for mid in ids]
+                for provider, ids in disk.items()
+            },
+            "cache_fallback",
+        )
+    return {}, "unavailable"
+
+
 _hermes_cache: dict = {"mtime": None, "models": None}
 
 

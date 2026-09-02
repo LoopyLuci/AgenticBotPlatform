@@ -403,6 +403,20 @@ class Router:
             self._record_circuit_result(instance_id, success=False)
         raise last_error or BackendError("all backends in chain failed")
 
+    def get_backend_for_instance(self, instance_id: int) -> Optional[Backend]:
+        """The live Backend object this instance's own `backend`/`model`
+        columns resolve to right now — same resolution `ask()` and
+        create_session() use, exposed for callers that need to reach a
+        backend-specific capability beyond ask() (e.g. HermesGatewayBackend's
+        fetch_model_options()). Returns None if the instance doesn't exist."""
+        from bot import bot_instances
+
+        instance = bot_instances.get_instance(instance_id)
+        if instance is None:
+            return None
+        cfg = config.current
+        return self._get_backend(instance["backend"], cfg, model_override=instance.get("model"))
+
     async def create_session(self, instance_id: int, chat_id: Optional[Any] = None, thread_id: Optional[Any] = None) -> str:
         """Explicitly opens a brand-new chat/session in the real desktop
         agent app (Claude Desktop for "ui", Hermes for "hermes_gateway")

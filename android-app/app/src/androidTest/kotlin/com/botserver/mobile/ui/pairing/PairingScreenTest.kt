@@ -6,6 +6,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.botserver.mobile.data.ApiService
@@ -27,7 +28,11 @@ import org.junit.runner.RunWith
  * about the screen wiring host/key input through to a working pairing
  * attempt, not about the network layer itself (that's DynamicHostInterceptorTest's
  * job). CredentialStore is real, backed by this test's own instrumentation
- * context — EncryptedSharedPreferences works fine on a real device/emulator. */
+ * context — EncryptedSharedPreferences works fine on a real device/emulator.
+ *
+ * closeSoftKeyboard() runs after every text field is filled and before the
+ * submit tap: on a real device the IME shrinks the window, which can push
+ * the submit button below the resized viewport and swallow the tap. */
 @RunWith(AndroidJUnit4::class)
 class PairingScreenTest {
     @get:Rule
@@ -58,6 +63,8 @@ class PairingScreenTest {
         composeRule.onNodeWithText("Enter key manually instead").performClick()
         composeRule.onNodeWithTag("pairing-host").performTextInput("192.168.1.50:8787")
         composeRule.onNodeWithTag("pairing-key").performTextInput("test-pairing-key")
+        closeSoftKeyboard()
+        composeRule.waitForIdle()
         composeRule.onNodeWithTag("pairing-submit").performClick()
 
         composeRule.waitUntil(timeoutMillis = 5_000) { paired }
@@ -76,6 +83,8 @@ class PairingScreenTest {
 
         composeRule.onNodeWithText("Enter key manually instead").performClick()
         composeRule.onNodeWithTag("pairing-host").performTextInput("192.168.1.50:8787")
+        closeSoftKeyboard()
+        composeRule.waitForIdle()
         composeRule.onNodeWithTag("pairing-submit").performClick()
 
         composeRule.onNodeWithText("Paste the key from the dashboard's Mobile tab.").assertExists()

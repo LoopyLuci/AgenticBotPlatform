@@ -250,18 +250,46 @@ def _sort_group(model_ids) -> list[str]:
     return free + paid
 
 
-async def instance_model_groups(backend: str) -> list[dict]:
+async def instance_model_groups(backend: str, instance_id: Optional[int] = None) -> list[dict]:
     """Models available to `backend`, grouped by provider (Hermes's own
     cache is already keyed by provider; the Claude family has exactly one),
     each group's models sorted with free ones first. Replaces the old flat
     instance_model_options() list, which discarded the provider structure
     Hermes's cache already gives us and interleaved every provider's models
-    together."""
+    together.
+
+    When `instance_id` is given and `backend` is hermes_gateway, free/paid
+    is resolved from that instance's own live gateway pricing data (see
+    bot.models.hermes_models_with_pricing) instead of the id-suffix
+    heuristic — each group then also carries "free_ids" so callers (e.g.
+    instance_model_page's provider free_count) can use the real
+    classification instead of re-guessing from the id string."""
     from bot.models import BACKEND_FAMILY, live_api_models, live_custom_models, live_hermes_models
 
     family = BACKEND_FAMILY.get(backend, "claude")
-    if family in ("hermes", "custom"):
-        grouped = live_hermes_models() if family == "hermes" else await live_custom_models()
+    if family == "hermes":
+        if instance_id is not None:
+            from bot.models import hermes_models_with_pricing
+
+            priced, source = await hermes_models_with_pricing(instance_id)
+            if priced:
+                groups = []
+                for name, entries in sorted(priced.items(), key=lambda kv: kv[0].lower()):
+                    free_ids = {e["id"] for e in entries if e["free"]}
+                    ids = sorted({e["id"] for e in entries})
+                    ordered = [m for m in ids if m in free_ids] + [m for m in ids if m not in free_ids]
+                    groups.append({"provider": name, "models": ordered, "free_ids": free_ids, "pricing_source": source})
+                return groups
+        grouped = live_hermes_models()
+        if not grouped:
+            return []
+        return [
+            {"provider": name, "models": _sort_group(models)}
+            for name, models in sorted(grouped.items(), key=lambda kv: kv[0].lower())
+            if models
+        ]
+    if family == "custom":
+        grouped = await live_custom_models()
         if not grouped:
             return []
         return [
@@ -286,7 +314,7 @@ async def instance_model_page(instance_id: int, provider: Optional[int], page: i
     if instance is None:
         return None
     backend = instance["backend"]
-    groups = await instance_model_groups(backend)
+    groups = await instance_model_groups(backend, instance_id=instance_id)
     current_model = instance.get("model")
 
     if not groups:
@@ -300,7 +328,10 @@ async def instance_model_page(instance_id: int, provider: Optional[int], page: i
                 "idx": i,
                 "name": g["provider"],
                 "count": len(g["models"]),
-                "free_count": sum(1 for m in g["models"] if is_free_model_id(m)),
+                "free_count": (
+                    len(g["free_ids"]) if "free_ids" in g
+                    else sum(1 for m in g["models"] if is_free_model_id(m))
+                ),
                 "is_current": current_model in g["models"],
             }
             for i, g in enumerate(groups)

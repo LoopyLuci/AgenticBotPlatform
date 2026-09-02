@@ -165,6 +165,7 @@ dependencies {
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.rules)
+    androidTestImplementation(libs.androidx.test.espresso.core)
     // The compose-bom platform only applies within the configuration it's
     // declared in — androidTest needs its own, matching the versions the
     // main `implementation(platform(...))` above already pins.

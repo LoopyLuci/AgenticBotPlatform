@@ -7,6 +7,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.room.Room
+import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.botserver.mobile.data.ApiService
@@ -80,6 +81,11 @@ class BotsScreenAddBotTest {
         composeRule.onNodeWithTag("bots-add-fab").performClick()
         composeRule.onNodeWithTag("bot-form-name").performTextInput("My Test Bot")
         composeRule.onNodeWithTag("bot-form-token").performTextInput("fake-bot-token-12345")
+        // Dismiss the IME before tapping save — on a real device the keyboard
+        // shrinks the window and can push the save button below the resized
+        // viewport, silently swallowing the tap.
+        closeSoftKeyboard()
+        composeRule.waitForIdle()
         composeRule.onNodeWithTag("bot-form-save").performClick()
 
         composeRule.waitUntil(timeoutMillis = 5_000) { createdBots.isNotEmpty() }

@@ -98,6 +98,31 @@ class HermesGatewayBackend(Backend):
         raw = {"desktop_session_key": session_id} if created else None
         return BackendResult(text=text, tokens=None, raw=raw)
 
+    async def fetch_model_options(self, refresh: bool = False, timeout_s: float = 20) -> dict:
+        """GET this gateway's own `/api/model/options` — the same
+        pricing-aware provider/model inventory Hermes's own dashboard/TUI
+        picker uses (`hermes_cli.inventory.build_model_options_payload()`),
+        including a real `free: bool` per model, not a naming-convention
+        guess. Auth here is the `X-Hermes-Session-Token` header (Hermes's
+        plain-HTTP auth) — distinct from the WS route's `?token=` query
+        param `_connect()` uses; see this module's docstring. Spawns the
+        gateway process first (via _ensure_connected(), same lazy-spawn
+        path ask() uses) if it isn't already running — discovery should
+        work even before the first ask()."""
+        import httpx
+
+        await self._ensure_connected()
+        url = f"http://127.0.0.1:{self.port}/api/model/options"
+        params = {"refresh": "true"} if refresh else {}
+        headers = {"X-Hermes-Session-Token": self._token}
+        try:
+            async with httpx.AsyncClient(timeout=timeout_s) as client:
+                resp = await client.get(url, params=params, headers=headers)
+                resp.raise_for_status()
+                return resp.json()
+        except httpx.HTTPError as exc:
+            raise BackendError(f"hermes gateway /api/model/options failed: {exc}") from exc
+
     async def create_session(self, timeout_s: float = 15) -> str:
         """Explicitly opens a brand-new Hermes session and returns its
         session_id as the key the caller (Router.create_session) should

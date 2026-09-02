@@ -3,9 +3,11 @@ package com.botserver.mobile.ui.chat
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.room.Room
+import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.botserver.mobile.data.ApiService
@@ -27,14 +29,15 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Send-a-message flow: type into the composer, tap send, confirm the
- * request actually reaches ApiService with the typed text. ApiService is
- * faked — this is about the screen -> ViewModel -> Repository wiring, not
- * a real round trip (that path's chunking/pruning/cursor logic already has
- * direct unit-test coverage in ChatRepositorySendFileTest and the Room
- * tests). LiveEventsClient is real but harmlessly unable to connect in a
- * test environment (no real BotServer listening) — its reconnect loop
- * backs off in the background and never blocks this test. */
+/** Send-a-message flow: open the one bot's conversation from the chat list,
+ * type into the composer, tap send, confirm the request actually reaches
+ * ApiService with the typed text. ApiService is faked — this is about the
+ * screen -> ViewModel -> Repository wiring, not a real round trip (that
+ * path's chunking/pruning/cursor logic already has direct unit-test
+ * coverage in ChatRepositorySendFileTest and the Room tests). LiveEventsClient
+ * is real but harmlessly unable to connect in a test environment (no real
+ * BotServer listening) — its reconnect loop backs off in the background and
+ * never blocks this test. */
 @RunWith(AndroidJUnit4::class)
 class ChatScreenSendMessageTest {
     @get:Rule
@@ -71,12 +74,17 @@ class ChatScreenSendMessageTest {
         }
 
         // Give the initial recipients fetch (triggered by start()'s first,
-        // immediate iteration) a moment to land and pick an active instance.
+        // immediate iteration) a moment to land, then open its conversation —
+        // ChatScreen's landing view is the bot list, not the composer; a row
+        // tap is what actually switches to the conversation screen.
         composeRule.waitUntil(timeoutMillis = 5_000) {
-            viewModel.uiState.value.activeInstanceId != null
+            viewModel.uiState.value.instances.isNotEmpty()
         }
+        composeRule.onNodeWithText("Test Bot").performClick()
 
         composeRule.onNodeWithTag("chat-message-input").performTextInput("Hello there")
+        closeSoftKeyboard()
+        composeRule.waitForIdle()
         composeRule.onNodeWithTag("chat-send").performClick()
 
         composeRule.waitUntil(timeoutMillis = 5_000) {
