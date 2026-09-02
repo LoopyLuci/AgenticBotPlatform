@@ -11,10 +11,16 @@ default file another (non-isolated) instance uses.
 
 from __future__ import annotations
 
+import asyncio
+
 from bot import bot_instances, hermes_config
 from bot.backends.hermes_gateway_backend import HermesGatewayBackend
 from bot.config import config
 from bot.router import Router
+
+
+def _run(coro):
+    return asyncio.run(coro)
 
 
 def _create_hermes_instance(name, hermes_home=None):
@@ -90,6 +96,39 @@ def test_spawn_sets_hermes_home_env_var(monkeypatch):
     asyncio.run(run())
 
     assert captured["env"]["HERMES_HOME"] == "/tmp/hermes-isolated"
+
+
+def test_evict_backend_shuts_down_and_removes_the_cached_object(temp_db, monkeypatch):
+    # Real-world case this closes (found via live testing): editing a
+    # hermes_gateway instance's model/hermes_home builds a NEW Backend
+    # object under a new cache key, silently orphaning the OLD one —
+    # still holding its spawned `hermes serve` subprocess — under its now
+    # unreachable old key forever.
+    monkeypatch.setattr(config, "_data", {"backends": {}, "action_overrides": {}, "timeouts": {}})
+    r = Router()
+    a_id = _create_hermes_instance("worker-a", hermes_home="/tmp/hermes-a")
+
+    old_backend = r.get_backend_for_instance(a_id)
+    shutdown_calls = []
+
+    async def fake_shutdown():
+        shutdown_calls.append(True)
+
+    monkeypatch.setattr(old_backend, "shutdown", fake_shutdown)
+
+    _run(r.evict_backend("hermes_gateway", model_override=None, hermes_home="/tmp/hermes-a"))
+
+    assert shutdown_calls == [True]
+    # A fresh lookup now builds a genuinely new object, not the evicted one.
+    new_backend = r.get_backend_for_instance(a_id)
+    assert new_backend is not old_backend
+
+
+def test_evict_backend_is_a_no_op_for_an_unknown_key(temp_db, monkeypatch):
+    monkeypatch.setattr(config, "_data", {"backends": {}, "action_overrides": {}, "timeouts": {}})
+    r = Router()
+    # Nothing cached at all yet — must not raise.
+    _run(r.evict_backend("hermes_gateway", model_override=None, hermes_home="/never-used"))
 
 
 def test_delegation_config_isolated_from_shared_default(tmp_path, monkeypatch, temp_db):

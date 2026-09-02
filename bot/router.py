@@ -74,6 +74,29 @@ class Router:
         Called from bot/main.py's shutdown path."""
         await self._shutdown_backend_set(self._backends)
 
+    async def evict_backend(
+        self, name: str, model_override: Optional[str] = None, hermes_home: Optional[str] = None
+    ) -> None:
+        """Shuts down and removes one specific cached backend (see
+        _get_backend's cache-key shape) built for a bot instance's OLD
+        model/hermes_home values. Without this, editing a hermes_gateway
+        instance's model (or deleting the instance outright) orphans the
+        old Backend object — still holding its spawned `hermes serve`
+        subprocess and socket — as an unreachable entry under its old
+        cache key, forever, since nothing else ever looks that key up
+        again. Safe to call for any backend name; a no-op if nothing was
+        cached under that exact key (e.g. it was never actually used, or
+        the instance's model/hermes_home never changed)."""
+        key = f"{name}::{model_override}::{hermes_home}" if (model_override or hermes_home) else name
+        backend = self._backends.pop(key, None)
+        if backend is not None:
+            shutdown = getattr(backend, "shutdown", None)
+            if shutdown is not None:
+                try:
+                    await shutdown()
+                except Exception as exc:
+                    logger.warning("error shutting down evicted backend %r: %s", backend, exc)
+
     @staticmethod
     async def _shutdown_backend_set(backends: dict[str, Backend]) -> None:
         for backend in backends.values():

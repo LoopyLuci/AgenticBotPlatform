@@ -170,9 +170,22 @@ def _rows_from_gateway_payload(payload: dict) -> dict[str, list[dict]]:
     hermes_cli.inventory.build_model_options_payload — each row carries
     `models`, and a `pricing` map of model_id -> {"free": bool, "input":
     ..., "output": ...} once `_apply_pricing` has run) into
-    {provider: [{"id", "free", "input", "output"}, ...]}. Tolerant of
+    {provider_slug: [{"id", "free", "input", "output"}, ...]}. Tolerant of
     whatever subset of fields a given payload actually has — this reads
-    a third-party process's live JSON, not a contract BotServer controls."""
+    a third-party process's live JSON, not a contract BotServer controls.
+
+    Keyed by each row's `slug` (e.g. "nous", "openrouter"), NOT its `name`
+    (e.g. "Nous Portal", "OpenRouter") — `slug` is the literal value
+    Hermes's own `delegation.provider` config expects; `name` is only a
+    display label. Confirmed against the real hermes_cli/inventory.py
+    source: rows carry both (`"name": _PROVIDER_LABELS.get(entry.slug,
+    entry.label)`), and this was found the hard way — an earlier version
+    of this function keyed on `name`, which silently produced an invalid
+    delegation.provider value ("Nous Portal" is not a provider Hermes's
+    own config resolves) that Hermes itself had to notice and
+    self-correct mid-run during live testing. The synthetic "moa" row
+    (Mixture-of-Agents — a feature, not a routable provider) is excluded
+    since it isn't a valid delegation.provider target either."""
     grouped: dict[str, list[dict]] = {}
     providers = payload.get("providers") if isinstance(payload, dict) else None
     if not isinstance(providers, list):
@@ -180,9 +193,9 @@ def _rows_from_gateway_payload(payload: dict) -> dict[str, list[dict]]:
     for row in providers:
         if not isinstance(row, dict):
             continue
-        name = row.get("provider") or row.get("name")
+        slug = row.get("slug")
         models = row.get("models")
-        if not name or not models:
+        if not slug or slug.lower() == "moa" or not models:
             continue
         pricing = row.get("pricing") or {}
         entries = []
@@ -198,7 +211,7 @@ def _rows_from_gateway_payload(payload: dict) -> dict[str, list[dict]]:
                 "output": price.get("output"),
             })
         if entries:
-            grouped[name] = entries
+            grouped[slug] = entries
     return grouped
 
 

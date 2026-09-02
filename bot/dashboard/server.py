@@ -979,19 +979,38 @@ def build_app() -> FastAPI:
             for k, v in payload.items()
             if k in ("name", "platform", "backend", "enabled", "credentials", "allowed_user_ids", "admin_user_ids", "action_overrides", "can_target", "model", "custom_instructions", "persona", "hermes_home")
         }
+        before = bot_instances.get_instance(instance_id)
         try:
             bot_instances.update_instance(instance_id, actor="dashboard", **fields)
         except bot_instances.ValidationError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+        # A hermes_gateway backend that changed model/hermes_home gets a
+        # brand-new cache slot (see Router._get_backend) — the OLD backend
+        # object, still holding its spawned `hermes serve` subprocess, is
+        # otherwise orphaned forever under its now-unreachable old cache
+        # key. Evict it so its subprocess actually gets terminated.
+        if (
+            before
+            and before.get("backend") == "hermes_gateway"
+            and ("model" in fields or "hermes_home" in fields)
+            and (fields.get("model", before.get("model")) != before.get("model")
+                 or fields.get("hermes_home", before.get("hermes_home")) != before.get("hermes_home"))
+        ):
+            await router.evict_backend("hermes_gateway", model_override=before.get("model"), hermes_home=before.get("hermes_home"))
         return {"ok": True}
 
     @app.delete("/api/bots/{instance_id}", dependencies=[Depends(_require_token_or_api_key)])
     async def api_bots_delete(instance_id: int):
         await platform_supervisor.stop_instance(instance_id)
+        instance = bot_instances.get_instance(instance_id)
         try:
             bot_instances.delete_instance(instance_id, actor="dashboard")
         except bot_instances.ValidationError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
+        if instance and instance.get("backend") == "hermes_gateway":
+            await router.evict_backend(
+                "hermes_gateway", model_override=instance.get("model"), hermes_home=instance.get("hermes_home")
+            )
         return {"ok": True}
 
     @app.post("/api/bots/{instance_id}/enable", dependencies=[Depends(_require_token_or_api_key)])

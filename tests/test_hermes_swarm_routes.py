@@ -223,3 +223,69 @@ def test_dispatch_route_respects_explicit_worker_model(temp_db, monkeypatch, tmp
     assert resp.json()["worker_provider"] == "ollama"
     assert resp.json()["worker_model"] == "llama3:free"
     assert hermes_config.read_delegation_config()["provider"] == "ollama"
+
+
+# -------------------------------------------------- backend-eviction wiring
+# Found via live testing against a real Hermes gateway: editing a
+# hermes_gateway instance's model orphaned its old Backend object (still
+# holding a real spawned `hermes serve` subprocess) forever under an
+# unreachable old cache key. These confirm the dashboard's update/delete
+# routes actually call the fix (Router.evict_backend), not just that the
+# method exists in isolation (see test_hermes_isolation.py for that).
+
+
+def test_updating_model_evicts_the_old_cached_backend(temp_db, monkeypatch):
+    client = _client(monkeypatch)
+    instance_id = _create_hermes_instance(model="old-model")
+
+    from bot.router import router
+
+    evicted = []
+
+    async def fake_evict(name, model_override=None, hermes_home=None):
+        evicted.append((name, model_override, hermes_home))
+
+    monkeypatch.setattr(router, "evict_backend", fake_evict)
+
+    resp = client.put(f"/api/bots/{instance_id}", headers=_headers(), json={"model": "new-model"})
+
+    assert resp.status_code == 200
+    assert evicted == [("hermes_gateway", "old-model", None)]
+
+
+def test_updating_unrelated_field_does_not_evict(temp_db, monkeypatch):
+    client = _client(monkeypatch)
+    instance_id = _create_hermes_instance(model="same-model")
+
+    from bot.router import router
+
+    evicted = []
+
+    async def fake_evict(name, model_override=None, hermes_home=None):
+        evicted.append((name, model_override, hermes_home))
+
+    monkeypatch.setattr(router, "evict_backend", fake_evict)
+
+    resp = client.put(f"/api/bots/{instance_id}", headers=_headers(), json={"custom_instructions": "be nice"})
+
+    assert resp.status_code == 200
+    assert evicted == []
+
+
+def test_deleting_hermes_gateway_instance_evicts_its_backend(temp_db, monkeypatch):
+    client = _client(monkeypatch)
+    instance_id = _create_hermes_instance(model="worker-model", hermes_home="/tmp/worker-home")
+
+    from bot.router import router
+
+    evicted = []
+
+    async def fake_evict(name, model_override=None, hermes_home=None):
+        evicted.append((name, model_override, hermes_home))
+
+    monkeypatch.setattr(router, "evict_backend", fake_evict)
+
+    resp = client.delete(f"/api/bots/{instance_id}", headers=_headers())
+
+    assert resp.status_code == 200
+    assert evicted == [("hermes_gateway", "worker-model", "/tmp/worker-home")]

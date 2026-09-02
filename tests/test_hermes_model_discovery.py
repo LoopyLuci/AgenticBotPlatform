@@ -77,12 +77,19 @@ class _FakeAsyncClient:
 _SAMPLE_PAYLOAD = {
     "providers": [
         {
-            "provider": "openrouter",
+            "slug": "openrouter",
+            "name": "OpenRouter",
             "models": ["meta-llama/llama-3.1-8b-instruct:free", "anthropic/claude-opus-4.8"],
             "pricing": {
                 "meta-llama/llama-3.1-8b-instruct:free": {"input": "free", "output": "free", "free": True},
                 "anthropic/claude-opus-4.8": {"input": "$15.00", "output": "$75.00", "free": False},
             },
+        },
+        {
+            "slug": "moa",
+            "name": "Mixture of Agents",
+            "models": ["default"],
+            "pricing": {"default": {"input": None, "output": None, "free": False}},
         },
     ],
 }
@@ -143,6 +150,9 @@ def test_hermes_models_with_pricing_uses_live_gateway_when_available(temp_db, mo
     assert grouped["openrouter"]
     free_ids = {e["id"] for e in grouped["openrouter"] if e["free"]}
     assert free_ids == {"meta-llama/llama-3.1-8b-instruct:free"}
+    # "moa" (Mixture of Agents) is a Hermes feature, not a routable
+    # provider — must never appear as a delegation.provider candidate.
+    assert "moa" not in grouped
     paid = [e for e in grouped["openrouter"] if e["id"] == "anthropic/claude-opus-4.8"][0]
     assert paid["free"] is False
     assert paid["input"] == "$15.00"
