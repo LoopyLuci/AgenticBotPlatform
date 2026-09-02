@@ -412,21 +412,24 @@ async def dispatch_swarm_goal(
 
 @mcp.tool()
 async def enable_hermes_swarm_tools(instance_id: int) -> dict:
-    """Gives a hermes_gateway-backed instance's own agent the SAME
-    cross-instance organizing ability you (Claude) have through this very
-    MCP server: registers bot-server's own MCP control server into that
-    Hermes instance's config, so its agent can call ask_instance,
-    run_swarm, dispatch_swarm_goal, list_available_models,
-    create_bot_instance, and configure_delegation itself, mid-turn —
-    reaching OTHER bot instances (Claude- or Hermes-backed), not just the
-    sub-agents it can already spawn via its own native delegate_task.
-    This is what lets a Hermes agent organize and use a swarm of
-    BotServer agents, not only a swarm of its own children.
+    """Gives a Hermes-backed instance's own agent (hermes_cli or
+    hermes_gateway) the SAME cross-instance organizing ability you
+    (Claude) have through this very MCP server: registers bot-server's
+    own MCP control server into that Hermes instance's config, so its
+    agent can call ask_instance, run_swarm, dispatch_swarm_goal,
+    list_available_models, create_bot_instance, and configure_delegation
+    itself, mid-turn — reaching OTHER bot instances (Claude- or
+    Hermes-backed), not just the sub-agents it can already spawn via its
+    own native delegate_task. This is what lets a Hermes agent organize
+    and use a swarm of BotServer agents, not only a swarm of its own
+    children.
 
-    Takes effect on that instance's NEXT message, not this call — Hermes
-    reads its mcp_servers config at gateway startup, so this evicts the
-    instance's currently-cached gateway connection to force a fresh spawn
-    that actually loads the new server.
+    Takes effect on that instance's NEXT message, not this call.
+    hermes_gateway needs its cached connection evicted first (Hermes
+    reads mcp_servers config only at gateway startup) — this tool does
+    that automatically. hermes_cli needs no eviction at all: it spawns a
+    fresh `hermes -z` process per call, which re-reads config.yaml fresh
+    every time, so the very next message already sees the change.
 
     NOTE: ask_instance/run_swarm require the caller to self-declare its
     own bot_instances name as `source_instance` — this Hermes agent won't
@@ -449,11 +452,12 @@ async def disable_hermes_swarm_tools(instance_id: int) -> dict:
 
 @mcp.tool()
 async def hermes_swarm_tools_status() -> dict:
-    """Every hermes_gateway-backed bot instance and whether it currently
-    has bot-server's MCP server registered (enable_hermes_swarm_tools) —
-    the same data the dashboard's swarm-tools panel shows. A config-file
-    read, not a live check of whether the running gateway actually
-    connected — see the route's own docstring."""
+    """Every Hermes-backed bot instance (hermes_cli or hermes_gateway)
+    and whether it currently has bot-server's MCP server registered
+    (enable_hermes_swarm_tools) — the same data the dashboard's
+    swarm-tools panel shows. A config-file read, not a live check of
+    whether a running gateway actually connected — see the route's own
+    docstring."""
     return await _request("GET", "/api/hermes/swarm-tools-status")
 
 

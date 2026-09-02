@@ -1382,6 +1382,27 @@ def build_app() -> FastAPI:
             )
         return instance
 
+    def _require_hermes_backed_instance(instance_id: int) -> dict:
+        """Looser than _require_hermes_gateway_instance — accepts both
+        Hermes backends. MCP-server registration is a property of the
+        underlying `hermes` install's own config.yaml, not of which
+        subprocess-management strategy BotServer uses to talk to it, so
+        registering bot-server's MCP server works identically for
+        hermes_cli (no gateway/eviction needed at all — hermes_cli spawns
+        a fresh `hermes -z` process per call, which re-reads config.yaml
+        fresh every time) and hermes_gateway (needs the eviction dance
+        since its persistent process only reads config at spawn time)."""
+        instance = bot_instances.get_instance(instance_id)
+        if instance is None:
+            raise HTTPException(status_code=404, detail=f"bot instance {instance_id} not found")
+        if instance.get("backend") not in ("hermes_cli", "hermes_gateway"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"instance {instance_id} is backed by {instance.get('backend')!r}, not a Hermes backend "
+                       "(hermes_cli/hermes_gateway)",
+            )
+        return instance
+
     @app.get("/api/hermes/{instance_id}/delegation", dependencies=[Depends(_require_token_or_api_key)])
     async def api_hermes_delegation_get(instance_id: int):
         from bot import hermes_config
@@ -1471,29 +1492,35 @@ def build_app() -> FastAPI:
         """Gives this Hermes instance's own agent the same cross-instance
         organizing ability Claude gets via this MCP server and api-backend
         agents get via delegate_to_instance: registers bot-server's own
-        MCP server into the instance's mcp_servers config, then evicts its
-        cached backend so the NEXT call spawns a fresh gateway process
-        that actually loads it (mcp_servers are read at gateway startup,
-        never hot-reloaded)."""
+        MCP server into the instance's mcp_servers config. For
+        hermes_gateway this also evicts the cached backend so the NEXT
+        call spawns a fresh gateway process that actually loads it
+        (mcp_servers are read at gateway startup, never hot-reloaded);
+        hermes_cli needs no eviction at all — it spawns a fresh `hermes
+        -z` process per call, which re-reads config.yaml fresh every
+        time, so the change is already live on the very next message."""
         from bot import hermes_config
 
-        instance = _require_hermes_gateway_instance(instance_id)
+        instance = _require_hermes_backed_instance(instance_id)
         token = os.environ.get("DASHBOARD_TOKEN") or envfile.get_var("DASHBOARD_TOKEN")
         registration = hermes_config.register_botserver_mcp_server(
             hermes_home=instance.get("hermes_home"), dashboard_token=token, actor="dashboard",
         )
-        await router.evict_backend(
-            "hermes_gateway", model_override=instance.get("model"), hermes_home=instance.get("hermes_home")
-        )
-        return {"ok": True, "registration": registration, "note": "takes effect on this instance's next message (fresh gateway spawn)"}
+        note = "takes effect on this instance's next message"
+        if instance.get("backend") == "hermes_gateway":
+            await router.evict_backend(
+                "hermes_gateway", model_override=instance.get("model"), hermes_home=instance.get("hermes_home")
+            )
+            note += " (fresh gateway spawn)"
+        return {"ok": True, "registration": registration, "note": note}
 
     @app.post("/api/hermes/{instance_id}/disable-swarm-tools", dependencies=[Depends(_require_token_or_api_key)])
     async def api_hermes_disable_swarm_tools(instance_id: int):
         from bot import hermes_config
 
-        instance = _require_hermes_gateway_instance(instance_id)
+        instance = _require_hermes_backed_instance(instance_id)
         removed = hermes_config.unregister_botserver_mcp_server(hermes_home=instance.get("hermes_home"), actor="dashboard")
-        if removed:
+        if removed and instance.get("backend") == "hermes_gateway":
             await router.evict_backend(
                 "hermes_gateway", model_override=instance.get("model"), hermes_home=instance.get("hermes_home")
             )
@@ -1501,22 +1528,23 @@ def build_app() -> FastAPI:
 
     @app.get("/api/hermes/swarm-tools-status", dependencies=[Depends(_require_token_or_api_key)])
     async def api_hermes_swarm_tools_status():
-        """For the dashboard's swarm-tools panel: every hermes_gateway
-        instance with whether it currently has bot-server's MCP server
-        registered in its own config (see hermes_config.is_
-        botserver_mcp_registered) — a config-file read, not a live "is
-        the running gateway actually connected to it" check, since that
-        would require spawning/probing every instance's gateway just to
-        render a panel."""
+        """For the dashboard's swarm-tools panel: every Hermes-backed
+        instance (hermes_cli or hermes_gateway) with whether it currently
+        has bot-server's MCP server registered in its own config (see
+        hermes_config.is_botserver_mcp_registered) — a config-file read,
+        not a live "is the running gateway actually connected to it"
+        check, since that would require spawning/probing every
+        instance's gateway just to render a panel."""
         from bot import hermes_config
 
         rows = []
         for instance in bot_instances.list_instances():
-            if instance.get("backend") != "hermes_gateway":
+            if instance.get("backend") not in ("hermes_cli", "hermes_gateway"):
                 continue
             rows.append({
                 "id": instance["id"],
                 "name": instance["name"],
+                "backend": instance["backend"],
                 "hermes_home": instance.get("hermes_home"),
                 "swarm_tools_enabled": hermes_config.is_botserver_mcp_registered(instance.get("hermes_home")),
             })

@@ -360,13 +360,60 @@ def test_enable_swarm_tools_registers_mcp_server_and_evicts_backend(temp_db, mon
     assert "bot.mcp_server" in text
 
 
-def test_enable_swarm_tools_rejects_non_hermes_gateway_instance(temp_db, monkeypatch):
+def test_enable_swarm_tools_rejects_non_hermes_instance(temp_db, monkeypatch):
     client = _client(monkeypatch)
-    instance_id = _create_cli_instance()
+    instance_id = _create_cli_instance()  # backend="cli" (Claude Code), not a Hermes backend at all
 
     resp = client.post(f"/api/hermes/{instance_id}/enable-swarm-tools", headers=_headers())
 
     assert resp.status_code == 400
+
+
+def test_enable_swarm_tools_works_for_hermes_cli_with_no_eviction(temp_db, monkeypatch, tmp_path):
+    # hermes_cli has no persistent gateway process to evict — registering
+    # the MCP server alone is enough, since it spawns a fresh `hermes -z`
+    # per call that re-reads config.yaml every time.
+    client = _client(monkeypatch)
+    instance_id = _create_hermes_instance(backend="hermes_cli", hermes_home=str(tmp_path / "home"))
+
+    from bot.router import router
+
+    evicted = []
+
+    async def fake_evict(name, model_override=None, hermes_home=None):
+        evicted.append((name, model_override, hermes_home))
+
+    monkeypatch.setattr(router, "evict_backend", fake_evict)
+
+    resp = client.post(f"/api/hermes/{instance_id}/enable-swarm-tools", headers=_headers())
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["registration"]["name"] == "botserver"
+    assert "fresh gateway spawn" not in body["note"]
+    assert evicted == []  # no eviction needed for hermes_cli
+    assert hermes_config.is_botserver_mcp_registered(str(tmp_path / "home")) is True
+
+
+def test_disable_swarm_tools_works_for_hermes_cli_with_no_eviction(temp_db, monkeypatch, tmp_path):
+    client = _client(monkeypatch)
+    instance_id = _create_hermes_instance(backend="hermes_cli", hermes_home=str(tmp_path / "home"))
+    hermes_config.register_botserver_mcp_server(hermes_home=str(tmp_path / "home"))
+
+    from bot.router import router
+
+    evicted = []
+
+    async def fake_evict(name, model_override=None, hermes_home=None):
+        evicted.append((name, model_override, hermes_home))
+
+    monkeypatch.setattr(router, "evict_backend", fake_evict)
+
+    resp = client.post(f"/api/hermes/{instance_id}/disable-swarm-tools", headers=_headers())
+
+    assert resp.status_code == 200
+    assert resp.json()["removed"] is True
+    assert evicted == []
 
 
 # --------------------------------------------------- swarm-tools status panel
@@ -447,11 +494,14 @@ def test_disable_route_evicts_only_when_something_was_removed(temp_db, monkeypat
     assert evicted == [("hermes_gateway", None, str(tmp_path / "home"))]
 
 
-def test_swarm_tools_status_lists_hermes_gateway_instances_with_flag(temp_db, monkeypatch, tmp_path):
+def test_swarm_tools_status_lists_both_hermes_backends_with_flag(temp_db, monkeypatch, tmp_path):
     client = _client(monkeypatch)
     enabled_id = _create_hermes_instance(name="enabled-worker", hermes_home=str(tmp_path / "a"))
     disabled_id = _create_hermes_instance(name="disabled-worker", hermes_home=str(tmp_path / "b"))
-    _create_cli_instance()  # non-hermes_gateway instance must be excluded
+    cli_backed_id = _create_hermes_instance(
+        name="cli-backed-worker", backend="hermes_cli", hermes_home=str(tmp_path / "c"),
+    )
+    _create_cli_instance()  # backend="cli" (Claude Code) — not a Hermes backend, must be excluded
 
     hermes_config.register_botserver_mcp_server(hermes_home=str(tmp_path / "a"))
 
@@ -459,7 +509,9 @@ def test_swarm_tools_status_lists_hermes_gateway_instances_with_flag(temp_db, mo
 
     assert resp.status_code == 200
     rows = {r["id"]: r for r in resp.json()["instances"]}
-    assert set(rows.keys()) == {enabled_id, disabled_id}
+    assert set(rows.keys()) == {enabled_id, disabled_id, cli_backed_id}
     assert rows[enabled_id]["swarm_tools_enabled"] is True
     assert rows[disabled_id]["swarm_tools_enabled"] is False
     assert rows[enabled_id]["name"] == "enabled-worker"
+    assert rows[enabled_id]["backend"] == "hermes_gateway"
+    assert rows[cli_backed_id]["backend"] == "hermes_cli"

@@ -1704,7 +1704,7 @@ async function refreshSwarms() {
 async function refreshSwarmToolsPanel() {
   const tbody = document.getElementById('swarm-tools-tbody');
   if (!getToken()) {
-    tbody.innerHTML = '<tr class="emptyrow"><td colspan="4">Unlock with the dashboard token to view.</td></tr>';
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="5">Unlock with the dashboard token to view.</td></tr>';
     return;
   }
   let data;
@@ -1715,12 +1715,13 @@ async function refreshSwarmToolsPanel() {
   tbody.innerHTML = rows.length ? rows.map(r => `
     <tr>
       <td>${esc(r.name)}</td>
+      <td class="mono">${esc(r.backend)}</td>
       <td class="mono" style="font-size:11px;">${r.hermes_home ? esc(r.hermes_home) : '<span style="color:var(--muted);">shared default</span>'}</td>
       <td><span class="pill"><span class="dot ${r.swarm_tools_enabled ? 'good' : ''}"></span>${r.swarm_tools_enabled ? 'Enabled' : 'Disabled'}</span></td>
       <td style="white-space:nowrap;">
         <button class="btn" data-swarm-tools-toggle="${r.id}" data-enabled="${r.swarm_tools_enabled}" style="padding:3px 8px; font-size:11px;">${r.swarm_tools_enabled ? 'Disable' : 'Enable'}</button>
       </td>
-    </tr>`).join('') : '<tr class="emptyrow"><td colspan="4">No Hermes-backed instances yet — add one in the Bots tab.</td></tr>';
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="5">No Hermes-backed instances yet — add one in the Bots tab.</td></tr>';
 
   document.querySelectorAll('[data-swarm-tools-toggle]').forEach(btn => btn.onclick = async () => {
     const id = Number(btn.dataset.swarmToolsToggle);
