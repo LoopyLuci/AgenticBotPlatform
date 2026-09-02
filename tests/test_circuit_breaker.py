@@ -29,7 +29,7 @@ def router_with_failing_backend(monkeypatch, temp_db):
         async def ask(self, prompt, *, context=None, timeout_s=30):
             raise BackendError("simulated backend failure")
 
-    monkeypatch.setattr(r, "_get_backend", lambda name, cfg, model_override=None: _FailingBackend())
+    monkeypatch.setattr(r, "_get_backend", lambda name, cfg, model_override=None, hermes_home=None: _FailingBackend())
     return r
 
 
@@ -63,7 +63,7 @@ def test_breaker_opens_at_threshold_and_rejects_without_calling_the_backend(rout
             called["n"] += 1
             raise BackendError("should not have been reached")
 
-    monkeypatch.setattr(r, "_get_backend", lambda name, cfg, model_override=None: _ShouldNeverBeCalled())
+    monkeypatch.setattr(r, "_get_backend", lambda name, cfg, model_override=None, hermes_home=None: _ShouldNeverBeCalled())
     with pytest.raises(CircuitOpenError):
         _ask(r, instance_id=1)
     assert called["n"] == 0
@@ -80,7 +80,7 @@ def test_a_success_resets_the_breaker(router_with_failing_backend, monkeypatch):
         async def ask(self, prompt, *, context=None, timeout_s=30):
             return BackendResult(text="ok", tokens=1, raw={})
 
-    monkeypatch.setattr(r, "_get_backend", lambda name, cfg, model_override=None: _WorkingBackend())
+    monkeypatch.setattr(r, "_get_backend", lambda name, cfg, model_override=None, hermes_home=None: _WorkingBackend())
     result = _ask(r, instance_id=1)
     assert result.text == "ok"
     assert r.circuit_status(1) == {"open": False, "consecutive_failures": 0}
@@ -121,7 +121,7 @@ def test_cooldown_elapsed_allows_one_half_open_trial(router_with_failing_backend
         async def ask(self, prompt, *, context=None, timeout_s=30):
             return BackendResult(text="recovered", tokens=1, raw={})
 
-    monkeypatch.setattr(r, "_get_backend", lambda name, cfg, model_override=None: _WorkingBackend())
+    monkeypatch.setattr(r, "_get_backend", lambda name, cfg, model_override=None, hermes_home=None: _WorkingBackend())
     result = _ask(r, instance_id=1)
     assert result.text == "recovered"
     assert r.circuit_status(1) == {"open": False, "consecutive_failures": 0}

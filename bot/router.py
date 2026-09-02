@@ -107,7 +107,9 @@ class Router:
             return
         loop.create_task(self._shutdown_backend_set(old_backends))
 
-    def _build_backend(self, name: str, cfg: dict, model_override: Optional[str] = None) -> Backend:
+    def _build_backend(
+        self, name: str, cfg: dict, model_override: Optional[str] = None, hermes_home: Optional[str] = None
+    ) -> Backend:
         b_cfg = (cfg.get("backends") or {}).get(name, {})
         if name == "api":
             from bot.models import DEFAULT_API_MODEL
@@ -142,10 +144,22 @@ class Router:
                 model=model_override or b_cfg.get("model"),
             )
         if name == "hermes_gateway":
+            port = b_cfg.get("port", 8799)
+            if hermes_home:
+                # An isolated instance needs its own port too, or its
+                # spawn would collide with the shared-default gateway (or
+                # another isolated instance) already bound to `port` —
+                # deterministic from hermes_home (stable across restarts,
+                # unlike Python's randomized hash()) rather than random,
+                # so the same instance always resolves to the same port.
+                import zlib
+
+                port = 8800 + (zlib.crc32(hermes_home.encode()) % 500)
             return HermesGatewayBackend(
                 binary=b_cfg.get("binary", "hermes"),
-                port=b_cfg.get("port", 8799),
+                port=port,
                 model=model_override or b_cfg.get("model"),
+                hermes_home=hermes_home,
             )
         if name == "custom_model":
             from bot import providers
@@ -169,14 +183,17 @@ class Router:
             )
         raise ValueError(f"unknown backend {name!r}")
 
-    def _get_backend(self, name: str, cfg: dict, model_override: Optional[str] = None) -> Backend:
-        # A per-instance model override (bot_instances.model) gets its own
-        # cache slot instead of reusing the shared/global backend object for
-        # `name` — otherwise one instance's custom model would leak onto
-        # every other instance routed to the same backend.
-        key = f"{name}::{model_override}" if model_override else name
+    def _get_backend(
+        self, name: str, cfg: dict, model_override: Optional[str] = None, hermes_home: Optional[str] = None
+    ) -> Backend:
+        # A per-instance model override (bot_instances.model) or hermes_home
+        # override (bot_instances.hermes_home) gets its own cache slot
+        # instead of reusing the shared/global backend object for `name` —
+        # otherwise one instance's custom model/isolated Hermes home would
+        # leak onto every other instance routed to the same backend.
+        key = f"{name}::{model_override}::{hermes_home}" if (model_override or hermes_home) else name
         if key not in self._backends:
-            self._backends[key] = self._build_backend(name, cfg, model_override=model_override)
+            self._backends[key] = self._build_backend(name, cfg, model_override=model_override, hermes_home=hermes_home)
         return self._backends[key]
 
     def resolve_chain(
@@ -296,6 +313,7 @@ class Router:
         timeouts = cfg.get("timeouts", {})
 
         instance_model: Optional[str] = None
+        instance_hermes_home: Optional[str] = None
         desktop_session_key: Optional[str] = None
         # effective_prompt is what actually goes to the backend; prompt
         # itself stays the clean, original text for db.create_job() below
@@ -308,6 +326,7 @@ class Router:
             instance = bot_instances.get_instance(instance_id)
             if instance:
                 instance_model = instance.get("model")
+                instance_hermes_home = instance.get("hermes_home")
                 # A chat-specific link (set by /new or /resume — see
                 # db.link_chat_session()) always wins over the instance-wide
                 # fallback bot_instances.desktop_session_key is used for:
@@ -364,7 +383,7 @@ class Router:
                 last_error = exc
                 continue
 
-            backend = self._get_backend(backend_name, cfg, model_override=instance_model)
+            backend = self._get_backend(backend_name, cfg, model_override=instance_model, hermes_home=instance_hermes_home)
             timeout_s = timeouts.get(backend_name, 30)
             t0 = time.monotonic()
             try:
@@ -415,7 +434,9 @@ class Router:
         if instance is None:
             return None
         cfg = config.current
-        return self._get_backend(instance["backend"], cfg, model_override=instance.get("model"))
+        return self._get_backend(
+            instance["backend"], cfg, model_override=instance.get("model"), hermes_home=instance.get("hermes_home")
+        )
 
     async def create_session(self, instance_id: int, chat_id: Optional[Any] = None, thread_id: Optional[Any] = None) -> str:
         """Explicitly opens a brand-new chat/session in the real desktop
@@ -439,7 +460,9 @@ class Router:
 
         backend_name = instance.get("backend")
         cfg = config.current
-        backend = self._get_backend(backend_name, cfg, model_override=instance.get("model"))
+        backend = self._get_backend(
+            backend_name, cfg, model_override=instance.get("model"), hermes_home=instance.get("hermes_home")
+        )
 
         create = getattr(backend, "create_session", None)
         if create is None:

@@ -46,19 +46,30 @@ def _yaml():
     return y
 
 
-def read_delegation_config() -> dict[str, Any]:
+def _config_path(hermes_home: Optional[str] = None) -> Path:
+    """`hermes_home`/config.yaml when given (a Phase-5-isolated instance's
+    own Hermes home — matches Hermes's own HERMES_HOME resolution order,
+    explicit override first), else the shared machine-wide default every
+    non-isolated hermes_gateway instance still uses."""
+    if hermes_home:
+        return Path(hermes_home).expanduser() / "config.yaml"
+    return HERMES_CONFIG_PATH
+
+
+def read_delegation_config(hermes_home: Optional[str] = None) -> dict[str, Any]:
     """The current `delegation:` section, or {} if the file or section
     doesn't exist yet (Hermes has never been run, or delegation has never
     been configured — both mean "everything at Hermes's own defaults")."""
-    if not HERMES_CONFIG_PATH.is_file():
+    path = _config_path(hermes_home)
+    if not path.is_file():
         return {}
     try:
         yaml = _yaml()
-        with HERMES_CONFIG_PATH.open(encoding="utf-8") as f:
+        with path.open(encoding="utf-8") as f:
             data = yaml.load(f) or {}
         return dict(data.get("delegation") or {})
     except Exception as exc:
-        logger.warning("read_delegation_config: failed to read %s: %s", HERMES_CONFIG_PATH, exc)
+        logger.warning("read_delegation_config: failed to read %s: %s", path, exc)
         return {}
 
 
@@ -69,16 +80,18 @@ def set_delegation_config(
     max_concurrent_children: Optional[int] = None,
     max_spawn_depth: Optional[int] = None,
     subagent_auto_approve: Optional[bool] = None,
+    hermes_home: Optional[str] = None,
     actor: str = "dashboard",
 ) -> dict[str, Any]:
     """Merges only the given (non-None) keys into Hermes's own
     `delegation:` section and writes the file back atomically
     (tmp-then-replace), preserving everything else in the file exactly as
-    it was. Returns the resulting delegation dict. Creates
-    ~/.hermes/config.yaml fresh (containing only this one section) if it
-    doesn't exist yet — Hermes merges a partial config over its own
-    built-in defaults, the same as a user hand-seeding
-    cli-config.yaml.example's documented shape."""
+    it was. Returns the resulting delegation dict. Creates the config file
+    fresh (containing only this one section) if it doesn't exist yet —
+    Hermes merges a partial config over its own built-in defaults, the
+    same as a user hand-seeding cli-config.yaml.example's documented
+    shape. Pass `hermes_home` for a Phase-5-isolated instance to target
+    its own config.yaml instead of the shared default."""
     from bot import db
 
     changes = {
@@ -93,15 +106,16 @@ def set_delegation_config(
         if v is not None
     }
     if not changes:
-        return read_delegation_config()
+        return read_delegation_config(hermes_home)
 
+    path = _config_path(hermes_home)
     yaml = _yaml()
-    if HERMES_CONFIG_PATH.is_file():
-        with HERMES_CONFIG_PATH.open(encoding="utf-8") as f:
+    if path.is_file():
+        with path.open(encoding="utf-8") as f:
             data = yaml.load(f) or {}
     else:
         data = {}
-        HERMES_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        path.parent.mkdir(parents=True, exist_ok=True)
 
     delegation = data.get("delegation")
     if delegation is None:
@@ -109,11 +123,11 @@ def set_delegation_config(
         data["delegation"] = delegation
     delegation.update(changes)
 
-    tmp_path = HERMES_CONFIG_PATH.with_suffix(".yaml.tmp")
+    tmp_path = path.with_suffix(".yaml.tmp")
     with tmp_path.open("w", encoding="utf-8") as f:
         yaml.dump(data, f)
-    tmp_path.replace(HERMES_CONFIG_PATH)  # atomic on the same filesystem
+    tmp_path.replace(path)  # atomic on the same filesystem
 
-    db.log_audit(actor=actor, action="hermes_delegation_config", detail=str(changes))
-    logger.info("delegation config updated: %s", changes)
+    db.log_audit(actor=actor, action="hermes_delegation_config", detail=f"{path}: {changes}")
+    logger.info("delegation config updated at %s: %s", path, changes)
     return dict(delegation)

@@ -291,6 +291,7 @@ async def create_bot_instance(
     persona: Optional[str] = None,
     can_target: Optional[list] = None,
     enabled: bool = True,
+    hermes_home: Optional[str] = None,
 ) -> dict:
     """Create a new bot instance — e.g. stand up a fresh Hermes-backed
     worker on the fly rather than requiring the dashboard's Bots tab.
@@ -303,12 +304,19 @@ async def create_bot_instance(
     with no direct platform connection of its own (it's only ever reached
     via ask_instance/dispatch_swarm_goal, never a live chat platform) —
     pass platform='telegram' with empty credentials/allowed_user_ids in
-    that case; it simply won't start a live connection until configured."""
+    that case; it simply won't start a live connection until configured.
+    `hermes_home` (hermes_gateway only) gives this instance its own
+    isolated Hermes runtime (own config.yaml/sessions/cwd/port) instead of
+    sharing the one machine-wide default every other hermes_gateway
+    instance uses — pass a dedicated directory path (e.g.
+    'C:\\hermes-homes\\worker1' or '~/.hermes-worker1') to actually get
+    independent agents, not just independent bot_instances rows pointed
+    at the same shared Hermes state."""
     return await _request("POST", "/api/bots", json={
         "name": name, "platform": platform, "backend": backend,
         "credentials": credentials or {}, "allowed_user_ids": allowed_user_ids or [],
         "model": model, "persona": persona, "can_target": can_target or [],
-        "enabled": enabled,
+        "enabled": enabled, "hermes_home": hermes_home,
     })
 
 

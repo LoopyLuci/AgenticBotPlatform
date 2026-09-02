@@ -19,10 +19,21 @@ compilers) for no real safety gain once a human has already approved it.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 from pathlib import Path
 from typing import Any, Optional
 
 from bot.envfile import PROJECT_ROOT
+
+# Ambient recursion depth for delegate_to_instance — a ContextVar rather
+# than a parameter threaded through execute_tool()'s signature, since a
+# nested router.ask() call from inside a tool call runs as a direct
+# `await` within the same task (not a separate one), so a ContextVar set
+# for the duration of that nested call is naturally visible to it and
+# nowhere else. Mirrors Hermes's own delegate_task using contextvars for
+# the same "how deep are we already" question (see the Hermes-swarm
+# plan's Phase 4 research).
+_delegation_depth: contextvars.ContextVar[int] = contextvars.ContextVar("delegation_depth", default=0)
 
 WORKSPACES_ROOT = PROJECT_ROOT / "data" / "agent_workspaces"
 
@@ -102,6 +113,25 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "type": "object",
             "properties": {"name": {"type": "string"}},
             "required": ["name"],
+        },
+    },
+    {
+        "name": "delegate_to_instance",
+        "description": (
+            "Ask another registered bot instance (Claude- or Hermes-backed — any backend) a question and "
+            "wait for its reply, the same 'manager delegates to a worker' pattern Hermes's own delegate_task "
+            "gives Hermes agents. Only instances your own can_target list allows are reachable when the "
+            "dashboard's agent_control mode is 'allowlist'; under the default 'trust_all' mode any instance "
+            "is reachable. Bounded by agent_runtime.max_delegation_depth to prevent an accidental delegation "
+            "cycle between two instances that target each other."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "target_instance": {"type": "string", "description": "Target bot_instances.id (or exact name)."},
+                "prompt": {"type": "string", "description": "The question/task to send it."},
+            },
+            "required": ["target_instance", "prompt"],
         },
     },
 ]
@@ -237,6 +267,42 @@ async def execute_tool(name: str, tool_input: dict, *, workspace: Path, instance
         if content is None:
             raise ToolError(f"no skill named {skill_name!r} — see the system prompt's skill list")
         return content
+
+    if name == "delegate_to_instance":
+        from bot import agent_control
+        from bot.backends.base import BackendError
+        from bot.config import config
+        from bot.router import router
+
+        if instance_id is None:
+            raise ToolError("delegate_to_instance needs an instance context")
+        target_ref = tool_input.get("target_instance")
+        prompt = (tool_input.get("prompt") or "").strip()
+        if not target_ref or not prompt:
+            raise ToolError("both target_instance and prompt are required")
+
+        max_depth = config.current.get("agent_runtime", {}).get("max_delegation_depth", 2)
+        depth = _delegation_depth.get()
+        if depth >= max_depth:
+            raise ToolError(
+                f"delegation depth limit reached (depth={depth}, max_delegation_depth={max_depth}) — "
+                "raise agent_runtime.max_delegation_depth in config/backends.yaml if deeper nesting is required"
+            )
+
+        target = agent_control.resolve_instance(target_ref)
+        if target is None:
+            raise ToolError(f"no bot instance found matching {target_ref!r}")
+        if not agent_control.can_target(instance_id, target["id"]):
+            raise ToolError(f"instance {instance_id} is not permitted to target {target['name']!r} under the current allowlist")
+
+        token = _delegation_depth.set(depth + 1)
+        try:
+            result = await router.ask(prompt, action_type="agent_delegate", instance_id=target["id"])
+        except BackendError as exc:
+            raise ToolError(f"delegation to {target['name']!r} failed: {exc}")
+        finally:
+            _delegation_depth.reset(token)
+        return result.text
 
     from bot import plugins as plugin_registry
 

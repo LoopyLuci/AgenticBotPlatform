@@ -956,6 +956,7 @@ def build_app() -> FastAPI:
                 model=payload.get("model") or None,
                 custom_instructions=payload.get("custom_instructions") or None,
                 persona=payload.get("persona") or None,
+                hermes_home=payload.get("hermes_home") or None,
                 actor="dashboard",
             )
         except bot_instances.ValidationError as exc:
@@ -976,7 +977,7 @@ def build_app() -> FastAPI:
         fields = {
             k: v
             for k, v in payload.items()
-            if k in ("name", "platform", "backend", "enabled", "credentials", "allowed_user_ids", "admin_user_ids", "action_overrides", "can_target", "model", "custom_instructions", "persona")
+            if k in ("name", "platform", "backend", "enabled", "credentials", "allowed_user_ids", "admin_user_ids", "action_overrides", "can_target", "model", "custom_instructions", "persona", "hermes_home")
         }
         try:
             bot_instances.update_instance(instance_id, actor="dashboard", **fields)
@@ -1366,14 +1367,14 @@ def build_app() -> FastAPI:
     async def api_hermes_delegation_get(instance_id: int):
         from bot import hermes_config
 
-        _require_hermes_gateway_instance(instance_id)
-        return {"delegation": hermes_config.read_delegation_config()}
+        instance = _require_hermes_gateway_instance(instance_id)
+        return {"delegation": hermes_config.read_delegation_config(instance.get("hermes_home"))}
 
     @app.post("/api/hermes/{instance_id}/delegation", dependencies=[Depends(_require_token_or_api_key)])
     async def api_hermes_delegation_set(instance_id: int, payload: dict = Body(...)):
         from bot import hermes_config
 
-        _require_hermes_gateway_instance(instance_id)
+        instance = _require_hermes_gateway_instance(instance_id)
         if payload.get("subagent_auto_approve") is True and not payload.get("confirm"):
             raise HTTPException(
                 status_code=400,
@@ -1386,6 +1387,7 @@ def build_app() -> FastAPI:
             max_concurrent_children=payload.get("max_concurrent_children"),
             max_spawn_depth=payload.get("max_spawn_depth"),
             subagent_auto_approve=payload.get("subagent_auto_approve"),
+            hermes_home=instance.get("hermes_home"),
             actor="dashboard",
         )
         return {"ok": True, "delegation": delegation}
@@ -1402,7 +1404,7 @@ def build_app() -> FastAPI:
         from bot.models import hermes_models_with_pricing
         from bot.swarm.prompts import hermes_delegation_goal
 
-        _require_hermes_gateway_instance(instance_id)
+        instance = _require_hermes_gateway_instance(instance_id)
         goal = (payload.get("goal") or "").strip()
         if not goal:
             raise HTTPException(status_code=400, detail="payload must include a non-empty 'goal'")
@@ -1422,7 +1424,8 @@ def build_app() -> FastAPI:
         if worker_provider and worker_model:
             hermes_config.set_delegation_config(
                 provider=worker_provider, model=worker_model,
-                max_concurrent_children=max_children, actor="dashboard",
+                max_concurrent_children=max_children, hermes_home=instance.get("hermes_home"),
+                actor="dashboard",
             )
 
         prompt = hermes_delegation_goal(

@@ -68,11 +68,25 @@ _READY_MARKER = b"HERMES_BACKEND_READY"
 class HermesGatewayBackend(Backend):
     name = "hermes_gateway"
 
-    def __init__(self, binary: str = "hermes", port: int = 8799, spawn_timeout_s: float = 30, model: Optional[str] = None):
+    def __init__(
+        self,
+        binary: str = "hermes",
+        port: int = 8799,
+        spawn_timeout_s: float = 30,
+        model: Optional[str] = None,
+        hermes_home: Optional[str] = None,
+    ):
         self.binary = binary
         self.port = port
         self.spawn_timeout_s = spawn_timeout_s
         self.model = model
+        # Per-instance HERMES_HOME override — see this module's docstring
+        # on why every hermes_gateway-backed instance shares one Hermes
+        # runtime's sessions/MCP connections/cwd by default. Setting this
+        # (Phase 5 of the Hermes-swarm plan) gives this specific backend
+        # its own Hermes home directory (own config.yaml, own session
+        # store, own cwd) — None preserves the historical shared behavior.
+        self.hermes_home = hermes_home
         self._token = secrets.token_urlsafe(24)
         self._proc: Optional[asyncio.subprocess.Process] = None
         self._ws: Optional[Any] = None
@@ -184,6 +198,8 @@ class HermesGatewayBackend(Backend):
             return
         env = os.environ.copy()
         env["HERMES_DASHBOARD_SESSION_TOKEN"] = self._token
+        if self.hermes_home:
+            env["HERMES_HOME"] = self.hermes_home
         try:
             self._proc = await asyncio.create_subprocess_exec(
                 self.binary, "serve", "--host", "127.0.0.1", "--port", str(self.port),
@@ -303,4 +319,5 @@ class HermesGatewayBackend(Backend):
         self._proc = None
 
     def __repr__(self) -> str:
-        return f"HermesGatewayBackend(port={self.port})"
+        home = f", hermes_home={self.hermes_home!r}" if self.hermes_home else ""
+        return f"HermesGatewayBackend(port={self.port}{home})"
