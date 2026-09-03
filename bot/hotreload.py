@@ -132,6 +132,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.agent_runtime.tool_loop",
     "bot.agent_runtime.output_schema",
     "bot.agent_runtime.subagents",
+    "bot.agent_runtime.moa",
     "bot.backends.api_backend",
     "bot.backends.cli_backend",
     "bot.backends.ui_backend",

@@ -64,7 +64,9 @@ class AnthropicTransport(ProviderTransport):
         # (each entry is exactly {"role","content"} with content already
         # either a plain string or a list of content blocks) — no
         # conversion needed, unlike the OpenAI-compatible transport.
-        create_kwargs = dict(model=model, max_tokens=max_tokens, tools=tool_schemas, messages=history)
+        create_kwargs = dict(model=model, max_tokens=max_tokens, messages=history)
+        if tool_schemas:
+            create_kwargs["tools"] = tool_schemas
         if system_prompt:
             create_kwargs["system"] = system_prompt
         try:

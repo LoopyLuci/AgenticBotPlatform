@@ -99,13 +99,10 @@ class OpenAICompatibleTransport(ProviderTransport):
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        payload = {
-            "model": model,
-            "messages": wire_messages,
-            "tools": to_openai_tools(tool_schemas),
-            "tool_choice": "auto",
-            "max_tokens": max_tokens,
-        }
+        payload = {"model": model, "messages": wire_messages, "max_tokens": max_tokens}
+        if tool_schemas:
+            payload["tools"] = to_openai_tools(tool_schemas)
+            payload["tool_choice"] = "auto"
         async with httpx.AsyncClient(timeout=timeout_s) as client:
             try:
                 resp = await client.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)

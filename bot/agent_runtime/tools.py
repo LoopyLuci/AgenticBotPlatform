@@ -180,6 +180,46 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "consult_models",
+        "description": (
+            "Get a second (or third, etc.) opinion by asking multiple models the same question in "
+            "parallel — mixture-of-agents consensus, the same capability Hermes Agent's own MoA mode "
+            "gives it, as an on-demand tool instead of an always-on mode. Pass 2+ references to ask; "
+            "omit aggregator to see every reference's raw labeled answer yourself, or give one to have "
+            "it synthesize them into a single final answer. Omit a reference's provider for the built-in "
+            "Claude API; otherwise name a provider from config/providers.yaml. One reference failing "
+            "doesn't fail the whole call — its own labeled block just notes the failure."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string"},
+                "references": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "provider": {"type": "string", "description": "Omit for the built-in Claude API."},
+                            "model": {"type": "string"},
+                        },
+                        "required": ["model"],
+                    },
+                },
+                "aggregator": {
+                    "type": "object",
+                    "description": "Optional — if given, one more call synthesizes every reference's answer into one.",
+                    "properties": {
+                        "provider": {"type": "string"},
+                        "model": {"type": "string"},
+                    },
+                    "required": ["model"],
+                },
+            },
+            "required": ["question", "references"],
+        },
+    },
+    {
         "name": "get_my_profile",
         "description": (
             "Your own identity as a small markdown document: name, backend, persona, model override, "
@@ -453,6 +493,22 @@ async def execute_tool(name: str, tool_input: dict, *, workspace: Path, instance
         except BackendError as exc:
             raise ToolError(str(exc))
         return _json.dumps(results)
+
+    if name == "consult_models":
+        from bot.agent_runtime import moa
+        from bot.backends.base import BackendError
+
+        question = (tool_input.get("question") or "").strip()
+        references = tool_input.get("references")
+        if not question:
+            raise ToolError("question is required")
+        if not isinstance(references, list) or not references:
+            raise ToolError("references must be a non-empty array of {provider?, model} objects")
+        aggregator = tool_input.get("aggregator")
+        try:
+            return await moa.consult(question, references, aggregator)
+        except BackendError as exc:
+            raise ToolError(str(exc))
 
     if name == "get_my_profile":
         from bot import bot_instances
