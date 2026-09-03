@@ -331,6 +331,43 @@ async def _fetch_custom_models(name: str, entry: dict, provider_registry) -> Opt
         return None
 
 
+async def custom_models_with_pricing(refresh: bool = False) -> tuple[dict[str, list[dict]], str]:
+    """{provider_name: [{"id","free","input","output"}, ...]} for every
+    provider configured in config/providers.yaml — the custom_model/
+    native_agent equivalent of hermes_models_with_pricing(), closing a
+    real gap where this family had zero pricing/free data at all. Model
+    ids come from live_custom_models() (that provider's own /models
+    endpoint); pricing for each id comes from bot.model_pricing.get_pricing()
+    (models.dev). A model id live_custom_models() found but models.dev
+    doesn't know about still appears, with free=False and input/output=None
+    — omitting it would hide a real, usable model just because pricing
+    data isn't available for it. Source label is the WORST of the two
+    fetches ("unavailable" > "cache_fallback" > "live") since a caller
+    checking "can I trust free=True here" needs to know if EITHER half of
+    this combined data could be stale."""
+    from bot import model_pricing
+
+    models = await live_custom_models()
+    if not models:
+        return {}, "unavailable"
+
+    _rank = {"live": 0, "cache_fallback": 1, "unavailable": 2}
+    worst_source = "live"
+    grouped: dict[str, list[dict]] = {}
+    for provider_name, model_ids in models.items():
+        entries = []
+        for model_id in model_ids:
+            pricing, source = await model_pricing.get_pricing(provider_name, model_id, refresh=refresh)
+            if _rank.get(source, 2) > _rank.get(worst_source, 0):
+                worst_source = source
+            if pricing:
+                entries.append({"id": model_id, **pricing})
+            else:
+                entries.append({"id": model_id, "free": False, "input": None, "output": None})
+        grouped[provider_name] = entries
+    return grouped, worst_source
+
+
 # ---------------------------------------------------- real-time default model
 # The `cli` and `ui` backends never get told which model to use (see
 # bot/router.py's _build_backend — CliBackend/UiBackend take no `model`

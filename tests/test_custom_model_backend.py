@@ -46,7 +46,7 @@ def _install_fake_client(monkeypatch, responses):
     def _factory(*, timeout):
         return fake
 
-    monkeypatch.setattr("bot.backends.custom_model_backend.httpx.AsyncClient", _factory)
+    monkeypatch.setattr("bot.agent_runtime.transports.openai_compatible.httpx.AsyncClient", _factory)
     return fake
 
 
@@ -117,7 +117,7 @@ def test_http_error_raises_backend_error(temp_db, monkeypatch, tmp_path):
             response = httpx.Response(500, text="internal error", request=request)
             raise httpx.HTTPStatusError("boom", request=request, response=response)
 
-    monkeypatch.setattr("bot.backends.custom_model_backend.httpx.AsyncClient",
+    monkeypatch.setattr("bot.agent_runtime.transports.openai_compatible.httpx.AsyncClient",
                          lambda *, timeout: _ErrorClient([]))
     with pytest.raises(BackendError):
         _run(_backend().ask("hi", context={"cwd": str(tmp_path / "ws")}))
