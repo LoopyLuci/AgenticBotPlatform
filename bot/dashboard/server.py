@@ -708,7 +708,8 @@ def build_app() -> FastAPI:
         return {
             "providers": [
                 {"name": name, "base_url": entry.get("base_url"), "protocol": entry.get("protocol", "openai"),
-                 "api_key_env": entry.get("api_key_env"), "has_inline_key": bool(entry.get("api_key"))}
+                 "api_key_env": entry.get("api_key_env"), "has_inline_key": bool(entry.get("api_key")),
+                 "catalog_id": entry.get("catalog_id")}
                 for name, entry in sorted(providers.list_providers().items())
             ]
         }
@@ -724,6 +725,7 @@ def build_app() -> FastAPI:
                 protocol=payload.get("protocol", "openai"),
                 api_key_env=payload.get("api_key_env") or None,
                 api_key=payload.get("api_key") or None,
+                catalog_id=payload.get("catalog_id") or None,
                 actor="dashboard",
             )
         except ValueError as exc:
@@ -736,6 +738,38 @@ def build_app() -> FastAPI:
 
         if not providers.delete_provider(name, actor="dashboard"):
             raise HTTPException(status_code=404, detail=f"no provider named {name!r}")
+        return {"ok": True}
+
+    @app.get("/api/providers/catalog", dependencies=[Depends(_require_token)])
+    async def api_providers_catalog():
+        from bot import model_pricing
+
+        return {"providers": await model_pricing.list_known_providers()}
+
+    @app.get("/api/providers/{name}/models", dependencies=[Depends(_require_token)])
+    async def api_provider_models(name: str):
+        from bot import models as models_module
+        from bot import providers
+
+        if providers.get_provider(name) is None:
+            raise HTTPException(status_code=404, detail=f"no provider named {name!r}")
+        return {"models": await models_module.browse_provider_models(name)}
+
+    @app.post("/api/providers/{name}/models/toggle", dependencies=[Depends(_require_token)])
+    async def api_provider_model_toggle(name: str, payload: dict = Body(...)):
+        from bot import providers
+
+        if providers.get_provider(name) is None:
+            raise HTTPException(status_code=404, detail=f"no provider named {name!r}")
+        model_id = payload.get("model_id")
+        if not model_id:
+            raise HTTPException(status_code=400, detail="model_id is required")
+        enabled = bool(payload.get("enabled", True))
+        db.set_model_toggle(name, model_id, enabled)
+        db.log_audit(
+            actor="dashboard", action="model_toggle",
+            detail=f"{name}/{model_id}: {'enabled' if enabled else 'disabled'}",
+        )
         return {"ok": True}
 
     @app.get("/api/plugins", dependencies=[Depends(_require_token)])

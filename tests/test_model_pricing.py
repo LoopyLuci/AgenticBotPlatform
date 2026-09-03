@@ -168,3 +168,76 @@ def test_refresh_forces_a_new_fetch(monkeypatch, tmp_path):
     _run(model_pricing.get_pricing("openrouter", "paid-model"))
     _run(model_pricing.get_pricing("openrouter", "paid-model", refresh=True))
     assert len(calls) == 2
+
+
+# --------------------------------------------------- catalog/provider browsing
+
+_CATALOG_WITH_PROVIDERS = {
+    "openrouter": {
+        "name": "OpenRouter", "api": "https://openrouter.ai/api/v1", "env": ["OPENROUTER_API_KEY"],
+        "models": {
+            "free-model:free": {"cost": {"input": 0, "output": 0}},
+            "paid-model": {"cost": {"input": 5.0, "output": 25.0}},
+            "no-cost-info": {},
+        },
+    },
+    "anthropic": {
+        "name": "Anthropic", "env": ["ANTHROPIC_API_KEY"],
+        # No "api" field — a native-SDK provider, not OpenAI-compatible.
+        "models": {"claude-opus-4-7": {"cost": {"input": 5, "output": 25}}},
+    },
+    "lmstudio": {
+        "name": "LM Studio", "api": "http://127.0.0.1:1234/v1", "env": ["LMSTUDIO_API_KEY"],
+        "models": {},
+    },
+}
+
+
+def test_list_known_providers_excludes_entries_with_no_api_field(monkeypatch, tmp_path):
+    monkeypatch.setattr(model_pricing, "CACHE_PATH", tmp_path / "cache.json")
+    monkeypatch.setattr("httpx.AsyncClient", lambda **k: _FakeAsyncClient(data=_CATALOG_WITH_PROVIDERS))
+
+    known = _run(model_pricing.list_known_providers())
+
+    ids = {p["id"] for p in known}
+    assert ids == {"openrouter", "lmstudio"}
+    assert "anthropic" not in ids
+
+
+def test_list_known_providers_shape_and_sort_order(monkeypatch, tmp_path):
+    monkeypatch.setattr(model_pricing, "CACHE_PATH", tmp_path / "cache.json")
+    monkeypatch.setattr("httpx.AsyncClient", lambda **k: _FakeAsyncClient(data=_CATALOG_WITH_PROVIDERS))
+
+    known = _run(model_pricing.list_known_providers())
+
+    assert [p["name"] for p in known] == ["LM Studio", "OpenRouter"]  # alphabetical by name
+    lmstudio = next(p for p in known if p["id"] == "lmstudio")
+    assert lmstudio == {"id": "lmstudio", "name": "LM Studio", "api": "http://127.0.0.1:1234/v1", "env": ["LMSTUDIO_API_KEY"]}
+
+
+def test_list_known_providers_empty_when_catalog_unavailable(monkeypatch, tmp_path):
+    monkeypatch.setattr(model_pricing, "CACHE_PATH", tmp_path / "does-not-exist.json")
+    monkeypatch.setattr("httpx.AsyncClient", lambda **k: _FakeAsyncClient(raises=ConnectionError("down")))
+
+    assert _run(model_pricing.list_known_providers()) == []
+
+
+def test_list_models_for_provider_returns_full_catalog_including_unpriced(monkeypatch, tmp_path):
+    monkeypatch.setattr(model_pricing, "CACHE_PATH", tmp_path / "cache.json")
+    monkeypatch.setattr("httpx.AsyncClient", lambda **k: _FakeAsyncClient(data=_CATALOG_WITH_PROVIDERS))
+
+    models = _run(model_pricing.list_models_for_provider("openrouter"))
+
+    by_id = {m["id"]: m for m in models}
+    assert by_id["free-model:free"]["free"] is True
+    assert by_id["paid-model"]["free"] is False
+    assert by_id["paid-model"]["input"] == pytest.approx(5.0 / 1_000_000)
+    assert by_id["no-cost-info"]["free"] is None
+    assert by_id["no-cost-info"]["input"] is None
+
+
+def test_list_models_for_provider_unknown_id_returns_empty(monkeypatch, tmp_path):
+    monkeypatch.setattr(model_pricing, "CACHE_PATH", tmp_path / "cache.json")
+    monkeypatch.setattr("httpx.AsyncClient", lambda **k: _FakeAsyncClient(data=_CATALOG_WITH_PROVIDERS))
+
+    assert _run(model_pricing.list_models_for_provider("does-not-exist")) == []

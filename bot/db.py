@@ -655,6 +655,21 @@ CREATE TABLE IF NOT EXISTS job_tool_events (
     ts            TEXT NOT NULL
 );
 
+-- Per-model on/off state for the custom_model/native_agent provider
+-- families (see bot/models.py's browse_provider_models()/
+-- live_custom_models() filtering) — sparse by design: only an explicit
+-- override is stored, absence of a row means enabled. A provider can
+-- have hundreds of models (OpenRouter's real catalog does); storing one
+-- row per model regardless of state would make this table needlessly
+-- large for no benefit, since "enabled" is already the sane default.
+CREATE TABLE IF NOT EXISTS model_toggles (
+    provider    TEXT NOT NULL,
+    model_id    TEXT NOT NULL,
+    enabled     INTEGER NOT NULL,
+    updated_at  TEXT NOT NULL,
+    PRIMARY KEY (provider, model_id)
+);
+
 -- Post-hoc per-child delegate_task breakdown, parsed from a completed
 -- swarm_dispatch job's own final reply (see bot/swarm/child_parser.py) —
 -- written once, as a full replace, when the dispatch finishes. This is
@@ -1852,6 +1867,40 @@ def list_ephemeral_sessions(parent_instance_id: Optional[int] = None, limit: int
             (parent_instance_id, limit),
         ).fetchall()
     return conn.execute("SELECT * FROM ephemeral_sessions ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+
+
+# ------------------------------------------------------------ model toggles
+
+def set_model_toggle(provider: str, model_id: str, enabled: bool) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute(
+            "INSERT INTO model_toggles (provider, model_id, enabled, updated_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(provider, model_id) DO UPDATE SET enabled=excluded.enabled, updated_at=excluded.updated_at",
+            (provider, model_id, 1 if enabled else 0, _now()),
+        )
+        conn.commit()
+
+
+def list_model_toggles(provider: Optional[str] = None) -> list[sqlite3.Row]:
+    """Every EXPLICIT toggle row (both enabled and disabled) — the Models
+    page needs this to render correct switch positions; a model with no
+    row here is enabled by default and simply isn't represented."""
+    conn = get_conn()
+    if provider is not None:
+        return conn.execute("SELECT * FROM model_toggles WHERE provider=?", (provider,)).fetchall()
+    return conn.execute("SELECT * FROM model_toggles").fetchall()
+
+
+def disabled_model_ids(provider: str) -> set[str]:
+    """One query per provider per call site — the shape every filtering
+    call site (bot.models.live_custom_models()/custom_models_with_pricing())
+    actually uses, rather than a per-model lookup."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT model_id FROM model_toggles WHERE provider=? AND enabled=0", (provider,)
+    ).fetchall()
+    return {r["model_id"] for r in rows}
 
 
 # ------------------------------------------------------------- logging ----

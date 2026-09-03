@@ -500,6 +500,7 @@
       <a href="#training" data-kw="training model health phrases custom instructions"><span class="ic">🎓</span><span class="nav-txt"><b>Training</b><small>Support Bot phrases &amp; bot instructions</small></span></a>
       <a href="#sessions" data-kw="sessions past conversations"><span class="ic">🗂</span><span class="nav-txt"><b>Sessions</b><small>Past conversations</small></span></a>
       <a href="#bots" data-kw="bots agents instances"><span class="ic">🤖</span><span class="nav-txt"><b>Bots</b><small>Manage bot instances</small></span></a>
+      <a href="#models" data-kw="models providers api keys free toggle"><span class="ic">🧩</span><span class="nav-txt"><b>Models</b><small>Providers, API keys, per-model toggles</small></span></a>
       <a href="#kanban" data-kw="kanban board cards tasks"><span class="ic">🗒</span><span class="nav-txt"><b>Kanban</b><small>Per-bot task board</small></span></a>
       <a href="#swarms" data-kw="swarms orchestration multi-bot"><span class="ic">🐝</span><span class="nav-txt"><b>Swarms</b><small>Multi-bot orchestration</small></span></a>
       <a href="#platforms" data-kw="platforms legacy single-bot"><span class="ic">🔌</span><span class="nav-txt"><b>Platforms</b><small>Legacy single-bot config</small></span></a>
@@ -1171,6 +1172,11 @@
         </div>
         <div class="wizard-field" style="margin-top:10px;">
           <div class="row">
+            <input type="text" id="provider-catalog-input" list="provider-catalog-options" placeholder="Pick a known provider (optional)…" autocomplete="off" spellcheck="false" style="flex:1;">
+            <datalist id="provider-catalog-options"></datalist>
+          </div>
+          <div class="cardnote" style="margin:4px 0 8px;">Picking one fills in its real endpoint below — or just fill in the fields yourself for a custom/local server. Some well-known providers (Anthropic, OpenAI, Google, Bedrock) use their own SDK protocol rather than a generic endpoint and aren't listed here; BotServer only speaks the OpenAI-compatible wire format for this backend family today.</div>
+          <div class="row">
             <input type="text" id="provider-new-name" placeholder="name, e.g. local_ollama" autocomplete="off" spellcheck="false" style="max-width:180px;">
             <input type="text" id="provider-new-url" placeholder="base URL, e.g. http://127.0.0.1:11434/v1" autocomplete="off" spellcheck="false">
             <input type="text" id="provider-new-key" placeholder="API key (optional)" autocomplete="off" spellcheck="false">
@@ -1253,6 +1259,15 @@
             <tbody id="bots-backups-tbody"><tr class="emptyrow"><td colspan="4">Unlock with the dashboard token to view.</td></tr></tbody>
           </table>
         </div>
+      </div>
+    </section>
+
+    <section id="models">
+      <div class="sec-head"><h2>Models</h2><span class="desc">Every model each configured provider (Model providers, in the Bots tab) offers — free models sorted first per provider, individually switchable. Wherever a model gets picked (this app's Add-a-bot form, Telegram's /model, dispatch_native_swarm_goal's auto-pick-free logic), a disabled model here is simply never offered.</span></div>
+
+      <div class="card">
+        <div id="models-page-empty" class="cardnote" hidden>No providers configured yet — add one in the Bots tab's "Model providers" card first.</div>
+        <div id="models-page-list"></div>
       </div>
     </section>
 

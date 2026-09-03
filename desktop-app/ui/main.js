@@ -883,6 +883,9 @@ function startDashboardPolling() {
   pollWhenVisible(refreshPairing, 15000);
   refreshProviders();
   pollWhenVisible(refreshProviders, 15000);
+  refreshProviderCatalog();
+  refreshModelsPage();
+  pollWhenVisible(refreshModelsPage, 30000);
   refreshPlugins();
   pollWhenVisible(refreshPlugins, 15000);
   refreshSnapshots();
@@ -1323,6 +1326,101 @@ async function refreshProviders() {
     await api(`/api/providers/${encodeURIComponent(btn.dataset.providerDelete)}`, { method: 'DELETE' });
     refreshProviders();
     refreshModels();
+    refreshModelsPage();
+  });
+}
+
+// Known-provider picker backing provider-catalog-input's <datalist> —
+// fetched once at startup (models.dev's catalog barely changes minute
+// to minute) rather than on every refreshProviders() poll.
+let providerCatalog = [];
+
+async function refreshProviderCatalog() {
+  if (!getToken()) return;
+  let data;
+  try {
+    data = await api('/api/providers/catalog');
+  } catch (_e) { return; }
+  providerCatalog = data.providers || [];
+  document.getElementById('provider-catalog-options').innerHTML =
+    providerCatalog.map(p => `<option value="${esc(p.name)}"></option>`).join('');
+}
+
+document.getElementById('provider-catalog-input').addEventListener('input', (e) => {
+  const match = providerCatalog.find(p => p.name === e.target.value);
+  if (!match) return;
+  document.getElementById('provider-new-name').value = match.id;
+  document.getElementById('provider-new-url').value = match.api;
+  const envHint = (match.env && match.env[0]) || '';
+  document.getElementById('provider-new-key').placeholder = envHint
+    ? `API key for ${match.name} (conventionally ${envHint})`
+    : 'API key (optional)';
+});
+
+// ------------------------------------------------------------- Models page
+// A separate cache/refresher from refreshModels() (Control Center's
+// per-backend-family default-model pickers) — this one is the dedicated
+// Models page: every model each configured custom_model/native_agent
+// provider offers, with an individual enable/disable toggle, free-first
+// per provider (pre-sorted by the backend).
+
+async function refreshModelsPage() {
+  const list = document.getElementById('models-page-list');
+  const empty = document.getElementById('models-page-empty');
+  if (!getToken() || !list) return;
+  let providersData;
+  try {
+    providersData = await api('/api/providers');
+  } catch (_e) { return; }
+  const providersList = providersData.providers || [];
+  empty.hidden = providersList.length > 0;
+  if (!providersList.length) {
+    list.innerHTML = '';
+    return;
+  }
+
+  const openNames = new Set(
+    [...list.querySelectorAll('details[data-provider]')].filter(d => d.open).map(d => d.dataset.provider)
+  );
+
+  const blocks = await Promise.all(providersList.map(async (p) => {
+    let models = [];
+    try {
+      const data = await api(`/api/providers/${encodeURIComponent(p.name)}/models`);
+      models = data.models || [];
+    } catch (_e) { /* provider unreachable — show what we can */ }
+    const rows = models.length ? models.map(m => `
+      <tr>
+        <td class="mono" style="font-size:12px;">${esc(m.id)}</td>
+        <td>${m.free === true ? '<span class="pill"><span class="dot good"></span>free</span>' : (m.free === false ? '<span class="pill">paid</span>' : '<span class="pill">—</span>')}</td>
+        <td>${m.input != null ? `$${(m.input * 1e6).toFixed(2)}/${(m.output * 1e6).toFixed(2)} per 1M in/out` : '—'}</td>
+        <td><input type="checkbox" data-model-toggle="${esc(p.name)}" data-model-id="${esc(m.id)}" ${m.enabled ? 'checked' : ''}></td>
+      </tr>`).join('') : '<tr><td colspan="4" class="cardnote">No models found yet — add a real API key, or this provider isn\'t in the known catalog and hasn\'t responded live.</td></tr>';
+    return `
+      <details data-provider="${esc(p.name)}" ${openNames.has(p.name) ? 'open' : ''} style="margin-bottom:10px;">
+        <summary style="cursor:pointer; font-weight:600; padding:6px 0;">${esc(p.name)} <span class="cardnote">(${models.length} model${models.length === 1 ? '' : 's'})</span></summary>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Model</th><th>Free?</th><th>Price</th><th>Enabled</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </details>`;
+  }));
+
+  list.innerHTML = blocks.join('');
+  list.querySelectorAll('[data-model-toggle]').forEach(cb => cb.onchange = async () => {
+    try {
+      await api(`/api/providers/${encodeURIComponent(cb.dataset.modelToggle)}/models/toggle`, {
+        method: 'POST',
+        body: JSON.stringify({ model_id: cb.dataset.modelId, enabled: cb.checked }),
+      });
+    } catch (e) {
+      cb.checked = !cb.checked;
+      alert(e.message || 'Failed to update that model\'s toggle.');
+      return;
+    }
+    refreshModels();
   });
 }
 
@@ -1380,9 +1478,14 @@ document.getElementById('btn-provider-add').onclick = async () => {
   const name = document.getElementById('provider-new-name').value.trim();
   const base_url = document.getElementById('provider-new-url').value.trim();
   const api_key = document.getElementById('provider-new-key').value.trim();
+  const catalogInput = document.getElementById('provider-catalog-input');
+  const catalogMatch = providerCatalog.find(p => p.name === catalogInput.value.trim());
   status.textContent = '';
   try {
-    await api('/api/providers', { method: 'POST', body: JSON.stringify({ name, base_url, api_key: api_key || null }) });
+    await api('/api/providers', {
+      method: 'POST',
+      body: JSON.stringify({ name, base_url, api_key: api_key || null, catalog_id: catalogMatch ? catalogMatch.id : null }),
+    });
   } catch (e) {
     status.textContent = e.message || 'Failed to add provider.';
     return;
@@ -1390,8 +1493,11 @@ document.getElementById('btn-provider-add').onclick = async () => {
   document.getElementById('provider-new-name').value = '';
   document.getElementById('provider-new-url').value = '';
   document.getElementById('provider-new-key').value = '';
+  document.getElementById('provider-new-key').placeholder = 'API key (optional)';
+  catalogInput.value = '';
   refreshProviders();
   refreshModels();
+  refreshModelsPage();
 };
 
 async function refreshBots() {

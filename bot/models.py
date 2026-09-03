@@ -290,7 +290,17 @@ async def live_custom_models() -> Optional[dict[str, list[str]]]:
     ever" rule live_api_models() follows, just for custom endpoints.
     A provider whose fetch fails is simply omitted, not treated as a
     reason to fail the whole call — one dead local server shouldn't hide
-    every other configured provider's models."""
+    every other configured provider's models.
+
+    Filters out anything explicitly disabled on the Models page
+    (bot.db.disabled_model_ids) — this is the ONE choke point every
+    model picker in the app (Telegram's /model, the dashboard's
+    GET /api/models, dispatch_native_swarm_goal's auto-pick-free logic)
+    already flows through, so toggling a model off here removes it from
+    every picker with no changes needed at those call sites. Use
+    browse_provider_models() instead when disabled models must still be
+    visible (i.e. the Models page's own toggle UI)."""
+    from bot import db
     from bot import providers as provider_registry
 
     configured = provider_registry.list_providers()
@@ -302,13 +312,15 @@ async def live_custom_models() -> Optional[dict[str, list[str]]]:
     for name, entry in configured.items():
         cached = _custom_cache.get(name)
         if cached is not None and (now - cached["at"]) < _CUSTOM_CACHE_TTL_S:
-            if cached["models"] is not None:
-                grouped[name] = cached["models"]
-            continue
-        models = await _fetch_custom_models(name, entry, provider_registry)
-        _custom_cache[name] = {"at": now, "models": models}
+            models = cached["models"]
+        else:
+            models = await _fetch_custom_models(name, entry, provider_registry)
+            _custom_cache[name] = {"at": now, "models": models}
         if models is not None:
-            grouped[name] = models
+            disabled = db.disabled_model_ids(name)
+            visible = [m for m in models if m not in disabled] if disabled else models
+            if visible:
+                grouped[name] = visible
     return grouped or None
 
 
@@ -367,6 +379,73 @@ async def custom_models_with_pricing(refresh: bool = False) -> tuple[dict[str, l
                 entries.append({"id": model_id, "free": False, "input": None, "output": None})
         grouped[provider_name] = entries
     return grouped, worst_source
+
+
+def _is_local_base_url(base_url: str) -> bool:
+    """True for a loopback/private-network endpoint (Ollama, LM Studio,
+    vLLM, llama.cpp's server, all typically 127.0.0.1/localhost) — used
+    by browse_provider_models() to treat a self-hosted model with no
+    pricing data as free by convention, since it genuinely costs the
+    user nothing per token, rather than showing it as "not marked free"
+    for lack of a models.dev entry."""
+    try:
+        from urllib.parse import urlparse
+
+        host = (urlparse(base_url).hostname or "").lower()
+    except ValueError:
+        return False
+    return host in ("127.0.0.1", "localhost", "::1") or host.startswith("192.168.") or host.startswith("10.")
+
+
+def _sort_browse_entries(entries: list[dict]) -> list[dict]:
+    """Free first, then unpriced (free=None), then paid — alphabetical
+    within each group, matching the order the user asked the Models page
+    to render in."""
+    rank = {True: 0, None: 1, False: 2}
+    return sorted(entries, key=lambda e: (rank.get(e["free"], 1), e["id"].lower()))
+
+
+async def browse_provider_models(provider_name: str, refresh: bool = False) -> list[dict]:
+    """Every model known for a CONFIGURED provider (config/providers.yaml)
+    — for the Models page's own toggle UI, so unlike live_custom_models()/
+    custom_models_with_pricing() this deliberately does NOT filter out
+    disabled models (the whole point is showing them so they can be
+    re-enabled). Combines models.dev's static catalog (via the
+    provider's stored catalog_id, if it has one — always available, no
+    live call needed) with a live /models fetch (covers local/custom
+    models models.dev can't know about, e.g. whatever's actually pulled
+    into a user's Ollama), each tagged with its current toggle state.
+    Sorted free-first per bot.models._sort_browse_entries. Returns []
+    for an unconfigured provider name — never raises."""
+    from bot import db
+    from bot import model_pricing
+    from bot import providers as provider_registry
+
+    entry = provider_registry.get_provider(provider_name)
+    if entry is None:
+        return []
+
+    by_id: dict[str, dict] = {}
+
+    catalog_id = entry.get("catalog_id")
+    if catalog_id:
+        for m in await model_pricing.list_models_for_provider(catalog_id, refresh=refresh):
+            by_id[m["id"]] = dict(m)
+
+    live_ids = await _fetch_custom_models(provider_name, entry, provider_registry)
+    is_local = _is_local_base_url(entry.get("base_url", ""))
+    for model_id in (live_ids or []):
+        if model_id not in by_id:
+            by_id[model_id] = {"id": model_id, "free": True if is_local else None, "input": None, "output": None}
+
+    if not by_id:
+        return []
+
+    disabled = db.disabled_model_ids(provider_name)
+    for model_id, e in by_id.items():
+        e["enabled"] = model_id not in disabled
+
+    return _sort_browse_entries(list(by_id.values()))
 
 
 # ---------------------------------------------------- real-time default model

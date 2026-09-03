@@ -123,3 +123,61 @@ async def get_pricing(provider: str, model_id: str, *, refresh: bool = False) ->
     input_per_token = input_per_mtok / _MILLION
     output_per_token = output_per_mtok / _MILLION
     return {"free": input_per_mtok == 0 and output_per_mtok == 0, "input": input_per_token, "output": output_per_token}, source
+
+
+async def list_known_providers(refresh: bool = False) -> list[dict[str, Any]]:
+    """`[{"id", "name", "api", "env"}, ...]` — every models.dev provider
+    that has a real base URL (its `api` field), sorted by display name.
+    Powers the catalog-assisted "add provider" picker: selecting one
+    gives BotServer a real base_url and a suggested API-key env var name
+    without the user hand-typing an endpoint. Excludes providers whose
+    SDK uses a native protocol rather than a generic OpenAI-compatible
+    URL (confirmed against the real catalog: Anthropic, OpenAI, Google,
+    Bedrock, Vertex, and ~20 others have no `api` field at all) — those
+    aren't providers bot.backends.custom_model_backend's
+    OpenAICompatibleTransport can actually talk to today, so listing them
+    here would offer a choice that silently doesn't work."""
+    catalog, _source = await _catalog(refresh=refresh)
+    if not catalog:
+        return []
+    out = []
+    for provider_id, entry in catalog.items():
+        if not isinstance(entry, dict):
+            continue
+        api = entry.get("api")
+        if not api:
+            continue
+        out.append({"id": provider_id, "name": entry.get("name") or provider_id, "api": api, "env": entry.get("env") or []})
+    return sorted(out, key=lambda p: p["name"].lower())
+
+
+async def list_models_for_provider(catalog_id: str, refresh: bool = False) -> list[dict[str, Any]]:
+    """`[{"id", "free", "input", "output"}, ...]` — every model models.dev
+    knows about for `catalog_id`, independent of whether a live call to
+    that provider would succeed right now. This is what lets the Models
+    page show a provider's full catalog before a working API key is ever
+    entered — `free`/`input`/`output` are None when models.dev has no
+    usable cost figures for that specific model (e.g. a synthetic
+    routing entry), never used as a reason to omit the model entirely."""
+    catalog, _source = await _catalog(refresh=refresh)
+    if not catalog:
+        return []
+    entry = catalog.get(catalog_id)
+    if not isinstance(entry, dict):
+        return []
+
+    out = []
+    for model_id, model_entry in (entry.get("models") or {}).items():
+        cost = (model_entry or {}).get("cost") if isinstance(model_entry, dict) else None
+        input_per_mtok = (cost or {}).get("input")
+        output_per_mtok = (cost or {}).get("output")
+        if input_per_mtok is None or output_per_mtok is None:
+            out.append({"id": model_id, "free": None, "input": None, "output": None})
+        else:
+            out.append({
+                "id": model_id,
+                "free": input_per_mtok == 0 and output_per_mtok == 0,
+                "input": input_per_mtok / _MILLION,
+                "output": output_per_mtok / _MILLION,
+            })
+    return out

@@ -71,6 +71,7 @@ def set_provider(
     protocol: str = "openai",
     api_key_env: Optional[str] = None,
     api_key: Optional[str] = None,
+    catalog_id: Optional[str] = None,
     actor: str = "dashboard",
 ) -> None:
     if not name or not name.strip():
@@ -85,6 +86,13 @@ def set_provider(
         entry["api_key_env"] = api_key_env.strip()
     elif api_key:
         entry["api_key"] = api_key
+    # Which models.dev catalog provider (if any) this entry corresponds
+    # to — set when added via the catalog-assisted picker, None for a
+    # fully custom/local endpoint models.dev doesn't know about. Lets
+    # bot.models.browse_provider_models() look up that provider's full
+    # model list without having to guess it from the user-chosen `name`.
+    if catalog_id:
+        entry["catalog_id"] = catalog_id.strip()
 
     data = _manager.read_raw()
     providers = data.setdefault("providers", {})

@@ -11,6 +11,8 @@ data/*.db-shm
 data/pre_migration_backup/
 data/inbox/
 data/attachments/
+data/agent_workspaces/
+data/models_dev_cache.json
 logs/*.log
 logs/local_pipeline/
 
