@@ -17,7 +17,6 @@ import os
 import platform
 import shutil
 import subprocess
-import sys
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -290,11 +289,21 @@ def disable_mcp(name: str) -> bool:
 def register_self_mcp(actor: str = "dashboard") -> dict[str, Any]:
     """Adds this app's own control server (bot/mcp_server.py) to Claude
     Desktop's claude_desktop_config.json under the name "bot-server",
-    pointing at the same venv python already running this process. This is
-    what closes the loop the rest of the app is built around: the Telegram
-    bot can drive Claude Desktop (ui_backend.py), and now Claude Desktop (or
-    Claude Code, via the equivalent `claude mcp add`) can drive this app
-    back, over MCP instead of Telegram/HTTP/GUI.
+    pointing at this project's own top-level .venv python (see
+    envfile.stable_python_executable) — deliberately NOT sys.executable,
+    which would resolve to whichever interpreter happens to be running
+    THIS process (the Tauri-bundled copy in production, the exact
+    directory `cargo tauri build` overwrites on every deploy). Claude
+    Desktop can keep an MCP server subprocess alive across many turns;
+    if it were spawned from the bundled copy, that live process's open
+    file handles on the interpreter's DLLs can make the next build fail
+    with a Windows file-in-use error — confirmed live, this exact
+    failure mode blocked a real deploy in this project's history (via
+    enable_hermes_swarm_tools's identical pattern, fixed the same way).
+    This is what closes the loop the rest of the app is built around:
+    the Telegram bot can drive Claude Desktop (ui_backend.py), and now
+    Claude Desktop (or Claude Code, via the equivalent `claude mcp add`)
+    can drive this app back, over MCP instead of Telegram/HTTP/GUI.
 
     Idempotent — re-running just overwrites the one "bot-server" entry with
     the current python path and token, so it stays correct after a token
@@ -305,7 +314,7 @@ def register_self_mcp(actor: str = "dashboard") -> dict[str, Any]:
     importable regardless of what working directory the client launches it
     from.
     """
-    python = sys.executable
+    python = envfile.stable_python_executable()
     project_root = str(envfile.PROJECT_ROOT)
     token = os.environ.get("DASHBOARD_TOKEN", "")
     env_vars = {"PYTHONPATH": project_root}

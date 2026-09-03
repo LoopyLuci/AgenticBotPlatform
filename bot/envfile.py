@@ -46,6 +46,29 @@ CONFIG_PATH = PROJECT_ROOT / "config" / "backends.yaml"
 BACKUP_DIR = PROJECT_ROOT / "data" / "env_backups"
 
 
+def stable_python_executable() -> str:
+    """The python interpreter to hand to an EXTERNAL process we want to
+    keep running independently of this app's own build/deploy cycle
+    (a registered MCP server another program spawns and may keep alive
+    across turns) — deliberately this project's own top-level `.venv`
+    under PROJECT_ROOT, NOT sys.executable.
+
+    sys.executable resolves to whichever interpreter happens to be
+    running the CURRENT process, which for the actual running app is the
+    Tauri-bundled copy under desktop-app/src-tauri/target/release/.venv
+    — the exact directory `cargo tauri build` overwrites on every
+    deploy. A long-lived external process still holding that
+    interpreter's DLLs open (confirmed live: a Hermes agent's registered
+    MCP server subprocess did exactly this) makes the next build fail
+    with a Windows file-in-use error. PROJECT_ROOT/.venv is never a
+    build target, so pointing there instead avoids the whole failure
+    class. Falls back to sys.executable if that venv doesn't exist on
+    this machine (e.g. a bare end-user install with no source checkout)."""
+    rel = ("Scripts", "python.exe") if sys.platform == "win32" else ("bin", "python")
+    candidate = PROJECT_ROOT / ".venv" / rel[0] / rel[1]
+    return str(candidate) if candidate.is_file() else sys.executable
+
+
 def candidates() -> list[Path]:
     return [PROJECT_ENV, GLOBAL_ENV]
 

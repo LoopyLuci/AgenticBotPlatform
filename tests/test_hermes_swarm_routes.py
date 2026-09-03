@@ -10,9 +10,11 @@ logic, not a live Hermes process or a real home-directory file.
 
 from __future__ import annotations
 
+import sys
+
 from fastapi.testclient import TestClient
 
-from bot import bot_instances, hermes_config
+from bot import bot_instances, envfile, hermes_config
 from bot.backends.base import BackendResult
 from bot.dashboard.server import build_app
 
@@ -114,6 +116,22 @@ def test_register_botserver_mcp_server_preserves_existing_mcp_servers_and_commen
     assert "some-other-python" in text
     assert "botserver" in text
     assert "bot.mcp_server" in text
+
+
+def test_register_botserver_mcp_server_uses_stable_python_not_sys_executable(tmp_path, monkeypatch, temp_db):
+    # Regression: this used to hardcode sys.executable, which resolves to
+    # the Tauri-bundled venv in production — a long-lived Hermes-spawned
+    # MCP server process from that path blocked a real `cargo tauri
+    # build` deploy (Windows file-in-use). Must go through
+    # envfile.stable_python_executable() instead.
+    monkeypatch.setattr(envfile, "stable_python_executable", lambda: "/path/redacted")
+
+    result = hermes_config.register_botserver_mcp_server(hermes_home=str(tmp_path))
+
+    assert result["command"] == "/path/redacted"
+    text = (tmp_path / "config.yaml").read_text(encoding="utf-8")
+    assert "/path/redacted" in text
+    assert sys.executable not in text
 
 
 def test_register_botserver_mcp_server_is_idempotent(tmp_path, monkeypatch, temp_db):

@@ -172,11 +172,16 @@ def register_botserver_mcp_server(
 ) -> dict[str, Any]:
     """Registers BotServer's own MCP control server (bot/mcp_server.py)
     into this Hermes instance's `mcp_servers:` section under the name
-    "botserver", pointing at the same interpreter this BotServer process
-    is running under — mirrors bot/desktop.py's register_self_mcp() for
-    Claude Desktop, adapted to Hermes's `mcp_servers:` (snake_case) config
-    key rather than Claude Desktop's `mcpServers` (camelCase)
-    claude_desktop_config.json.
+    "botserver", pointing at this project's own top-level .venv python
+    (see envfile.stable_python_executable) rather than sys.executable —
+    mirrors bot/desktop.py's register_self_mcp() for Claude Desktop
+    (same fix, same reason: sys.executable would resolve to the
+    Tauri-bundled copy in production, and a long-lived MCP server
+    subprocess spawned from it can block the next `cargo tauri build`
+    with a Windows file-in-use error — confirmed live, this exact
+    failure blocked a real deploy in this project's history), adapted to
+    Hermes's `mcp_servers:` (snake_case) config key rather than Claude
+    Desktop's `mcpServers` (camelCase) claude_desktop_config.json.
 
     This is what completes the "Hermes can organize swarms too" half of
     the Hermes-swarm plan: a Hermes agent already gets its own delegate_task
@@ -198,8 +203,9 @@ def register_botserver_mcp_server(
     to evict/reconnect the backend afterward (see the dashboard route
     this backs, which does exactly that)."""
     from bot import db
+    from bot.envfile import stable_python_executable
 
-    python = sys.executable
+    python = stable_python_executable()
     project_root = str(_project_root())
     env_vars = {"PYTHONPATH": project_root}
     if dashboard_token:
