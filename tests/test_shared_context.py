@@ -74,6 +74,7 @@ def test_rejects_content_over_the_size_cap(temp_db):
 
 
 def test_rejects_new_doc_past_the_doc_count_cap(temp_db, monkeypatch):
+    shared_context.delete_doc(shared_context.SEED_DOC_NAME)  # isolate this test's own doc-count math
     monkeypatch.setattr(shared_context, "MAX_DOCS", 2)
     shared_context.write_doc("a", "1", actor="x")
     shared_context.write_doc("b", "2", actor="x")
@@ -84,3 +85,38 @@ def test_rejects_new_doc_past_the_doc_count_cap(temp_db, monkeypatch):
     # Overwriting an EXISTING doc at the cap is still fine — only new docs are capped.
     shared_context.write_doc("a", "updated", actor="x")
     assert shared_context.read_doc("a")["content"] == "updated"
+
+
+# --------------------------------------------------------------- seed doc
+
+
+def test_seed_doc_exists_on_a_fresh_db(temp_db):
+    # temp_db's fixture calls db.init_db(), which calls seed_default_docs()
+    # — a fresh install should always have a working example an agent can
+    # discover via list_project_context with zero manual setup.
+    doc = shared_context.read_doc(shared_context.SEED_DOC_NAME)
+    assert doc is not None
+    assert "write_project_context" in doc["content"]
+    assert "read_project_context" in doc["content"]
+    assert doc["updated_by"] == "system"
+
+
+def test_seed_doc_is_within_the_size_cap():
+    assert len(shared_context.SEED_DOC_CONTENT) <= shared_context.MAX_DOC_CHARS
+
+
+def test_seed_never_overwrites_a_customized_or_deleted_seed_doc(temp_db):
+    # An operator/agent edited the seed doc — re-seeding must never clobber that.
+    shared_context.write_doc(shared_context.SEED_DOC_NAME, "my own customized notes", actor="operator")
+
+    shared_context.seed_default_docs()
+
+    assert shared_context.read_doc(shared_context.SEED_DOC_NAME)["content"] == "my own customized notes"
+
+
+def test_seed_is_idempotent_when_called_again(temp_db):
+    shared_context.seed_default_docs()  # already seeded once by temp_db's init_db()
+    shared_context.seed_default_docs()  # calling again must not raise or duplicate
+
+    docs = [d for d in shared_context.list_docs() if d["name"] == shared_context.SEED_DOC_NAME]
+    assert len(docs) == 1

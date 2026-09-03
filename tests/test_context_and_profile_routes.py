@@ -90,7 +90,10 @@ def test_context_list_shows_every_doc(temp_db, monkeypatch):
 
     assert resp.status_code == 200
     names = {d["name"] for d in resp.json()["docs"]}
-    assert names == {"status", "notes"}
+    # A fresh DB always seeds the how-to-use-context example doc too (see
+    # bot.shared_context.seed_default_docs) — assert our two are present
+    # rather than asserting the exact set, so this doesn't fight the seed.
+    assert {"status", "notes"} <= names
 
 
 def test_context_delete(temp_db, monkeypatch):

@@ -760,6 +760,13 @@ def init_db() -> None:
     ensure_server_chat_group()
     backfill_server_chat_conversations()
 
+    # Lazy import: bot.shared_context imports bot.db at module level, so a
+    # top-level import here would be circular. Safe at call time — init_db()
+    # only ever runs once bot.db itself is fully loaded.
+    from bot import shared_context
+
+    shared_context.seed_default_docs()
+
 
 # ------------------------------------------------------------ sessions ----
 
