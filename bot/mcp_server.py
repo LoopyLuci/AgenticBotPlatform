@@ -492,6 +492,48 @@ async def dispatch_swarm_goal(
 
 
 @mcp.tool()
+async def dispatch_native_swarm_goal(
+    instance_id: int,
+    tasks: list[dict],
+    worker_provider: Optional[str] = None,
+    worker_model: Optional[str] = None,
+    max_children: Optional[int] = None,
+    role: str = "leaf",
+    confirm: bool = False,
+) -> dict:
+    """The native equivalent of dispatch_swarm_goal, for a native_agent-
+    backed instance — no external Hermes process, no goal-prompt-and-hope
+    indirection. Unlike dispatch_swarm_goal (which sends ONE prompt and
+    trusts an external Hermes agent to decompose it itself via
+    delegate_task), YOU decompose the goal into `tasks` up front
+    ([{"goal": str, "output_schema": object?}, ...]) — this calls
+    bot.agent_runtime.subagents.run_batch() directly against each one in
+    parallel, so there's no risk of the decomposition step being ignored
+    or done wrong by an intermediary agent.
+
+    Auto-picks the cheapest currently-free provider/model from
+    list_available_models if worker_provider/worker_model aren't given.
+    role="leaf" (default) children can't spawn further sub-agents,
+    reconfigure other instances, save memory, or write shared project
+    context; role="orchestrator" keeps those abilities.
+
+    Subject to the same pre-dispatch budget guard as dispatch_swarm_goal
+    (see get_swarm_budget_config) — a soft refusal can be overridden with
+    confirm=true, a hard one (too many children, an unpriced paid model
+    under deny_unpriced_paid_models, or the estimate exceeding the hard
+    ceiling) cannot.
+
+    Returns {"result": <readable summary>, "children": [{"index","goal",
+    "model","status","result_excerpt"}, ...], "job_id": ...} — the same
+    per-child shape the dashboard's Delegation Activity panel already
+    understands from a Hermes-external dispatch."""
+    return await _request("POST", f"/api/native-agent/{instance_id}/dispatch", timeout=600.0, json={
+        "tasks": tasks, "worker_provider": worker_provider, "worker_model": worker_model,
+        "max_children": max_children, "role": role, "confirm": confirm,
+    })
+
+
+@mcp.tool()
 async def get_swarm_budget_config() -> dict:
     """The current pre-dispatch cost-ceiling settings dispatch_swarm_goal
     is checked against — see bot/swarm_budget.py. This is a global,

@@ -36,7 +36,7 @@ from bot.config import config
 
 logger = logging.getLogger("bot.router")
 
-VALID_BACKENDS = ("api", "cli", "ui", "hermes_cli", "hermes_gateway", "custom_model")
+VALID_BACKENDS = ("api", "cli", "ui", "hermes_cli", "hermes_gateway", "custom_model", "native_agent")
 
 # A bot instance whose backend is crash-looping (every single request
 # fails — bad credentials, a dead binary, a revoked key) used to just keep
@@ -192,6 +192,37 @@ class Router:
                 raise ValueError(
                     "custom_model backend needs a model of the form '<provider>/<model_id>' "
                     "(set it on the bot instance, or as backends.custom_model.model)"
+                )
+            provider_name, model_id = providers.parse_model_ref(model_ref)
+            provider = providers.get_provider(provider_name)
+            if provider is None:
+                raise ValueError(f"no provider named {provider_name!r} configured in config/providers.yaml")
+            return CustomModelBackend(
+                provider_name=provider_name,
+                model_id=model_id,
+                base_url=provider["base_url"],
+                api_key=providers.get_api_key(provider_name),
+                max_tokens=b_cfg.get("max_tokens", 4096),
+            )
+        if name == "native_agent":
+            from bot import providers
+
+            # Runtime-identical to "custom_model" (same NativeAgentBackend
+            # loop, same tool list — see bot/backends/native_backend.py's
+            # module docstring) — the two are differentiated at the
+            # dispatch/routing level, not runtime capability:
+            # dispatch_native_swarm_goal (Phase E, Native Hermes-parity
+            # plan) requires an instance's backend to literally be
+            # "native_agent" rather than "custom_model", so an operator's
+            # intent ("this instance is meant for spawn_subagent-driven
+            # swarm work") is explicit in bot_instances.backend, not
+            # inferred. Shares config/providers.yaml with custom_model —
+            # not a second model registry.
+            model_ref = model_override or (cfg.get("backends") or {}).get("native_agent", {}).get("model")
+            if not model_ref:
+                raise ValueError(
+                    "native_agent backend needs a model of the form '<provider>/<model_id>' "
+                    "(set it on the bot instance, or as backends.native_agent.model)"
                 )
             provider_name, model_id = providers.parse_model_ref(model_ref)
             provider = providers.get_provider(provider_name)

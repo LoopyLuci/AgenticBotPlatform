@@ -439,7 +439,7 @@ function refreshBotModelOptions() {
   document.getElementById('bot-new-model-options').innerHTML = options.map(name => `<option value="${esc(name)}"></option>`).join('');
   const help = document.getElementById('bot-new-model-help');
   const input = document.getElementById('bot-new-model');
-  if (backend === 'custom_model') {
+  if (backend === 'custom_model' || backend === 'native_agent') {
     help.textContent = 'Required for this backend: "<provider>/<model_id>", where <provider> is one configured below in Model Providers.';
     input.placeholder = 'e.g. local_ollama/llama3.1';
   } else {

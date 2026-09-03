@@ -31,6 +31,7 @@ BACKEND_FAMILY: dict[str, str] = {
     "hermes_cli": "hermes",
     "hermes_gateway": "hermes",
     "custom_model": "custom",
+    "native_agent": "custom",
 }
 
 # The one hardcoded model id in this module — not a "list of choices" (the

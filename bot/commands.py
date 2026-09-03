@@ -96,6 +96,7 @@ _BACKEND_DISPLAY_NAMES = {
     "hermes_cli": "hermes_cli",
     "hermes_gateway": "hermes_gateway",
     "custom_model": "custom_model",
+    "native_agent": "native_agent",
 }
 
 
@@ -153,14 +154,16 @@ async def cmd_gateway(ctx: CmdContext, args: list[str]) -> str:
         names = ("api", "cli", "ui")
         default = cfg.get("default_backend")
     elif family == "custom":
-        # Only one backend in this family — "default" isn't a meaningful
-        # concept the way it is for Claude/Hermes's multiple backends, so
-        # it's just named directly rather than read from a config key that
-        # doesn't exist.
-        names = ("custom_model",)
-        default = "custom_model"
+        # custom_model and native_agent share one provider registry
+        # (config/providers.yaml) and runtime (NativeAgentBackend) —
+        # differentiated by intent (see bot/router.py's native_agent
+        # branch), not by readiness. Neither has a meaningful "default"
+        # concept the way Claude/Hermes's multiple backends do, so this
+        # bot's own actual backend is just named directly.
+        names = ("custom_model", "native_agent")
+        default = instance["backend"]
     else:
-        names = ("api", "cli", "ui", "hermes_cli", "hermes_gateway", "custom_model")
+        names = ("api", "cli", "ui", "hermes_cli", "hermes_gateway", "custom_model", "native_agent")
         default = cfg.get("default_backend")
 
     lines = [f"Default backend: {default}", "Backends:"]
@@ -400,7 +403,7 @@ async def real_time_model_label(instance: dict) -> str:
     if backend == "ui":
         return "(selected in Claude Desktop — not visible to BotServer)"
 
-    if backend == "custom_model":
+    if backend in ("custom_model", "native_agent"):
         return "(no model configured — set one with /model, as '<provider>/<model_id>')"
 
     # hermes_cli / hermes_gateway

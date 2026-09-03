@@ -1427,6 +1427,18 @@ def build_app() -> FastAPI:
             )
         return instance
 
+    def _require_native_agent_instance(instance_id: int) -> dict:
+        instance = bot_instances.get_instance(instance_id)
+        if instance is None:
+            raise HTTPException(status_code=404, detail=f"bot instance {instance_id} not found")
+        if instance.get("backend") != "native_agent":
+            raise HTTPException(
+                status_code=400,
+                detail=f"instance {instance_id} is backed by {instance.get('backend')!r}, not native_agent — "
+                       "dispatch_native_swarm_goal only applies to native_agent-backed instances",
+            )
+        return instance
+
     @app.get("/api/hermes/{instance_id}/delegation", dependencies=[Depends(_require_token_or_api_key)])
     async def api_hermes_delegation_get(instance_id: int):
         from bot import hermes_config
@@ -1537,6 +1549,92 @@ def build_app() -> FastAPI:
             "worker_model_source": pricing_source,
             "estimated_usd": decision.estimated_usd,
             "job_id": job_row["id"] if job_row is not None else None,
+        }
+
+    @app.post("/api/native-agent/{instance_id}/dispatch", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_native_agent_dispatch(instance_id: int, payload: dict = Body(...)):
+        """The native_agent equivalent of api_hermes_dispatch — but with
+        no goal-prompt-and-hope indirection: the caller already provides
+        the decomposed task list (this route's own caller — an MCP tool
+        call from Claude, or the dashboard operator — plays the role a
+        goal-prompt template plays for an external Hermes instance,
+        deciding the subtask breakdown up front), so this calls
+        bot.agent_runtime.subagents.run_batch() directly. Results land in
+        job_children/job_tool_events exactly like a Hermes-external
+        dispatch, so the dashboard's Delegation Activity panel works
+        unmodified for either kind of fan-out."""
+        from bot import swarm_budget
+        from bot.agent_runtime import subagents
+        from bot.backends.base import BackendError
+        from bot.models import custom_models_with_pricing
+
+        instance = _require_native_agent_instance(instance_id)
+        tasks = payload.get("tasks")
+        if not isinstance(tasks, list) or not tasks:
+            raise HTTPException(status_code=400, detail="payload must include a non-empty 'tasks' array")
+
+        worker_provider = payload.get("worker_provider")
+        worker_model = payload.get("worker_model")
+        priced, pricing_source = await custom_models_with_pricing()
+        if not worker_provider or not worker_model:
+            for provider_name, entries in sorted(priced.items()):
+                free_entry = next((e for e in sorted(entries, key=lambda e: e["id"]) if e["free"]), None)
+                if free_entry:
+                    worker_provider, worker_model = provider_name, free_entry["id"]
+                    break
+
+        max_children = payload.get("max_children")
+        pricing_row = next(
+            (e for e in priced.get(worker_provider, []) if e["id"] == worker_model), None
+        ) if worker_provider else None
+        decision = swarm_budget.check_budget(
+            pricing_row=pricing_row,
+            max_children=max_children or len(tasks),
+            confirm=bool(payload.get("confirm")),
+            cfg=config.current.get("swarm_budget", {}),
+        )
+        if not decision.allowed:
+            db.log_audit(
+                actor="dashboard", action="swarm_dispatch_blocked",
+                detail=f"instance {instance_id} native ({worker_provider}/{worker_model}): {decision.reason}",
+            )
+            raise HTTPException(status_code=400, detail=decision.reason)
+
+        role = payload.get("role", "leaf")
+        job_id = db.create_job(
+            action_type="swarm_dispatch", backend="native_agent", user_id=0,
+            prompt=f"native dispatch: {len(tasks)} task(s)", instance_id=instance_id,
+        )
+        db.mark_job_running(job_id, backend="native_agent")
+        audit_id = db.log_audit(
+            actor="dashboard", action="swarm_dispatch",
+            detail=f"instance {instance_id} native -> {worker_provider}/{worker_model}: {len(tasks)} task(s)"
+            + (f" (est. ${decision.estimated_usd:.4f})" if decision.estimated_usd else ""),
+        )
+        db.set_audit_log_job_id(audit_id, job_id)
+
+        try:
+            results = await subagents.run_batch(
+                tasks, role=role, provider=worker_provider, model=worker_model,
+                max_children=max_children, parent_instance_id=instance_id,
+            )
+        except BackendError as exc:
+            db.mark_job_done(job_id, status="failed", error=str(exc))
+            raise HTTPException(status_code=502, detail=f"dispatch failed: {exc}")
+
+        db.set_job_children(job_id, results)
+        final_text = "\n\n".join(f"[{r['status']}] {r['goal']}: {r['result_excerpt']}" for r in results)
+        db.mark_job_done(job_id, status="success", result=final_text)
+
+        return {
+            "ok": True,
+            "result": final_text,
+            "children": results,
+            "worker_provider": worker_provider,
+            "worker_model": worker_model,
+            "worker_model_source": pricing_source,
+            "estimated_usd": decision.estimated_usd,
+            "job_id": job_id,
         }
 
     @app.post("/api/hermes/{instance_id}/enable-swarm-tools", dependencies=[Depends(_require_token_or_api_key)])

@@ -241,6 +241,7 @@ _READINESS_CHECKS: dict[str, Callable[[], tuple[bool, str]]] = {
     "hermes_cli": _hermes_cli_ready,
     "hermes_gateway": _hermes_gateway_ready,
     "custom_model": _custom_model_ready,
+    "native_agent": _custom_model_ready,  # same providers.yaml registry
 }
 
 
