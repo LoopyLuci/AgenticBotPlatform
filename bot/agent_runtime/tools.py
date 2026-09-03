@@ -42,8 +42,12 @@ MAX_OUTPUT_CHARS = 8000
 MAX_READ_CHARS = 20000
 
 # Tools that can change state or run arbitrary code — gated behind
-# approval.py. Everything else (reads) runs immediately.
-DANGEROUS_TOOLS = {"run_shell", "write_file"}
+# approval.py. Everything else (reads) runs immediately. update_agent_config
+# is included because it can change ANOTHER instance's identity/behavior/
+# can_target list — a compromised or misbehaving agent using it to
+# re-route its own or another instance's permissions is exactly the kind
+# of consequential change write_file already requires a human for.
+DANGEROUS_TOOLS = {"run_shell", "write_file", "update_agent_config"}
 
 TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
@@ -133,6 +137,76 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
             "required": ["target_instance", "prompt"],
         },
+    },
+    {
+        "name": "get_my_profile",
+        "description": (
+            "Your own identity as a small markdown document: name, backend, persona, model override, "
+            "which other instances you can target, and your own custom instructions. Call this whenever "
+            "you need to state your own bot_instances name (e.g. as source_instance for delegate_to_instance "
+            "or the botserver MCP tools) rather than guessing it."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "update_agent_config",
+        "description": (
+            "Update another bot instance's name, custom instructions, persona, model, or can_target list "
+            "on the fly — the lever a manager needs to (re)configure the workers it runs, without going "
+            "through the dashboard. Only instances your can_target list allows are editable when agent_control "
+            "is in 'allowlist' mode (same gate delegate_to_instance uses); under 'trust_all' any instance is "
+            "editable. Only the fields you pass are changed — omit anything you don't want to touch."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "target_instance": {"type": "string", "description": "Target bot_instances.id (or exact name)."},
+                "name": {"type": "string", "description": "New display name."},
+                "custom_instructions": {"type": "string", "description": "Replaces the target's entire custom_instructions text."},
+                "persona": {"type": "string", "description": "One of bot/personas.py's presets."},
+                "model": {"type": "string", "description": "Per-instance model override (backend-specific format)."},
+                "can_target": {
+                    "type": "array", "items": {"type": "integer"},
+                    "description": "Replaces the target's own can_target list (which OTHER instances it, in turn, may reach).",
+                },
+            },
+            "required": ["target_instance"],
+        },
+    },
+    {
+        "name": "read_project_context",
+        "description": (
+            "Read a shared, cross-instance markdown document — the way a swarm of workers and their manager "
+            "keep something like project status or shared notes in sync, independent of any one instance's "
+            "own conversation history. Every registered instance can read every doc. Call list_project_context "
+            "first if you don't know what docs exist."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"name": {"type": "string", "description": "Doc name, e.g. 'status'."}},
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "write_project_context",
+        "description": (
+            "Create or replace a shared, cross-instance markdown document (see read_project_context) — "
+            "e.g. post a project-status update every worker and the manager can read. Keep it concise "
+            "(a few KB max) — this is meant to be read on every turn cheaply, not as a general file store."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Doc name, e.g. 'status'."},
+                "content": {"type": "string", "description": "Full markdown content — replaces whatever was there."},
+            },
+            "required": ["name", "content"],
+        },
+    },
+    {
+        "name": "list_project_context",
+        "description": "List every shared context doc's name, size, and when/who last updated it.",
+        "input_schema": {"type": "object", "properties": {}},
     },
 ]
 
@@ -303,6 +377,80 @@ async def execute_tool(name: str, tool_input: dict, *, workspace: Path, instance
         finally:
             _delegation_depth.reset(token)
         return result.text
+
+    if name == "get_my_profile":
+        from bot import bot_instances
+
+        if instance_id is None:
+            raise ToolError("get_my_profile needs an instance context")
+        profile = bot_instances.render_profile_markdown(instance_id)
+        if profile is None:
+            raise ToolError(f"instance {instance_id} not found")
+        return profile
+
+    if name == "update_agent_config":
+        from bot import agent_control, bot_instances
+
+        if instance_id is None:
+            raise ToolError("update_agent_config needs an instance context")
+        target_ref = tool_input.get("target_instance")
+        if not target_ref:
+            raise ToolError("target_instance is required")
+        target = agent_control.resolve_instance(target_ref)
+        if target is None:
+            raise ToolError(f"no bot instance found matching {target_ref!r}")
+        if not agent_control.can_target(instance_id, target["id"]):
+            raise ToolError(f"instance {instance_id} is not permitted to reconfigure {target['name']!r} under the current allowlist")
+
+        fields = {
+            k: tool_input[k]
+            for k in ("name", "custom_instructions", "persona", "model", "can_target")
+            if k in tool_input
+        }
+        if not fields:
+            raise ToolError("nothing to update — pass at least one of name/custom_instructions/persona/model/can_target")
+        try:
+            bot_instances.update_instance(target["id"], actor=f"agent:{instance_id}", **fields)
+        except bot_instances.ValidationError as exc:
+            raise ToolError(str(exc))
+        updated = bot_instances.render_profile_markdown(target["id"])
+        return f"Updated {target['name']!r} (id {target['id']}).\n\n{updated}"
+
+    if name == "read_project_context":
+        from bot import shared_context
+
+        doc_name = (tool_input.get("name") or "").strip()
+        if not doc_name:
+            raise ToolError("name is required")
+        try:
+            doc = shared_context.read_doc(doc_name)
+        except shared_context.SharedContextError as exc:
+            raise ToolError(str(exc))
+        if doc is None:
+            return f"No shared context doc named {doc_name!r} yet — use write_project_context to create it."
+        return doc["content"]
+
+    if name == "write_project_context":
+        from bot import shared_context
+
+        doc_name = (tool_input.get("name") or "").strip()
+        content = tool_input.get("content", "")
+        if not doc_name:
+            raise ToolError("name is required")
+        actor = f"agent:{instance_id}" if instance_id is not None else "agent"
+        try:
+            shared_context.write_doc(doc_name, content, actor)
+        except shared_context.SharedContextError as exc:
+            raise ToolError(str(exc))
+        return f"Saved shared context doc {doc_name!r} ({len(content)} chars)."
+
+    if name == "list_project_context":
+        from bot import shared_context
+
+        docs = shared_context.list_docs()
+        if not docs:
+            return "(no shared context docs yet)"
+        return "\n".join(f"- {d['name']} ({d['size']} chars, updated {d['updated_at']} by {d['updated_by']})" for d in docs)
 
     from bot import plugins as plugin_registry
 

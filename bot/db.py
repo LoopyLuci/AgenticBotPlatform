@@ -590,6 +590,22 @@ CREATE TABLE IF NOT EXISTS plugins (
     enabled       INTEGER NOT NULL DEFAULT 1,
     installed_at  TEXT NOT NULL
 );
+
+-- A small, named markdown document any agent (any backend, any instance)
+-- can read/write via the read_project_context/write_project_context
+-- tools — see bot/shared_context.py. Unlike memory_entries/kanban_*
+-- (both scoped to ONE instance), this is deliberately cross-instance: the
+-- one place a swarm of workers and their manager keep a shared,
+-- human-readable project status without needing their own conversation
+-- history to carry it. `name` is a short slug ("status", "architecture",
+-- caller's choice), not an id — callers think in names, not ids, the
+-- same reasoning bot/skills.py's own name-keyed rows already follow.
+CREATE TABLE IF NOT EXISTS shared_context_docs (
+    name          TEXT PRIMARY KEY,
+    content       TEXT NOT NULL DEFAULT '',
+    updated_at    TEXT NOT NULL,
+    updated_by    TEXT NOT NULL DEFAULT 'system'
+);
 """
 # idx_jobs_instance / idx_jobs_swarm_run / idx_messages_instance are created
 # in _migrate(), not here — on a pre-existing DB, jobs/messages get their
@@ -1246,6 +1262,37 @@ def delete_skill(instance_id: Optional[int], name: str) -> None:
     with _lock:
         conn.execute("DELETE FROM skills WHERE instance_id IS ? AND name=?", (instance_id, name))
         conn.commit()
+
+
+# --------------------------------------------------------- shared context
+
+def set_context_doc(name: str, content: str, updated_by: str) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute(
+            "INSERT INTO shared_context_docs (name, content, updated_at, updated_by) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(name) DO UPDATE SET content=excluded.content, updated_at=excluded.updated_at, updated_by=excluded.updated_by",
+            (name, content, _now(), updated_by),
+        )
+        conn.commit()
+
+
+def get_context_doc(name: str) -> Optional[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute("SELECT * FROM shared_context_docs WHERE name=?", (name,)).fetchone()
+
+
+def list_context_docs() -> list[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute("SELECT name, updated_at, updated_by, length(content) AS size FROM shared_context_docs ORDER BY name").fetchall()
+
+
+def delete_context_doc(name: str) -> bool:
+    conn = get_conn()
+    with _lock:
+        cur = conn.execute("DELETE FROM shared_context_docs WHERE name=?", (name,))
+        conn.commit()
+        return cur.rowcount > 0
 
 
 # ----------------------------------------------------------------- plugins

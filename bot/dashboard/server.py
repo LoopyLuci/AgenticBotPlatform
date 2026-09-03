@@ -940,6 +940,16 @@ def build_app() -> FastAPI:
             raise HTTPException(status_code=404, detail=f"bot instance {instance_id} not found")
         return row
 
+    @app.get("/api/bots/{instance_id}/profile", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_bots_profile(instance_id: int):
+        """This instance's own identity/instructions as markdown — see
+        bot.bot_instances.render_profile_markdown and the get_my_profile/
+        get_agent_profile tools that read the exact same thing."""
+        markdown = bot_instances.render_profile_markdown(instance_id)
+        if markdown is None:
+            raise HTTPException(status_code=404, detail=f"bot instance {instance_id} not found")
+        return {"instance_id": instance_id, "markdown": markdown}
+
     @app.post("/api/bots", dependencies=[Depends(_require_token_or_api_key)])
     async def api_bots_create(payload: dict = Body(...)):
         try:
@@ -1549,6 +1559,53 @@ def build_app() -> FastAPI:
                 "swarm_tools_enabled": hermes_config.is_botserver_mcp_registered(instance.get("hermes_home")),
             })
         return {"instances": rows}
+
+    # ------------------------------------------------------ shared context --
+    # Small, named markdown docs any registered instance (any backend) can
+    # read/write via the read_project_context/write_project_context tools
+    # or these same routes — see bot/shared_context.py's module docstring.
+
+    @app.get("/api/context", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_context_list():
+        from bot import shared_context
+
+        return {"docs": shared_context.list_docs()}
+
+    @app.get("/api/context/{name}", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_context_get(name: str):
+        from bot import shared_context
+
+        try:
+            doc = shared_context.read_doc(name)
+        except shared_context.SharedContextError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        if doc is None:
+            raise HTTPException(status_code=404, detail=f"no shared context doc named {name!r}")
+        return doc
+
+    @app.post("/api/context/{name}", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_context_set(name: str, payload: dict = Body(...)):
+        from bot import shared_context
+
+        content = payload.get("content")
+        if content is None:
+            raise HTTPException(status_code=400, detail="payload must include 'content'")
+        actor = payload.get("actor") or "dashboard"
+        try:
+            doc = shared_context.write_doc(name, content, actor)
+        except shared_context.SharedContextError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True, "doc": doc}
+
+    @app.delete("/api/context/{name}", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_context_delete(name: str):
+        from bot import shared_context
+
+        try:
+            removed = shared_context.delete_doc(name)
+        except shared_context.SharedContextError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True, "removed": removed}
 
     # --------------------------------------------------------- mutations --
 

@@ -330,6 +330,69 @@ async def delete_bot_instance(instance_id: int) -> dict:
 
 
 @mcp.tool()
+async def update_bot_instance(
+    instance_id: int,
+    name: Optional[str] = None,
+    custom_instructions: Optional[str] = None,
+    persona: Optional[str] = None,
+    model: Optional[str] = None,
+    can_target: Optional[list] = None,
+    hermes_home: Optional[str] = None,
+    allowed_user_ids: Optional[list] = None,
+    admin_user_ids: Optional[list] = None,
+    enabled: Optional[bool] = None,
+) -> dict:
+    """Rename or reconfigure an existing bot instance on the fly — the
+    lever a manager needs to control worker agents' names, instructions,
+    persona, model, or can_target list without going through the
+    dashboard. Only the fields you actually pass are changed; everything
+    else on the instance is left exactly as it was."""
+    fields = {
+        "name": name, "custom_instructions": custom_instructions, "persona": persona,
+        "model": model, "can_target": can_target, "hermes_home": hermes_home,
+        "allowed_user_ids": allowed_user_ids, "admin_user_ids": admin_user_ids, "enabled": enabled,
+    }
+    payload = {k: v for k, v in fields.items() if v is not None}
+    if not payload:
+        return {"error": "nothing to update — pass at least one field"}
+    return await _request("PUT", f"/api/bots/{instance_id}", json=payload)
+
+
+@mcp.tool()
+async def get_agent_profile(instance_id: int) -> dict:
+    """A bot instance's own identity as a small markdown document: name,
+    backend, persona, model override, which other instances it can
+    target, and its own custom instructions. The same document
+    get_my_profile (its own in-conversation tool) gives an agent about
+    itself — this is the manager/Claude-side way to inspect it for any
+    instance by id."""
+    return await _request("GET", f"/api/bots/{instance_id}/profile")
+
+
+@mcp.tool()
+async def read_project_context(name: str) -> dict:
+    """Read a shared, cross-instance markdown document — the way a swarm
+    of workers and their manager keep something like project status in
+    sync, independent of any one instance's own conversation history.
+    Call list_project_context first if you don't know what docs exist."""
+    return await _request("GET", f"/api/context/{name}")
+
+
+@mcp.tool()
+async def write_project_context(name: str, content: str) -> dict:
+    """Create or replace a shared, cross-instance markdown document (see
+    read_project_context) — e.g. post a project-status update every
+    worker and the manager can read. Keep it concise (a few KB max)."""
+    return await _request("POST", f"/api/context/{name}", json={"content": content, "actor": "claude"})
+
+
+@mcp.tool()
+async def list_project_context() -> dict:
+    """List every shared context doc's name, size, and when/who last updated it."""
+    return await _request("GET", "/api/context")
+
+
+@mcp.tool()
 async def list_available_models(instance_id: Optional[int] = None) -> dict:
     """The full model catalog Claude needs to pick an "optimal free model":
     Claude's own live /v1/models, BotServer's custom_model provider

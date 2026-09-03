@@ -399,3 +399,36 @@ def migrate_legacy_env_instance() -> Optional[int]:
     )
     backup_instances(reason="post-migration snapshot")
     return instance_id
+
+
+def render_profile_markdown(instance_id: int) -> Optional[str]:
+    """This instance's own identity/instructions as a small, self-
+    contained markdown document — what "every agent has proper access to
+    its own instructions" means concretely: one cheap, synchronous,
+    DB-only read (no live model/pricing lookups — see
+    bot.commands.real_time_model_label for that heavier, async variant)
+    formatted so a model can use it directly as part of a prompt or a
+    tool result. Returns None if the instance doesn't exist."""
+    instance = get_instance(instance_id)
+    if instance is None:
+        return None
+
+    targets = []
+    for target_id in instance.get("can_target") or []:
+        target = get_instance(target_id)
+        targets.append(f"- {target['name']} (id {target_id})" if target else f"- (unknown instance {target_id})")
+    targets_block = "\n".join(targets) if targets else "- (none)"
+
+    instructions = (instance.get("custom_instructions") or "").strip() or "(none set)"
+
+    return (
+        f"# Agent profile: {instance['name']}\n\n"
+        f"- **ID:** {instance['id']}\n"
+        f"- **Platform:** {instance['platform']}\n"
+        f"- **Backend:** {instance['backend']}\n"
+        f"- **Persona:** {instance.get('persona') or 'assistant'}\n"
+        f"- **Model override:** {instance.get('model') or '(backend default)'}\n"
+        f"- **Enabled:** {'yes' if instance.get('enabled') else 'no'}\n\n"
+        f"## Can target\n{targets_block}\n\n"
+        f"## Instructions\n{instructions}\n"
+    )
