@@ -899,6 +899,8 @@ function startDashboardPolling() {
   pollWhenVisible(refreshSwarmToolsPanel, 15000);
   refreshContextDocs();
   pollWhenVisible(refreshContextDocs, 15000);
+  refreshDelegationActivity();
+  pollWhenVisible(refreshDelegationActivity, 15000);
   refreshMobileKeys();
   pollWhenVisible(refreshMobileKeys, 15000);
   refreshPeers();
@@ -1917,6 +1919,31 @@ async function refreshSwarmRuns() {
     </tr>`).join('') : '<tr class="emptyrow"><td colspan="4">No runs yet.</td></tr>';
 
   document.querySelectorAll('[data-view-run]').forEach(btn => btn.onclick = () => pollSwarmRun(btn.dataset.viewRun));
+}
+
+const DELEGATION_KIND_LABELS = {
+  agent_ask: 'ask_instance',
+  swarm_dispatch: 'dispatch_swarm_goal',
+  agent_delegate: 'delegate_to_instance',
+};
+
+async function refreshDelegationActivity() {
+  const tbody = document.getElementById('delegation-activity-tbody');
+  if (!getToken()) {
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="3">Unlock with the dashboard token to view.</td></tr>';
+    return;
+  }
+  let data;
+  try {
+    data = await api('/api/delegation-activity?limit=20');
+  } catch (_e) { return; }
+  const events = data.events || [];
+  tbody.innerHTML = events.length ? events.map(e => `
+    <tr>
+      <td class="mono" style="font-size:11px; white-space:nowrap;">${fmtTime(e.ts)}</td>
+      <td><span class="pill">${esc(DELEGATION_KIND_LABELS[e.action] || e.action)}</span></td>
+      <td style="max-width:420px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(e.actor.replace(/^agent:/, ''))} ${esc(e.detail)}</td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="3">No delegation activity yet.</td></tr>';
 }
 
 // ------------------------------------------------------------------ chat -

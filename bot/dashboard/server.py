@@ -1607,6 +1607,25 @@ def build_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc))
         return {"ok": True, "removed": removed}
 
+    # --------------------------------------------------------- delegation --
+    # Cross-instance calls (ask_instance, dispatch_swarm_goal,
+    # delegate_to_instance) all write a "source -> target: prompt" row to
+    # audit_log alongside their own jobs-table entry — this surfaces just
+    # those three action kinds, newest first, so the dashboard can show
+    # "who asked whom to do what" without wading through every other
+    # audit event (config changes, snapshots, mcp registration, etc.).
+    _DELEGATION_ACTIONS = ["agent_ask", "swarm_dispatch", "agent_delegate"]
+
+    @app.get("/api/delegation-activity", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_delegation_activity(limit: int = 20):
+        rows = db.list_audit_log(actions=_DELEGATION_ACTIONS, limit=max(1, min(limit, 200)))
+        return {
+            "events": [
+                {"id": r["id"], "ts": r["ts"], "actor": r["actor"], "action": r["action"], "detail": r["detail"]}
+                for r in rows
+            ]
+        }
+
     # --------------------------------------------------------- mutations --
 
     @app.post("/api/desktop/start", dependencies=[Depends(_require_token)])

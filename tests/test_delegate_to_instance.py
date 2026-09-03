@@ -50,6 +50,35 @@ def test_delegate_to_instance_calls_router_ask_against_target(temp_db, monkeypat
     assert calls == [{"prompt": "do the thing", "action_type": "agent_delegate", "instance_id": target_id}]
 
 
+def test_delegate_to_instance_logs_to_audit_log(temp_db, monkeypatch, tmp_path):
+    # Found missing while building the delegation-activity dashboard
+    # panel — ask_instance and dispatch_swarm_goal both wrote a
+    # "source -> target: prompt" audit_log row, this one didn't, making
+    # it invisible in that panel's audit-log-backed data.
+    from bot import db
+
+    monkeypatch.setattr(config, "_data", {"agent_control": {"mode": "trust_all"}, "agent_runtime": {}})
+    source_id = _create_instance("manager")
+    target_id = _create_instance("worker")
+
+    async def fake_ask(prompt, *, action_type=None, instance_id=None, **kwargs):
+        return BackendResult(text="ok", tokens=None, raw=None)
+
+    from bot.router import router
+
+    monkeypatch.setattr(router, "ask", fake_ask)
+
+    _run(agent_tools.execute_tool(
+        "delegate_to_instance", {"target_instance": str(target_id), "prompt": "do the thing"},
+        workspace=tmp_path, instance_id=source_id,
+    ))
+
+    rows = db.list_audit_log(actions=["agent_delegate"])
+    assert len(rows) == 1
+    assert rows[0]["actor"] == "agent:manager"
+    assert rows[0]["detail"] == "-> worker: do the thing"
+
+
 def test_delegate_to_instance_blocked_by_allowlist(temp_db, monkeypatch, tmp_path):
     monkeypatch.setattr(config, "_data", {"agent_control": {"mode": "allowlist"}, "agent_runtime": {}})
     source_id = _create_instance("manager", can_target=[])

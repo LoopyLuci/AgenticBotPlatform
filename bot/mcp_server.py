@@ -533,6 +533,15 @@ async def hermes_swarm_tools_status() -> dict:
 
 
 @mcp.tool()
+async def list_delegation_activity(limit: int = 20) -> dict:
+    """Recent cross-instance delegation events — ask_instance,
+    dispatch_swarm_goal, and delegate_to_instance calls, newest first —
+    each showing who asked whom to do what. The same data the
+    dashboard's delegation-activity panel shows."""
+    return await _request("GET", "/api/delegation-activity", params={"limit": limit})
+
+
+@mcp.tool()
 async def run_swarm(source_instance: str, swarm: str, prompt: str) -> dict:
     """Trigger a multi-step swarm run (see the dashboard's Swarms tab) as the
     given source persona, subject to the same agent_control allowlist as

@@ -343,7 +343,7 @@ async def execute_tool(name: str, tool_input: dict, *, workspace: Path, instance
         return content
 
     if name == "delegate_to_instance":
-        from bot import agent_control
+        from bot import agent_control, bot_instances, db
         from bot.backends.base import BackendError
         from bot.config import config
         from bot.router import router
@@ -368,6 +368,15 @@ async def execute_tool(name: str, tool_input: dict, *, workspace: Path, instance
             raise ToolError(f"no bot instance found matching {target_ref!r}")
         if not agent_control.can_target(instance_id, target["id"]):
             raise ToolError(f"instance {instance_id} is not permitted to target {target['name']!r} under the current allowlist")
+
+        source = bot_instances.get_instance(instance_id)
+        source_name = source["name"] if source else f"instance {instance_id}"
+        # Matches the ask_instance/dispatch_swarm_goal audit shape exactly
+        # (found missing here while building the delegation-activity
+        # dashboard panel — this call was invisible in that panel's audit-
+        # log-backed data source until this was added) so all three
+        # cross-instance delegation paths show up the same way.
+        db.log_audit(actor=f"agent:{source_name}", action="agent_delegate", detail=f"-> {target['name']}: {prompt[:120]}")
 
         token = _delegation_depth.set(depth + 1)
         try:

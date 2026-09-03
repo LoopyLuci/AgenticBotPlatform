@@ -1690,6 +1690,21 @@ def log_audit(actor: str, action: str, detail: str = "") -> None:
         conn.commit()
 
 
+def list_audit_log(actions: Optional[list[str]] = None, limit: int = 50) -> list[sqlite3.Row]:
+    """Recent audit_log rows, optionally filtered to a set of `action`
+    values — used by the dashboard's delegation-activity panel to show
+    only cross-instance calls (agent_ask/swarm_dispatch/agent_delegate)
+    out of every audit event this app logs."""
+    conn = get_conn()
+    if actions:
+        placeholders = ",".join("?" for _ in actions)
+        return conn.execute(
+            f"SELECT * FROM audit_log WHERE action IN ({placeholders}) ORDER BY id DESC LIMIT ?",
+            (*actions, limit),
+        ).fetchall()
+    return conn.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+
+
 def record_config_version(version: int, actor: str, summary: str) -> None:
     conn = get_conn()
     with _lock:
