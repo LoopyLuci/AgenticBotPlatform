@@ -139,6 +139,47 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "spawn_subagent",
+        "description": (
+            "Spawn one or more disposable, ephemeral sub-agents to work on independent subtasks in parallel — "
+            "the same 'decompose and delegate' pattern Hermes Agent's own delegate_task tool gives Hermes "
+            "agents. Unlike delegate_to_instance (which addresses ONE specific, persistent registered bot "
+            "instance), these workers are throwaway: no bot_instances row is created for them, and their "
+            "history isn't kept beyond this call. role='leaf' (default) workers can't spawn further "
+            "sub-agents, reconfigure other instances, save memory, or write shared project context; "
+            "role='orchestrator' keeps those abilities, bounded by agent_runtime.max_delegation_depth. "
+            "Pass provider+model together to run children on a specific (e.g. free) model; omit both to "
+            "inherit your own backend/model. Returns a JSON array, one entry per task: "
+            "{index, goal, model, status: 'ok'|'error', result_excerpt}."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "tasks": {
+                    "type": "array",
+                    "description": "One entry per subtask — all run in parallel, bounded by max_children.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "goal": {"type": "string", "description": "The subtask's own goal/prompt."},
+                            "output_schema": {
+                                "type": "object",
+                                "description": "Optional JSON Schema the child's final answer must match "
+                                "(validated, with one bounded retry on failure).",
+                            },
+                        },
+                        "required": ["goal"],
+                    },
+                },
+                "role": {"type": "string", "enum": ["leaf", "orchestrator"], "description": "Defaults to 'leaf'."},
+                "provider": {"type": "string", "description": "Named provider from config/providers.yaml. Give together with model, or omit both."},
+                "model": {"type": "string", "description": "Model id at that provider. Give together with provider, or omit both to inherit your own."},
+                "max_children": {"type": "integer", "description": "Caps parallelism for this call, further capped by native_agent.max_concurrent_children."},
+            },
+            "required": ["tasks"],
+        },
+    },
+    {
         "name": "get_my_profile",
         "description": (
             "Your own identity as a small markdown document: name, backend, persona, model override, "
@@ -386,6 +427,32 @@ async def execute_tool(name: str, tool_input: dict, *, workspace: Path, instance
         finally:
             _delegation_depth.reset(token)
         return result.text
+
+    if name == "spawn_subagent":
+        import json as _json
+
+        from bot.agent_runtime import subagents
+        from bot.backends.base import BackendError
+
+        tasks = tool_input.get("tasks")
+        if not isinstance(tasks, list) or not tasks:
+            raise ToolError("tasks must be a non-empty array of {goal, output_schema?} objects")
+        role = tool_input.get("role", "leaf")
+        if role not in ("leaf", "orchestrator"):
+            raise ToolError("role must be 'leaf' or 'orchestrator'")
+        provider = tool_input.get("provider")
+        model = tool_input.get("model")
+        if bool(provider) != bool(model):
+            raise ToolError("provider and model must both be given, or both omitted")
+        max_children = tool_input.get("max_children")
+        try:
+            results = await subagents.run_batch(
+                tasks, role=role, provider=provider, model=model,
+                max_children=max_children, parent_instance_id=instance_id,
+            )
+        except BackendError as exc:
+            raise ToolError(str(exc))
+        return _json.dumps(results)
 
     if name == "get_my_profile":
         from bot import bot_instances

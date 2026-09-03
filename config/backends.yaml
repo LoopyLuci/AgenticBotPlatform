@@ -85,6 +85,13 @@ swarm_budget:
 # itself succeeds.
 swarm_observability:
   live_tool_events: true
+# spawn_subagent (bot/agent_runtime/subagents.py) — ephemeral, disposable
+# sub-agent fan-out for api/custom_model-backed instances, the native
+# equivalent of Hermes Agent's own delegate_task. Depth is governed by
+# the existing agent_runtime.max_delegation_depth key (not duplicated
+# here) — this section only holds concerns unique to a batch of children.
+native_agent:
+  max_concurrent_children: 6
 # Applies an edit to bot/*.py to this already-running process instead of
 # needing the full stop/rebuild/relaunch cycle — see bot/hotreload.py's
 # module docstring for exactly what can and can't hot-reload. Checked

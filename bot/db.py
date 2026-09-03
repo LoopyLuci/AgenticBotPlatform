@@ -670,6 +670,24 @@ CREATE TABLE IF NOT EXISTS job_children (
     result_excerpt  TEXT NOT NULL DEFAULT '',
     created_at      TEXT NOT NULL
 );
+
+-- One row per ephemeral sub-agent spawned by spawn_subagent (see
+-- bot/agent_runtime/subagents.py) — deliberately NOT a bot_instances row:
+-- a spawned worker is disposable and has no persistent identity, so
+-- giving it one would clutter the Bots tab with a throwaway row per
+-- dispatch. Pruned by the existing retention mechanism (bot/retention.py)
+-- like jobs/telemetry_events, not a bespoke cleanup job.
+CREATE TABLE IF NOT EXISTS ephemeral_sessions (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    parent_instance_id  INTEGER,
+    backend             TEXT NOT NULL,
+    model               TEXT NOT NULL,
+    goal                TEXT NOT NULL DEFAULT '',
+    status              TEXT NOT NULL DEFAULT 'running',
+    result              TEXT,
+    created_at          TEXT NOT NULL,
+    finished_at         TEXT
+);
 """
 # idx_jobs_instance / idx_jobs_swarm_run / idx_messages_instance are created
 # in _migrate(), not here — on a pre-existing DB, jobs/messages get their
@@ -824,6 +842,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_job_tool_events_job ON job_tool_events(job_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_job_children_job ON job_children(job_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ephemeral_sessions_parent ON ephemeral_sessions(parent_instance_id)")
 
 
 def init_db() -> None:
@@ -1796,6 +1815,45 @@ def list_job_children(job_id: int) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+# --------------------------------------------------------- ephemeral sessions
+
+def create_ephemeral_session(parent_instance_id: Optional[int], backend: str, model: str, goal: str) -> int:
+    conn = get_conn()
+    with _lock:
+        cur = conn.execute(
+            "INSERT INTO ephemeral_sessions (parent_instance_id, backend, model, goal, status, created_at) "
+            "VALUES (?, ?, ?, ?, 'running', ?)",
+            (parent_instance_id, backend, model, goal, _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def finish_ephemeral_session(session_id: int, status: str, result: Optional[str] = None) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute(
+            "UPDATE ephemeral_sessions SET status=?, result=?, finished_at=? WHERE id=?",
+            (status, result, _now(), session_id),
+        )
+        conn.commit()
+
+
+def get_ephemeral_session(session_id: int) -> Optional[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute("SELECT * FROM ephemeral_sessions WHERE id=?", (session_id,)).fetchone()
+
+
+def list_ephemeral_sessions(parent_instance_id: Optional[int] = None, limit: int = 50) -> list[sqlite3.Row]:
+    conn = get_conn()
+    if parent_instance_id is not None:
+        return conn.execute(
+            "SELECT * FROM ephemeral_sessions WHERE parent_instance_id=? ORDER BY id DESC LIMIT ?",
+            (parent_instance_id, limit),
+        ).fetchall()
+    return conn.execute("SELECT * FROM ephemeral_sessions ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+
+
 # ------------------------------------------------------------- logging ----
 
 def log_connection_event(component: str, event: str, detail: str = "") -> None:
@@ -2292,6 +2350,10 @@ def prune_old_data(days: int) -> dict[str, int]:
         removed["connections_log"] = cur.rowcount
         cur = conn.execute("DELETE FROM support_bot_classifications WHERE ts<?", (cutoff,))
         removed["support_bot_classifications"] = cur.rowcount
+        cur = conn.execute(
+            "DELETE FROM ephemeral_sessions WHERE created_at<? AND status != 'running'", (cutoff,)
+        )
+        removed["ephemeral_sessions"] = cur.rowcount
         conn.commit()
     return removed
 
