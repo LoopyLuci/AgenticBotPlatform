@@ -897,6 +897,8 @@ function startDashboardPolling() {
   pollWhenVisible(refreshSwarms, 15000);
   refreshSwarmToolsPanel();
   pollWhenVisible(refreshSwarmToolsPanel, 15000);
+  refreshContextDocs();
+  pollWhenVisible(refreshContextDocs, 15000);
   refreshMobileKeys();
   pollWhenVisible(refreshMobileKeys, 15000);
   refreshPeers();
@@ -1734,6 +1736,86 @@ async function refreshSwarmToolsPanel() {
     }
   });
 }
+
+let contextDocEditingName = null;
+
+function _resetContextDocForm() {
+  contextDocEditingName = null;
+  document.getElementById('context-doc-name').value = '';
+  document.getElementById('context-doc-name').disabled = false;
+  document.getElementById('context-doc-content').value = '';
+  document.getElementById('context-doc-status').textContent = '';
+  document.getElementById('btn-context-doc-save').textContent = 'Save doc';
+  document.getElementById('btn-context-doc-cancel').style.display = 'none';
+}
+
+async function _loadContextDocIntoForm(name) {
+  let doc;
+  try {
+    doc = await api(`/api/context/${encodeURIComponent(name)}`);
+  } catch (_e) { return; }
+  contextDocEditingName = doc.name;
+  document.getElementById('context-doc-name').value = doc.name;
+  document.getElementById('context-doc-name').disabled = true;
+  document.getElementById('context-doc-content').value = doc.content;
+  document.getElementById('btn-context-doc-save').textContent = 'Save changes';
+  document.getElementById('btn-context-doc-cancel').style.display = '';
+  document.getElementById('swarms').scrollIntoView({ behavior: 'smooth' });
+}
+
+async function refreshContextDocs() {
+  const tbody = document.getElementById('context-docs-tbody');
+  if (!getToken()) {
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="5">Unlock with the dashboard token to view.</td></tr>';
+    return;
+  }
+  let data;
+  try {
+    data = await api('/api/context');
+  } catch (_e) { return; }
+  const docs = data.docs || [];
+  tbody.innerHTML = docs.length ? docs.map(d => `
+    <tr>
+      <td class="mono">${esc(d.name)}</td>
+      <td>${d.size} chars</td>
+      <td style="font-size:11px;">${esc(d.updated_at)}</td>
+      <td>${esc(d.updated_by)}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn" data-context-edit="${esc(d.name)}" style="padding:3px 8px; font-size:11px;">Edit</button>
+        <button class="btn" data-context-delete="${esc(d.name)}" style="padding:3px 8px; font-size:11px;">Delete</button>
+      </td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="5">No shared context docs yet — add one above.</td></tr>';
+
+  document.querySelectorAll('[data-context-edit]').forEach(btn => btn.onclick = () => _loadContextDocIntoForm(btn.dataset.contextEdit));
+  document.querySelectorAll('[data-context-delete]').forEach(btn => btn.onclick = async () => {
+    const name = btn.dataset.contextDelete;
+    if (!confirm(`Delete shared context doc "${name}"? This can't be undone.`)) return;
+    await api(`/api/context/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    if (contextDocEditingName === name) _resetContextDocForm();
+    refreshContextDocs();
+  });
+}
+
+document.getElementById('btn-context-doc-save').onclick = async () => {
+  const statusEl = document.getElementById('context-doc-status');
+  const name = document.getElementById('context-doc-name').value.trim();
+  const content = document.getElementById('context-doc-content').value;
+  if (!name) {
+    statusEl.textContent = 'Name is required.';
+    return;
+  }
+  statusEl.textContent = 'Saving…';
+  try {
+    await api(`/api/context/${encodeURIComponent(name)}`, { method: 'POST', body: JSON.stringify({ content, actor: 'dashboard' }) });
+    statusEl.textContent = 'Saved.';
+    _resetContextDocForm();
+    refreshContextDocs();
+  } catch (e) {
+    statusEl.textContent = `Failed: ${e.message}`;
+  }
+};
+
+document.getElementById('btn-context-doc-cancel').onclick = () => _resetContextDocForm();
 
 document.getElementById('btn-swarm-create').onclick = async () => {
   const statusEl = document.getElementById('swarm-new-status');

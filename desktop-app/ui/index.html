@@ -1334,6 +1334,30 @@
       </div>
 
       <div class="card" style="margin-top:14px;">
+        <h3>Project context <span style="font-weight:400; color:var(--muted); font-size:12px;">— shared markdown docs every agent can read/write</span></h3>
+        <p class="cardnote">Small, named documents any registered instance (any backend) can read via <code>read_project_context</code> or write via <code>write_project_context</code> — the one place a swarm of workers and their manager keep something like a project-status update in sync, independent of any one instance's own conversation history. Capped at 8KB per doc, 50 docs total.</p>
+        <div class="wizard-field">
+          <label>Name</label>
+          <div class="row"><input type="text" id="context-doc-name" placeholder="e.g. status" autocomplete="off" spellcheck="false"></div>
+        </div>
+        <div class="wizard-field">
+          <label>Content (markdown)</label>
+          <div class="row"><textarea id="context-doc-content" rows="8" spellcheck="false" style="width:100%; padding:9px 11px; border-radius:7px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font-family:var(--font-mono); font-size:12.5px;"></textarea></div>
+        </div>
+        <div class="wizard-foot">
+          <span class="cardnote" id="context-doc-status"></span>
+          <button class="btn" id="btn-context-doc-cancel" style="display:none;">Cancel</button>
+          <button class="btn primary" id="btn-context-doc-save">Save doc</button>
+        </div>
+        <div class="tablewrap" style="margin-top:14px;">
+          <table>
+            <thead><tr><th>Name</th><th>Size</th><th>Updated</th><th>By</th><th></th></tr></thead>
+            <tbody id="context-docs-tbody"><tr class="emptyrow"><td colspan="5">Unlock with the dashboard token to view.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
         <h3>Run a swarm</h3>
         <div class="wizard-field">
           <label>Swarm</label>

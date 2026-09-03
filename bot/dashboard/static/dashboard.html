@@ -1110,6 +1110,30 @@
       </div>
 
       <div class="card" style="margin-top:14px;">
+        <h3>Project context <span style="font-weight:400; color:var(--muted); font-size:12px;">— shared markdown docs every agent can read/write</span></h3>
+        <p class="cardnote">Small, named documents any registered instance (any backend) can read via <code>read_project_context</code> or write via <code>write_project_context</code> — the one place a swarm of workers and their manager keep something like a project-status update in sync, independent of any one instance's own conversation history. Capped at 8KB per doc, 50 docs total.</p>
+        <div class="wizard-field">
+          <label>Name</label>
+          <div class="row"><input type="text" id="context-doc-name" placeholder="e.g. status" autocomplete="off" spellcheck="false"></div>
+        </div>
+        <div class="wizard-field">
+          <label>Content (markdown)</label>
+          <div class="row"><textarea id="context-doc-content" rows="8" spellcheck="false" style="width:100%; padding:9px 11px; border-radius:7px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font-family:var(--font-mono); font-size:12.5px;"></textarea></div>
+        </div>
+        <div class="wizard-foot">
+          <span class="cardnote" id="context-doc-status"></span>
+          <button class="btn" id="btn-context-doc-cancel" style="display:none;">Cancel</button>
+          <button class="btn primary" id="btn-context-doc-save">Save doc</button>
+        </div>
+        <div class="tablewrap" style="margin-top:14px;">
+          <table>
+            <thead><tr><th>Name</th><th>Size</th><th>Updated</th><th>By</th><th></th></tr></thead>
+            <tbody id="context-docs-tbody"><tr class="emptyrow"><td colspan="5">Unlock with the dashboard token to view.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
         <h3>Run a swarm</h3>
         <div class="wizard-field">
           <label>Swarm</label>
@@ -2133,6 +2157,8 @@ function startDashboard() {
   pollWhenVisible(refreshSwarms, 15000);
   refreshSwarmToolsPanel();
   pollWhenVisible(refreshSwarmToolsPanel, 15000);
+  refreshContextDocs();
+  pollWhenVisible(refreshContextDocs, 15000);
   refreshMobileKeys();
   pollWhenVisible(refreshMobileKeys, 15000);
   refreshPeers();
@@ -3073,6 +3099,86 @@ async function refreshSwarmToolsPanel() {
     }
   });
 }
+
+let contextDocEditingName = null;
+
+function _resetContextDocForm() {
+  contextDocEditingName = null;
+  document.getElementById('context-doc-name').value = '';
+  document.getElementById('context-doc-name').disabled = false;
+  document.getElementById('context-doc-content').value = '';
+  document.getElementById('context-doc-status').textContent = '';
+  document.getElementById('btn-context-doc-save').textContent = 'Save doc';
+  document.getElementById('btn-context-doc-cancel').style.display = 'none';
+}
+
+async function _loadContextDocIntoForm(name) {
+  let doc;
+  try {
+    doc = await api(`/api/context/${encodeURIComponent(name)}`);
+  } catch (_e) { return; }
+  contextDocEditingName = doc.name;
+  document.getElementById('context-doc-name').value = doc.name;
+  document.getElementById('context-doc-name').disabled = true;
+  document.getElementById('context-doc-content').value = doc.content;
+  document.getElementById('btn-context-doc-save').textContent = 'Save changes';
+  document.getElementById('btn-context-doc-cancel').style.display = '';
+  document.getElementById('swarms').scrollIntoView({ behavior: 'smooth' });
+}
+
+async function refreshContextDocs() {
+  const tbody = document.getElementById('context-docs-tbody');
+  if (!getToken()) {
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="5">Unlock with the dashboard token to view.</td></tr>';
+    return;
+  }
+  let data;
+  try {
+    data = await api('/api/context');
+  } catch (_e) { return; }
+  const docs = data.docs || [];
+  tbody.innerHTML = docs.length ? docs.map(d => `
+    <tr>
+      <td class="mono">${esc(d.name)}</td>
+      <td>${d.size} chars</td>
+      <td style="font-size:11px;">${esc(d.updated_at)}</td>
+      <td>${esc(d.updated_by)}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn" data-context-edit="${esc(d.name)}" style="padding:3px 8px; font-size:11px;">Edit</button>
+        <button class="btn" data-context-delete="${esc(d.name)}" style="padding:3px 8px; font-size:11px;">Delete</button>
+      </td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="5">No shared context docs yet — add one above.</td></tr>';
+
+  document.querySelectorAll('[data-context-edit]').forEach(btn => btn.onclick = () => _loadContextDocIntoForm(btn.dataset.contextEdit));
+  document.querySelectorAll('[data-context-delete]').forEach(btn => btn.onclick = async () => {
+    const name = btn.dataset.contextDelete;
+    if (!confirm(`Delete shared context doc "${name}"? This can't be undone.`)) return;
+    await api(`/api/context/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    if (contextDocEditingName === name) _resetContextDocForm();
+    refreshContextDocs();
+  });
+}
+
+document.getElementById('btn-context-doc-save').onclick = async () => {
+  const statusEl = document.getElementById('context-doc-status');
+  const name = document.getElementById('context-doc-name').value.trim();
+  const content = document.getElementById('context-doc-content').value;
+  if (!name) {
+    statusEl.textContent = 'Name is required.';
+    return;
+  }
+  statusEl.textContent = 'Saving…';
+  try {
+    await api(`/api/context/${encodeURIComponent(name)}`, { method: 'POST', body: JSON.stringify({ content, actor: 'dashboard' }) });
+    statusEl.textContent = 'Saved.';
+    _resetContextDocForm();
+    refreshContextDocs();
+  } catch (e) {
+    statusEl.textContent = `Failed: ${e.message}`;
+  }
+};
+
+document.getElementById('btn-context-doc-cancel').onclick = () => _resetContextDocForm();
 
 document.getElementById('btn-swarm-create').onclick = async () => {
   const statusEl = document.getElementById('swarm-new-status');
