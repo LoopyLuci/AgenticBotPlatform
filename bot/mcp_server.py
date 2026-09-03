@@ -379,11 +379,19 @@ async def read_project_context(name: str) -> dict:
 
 
 @mcp.tool()
-async def write_project_context(name: str, content: str) -> dict:
+async def write_project_context(name: str, content: str, actor: Optional[str] = None) -> dict:
     """Create or replace a shared, cross-instance markdown document (see
     read_project_context) — e.g. post a project-status update every
-    worker and the manager can read. Keep it concise (a few KB max)."""
-    return await _request("POST", f"/api/context/{name}", json={"content": content, "actor": "claude"})
+    worker and the manager can read. Keep it concise (a few KB max).
+
+    Pass `actor` as your own bot_instances name (see get_my_profile/
+    get_agent_profile) if you're a Hermes agent calling this via
+    enable_hermes_swarm_tools — otherwise every write from every caller
+    of this MCP server gets attributed to the generic default below,
+    which makes the doc's "who last touched this" metadata meaningless
+    for telling multiple agents apart. Defaults to "claude" (this MCP
+    server's most common caller) when omitted."""
+    return await _request("POST", f"/api/context/{name}", json={"content": content, "actor": actor or "claude"})
 
 
 @mcp.tool()
