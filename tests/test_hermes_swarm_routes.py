@@ -342,6 +342,103 @@ def test_deleting_hermes_gateway_instance_evicts_its_backend(temp_db, monkeypatc
     assert evicted == [("hermes_gateway", "worker-model", "/tmp/worker-home")]
 
 
+# --------------------------------------------------- Phase 9: budget guard
+# The pre-dispatch cost-ceiling check (bot/swarm_budget.py) wired into this
+# same route — a blocked dispatch must never call router.ask() or write to
+# Hermes's own delegation config, and must show up as a real
+# swarm_dispatch_blocked audit row (visible in the Delegation Activity panel).
+
+
+def test_dispatch_route_blocked_by_budget_never_calls_ask(temp_db, monkeypatch, tmp_path):
+    client = _client(monkeypatch)
+    instance_id = _create_hermes_instance()
+    monkeypatch.setattr(hermes_config, "HERMES_CONFIG_PATH", tmp_path / "config.yaml")
+    from bot.config import config as config_singleton
+
+    monkeypatch.setattr(config_singleton, "_data", {"swarm_budget": {"enabled": True, "max_children": 2}})
+
+    async def fake_ask(prompt, *, action_type=None, instance_id=None, **kwargs):
+        raise AssertionError("router.ask should never be called when the budget guard refuses")
+
+    from bot.router import router
+
+    monkeypatch.setattr(router, "ask", fake_ask)
+
+    resp = client.post(
+        f"/api/hermes/{instance_id}/dispatch", headers=_headers(),
+        json={"goal": "do it", "worker_provider": "ollama", "worker_model": "llama3:free", "max_children": 20},
+    )
+
+    assert resp.status_code == 400
+    assert "max_children" in resp.json()["detail"]
+    assert not hermes_config.HERMES_CONFIG_PATH.exists()
+
+    from bot import db
+
+    blocked = db.list_audit_log(actions=["swarm_dispatch_blocked"])
+    assert len(blocked) == 1
+    assert f"instance {instance_id}" in blocked[0]["detail"]
+
+
+def test_dispatch_route_allowed_within_budget_still_dispatches(temp_db, monkeypatch, tmp_path):
+    client = _client(monkeypatch)
+    instance_id = _create_hermes_instance()
+    monkeypatch.setattr(hermes_config, "HERMES_CONFIG_PATH", tmp_path / "config.yaml")
+
+    async def fake_ask(prompt, *, action_type=None, instance_id=None, **kwargs):
+        return BackendResult(text="ok, no structured block here", tokens=None, raw=None)
+
+    from bot.router import router
+
+    monkeypatch.setattr(router, "ask", fake_ask)
+
+    resp = client.post(
+        f"/api/hermes/{instance_id}/dispatch", headers=_headers(),
+        json={"goal": "do it", "worker_provider": "ollama", "worker_model": "llama3:free"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["result"] == "ok, no structured block here"
+
+
+def test_dispatch_route_parses_child_breakdown_into_job_children(temp_db, monkeypatch, tmp_path):
+    client = _client(monkeypatch)
+    instance_id = _create_hermes_instance()
+    monkeypatch.setattr(hermes_config, "HERMES_CONFIG_PATH", tmp_path / "config.yaml")
+
+    reply = (
+        "All subtasks done.\n\n"
+        '```json\n[{"index": 0, "goal": "part one", "model": "ollama/llama3:free", '
+        '"status": "ok", "result_excerpt": "done"}]\n```'
+    )
+
+    from bot import db
+
+    async def fake_ask(prompt, *, action_type=None, instance_id=None, **kwargs):
+        # The real router.ask() creates the jobs row this route later looks
+        # up via db.get_latest_job() — simulate that here since this test
+        # replaces ask() wholesale rather than letting the real one run.
+        db.create_job(action_type=action_type, backend="hermes_gateway", user_id=0, prompt=prompt, instance_id=instance_id)
+        return BackendResult(text=reply, tokens=None, raw=None)
+
+    from bot.router import router
+
+    monkeypatch.setattr(router, "ask", fake_ask)
+
+    resp = client.post(
+        f"/api/hermes/{instance_id}/dispatch", headers=_headers(),
+        json={"goal": "do it", "worker_provider": "ollama", "worker_model": "llama3:free"},
+    )
+
+    assert resp.status_code == 200
+    job_id = resp.json()["job_id"]
+    assert job_id is not None
+
+    children_resp = client.get(f"/api/jobs/{job_id}/children", headers=_headers())
+    assert len(children_resp.json()["children"]) == 1
+    assert children_resp.json()["children"][0]["goal"] == "part one"
+
+
 # ------------------------------------------------ Hermes-organizes-swarms too
 # The reverse direction: giving a Hermes agent itself the same
 # cross-instance organizing ability Claude has via this MCP server, by

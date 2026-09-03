@@ -49,5 +49,12 @@ def hermes_delegation_goal(
         f"{routing_note} {concurrency_note} "
         "Once every subtask finishes, synthesize their results into one clear final answer "
         "covering everything the goal asked for.\n\n"
+        "Then, as the very last thing in your reply, include one fenced ```json code block "
+        "listing every subtask you actually ran, in this exact shape (a JSON array, one object "
+        'per subtask): [{"index": 0, "goal": "<the subtask\'s own goal text>", '
+        '"model": "<provider/model it ran on>", "status": "ok" or "error", '
+        '"result_excerpt": "<a short, 1-2 sentence summary of that subtask\'s own result>"}]. '
+        "This lets the operator see a per-subtask breakdown, not just your final synthesis — "
+        "include it even if there was only one subtask.\n\n"
         f"Goal: {goal}"
     )

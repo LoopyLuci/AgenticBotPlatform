@@ -46,6 +46,8 @@ _conn: Optional[sqlite3.Connection] = None
 # be why sending or receiving one fails.
 _message_listeners: list[Callable[[int], None]] = []
 _job_listeners: list[Callable[[int], None]] = []
+_job_tool_event_listeners: list[Callable[[int], None]] = []
+_job_children_listeners: list[Callable[[int], None]] = []
 
 
 def on_message_logged(callback: Callable[[int], None]) -> None:
@@ -54,6 +56,20 @@ def on_message_logged(callback: Callable[[int], None]) -> None:
 
 def on_job_changed(callback: Callable[[int], None]) -> None:
     _job_listeners.append(callback)
+
+
+def on_job_tool_event(callback: Callable[[int], None]) -> None:
+    """Fired with a job_id whenever a live tool-call event (from the
+    Hermes gateway's SSE stream — see bot/swarm/observability.py) is
+    recorded for that job."""
+    _job_tool_event_listeners.append(callback)
+
+
+def on_job_children_set(callback: Callable[[int], None]) -> None:
+    """Fired with a job_id once a dispatch's post-hoc structured child
+    breakdown (parsed from the final reply — see
+    bot/swarm/child_parser.py) has been written."""
+    _job_children_listeners.append(callback)
 
 
 def _notify_message_logged(message_id: int) -> None:
@@ -70,6 +86,22 @@ def _notify_job_changed(job_id: int) -> None:
             cb(job_id)
         except Exception:
             logger.exception("on_job_changed callback failed")
+
+
+def _notify_job_tool_event(job_id: int) -> None:
+    for cb in _job_tool_event_listeners:
+        try:
+            cb(job_id)
+        except Exception:
+            logger.exception("on_job_tool_event callback failed")
+
+
+def _notify_job_children_set(job_id: int) -> None:
+    for cb in _job_children_listeners:
+        try:
+            cb(job_id)
+        except Exception:
+            logger.exception("on_job_children_set callback failed")
 
 
 SCHEMA = """
@@ -606,6 +638,38 @@ CREATE TABLE IF NOT EXISTS shared_context_docs (
     updated_at    TEXT NOT NULL,
     updated_by    TEXT NOT NULL DEFAULT 'system'
 );
+
+-- Live, best-effort per-call tool-event trail for a swarm_dispatch job —
+-- see bot/swarm/observability.py, which taps the Hermes gateway's SSE
+-- stream for its own top-level delegate_task tool_started/tool_completed
+-- events (no per-child data reaches this — see that module's docstring
+-- for why). Soft FK to jobs.id, matching this project's existing
+-- no-enforced-FKs convention on jobs-adjacent tables.
+CREATE TABLE IF NOT EXISTS job_tool_events (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id        INTEGER NOT NULL,
+    seq           INTEGER NOT NULL,
+    event_type    TEXT NOT NULL,   -- tool_started|tool_completed
+    tool_name     TEXT NOT NULL,
+    payload_json  TEXT NOT NULL DEFAULT '{}',
+    ts            TEXT NOT NULL
+);
+
+-- Post-hoc per-child delegate_task breakdown, parsed from a completed
+-- swarm_dispatch job's own final reply (see bot/swarm/child_parser.py) —
+-- written once, as a full replace, when the dispatch finishes. This is
+-- the actual "per-child detail" data; job_tool_events above is only a
+-- live top-level status signal.
+CREATE TABLE IF NOT EXISTS job_children (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id          INTEGER NOT NULL,
+    child_index     INTEGER NOT NULL,
+    goal            TEXT NOT NULL DEFAULT '',
+    model           TEXT NOT NULL DEFAULT '',
+    status          TEXT NOT NULL DEFAULT '',
+    result_excerpt  TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL
+);
 """
 # idx_jobs_instance / idx_jobs_swarm_run / idx_messages_instance are created
 # in _migrate(), not here — on a pre-existing DB, jobs/messages get their
@@ -731,6 +795,15 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "mesh_token_used_at" not in apk_push_cols:
         conn.execute("ALTER TABLE apk_pushes ADD COLUMN mesh_token_used_at TEXT")
 
+    audit_cols = {row["name"] for row in conn.execute("PRAGMA table_info(audit_log)").fetchall()}
+    if "job_id" not in audit_cols:
+        # Lets the Delegation Activity dashboard panel link a swarm_dispatch
+        # audit row to that dispatch's own job_tool_events/job_children rows
+        # (see bot/swarm/observability.py / child_parser.py) — NULL for
+        # every other audit action, and for swarm_dispatch_blocked (refused
+        # before a job was ever created).
+        conn.execute("ALTER TABLE audit_log ADD COLUMN job_id INTEGER")
+
     api_key_cols = {row["name"] for row in conn.execute("PRAGMA table_info(api_keys)").fetchall()}
     if "kind" not in api_key_cols:
         # 'device' (default, every key minted before this column existed)
@@ -749,6 +822,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_instance ON messages(instance_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_session ON jobs(session_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_job_tool_events_job ON job_tool_events(job_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_job_children_job ON job_children(job_id)")
 
 
 def init_db() -> None:
@@ -1648,6 +1723,79 @@ def list_jobs(
     return conn.execute(f"SELECT * FROM jobs {where} ORDER BY id DESC LIMIT ?", params).fetchall()
 
 
+def get_latest_job(instance_id: int, action_type: str) -> Optional[sqlite3.Row]:
+    """Most recent job for this instance+action_type — used right after a
+    synchronous dispatch call (e.g. dispatch_swarm_goal's router.ask())
+    returns, to resolve the job row that call just finished writing,
+    without needing router.ask() to change its own return shape."""
+    conn = get_conn()
+    return conn.execute(
+        "SELECT * FROM jobs WHERE instance_id=? AND action_type=? ORDER BY id DESC LIMIT 1",
+        (instance_id, action_type),
+    ).fetchone()
+
+
+# ----------------------------------------------------- swarm observability
+
+def log_job_tool_event(job_id: int, event_type: str, tool_name: str, payload: dict) -> int:
+    conn = get_conn()
+    with _lock:
+        seq_row = conn.execute(
+            "SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM job_tool_events WHERE job_id=?", (job_id,)
+        ).fetchone()
+        seq = seq_row["next_seq"]
+        cur = conn.execute(
+            "INSERT INTO job_tool_events (job_id, seq, event_type, tool_name, payload_json, ts) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (job_id, seq, event_type, tool_name, json.dumps(payload), _now()),
+        )
+        conn.commit()
+        event_id = cur.lastrowid
+    _notify_job_tool_event(job_id)
+    return event_id
+
+
+def list_job_tool_events(job_id: int) -> list[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute(
+        "SELECT * FROM job_tool_events WHERE job_id=? ORDER BY seq ASC", (job_id,)
+    ).fetchall()
+
+
+def set_job_children(job_id: int, children: list[dict]) -> None:
+    """Full replace of a job's parsed child breakdown — written once, when
+    the dispatch that produced it completes."""
+    conn = get_conn()
+    with _lock:
+        conn.execute("DELETE FROM job_children WHERE job_id=?", (job_id,))
+        now = _now()
+        conn.executemany(
+            "INSERT INTO job_children (job_id, child_index, goal, model, status, result_excerpt, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    job_id,
+                    c.get("index", i),
+                    c.get("goal", ""),
+                    c.get("model", ""),
+                    c.get("status", ""),
+                    c.get("result_excerpt", ""),
+                    now,
+                )
+                for i, c in enumerate(children)
+            ],
+        )
+        conn.commit()
+    _notify_job_children_set(job_id)
+
+
+def list_job_children(job_id: int) -> list[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute(
+        "SELECT * FROM job_children WHERE job_id=? ORDER BY child_index ASC", (job_id,)
+    ).fetchall()
+
+
 # ------------------------------------------------------------- logging ----
 
 def log_connection_event(component: str, event: str, detail: str = "") -> None:
@@ -1680,13 +1828,25 @@ def log_mcp_event(server: str, event: str, detail: str = "") -> None:
         conn.commit()
 
 
-def log_audit(actor: str, action: str, detail: str = "") -> None:
+def log_audit(actor: str, action: str, detail: str = "", job_id: Optional[int] = None) -> int:
     conn = get_conn()
     with _lock:
-        conn.execute(
-            "INSERT INTO audit_log (ts, actor, action, detail) VALUES (?, ?, ?, ?)",
-            (_now(), actor, action, detail),
+        cur = conn.execute(
+            "INSERT INTO audit_log (ts, actor, action, detail, job_id) VALUES (?, ?, ?, ?, ?)",
+            (_now(), actor, action, detail, job_id),
         )
+        conn.commit()
+        return cur.lastrowid
+
+
+def set_audit_log_job_id(audit_id: int, job_id: int) -> None:
+    """Backfills job_id onto an audit_log row written before the job it
+    describes existed — e.g. a swarm_dispatch row logged right before
+    router.ask() creates the actual jobs row. See log_audit's job_id
+    param for the normal (known-at-log-time) path."""
+    conn = get_conn()
+    with _lock:
+        conn.execute("UPDATE audit_log SET job_id=? WHERE id=?", (job_id, audit_id))
         conn.commit()
 
 

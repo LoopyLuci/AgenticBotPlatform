@@ -55,6 +55,36 @@ features:
   verbose_telemetry: true
 agent_control:
   mode: trust_all
+# Pre-dispatch cost ceiling for dispatch_swarm_goal — see bot/swarm_budget.py.
+# This is a worst-case ESTIMATE gate (max_children x assumed tokens/child x
+# the resolved model's known per-token price), not a real spend tracker —
+# the Hermes gateway backend never reports actual token usage back to
+# BotServer today, a real, documented limitation (see that module's
+# docstring). Refuses to dispatch (never configures Hermes's own delegation
+# config, never sends anything) when the estimate can't be trusted or
+# exceeds these caps; a swarm_dispatch_blocked audit entry is logged either
+# way and shows up in the dashboard's Delegation Activity panel.
+swarm_budget:
+  enabled: true
+  max_children: 6
+  max_estimated_usd: 0.25
+  require_confirm_above_usd: 1.0
+  # Off by default: an explicitly-chosen model with no known price is
+  # common and legitimate (a local custom_model/Ollama model genuinely has
+  # no $ price; a brand-new provider entry just hasn't been priced by
+  # Hermes's own inventory yet) — set true for maximum protection if
+  # every worker model in your setup is expected to have real pricing.
+  deny_unpriced_paid_models: false
+  assumed_tokens_per_child:
+    input: 2000
+    output: 1000
+# Optional live top-level tool-event tap for a dispatch, over the Hermes
+# gateway's SSE stream — see bot/swarm/observability.py. Purely additive
+# observability: turning this off (or it simply failing against an older
+# Hermes version with no SSE route) never affects whether a dispatch
+# itself succeeds.
+swarm_observability:
+  live_tool_events: true
 # Applies an edit to bot/*.py to this already-running process instead of
 # needing the full stop/rebuild/relaunch cycle — see bot/hotreload.py's
 # module docstring for exactly what can and can't hot-reload. Checked

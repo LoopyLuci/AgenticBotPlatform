@@ -192,8 +192,22 @@ def _on_job_changed(job_id: int) -> None:
     _broadcast_soon({"type": "job_update", "job": dict(row)})
 
 
+def _on_job_tool_event(job_id: int) -> None:
+    events = db.list_job_tool_events(job_id)
+    if not events:
+        return
+    _broadcast_soon({"type": "job_tool_event", "job_id": job_id, "event": dict(events[-1])})
+
+
+def _on_job_children_set(job_id: int) -> None:
+    children = db.list_job_children(job_id)
+    _broadcast_soon({"type": "job_children_update", "job_id": job_id, "children": [dict(c) for c in children]})
+
+
 db.on_message_logged(_on_message_logged)
 db.on_job_changed(_on_job_changed)
+db.on_job_tool_event(_on_job_tool_event)
+db.on_job_children_set(_on_job_children_set)
 
 
 def _require_token(x_dashboard_token: Optional[str] = Header(default=None)) -> None:
@@ -1450,8 +1464,10 @@ def build_app() -> FastAPI:
         Hermes's own agent to use delegate_task to fan it out — see
         bot/swarm/prompts.py's module docstring for why the prompt itself,
         not an external RPC, is the actual dispatch mechanism."""
-        from bot import hermes_config
+        from bot import hermes_config, swarm_budget
+        from bot.config import config
         from bot.models import hermes_models_with_pricing
+        from bot.swarm.child_parser import parse_child_breakdown
         from bot.swarm.prompts import hermes_delegation_goal
 
         instance = _require_hermes_gateway_instance(instance_id)
@@ -1461,9 +1477,8 @@ def build_app() -> FastAPI:
 
         worker_provider = payload.get("worker_provider")
         worker_model = payload.get("worker_model")
-        pricing_source = None
+        priced, pricing_source = await hermes_models_with_pricing(instance_id)
         if not worker_provider or not worker_model:
-            priced, pricing_source = await hermes_models_with_pricing(instance_id)
             for provider_name, entries in sorted(priced.items()):
                 free_entry = next((e for e in sorted(entries, key=lambda e: e["id"]) if e["free"]), None)
                 if free_entry:
@@ -1471,6 +1486,22 @@ def build_app() -> FastAPI:
                     break
 
         max_children = payload.get("max_children")
+        pricing_row = next(
+            (e for e in priced.get(worker_provider, []) if e["id"] == worker_model), None
+        ) if worker_provider else None
+        decision = swarm_budget.check_budget(
+            pricing_row=pricing_row,
+            max_children=max_children,
+            confirm=bool(payload.get("confirm")),
+            cfg=config.current.get("swarm_budget", {}),
+        )
+        if not decision.allowed:
+            db.log_audit(
+                actor="dashboard", action="swarm_dispatch_blocked",
+                detail=f"instance {instance_id} ({worker_provider}/{worker_model}): {decision.reason}",
+            )
+            raise HTTPException(status_code=400, detail=decision.reason)
+
         if worker_provider and worker_model:
             hermes_config.set_delegation_config(
                 provider=worker_provider, model=worker_model,
@@ -1481,20 +1512,31 @@ def build_app() -> FastAPI:
         prompt = hermes_delegation_goal(
             goal, worker_provider=worker_provider, worker_model=worker_model, max_children=max_children,
         )
-        db.log_audit(
+        audit_id = db.log_audit(
             actor="dashboard", action="swarm_dispatch",
-            detail=f"instance {instance_id} -> {worker_provider}/{worker_model}: {goal[:120]}",
+            detail=f"instance {instance_id} -> {worker_provider}/{worker_model}: {goal[:120]}"
+            + (f" (est. ${decision.estimated_usd:.4f})" if decision.estimated_usd else ""),
         )
         try:
             result = await router.ask(prompt, action_type="swarm_dispatch", instance_id=instance_id)
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"dispatch failed: {exc}")
+
+        job_row = db.get_latest_job(instance_id, "swarm_dispatch")
+        if job_row is not None:
+            db.set_audit_log_job_id(audit_id, job_row["id"])
+            children = parse_child_breakdown(result.text)
+            if children is not None:
+                db.set_job_children(job_row["id"], children)
+
         return {
             "ok": True,
             "result": result.text,
             "worker_provider": worker_provider,
             "worker_model": worker_model,
             "worker_model_source": pricing_source,
+            "estimated_usd": decision.estimated_usd,
+            "job_id": job_row["id"] if job_row is not None else None,
         }
 
     @app.post("/api/hermes/{instance_id}/enable-swarm-tools", dependencies=[Depends(_require_token_or_api_key)])
@@ -1614,17 +1656,63 @@ def build_app() -> FastAPI:
     # those three action kinds, newest first, so the dashboard can show
     # "who asked whom to do what" without wading through every other
     # audit event (config changes, snapshots, mcp registration, etc.).
-    _DELEGATION_ACTIONS = ["agent_ask", "swarm_dispatch", "agent_delegate"]
+    _DELEGATION_ACTIONS = ["agent_ask", "swarm_dispatch", "agent_delegate", "swarm_dispatch_blocked"]
 
     @app.get("/api/delegation-activity", dependencies=[Depends(_require_token_or_api_key)])
     async def api_delegation_activity(limit: int = 20):
         rows = db.list_audit_log(actions=_DELEGATION_ACTIONS, limit=max(1, min(limit, 200)))
         return {
             "events": [
-                {"id": r["id"], "ts": r["ts"], "actor": r["actor"], "action": r["action"], "detail": r["detail"]}
+                {
+                    "id": r["id"], "ts": r["ts"], "actor": r["actor"], "action": r["action"],
+                    "detail": r["detail"], "job_id": r["job_id"],
+                }
                 for r in rows
             ]
         }
+
+    @app.get("/api/jobs/{job_id}/tool-events", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_job_tool_events(job_id: int):
+        """Live top-level delegate_task tool_started/tool_completed events
+        recorded for this job by bot/swarm/observability.py — see that
+        module's docstring for why this is top-level only, never
+        per-child."""
+        events = db.list_job_tool_events(job_id)
+        return {"events": [dict(e) for e in events]}
+
+    @app.get("/api/jobs/{job_id}/children", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_job_children(job_id: int):
+        """Post-hoc per-child breakdown parsed from this job's own final
+        reply — see bot/swarm/child_parser.py. Empty until the dispatch
+        completes and its reply actually included the structured block."""
+        children = db.list_job_children(job_id)
+        return {"children": [dict(c) for c in children]}
+
+    @app.get("/api/swarm-budget", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_get_swarm_budget():
+        from bot import swarm_budget
+
+        cfg = config.current.get("swarm_budget", {})
+        return {
+            "enabled": cfg.get("enabled", True),
+            "max_children": cfg.get("max_children", swarm_budget.DEFAULT_MAX_CHILDREN),
+            "max_estimated_usd": cfg.get("max_estimated_usd", swarm_budget.DEFAULT_MAX_ESTIMATED_USD),
+            "require_confirm_above_usd": cfg.get(
+                "require_confirm_above_usd", swarm_budget.DEFAULT_REQUIRE_CONFIRM_ABOVE_USD
+            ),
+            "deny_unpriced_paid_models": cfg.get("deny_unpriced_paid_models", False),
+        }
+
+    @app.post("/api/swarm-budget", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_set_swarm_budget(payload: dict = Body(...)):
+        fields = (
+            "enabled", "max_children", "max_estimated_usd",
+            "require_confirm_above_usd", "deny_unpriced_paid_models",
+        )
+        for field in fields:
+            if payload.get(field) is not None:
+                config.set_value(["swarm_budget", field], payload[field], actor="dashboard")
+        return await api_get_swarm_budget()
 
     # --------------------------------------------------------- mutations --
 

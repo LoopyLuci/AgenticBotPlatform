@@ -99,18 +99,60 @@ class HermesGatewayBackend(Backend):
     async def ask(self, prompt: str, *, context=None, timeout_s: float = 60) -> BackendResult:
         context = context or {}
         instance_id = context.get("instance_id")
+        job_id = context.get("job_id")
+        action_type = context.get("action_type")
         session_key = context.get("desktop_session_key") if not context.get("force_new_session") else None
         try:
-            text, session_id, created = await self._ask_once(prompt, timeout_s, session_key, instance_id)
+            text, session_id, created = await self._ask_once(
+                prompt, timeout_s, session_key, instance_id, job_id, action_type
+            )
         except (ConnectionError, asyncio.IncompleteReadError, BackendError) as first_exc:
             logger.warning("hermes_gateway connection issue, retrying once: %s", first_exc)
             await self._teardown_connection()
             try:
-                text, session_id, created = await self._ask_once(prompt, timeout_s, session_key, instance_id)
+                text, session_id, created = await self._ask_once(
+                    prompt, timeout_s, session_key, instance_id, job_id, action_type
+                )
             except Exception as exc:
                 raise BackendError(f"hermes_gateway failed after retry: {exc}") from exc
         raw = {"desktop_session_key": session_id} if created else None
         return BackendResult(text=text, tokens=None, raw=raw)
+
+    async def stream_tool_events(self, session_id: str, timeout_s: float = 20):
+        """Best-effort async generator over this gateway's SSE
+        `/api/sessions/{session_id}/chat/stream` endpoint — a genuinely
+        different request path than the WS protocol every other method in
+        this class uses (see the module docstring). Yields decoded event
+        dicts whose top-level tool name is "delegate_task"
+        (tool_started/tool_completed only — Hermes's own gateway does not
+        emit per-child delegate_task progress over this stream today; see
+        bot/swarm/observability.py's docstring for the confirmed reason).
+        Raises on connection failure — callers that treat this as purely
+        optional observability (not required for a dispatch to work) must
+        wrap the call in their own try/except, same as
+        bot/swarm/observability.py does."""
+        import httpx
+
+        url = f"http://127.0.0.1:{self.port}/api/sessions/{session_id}/chat/stream"
+        headers = {"X-Hermes-Session-Token": self._token, "Accept": "text/event-stream"}
+        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_s, read=None)) as client:
+            async with client.stream("POST", url, headers=headers, json={}) as resp:
+                resp.raise_for_status()
+                event_name = None
+                async for line in resp.aiter_lines():
+                    if line.startswith("event:"):
+                        event_name = line[len("event:"):].strip()
+                    elif line.startswith("data:"):
+                        raw_data = line[len("data:"):].strip()
+                        if not raw_data:
+                            continue
+                        try:
+                            payload = json.loads(raw_data)
+                        except json.JSONDecodeError:
+                            continue
+                        if payload.get("name") == "delegate_task":
+                            yield {"event": event_name, **payload}
+                        event_name = None
 
     async def fetch_model_options(self, refresh: bool = False, timeout_s: float = 20) -> dict:
         """GET this gateway's own `/api/model/options` — the same
@@ -150,7 +192,13 @@ class HermesGatewayBackend(Backend):
         return session_id
 
     async def _ask_once(
-        self, prompt: str, timeout_s: float, session_key: Optional[str], instance_id: Optional[int]
+        self,
+        prompt: str,
+        timeout_s: float,
+        session_key: Optional[str],
+        instance_id: Optional[int],
+        job_id: Optional[int] = None,
+        action_type: Optional[str] = None,
     ) -> tuple[str, Optional[str], bool]:
         await self._ensure_connected()
         created = False
@@ -169,7 +217,37 @@ class HermesGatewayBackend(Backend):
                 session_id = await self.create_session(timeout_s=15)
                 created = True
 
+        if job_id is not None and action_type == "swarm_dispatch":
+            # Best-effort, fire-and-forget — its own bounded lifetime (see
+            # observability.watch_dispatch) means nothing here needs to
+            # track or cancel it; a failure inside is caught and logged by
+            # _maybe_start_observability itself, never propagated here.
+            self._maybe_start_observability(job_id, session_id)
+
         bg = await self._call("prompt.background", {"session_id": session_id, "text": prompt}, timeout_s=15)
+        return await self._await_background_reply(bg, session_id, created, timeout_s)
+
+    def _maybe_start_observability(self, job_id: int, session_id: str) -> Optional[asyncio.Task]:
+        """Fire-and-forget best-effort live tool-event tap for this one
+        dispatch — never allowed to affect the actual prompt.background
+        call above. Gated by config so an operator without a live-events-
+        capable Hermes version (or who simply doesn't want the extra
+        connection) can turn it off with zero code changes."""
+        try:
+            from bot.config import config
+
+            if not config.current.get("swarm_observability", {}).get("live_tool_events", True):
+                return None
+            from bot.swarm import observability
+
+            return asyncio.create_task(observability.watch_dispatch(job_id, self, session_id))
+        except Exception:
+            logger.info("could not start swarm observability tap for job %s", job_id, exc_info=True)
+            return None
+
+    async def _await_background_reply(
+        self, bg: dict, session_id: str, created: bool, timeout_s: float
+    ) -> tuple[str, Optional[str], bool]:
         task_id = bg.get("task_id")
         if not task_id:
             raise BackendError("hermes prompt.background returned no task_id")

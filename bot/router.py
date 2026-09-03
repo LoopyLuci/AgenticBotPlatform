@@ -386,6 +386,12 @@ class Router:
             swarm_run_id=swarm_run_id,
             chat_id=chat_id,
         )
+        # Lets a backend (currently only hermes_gateway_backend's optional
+        # SSE tool-event tap — see bot/swarm/observability.py) correlate its
+        # own best-effort observability data back to this specific job
+        # without needing ask() to change its return shape.
+        context["job_id"] = job_id
+        context["action_type"] = action_type
 
         last_error: Optional[Exception] = None
         for i, backend_name in enumerate(chain):

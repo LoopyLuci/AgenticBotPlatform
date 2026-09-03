@@ -115,6 +115,9 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.providers",
     "bot.hermes_config",
     "bot.swarm.prompts",
+    "bot.swarm.child_parser",
+    "bot.swarm_budget",
+    "bot.swarm.observability",  # only ever imported lazily (inside a function body), so no ordering constraint from anything else here
     "bot.setup_wizard",
     "bot.snapshots",
     "bot.agent_control",

@@ -70,6 +70,8 @@ function connectDevicesSocket() {
       if (msg.type === 'device_list') {
         mobileKeysState.devices = msg.devices;
         renderMobileKeysTable();
+      } else if ((msg.type === 'job_tool_event' || msg.type === 'job_children_update') && msg.job_id === openDelegationDetailJobId) {
+        renderDelegationDetail(msg.job_id);
       }
     } catch (_e) { /* malformed frame, ignore */ }
   };
@@ -901,6 +903,8 @@ function startDashboardPolling() {
   pollWhenVisible(refreshContextDocs, 15000);
   refreshDelegationActivity();
   pollWhenVisible(refreshDelegationActivity, 15000);
+  refreshSwarmBudget();
+  pollWhenVisible(refreshSwarmBudget, 15000);
   refreshMobileKeys();
   pollWhenVisible(refreshMobileKeys, 15000);
   refreshPeers();
@@ -1925,12 +1929,19 @@ const DELEGATION_KIND_LABELS = {
   agent_ask: 'ask_instance',
   swarm_dispatch: 'dispatch_swarm_goal',
   agent_delegate: 'delegate_to_instance',
+  swarm_dispatch_blocked: 'blocked (budget)',
 };
+
+// Tracks which delegation-activity job_id currently has its detail row
+// open, so a live job_tool_event/job_children_update push (see
+// devicesSocket.onmessage above) can refresh it in place instead of
+// waiting for the next 15s poll.
+let openDelegationDetailJobId = null;
 
 async function refreshDelegationActivity() {
   const tbody = document.getElementById('delegation-activity-tbody');
   if (!getToken()) {
-    tbody.innerHTML = '<tr class="emptyrow"><td colspan="3">Unlock with the dashboard token to view.</td></tr>';
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="4">Unlock with the dashboard token to view.</td></tr>';
     return;
   }
   let data;
@@ -1943,8 +1954,96 @@ async function refreshDelegationActivity() {
       <td class="mono" style="font-size:11px; white-space:nowrap;">${fmtTime(e.ts)}</td>
       <td><span class="pill">${esc(DELEGATION_KIND_LABELS[e.action] || e.action)}</span></td>
       <td style="max-width:420px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(e.actor.replace(/^agent:/, ''))} ${esc(e.detail)}</td>
-    </tr>`).join('') : '<tr class="emptyrow"><td colspan="3">No delegation activity yet.</td></tr>';
+      <td>${e.job_id ? `<button class="btn" data-view-job="${e.job_id}" style="padding:3px 8px; font-size:11px;">View</button>` : ''}</td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="4">No delegation activity yet.</td></tr>';
+
+  document.querySelectorAll('[data-view-job]').forEach(btn => btn.onclick = () => toggleDelegationDetail(Number(btn.dataset.viewJob), btn));
 }
+
+async function toggleDelegationDetail(jobId, btn) {
+  const row = btn.closest('tr');
+  const existing = row.nextElementSibling;
+  if (existing && existing.classList.contains('delegation-detail-row')) {
+    existing.remove();
+    if (openDelegationDetailJobId === jobId) openDelegationDetailJobId = null;
+    return;
+  }
+  document.querySelectorAll('.delegation-detail-row').forEach(r => r.remove());
+  openDelegationDetailJobId = jobId;
+  const detailRow = document.createElement('tr');
+  detailRow.className = 'delegation-detail-row';
+  detailRow.dataset.jobId = String(jobId);
+  detailRow.innerHTML = '<td colspan="4"><em>Loading...</em></td>';
+  row.after(detailRow);
+  await renderDelegationDetail(jobId);
+}
+
+async function renderDelegationDetail(jobId) {
+  const detailRow = document.querySelector(`.delegation-detail-row[data-job-id="${jobId}"]`);
+  if (!detailRow) return;
+  let toolEvents = [], children = [];
+  try {
+    const [teData, chData] = await Promise.all([
+      api(`/api/jobs/${jobId}/tool-events`),
+      api(`/api/jobs/${jobId}/children`),
+    ]);
+    toolEvents = teData.events || [];
+    children = chData.children || [];
+  } catch (_e) {
+    detailRow.innerHTML = '<td colspan="4"><em>Could not load detail.</em></td>';
+    return;
+  }
+  const eventsHtml = toolEvents.length
+    ? `<div style="font-size:11px; margin-bottom:8px;"><b>Live tool events</b> (top-level delegate_task calls only — no per-child data reaches this stream):<br>${
+        toolEvents.map(e => `<span class="pill" style="margin:2px;">${esc(e.event_type)} @ ${fmtTime(e.ts)}</span>`).join('')
+      }</div>`
+    : '<div class="cardnote" style="margin-bottom:8px;">No live tool events recorded (either still starting, the dispatch finished before this loaded, or this Hermes gateway version has no SSE stream).</div>';
+  const childrenHtml = children.length
+    ? `<div style="font-size:11px;"><b>Per-child breakdown</b> (parsed from the dispatch's own final reply):</div>
+       <table style="margin-top:4px;"><thead><tr><th>#</th><th>Goal</th><th>Model</th><th>Status</th><th>Result</th></tr></thead><tbody>${
+         children.map(c => `<tr>
+           <td>${c.child_index}</td>
+           <td style="max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(c.goal)}</td>
+           <td class="mono" style="font-size:11px;">${esc(c.model)}</td>
+           <td><span class="pill"><span class="dot ${c.status === 'ok' ? 'good' : 'critical'}"></span>${esc(c.status)}</span></td>
+           <td style="max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(c.result_excerpt)}</td>
+         </tr>`).join('')
+       }</tbody></table>`
+    : '<div class="cardnote">No per-child breakdown yet — the dispatch hasn\'t finished, or its final reply didn\'t include the structured block.</div>';
+  detailRow.innerHTML = `<td colspan="4" style="background:var(--panel-2, rgba(127,127,127,0.06));">${eventsHtml}${childrenHtml}</td>`;
+}
+
+async function refreshSwarmBudget() {
+  if (!getToken()) return;
+  let cfg;
+  try { cfg = await api('/api/swarm-budget'); } catch (_e) { return; }
+  document.getElementById('budget-enabled').checked = !!cfg.enabled;
+  document.getElementById('budget-max-children').value = cfg.max_children;
+  document.getElementById('budget-max-usd').value = cfg.max_estimated_usd;
+  document.getElementById('budget-confirm-usd').value = cfg.require_confirm_above_usd;
+  document.getElementById('budget-deny-unpriced').checked = !!cfg.deny_unpriced_paid_models;
+}
+
+document.getElementById('budget-save-btn').onclick = async () => {
+  const status = document.getElementById('budget-save-status');
+  status.textContent = 'Saving...';
+  try {
+    await api('/api/swarm-budget', {
+      method: 'POST',
+      body: JSON.stringify({
+        enabled: document.getElementById('budget-enabled').checked,
+        max_children: Number(document.getElementById('budget-max-children').value),
+        max_estimated_usd: Number(document.getElementById('budget-max-usd').value),
+        require_confirm_above_usd: Number(document.getElementById('budget-confirm-usd').value),
+        deny_unpriced_paid_models: document.getElementById('budget-deny-unpriced').checked,
+      }),
+    });
+    status.textContent = 'Saved.';
+  } catch (e) {
+    status.textContent = 'Failed: ' + e.message;
+  }
+  setTimeout(() => { status.textContent = ''; }, 3000);
+};
 
 // ------------------------------------------------------------------ chat -
 // Per-instance panels: chatState.panels[id] holds each bot's own cursor,

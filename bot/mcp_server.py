@@ -457,6 +457,7 @@ async def dispatch_swarm_goal(
     worker_provider: Optional[str] = None,
     worker_model: Optional[str] = None,
     max_children: Optional[int] = None,
+    confirm: bool = False,
 ) -> dict:
     """The actual "use Hermes Agents with the optimal free models to work
     on this" lever: configures this hermes_gateway-backed instance's
@@ -474,10 +475,47 @@ async def dispatch_swarm_goal(
     underlying Hermes task (see the Hermes-swarm plan's Phase 3 notes).
     This call blocks until the whole swarm run (parent + every child)
     finishes — call list_available_models first if you want to see what
-    "optimal free" actually resolved to before committing to a run."""
+    "optimal free" actually resolved to before committing to a run.
+
+    A pre-dispatch budget guard (see get_swarm_budget_config) may refuse
+    this call outright — the response's "error" field (HTTP 400) explains
+    why. If the refusal is a soft one (estimated cost above
+    require_confirm_above_usd but still under the hard max_estimated_usd
+    ceiling), pass confirm=true to proceed anyway; a hard refusal (too
+    many children, an unpriced paid model, or exceeding the hard ceiling
+    itself) is not overridable here — the operator must adjust
+    config/backends.yaml's swarm_budget section."""
     return await _request("POST", f"/api/hermes/{instance_id}/dispatch", timeout=900.0, json={
         "goal": goal, "worker_provider": worker_provider, "worker_model": worker_model,
-        "max_children": max_children,
+        "max_children": max_children, "confirm": confirm,
+    })
+
+
+@mcp.tool()
+async def get_swarm_budget_config() -> dict:
+    """The current pre-dispatch cost-ceiling settings dispatch_swarm_goal
+    is checked against — see bot/swarm_budget.py. This is a global,
+    machine-wide setting (not per-instance)."""
+    return await _request("GET", "/api/swarm-budget")
+
+
+@mcp.tool()
+async def set_swarm_budget_config(
+    enabled: Optional[bool] = None,
+    max_children: Optional[int] = None,
+    max_estimated_usd: Optional[float] = None,
+    require_confirm_above_usd: Optional[float] = None,
+    deny_unpriced_paid_models: Optional[bool] = None,
+) -> dict:
+    """Updates the swarm budget guard's config (only the fields given are
+    changed) — see get_swarm_budget_config for current values and
+    bot/swarm_budget.py for exactly how each field is used. Every
+    swarm_dispatch_blocked refusal this produces is logged to the audit
+    trail and visible in the dashboard's Delegation Activity panel."""
+    return await _request("POST", "/api/swarm-budget", json={
+        "enabled": enabled, "max_children": max_children, "max_estimated_usd": max_estimated_usd,
+        "require_confirm_above_usd": require_confirm_above_usd,
+        "deny_unpriced_paid_models": deny_unpriced_paid_models,
     })
 
 

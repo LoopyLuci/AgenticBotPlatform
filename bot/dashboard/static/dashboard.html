@@ -1168,12 +1168,25 @@
       </div>
 
       <div class="card" style="margin-top:14px;">
+        <h3>Swarm budget <span style="font-weight:400; color:var(--muted); font-size:12px;">— pre-dispatch cost ceiling for dispatch_swarm_goal</span></h3>
+        <p class="cardnote">A worst-case ESTIMATE gate (max children &times; assumed tokens/child &times; the resolved model's known price) checked before a dispatch is ever sent — not a real spend tracker. A refused dispatch is logged below as <code>swarm_dispatch_blocked</code> and never touches Hermes.</p>
+        <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; margin-top:10px;">
+          <label>Enabled<br><input type="checkbox" id="budget-enabled" style="margin-top:6px;"></label>
+          <label>Max children<br><input type="number" id="budget-max-children" min="1" style="width:100%;"></label>
+          <label>Max estimated $ (hard cap)<br><input type="number" id="budget-max-usd" min="0" step="0.01" style="width:100%;"></label>
+          <label>Confirm above $ (soft cap)<br><input type="number" id="budget-confirm-usd" min="0" step="0.01" style="width:100%;"></label>
+          <label>Deny unpriced paid models<br><input type="checkbox" id="budget-deny-unpriced" style="margin-top:6px;"></label>
+        </div>
+        <div style="margin-top:10px;"><button class="btn" id="budget-save-btn">Save</button> <span id="budget-save-status" class="cardnote" style="display:inline;"></span></div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
         <h3>Delegation activity <span style="font-weight:400; color:var(--muted); font-size:12px;">— who asked whom to do what</span></h3>
-        <p class="cardnote">Every cross-instance call — <code>ask_instance</code>, <code>dispatch_swarm_goal</code>, and an <code>api</code>-backend agent's own <code>delegate_to_instance</code> — logged here, newest first.</p>
+        <p class="cardnote">Every cross-instance call — <code>ask_instance</code>, <code>dispatch_swarm_goal</code>, and an <code>api</code>-backend agent's own <code>delegate_to_instance</code> — logged here, newest first. A dispatch row can be expanded for its live tool-call status and post-hoc per-child breakdown.</p>
         <div class="tablewrap" style="margin-top:10px;">
           <table>
-            <thead><tr><th>Time</th><th>Kind</th><th>Detail</th></tr></thead>
-            <tbody id="delegation-activity-tbody"><tr class="emptyrow"><td colspan="3">Unlock with the dashboard token to view.</td></tr></tbody>
+            <thead><tr><th>Time</th><th>Kind</th><th>Detail</th><th></th></tr></thead>
+            <tbody id="delegation-activity-tbody"><tr class="emptyrow"><td colspan="4">Unlock with the dashboard token to view.</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -2172,6 +2185,9 @@ function startDashboard() {
   pollWhenVisible(refreshContextDocs, 15000);
   refreshDelegationActivity();
   pollWhenVisible(refreshDelegationActivity, 15000);
+  refreshSwarmBudget();
+  pollWhenVisible(refreshSwarmBudget, 15000);
+  connectLiveEventsSocket();
   refreshMobileKeys();
   pollWhenVisible(refreshMobileKeys, 15000);
   refreshPeers();
@@ -3299,12 +3315,19 @@ const DELEGATION_KIND_LABELS = {
   agent_ask: 'ask_instance',
   swarm_dispatch: 'dispatch_swarm_goal',
   agent_delegate: 'delegate_to_instance',
+  swarm_dispatch_blocked: 'blocked (budget)',
 };
+
+// Tracks which delegation-activity job_id currently has its detail row
+// open, so a live job_tool_event/job_children_update push (see
+// connectLiveEventsSocket below) can refresh it in place instead of
+// waiting for the next 15s poll.
+let openDelegationDetailJobId = null;
 
 async function refreshDelegationActivity() {
   const tbody = document.getElementById('delegation-activity-tbody');
   if (!getToken()) {
-    tbody.innerHTML = '<tr class="emptyrow"><td colspan="3">Unlock with the dashboard token to view.</td></tr>';
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="4">Unlock with the dashboard token to view.</td></tr>';
     return;
   }
   let data;
@@ -3317,7 +3340,133 @@ async function refreshDelegationActivity() {
       <td class="mono" style="font-size:11px; white-space:nowrap;">${fmtTime(e.ts)}</td>
       <td><span class="pill">${esc(DELEGATION_KIND_LABELS[e.action] || e.action)}</span></td>
       <td style="max-width:420px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(e.actor.replace(/^agent:/, ''))} ${esc(e.detail)}</td>
-    </tr>`).join('') : '<tr class="emptyrow"><td colspan="3">No delegation activity yet.</td></tr>';
+      <td>${e.job_id ? `<button class="btn" data-view-job="${e.job_id}" style="padding:3px 8px; font-size:11px;">View</button>` : ''}</td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="4">No delegation activity yet.</td></tr>';
+
+  document.querySelectorAll('[data-view-job]').forEach(btn => btn.onclick = () => toggleDelegationDetail(Number(btn.dataset.viewJob), btn));
+}
+
+async function toggleDelegationDetail(jobId, btn) {
+  const row = btn.closest('tr');
+  const existing = row.nextElementSibling;
+  if (existing && existing.classList.contains('delegation-detail-row')) {
+    existing.remove();
+    if (openDelegationDetailJobId === jobId) openDelegationDetailJobId = null;
+    return;
+  }
+  document.querySelectorAll('.delegation-detail-row').forEach(r => r.remove());
+  openDelegationDetailJobId = jobId;
+  const detailRow = document.createElement('tr');
+  detailRow.className = 'delegation-detail-row';
+  detailRow.dataset.jobId = String(jobId);
+  detailRow.innerHTML = '<td colspan="4"><em>Loading...</em></td>';
+  row.after(detailRow);
+  await renderDelegationDetail(jobId);
+}
+
+async function renderDelegationDetail(jobId) {
+  const detailRow = document.querySelector(`.delegation-detail-row[data-job-id="${jobId}"]`);
+  if (!detailRow) return;
+  let toolEvents = [], children = [];
+  try {
+    const [teData, chData] = await Promise.all([
+      api(`/api/jobs/${jobId}/tool-events`),
+      api(`/api/jobs/${jobId}/children`),
+    ]);
+    toolEvents = teData.events || [];
+    children = chData.children || [];
+  } catch (_e) {
+    detailRow.innerHTML = '<td colspan="4"><em>Could not load detail.</em></td>';
+    return;
+  }
+  const eventsHtml = toolEvents.length
+    ? `<div style="font-size:11px; margin-bottom:8px;"><b>Live tool events</b> (top-level delegate_task calls only — no per-child data reaches this stream):<br>${
+        toolEvents.map(e => `<span class="pill" style="margin:2px;">${esc(e.event_type)} @ ${fmtTime(e.ts)}</span>`).join('')
+      }</div>`
+    : '<div class="cardnote" style="margin-bottom:8px;">No live tool events recorded (either still starting, the dispatch finished before this loaded, or this Hermes gateway version has no SSE stream).</div>';
+  const childrenHtml = children.length
+    ? `<div style="font-size:11px;"><b>Per-child breakdown</b> (parsed from the dispatch's own final reply):</div>
+       <table style="margin-top:4px;"><thead><tr><th>#</th><th>Goal</th><th>Model</th><th>Status</th><th>Result</th></tr></thead><tbody>${
+         children.map(c => `<tr>
+           <td>${c.child_index}</td>
+           <td style="max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(c.goal)}</td>
+           <td class="mono" style="font-size:11px;">${esc(c.model)}</td>
+           <td><span class="pill"><span class="dot ${c.status === 'ok' ? 'good' : 'critical'}"></span>${esc(c.status)}</span></td>
+           <td style="max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(c.result_excerpt)}</td>
+         </tr>`).join('')
+       }</tbody></table>`
+    : '<div class="cardnote">No per-child breakdown yet — the dispatch hasn\'t finished, or its final reply didn\'t include the structured block.</div>';
+  detailRow.innerHTML = `<td colspan="4" style="background:var(--panel-2, rgba(127,127,127,0.06));">${eventsHtml}${childrenHtml}</td>`;
+}
+
+async function refreshSwarmBudget() {
+  if (!getToken()) return;
+  let cfg;
+  try { cfg = await api('/api/swarm-budget'); } catch (_e) { return; }
+  document.getElementById('budget-enabled').checked = !!cfg.enabled;
+  document.getElementById('budget-max-children').value = cfg.max_children;
+  document.getElementById('budget-max-usd').value = cfg.max_estimated_usd;
+  document.getElementById('budget-confirm-usd').value = cfg.require_confirm_above_usd;
+  document.getElementById('budget-deny-unpriced').checked = !!cfg.deny_unpriced_paid_models;
+}
+
+document.getElementById('budget-save-btn').onclick = async () => {
+  const status = document.getElementById('budget-save-status');
+  status.textContent = 'Saving...';
+  try {
+    await api('/api/swarm-budget', {
+      method: 'POST',
+      body: JSON.stringify({
+        enabled: document.getElementById('budget-enabled').checked,
+        max_children: Number(document.getElementById('budget-max-children').value),
+        max_estimated_usd: Number(document.getElementById('budget-max-usd').value),
+        require_confirm_above_usd: Number(document.getElementById('budget-confirm-usd').value),
+        deny_unpriced_paid_models: document.getElementById('budget-deny-unpriced').checked,
+      }),
+    });
+    status.textContent = 'Saved.';
+  } catch (e) {
+    status.textContent = 'Failed: ' + e.message;
+  }
+  setTimeout(() => { status.textContent = ''; }, 3000);
+};
+
+// ------------------------------------------------------- live job events -
+// A small, dashboard.html-local WebSocket to /api/ws, mirroring the same
+// device-presence socket desktop-app/ui/main.js already keeps — this file
+// previously had no WS consumer at all (chat_message/job_update were
+// already broadcast server-side but nothing here read them), discovered
+// while wiring up job_tool_event/job_children_update for this feature.
+let liveEventsSocket = null;
+let liveEventsRetryTimer = null;
+
+function liveEventsWsBase() {
+  return location.origin.replace(/^http/, 'ws');
+}
+
+function connectLiveEventsSocket() {
+  const token = getToken();
+  if (!token) return;
+  if (liveEventsSocket && (liveEventsSocket.readyState === WebSocket.OPEN || liveEventsSocket.readyState === WebSocket.CONNECTING)) return;
+  clearTimeout(liveEventsRetryTimer);
+  try {
+    liveEventsSocket = new WebSocket(`${liveEventsWsBase()}/api/ws?token=${encodeURIComponent(token)}`);
+  } catch (_e) {
+    liveEventsRetryTimer = setTimeout(connectLiveEventsSocket, 4000);
+    return;
+  }
+  liveEventsSocket.onmessage = (evt) => {
+    try {
+      const msg = JSON.parse(evt.data);
+      if ((msg.type === 'job_tool_event' || msg.type === 'job_children_update') && msg.job_id === openDelegationDetailJobId) {
+        renderDelegationDetail(msg.job_id);
+      }
+    } catch (_e) { /* malformed frame, ignore */ }
+  };
+  liveEventsSocket.onclose = liveEventsSocket.onerror = () => {
+    liveEventsSocket = null;
+    liveEventsRetryTimer = setTimeout(connectLiveEventsSocket, 4000);
+  };
 }
 
 // ------------------------------------------------------------------ chat -

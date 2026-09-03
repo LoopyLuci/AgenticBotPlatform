@@ -1392,12 +1392,25 @@
       </div>
 
       <div class="card" style="margin-top:14px;">
+        <h3>Swarm budget <span style="font-weight:400; color:var(--muted); font-size:12px;">— pre-dispatch cost ceiling for dispatch_swarm_goal</span></h3>
+        <p class="cardnote">A worst-case ESTIMATE gate (max children &times; assumed tokens/child &times; the resolved model's known price) checked before a dispatch is ever sent — not a real spend tracker. A refused dispatch is logged below as <code>swarm_dispatch_blocked</code> and never touches Hermes.</p>
+        <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; margin-top:10px;">
+          <label>Enabled<br><input type="checkbox" id="budget-enabled" style="margin-top:6px;"></label>
+          <label>Max children<br><input type="number" id="budget-max-children" min="1" style="width:100%;"></label>
+          <label>Max estimated $ (hard cap)<br><input type="number" id="budget-max-usd" min="0" step="0.01" style="width:100%;"></label>
+          <label>Confirm above $ (soft cap)<br><input type="number" id="budget-confirm-usd" min="0" step="0.01" style="width:100%;"></label>
+          <label>Deny unpriced paid models<br><input type="checkbox" id="budget-deny-unpriced" style="margin-top:6px;"></label>
+        </div>
+        <div style="margin-top:10px;"><button class="btn" id="budget-save-btn">Save</button> <span id="budget-save-status" class="cardnote" style="display:inline;"></span></div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
         <h3>Delegation activity <span style="font-weight:400; color:var(--muted); font-size:12px;">— who asked whom to do what</span></h3>
-        <p class="cardnote">Every cross-instance call — <code>ask_instance</code>, <code>dispatch_swarm_goal</code>, and an <code>api</code>-backend agent's own <code>delegate_to_instance</code> — logged here, newest first.</p>
+        <p class="cardnote">Every cross-instance call — <code>ask_instance</code>, <code>dispatch_swarm_goal</code>, and an <code>api</code>-backend agent's own <code>delegate_to_instance</code> — logged here, newest first. A dispatch row can be expanded for its live tool-call status and post-hoc per-child breakdown.</p>
         <div class="tablewrap" style="margin-top:10px;">
           <table>
-            <thead><tr><th>Time</th><th>Kind</th><th>Detail</th></tr></thead>
-            <tbody id="delegation-activity-tbody"><tr class="emptyrow"><td colspan="3">Unlock with the dashboard token to view.</td></tr></tbody>
+            <thead><tr><th>Time</th><th>Kind</th><th>Detail</th><th></th></tr></thead>
+            <tbody id="delegation-activity-tbody"><tr class="emptyrow"><td colspan="4">Unlock with the dashboard token to view.</td></tr></tbody>
           </table>
         </div>
       </div>
