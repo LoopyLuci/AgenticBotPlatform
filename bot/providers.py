@@ -7,17 +7,21 @@ key straight into bot_instances. A bot instance's existing `model`
 column becomes "<provider_name>/<model_id>" when its backend is
 "custom_model" (see parse_model_ref()).
 
-Reuses bot/config.py's ConfigManager wholesale (atomic writes, hot
-reload, "a bad file never crashes the app") for a second file
-(config/providers.yaml) rather than inventing a second loader.
+Reuses bot/config.py's ConfigManager for the READ side (hot reload,
+`.current`, `on_reload()` — this module never needed a second watcher
+implementation), but writes go through ruamel.yaml's round-trip loader
+instead, same pattern bot/hermes_config.py uses for Hermes's own
+config.yaml: a plain yaml.safe_load()/safe_dump() round trip silently
+strips comments (confirmed live — the schema-explaining header comment
+in config/providers.yaml was wiped by a single add-then-delete through
+the dashboard before this fix), which matters here because this file
+ships with real documentation comments, not just data.
 """
 
 from __future__ import annotations
 
 import os
-from typing import Optional
-
-import yaml
+from typing import Any, Optional
 
 from bot.config import ConfigManager
 from bot.envfile import PROJECT_ROOT
@@ -25,6 +29,30 @@ from bot.envfile import PROJECT_ROOT
 PROVIDERS_PATH = PROJECT_ROOT / "config" / "providers.yaml"
 
 _manager = ConfigManager(path=PROVIDERS_PATH)
+
+
+def _yaml():
+    from ruamel.yaml import YAML
+
+    y = YAML(typ="rt")  # round-trip: preserves comments, key order, quoting style
+    y.preserve_quotes = True
+    y.indent(mapping=2, sequence=4, offset=2)
+    return y
+
+
+def _load_yaml_or_empty(path, yaml) -> dict[str, Any]:
+    if not path.is_file():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return {}
+    with path.open(encoding="utf-8") as f:
+        return yaml.load(f) or {}
+
+
+def _atomic_write_yaml(path, data: dict, yaml) -> None:
+    tmp_path = path.with_suffix(".yaml.tmp")
+    with tmp_path.open("w", encoding="utf-8") as f:
+        yaml.dump(data, f)
+    tmp_path.replace(path)  # atomic on the same filesystem
 
 
 def on_reload(callback) -> None:
@@ -94,27 +122,29 @@ def set_provider(
     if catalog_id:
         entry["catalog_id"] = catalog_id.strip()
 
-    data = _manager.read_raw()
-    providers = data.setdefault("providers", {})
+    yaml = _yaml()
+    data = _load_yaml_or_empty(_manager.path, yaml)
+    providers = data.get("providers")
+    if providers is None:
+        providers = {}
+        data["providers"] = providers
     providers[name] = entry
-    _write(data, actor)
+    _write(data, yaml, actor)
 
 
 def delete_provider(name: str, actor: str = "dashboard") -> bool:
-    data = _manager.read_raw()
+    yaml = _yaml()
+    data = _load_yaml_or_empty(_manager.path, yaml)
     providers = data.get("providers") or {}
     if name not in providers:
         return False
     del providers[name]
-    _write(data, actor)
+    _write(data, yaml, actor)
     return True
 
 
-def _write(data: dict, actor: str) -> None:
-    tmp_path = _manager.path.with_suffix(".yaml.tmp")
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(data, f, sort_keys=False)
-    tmp_path.replace(_manager.path)  # atomic on the same filesystem
+def _write(data: dict, yaml, actor: str) -> None:
+    _atomic_write_yaml(_manager.path, data, yaml)
     _manager.reload(actor=actor)
 
 

@@ -74,6 +74,28 @@ def test_api_key_none_when_unconfigured():
     assert providers.get_api_key("nokey") is None
 
 
+def test_set_and_delete_provider_preserves_file_comments():
+    # Real regression: config/providers.yaml ships with a header comment
+    # explaining the schema — a plain yaml.safe_load()/safe_dump() round
+    # trip (the old implementation) silently destroyed it on any write.
+    # Mirrors test_hermes_config.py's own comment-preservation coverage
+    # for the same ruamel.yaml round-trip pattern.
+    providers._manager.path.write_text(
+        "# a real header comment that must survive\nproviders: {}\n", encoding="utf-8",
+    )
+    providers._manager.reload(actor="test")
+
+    providers.set_provider("temp", "http://x")
+    text_after_set = providers._manager.path.read_text(encoding="utf-8")
+    assert "# a real header comment that must survive" in text_after_set
+    assert "temp" in text_after_set
+
+    providers.delete_provider("temp")
+    text_after_delete = providers._manager.path.read_text(encoding="utf-8")
+    assert "# a real header comment that must survive" in text_after_delete
+    assert "temp" not in text_after_delete
+
+
 def test_persists_to_disk():
     providers.set_provider("persisted", "http://x")
     # Fresh read straight from disk (bypassing the in-memory cache) to
