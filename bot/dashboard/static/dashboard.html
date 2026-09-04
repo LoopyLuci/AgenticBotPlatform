@@ -1258,9 +1258,10 @@
           <input type="text" id="mobile-new-host2" placeholder="Fallback host:port (optional), e.g. LAN IP if the above is Tailscale">
           <button class="btn primary" id="btn-mobile-generate">Generate key</button>
         </div>
-        <p class="cardnote">Leave either host blank to fill it in yourself later. The fallback is an optional second, independent path to this server (e.g. a Tailscale hostname alongside a LAN IP) — the app automatically switches to it if the first one stops answering.</p>
+        <p class="cardnote" id="mobile-network-info-note">Leave both blank to auto-fill this machine's own detected LAN/Tailscale addresses. The fallback is an optional second, independent path to this server — the app automatically switches to it if the first one stops answering.</p>
         <div class="hidden" id="mobile-new-result" style="margin-top:14px;">
           <p class="cardnote" style="color:var(--warning);">Shown once — this key can't be recovered after you leave this page. Copy it or scan the QR now.</p>
+          <p class="cardnote" id="mobile-new-hosts-used"></p>
           <div class="row" style="gap:14px; align-items:flex-start;">
             <img id="mobile-new-qr" style="width:180px; height:180px; border-radius:8px; border:1px solid var(--line);">
             <div style="flex:1;">
@@ -2210,6 +2211,7 @@ function startDashboard() {
   connectLiveEventsSocket();
   refreshMobileKeys();
   pollWhenVisible(refreshMobileKeys, 15000);
+  refreshNetworkInfoHint();
   refreshPeers();
   pollWhenVisible(refreshPeers, 15000);
   refreshTrainingPhrases();
@@ -4477,6 +4479,34 @@ document.getElementById('btn-mobile-send-apk-all').onclick = async () => {
   }
 };
 
+async function refreshNetworkInfoHint() {
+  // Mirrors the desktop app's own autoFillMobileHosts() (main.js) exactly:
+  // pre-fill both host fields the moment the Mobile tab loads, so pairing
+  // never blocks on the operator going to find their own LAN IP or
+  // Tailscale address. Only fills in blank fields — never overwrites
+  // something already typed or edited.
+  const hostInput = document.getElementById('mobile-new-host');
+  const host2Input = document.getElementById('mobile-new-host2');
+  const note = document.getElementById('mobile-network-info-note');
+  if (!hostInput || !getToken()) return;
+  let info;
+  try {
+    info = await api('/api/network-info');
+  } catch (_e) { return; }
+  const parts = [];
+  if (info.lan) {
+    parts.push(`LAN ${info.lan}`);
+    if (!hostInput.value.trim()) hostInput.value = info.lan;
+  }
+  if (info.tailscale && info.tailscale !== hostInput.value.trim()) {
+    parts.push(`Tailscale ${info.tailscale}`);
+    if (!host2Input.value.trim()) host2Input.value = info.tailscale;
+  }
+  if (note && parts.length) {
+    note.textContent = `Auto-filled with this machine's own detected addresses (${parts.join(', ')}) — edit them only if wrong. The fallback is a second, independent path; the app automatically switches to it if the first one stops answering.`;
+  }
+}
+
 document.getElementById('btn-mobile-generate').onclick = async () => {
   const label = document.getElementById('mobile-new-label').value.trim() || 'Unnamed device';
   const host = document.getElementById('mobile-new-host').value.trim();
@@ -4487,8 +4517,12 @@ document.getElementById('btn-mobile-generate').onclick = async () => {
     const res = await api('/api/mobile-keys', { method: 'POST', body: JSON.stringify({ label, host, host2 }) });
     document.getElementById('mobile-new-key').textContent = res.key;
     document.getElementById('mobile-new-qr').src = `data:image/png;base64,${res.qr_png_base64}`;
+    const hostsNote = [res.host && `primary ${res.host}`, res.host2 && `fallback ${res.host2}`].filter(Boolean).join(', ');
+    document.getElementById('mobile-new-hosts-used').textContent = hostsNote ? `Paired with: ${hostsNote}` : 'No host configured yet — add one later from this device.';
     document.getElementById('mobile-new-result').classList.remove('hidden');
     document.getElementById('mobile-new-label').value = '';
+    document.getElementById('mobile-new-host').value = '';
+    document.getElementById('mobile-new-host2').value = '';
     refreshMobileKeys();
   } catch (e) {
     alert('Failed to generate key — check the dashboard token.');

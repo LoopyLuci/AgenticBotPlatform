@@ -1,6 +1,7 @@
 package com.botserver.mobile.di
 
 import com.botserver.mobile.data.CredentialStore
+import com.botserver.mobile.data.NsdDiscoveryClient
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -27,6 +28,7 @@ class DynamicHostInterceptorTest {
     private lateinit var primary: MockWebServer
     private lateinit var secondary: MockWebServer
     private lateinit var credentials: CredentialStore
+    private lateinit var nsdDiscovery: NsdDiscoveryClient
     private lateinit var client: OkHttpClient
 
     @Before
@@ -34,7 +36,11 @@ class DynamicHostInterceptorTest {
         primary = MockWebServer().apply { start() }
         secondary = MockWebServer().apply { start() }
         credentials = mockk(relaxed = true)
-        client = OkHttpClient.Builder().addInterceptor(DynamicHostInterceptor(credentials)).build()
+        // Relaxed → discoverBlocking() returns null unless a test overrides
+        // it, i.e. "nothing found on the network", same as real behavior
+        // with NSD unsupported/no server advertising.
+        nsdDiscovery = mockk(relaxed = true)
+        client = OkHttpClient.Builder().addInterceptor(DynamicHostInterceptor(credentials, nsdDiscovery)).build()
     }
 
     @After
@@ -103,6 +109,36 @@ class DynamicHostInterceptorTest {
 
         assertEquals(200, response.code)
         verify { credentials.markGood(secondaryUrl) }
+    }
+
+    @Test
+    fun `both hosts failing falls back to NSD discovery and persists the discovered host`() {
+        val discoveredUrl = secondary.url("/").toString().trimEnd('/')
+        val discoveredHostPort = discoveredUrl.removePrefix("http://")
+        every { credentials.preferredBaseUrl() } returns "http://127.0.0.1:1"
+        every { credentials.otherBaseUrl() } returns "http://127.0.0.1:2"
+        every { credentials.lastGoodHost } returns CredentialStore.SLOT_HOST
+        every { nsdDiscovery.discoverBlocking() } returns discoveredHostPort
+        secondary.enqueue(MockResponse().setResponseCode(200).setBody("ok"))
+
+        val response = client.newCall(request()).execute()
+
+        assertEquals(200, response.code)
+        assertEquals(1, secondary.requestCount)
+        // The primary slot ("host") was the one marked good before this
+        // call, so the newly discovered address overwrites the OTHER slot
+        // ("host2") rather than clobbering a primary that might come back.
+        verify { credentials.host2 = discoveredHostPort }
+        verify { credentials.markGood(discoveredUrl) }
+    }
+
+    @Test
+    fun `NSD discovery finding nothing propagates the original failure`() {
+        every { credentials.preferredBaseUrl() } returns "http://127.0.0.1:1"
+        every { credentials.otherBaseUrl() } returns "http://127.0.0.1:2"
+        every { nsdDiscovery.discoverBlocking() } returns null
+
+        assertThrows(IOException::class.java) { client.newCall(request()).execute() }
     }
 
     @Test

@@ -75,6 +75,15 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.support_bot.model", "bot.support_bot.training_data", "bot.support_bot.hybrid",
     "bot.support_bot.actions", "bot.support_bot.nn_model", "bot.support_bot.slots",
     "bot.support_bot.engine",
+    # Module-level `_zeroconf`/`_service_info` singleton for a real
+    # registered mDNS service (see start()/stop()) — a reload would rebind
+    # the module's own names to None while the old Zeroconf instance is
+    # still actually running and advertising in the background, orphaning
+    # it exactly like the outbox.py/plugins.py/attachments.py cases this
+    # project has hit before. Never restart-required in practice: this
+    # module changes rarely and a stale advertisement is harmless (the
+    # dashboard's real HTTP server is unaffected either way).
+    "bot.mdns_advertise",
 })
 
 # module dotted-name -> the platform name to pass to
@@ -93,6 +102,7 @@ PLATFORM_MODULES: dict[str, str] = {
 # holding X's pre-reload value for the rest of the cycle.
 _TIER3_LEAVES: tuple[str, ...] = (
     "bot.validators",
+    "bot.network_info",
     "bot.platform_guides",
     "bot.personas",
     "bot.bot_instances",  # depends only on validators/personas — before pairing/memory, which import it at module scope

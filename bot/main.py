@@ -197,6 +197,15 @@ async def run() -> None:
 
     retention_task = asyncio.create_task(retention.run_forever(stop_event))
 
+    from bot import mdns_advertise
+
+    # Blocking (real socket I/O to send the mDNS announcement) but brief and
+    # one-shot — off the event loop rather than a long-lived task. Failure
+    # here (no multicast-capable network stack, etc.) is logged and
+    # swallowed inside start() itself; this is discovery sugar for the
+    # Android app's NsdDiscoveryClient, never a startup dependency.
+    await asyncio.to_thread(mdns_advertise.start, port)
+
     # server.serve() just got scheduled, not confirmed running — uvicorn
     # sets Server.started once it's actually bound and accepting
     # connections. Wait for that (bounded, so a real bind failure still
@@ -220,6 +229,7 @@ async def run() -> None:
         await scheduler_task  # stop_event is already set; run_forever exits its own loop cleanly
         await peers_health_task  # same shutdown contract as scheduler_task
         await retention_task  # same shutdown contract as scheduler_task
+        await asyncio.to_thread(mdns_advertise.stop)
         server.should_exit = True
         await dashboard_task
         await platform_supervisor.stop_all()

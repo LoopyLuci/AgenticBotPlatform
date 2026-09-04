@@ -7,6 +7,7 @@ import com.botserver.mobile.BuildConfig
 import com.botserver.mobile.data.ApiService
 import com.botserver.mobile.data.CredentialStore
 import com.botserver.mobile.data.MeshPortHolder
+import com.botserver.mobile.data.NsdDiscoveryClient
 import com.botserver.mobile.data.PrivateNetworkGuard
 import dagger.Module
 import dagger.Provides
@@ -76,7 +77,10 @@ const val PLACEHOLDER_BASE_URL = "http://127.0.0.1:8787"
  */
 // internal (not private) so tests in this module can drive its failover
 // logic directly — see DynamicHostInterceptorTest.
-internal class DynamicHostInterceptor(private val credentials: CredentialStore) : Interceptor {
+internal class DynamicHostInterceptor(
+    private val credentials: CredentialStore,
+    private val nsdDiscovery: NsdDiscoveryClient,
+) : Interceptor {
     private fun rebuild(original: Request, base: String): Request? {
         val target = base.toHttpUrlOrNull() ?: return null
         if (target.scheme == "http" && !PrivateNetworkGuard.isAllowedHost(target.host)) {
@@ -114,12 +118,42 @@ internal class DynamicHostInterceptor(private val credentials: CredentialStore) 
             credentials.markGood(primaryBase)
             return response
         } catch (e: IOException) {
-            val fallbackBase = credentials.otherBaseUrl() ?: throw e
-            val fallbackReq = rebuild(original, fallbackBase) ?: throw e
-            val response = chain.proceed(fallbackReq)
-            credentials.markGood(fallbackBase)
-            return response
+            val fallbackBase = credentials.otherBaseUrl()
+            if (fallbackBase == null) {
+                return discoverAndRetry(chain, original, e)
+            }
+            return try {
+                val fallbackReq = rebuild(original, fallbackBase) ?: throw e
+                val response = chain.proceed(fallbackReq)
+                credentials.markGood(fallbackBase)
+                response
+            } catch (e2: IOException) {
+                discoverAndRetry(chain, original, e2)
+            }
         }
+    }
+
+    /** Last resort once every configured host has failed on this same
+     * request: look for this server fresh on the local network via mDNS
+     * (see bot/mdns_advertise.py server-side) instead of giving up outright.
+     * This is what keeps the app working after a LAN IP changed under DHCP
+     * or a Tailscale hostname stopped resolving, without the user re-pairing
+     * by hand — as long as the phone is on the same local network right now.
+     * A successful discovery overwrites whichever host slot didn't just work
+     * (never the one currently marked good), so future requests go straight
+     * there instead of re-discovering every time. */
+    private fun discoverAndRetry(chain: Interceptor.Chain, original: Request, lastError: IOException): Response {
+        val discovered = nsdDiscovery.discoverBlocking() ?: throw lastError
+        val discoveredBase = "http://$discovered"
+        val req = rebuild(original, discoveredBase) ?: throw lastError
+        val response = chain.proceed(req)
+        if (credentials.lastGoodHost == CredentialStore.SLOT_HOST) {
+            credentials.host2 = discovered
+        } else {
+            credentials.host = discovered
+        }
+        credentials.markGood(discoveredBase)
+        return response
     }
 }
 
@@ -129,7 +163,7 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(credentials: CredentialStore): OkHttpClient =
+    fun provideOkHttpClient(credentials: CredentialStore, nsdDiscovery: NsdDiscoveryClient): OkHttpClient =
         OkHttpClient.Builder()
             // Short-ish connect timeout so a dead host fails fast into the
             // interceptor's fallback instead of stalling the UI for
@@ -138,7 +172,7 @@ object NetworkModule {
             .readTimeout(15, TimeUnit.SECONDS)
             .writeTimeout(15, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
-            .addInterceptor(DynamicHostInterceptor(credentials))
+            .addInterceptor(DynamicHostInterceptor(credentials, nsdDiscovery))
             .build()
 
     @Provides

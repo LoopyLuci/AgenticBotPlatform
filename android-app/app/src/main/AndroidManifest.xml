@@ -4,6 +4,14 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- NsdDiscoveryClient's mDNS/DNS-SD lookup (finding this server fresh
+         on the LAN when both paired hosts stop answering — e.g. a DHCP
+         lease changed the LAN IP) needs Wi-Fi state to hold a multicast
+         lock, since mDNS relies on multicast packets some Wi-Fi chipsets
+         drop by default without one. -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Required on Android 8+ to launch the system installer for an APK
          from a source other than the Play Store (see UpdateInstaller.kt) —
          the user still has to explicitly allow "install unknown apps" for

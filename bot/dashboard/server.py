@@ -2596,6 +2596,17 @@ def build_app() -> FastAPI:
     # devices' access, so revoking a lost/stolen phone from the desktop
     # still cuts off anything it minted too.
 
+    @app.get("/api/network-info", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_network_info():
+        from bot import network_info
+
+        addrs = await asyncio.get_running_loop().run_in_executor(None, network_info.detect_addresses)
+        port = int(os.environ.get("DASHBOARD_PORT", "8787"))
+        return {
+            "lan": f"{addrs['lan']}:{port}" if addrs.get("lan") else None,
+            "tailscale": f"{addrs['tailscale']}:{port}" if addrs.get("tailscale") else None,
+        }
+
     @app.post("/api/mobile-keys", dependencies=[Depends(_require_token_or_api_key)])
     async def api_mobile_keys_create(payload: dict = Body(...), caller: str = Depends(_identify_caller)):
         label = (payload.get("label") or "").strip() or "Unnamed device"
@@ -2606,6 +2617,22 @@ def build_app() -> FastAPI:
         # (e.g. a Tailscale hostname alongside a LAN IP) — the Android app
         # fails over between them automatically if one stops answering.
         host2 = (payload.get("host2") or "").strip()
+        # Auto-fill whichever of host/host2 the caller left blank with this
+        # machine's own detected LAN/Tailscale address, so a key minted with
+        # no explicit host still gets two independent, automatically-tried
+        # network paths by default instead of the phone needing a manual
+        # fallback added later — see bot/network_info.py's module doc.
+        if not host or not host2:
+            from bot import network_info
+
+            addrs = await asyncio.get_running_loop().run_in_executor(None, network_info.detect_addresses)
+            port = int(os.environ.get("DASHBOARD_PORT", "8787"))
+            candidates = [f"{addrs[kind]}:{port}" for kind in ("lan", "tailscale") if addrs.get(kind)]
+            for candidate in candidates:
+                if not host:
+                    host = candidate
+                elif not host2 and candidate != host:
+                    host2 = candidate
         params = [f"key={plaintext}"]
         if host:
             params.insert(0, f"host={host}")
@@ -2619,7 +2646,13 @@ def build_app() -> FastAPI:
         db.log_audit(actor=caller, action="mobile_key_create", detail=f"created key {key_id!r} ({label!r})")
         devices = await asyncio.get_running_loop().run_in_executor(None, db.list_devices)
         await _manager.broadcast({"type": "device_list", "devices": _annotate_online([dict(d) for d in devices])})
-        return {"id": key_id, "label": label, "key": plaintext, "qr_png_base64": qr_png_base64}
+        return {
+            "id": key_id, "label": label, "key": plaintext, "qr_png_base64": qr_png_base64,
+            # Echoed back (not just embedded in the QR) so the dashboard UI
+            # can show exactly which two paths this key was minted with,
+            # including whichever got auto-filled above.
+            "host": host or None, "host2": host2 or None,
+        }
 
     @app.get("/api/mobile-keys", dependencies=[Depends(_require_token)])
     async def api_mobile_keys_list():
