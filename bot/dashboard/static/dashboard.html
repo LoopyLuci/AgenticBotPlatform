@@ -2817,12 +2817,18 @@ async function refreshModelsPage() {
         <td>${m.input != null ? `$${(m.input * 1e6).toFixed(2)}/${(m.output * 1e6).toFixed(2)} per 1M in/out` : '—'}</td>
         <td><input type="checkbox" data-model-toggle="${esc(p.name)}" data-model-id="${esc(m.id)}" ${m.enabled ? 'checked' : ''}></td>
       </tr>`).join('') : '<tr><td colspan="4" class="cardnote">No models found yet — add a real API key, or this provider isn\'t in the known catalog and hasn\'t responded live.</td></tr>';
+    const paidTotal = models.filter(m => m.free !== true).length;
+    const paidHidden = models.filter(m => m.free !== true && !m.enabled).length;
+    const hiddenNote = paidTotal
+      ? `<span class="cardnote">${paidHidden} of ${paidTotal} paid/unpriced model${paidTotal === 1 ? '' : 's'} hidden by default</span>`
+      : '';
     return `
       <details data-provider="${esc(p.name)}" ${openNames.has(p.name) ? 'open' : ''} style="margin-bottom:10px;">
         <summary style="cursor:pointer; font-weight:600; padding:6px 0;">${esc(p.name)} <span class="cardnote">(${models.length} model${models.length === 1 ? '' : 's'})</span></summary>
-        <div style="margin:6px 0;">
+        <div style="margin:6px 0; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
           <button type="button" class="secondary" data-toggle-paid="${esc(p.name)}" data-enable="0">Turn Off All Paid</button>
           <button type="button" class="secondary" data-toggle-paid="${esc(p.name)}" data-enable="1">Turn On All Paid Models</button>
+          ${hiddenNote}
         </div>
         <div class="tablewrap" style="margin-top:6px;">
           <table>
