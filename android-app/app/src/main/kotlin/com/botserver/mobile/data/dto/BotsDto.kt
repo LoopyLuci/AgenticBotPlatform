@@ -6,15 +6,26 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonPrimitive
 
-/** Mirrors bot_instances.py's credentials JSON shape — bot_token for every
- * platform, app_token additionally for Slack (xapp-...). Full parity with
- * the desktop dashboard means this app can read and write real platform
- * bot tokens; see bot/dashboard/server.py's _identify_caller() docstring
- * for the tradeoff that was a deliberate choice, not an oversight. */
+/** Mirrors bot_instances.py's credentials JSON shape — bot_token for
+ * Telegram/Discord, bot_token+app_token for Slack, homeserver/user_id/
+ * access_token(/device_id) for Matrix, phone_number_id/access_token/
+ * app_secret/verify_token for WhatsApp (see bot/validators.py's
+ * PLATFORM_TOKEN_VALIDATORS for the authoritative per-platform field
+ * list). Full parity with the desktop dashboard means this app can read
+ * and write real platform credentials; see bot/dashboard/server.py's
+ * _identify_caller() docstring for the tradeoff that was a deliberate
+ * choice, not an oversight. */
 @Serializable
 data class BotCredentials(
     @SerialName("bot_token") val botToken: String? = null,
     @SerialName("app_token") val appToken: String? = null,
+    val homeserver: String? = null,
+    @SerialName("user_id") val userId: String? = null,
+    @SerialName("access_token") val accessToken: String? = null,
+    @SerialName("device_id") val deviceId: String? = null,
+    @SerialName("phone_number_id") val phoneNumberId: String? = null,
+    @SerialName("app_secret") val appSecret: String? = null,
+    @SerialName("verify_token") val verifyToken: String? = null,
 )
 
 /** Mirrors one row from GET /api/bots — see bot/bot_instances.py's

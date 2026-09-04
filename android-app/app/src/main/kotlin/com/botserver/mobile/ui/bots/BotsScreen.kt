@@ -37,13 +37,7 @@ import com.botserver.mobile.security.rememberFragmentActivity
 import com.botserver.mobile.security.requireBiometricAuth
 import kotlinx.coroutines.launch
 
-// Matrix/WhatsApp are deliberately not offered here yet — each needs its
-// own credential fields (homeserver/user_id/access_token for Matrix;
-// phone_number_id/access_token/app_secret/verify_token for WhatsApp),
-// which is a larger, separate form-design change from this pass's scope
-// (adding the custom_model/native_agent backends + a Providers/Models
-// screen). Flagged as a known follow-up, not silently dropped.
-private val PLATFORMS = listOf("telegram", "discord", "slack")
+private val PLATFORMS = listOf("telegram", "discord", "slack", "matrix", "whatsapp")
 private val BACKENDS = listOf("cli", "api", "ui", "hermes_cli", "hermes_gateway", "custom_model", "native_agent")
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
@@ -325,16 +319,88 @@ private fun BotFormScreen(
                 SecretTextField(
                     value = form.botToken,
                     onValueChange = { v -> onChange { it.copy(botToken = v) } },
-                    label = "Bot token",
+                    label = form.tokenFieldLabel,
                     modifier = Modifier.testTag("bot-form-token"),
                 )
-                if (form.platform == "slack") {
-                    Spacer(Modifier.height(14.dp))
-                    SecretTextField(
-                        value = form.appToken,
-                        onValueChange = { v -> onChange { it.copy(appToken = v) } },
-                        label = "App token (xapp-...)",
-                    )
+                when (form.platform) {
+                    "slack" -> {
+                        Spacer(Modifier.height(14.dp))
+                        SecretTextField(
+                            value = form.appToken,
+                            onValueChange = { v -> onChange { it.copy(appToken = v) } },
+                            label = "App token (xapp-...)",
+                        )
+                    }
+                    "matrix" -> {
+                        Spacer(Modifier.height(14.dp))
+                        OutlinedTextField(
+                            value = form.homeserver,
+                            onValueChange = { v -> onChange { it.copy(homeserver = v) } },
+                            label = { Text("Homeserver URL") },
+                            placeholder = { Text("https://matrix.org") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                        )
+                        Spacer(Modifier.height(14.dp))
+                        OutlinedTextField(
+                            value = form.matrixUserId,
+                            onValueChange = { v -> onChange { it.copy(matrixUserId = v) } },
+                            label = { Text("Matrix user ID") },
+                            placeholder = { Text("@mybot:matrix.org") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            supportingText = {
+                                Text(
+                                    "Get an access token (goes in the field above) via Element → Settings → Help & About → " +
+                                        "Advanced → Access Token, or POST /_matrix/client/v3/login. Encrypted rooms aren't " +
+                                        "supported — invite this bot into an unencrypted room.",
+                                )
+                            },
+                        )
+                        Spacer(Modifier.height(14.dp))
+                        OutlinedTextField(
+                            value = form.matrixDeviceId,
+                            onValueChange = { v -> onChange { it.copy(matrixDeviceId = v) } },
+                            label = { Text("Device ID (optional)") },
+                            placeholder = { Text("leave blank to auto-assign") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                        )
+                    }
+                    "whatsapp" -> {
+                        Spacer(Modifier.height(14.dp))
+                        OutlinedTextField(
+                            value = form.whatsappPhoneNumberId,
+                            onValueChange = { v -> onChange { it.copy(whatsappPhoneNumberId = v) } },
+                            label = { Text("Phone Number ID") },
+                            placeholder = { Text("1234567890") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            supportingText = { Text("The access token (field above) is a permanent System User token with the whatsapp_business_messaging permission.") },
+                        )
+                        Spacer(Modifier.height(14.dp))
+                        SecretTextField(
+                            value = form.whatsappAppSecret,
+                            onValueChange = { v -> onChange { it.copy(whatsappAppSecret = v) } },
+                            label = "App secret",
+                        )
+                        Spacer(Modifier.height(14.dp))
+                        OutlinedTextField(
+                            value = form.whatsappVerifyToken,
+                            onValueChange = { v -> onChange { it.copy(whatsappVerifyToken = v) } },
+                            label = { Text("Verify token") },
+                            placeholder = { Text("pick any string, 6+ chars") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            supportingText = {
+                                Text(
+                                    "Webhook URL for Meta's App Dashboard → WhatsApp → Configuration: <your public HTTPS " +
+                                        "domain>/webhooks/whatsapp — same URL and verify token for every WhatsApp " +
+                                        "instance on this install, since Meta allows only one webhook per App.",
+                                )
+                            },
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(14.dp))
@@ -344,7 +410,12 @@ private fun BotFormScreen(
                 label = { Text("Allowed user ID(s)") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                supportingText = { Text("Comma-separated. Numeric IDs for Telegram/Discord, member IDs (U.../W...) for Slack.") },
+                supportingText = {
+                    Text(
+                        "Comma-separated. Numeric IDs for Telegram/Discord, member IDs (U.../W...) for Slack, full Matrix " +
+                            "user IDs (@name:server) for Matrix, phone numbers with country code and no \"+\" for WhatsApp.",
+                    )
+                },
             )
             if (form.isEditing) {
                 Spacer(Modifier.height(14.dp))

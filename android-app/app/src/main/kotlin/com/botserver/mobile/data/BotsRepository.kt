@@ -57,8 +57,7 @@ class BotsRepository @Inject constructor(
         backend: String,
         model: String?,
         persona: String,
-        botToken: String,
-        appToken: String?,
+        credentials: BotCredentials,
         allowedUserIds: List<String>,
     ) {
         apiService.createBot(
@@ -68,7 +67,7 @@ class BotsRepository @Inject constructor(
                 backend = backend,
                 model = model?.takeIf { it.isNotBlank() },
                 persona = persona,
-                credentials = BotCredentials(botToken = botToken, appToken = appToken?.takeIf { it.isNotBlank() }),
+                credentials = credentials,
                 allowedUserIds = allowedUserIds,
             ),
         )
@@ -81,8 +80,7 @@ class BotsRepository @Inject constructor(
         backend: String,
         model: String?,
         persona: String,
-        botToken: String,
-        appToken: String?,
+        credentials: BotCredentials,
         allowedUserIds: List<String>,
         enabled: Boolean,
     ) {
@@ -94,7 +92,7 @@ class BotsRepository @Inject constructor(
                 backend = backend,
                 model = model?.takeIf { it.isNotBlank() },
                 persona = persona,
-                credentials = BotCredentials(botToken = botToken, appToken = appToken?.takeIf { it.isNotBlank() }),
+                credentials = credentials,
                 allowedUserIds = allowedUserIds,
                 enabled = enabled,
             ),
