@@ -263,6 +263,27 @@ private fun BotFormScreen(
                 title = { Text(if (form.isEditing) "Edit bot" else "Add bot") },
             )
         },
+        // The Save button lives in bottomBar, not as the scrollable
+        // Column's last item — see PairingScreen.kt's own bottomBar for
+        // the same reasoning: always visible without scrolling, and gets
+        // real navigation-bar inset handling the same way BotsScreen's own
+        // (bypassed while this form is open) NavigationBar already does.
+        bottomBar = {
+            Surface(tonalElevation = 2.dp) {
+                Button(
+                    onClick = onSave,
+                    enabled = !form.saving && !form.loadingCredentials,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(16.dp)
+                        .testTag("bot-form-save"),
+                ) {
+                    if (form.saving) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                    else Text(if (form.isEditing) "Save changes" else "Add bot")
+                }
+            }
+        },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -429,15 +450,6 @@ private fun BotFormScreen(
                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
             Spacer(Modifier.height(20.dp))
-            Button(
-                onClick = onSave,
-                enabled = !form.saving && !form.loadingCredentials,
-                modifier = Modifier.fillMaxWidth().testTag("bot-form-save"),
-            ) {
-                if (form.saving) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
-                else Text(if (form.isEditing) "Save changes" else "Add bot")
-            }
-            Spacer(Modifier.height(24.dp))
         }
     }
 }

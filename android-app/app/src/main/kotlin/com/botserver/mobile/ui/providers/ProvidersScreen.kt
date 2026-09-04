@@ -271,6 +271,25 @@ private fun AddProviderScreen(
                 title = { Text("Add provider") },
             )
         },
+        // The Save button lives in bottomBar — see PairingScreen.kt's
+        // bottomBar for the same reasoning: always visible without
+        // scrolling, with real navigation-bar inset handling.
+        bottomBar = {
+            Surface(tonalElevation = 2.dp) {
+                Button(
+                    onClick = onSave,
+                    enabled = !form.saving,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(16.dp)
+                        .testTag("provider-form-save"),
+                ) {
+                    if (form.saving) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                    else Text("Add provider")
+                }
+            }
+        },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -333,15 +352,6 @@ private fun AddProviderScreen(
                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
             Spacer(Modifier.height(20.dp))
-            Button(
-                onClick = onSave,
-                enabled = !form.saving,
-                modifier = Modifier.fillMaxWidth().testTag("provider-form-save"),
-            ) {
-                if (form.saving) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
-                else Text("Add provider")
-            }
-            Spacer(Modifier.height(24.dp))
         }
     }
 }

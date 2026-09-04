@@ -52,7 +52,35 @@ fun PairingScreen(
         if (state is PairingState.Success) onPaired()
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Pair with Bot Server") }) }) { padding ->
+    Scaffold(
+        topBar = { TopAppBar(title = { Text("Pair with Bot Server") }) },
+        // The Pair button lives in bottomBar, not as the scrollable
+        // Column's last item, so it's always visible without scrolling
+        // and gets real navigation-bar inset handling for free — the same
+        // mechanism HomeScreen's own NavigationBar already relies on for
+        // every other screen (this was the one screen without a bottomBar
+        // at all). A plain trailing button at the end of a Column that
+        // already fits the viewport stays at a fixed absolute position no
+        // matter what padding is added to the Column, so pinning it here
+        // instead is the more robust structural choice, not just cosmetic.
+        bottomBar = {
+            if (showManualEntry) {
+                Surface(tonalElevation = 2.dp) {
+                    Button(
+                        onClick = { viewModel.onManualSubmit(manualHost, manualKey, manualHost2) },
+                        enabled = state !is PairingState.Verifying,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(20.dp)
+                            .testTag("pairing-submit"),
+                    ) {
+                        Text("Pair", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        },
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -123,14 +151,6 @@ fun PairingScreen(
                         modifier = Modifier.fillMaxWidth().testTag("pairing-key"),
                         singleLine = true,
                     )
-                    Spacer(Modifier.height(12.dp))
-                    Button(
-                        onClick = { viewModel.onManualSubmit(manualHost, manualKey, manualHost2) },
-                        enabled = state !is PairingState.Verifying,
-                        modifier = Modifier.fillMaxWidth().testTag("pairing-submit"),
-                    ) {
-                        Text("Pair", fontWeight = FontWeight.Bold)
-                    }
                 }
             }
         }
