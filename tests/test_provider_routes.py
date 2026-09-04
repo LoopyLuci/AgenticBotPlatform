@@ -113,6 +113,45 @@ def test_toggle_route_persists_and_logs_audit(temp_db, monkeypatch, tmp_path):
     assert "disabled" in audit[0]["detail"]
 
 
+def test_toggle_paid_route_disables_only_paid_models(temp_db, monkeypatch, tmp_path):
+    _isolate_provider_registry(tmp_path, monkeypatch)
+    client = _client(monkeypatch)
+    providers.set_provider("openrouter", "https://openrouter.ai/api/v1")
+
+    from bot import models as models_module
+
+    async def fake_browse(name):
+        return [
+            {"id": "free-model:free", "free": True, "input": None, "output": None, "enabled": True},
+            {"id": "paid-model-a", "free": False, "input": 1e-6, "output": 2e-6, "enabled": False},
+            {"id": "paid-model-b", "free": None, "input": None, "output": None, "enabled": False},
+        ]
+
+    monkeypatch.setattr(models_module, "browse_provider_models", fake_browse)
+
+    resp = client.post(
+        "/api/providers/openrouter/models/toggle-paid", headers=_headers(), json={"enabled": True},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["count"] == 2
+    overrides = {r["model_id"]: bool(r["enabled"]) for r in db.list_model_toggles("openrouter")}
+    assert overrides == {"paid-model-a": True, "paid-model-b": True}
+    assert "free-model:free" not in overrides
+    audit = db.list_audit_log(actions=["model_toggle_paid_bulk"])
+    assert len(audit) == 1
+    assert "2 paid model(s) enabled" in audit[0]["detail"]
+
+
+def test_toggle_paid_route_404_for_unconfigured_provider(temp_db, monkeypatch, tmp_path):
+    _isolate_provider_registry(tmp_path, monkeypatch)
+    client = _client(monkeypatch)
+
+    resp = client.post("/api/providers/nope/models/toggle-paid", headers=_headers(), json={"enabled": False})
+
+    assert resp.status_code == 404
+
+
 def test_set_provider_route_stores_catalog_id(temp_db, monkeypatch, tmp_path):
     _isolate_provider_registry(tmp_path, monkeypatch)
     client = _client(monkeypatch)

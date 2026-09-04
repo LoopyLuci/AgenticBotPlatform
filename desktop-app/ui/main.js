@@ -1399,6 +1399,10 @@ async function refreshModelsPage() {
     return `
       <details data-provider="${esc(p.name)}" ${openNames.has(p.name) ? 'open' : ''} style="margin-bottom:10px;">
         <summary style="cursor:pointer; font-weight:600; padding:6px 0;">${esc(p.name)} <span class="cardnote">(${models.length} model${models.length === 1 ? '' : 's'})</span></summary>
+        <div style="margin:6px 0;">
+          <button type="button" class="secondary" data-toggle-paid="${esc(p.name)}" data-enable="0">Turn Off All Paid</button>
+          <button type="button" class="secondary" data-toggle-paid="${esc(p.name)}" data-enable="1">Turn On All Paid Models</button>
+        </div>
         <div class="tablewrap" style="margin-top:6px;">
           <table>
             <thead><tr><th>Model</th><th>Free?</th><th>Price</th><th>Enabled</th></tr></thead>
@@ -1420,6 +1424,23 @@ async function refreshModelsPage() {
       alert(e.message || 'Failed to update that model\'s toggle.');
       return;
     }
+    refreshModels();
+  });
+  list.querySelectorAll('[data-toggle-paid]').forEach(btn => btn.onclick = async () => {
+    const providerName = btn.dataset.togglePaid;
+    const enabled = btn.dataset.enable === '1';
+    btn.disabled = true;
+    try {
+      await api(`/api/providers/${encodeURIComponent(providerName)}/models/toggle-paid`, {
+        method: 'POST',
+        body: JSON.stringify({ enabled }),
+      });
+    } catch (e) {
+      alert(e.message || 'Failed to update paid models for that provider.');
+    } finally {
+      btn.disabled = false;
+    }
+    refreshModelsPage();
     refreshModels();
   });
 }

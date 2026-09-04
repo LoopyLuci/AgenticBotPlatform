@@ -53,6 +53,30 @@ def test_combines_static_catalog_with_toggle_state(temp_db, monkeypatch):
     assert result[0]["id"] == "free-model:free"
 
 
+def test_paid_model_defaults_disabled_without_explicit_toggle(temp_db, monkeypatch):
+    _configure_provider(monkeypatch, "openrouter", {"base_url": "https://openrouter.ai/api/v1", "catalog_id": "openrouter"})
+
+    async def fake_list_models_for_provider(catalog_id, refresh=False):
+        return [
+            {"id": "free-model:free", "free": True, "input": 0.0, "output": 0.0},
+            {"id": "paid-model", "free": False, "input": 1e-6, "output": 2e-6},
+            {"id": "unpriced-model", "free": None, "input": None, "output": None},
+        ]
+
+    async def fake_fetch_custom_models(name, entry, registry):
+        return None
+
+    monkeypatch.setattr("bot.model_pricing.list_models_for_provider", fake_list_models_for_provider)
+    monkeypatch.setattr(models_module, "_fetch_custom_models", fake_fetch_custom_models)
+
+    result = _run(models_module.browse_provider_models("openrouter"))
+
+    by_id = {m["id"]: m for m in result}
+    assert by_id["free-model:free"]["enabled"] is True
+    assert by_id["paid-model"]["enabled"] is False
+    assert by_id["unpriced-model"]["enabled"] is False
+
+
 def test_live_only_models_appear_for_provider_with_no_catalog_id(temp_db, monkeypatch):
     _configure_provider(monkeypatch, "my_local", {"base_url": "http://127.0.0.1:11434/v1"})
 

@@ -282,6 +282,38 @@ _CUSTOM_CACHE_TTL_S = 300.0
 _custom_cache: dict[str, dict] = {}  # provider_name -> {"at": float, "models": Optional[list[str]]}
 
 
+async def _resolve_effective_enabled(provider_name: str, entry: dict, model_ids: list[str]) -> dict[str, bool]:
+    """Per-model_id effective enabled/disabled state for `provider_name`,
+    combining any explicit bot.db.model_toggles override with a free/
+    paid-based default when none exists: a local endpoint's models are
+    free by convention (see _is_local_base_url) and default enabled; any
+    other model defaults enabled only when models.dev actually reports
+    it as free (cost 0/0) — an unpriced or genuinely paid model defaults
+    DISABLED, so adding a real API key for a provider with hundreds of
+    models doesn't silently expose all of them, paid ones included,
+    with no explicit opt-in. Prefers the provider's stored catalog_id
+    (set when it was added via the catalog-assisted picker) over its
+    bare config name when looking up pricing, since the two only
+    coincide by chance for a manually-named provider."""
+    from bot import db
+    from bot import model_pricing
+
+    overrides = {row["model_id"]: bool(row["enabled"]) for row in db.list_model_toggles(provider_name)}
+    is_local = _is_local_base_url(entry.get("base_url", ""))
+    pricing_key = entry.get("catalog_id") or provider_name
+
+    result: dict[str, bool] = {}
+    for model_id in model_ids:
+        if model_id in overrides:
+            result[model_id] = overrides[model_id]
+        elif is_local:
+            result[model_id] = True
+        else:
+            pricing, _source = await model_pricing.get_pricing(pricing_key, model_id)
+            result[model_id] = bool(pricing and pricing.get("free"))
+    return result
+
+
 async def live_custom_models() -> Optional[dict[str, list[str]]]:
     """{provider_name: [model_ids]} for every provider configured in
     config/providers.yaml, fetched live from that provider's own
@@ -292,15 +324,16 @@ async def live_custom_models() -> Optional[dict[str, list[str]]]:
     reason to fail the whole call — one dead local server shouldn't hide
     every other configured provider's models.
 
-    Filters out anything explicitly disabled on the Models page
-    (bot.db.disabled_model_ids) — this is the ONE choke point every
-    model picker in the app (Telegram's /model, the dashboard's
+    Filters to only EFFECTIVELY ENABLED models — an explicit Models-page
+    override when one exists, else the free/paid-based default computed
+    by _resolve_effective_enabled() (paid/unpriced models are off unless
+    explicitly turned on). This is the ONE choke point every model
+    picker in the app (Telegram's /model, the dashboard's
     GET /api/models, dispatch_native_swarm_goal's auto-pick-free logic)
-    already flows through, so toggling a model off here removes it from
-    every picker with no changes needed at those call sites. Use
-    browse_provider_models() instead when disabled models must still be
-    visible (i.e. the Models page's own toggle UI)."""
-    from bot import db
+    already flows through, so toggling — or a provider's own free/paid
+    default — is respected everywhere with no changes needed at those
+    call sites. Use browse_provider_models() instead when disabled
+    models must still be visible (i.e. the Models page's own toggle UI)."""
     from bot import providers as provider_registry
 
     configured = provider_registry.list_providers()
@@ -317,8 +350,8 @@ async def live_custom_models() -> Optional[dict[str, list[str]]]:
             models = await _fetch_custom_models(name, entry, provider_registry)
             _custom_cache[name] = {"at": now, "models": models}
         if models is not None:
-            disabled = db.disabled_model_ids(name)
-            visible = [m for m in models if m not in disabled] if disabled else models
+            effective = await _resolve_effective_enabled(name, entry, models)
+            visible = [m for m in models if effective.get(m)]
             if visible:
                 grouped[name] = visible
     return grouped or None
@@ -414,7 +447,11 @@ async def browse_provider_models(provider_name: str, refresh: bool = False) -> l
     provider's stored catalog_id, if it has one — always available, no
     live call needed) with a live /models fetch (covers local/custom
     models models.dev can't know about, e.g. whatever's actually pulled
-    into a user's Ollama), each tagged with its current toggle state.
+    into a user's Ollama), each tagged with its current *effective*
+    toggle state — an explicit override when one exists, else the same
+    free-default-on/paid-default-off rule _resolve_effective_enabled()
+    applies for live_custom_models(), so this page's checkboxes reflect
+    reality rather than a flat "everything starts on".
     Sorted free-first per bot.models._sort_browse_entries. Returns []
     for an unconfigured provider name — never raises."""
     from bot import db
@@ -441,9 +478,9 @@ async def browse_provider_models(provider_name: str, refresh: bool = False) -> l
     if not by_id:
         return []
 
-    disabled = db.disabled_model_ids(provider_name)
+    overrides = {row["model_id"]: bool(row["enabled"]) for row in db.list_model_toggles(provider_name)}
     for model_id, e in by_id.items():
-        e["enabled"] = model_id not in disabled
+        e["enabled"] = overrides[model_id] if model_id in overrides else e.get("free") is True
 
     return _sort_browse_entries(list(by_id.values()))
 

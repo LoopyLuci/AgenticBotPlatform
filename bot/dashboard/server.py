@@ -772,6 +772,29 @@ def build_app() -> FastAPI:
         )
         return {"ok": True}
 
+    @app.post("/api/providers/{name}/models/toggle-paid", dependencies=[Depends(_require_token)])
+    async def api_provider_models_toggle_paid(name: str, payload: dict = Body(...)):
+        """Bulk on/off for every non-free model of one provider — backs
+        the Models page's "Turn Off All Paid"/"Turn On All Paid Models"
+        buttons. Free models are never touched by this route; a model
+        with unknown pricing counts as "paid" here, matching the same
+        default-off convention bot.models._resolve_effective_enabled()
+        already applies to it."""
+        from bot import models as models_module
+        from bot import providers
+
+        if providers.get_provider(name) is None:
+            raise HTTPException(status_code=404, detail=f"no provider named {name!r}")
+        enabled = bool(payload.get("enabled", False))
+        entries = await models_module.browse_provider_models(name)
+        updates = {e["id"]: enabled for e in entries if e.get("free") is not True}
+        db.bulk_set_model_toggles(name, updates)
+        db.log_audit(
+            actor="dashboard", action="model_toggle_paid_bulk",
+            detail=f"{name}: {len(updates)} paid model(s) {'enabled' if enabled else 'disabled'}",
+        )
+        return {"ok": True, "count": len(updates)}
+
     @app.get("/api/plugins", dependencies=[Depends(_require_token)])
     async def api_plugins_list():
         from bot import plugins as plugin_registry

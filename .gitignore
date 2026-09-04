@@ -1,4 +1,5 @@
 .env
+config/providers.yaml
 data/env_backups/
 data/bot_instances_backups/
 __pycache__/

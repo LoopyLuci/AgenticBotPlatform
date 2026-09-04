@@ -658,10 +658,14 @@ CREATE TABLE IF NOT EXISTS job_tool_events (
 -- Per-model on/off state for the custom_model/native_agent provider
 -- families (see bot/models.py's browse_provider_models()/
 -- live_custom_models() filtering) — sparse by design: only an explicit
--- override is stored, absence of a row means enabled. A provider can
--- have hundreds of models (OpenRouter's real catalog does); storing one
--- row per model regardless of state would make this table needlessly
--- large for no benefit, since "enabled" is already the sane default.
+-- override is stored. Absence of a row falls back to a free/paid-based
+-- default (free models default enabled, paid/unpriced models default
+-- disabled — see bot.models._resolve_effective_enabled) rather than a
+-- flat "always enabled", so a freshly-configured provider with a real
+-- API key doesn't silently expose hundreds of paid models with no
+-- explicit opt-in. A provider can have hundreds of models (OpenRouter's
+-- real catalog does); storing one row per model regardless of state
+-- would make this table needlessly large for no benefit.
 CREATE TABLE IF NOT EXISTS model_toggles (
     provider    TEXT NOT NULL,
     model_id    TEXT NOT NULL,
@@ -1878,6 +1882,24 @@ def set_model_toggle(provider: str, model_id: str, enabled: bool) -> None:
             "INSERT INTO model_toggles (provider, model_id, enabled, updated_at) VALUES (?, ?, ?, ?) "
             "ON CONFLICT(provider, model_id) DO UPDATE SET enabled=excluded.enabled, updated_at=excluded.updated_at",
             (provider, model_id, 1 if enabled else 0, _now()),
+        )
+        conn.commit()
+
+
+def bulk_set_model_toggles(provider: str, updates: dict[str, bool]) -> None:
+    """Set many per-model overrides for one provider in a single
+    transaction — backs the Models page's "Turn Off All Paid"/"Turn On
+    All Paid Models" bulk actions, which would otherwise cost one
+    commit per model (a real provider can have hundreds)."""
+    if not updates:
+        return
+    conn = get_conn()
+    ts = _now()
+    with _lock:
+        conn.executemany(
+            "INSERT INTO model_toggles (provider, model_id, enabled, updated_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(provider, model_id) DO UPDATE SET enabled=excluded.enabled, updated_at=excluded.updated_at",
+            [(provider, model_id, 1 if enabled else 0, ts) for model_id, enabled in updates.items()],
         )
         conn.commit()
 
