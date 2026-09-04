@@ -152,6 +152,31 @@ def test_toggle_paid_route_404_for_unconfigured_provider(temp_db, monkeypatch, t
     assert resp.status_code == 404
 
 
+def test_providers_routes_reachable_by_a_paired_mobile_device_key(temp_db, monkeypatch, tmp_path):
+    # Regression: these routes used to require the literal DASHBOARD_TOKEN
+    # (_require_token), one tier stricter than every other bot/model-
+    # management route (_require_token_or_api_key) — silently unreachable
+    # by the Android app's own paired-device key, which is how it
+    # authenticates everything else (see bot.bot_instances/api/bots).
+    _isolate_provider_registry(tmp_path, monkeypatch)
+    client = _client(monkeypatch)
+    _, plaintext = db.create_api_key("test-phone", kind="device")
+    device_headers = {"X-Dashboard-Token": plaintext}
+
+    resp = client.get("/api/providers", headers=device_headers)
+    assert resp.status_code == 200
+
+    resp = client.post(
+        "/api/providers", headers=device_headers,
+        json={"name": "from_mobile", "base_url": "https://openrouter.ai/api/v1"},
+    )
+    assert resp.status_code == 200
+    assert providers.get_provider("from_mobile") is not None
+
+    resp = client.delete("/api/providers/from_mobile", headers=device_headers)
+    assert resp.status_code == 200
+
+
 def test_set_provider_route_stores_catalog_id(temp_db, monkeypatch, tmp_path):
     _isolate_provider_registry(tmp_path, monkeypatch)
     client = _client(monkeypatch)

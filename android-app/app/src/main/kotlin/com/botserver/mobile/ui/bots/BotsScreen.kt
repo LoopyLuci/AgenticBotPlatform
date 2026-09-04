@@ -37,8 +37,14 @@ import com.botserver.mobile.security.rememberFragmentActivity
 import com.botserver.mobile.security.requireBiometricAuth
 import kotlinx.coroutines.launch
 
+// Matrix/WhatsApp are deliberately not offered here yet — each needs its
+// own credential fields (homeserver/user_id/access_token for Matrix;
+// phone_number_id/access_token/app_secret/verify_token for WhatsApp),
+// which is a larger, separate form-design change from this pass's scope
+// (adding the custom_model/native_agent backends + a Providers/Models
+// screen). Flagged as a known follow-up, not silently dropped.
 private val PLATFORMS = listOf("telegram", "discord", "slack")
-private val BACKENDS = listOf("cli", "api", "ui", "hermes_cli", "hermes_gateway")
+private val BACKENDS = listOf("cli", "api", "ui", "hermes_cli", "hermes_gateway", "custom_model", "native_agent")
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable

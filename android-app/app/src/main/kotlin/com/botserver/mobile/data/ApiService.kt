@@ -21,6 +21,13 @@ import com.botserver.mobile.data.dto.MeshRedeemResponse
 import com.botserver.mobile.data.dto.PairingListResponse
 import com.botserver.mobile.data.dto.PendingApkResponse
 import com.botserver.mobile.data.dto.PersonaPreset
+import com.botserver.mobile.data.dto.ModelToggleRequest
+import com.botserver.mobile.data.dto.ModelTogglePaidRequest
+import com.botserver.mobile.data.dto.ModelTogglePaidResponse
+import com.botserver.mobile.data.dto.ProviderModelsResponse
+import com.botserver.mobile.data.dto.ProvidersCatalogResponse
+import com.botserver.mobile.data.dto.ProvidersListResponse
+import com.botserver.mobile.data.dto.SetProviderRequest
 import com.botserver.mobile.data.dto.ServerChatConversation
 import com.botserver.mobile.data.dto.ServerChatMessage
 import com.botserver.mobile.data.dto.ServerChatSendRequest
@@ -248,6 +255,35 @@ interface ApiService {
 
     @POST("/api/config/set")
     suspend fun setConfig(@Body request: ConfigSetRequest): OkResponse
+
+    // -------------------------------------------------------- providers ---
+    // Full parity with the desktop dashboard's Providers + Models page —
+    // add a named OpenAI-compatible endpoint (local or cloud), browse and
+    // toggle its models. See bot/providers.py and bot/models.py's
+    // browse_provider_models(). Reachable by a mobile device key exactly
+    // like /api/bots — same tier, same reasoning (a lost/unlocked phone
+    // could already rewrite bot platform tokens; provider API keys are no
+    // more sensitive than that).
+    @GET("/api/providers")
+    suspend fun providers(): ProvidersListResponse
+
+    @GET("/api/providers/catalog")
+    suspend fun providersCatalog(): ProvidersCatalogResponse
+
+    @POST("/api/providers")
+    suspend fun setProvider(@Body request: SetProviderRequest): OkResponse
+
+    @DELETE("/api/providers/{name}")
+    suspend fun deleteProvider(@Path("name") name: String): OkResponse
+
+    @GET("/api/providers/{name}/models")
+    suspend fun providerModels(@Path("name") name: String): ProviderModelsResponse
+
+    @POST("/api/providers/{name}/models/toggle")
+    suspend fun toggleModel(@Path("name") name: String, @Body request: ModelToggleRequest): OkResponse
+
+    @POST("/api/providers/{name}/models/toggle-paid")
+    suspend fun toggleAllPaidModels(@Path("name") name: String, @Body request: ModelTogglePaidRequest): ModelTogglePaidResponse
 
     @POST("/api/push/register")
     suspend fun registerPushToken(@Body request: RegisterPushTokenRequest): OkResponse

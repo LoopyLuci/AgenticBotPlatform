@@ -701,7 +701,7 @@ def build_app() -> FastAPI:
                 result["pricing_source"] = source
         return result
 
-    @app.get("/api/providers", dependencies=[Depends(_require_token)])
+    @app.get("/api/providers", dependencies=[Depends(_require_token_or_api_key)])
     async def api_providers_list():
         from bot import providers
 
@@ -714,7 +714,7 @@ def build_app() -> FastAPI:
             ]
         }
 
-    @app.post("/api/providers", dependencies=[Depends(_require_token)])
+    @app.post("/api/providers", dependencies=[Depends(_require_token_or_api_key)])
     async def api_providers_set(payload: dict = Body(...)):
         from bot import providers
 
@@ -732,7 +732,7 @@ def build_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc))
         return {"ok": True}
 
-    @app.delete("/api/providers/{name}", dependencies=[Depends(_require_token)])
+    @app.delete("/api/providers/{name}", dependencies=[Depends(_require_token_or_api_key)])
     async def api_providers_delete(name: str):
         from bot import providers
 
@@ -740,13 +740,13 @@ def build_app() -> FastAPI:
             raise HTTPException(status_code=404, detail=f"no provider named {name!r}")
         return {"ok": True}
 
-    @app.get("/api/providers/catalog", dependencies=[Depends(_require_token)])
+    @app.get("/api/providers/catalog", dependencies=[Depends(_require_token_or_api_key)])
     async def api_providers_catalog():
         from bot import model_pricing
 
         return {"providers": await model_pricing.list_known_providers()}
 
-    @app.get("/api/providers/{name}/models", dependencies=[Depends(_require_token)])
+    @app.get("/api/providers/{name}/models", dependencies=[Depends(_require_token_or_api_key)])
     async def api_provider_models(name: str):
         from bot import models as models_module
         from bot import providers
@@ -755,7 +755,7 @@ def build_app() -> FastAPI:
             raise HTTPException(status_code=404, detail=f"no provider named {name!r}")
         return {"models": await models_module.browse_provider_models(name)}
 
-    @app.post("/api/providers/{name}/models/toggle", dependencies=[Depends(_require_token)])
+    @app.post("/api/providers/{name}/models/toggle", dependencies=[Depends(_require_token_or_api_key)])
     async def api_provider_model_toggle(name: str, payload: dict = Body(...)):
         from bot import providers
 
@@ -772,7 +772,7 @@ def build_app() -> FastAPI:
         )
         return {"ok": True}
 
-    @app.post("/api/providers/{name}/models/toggle-paid", dependencies=[Depends(_require_token)])
+    @app.post("/api/providers/{name}/models/toggle-paid", dependencies=[Depends(_require_token_or_api_key)])
     async def api_provider_models_toggle_paid(name: str, payload: dict = Body(...)):
         """Bulk on/off for every non-free model of one provider — backs
         the Models page's "Turn Off All Paid"/"Turn On All Paid Models"

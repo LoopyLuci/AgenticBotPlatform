@@ -28,6 +28,7 @@ import com.botserver.mobile.ui.bots.BotsScreen
 import com.botserver.mobile.ui.chat.ChatScreen
 import com.botserver.mobile.ui.devices.DevicesScreen
 import com.botserver.mobile.ui.jobs.JobsScreen
+import com.botserver.mobile.ui.providers.ProvidersScreen
 import com.botserver.mobile.ui.serverchat.ServerChatScreen
 import com.botserver.mobile.ui.sessions.SessionsScreen
 import com.botserver.mobile.ui.settings.SettingsScreen
@@ -86,7 +87,8 @@ fun HomeScreen() {
             composable("sessions") { SessionsScreen() }
             composable("jobs") { JobsScreen() }
             composable("bots") { BotsScreen() }
-            composable("settings") { SettingsScreen() }
+            composable("settings") { SettingsScreen(onOpenProviders = { navController.navigate("providers") }) }
+            composable("providers") { ProvidersScreen(onBack = { navController.popBackStack() }) }
             composable("devices") { DevicesScreen() }
         }
     }
