@@ -1161,31 +1161,6 @@
         </div>
       </div>
 
-      <div class="card" style="margin-top:14px;" id="providers-card">
-        <h3>Model providers</h3>
-        <p class="cardnote">Named endpoints for the "custom_model" backend — any OpenAI-compatible server (a local Ollama/LM Studio/vLLM/llama.cpp instance, OpenRouter, or real OpenAI). A bot instance points at one with a model of the form "&lt;name&gt;/&lt;model_id&gt;".</p>
-        <div class="tablewrap" style="margin-top:6px;">
-          <table>
-            <thead><tr><th>Name</th><th>Base URL</th><th>API key</th><th></th></tr></thead>
-            <tbody id="providers-tbody"></tbody>
-          </table>
-        </div>
-        <div class="wizard-field" style="margin-top:10px;">
-          <div class="row">
-            <input type="text" id="provider-catalog-input" list="provider-catalog-options" placeholder="Pick a known provider (optional)…" autocomplete="off" spellcheck="false" style="flex:1;">
-            <datalist id="provider-catalog-options"></datalist>
-          </div>
-          <div class="cardnote" style="margin:4px 0 8px;">Picking one fills in its real endpoint below — or just fill in the fields yourself for a custom/local server. Some well-known providers (Anthropic, OpenAI, Google, Bedrock) use their own SDK protocol rather than a generic endpoint and aren't listed here; BotServer only speaks the OpenAI-compatible wire format for this backend family today.</div>
-          <div class="row">
-            <input type="text" id="provider-new-name" placeholder="name, e.g. local_ollama" autocomplete="off" spellcheck="false" style="max-width:180px;">
-            <input type="text" id="provider-new-url" placeholder="base URL, e.g. http://127.0.0.1:11434/v1" autocomplete="off" spellcheck="false">
-            <input type="text" id="provider-new-key" placeholder="API key (optional)" autocomplete="off" spellcheck="false">
-            <button class="btn" id="btn-provider-add">Add</button>
-          </div>
-          <span class="cardnote" id="provider-new-status"></span>
-        </div>
-      </div>
-
       <div class="card" style="margin-top:14px;" id="plugins-card">
         <h3>Plugins</h3>
         <p class="cardnote">Local Python files that register extra agent tools and/or slash commands — trusted local code with the same privileges the app already has (not sandboxed, not fetched from a network). Enter the path to a <code>plugin.py</code> already on this machine's disk.</p>
@@ -1263,10 +1238,36 @@
     </section>
 
     <section id="models">
-      <div class="sec-head"><h2>Models</h2><span class="desc">Every model each configured provider (Model providers, in the Bots tab) offers — free models sorted first per provider, individually switchable. Wherever a model gets picked (this app's Add-a-bot form, Telegram's /model, dispatch_native_swarm_goal's auto-pick-free logic), a disabled model here is simply never offered.</span></div>
+      <div class="sec-head"><h2>Models</h2><span class="desc">Add a provider's API key, then switch individual models on or off below — free models sorted first per provider. Wherever a model gets picked (this app's Add-a-bot form, Telegram's /model, dispatch_native_swarm_goal's auto-pick-free logic), a disabled model is simply never offered.</span></div>
 
-      <div class="card">
-        <div id="models-page-empty" class="cardnote" hidden>No providers configured yet — add one in the Bots tab's "Model providers" card first.</div>
+      <div class="card" id="providers-card">
+        <h3>Providers</h3>
+        <p class="cardnote">Named endpoints for the "custom_model"/"native_agent" backends — any OpenAI-compatible server (a local Ollama/LM Studio/vLLM/llama.cpp instance, OpenRouter, or real OpenAI). A bot instance points at one with a model of the form "&lt;name&gt;/&lt;model_id&gt;".</p>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Name</th><th>Base URL</th><th>API key</th><th></th></tr></thead>
+            <tbody id="providers-tbody"></tbody>
+          </table>
+        </div>
+        <div class="wizard-field" style="margin-top:10px;">
+          <div class="row">
+            <input type="text" id="provider-catalog-input" list="provider-catalog-options" placeholder="Pick a known provider (optional)…" autocomplete="off" spellcheck="false" style="flex:1;">
+            <datalist id="provider-catalog-options"></datalist>
+          </div>
+          <div class="cardnote" style="margin:4px 0 8px;">Picking one fills in its real endpoint below — or just fill in the fields yourself for a custom/local server. Some well-known providers (Anthropic, OpenAI, Google, Bedrock) use their own SDK protocol rather than a generic endpoint and aren't listed here; BotServer only speaks the OpenAI-compatible wire format for this backend family today.</div>
+          <div class="row">
+            <input type="text" id="provider-new-name" placeholder="name, e.g. local_ollama" autocomplete="off" spellcheck="false" style="max-width:180px;">
+            <input type="text" id="provider-new-url" placeholder="base URL, e.g. http://127.0.0.1:11434/v1" autocomplete="off" spellcheck="false">
+            <input type="text" id="provider-new-key" placeholder="API key (optional)" autocomplete="off" spellcheck="false">
+            <button class="btn" id="btn-provider-add">Add</button>
+          </div>
+          <span class="cardnote" id="provider-new-status"></span>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Models</h3>
+        <div id="models-page-empty" class="cardnote" hidden>No providers configured yet — add one above.</div>
         <div id="models-page-list"></div>
       </div>
     </section>

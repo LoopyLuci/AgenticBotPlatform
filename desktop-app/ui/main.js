@@ -440,7 +440,7 @@ function refreshBotModelOptions() {
   const help = document.getElementById('bot-new-model-help');
   const input = document.getElementById('bot-new-model');
   if (backend === 'custom_model' || backend === 'native_agent') {
-    help.textContent = 'Required for this backend: "<provider>/<model_id>", where <provider> is one configured below in Model Providers.';
+    help.textContent = 'Required for this backend: "<provider>/<model_id>", where <provider> is one configured on the Models tab.';
     input.placeholder = 'e.g. local_ollama/llama3.1';
   } else {
     help.textContent = "Leave blank to use this backend's configured default. Options are live models actually available to this backend.";
