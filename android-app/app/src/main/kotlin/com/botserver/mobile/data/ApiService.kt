@@ -11,6 +11,7 @@ import com.botserver.mobile.data.dto.CreateMobileKeyResponse
 import com.botserver.mobile.data.dto.DeviceInfo
 import com.botserver.mobile.data.dto.JobSummary
 import com.botserver.mobile.data.dto.ModelsResponse
+import com.botserver.mobile.data.dto.NetworkInfoResponse
 import com.botserver.mobile.data.dto.OkResponse
 import com.botserver.mobile.data.dto.ApkSendAllRequest
 import com.botserver.mobile.data.dto.ApkSendAllResponse
@@ -110,6 +111,13 @@ interface ApiService {
 
     @GET("/api/devices")
     suspend fun devices(): List<DeviceInfo>
+
+    // The server's own live-detected LAN/Tailscale/Funnel addresses (see
+    // bot/network_info.py) — polled opportunistically by HostSyncRepository
+    // so a paired device's stored hosts self-heal after a LAN IP changes
+    // under DHCP or Funnel gets turned on later, without ever re-pairing.
+    @GET("/api/network-info")
+    suspend fun networkInfo(): NetworkInfoResponse
 
     // Pull-based APK delivery — see bot/db.py's apk_pushes table comment.
     // The desktop app's "Send APK"/"Send APK to All Paired Devices"

@@ -26,3 +26,15 @@ data class DeviceListMessage(
     val type: String,
     val devices: List<DeviceInfo> = emptyList(),
 )
+
+/** GET /api/network-info's response — the server's own live-detected
+ * addresses (see bot/network_info.py's detect_addresses()/
+ * detect_funnel_url()), each already "host:port" (lan/tailscale) or a
+ * full "https://..." URL (funnel), or null if that path isn't available
+ * right now. */
+@Serializable
+data class NetworkInfoResponse(
+    val lan: String? = null,
+    val tailscale: String? = null,
+    val funnel: String? = null,
+)

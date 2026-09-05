@@ -1256,9 +1256,10 @@
           <input type="text" id="mobile-new-label" placeholder="Device label, e.g. \"My Phone\"" style="flex:1;">
           <input type="text" id="mobile-new-host" placeholder="Host:port the phone should reach, e.g. your-tailnet-host:8787">
           <input type="text" id="mobile-new-host2" placeholder="Fallback host:port (optional), e.g. LAN IP if the above is Tailscale">
+          <input type="text" id="mobile-new-host3" placeholder="Public URL (optional), e.g. https://you.ts.net via Tailscale Funnel">
           <button class="btn primary" id="btn-mobile-generate">Generate key</button>
         </div>
-        <p class="cardnote" id="mobile-network-info-note">Leave both blank to auto-fill this machine's own detected LAN/Tailscale addresses. The fallback is an optional second, independent path to this server — the app automatically switches to it if the first one stops answering.</p>
+        <p class="cardnote" id="mobile-network-info-note">Leave all three blank to auto-fill this machine's own detected LAN/Tailscale/Funnel addresses. Each is an independent path to this server — the app tries them in order and switches automatically if one stops answering, so the phone stays connected from any network without you doing anything.</p>
         <div class="hidden" id="mobile-new-result" style="margin-top:14px;">
           <p class="cardnote" style="color:var(--warning);">Shown once — this key can't be recovered after you leave this page. Copy it or scan the QR now.</p>
           <p class="cardnote" id="mobile-new-hosts-used"></p>
@@ -4487,6 +4488,7 @@ async function refreshNetworkInfoHint() {
   // something already typed or edited.
   const hostInput = document.getElementById('mobile-new-host');
   const host2Input = document.getElementById('mobile-new-host2');
+  const host3Input = document.getElementById('mobile-new-host3');
   const note = document.getElementById('mobile-network-info-note');
   if (!hostInput || !getToken()) return;
   let info;
@@ -4502,8 +4504,12 @@ async function refreshNetworkInfoHint() {
     parts.push(`Tailscale ${info.tailscale}`);
     if (!host2Input.value.trim()) host2Input.value = info.tailscale;
   }
+  if (info.funnel && info.funnel !== hostInput.value.trim() && info.funnel !== host2Input.value.trim()) {
+    parts.push(`Funnel ${info.funnel}`);
+    if (!host3Input.value.trim()) host3Input.value = info.funnel;
+  }
   if (note && parts.length) {
-    note.textContent = `Auto-filled with this machine's own detected addresses (${parts.join(', ')}) — edit them only if wrong. The fallback is a second, independent path; the app automatically switches to it if the first one stops answering.`;
+    note.textContent = `Auto-filled with this machine's own detected addresses (${parts.join(', ')}) — edit them only if wrong. Each is an independent path; the app tries them in order and switches automatically if one stops answering.`;
   }
 }
 
@@ -4511,18 +4517,20 @@ document.getElementById('btn-mobile-generate').onclick = async () => {
   const label = document.getElementById('mobile-new-label').value.trim() || 'Unnamed device';
   const host = document.getElementById('mobile-new-host').value.trim();
   const host2 = document.getElementById('mobile-new-host2').value.trim();
+  const host3 = document.getElementById('mobile-new-host3').value.trim();
   const btn = document.getElementById('btn-mobile-generate');
   btn.disabled = true;
   try {
-    const res = await api('/api/mobile-keys', { method: 'POST', body: JSON.stringify({ label, host, host2 }) });
+    const res = await api('/api/mobile-keys', { method: 'POST', body: JSON.stringify({ label, host, host2, host3 }) });
     document.getElementById('mobile-new-key').textContent = res.key;
     document.getElementById('mobile-new-qr').src = `data:image/png;base64,${res.qr_png_base64}`;
-    const hostsNote = [res.host && `primary ${res.host}`, res.host2 && `fallback ${res.host2}`].filter(Boolean).join(', ');
+    const hostsNote = [res.host && `primary ${res.host}`, res.host2 && `fallback ${res.host2}`, res.host3 && `public ${res.host3}`].filter(Boolean).join(', ');
     document.getElementById('mobile-new-hosts-used').textContent = hostsNote ? `Paired with: ${hostsNote}` : 'No host configured yet — add one later from this device.';
     document.getElementById('mobile-new-result').classList.remove('hidden');
     document.getElementById('mobile-new-label').value = '';
     document.getElementById('mobile-new-host').value = '';
     document.getElementById('mobile-new-host2').value = '';
+    document.getElementById('mobile-new-host3').value = '';
     refreshMobileKeys();
   } catch (e) {
     alert('Failed to generate key — check the dashboard token.');

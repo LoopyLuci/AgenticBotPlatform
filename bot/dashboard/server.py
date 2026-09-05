@@ -19,6 +19,7 @@ import mimetypes
 import os
 import secrets
 import socket
+import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -486,7 +487,7 @@ def build_app() -> FastAPI:
         status_code = 200 if db_ok else 503
         return JSONResponse({"status": "ok" if db_ok else "degraded", "db_ok": db_ok}, status_code=status_code)
 
-    @app.get("/metrics")
+    @app.get("/metrics", dependencies=[Depends(_require_token_or_api_key)])
     async def metrics():
         # Hand-rolled Prometheus text exposition format rather than the
         # prometheus_client dependency — this project's bundled venv is
@@ -572,7 +573,7 @@ def build_app() -> FastAPI:
 
     # ------------------------------------------------------------- reads --
 
-    @app.get("/api/overview")
+    @app.get("/api/overview", dependencies=[Depends(_require_token_or_api_key)])
     async def api_overview():
         overview = db.get_overview()
         # desktop.status() does a synchronous full-process-list scan
@@ -601,7 +602,7 @@ def build_app() -> FastAPI:
     async def api_jobs_by_backend():
         return db.get_jobs_by_backend_today()
 
-    @app.get("/api/telemetry")
+    @app.get("/api/telemetry", dependencies=[Depends(_require_token_or_api_key)])
     async def api_telemetry():
         d = await asyncio.get_running_loop().run_in_executor(None, desktop.status)
         mcp_servers = desktop.list_mcp_servers()
@@ -618,7 +619,7 @@ def build_app() -> FastAPI:
             "connection_events": [dict(r) for r in db.get_recent_connection_events(limit=25)],
         }
 
-    @app.get("/api/database")
+    @app.get("/api/database", dependencies=[Depends(_require_token_or_api_key)])
     async def api_database():
         return {
             "size_bytes": db.get_db_size_bytes(),
@@ -649,12 +650,13 @@ def build_app() -> FastAPI:
             )
         return _json_download(rows, f"{table}-{stamp}.json")
 
-    @app.get("/api/config")
+    @app.get("/api/config", dependencies=[Depends(_require_token_or_api_key)])
     async def api_config():
-        # This read (like most GET endpoints in this section) has no auth
-        # gate, so the TURN shared secret must never appear in it verbatim
-        # — same reasoning as never echoing it back after it's set. The
-        # dashboard UI only needs to know whether one is configured at all.
+        # Token/api-key gated (see the route decorator) now that the server
+        # can be reached from the public internet via Tailscale Funnel —
+        # the TURN shared secret still never appears in it verbatim as a
+        # second layer, matching the same reasoning as never echoing it
+        # back after it's set.
         current = config.current
         turn_cfg = current.get("turn")
         if isinstance(turn_cfg, dict) and turn_cfg.get("secret"):
@@ -665,7 +667,7 @@ def build_app() -> FastAPI:
             "history": [dict(r) for r in db.list_config_history(limit=20)],
         }
 
-    @app.get("/api/models")
+    @app.get("/api/models", dependencies=[Depends(_require_token_or_api_key)])
     async def api_models(instance_id: Optional[int] = None):
         from bot.models import BACKEND_FAMILY, live_api_models, live_custom_models, live_hermes_models
 
@@ -843,21 +845,21 @@ def build_app() -> FastAPI:
         db.log_audit(actor="dashboard", action="plugin_remove", detail=name)
         return {"ok": True}
 
-    @app.get("/api/personas")
+    @app.get("/api/personas", dependencies=[Depends(_require_token_or_api_key)])
     async def api_personas():
         from bot.personas import list_personas
 
         return list_personas()
 
-    @app.get("/api/mcp")
+    @app.get("/api/mcp", dependencies=[Depends(_require_token_or_api_key)])
     async def api_mcp():
         return desktop.list_mcp_servers()
 
-    @app.get("/api/mcp/{name}/logs")
+    @app.get("/api/mcp/{name}/logs", dependencies=[Depends(_require_token_or_api_key)])
     async def api_mcp_logs(name: str, lines: int = 50):
         return {"lines": desktop.tail_mcp_log(name, lines=lines)}
 
-    @app.get("/api/logs")
+    @app.get("/api/logs", dependencies=[Depends(_require_token_or_api_key)])
     async def api_logs(lines: int = 100, level: Optional[str] = None):
         if not LOG_FILE.exists():
             return {"lines": []}
@@ -867,7 +869,7 @@ def build_app() -> FastAPI:
             all_lines = [ln for ln in all_lines if f" {level.upper()} " in ln or f" {level.upper()}   " in ln]
         return {"lines": [ln.rstrip("\n") for ln in all_lines[-lines:]]}
 
-    @app.get("/api/env")
+    @app.get("/api/env", dependencies=[Depends(_require_token_or_api_key)])
     async def api_env():
         return envfile.status()
 
@@ -945,7 +947,7 @@ def build_app() -> FastAPI:
         backup, status = setup_wizard.apply_platform_fields(payload, actor="platforms-settings")
         return {"ok": True, "backup": backup.name if backup else None, "status": status}
 
-    @app.get("/api/security/allowed-users")
+    @app.get("/api/security/allowed-users", dependencies=[Depends(_require_token_or_api_key)])
     async def api_allowed_users():
         return [dict(r) for r in db.list_allowed_users()]
 
@@ -2600,11 +2602,16 @@ def build_app() -> FastAPI:
     async def api_network_info():
         from bot import network_info
 
-        addrs = await asyncio.get_running_loop().run_in_executor(None, network_info.detect_addresses)
+        loop = asyncio.get_running_loop()
+        addrs, funnel_url = await asyncio.gather(
+            loop.run_in_executor(None, network_info.detect_addresses),
+            loop.run_in_executor(None, network_info.detect_funnel_url),
+        )
         port = int(os.environ.get("DASHBOARD_PORT", "8787"))
         return {
             "lan": f"{addrs['lan']}:{port}" if addrs.get("lan") else None,
             "tailscale": f"{addrs['tailscale']}:{port}" if addrs.get("tailscale") else None,
+            "funnel": funnel_url,
         }
 
     @app.post("/api/mobile-keys", dependencies=[Depends(_require_token_or_api_key)])
@@ -2613,31 +2620,51 @@ def build_app() -> FastAPI:
         key_id, plaintext = db.create_api_key(label)
         db.create_conversations_for_new_device(key_id)
         host = (payload.get("host") or "").strip()
-        # host2 is an optional second, independent path to the same server
-        # (e.g. a Tailscale hostname alongside a LAN IP) — the Android app
-        # fails over between them automatically if one stops answering.
+        # host2/host3 are optional additional, independent paths to the same
+        # server (e.g. a Tailscale hostname alongside a LAN IP, alongside a
+        # public Tailscale Funnel URL) — the Android app tries all
+        # configured hosts in order and fails over automatically if one
+        # stops answering.
         host2 = (payload.get("host2") or "").strip()
-        # Auto-fill whichever of host/host2 the caller left blank with this
-        # machine's own detected LAN/Tailscale address, so a key minted with
-        # no explicit host still gets two independent, automatically-tried
-        # network paths by default instead of the phone needing a manual
-        # fallback added later — see bot/network_info.py's module doc.
-        if not host or not host2:
+        host3 = (payload.get("host3") or "").strip()
+        # Auto-fill whichever of host/host2/host3 the caller left blank
+        # with this machine's own detected addresses, so a key minted with
+        # no explicit host still gets every automatically-tried network
+        # path by default instead of the phone needing a manual fallback
+        # added later — see bot/network_info.py's module doc. Funnel (a
+        # public HTTPS URL, works from any network) is always the last
+        # candidate: it adds a relay hop, so it should only be reached for
+        # once the LAN/Tailscale-direct paths have already failed.
+        if not host or not host2 or not host3:
             from bot import network_info
 
-            addrs = await asyncio.get_running_loop().run_in_executor(None, network_info.detect_addresses)
+            loop = asyncio.get_running_loop()
+            addrs, funnel_url = await asyncio.gather(
+                loop.run_in_executor(None, network_info.detect_addresses),
+                loop.run_in_executor(None, network_info.detect_funnel_url),
+            )
             port = int(os.environ.get("DASHBOARD_PORT", "8787"))
             candidates = [f"{addrs[kind]}:{port}" for kind in ("lan", "tailscale") if addrs.get(kind)]
+            if funnel_url:
+                candidates.append(funnel_url)
             for candidate in candidates:
                 if not host:
                     host = candidate
                 elif not host2 and candidate != host:
                     host2 = candidate
-        params = [f"key={plaintext}"]
+                elif not host3 and candidate not in (host, host2):
+                    host3 = candidate
+        params = [f"key={urllib.parse.quote(plaintext, safe='')}"]
         if host:
-            params.insert(0, f"host={host}")
+            params.insert(0, f"host={urllib.parse.quote(host, safe='')}")
         if host2:
-            params.append(f"host2={host2}")
+            params.append(f"host2={urllib.parse.quote(host2, safe='')}")
+        if host3:
+            # host3 (Funnel) is a full https:// URL, unlike host/host2's
+            # bare host:port — always URL-encoded, not just when it
+            # happens to contain special characters, so the "://" doesn't
+            # depend on being harmless-by-luck inside a query value.
+            params.append(f"host3={urllib.parse.quote(host3, safe='')}")
         pair_uri = "botserver://pair?" + "&".join(params)
         img = qrcode.make(pair_uri, image_factory=PyPNGImage)
         buf = io.BytesIO()
@@ -2651,7 +2678,7 @@ def build_app() -> FastAPI:
             # Echoed back (not just embedded in the QR) so the dashboard UI
             # can show exactly which two paths this key was minted with,
             # including whichever got auto-filled above.
-            "host": host or None, "host2": host2 or None,
+            "host": host or None, "host2": host2 or None, "host3": host3 or None,
         }
 
     @app.get("/api/mobile-keys", dependencies=[Depends(_require_token)])

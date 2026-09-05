@@ -133,3 +133,75 @@ def test_never_raises_when_default_route_lookup_explodes(monkeypatch):
     _patch_interfaces(monkeypatch, {})
 
     assert network_info.detect_addresses() == {"lan": None, "tailscale": None}
+
+
+def _fake_subprocess_run(monkeypatch, responses: dict[str, str]):
+    """responses maps the tailscale subcommand ("funnel status" or
+    "status") to raw stdout text; anything not listed returns empty
+    stdout with a nonzero exit code, matching a real CLI/binary failure."""
+    import subprocess as subprocess_module
+
+    class _FakeProc:
+        def __init__(self, stdout: str, returncode: int = 0):
+            self.stdout = stdout
+            self.returncode = returncode
+
+    def _fake_run(cmd, **kwargs):
+        key = " ".join(cmd[1:-1])  # drop the binary path and trailing "--json"
+        if key in responses:
+            return _FakeProc(responses[key])
+        return _FakeProc("", returncode=1)
+
+    monkeypatch.setattr(subprocess_module, "run", _fake_run)
+
+
+def test_detect_funnel_url_returns_none_when_funnel_not_configured(monkeypatch):
+    _fake_subprocess_run(monkeypatch, {"funnel status": '{"AllowFunnel": null}'})
+
+    assert network_info.detect_funnel_url() is None
+
+
+def test_detect_funnel_url_builds_https_url_from_dns_name(monkeypatch):
+    _fake_subprocess_run(monkeypatch, {
+        "funnel status": '{"AllowFunnel": {"shivati.example.ts.net:443": true}}',
+        "status": '{"Self": {"DNSName": "shivati.example.ts.net."}}',
+    })
+
+    assert network_info.detect_funnel_url() == "https://shivati.example.ts.net"
+
+
+def test_detect_funnel_url_returns_none_when_dns_name_missing(monkeypatch):
+    _fake_subprocess_run(monkeypatch, {
+        "funnel status": '{"AllowFunnel": {"x:443": true}}',
+        "status": '{"Self": {}}',
+    })
+
+    assert network_info.detect_funnel_url() is None
+
+
+def test_detect_funnel_url_never_raises_when_cli_is_missing(monkeypatch):
+    import subprocess as subprocess_module
+
+    def _boom(cmd, **kwargs):
+        raise FileNotFoundError("no such file: tailscale")
+
+    monkeypatch.setattr(subprocess_module, "run", _boom)
+
+    assert network_info.detect_funnel_url() is None
+
+
+def test_detect_funnel_url_never_raises_on_timeout(monkeypatch):
+    import subprocess as subprocess_module
+
+    def _boom(cmd, **kwargs):
+        raise subprocess_module.TimeoutExpired(cmd, 3)
+
+    monkeypatch.setattr(subprocess_module, "run", _boom)
+
+    assert network_info.detect_funnel_url() is None
+
+
+def test_detect_funnel_url_never_raises_on_malformed_json(monkeypatch):
+    _fake_subprocess_run(monkeypatch, {"funnel status": "not json at all"})
+
+    assert network_info.detect_funnel_url() is None

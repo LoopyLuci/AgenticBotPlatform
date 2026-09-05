@@ -33,7 +33,7 @@ class PairingViewModel @Inject constructor(
             _state.value = PairingState.Error("That QR doesn't look like a Bot Server pairing code.")
             return
         }
-        attemptPair(payload.host, payload.key, payload.host2)
+        attemptPair(payload.host, payload.key, payload.host2, payload.host3)
     }
 
     /** Called once, at most, with the activity's launch intent data — a
@@ -45,22 +45,22 @@ class PairingViewModel @Inject constructor(
     fun onAutoPairLink(raw: String) {
         val payload = repository.parse(raw) ?: return
         if (payload.host.isNullOrBlank()) return
-        attemptPair(payload.host, payload.key, payload.host2)
+        attemptPair(payload.host, payload.key, payload.host2, payload.host3)
     }
 
-    fun onManualSubmit(host: String, key: String, host2: String = "") {
+    fun onManualSubmit(host: String, key: String, host2: String = "", host3: String = "") {
         val trimmedKey = key.trim()
         if (trimmedKey.isEmpty()) {
             _state.value = PairingState.Error("Paste the key from the dashboard's Mobile tab.")
             return
         }
-        attemptPair(host.trim().ifEmpty { null }, trimmedKey, host2.trim().ifEmpty { null })
+        attemptPair(host.trim().ifEmpty { null }, trimmedKey, host2.trim().ifEmpty { null }, host3.trim().ifEmpty { null })
     }
 
-    private fun attemptPair(host: String?, key: String, host2: String? = null) {
+    private fun attemptPair(host: String?, key: String, host2: String? = null, host3: String? = null) {
         _state.value = PairingState.Verifying
         viewModelScope.launch {
-            val result = repository.pairAndVerify(PairingPayload(host, host2, key), host, host2)
+            val result = repository.pairAndVerify(PairingPayload(host, host2, host3, key), host, host2, host3)
             _state.value = result.fold(
                 onSuccess = { PairingState.Success },
                 onFailure = { e -> PairingState.Error(e.message ?: "Couldn't reach that server — check the host and that it's reachable from this phone.") },

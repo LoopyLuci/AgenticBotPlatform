@@ -179,7 +179,7 @@ class WebRtcMeshClient @Inject constructor(
     fun start() {
         if (signalingSocket != null) return
         val apiKey = credentials.apiKey ?: return
-        val wsBase = credentials.preferredBaseUrl().replaceFirst("http", "ws")
+        val wsBase = credentials.candidateUrls().first().replaceFirst("http", "ws")
         val request = Request.Builder().url("$wsBase/api/ws?token=$apiKey").build()
         signalingSocket = httpClient.newWebSocket(request, object : WebSocketListener() {
             override fun onMessage(webSocket: WebSocket, text: String) {

@@ -19,6 +19,18 @@ class PairingRepositoryTest {
     }
 
     @Test
+    fun `a pairing URI with all three hosts parses host3 (the Funnel URL) too`() {
+        val encoded = "botserver://pair?host=192.168.1.5&host2=100.101.98.77%3A8787" +
+            "&host3=https%3A%2F%2Fshivati.example.ts.net&key=abc123"
+        val result = repository.parse(encoded)
+
+        assertEquals(
+            PairingPayload(host = "192.168.1.5", host2 = "100.101.98.77:8787", host3 = "https://shivati.example.ts.net", key = "abc123"),
+            result,
+        )
+    }
+
+    @Test
     fun `a pairing URI with only a host and key parses host2 as null`() {
         val result = repository.parse("botserver://pair?host=192.168.1.5&key=abc123")
 

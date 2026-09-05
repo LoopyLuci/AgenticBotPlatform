@@ -45,6 +45,7 @@ fun PairingScreen(
 
     var manualHost by remember { mutableStateOf("") }
     var manualHost2 by remember { mutableStateOf("") }
+    var manualHost3 by remember { mutableStateOf("") }
     var manualKey by remember { mutableStateOf("") }
     var showManualEntry by remember { mutableStateOf(false) }
 
@@ -67,7 +68,7 @@ fun PairingScreen(
             if (showManualEntry) {
                 Surface(tonalElevation = 2.dp) {
                     Button(
-                        onClick = { viewModel.onManualSubmit(manualHost, manualKey, manualHost2) },
+                        onClick = { viewModel.onManualSubmit(manualHost, manualKey, manualHost2, manualHost3) },
                         enabled = state !is PairingState.Verifying,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -141,6 +142,14 @@ fun PairingScreen(
                         onValueChange = { manualHost2 = it },
                         label = { Text("Fallback host:port (optional)") },
                         modifier = Modifier.fillMaxWidth().testTag("pairing-host2"),
+                        singleLine = true,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = manualHost3,
+                        onValueChange = { manualHost3 = it },
+                        label = { Text("Public URL (optional, e.g. https://you.ts.net)") },
+                        modifier = Modifier.fillMaxWidth().testTag("pairing-host3"),
                         singleLine = true,
                     )
                     Spacer(Modifier.height(8.dp))

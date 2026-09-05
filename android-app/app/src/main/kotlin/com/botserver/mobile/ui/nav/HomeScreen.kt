@@ -18,6 +18,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -52,6 +53,10 @@ private val tabs = listOf(
  * app mirrors, plus Devices for onboarding new devices from this one. */
 @Composable
 fun HomeScreen() {
+    // Triggers HostSyncRepository.syncHosts() once per app session — see
+    // HomeViewModel's doc. The return value is unused; this exists purely
+    // for its init{} side effect, scoped to survive rotation.
+    hiltViewModel<HomeViewModel>()
     val navController = rememberNavController()
 
     Scaffold(

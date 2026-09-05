@@ -7,7 +7,7 @@ import java.net.URLDecoder
 import javax.inject.Inject
 import javax.inject.Singleton
 
-data class PairingPayload(val host: String?, val host2: String? = null, val key: String)
+data class PairingPayload(val host: String?, val host2: String? = null, val host3: String? = null, val key: String)
 
 @Singleton
 class PairingRepository @Inject constructor(
@@ -15,20 +15,22 @@ class PairingRepository @Inject constructor(
     private val apiService: ApiService,
     private val pushRepository: PushRepository,
 ) {
-    /** Parses the botserver://pair?host=...&host2=...&key=... URI the
-     * dashboard's Mobile tab QR encodes (see bot/dashboard/server.py's
+    /** Parses the botserver://pair?host=...&host2=...&host3=...&key=... URI
+     * the dashboard's Mobile tab QR encodes (see bot/dashboard/server.py's
      * api_mobile_keys_create()) — also accepts a bare "host|key" or just a
      * raw key string typed in manually, so a QR-less pairing flow works
-     * from a copy-pasted key too. host2 is an optional second, independent
-     * path to the same server (e.g. Tailscale alongside LAN) that
-     * DynamicHostInterceptor fails over to automatically. */
+     * from a copy-pasted key too. host2/host3 are optional additional,
+     * independent paths to the same server (LAN, Tailscale-direct, and a
+     * public Tailscale Funnel URL respectively, by convention — though
+     * nothing here enforces which slot means what) that
+     * DynamicHostInterceptor fails over between automatically. */
     fun parse(raw: String): PairingPayload? {
         val trimmed = raw.trim()
         if (trimmed.startsWith("botserver://")) {
             val query = runCatching { URI(trimmed).query }.getOrNull() ?: return null
             val params = queryParams(query)
             val key = params["key"] ?: return null
-            return PairingPayload(host = params["host"], host2 = params["host2"], key = key)
+            return PairingPayload(host = params["host"], host2 = params["host2"], host3 = params["host3"], key = key)
         }
         if (trimmed.isEmpty()) return null
         return PairingPayload(host = null, key = trimmed)
@@ -45,25 +47,25 @@ class PairingRepository @Inject constructor(
 
     /** Stores the credential and confirms it actually works against the
      * real server before declaring pairing successful — a key that merely
-     * *parses* isn't proof it's valid. Tries the primary host first, then
-     * the fallback if given, so pairing itself proves whichever path
-     * actually answers rather than assuming the first one is reachable. */
-    suspend fun pairAndVerify(payload: PairingPayload, manualHost: String?, manualHost2: String? = null): Result<Unit> {
+     * *parses* isn't proof it's valid. A single call is enough:
+     * DynamicHostInterceptor itself already tries every configured host in
+     * priority order (see CredentialStore.candidateUrls()) within one
+     * request, falling back all the way to LAN mDNS discovery before
+     * giving up — so this proves whichever path actually answers rather
+     * than assuming the first one is reachable, without pairing needing
+     * its own duplicate retry logic. */
+    suspend fun pairAndVerify(payload: PairingPayload, manualHost: String?, manualHost2: String? = null, manualHost3: String? = null): Result<Unit> {
         val host = payload.host ?: manualHost
         val host2 = payload.host2 ?: manualHost2
+        val host3 = payload.host3 ?: manualHost3
         if (host.isNullOrBlank()) return Result.failure(IllegalArgumentException("A host is required — scan a QR that includes one, or enter it manually."))
         credentials.host = host
         credentials.host2 = host2
+        credentials.host3 = host3
         credentials.apiKey = payload.key
         credentials.lastGoodHost = CredentialStore.SLOT_HOST
 
-        suspend fun tryVerify(): Result<Unit> = runCatching { apiService.chatRecipients() }.map {}
-
-        var result = tryVerify()
-        if (result.isFailure && !host2.isNullOrBlank()) {
-            credentials.lastGoodHost = CredentialStore.SLOT_HOST2
-            result = tryVerify()
-        }
+        val result = runCatching { apiService.chatRecipients() }.map {}
 
         return result.fold(
             onSuccess = {

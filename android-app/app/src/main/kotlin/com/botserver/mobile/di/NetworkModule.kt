@@ -67,13 +67,14 @@ const val PLACEHOLDER_BASE_URL = "http://127.0.0.1:8787"
  * helper always reading getToken()/API_BASE fresh on every call rather
  * than capturing it once.
  *
- * It's also where connection failover lives: a paired device can carry two
- * independent hosts (e.g. a LAN IP and a Tailscale hostname). Every request
- * goes to whichever one last worked; if that throws an IOException (host
- * unreachable, timed out, connection reset — not an HTTP error status,
- * which reaches the app normally), it's retried once against the other
- * host before giving up, and the winner is remembered so later requests
- * don't keep re-probing a dead path.
+ * It's also where connection failover lives: a paired device can carry up
+ * to three independent hosts (see CredentialStore.candidateUrls() — LAN,
+ * Tailscale-direct, and a public Tailscale Funnel URL as the guaranteed-
+ * reachable-from-anywhere last resort). Every request tries them in that
+ * priority order; each IOException (host unreachable, timed out,
+ * connection reset — not an HTTP error status, which reaches the app
+ * normally) moves on to the next candidate, and the winner is remembered
+ * so later requests don't keep re-probing a dead path first.
  */
 // internal (not private) so tests in this module can drive its failover
 // logic directly — see DynamicHostInterceptorTest.
@@ -88,7 +89,8 @@ internal class DynamicHostInterceptor(
             // Tailscale/private-LAN ranges — see PrivateNetworkGuard's doc.
             // Thrown as IOException so intercept()'s existing fallback path
             // treats this exactly like an unreachable host and tries the
-            // other paired host instead of silently leaking the token.
+            // next paired host instead of silently leaking the token. A
+            // Funnel URL is always https, so it never hits this guard.
             throw IOException("refusing cleartext request to non-private host: ${target.host}")
         }
         val newUrl = original.url.newBuilder()
@@ -111,47 +113,38 @@ internal class DynamicHostInterceptor(
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
-        val primaryBase = credentials.preferredBaseUrl()
-        try {
-            val primaryReq = rebuild(original, primaryBase) ?: original
-            val response = chain.proceed(primaryReq)
-            credentials.markGood(primaryBase)
-            return response
-        } catch (e: IOException) {
-            val fallbackBase = credentials.otherBaseUrl()
-            if (fallbackBase == null) {
-                return discoverAndRetry(chain, original, e)
-            }
-            return try {
-                val fallbackReq = rebuild(original, fallbackBase) ?: throw e
-                val response = chain.proceed(fallbackReq)
-                credentials.markGood(fallbackBase)
-                response
-            } catch (e2: IOException) {
-                discoverAndRetry(chain, original, e2)
+        val candidates = credentials.candidateUrls()
+        var lastError: IOException? = null
+        for (base in candidates) {
+            try {
+                val req = rebuild(original, base) ?: continue
+                val response = chain.proceed(req)
+                credentials.markGood(base)
+                return response
+            } catch (e: IOException) {
+                lastError = e
             }
         }
+        return discoverAndRetry(chain, original, lastError ?: IOException("no host configured"))
     }
 
-    /** Last resort once every configured host has failed on this same
-     * request: look for this server fresh on the local network via mDNS
-     * (see bot/mdns_advertise.py server-side) instead of giving up outright.
-     * This is what keeps the app working after a LAN IP changed under DHCP
-     * or a Tailscale hostname stopped resolving, without the user re-pairing
-     * by hand — as long as the phone is on the same local network right now.
-     * A successful discovery overwrites whichever host slot didn't just work
-     * (never the one currently marked good), so future requests go straight
-     * there instead of re-discovering every time. */
+    /** Last resort once every configured host (LAN, Tailscale, Funnel —
+     * whichever are set) has failed on this same request: look for this
+     * server fresh on the local network via mDNS (see
+     * bot/mdns_advertise.py server-side) instead of giving up outright.
+     * This is what keeps the app working after a LAN IP changed under DHCP,
+     * without the user re-pairing by hand — as long as the phone is on the
+     * same local network right now. mDNS only ever finds a LAN address, so
+     * a successful discovery always overwrites the "host" slot specifically
+     * (that's the one it's a fresher replacement for), never host2/host3,
+     * so future requests go straight there instead of re-discovering every
+     * time. */
     private fun discoverAndRetry(chain: Interceptor.Chain, original: Request, lastError: IOException): Response {
         val discovered = nsdDiscovery.discoverBlocking() ?: throw lastError
         val discoveredBase = "http://$discovered"
         val req = rebuild(original, discoveredBase) ?: throw lastError
         val response = chain.proceed(req)
-        if (credentials.lastGoodHost == CredentialStore.SLOT_HOST) {
-            credentials.host2 = discovered
-        } else {
-            credentials.host = discovered
-        }
+        credentials.host = discovered
         credentials.markGood(discoveredBase)
         return response
     }
