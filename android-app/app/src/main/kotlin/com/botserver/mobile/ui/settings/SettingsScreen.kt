@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -24,8 +25,13 @@ import androidx.hilt.navigation.compose.hiltViewModel
  * underlying config file, just a phone-shaped layout. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onOpenProviders: () -> Unit = {}, viewModel: SettingsViewModel = hiltViewModel()) {
+fun SettingsScreen(
+    onOpenProviders: () -> Unit = {},
+    onUnpaired: () -> Unit = {},
+    viewModel: SettingsViewModel = hiltViewModel(),
+) {
     val state by viewModel.uiState.collectAsState()
+    var showForgetDialog by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { viewModel.refresh() }
 
     Scaffold(topBar = { TopAppBar(title = { Text("Settings", fontWeight = FontWeight.Bold) }) }) { padding ->
@@ -142,8 +148,45 @@ fun SettingsScreen(onOpenProviders: () -> Unit = {}, viewModel: SettingsViewMode
                 ToggleRow("Verbose telemetry", "Log every backend call, not just failures", state.verboseTelemetry, state.savingKey == "verbose_telemetry", viewModel::setVerboseTelemetry)
             }
 
+            Spacer(Modifier.height(14.dp))
+
+            SettingsCard(title = "Danger zone") {
+                Text(
+                    "Clears this phone's stored server address and key, and takes you back to the pairing screen. Your pairing key itself stays valid until you revoke it from the desktop/web dashboard's Mobile tab.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = { showForgetDialog = true },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier.fillMaxWidth().testTag("settings-forget-pairing"),
+                ) {
+                    Text("Clear app settings (forget this server)")
+                }
+            }
+
             Spacer(Modifier.height(24.dp))
         }
+    }
+
+    if (showForgetDialog) {
+        AlertDialog(
+            onDismissRequest = { showForgetDialog = false },
+            title = { Text("Clear app settings?") },
+            text = { Text("This phone will forget the paired server and key, and return to the pairing screen. You'll need to scan a QR or enter a key again to reconnect.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showForgetDialog = false
+                        viewModel.forgetPairing()
+                        onUnpaired()
+                    },
+                    modifier = Modifier.testTag("settings-forget-pairing-confirm"),
+                ) { Text("Clear settings", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { showForgetDialog = false }) { Text("Cancel") } },
+        )
     }
 }
 

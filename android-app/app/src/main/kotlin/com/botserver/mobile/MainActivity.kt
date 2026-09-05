@@ -75,7 +75,19 @@ class MainActivity : FragmentActivity() {
                         )
                     }
                     composable("home") {
-                        HomeScreen()
+                        HomeScreen(
+                            onUnpaired = {
+                                // Settings' "Clear app settings" already
+                                // wiped CredentialStore — this only needs
+                                // to move the visible screen back to
+                                // pairing and drop "home" from the back
+                                // stack so the system back button can't
+                                // return to a now-credential-less shell.
+                                navController.navigate("pairing") {
+                                    popUpTo("home") { inclusive = true }
+                                }
+                            },
+                        )
                     }
                 }
             }

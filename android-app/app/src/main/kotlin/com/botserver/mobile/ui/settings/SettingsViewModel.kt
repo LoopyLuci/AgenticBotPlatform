@@ -2,6 +2,7 @@ package com.botserver.mobile.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.botserver.mobile.data.CredentialStore
 import com.botserver.mobile.data.SettingsRepository
 import com.botserver.mobile.data.dto.agentControlMode
 import com.botserver.mobile.data.dto.confirmDestructive
@@ -38,7 +39,10 @@ data class SettingsUiState(
  * connected device) reads from — there's no separate mobile copy to fall
  * out of sync. */
 @HiltViewModel
-class SettingsViewModel @Inject constructor(private val repository: SettingsRepository) : ViewModel() {
+class SettingsViewModel @Inject constructor(
+    private val repository: SettingsRepository,
+    private val credentials: CredentialStore,
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState
@@ -111,4 +115,14 @@ class SettingsViewModel @Inject constructor(private val repository: SettingsRepo
 
     fun setVerboseTelemetry(enabled: Boolean) =
         apply("verbose_telemetry", { it.copy(verboseTelemetry = enabled) }) { repository.setVerboseTelemetry(enabled) }
+
+    /** Wipes this device's stored host(s)/API key — purely local, and
+     * deliberately doesn't call the server at all: the pairing key itself
+     * stays valid until the operator revokes it from the desktop/web
+     * dashboard's Mobile tab, exactly like signing out of an app doesn't
+     * delete the account. This is "make this phone forget it was ever
+     * paired," not "kill this device's access everywhere." */
+    fun forgetPairing() {
+        credentials.clear()
+    }
 }

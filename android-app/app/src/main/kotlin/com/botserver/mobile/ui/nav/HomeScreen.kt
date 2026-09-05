@@ -52,7 +52,7 @@ private val tabs = listOf(
  * Support Bot / Sessions / Jobs / Bots / Control Center tabs this Android
  * app mirrors, plus Devices for onboarding new devices from this one. */
 @Composable
-fun HomeScreen() {
+fun HomeScreen(onUnpaired: () -> Unit = {}) {
     // Triggers HostSyncRepository.syncHosts() once per app session — see
     // HomeViewModel's doc. The return value is unused; this exists purely
     // for its init{} side effect, scoped to survive rotation.
@@ -92,7 +92,7 @@ fun HomeScreen() {
             composable("sessions") { SessionsScreen() }
             composable("jobs") { JobsScreen() }
             composable("bots") { BotsScreen() }
-            composable("settings") { SettingsScreen(onOpenProviders = { navController.navigate("providers") }) }
+            composable("settings") { SettingsScreen(onOpenProviders = { navController.navigate("providers") }, onUnpaired = onUnpaired) }
             composable("providers") { ProvidersScreen(onBack = { navController.popBackStack() }) }
             composable("devices") { DevicesScreen() }
         }
