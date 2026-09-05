@@ -1,5 +1,6 @@
 .env
 config/providers.yaml
+config/file_share.yaml
 data/env_backups/
 data/bot_instances_backups/
 __pycache__/

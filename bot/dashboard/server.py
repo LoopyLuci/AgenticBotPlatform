@@ -797,6 +797,75 @@ def build_app() -> FastAPI:
         )
         return {"ok": True, "count": len(updates)}
 
+    # -------------------------------------------------------------- files --
+    # Read-only, allowlisted access to specific directories on this
+    # machine (see bot/file_share.py) — how a file that lives outside
+    # BotServer's own data (e.g. a freshly built Android APK) gets reached
+    # "from anywhere" over the same Funnel/Tailscale/LAN paths + auth
+    # everything else already uses. Browsing/downloading within an
+    # already-configured root is token-or-api-key (works from a paired
+    # phone); adding/removing a root is desktop-token-only — a mobile
+    # device key must never be able to mount a new directory on this
+    # machine as browsable.
+
+    @app.get("/api/files", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_files_roots():
+        from bot import file_share
+
+        return await asyncio.get_running_loop().run_in_executor(None, file_share.list_roots)
+
+    @app.post("/api/files", dependencies=[Depends(_require_token)])
+    async def api_files_add_root(payload: dict = Body(...)):
+        from bot import file_share
+
+        name = payload.get("name") or ""
+        path = payload.get("path") or ""
+        try:
+            await asyncio.get_running_loop().run_in_executor(None, file_share.add_root, name, path)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        db.log_audit(actor="dashboard", action="file_share_add_root", detail=f"added root {name!r} -> {path!r}")
+        return {"ok": True}
+
+    @app.delete("/api/files/{root}", dependencies=[Depends(_require_token)])
+    async def api_files_remove_root(root: str):
+        from bot import file_share
+
+        removed = await asyncio.get_running_loop().run_in_executor(None, file_share.remove_root, root)
+        if not removed:
+            raise HTTPException(status_code=404, detail=f"no root named {root!r}")
+        db.log_audit(actor="dashboard", action="file_share_remove_root", detail=f"removed root {root!r}")
+        return {"ok": True}
+
+    @app.get("/api/files/{root}", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_files_list(root: str, path: str = ""):
+        from bot import file_share
+
+        try:
+            entries = await asyncio.get_running_loop().run_in_executor(None, file_share.list_dir, root, path)
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"no root named {root!r}")
+        except file_share.PathEscapeError:
+            raise HTTPException(status_code=400, detail="that path escapes the root")
+        except (NotADirectoryError, FileNotFoundError):
+            raise HTTPException(status_code=404, detail="no such directory")
+        return {"entries": entries}
+
+    @app.get("/api/files/{root}/download", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_files_download(root: str, path: str):
+        from bot import file_share
+
+        try:
+            target = await asyncio.get_running_loop().run_in_executor(None, file_share.resolve_safe_path, root, path)
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"no root named {root!r}")
+        except file_share.PathEscapeError:
+            raise HTTPException(status_code=400, detail="that path escapes the root")
+        if not target.is_file():
+            raise HTTPException(status_code=404, detail="no such file")
+        db.log_audit(actor="dashboard", action="file_share_download", detail=f"{root}/{path}")
+        return FileResponse(target, filename=target.name)
+
     @app.get("/api/plugins", dependencies=[Depends(_require_token)])
     async def api_plugins_list():
         from bot import plugins as plugin_registry

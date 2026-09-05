@@ -124,6 +124,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.skills",
     "bot.shared_context",
     "bot.providers",
+    "bot.file_share",
     "bot.hermes_config",
     "bot.swarm.prompts",
     "bot.swarm.child_parser",

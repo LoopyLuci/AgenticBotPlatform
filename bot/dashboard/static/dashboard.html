@@ -345,6 +345,7 @@
       <a href="#training"><span class="ic">🎓</span>Training</a>
       <a href="#platforms"><span class="ic">🔌</span>Platforms</a>
       <a href="#mobile"><span class="ic">📱</span>Mobile</a>
+      <a href="#files"><span class="ic">📁</span>Files</a>
       <a href="#servers"><span class="ic">🌐</span>Linked Servers</a>
     </nav>
     <div class="side-status">
@@ -1288,6 +1289,35 @@
       </div>
     </section>
 
+    <section id="files">
+      <div class="sec-head"><h2>Files</h2><span class="desc">Grab a file that lives outside BotServer's own data — e.g. a freshly built Android APK — from any device, over the same Funnel/Tailscale/LAN paths and auth as everything else. Only directories you explicitly add below are ever reachable.</span></div>
+      <div class="card">
+        <h3>Add a shared folder</h3>
+        <div class="row" style="gap:8px; align-items:center;">
+          <input type="text" id="files-new-name" placeholder="Name, e.g. \"Android builds\"" style="flex:1;">
+          <input type="text" id="files-new-path" placeholder="Absolute path on this machine, e.g. /path/redacted" style="flex:2;">
+          <button class="btn primary" id="btn-files-add-root">Add folder</button>
+        </div>
+        <p class="cardnote">Requires the desktop dashboard token (not a paired phone's key) — mounting a new folder as browsable is a bigger grant than browsing one that's already configured.</p>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <div class="row" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+          <h3 style="margin:0;">Browse</h3>
+          <div class="row" style="gap:8px; align-items:center;">
+            <select id="files-root-select" style="min-width:160px;"></select>
+            <button class="btn" id="btn-files-remove-root" title="Remove this folder from the browsable list">Remove folder</button>
+          </div>
+        </div>
+        <p class="cardnote" id="files-breadcrumb" style="margin-top:8px;"></p>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Name</th><th>Size</th><th>Modified</th><th></th></tr></thead>
+            <tbody id="files-tbody"><tr class="emptyrow"><td colspan="4">Add a folder above to start browsing.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <section id="servers">
       <div class="sec-head"><h2>Linked Servers</h2><span class="desc">Other BotServer installations you run — each keeps its own database and Telegram bot, linked here so you can see and manage them from one place</span></div>
 
@@ -2213,6 +2243,7 @@ function startDashboard() {
   refreshMobileKeys();
   pollWhenVisible(refreshMobileKeys, 15000);
   refreshNetworkInfoHint();
+  refreshFileRoots();
   refreshPeers();
   pollWhenVisible(refreshPeers, 15000);
   refreshTrainingPhrases();
@@ -4537,6 +4568,116 @@ document.getElementById('btn-mobile-generate').onclick = async () => {
   } finally {
     btn.disabled = false;
   }
+};
+
+// ------------------------------------------------------------------ files
+// Allowlisted directory browsing/download (bot/file_share.py) — how a
+// file that lives outside BotServer's own data (e.g. a freshly built
+// Android APK) gets reached from any device over the same Funnel/
+// Tailscale/LAN paths + auth as everything else here.
+const filesState = { root: null, path: '' };
+
+function fmtFileSize(bytes) {
+  if (bytes === null || bytes === undefined) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function refreshFileRoots(selectRoot) {
+  const select = document.getElementById('files-root-select');
+  let roots;
+  try {
+    roots = await api('/api/files');
+  } catch (_e) { return; }
+  const names = Object.keys(roots).sort();
+  select.innerHTML = names.length
+    ? names.map(n => `<option value="${esc(n)}" ${!roots[n].exists ? 'style="color:var(--warning);"' : ''}>${esc(n)}${roots[n].exists ? '' : ' (missing)'}</option>`).join('')
+    : '<option value="">No folders added yet</option>';
+  const target = selectRoot && names.includes(selectRoot) ? selectRoot : (names.includes(filesState.root) ? filesState.root : names[0]);
+  select.value = target || '';
+  filesState.root = target || null;
+  filesState.path = '';
+  await refreshFilesList();
+}
+
+async function refreshFilesList() {
+  const tbody = document.getElementById('files-tbody');
+  const breadcrumb = document.getElementById('files-breadcrumb');
+  if (!filesState.root) {
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="4">Add a folder above to start browsing.</td></tr>';
+    breadcrumb.textContent = '';
+    return;
+  }
+  breadcrumb.textContent = `${filesState.root}${filesState.path ? '/' + filesState.path : ''}`;
+  let entries;
+  try {
+    const res = await api(`/api/files/${encodeURIComponent(filesState.root)}?path=${encodeURIComponent(filesState.path)}`);
+    entries = res.entries;
+  } catch (e) {
+    tbody.innerHTML = `<tr class="emptyrow"><td colspan="4">Couldn't list this folder: ${esc(e.message)}</td></tr>`;
+    return;
+  }
+  const rows = [];
+  if (filesState.path) {
+    rows.push(`<tr><td colspan="4"><button class="btn" data-files-up style="padding:3px 8px; font-size:11px;">.. (up one level)</button></td></tr>`);
+  }
+  rows.push(...entries.map(en => `
+    <tr>
+      <td>${en.is_dir ? '📁 ' : '📄 '}${en.is_dir ? `<a href="#" data-files-open="${esc(en.name)}">${esc(en.name)}</a>` : esc(en.name)}</td>
+      <td class="mono">${fmtFileSize(en.size)}</td>
+      <td class="mono">${fmtMobileTime(en.modified_at)}</td>
+      <td>${en.is_dir ? '' : `<button class="btn" data-files-download="${esc(en.name)}" style="padding:3px 8px; font-size:11px;">Download</button>`}</td>
+    </tr>`));
+  tbody.innerHTML = rows.length ? rows.join('') : '<tr class="emptyrow"><td colspan="4">Empty folder.</td></tr>';
+
+  tbody.querySelectorAll('[data-files-open]').forEach(a => a.onclick = (ev) => {
+    ev.preventDefault();
+    filesState.path = filesState.path ? `${filesState.path}/${a.dataset.filesOpen}` : a.dataset.filesOpen;
+    refreshFilesList();
+  });
+  const upBtn = tbody.querySelector('[data-files-up]');
+  if (upBtn) upBtn.onclick = () => {
+    const parts = filesState.path.split('/');
+    parts.pop();
+    filesState.path = parts.join('/');
+    refreshFilesList();
+  };
+  tbody.querySelectorAll('[data-files-download]').forEach(btn => btn.onclick = () => {
+    const filePath = filesState.path ? `${filesState.path}/${btn.dataset.filesDownload}` : btn.dataset.filesDownload;
+    downloadUrl(`/api/files/${encodeURIComponent(filesState.root)}/download?path=${encodeURIComponent(filePath)}`);
+  });
+}
+
+document.getElementById('files-root-select').onchange = (ev) => {
+  filesState.root = ev.target.value || null;
+  filesState.path = '';
+  refreshFilesList();
+};
+
+document.getElementById('btn-files-add-root').onclick = async () => {
+  const name = document.getElementById('files-new-name').value.trim();
+  const path = document.getElementById('files-new-path').value.trim();
+  if (!name || !path) { alert('A name and a path are both required.'); return; }
+  const btn = document.getElementById('btn-files-add-root');
+  btn.disabled = true;
+  try {
+    await api('/api/files', { method: 'POST', body: JSON.stringify({ name, path }) });
+    document.getElementById('files-new-name').value = '';
+    document.getElementById('files-new-path').value = '';
+    await refreshFileRoots(name);
+  } catch (e) {
+    alert(`Couldn't add that folder: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+document.getElementById('btn-files-remove-root').onclick = async () => {
+  if (!filesState.root) return;
+  if (!confirm(`Remove "${filesState.root}" from the browsable list? The folder itself is untouched — this only stops it being reachable from here.`)) return;
+  await api(`/api/files/${encodeURIComponent(filesState.root)}`, { method: 'DELETE' });
+  refreshFileRoots();
 };
 
 // ---------------------------------------------------------- linked servers
