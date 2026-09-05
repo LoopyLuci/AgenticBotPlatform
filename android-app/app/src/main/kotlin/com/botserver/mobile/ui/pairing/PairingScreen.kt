@@ -67,16 +67,38 @@ fun PairingScreen(
         bottomBar = {
             if (showManualEntry) {
                 Surface(tonalElevation = 2.dp) {
-                    Button(
-                        onClick = { viewModel.onManualSubmit(manualHost, manualKey, manualHost2, manualHost3) },
-                        enabled = state !is PairingState.Verifying,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .padding(20.dp)
-                            .testTag("pairing-submit"),
-                    ) {
-                        Text("Pair", fontWeight = FontWeight.Bold)
+                    Column(modifier = Modifier.navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp)) {
+                        // Status feedback lives here, right next to the
+                        // button — not only in the QR box above, which can
+                        // be scrolled out of view while filling in the
+                        // manual-entry fields below it. Tapping "Pair" with
+                        // the fields scrolled into view previously gave no
+                        // visible sign anything happened at all unless the
+                        // user scrolled back up to see the QR box's spinner.
+                        when (state) {
+                            is PairingState.Verifying -> Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Verifying…", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("pairing-status-verifying"))
+                            }
+                            is PairingState.Error -> Text(
+                                (state as PairingState.Error).message,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.testTag("pairing-status-error"),
+                            )
+                            else -> {}
+                        }
+                        if (state !is PairingState.Idle) Spacer(Modifier.height(8.dp))
+                        Button(
+                            onClick = { viewModel.onManualSubmit(manualHost, manualKey, manualHost2, manualHost3) },
+                            enabled = state !is PairingState.Verifying,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("pairing-submit"),
+                        ) {
+                            Text("Pair", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }

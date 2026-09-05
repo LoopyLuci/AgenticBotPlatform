@@ -5,11 +5,14 @@ import androidx.lifecycle.viewModelScope
 import com.botserver.mobile.data.CredentialStore
 import com.botserver.mobile.data.PairingPayload
 import com.botserver.mobile.data.PairingRepository
+import com.botserver.mobile.diagnostics.AppLog
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+private const val TAG = "Pairing"
 
 sealed interface PairingState {
     data object Idle : PairingState
@@ -49,8 +52,10 @@ class PairingViewModel @Inject constructor(
     }
 
     fun onManualSubmit(host: String, key: String, host2: String = "", host3: String = "") {
+        AppLog.i(TAG, "onManualSubmit tapped: host=${host.ifBlank { "(blank)" }}, host2=${host2.ifBlank { "(blank)" }}, host3=${host3.ifBlank { "(blank)" }}, keyLen=${key.trim().length}")
         val trimmedKey = key.trim()
         if (trimmedKey.isEmpty()) {
+            AppLog.w(TAG, "onManualSubmit: rejected — key field was empty")
             _state.value = PairingState.Error("Paste the key from the dashboard's Mobile tab.")
             return
         }
@@ -58,13 +63,34 @@ class PairingViewModel @Inject constructor(
     }
 
     private fun attemptPair(host: String?, key: String, host2: String? = null, host3: String? = null) {
+        AppLog.i(TAG, "attemptPair: starting verification against host=$host host2=$host2 host3=$host3")
         _state.value = PairingState.Verifying
         viewModelScope.launch {
-            val result = repository.pairAndVerify(PairingPayload(host, host2, host3, key), host, host2, host3)
-            _state.value = result.fold(
-                onSuccess = { PairingState.Success },
-                onFailure = { e -> PairingState.Error(e.message ?: "Couldn't reach that server — check the host and that it's reachable from this phone.") },
-            )
+            try {
+                val result = repository.pairAndVerify(PairingPayload(host, host2, host3, key), host, host2, host3)
+                _state.value = result.fold(
+                    onSuccess = {
+                        AppLog.i(TAG, "attemptPair: succeeded")
+                        PairingState.Success
+                    },
+                    onFailure = { e ->
+                        AppLog.w(TAG, "attemptPair: failed — ${e::class.simpleName}: ${e.message}", e)
+                        PairingState.Error(e.message ?: "Couldn't reach that server — check the host and that it's reachable from this phone.")
+                    },
+                )
+            } catch (e: Exception) {
+                // pairAndVerify() already wraps its own network call in
+                // runCatching — this outer catch is specifically for
+                // anything unexpected happening around it (e.g. a
+                // CredentialStore/Keystore write failing), so a truly
+                // unforeseen failure still updates state and gets logged
+                // instead of silently killing this coroutine and leaving
+                // the button stuck on "Verifying" forever with no visible
+                // sign of what happened — see AppLog's own doc for why
+                // that "looks like nothing happened" symptom matters.
+                AppLog.e(TAG, "attemptPair: unexpected exception outside pairAndVerify's own error handling", e)
+                _state.value = PairingState.Error(e.message ?: "Unexpected error — check exported diagnostics in Settings.")
+            }
         }
     }
 

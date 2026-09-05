@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import kotlinx.coroutines.launch
 
 /** Mirrors the desktop dashboard's Control Center card-for-card: backend
  * router, models, agent control, feature toggles — same settings, same
@@ -150,6 +151,14 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(14.dp))
 
+            AppUpdateCard(viewModel)
+
+            Spacer(Modifier.height(14.dp))
+
+            DiagnosticsCard()
+
+            Spacer(Modifier.height(14.dp))
+
             SettingsCard(title = "Danger zone") {
                 Text(
                     "Clears this phone's stored server address and key, and takes you back to the pairing screen. Your pairing key itself stays valid until you revoke it from the desktop/web dashboard's Mobile tab.",
@@ -189,6 +198,115 @@ fun SettingsScreen(
         )
     }
 }
+
+/** Self-update from the project's public GitHub releases — independent
+ * of the paired BotServer connection entirely (see
+ * GitHubUpdateRepository's doc), so it works even when pairing itself is
+ * broken. Deliberately its own card, not folded into Danger zone: this
+ * one's routine, not destructive. */
+@Composable
+private fun AppUpdateCard(viewModel: SettingsViewModel) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val state by viewModel.gitHubUpdateState.collectAsState()
+
+    SettingsCard(title = "App update") {
+        Text(
+            "Installed version: ${com.botserver.mobile.BuildConfig.VERSION_NAME}",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Spacer(Modifier.height(8.dp))
+        when (val s = state) {
+            is GitHubUpdateState.Idle -> {}
+            is GitHubUpdateState.Checking -> Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text("Checking GitHub…", style = MaterialTheme.typography.labelSmall)
+            }
+            is GitHubUpdateState.UpToDate -> Text("You're on the latest published release.", style = MaterialTheme.typography.labelSmall)
+            is GitHubUpdateState.Available -> Column {
+                Text("${s.release.tag} is available.", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(6.dp))
+                Row {
+                    Button(onClick = viewModel::downloadGitHubUpdate, modifier = Modifier.testTag("update-download")) { Text("Download & install") }
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(onClick = viewModel::dismissGitHubUpdate) { Text("Not now") }
+                }
+            }
+            is GitHubUpdateState.Downloading -> Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text("Downloading…", style = MaterialTheme.typography.labelSmall)
+            }
+            is GitHubUpdateState.Downloaded -> {
+                LaunchedEffect(s.file) { context.startActivity(viewModel.installIntent(s.file)) }
+                Text(
+                    "Downloaded — Android will ask you to confirm the install.",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+            is GitHubUpdateState.Error -> Text(s.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+        }
+        if (state is GitHubUpdateState.Idle || state is GitHubUpdateState.UpToDate || state is GitHubUpdateState.Error) {
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = viewModel::checkForGitHubUpdate, modifier = Modifier.testTag("update-check")) {
+                Text("Check for updates")
+            }
+        }
+    }
+}
+
+/** Exports AppLog's rolling log file via the system share sheet — works
+ * regardless of network/pairing state, since it's just a local file
+ * handoff to whatever app the user picks (email, Telegram to themselves,
+ * Drive, ...). This is the "collect the data you need" mechanism: when
+ * something silently fails, the real diagnosis lives in this file, not
+ * in whatever the UI itself managed to show. */
+@Composable
+private fun DiagnosticsCard() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    var logSize by remember { mutableStateOf(0L) }
+    var exporting by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        logSize = withContextIo { com.botserver.mobile.diagnostics.AppLog.currentSizeBytes(context) }
+    }
+
+    SettingsCard(title = "Diagnostics") {
+        Text(
+            "Every pairing attempt, network failure, and crash this app hits is written to a local log — export it if something isn't working and you need to share what actually happened.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+        )
+        Spacer(Modifier.height(8.dp))
+        Text("Current log size: ${logSize / 1024} KB", style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(
+            enabled = !exporting,
+            onClick = {
+                exporting = true
+                scope.launch {
+                    val file = withContextIo { com.botserver.mobile.diagnostics.AppLog.exportFile(context) }
+                    val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(android.content.Intent.createChooser(intent, "Share diagnostics"))
+                    exporting = false
+                }
+            },
+            modifier = Modifier.testTag("export-logs"),
+        ) {
+            if (exporting) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+            else Text("Export logs")
+        }
+    }
+}
+
+private suspend fun <T> withContextIo(block: () -> T): T =
+    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { block() }
 
 @Composable
 private fun SettingsCard(title: String, content: @Composable ColumnScope.() -> Unit) {

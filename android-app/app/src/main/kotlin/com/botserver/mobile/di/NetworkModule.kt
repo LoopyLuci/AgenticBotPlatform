@@ -9,6 +9,7 @@ import com.botserver.mobile.data.CredentialStore
 import com.botserver.mobile.data.MeshPortHolder
 import com.botserver.mobile.data.NsdDiscoveryClient
 import com.botserver.mobile.data.PrivateNetworkGuard
+import com.botserver.mobile.diagnostics.AppLog
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -114,14 +115,20 @@ internal class DynamicHostInterceptor(
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
         val candidates = credentials.candidateUrls()
+        val path = original.url.encodedPath
+        if (candidates.isEmpty()) {
+            AppLog.w("DynamicHostInterceptor", "$path: no candidate hosts configured at all — pairing never completed?")
+        }
         var lastError: IOException? = null
         for (base in candidates) {
             try {
                 val req = rebuild(original, base) ?: continue
                 val response = chain.proceed(req)
                 credentials.markGood(base)
+                AppLog.d("DynamicHostInterceptor", "$path: succeeded via $base")
                 return response
             } catch (e: IOException) {
+                AppLog.w("DynamicHostInterceptor", "$path: $base failed — ${e::class.simpleName}: ${e.message}")
                 lastError = e
             }
         }
@@ -140,7 +147,12 @@ internal class DynamicHostInterceptor(
      * so future requests go straight there instead of re-discovering every
      * time. */
     private fun discoverAndRetry(chain: Interceptor.Chain, original: Request, lastError: IOException): Response {
-        val discovered = nsdDiscovery.discoverBlocking() ?: throw lastError
+        AppLog.d("DynamicHostInterceptor", "${original.url.encodedPath}: every configured host failed, trying mDNS discovery")
+        val discovered = nsdDiscovery.discoverBlocking() ?: run {
+            AppLog.w("DynamicHostInterceptor", "mDNS discovery found nothing — giving up: ${lastError.message}")
+            throw lastError
+        }
+        AppLog.i("DynamicHostInterceptor", "mDNS discovery found $discovered")
         val discoveredBase = "http://$discovered"
         val req = rebuild(original, discoveredBase) ?: throw lastError
         val response = chain.proceed(req)

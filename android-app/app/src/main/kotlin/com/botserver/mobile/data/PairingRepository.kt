@@ -1,11 +1,14 @@
 package com.botserver.mobile.data
 
+import com.botserver.mobile.diagnostics.AppLog
 import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.tasks.await
 import java.net.URI
 import java.net.URLDecoder
 import javax.inject.Inject
 import javax.inject.Singleton
+
+private const val TAG = "Pairing"
 
 data class PairingPayload(val host: String?, val host2: String? = null, val host3: String? = null, val key: String)
 
@@ -64,8 +67,10 @@ class PairingRepository @Inject constructor(
         credentials.host3 = host3
         credentials.apiKey = payload.key
         credentials.lastGoodHost = CredentialStore.SLOT_HOST
+        AppLog.i(TAG, "pairAndVerify: stored credentials, calling chatRecipients() to verify")
 
         val result = runCatching { apiService.chatRecipients() }.map {}
+        AppLog.i(TAG, "pairAndVerify: chatRecipients() ${if (result.isSuccess) "succeeded" else "failed: ${result.exceptionOrNull()}"}")
 
         return result.fold(
             onSuccess = {
@@ -77,6 +82,7 @@ class PairingRepository @Inject constructor(
                 // makes this fail harmlessly, it never blocks pairing.
                 runCatching { FirebaseMessaging.getInstance().token.await() }
                     .onSuccess { token -> pushRepository.registerToken(token) }
+                    .onFailure { e -> AppLog.w(TAG, "pairAndVerify: FCM token registration failed (non-blocking)", e) }
                 Result.success(Unit)
             },
             onFailure = { e ->

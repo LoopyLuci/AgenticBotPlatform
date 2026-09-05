@@ -125,6 +125,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.shared_context",
     "bot.providers",
     "bot.file_share",
+    "bot.android_apk",
     "bot.hermes_config",
     "bot.swarm.prompts",
     "bot.swarm.child_parser",

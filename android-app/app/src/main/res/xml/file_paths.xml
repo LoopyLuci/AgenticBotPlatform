@@ -3,9 +3,12 @@
      files to other apps via ACTION_SEND/ACTION_VIEW: "shared" is this app's
      own APK (DevicesScreen), "downloads" is chat attachments pulled from
      the server on demand (ChatRepository.downloadAttachment), "updates" is
-     a newer APK sent from the desktop app (UpdateRepository). -->
+     a newer APK sent from the desktop app (UpdateRepository) or downloaded
+     from a GitHub release (GitHubUpdateRepository), "logs" is an exported
+     diagnostics snapshot (AppLog.exportFile, shared from Settings). -->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="shared" path="shared/" />
     <cache-path name="downloads" path="downloads/" />
     <cache-path name="updates" path="updates/" />
+    <cache-path name="logs" path="logs/" />
 </paths>

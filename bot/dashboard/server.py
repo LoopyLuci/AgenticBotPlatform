@@ -2927,15 +2927,11 @@ def build_app() -> FastAPI:
     # own next /api/android/apk/pending poll — see bot/db.py's apk_pushes
     # table comment.
 
-    def _latest_apk_path() -> Path:
-        return envfile.PROJECT_ROOT / "android-app" / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
-
-    def _apk_version_label(path: Path) -> str:
-        return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
-
     @app.get("/api/android/apk/status", dependencies=[Depends(_require_token)])
     async def api_android_apk_status():
-        path = _latest_apk_path()
+        from bot.android_apk import latest_apk_path
+
+        path = latest_apk_path()
         if not path.is_file():
             return {"available": False}
         stat = path.stat()
@@ -2964,10 +2960,12 @@ def build_app() -> FastAPI:
             )
             db.log_audit(actor="dashboard", action="apk_send_mesh", detail=f"queued mesh apk push {push_id} from device {caller_device_id} to {api_key_id}")
             return {"ok": True, "push_id": push_id}
-        path = _latest_apk_path()
+        from bot.android_apk import apk_version_label, latest_apk_path
+
+        path = latest_apk_path()
         if not path.is_file():
             raise HTTPException(status_code=400, detail="no built APK found — build one first")
-        push_id = db.create_apk_push(api_key_id, str(path), version_label=_apk_version_label(path))
+        push_id = db.create_apk_push(api_key_id, str(path), version_label=apk_version_label(path))
         db.log_audit(actor="dashboard", action="apk_send", detail=f"queued apk push {push_id} for device {api_key_id}")
         return {"ok": True, "push_id": push_id}
 
@@ -2988,10 +2986,12 @@ def build_app() -> FastAPI:
                 ))
             db.log_audit(actor="dashboard", action="apk_send_all_mesh", detail=f"queued mesh apk push from device {caller_device_id} for {len(push_ids)} device(s)")
             return {"ok": True, "sent_to": len(push_ids)}
-        path = _latest_apk_path()
+        from bot.android_apk import apk_version_label, latest_apk_path
+
+        path = latest_apk_path()
         if not path.is_file():
             raise HTTPException(status_code=400, detail="no built APK found — build one first")
-        version_label = _apk_version_label(path)
+        version_label = apk_version_label(path)
         push_ids = [db.create_apk_push(r["id"], str(path), version_label=version_label) for r in keys]
         db.log_audit(actor="dashboard", action="apk_send_all", detail=f"queued apk push for {len(push_ids)} device(s)")
         return {"ok": True, "sent_to": len(push_ids)}

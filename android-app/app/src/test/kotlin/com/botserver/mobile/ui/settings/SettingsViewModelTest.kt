@@ -1,7 +1,9 @@
 package com.botserver.mobile.ui.settings
 
 import com.botserver.mobile.data.CredentialStore
+import com.botserver.mobile.data.GitHubUpdateRepository
 import com.botserver.mobile.data.SettingsRepository
+import com.botserver.mobile.data.UpdateRepository
 import io.mockk.mockk
 import io.mockk.verify
 import org.junit.Test
@@ -13,11 +15,17 @@ import org.junit.Test
  * Synchronous, so no coroutine dispatcher rule is needed to test it. */
 class SettingsViewModelTest {
 
+    private fun buildViewModel(
+        repository: SettingsRepository = mockk(relaxed = true),
+        credentials: CredentialStore = mockk(relaxed = true),
+        gitHubUpdateRepository: GitHubUpdateRepository = mockk(relaxed = true),
+        updateRepository: UpdateRepository = mockk(relaxed = true),
+    ) = SettingsViewModel(repository, credentials, gitHubUpdateRepository, updateRepository)
+
     @Test
     fun `forgetPairing clears the credential store and nothing else`() {
-        val repository = mockk<SettingsRepository>(relaxed = true)
         val credentials = mockk<CredentialStore>(relaxed = true)
-        val viewModel = SettingsViewModel(repository, credentials)
+        val viewModel = buildViewModel(credentials = credentials)
 
         viewModel.forgetPairing()
 

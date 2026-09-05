@@ -409,6 +409,31 @@ def _device_revoke(text: str, actor: str) -> str:
     return f"Revoked {device['label']!r} — it can no longer connect."
 
 
+def _app_update(text: str, actor: str) -> str:
+    """Queues the last-built Android APK to a specific paired device (if
+    one's named in the text, e.g. "update my xiaomi") or to every paired
+    device at once (the common case — someone just says "update the
+    app"). Reuses the exact same apk_pushes queue POST /api/android/apk/
+    send(-all) already write to; the phone picks it up on its own next
+    poll, same as a push queued from the dashboard's Mobile tab."""
+    from bot.android_apk import apk_version_label, latest_apk_path
+
+    path = latest_apk_path()
+    if not path.is_file():
+        raise ActionError("No built APK found on the server yet — build one first.")
+    version_label = apk_version_label(path)
+    device = slots.find_device(text)
+    if device is not None:
+        db.create_apk_push(device["id"], str(path), version_label=version_label)
+        return f"Queued the latest build for {device['label']!r} — it'll pick it up next time the app is open."
+    keys = [r for r in db.list_api_keys(kind="device") if not r["revoked_at"]]
+    if not keys:
+        raise ActionError("No paired devices to update yet — pair one from the Mobile tab first.")
+    for r in keys:
+        db.create_apk_push(r["id"], str(path), version_label=version_label)
+    return f"Queued the latest build for {len(keys)} paired device(s) — each picks it up next time its app is open."
+
+
 def _mobile_key_create(text: str, actor: str) -> str:
     label = slots.find_quoted(text) or "New device"
     key_id, plaintext = db.create_api_key(label)
@@ -531,8 +556,9 @@ def _help(text: str, actor: str) -> str:
         "users, jobs & swarms (list/run/check status), diagnostics "
         "(errors/latency), database status/vacuum, backups (list/restore), "
         "feature toggles & agent control mode, paired devices (list/revoke/"
-        "create a pairing key), sessions (list/show), and checking Claude "
-        "Desktop/Hermes Agent setup. Just ask in plain language."
+        "create a pairing key/push the latest Android app update), sessions "
+        "(list/show), and checking Claude Desktop/Hermes Agent setup. Just "
+        "ask in plain language."
     )
 
 
@@ -575,6 +601,7 @@ INTENT_HANDLERS: dict[str, Callable[[str, str], str]] = {
     "devices_list": _devices_list,
     "device_revoke": _device_revoke,
     "mobile_key_create": _mobile_key_create,
+    "app_update": _app_update,
     "sessions_list": _sessions_list,
     "session_show": _session_show,
     "claude_setup_check": _claude_setup_check,

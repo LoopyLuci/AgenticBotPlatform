@@ -247,6 +247,18 @@ EXAMPLES: list[tuple[str, str]] = [
     ("i need a new pairing key for my tablet", "mobile_key_create"),
     ("pair a new device", "mobile_key_create"),
 
+    # app_update
+    ("update the app", "app_update"),
+    ("update my phone", "app_update"),
+    ("push the latest apk to my phone", "app_update"),
+    ("update the android app", "app_update"),
+    ("send the latest build to my device", "app_update"),
+    ("install the newest version on my phone", "app_update"),
+    ("update my xiaomi", "app_update"),
+    ("can you update the mobile app for me", "app_update"),
+    ("push the new apk", "app_update"),
+    ("update all paired devices", "app_update"),
+
     # sessions_list
     ("list recent sessions", "sessions_list"),
     ("show my sessions", "sessions_list"),

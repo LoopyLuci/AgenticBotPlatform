@@ -3,18 +3,23 @@ package com.botserver.mobile.ui.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.botserver.mobile.data.CredentialStore
+import com.botserver.mobile.data.GitHubRelease
+import com.botserver.mobile.data.GitHubUpdateRepository
 import com.botserver.mobile.data.SettingsRepository
+import com.botserver.mobile.data.UpdateRepository
 import com.botserver.mobile.data.dto.agentControlMode
 import com.botserver.mobile.data.dto.confirmDestructive
 import com.botserver.mobile.data.dto.defaultBackend
 import com.botserver.mobile.data.dto.defaultHermesBackend
 import com.botserver.mobile.data.dto.uiAutomationEnabled
 import com.botserver.mobile.data.dto.verboseTelemetry
+import com.botserver.mobile.diagnostics.AppLog
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 import javax.inject.Inject
 
 data class SettingsUiState(
@@ -33,6 +38,16 @@ data class SettingsUiState(
     val savingKey: String? = null,
 )
 
+sealed interface GitHubUpdateState {
+    data object Idle : GitHubUpdateState
+    data object Checking : GitHubUpdateState
+    data object UpToDate : GitHubUpdateState
+    data class Available(val release: GitHubRelease) : GitHubUpdateState
+    data object Downloading : GitHubUpdateState
+    data class Downloaded(val file: File) : GitHubUpdateState
+    data class Error(val message: String) : GitHubUpdateState
+}
+
 /** Mirrors the desktop dashboard's Control Center — same underlying
  * POST /api/config/set the desktop uses, so a change made from the phone
  * is a change to the one config file the server (and every other
@@ -42,10 +57,15 @@ data class SettingsUiState(
 class SettingsViewModel @Inject constructor(
     private val repository: SettingsRepository,
     private val credentials: CredentialStore,
+    private val gitHubUpdateRepository: GitHubUpdateRepository,
+    private val updateRepository: UpdateRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState
+
+    private val _gitHubUpdateState = MutableStateFlow<GitHubUpdateState>(GitHubUpdateState.Idle)
+    val gitHubUpdateState: StateFlow<GitHubUpdateState> = _gitHubUpdateState
 
     fun refresh() {
         viewModelScope.launch {
@@ -125,4 +145,55 @@ class SettingsViewModel @Inject constructor(
     fun forgetPairing() {
         credentials.clear()
     }
+
+    /** Independent of pairing entirely — this hits GitHub directly, not
+     * the paired BotServer, so it works even if pairing is broken or the
+     * app has never been paired at all. See GitHubUpdateRepository's doc
+     * for why there's no real version-number comparison here. */
+    fun checkForGitHubUpdate() {
+        _gitHubUpdateState.value = GitHubUpdateState.Checking
+        viewModelScope.launch {
+            _gitHubUpdateState.value = runCatching { gitHubUpdateRepository.checkLatest() }.fold(
+                onSuccess = { release ->
+                    when {
+                        release == null -> GitHubUpdateState.Error("Latest release has no APK attached.")
+                        gitHubUpdateRepository.isNew(release) -> GitHubUpdateState.Available(release)
+                        else -> GitHubUpdateState.UpToDate
+                    }
+                },
+                onFailure = { e ->
+                    AppLog.w("GitHubUpdate", "check failed", e)
+                    GitHubUpdateState.Error(e.message ?: "Couldn't reach GitHub.")
+                },
+            )
+        }
+    }
+
+    fun downloadGitHubUpdate() {
+        val current = _gitHubUpdateState.value
+        if (current !is GitHubUpdateState.Available) return
+        _gitHubUpdateState.value = GitHubUpdateState.Downloading
+        viewModelScope.launch {
+            _gitHubUpdateState.value = runCatching { gitHubUpdateRepository.download(current.release) }.fold(
+                onSuccess = {
+                    gitHubUpdateRepository.markSeen(current.release)
+                    GitHubUpdateState.Downloaded(it)
+                },
+                onFailure = { e ->
+                    AppLog.w("GitHubUpdate", "download failed", e)
+                    GitHubUpdateState.Error(e.message ?: "Download failed.")
+                },
+            )
+        }
+    }
+
+    fun dismissGitHubUpdate() {
+        (_gitHubUpdateState.value as? GitHubUpdateState.Available)?.let { gitHubUpdateRepository.markSeen(it.release) }
+        _gitHubUpdateState.value = GitHubUpdateState.Idle
+    }
+
+    /** Same install flow the server-push update path (DevicesViewModel)
+     * already uses — one FileProvider + ACTION_VIEW mechanism regardless
+     * of whether the APK came from the paired server or GitHub. */
+    fun installIntent(file: File) = updateRepository.installIntent(file)
 }
