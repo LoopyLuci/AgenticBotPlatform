@@ -3801,7 +3801,15 @@ async function waitForServerReady(maxAttempts = 300) {
     const controller = new AbortController();
     const abortTimer = setTimeout(() => controller.abort(), 3000);
     try {
-      const res = await fetch(API_BASE + '/api/overview', { cache: 'no-store', signal: controller.signal });
+      // /healthz specifically, not a data endpoint like /api/overview:
+      // this check only needs to know "is the process up and the DB
+      // readable," and it runs before the dashboard token is guaranteed
+      // to be attached to requests yet, so it must hit a route that's
+      // unauthenticated by design (see bot/dashboard/server.py's comment
+      // on /healthz) — otherwise every attempt 401s and this loop churns
+      // through its whole retry budget looking "stuck" even when the
+      // server answered instantly and correctly the entire time.
+      const res = await fetch(API_BASE + '/healthz', { cache: 'no-store', signal: controller.signal });
       if (res.ok) return true;
     } catch (_e) { /* not up yet, or that attempt timed out */ }
     finally { clearTimeout(abortTimer); }
