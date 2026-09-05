@@ -51,11 +51,44 @@ class PairingViewModel @Inject constructor(
         attemptPair(payload.host, payload.key, payload.host2, payload.host3)
     }
 
-    fun onManualSubmit(host: String, key: String, host2: String = "", host3: String = "") {
-        AppLog.i(TAG, "onManualSubmit tapped: host=${host.ifBlank { "(blank)" }}, host2=${host2.ifBlank { "(blank)" }}, host3=${host3.ifBlank { "(blank)" }}, keyLen=${key.trim().length}")
+    /** The primary manual-entry path: paste the one self-contained pairing
+     * code the dashboard/Support Bot now hand out (see
+     * bot/mobile_pairing.py) — it already carries every host, so this
+     * never needs a separate host field. Also accepts the QR's raw
+     * "botserver://pair?..." text verbatim, since it's the exact same
+     * format; a bare key with no embedded host routes the user to
+     * onAdvancedManualSubmit instead of guessing at a host. */
+    fun onManualCodeSubmit(pastedText: String) {
+        val trimmed = pastedText.trim()
+        AppLog.i(TAG, "onManualCodeSubmit tapped: length=${trimmed.length}")
+        if (trimmed.isEmpty()) {
+            _state.value = PairingState.Error("Paste the pairing code from the dashboard's Mobile tab or a Support Bot reply.")
+            return
+        }
+        val payload = repository.parse(trimmed) ?: run {
+            AppLog.w(TAG, "onManualCodeSubmit: rejected — didn't parse as a pairing code or key")
+            _state.value = PairingState.Error("That doesn't look like a valid pairing code.")
+            return
+        }
+        if (payload.host.isNullOrBlank()) {
+            AppLog.w(TAG, "onManualCodeSubmit: parsed as a bare key with no embedded host")
+            _state.value = PairingState.Error(
+                "That's a bare key with no host baked in — use \"Enter host and key separately\" below, " +
+                    "or generate a fresh pairing code from the dashboard's Mobile tab.",
+            )
+            return
+        }
+        attemptPair(payload.host, payload.key, payload.host2, payload.host3)
+    }
+
+    /** The advanced fallback for a bare key (no embedded host) or a
+     * deliberately custom host override — most pairings should never
+     * need this now that a generated code carries every host itself. */
+    fun onAdvancedManualSubmit(host: String, key: String, host2: String = "", host3: String = "") {
+        AppLog.i(TAG, "onAdvancedManualSubmit tapped: host=${host.ifBlank { "(blank)" }}, host2=${host2.ifBlank { "(blank)" }}, host3=${host3.ifBlank { "(blank)" }}, keyLen=${key.trim().length}")
         val trimmedKey = key.trim()
         if (trimmedKey.isEmpty()) {
-            AppLog.w(TAG, "onManualSubmit: rejected — key field was empty")
+            AppLog.w(TAG, "onAdvancedManualSubmit: rejected — key field was empty")
             _state.value = PairingState.Error("Paste the key from the dashboard's Mobile tab.")
             return
         }

@@ -19,7 +19,6 @@ import mimetypes
 import os
 import secrets
 import socket
-import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -2685,57 +2684,29 @@ def build_app() -> FastAPI:
 
     @app.post("/api/mobile-keys", dependencies=[Depends(_require_token_or_api_key)])
     async def api_mobile_keys_create(payload: dict = Body(...), caller: str = Depends(_identify_caller)):
+        from bot import mobile_pairing
+
         label = (payload.get("label") or "").strip() or "Unnamed device"
         key_id, plaintext = db.create_api_key(label)
         db.create_conversations_for_new_device(key_id)
-        host = (payload.get("host") or "").strip()
         # host2/host3 are optional additional, independent paths to the same
         # server (e.g. a Tailscale hostname alongside a LAN IP, alongside a
         # public Tailscale Funnel URL) — the Android app tries all
         # configured hosts in order and fails over automatically if one
-        # stops answering.
-        host2 = (payload.get("host2") or "").strip()
-        host3 = (payload.get("host3") or "").strip()
-        # Auto-fill whichever of host/host2/host3 the caller left blank
-        # with this machine's own detected addresses, so a key minted with
-        # no explicit host still gets every automatically-tried network
-        # path by default instead of the phone needing a manual fallback
-        # added later — see bot/network_info.py's module doc. Funnel (a
-        # public HTTPS URL, works from any network) is always the last
-        # candidate: it adds a relay hop, so it should only be reached for
-        # once the LAN/Tailscale-direct paths have already failed.
-        if not host or not host2 or not host3:
-            from bot import network_info
-
-            loop = asyncio.get_running_loop()
-            addrs, funnel_url = await asyncio.gather(
-                loop.run_in_executor(None, network_info.detect_addresses),
-                loop.run_in_executor(None, network_info.detect_funnel_url),
-            )
-            port = int(os.environ.get("DASHBOARD_PORT", "8787"))
-            candidates = [f"{addrs[kind]}:{port}" for kind in ("lan", "tailscale") if addrs.get(kind)]
-            if funnel_url:
-                candidates.append(funnel_url)
-            for candidate in candidates:
-                if not host:
-                    host = candidate
-                elif not host2 and candidate != host:
-                    host2 = candidate
-                elif not host3 and candidate not in (host, host2):
-                    host3 = candidate
-        params = [f"key={urllib.parse.quote(plaintext, safe='')}"]
-        if host:
-            params.insert(0, f"host={urllib.parse.quote(host, safe='')}")
-        if host2:
-            params.append(f"host2={urllib.parse.quote(host2, safe='')}")
-        if host3:
-            # host3 (Funnel) is a full https:// URL, unlike host/host2's
-            # bare host:port — always URL-encoded, not just when it
-            # happens to contain special characters, so the "://" doesn't
-            # depend on being harmless-by-luck inside a query value.
-            params.append(f"host3={urllib.parse.quote(host3, safe='')}")
-        pair_uri = "botserver://pair?" + "&".join(params)
-        img = qrcode.make(pair_uri, image_factory=PyPNGImage)
+        # stops answering. Auto-filled with this machine's own detected
+        # addresses whenever the caller leaves any blank, so a key minted
+        # with no explicit host still gets every automatically-tried
+        # network path by default — see bot/mobile_pairing.py's doc.
+        host, host2, host3 = await mobile_pairing.detect_hosts(
+            (payload.get("host") or "").strip(),
+            (payload.get("host2") or "").strip(),
+            (payload.get("host3") or "").strip(),
+        )
+        # The self-contained pairing code — one string carrying every host
+        # plus the key, so pasting it alone (no separate host entry) is
+        # enough for the app's manual-entry flow, not only its QR scan.
+        pairing_code = mobile_pairing.build_pairing_code(plaintext, host, host2, host3)
+        img = qrcode.make(pairing_code, image_factory=PyPNGImage)
         buf = io.BytesIO()
         img.save(buf)
         qr_png_base64 = base64.b64encode(buf.getvalue()).decode("ascii")
@@ -2743,8 +2714,8 @@ def build_app() -> FastAPI:
         devices = await asyncio.get_running_loop().run_in_executor(None, db.list_devices)
         await _manager.broadcast({"type": "device_list", "devices": _annotate_online([dict(d) for d in devices])})
         return {
-            "id": key_id, "label": label, "key": plaintext, "qr_png_base64": qr_png_base64,
-            # Echoed back (not just embedded in the QR) so the dashboard UI
+            "id": key_id, "label": label, "key": plaintext, "pairing_code": pairing_code, "qr_png_base64": qr_png_base64,
+            # Echoed back (not just embedded in the code) so the dashboard UI
             # can show exactly which two paths this key was minted with,
             # including whichever got auto-filled above.
             "host": host or None, "host2": host2 or None, "host3": host3 or None,

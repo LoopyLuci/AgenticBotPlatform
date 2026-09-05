@@ -30,6 +30,7 @@ fun SettingsScreen(
     onOpenProviders: () -> Unit = {},
     onUnpaired: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
+    updateViewModel: com.botserver.mobile.ui.update.AppUpdateViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
     var showForgetDialog by rememberSaveable { mutableStateOf(false) }
@@ -151,7 +152,7 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(14.dp))
 
-            AppUpdateCard(viewModel)
+            AppUpdateCard(updateViewModel)
 
             Spacer(Modifier.height(14.dp))
 
@@ -202,12 +203,14 @@ fun SettingsScreen(
 /** Self-update from the project's public GitHub releases — independent
  * of the paired BotServer connection entirely (see
  * GitHubUpdateRepository's doc), so it works even when pairing itself is
- * broken. Deliberately its own card, not folded into Danger zone: this
- * one's routine, not destructive. */
+ * broken; the same AppUpdateViewModel/AppUpdateBanner PairingScreen uses
+ * pre-pairing, here wrapped in a full card with a manual "Check for
+ * updates" button and the installed-version display. Deliberately its
+ * own card, not folded into Danger zone: this one's routine, not
+ * destructive. */
 @Composable
-private fun AppUpdateCard(viewModel: SettingsViewModel) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val state by viewModel.gitHubUpdateState.collectAsState()
+private fun AppUpdateCard(updateViewModel: com.botserver.mobile.ui.update.AppUpdateViewModel) {
+    val state by updateViewModel.state.collectAsState()
 
     SettingsCard(title = "App update") {
         Text(
@@ -215,40 +218,21 @@ private fun AppUpdateCard(viewModel: SettingsViewModel) {
             style = MaterialTheme.typography.bodySmall,
         )
         Spacer(Modifier.height(8.dp))
-        when (val s = state) {
-            is GitHubUpdateState.Idle -> {}
-            is GitHubUpdateState.Checking -> Row(verticalAlignment = Alignment.CenterVertically) {
+        when (state) {
+            is com.botserver.mobile.ui.update.AppUpdateState.Checking -> Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(8.dp))
                 Text("Checking GitHub…", style = MaterialTheme.typography.labelSmall)
             }
-            is GitHubUpdateState.UpToDate -> Text("You're on the latest published release.", style = MaterialTheme.typography.labelSmall)
-            is GitHubUpdateState.Available -> Column {
-                Text("${s.release.tag} is available.", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(6.dp))
-                Row {
-                    Button(onClick = viewModel::downloadGitHubUpdate, modifier = Modifier.testTag("update-download")) { Text("Download & install") }
-                    Spacer(Modifier.width(8.dp))
-                    TextButton(onClick = viewModel::dismissGitHubUpdate) { Text("Not now") }
-                }
-            }
-            is GitHubUpdateState.Downloading -> Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                Spacer(Modifier.width(8.dp))
-                Text("Downloading…", style = MaterialTheme.typography.labelSmall)
-            }
-            is GitHubUpdateState.Downloaded -> {
-                LaunchedEffect(s.file) { context.startActivity(viewModel.installIntent(s.file)) }
-                Text(
-                    "Downloaded — Android will ask you to confirm the install.",
-                    style = MaterialTheme.typography.labelSmall,
-                )
-            }
-            is GitHubUpdateState.Error -> Text(s.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+            is com.botserver.mobile.ui.update.AppUpdateState.UpToDate -> Text("You're on the latest published release.", style = MaterialTheme.typography.labelSmall)
+            else -> com.botserver.mobile.ui.update.AppUpdateBanner(updateViewModel)
         }
-        if (state is GitHubUpdateState.Idle || state is GitHubUpdateState.UpToDate || state is GitHubUpdateState.Error) {
+        if (state is com.botserver.mobile.ui.update.AppUpdateState.Idle ||
+            state is com.botserver.mobile.ui.update.AppUpdateState.UpToDate ||
+            state is com.botserver.mobile.ui.update.AppUpdateState.Error
+        ) {
             Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = viewModel::checkForGitHubUpdate, modifier = Modifier.testTag("update-check")) {
+            OutlinedButton(onClick = updateViewModel::checkForUpdate, modifier = Modifier.testTag("update-check")) {
                 Text("Check for updates")
             }
         }

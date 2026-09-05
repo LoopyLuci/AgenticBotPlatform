@@ -1262,12 +1262,12 @@
         </div>
         <p class="cardnote" id="mobile-network-info-note">Leave all three blank to auto-fill this machine's own detected LAN/Tailscale/Funnel addresses. Each is an independent path to this server — the app tries them in order and switches automatically if one stops answering, so the phone stays connected from any network without you doing anything.</p>
         <div class="hidden" id="mobile-new-result" style="margin-top:14px;">
-          <p class="cardnote" style="color:var(--warning);">Shown once — this key can't be recovered after you leave this page. Copy it or scan the QR now.</p>
+          <p class="cardnote" style="color:var(--warning);">Shown once — this can't be recovered after you leave this page. Scan the QR, or copy the code below and paste it into the app's pairing screen — it already carries every host, no typing required.</p>
           <p class="cardnote" id="mobile-new-hosts-used"></p>
           <div class="row" style="gap:14px; align-items:flex-start;">
             <img id="mobile-new-qr" style="width:180px; height:180px; border-radius:8px; border:1px solid var(--line);">
             <div style="flex:1;">
-              <div class="cardnote">Key</div>
+              <div class="cardnote">Pairing code — paste this whole thing into the app</div>
               <div class="mono" id="mobile-new-key" style="word-break:break-all; font-size:12px; background:var(--surface-2); border:1px solid var(--line); border-radius:7px; padding:8px;"></div>
             </div>
           </div>
@@ -4553,7 +4553,7 @@ document.getElementById('btn-mobile-generate').onclick = async () => {
   btn.disabled = true;
   try {
     const res = await api('/api/mobile-keys', { method: 'POST', body: JSON.stringify({ label, host, host2, host3 }) });
-    document.getElementById('mobile-new-key').textContent = res.key;
+    document.getElementById('mobile-new-key').textContent = res.pairing_code;
     document.getElementById('mobile-new-qr').src = `data:image/png;base64,${res.qr_png_base64}`;
     const hostsNote = [res.host && `primary ${res.host}`, res.host2 && `fallback ${res.host2}`, res.host3 && `public ${res.host3}`].filter(Boolean).join(', ');
     document.getElementById('mobile-new-hosts-used').textContent = hostsNote ? `Paired with: ${hostsNote}` : 'No host configured yet — add one later from this device.';

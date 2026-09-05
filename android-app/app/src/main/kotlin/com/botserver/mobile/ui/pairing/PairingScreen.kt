@@ -19,12 +19,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.botserver.mobile.ui.update.AppUpdateBanner
+import com.botserver.mobile.ui.update.AppUpdateViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PairingScreen(
     autoPairRaw: String? = null,
     viewModel: PairingViewModel = hiltViewModel(),
+    updateViewModel: AppUpdateViewModel = hiltViewModel(),
     onPaired: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -33,6 +36,14 @@ fun PairingScreen(
     LaunchedEffect(autoPairRaw) {
         if (autoPairRaw != null) viewModel.onAutoPairLink(autoPairRaw)
     }
+
+    // A self-update check needs no pairing at all — it talks to GitHub
+    // directly (see AppUpdateViewModel/GitHubUpdateRepository) — so this
+    // runs the moment the pairing screen appears, not gated behind ever
+    // having paired. Auto-*checks* only; installing still needs one tap
+    // (see AppUpdateBanner), never a surprise install prompt with no
+    // action from the user.
+    LaunchedEffect(Unit) { updateViewModel.checkForUpdate() }
 
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -43,11 +54,13 @@ fun PairingScreen(
         hasCameraPermission = granted
     }
 
-    var manualHost by remember { mutableStateOf("") }
-    var manualHost2 by remember { mutableStateOf("") }
-    var manualHost3 by remember { mutableStateOf("") }
-    var manualKey by remember { mutableStateOf("") }
+    var manualCode by remember { mutableStateOf("") }
     var showManualEntry by remember { mutableStateOf(false) }
+    var showAdvancedManual by remember { mutableStateOf(false) }
+    var advHost by remember { mutableStateOf("") }
+    var advHost2 by remember { mutableStateOf("") }
+    var advHost3 by remember { mutableStateOf("") }
+    var advKey by remember { mutableStateOf("") }
 
     LaunchedEffect(state) {
         if (state is PairingState.Success) onPaired()
@@ -91,7 +104,10 @@ fun PairingScreen(
                         }
                         if (state !is PairingState.Idle) Spacer(Modifier.height(8.dp))
                         Button(
-                            onClick = { viewModel.onManualSubmit(manualHost, manualKey, manualHost2, manualHost3) },
+                            onClick = {
+                                if (showAdvancedManual) viewModel.onAdvancedManualSubmit(advHost, advKey, advHost2, advHost3)
+                                else viewModel.onManualCodeSubmit(manualCode)
+                            },
                             enabled = state !is PairingState.Verifying,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -112,6 +128,9 @@ fun PairingScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            AppUpdateBanner(updateViewModel)
+            Spacer(Modifier.height(12.dp))
+
             Text(
                 "Scan the QR code from the dashboard's Mobile tab (Generate a key)",
                 style = MaterialTheme.typography.bodyMedium,
@@ -146,42 +165,68 @@ fun PairingScreen(
 
             Spacer(Modifier.height(20.dp))
             TextButton(onClick = { showManualEntry = !showManualEntry }) {
-                Text(if (showManualEntry) "Hide manual entry" else "Enter key manually instead")
+                Text(if (showManualEntry) "Hide manual entry" else "Enter pairing code manually instead")
             }
 
             if (showManualEntry) {
                 Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                    OutlinedTextField(
-                        value = manualHost,
-                        onValueChange = { manualHost = it },
-                        label = { Text("Host:port (e.g. your-tailnet-host:8787)") },
-                        modifier = Modifier.fillMaxWidth().testTag("pairing-host"),
-                        singleLine = true,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = manualHost2,
-                        onValueChange = { manualHost2 = it },
-                        label = { Text("Fallback host:port (optional)") },
-                        modifier = Modifier.fillMaxWidth().testTag("pairing-host2"),
-                        singleLine = true,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = manualHost3,
-                        onValueChange = { manualHost3 = it },
-                        label = { Text("Public URL (optional, e.g. https://you.ts.net)") },
-                        modifier = Modifier.fillMaxWidth().testTag("pairing-host3"),
-                        singleLine = true,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = manualKey,
-                        onValueChange = { manualKey = it },
-                        label = { Text("Key") },
-                        modifier = Modifier.fillMaxWidth().testTag("pairing-key"),
-                        singleLine = true,
-                    )
+                    if (!showAdvancedManual) {
+                        Text(
+                            "Paste the pairing code from the dashboard's Mobile tab or a Support Bot reply — " +
+                                "it already carries every host this server is reachable at, nothing else to type.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = manualCode,
+                            onValueChange = { manualCode = it },
+                            label = { Text("Pairing code") },
+                            modifier = Modifier.fillMaxWidth().testTag("pairing-code"),
+                            singleLine = false,
+                            maxLines = 4,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(onClick = { showAdvancedManual = true }) {
+                            Text("Paste isn't working? Enter host and key separately")
+                        }
+                    } else {
+                        OutlinedTextField(
+                            value = advHost,
+                            onValueChange = { advHost = it },
+                            label = { Text("Host:port (e.g. your-tailnet-host:8787)") },
+                            modifier = Modifier.fillMaxWidth().testTag("pairing-host"),
+                            singleLine = true,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = advHost2,
+                            onValueChange = { advHost2 = it },
+                            label = { Text("Fallback host:port (optional)") },
+                            modifier = Modifier.fillMaxWidth().testTag("pairing-host2"),
+                            singleLine = true,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = advHost3,
+                            onValueChange = { advHost3 = it },
+                            label = { Text("Public URL (optional, e.g. https://you.ts.net)") },
+                            modifier = Modifier.fillMaxWidth().testTag("pairing-host3"),
+                            singleLine = true,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = advKey,
+                            onValueChange = { advKey = it },
+                            label = { Text("Key") },
+                            modifier = Modifier.fillMaxWidth().testTag("pairing-key"),
+                            singleLine = true,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(onClick = { showAdvancedManual = false }) {
+                            Text("Back to pasting a pairing code")
+                        }
+                    }
                 }
             }
         }

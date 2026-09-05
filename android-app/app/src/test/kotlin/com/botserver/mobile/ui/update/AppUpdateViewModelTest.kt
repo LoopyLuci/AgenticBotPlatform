@@ -1,9 +1,7 @@
-package com.botserver.mobile.ui.settings
+package com.botserver.mobile.ui.update
 
-import com.botserver.mobile.data.CredentialStore
 import com.botserver.mobile.data.GitHubRelease
 import com.botserver.mobile.data.GitHubUpdateRepository
-import com.botserver.mobile.data.SettingsRepository
 import com.botserver.mobile.data.UpdateRepository
 import io.mockk.coEvery
 import io.mockk.every
@@ -20,12 +18,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-/** SettingsViewModel's GitHub self-update state machine
- * (checkForGitHubUpdate/downloadGitHubUpdate) — this update path is
- * deliberately independent of the paired BotServer connection (see
- * GitHubUpdateRepository's doc), so it's tested against a mocked
- * repository rather than a real HTTP call. */
-class GitHubUpdateStateTest {
+/** AppUpdateViewModel — the self-update state machine shared by
+ * PairingScreen (reachable with no pairing at all) and Settings. This
+ * update path is deliberately independent of the paired BotServer
+ * connection (see GitHubUpdateRepository's doc), so it's tested against
+ * a mocked repository rather than a real HTTP call. */
+class AppUpdateViewModelTest {
 
     private val dispatcher = StandardTestDispatcher()
 
@@ -39,15 +37,11 @@ class GitHubUpdateStateTest {
         Dispatchers.resetMain()
     }
 
-    private fun buildViewModel(gitHub: GitHubUpdateRepository) = SettingsViewModel(
-        repository = mockk<SettingsRepository>(relaxed = true),
-        credentials = mockk<CredentialStore>(relaxed = true),
-        gitHubUpdateRepository = gitHub,
-        updateRepository = mockk<UpdateRepository>(relaxed = true),
-    )
+    private fun buildViewModel(gitHub: GitHubUpdateRepository) =
+        AppUpdateViewModel(gitHub, mockk<UpdateRepository>(relaxed = true))
 
     @Test
-    fun `checkForGitHubUpdate reports Available for a release not yet seen`() = runTest {
+    fun `checkForUpdate reports Available for a release not yet seen`() = runTest {
         val release = GitHubRelease("v0.5.0", "https://github.com/x", "https://example.com/app.apk", "app.apk")
         val gitHub = mockk<GitHubUpdateRepository> {
             coEvery { checkLatest() } returns release
@@ -55,15 +49,15 @@ class GitHubUpdateStateTest {
         }
         val viewModel = buildViewModel(gitHub)
 
-        viewModel.checkForGitHubUpdate()
-        assertEquals(GitHubUpdateState.Checking, viewModel.gitHubUpdateState.value)
+        viewModel.checkForUpdate()
+        assertEquals(AppUpdateState.Checking, viewModel.state.value)
         dispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(GitHubUpdateState.Available(release), viewModel.gitHubUpdateState.value)
+        assertEquals(AppUpdateState.Available(release), viewModel.state.value)
     }
 
     @Test
-    fun `checkForGitHubUpdate reports UpToDate for an already-seen release`() = runTest {
+    fun `checkForUpdate reports UpToDate for an already-seen release`() = runTest {
         val release = GitHubRelease("v0.5.0", "https://github.com/x", "https://example.com/app.apk", "app.apk")
         val gitHub = mockk<GitHubUpdateRepository> {
             coEvery { checkLatest() } returns release
@@ -71,27 +65,27 @@ class GitHubUpdateStateTest {
         }
         val viewModel = buildViewModel(gitHub)
 
-        viewModel.checkForGitHubUpdate()
+        viewModel.checkForUpdate()
         dispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(GitHubUpdateState.UpToDate, viewModel.gitHubUpdateState.value)
+        assertEquals(AppUpdateState.UpToDate, viewModel.state.value)
     }
 
     @Test
-    fun `checkForGitHubUpdate reports Error when the network call fails`() = runTest {
+    fun `checkForUpdate reports Error when the network call fails`() = runTest {
         val gitHub = mockk<GitHubUpdateRepository> {
             coEvery { checkLatest() } throws java.io.IOException("no connection")
         }
         val viewModel = buildViewModel(gitHub)
 
-        viewModel.checkForGitHubUpdate()
+        viewModel.checkForUpdate()
         dispatcher.scheduler.advanceUntilIdle()
 
-        assertTrue(viewModel.gitHubUpdateState.value is GitHubUpdateState.Error)
+        assertTrue(viewModel.state.value is AppUpdateState.Error)
     }
 
     @Test
-    fun `downloadGitHubUpdate marks the release seen and reports Downloaded`() = runTest {
+    fun `downloadAndInstall marks the release seen and reports Downloaded`() = runTest {
         val release = GitHubRelease("v0.5.0", "https://github.com/x", "https://example.com/app.apk", "app.apk")
         val file = File("app.apk")
         val gitHub = mockk<GitHubUpdateRepository> {
@@ -101,23 +95,40 @@ class GitHubUpdateStateTest {
             every { markSeen(release) } returns Unit
         }
         val viewModel = buildViewModel(gitHub)
-        viewModel.checkForGitHubUpdate()
+        viewModel.checkForUpdate()
         dispatcher.scheduler.advanceUntilIdle()
 
-        viewModel.downloadGitHubUpdate()
+        viewModel.downloadAndInstall()
         dispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(GitHubUpdateState.Downloaded(file), viewModel.gitHubUpdateState.value)
+        assertEquals(AppUpdateState.Downloaded(file), viewModel.state.value)
     }
 
     @Test
-    fun `downloadGitHubUpdate does nothing when no update is available`() = runTest {
+    fun `downloadAndInstall does nothing when no update is available`() = runTest {
         val gitHub = mockk<GitHubUpdateRepository>(relaxed = true)
         val viewModel = buildViewModel(gitHub)
 
-        viewModel.downloadGitHubUpdate()
+        viewModel.downloadAndInstall()
         dispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(GitHubUpdateState.Idle, viewModel.gitHubUpdateState.value)
+        assertEquals(AppUpdateState.Idle, viewModel.state.value)
+    }
+
+    @Test
+    fun `dismiss marks an available release seen and returns to Idle`() = runTest {
+        val release = GitHubRelease("v0.5.0", "https://github.com/x", "https://example.com/app.apk", "app.apk")
+        val gitHub = mockk<GitHubUpdateRepository> {
+            coEvery { checkLatest() } returns release
+            every { isNew(release) } returns true
+            every { markSeen(release) } returns Unit
+        }
+        val viewModel = buildViewModel(gitHub)
+        viewModel.checkForUpdate()
+        dispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.dismiss()
+
+        assertEquals(AppUpdateState.Idle, viewModel.state.value)
     }
 }

@@ -3258,7 +3258,7 @@ document.getElementById('btn-mobile-generate').onclick = async () => {
   btn.disabled = true;
   try {
     const res = await api('/api/mobile-keys', { method: 'POST', body: JSON.stringify({ label, host, host2 }) });
-    document.getElementById('mobile-new-key').textContent = res.key;
+    document.getElementById('mobile-new-key').textContent = res.pairing_code;
     document.getElementById('mobile-new-qr').src = `data:image/png;base64,${res.qr_png_base64}`;
     document.getElementById('mobile-new-result').classList.remove('hidden');
     document.getElementById('mobile-new-label').value = '';

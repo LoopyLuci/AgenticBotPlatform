@@ -226,7 +226,7 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel()) {
                             Spacer(Modifier.height(12.dp))
                             SelectionContainer {
                                 Text(
-                                    s.pairing.key,
+                                    s.pairing.pairingCode,
                                     style = MaterialTheme.typography.bodySmall,
                                     modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)).padding(10.dp),
                                 )
@@ -236,7 +236,7 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel()) {
                                 OutlinedButton(onClick = {
                                     val intent = Intent(Intent.ACTION_SEND).apply {
                                         type = "text/plain"
-                                        putExtra(Intent.EXTRA_TEXT, s.pairing.pairUri())
+                                        putExtra(Intent.EXTRA_TEXT, s.pairing.pairingCode)
                                     }
                                     context.startActivity(Intent.createChooser(intent, "Share pairing link"))
                                 }) { Text("Share pairing link") }

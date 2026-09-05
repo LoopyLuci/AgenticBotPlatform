@@ -434,13 +434,18 @@ def _app_update(text: str, actor: str) -> str:
     return f"Queued the latest build for {len(keys)} paired device(s) — each picks it up next time its app is open."
 
 
-def _mobile_key_create(text: str, actor: str) -> str:
+async def _mobile_key_create(text: str, actor: str) -> str:
+    from bot import mobile_pairing
+
     label = slots.find_quoted(text) or "New device"
     key_id, plaintext = db.create_api_key(label)
+    db.create_conversations_for_new_device(key_id)
+    host, host2, host3 = await mobile_pairing.detect_hosts()
+    pairing_code = mobile_pairing.build_pairing_code(plaintext, host, host2, host3)
     return (
-        f"Created pairing key for {label!r} (id {key_id}). Key: {plaintext}\n"
-        "This is shown once — use the Mobile tab's QR code if you need it again later, "
-        "or hand this key to the device's manual-entry pairing screen now."
+        f"Created a pairing code for {label!r} (id {key_id}) — paste this whole thing into "
+        f"the app's pairing screen, no host typing needed:\n\n{pairing_code}\n\n"
+        "This is shown once — use the Mobile tab's QR code if you need it again later."
     )
 
 
@@ -600,7 +605,6 @@ INTENT_HANDLERS: dict[str, Callable[[str, str], str]] = {
     "settings_set": _settings_set,
     "devices_list": _devices_list,
     "device_revoke": _device_revoke,
-    "mobile_key_create": _mobile_key_create,
     "app_update": _app_update,
     "sessions_list": _sessions_list,
     "session_show": _session_show,
@@ -612,4 +616,5 @@ INTENT_HANDLERS: dict[str, Callable[[str, str], str]] = {
 ASYNC_INTENT_HANDLERS: dict[str, Callable[[str, str], Any]] = {
     "bot_restart": _bot_restart_async,
     "model_set": _model_set,
+    "mobile_key_create": _mobile_key_create,
 }
