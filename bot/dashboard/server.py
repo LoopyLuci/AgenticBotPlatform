@@ -1091,6 +1091,29 @@ def build_app() -> FastAPI:
             raise HTTPException(status_code=404, detail=f"bot instance {instance_id} not found")
         return {"instance_id": instance_id, "markdown": markdown}
 
+    @app.get("/api/bots/{instance_id}/model-picker", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_bots_model_picker(instance_id: int, provider: Optional[int] = None, page: int = 0):
+        """The exact same two-level provider/model picker data Telegram's
+        interactive /model command already renders as an inline keyboard
+        (see bot/handlers.py's _model_providers_page/_model_page) — exposed
+        over HTTP so any client that isn't Telegram (the Android app's own
+        Chat screen) can build an equivalent native picker instead of only
+        ever seeing bot.commands.cmd_model's plain-text global summary."""
+        data = await bot_commands.instance_model_page(instance_id, provider, page)
+        if data is None:
+            raise HTTPException(status_code=404, detail=f"bot instance {instance_id} not found")
+        return data
+
+    @app.post("/api/bots/{instance_id}/model", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_bots_set_model(instance_id: int, payload: dict = Body(...), caller: str = Depends(_identify_caller)):
+        model = (payload.get("model") or "").strip()
+        if not model:
+            raise HTTPException(status_code=400, detail="payload must be {model: <str>}")
+        if bot_instances.get_instance(instance_id) is None:
+            raise HTTPException(status_code=404, detail=f"bot instance {instance_id} not found")
+        message = await bot_commands.apply_instance_model(instance_id, model, actor=caller)
+        return {"ok": True, "message": message}
+
     @app.post("/api/bots", dependencies=[Depends(_require_token_or_api_key)])
     async def api_bots_create(payload: dict = Body(...)):
         try:

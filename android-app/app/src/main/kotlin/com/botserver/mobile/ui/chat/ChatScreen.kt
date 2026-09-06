@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -164,7 +165,9 @@ private fun ConversationScreen(
     state: ChatUiState,
     onBack: () -> Unit,
     viewModel: ChatViewModel,
+    modelPickerViewModel: com.botserver.mobile.ui.model.ModelPickerViewModel = androidx.hilt.navigation.compose.hiltViewModel(),
 ) {
+    com.botserver.mobile.ui.model.ModelPickerDialog(modelPickerViewModel)
     Scaffold(
         topBar = {
             TopAppBar(
@@ -193,6 +196,11 @@ private fun ConversationScreen(
                     }
                 },
                 actions = {
+                    if (instance != null) {
+                        IconButton(onClick = { modelPickerViewModel.open(instance.id) }) {
+                            Icon(Icons.Filled.Tune, contentDescription = "Choose model")
+                        }
+                    }
                     ModeSwitch(mode = state.mode, onChange = { viewModel.setMode(it) })
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),

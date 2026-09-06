@@ -43,7 +43,7 @@ COMMAND_DEFS: tuple[CommandDef, ...] = (
     CommandDef("backend", "Show or change the router backend", category="Config",
                args_hint="show | set <action|default> <backend>"),
     CommandDef("model", "Show or change the model (interactive picker)", category="Config",
-               args_hint="[show | set <backend> <model>]"),
+               args_hint="[show | set <backend> <model>]", aliases=("menu",)),
     CommandDef("mcp", "Manage MCP servers", category="Tools", args_hint="list | enable | disable | logs <name>"),
     CommandDef("project", "Set the working directory for the next /ask", category="Session", args_hint="open <path>"),
     CommandDef("new", "Start a new session (fresh history)", category="Session",

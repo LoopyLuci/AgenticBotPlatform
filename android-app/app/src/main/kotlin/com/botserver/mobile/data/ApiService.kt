@@ -10,8 +10,11 @@ import com.botserver.mobile.data.dto.CreateMobileKeyRequest
 import com.botserver.mobile.data.dto.CreateMobileKeyResponse
 import com.botserver.mobile.data.dto.DeviceInfo
 import com.botserver.mobile.data.dto.JobSummary
+import com.botserver.mobile.data.dto.ModelPickerResponse
 import com.botserver.mobile.data.dto.ModelsResponse
 import com.botserver.mobile.data.dto.NetworkInfoResponse
+import com.botserver.mobile.data.dto.SetModelRequest
+import com.botserver.mobile.data.dto.SetModelResponse
 import com.botserver.mobile.data.dto.OkResponse
 import com.botserver.mobile.data.dto.ApkSendAllRequest
 import com.botserver.mobile.data.dto.ApkSendAllResponse
@@ -235,6 +238,20 @@ interface ApiService {
 
     @POST("/api/bots/{instanceId}/restart")
     suspend fun restartBot(@Path("instanceId") instanceId: Int): OkResponse
+
+    // The same provider/model picker data Telegram's interactive /model
+    // renders as an inline keyboard (see bot/handlers.py) — this is what
+    // lets the Android app's own Chat screen build an equivalent native
+    // picker instead of only ever getting the plain-text global summary.
+    @GET("/api/bots/{instanceId}/model-picker")
+    suspend fun modelPicker(
+        @Path("instanceId") instanceId: Int,
+        @Query("provider") provider: Int? = null,
+        @Query("page") page: Int = 0,
+    ): ModelPickerResponse
+
+    @POST("/api/bots/{instanceId}/model")
+    suspend fun setInstanceModel(@Path("instanceId") instanceId: Int, @Body request: SetModelRequest): SetModelResponse
 
     // ---------------------------------------------------------- pairing ---
     // Someone messaged a bot from an unrecognized chat id and got a
