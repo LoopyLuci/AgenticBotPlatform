@@ -337,6 +337,23 @@ private fun ServerChatBubble(
                             label = { Text("📎 " + (message.attachmentName ?: "file")) },
                         )
                     }
+                    // Tap-based fallback into the same menu long-press
+                    // opens — see MessageBubble's identical addition in
+                    // ui/chat/ChatScreen.kt for why (some devices' touch
+                    // handling makes long-press unreliable).
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                        horizontalArrangement = if (isOut) Arrangement.End else Arrangement.Start,
+                    ) {
+                        IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(24.dp)) {
+                            Icon(
+                                Icons.Filled.MoreVert,
+                                contentDescription = "Message options",
+                                modifier = Modifier.size(14.dp),
+                                tint = LocalContentColor.current.copy(alpha = 0.65f),
+                            )
+                        }
+                    }
                 }
             }
 

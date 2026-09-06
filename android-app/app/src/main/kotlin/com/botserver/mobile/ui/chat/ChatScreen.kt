@@ -451,13 +451,34 @@ private fun MessageBubble(
                         },
                     )
                 }
-                Text(
-                    message.username ?: message.platform,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = LocalContentColor.current.copy(alpha = 0.65f),
+                Row(
                     modifier = Modifier.padding(top = 3.dp).fillMaxWidth(),
-                    textAlign = if (isOut) TextAlign.End else TextAlign.Start,
-                )
+                    horizontalArrangement = if (isOut) Arrangement.End else Arrangement.Start,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // A tap-based way into the same menu long-press opens —
+                    // some devices' touch handling (seen on Fire OS and
+                    // MIUI, both known for aggressive gesture customization
+                    // on sideloaded apps) can make a long-press unreliable,
+                    // so this guarantees the menu is always reachable
+                    // regardless of that.
+                    IconButton(
+                        onClick = { menuOpen = true },
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.MoreVert,
+                            contentDescription = "Message options",
+                            modifier = Modifier.size(16.dp),
+                            tint = LocalContentColor.current.copy(alpha = 0.65f),
+                        )
+                    }
+                    Text(
+                        message.username ?: message.platform,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = LocalContentColor.current.copy(alpha = 0.65f),
+                    )
+                }
             }
         }
 
