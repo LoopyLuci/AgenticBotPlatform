@@ -58,7 +58,10 @@ private fun initialsFor(name: String): String =
  * its own back-arrow header. Mirrors the same list → conversation split the
  * desktop dashboard's Chat tab now uses. */
 @Composable
-fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
+fun ChatScreen(
+    viewModel: ChatViewModel = hiltViewModel(),
+    modelPickerViewModel: com.botserver.mobile.ui.model.ModelPickerViewModel = hiltViewModel(),
+) {
     val context = LocalContext.current
     val state by viewModel.uiState.collectAsState()
     LaunchedEffect(Unit) { viewModel.start() }
@@ -94,6 +97,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
             state = state,
             onBack = { showConversation = false },
             viewModel = viewModel,
+            modelPickerViewModel = modelPickerViewModel,
         )
     }
 }
@@ -165,7 +169,7 @@ private fun ConversationScreen(
     state: ChatUiState,
     onBack: () -> Unit,
     viewModel: ChatViewModel,
-    modelPickerViewModel: com.botserver.mobile.ui.model.ModelPickerViewModel = androidx.hilt.navigation.compose.hiltViewModel(),
+    modelPickerViewModel: com.botserver.mobile.ui.model.ModelPickerViewModel,
 ) {
     com.botserver.mobile.ui.model.ModelPickerDialog(modelPickerViewModel)
     Scaffold(
@@ -248,6 +252,16 @@ private fun ConversationScreen(
                 mode = state.mode,
                 onSend = { viewModel.send(it) },
                 onSendFile = { uri, caption -> viewModel.sendFile(uri, caption) },
+                // Typed "/model" (or "/menu") in Chat-with-Bot mode opens the
+                // native picker dialog instead of sending the literal text —
+                // otherwise it round-trips to bot.commands.cmd_model's
+                // plain-text global summary exactly like before, since this
+                // screen has no other way to know "the user typed a command
+                // this app itself has a native UI for." Only intercepted in
+                // Chat-with-Bot mode: in Send-from-Server mode this text
+                // would go out for real to an external platform user, where
+                // it should never be silently swallowed.
+                onModelCommand = { instance?.let { modelPickerViewModel.open(it.id) } },
             )
         }
     }
@@ -416,6 +430,8 @@ private fun AttachmentChip(name: String, state: DownloadState?, onClick: () -> U
     )
 }
 
+private val MODEL_COMMAND_TEXTS = setOf("/model", "/menu")
+
 @Composable
 private fun Composer(
     sending: Boolean,
@@ -423,6 +439,7 @@ private fun Composer(
     mode: ChatMode,
     onSend: (String) -> Unit,
     onSendFile: (Uri, String) -> Unit,
+    onModelCommand: () -> Unit,
 ) {
     var text by remember { mutableStateOf("") }
     var pickedUri by remember { mutableStateOf<Uri?>(null) }
@@ -485,11 +502,14 @@ private fun Composer(
                 modifier = Modifier.testTag("chat-send"),
                 onClick = {
                     val uri = pickedUri
-                    if (uri != null) {
-                        onSendFile(uri, text)
-                        pickedUri = null
-                    } else {
-                        onSend(text)
+                    val trimmed = text.trim()
+                    when {
+                        uri != null -> {
+                            onSendFile(uri, text)
+                            pickedUri = null
+                        }
+                        isBot && trimmed.lowercase() in MODEL_COMMAND_TEXTS -> onModelCommand()
+                        else -> onSend(text)
                     }
                     text = ""
                 },

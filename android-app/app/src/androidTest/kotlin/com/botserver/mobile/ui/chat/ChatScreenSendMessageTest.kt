@@ -15,15 +15,19 @@ import com.botserver.mobile.data.ChatRepository
 import com.botserver.mobile.data.LiveEventsClient
 import com.botserver.mobile.data.dto.BotInstanceSummary
 import com.botserver.mobile.data.dto.ChatRecipientsResponse
+import com.botserver.mobile.data.dto.ModelPickerResponse
 import com.botserver.mobile.data.dto.OkResponse
 import com.botserver.mobile.data.dto.SendMessageRequest
+import com.botserver.mobile.data.dto.SendToBotResponse
 import com.botserver.mobile.data.db.AppDatabase
+import com.botserver.mobile.ui.model.ModelPickerViewModel
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -68,9 +72,10 @@ class ChatScreenSendMessageTest {
         val liveEvents = LiveEventsClient(OkHttpClient(), Json { ignoreUnknownKeys = true; isLenient = true })
         val repository = ChatRepository(apiService, db.chatDao(), liveEvents, InstrumentationRegistry.getInstrumentation().targetContext)
         val viewModel = ChatViewModel(repository)
+        val modelPickerViewModel = ModelPickerViewModel(apiService)
 
         composeRule.setContent {
-            ChatScreen(viewModel = viewModel)
+            ChatScreen(viewModel = viewModel, modelPickerViewModel = modelPickerViewModel)
         }
 
         // Give the initial recipients fetch (triggered by start()'s first,
@@ -97,5 +102,35 @@ class ChatScreenSendMessageTest {
                 false
             }
         }
+    }
+
+    @Test
+    fun typingSlashModelInChatWithBotModeOpensThePickerInsteadOfSendingIt() {
+        coEvery { apiService.sendToBot(any()) } returns SendToBotResponse(ok = true, reply = "should never be called")
+        coEvery { apiService.modelPicker(1, null, 0) } returns ModelPickerResponse(mode = "models", backend = "api", models = listOf("m1"))
+        val liveEvents = LiveEventsClient(OkHttpClient(), Json { ignoreUnknownKeys = true; isLenient = true })
+        val repository = ChatRepository(apiService, db.chatDao(), liveEvents, InstrumentationRegistry.getInstrumentation().targetContext)
+        val viewModel = ChatViewModel(repository)
+        val modelPickerViewModel = ModelPickerViewModel(apiService)
+
+        composeRule.setContent {
+            ChatScreen(viewModel = viewModel, modelPickerViewModel = modelPickerViewModel)
+        }
+
+        composeRule.waitUntil(timeoutMillis = 5_000) { viewModel.uiState.value.instances.isNotEmpty() }
+        composeRule.onNodeWithText("Test Bot").performClick()
+        viewModel.setMode(ChatMode.CHAT_WITH_BOT)
+
+        composeRule.onNodeWithTag("chat-message-input").performTextInput("/model")
+        closeSoftKeyboard()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("chat-send").performClick()
+
+        composeRule.waitUntil(timeoutMillis = 5_000) { modelPickerViewModel.state.value.visible }
+        assertEquals(1, modelPickerViewModel.state.value.instanceId)
+        // The whole point: this must never round-trip as a real chat
+        // message to the bot — that's the exact "plain-text summary
+        // instead of a picker" bug this interception fixes.
+        coVerify(exactly = 0) { apiService.sendToBot(any()) }
     }
 }
