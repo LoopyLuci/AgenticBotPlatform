@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.botserver.mobile.data.UpdateState
 import com.botserver.mobile.data.dto.DeviceInfo
 import com.botserver.mobile.security.rememberFragmentActivity
 import com.botserver.mobile.security.requireBiometricAuth
@@ -139,10 +140,21 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel()) {
                                 }
                             }
                             is UpdateState.Downloading -> {
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("Downloading…", style = MaterialTheme.typography.bodySmall)
+                                Column(Modifier.padding(top = 4.dp)) {
+                                    if (s.progress >= 0f) {
+                                        LinearProgressIndicator(
+                                            progress = { s.progress },
+                                            modifier = Modifier.fillMaxWidth(),
+                                        )
+                                        Spacer(Modifier.height(6.dp))
+                                        Text("Downloading… ${(s.progress * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
+                                    } else {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                            Spacer(Modifier.width(8.dp))
+                                            Text("Downloading…", style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
                                 }
                             }
                             is UpdateState.Error -> {

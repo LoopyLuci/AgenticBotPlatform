@@ -5,10 +5,11 @@ import androidx.lifecycle.viewModelScope
 import com.botserver.mobile.data.DevicesRepository
 import com.botserver.mobile.data.MeshServer
 import com.botserver.mobile.data.NewDevicePairing
+import com.botserver.mobile.data.PendingUpdateCoordinator
 import com.botserver.mobile.data.UpdateRepository
+import com.botserver.mobile.data.UpdateState
 import com.botserver.mobile.data.WebRtcMeshClient
 import com.botserver.mobile.data.dto.DeviceInfo
-import com.botserver.mobile.data.dto.MeshOrigin
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,14 +25,6 @@ sealed interface GenerateState {
     data class Error(val message: String) : GenerateState
 }
 
-sealed interface UpdateState {
-    data object None : UpdateState
-    data class Available(val pushId: Int, val versionLabel: String?, val mesh: MeshOrigin?) : UpdateState
-    data object Downloading : UpdateState
-    data class Downloaded(val file: File) : UpdateState
-    data class Error(val message: String) : UpdateState
-}
-
 sealed interface SendState {
     data object Idle : SendState
     data class Sending(val targetId: Int?) : SendState
@@ -43,6 +36,7 @@ sealed interface SendState {
 class DevicesViewModel @Inject constructor(
     private val repository: DevicesRepository,
     private val updateRepository: UpdateRepository,
+    private val pendingUpdateCoordinator: PendingUpdateCoordinator,
     private val meshServer: MeshServer,
     private val webRtcMeshClient: WebRtcMeshClient,
 ) : ViewModel() {
@@ -58,8 +52,10 @@ class DevicesViewModel @Inject constructor(
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing
 
-    private val _updateState = MutableStateFlow<UpdateState>(UpdateState.None)
-    val updateState: StateFlow<UpdateState> = _updateState
+    // Delegates to the process-wide coordinator (see its own doc) rather
+    // than owning this state — a push-triggered download can start and
+    // finish while the Devices screen isn't even open.
+    val updateState: StateFlow<UpdateState> = pendingUpdateCoordinator.updateState
 
     private val _sendState = MutableStateFlow<SendState>(SendState.Idle)
     val sendState: StateFlow<SendState> = _sendState
@@ -94,31 +90,11 @@ class DevicesViewModel @Inject constructor(
 
     /** Checked once per screen visit (see LaunchedEffect in DevicesScreen)
      * — cheap enough (one small GET) that there's no need for a background
-     * schedule beyond "whenever this screen is opened." */
-    fun checkForUpdate() {
-        viewModelScope.launch {
-            runCatching { updateRepository.checkPending() }.onSuccess { resp ->
-                _updateState.value = if (resp.available && resp.pushId != null) {
-                    UpdateState.Available(resp.pushId, resp.versionLabel, resp.mesh)
-                } else {
-                    UpdateState.None
-                }
-            }
-        }
-    }
+     * schedule beyond "whenever this screen is opened," on top of the
+     * coordinator's own push-triggered checks. */
+    fun checkForUpdate() = pendingUpdateCoordinator.checkForUpdate()
 
-    fun downloadUpdate() {
-        val current = _updateState.value
-        if (current !is UpdateState.Available) return
-        viewModelScope.launch {
-            _updateState.value = UpdateState.Downloading
-            _updateState.value = runCatching { updateRepository.downloadApk(current.pushId, current.mesh) }
-                .fold(
-                    onSuccess = { UpdateState.Downloaded(it) },
-                    onFailure = { e -> UpdateState.Error(e.message ?: "Download failed.") },
-                )
-        }
-    }
+    fun downloadUpdate() = pendingUpdateCoordinator.downloadUpdate()
 
     /** Runs only while the Devices screen is visible (see DevicesScreen's
      * DisposableEffect) — lets other paired devices on the same network
@@ -139,11 +115,9 @@ class DevicesViewModel @Inject constructor(
         webRtcMeshClient.stop()
     }
 
-    fun dismissUpdate() {
-        _updateState.value = UpdateState.None
-    }
+    fun dismissUpdate() = pendingUpdateCoordinator.dismissUpdate()
 
-    fun installIntent(file: File) = updateRepository.installIntent(file)
+    fun installIntent(file: File) = pendingUpdateCoordinator.installIntent(file)
 
     /** Manual "Update Devices" pull — the live WebSocket (startPresence
      * below) is the primary path, but it's a single long-lived connection

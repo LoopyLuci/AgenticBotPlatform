@@ -10,7 +10,13 @@ data class JobSummary(
     @SerialName("action_type") val actionType: String,
     val backend: String,
     val status: String,
-    @SerialName("user_id") val userId: Int? = null,
+    // Free text in practice, not a numeric id — e.g. the literal string
+    // "dashboard" for server-initiated jobs (see bot/support_bot/engine.py's
+    // CmdContext(user_id="dashboard", ...)), or a platform user id string
+    // for others. Was typed Int? before, which threw a kotlinx.serialization
+    // exception ("Unexpected symbol 'd' in numeric literal") the instant any
+    // job with a non-numeric user_id appeared, breaking the whole Jobs list.
+    @SerialName("user_id") val userId: String? = null,
     val prompt: String? = null,
     val result: String? = null,
     val error: String? = null,

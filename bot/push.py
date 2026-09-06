@@ -83,6 +83,56 @@ async def _access_token(account: dict[str, Any]) -> Optional[str]:
     return _cached_access_token
 
 
+async def notify_apk_push(api_key_id: int, push_id: int, version_label: Optional[str]) -> None:
+    """Fire-and-forget — wakes exactly one paired device the instant an
+    operator queues an APK push for it (dashboard's "Send APK"/"Send to
+    all", or a phone's own mesh send), instead of that device only
+    finding out on its own next `/api/android/apk/pending` poll (i.e.
+    whenever the user happens to next open the Devices screen). A
+    data-only message (no "notification" key) — this always reaches
+    FirebaseMessagingService.onMessageReceived() on the device, even
+    while the app is backgrounded, unlike a notification+data payload
+    the OS may otherwise post directly without waking app code. Silent
+    no-op with no error if FCM isn't configured or this device never
+    registered a token, same as notify_new_message above."""
+    try:
+        account = _service_account()
+        if account is None:
+            return
+        tokens = [row["fcm_token"] for row in db.list_push_tokens() if row["api_key_id"] == api_key_id]
+        if not tokens:
+            return
+        access_token = await _access_token(account)
+        if access_token is None:
+            return
+        project_id = account["project_id"]
+        url = f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send"
+        headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for token in tokens:
+                payload = {
+                    "message": {
+                        "token": token,
+                        "data": {
+                            "type": "apk_update",
+                            "push_id": str(push_id),
+                            "version_label": version_label or "",
+                        },
+                    }
+                }
+                try:
+                    resp = await client.post(url, headers=headers, json=payload)
+                    if resp.status_code == 404 or (resp.status_code == 400 and "UNREGISTERED" in resp.text):
+                        conn = db.get_conn()
+                        with db._lock:
+                            conn.execute("DELETE FROM push_tokens WHERE fcm_token=?", (token,))
+                            conn.commit()
+                except Exception as exc:
+                    logger.warning("FCM apk-push notify failed for one device: %s", exc)
+    except Exception as exc:
+        logger.warning("notify_apk_push failed: %s", exc)
+
+
 async def notify_new_message(instance_name: str, text: str) -> None:
     """Fire-and-forget — call via asyncio.create_task(...), never awaited
     for its result. Swallows all errors internally; logs, doesn't raise."""

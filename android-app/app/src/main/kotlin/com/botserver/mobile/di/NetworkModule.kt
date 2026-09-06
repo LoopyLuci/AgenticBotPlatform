@@ -177,6 +177,13 @@ object NetworkModule {
             .readTimeout(15, TimeUnit.SECONDS)
             .writeTimeout(15, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
+            // Doubled from OkHttp's default 5 idle connections — this one
+            // client is shared by every Retrofit call AND every Coil image
+            // request (see provideImageLoader below), so it's common to have
+            // several requests in flight at once (chat list + thumbnails +
+            // a background poll); a bigger pool means more of those reuse an
+            // already-warm connection instead of paying a fresh handshake.
+            .connectionPool(okhttp3.ConnectionPool(10, 5, TimeUnit.MINUTES))
             .addInterceptor(DynamicHostInterceptor(credentials, nsdDiscovery))
             .build()
 
@@ -205,5 +212,21 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideImageLoader(@ApplicationContext context: Context, client: OkHttpClient): ImageLoader =
-        ImageLoader.Builder(context).okHttpClient(client).build()
+        ImageLoader.Builder(context)
+            .okHttpClient(client)
+            .crossfade(true)
+            // Explicit, bounded caches instead of Coil's own defaults — a
+            // quarter of available app memory for the in-memory cache (chat
+            // thumbnails scroll in and out constantly; this is what keeps
+            // re-scrolling instant) and a capped 50MB on-disk cache so
+            // repeated app opens don't re-download the same attachment
+            // thumbnails, without letting it grow unbounded.
+            .memoryCache { coil.memory.MemoryCache.Builder(context).maxSizePercent(0.25).build() }
+            .diskCache {
+                coil.disk.DiskCache.Builder()
+                    .directory(context.cacheDir.resolve("image_cache"))
+                    .maxSizeBytes(50L * 1024 * 1024)
+                    .build()
+            }
+            .build()
 }

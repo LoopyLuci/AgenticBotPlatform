@@ -49,7 +49,7 @@ class UpdateRepository @Inject constructor(
      * NAT/firewall), then finally the server-relay download. Each step
      * only runs if the previous one couldn't even connect — whichever
      * actually works, transparently to the caller. */
-    suspend fun downloadApk(pushId: Int, mesh: MeshOrigin? = null): File = withContext(Dispatchers.IO) {
+    suspend fun downloadApk(pushId: Int, mesh: MeshOrigin? = null, onProgress: (Float) -> Unit = {}): File = withContext(Dispatchers.IO) {
         val dir = File(context.cacheDir, "updates").apply { mkdirs() }
         val dest = File(dir, "BotServer.apk")
         if (mesh != null) {
@@ -61,8 +61,19 @@ class UpdateRepository @Inject constructor(
             if (viaWebRtc != null) return@withContext viaWebRtc
         }
         val body = apiService.downloadApk(pushId)
+        val total = body.contentLength()
+        var written = 0L
         body.byteStream().use { input ->
-            dest.outputStream().use { output -> input.copyTo(output) }
+            dest.outputStream().use { output ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read == -1) break
+                    output.write(buffer, 0, read)
+                    written += read
+                    if (total > 0) onProgress((written.toFloat() / total).coerceIn(0f, 1f))
+                }
+            }
         }
         dest
     }

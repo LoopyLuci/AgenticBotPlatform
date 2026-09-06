@@ -18,3 +18,13 @@
     kotlinx.serialization.KSerializer serializer(...);
 }
 -keep,includedescriptorclasses class com.botserver.mobile.data.dto.**$$serializer { *; }
+
+# Strip verbose/debug android.util.Log calls (and their string-building
+# arguments) from the release binary — real diagnostics still work fine:
+# AppLog (diagnostics/AppLog.kt), the thing users actually export via
+# Settings' Diagnostics card, is untouched by this, and Log.w/.e stay in
+# so a real warning/error is never silently dropped.
+-assumenosideeffects class android.util.Log {
+    public static int v(...);
+    public static int d(...);
+}

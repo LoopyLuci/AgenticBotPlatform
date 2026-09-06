@@ -77,7 +77,7 @@ fun SupportBotScreen(viewModel: SupportBotViewModel = hiltViewModel()) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(vertical = 12.dp),
             ) {
-                items(state.messages) { message ->
+                items(state.messages, key = { it.id }) { message ->
                     SupportBotBubble(message, onConfirm = { viewModel.confirm(message) })
                 }
             }

@@ -31,7 +31,7 @@ from fastapi import Response
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from bot import agent_control, attachments, bot_instances, db, desktop, envfile, kanban, outbox, pairing, platform_supervisor, setup_wizard, thumbnails
+from bot import agent_control, attachments, bot_instances, db, desktop, envfile, kanban, outbox, pairing, platform_supervisor, push, setup_wizard, thumbnails
 from bot.backends.base import BackendError
 from bot import commands as bot_commands
 from bot.config import config
@@ -2953,14 +2953,17 @@ def build_app() -> FastAPI:
                 api_key_id, "", version_label="mesh", origin_api_key_id=caller_device_id, mesh_token=token,
             )
             db.log_audit(actor="dashboard", action="apk_send_mesh", detail=f"queued mesh apk push {push_id} from device {caller_device_id} to {api_key_id}")
+            asyncio.create_task(push.notify_apk_push(api_key_id, push_id, "mesh"))
             return {"ok": True, "push_id": push_id}
         from bot.android_apk import apk_version_label, latest_apk_path
 
         path = latest_apk_path()
         if not path.is_file():
             raise HTTPException(status_code=400, detail="no built APK found — build one first")
-        push_id = db.create_apk_push(api_key_id, str(path), version_label=apk_version_label(path))
+        version_label = apk_version_label(path)
+        push_id = db.create_apk_push(api_key_id, str(path), version_label=version_label)
         db.log_audit(actor="dashboard", action="apk_send", detail=f"queued apk push {push_id} for device {api_key_id}")
+        asyncio.create_task(push.notify_apk_push(api_key_id, push_id, version_label))
         return {"ok": True, "push_id": push_id}
 
     @app.post("/api/android/apk/send-all")
@@ -2975,9 +2978,11 @@ def build_app() -> FastAPI:
                 if r["id"] == caller_device_id:
                     continue  # don't queue a push to yourself
                 token = secrets.token_urlsafe(24)
-                push_ids.append(db.create_apk_push(
+                pid = db.create_apk_push(
                     r["id"], "", version_label="mesh", origin_api_key_id=caller_device_id, mesh_token=token,
-                ))
+                )
+                push_ids.append(pid)
+                asyncio.create_task(push.notify_apk_push(r["id"], pid, "mesh"))
             db.log_audit(actor="dashboard", action="apk_send_all_mesh", detail=f"queued mesh apk push from device {caller_device_id} for {len(push_ids)} device(s)")
             return {"ok": True, "sent_to": len(push_ids)}
         from bot.android_apk import apk_version_label, latest_apk_path
@@ -2986,7 +2991,11 @@ def build_app() -> FastAPI:
         if not path.is_file():
             raise HTTPException(status_code=400, detail="no built APK found — build one first")
         version_label = apk_version_label(path)
-        push_ids = [db.create_apk_push(r["id"], str(path), version_label=version_label) for r in keys]
+        push_ids = []
+        for r in keys:
+            pid = db.create_apk_push(r["id"], str(path), version_label=version_label)
+            push_ids.append(pid)
+            asyncio.create_task(push.notify_apk_push(r["id"], pid, version_label))
         db.log_audit(actor="dashboard", action="apk_send_all", detail=f"queued apk push for {len(push_ids)} device(s)")
         return {"ok": True, "sent_to": len(push_ids)}
 

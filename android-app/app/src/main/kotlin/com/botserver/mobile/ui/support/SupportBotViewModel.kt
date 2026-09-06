@@ -16,6 +16,10 @@ data class SupportBotMessage(
     val needsConfirm: Boolean = false,
     val confirmToken: String? = null,
     val confirmResolved: Boolean = false,
+    // Stable LazyColumn key (see SupportBotScreen's items(..., key = ...)) —
+    // this list has no server-assigned id to key by, so each message gets
+    // a unique value the instant it's constructed instead.
+    val id: Long = System.nanoTime(),
 )
 
 data class SupportBotUiState(

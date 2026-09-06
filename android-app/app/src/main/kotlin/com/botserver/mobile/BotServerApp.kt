@@ -3,6 +3,7 @@ package com.botserver.mobile
 import android.app.Application
 import coil.Coil
 import coil.ImageLoader
+import com.botserver.mobile.data.PendingUpdateCoordinator
 import com.botserver.mobile.diagnostics.AppLog
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
@@ -15,6 +16,15 @@ class BotServerApp : Application() {
     // host-failover-aware OkHttpClient as Retrofit — see
     // di/NetworkModule.kt's provideImageLoader().
     @Inject lateinit var imageLoader: ImageLoader
+
+    // Never called on directly — the field injection itself is what
+    // matters: it forces Hilt to construct this @Singleton (running its
+    // init block, which starts listening for FCM-triggered update
+    // pushes) at process start, instead of only whenever something else
+    // first happens to ask for it (which could be "never," if the user
+    // never opens the Devices screen this session).
+    @Suppress("unused")
+    @Inject lateinit var pendingUpdateCoordinator: PendingUpdateCoordinator
 
     override fun onCreate() {
         super.onCreate()
