@@ -33,13 +33,20 @@ private const val KEY_LAST_SEEN_TAG = "last_seen_release_tag"
  * host, not the dynamic multi-candidate server DynamicHostInterceptor
  * exists to rewrite requests toward.
  *
- * There's no meaningful version-number comparison here (the git tags
- * this repo uses, e.g. "v0.5.0", track the desktop app's own Cargo.toml
- * version — a different numbering scheme than this app's own
- * versionName) — instead this just remembers the last release tag the
- * user has already seen/downloaded and flags anything newer, the same
- * "always offer the latest, let the person decide" philosophy the
- * existing server-push update flow (UpdateRepository) already uses.
+ * `BuildConfig.RELEASE_TAG` (set from `versionName` in build.gradle.kts,
+ * kept identical to the git tag this build ships under) is the ground
+ * truth for "is this actually a different version than what's
+ * installed" — [isNew] short-circuits false whenever a checked release
+ * IS the one currently installed. Below that, there's still no ordering
+ * comparison (no "is 0.8.0 greater than 0.7.1" logic) — instead it
+ * falls back to remembering the last release tag the user has already
+ * seen/dismissed and flags anything newer than *that*, the same "always
+ * offer the latest, let the person decide" philosophy the existing
+ * server-push update flow (UpdateRepository) already uses. This
+ * two-tier check exists because a bare last-seen-tag comparison alone
+ * has a real bug: a fresh install (or a user who cleared app data) has
+ * no last-seen-tag recorded yet, so it would report "update available"
+ * for the exact release that was just installed.
  */
 @Singleton
 class GitHubUpdateRepository @Inject constructor(
@@ -86,9 +93,14 @@ class GitHubUpdateRepository @Inject constructor(
     }
 
     /** Whether `release` is worth showing as "an update is available" —
-     * true whenever its tag differs from the last one this device has
-     * already downloaded or explicitly dismissed. */
-    fun isNew(release: GitHubRelease): Boolean = prefs.getString(KEY_LAST_SEEN_TAG, null) != release.tag
+     * false outright if it's the exact release already installed
+     * (see class doc), otherwise true whenever its tag differs from the
+     * last one this device has already downloaded or explicitly
+     * dismissed. */
+    fun isNew(release: GitHubRelease): Boolean {
+        if (release.tag == BuildConfig.RELEASE_TAG) return false
+        return prefs.getString(KEY_LAST_SEEN_TAG, null) != release.tag
+    }
 
     fun markSeen(release: GitHubRelease) {
         prefs.edit { putString(KEY_LAST_SEEN_TAG, release.tag) }

@@ -325,7 +325,7 @@ private fun AppUpdateCard(updateViewModel: com.botserver.mobile.ui.update.AppUpd
 
     SettingsCard(title = "App update") {
         Text(
-            "Installed version: ${com.botserver.mobile.BuildConfig.VERSION_NAME}",
+            "Installed version: ${com.botserver.mobile.BuildConfig.RELEASE_TAG}",
             style = MaterialTheme.typography.bodySmall,
         )
         Spacer(Modifier.height(8.dp))

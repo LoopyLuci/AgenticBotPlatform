@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -238,6 +239,10 @@ private fun ConversationScreen(
                         downloadState = state.downloads[message.id],
                         onDownload = { viewModel.downloadAttachment(message) },
                         onOpen = { file -> openFile(context, file, message.attachmentMime) },
+                        onExportChat = {
+                            val file = exportChatFile(context, instance?.name ?: "chat", state.messages)
+                            shareChatExportFile(context, file)
+                        },
                     )
                 }
             }
@@ -337,12 +342,14 @@ private fun openFile(context: android.content.Context, file: java.io.File, mime:
     runCatching { context.startActivity(intent) }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun MessageBubble(
     message: ChatMessage,
     downloadState: DownloadState?,
     onDownload: () -> Unit,
     onOpen: (java.io.File) -> Unit,
+    onExportChat: () -> Unit,
 ) {
     val isOut = message.direction == "out"
     // Telegram's actual bubble shape: rounded everywhere except the one
@@ -352,16 +359,24 @@ private fun MessageBubble(
         bottomStart = if (isOut) 16.dp else 4.dp,
         bottomEnd = if (isOut) 4.dp else 16.dp,
     )
+    var menuOpen by remember { mutableStateOf(false) }
+    var selectTextOpen by remember { mutableStateOf(false) }
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isOut) Arrangement.End else Arrangement.Start,
     ) {
+        Box {
         Surface(
             color = if (isOut) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
             contentColor = if (isOut) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
             shape = bubbleShape,
             shadowElevation = 1.dp,
-            modifier = Modifier.widthIn(max = 280.dp),
+            modifier = Modifier
+                .widthIn(max = 280.dp)
+                .combinedClickable(onClick = {}, onLongClick = { menuOpen = true })
+                .testTag("chat-message-bubble"),
         ) {
             Column(Modifier.padding(horizontal = 13.dp, vertical = 9.dp)) {
                 if (message.text.isNotBlank()) {
@@ -405,6 +420,46 @@ private fun MessageBubble(
                 )
             }
         }
+
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+                text = { Text("Copy message") },
+                onClick = {
+                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(message.text))
+                    menuOpen = false
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Select text") },
+                onClick = {
+                    menuOpen = false
+                    selectTextOpen = true
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Export chat") },
+                onClick = {
+                    menuOpen = false
+                    onExportChat()
+                },
+            )
+        }
+        }
+    }
+
+    if (selectTextOpen) {
+        AlertDialog(
+            onDismissRequest = { selectTextOpen = false },
+            title = { Text("Select text") },
+            text = {
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    Text(message.text, style = MaterialTheme.typography.bodyMedium)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { selectTextOpen = false }) { Text("Close") }
+            },
+        )
     }
 }
 
