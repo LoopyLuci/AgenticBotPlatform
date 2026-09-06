@@ -321,32 +321,8 @@ private fun AccentSwatch(accent: AccentColor, selected: Boolean, onClick: () -> 
  * destructive. */
 @Composable
 private fun AppUpdateCard(updateViewModel: com.botserver.mobile.ui.update.AppUpdateViewModel) {
-    val state by updateViewModel.state.collectAsState()
-
     SettingsCard(title = "App update") {
-        Text(
-            "Installed version: ${com.botserver.mobile.BuildConfig.RELEASE_TAG}",
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Spacer(Modifier.height(8.dp))
-        when (state) {
-            is com.botserver.mobile.ui.update.AppUpdateState.Checking -> Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                Spacer(Modifier.width(8.dp))
-                Text("Checking GitHub…", style = MaterialTheme.typography.labelSmall)
-            }
-            is com.botserver.mobile.ui.update.AppUpdateState.UpToDate -> Text("You're on the latest published release.", style = MaterialTheme.typography.labelSmall)
-            else -> com.botserver.mobile.ui.update.AppUpdateBanner(updateViewModel)
-        }
-        if (state is com.botserver.mobile.ui.update.AppUpdateState.Idle ||
-            state is com.botserver.mobile.ui.update.AppUpdateState.UpToDate ||
-            state is com.botserver.mobile.ui.update.AppUpdateState.Error
-        ) {
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = updateViewModel::checkForUpdate, modifier = Modifier.testTag("update-check")) {
-                Text("Check for updates")
-            }
-        }
+        com.botserver.mobile.ui.update.AppUpdateStatus(updateViewModel)
     }
 }
 

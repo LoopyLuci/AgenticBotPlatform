@@ -19,7 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.botserver.mobile.ui.update.AppUpdateBanner
+import com.botserver.mobile.ui.update.AppUpdateStatus
 import com.botserver.mobile.ui.update.AppUpdateViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -128,7 +128,11 @@ fun PairingScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            AppUpdateBanner(updateViewModel)
+            Surface(shape = RoundedCornerShape(12.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp)) {
+                    AppUpdateStatus(updateViewModel)
+                }
+            }
             Spacer(Modifier.height(12.dp))
 
             Text(

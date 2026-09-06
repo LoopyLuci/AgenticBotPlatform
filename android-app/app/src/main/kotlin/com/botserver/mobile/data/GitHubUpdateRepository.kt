@@ -55,6 +55,12 @@ class GitHubUpdateRepository @Inject constructor(
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
+        // See DohFallbackDns's own doc — some devices (observed on Fire OS)
+        // have a system DNS resolver that fails outright on ordinary public
+        // hostnames ("Unable to resolve host api.github.com"); this falls
+        // back to DNS-over-HTTPS only when that happens, never overriding a
+        // resolver that's actually working.
+        .dns(DohFallbackDns)
         .build()
 
     private val prefs get() = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

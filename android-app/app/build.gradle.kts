@@ -15,7 +15,7 @@ android {
         applicationId = "com.botserver.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
+        versionCode = 7
         // Kept identical to the git tag this build is released under
         // (e.g. tag "v0.7.0" -> versionName "0.7.0") — this used to drift
         // (versionName sat frozen at "1.1.0" across several GitHub
@@ -23,7 +23,7 @@ android {
         // Settings' "Installed version" line was showing a number
         // disconnected from what was actually installed. Bump this
         // alongside the git tag on every release from now on.
-        versionName = "0.7.2"
+        versionName = "0.7.3"
         buildConfigField("String", "RELEASE_TAG", "\"v$versionName\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
