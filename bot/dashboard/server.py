@@ -2481,11 +2481,42 @@ def build_app() -> FastAPI:
         )
 
     @app.delete("/api/server-chat/conversations/{conversation_id}")
-    async def api_server_chat_clear(conversation_id: int, device_id: int = Depends(_require_device_id)):
-        if not db.is_conversation_participant(conversation_id, device_id):
+    async def api_server_chat_clear(conversation_id: int, full: bool = False, device_id: int = Depends(_require_device_id)):
+        """`full=false` (default): clear every message, keep the
+        conversation itself — the group room and every direct
+        conversation are structural (see module comment above), so this
+        is what "delete chat" meant before `full` existed.
+        `full=true`: also drop the conversation row — genuinely removes
+        it from the list until either device messages the other again
+        (see POST /api/server-chat/conversations, which re-opens exactly
+        this row on demand). Refused for the group room: a shared room
+        can't be unilaterally deleted out from under every other device."""
+        row = db.get_conn().execute(
+            "SELECT kind FROM server_chat_conversations WHERE id=?", (conversation_id,)
+        ).fetchone()
+        if row is None or not db.is_conversation_participant(conversation_id, device_id):
             raise HTTPException(status_code=404, detail="no such conversation")
+        if full:
+            if row["kind"] == "group":
+                raise HTTPException(status_code=400, detail="the group room can't be deleted, only cleared")
+            db.delete_server_chat_conversation(conversation_id)
+            return {"ok": True, "deleted_conversation": True}
         count = db.clear_server_chat_messages(conversation_id)
         return {"ok": True, "deleted": count}
+
+    @app.post("/api/server-chat/conversations")
+    async def api_server_chat_open(payload: dict = Body(...), device_id: int = Depends(_require_device_id)):
+        """Opens (or re-opens, if it was previously fully deleted) a
+        direct conversation with another paired device — the entry point
+        for "message this device" after a full delete, since a deleted
+        direct conversation has no id left to reference."""
+        peer_device_id = payload.get("peer_device_id")
+        if not isinstance(peer_device_id, int):
+            raise HTTPException(status_code=400, detail="payload must be {peer_device_id: <int>}")
+        if peer_device_id == device_id:
+            raise HTTPException(status_code=400, detail="can't open a conversation with yourself")
+        conversation_id = db.ensure_direct_conversation(device_id, peer_device_id)
+        return {"ok": True, "conversation_id": conversation_id}
 
     @app.delete("/api/server-chat/messages/{message_id}")
     async def api_server_chat_delete_message(message_id: int, device_id: int = Depends(_require_device_id)):

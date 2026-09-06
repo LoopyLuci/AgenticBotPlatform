@@ -25,6 +25,24 @@ class SessionsViewModel @Inject constructor(private val repository: SessionsRepo
     private val _uiState = MutableStateFlow(SessionsUiState())
     val uiState: StateFlow<SessionsUiState> = _uiState
 
+    private val _snackbarMessages = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val snackbarMessages: kotlinx.coroutines.flow.SharedFlow<String> = _snackbarMessages
+
+    /** Optimistic — removes the row immediately; a failure puts it back
+     * on the next refresh() rather than needing its own undo path. */
+    fun delete(session: SessionSummary) {
+        val id = session.sessionIdString()
+        _uiState.update { it.copy(sessions = it.sessions.filterNot { s -> s.sessionIdString() == id }) }
+        viewModelScope.launch {
+            runCatching { repository.delete(id) }
+                .onSuccess { _snackbarMessages.tryEmit("Session deleted") }
+                .onFailure { e ->
+                    _snackbarMessages.tryEmit(e.message ?: "Couldn't delete that session.")
+                    refresh()
+                }
+        }
+    }
+
     fun refresh() {
         viewModelScope.launch {
             _uiState.update { it.copy(loading = true) }

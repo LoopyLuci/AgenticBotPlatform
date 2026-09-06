@@ -6,6 +6,7 @@ import com.botserver.mobile.data.DevicesRepository
 import com.botserver.mobile.data.MeshServer
 import com.botserver.mobile.data.NewDevicePairing
 import com.botserver.mobile.data.PendingUpdateCoordinator
+import com.botserver.mobile.data.ServerChatRepository
 import com.botserver.mobile.data.UpdateRepository
 import com.botserver.mobile.data.UpdateState
 import com.botserver.mobile.data.WebRtcMeshClient
@@ -37,12 +38,31 @@ class DevicesViewModel @Inject constructor(
     private val repository: DevicesRepository,
     private val updateRepository: UpdateRepository,
     private val pendingUpdateCoordinator: PendingUpdateCoordinator,
+    private val serverChatRepository: ServerChatRepository,
     private val meshServer: MeshServer,
     private val webRtcMeshClient: WebRtcMeshClient,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<GenerateState>(GenerateState.Idle)
     val state: StateFlow<GenerateState> = _state
+
+    // One-shot feedback for "Message this device" — see the chat
+    // ViewModels' identical snackbarMessages field for why this exists
+    // rather than a plain error StateFlow.
+    private val _snackbarMessages = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val snackbarMessages: kotlinx.coroutines.flow.SharedFlow<String> = _snackbarMessages
+
+    /** Opens (or re-opens, if it was previously fully deleted from
+     * Server Chat) a direct conversation with [device], then navigates
+     * there via [onOpened] — the way back to a device after "Delete
+     * chat" removed the conversation entirely. */
+    fun messageDevice(device: DeviceInfo, onOpened: () -> Unit) {
+        viewModelScope.launch {
+            runCatching { serverChatRepository.openConversation(device.id) }
+                .onSuccess { onOpened() }
+                .onFailure { _snackbarMessages.tryEmit(it.message ?: "Couldn't message ${device.label}.") }
+        }
+    }
 
     private val _devices = MutableStateFlow<List<DeviceInfo>>(emptyList())
     val devices: StateFlow<List<DeviceInfo>> = _devices

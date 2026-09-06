@@ -1,15 +1,21 @@
 package com.botserver.mobile.ui.jobs
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.botserver.mobile.data.dto.JobSummary
@@ -56,14 +62,49 @@ fun JobsScreen(viewModel: JobsViewModel = hiltViewModel()) {
 
 @Composable
 private fun JobRow(job: JobSummary, modifier: Modifier = Modifier) {
-    Surface(shape = RoundedCornerShape(12.dp), tonalElevation = 1.dp, modifier = modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp)) {
-            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Text(job.actionType, style = MaterialTheme.typography.titleSmall)
-                Text(job.status, color = statusColor(job.status), style = MaterialTheme.typography.labelMedium)
+    var menuOpen by remember { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
+    Box(modifier = modifier) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            tonalElevation = 1.dp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .pointerInput(Unit) { detectTapGestures(onLongPress = { menuOpen = true }) },
+        ) {
+            Column(Modifier.padding(14.dp)) {
+                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(job.actionType, style = MaterialTheme.typography.titleSmall)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(job.status, color = statusColor(job.status), style = MaterialTheme.typography.labelMedium)
+                        IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "Job options", modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+                job.prompt?.let { Text(it.take(120), style = MaterialTheme.typography.bodySmall, maxLines = 2) }
+                Text("${job.backend} · ${job.createdAt}", style = MaterialTheme.typography.labelSmall)
             }
-            job.prompt?.let { Text(it.take(120), style = MaterialTheme.typography.bodySmall, maxLines = 2) }
-            Text("${job.backend} · ${job.createdAt}", style = MaterialTheme.typography.labelSmall)
+        }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            job.prompt?.takeIf { it.isNotBlank() }?.let { prompt ->
+                DropdownMenuItem(
+                    text = { Text("Copy prompt") },
+                    onClick = { clipboard.setText(AnnotatedString(prompt)); menuOpen = false },
+                )
+            }
+            job.result?.takeIf { it.isNotBlank() }?.let { result ->
+                DropdownMenuItem(
+                    text = { Text("Copy result") },
+                    onClick = { clipboard.setText(AnnotatedString(result)); menuOpen = false },
+                )
+            }
+            job.error?.takeIf { it.isNotBlank() }?.let { error ->
+                DropdownMenuItem(
+                    text = { Text("Copy error") },
+                    onClick = { clipboard.setText(AnnotatedString(error)); menuOpen = false },
+                )
+            }
         }
     }
 }

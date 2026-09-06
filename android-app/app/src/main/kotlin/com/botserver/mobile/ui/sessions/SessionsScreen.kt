@@ -2,17 +2,22 @@ package com.botserver.mobile.ui.sessions
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.botserver.mobile.data.dto.SessionSummary
@@ -25,9 +30,17 @@ import com.botserver.mobile.ui.components.PullRefreshBox
 @Composable
 fun SessionsScreen(viewModel: SessionsViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(Unit) { viewModel.refresh() }
+    LaunchedEffect(Unit) {
+        viewModel.snackbarMessages.collect { message -> snackbarHostState.showSnackbar(message) }
+    }
+    var pendingDelete by remember { mutableStateOf<SessionSummary?>(null) }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Sessions") }) }) { padding ->
+    Scaffold(
+        topBar = { TopAppBar(title = { Text("Sessions") }) },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+    ) { padding ->
         if (state.selected != null) {
             SessionDetailView(state.selected!!, onBack = { viewModel.closeDetail() }, modifier = Modifier.padding(padding))
             return@Scaffold
@@ -47,6 +60,7 @@ fun SessionsScreen(viewModel: SessionsViewModel = hiltViewModel()) {
                             SessionRow(
                                 session,
                                 onClick = { viewModel.open(session.sessionIdString()) },
+                                onDelete = { pendingDelete = session },
                                 modifier = Modifier.animateItemPlacement(),
                             )
                         }
@@ -55,24 +69,64 @@ fun SessionsScreen(viewModel: SessionsViewModel = hiltViewModel()) {
             }
         }
     }
+
+    pendingDelete?.let { session ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("Delete this session?") },
+            text = { Text("Every message and job filed under \"${session.title.ifBlank { "Untitled" }}\" will be permanently removed. This can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = { viewModel.delete(session); pendingDelete = null }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("Cancel") } },
+        )
+    }
 }
 
 @Composable
-private fun SessionRow(session: SessionSummary, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        tonalElevation = 1.dp,
-        modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+private fun SessionRow(session: SessionSummary, onClick: () -> Unit, onDelete: () -> Unit, modifier: Modifier = Modifier) {
+    var menuOpen by remember { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
+    Box(modifier = modifier) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            tonalElevation = 1.dp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .pointerInput(Unit) { detectTapGestures(onLongPress = { menuOpen = true }) },
         ) {
-            Column {
-                Text(session.title.ifBlank { "Untitled" }, style = MaterialTheme.typography.titleSmall)
-                Text("${session.itemCount} item(s)", style = MaterialTheme.typography.bodySmall)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    Text(session.title.ifBlank { "Untitled" }, style = MaterialTheme.typography.titleSmall)
+                    Text("${session.itemCount} item(s)", style = MaterialTheme.typography.bodySmall)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(session.lastActivityAt ?: "", style = MaterialTheme.typography.labelSmall)
+                    IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "Session options", modifier = Modifier.size(16.dp))
+                    }
+                }
             }
-            Text(session.lastActivityAt ?: "", style = MaterialTheme.typography.labelSmall)
+        }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+                text = { Text("Copy title") },
+                onClick = {
+                    menuOpen = false
+                    clipboard.setText(AnnotatedString(session.title.ifBlank { "Untitled" }))
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Delete session") },
+                onClick = { menuOpen = false; onDelete() },
+            )
         }
     }
 }

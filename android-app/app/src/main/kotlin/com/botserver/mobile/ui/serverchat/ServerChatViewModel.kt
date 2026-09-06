@@ -120,7 +120,11 @@ class ServerChatViewModel @Inject constructor(private val repository: ServerChat
         }
     }
 
-    fun clearActiveConversation() {
+    /** The group room can only ever be cleared (see repository/backend
+     * doc — a shared room can't be unilaterally removed for everyone);
+     * a direct 1:1 conversation is genuinely deleted, matching "fully
+     * and completely delete entire chats," not just its messages. */
+    fun deleteActiveConversation(conversation: ServerChatConversation) {
         val id = _activeConversationId.value
         if (id == null) {
             _snackbarMessages.tryEmit("Couldn't delete this chat — no active conversation.")
@@ -128,11 +132,31 @@ class ServerChatViewModel @Inject constructor(private val repository: ServerChat
         }
         _messages.value = emptyList()
         lastId = 0
+        val isGroup = conversation.kind == "group"
         viewModelScope.launch {
-            runCatching { repository.clearConversation(id) }
-                .onSuccess { _snackbarMessages.tryEmit("Chat deleted") }
+            runCatching {
+                if (isGroup) repository.clearConversation(id) else repository.deleteConversation(id)
+            }
+                .onSuccess {
+                    _snackbarMessages.tryEmit(if (isGroup) "Chat cleared" else "Chat deleted")
+                    if (!isGroup) closeConversation()
+                }
                 .onFailure { _snackbarMessages.tryEmit(it.message ?: "Couldn't delete this conversation.") }
             refreshConversations()
+        }
+    }
+
+    /** Opens (or re-opens, after a full delete) a direct conversation
+     * with another device and switches straight to it — the entry point
+     * used from the Devices screen's "Message this device" action. */
+    fun openConversationWith(peerDeviceId: Int) {
+        viewModelScope.launch {
+            runCatching { repository.openConversation(peerDeviceId) }
+                .onSuccess { conversationId ->
+                    refreshConversations()
+                    openConversation(conversationId)
+                }
+                .onFailure { _snackbarMessages.tryEmit(it.message ?: "Couldn't open a conversation with that device.") }
         }
     }
 }

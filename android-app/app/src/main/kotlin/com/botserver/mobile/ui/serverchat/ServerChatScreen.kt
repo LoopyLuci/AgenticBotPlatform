@@ -99,7 +99,8 @@ fun ServerChatScreen(viewModel: ServerChatViewModel = hiltViewModel()) {
             onSendFile = { uri, caption -> viewModel.sendFile(uri, caption) },
             onDownload = { messageId, name -> viewModel.downloadAttachment(messageId, name) },
             onDeleteMessage = { viewModel.deleteMessage(it) },
-            onClearChat = { viewModel.clearActiveConversation() },
+            onClearChat = { active?.let { viewModel.deleteActiveConversation(it) } },
+            isGroup = active?.kind == "group",
             snackbarMessages = viewModel.snackbarMessages,
         )
     }
@@ -179,6 +180,7 @@ private fun ServerChatConversationScreen(
     onDownload: suspend (Int, String) -> File,
     onDeleteMessage: (ServerChatMessage) -> Unit,
     onClearChat: () -> Unit,
+    isGroup: Boolean,
     snackbarMessages: kotlinx.coroutines.flow.SharedFlow<String>,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -224,7 +226,7 @@ private fun ServerChatConversationScreen(
                                 },
                             )
                             DropdownMenuItem(
-                                text = { Text("Delete chat") },
+                                text = { Text(if (isGroup) "Clear chat" else "Delete chat") },
                                 onClick = {
                                     menuOpen = false
                                     confirmClearOpen = true
@@ -275,11 +277,19 @@ private fun ServerChatConversationScreen(
     if (confirmClearOpen) {
         AlertDialog(
             onDismissRequest = { confirmClearOpen = false },
-            title = { Text("Delete this chat?") },
-            text = { Text("Every message in this conversation will be permanently removed. This can't be undone.") },
+            title = { Text(if (isGroup) "Clear this chat?" else "Delete this chat?") },
+            text = {
+                Text(
+                    if (isGroup) {
+                        "Every message in the shared Server Chat room will be permanently removed for everyone. This can't be undone."
+                    } else {
+                        "This conversation and every message in it will be permanently removed. You can message this device again later to start a new one. This can't be undone."
+                    },
+                )
+            },
             confirmButton = {
                 TextButton(onClick = { confirmClearOpen = false; onClearChat() }) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text(if (isGroup) "Clear" else "Delete", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = { TextButton(onClick = { confirmClearOpen = false }) { Text("Cancel") } },

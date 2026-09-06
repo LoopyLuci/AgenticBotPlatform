@@ -53,11 +53,24 @@ class ServerChatRepository @Inject constructor(
         apiService.deleteServerChatMessage(messageId)
     }
 
-    /** Wipes every message in this conversation — the row itself (group
-     * room or a device pair's direct channel) is structural and stays. */
+    /** Wipes every message in this conversation — the row itself stays. */
     suspend fun clearConversation(conversationId: Int) {
-        apiService.clearServerChatConversation(conversationId)
+        apiService.clearServerChatConversation(conversationId, full = false)
     }
+
+    /** Genuinely removes the conversation — refused server-side for the
+     * group room (see ApiService's own doc). Use [openConversation] to
+     * message that peer again afterward. */
+    suspend fun deleteConversation(conversationId: Int) {
+        apiService.clearServerChatConversation(conversationId, full = true)
+    }
+
+    /** Opens or re-opens a direct conversation with another paired
+     * device — the only way back to one after [deleteConversation]. */
+    suspend fun openConversation(peerDeviceId: Int): Int =
+        apiService.openServerChatConversation(
+            com.botserver.mobile.data.dto.OpenServerChatConversationRequest(peerDeviceId),
+        ).conversationId
 
     suspend fun downloadAttachment(messageId: Int, suggestedName: String): File = withContext(Dispatchers.IO) {
         val body = apiService.downloadServerChatAttachment(messageId)

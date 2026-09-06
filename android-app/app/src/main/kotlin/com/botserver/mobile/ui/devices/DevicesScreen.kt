@@ -3,18 +3,22 @@ package com.botserver.mobile.ui.devices
 import android.content.Intent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -35,7 +39,7 @@ import java.io.File
  * shareable botserver://pair link. Mirrors the dashboard's Mobile tab. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel()) {
+fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel(), onOpenServerChat: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val activity = rememberFragmentActivity()
@@ -51,8 +55,12 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel()) {
     val sendState by viewModel.sendState.collectAsState()
     var label by remember { mutableStateOf("") }
     var apkShareError by remember { mutableStateOf<String?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(Unit) { viewModel.startPresence() }
     LaunchedEffect(Unit) { viewModel.checkForUpdate() }
+    LaunchedEffect(Unit) {
+        viewModel.snackbarMessages.collect { message -> snackbarHostState.showSnackbar(message) }
+    }
     DisposableEffect(Unit) {
         viewModel.startMesh()
         onDispose { viewModel.stopMesh() }
@@ -63,7 +71,10 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel()) {
         viewModel.dismissUpdate()
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Devices") }) }) { padding ->
+    Scaffold(
+        topBar = { TopAppBar(title = { Text("Devices") }) },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+    ) { padding ->
         Column(
             modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp).verticalScroll(rememberScrollState()),
         ) {
@@ -93,6 +104,7 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel()) {
                                 device = device,
                                 sending = (sendState as? SendState.Sending)?.targetId == device.id,
                                 onSend = { gated("Confirm it's you to send an update to ${device.label}") { viewModel.sendUpdateTo(device) } },
+                                onMessage = { viewModel.messageDevice(device, onOpened = onOpenServerChat) },
                             )
                         }
                         Spacer(Modifier.height(10.dp))
@@ -264,9 +276,13 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel()) {
 }
 
 @Composable
-private fun DeviceRow(device: DeviceInfo, sending: Boolean, onSend: () -> Unit) {
+private fun DeviceRow(device: DeviceInfo, sending: Boolean, onSend: () -> Unit, onMessage: () -> Unit) {
+    var menuOpen by remember { mutableStateOf(false) }
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .pointerInput(Unit) { detectTapGestures(onLongPress = { menuOpen = true }) },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -296,6 +312,17 @@ private fun DeviceRow(device: DeviceInfo, sending: Boolean, onSend: () -> Unit) 
         TextButton(onClick = onSend, enabled = !sending) {
             if (sending) CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
             else Text("Send")
+        }
+        Box {
+            IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Filled.MoreVert, contentDescription = "Device options", modifier = Modifier.size(18.dp))
+            }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text("Message this device") },
+                    onClick = { menuOpen = false; onMessage() },
+                )
+            }
         }
     }
 }

@@ -202,12 +202,22 @@ interface ApiService {
     @DELETE("/api/server-chat/messages/{messageId}")
     suspend fun deleteServerChatMessage(@Path("messageId") messageId: Int): OkResponse
 
-    // Clears every message in a conversation (the conversation itself —
-    // the group room or a device pair's direct channel — is structural
-    // and always exists again for anyone still paired, so this is
-    // "delete chat" in the sense of wiping its history).
+    // full=false (default): clears every message, keeps the conversation
+    // (the group room can only ever be cleared this way — see full=true
+    // below). full=true: genuinely removes the conversation itself —
+    // refused server-side for the group room. Reopen a fully-deleted
+    // direct conversation with openServerChatConversation() below.
     @DELETE("/api/server-chat/conversations/{conversationId}")
-    suspend fun clearServerChatConversation(@Path("conversationId") conversationId: Int): OkResponse
+    suspend fun clearServerChatConversation(
+        @Path("conversationId") conversationId: Int,
+        @Query("full") full: Boolean = false,
+    ): OkResponse
+
+    // Opens (or re-opens, after a full delete) a direct conversation with
+    // another paired device — there's no other way to reference one once
+    // its id is gone.
+    @POST("/api/server-chat/conversations")
+    suspend fun openServerChatConversation(@Body request: com.botserver.mobile.data.dto.OpenServerChatConversationRequest): com.botserver.mobile.data.dto.OpenServerChatConversationResponse
 
     @GET("/api/sessions")
     suspend fun sessions(
@@ -218,6 +228,9 @@ interface ApiService {
 
     @GET("/api/sessions/{sessionId}")
     suspend fun sessionDetail(@Path("sessionId") sessionId: String): SessionDetail
+
+    @DELETE("/api/sessions/{sessionId}")
+    suspend fun deleteSession(@Path("sessionId") sessionId: String): OkResponse
 
     @GET("/api/jobs")
     suspend fun jobs(

@@ -94,7 +94,17 @@ fun HomeScreen(onUnpaired: () -> Unit = {}) {
             composable("bots") { BotsScreen() }
             composable("settings") { SettingsScreen(onOpenProviders = { navController.navigate("providers") }, onUnpaired = onUnpaired) }
             composable("providers") { ProvidersScreen(onBack = { navController.popBackStack() }) }
-            composable("devices") { DevicesScreen() }
+            composable("devices") {
+                DevicesScreen(
+                    onOpenServerChat = {
+                        navController.navigate("server-chat") {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                )
+            }
         }
     }
 }

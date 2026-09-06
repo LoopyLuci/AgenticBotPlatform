@@ -1649,6 +1649,29 @@ def clear_server_chat_messages(conversation_id: int) -> int:
         return cur.rowcount
 
 
+def delete_server_chat_conversation(conversation_id: int) -> bool:
+    """Fully removes one Server Chat conversation — every message, their
+    attachment/thumbnail files, and the conversation row itself (unlike
+    clear_server_chat_messages, which only empties a conversation's
+    history and keeps the row). The caller (see the dashboard route) is
+    responsible for refusing this on the group room — a shared room
+    can't be "deleted" out from under every other device the way a
+    direct 1:1 conversation can. Returns False if it didn't exist."""
+    conn = get_conn()
+    with _lock:
+        if conn.execute("SELECT 1 FROM server_chat_conversations WHERE id=?", (conversation_id,)).fetchone() is None:
+            return False
+        msg_rows = conn.execute(
+            "SELECT attachment_path, thumbnail_path FROM server_chat_messages WHERE conversation_id=?",
+            (conversation_id,),
+        ).fetchall()
+        _delete_attachment_files(msg_rows)
+        conn.execute("DELETE FROM server_chat_messages WHERE conversation_id=?", (conversation_id,))
+        conn.execute("DELETE FROM server_chat_conversations WHERE id=?", (conversation_id,))
+        conn.commit()
+        return True
+
+
 def export_server_chat_data(conversation_id: int) -> list[dict]:
     conn = get_conn()
     rows = conn.execute(

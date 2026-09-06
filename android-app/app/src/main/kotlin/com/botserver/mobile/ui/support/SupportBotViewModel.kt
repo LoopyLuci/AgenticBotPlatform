@@ -58,6 +58,17 @@ class SupportBotViewModel @Inject constructor(private val repository: SupportBot
         }
     }
 
+    /** Purely local — this screen has no server-side history at all
+     * (see class doc), so "delete chat" here means resetting back to
+     * the same greeting a fresh screen starts with. */
+    fun clear() {
+        _uiState.value = SupportBotUiState()
+    }
+
+    fun deleteMessage(message: SupportBotMessage) {
+        _uiState.update { it.copy(messages = it.messages.filterNot { m -> m.id == message.id }) }
+    }
+
     fun confirm(message: SupportBotMessage) {
         val token = message.confirmToken ?: return
         viewModelScope.launch {

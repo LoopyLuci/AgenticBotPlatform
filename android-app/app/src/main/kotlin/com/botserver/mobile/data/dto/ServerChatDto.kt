@@ -54,6 +54,17 @@ data class ServerChatSendResponse(
     val id: Int,
 )
 
+@Serializable
+data class OpenServerChatConversationRequest(
+    @SerialName("peer_device_id") val peerDeviceId: Int,
+)
+
+@Serializable
+data class OpenServerChatConversationResponse(
+    val ok: Boolean,
+    @SerialName("conversation_id") val conversationId: Int,
+)
+
 /** Mirrors GET /api/server-chat/whoami — resolves this device's own
  * Server Chat identity (0 for desktop, otherwise this device's own
  * api_keys.id) so the client can tell "sent by me" from "received". */

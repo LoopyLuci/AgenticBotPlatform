@@ -1,6 +1,7 @@
 package com.botserver.mobile.ui.bots
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,6 +21,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -154,7 +156,17 @@ private fun BotRow(
     var menuOpen by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
 
-    Surface(shape = RoundedCornerShape(14.dp), tonalElevation = 1.dp, modifier = modifier.fillMaxWidth().testTag("bot-row-${bot.id}")) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        tonalElevation = 1.dp,
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("bot-row-${bot.id}")
+            // Long-press anywhere on the row opens the exact same menu
+            // the kebab icon does — consistent with every other list in
+            // the app, not a separate/different set of options.
+            .pointerInput(Unit) { detectTapGestures(onLongPress = { if (!busy) menuOpen = true }) },
+    ) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f)) {
