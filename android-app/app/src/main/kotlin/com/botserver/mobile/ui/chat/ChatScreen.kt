@@ -20,6 +20,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material3.*
@@ -173,6 +174,8 @@ private fun ConversationScreen(
     modelPickerViewModel: com.botserver.mobile.ui.model.ModelPickerViewModel,
 ) {
     com.botserver.mobile.ui.model.ModelPickerDialog(modelPickerViewModel)
+    var chatMenuOpen by remember { mutableStateOf(false) }
+    var confirmDeleteChatOpen by remember { mutableStateOf(false) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -207,6 +210,17 @@ private fun ConversationScreen(
                         }
                     }
                     ModeSwitch(mode = state.mode, onChange = { viewModel.setMode(it) })
+                    Box {
+                        IconButton(onClick = { chatMenuOpen = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "Chat options")
+                        }
+                        DropdownMenu(expanded = chatMenuOpen, onDismissRequest = { chatMenuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Delete chat") },
+                                onClick = { chatMenuOpen = false; confirmDeleteChatOpen = true },
+                            )
+                        }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
             )
@@ -243,6 +257,7 @@ private fun ConversationScreen(
                             val file = exportChatFile(context, instance?.name ?: "chat", state.messages)
                             shareChatExportFile(context, file)
                         },
+                        onDelete = { viewModel.deleteMessage(message) },
                     )
                 }
             }
@@ -269,6 +284,20 @@ private fun ConversationScreen(
                 onModelCommand = { instance?.let { modelPickerViewModel.open(it.id) } },
             )
         }
+    }
+
+    if (confirmDeleteChatOpen) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteChatOpen = false },
+            title = { Text("Delete this chat?") },
+            text = { Text("Every message in this chat's local history will be permanently removed. This can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = { confirmDeleteChatOpen = false; viewModel.deleteActiveChatHistory() }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmDeleteChatOpen = false }) { Text("Cancel") } },
+        )
     }
 }
 
@@ -350,6 +379,7 @@ private fun MessageBubble(
     onDownload: () -> Unit,
     onOpen: (java.io.File) -> Unit,
     onExportChat: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     val isOut = message.direction == "out"
     // Telegram's actual bubble shape: rounded everywhere except the one
@@ -441,6 +471,13 @@ private fun MessageBubble(
                 onClick = {
                     menuOpen = false
                     onExportChat()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Delete message") },
+                onClick = {
+                    menuOpen = false
+                    onDelete()
                 },
             )
         }

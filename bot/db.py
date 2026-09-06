@@ -2702,6 +2702,26 @@ def get_server_chat_message(message_id: int) -> Optional[sqlite3.Row]:
     return conn.execute("SELECT * FROM server_chat_messages WHERE id=?", (message_id,)).fetchone()
 
 
+def delete_server_chat_message(message_id: int) -> bool:
+    """Deletes one Server Chat message and its attachment/thumbnail files
+    (if any). The caller (see the dashboard route) is responsible for
+    checking the requester actually sent this message before calling
+    this — this function itself does no permission check, same division
+    of responsibility as every other bare db.py delete helper. Returns
+    False if the message didn't exist (already deleted, bad id)."""
+    conn = get_conn()
+    with _lock:
+        row = conn.execute(
+            "SELECT attachment_path, thumbnail_path FROM server_chat_messages WHERE id=?", (message_id,)
+        ).fetchone()
+        if row is None:
+            return False
+        _delete_attachment_files([row])
+        conn.execute("DELETE FROM server_chat_messages WHERE id=?", (message_id,))
+        conn.commit()
+        return True
+
+
 def verify_api_key(
     plaintext: str,
     platform: Optional[str] = None,
@@ -2792,6 +2812,26 @@ def log_message(
 def get_message(message_id: int) -> Optional[sqlite3.Row]:
     conn = get_conn()
     return conn.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
+
+
+def delete_message(message_id: int) -> bool:
+    """Deletes one row from this bot's local message history (plus its
+    attachment file, if any) — a log-management action on BotServer's
+    own stored copy, not a retraction from the real Telegram/Discord/etc
+    conversation (this app has no such capability against those
+    platforms). Unlike Server Chat's delete_server_chat_message, there's
+    no sender-restriction here: this is the operator's own bot's history,
+    already gated by _require_token_or_api_key same as every other
+    /api/chat/* route. Returns False if the message didn't exist."""
+    conn = get_conn()
+    with _lock:
+        row = conn.execute("SELECT attachment_path FROM messages WHERE id=?", (message_id,)).fetchone()
+        if row is None:
+            return False
+        _delete_attachment_files([row])
+        conn.execute("DELETE FROM messages WHERE id=?", (message_id,))
+        conn.commit()
+        return True
 
 
 def list_messages(

@@ -116,6 +116,22 @@ class ChatRepository @Inject constructor(
         apiService.sendMessage(SendMessageRequest(instanceId, chatId, text))
     }
 
+    /** Deletes one message from this bot's local history — server-side
+     * plus the local Room cache (see Phase 4's offline-cache work), so it
+     * actually disappears from the screen instead of reappearing on the
+     * next refresh. */
+    suspend fun deleteMessage(messageId: Int) {
+        apiService.deleteChatMessage(messageId)
+        dao.deleteById(messageId)
+    }
+
+    /** Clears every message for one chat (or the whole instance, with
+     * chatId null) — both server-side and the local Room cache. */
+    suspend fun deleteHistory(instanceId: Int, chatId: String?, platform: String?) {
+        apiService.deleteChatHistory(com.botserver.mobile.data.dto.DeleteChatMessagesRequest(instanceId, chatId, platform))
+        dao.deleteAllForInstance(instanceId)
+    }
+
     /** Chat with Bot mode — a real message TO the bot; the sender's identity
      * comes from this request's own auth (the paired device's api key), not
      * a client-declared chat_id. Returns the bot's real reply text. */

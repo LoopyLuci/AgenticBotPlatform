@@ -202,6 +202,8 @@
   .chat-pending-attachment.hidden { display:none; }
   .chat-pending-attachment button { background:none; border:none; color:var(--ink-soft); cursor:pointer; font-size:12px; }
   .chat-attachment { display:inline-block; margin-top:4px; font-size:12px; text-decoration:underline; cursor:pointer; }
+  .chat-msg-delete { background:none; border:none; padding:0; margin-left:6px; font-size:10.5px; font-family:var(--font-mono); text-decoration:underline; cursor:pointer; color:inherit; opacity:.7; }
+  .chat-msg-delete:hover { opacity:1; }
 
   .sessions-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
   .sessions-toolbar select, .sessions-toolbar input { background:var(--surface-2); border:1px solid var(--line); color:var(--ink); border-radius:7px; padding:6px 10px; font-family:var(--font-mono); font-size:12.5px; }
@@ -4117,12 +4119,24 @@ async function downloadServerChatAttachment(messageId, name) {
   }
 }
 
+async function deleteServerChatMessage(messageId, rowEl) {
+  if (!confirm('Delete this message?')) return;
+  try {
+    await api(`/api/server-chat/messages/${messageId}`, { method: 'DELETE' });
+    rowEl.remove();
+  } catch (e) {
+    alert('Delete failed: ' + (e.message || e));
+  }
+}
+
 function appendServerChatMessages(rows) {
   const win = document.getElementById('serverchat-window');
   const atBottom = win.scrollHeight - win.scrollTop - win.clientHeight < 60;
   rows.forEach(m => {
     const row = document.createElement('div');
-    row.className = 'chat-row ' + (m.sender_device_id === SERVER_CHAT_MY_DEVICE_ID ? 'out' : 'in');
+    const isOut = m.sender_device_id === SERVER_CHAT_MY_DEVICE_ID;
+    row.className = 'chat-row ' + (isOut ? 'out' : 'in');
+    row.dataset.serverchatMsgId = String(m.id);
     const bubble = document.createElement('div');
     bubble.className = 'chat-bubble';
     if (m.text) {
@@ -4142,6 +4156,14 @@ function appendServerChatMessages(rows) {
     meta.className = 'chat-meta';
     meta.textContent = fmtChatTime(m.ts);
     bubble.appendChild(meta);
+    if (isOut) {
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'chat-msg-delete';
+      del.textContent = 'delete';
+      del.onclick = () => deleteServerChatMessage(m.id, row);
+      bubble.appendChild(del);
+    }
     row.appendChild(bubble);
     win.appendChild(row);
     serverChatState.lastId = Math.max(serverChatState.lastId, m.id);

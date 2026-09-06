@@ -98,4 +98,28 @@ class ServerChatViewModel @Inject constructor(private val repository: ServerChat
 
     suspend fun downloadAttachment(messageId: Int, suggestedName: String) =
         repository.downloadAttachment(messageId, suggestedName)
+
+    /** Optimistic — removes the row from the visible list immediately
+     * rather than waiting on a round trip, since the only way this can
+     * fail server-side (this device didn't send it) can't happen from
+     * this UI in the first place: the delete option is only ever shown
+     * on the caller's own messages (see ServerChatScreen). */
+    fun deleteMessage(message: ServerChatMessage) {
+        _messages.value = _messages.value.filterNot { it.id == message.id }
+        viewModelScope.launch {
+            runCatching { repository.deleteMessage(message.id) }
+                .onFailure { _loadError.value = it.message ?: "Couldn't delete that message." }
+        }
+    }
+
+    fun clearActiveConversation() {
+        val id = _activeConversationId.value ?: return
+        _messages.value = emptyList()
+        lastId = 0
+        viewModelScope.launch {
+            runCatching { repository.clearConversation(id) }
+                .onFailure { _loadError.value = it.message ?: "Couldn't clear this conversation." }
+            refreshConversations()
+        }
+    }
 }

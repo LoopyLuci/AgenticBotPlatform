@@ -38,4 +38,10 @@ interface ChatDao {
         """,
     )
     suspend fun pruneOld(instanceId: Int, keep: Int = 500)
+
+    @Query("DELETE FROM chat_messages WHERE id = :messageId")
+    suspend fun deleteById(messageId: Int)
+
+    @Query("DELETE FROM chat_messages WHERE instanceId = :instanceId")
+    suspend fun deleteAllForInstance(instanceId: Int)
 }

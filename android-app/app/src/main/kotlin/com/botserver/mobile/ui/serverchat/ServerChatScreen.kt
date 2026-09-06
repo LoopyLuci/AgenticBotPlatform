@@ -8,17 +8,20 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -27,7 +30,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -92,6 +97,8 @@ fun ServerChatScreen(viewModel: ServerChatViewModel = hiltViewModel()) {
             onSend = { viewModel.send(it) },
             onSendFile = { uri, caption -> viewModel.sendFile(uri, caption) },
             onDownload = { messageId, name -> viewModel.downloadAttachment(messageId, name) },
+            onDeleteMessage = { viewModel.deleteMessage(it) },
+            onClearChat = { viewModel.clearActiveConversation() },
         )
     }
 }
@@ -168,7 +175,12 @@ private fun ServerChatConversationScreen(
     onSend: (String) -> Unit,
     onSendFile: (Uri, String) -> Unit,
     onDownload: suspend (Int, String) -> File,
+    onDeleteMessage: (ServerChatMessage) -> Unit,
+    onClearChat: () -> Unit,
 ) {
+    var menuOpen by remember { mutableStateOf(false) }
+    var confirmClearOpen by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -189,6 +201,30 @@ private fun ServerChatConversationScreen(
                         Text(conversation?.title ?: "", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     }
                 },
+                actions = {
+                    Box {
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "Chat options")
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Export chat") },
+                                onClick = {
+                                    menuOpen = false
+                                    val file = exportServerChatFile(context, conversation?.title ?: "server-chat", messages, myDeviceId)
+                                    shareServerChatExportFile(context, file)
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Delete chat") },
+                                onClick = {
+                                    menuOpen = false
+                                    confirmClearOpen = true
+                                },
+                            )
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
             )
         },
@@ -206,20 +242,40 @@ private fun ServerChatConversationScreen(
                 contentPadding = PaddingValues(vertical = 12.dp),
             ) {
                 items(messages, key = { it.id }) { message ->
+                    val isOut = message.senderDeviceId == myDeviceId
                     ServerChatBubble(
                         message = message,
-                        isOut = message.senderDeviceId == myDeviceId,
+                        isOut = isOut,
                         onOpen = {
                             scope.launch {
                                 runCatching { onDownload(message.id, message.attachmentName ?: "file") }
                                     .onSuccess { file -> openFile(context, file, message.attachmentMime) }
                             }
                         },
+                        onDelete = if (isOut) ({ onDeleteMessage(message) }) else null,
+                        onExportChat = {
+                            val file = exportServerChatFile(context, conversation?.title ?: "server-chat", messages, myDeviceId)
+                            shareServerChatExportFile(context, file)
+                        },
                     )
                 }
             }
             ServerChatComposer(onSend = onSend, onSendFile = onSendFile)
         }
+    }
+
+    if (confirmClearOpen) {
+        AlertDialog(
+            onDismissRequest = { confirmClearOpen = false },
+            title = { Text("Delete this chat?") },
+            text = { Text("Every message in this conversation will be permanently removed. This can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = { confirmClearOpen = false; onClearChat() }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmClearOpen = false }) { Text("Cancel") } },
+        )
     }
 }
 
@@ -233,35 +289,85 @@ private fun openFile(context: android.content.Context, file: File, mime: String?
     runCatching { context.startActivity(intent) }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun ServerChatBubble(message: ServerChatMessage, isOut: Boolean, onOpen: () -> Unit) {
+private fun ServerChatBubble(
+    message: ServerChatMessage,
+    isOut: Boolean,
+    onOpen: () -> Unit,
+    onDelete: (() -> Unit)?,
+    onExportChat: () -> Unit,
+) {
     val bubbleShape = RoundedCornerShape(
         topStart = 16.dp, topEnd = 16.dp,
         bottomStart = if (isOut) 16.dp else 4.dp,
         bottomEnd = if (isOut) 4.dp else 16.dp,
     )
+    var menuOpen by remember { mutableStateOf(false) }
+    var selectTextOpen by remember { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
+
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = if (isOut) Arrangement.End else Arrangement.Start) {
-        Surface(
-            color = if (isOut) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-            contentColor = if (isOut) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-            shape = bubbleShape,
-            shadowElevation = 1.dp,
-            modifier = Modifier.widthIn(max = 280.dp),
-        ) {
-            Column(Modifier.padding(horizontal = 13.dp, vertical = 9.dp)) {
-                if (message.text.isNotBlank()) {
-                    Text(message.text, style = MaterialTheme.typography.bodyMedium)
-                }
-                if (message.attachmentPath != null) {
-                    AssistChip(
-                        onClick = onOpen,
-                        modifier = Modifier.padding(top = 4.dp),
-                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.InsertDriveFile, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                        label = { Text("📎 " + (message.attachmentName ?: "file")) },
-                    )
+        Box {
+            Surface(
+                color = if (isOut) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = if (isOut) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                shape = bubbleShape,
+                shadowElevation = 1.dp,
+                modifier = Modifier
+                    .widthIn(max = 280.dp)
+                    .combinedClickable(onClick = {}, onLongClick = { menuOpen = true }),
+            ) {
+                Column(Modifier.padding(horizontal = 13.dp, vertical = 9.dp)) {
+                    if (message.text.isNotBlank()) {
+                        Text(message.text, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    if (message.attachmentPath != null) {
+                        AssistChip(
+                            onClick = onOpen,
+                            modifier = Modifier.padding(top = 4.dp),
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.InsertDriveFile, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                            label = { Text("📎 " + (message.attachmentName ?: "file")) },
+                        )
+                    }
                 }
             }
+
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                if (message.text.isNotBlank()) {
+                    DropdownMenuItem(
+                        text = { Text("Copy message") },
+                        onClick = {
+                            clipboard.setText(AnnotatedString(message.text))
+                            menuOpen = false
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Select text") },
+                        onClick = { menuOpen = false; selectTextOpen = true },
+                    )
+                }
+                if (onDelete != null) {
+                    DropdownMenuItem(
+                        text = { Text("Delete message") },
+                        onClick = { menuOpen = false; onDelete() },
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text("Export chat") },
+                    onClick = { menuOpen = false; onExportChat() },
+                )
+            }
         }
+    }
+
+    if (selectTextOpen) {
+        AlertDialog(
+            onDismissRequest = { selectTextOpen = false },
+            title = { Text("Select text") },
+            text = { SelectionContainer { Text(message.text, style = MaterialTheme.typography.bodyMedium) } },
+            confirmButton = { TextButton(onClick = { selectTextOpen = false }) { Text("Close") } },
+        )
     }
 }
 

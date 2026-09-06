@@ -47,6 +47,18 @@ class ServerChatRepository @Inject constructor(
         apiService.serverChatSend(ServerChatSendRequest(conversationId, text))
     }
 
+    /** Sender-only server-side (403 for anyone else's message) — see
+     * ApiService's own doc on this call. */
+    suspend fun deleteMessage(messageId: Int) {
+        apiService.deleteServerChatMessage(messageId)
+    }
+
+    /** Wipes every message in this conversation — the row itself (group
+     * room or a device pair's direct channel) is structural and stays. */
+    suspend fun clearConversation(conversationId: Int) {
+        apiService.clearServerChatConversation(conversationId)
+    }
+
     suspend fun downloadAttachment(messageId: Int, suggestedName: String): File = withContext(Dispatchers.IO) {
         val body = apiService.downloadServerChatAttachment(messageId)
         val dir = File(context.cacheDir, "downloads").apply { mkdirs() }

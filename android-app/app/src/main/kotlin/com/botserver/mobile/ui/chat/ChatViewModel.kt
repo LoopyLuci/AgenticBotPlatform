@@ -154,6 +154,28 @@ class ChatViewModel @Inject constructor(private val repository: ChatRepository) 
         }
     }
 
+    /** Removes the row from Room immediately (the actual UI list observes
+     * Room, see ChatRepository's Flow) rather than waiting on the network
+     * call — server delete failing is rare and, worst case, just means
+     * the row silently comes back on the next refresh, same
+     * fail-soft behavior the rest of this screen already has. */
+    fun deleteMessage(message: ChatMessage) {
+        viewModelScope.launch {
+            runCatching { repository.deleteMessage(message.id) }
+                .onFailure { e -> _uiState.update { it.copy(loadError = e.message ?: "Couldn't delete that message.") } }
+        }
+    }
+
+    fun deleteActiveChatHistory() {
+        val instanceId = _uiState.value.activeInstanceId ?: return
+        val inst = _uiState.value.instances.find { it.id == instanceId } ?: return
+        val chatId = inst.allowedIds.firstOrNull()
+        viewModelScope.launch {
+            runCatching { repository.deleteHistory(instanceId, chatId, inst.platform) }
+                .onFailure { e -> _uiState.update { it.copy(loadError = e.message ?: "Couldn't delete this chat.") } }
+        }
+    }
+
     fun downloadAttachment(message: ChatMessage) {
         if (_uiState.value.downloads[message.id] is DownloadState.Downloading) return
         _uiState.update { it.copy(downloads = it.downloads + (message.id to DownloadState.Downloading)) }

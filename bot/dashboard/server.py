@@ -2211,6 +2211,13 @@ def build_app() -> FastAPI:
             count = db.delete_chat_messages(instance_id, chat_id, platform=platform)
         return {"ok": True, "deleted": count}
 
+    @app.delete("/api/chat/messages/{message_id}", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_chat_message_delete_one(message_id: int):
+        if db.get_message(message_id) is None:
+            raise HTTPException(status_code=404, detail="no such message")
+        db.delete_message(message_id)
+        return {"ok": True}
+
     @app.post("/api/chat/send", dependencies=[Depends(_require_token_or_api_key)])
     async def api_chat_send(payload: dict = Body(...)):
         instance_id = payload.get("instance_id")
@@ -2479,6 +2486,21 @@ def build_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="no such conversation")
         count = db.clear_server_chat_messages(conversation_id)
         return {"ok": True, "deleted": count}
+
+    @app.delete("/api/server-chat/messages/{message_id}")
+    async def api_server_chat_delete_message(message_id: int, device_id: int = Depends(_require_device_id)):
+        """Deletes one message — restricted to the device that actually
+        sent it (like every ordinary chat app's "delete message," not a
+        moderation action any participant can take on anyone else's
+        text). Use DELETE /api/server-chat/conversations/{id} instead to
+        clear a whole conversation's history."""
+        row = db.get_server_chat_message(message_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="no such message")
+        if row["sender_device_id"] != device_id:
+            raise HTTPException(status_code=403, detail="you can only delete your own messages")
+        db.delete_server_chat_message(message_id)
+        return {"ok": True}
 
     @app.post("/api/server-chat/send")
     async def api_server_chat_send(payload: dict = Body(...), device_id: int = Depends(_require_device_id)):

@@ -2816,12 +2816,24 @@ async function downloadServerChatAttachment(messageId, name) {
   }
 }
 
+async function deleteServerChatMessage(messageId, rowEl) {
+  if (!confirm('Delete this message?')) return;
+  try {
+    await api(`/api/server-chat/messages/${messageId}`, { method: 'DELETE' });
+    rowEl.remove();
+  } catch (e) {
+    alert('Delete failed: ' + (e.message || e));
+  }
+}
+
 function appendServerChatMessages(rows) {
   const win = document.getElementById('serverchat-panels');
   const atBottom = win.scrollHeight - win.scrollTop - win.clientHeight < 60;
   rows.forEach(m => {
     const row = document.createElement('div');
-    row.className = 'chat-row ' + (m.sender_device_id === SERVER_CHAT_MY_DEVICE_ID ? 'out' : 'in');
+    const isOut = m.sender_device_id === SERVER_CHAT_MY_DEVICE_ID;
+    row.className = 'chat-row ' + (isOut ? 'out' : 'in');
+    row.dataset.serverchatMsgId = String(m.id);
     const bubble = document.createElement('div');
     bubble.className = 'chat-bubble';
     if (m.text) {
@@ -2841,6 +2853,17 @@ function appendServerChatMessages(rows) {
     meta.className = 'chat-meta';
     meta.textContent = fmtChatTime(m.ts);
     bubble.appendChild(meta);
+    // Only the sender can delete their own message (server enforces this
+    // too — see DELETE /api/server-chat/messages/{id} — this just avoids
+    // showing a control that would 403 for everyone else's messages).
+    if (isOut) {
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'chat-msg-delete';
+      del.textContent = 'delete';
+      del.onclick = () => deleteServerChatMessage(m.id, row);
+      bubble.appendChild(del);
+    }
     row.appendChild(bubble);
     win.appendChild(row);
     serverChatState.lastId = Math.max(serverChatState.lastId, m.id);

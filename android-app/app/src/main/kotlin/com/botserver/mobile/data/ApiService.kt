@@ -56,6 +56,7 @@ import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.HTTP
 import retrofit2.http.Multipart
 import retrofit2.http.POST
 import retrofit2.http.PUT
@@ -91,6 +92,14 @@ interface ApiService {
     @Streaming
     @GET("/api/chat/attachments/{messageId}")
     suspend fun downloadAttachment(@Path("messageId") messageId: Int): ResponseBody
+
+    @DELETE("/api/chat/messages/{messageId}")
+    suspend fun deleteChatMessage(@Path("messageId") messageId: Int): OkResponse
+
+    // Retrofit's @DELETE rejects a @Body param directly — @HTTP with
+    // hasBody=true is the documented way to send one on a DELETE request.
+    @HTTP(method = "DELETE", path = "/api/chat/messages", hasBody = true)
+    suspend fun deleteChatHistory(@Body request: com.botserver.mobile.data.dto.DeleteChatMessagesRequest): OkResponse
 
     // Chunked upload — every attachment send goes through this (init → one
     // PUT per chunk → complete) so it can report progress and isn't a
@@ -188,6 +197,17 @@ interface ApiService {
     @Streaming
     @GET("/api/server-chat/attachments/{messageId}")
     suspend fun downloadServerChatAttachment(@Path("messageId") messageId: Int): ResponseBody
+
+    // Sender-only — the server 403s if this device didn't send the message.
+    @DELETE("/api/server-chat/messages/{messageId}")
+    suspend fun deleteServerChatMessage(@Path("messageId") messageId: Int): OkResponse
+
+    // Clears every message in a conversation (the conversation itself —
+    // the group room or a device pair's direct channel — is structural
+    // and always exists again for anyone still paired, so this is
+    // "delete chat" in the sense of wiping its history).
+    @DELETE("/api/server-chat/conversations/{conversationId}")
+    suspend fun clearServerChatConversation(@Path("conversationId") conversationId: Int): OkResponse
 
     @GET("/api/sessions")
     suspend fun sessions(

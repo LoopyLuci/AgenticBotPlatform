@@ -62,6 +62,15 @@ data class SendMessageRequest(
 @Serializable
 data class OkResponse(val ok: Boolean = false)
 
+/** Body for DELETE /api/chat/messages — clears every message for one
+ * chat (or, with chatId null, the whole instance's history). */
+@Serializable
+data class DeleteChatMessagesRequest(
+    @SerialName("instance_id") val instanceId: Int,
+    @SerialName("chat_id") val chatId: String? = null,
+    val platform: String? = null,
+)
+
 /** Mirrors POST /api/chat/send-to-bot — "Chat with Bot" mode: a real
  * message to the bot, no chat_id needed (the server derives the sender's
  * identity from this request's own auth). */
