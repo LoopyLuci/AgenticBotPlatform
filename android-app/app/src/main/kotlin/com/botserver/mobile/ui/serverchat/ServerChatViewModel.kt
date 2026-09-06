@@ -33,6 +33,13 @@ class ServerChatViewModel @Inject constructor(private val repository: ServerChat
     private var lastId = 0
     private var listStarted = false
 
+    // Same reasoning as ChatViewModel's identical field — loadError is
+    // only ever rendered on the conversation *list* screen, never inside
+    // an open conversation, so a delete/clear failure (or even a quiet
+    // success) inside one was previously invisible.
+    private val _snackbarMessages = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val snackbarMessages: kotlinx.coroutines.flow.SharedFlow<String> = _snackbarMessages
+
     fun start() {
         if (listStarted) return
         listStarted = true
@@ -108,17 +115,23 @@ class ServerChatViewModel @Inject constructor(private val repository: ServerChat
         _messages.value = _messages.value.filterNot { it.id == message.id }
         viewModelScope.launch {
             runCatching { repository.deleteMessage(message.id) }
-                .onFailure { _loadError.value = it.message ?: "Couldn't delete that message." }
+                .onSuccess { _snackbarMessages.tryEmit("Message deleted") }
+                .onFailure { _snackbarMessages.tryEmit(it.message ?: "Couldn't delete that message.") }
         }
     }
 
     fun clearActiveConversation() {
-        val id = _activeConversationId.value ?: return
+        val id = _activeConversationId.value
+        if (id == null) {
+            _snackbarMessages.tryEmit("Couldn't delete this chat — no active conversation.")
+            return
+        }
         _messages.value = emptyList()
         lastId = 0
         viewModelScope.launch {
             runCatching { repository.clearConversation(id) }
-                .onFailure { _loadError.value = it.message ?: "Couldn't clear this conversation." }
+                .onSuccess { _snackbarMessages.tryEmit("Chat deleted") }
+                .onFailure { _snackbarMessages.tryEmit(it.message ?: "Couldn't delete this conversation.") }
             refreshConversations()
         }
     }

@@ -65,6 +65,17 @@ class ChatViewModel @Inject constructor(private val repository: ChatRepository) 
 
     private var pollingStarted = false
 
+    // One-shot feedback for actions that don't otherwise leave a visible
+    // trace — a successful delete just makes a message vanish from a list
+    // that might already look the same (a chat with 1 message, now 0, can
+    // look identical to "the list scrolled" at a glance), and a failure
+    // was previously only ever written to `loadError`, which this screen
+    // never actually renders (only the chat-list screen does). Without
+    // this, "delete chat" looked like it silently did nothing whether it
+    // succeeded or failed.
+    private val _snackbarMessages = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val snackbarMessages: kotlinx.coroutines.flow.SharedFlow<String> = _snackbarMessages
+
     init {
         // Room is the source of truth for the active conversation's
         // messages — this re-subscribes whenever activeInstanceId changes,
@@ -162,17 +173,23 @@ class ChatViewModel @Inject constructor(private val repository: ChatRepository) 
     fun deleteMessage(message: ChatMessage) {
         viewModelScope.launch {
             runCatching { repository.deleteMessage(message.id) }
-                .onFailure { e -> _uiState.update { it.copy(loadError = e.message ?: "Couldn't delete that message.") } }
+                .onSuccess { _snackbarMessages.tryEmit("Message deleted") }
+                .onFailure { e -> _snackbarMessages.tryEmit(e.message ?: "Couldn't delete that message.") }
         }
     }
 
     fun deleteActiveChatHistory() {
         val instanceId = _uiState.value.activeInstanceId ?: return
-        val inst = _uiState.value.instances.find { it.id == instanceId } ?: return
+        val inst = _uiState.value.instances.find { it.id == instanceId }
+        if (inst == null) {
+            _snackbarMessages.tryEmit("Couldn't delete this chat — no active conversation.")
+            return
+        }
         val chatId = inst.allowedIds.firstOrNull()
         viewModelScope.launch {
             runCatching { repository.deleteHistory(instanceId, chatId, inst.platform) }
-                .onFailure { e -> _uiState.update { it.copy(loadError = e.message ?: "Couldn't delete this chat.") } }
+                .onSuccess { _snackbarMessages.tryEmit("Chat deleted") }
+                .onFailure { e -> _snackbarMessages.tryEmit(e.message ?: "Couldn't delete this chat.") }
         }
     }
 

@@ -8,7 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -99,6 +100,7 @@ fun ServerChatScreen(viewModel: ServerChatViewModel = hiltViewModel()) {
             onDownload = { messageId, name -> viewModel.downloadAttachment(messageId, name) },
             onDeleteMessage = { viewModel.deleteMessage(it) },
             onClearChat = { viewModel.clearActiveConversation() },
+            snackbarMessages = viewModel.snackbarMessages,
         )
     }
 }
@@ -177,11 +179,17 @@ private fun ServerChatConversationScreen(
     onDownload: suspend (Int, String) -> File,
     onDeleteMessage: (ServerChatMessage) -> Unit,
     onClearChat: () -> Unit,
+    snackbarMessages: kotlinx.coroutines.flow.SharedFlow<String>,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var confirmClearOpen by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(Unit) {
+        snackbarMessages.collect { message -> snackbarHostState.showSnackbar(message) }
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 navigationIcon = {
@@ -289,7 +297,6 @@ private fun openFile(context: android.content.Context, file: File, mime: String?
     runCatching { context.startActivity(intent) }
 }
 
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun ServerChatBubble(
     message: ServerChatMessage,
@@ -316,7 +323,7 @@ private fun ServerChatBubble(
                 shadowElevation = 1.dp,
                 modifier = Modifier
                     .widthIn(max = 280.dp)
-                    .combinedClickable(onClick = {}, onLongClick = { menuOpen = true }),
+                    .pointerInput(Unit) { detectTapGestures(onLongPress = { menuOpen = true }) },
             ) {
                 Column(Modifier.padding(horizontal = 13.dp, vertical = 9.dp)) {
                     if (message.text.isNotBlank()) {

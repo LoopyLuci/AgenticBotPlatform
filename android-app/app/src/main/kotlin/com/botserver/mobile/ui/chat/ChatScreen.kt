@@ -8,7 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -176,7 +177,12 @@ private fun ConversationScreen(
     com.botserver.mobile.ui.model.ModelPickerDialog(modelPickerViewModel)
     var chatMenuOpen by remember { mutableStateOf(false) }
     var confirmDeleteChatOpen by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(Unit) {
+        viewModel.snackbarMessages.collect { message -> snackbarHostState.showSnackbar(message) }
+    }
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 navigationIcon = {
@@ -371,7 +377,6 @@ private fun openFile(context: android.content.Context, file: java.io.File, mime:
     runCatching { context.startActivity(intent) }
 }
 
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun MessageBubble(
     message: ChatMessage,
@@ -405,7 +410,12 @@ private fun MessageBubble(
             shadowElevation = 1.dp,
             modifier = Modifier
                 .widthIn(max = 280.dp)
-                .combinedClickable(onClick = {}, onLongClick = { menuOpen = true })
+                // A lower-level primitive than Modifier.combinedClickable —
+                // detectTapGestures never claims the single-tap gesture at
+                // all (no onClick to register), so there's nothing here
+                // that could compete with a child's own .clickable (the
+                // attachment thumbnail) for the down-event.
+                .pointerInput(Unit) { detectTapGestures(onLongPress = { menuOpen = true }) }
                 .testTag("chat-message-bubble"),
         ) {
             Column(Modifier.padding(horizontal = 13.dp, vertical = 9.dp)) {
