@@ -18,7 +18,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.botserver.mobile.ui.appearance.AccentColor
+import com.botserver.mobile.ui.appearance.AppIcon
+import com.botserver.mobile.ui.appearance.AppearanceViewModel
+import com.botserver.mobile.ui.appearance.ThemeMode
+import com.botserver.mobile.ui.appearance.UiDensity
 import kotlinx.coroutines.launch
 
 /** Mirrors the desktop dashboard's Control Center card-for-card: backend
@@ -31,6 +41,7 @@ fun SettingsScreen(
     onUnpaired: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
     updateViewModel: com.botserver.mobile.ui.update.AppUpdateViewModel = hiltViewModel(),
+    appearanceViewModel: AppearanceViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
     var showForgetDialog by rememberSaveable { mutableStateOf(false) }
@@ -53,6 +64,10 @@ fun SettingsScreen(
             state.error?.let {
                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 12.dp))
             }
+
+            AppearanceCard(appearanceViewModel)
+
+            Spacer(Modifier.height(14.dp))
 
             SettingsCard(title = "Backend router — Claude") {
                 SettingsRow("Default backend", "Used when no action-type override matches") {
@@ -197,6 +212,102 @@ fun SettingsScreen(
             },
             dismissButton = { TextButton(onClick = { showForgetDialog = false }) { Text("Cancel") } },
         )
+    }
+}
+
+/** App icon, theme mode, accent color, UI density — all local-to-this-
+ * device preferences (see AppearanceStore's doc comment for why these
+ * are kept out of the server-synced config every other card here uses).
+ * Changing the icon here flips one of AndroidManifest.xml's four
+ * activity-aliases via AppIconSwitcher — the home-screen icon updates
+ * within a moment, no reinstall needed. */
+@Composable
+private fun AppearanceCard(viewModel: AppearanceViewModel) {
+    val state by viewModel.uiState.collectAsState()
+
+    SettingsCard(title = "Appearance") {
+        Text("App icon", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(8.dp))
+        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            AppIcon.entries.forEach { icon ->
+                IconChoice(icon = icon, selected = state.icon == icon, onClick = { viewModel.setIcon(icon) })
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        SettingsRow("Theme", "Light, dark, or match the system setting") {
+            SegmentedPicker(
+                options = ThemeMode.entries.map { it.label },
+                selected = state.themeMode.label,
+                busy = false,
+                onSelect = { label -> viewModel.setThemeMode(ThemeMode.entries.first { it.label == label }) },
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        Text("Accent color", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(8.dp))
+        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            AccentColor.entries.forEach { accent ->
+                AccentSwatch(accent = accent, selected = state.accent == accent, onClick = { viewModel.setAccent(accent) })
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        SettingsRow("Styling", "Comfortable spacing, or a tighter compact layout") {
+            SegmentedPicker(
+                options = UiDensity.entries.map { it.label },
+                selected = state.density.label,
+                busy = false,
+                onSelect = { label -> viewModel.setDensity(UiDensity.entries.first { it.label == label }) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun IconChoice(icon: AppIcon, selected: Boolean, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClick = onClick)) {
+        Image(
+            painter = androidx.compose.ui.res.painterResource(icon.previewRes),
+            contentDescription = icon.label,
+            modifier = Modifier
+                .size(56.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .border(
+                    width = if (selected) 3.dp else 1.dp,
+                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                    shape = RoundedCornerShape(16.dp),
+                ),
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            icon.label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+        )
+    }
+}
+
+@Composable
+private fun AccentSwatch(accent: AccentColor, selected: Boolean, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClick = onClick)) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(accent.primaryLight)
+                .border(
+                    width = if (selected) 3.dp else 0.dp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    shape = CircleShape,
+                ),
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(accent.label, style = MaterialTheme.typography.labelSmall)
     }
 }
 

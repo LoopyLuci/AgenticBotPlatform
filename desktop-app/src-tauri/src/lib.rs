@@ -314,6 +314,37 @@ fn get_dashboard_token(app: AppHandle) -> Result<Option<String>, String> {
     Ok(if token.is_empty() { None } else { Some(token) })
 }
 
+/// The 4 selectable app icons, embedded at compile time (`include_bytes!`)
+/// rather than loaded from a bundled resource path — avoids any
+/// dev-vs-release resource-directory resolution difference (see
+/// `resolve_paths` above for how much that distinction already matters
+/// elsewhere in this file) for what's otherwise a tiny, fixed set of
+/// files. Only changes the *running* window's icon (title bar + taskbar
+/// while open, via `WebviewWindow::set_icon`) — the installed .exe's own
+/// embedded icon and any pinned taskbar/desktop shortcut are baked in at
+/// build time and need a real reinstall to change; the frontend's Settings
+/// UI says so rather than implying a full icon swap.
+const ICON_CUTE: &[u8] = include_bytes!("../icons/variants/cute/icon.png");
+const ICON_VAPORWAVE: &[u8] = include_bytes!("../icons/variants/vaporwave/icon.png");
+const ICON_HOLO: &[u8] = include_bytes!("../icons/variants/holo/icon.png");
+const ICON_CYBERPUNK: &[u8] = include_bytes!("../icons/variants/cyberpunk/icon.png");
+
+#[tauri::command]
+fn set_app_icon(app: AppHandle, icon_name: String) -> Result<(), String> {
+    let bytes: &[u8] = match icon_name.as_str() {
+        "cute" => ICON_CUTE,
+        "vaporwave" => ICON_VAPORWAVE,
+        "holo" => ICON_HOLO,
+        "cyberpunk" => ICON_CYBERPUNK,
+        other => return Err(format!("unknown icon '{other}'")),
+    };
+    let image = tauri::image::Image::from_bytes(bytes).map_err(|e| e.to_string())?;
+    if let Some(window) = app.get_webview_window("main") {
+        window.set_icon(image).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn server_status(state: State<ServerState>) -> Result<ServerStatusPayload, String> {
     let guard = state
@@ -343,6 +374,7 @@ pub fn run() {
             stop_server,
             restart_server,
             server_status,
+            set_app_icon,
             get_dashboard_token,
             android_env_status,
             list_adb_devices,

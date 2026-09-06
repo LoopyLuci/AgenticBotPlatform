@@ -571,14 +571,41 @@ function applyAppearanceScale(scale) {
   document.documentElement.style.zoom = scale;
   document.querySelectorAll('#appearance-scale-seg button').forEach(b => b.classList.toggle('active', b.dataset.scaleChoice === String(scale)));
 }
+// App icon — changes the running window/taskbar icon via the Rust
+// `set_app_icon` command (see src-tauri/src/lib.rs); does NOT change the
+// installed .exe/shortcut's own baked-in icon, which needs a reinstall —
+// that limitation is stated directly in the Appearance card's copy.
+function applyAppearanceIcon(name) {
+  document.querySelectorAll('#appearance-icon-picker .icon-choice').forEach(b => b.classList.toggle('active', b.dataset.iconChoice === name));
+  try {
+    const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+    if (invoke) invoke('set_app_icon', { iconName: name }).catch(() => {});
+  } catch (_e) { /* not running under Tauri (e.g. a plain browser tab) — no-op */ }
+}
+function applyAppearanceAccent(name) {
+  if (name && name !== 'blue') document.documentElement.setAttribute('data-accent', name);
+  else document.documentElement.removeAttribute('data-accent');
+  document.querySelectorAll('#appearance-accent-picker .accent-swatch').forEach(b => b.classList.toggle('active', b.dataset.accentChoice === name));
+}
+function applyAppearanceDensity(mode) {
+  if (mode === 'compact') document.documentElement.setAttribute('data-density', mode);
+  else document.documentElement.removeAttribute('data-density');
+  document.querySelectorAll('#appearance-density-seg button').forEach(b => b.classList.toggle('active', b.dataset.densityChoice === mode));
+}
 function initAppearance() {
-  let theme = 'system', scale = '1';
+  let theme = 'system', scale = '1', icon = 'vaporwave', accent = 'blue', density = 'comfortable';
   try {
     theme = localStorage.getItem('bs-ui-theme') || 'system';
     scale = localStorage.getItem('bs-ui-scale') || '1';
+    icon = localStorage.getItem('bs-ui-icon') || 'vaporwave';
+    accent = localStorage.getItem('bs-ui-accent') || 'blue';
+    density = localStorage.getItem('bs-ui-density') || 'comfortable';
   } catch (_e) { /* localStorage unavailable — defaults above stand */ }
   applyAppearanceTheme(theme);
   applyAppearanceScale(scale);
+  applyAppearanceIcon(icon);
+  applyAppearanceAccent(accent);
+  applyAppearanceDensity(density);
 }
 document.querySelectorAll('#appearance-theme-seg button').forEach(btn => {
   btn.onclick = () => {
@@ -592,6 +619,27 @@ document.querySelectorAll('#appearance-scale-seg button').forEach(btn => {
     const scale = btn.dataset.scaleChoice;
     try { localStorage.setItem('bs-ui-scale', scale); } catch (_e) {}
     applyAppearanceScale(scale);
+  };
+});
+document.querySelectorAll('#appearance-icon-picker .icon-choice').forEach(btn => {
+  btn.onclick = () => {
+    const icon = btn.dataset.iconChoice;
+    try { localStorage.setItem('bs-ui-icon', icon); } catch (_e) {}
+    applyAppearanceIcon(icon);
+  };
+});
+document.querySelectorAll('#appearance-accent-picker .accent-swatch').forEach(btn => {
+  btn.onclick = () => {
+    const accent = btn.dataset.accentChoice;
+    try { localStorage.setItem('bs-ui-accent', accent); } catch (_e) {}
+    applyAppearanceAccent(accent);
+  };
+});
+document.querySelectorAll('#appearance-density-seg button').forEach(btn => {
+  btn.onclick = () => {
+    const density = btn.dataset.densityChoice;
+    try { localStorage.setItem('bs-ui-density', density); } catch (_e) {}
+    applyAppearanceDensity(density);
   };
 });
 initAppearance();

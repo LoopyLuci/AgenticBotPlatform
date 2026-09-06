@@ -11,7 +11,10 @@ import androidx.fragment.app.FragmentActivity
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.botserver.mobile.data.CredentialStore
+import com.botserver.mobile.ui.appearance.AppearanceViewModel
+import com.botserver.mobile.ui.appearance.ThemeMode
 import com.botserver.mobile.ui.nav.HomeScreen
 import com.botserver.mobile.ui.pairing.PairingScreen
 import com.botserver.mobile.ui.theme.BotServerTheme
@@ -48,7 +51,15 @@ class MainActivity : FragmentActivity() {
                     notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
             }
-            BotServerTheme {
+            val appearanceViewModel: AppearanceViewModel = hiltViewModel()
+            val appearance by appearanceViewModel.uiState.collectAsState()
+            val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+            val darkTheme = when (appearance.themeMode) {
+                ThemeMode.SYSTEM -> systemDark
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+            }
+            BotServerTheme(darkTheme = darkTheme, accent = appearance.accent, density = appearance.density) {
                 val navController = rememberNavController()
                 // A fresh botserver://pair link always wins, even if this
                 // device already has stored credentials — otherwise

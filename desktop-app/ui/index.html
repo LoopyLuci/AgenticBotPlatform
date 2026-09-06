@@ -16,6 +16,10 @@
       if (theme === 'light' || theme === 'dark') document.documentElement.setAttribute('data-theme', theme);
       var scale = localStorage.getItem('bs-ui-scale');
       if (scale) document.documentElement.style.zoom = scale;
+      var accent = localStorage.getItem('bs-ui-accent');
+      if (accent && accent !== 'blue') document.documentElement.setAttribute('data-accent', accent);
+      var density = localStorage.getItem('bs-ui-density');
+      if (density === 'compact') document.documentElement.setAttribute('data-density', density);
     } catch (_e) { /* localStorage unavailable (private mode, etc.) — fall back to defaults */ }
   })();
 </script>
@@ -55,6 +59,37 @@
   }
   :root[data-theme="dark"] { --bubble-out-ink:#e9f2fd; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bubble-out-ink:#e9f2fd; } }
+
+  /* Accent presets — same 5 choices as the Android app's Settings >
+     Appearance (see ui/appearance/AppearanceModels.kt's AccentColor enum),
+     kept in sync so "Pink"/"Cyan"/etc. mean the same color on both. "blue"
+     is the default and needs no override — the base :root/:root[data-theme]
+     blocks above already are the blue palette. Each other accent needs a
+     light-mode, an explicit dark-mode, and a system-dark-mode variant, the
+     same three-way split the base theme already uses. */
+  :root[data-accent="pink"] { --accent:#e0568f; --accent-2:#c2447a; --accent-soft:#ffe3f0; --accent-ink:#99235f; }
+  :root[data-theme="dark"][data-accent="pink"] { --accent:#ff8fc6; --accent-2:#ff6fb2; --accent-soft:#4a1f34; --accent-ink:#ffd6ea; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"])[data-accent="pink"] { --accent:#ff8fc6; --accent-2:#ff6fb2; --accent-soft:#4a1f34; --accent-ink:#ffd6ea; } }
+
+  :root[data-accent="violet"] { --accent:#7a4fe0; --accent-2:#5e39b8; --accent-soft:#ece3ff; --accent-ink:#3c1f8f; }
+  :root[data-theme="dark"][data-accent="violet"] { --accent:#b07aff; --accent-2:#9662e8; --accent-soft:#2a1f4a; --accent-ink:#e3d6ff; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"])[data-accent="violet"] { --accent:#b07aff; --accent-2:#9662e8; --accent-soft:#2a1f4a; --accent-ink:#e3d6ff; } }
+
+  :root[data-accent="cyan"] { --accent:#1aa9c2; --accent-2:#12839a; --accent-soft:#dff8fb; --accent-ink:#0a5866; }
+  :root[data-theme="dark"][data-accent="cyan"] { --accent:#4ee0ff; --accent-2:#2ec8ee; --accent-soft:#123a40; --accent-ink:#cdf5fb; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"])[data-accent="cyan"] { --accent:#4ee0ff; --accent-2:#2ec8ee; --accent-soft:#123a40; --accent-ink:#cdf5fb; } }
+
+  :root[data-accent="magenta"] { --accent:#cc2c9e; --accent-2:#a3227e; --accent-soft:#ffe3f7; --accent-ink:#7a1a5e; }
+  :root[data-theme="dark"][data-accent="magenta"] { --accent:#ff4fc3; --accent-2:#e83eae; --accent-soft:#401a34; --accent-ink:#ffd6f0; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"])[data-accent="magenta"] { --accent:#ff4fc3; --accent-2:#e83eae; --accent-soft:#401a34; --accent-ink:#ffd6f0; } }
+
+  /* Styling / density — "Compact" tightens card padding and drops the
+     base font size a touch; everything else (colors, layout structure)
+     is unaffected. */
+  [data-density="compact"] .card { padding:11px 13px; }
+  [data-density="compact"] body { font-size:13px; }
+  [data-density="compact"] .settingrow { padding:6px 0; }
+
   * { box-sizing:border-box; }
   html { scroll-behavior:smooth; }
   body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--font-body); font-size:14px; }
@@ -170,6 +205,15 @@
   .segmented { display:inline-flex; background:var(--surface-2); border-radius:999px; padding:3px; gap:2px; }
   .segmented button { border:none; background:transparent; padding:6px 13px; border-radius:999px; font-size:12px; font-weight:700; color:var(--ink-soft); cursor:pointer; font-family:var(--font-mono); transition:background .12s ease, color .12s ease; }
   .segmented button.active { background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:#fff; }
+  .icon-picker { display:flex; gap:12px; flex-wrap:wrap; margin:8px 0 14px; }
+  .icon-choice { display:flex; flex-direction:column; align-items:center; gap:6px; background:none; border:none; cursor:pointer; padding:4px; width:76px; }
+  .icon-choice img { width:56px; height:56px; border-radius:14px; box-shadow:0 0 0 1px var(--line); }
+  .icon-choice span { font-size:11px; color:var(--ink-soft); text-align:center; }
+  .icon-choice.active img { box-shadow:0 0 0 3px var(--accent); }
+  .icon-choice.active span { color:var(--accent); font-weight:700; }
+  .accent-picker { display:inline-flex; gap:8px; }
+  .accent-swatch { width:26px; height:26px; border-radius:999px; background:var(--sw); border:2px solid transparent; cursor:pointer; box-shadow:0 0 0 1px var(--line); }
+  .accent-swatch.active { border-color:var(--ink); }
 
   .term { background:var(--chart-surface); color:#e4e1d8; border-radius:10px; overflow:hidden; border:1px solid var(--line); }
   .term .tb { display:flex; align-items:center; gap:6px; padding:9px 12px; border-bottom:1px solid rgba(255,255,255,.08); }
@@ -710,11 +754,36 @@
 
         <div class="card">
           <h3>Appearance</h3>
-          <p class="cardnote">Per-browser display preferences — saved on this device only, applied instantly, no server round trip.</p>
+          <p class="cardnote">Per-device display preferences — saved on this device only, applied instantly, no server round trip.</p>
+          <div class="settingrow">
+            <div><div class="st">App icon</div><div class="sd">Changes the app's window/taskbar icon while it's running. The installed shortcut's own icon needs a reinstall to change.</div></div>
+          </div>
+          <div class="icon-picker" id="appearance-icon-picker">
+            <button class="icon-choice" data-icon-choice="vaporwave"><img src="assets/icons/vaporwave.png" alt="Vaporwave Visor"><span>Vaporwave Visor</span></button>
+            <button class="icon-choice" data-icon-choice="cute"><img src="assets/icons/cute.png" alt="Cute Pastel"><span>Cute Pastel</span></button>
+            <button class="icon-choice" data-icon-choice="holo"><img src="assets/icons/holo.png" alt="Holo Orb"><span>Holo Orb</span></button>
+            <button class="icon-choice" data-icon-choice="cyberpunk"><img src="assets/icons/cyberpunk.png" alt="Cyberpunk"><span>Cyberpunk</span></button>
+          </div>
           <div class="settingrow">
             <div><div class="st">Theme</div><div class="sd">"System" follows your OS's light/dark setting</div></div>
             <div class="segmented" id="appearance-theme-seg">
               <button data-theme-choice="system">System</button><button data-theme-choice="light">Light</button><button data-theme-choice="dark">Dark</button>
+            </div>
+          </div>
+          <div class="settingrow">
+            <div><div class="st">Accent color</div><div class="sd">Matches the same 5 choices as the Android app</div></div>
+            <div class="accent-picker" id="appearance-accent-picker">
+              <button class="accent-swatch" data-accent-choice="blue" style="--sw:#3390ec" title="Blue"></button>
+              <button class="accent-swatch" data-accent-choice="pink" style="--sw:#e0568f" title="Pink"></button>
+              <button class="accent-swatch" data-accent-choice="violet" style="--sw:#7a4fe0" title="Violet"></button>
+              <button class="accent-swatch" data-accent-choice="cyan" style="--sw:#1aa9c2" title="Cyan"></button>
+              <button class="accent-swatch" data-accent-choice="magenta" style="--sw:#cc2c9e" title="Magenta"></button>
+            </div>
+          </div>
+          <div class="settingrow">
+            <div><div class="st">Styling</div><div class="sd">Compact tightens card padding and text size</div></div>
+            <div class="segmented" id="appearance-density-seg">
+              <button data-density-choice="comfortable">Comfortable</button><button data-density-choice="compact">Compact</button>
             </div>
           </div>
           <div class="settingrow">
