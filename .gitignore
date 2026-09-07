@@ -15,6 +15,12 @@ data/inbox/
 data/attachments/
 data/agent_workspaces/
 data/models_dev_cache.json
+# Per-instance isolated Hermes homes (bot_instances.desktop_project's
+# hermes_home counterpart) — each one is a real, live clone of a Hermes
+# account's own state (config.yaml, state.db, session history, and
+# whatever auth/session tokens that account has) for an isolated
+# hermes_gateway-backed bot instance. Never committed, same as data/*.db.
+data/hermes_homes/
 logs/*.log
 logs/local_pipeline/
 

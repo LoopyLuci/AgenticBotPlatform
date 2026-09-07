@@ -96,6 +96,30 @@ class HermesGatewayBackend(Backend):
         self._next_id = 0
         self._connect_lock = asyncio.Lock()
 
+    def _session_params(self) -> dict[str, str]:
+        """Confirmed against the real Hermes gateway source
+        (tui_gateway/methods_session.py's session.create handler): it
+        reads `provider` and `model` as two SEPARATE top-level params,
+        not one combined string — sending only `{"model": self.model}`
+        (the original shape here) meant a value like
+        "nous/some-model-id" was passed whole as `model` with no
+        `provider` at all, and the gateway couldn't resolve a provider
+        for it, failing with "No inference provider configured" even
+        though a perfectly valid model was configured. self.model
+        follows this project's own established "<provider>/<model_id>"
+        convention (matching custom_model/native_agent) and is split on
+        the first "/" here — model ids can themselves contain "/", so a
+        naive split(", ", 1) on the right side would be wrong."""
+        if not self.model:
+            return {}
+        provider, sep, model_id = self.model.partition("/")
+        if not sep:
+            # No "/" at all — nothing to split, pass it through bare and
+            # let the gateway's own error surface if that's wrong, rather
+            # than guessing a provider.
+            return {"model": self.model}
+        return {"provider": provider, "model": model_id}
+
     async def ask(self, prompt: str, *, context=None, timeout_s: float = 60) -> BackendResult:
         context = context or {}
         instance_id = context.get("instance_id")
@@ -184,7 +208,7 @@ class HermesGatewayBackend(Backend):
         session_id as the key the caller (Router.create_session) should
         persist against the bot instance."""
         await self._ensure_connected()
-        session_params = {"model": self.model} if self.model else {}
+        session_params = self._session_params()
         session = await self._call("session.create", session_params, timeout_s=timeout_s)
         session_id = session.get("session_id")
         if not session_id:
@@ -208,7 +232,7 @@ class HermesGatewayBackend(Backend):
                 # No linked bot instance at all — keep the old stateless
                 # behavior (a fresh throwaway session every call) rather than
                 # persisting anything nowhere.
-                session_params = {"model": self.model} if self.model else {}
+                session_params = self._session_params()
                 session = await self._call("session.create", session_params, timeout_s=15)
                 session_id = session.get("session_id")
                 if not session_id:
