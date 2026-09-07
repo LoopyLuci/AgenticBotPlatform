@@ -677,6 +677,31 @@ CREATE TABLE IF NOT EXISTS model_toggles (
     PRIMARY KEY (provider, model_id)
 );
 
+-- Unified agent/swarm control settings (see bot/agent_settings.py) — one
+-- row per bot_instances.id, or a single instance_id=NULL row for the
+-- process-wide default an instance falls back to when it has no row of
+-- its own. Sparse (any column may be NULL, meaning "use the next
+-- fallback level down" — see agent_settings.get()'s three-level
+-- resolution) rather than every instance getting a fully-populated row
+-- at creation time, matching model_toggles' own sparse-by-design
+-- reasoning above. Hermes-backed instances do NOT use worker_effort/
+-- manager_effort here — those write straight through to
+-- bot/hermes_config.py's delegation.reasoning_effort/agent.reasoning_effort
+-- instead, since Hermes already owns that state in its own config.yaml
+-- and this table must never become a second, divergent source of truth
+-- for it.
+CREATE TABLE IF NOT EXISTS agent_settings (
+    instance_id             INTEGER UNIQUE,
+    max_concurrent_children INTEGER,
+    worker_provider         TEXT,
+    worker_model            TEXT,
+    worker_effort           TEXT,
+    manager_effort          TEXT,
+    updated_at              TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_settings_instance_null
+    ON agent_settings ((instance_id IS NULL)) WHERE instance_id IS NULL;
+
 -- Post-hoc per-child delegate_task breakdown, parsed from a completed
 -- swarm_dispatch job's own final reply (see bot/swarm/child_parser.py) —
 -- written once, as a full replace, when the dispatch finishes. This is
@@ -1425,6 +1450,42 @@ def delete_context_doc(name: str) -> bool:
 
 
 # ----------------------------------------------------------------- plugins
+
+# ----------------------------------------------------------- agent_settings
+
+_AGENT_SETTINGS_COLUMNS = ("max_concurrent_children", "worker_provider", "worker_model", "worker_effort", "manager_effort")
+
+
+def get_agent_settings_row(instance_id: Optional[int]) -> Optional[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute(
+        "SELECT * FROM agent_settings WHERE instance_id IS ?", (instance_id,)
+    ).fetchone()
+
+
+def set_agent_settings_row(instance_id: Optional[int], **fields: Any) -> None:
+    """Merges only the given keys (any value, including None to explicitly
+    clear a field back to "fall through") into this instance_id's row,
+    creating it if it doesn't exist yet."""
+    unknown = set(fields) - set(_AGENT_SETTINGS_COLUMNS)
+    if unknown:
+        raise ValueError(f"unknown agent_settings field(s): {sorted(unknown)}")
+    conn = get_conn()
+    with _lock:
+        existing = conn.execute("SELECT * FROM agent_settings WHERE instance_id IS ?", (instance_id,)).fetchone()
+        if existing is None:
+            columns = ["instance_id"] + list(fields.keys()) + ["updated_at"]
+            placeholders = ", ".join("?" for _ in columns)
+            values = [instance_id] + list(fields.values()) + [_now()]
+            conn.execute(f"INSERT INTO agent_settings ({', '.join(columns)}) VALUES ({placeholders})", values)
+        else:
+            set_clause = ", ".join(f"{k}=?" for k in fields) + ", updated_at=?"
+            conn.execute(
+                f"UPDATE agent_settings SET {set_clause} WHERE instance_id IS ?",
+                list(fields.values()) + [_now(), instance_id],
+            )
+        conn.commit()
+
 
 def install_plugin_row(name: str, path: str, description: str) -> int:
     conn = get_conn()

@@ -459,6 +459,41 @@ async def list_plugins() -> dict:
 
 
 @mcp.tool()
+async def get_agent_settings(instance_id: Optional[int] = None) -> dict:
+    """Resolved agent/swarm settings for instance_id (or the process-wide
+    default if omitted): max_concurrent_children, worker_provider,
+    worker_model, worker_effort, manager_effort."""
+    params = {"instance_id": instance_id} if instance_id is not None else {}
+    return await _request("GET", "/api/agent-settings", params=params)
+
+
+@mcp.tool()
+async def set_agent_settings(
+    instance_id: Optional[int] = None,
+    max_concurrent_children: Optional[int] = None,
+    worker_provider: Optional[str] = None,
+    worker_model: Optional[str] = None,
+    worker_effort: Optional[str] = None,
+    manager_effort: Optional[str] = None,
+) -> dict:
+    """Set one or more agent/swarm settings for instance_id (or the
+    process-wide default if omitted). Effort values: none, minimal, low,
+    medium, high, xhigh, max, ultra. For a Hermes-backed instance, prefer
+    configure_delegation/the /agent_settings command instead — Hermes
+    owns worker/manager effort in its own real config, not this table."""
+    payload = {
+        "instance_id": instance_id,
+        "max_concurrent_children": max_concurrent_children,
+        "worker_provider": worker_provider,
+        "worker_model": worker_model,
+        "worker_effort": worker_effort,
+        "manager_effort": manager_effort,
+    }
+    payload = {k: v for k, v in payload.items() if v is not None or k == "instance_id"}
+    return await _request("POST", "/api/agent-settings", json=payload)
+
+
+@mcp.tool()
 async def list_available_models(instance_id: Optional[int] = None) -> dict:
     """The full model catalog Claude needs to pick an "optimal free model":
     Claude's own live /v1/models, BotServer's custom_model provider

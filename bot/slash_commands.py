@@ -54,6 +54,8 @@ COMMAND_DEFS: tuple[CommandDef, ...] = (
     CommandDef("resume", "Resume a previous session", category="Session", args_hint="<id>"),
     CommandDef("effort", "Show or set Claude Desktop's Effort level (ui backend)", category="Config",
                args_hint="[low|medium|high|extra|max|ultracode]"),
+    CommandDef("agent_settings", "Show/set swarm concurrency, worker model, and effort settings", category="Config",
+               args_hint="show | set <field> <value> | clear <field>"),
     CommandDef("title", "Title this chat's active session", category="Session", args_hint="<name>"),
     CommandDef("profile", "Show this chat's active bot/backend", category="Info"),
     CommandDef("whoami", "Show your slash-command access tier", category="Info"),

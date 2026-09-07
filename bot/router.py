@@ -416,6 +416,16 @@ class Router:
             context.setdefault("desktop_project", instance_desktop_project)
             context.setdefault("desktop_workspace_dir", instance_desktop_workspace_dir)
             context.setdefault("desktop_effort", instance_desktop_effort)
+            # The manager/orchestrator's OWN effort (bot/agent_settings.py)
+            # — distinct from a spawned child's "worker_effort", which
+            # subagents.py resolves separately for its own direct
+            # backend.ask() calls that never pass through here. Harmless
+            # to set unconditionally: only NativeAgentBackend's transports
+            # (bot/effort.py's per-backend mappings) ever look at
+            # context["effort"] at all; every other backend ignores it.
+            from bot import agent_settings
+
+            context.setdefault("effort", agent_settings.get(instance_id)["manager_effort"])
 
         job_id = db.create_job(
             action_type=action_type,

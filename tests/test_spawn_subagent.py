@@ -265,3 +265,118 @@ def test_spawn_subagent_tool_returns_json_results(temp_db, monkeypatch, tmp_path
     assert parsed["dispatch_id"]
     assert parsed["children"][0]["status"] == "ok"
     assert parsed["children"][0]["goal"] == "say hi"
+
+
+class TestAgentSettingsIntegration:
+    """bot/agent_settings.py's unified settings surface must actually
+    influence a real dispatch when the caller doesn't override
+    explicitly — an explicit call-site arg always still wins."""
+
+    def test_max_concurrent_children_falls_back_to_agent_settings(self, temp_db, monkeypatch):
+        from bot import agent_settings
+
+        monkeypatch.setattr(config, "_data", {"agent_runtime": {}, "native_agent": {}})
+        instance_id = _create_instance()
+        agent_settings.set_settings(instance_id, max_concurrent_children=1)
+        backend = _FakeBackend(["a", "b"])
+        _patch_inherited_backend(monkeypatch, backend)
+
+        semaphores_seen = []
+        real_semaphore_cls = asyncio.Semaphore
+
+        def spy(value):
+            sem = real_semaphore_cls(value)
+            semaphores_seen.append(value)
+            return sem
+
+        monkeypatch.setattr(subagents.asyncio, "Semaphore", spy)
+
+        _run(subagents.run_batch([{"goal": "one"}, {"goal": "two"}], parent_instance_id=instance_id))
+
+        assert semaphores_seen == [1]
+
+    def test_explicit_max_children_is_still_capped_by_agent_settings(self, temp_db, monkeypatch):
+        """Matches run_batch's existing min()-based cap logic (pre-dating
+        agent_settings): a caller's explicit max_children is a ceiling
+        request, not an override — the smaller of the two always wins,
+        exactly as it already did against config.yaml's own cap."""
+        from bot import agent_settings
+
+        monkeypatch.setattr(config, "_data", {"agent_runtime": {}, "native_agent": {}})
+        instance_id = _create_instance()
+        agent_settings.set_settings(instance_id, max_concurrent_children=1)
+        backend = _FakeBackend(["a", "b"])
+        _patch_inherited_backend(monkeypatch, backend)
+
+        semaphores_seen = []
+        real_semaphore_cls = asyncio.Semaphore
+
+        def spy(value):
+            semaphores_seen.append(value)
+            return real_semaphore_cls(value)
+
+        monkeypatch.setattr(subagents.asyncio, "Semaphore", spy)
+
+        # min(explicit=5, settings' cfg_cap=1) = 1 — settings.py's own
+        # process default still bounds an explicit call-site value higher
+        # than it, matching run_batch's existing min()-based cap logic.
+        _run(subagents.run_batch(
+            [{"goal": "one"}, {"goal": "two"}], parent_instance_id=instance_id, max_children=5,
+        ))
+
+        assert semaphores_seen == [1]
+
+    def test_worker_effort_reaches_child_context(self, temp_db, monkeypatch):
+        from bot import agent_settings
+
+        monkeypatch.setattr(config, "_data", {"agent_runtime": {}, "native_agent": {}})
+        instance_id = _create_instance()
+        agent_settings.set_settings(instance_id, worker_effort="low")
+        backend = _FakeBackend(["a"])
+        _patch_inherited_backend(monkeypatch, backend)
+
+        _run(subagents.run_batch([{"goal": "one"}], parent_instance_id=instance_id))
+
+        assert backend.calls[0]["context"]["effort"] == "low"
+
+    def test_worker_provider_model_fall_back_to_agent_settings(self, temp_db, monkeypatch):
+        from bot import agent_settings, providers as provider_registry
+
+        monkeypatch.setattr(config, "_data", {"agent_runtime": {}, "native_agent": {}})
+        instance_id = _create_instance()
+        agent_settings.set_settings(instance_id, worker_provider="myprovider", worker_model="my/model")
+
+        seen = {}
+
+        def fake_named(provider, model):
+            seen["provider"] = provider
+            seen["model"] = model
+            return _FakeBackend(["a"])
+
+        monkeypatch.setattr(subagents, "_resolve_named_backend", fake_named)
+
+        _run(subagents.run_batch([{"goal": "one"}], parent_instance_id=instance_id))
+
+        assert seen == {"provider": "myprovider", "model": "my/model"}
+
+    def test_explicit_provider_model_still_wins_over_agent_settings(self, temp_db, monkeypatch):
+        from bot import agent_settings
+
+        monkeypatch.setattr(config, "_data", {"agent_runtime": {}, "native_agent": {}})
+        instance_id = _create_instance()
+        agent_settings.set_settings(instance_id, worker_provider="settings-provider", worker_model="settings/model")
+
+        seen = {}
+
+        def fake_named(provider, model):
+            seen["provider"] = provider
+            seen["model"] = model
+            return _FakeBackend(["a"])
+
+        monkeypatch.setattr(subagents, "_resolve_named_backend", fake_named)
+
+        _run(subagents.run_batch(
+            [{"goal": "one"}], parent_instance_id=instance_id, provider="explicit-provider", model="explicit/model",
+        ))
+
+        assert seen == {"provider": "explicit-provider", "model": "explicit/model"}

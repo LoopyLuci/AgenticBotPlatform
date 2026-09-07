@@ -968,6 +968,25 @@ def build_app() -> FastAPI:
         db.log_audit(actor="dashboard", action="skill_remove", detail=name)
         return {"ok": True}
 
+    @app.get("/api/agent-settings", dependencies=[Depends(_require_token)])
+    async def api_agent_settings_get(instance_id: Optional[int] = None):
+        from bot import agent_settings
+
+        return agent_settings.get(instance_id)
+
+    @app.post("/api/agent-settings", dependencies=[Depends(_require_token)])
+    async def api_agent_settings_set(payload: dict = Body(...)):
+        from bot import agent_settings
+
+        instance_id = payload.get("instance_id")
+        fields = {k: v for k, v in payload.items() if k in agent_settings.FIELDS}
+        try:
+            result = agent_settings.set_settings(instance_id, **fields)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        db.log_audit(actor="dashboard", action="agent_settings_update", detail=f"instance {instance_id}: {fields}")
+        return result
+
     @app.get("/api/personas", dependencies=[Depends(_require_token_or_api_key)])
     async def api_personas():
         from bot.personas import list_personas

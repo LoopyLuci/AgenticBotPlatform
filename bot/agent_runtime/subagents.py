@@ -133,6 +133,7 @@ async def run_batch(
     this module's own docstring and the plan that added this for why
     that's an honest, bounded claim rather than a persistent-process
     guarantee Hermes's own delegate_task(background=true) makes."""
+    from bot import agent_settings
     from bot.agent_runtime.tools import _delegation_depth
     from bot.config import config
 
@@ -147,11 +148,19 @@ async def run_batch(
             "raise agent_runtime.max_delegation_depth in config/backends.yaml if deeper nesting is required"
         )
 
-    cfg_cap = config.current.get("native_agent", {}).get("max_concurrent_children", DEFAULT_MAX_CONCURRENT_CHILDREN)
+    # A caller's own explicit args always win; absent that, fall back to
+    # the unified agent_settings surface (bot/agent_settings.py) before
+    # today's hardcoded/config defaults — purely additive, no behavior
+    # change for any existing call that already passes explicit args.
+    settings = agent_settings.get(parent_instance_id)
+    cfg_cap = settings["max_concurrent_children"]
     effective_cap = min(max_children, cfg_cap) if max_children else cfg_cap
     semaphore = asyncio.Semaphore(max(1, effective_cap))
 
+    if not provider and not model and settings["worker_provider"] and settings["worker_model"]:
+        provider, model = settings["worker_provider"], settings["worker_model"]
     backend = _resolve_named_backend(provider, model) if (provider and model) else _resolve_inherited_backend(parent_instance_id)
+    worker_effort = settings["worker_effort"]
 
     allowed_tools = None
     if role == "leaf":
@@ -163,7 +172,9 @@ async def run_batch(
     token = _delegation_depth.set(depth + 1)
     try:
         for i, task in enumerate(tasks):
-            handle = await _start_child(dispatch, i, task, backend, semaphore, allowed_tools, parent_instance_id)
+            handle = await _start_child(
+                dispatch, i, task, backend, semaphore, allowed_tools, parent_instance_id, worker_effort
+            )
             subagent_registry.register_child(dispatch, i, handle)
     finally:
         _delegation_depth.reset(token)
@@ -211,6 +222,7 @@ async def _start_child(
     semaphore: asyncio.Semaphore,
     allowed_tools: Optional[frozenset],
     parent_instance_id: Optional[int],
+    effort: Optional[str] = None,
 ):
     """Creates the child's ephemeral_sessions row and steer queue up
     front (before the task starts running), then wraps _run_one_child in
@@ -222,7 +234,9 @@ async def _start_child(
     goal = (task.get("goal") or "").strip()
     session_id = db.create_ephemeral_session(parent_instance_id, backend.name, backend.model, goal)
     steer_queue: "asyncio.Queue[str]" = asyncio.Queue()
-    coro = _run_one_child(index, task, goal, session_id, backend, semaphore, allowed_tools, parent_instance_id, steer_queue)
+    coro = _run_one_child(
+        index, task, goal, session_id, backend, semaphore, allowed_tools, parent_instance_id, steer_queue, effort
+    )
     aio_task = asyncio.create_task(coro)
     return ChildHandle(
         task=aio_task, steer_queue=steer_queue, ephemeral_session_id=session_id,
@@ -240,6 +254,7 @@ async def _run_one_child(
     allowed_tools: Optional[frozenset],
     parent_instance_id: Optional[int],
     steer_queue: "asyncio.Queue[str]",
+    effort: Optional[str] = None,
 ) -> dict[str, Any]:
     from bot import db
     from bot.agent_runtime.output_schema import validate_or_retry
@@ -253,6 +268,8 @@ async def _run_one_child(
         context: dict[str, Any] = {"instance_id": parent_instance_id, "steer_queue": steer_queue}
         if allowed_tools is not None:
             context["allowed_tools"] = allowed_tools
+        if effort is not None:
+            context["effort"] = effort
         try:
             result = await backend.ask(goal, context=context, timeout_s=CHILD_TIMEOUT_S)
             text = result.text

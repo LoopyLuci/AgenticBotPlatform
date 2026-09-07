@@ -478,6 +478,80 @@ async def cmd_effort(ctx: CmdContext, args: list[str]) -> str:
     return f"Effort set to {level} for future sends"
 
 
+_AGENT_SETTINGS_INT_FIELDS = ("max_concurrent_children",)
+_AGENT_SETTINGS_EFFORT_FIELDS = ("worker_effort", "manager_effort")
+_AGENT_SETTINGS_STR_FIELDS = ("worker_provider", "worker_model")
+
+
+async def cmd_agent_settings(ctx: CmdContext, args: list[str]) -> str:
+    """Unified agent/swarm control settings (bot/agent_settings.py) — how
+    many subagents run in parallel, what provider/model workers use, and
+    what effort (bot/effort.py) both workers and this instance's own
+    turns think at. For a hermes_cli/hermes_gateway-backed instance,
+    worker_effort/manager_effort write through to Hermes's own real
+    config (delegation.reasoning_effort/agent.reasoning_effort) instead
+    of this table — Hermes already owns that state natively."""
+    from bot import agent_settings, bot_instances, effort as effort_module
+
+    if ctx.instance_id is None:
+        return "no bot instance for this chat"
+    instance = bot_instances.get_instance(ctx.instance_id)
+    if instance is None:
+        return "bot instance not found"
+
+    if not args or args[0] == "show":
+        resolved = agent_settings.get(ctx.instance_id)
+        lines = [f"{k}: {v if v is not None else '(unset)'}" for k, v in resolved.items()]
+        return "Agent settings for this instance:\n" + "\n".join(lines)
+
+    if args[0] in ("set", "clear") and len(args) >= 2:
+        field = args[1]
+        is_hermes = instance.get("backend") in ("hermes_cli", "hermes_gateway")
+        clearing = args[0] == "clear"
+        if not clearing and len(args) < 3:
+            return f"Usage: /agent_settings set {field} <value>"
+        raw_value = None if clearing else " ".join(args[2:])
+
+        if field in _AGENT_SETTINGS_EFFORT_FIELDS:
+            value: Any = None
+            if not clearing:
+                level = raw_value.strip().lower()
+                if not effort_module.is_valid(level):
+                    return f"unknown effort level {level!r} — expected one of {', '.join(effort_module.EFFORT_LADDER)}"
+                value = level
+            if is_hermes:
+                from bot import hermes_config
+
+                hermes_home = instance.get("hermes_home")
+                if field == "manager_effort":
+                    hermes_config.set_agent_config(reasoning_effort=value, hermes_home=hermes_home, actor=ctx.actor)
+                else:
+                    hermes_config.set_delegation_config(reasoning_effort=value, hermes_home=hermes_home, actor=ctx.actor)
+                return f"{field} set to {value!r} in this instance's Hermes config."
+            agent_settings.set_settings(ctx.instance_id, **{field: value})
+            return f"{field} set to {value!r}."
+
+        if field in _AGENT_SETTINGS_INT_FIELDS:
+            if clearing:
+                agent_settings.set_settings(ctx.instance_id, **{field: None})
+                return f"{field} cleared."
+            if not raw_value.strip().isdigit():
+                return f"{field} must be a positive integer"
+            agent_settings.set_settings(ctx.instance_id, **{field: int(raw_value.strip())})
+            return f"{field} set to {raw_value.strip()}."
+
+        if field in _AGENT_SETTINGS_STR_FIELDS:
+            agent_settings.set_settings(ctx.instance_id, **{field: None if clearing else raw_value.strip()})
+            return f"{field} {'cleared' if clearing else f'set to {raw_value.strip()!r}'}."
+
+        return (
+            f"unknown field {field!r} — expected one of "
+            f"{', '.join(_AGENT_SETTINGS_INT_FIELDS + _AGENT_SETTINGS_EFFORT_FIELDS + _AGENT_SETTINGS_STR_FIELDS)}"
+        )
+
+    return "Usage: /agent_settings show | set <field> <value> | clear <field>"
+
+
 _DESKTOP_ACTIONS: dict[str, Callable[[], bool]] = {
     "start": desktop.start,
     "stop": desktop.stop,
@@ -1210,6 +1284,7 @@ COMMANDS: dict[str, Callable[[CmdContext, list[str]], Any]] = {
     "mcp": cmd_mcp,
     "project": cmd_project,
     "effort": cmd_effort,
+    "agent_settings": cmd_agent_settings,
     "new": cmd_new_session,
     "desktop_projects": cmd_desktop_projects,
     "sessions": cmd_sessions,
