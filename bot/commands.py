@@ -454,6 +454,30 @@ async def cmd_project(ctx: CmdContext, args: list[str]) -> str:
     return "Usage: /project open <path>"
 
 
+async def cmd_effort(ctx: CmdContext, args: list[str]) -> str:
+    """Only meaningful for a "ui"-backend instance — Claude Desktop's own
+    "Effort" toolbar slider (see bot/backends/ui_backend.py's
+    EFFORT_LEVELS) defaults to Low for every bot instance and is forced
+    back to whatever level is stored here before every single automated
+    send, so it can never silently drift up to a costlier tier."""
+    from bot.backends.ui_backend import EFFORT_LEVELS
+    from bot import bot_instances
+
+    if ctx.instance_id is None:
+        return "no bot instance for this chat"
+    instance = bot_instances.get_instance(ctx.instance_id)
+    if instance is None:
+        return "bot instance not found"
+    if not args:
+        current = instance.get("desktop_effort") or "low"
+        return f"Effort: {current} (levels: {', '.join(EFFORT_LEVELS)})"
+    level = args[0].strip().lower()
+    if level not in EFFORT_LEVELS:
+        return f"unknown effort level {level!r} — expected one of {', '.join(EFFORT_LEVELS)}"
+    bot_instances.update_instance(ctx.instance_id, actor=ctx.actor, desktop_effort=level)
+    return f"Effort set to {level} for future sends"
+
+
 _DESKTOP_ACTIONS: dict[str, Callable[[], bool]] = {
     "start": desktop.start,
     "stop": desktop.stop,
@@ -1118,6 +1142,7 @@ COMMANDS: dict[str, Callable[[CmdContext, list[str]], Any]] = {
     "model": cmd_model,
     "mcp": cmd_mcp,
     "project": cmd_project,
+    "effort": cmd_effort,
     "new": cmd_new_session,
     "sessions": cmd_sessions,
     "resume": cmd_resume,

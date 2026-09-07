@@ -114,6 +114,8 @@ def create_instance(
     persona: Optional[str] = None,
     hermes_home: Optional[str] = None,
     desktop_project: Optional[str] = None,
+    desktop_workspace_dir: Optional[str] = None,
+    desktop_effort: Optional[str] = None,
     actor: str = "dashboard",
 ) -> int:
     name = (name or "").strip()
@@ -127,8 +129,8 @@ def create_instance(
         try:
             cur = conn.execute(
                 "INSERT INTO bot_instances "
-                "(name, platform, backend, enabled, credentials, allowed_user_ids, admin_user_ids, action_overrides, can_target, model, custom_instructions, persona, hermes_home, desktop_project, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "(name, platform, backend, enabled, credentials, allowed_user_ids, admin_user_ids, action_overrides, can_target, model, custom_instructions, persona, hermes_home, desktop_project, desktop_workspace_dir, desktop_effort, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     name,
                     platform,
@@ -144,6 +146,8 @@ def create_instance(
                     (persona or "").strip() or DEFAULT_PERSONA,
                     (hermes_home or "").strip() or None,
                     (desktop_project or "").strip() or None,
+                    (desktop_workspace_dir or "").strip() or None,
+                    (desktop_effort or "").strip().lower() or "low",
                     _now(),
                     _now(),
                 ),
@@ -174,7 +178,7 @@ def update_instance(instance_id: int, actor: str = "dashboard", **fields: Any) -
 
     columns: list[str] = []
     params: list[Any] = []
-    for key in ("name", "platform", "backend", "enabled", "model", "custom_instructions", "persona", "hermes_home", "desktop_project"):
+    for key in ("name", "platform", "backend", "enabled", "model", "custom_instructions", "persona", "hermes_home", "desktop_project", "desktop_workspace_dir", "desktop_effort"):
         if key in fields:
             columns.append(f"{key}=?")
             params.append(1 if key == "enabled" and fields[key] else (0 if key == "enabled" else fields[key]))

@@ -11,7 +11,16 @@ from __future__ import annotations
 import sys
 from unittest.mock import MagicMock
 
-from bot.backends.ui_backend import UiBackend, UNTITLED_SESSION_KEY, REPLY_STABLE_SECONDS, _type_text_via_clipboard
+from bot.backends.ui_backend import (
+    UiBackend,
+    UNTITLED_SESSION_KEY,
+    REPLY_STABLE_SECONDS,
+    REPLY_COMPLETE_MARKER,
+    EFFORT_LEVELS,
+    DEFAULT_EFFORT,
+    _type_text_via_clipboard,
+    _is_chrome_or_echo,
+)
 
 
 def _button(text: str, enabled: bool = True) -> MagicMock:
@@ -151,6 +160,7 @@ class TestSyncAskReplyStability:
         backend._select_session = lambda win, session_key: None  # type: ignore[method-assign]
         backend._find_input = lambda win: field  # type: ignore[method-assign]
         backend._find_send_button = lambda win: send_btn  # type: ignore[method-assign]
+        backend._sync_ensure_effort = lambda win, level: None  # type: ignore[method-assign]
         monkeypatch.setattr("bot.backends.ui_backend._type_text_via_clipboard", lambda field, text: None)
 
         # Poll sequence: "Hello" appears, pauses for 2 polls (shorter than
@@ -179,6 +189,173 @@ class TestSyncAskReplyStability:
 
     def test_still_uses_the_shorter_default_window_when_unpatched(self):
         assert REPLY_STABLE_SECONDS >= 2.0
+
+    def test_reassembles_a_multi_part_reply_instead_of_trusting_the_truncated_announcement(self, monkeypatch):
+        """Real bug found live: the "Claude responded: <preview>"
+        announcement is only a one-sentence PREVIEW, not the full reply —
+        a real reply consisting of an opening sentence, three bulleted
+        list items, and a closing sentence announced only the opening
+        sentence. Once REPLY_COMPLETE_MARKER appears, extraction must
+        reassemble every new Text/ListItem fragment (in on-screen order),
+        not just trust the announcement."""
+        backend = UiBackend(poll_interval_s=0.01)
+        win = MagicMock()
+        field = MagicMock()
+        send_btn = _button("Send", enabled=True)
+        backend._connect = lambda: win  # type: ignore[method-assign]
+        backend._select_session = lambda win, session_key: None  # type: ignore[method-assign]
+        backend._find_input = lambda win: field  # type: ignore[method-assign]
+        backend._find_send_button = lambda win: send_btn  # type: ignore[method-assign]
+        backend._sync_ensure_effort = lambda win, level: None  # type: ignore[method-assign]
+        monkeypatch.setattr("bot.backends.ui_backend._type_text_via_clipboard", lambda field, text: None)
+
+        prompt = "List exactly three short bullet points about the color blue, then say goodbye."
+        full_reply_parts = [
+            "Blue is the color most associated with calm, trust, and stability.",
+            "The sky and ocean appear blue due to how they scatter and absorb sunlight.",
+            "Goodbye, and take care!",
+        ]
+        # The very first call (before the prompt is even typed) captures
+        # the pre-existing baseline; every call after that returns the
+        # full final content at once, including the truncated
+        # announcement and the completion marker — matches what was
+        # confirmed live (the marker and full content land together).
+        final_ordered = (
+            [f"You said: {prompt}", prompt]
+            + [f"Claude responded: {full_reply_parts[0]}"]
+            + full_reply_parts
+            + [REPLY_COMPLETE_MARKER, "Chat mode"]
+        )
+        calls = {"n": 0}
+
+        def fake_collect_texts(win):
+            calls["n"] += 1
+            return [] if calls["n"] == 1 else list(final_ordered)
+
+        backend._collect_texts = fake_collect_texts  # type: ignore[method-assign]
+
+        reply, discovered = backend._sync_ask(prompt, timeout_s=5, session_key="existing-session")
+
+        assert reply == "\n".join(full_reply_parts)
+
+    def test_marker_short_circuits_the_stability_wait(self, monkeypatch):
+        """The completion marker should finish extraction on the very
+        poll it appears, without waiting for REPLY_STABLE_SECONDS worth
+        of additional stable polls."""
+        monkeypatch.setattr("bot.backends.ui_backend.REPLY_STABLE_SECONDS", 100.0)
+        backend = UiBackend(poll_interval_s=0.01)
+        win = MagicMock()
+        field = MagicMock()
+        send_btn = _button("Send", enabled=True)
+        backend._connect = lambda: win  # type: ignore[method-assign]
+        backend._select_session = lambda win, session_key: None  # type: ignore[method-assign]
+        backend._find_input = lambda win: field  # type: ignore[method-assign]
+        backend._find_send_button = lambda win: send_btn  # type: ignore[method-assign]
+        backend._sync_ensure_effort = lambda win, level: None  # type: ignore[method-assign]
+        monkeypatch.setattr("bot.backends.ui_backend._type_text_via_clipboard", lambda field, text: None)
+
+        calls = {"n": 0}
+
+        def fake_collect_texts(win):
+            calls["n"] += 1
+            return [] if calls["n"] == 1 else ["Hi there!", REPLY_COMPLETE_MARKER]
+
+        backend._collect_texts = fake_collect_texts  # type: ignore[method-assign]
+
+        reply, discovered = backend._sync_ask("hi", timeout_s=2, session_key="existing-session")
+
+        assert reply == "Hi there!"
+
+
+class TestIsChromeOrEcho:
+    def test_excludes_echo_and_announcement_and_marker(self):
+        assert _is_chrome_or_echo("You said: hi", "hi")
+        assert _is_chrome_or_echo("Claude responded: Hi!", "hi")
+        assert _is_chrome_or_echo("hi", "hi")
+        assert _is_chrome_or_echo(REPLY_COMPLETE_MARKER, "hi")
+        assert _is_chrome_or_echo("Chat mode", "hi")
+
+    def test_keeps_real_reply_content(self):
+        assert not _is_chrome_or_echo("Hello! How can I help you today?", "hi")
+        assert not _is_chrome_or_echo("The sky and ocean appear blue.", "hi")
+
+
+class TestEffortLevels:
+    def test_default_is_low(self):
+        assert DEFAULT_EFFORT == "low"
+        assert EFFORT_LEVELS["low"] == 0.0
+
+    def test_six_ordered_levels(self):
+        assert list(EFFORT_LEVELS.keys()) == ["low", "medium", "high", "extra", "max", "ultracode"]
+        values = list(EFFORT_LEVELS.values())
+        assert values == sorted(values)
+
+
+class TestSyncEnsureEffort:
+    def test_noop_when_already_at_target_level(self):
+        backend = UiBackend()
+        win = MagicMock()
+        effort_btn = _button("Effort: Low")
+        win.descendants.side_effect = lambda control_type=None, **_: (
+            [effort_btn] if control_type == "Button" else []
+        )
+
+        backend._sync_ensure_effort(win, "low")
+
+        effort_btn.click_input.assert_not_called()
+
+    def test_clicks_and_sets_slider_when_level_differs(self):
+        backend = UiBackend()
+        win = MagicMock()
+        effort_btn = _button("Effort: High")
+        slider = MagicMock()
+        slider.window_text.return_value = "Effort"
+
+        def descendants(control_type=None, **_):
+            if control_type == "Button":
+                return [effort_btn]
+            if control_type == "Slider":
+                return [slider]
+            return []
+
+        win.descendants.side_effect = descendants
+
+        backend._sync_ensure_effort(win, "low")
+
+        effort_btn.click_input.assert_called_once()
+        slider.set_value.assert_called_once_with(0.0)
+
+
+class TestFindDefaultWorkspaceChip:
+    def test_returns_the_non_local_chip_between_feedback_and_add_folder(self):
+        backend = UiBackend()
+        win = _win([
+            _button("Send feedback"),
+            _button("Local"),
+            _button("Aion"),
+            _button("Add another folder"),
+            _button("Send"),
+        ])
+
+        chip = backend._find_default_workspace_chip(win)
+
+        assert chip.window_text() == "Aion"
+
+    def test_returns_none_when_only_local_is_present(self):
+        backend = UiBackend()
+        win = _win([
+            _button("Send feedback"),
+            _button("Local"),
+            _button("Add another folder"),
+        ])
+
+        assert backend._find_default_workspace_chip(win) is None
+
+    def test_returns_none_when_add_another_folder_is_absent(self):
+        backend = UiBackend()
+        win = _win([_button("Local")])
+
+        assert backend._find_default_workspace_chip(win) is None
 
 
 class _FakeWin32Clipboard:

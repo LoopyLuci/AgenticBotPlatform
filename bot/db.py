@@ -210,6 +210,8 @@ CREATE TABLE IF NOT EXISTS bot_instances (
     persona            TEXT NOT NULL DEFAULT 'assistant', -- one of bot/personas.py's PERSONA_PRESETS keys; purely metadata + a custom_instructions seed
     hermes_home        TEXT,                          -- optional per-instance HERMES_HOME override (hermes_gateway only) — see bot/backends/hermes_gateway_backend.py's isolation docstring; NULL means "share the machine-wide default Hermes home", today's historical behavior
     desktop_project    TEXT,                          -- optional per-instance Claude Desktop project name (ui backend only) — pins this instance's new sessions to one project's "New session in <name>" button instead of the bare "New" one; NULL means outside any project, today's historical behavior
+    desktop_workspace_dir TEXT,                       -- optional per-instance absolute folder path (ui backend only) — new sessions open scoped to exactly this folder via Desktop's own Ctrl+N "Open folder..." replace flow, guaranteeing isolation from any existing project; takes priority over desktop_project when both are set
+    desktop_effort     TEXT NOT NULL DEFAULT 'low',    -- ui backend only: Desktop's own "Effort" toolbar slider (low/medium/high/extra/max/ultracode) is forced to this level before every send — see bot/backends/ui_backend.py's EFFORT_LEVELS
     created_at         TEXT NOT NULL,
     updated_at         TEXT NOT NULL,
     last_started_at    TEXT,
@@ -803,6 +805,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE bot_instances ADD COLUMN hermes_home TEXT")
     if "desktop_project" not in instance_cols:
         conn.execute("ALTER TABLE bot_instances ADD COLUMN desktop_project TEXT")
+    if "desktop_workspace_dir" not in instance_cols:
+        conn.execute("ALTER TABLE bot_instances ADD COLUMN desktop_workspace_dir TEXT")
+    if "desktop_effort" not in instance_cols:
+        conn.execute("ALTER TABLE bot_instances ADD COLUMN desktop_effort TEXT NOT NULL DEFAULT 'low'")
 
     chat_session_cols = {row["name"] for row in conn.execute("PRAGMA table_info(chat_sessions)").fetchall()}
     if "thread_id" not in chat_session_cols:

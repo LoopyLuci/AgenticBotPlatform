@@ -369,6 +369,8 @@ class Router:
         instance_model: Optional[str] = None
         instance_hermes_home: Optional[str] = None
         instance_desktop_project: Optional[str] = None
+        instance_desktop_workspace_dir: Optional[str] = None
+        instance_desktop_effort: Optional[str] = None
         desktop_session_key: Optional[str] = None
         # effective_prompt is what actually goes to the backend; prompt
         # itself stays the clean, original text for db.create_job() below
@@ -383,6 +385,8 @@ class Router:
                 instance_model = instance.get("model")
                 instance_hermes_home = instance.get("hermes_home")
                 instance_desktop_project = instance.get("desktop_project")
+                instance_desktop_workspace_dir = instance.get("desktop_workspace_dir")
+                instance_desktop_effort = instance.get("desktop_effort")
                 # A chat-specific link (set by /new or /resume — see
                 # db.link_chat_session()) always wins over the instance-wide
                 # fallback bot_instances.desktop_session_key is used for:
@@ -410,6 +414,8 @@ class Router:
             context.setdefault("instance_id", instance_id)
             context.setdefault("desktop_session_key", desktop_session_key)
             context.setdefault("desktop_project", instance_desktop_project)
+            context.setdefault("desktop_workspace_dir", instance_desktop_workspace_dir)
+            context.setdefault("desktop_effort", instance_desktop_effort)
 
         job_id = db.create_job(
             action_type=action_type,
@@ -536,7 +542,11 @@ class Router:
         # takes no such argument) — pass it conditionally rather than
         # unconditionally, so this call stays valid for every session-aware
         # backend.
-        create_kwargs = {"project": instance.get("desktop_project")} if backend_name == "ui" else {}
+        create_kwargs = (
+            {"project": instance.get("desktop_project"), "workspace_dir": instance.get("desktop_workspace_dir")}
+            if backend_name == "ui"
+            else {}
+        )
         key = await create(**create_kwargs)
         if chat_id is not None:
             db.link_chat_session(instance_id, chat_id, key, thread_id=thread_id)

@@ -1151,7 +1151,7 @@ def build_app() -> FastAPI:
         fields = {
             k: v
             for k, v in payload.items()
-            if k in ("name", "platform", "backend", "enabled", "credentials", "allowed_user_ids", "admin_user_ids", "action_overrides", "can_target", "model", "custom_instructions", "persona", "hermes_home", "desktop_project")
+            if k in ("name", "platform", "backend", "enabled", "credentials", "allowed_user_ids", "admin_user_ids", "action_overrides", "can_target", "model", "custom_instructions", "persona", "hermes_home", "desktop_project", "desktop_workspace_dir", "desktop_effort")
         }
         before = bot_instances.get_instance(instance_id)
         try:
