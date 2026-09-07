@@ -494,6 +494,34 @@ async def set_agent_settings(
 
 
 @mcp.tool()
+async def get_auto_manage_config(instance_id: int) -> dict:
+    """Current auto-management config for instance_id (enabled, trigger, interval, chat_id, goal_template)."""
+    return await _request("GET", f"/api/auto-manage/{instance_id}")
+
+
+@mcp.tool()
+async def set_auto_manage_config(
+    instance_id: int,
+    enabled: Optional[bool] = None,
+    chat_id: Optional[Any] = None,
+    thread_id: Optional[Any] = None,
+    trigger: Optional[str] = None,
+    interval: Optional[str] = None,
+    goal_template: Optional[str] = None,
+) -> dict:
+    """Enable/disable or reconfigure autonomous manager check-ins for
+    instance_id (must be persona="manager"). trigger: "scheduled",
+    "kanban_card_created", or "both". Pass enabled=True with chat_id to
+    turn it on."""
+    payload = {
+        "enabled": enabled, "chat_id": chat_id, "thread_id": thread_id,
+        "trigger": trigger, "interval": interval, "goal_template": goal_template,
+    }
+    payload = {k: v for k, v in payload.items() if v is not None}
+    return await _request("POST", f"/api/auto-manage/{instance_id}", json=payload)
+
+
+@mcp.tool()
 async def list_available_models(instance_id: Optional[int] = None) -> dict:
     """The full model catalog Claude needs to pick an "optimal free model":
     Claude's own live /v1/models, BotServer's custom_model provider

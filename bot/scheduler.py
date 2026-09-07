@@ -100,6 +100,18 @@ async def _fire(row) -> None:
         # check back next poll instead of firing on top of it.
         return
 
+    if row["kind"] == "auto_manage":
+        # Funnels through bot/auto_manage.py's single shared check-in path
+        # (the same one the reactive kanban-card trigger uses) instead of
+        # the generic dispatch below, so the two triggers can never
+        # diverge in what a check-in actually does.
+        from bot import auto_manage
+
+        await auto_manage.run_check_in(instance_id, reason="scheduled check-in")
+        next_run = _iso(_now() + timedelta(seconds=row["interval_s"]))
+        db.mark_scheduled_command_ran(row["id"], next_run)
+        return
+
     async def _deliver(outcome: str, result) -> None:
         if outcome != "ran":
             return

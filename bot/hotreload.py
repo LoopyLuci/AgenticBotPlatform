@@ -121,6 +121,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.auth",
     "bot.slash_access",
     "bot.scheduler",
+    "bot.auto_manage",  # depends on bot.scheduler (enable/disable manage the underlying schedule row) — must follow it
     "bot.memory",
     "bot.kanban",
     "bot.skills",

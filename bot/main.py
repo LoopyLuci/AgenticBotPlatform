@@ -189,6 +189,18 @@ async def run() -> None:
 
     scheduler_task = asyncio.create_task(scheduler.run_forever(stop_event))
 
+    # Reactive half of auto-management (bot/auto_manage.py) — a new
+    # kanban card fires a real check-in for that board's owning instance,
+    # if it's configured to react to this trigger. The scheduled half
+    # needs no separate wiring here: it's a normal scheduled_commands row
+    # (kind="auto_manage") the scheduler task above already polls.
+    from bot import auto_manage, db as _db
+
+    def _on_kanban_card_created(card_id: int) -> None:
+        asyncio.create_task(auto_manage.maybe_trigger_from_kanban_card(card_id))
+
+    _db.on_kanban_card_created(_on_kanban_card_created)
+
     from bot import peers
 
     peers_health_task = asyncio.create_task(peers.health_check_forever(stop_event))

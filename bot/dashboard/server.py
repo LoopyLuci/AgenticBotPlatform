@@ -987,6 +987,40 @@ def build_app() -> FastAPI:
         db.log_audit(actor="dashboard", action="agent_settings_update", detail=f"instance {instance_id}: {fields}")
         return result
 
+    @app.get("/api/auto-manage/{instance_id}", dependencies=[Depends(_require_token)])
+    async def api_auto_manage_get(instance_id: int):
+        from bot import auto_manage
+
+        try:
+            return auto_manage.get_config(instance_id)
+        except auto_manage.AutoManageError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+
+    @app.post("/api/auto-manage/{instance_id}", dependencies=[Depends(_require_token)])
+    async def api_auto_manage_set(instance_id: int, payload: dict = Body(...)):
+        from bot import auto_manage
+
+        try:
+            if payload.get("enabled") is False:
+                result = auto_manage.disable(instance_id, actor="dashboard")
+            elif payload.get("enabled") is True:
+                result = auto_manage.enable(
+                    instance_id,
+                    chat_id=payload.get("chat_id"),
+                    thread_id=payload.get("thread_id"),
+                    trigger=payload.get("trigger", "scheduled"),
+                    interval=payload.get("interval", "30m"),
+                    goal_template=payload.get("goal_template"),
+                    actor="dashboard",
+                )
+            else:
+                fields = {k: v for k, v in payload.items() if k in ("trigger", "interval", "goal_template", "chat_id", "thread_id")}
+                result = auto_manage.set_config(instance_id, actor="dashboard", **fields)
+        except auto_manage.AutoManageError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        db.log_audit(actor="dashboard", action="auto_manage_update", detail=f"instance {instance_id}: {payload}")
+        return result
+
     @app.get("/api/personas", dependencies=[Depends(_require_token_or_api_key)])
     async def api_personas():
         from bot.personas import list_personas

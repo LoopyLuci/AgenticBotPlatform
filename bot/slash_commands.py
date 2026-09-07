@@ -56,6 +56,8 @@ COMMAND_DEFS: tuple[CommandDef, ...] = (
                args_hint="[low|medium|high|extra|max|ultracode]"),
     CommandDef("agent_settings", "Show/set swarm concurrency, worker model, and effort settings", category="Config",
                args_hint="show | set <field> <value> | clear <field>"),
+    CommandDef("auto_manage", "Autonomous manager check-ins (scheduled/reactive/both)", category="Config",
+               args_hint="show | enable | disable | set-trigger <..> | set-interval <..> | set-goal <text>"),
     CommandDef("title", "Title this chat's active session", category="Session", args_hint="<name>"),
     CommandDef("profile", "Show this chat's active bot/backend", category="Info"),
     CommandDef("whoami", "Show your slash-command access tier", category="Info"),

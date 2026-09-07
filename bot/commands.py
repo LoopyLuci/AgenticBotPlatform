@@ -552,6 +552,79 @@ async def cmd_agent_settings(ctx: CmdContext, args: list[str]) -> str:
     return "Usage: /agent_settings show | set <field> <value> | clear <field>"
 
 
+async def cmd_auto_manage(ctx: CmdContext, args: list[str]) -> str:
+    """Autonomous manager check-ins for this instance (bot/auto_manage.py)
+    — scheduled, reactive (a new kanban card), or both. Only meaningful
+    for a persona="manager" instance, since a check-in prompt assumes the
+    instance has real delegation tools (delegate_to_instance,
+    spawn_subagent, dispatch_*_swarm_goal) to act on it with."""
+    from bot import auto_manage, bot_instances
+
+    if ctx.instance_id is None:
+        return "no bot instance for this chat"
+    instance = bot_instances.get_instance(ctx.instance_id)
+    if instance is None:
+        return "bot instance not found"
+
+    if not args or args[0] == "show":
+        cfg = auto_manage.get_config(ctx.instance_id)
+        if not cfg.get("enabled"):
+            return "Auto-management is off for this instance."
+        lines = [f"{k}: {v}" for k, v in cfg.items() if k != "schedule_id"]
+        return "Auto-management is on:\n" + "\n".join(lines)
+
+    if args[0] == "enable":
+        if instance.get("persona") != "manager":
+            return "Auto-management requires this instance's persona to be \"manager\"."
+        try:
+            cfg = auto_manage.enable(ctx.instance_id, chat_id=ctx.chat_id, thread_id=ctx.thread_id, actor=ctx.actor)
+        except auto_manage.AutoManageError as exc:
+            return str(exc)
+        return f"Auto-management enabled (trigger={cfg['trigger']}, interval={cfg['interval']})."
+
+    if args[0] == "disable":
+        auto_manage.disable(ctx.instance_id, actor=ctx.actor)
+        return "Auto-management disabled."
+
+    if args[0] == "set-trigger" and len(args) >= 2:
+        trigger = args[1].strip().lower()
+        if trigger not in auto_manage.VALID_TRIGGERS:
+            return f"trigger must be one of {auto_manage.VALID_TRIGGERS}"
+        cfg = auto_manage.get_config(ctx.instance_id)
+        if cfg.get("enabled"):
+            auto_manage.enable(
+                ctx.instance_id, chat_id=cfg.get("chat_id", ctx.chat_id), thread_id=cfg.get("thread_id"),
+                trigger=trigger, interval=cfg.get("interval", "30m"), goal_template=cfg.get("goal_template"),
+                actor=ctx.actor,
+            )
+        else:
+            auto_manage.set_config(ctx.instance_id, actor=ctx.actor, trigger=trigger)
+        return f"Trigger set to {trigger!r}."
+
+    if args[0] == "set-interval" and len(args) >= 2:
+        interval = args[1].strip()
+        cfg = auto_manage.get_config(ctx.instance_id)
+        if cfg.get("enabled") and cfg.get("trigger") in ("scheduled", "both"):
+            try:
+                auto_manage.enable(
+                    ctx.instance_id, chat_id=cfg.get("chat_id", ctx.chat_id), thread_id=cfg.get("thread_id"),
+                    trigger=cfg.get("trigger", "scheduled"), interval=interval, goal_template=cfg.get("goal_template"),
+                    actor=ctx.actor,
+                )
+            except auto_manage.AutoManageError as exc:
+                return str(exc)
+        else:
+            auto_manage.set_config(ctx.instance_id, actor=ctx.actor, interval=interval)
+        return f"Interval set to {interval!r}."
+
+    if args[0] == "set-goal" and len(args) >= 2:
+        goal_template = " ".join(args[1:])
+        auto_manage.set_config(ctx.instance_id, actor=ctx.actor, goal_template=goal_template)
+        return "Goal template updated."
+
+    return "Usage: /auto_manage show | enable | disable | set-trigger <scheduled|kanban_card_created|both> | set-interval <duration> | set-goal <text>"
+
+
 _DESKTOP_ACTIONS: dict[str, Callable[[], bool]] = {
     "start": desktop.start,
     "stop": desktop.stop,
@@ -1285,6 +1358,7 @@ COMMANDS: dict[str, Callable[[CmdContext, list[str]], Any]] = {
     "project": cmd_project,
     "effort": cmd_effort,
     "agent_settings": cmd_agent_settings,
+    "auto_manage": cmd_auto_manage,
     "new": cmd_new_session,
     "desktop_projects": cmd_desktop_projects,
     "sessions": cmd_sessions,

@@ -48,6 +48,7 @@ _message_listeners: list[Callable[[int], None]] = []
 _job_listeners: list[Callable[[int], None]] = []
 _job_tool_event_listeners: list[Callable[[int], None]] = []
 _job_children_listeners: list[Callable[[int], None]] = []
+_kanban_card_created_listeners: list[Callable[[int], None]] = []
 
 
 def on_message_logged(callback: Callable[[int], None]) -> None:
@@ -70,6 +71,14 @@ def on_job_children_set(callback: Callable[[int], None]) -> None:
     breakdown (parsed from the final reply — see
     bot/swarm/child_parser.py) has been written."""
     _job_children_listeners.append(callback)
+
+
+def on_kanban_card_created(callback: Callable[[int], None]) -> None:
+    """Fired with a card_id right after a new kanban card is inserted —
+    the reactive half of auto-management (bot/auto_manage.py): a manager
+    instance configured with trigger including "kanban_card_created" gets
+    a real check-in call for that board's owning instance."""
+    _kanban_card_created_listeners.append(callback)
 
 
 def _notify_message_logged(message_id: int) -> None:
@@ -102,6 +111,14 @@ def _notify_job_children_set(job_id: int) -> None:
             cb(job_id)
         except Exception:
             logger.exception("on_job_children_set callback failed")
+
+
+def _notify_kanban_card_created(card_id: int) -> None:
+    for cb in _kanban_card_created_listeners:
+        try:
+            cb(card_id)
+        except Exception:
+            logger.exception("on_kanban_card_created callback failed")
 
 
 SCHEMA = """
@@ -1312,7 +1329,9 @@ def create_kanban_card(board_id: int, column_name: str, text: str) -> int:
             (board_id, column_name, text, pos_row["p"], _now(), _now()),
         )
         conn.commit()
-        return cur.lastrowid
+        card_id = cur.lastrowid
+    _notify_kanban_card_created(card_id)
+    return card_id
 
 
 def list_kanban_cards(board_id: int) -> list[sqlite3.Row]:
