@@ -142,6 +142,36 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "input_schema": {"type": "object", "properties": {}},
     },
     {
+        "name": "create_skill",
+        "description": (
+            "Author a brand-new skill directly from text — no file needed first. Use this to save something "
+            "you just learned, or a set of instructions the user asked you to remember for future use with "
+            "read_skill. Skills are plain descriptive text, never executed."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Short identifier — letters, digits, _ or - only."},
+                "description": {"type": "string", "description": "One-line summary shown in skill listings."},
+                "content": {"type": "string", "description": "The full skill text read_skill will return."},
+                "global_": {
+                    "type": "boolean",
+                    "description": "Make this visible to every bot instance, not just yours. Requires manager persona.",
+                },
+            },
+            "required": ["name", "content"],
+        },
+    },
+    {
+        "name": "remove_skill",
+        "description": "Delete one of your own skills by name.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+        },
+    },
+    {
         "name": "kanban_add_card",
         "description": "Add a card to one of your kanban boards (created automatically the first time it's named).",
         "input_schema": {
@@ -600,6 +630,42 @@ async def execute_tool(name: str, tool_input: dict, *, workspace: Path, instance
         if instance_id is None:
             raise ToolError("list_skills needs an instance context")
         return _json_dumps(bot_skills.list_for_instance(instance_id))
+
+    if name == "create_skill":
+        from bot import bot_instances, skills as bot_skills
+
+        if instance_id is None:
+            raise ToolError("create_skill needs an instance context")
+        global_ = bool(tool_input.get("global_"))
+        if global_:
+            # A global skill is visible to every instance at once — there's
+            # no single "target" for agent_control.can_target's per-instance
+            # allowlist to check, so this reuses the same "manager" trust
+            # convention persona=manager already carries elsewhere rather
+            # than inventing a new wildcard allowlist concept.
+            caller = bot_instances.get_instance(instance_id)
+            if not caller or caller.get("persona") != "manager":
+                raise ToolError("creating a global skill requires a manager-persona instance")
+        try:
+            result = bot_skills.create(
+                instance_id,
+                tool_input.get("name") or "",
+                tool_input.get("description") or "",
+                tool_input.get("content") or "",
+                global_=global_,
+            )
+        except bot_skills.SkillError as exc:
+            raise ToolError(str(exc))
+        return _json_dumps(result)
+
+    if name == "remove_skill":
+        from bot import skills as bot_skills
+
+        if instance_id is None:
+            raise ToolError("remove_skill needs an instance context")
+        skill_name = (tool_input.get("name") or "").strip()
+        removed = bot_skills.remove(instance_id, skill_name)
+        return f"Removed skill {skill_name!r}." if removed else f"No skill named {skill_name!r} found."
 
     if name == "kanban_add_card":
         from bot import kanban

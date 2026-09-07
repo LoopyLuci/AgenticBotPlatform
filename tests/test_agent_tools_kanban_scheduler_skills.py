@@ -148,3 +148,57 @@ def test_install_skill_refuses_path_outside_workspace(temp_db, tmp_path, tmp_pat
         _exec(
             "install_skill", {"path": str(outside_file)}, instance_id=instance_id, workspace=tmp_path,
         )
+
+
+def test_create_skill_needs_no_file(temp_db, tmp_path):
+    instance_id = _create_instance()
+
+    created = json.loads(_exec(
+        "create_skill",
+        {"name": "learned_thing", "description": "Something I learned", "content": "Full details here."},
+        instance_id=instance_id, workspace=tmp_path,
+    ))
+    assert created == {"name": "learned_thing", "description": "Something I learned", "global": False}
+
+    content = _exec("read_skill", {"name": "learned_thing"}, instance_id=instance_id, workspace=tmp_path)
+    assert content == "Full details here."
+
+
+def test_create_skill_rejects_invalid_name(temp_db, tmp_path):
+    instance_id = _create_instance()
+    with pytest.raises(agent_tools.ToolError, match="valid skill name"):
+        _exec("create_skill", {"name": "not a valid name!", "content": "x"}, instance_id=instance_id, workspace=tmp_path)
+
+
+def test_create_skill_global_requires_manager_persona(temp_db, tmp_path):
+    from bot import bot_instances
+
+    instance_id = _create_instance()
+    with pytest.raises(agent_tools.ToolError, match="manager-persona"):
+        _exec(
+            "create_skill", {"name": "global_thing", "content": "x", "global_": True},
+            instance_id=instance_id, workspace=tmp_path,
+        )
+
+    bot_instances.update_instance(instance_id, persona="manager")
+    created = json.loads(_exec(
+        "create_skill", {"name": "global_thing", "content": "x", "global_": True},
+        instance_id=instance_id, workspace=tmp_path,
+    ))
+    assert created["global"] is True
+
+    other_id = bot_instances.create_instance(
+        name="worker-2", platform="telegram", backend="api",
+        credentials={"bot_token": "123456789:AAExampleTokenFromBotFather1234"},
+        allowed_user_ids=[111], enabled=False,
+    )
+    content = _exec("read_skill", {"name": "global_thing"}, instance_id=other_id, workspace=tmp_path)
+    assert content == "x"
+
+
+def test_remove_skill(temp_db, tmp_path):
+    instance_id = _create_instance()
+    _exec("create_skill", {"name": "temp_skill", "content": "x"}, instance_id=instance_id, workspace=tmp_path)
+
+    assert "Removed" in _exec("remove_skill", {"name": "temp_skill"}, instance_id=instance_id, workspace=tmp_path)
+    assert "No skill" in _exec("remove_skill", {"name": "temp_skill"}, instance_id=instance_id, workspace=tmp_path)

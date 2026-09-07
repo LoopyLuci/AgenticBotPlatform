@@ -40,7 +40,11 @@ LEAF_BLOCKED_TOOLS = frozenset({
     # A leaf worker shouldn't schedule recurring commands or install new
     # skills in the parent's name — same reasoning as save_memory/
     # write_project_context above, just for two tools added later.
-    "schedule_command", "install_skill",
+    "schedule_command", "install_skill", "create_skill",
+    # New code-execution-authoring tools (added alongside create_skill) —
+    # a leaf worker must never author or activate new unsandboxed,
+    # full-privilege plugin code in the parent's name.
+    "create_plugin", "enable_plugin",
 })
 
 DEFAULT_MAX_CONCURRENT_CHILDREN = 6

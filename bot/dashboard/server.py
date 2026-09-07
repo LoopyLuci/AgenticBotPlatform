@@ -913,6 +913,38 @@ def build_app() -> FastAPI:
         db.log_audit(actor="dashboard", action="plugin_remove", detail=name)
         return {"ok": True}
 
+    @app.get("/api/skills", dependencies=[Depends(_require_token)])
+    async def api_skills_list(instance_id: Optional[int] = None):
+        from bot import skills as bot_skills
+
+        return {"skills": bot_skills.list_for_instance(instance_id)}
+
+    @app.post("/api/skills", dependencies=[Depends(_require_token)])
+    async def api_skills_create(payload: dict = Body(...)):
+        from bot import skills as bot_skills
+
+        try:
+            info = bot_skills.create(
+                payload.get("instance_id"),
+                payload.get("name", ""),
+                payload.get("description", ""),
+                payload.get("content", ""),
+                global_=bool(payload.get("global_")),
+            )
+        except bot_skills.SkillError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        db.log_audit(actor="dashboard", action="skill_create", detail=info["name"])
+        return info
+
+    @app.delete("/api/skills/{name}", dependencies=[Depends(_require_token)])
+    async def api_skills_delete(name: str, instance_id: Optional[int] = None):
+        from bot import skills as bot_skills
+
+        if not bot_skills.remove(instance_id, name):
+            raise HTTPException(status_code=404, detail=f"no skill named {name!r}")
+        db.log_audit(actor="dashboard", action="skill_remove", detail=name)
+        return {"ok": True}
+
     @app.get("/api/personas", dependencies=[Depends(_require_token_or_api_key)])
     async def api_personas():
         from bot.personas import list_personas

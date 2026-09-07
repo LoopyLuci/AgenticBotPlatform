@@ -19,6 +19,7 @@ gets); the rest is the content returned by read_skill.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -26,9 +27,19 @@ from bot import db
 
 MAX_INSTALL_CHARS = 20000
 
+# Same shape a file's stem naturally produces (install() derives name from
+# Path.stem) — enforced explicitly for create(), which has no file to
+# derive a safe name from, so a caller-supplied name needs its own check.
+_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
 
 class SkillError(Exception):
     pass
+
+
+def _description_from(text: str) -> str:
+    lines = text.splitlines()
+    return (lines[0].strip().lstrip("#").strip() if lines else "") or "(no description)"
 
 
 def install(instance_id: Optional[int], path: str) -> dict:
@@ -38,11 +49,37 @@ def install(instance_id: Optional[int], path: str) -> dict:
     text = p.read_text(encoding="utf-8", errors="replace")
     if len(text) > MAX_INSTALL_CHARS:
         raise SkillError(f"{path!r} is too large ({len(text)} chars, max {MAX_INSTALL_CHARS})")
-    lines = text.splitlines()
-    description = (lines[0].strip().lstrip("#").strip() if lines else "") or "(no description)"
+    description = _description_from(text)
     name = p.stem
     db.install_skill(instance_id, name, description, text)
     return {"name": name, "description": description}
+
+
+def create(
+    instance_id: Optional[int], name: str, description: str, content: str, *, global_: bool = False
+) -> dict:
+    """Registers a skill directly from text — no file-path prerequisite,
+    unlike install(). This is what lets an agent author a new skill
+    on the spot (from what it just learned, or what the user asked for)
+    without the awkward write_file-into-workspace-then-install_skill
+    two-step that was the only path before this existed. Skills are
+    inert descriptive text, never executed, so this carries none of
+    install_plugin's code-execution risk and needs no approval gate.
+    `global_=True` makes it visible to every instance (db.install_skill's
+    existing instance_id=None convention) — callers exposing this to an
+    agent must apply their own cross-instance trust check first (see
+    agent_control.py), same as update_agent_config's cross-instance
+    guard."""
+    name = (name or "").strip()
+    if not _NAME_RE.match(name):
+        raise SkillError(f"{name!r} isn't a valid skill name — use letters, digits, _ or - only (max 64 chars)")
+    content = content or ""
+    if len(content) > MAX_INSTALL_CHARS:
+        raise SkillError(f"content is too large ({len(content)} chars, max {MAX_INSTALL_CHARS})")
+    description = (description or "").strip() or _description_from(content)
+    target_instance_id = None if global_ else instance_id
+    db.install_skill(target_instance_id, name, description, content)
+    return {"name": name, "description": description, "global": global_}
 
 
 def remove(instance_id: Optional[int], name: str) -> bool:

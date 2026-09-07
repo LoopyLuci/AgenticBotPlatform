@@ -401,6 +401,31 @@ async def list_project_context() -> dict:
 
 
 @mcp.tool()
+async def list_skills(instance_id: Optional[int] = None) -> dict:
+    """List skills visible to instance_id (its own plus every global one),
+    or every global skill if instance_id is omitted."""
+    params = {"instance_id": instance_id} if instance_id is not None else {}
+    return await _request("GET", "/api/skills", params=params)
+
+
+@mcp.tool()
+async def create_skill(name: str, content: str, description: str = "", instance_id: Optional[int] = None, global_: bool = False) -> dict:
+    """Author a new skill directly from text — no file needed. Pass
+    global_=True to make it visible to every bot instance."""
+    return await _request(
+        "POST", "/api/skills",
+        json={"name": name, "description": description, "content": content, "instance_id": instance_id, "global_": global_},
+    )
+
+
+@mcp.tool()
+async def remove_skill(name: str, instance_id: Optional[int] = None) -> dict:
+    """Delete a skill by name (instance-owned, or global if instance_id is omitted)."""
+    params = {"instance_id": instance_id} if instance_id is not None else {}
+    return await _request("DELETE", f"/api/skills/{name}", params=params)
+
+
+@mcp.tool()
 async def list_available_models(instance_id: Optional[int] = None) -> dict:
     """The full model catalog Claude needs to pick an "optimal free model":
     Claude's own live /v1/models, BotServer's custom_model provider
