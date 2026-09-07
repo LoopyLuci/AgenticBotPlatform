@@ -11,7 +11,7 @@ from __future__ import annotations
 import sys
 from unittest.mock import MagicMock
 
-from bot.backends.ui_backend import UiBackend, UNTITLED_SESSION_KEY, _type_text_via_clipboard
+from bot.backends.ui_backend import UiBackend, UNTITLED_SESSION_KEY, REPLY_STABLE_SECONDS, _type_text_via_clipboard
 
 
 def _button(text: str, enabled: bool = True) -> MagicMock:
@@ -129,6 +129,56 @@ class TestCreateSessionSentinel:
         key = backend._sync_create_session(timeout_s=1, project="PrivateProject")
 
         assert key == UNTITLED_SESSION_KEY
+
+
+class TestSyncAskReplyStability:
+    def test_does_not_truncate_a_reply_that_pauses_mid_generation(self, monkeypatch):
+        """Real bug found live: the reply-completion check declared a
+        reply "done" after just 1s of no visible text change (2 polls at
+        the default 0.5s interval) — short enough that an ordinary pause
+        between an opening sentence and the rest of a longer answer got
+        mistaken for the model being finished, and a real reply reached
+        Telegram truncated to its first couple of words. This locks in
+        the fix: a much longer required-stable window that survives a
+        brief mid-generation pause before more text arrives."""
+        monkeypatch.setattr("bot.backends.ui_backend.REPLY_STABLE_SECONDS", 0.03)
+        backend = UiBackend(poll_interval_s=0.01)
+
+        win = MagicMock()
+        field = MagicMock()
+        send_btn = _button("Send", enabled=True)
+        backend._connect = lambda: win  # type: ignore[method-assign]
+        backend._select_session = lambda win, session_key: None  # type: ignore[method-assign]
+        backend._find_input = lambda win: field  # type: ignore[method-assign]
+        backend._find_send_button = lambda win: send_btn  # type: ignore[method-assign]
+        monkeypatch.setattr("bot.backends.ui_backend._type_text_via_clipboard", lambda field, text: None)
+
+        # Poll sequence: "Hello" appears, pauses for 2 polls (shorter than
+        # the required stable window), then "Hello world" appears and
+        # holds stable long enough to be declared finished.
+        sequence = [
+            {"Hello"},
+            {"Hello"},
+            {"Hello world"},
+            {"Hello world"},
+            {"Hello world"},
+            {"Hello world"},
+        ]
+        calls = {"n": 0}
+
+        def fake_collect_texts(win):
+            idx = min(calls["n"], len(sequence) - 1)
+            calls["n"] += 1
+            return list(sequence[idx])
+
+        backend._collect_texts = fake_collect_texts  # type: ignore[method-assign]
+
+        reply, discovered = backend._sync_ask("hi", timeout_s=5, session_key="existing-session")
+
+        assert reply == "Hello world"
+
+    def test_still_uses_the_shorter_default_window_when_unpatched(self):
+        assert REPLY_STABLE_SECONDS >= 2.0
 
 
 class _FakeWin32Clipboard:

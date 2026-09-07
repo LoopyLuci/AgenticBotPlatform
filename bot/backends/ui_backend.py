@@ -123,6 +123,14 @@ def _type_text_via_clipboard(field, text: str) -> None:
 # first reply lands.
 UNTITLED_SESSION_KEY = "__untitled__"
 
+# How long the visible text must stay completely unchanged before a reply is
+# considered finished streaming. Real bug found live: the old fixed "2 polls"
+# threshold (1s at the default 0.5s poll interval) was short enough that a
+# normal mid-generation pause (e.g. between an opening sentence and the rest
+# of a longer answer) got mistaken for the model being done — a real reply
+# was cut down to its first couple of words as a result.
+REPLY_STABLE_SECONDS = 4.0
+
 
 class UiBackend(Backend):
     name = "ui"
@@ -349,13 +357,23 @@ class UiBackend(Backend):
         deadline = time.monotonic() + timeout_s
         last_texts: set[str] = before_texts
         stable_reads = 0
+        # Real bug found live: requiring only 2 stable polls (1s at the
+        # default 0.5s interval) declared the reply "finished" the moment
+        # generation paused for a beat between an opening sentence and the
+        # rest of a longer answer (or any brief mid-generation pause) —
+        # confirmed live via a reply that stopped after its first couple of
+        # words. A much longer required-stable window makes a genuine
+        # mid-generation pause far less likely to be mistaken for
+        # completion, at the cost of every reply taking a few extra
+        # seconds to be recognized as done.
+        stable_reads_required = max(2, round(REPLY_STABLE_SECONDS / self.poll_interval_s))
         while time.monotonic() < deadline:
             time.sleep(self.poll_interval_s)
             current = {t.strip() for t in self._collect_texts(win) if t and t.strip()}
             new_text = current - before_texts
             if new_text and current == last_texts:
                 stable_reads += 1
-                if stable_reads >= 2:  # unchanged across two polls = response finished streaming
+                if stable_reads >= stable_reads_required:  # unchanged for REPLY_STABLE_SECONDS = response finished streaming
                     # Confirmed live: Desktop emits an accessibility-style
                     # announcement text "Claude responded: <reply>" right
                     # alongside the actual visible reply text (and
