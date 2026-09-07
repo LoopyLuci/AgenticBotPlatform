@@ -479,6 +479,33 @@ class UiBackend(Backend):
 
     NO_PROJECT_BUCKET = "(no project)"
 
+    def _sync_expand_paginated_sessions(self, win) -> None:
+        """Confirmed live: a project with many sessions shows a "Show N
+        more in <project>" button instead of all of them — without
+        clicking it, a scan silently under-reports how many chats that
+        project actually has (not just omits a count, the sessions are
+        genuinely absent from the accessibility tree until expanded).
+        Bounded loop since a very large project could paginate more than
+        once; a non-destructive read-only UI action, safe to do before any
+        listing scan."""
+        for _ in range(10):
+            expand_btn = None
+            for btn in win.descendants(control_type="Button"):
+                try:
+                    name = (btn.window_text() or "").strip().lower()
+                except Exception:
+                    continue
+                if re.match(r"^show \d+ more in ", name):
+                    expand_btn = btn
+                    break
+            if expand_btn is None:
+                return
+            try:
+                expand_btn.click_input()
+                time.sleep(self.poll_interval_s)
+            except Exception:
+                return
+
     def _sync_list_projects_with_sessions(self) -> dict[str, list[str]]:
         """Every project's real, currently-visible sidebar sessions,
         grouped by project — confirmed live that a project's own session
@@ -487,9 +514,20 @@ class UiBackend(Backend):
         the next project's, so a project can be inferred from button
         order alone without any explicit parent/child UIA relationship to
         rely on. Sessions appearing before the first project marker at all
-        (e.g. a pinned session outside any project) are grouped under
-        NO_PROJECT_BUCKET rather than dropped."""
+        are grouped under NO_PROJECT_BUCKET rather than dropped.
+
+        Confirmed live: Desktop's "Pinned" section shows one shortcut per
+        pinned PROJECT, styled identically to a real session button
+        ("Idle <project name>"/"Running <project name>") and appearing
+        before any "New session in X" marker — these are not distinct
+        conversations and were seen colliding with that same project's
+        real group found later in the same scan (e.g. "Idle PrivateProject" in
+        the pinned section vs. the real "PrivateProject" project's own
+        sessions). Any NO_PROJECT_BUCKET entry whose title exactly matches
+        a real project name found elsewhere in this scan is dropped as a
+        pinned shortcut rather than reported as a standalone chat."""
         win = self._connect()
+        self._sync_expand_paginated_sessions(win)
         new_session_prefix = "new session in "
         result: dict[str, list[str]] = {}
         current_project = self.NO_PROJECT_BUCKET
@@ -509,6 +547,10 @@ class UiBackend(Backend):
                 if name.startswith(status_prefix):
                     result.setdefault(current_project, []).append(name[len(status_prefix):])
                     break
+        if self.NO_PROJECT_BUCKET in result:
+            result[self.NO_PROJECT_BUCKET] = [
+                t for t in result[self.NO_PROJECT_BUCKET] if t not in result
+            ]
         if not result.get(self.NO_PROJECT_BUCKET):
             result.pop(self.NO_PROJECT_BUCKET, None)
         return result

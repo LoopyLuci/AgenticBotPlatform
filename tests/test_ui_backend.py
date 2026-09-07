@@ -375,6 +375,26 @@ class TestListProjectsWithSessions:
 
         assert grouped == {"Omnisystem": []}
 
+    def test_pinned_project_shortcut_is_not_reported_as_a_standalone_chat(self):
+        """Real bug found live: Desktop's "Pinned" section shows a
+        shortcut per pinned PROJECT styled identically to a real session
+        button ("Idle PrivateProject"), appearing before any "New session in X"
+        marker — a naive scan reported "PrivateProject" as a standalone chat in
+        NO_PROJECT_BUCKET even though "PrivateProject" was also a real project
+        with its own sessions found later in the same scan."""
+        backend = UiBackend()
+        win = _win([
+            _button("Idle PrivateProject"),  # pinned shortcut, not a real chat
+            _button("New session in PrivateProject"),
+            _button("Idle Fix the login bug"),
+        ])
+        backend._connect = lambda: win  # type: ignore[method-assign]
+
+        grouped = backend._sync_list_projects_with_sessions()
+
+        assert UiBackend.NO_PROJECT_BUCKET not in grouped
+        assert grouped["PrivateProject"] == ["Fix the login bug"]
+
     def test_no_project_bucket_omitted_when_empty(self):
         backend = UiBackend()
         win = _win([_button("New session in PrivateProject"), _button("Idle Fix the login bug")])
@@ -383,6 +403,35 @@ class TestListProjectsWithSessions:
         grouped = backend._sync_list_projects_with_sessions()
 
         assert UiBackend.NO_PROJECT_BUCKET not in grouped
+
+
+class TestExpandPaginatedSessions:
+    def test_clicks_show_more_until_it_disappears(self):
+        backend = UiBackend(poll_interval_s=0.001)
+        show_more = _button("Show 3 more in PrivateProject")
+        state = {"expanded": False}
+
+        def descendants(control_type=None, **_):
+            if control_type != "Button":
+                return []
+            return [] if state["expanded"] else [show_more]
+
+        def click():
+            state["expanded"] = True
+
+        show_more.click_input.side_effect = click
+        win = MagicMock()
+        win.descendants.side_effect = descendants
+
+        backend._sync_expand_paginated_sessions(win)
+
+        show_more.click_input.assert_called_once()
+
+    def test_noop_when_nothing_paginated(self):
+        backend = UiBackend()
+        win = _win([_button("Idle Fix the login bug")])
+
+        backend._sync_expand_paginated_sessions(win)  # must not raise
 
 
 class TestFindDefaultWorkspaceChip:
