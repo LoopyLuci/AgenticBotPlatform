@@ -133,9 +133,31 @@ class HermesGatewayBackend(Backend):
         except (ConnectionError, asyncio.IncompleteReadError, BackendError) as first_exc:
             logger.warning("hermes_gateway connection issue, retrying once: %s", first_exc)
             await self._teardown_connection()
+            # Confirmed live: a persisted desktop_session_key can outlive
+            # the actual Hermes session it names — its gateway process
+            # died (this project's own hermes_gateway backends spawn a
+            # real subprocess per Backend object; a BotServer restart, or
+            # this backend's own process exiting for any reason, discards
+            # it) and Hermes's session store is in-memory/lazy (confirmed
+            # against the real gateway source — a session has no state.db
+            # row until its first prompt), so nothing durable survives to
+            # let a *new* process recognize the old id. Retrying with the
+            # exact same stale key just fails identically a second time —
+            # confirmed live via a real "session not found" (code 4001)
+            # reported back through an actual Telegram message. Detecting
+            # that specific failure and forcing a fresh session on the
+            # retry is what actually recovers, instead of surfacing the
+            # same dead end twice.
+            retry_session_key = session_key
+            if session_key and "session not found" in str(first_exc):
+                logger.warning(
+                    "hermes_gateway session %r no longer exists on the current gateway process — "
+                    "starting a fresh one instead of retrying the same stale key", session_key,
+                )
+                retry_session_key = None
             try:
                 text, session_id, created = await self._ask_once(
-                    prompt, timeout_s, session_key, instance_id, job_id, action_type
+                    prompt, timeout_s, retry_session_key, instance_id, job_id, action_type
                 )
             except Exception as exc:
                 raise BackendError(f"hermes_gateway failed after retry: {exc}") from exc
