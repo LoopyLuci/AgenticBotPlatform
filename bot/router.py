@@ -368,6 +368,7 @@ class Router:
 
         instance_model: Optional[str] = None
         instance_hermes_home: Optional[str] = None
+        instance_desktop_project: Optional[str] = None
         desktop_session_key: Optional[str] = None
         # effective_prompt is what actually goes to the backend; prompt
         # itself stays the clean, original text for db.create_job() below
@@ -381,6 +382,7 @@ class Router:
             if instance:
                 instance_model = instance.get("model")
                 instance_hermes_home = instance.get("hermes_home")
+                instance_desktop_project = instance.get("desktop_project")
                 # A chat-specific link (set by /new or /resume — see
                 # db.link_chat_session()) always wins over the instance-wide
                 # fallback bot_instances.desktop_session_key is used for:
@@ -407,6 +409,7 @@ class Router:
         if instance_id is not None:
             context.setdefault("instance_id", instance_id)
             context.setdefault("desktop_session_key", desktop_session_key)
+            context.setdefault("desktop_project", instance_desktop_project)
 
         job_id = db.create_job(
             action_type=action_type,
@@ -529,12 +532,27 @@ class Router:
             raise BackendError(
                 f"backend {backend_name!r} does not support session linking — only ui/hermes_gateway do"
             )
-        key = await create()
+        # Only "ui" has a project concept (hermes_gateway's create_session
+        # takes no such argument) — pass it conditionally rather than
+        # unconditionally, so this call stays valid for every session-aware
+        # backend.
+        create_kwargs = {"project": instance.get("desktop_project")} if backend_name == "ui" else {}
+        key = await create(**create_kwargs)
         if chat_id is not None:
             db.link_chat_session(instance_id, chat_id, key, thread_id=thread_id)
         else:
             bot_instances.set_desktop_session_key(instance_id, key, actor="dashboard")
         return key
+
+    async def list_desktop_projects(self) -> list[str]:
+        """Every project currently visible in the real, running Claude
+        Desktop window's sidebar — the live data behind "let the user see
+        currently open projects" before pinning a ui-backend bot instance
+        to one via desktop_project. Raises BackendError with a clear
+        message (not a crash) if Desktop isn't running or the window
+        can't be read — callers should surface that text as-is."""
+        backend = self._get_backend("ui", config.current)
+        return await backend.list_projects()
 
     async def resume_session(
         self, instance_id: int, chat_id: Any, chat_session_id: int, thread_id: Optional[Any] = None

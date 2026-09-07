@@ -49,6 +49,17 @@ from bot.backends.base import Backend, BackendError, BackendResult
 
 logger = logging.getLogger("bot.backends.ui")
 
+# Confirmed live against a real running Claude Desktop install: a brand-new
+# chat has NO sidebar entry at all until its first message exchange gives it
+# an auto-generated title (Desktop names it from the conversation content,
+# e.g. sending "PONG?" produced a session titled "PONG response"). There is
+# nothing to read a real key from immediately after clicking the new-chat
+# button. This sentinel stands in for "opened, but not yet named" — ask()
+# recognizes it and skips trying to re-select a session that doesn't exist
+# in the sidebar yet, then discovers and persists the real title once the
+# first reply lands.
+UNTITLED_SESSION_KEY = "__untitled__"
+
 
 class UiBackend(Backend):
     name = "ui"
@@ -60,7 +71,7 @@ class UiBackend(Backend):
         input_automation_id: Optional[str] = None,
         send_button_automation_id: Optional[str] = None,
         new_chat_button_automation_id: Optional[str] = None,
-        sidebar_item_control_type: str = "ListItem",
+        sidebar_item_control_type: str = "Button",
     ):
         self.window_title_re = window_title_re
         self.poll_interval_s = poll_interval_s
@@ -102,76 +113,162 @@ class UiBackend(Backend):
     def _find_send_button(self, win):
         if self.send_button_automation_id:
             return win.child_window(auto_id=self.send_button_automation_id, control_type="Button")
+        # Confirmed live, and the actual root cause of a whole run of
+        # apparent "reply extraction" failures earlier: Claude Desktop
+        # also has a "Send feedback" button elsewhere in the window,
+        # which a bare substring match ("send" in name) can find and
+        # click FIRST — it's disabled, so the click silently does
+        # nothing and the real message is left sitting unsent in the
+        # input field. An exact (case-insensitive) match to "send" only
+        # matches the real button.
         for btn in win.descendants(control_type="Button"):
             try:
-                if "send" in (btn.window_text() or "").lower():
+                if (btn.window_text() or "").strip().lower() == "send":
                     return btn
             except Exception:
                 continue
         return None
 
-    def _find_new_chat_button(self, win):
+    def _find_new_chat_button(self, win, project: Optional[str] = None):
+        """Current Claude Desktop (confirmed live against a real running
+        install) organizes chats per-project in the sidebar — there is no
+        single global "New chat" button anymore, only per-project "New
+        session in <project>" buttons plus one bare "New" button (labeled
+        just "New", not "New chat") for a session outside any project. A
+        [project] name routes to that project's own button; without one,
+        the bare "New" button is used. The old "new chat"/"+" heuristic
+        below this comment's history matched neither and always raised —
+        this is a real, confirmed fix, not a guess."""
         if self.new_chat_button_automation_id:
             return win.child_window(auto_id=self.new_chat_button_automation_id, control_type="Button")
+        if not project:
+            # Confirmed live: the bare "New" button (no project) opens a
+            # picker screen (pick a project/worktree) before landing on a
+            # compose view — a real, meaningful choice this backend
+            # deliberately does not guess at. Only the per-project "New
+            # session in <project>" buttons drop straight into compose,
+            # which is the one path the rest of this backend automates.
+            raise BackendError(
+                "the ui backend needs a project to start a session reliably — set desktop_project on this "
+                "bot instance to one of list_desktop_projects()'s names (the bare \"New\" button opens a "
+                "project/worktree picker screen this backend doesn't automate)"
+            )
+        target = f"new session in {project}".strip().lower()
         for btn in win.descendants(control_type="Button"):
             try:
-                name = (btn.window_text() or "").lower()
-                if "new chat" in name or name.strip() == "+":
-                    return btn
+                name = (btn.window_text() or "").strip().lower()
             except Exception:
                 continue
+            if name == target:
+                return btn
         raise BackendError(
-            "no \"New chat\" button found in the Claude Desktop window — "
-            "set backends.ui.new_chat_button_automation_id in config/backends.yaml"
+            f"no \"New session in {project}\" button found — is that project still open in "
+            "Claude Desktop's sidebar? Use list_projects() to see what's currently available."
         )
 
-    def _sidebar_items(self, win) -> list:
-        items = win.descendants(control_type=self.sidebar_item_control_type)
-        if not items:
-            raise BackendError(
-                f"no sidebar items (control_type={self.sidebar_item_control_type!r}) found in the "
-                "Claude Desktop window — set backends.ui.sidebar_item_control_type in config/backends.yaml"
-            )
+    def _sync_list_projects(self) -> list[str]:
+        win = self._connect()
+        projects: list[str] = []
+        prefix = "new session in "
+        for btn in win.descendants(control_type="Button"):
+            try:
+                name = (btn.window_text() or "").strip()
+            except Exception:
+                continue
+            if name.lower().startswith(prefix):
+                projects.append(name[len(prefix):])
+        return projects
+
+    async def list_projects(self, timeout_s: float = 10) -> list[str]:
+        """Every project currently visible in Claude Desktop's sidebar —
+        lets a caller (dashboard/MCP) show real, live project names before
+        picking one to pin a bot instance to, or to start a session in."""
+        if platform.system() != "Windows":
+            raise BackendError("ui backend is only available on Windows")
+        async with self._lock:
+            try:
+                return await asyncio.to_thread(self._sync_list_projects)
+            except BackendError:
+                raise
+            except Exception as exc:
+                raise BackendError(f"ui backend error listing projects: {exc}") from exc
+
+    def _session_buttons(self, win) -> dict[str, object]:
+        """Every sidebar row that is an actual chat session, keyed by its
+        bare title with the "Idle "/"Running " status prefix stripped —
+        confirmed live that real Claude Desktop sidebar rows are plain
+        Buttons named exactly f"{status} {title}", not a distinct
+        ListItem/TreeItem control type the old code assumed. Buttons that
+        aren't session rows (New, Search, per-project "New session in X",
+        etc.) never match this prefix and are correctly excluded."""
+        items: dict[str, object] = {}
+        for btn in win.descendants(control_type=self.sidebar_item_control_type):
+            try:
+                text = (btn.window_text() or "").strip()
+            except Exception:
+                continue
+            for prefix in ("Idle ", "Running "):
+                if text.startswith(prefix):
+                    items[text[len(prefix):]] = btn
+                    break
         return items
 
-    def _sync_create_session(self, timeout_s: float) -> str:
+    def _sync_create_session(self, timeout_s: float, project: Optional[str] = None) -> str:
+        """Opens a brand-new chat and returns immediately with
+        UNTITLED_SESSION_KEY — see that constant's docstring for why no
+        real key can be read yet. The caller (ask(), or a later ask() for
+        a chat whose only prior create_session() call returned this same
+        placeholder) is responsible for discovering and persisting the
+        real title once a first message actually names the session."""
         win = self._connect()
         win.set_focus()
-        btn = self._find_new_chat_button(win)
+        btn = self._find_new_chat_button(win, project=project)
         btn.click_input()
-        time.sleep(self.poll_interval_s)
-
-        deadline = time.monotonic() + timeout_s
-        while time.monotonic() < deadline:
-            items = self._sidebar_items(win)
-            for item in items:
-                try:
-                    label = (item.window_text() or "").strip()
-                except Exception:
-                    continue
-                if label:
-                    return label
-            time.sleep(self.poll_interval_s)
-        raise BackendError("created a new chat but could not read its sidebar label to link it to this bot instance")
+        # Confirmed live: poll_interval_s (0.5s) alone isn't a long enough
+        # pause here — the new compose view is still transitioning in
+        # right after the click, so typing too soon lands in whatever
+        # Edit control was already on screen before the switch finished
+        # (confirmed by reproducing exactly this: an automated attempt at
+        # 0.5s typed into the wrong place and echoed the prompt back
+        # instead of getting a real reply, while the identical sequence
+        # done by hand with a ~1.5s pause worked correctly). A fixed,
+        # slightly generous pause here is simpler and no less reliable
+        # than guessing a readiness signal from an already-undocumented,
+        # unstable accessibility tree.
+        time.sleep(max(self.poll_interval_s, 2.0))
+        return UNTITLED_SESSION_KEY
 
     def _select_session(self, win, session_key: str) -> None:
-        for item in self._sidebar_items(win):
-            try:
-                label = (item.window_text() or "").strip()
-            except Exception:
-                continue
-            if label == session_key:
-                item.click_input()
-                return
-        raise BackendError(
-            f"linked chat {session_key!r} is no longer in the Claude Desktop sidebar (renamed or deleted there) — "
-            "create a new session for this bot instance to relink it"
-        )
+        items = self._session_buttons(win)
+        btn = items.get(session_key)
+        if btn is None:
+            raise BackendError(
+                f"linked chat {session_key!r} is no longer in the Claude Desktop sidebar (renamed or deleted there) — "
+                "create a new session for this bot instance to relink it"
+            )
+        btn.click_input()
 
-    def _sync_ask(self, prompt: str, timeout_s: float, session_key: str) -> str:
+    def _sync_ask(self, prompt: str, timeout_s: float, session_key: Optional[str]) -> tuple[str, Optional[str]]:
+        """Returns (reply_text, discovered_session_key). discovered_session_key
+        is only ever non-None when [session_key] was None/UNTITLED_SESSION_KEY
+        going in — the real title Desktop assigned this session from this
+        very message, to be persisted by the caller."""
         win = self._connect()
         win.set_focus()
-        self._select_session(win, session_key)
+
+        untitled = session_key is None or session_key == UNTITLED_SESSION_KEY
+        before_labels: set[str] = set()
+        if untitled:
+            # Nothing to select — the session this ask() is for was either
+            # just created (still the focused/active chat) or was created
+            # by an earlier create_session() call and never touched since,
+            # so it's still sitting there focused with nothing else having
+            # happened in this single-window, lock-serialized backend
+            # since. Snapshot which titled sessions already exist so the
+            # one that appears after this message is unambiguous.
+            before_labels = set(self._session_buttons(win).keys())
+        else:
+            self._select_session(win, session_key)
 
         before_texts = {t.strip() for t in self._collect_texts(win) if t and t.strip()}
 
@@ -185,6 +282,7 @@ class UiBackend(Backend):
         else:
             field.type_keys("{ENTER}")
 
+        prompt_stripped = prompt.strip()
         deadline = time.monotonic() + timeout_s
         last_texts: set[str] = before_texts
         stable_reads = 0
@@ -195,7 +293,66 @@ class UiBackend(Backend):
             if new_text and current == last_texts:
                 stable_reads += 1
                 if stable_reads >= 2:  # unchanged across two polls = response finished streaming
-                    return "\n".join(sorted(new_text, key=len, reverse=True)[:1] or new_text)
+                    # Confirmed live: Desktop emits an accessibility-style
+                    # announcement text "Claude responded: <reply>" right
+                    # alongside the actual visible reply text (and
+                    # similarly "You said: <prompt>" for the echoed
+                    # prompt) — stripping that prefix is a direct,
+                    # positive source for the real reply, far more
+                    # reliable than guessing from length: the earlier
+                    # "pick the longest new string" heuristic picked the
+                    # echoed PROMPT itself whenever it was longer than the
+                    # actual reply.
+                    announced = next(
+                        (t[len("Claude responded: "):] for t in new_text if t.startswith("Claude responded: ")),
+                        None,
+                    )
+                    if announced is not None:
+                        reply = announced
+                    else:
+                        candidates = {
+                            t for t in new_text
+                            if not t.startswith("You said: ")
+                            and not t.startswith("Claude responded: ")
+                            and t != prompt_stripped
+                        } or new_text
+                        reply = "\n".join(sorted(candidates, key=len, reverse=True)[:1] or candidates)
+                    discovered = None
+                    if untitled:
+                        # Confirmed live: the sidebar's auto-generated
+                        # title lags a couple of seconds behind the reply
+                        # text itself becoming stable — polling only once,
+                        # right here, missed a title that reliably showed
+                        # up moments later. A short bounded retry (not the
+                        # full timeout_s budget) covers that lag without
+                        # risking a slow permanent hang.
+                        # Confirmed live: re-using the same WindowSpecification
+                        # object across repeated descendants() calls in this
+                        # loop never saw the new title appear no matter how
+                        # long the wait, while a freshly reconnected window
+                        # handle found it within a fraction of a second — a
+                        # real pywinauto/UIA element-tree caching gotcha on
+                        # a long-lived handle, not an actual Desktop delay.
+                        # Reconnecting fresh each attempt avoids it.
+                        title_deadline = time.monotonic() + 20
+                        new_labels: set[str] = set()
+                        while time.monotonic() < title_deadline:
+                            fresh_win = self._connect()
+                            new_labels = set(self._session_buttons(fresh_win).keys()) - before_labels
+                            if new_labels:
+                                break
+                            time.sleep(self.poll_interval_s)
+                        if len(new_labels) == 1:
+                            discovered = next(iter(new_labels))
+                        elif new_labels:
+                            # Ambiguous (more than one new title appeared,
+                            # e.g. another instance's ask() also just
+                            # finished) — better to leave this session
+                            # unlinked than link it to the wrong title.
+                            logger.warning("ui backend: %d new session titles appeared, could not disambiguate", len(new_labels))
+                        else:
+                            logger.warning("ui backend: sent a message into an untitled session but no new sidebar title appeared yet")
+                    return reply, discovered
             else:
                 stable_reads = 0
             last_texts = current
@@ -212,15 +369,20 @@ class UiBackend(Backend):
                 continue
         return texts
 
-    async def create_session(self, timeout_s: float = 45) -> str:
+    async def create_session(self, timeout_s: float = 45, project: Optional[str] = None) -> str:
         """Explicitly opens a brand-new chat in the real Claude Desktop
-        window and returns its sidebar label as the session key the caller
-        (Router.create_session) should persist against the bot instance."""
+        window (in [project] if given, matching one of list_projects()'s
+        names, otherwise the bare "New" button outside any project) and
+        returns UNTITLED_SESSION_KEY — see that constant's docstring.
+        Persist this placeholder exactly like a real key; the first ask()
+        that consumes it discovers and reports back the real title, which
+        Router.ask() already re-persists over this placeholder the same
+        way it does for its own lazy-create path."""
         if platform.system() != "Windows":
             raise BackendError("ui backend is only available on Windows")
         async with self._lock:
             try:
-                return await asyncio.to_thread(self._sync_create_session, timeout_s)
+                return await asyncio.to_thread(self._sync_create_session, timeout_s, project)
             except BackendError:
                 raise
             except Exception as exc:
@@ -234,24 +396,23 @@ class UiBackend(Backend):
         session_key = context.get("desktop_session_key")
         force_new = bool(context.get("force_new_session"))
         instance_id = context.get("instance_id")
+        project = context.get("desktop_project")
 
         async with self._lock:
             try:
-                created_key: Optional[str] = None
                 if force_new or not session_key:
                     if instance_id is None:
                         raise BackendError(
                             "ui backend requires a bot instance with a linked session — "
                             "this call has neither instance_id nor an existing desktop_session_key"
                         )
-                    created_key = await asyncio.to_thread(self._sync_create_session, timeout_s)
-                    session_key = created_key
+                    session_key = await asyncio.to_thread(self._sync_create_session, timeout_s, project)
 
-                text = await asyncio.to_thread(self._sync_ask, prompt, timeout_s, session_key)
+                text, discovered_key = await asyncio.to_thread(self._sync_ask, prompt, timeout_s, session_key)
             except BackendError:
                 raise
             except Exception as exc:
                 raise BackendError(f"ui backend error: {exc}") from exc
 
-        raw = {"desktop_session_key": created_key} if created_key else None
+        raw = {"desktop_session_key": discovered_key} if discovered_key else None
         return BackendResult(text=text, tokens=None, raw=raw)

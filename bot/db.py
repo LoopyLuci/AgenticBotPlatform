@@ -209,6 +209,7 @@ CREATE TABLE IF NOT EXISTS bot_instances (
     custom_instructions TEXT,                          -- optional persona/instructions prepended to every prompt this instance routes through router.ask()
     persona            TEXT NOT NULL DEFAULT 'assistant', -- one of bot/personas.py's PERSONA_PRESETS keys; purely metadata + a custom_instructions seed
     hermes_home        TEXT,                          -- optional per-instance HERMES_HOME override (hermes_gateway only) — see bot/backends/hermes_gateway_backend.py's isolation docstring; NULL means "share the machine-wide default Hermes home", today's historical behavior
+    desktop_project    TEXT,                          -- optional per-instance Claude Desktop project name (ui backend only) — pins this instance's new sessions to one project's "New session in <name>" button instead of the bare "New" one; NULL means outside any project, today's historical behavior
     created_at         TEXT NOT NULL,
     updated_at         TEXT NOT NULL,
     last_started_at    TEXT,
@@ -800,6 +801,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE bot_instances ADD COLUMN admin_user_ids TEXT NOT NULL DEFAULT '[]'")
     if "hermes_home" not in instance_cols:
         conn.execute("ALTER TABLE bot_instances ADD COLUMN hermes_home TEXT")
+    if "desktop_project" not in instance_cols:
+        conn.execute("ALTER TABLE bot_instances ADD COLUMN desktop_project TEXT")
 
     chat_session_cols = {row["name"] for row in conn.execute("PRAGMA table_info(chat_sessions)").fetchall()}
     if "thread_id" not in chat_session_cols:
