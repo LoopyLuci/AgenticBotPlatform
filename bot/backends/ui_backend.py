@@ -477,6 +477,42 @@ class UiBackend(Backend):
                 projects.append(name[len(prefix):])
         return projects
 
+    NO_PROJECT_BUCKET = "(no project)"
+
+    def _sync_list_projects_with_sessions(self) -> dict[str, list[str]]:
+        """Every project's real, currently-visible sidebar sessions,
+        grouped by project — confirmed live that a project's own session
+        buttons ("Idle <title>"/"Running <title>") are listed immediately
+        after that project's own "New session in <project>" button, before
+        the next project's, so a project can be inferred from button
+        order alone without any explicit parent/child UIA relationship to
+        rely on. Sessions appearing before the first project marker at all
+        (e.g. a pinned session outside any project) are grouped under
+        NO_PROJECT_BUCKET rather than dropped."""
+        win = self._connect()
+        new_session_prefix = "new session in "
+        result: dict[str, list[str]] = {}
+        current_project = self.NO_PROJECT_BUCKET
+        for btn in win.descendants(control_type="Button"):
+            try:
+                name = (btn.window_text() or "").strip()
+            except Exception:
+                continue
+            if not name:
+                continue
+            lowered = name.lower()
+            if lowered.startswith(new_session_prefix):
+                current_project = name[len(new_session_prefix):]
+                result.setdefault(current_project, [])
+                continue
+            for status_prefix in ("Idle ", "Running "):
+                if name.startswith(status_prefix):
+                    result.setdefault(current_project, []).append(name[len(status_prefix):])
+                    break
+        if not result.get(self.NO_PROJECT_BUCKET):
+            result.pop(self.NO_PROJECT_BUCKET, None)
+        return result
+
     async def list_projects(self, timeout_s: float = 10) -> list[str]:
         """Every project currently visible in Claude Desktop's sidebar —
         lets a caller (dashboard/MCP) show real, live project names before
@@ -490,6 +526,21 @@ class UiBackend(Backend):
                 raise
             except Exception as exc:
                 raise BackendError(f"ui backend error listing projects: {exc}") from exc
+
+    async def list_projects_with_sessions(self, timeout_s: float = 10) -> dict[str, list[str]]:
+        """Every project's real, currently-visible sessions, grouped by
+        project name — the live data behind letting a user browse "what
+        projects and chats already exist in Claude Desktop" and pick one
+        to continue, rather than only ever creating brand-new sessions."""
+        if platform.system() != "Windows":
+            raise BackendError("ui backend is only available on Windows")
+        async with self._lock:
+            try:
+                return await asyncio.to_thread(self._sync_list_projects_with_sessions)
+            except BackendError:
+                raise
+            except Exception as exc:
+                raise BackendError(f"ui backend error listing projects and sessions: {exc}") from exc
 
     def _session_buttons(self, win) -> dict[str, object]:
         """Every sidebar row that is an actual chat session, keyed by its

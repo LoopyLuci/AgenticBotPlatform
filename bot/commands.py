@@ -791,6 +791,73 @@ async def cmd_new_session(ctx: CmdContext, args: list[str]) -> str:
     return f"New session linked: {key!r}. Future messages from this chat go there."
 
 
+async def cmd_desktop_projects(ctx: CmdContext, args: list[str]) -> str:
+    """Browse and continue REAL, already-existing Claude Desktop
+    projects/chats — distinct from /sessions and /resume, which only know
+    about sessions BotServer itself created via /new. This surfaces
+    whatever's actually sitting in the live sidebar, including chats a
+    human created by hand, and lets this chat be pointed at one of them
+    directly. Only meaningful for a "ui"-backend instance."""
+    if ctx.instance_id is None:
+        return "/desktop_projects needs a bot instance — this chat isn't linked to one."
+    from bot import bot_instances
+
+    instance = bot_instances.get_instance(ctx.instance_id)
+    if instance is None or instance.get("backend") != "ui":
+        return "/desktop_projects only applies to a \"ui\"-backend instance."
+
+    if not args:
+        try:
+            grouped = await router.list_desktop_projects_with_sessions()
+        except BackendError as exc:
+            return f"Could not read Claude Desktop's sidebar: {exc}"
+        if not grouped:
+            return "No projects/chats currently visible in Claude Desktop."
+        lines = ["Projects in Claude Desktop:"]
+        for name, sessions in grouped.items():
+            plural = "s" if len(sessions) != 1 else ""
+            lines.append(f"- {name} ({len(sessions)} chat{plural})")
+        lines.append("\nUse /desktop_projects <project> to see its chats.")
+        return "\n".join(lines)
+
+    # A numeric (optionally "#N") LAST token, with something before it,
+    # selects a chat within the project named by everything before it;
+    # otherwise the whole remainder is a project name to list.
+    index: Optional[int] = None
+    project_tokens = args
+    last = args[-1].lstrip("#")
+    if last.isdigit() and len(args) > 1:
+        index = int(last)
+        project_tokens = args[:-1]
+    project = " ".join(project_tokens)
+
+    try:
+        grouped = await router.list_desktop_projects_with_sessions()
+    except BackendError as exc:
+        return f"Could not read Claude Desktop's sidebar: {exc}"
+    sessions = grouped.get(project)
+    if sessions is None:
+        return f"No project named {project!r} currently visible — use /desktop_projects to see what's available."
+
+    if index is None:
+        if not sessions:
+            return f"{project!r} has no chats yet."
+        lines = [f"Chats in {project!r}:"]
+        for i, title in enumerate(sessions, 1):
+            lines.append(f"{i}. {title}")
+        lines.append(f"\nUse /desktop_projects {project} <#> to continue one of these.")
+        return "\n".join(lines)
+
+    if index < 1 or index > len(sessions):
+        return f"{project!r} only has {len(sessions)} chat(s) — pick a number between 1 and {len(sessions)}."
+    title = sessions[index - 1]
+    try:
+        await router.link_existing_desktop_session(ctx.instance_id, ctx.chat_id, title, thread_id=ctx.thread_id)
+    except BackendError as exc:
+        return f"Could not link to that chat: {exc}"
+    return f"This chat is now continuing {title!r} in {project!r}."
+
+
 async def cmd_sessions(ctx: CmdContext, args: list[str]) -> str:
     """Lists this chat's linked backend sessions — the currently-active one
     plus history, newest first. See db.list_chat_sessions()."""
@@ -1144,6 +1211,7 @@ COMMANDS: dict[str, Callable[[CmdContext, list[str]], Any]] = {
     "project": cmd_project,
     "effort": cmd_effort,
     "new": cmd_new_session,
+    "desktop_projects": cmd_desktop_projects,
     "sessions": cmd_sessions,
     "resume": cmd_resume,
     "title": cmd_title,

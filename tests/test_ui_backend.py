@@ -326,6 +326,65 @@ class TestSyncEnsureEffort:
         slider.set_value.assert_called_once_with(0.0)
 
 
+class TestListProjectsWithSessions:
+    def test_groups_sessions_under_their_own_project_marker(self):
+        """Confirmed live: a project's session buttons are listed
+        immediately after that project's own "New session in <project>"
+        button, before the next project's — grouping by button order is
+        the only lever available since there's no explicit UIA
+        parent/child relationship to rely on."""
+        backend = UiBackend()
+        win = _win([
+            _button("New"),
+            _button("New session in PrivateProject"),
+            _button("Idle Fix the login bug"),
+            _button("More options for Fix the login bug"),
+            _button("Idle Refactor the parser"),
+            _button("New session in TridentDroid"),
+            _button("Idle Android crash triage"),
+        ])
+        backend._connect = lambda: win  # type: ignore[method-assign]
+
+        grouped = backend._sync_list_projects_with_sessions()
+
+        assert grouped == {
+            "PrivateProject": ["Fix the login bug", "Refactor the parser"],
+            "TridentDroid": ["Android crash triage"],
+        }
+
+    def test_sessions_before_any_project_marker_are_bucketed_separately(self):
+        backend = UiBackend()
+        win = _win([
+            _button("Running BotServer"),
+            _button("New session in PrivateProject"),
+            _button("Idle Fix the login bug"),
+        ])
+        backend._connect = lambda: win  # type: ignore[method-assign]
+
+        grouped = backend._sync_list_projects_with_sessions()
+
+        assert grouped[UiBackend.NO_PROJECT_BUCKET] == ["BotServer"]
+        assert grouped["PrivateProject"] == ["Fix the login bug"]
+
+    def test_a_project_with_no_sessions_yet_still_appears(self):
+        backend = UiBackend()
+        win = _win([_button("New session in Omnisystem")])
+        backend._connect = lambda: win  # type: ignore[method-assign]
+
+        grouped = backend._sync_list_projects_with_sessions()
+
+        assert grouped == {"Omnisystem": []}
+
+    def test_no_project_bucket_omitted_when_empty(self):
+        backend = UiBackend()
+        win = _win([_button("New session in PrivateProject"), _button("Idle Fix the login bug")])
+        backend._connect = lambda: win  # type: ignore[method-assign]
+
+        grouped = backend._sync_list_projects_with_sessions()
+
+        assert UiBackend.NO_PROJECT_BUCKET not in grouped
+
+
 class TestFindDefaultWorkspaceChip:
     def test_returns_the_non_local_chip_between_feedback_and_add_folder(self):
         backend = UiBackend()

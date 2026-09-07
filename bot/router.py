@@ -564,6 +564,42 @@ class Router:
         backend = self._get_backend("ui", config.current)
         return await backend.list_projects()
 
+    async def list_desktop_projects_with_sessions(self) -> dict[str, list[str]]:
+        """Every project's real, currently-open chats in the actual
+        Claude Desktop window — the live data behind letting a user
+        browse what already exists (not just what BotServer itself has
+        created) before choosing one to continue. See
+        UiBackend.list_projects_with_sessions() for how project/session
+        grouping is inferred."""
+        backend = self._get_backend("ui", config.current)
+        return await backend.list_projects_with_sessions()
+
+    async def link_existing_desktop_session(
+        self, instance_id: int, chat_id: Any, session_title: str, thread_id: Optional[Any] = None
+    ) -> None:
+        """Links this chat directly to an already-existing, already-titled
+        Claude Desktop session — the "continue an existing chat" half of
+        project/session browsing, as opposed to create_session()'s
+        "start a brand-new one". Verifies [session_title] is a real,
+        currently-visible sidebar session first (case-sensitive exact
+        match against list_desktop_projects_with_sessions()) rather than
+        trusting caller input blindly, since a wrong/stale title would
+        otherwise silently fail later inside _select_session()'s own
+        error instead of failing clearly here at link time."""
+        from bot import bot_instances
+
+        instance = bot_instances.get_instance(instance_id)
+        if instance is None or instance.get("backend") != "ui":
+            raise BackendError("linking to an existing Desktop session is only supported for \"ui\"-backend instances")
+        grouped = await self.list_desktop_projects_with_sessions()
+        all_titles = {title for titles in grouped.values() for title in titles}
+        if session_title not in all_titles:
+            raise BackendError(
+                f"{session_title!r} isn't a currently-visible Claude Desktop session — "
+                "use the live listing to pick an exact title"
+            )
+        db.link_chat_session(instance_id, chat_id, session_title, title=session_title, thread_id=thread_id)
+
     async def resume_session(
         self, instance_id: int, chat_id: Any, chat_session_id: int, thread_id: Optional[Any] = None
     ) -> dict:
