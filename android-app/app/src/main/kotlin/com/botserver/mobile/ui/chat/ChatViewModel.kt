@@ -178,16 +178,20 @@ class ChatViewModel @Inject constructor(private val repository: ChatRepository) 
         }
     }
 
-    fun deleteActiveChatHistory() {
-        val instanceId = _uiState.value.activeInstanceId ?: return
-        val inst = _uiState.value.instances.find { it.id == instanceId }
+    /** Defaults to the currently-open conversation when no id is given
+     * (the open conversation's own kebab menu); the chat-list screen's
+     * long-press menu passes a specific instance id directly, without
+     * ever opening that conversation first. */
+    fun deleteChatHistory(instanceId: Int? = null) {
+        val id = instanceId ?: _uiState.value.activeInstanceId ?: return
+        val inst = _uiState.value.instances.find { it.id == id }
         if (inst == null) {
             _snackbarMessages.tryEmit("Couldn't delete this chat — no active conversation.")
             return
         }
         val chatId = inst.allowedIds.firstOrNull()
         viewModelScope.launch {
-            runCatching { repository.deleteHistory(instanceId, chatId, inst.platform) }
+            runCatching { repository.deleteHistory(id, chatId, inst.platform) }
                 .onSuccess { _snackbarMessages.tryEmit("Chat deleted") }
                 .onFailure { e -> _snackbarMessages.tryEmit(e.message ?: "Couldn't delete this chat.") }
         }

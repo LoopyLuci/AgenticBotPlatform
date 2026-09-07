@@ -7,7 +7,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -86,6 +85,8 @@ fun ServerChatScreen(viewModel: ServerChatViewModel = hiltViewModel()) {
             conversations = conversations,
             loadError = loadError,
             onSelect = { viewModel.openConversation(it) },
+            onDelete = { viewModel.deleteConversation(it) },
+            snackbarMessages = viewModel.snackbarMessages,
         )
     } else {
         val active = conversations.find { it.id == activeId }
@@ -99,7 +100,7 @@ fun ServerChatScreen(viewModel: ServerChatViewModel = hiltViewModel()) {
             onSendFile = { uri, caption -> viewModel.sendFile(uri, caption) },
             onDownload = { messageId, name -> viewModel.downloadAttachment(messageId, name) },
             onDeleteMessage = { viewModel.deleteMessage(it) },
-            onClearChat = { active?.let { viewModel.deleteActiveConversation(it) } },
+            onClearChat = { active?.let { viewModel.deleteConversation(it) } },
             isGroup = active?.kind == "group",
             snackbarMessages = viewModel.snackbarMessages,
         )
@@ -112,8 +113,15 @@ private fun ServerChatListScreen(
     conversations: List<ServerChatConversation>,
     loadError: String?,
     onSelect: (Int) -> Unit,
+    onDelete: (ServerChatConversation) -> Unit,
+    snackbarMessages: kotlinx.coroutines.flow.SharedFlow<String>,
 ) {
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(Unit) {
+        snackbarMessages.collect { message -> snackbarHostState.showSnackbar(message) }
+    }
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             CenterAlignedTopAppBar(
                 title = { Text("Server Chat", fontWeight = FontWeight.Bold) },
@@ -133,37 +141,91 @@ private fun ServerChatListScreen(
         }
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
             items(conversations, key = { it.id }) { conv ->
-                ServerChatListRow(conv, onClick = { onSelect(conv.id) })
+                ServerChatListRow(conv, onClick = { onSelect(conv.id) }, onDelete = { onDelete(conv) })
             }
         }
     }
 }
 
 @Composable
-private fun ServerChatListRow(conv: ServerChatConversation, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier.size(50.dp).clip(CircleShape).background(ServerChatBubbleGradient),
-            contentAlignment = Alignment.Center,
+private fun ServerChatListRow(conv: ServerChatConversation, onClick: () -> Unit, onDelete: () -> Unit) {
+    var menuOpen by remember { mutableStateOf(false) }
+    var confirmDeleteOpen by remember { mutableStateOf(false) }
+    val isGroup = conv.kind == "group"
+
+    Box {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                // A single gesture detector for both tap and long-press —
+                // see ChatScreen.kt's ChatListRow for why a separate
+                // .clickable + .pointerInput(onLongPress) pair doesn't
+                // work: both independently process the same touch, so
+                // the long-press-opened menu was immediately buried by
+                // clickable's own release-triggered onClick navigating
+                // away. Confirmed via real on-device testing.
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = { onClick() }, onLongPress = { menuOpen = true })
+                }
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(initialsFor(conv.title), color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            Box(
+                modifier = Modifier.size(50.dp).clip(CircleShape).background(ServerChatBubbleGradient),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(initialsFor(conv.title), color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(conv.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                val preview = conv.lastMessage?.let { it.text?.takeIf { t -> t.isNotBlank() } ?: it.attachmentName?.let { n -> "📎 $n" } }
+                Text(
+                    preview ?: "No messages yet",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+            }
+            // Tap-based fallback into the same menu long-press opens —
+            // see ChatScreen.kt's MessageBubble for why (some devices'
+            // touch handling makes long-press unreliable).
+            IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(28.dp)) {
+                Icon(
+                    Icons.Filled.MoreVert,
+                    contentDescription = "Chat options",
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                )
+            }
         }
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(conv.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            val preview = conv.lastMessage?.let { it.text?.takeIf { t -> t.isNotBlank() } ?: it.attachmentName?.let { n -> "📎 $n" } }
-            Text(
-                preview ?: "No messages yet",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+                text = { Text(if (isGroup) "Clear chat" else "Delete chat") },
+                onClick = { menuOpen = false; confirmDeleteOpen = true },
             )
         }
+    }
+
+    if (confirmDeleteOpen) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteOpen = false },
+            title = { Text(if (isGroup) "Clear this chat?" else "Delete this chat?") },
+            text = {
+                Text(
+                    if (isGroup) {
+                        "Every message in the shared Server Chat room will be permanently removed for everyone. This can't be undone."
+                    } else {
+                        "This conversation and every message in it will be permanently removed. You can message this device again later to start a new one. This can't be undone."
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { confirmDeleteOpen = false; onDelete() }) {
+                    Text(if (isGroup) "Clear" else "Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmDeleteOpen = false }) { Text("Cancel") } },
+        )
     }
 }
 

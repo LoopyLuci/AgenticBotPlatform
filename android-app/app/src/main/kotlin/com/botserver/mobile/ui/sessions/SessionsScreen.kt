@@ -1,7 +1,6 @@
 package com.botserver.mobile.ui.sessions
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -95,8 +94,16 @@ private fun SessionRow(session: SessionSummary, onClick: () -> Unit, onDelete: (
             tonalElevation = 1.dp,
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick)
-                .pointerInput(Unit) { detectTapGestures(onLongPress = { menuOpen = true }) },
+                // Single gesture detector for both tap and long-press —
+                // a separate .clickable + .pointerInput(onLongPress) pair
+                // both independently process the same touch, so a real
+                // held-then-released tap fires the long-press (opening
+                // the menu) AND clickable's own release-triggered onClick
+                // (navigating away), burying the menu instantly. Found
+                // via real on-device testing on this exact pattern.
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = { onClick() }, onLongPress = { menuOpen = true })
+                },
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(14.dp),

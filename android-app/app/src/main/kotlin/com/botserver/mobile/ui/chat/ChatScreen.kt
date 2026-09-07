@@ -91,6 +91,8 @@ fun ChatScreen(
                 viewModel.switchInstance(id)
                 showConversation = true
             },
+            onDeleteChat = { viewModel.deleteChatHistory(it.id) },
+            snackbarMessages = viewModel.snackbarMessages,
         )
     } else {
         val active = state.instances.find { it.id == state.activeInstanceId }
@@ -118,48 +120,104 @@ private fun ChatListTopBar() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ChatListScreen(instances: List<BotInstanceSummary>, onSelect: (Int) -> Unit) {
-    Scaffold(topBar = { ChatListTopBar() }) { padding ->
+private fun ChatListScreen(
+    instances: List<BotInstanceSummary>,
+    onSelect: (Int) -> Unit,
+    onDeleteChat: (BotInstanceSummary) -> Unit,
+    snackbarMessages: kotlinx.coroutines.flow.SharedFlow<String>,
+) {
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(Unit) {
+        snackbarMessages.collect { message -> snackbarHostState.showSnackbar(message) }
+    }
+    Scaffold(topBar = { ChatListTopBar() }, snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
             items(instances, key = { it.id }) { inst ->
-                ChatListRow(inst, onClick = { onSelect(inst.id) })
+                ChatListRow(inst, onClick = { onSelect(inst.id) }, onDelete = { onDeleteChat(inst) })
             }
         }
     }
 }
 
 @Composable
-private fun ChatListRow(inst: BotInstanceSummary, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
+private fun ChatListRow(inst: BotInstanceSummary, onClick: () -> Unit, onDelete: () -> Unit) {
+    var menuOpen by remember { mutableStateOf(false) }
+    var confirmDeleteOpen by remember { mutableStateOf(false) }
+
+    Box {
+        Row(
             modifier = Modifier
-                .size(50.dp)
-                .clip(CircleShape)
-                .background(TgBubbleGradient),
-            contentAlignment = Alignment.Center,
+                .fillMaxWidth()
+                // A single gesture detector handling both tap and
+                // long-press, rather than a separate .clickable +
+                // .pointerInput(onLongPress) — two independent gesture
+                // detectors on the same node both process the same touch
+                // stream, so a held-then-released tap fired BOTH the
+                // long-press (opening the menu) AND clickable's own
+                // release-based onClick (navigating away), burying the
+                // menu the instant it opened. Found via real on-device
+                // testing, not by inspection.
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = { onClick() }, onLongPress = { menuOpen = true })
+                }
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(initialsFor(inst.name), color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            Box(
+                modifier = Modifier
+                    .size(50.dp)
+                    .clip(CircleShape)
+                    .background(TgBubbleGradient),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(initialsFor(inst.name), color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(inst.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    inst.platform.replaceFirstChar { it.uppercase() } + if (inst.connected) "" else " · offline",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(if (inst.connected) Color(0xFF3DD65B) else MaterialTheme.colorScheme.outline),
+            )
+            Spacer(Modifier.width(6.dp))
+            // Tap-based fallback into the same menu long-press opens —
+            // some devices' touch handling makes long-press unreliable.
+            IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(28.dp)) {
+                Icon(
+                    Icons.Filled.MoreVert,
+                    contentDescription = "Chat options",
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                )
+            }
         }
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(inst.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                inst.platform.replaceFirstChar { it.uppercase() } + if (inst.connected) "" else " · offline",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+                text = { Text("Delete chat") },
+                onClick = { menuOpen = false; confirmDeleteOpen = true },
             )
         }
-        Box(
-            modifier = Modifier
-                .size(10.dp)
-                .clip(CircleShape)
-                .background(if (inst.connected) Color(0xFF3DD65B) else MaterialTheme.colorScheme.outline),
+    }
+
+    if (confirmDeleteOpen) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteOpen = false },
+            title = { Text("Delete this chat?") },
+            text = { Text("Every message in this chat's local history will be permanently removed. This can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = { confirmDeleteOpen = false; onDelete() }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmDeleteOpen = false }) { Text("Cancel") } },
         )
     }
 }
@@ -298,7 +356,7 @@ private fun ConversationScreen(
             title = { Text("Delete this chat?") },
             text = { Text("Every message in this chat's local history will be permanently removed. This can't be undone.") },
             confirmButton = {
-                TextButton(onClick = { confirmDeleteChatOpen = false; viewModel.deleteActiveChatHistory() }) {
+                TextButton(onClick = { confirmDeleteChatOpen = false; viewModel.deleteChatHistory() }) {
                     Text("Delete", color = MaterialTheme.colorScheme.error)
                 }
             },
