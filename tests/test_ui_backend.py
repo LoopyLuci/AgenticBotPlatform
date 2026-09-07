@@ -133,20 +133,27 @@ class TestCreateSessionSentinel:
 
 class _FakeWin32Clipboard:
     """Stands in for the real win32clipboard module — enough surface for
-    _type_text_via_clipboard's open/get/empty/set/close sequence."""
+    _type_text_via_clipboard's open/get/empty/set/close sequence.
+    fail_opens_before_success lets a test simulate OpenClipboard()'s real,
+    transient "another process is holding it" failure mode."""
 
     CF_UNICODETEXT = 13
 
-    def __init__(self, initial_contents=None):
+    def __init__(self, initial_contents=None, fail_opens_before_success=0):
         self._contents = initial_contents
         self.set_calls = []
         self.open_count = 0
+        self.close_count = 0
+        self._fail_opens_remaining = fail_opens_before_success
 
     def OpenClipboard(self):
         self.open_count += 1
+        if self._fail_opens_remaining > 0:
+            self._fail_opens_remaining -= 1
+            raise OSError("Access is denied.")
 
     def CloseClipboard(self):
-        pass
+        self.close_count += 1
 
     def GetClipboardData(self, fmt):
         if self._contents is None:
@@ -197,3 +204,39 @@ class TestTypeTextViaClipboard:
         # Only the prompt itself was ever set — nothing to restore since
         # there was nothing real on the clipboard beforehand.
         assert fake_clipboard.set_calls == ["some prompt text"]
+
+    def test_retries_a_transiently_failing_open_before_succeeding(self, monkeypatch):
+        """Real bug found live: "(1418, 'CloseClipboard', 'Thread does
+        not have a clipboard open.')" — the original code called
+        CloseClipboard() in a bare finally even when OpenClipboard()
+        itself had failed. OpenClipboard() genuinely can fail
+        transiently (another process briefly holding the clipboard);
+        this must retry rather than immediately treat one failure as
+        fatal, and must never close a clipboard it never successfully
+        opened."""
+        fake_clipboard = _FakeWin32Clipboard(fail_opens_before_success=2)
+        monkeypatch.setitem(sys.modules, "win32clipboard", fake_clipboard)
+        monkeypatch.setattr("bot.backends.ui_backend.time.sleep", lambda s: None)
+        field = MagicMock()
+
+        _type_text_via_clipboard(field, "some prompt text")
+
+        assert fake_clipboard.set_calls == ["some prompt text"]
+        # Every OpenClipboard() call that actually succeeded (2 failures
+        # + 1 success for the "set" half, then however many it took for
+        # the restore half) has a matching CloseClipboard() — never more
+        # closes than successful opens.
+        assert fake_clipboard.close_count <= fake_clipboard.open_count
+
+    def test_never_closes_a_clipboard_it_never_opened(self, monkeypatch):
+        fake_clipboard = _FakeWin32Clipboard(fail_opens_before_success=999)
+        monkeypatch.setitem(sys.modules, "win32clipboard", fake_clipboard)
+        monkeypatch.setattr("bot.backends.ui_backend.time.sleep", lambda s: None)
+        field = MagicMock()
+
+        try:
+            _type_text_via_clipboard(field, "some prompt text")
+        except Exception:
+            pass
+
+        assert fake_clipboard.close_count == 0

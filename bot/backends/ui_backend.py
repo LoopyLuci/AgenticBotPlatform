@@ -65,30 +65,52 @@ def _type_text_via_clipboard(field, text: str) -> None:
     actually had copied."""
     import win32clipboard
 
+    def _open_clipboard_with_retry(attempts: int = 10, delay_s: float = 0.05) -> bool:
+        # Real bug found live: OpenClipboard() can transiently fail
+        # (Windows clipboard access is exclusive — another process, or
+        # even Explorer's own clipboard history, can be holding it for a
+        # moment) — confirmed by an actual "Thread does not have a
+        # clipboard open" CloseClipboard error, which happened because
+        # the original code unconditionally closed in a bare `finally`
+        # even when open itself had failed. Retrying open a few times is
+        # the standard, expected way to handle this on Windows; only a
+        # *successful* open is ever paired with a close below.
+        for attempt in range(attempts):
+            try:
+                win32clipboard.OpenClipboard()
+                return True
+            except Exception:
+                if attempt == attempts - 1:
+                    return False
+                time.sleep(delay_s)
+        return False
+
     previous = None
-    try:
-        win32clipboard.OpenClipboard()
+    if _open_clipboard_with_retry():
         try:
-            previous = win32clipboard.GetClipboardData(win32clipboard.CF_UNICODETEXT)
-        except Exception:
-            previous = None
-        win32clipboard.EmptyClipboard()
-        win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT, text)
-    finally:
-        win32clipboard.CloseClipboard()
+            try:
+                previous = win32clipboard.GetClipboardData(win32clipboard.CF_UNICODETEXT)
+            except Exception:
+                previous = None
+            win32clipboard.EmptyClipboard()
+            win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT, text)
+        finally:
+            win32clipboard.CloseClipboard()
+    else:
+        raise BackendError("could not open the clipboard to paste the prompt (another process was holding it)")
 
     try:
         field.type_keys("^v")
     finally:
-        try:
-            win32clipboard.OpenClipboard()
-            win32clipboard.EmptyClipboard()
-            if previous is not None:
-                win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT, previous)
-        except Exception:
-            pass
-        finally:
-            win32clipboard.CloseClipboard()
+        if _open_clipboard_with_retry():
+            try:
+                win32clipboard.EmptyClipboard()
+                if previous is not None:
+                    win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT, previous)
+            except Exception:
+                pass
+            finally:
+                win32clipboard.CloseClipboard()
 
 # Confirmed live against a real running Claude Desktop install: a brand-new
 # chat has NO sidebar entry at all until its first message exchange gives it
