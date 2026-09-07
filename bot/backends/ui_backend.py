@@ -49,6 +49,47 @@ from bot.backends.base import Backend, BackendError, BackendResult
 
 logger = logging.getLogger("bot.backends.ui")
 
+
+def _type_text_via_clipboard(field, text: str) -> None:
+    """Enters text into a focused control via the clipboard (set text,
+    Ctrl+V, restore whatever was on the clipboard before) instead of
+    field.type_keys(text). Confirmed live and real: type_keys() sends
+    Windows SendInput keystrokes one at a time, which reliably fails
+    with "[Errno 22] Invalid argument" on kaomoji and similar Unicode
+    outside plain ASCII — a real production instance's prompt started
+    failing outright the moment its custom_instructions gained kaomoji.
+    Clipboard paste hands the whole string to the OS in one piece and
+    has no such character-set limitation, matching how a human would
+    paste non-ASCII text in practice. The clipboard's prior contents are
+    restored afterward so this doesn't clobber whatever the user
+    actually had copied."""
+    import win32clipboard
+
+    previous = None
+    try:
+        win32clipboard.OpenClipboard()
+        try:
+            previous = win32clipboard.GetClipboardData(win32clipboard.CF_UNICODETEXT)
+        except Exception:
+            previous = None
+        win32clipboard.EmptyClipboard()
+        win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT, text)
+    finally:
+        win32clipboard.CloseClipboard()
+
+    try:
+        field.type_keys("^v")
+    finally:
+        try:
+            win32clipboard.OpenClipboard()
+            win32clipboard.EmptyClipboard()
+            if previous is not None:
+                win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT, previous)
+        except Exception:
+            pass
+        finally:
+            win32clipboard.CloseClipboard()
+
 # Confirmed live against a real running Claude Desktop install: a brand-new
 # chat has NO sidebar entry at all until its first message exchange gives it
 # an auto-generated title (Desktop names it from the conversation content,
@@ -274,7 +315,7 @@ class UiBackend(Backend):
 
         field = self._find_input(win)
         field.set_focus()
-        field.type_keys(prompt, with_spaces=True, with_tabs=True, with_newlines=False)
+        _type_text_via_clipboard(field, prompt)
 
         send_btn = self._find_send_button(win)
         if send_btn is not None:

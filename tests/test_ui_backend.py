@@ -8,9 +8,10 @@ can't silently regress.
 
 from __future__ import annotations
 
+import sys
 from unittest.mock import MagicMock
 
-from bot.backends.ui_backend import UiBackend, UNTITLED_SESSION_KEY
+from bot.backends.ui_backend import UiBackend, UNTITLED_SESSION_KEY, _type_text_via_clipboard
 
 
 def _button(text: str, enabled: bool = True) -> MagicMock:
@@ -128,3 +129,71 @@ class TestCreateSessionSentinel:
         key = backend._sync_create_session(timeout_s=1, project="PrivateProject")
 
         assert key == UNTITLED_SESSION_KEY
+
+
+class _FakeWin32Clipboard:
+    """Stands in for the real win32clipboard module — enough surface for
+    _type_text_via_clipboard's open/get/empty/set/close sequence."""
+
+    CF_UNICODETEXT = 13
+
+    def __init__(self, initial_contents=None):
+        self._contents = initial_contents
+        self.set_calls = []
+        self.open_count = 0
+
+    def OpenClipboard(self):
+        self.open_count += 1
+
+    def CloseClipboard(self):
+        pass
+
+    def GetClipboardData(self, fmt):
+        if self._contents is None:
+            raise RuntimeError("nothing on the clipboard")
+        return self._contents
+
+    def EmptyClipboard(self):
+        self._contents = None
+
+    def SetClipboardData(self, fmt, value):
+        self.set_calls.append(value)
+        self._contents = value
+
+
+class TestTypeTextViaClipboard:
+    def test_pastes_via_ctrl_v_not_keystrokes(self, monkeypatch):
+        """Real bug this replaces: field.type_keys(kaomoji_text) failed
+        outright with "[Errno 22] Invalid argument" — confirmed live
+        against the real Claude Desktop window the moment a
+        custom_instructions value containing kaomoji was sent through
+        it. Pasting hands the OS the whole string at once instead of
+        simulating it keystroke-by-keystroke."""
+        fake_clipboard = _FakeWin32Clipboard(initial_contents="previous clipboard contents")
+        monkeypatch.setitem(sys.modules, "win32clipboard", fake_clipboard)
+        field = MagicMock()
+
+        _type_text_via_clipboard(field, "hello (づ｡◕‿‿◕｡)づ")
+
+        assert fake_clipboard.set_calls[0] == "hello (づ｡◕‿‿◕｡)づ"
+        field.type_keys.assert_called_once_with("^v")
+
+    def test_restores_the_original_clipboard_contents_afterward(self, monkeypatch):
+        fake_clipboard = _FakeWin32Clipboard(initial_contents="what the user actually had copied")
+        monkeypatch.setitem(sys.modules, "win32clipboard", fake_clipboard)
+        field = MagicMock()
+
+        _type_text_via_clipboard(field, "some prompt text")
+
+        assert fake_clipboard.set_calls[-1] == "what the user actually had copied"
+
+    def test_restores_empty_clipboard_when_there_was_nothing_before(self, monkeypatch):
+        fake_clipboard = _FakeWin32Clipboard(initial_contents=None)
+        monkeypatch.setitem(sys.modules, "win32clipboard", fake_clipboard)
+        field = MagicMock()
+
+        _type_text_via_clipboard(field, "some prompt text")
+
+        # Only the prompt itself was ever set — nothing to restore since
+        # there was nothing real on the clipboard beforehand.
+        assert fake_clipboard.set_calls == ["some prompt text"]
