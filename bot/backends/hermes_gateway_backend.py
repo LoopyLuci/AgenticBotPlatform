@@ -64,6 +64,16 @@ logger = logging.getLogger("bot.backends.hermes_gateway")
 
 _READY_MARKER = b"HERMES_BACKEND_READY"
 
+# Confirmed live, twice: a genuinely fresh session's first
+# session.create/prompt.background round trip can take real cold-start
+# time (agent construction, MCP server discovery, skill/prompt building —
+# confirmed against the real gateway source as synchronous work on first
+# use) well past what looked like a generous 15s when this was written.
+# One real Telegram message hit this exact wall. 15s is fine for every
+# later call against an already-warm session; it's specifically the
+# "getting started" RPCs that need more room.
+SESSION_START_TIMEOUT_S = 45
+
 
 class HermesGatewayBackend(Backend):
     name = "hermes_gateway"
@@ -225,7 +235,7 @@ class HermesGatewayBackend(Backend):
         except httpx.HTTPError as exc:
             raise BackendError(f"hermes gateway /api/model/options failed: {exc}") from exc
 
-    async def create_session(self, timeout_s: float = 15) -> str:
+    async def create_session(self, timeout_s: float = SESSION_START_TIMEOUT_S) -> str:
         """Explicitly opens a brand-new Hermes session and returns its
         session_id as the key the caller (Router.create_session) should
         persist against the bot instance."""
@@ -255,12 +265,12 @@ class HermesGatewayBackend(Backend):
                 # behavior (a fresh throwaway session every call) rather than
                 # persisting anything nowhere.
                 session_params = self._session_params()
-                session = await self._call("session.create", session_params, timeout_s=15)
+                session = await self._call("session.create", session_params, timeout_s=SESSION_START_TIMEOUT_S)
                 session_id = session.get("session_id")
                 if not session_id:
                     raise BackendError("hermes session.create returned no session_id")
             else:
-                session_id = await self.create_session(timeout_s=15)
+                session_id = await self.create_session(timeout_s=SESSION_START_TIMEOUT_S)
                 created = True
 
         if job_id is not None and action_type == "swarm_dispatch":
@@ -270,7 +280,7 @@ class HermesGatewayBackend(Backend):
             # _maybe_start_observability itself, never propagated here.
             self._maybe_start_observability(job_id, session_id)
 
-        bg = await self._call("prompt.background", {"session_id": session_id, "text": prompt}, timeout_s=15)
+        bg = await self._call("prompt.background", {"session_id": session_id, "text": prompt}, timeout_s=SESSION_START_TIMEOUT_S)
         return await self._await_background_reply(bg, session_id, created, timeout_s)
 
     def _maybe_start_observability(self, job_id: int, session_id: str) -> Optional[asyncio.Task]:
