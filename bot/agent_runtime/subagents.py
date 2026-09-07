@@ -110,11 +110,23 @@ async def run_batch(
     role: str = "leaf",
     provider: Optional[str] = None,
     model: Optional[str] = None,
+    effort: Optional[str] = None,
     max_children: Optional[int] = None,
     parent_instance_id: Optional[int] = None,
     background: bool = False,
 ) -> dict[str, Any]:
-    """`tasks`: [{"goal": str, "output_schema": dict|None}, ...].
+    """`tasks`: [{"goal": str, "output_schema": dict|None, "provider":
+    str|None, "model": str|None, "effort": str|None}, ...] — a task's own
+    provider+model/effort override the batch-level ones given here, which
+    themselves override bot/agent_settings.py's worker_provider/
+    worker_model/worker_effort, which fall back to inheriting the
+    calling instance's own backend. This per-TASK granularity is real
+    capability Hermes's own delegate_task tool does not have (confirmed
+    against its real source — model/provider/reasoning_effort there are
+    entirely config.yaml-driven, one shared value for every child in
+    every call) — an orchestrator here can give different subtasks
+    different models/effort in the same batch based on how hard each one
+    actually is.
 
     Default (background=False): blocks until every child finishes, same
     as always, and returns
@@ -159,8 +171,8 @@ async def run_batch(
 
     if not provider and not model and settings["worker_provider"] and settings["worker_model"]:
         provider, model = settings["worker_provider"], settings["worker_model"]
-    backend = _resolve_named_backend(provider, model) if (provider and model) else _resolve_inherited_backend(parent_instance_id)
-    worker_effort = settings["worker_effort"]
+    default_backend = _resolve_named_backend(provider, model) if (provider and model) else _resolve_inherited_backend(parent_instance_id)
+    batch_effort = effort if effort is not None else settings["worker_effort"]
 
     allowed_tools = None
     if role == "leaf":
@@ -172,8 +184,14 @@ async def run_batch(
     token = _delegation_depth.set(depth + 1)
     try:
         for i, task in enumerate(tasks):
+            task_provider = task.get("provider")
+            task_model = task.get("model")
+            if bool(task_provider) != bool(task_model):
+                raise BackendError(f"task {i}: provider and model must both be given, or both omitted")
+            task_backend = _resolve_named_backend(task_provider, task_model) if (task_provider and task_model) else default_backend
+            task_effort = task.get("effort") or batch_effort
             handle = await _start_child(
-                dispatch, i, task, backend, semaphore, allowed_tools, parent_instance_id, worker_effort
+                dispatch, i, task, task_backend, semaphore, allowed_tools, parent_instance_id, task_effort
             )
             subagent_registry.register_child(dispatch, i, handle)
     finally:
@@ -206,7 +224,12 @@ async def run_batch(
         if isinstance(outcome, BaseException):
             status = "stopped" if isinstance(outcome, asyncio.CancelledError) else "error"
             children.append({
-                "index": index, "goal": handle.goal, "model": backend.model,
+                # default_backend.model here is only an informational
+                # label for this exceptional (cancelled/errored-before-
+                # returning) path — a task-level model override, if any,
+                # was already recorded in the handle's own goal/session
+                # data, not tracked redundantly on ChildHandle itself.
+                "index": index, "goal": handle.goal, "model": default_backend.model,
                 "status": status, "result_excerpt": str(outcome)[:500] or status,
             })
         else:

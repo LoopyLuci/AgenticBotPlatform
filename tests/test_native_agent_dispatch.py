@@ -71,7 +71,7 @@ def test_dispatch_route_runs_tasks_and_populates_job_children(temp_db, monkeypat
     client = _client(monkeypatch)
     instance_id = _create_native_agent_instance()
 
-    async def fake_run_batch(tasks, *, role, provider, model, max_children, parent_instance_id):
+    async def fake_run_batch(tasks, *, role, provider, model, effort=None, max_children, parent_instance_id):
         return {
             "dispatch_id": "fake",
             "children": [
@@ -103,6 +103,26 @@ def test_dispatch_route_runs_tasks_and_populates_job_children(temp_db, monkeypat
     assert job["backend"] == "native_agent"
 
 
+def test_dispatch_route_passes_worker_effort_through(temp_db, monkeypatch):
+    client = _client(monkeypatch)
+    instance_id = _create_native_agent_instance()
+    captured = {}
+
+    async def fake_run_batch(tasks, *, role, provider, model, effort=None, max_children, parent_instance_id):
+        captured["effort"] = effort
+        return {"dispatch_id": "fake", "children": [{"index": 0, "goal": tasks[0]["goal"], "model": model, "status": "ok", "result_excerpt": "done"}]}
+
+    monkeypatch.setattr("bot.agent_runtime.subagents.run_batch", fake_run_batch)
+
+    resp = client.post(
+        f"/api/native-agent/{instance_id}/dispatch", headers=_headers(),
+        json={"tasks": [{"goal": "x"}], "worker_provider": "ollama", "worker_model": "llama3.1", "worker_effort": "low"},
+    )
+
+    assert resp.status_code == 200
+    assert captured["effort"] == "low"
+
+
 def test_dispatch_route_auto_picks_free_model(temp_db, monkeypatch):
     client = _client(monkeypatch)
     instance_id = _create_native_agent_instance()
@@ -113,7 +133,7 @@ def test_dispatch_route_auto_picks_free_model(temp_db, monkeypatch):
         ],
     })
 
-    async def fake_run_batch(tasks, *, role, provider, model, max_children, parent_instance_id):
+    async def fake_run_batch(tasks, *, role, provider, model, effort=None, max_children, parent_instance_id):
         assert provider == "openrouter"
         assert model == "free-model"
         return {

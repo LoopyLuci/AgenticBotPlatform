@@ -201,6 +201,54 @@ def test_delegation_route_allows_auto_approve_with_confirm(temp_db, monkeypatch,
     assert resp.json()["delegation"]["subagent_auto_approve"] is True
 
 
+def test_delegation_route_sets_reasoning_effort(temp_db, monkeypatch, tmp_path):
+    client = _client(monkeypatch)
+    instance_id = _create_hermes_instance()
+    monkeypatch.setattr(hermes_config, "HERMES_CONFIG_PATH", tmp_path / "config.yaml")
+
+    resp = client.post(
+        f"/api/hermes/{instance_id}/delegation", headers=_headers(), json={"reasoning_effort": "xhigh"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["delegation"]["reasoning_effort"] == "xhigh"
+
+
+def test_agent_config_route_get_empty_when_never_set(temp_db, monkeypatch, tmp_path):
+    client = _client(monkeypatch)
+    instance_id = _create_hermes_instance()
+    monkeypatch.setattr(hermes_config, "HERMES_CONFIG_PATH", tmp_path / "config.yaml")
+
+    resp = client.get(f"/api/hermes/{instance_id}/agent-config", headers=_headers())
+
+    assert resp.status_code == 200
+    assert resp.json()["agent"] == {}
+
+
+def test_agent_config_route_set_then_get(temp_db, monkeypatch, tmp_path):
+    client = _client(monkeypatch)
+    instance_id = _create_hermes_instance()
+    monkeypatch.setattr(hermes_config, "HERMES_CONFIG_PATH", tmp_path / "config.yaml")
+
+    resp = client.post(
+        f"/api/hermes/{instance_id}/agent-config", headers=_headers(), json={"reasoning_effort": "minimal"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["agent"]["reasoning_effort"] == "minimal"
+
+    resp2 = client.get(f"/api/hermes/{instance_id}/agent-config", headers=_headers())
+    assert resp2.json()["agent"]["reasoning_effort"] == "minimal"
+
+
+def test_agent_config_route_rejects_non_hermes_gateway_instance(temp_db, monkeypatch):
+    client = _client(monkeypatch)
+    instance_id = _create_cli_instance()
+
+    resp = client.get(f"/api/hermes/{instance_id}/agent-config", headers=_headers())
+
+    assert resp.status_code == 400
+
+
 def test_dispatch_route_requires_goal(temp_db, monkeypatch):
     client = _client(monkeypatch)
     instance_id = _create_hermes_instance()

@@ -359,6 +359,60 @@ class TestAgentSettingsIntegration:
 
         assert seen == {"provider": "myprovider", "model": "my/model"}
 
+    def test_per_task_effort_overrides_the_batch_level_effort(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "_data", {"agent_runtime": {}, "native_agent": {}})
+        instance_id = _create_instance()
+        backend = _FakeBackend(["a", "b"])
+        _patch_inherited_backend(monkeypatch, backend)
+
+        _run(subagents.run_batch(
+            [{"goal": "one", "effort": "max"}, {"goal": "two"}],
+            parent_instance_id=instance_id, effort="low",
+        ))
+
+        assert backend.calls[0]["context"]["effort"] == "max"
+        assert backend.calls[1]["context"]["effort"] == "low"
+
+    def test_per_task_provider_model_overrides_the_batch_default(self, temp_db, monkeypatch):
+        from bot import providers as provider_registry
+
+        monkeypatch.setattr(config, "_data", {"agent_runtime": {}, "native_agent": {}})
+        instance_id = _create_instance()
+
+        resolved = []
+
+        def fake_named(provider, model):
+            resolved.append((provider, model))
+            return _FakeBackend(["a"])
+
+        monkeypatch.setattr(subagents, "_resolve_named_backend", fake_named)
+
+        _run(subagents.run_batch(
+            [
+                {"goal": "one", "provider": "task-provider", "model": "task/model"},
+                {"goal": "two"},
+            ],
+            parent_instance_id=instance_id, provider="batch-provider", model="batch/model",
+        ))
+
+        assert ("task-provider", "task/model") in resolved
+        # The batch default is resolved once up front (used by the
+        # second, non-overriding task) — the override task additionally
+        # resolves its own distinct provider/model.
+        assert resolved.count(("batch-provider", "batch/model")) == 1
+        assert resolved.count(("task-provider", "task/model")) == 1
+
+    def test_per_task_provider_without_model_is_an_error(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "_data", {"agent_runtime": {}, "native_agent": {}})
+        instance_id = _create_instance()
+        backend = _FakeBackend(["a"])
+        _patch_inherited_backend(monkeypatch, backend)
+
+        with pytest.raises(BackendError, match="both be given"):
+            _run(subagents.run_batch(
+                [{"goal": "one", "provider": "only-provider"}], parent_instance_id=instance_id,
+            ))
+
     def test_explicit_provider_model_still_wins_over_agent_settings(self, temp_db, monkeypatch):
         from bot import agent_settings
 

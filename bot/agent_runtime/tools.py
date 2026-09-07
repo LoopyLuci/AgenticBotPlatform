@@ -333,19 +333,28 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "description": (
             "Spawn one or more disposable, ephemeral sub-agents to work on independent subtasks in parallel — "
             "the same 'decompose and delegate' pattern Hermes Agent's own delegate_task tool gives Hermes "
-            "agents. Unlike delegate_to_instance (which addresses ONE specific, persistent registered bot "
-            "instance), these workers are throwaway: no bot_instances row is created for them, and their "
-            "history isn't kept beyond this call. role='leaf' (default) workers can't spawn further "
-            "sub-agents, reconfigure other instances, save memory, or write shared project context; "
-            "role='orchestrator' keeps those abilities, bounded by agent_runtime.max_delegation_depth. "
-            "Pass provider+model together to run children on a specific (e.g. free) model; omit both to "
-            "inherit your own backend/model. By default this call blocks until every child finishes and "
-            "returns {dispatch_id, children: [{index, goal, model, status: 'ok'|'error', result_excerpt}]}. "
-            "Pass background=true to return immediately instead — {dispatch_id, children: [{index, goal}]} "
-            "— so you can keep working in this same turn while they run; check on them with list_subagents, "
-            "nudge one with steer_subagent, or cancel one with stop_subagent, using the dispatch_id this call "
-            "returns. Either way, the dispatch_id stays valid afterward for list_subagents to look results up "
-            "again later, including from a later message if this turn ends first."
+            "agents, but with a real capability Hermes's own tool doesn't have: each task can pick its OWN "
+            "model and effort, not just one shared setting for the whole batch. Unlike delegate_to_instance "
+            "(which addresses ONE specific, persistent registered bot instance), these workers are throwaway: "
+            "no bot_instances row is created for them, and their history isn't kept beyond this call. "
+            "role='leaf' (default) workers can't spawn further sub-agents, reconfigure other instances, save "
+            "memory, or write shared project context; role='orchestrator' keeps those abilities, bounded by "
+            "agent_runtime.max_delegation_depth — an orchestrator child makes its own spawn_subagent call for "
+            "its own children, deciding their count/model/effort itself, the same way you're deciding for it.\n\n"
+            "You are trusted to actively choose swarm composition, not just accept defaults: call "
+            "list_available_models first if you're unsure what's available/cheapest, then pick a model and "
+            "effort level per task that fits its difficulty — e.g. low effort on a fast/free model for "
+            "simple parallel lookups, higher effort on a stronger model for anything requiring real "
+            "reasoning. Batch-level provider/model/effort/max_children are the default for every task; any "
+            "task may override provider+model and/or effort individually. Effort levels (least to most): "
+            "none, minimal, low, medium, high, xhigh, max, ultra — omit for no explicit preference.\n\n"
+            "By default this call blocks until every child finishes and returns {dispatch_id, children: "
+            "[{index, goal, model, status: 'ok'|'error', result_excerpt}]}. Pass background=true to return "
+            "immediately instead — {dispatch_id, children: [{index, goal}]} — so you can keep working in "
+            "this same turn while they run; check on them with list_subagents, nudge one with "
+            "steer_subagent, or cancel one with stop_subagent, using the dispatch_id this call returns. "
+            "Either way, the dispatch_id stays valid afterward for list_subagents to look results up again "
+            "later, including from a later message if this turn ends first."
         ),
         "input_schema": {
             "type": "object",
@@ -362,13 +371,25 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                                 "description": "Optional JSON Schema the child's final answer must match "
                                 "(validated, with one bounded retry on failure).",
                             },
+                            "provider": {"type": "string", "description": "Override the batch-level provider for just this task. Give together with model."},
+                            "model": {"type": "string", "description": "Override the batch-level model for just this task. Give together with provider."},
+                            "effort": {
+                                "type": "string",
+                                "enum": ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
+                                "description": "Override the batch-level effort for just this task.",
+                            },
                         },
                         "required": ["goal"],
                     },
                 },
                 "role": {"type": "string", "enum": ["leaf", "orchestrator"], "description": "Defaults to 'leaf'."},
-                "provider": {"type": "string", "description": "Named provider from config/providers.yaml. Give together with model, or omit both."},
-                "model": {"type": "string", "description": "Model id at that provider. Give together with provider, or omit both to inherit your own."},
+                "provider": {"type": "string", "description": "Named provider from config/providers.yaml, used for every task that doesn't override it. Give together with model, or omit both."},
+                "model": {"type": "string", "description": "Model id at that provider, used for every task that doesn't override it. Give together with provider, or omit both to inherit your own."},
+                "effort": {
+                    "type": "string",
+                    "enum": ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
+                    "description": "Effort level for every task that doesn't override it — least to most: none, minimal, low, medium, high, xhigh, max, ultra.",
+                },
                 "max_children": {"type": "integer", "description": "Caps parallelism for this call, further capped by native_agent.max_concurrent_children."},
                 "background": {"type": "boolean", "description": "Return immediately with a dispatch_id instead of waiting for every child to finish. Defaults to false."},
             },
@@ -701,11 +722,13 @@ async def execute_tool(name: str, tool_input: dict, *, workspace: Path, instance
         if global_:
             # A global skill is visible to every instance at once — there's
             # no single "target" for agent_control.can_target's per-instance
-            # allowlist to check, so this reuses the same "manager" trust
-            # convention persona=manager already carries elsewhere rather
-            # than inventing a new wildcard allowlist concept.
+            # allowlist to check, so this reuses the same manager-like trust
+            # convention (personas.MANAGER_LIKE_PERSONAS) rather than
+            # inventing a new wildcard allowlist concept.
+            from bot import personas
+
             caller = bot_instances.get_instance(instance_id)
-            if not caller or caller.get("persona") != "manager":
+            if not caller or not personas.is_manager_like(caller.get("persona")):
                 raise ToolError("creating a global skill requires a manager-persona instance")
         try:
             result = bot_skills.create(
@@ -927,9 +950,10 @@ async def execute_tool(name: str, tool_input: dict, *, workspace: Path, instance
             raise ToolError("provider and model must both be given, or both omitted")
         max_children = tool_input.get("max_children")
         background = bool(tool_input.get("background", False))
+        effort = tool_input.get("effort")
         try:
             result = await subagents.run_batch(
-                tasks, role=role, provider=provider, model=model,
+                tasks, role=role, provider=provider, model=model, effort=effort,
                 max_children=max_children, parent_instance_id=instance_id,
                 background=background,
             )

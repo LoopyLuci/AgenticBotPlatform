@@ -1721,10 +1721,30 @@ def build_app() -> FastAPI:
             max_concurrent_children=payload.get("max_concurrent_children"),
             max_spawn_depth=payload.get("max_spawn_depth"),
             subagent_auto_approve=payload.get("subagent_auto_approve"),
+            reasoning_effort=payload.get("reasoning_effort"),
             hermes_home=instance.get("hermes_home"),
             actor="dashboard",
         )
         return {"ok": True, "delegation": delegation}
+
+    @app.get("/api/hermes/{instance_id}/agent-config", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_hermes_agent_config_get(instance_id: int):
+        from bot import hermes_config
+
+        instance = _require_hermes_gateway_instance(instance_id)
+        return {"agent": hermes_config.read_agent_config(instance.get("hermes_home"))}
+
+    @app.post("/api/hermes/{instance_id}/agent-config", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_hermes_agent_config_set(instance_id: int, payload: dict = Body(...)):
+        from bot import hermes_config
+
+        instance = _require_hermes_gateway_instance(instance_id)
+        agent_cfg = hermes_config.set_agent_config(
+            reasoning_effort=payload.get("reasoning_effort"),
+            hermes_home=instance.get("hermes_home"),
+            actor="dashboard",
+        )
+        return {"ok": True, "agent": agent_cfg}
 
     @app.post("/api/hermes/{instance_id}/dispatch", dependencies=[Depends(_require_token_or_api_key)])
     async def api_hermes_dispatch(instance_id: int, payload: dict = Body(...)):
@@ -1874,6 +1894,7 @@ def build_app() -> FastAPI:
         try:
             dispatch_result = await subagents.run_batch(
                 tasks, role=role, provider=worker_provider, model=worker_model,
+                effort=payload.get("worker_effort"),
                 max_children=max_children, parent_instance_id=instance_id,
             )
         except BackendError as exc:

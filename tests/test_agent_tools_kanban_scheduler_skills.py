@@ -196,6 +196,21 @@ def test_create_skill_global_requires_manager_persona(temp_db, tmp_path):
     assert content == "x"
 
 
+def test_create_skill_global_also_allowed_for_auto_orchestrator_persona(temp_db, tmp_path):
+    from bot import bot_instances
+
+    instance_id = bot_instances.create_instance(
+        name="auto-orch", platform="telegram", backend="api",
+        credentials={"bot_token": "123456789:AAExampleTokenFromBotFather1234"},
+        allowed_user_ids=[111], enabled=False, persona="auto_orchestrator",
+    )
+    created = json.loads(_exec(
+        "create_skill", {"name": "global_thing2", "content": "x", "global_": True},
+        instance_id=instance_id, workspace=tmp_path,
+    ))
+    assert created["global"] is True
+
+
 def test_remove_skill(temp_db, tmp_path):
     instance_id = _create_instance()
     _exec("create_skill", {"name": "temp_skill", "content": "x"}, instance_id=instance_id, workspace=tmp_path)

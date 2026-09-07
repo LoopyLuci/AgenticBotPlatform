@@ -46,6 +46,16 @@ def test_enable_requires_manager_persona(temp_db):
     assert not auto_manage.get_config(iid).get("enabled")
 
 
+def test_enable_allowed_for_auto_orchestrator_persona(temp_db):
+    iid = bot_instances.create_instance(
+        name="auto-orch", platform="telegram", backend="api",
+        credentials={"bot_token": "123456789:AAExampleTokenFromBotFather1234"},
+        allowed_user_ids=[1], persona="auto_orchestrator",
+    )
+    reply = _run(commands.cmd_auto_manage(_ctx(iid), ["enable"]))
+    assert "enabled" in reply.lower()
+
+
 def test_enable_then_show(temp_db):
     iid = _make_manager_instance()
     reply = _run(commands.cmd_auto_manage(_ctx(iid, chat_id=99), ["enable"]))

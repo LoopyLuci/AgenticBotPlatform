@@ -574,8 +574,10 @@ async def cmd_auto_manage(ctx: CmdContext, args: list[str]) -> str:
         return "Auto-management is on:\n" + "\n".join(lines)
 
     if args[0] == "enable":
-        if instance.get("persona") != "manager":
-            return "Auto-management requires this instance's persona to be \"manager\"."
+        from bot import personas
+
+        if not personas.is_manager_like(instance.get("persona")):
+            return "Auto-management requires this instance's persona to be \"manager\" or \"auto_orchestrator\"."
         try:
             cfg = auto_manage.enable(ctx.instance_id, chat_id=ctx.chat_id, thread_id=ctx.thread_id, actor=ctx.actor)
         except auto_manage.AutoManageError as exc:

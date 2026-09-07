@@ -545,14 +545,25 @@ async def configure_delegation(
     max_concurrent_children: Optional[int] = None,
     max_spawn_depth: Optional[int] = None,
     subagent_auto_approve: Optional[bool] = None,
+    reasoning_effort: Optional[str] = None,
     confirm: bool = False,
 ) -> dict:
     """Sets defaults in a hermes_gateway-backed instance's own Hermes
     delegation config — which provider/model delegate_task's children run
     on (e.g. a free model while the parent stays on something stronger),
     how many children can run in parallel, how deep orchestrator-role
-    recursion may go, and whether children may run dangerous shell
-    commands with no human approval.
+    recursion may go, what effort level children think at (reasoning_effort:
+    none/minimal/low/medium/high/xhigh/max/ultra), and whether children may
+    run dangerous shell commands with no human approval.
+
+    Confirmed against Hermes's real source: delegate_task itself has NO
+    per-call model/provider/effort override — every child in every batch
+    shares whatever this config currently says, but a change here takes
+    effect on the VERY NEXT delegate_task call, no restart needed. This is
+    the actual lever for a Hermes-backed "auto orchestrator" manager: call
+    this to set the right model/effort for a batch of children BEFORE
+    calling delegate_task for it, and call it again before the next batch
+    if that one needs something different.
 
     IMPORTANT LIMITATION: until every Hermes instance gets its own
     isolated HERMES_HOME, this writes to the ONE Hermes config every
@@ -567,8 +578,30 @@ async def configure_delegation(
     return await _request("POST", f"/api/hermes/{instance_id}/delegation", json={
         "provider": provider, "model": model,
         "max_concurrent_children": max_concurrent_children, "max_spawn_depth": max_spawn_depth,
-        "subagent_auto_approve": subagent_auto_approve, "confirm": confirm,
+        "subagent_auto_approve": subagent_auto_approve, "reasoning_effort": reasoning_effort, "confirm": confirm,
     })
+
+
+@mcp.tool()
+async def get_hermes_agent_config(instance_id: int) -> dict:
+    """This hermes_gateway-backed instance's own (manager/orchestrator)
+    effort level — distinct from configure_delegation's, which governs
+    its CHILDREN."""
+    return await _request("GET", f"/api/hermes/{instance_id}/agent-config")
+
+
+@mcp.tool()
+async def set_hermes_agent_config(instance_id: int, reasoning_effort: str) -> dict:
+    """Sets THIS hermes_gateway-backed instance's own effort level (none/
+    minimal/low/medium/high/xhigh/max/ultra) — the manager/orchestrator's
+    own reasoning depth, distinct from configure_delegation's
+    reasoning_effort (its children's). Confirmed against Hermes's real
+    source: there is no tool Hermes's own agent can call to change its
+    own effort mid-turn — this MCP tool, reachable because BotServer's
+    own MCP server is registered into the Hermes instance (see
+    enable_hermes_swarm_tools), is the only self-service way to do it
+    without a human typing the gateway's /reasoning command."""
+    return await _request("POST", f"/api/hermes/{instance_id}/agent-config", json={"reasoning_effort": reasoning_effort})
 
 
 @mcp.tool()
@@ -618,6 +651,7 @@ async def dispatch_native_swarm_goal(
     tasks: list[dict],
     worker_provider: Optional[str] = None,
     worker_model: Optional[str] = None,
+    worker_effort: Optional[str] = None,
     max_children: Optional[int] = None,
     role: str = "leaf",
     confirm: bool = False,
@@ -644,13 +678,22 @@ async def dispatch_native_swarm_goal(
     under deny_unpriced_paid_models, or the estimate exceeding the hard
     ceiling) cannot.
 
+    Auto Swarm Orchestration: to give different subtasks different
+    models/effort in the same batch, put "provider"+"model" and/or
+    "effort" (none/minimal/low/medium/high/xhigh/max/ultra) directly on
+    the individual task dicts in `tasks` — they override worker_provider/
+    worker_model/worker_effort for just that one task. This granularity
+    is real capability Hermes's own delegate_task tool doesn't have
+    (confirmed against its real source: model/provider/effort there is
+    entirely config.yaml-driven, one shared value for the whole batch).
+
     Returns {"result": <readable summary>, "children": [{"index","goal",
     "model","status","result_excerpt"}, ...], "job_id": ...} — the same
     per-child shape the dashboard's Delegation Activity panel already
     understands from a Hermes-external dispatch."""
     return await _request("POST", f"/api/native-agent/{instance_id}/dispatch", timeout=600.0, json={
         "tasks": tasks, "worker_provider": worker_provider, "worker_model": worker_model,
-        "max_children": max_children, "role": role, "confirm": confirm,
+        "worker_effort": worker_effort, "max_children": max_children, "role": role, "confirm": confirm,
     })
 
 
