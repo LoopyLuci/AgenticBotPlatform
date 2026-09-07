@@ -10,6 +10,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
 @HiltViewModel
@@ -32,6 +34,17 @@ class ServerChatViewModel @Inject constructor(private val repository: ServerChat
 
     private var lastId = 0
     private var listStarted = false
+
+    // Guards refreshMessages() against overlapping calls — it's invoked
+    // both by a periodic poll (every 2s while a conversation is open,
+    // see ServerChatScreen) and directly after send()/sendFile(). Without
+    // this, two overlapping calls can both read the same `lastId` before
+    // either updates it, both fetch the same new row, and both append it
+    // to `_messages`, producing two list entries with the same id — which
+    // crashes the conversation LazyColumn's `key = { it.id }` with
+    // "Key ... was already used." Confirmed via a real crash log after
+    // sending a message immediately after opening a fresh conversation.
+    private val refreshMutex = Mutex()
 
     // Same reasoning as ChatViewModel's identical field — loadError is
     // only ever rendered on the conversation *list* screen, never inside
@@ -73,10 +86,18 @@ class ServerChatViewModel @Inject constructor(private val repository: ServerChat
     fun refreshMessages() {
         val id = _activeConversationId.value ?: return
         viewModelScope.launch {
-            runCatching { repository.messages(id, afterId = lastId) }.onSuccess { rows ->
-                if (rows.isNotEmpty()) {
-                    _messages.value = _messages.value + rows
-                    lastId = rows.maxOf { it.id }
+            refreshMutex.withLock {
+                // The conversation may have changed (or closed) while
+                // this call was waiting for the lock — don't apply a
+                // stale fetch's results against a different one.
+                if (_activeConversationId.value != id) return@withLock
+                runCatching { repository.messages(id, afterId = lastId) }.onSuccess { rows ->
+                    if (rows.isNotEmpty()) {
+                        val existingIds = _messages.value.mapTo(HashSet()) { it.id }
+                        val newRows = rows.filterNot { it.id in existingIds }
+                        if (newRows.isNotEmpty()) _messages.value = _messages.value + newRows
+                        lastId = rows.maxOf { it.id }
+                    }
                 }
             }
         }
