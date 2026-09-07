@@ -1764,7 +1764,7 @@ def build_app() -> FastAPI:
         db.set_audit_log_job_id(audit_id, job_id)
 
         try:
-            results = await subagents.run_batch(
+            dispatch_result = await subagents.run_batch(
                 tasks, role=role, provider=worker_provider, model=worker_model,
                 max_children=max_children, parent_instance_id=instance_id,
             )
@@ -1772,6 +1772,7 @@ def build_app() -> FastAPI:
             db.mark_job_done(job_id, status="failed", error=str(exc))
             raise HTTPException(status_code=502, detail=f"dispatch failed: {exc}")
 
+        results = dispatch_result["children"]
         db.set_job_children(job_id, results)
         final_text = "\n\n".join(f"[{r['status']}] {r['goal']}: {r['result_excerpt']}" for r in results)
         db.mark_job_done(job_id, status="success", result=final_text)
@@ -1780,6 +1781,7 @@ def build_app() -> FastAPI:
             "ok": True,
             "result": final_text,
             "children": results,
+            "dispatch_id": dispatch_result["dispatch_id"],
             "worker_provider": worker_provider,
             "worker_model": worker_model,
             "worker_model_source": pricing_source,

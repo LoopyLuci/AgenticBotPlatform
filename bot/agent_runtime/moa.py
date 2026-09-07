@@ -13,6 +13,16 @@ config) is deliberately NOT built here — this on-demand tool captures
 most of the real value (the agent decides WHEN a second opinion is worth
 the extra cost) without the state-signature caching machinery an
 always-on mode needs.
+
+Re-confirmed during a later native-parity audit session (the one that
+added spawn_subagent's list/steer/stop and background mode, and the
+kanban/scheduler/skills tools): auto-firing MoA on every single turn for
+every instance would be a real, surprising cost/latency multiplier with
+no clear win over this existing on-demand tool, which BotServer's own
+per-message-triggered execution model (unlike Hermes's persistent-process
+loop) doesn't naturally fit anyway. This is a deliberate, reasoned
+decision, not a forgotten gap — don't re-flag it as one without a
+concrete reason the tradeoff above no longer holds.
 """
 
 from __future__ import annotations

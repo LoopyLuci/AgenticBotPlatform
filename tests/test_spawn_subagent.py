@@ -60,10 +60,12 @@ def test_run_batch_runs_all_tasks_in_parallel(temp_db, monkeypatch):
     backend = _FakeBackend(["answer one", "answer two"])
     _patch_inherited_backend(monkeypatch, backend)
 
-    results = _run(subagents.run_batch(
+    result = _run(subagents.run_batch(
         [{"goal": "task one"}, {"goal": "task two"}], parent_instance_id=instance_id,
     ))
 
+    results = result["children"]
+    assert result["dispatch_id"]
     assert len(results) == 2
     assert {r["goal"] for r in results} == {"task one", "task two"}
     assert all(r["status"] == "ok" for r in results)
@@ -116,7 +118,7 @@ def test_empty_goal_errors_without_calling_backend(temp_db, monkeypatch):
     backend = _FakeBackend([])
     _patch_inherited_backend(monkeypatch, backend)
 
-    results = _run(subagents.run_batch([{"goal": "  "}], parent_instance_id=instance_id))
+    results = _run(subagents.run_batch([{"goal": "  "}], parent_instance_id=instance_id))["children"]
 
     assert results[0]["status"] == "error"
     assert backend.calls == []
@@ -128,7 +130,7 @@ def test_child_exception_is_captured_not_raised(temp_db, monkeypatch):
     backend = _FakeBackend([RuntimeError("boom")])
     _patch_inherited_backend(monkeypatch, backend)
 
-    results = _run(subagents.run_batch([{"goal": "x"}], parent_instance_id=instance_id))
+    results = _run(subagents.run_batch([{"goal": "x"}], parent_instance_id=instance_id))["children"]
 
     assert results[0]["status"] == "error"
     assert "boom" in results[0]["result_excerpt"]
@@ -193,7 +195,7 @@ def test_grandchild_hitting_depth_limit_surfaces_as_a_failed_child_not_a_crash(t
     backend.ask = nested_ask
     _patch_inherited_backend(monkeypatch, backend)
 
-    results = _run(subagents.run_batch([{"goal": "top"}], parent_instance_id=instance_id))
+    results = _run(subagents.run_batch([{"goal": "top"}], parent_instance_id=instance_id))["children"]
 
     assert results[0]["status"] == "error"
     assert "depth limit" in results[0]["result_excerpt"]
@@ -260,5 +262,6 @@ def test_spawn_subagent_tool_returns_json_results(temp_db, monkeypatch, tmp_path
     ))
 
     parsed = json.loads(output)
-    assert parsed[0]["status"] == "ok"
-    assert parsed[0]["goal"] == "say hi"
+    assert parsed["dispatch_id"]
+    assert parsed["children"][0]["status"] == "ok"
+    assert parsed["children"][0]["goal"] == "say hi"

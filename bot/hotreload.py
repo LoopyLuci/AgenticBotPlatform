@@ -65,7 +65,8 @@ PKG_DOTTED_PREFIX = "bot"
 # for module-level mutable containers, not by inspection alone).
 DENYLIST: frozenset[str] = frozenset({
     "bot.main", "bot.router", "bot.db", "bot.config", "bot.dashboard.server",
-    "bot.agent_runtime.engine", "bot.agent_runtime.approval", "bot.platform_supervisor",
+    "bot.agent_runtime.engine", "bot.agent_runtime.approval", "bot.agent_runtime.subagent_registry",
+    "bot.platform_supervisor",
     "bot.envfile", "bot.handlers", "bot.outbox", "bot.plugins", "bot.attachments",
     "bot.hotreload",  # never reload the reloader mid-cycle
     "bot.mcp_server",  # a separate process (python -m bot.mcp_server); not part of this one anyway

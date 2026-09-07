@@ -72,10 +72,13 @@ def test_dispatch_route_runs_tasks_and_populates_job_children(temp_db, monkeypat
     instance_id = _create_native_agent_instance()
 
     async def fake_run_batch(tasks, *, role, provider, model, max_children, parent_instance_id):
-        return [
-            {"index": i, "goal": t["goal"], "model": f"{provider}/{model}", "status": "ok", "result_excerpt": f"done {i}"}
-            for i, t in enumerate(tasks)
-        ]
+        return {
+            "dispatch_id": "fake",
+            "children": [
+                {"index": i, "goal": t["goal"], "model": f"{provider}/{model}", "status": "ok", "result_excerpt": f"done {i}"}
+                for i, t in enumerate(tasks)
+            ],
+        }
 
     monkeypatch.setattr("bot.agent_runtime.subagents.run_batch", fake_run_batch)
 
@@ -113,7 +116,10 @@ def test_dispatch_route_auto_picks_free_model(temp_db, monkeypatch):
     async def fake_run_batch(tasks, *, role, provider, model, max_children, parent_instance_id):
         assert provider == "openrouter"
         assert model == "free-model"
-        return [{"index": 0, "goal": tasks[0]["goal"], "model": f"{provider}/{model}", "status": "ok", "result_excerpt": "ok"}]
+        return {
+            "dispatch_id": "fake",
+            "children": [{"index": 0, "goal": tasks[0]["goal"], "model": f"{provider}/{model}", "status": "ok", "result_excerpt": "ok"}],
+        }
 
     monkeypatch.setattr("bot.agent_runtime.subagents.run_batch", fake_run_batch)
 

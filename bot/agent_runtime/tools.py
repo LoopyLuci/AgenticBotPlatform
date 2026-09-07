@@ -20,10 +20,15 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import json as _json_module
 from pathlib import Path
 from typing import Any, Optional
 
 from bot.envfile import PROJECT_ROOT
+
+
+def _json_dumps(value: Any) -> str:
+    return _json_module.dumps(value)
 
 # Ambient recursion depth for delegate_to_instance — a ContextVar rather
 # than a parameter threaded through execute_tool()'s signature, since a
@@ -120,6 +125,100 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "install_skill",
+        "description": (
+            "Register a file already in your own working directory as a new skill you can load later with "
+            "read_skill — its first line becomes the one-line description shown in your own skill list."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"path": {"type": "string", "description": "Path within your working directory to the skill file."}},
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "list_skills",
+        "description": "List every skill currently available to you (name + one-line description).",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "kanban_add_card",
+        "description": "Add a card to one of your kanban boards (created automatically the first time it's named).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "board": {"type": "string", "description": "Board name — e.g. 'default'."},
+                "column": {"type": "string", "description": "Column name — e.g. 'todo', 'doing', 'done'."},
+                "text": {"type": "string", "description": "The card's text."},
+            },
+            "required": ["board", "column", "text"],
+        },
+    },
+    {
+        "name": "kanban_list_cards",
+        "description": "List every card on one of your kanban boards, grouped by column.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"board": {"type": "string", "description": "Board name — e.g. 'default'."}},
+            "required": ["board"],
+        },
+    },
+    {
+        "name": "kanban_move_card",
+        "description": "Move one of your kanban cards to a different column.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "card_id": {"type": "integer"},
+                "column": {"type": "string", "description": "The column to move it to."},
+            },
+            "required": ["card_id", "column"],
+        },
+    },
+    {
+        "name": "schedule_command",
+        "description": (
+            "Schedule a prompt to run for you repeatedly, like /cron — e.g. a recurring status check or "
+            "reminder. Runs through the exact same agent loop (same tools, same approval gating) as a "
+            "manually-typed message."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "kind": {"type": "string", "description": "A short label for what this is, e.g. 'status_check'."},
+                "prompt": {"type": "string", "description": "The prompt to run on each firing."},
+                "interval": {"type": "string", "description": "e.g. '30s', '10m', '2h', '1d', or a bare number of seconds."},
+                "chat_id": {"type": "string", "description": "Which chat to post results into. Omit for instance-wide (no specific chat)."},
+                "thread_id": {"type": "string", "description": "Optional thread/topic id within that chat."},
+                "max_runs": {"type": "integer", "description": "Optional cap on how many times this fires before it stops itself."},
+            },
+            "required": ["kind", "prompt", "interval"],
+        },
+    },
+    {
+        "name": "list_schedules",
+        "description": "List your own scheduled commands (from schedule_command or /cron).",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "pause_schedule",
+        "description": "Pause one of your scheduled commands without deleting it.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"schedule_id": {"type": "integer"}},
+            "required": ["schedule_id"],
+        },
+    },
+    {
+        "name": "remove_schedule",
+        "description": "Permanently remove one of your scheduled commands.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"schedule_id": {"type": "integer"}},
+            "required": ["schedule_id"],
+        },
+    },
+    {
         "name": "delegate_to_instance",
         "description": (
             "Ask another registered bot instance (Claude- or Hermes-backed — any backend) a question and "
@@ -149,8 +248,13 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "sub-agents, reconfigure other instances, save memory, or write shared project context; "
             "role='orchestrator' keeps those abilities, bounded by agent_runtime.max_delegation_depth. "
             "Pass provider+model together to run children on a specific (e.g. free) model; omit both to "
-            "inherit your own backend/model. Returns a JSON array, one entry per task: "
-            "{index, goal, model, status: 'ok'|'error', result_excerpt}."
+            "inherit your own backend/model. By default this call blocks until every child finishes and "
+            "returns {dispatch_id, children: [{index, goal, model, status: 'ok'|'error', result_excerpt}]}. "
+            "Pass background=true to return immediately instead — {dispatch_id, children: [{index, goal}]} "
+            "— so you can keep working in this same turn while they run; check on them with list_subagents, "
+            "nudge one with steer_subagent, or cancel one with stop_subagent, using the dispatch_id this call "
+            "returns. Either way, the dispatch_id stays valid afterward for list_subagents to look results up "
+            "again later, including from a later message if this turn ends first."
         ),
         "input_schema": {
             "type": "object",
@@ -175,8 +279,58 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "provider": {"type": "string", "description": "Named provider from config/providers.yaml. Give together with model, or omit both."},
                 "model": {"type": "string", "description": "Model id at that provider. Give together with provider, or omit both to inherit your own."},
                 "max_children": {"type": "integer", "description": "Caps parallelism for this call, further capped by native_agent.max_concurrent_children."},
+                "background": {"type": "boolean", "description": "Return immediately with a dispatch_id instead of waiting for every child to finish. Defaults to false."},
             },
             "required": ["tasks"],
+        },
+    },
+    {
+        "name": "list_subagents",
+        "description": (
+            "Check on spawn_subagent children — omit dispatch_id to list every dispatch you currently have "
+            "(useful after starting one or more background dispatches), or pass one dispatch_id for that "
+            "batch's live per-child status ('running'/'ok'/'error'/'stopped') and results so far. Works for "
+            "both background and already-finished blocking dispatches."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "dispatch_id": {"type": "string", "description": "A dispatch_id returned by an earlier spawn_subagent call. Omit to list all of yours."},
+            },
+        },
+    },
+    {
+        "name": "steer_subagent",
+        "description": (
+            "Send a mid-turn nudge to one still-running spawn_subagent child — the same idea as the /steer "
+            "command a human can send you, given to a child you spawned. Delivered before that child's next "
+            "tool call; has no effect on a child that has already finished (use list_subagents to check first "
+            "if unsure)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "dispatch_id": {"type": "string", "description": "The dispatch this child belongs to."},
+                "child_index": {"type": "integer", "description": "Which child within that dispatch (its 'index' from spawn_subagent/list_subagents)."},
+                "message": {"type": "string", "description": "The nudge to send."},
+            },
+            "required": ["dispatch_id", "child_index", "message"],
+        },
+    },
+    {
+        "name": "stop_subagent",
+        "description": (
+            "Cancel one still-running spawn_subagent child before it finishes on its own — its ephemeral "
+            "session is marked 'stopped', distinct from a natural 'error'. Has no effect on a child that has "
+            "already finished."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "dispatch_id": {"type": "string", "description": "The dispatch this child belongs to."},
+                "child_index": {"type": "integer", "description": "Which child within that dispatch (its 'index' from spawn_subagent/list_subagents)."},
+            },
+            "required": ["dispatch_id", "child_index"],
         },
     },
     {
@@ -423,6 +577,115 @@ async def execute_tool(name: str, tool_input: dict, *, workspace: Path, instance
             raise ToolError(f"no skill named {skill_name!r} — see the system prompt's skill list")
         return content
 
+    if name == "install_skill":
+        from bot import skills as bot_skills
+
+        if instance_id is None:
+            raise ToolError("install_skill needs an instance context")
+        rel_path = tool_input.get("path") or ""
+        # Same workspace sandbox read_file/write_file enforce — without
+        # this, install_skill would be a path outside the intended
+        # boundary: read any file on disk into a "skill" here, then
+        # read_skill it back out, regardless of the workspace sandbox
+        # every other file-reading tool respects.
+        safe_path = _safe_path(workspace, rel_path)
+        try:
+            return _json_dumps(bot_skills.install(instance_id, str(safe_path)))
+        except bot_skills.SkillError as exc:
+            raise ToolError(str(exc))
+
+    if name == "list_skills":
+        from bot import skills as bot_skills
+
+        if instance_id is None:
+            raise ToolError("list_skills needs an instance context")
+        return _json_dumps(bot_skills.list_for_instance(instance_id))
+
+    if name == "kanban_add_card":
+        from bot import kanban
+
+        if instance_id is None:
+            raise ToolError("kanban_add_card needs an instance context")
+        board = tool_input.get("board") or "default"
+        column = tool_input.get("column") or "todo"
+        text = tool_input.get("text") or ""
+        try:
+            return _json_dumps(kanban.add_card(instance_id, board, column, text))
+        except kanban.KanbanError as exc:
+            raise ToolError(str(exc))
+
+    if name == "kanban_list_cards":
+        from bot import kanban
+
+        if instance_id is None:
+            raise ToolError("kanban_list_cards needs an instance context")
+        board = tool_input.get("board") or "default"
+        return _json_dumps(kanban.list_cards(instance_id, board))
+
+    if name == "kanban_move_card":
+        from bot import kanban
+
+        if instance_id is None:
+            raise ToolError("kanban_move_card needs an instance context")
+        card_id = tool_input.get("card_id")
+        column = tool_input.get("column") or "todo"
+        if card_id is None:
+            raise ToolError("card_id is required")
+        try:
+            return _json_dumps(kanban.move_card(instance_id, int(card_id), column))
+        except kanban.KanbanError as exc:
+            raise ToolError(str(exc))
+
+    if name == "schedule_command":
+        from bot import scheduler
+
+        if instance_id is None:
+            raise ToolError("schedule_command needs an instance context")
+        kind = tool_input.get("kind") or ""
+        prompt = tool_input.get("prompt") or ""
+        interval = tool_input.get("interval") or ""
+        chat_id = tool_input.get("chat_id")
+        thread_id = tool_input.get("thread_id")
+        max_runs = tool_input.get("max_runs")
+        if not prompt.strip():
+            raise ToolError("prompt is required")
+        try:
+            interval_s = scheduler.parse_duration(interval)
+            sched_id = scheduler.create(
+                instance_id, chat_id, kind, prompt, interval_s, max_runs=max_runs, thread_id=thread_id,
+            )
+        except scheduler.ScheduleError as exc:
+            raise ToolError(str(exc))
+        return _json_dumps({"id": sched_id})
+
+    if name == "list_schedules":
+        from bot import scheduler
+
+        if instance_id is None:
+            raise ToolError("list_schedules needs an instance context")
+        return _json_dumps(scheduler.list_for_chat(instance_id, chat_id=None))
+
+    if name in ("pause_schedule", "remove_schedule"):
+        from bot import db, scheduler
+
+        if instance_id is None:
+            raise ToolError(f"{name} needs an instance context")
+        sched_id = tool_input.get("schedule_id")
+        if sched_id is None:
+            raise ToolError("schedule_id is required")
+        row = db.get_scheduled_command(int(sched_id))
+        # scheduler.pause/remove take no instance_id themselves — this
+        # ownership check is what stops one instance from touching
+        # another's schedule via this tool, since scheduler.py's own
+        # functions don't enforce that boundary at all.
+        if row is None or row["instance_id"] != instance_id:
+            raise ToolError(f"schedule {sched_id} not found")
+        if name == "pause_schedule":
+            scheduler.pause(int(sched_id))
+        else:
+            scheduler.remove(int(sched_id))
+        return "ok"
+
     if name == "delegate_to_instance":
         from bot import agent_control, bot_instances, db
         from bot.backends.base import BackendError
@@ -469,8 +732,6 @@ async def execute_tool(name: str, tool_input: dict, *, workspace: Path, instance
         return result.text
 
     if name == "spawn_subagent":
-        import json as _json
-
         from bot.agent_runtime import subagents
         from bot.backends.base import BackendError
 
@@ -485,14 +746,45 @@ async def execute_tool(name: str, tool_input: dict, *, workspace: Path, instance
         if bool(provider) != bool(model):
             raise ToolError("provider and model must both be given, or both omitted")
         max_children = tool_input.get("max_children")
+        background = bool(tool_input.get("background", False))
         try:
-            results = await subagents.run_batch(
+            result = await subagents.run_batch(
                 tasks, role=role, provider=provider, model=model,
                 max_children=max_children, parent_instance_id=instance_id,
+                background=background,
             )
         except BackendError as exc:
             raise ToolError(str(exc))
-        return _json.dumps(results)
+        return _json_dumps(result)
+
+    if name == "list_subagents":
+        from bot.agent_runtime import subagent_registry
+
+        dispatch_id = tool_input.get("dispatch_id")
+        if dispatch_id:
+            return _json_dumps(subagent_registry.describe(dispatch_id, parent_instance_id=instance_id))
+        return _json_dumps(subagent_registry.describe_all(instance_id))
+
+    if name == "steer_subagent":
+        from bot.agent_runtime import subagent_registry
+
+        dispatch_id = tool_input.get("dispatch_id")
+        child_index = tool_input.get("child_index")
+        message = (tool_input.get("message") or "").strip()
+        if not dispatch_id or child_index is None or not message:
+            raise ToolError("dispatch_id, child_index, and message are all required")
+        subagent_registry.steer(dispatch_id, int(child_index), message, parent_instance_id=instance_id)
+        return "steered"
+
+    if name == "stop_subagent":
+        from bot.agent_runtime import subagent_registry
+
+        dispatch_id = tool_input.get("dispatch_id")
+        child_index = tool_input.get("child_index")
+        if not dispatch_id or child_index is None:
+            raise ToolError("dispatch_id and child_index are both required")
+        subagent_registry.stop(dispatch_id, int(child_index), parent_instance_id=instance_id)
+        return "stopped"
 
     if name == "consult_models":
         from bot.agent_runtime import moa

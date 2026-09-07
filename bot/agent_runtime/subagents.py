@@ -21,6 +21,7 @@ import asyncio
 import logging
 from typing import Any, Optional
 
+from bot.agent_runtime import subagent_registry
 from bot.agent_runtime.transports.anthropic import AnthropicTransport
 from bot.agent_runtime.transports.openai_compatible import OpenAICompatibleTransport
 from bot.backends.base import BackendError
@@ -36,6 +37,10 @@ logger = logging.getLogger("bot.agent_runtime.subagents")
 LEAF_BLOCKED_TOOLS = frozenset({
     "spawn_subagent", "delegate_to_instance", "update_agent_config",
     "write_project_context", "save_memory",
+    # A leaf worker shouldn't schedule recurring commands or install new
+    # skills in the parent's name — same reasoning as save_memory/
+    # write_project_context above, just for two tools added later.
+    "schedule_command", "install_skill",
 })
 
 DEFAULT_MAX_CONCURRENT_CHILDREN = 6
@@ -103,17 +108,32 @@ async def run_batch(
     model: Optional[str] = None,
     max_children: Optional[int] = None,
     parent_instance_id: Optional[int] = None,
-) -> list[dict[str, Any]]:
-    """`tasks`: [{"goal": str, "output_schema": dict|None}, ...]. Returns
-    [{"index", "goal", "model", "status": "ok"|"error", "result_excerpt"}]
-    — the exact shape bot/swarm/child_parser.py already parses from a
-    Hermes-external dispatch's final reply, so dashboard observability
-    code understands both kinds of fan-out identically."""
+    background: bool = False,
+) -> dict[str, Any]:
+    """`tasks`: [{"goal": str, "output_schema": dict|None}, ...].
+
+    Default (background=False): blocks until every child finishes, same
+    as always, and returns
+    {"dispatch_id", "children": [{"index", "goal", "model", "status": "ok"|"error", "result_excerpt"}]}
+    — the `children` shape is exactly what bot/swarm/child_parser.py
+    already parses from a Hermes-external dispatch's final reply, so
+    dashboard observability code understands both kinds of fan-out
+    identically. `dispatch_id` is returned even though the dispatch is
+    already finished by the time this returns, so a caller can still
+    look results up again later via list_subagents().
+
+    background=True: registers every child (so list_subagents/
+    steer_subagent/stop_subagent can reach them) and returns immediately
+    with {"dispatch_id", "children": [{"index", "goal"}]} — no waiting.
+    The children keep running on this same process's event loop; see
+    this module's own docstring and the plan that added this for why
+    that's an honest, bounded claim rather than a persistent-process
+    guarantee Hermes's own delegate_task(background=true) makes."""
     from bot.agent_runtime.tools import _delegation_depth
     from bot.config import config
 
     if not tasks:
-        return []
+        return {"dispatch_id": None, "children": []}
 
     max_depth = config.current.get("agent_runtime", {}).get("max_delegation_depth", 2)
     depth = _delegation_depth.get()
@@ -135,36 +155,98 @@ async def run_batch(
 
         allowed_tools = frozenset(TOOL_SCHEMA_NAMES) - LEAF_BLOCKED_TOOLS
 
+    dispatch = subagent_registry.new_dispatch(parent_instance_id)
     token = _delegation_depth.set(depth + 1)
     try:
-        results = await asyncio.gather(*(
-            _run_one_child(i, task, backend, semaphore, allowed_tools, parent_instance_id)
-            for i, task in enumerate(tasks)
-        ))
+        for i, task in enumerate(tasks):
+            handle = await _start_child(dispatch, i, task, backend, semaphore, allowed_tools, parent_instance_id)
+            subagent_registry.register_child(dispatch, i, handle)
     finally:
         _delegation_depth.reset(token)
-    return list(results)
+
+    if background:
+        return {
+            "dispatch_id": dispatch.dispatch_id,
+            "children": [{"index": i, "goal": h.goal} for i, h in dispatch.children.items()],
+        }
+
+    # Deliberately NOT removed from the registry once gather() returns —
+    # see subagent_registry.describe()'s docstring: a caller should still
+    # be able to list_subagents(dispatch_id) this dispatch afterward and
+    # get its real final results, not a "no such dispatch" error just
+    # because it already finished.
+    #
+    # return_exceptions=True matters here specifically for
+    # stop_subagent(): cancelling one child raises CancelledError out of
+    # its task, and without this, a plain gather() would propagate that
+    # straight out of run_batch — crashing the WHOLE blocking dispatch
+    # (every sibling's real results lost) just because one child was
+    # deliberately stopped. Each raised exception is converted below into
+    # the same per-child dict shape a normal result already has, so a
+    # caller never needs to know whether a given entry came back via a
+    # return or an exception.
+    raw_results = await asyncio.gather(*(h.task for h in dispatch.children.values()), return_exceptions=True)
+    children = []
+    for (index, handle), outcome in zip(dispatch.children.items(), raw_results):
+        if isinstance(outcome, BaseException):
+            status = "stopped" if isinstance(outcome, asyncio.CancelledError) else "error"
+            children.append({
+                "index": index, "goal": handle.goal, "model": backend.model,
+                "status": status, "result_excerpt": str(outcome)[:500] or status,
+            })
+        else:
+            children.append(outcome)
+    return {"dispatch_id": dispatch.dispatch_id, "children": children}
 
 
-async def _run_one_child(
+async def _start_child(
+    dispatch,
     index: int,
     task: dict[str, Any],
     backend: NativeAgentBackend,
     semaphore: asyncio.Semaphore,
     allowed_tools: Optional[frozenset],
     parent_instance_id: Optional[int],
+):
+    """Creates the child's ephemeral_sessions row and steer queue up
+    front (before the task starts running), then wraps _run_one_child in
+    a real asyncio.Task so it has a handle steer_subagent/stop_subagent
+    can act on for as long as it's alive."""
+    from bot import db
+    from bot.agent_runtime.subagent_registry import ChildHandle
+
+    goal = (task.get("goal") or "").strip()
+    session_id = db.create_ephemeral_session(parent_instance_id, backend.name, backend.model, goal)
+    steer_queue: "asyncio.Queue[str]" = asyncio.Queue()
+    coro = _run_one_child(index, task, goal, session_id, backend, semaphore, allowed_tools, parent_instance_id, steer_queue)
+    aio_task = asyncio.create_task(coro)
+    return ChildHandle(
+        task=aio_task, steer_queue=steer_queue, ephemeral_session_id=session_id,
+        parent_instance_id=parent_instance_id, goal=goal,
+    )
+
+
+async def _run_one_child(
+    index: int,
+    task: dict[str, Any],
+    goal: str,
+    session_id: int,
+    backend: NativeAgentBackend,
+    semaphore: asyncio.Semaphore,
+    allowed_tools: Optional[frozenset],
+    parent_instance_id: Optional[int],
+    steer_queue: "asyncio.Queue[str]",
 ) -> dict[str, Any]:
     from bot import db
     from bot.agent_runtime.output_schema import validate_or_retry
 
-    goal = (task.get("goal") or "").strip()
     if not goal:
+        db.finish_ephemeral_session(session_id, status="error", result="empty goal")
         return {"index": index, "goal": "", "model": backend.model, "status": "error", "result_excerpt": "empty goal"}
 
     output_schema = task.get("output_schema")
     async with semaphore:
-        session_id = db.create_ephemeral_session(parent_instance_id, backend.name, backend.model, goal)
-        context: dict[str, Any] = {"instance_id": parent_instance_id}
+        context: dict[str, Any] = {"instance_id": parent_instance_id, "steer_queue": steer_queue}
         if allowed_tools is not None:
             context["allowed_tools"] = allowed_tools
         try:
@@ -179,6 +261,10 @@ async def _run_one_child(
                 status = "ok" if ok else "error"
             db.finish_ephemeral_session(session_id, status=status, result=text)
             return {"index": index, "goal": goal, "model": backend.model, "status": status, "result_excerpt": text[:500]}
+        except asyncio.CancelledError:
+            # stop_subagent() already wrote the "stopped" status/result —
+            # don't overwrite it with a generic cancellation message.
+            raise
         except Exception as exc:
             logger.warning("spawn_subagent child %d failed: %s", index, exc)
             db.finish_ephemeral_session(session_id, status="error", result=str(exc))
