@@ -405,6 +405,101 @@ class TestListProjectsWithSessions:
         assert UiBackend.NO_PROJECT_BUCKET not in grouped
 
 
+class TestClickProjectHeader:
+    def test_clicks_the_exact_header_button(self):
+        """Real bug found live: the sidebar's session rows are
+        virtualized — a project's sessions are genuinely absent from the
+        accessibility tree (not collapsed, not paginated) until that
+        project's own plain header button is clicked."""
+        backend = UiBackend()
+        private_project_header = _button("PrivateProject")
+        win = _win([private_project_header, _button("New session in PrivateProject")])
+
+        found = backend._sync_click_project_header(win, "PrivateProject")
+
+        assert found is True
+        private_project_header.click_input.assert_called_once()
+
+    def test_missing_header_is_a_safe_no_op(self):
+        """Some projects (e.g. a very new one) show no separate header
+        button at all — already as expanded as they'll get."""
+        backend = UiBackend()
+        win = _win([_button("New session in TridentDroid")])
+
+        found = backend._sync_click_project_header(win, "TridentDroid")
+
+        assert found is False
+
+    def test_pinned_shortcut_is_never_mistaken_for_the_real_header(self):
+        """The pinned section's "Idle PrivateProject" shortcut must not be
+        clicked instead of the real plain "PrivateProject" header — only an
+        exact, unprefixed name match counts."""
+        backend = UiBackend()
+        pinned_shortcut = _button("Idle PrivateProject")
+        real_header = _button("PrivateProject")
+        win = _win([pinned_shortcut, real_header, _button("New session in PrivateProject")])
+
+        backend._sync_click_project_header(win, "PrivateProject")
+
+        pinned_shortcut.click_input.assert_not_called()
+        real_header.click_input.assert_called_once()
+
+
+class TestListProjectsWithSessionsAccordion:
+    def test_clicks_and_scans_each_project_one_at_a_time(self):
+        """Confirmed live this is genuinely ACCORDION behavior — clicking
+        one project's header collapses whichever was previously expanded.
+        An "expand every project, then scan once" approach only ever
+        captured the LAST project clicked; this locks in the real fix:
+        click one, scan immediately, then move to the next, merging
+        results across all of them."""
+        backend = UiBackend()
+        click_log: list[str] = []
+
+        # Each project only reveals its own sessions in this fake
+        # sidebar's view AFTER its own header has been clicked — modeling
+        # the real accordion behavior found live.
+        expanded = {"project": None}
+
+        def make_win():
+            win = MagicMock()
+
+            def descendants(control_type=None, **_):
+                if control_type != "Button":
+                    return []
+                # Realistic ordering: each project's own header + sessions
+                # (when expanded) sit right after that project's own "New
+                # session in X" marker, before the next project's.
+                buttons = [_button("PrivateProject"), _button("New session in PrivateProject")]
+                if expanded["project"] == "PrivateProject":
+                    buttons.append(_button("Idle Fix the login bug"))
+                buttons += [_button("TridentDroid"), _button("New session in TridentDroid")]
+                if expanded["project"] == "TridentDroid":
+                    buttons.append(_button("Idle Android crash triage"))
+                return buttons
+
+            win.descendants.side_effect = descendants
+            return win
+
+        win = make_win()
+        backend._connect = lambda: win  # type: ignore[method-assign]
+
+        def fake_click_header(win, project):
+            click_log.append(project)
+            expanded["project"] = project
+            return True
+
+        backend._sync_click_project_header = fake_click_header  # type: ignore[method-assign]
+
+        grouped = backend._sync_list_projects_with_sessions()
+
+        assert click_log == ["PrivateProject", "TridentDroid"]
+        assert grouped == {
+            "PrivateProject": ["Fix the login bug"],
+            "TridentDroid": ["Android crash triage"],
+        }
+
+
 class TestExpandPaginatedSessions:
     def test_clicks_show_more_until_it_disappears(self):
         backend = UiBackend(poll_interval_s=0.001)

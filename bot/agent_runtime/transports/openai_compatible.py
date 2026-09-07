@@ -91,6 +91,7 @@ class OpenAICompatibleTransport(ProviderTransport):
         max_tokens: int,
         timeout_s: float,
         system_prompt: Optional[str] = None,
+        effort: Optional[str] = None,
     ) -> NormalizedResponse:
         wire_messages = _to_wire_messages(history)
         if system_prompt:
@@ -103,6 +104,18 @@ class OpenAICompatibleTransport(ProviderTransport):
         if tool_schemas:
             payload["tools"] = to_openai_tools(tool_schemas)
             payload["tool_choice"] = "auto"
+        # Best-effort only: "reasoning_effort" is the real parameter name
+        # OpenAI's o-series Chat Completions API accepts, and several
+        # OpenRouter-routed models pass it straight through — but this is
+        # genuinely provider/model-dependent, not a guarantee. An endpoint
+        # that doesn't recognize the field is expected to just ignore it
+        # (safe), not error — never asserted or verified for every
+        # possible custom_model provider.
+        from bot import effort as effort_module
+
+        openai_effort = effort_module.to_openai_reasoning_effort(effort)
+        if openai_effort is not None:
+            payload["reasoning_effort"] = openai_effort
         async with httpx.AsyncClient(timeout=timeout_s) as client:
             try:
                 resp = await client.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)

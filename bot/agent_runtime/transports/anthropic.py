@@ -58,6 +58,7 @@ class AnthropicTransport(ProviderTransport):
         max_tokens: int,
         timeout_s: float,
         system_prompt: Optional[str] = None,
+        effort: Optional[str] = None,
     ) -> NormalizedResponse:
         client = self._get_client()
         # Anthropic's stored-history shape IS the wire shape already
@@ -69,6 +70,17 @@ class AnthropicTransport(ProviderTransport):
             create_kwargs["tools"] = tool_schemas
         if system_prompt:
             create_kwargs["system"] = system_prompt
+        # Confirmed live against platform.claude.com/docs (matching this
+        # deployment's real model family — claude-sonnet-5, claude-opus-5,
+        # etc.): output_config.effort is the current, correct control —
+        # the older thinking.budget_tokens path is deprecated/rejected on
+        # these exact models. Omitting the field entirely (effort=None or
+        # an unrecognized level) preserves the API's own "high" default.
+        from bot import effort as effort_module
+
+        anthropic_effort = effort_module.to_anthropic(effort)
+        if anthropic_effort is not None:
+            create_kwargs["output_config"] = {"effort": anthropic_effort}
         try:
             resp = await asyncio.wait_for(client.messages.create(**create_kwargs), timeout=timeout_s)
         except asyncio.TimeoutError as exc:

@@ -102,6 +102,7 @@ PLATFORM_MODULES: dict[str, str] = {
 # already re-executed `from X import y` this cycle never gets stuck
 # holding X's pre-reload value for the rest of the cycle.
 _TIER3_LEAVES: tuple[str, ...] = (
+    "bot.effort",  # pure, stateless mapping functions, zero bot-internal deps — must precede hermes_config/the two transports, which import it
     "bot.validators",
     "bot.network_info",
     "bot.platform_guides",

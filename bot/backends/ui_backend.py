@@ -479,6 +479,62 @@ class UiBackend(Backend):
 
     NO_PROJECT_BUCKET = "(no project)"
 
+    def _scan_sidebar_buttons(self, win) -> dict[str, list[str]]:
+        """One pass over whatever's CURRENTLY rendered, grouping session
+        buttons ("Idle <title>"/"Running <title>") under whichever
+        project's "New session in <project>" marker most recently
+        preceded them in button order — confirmed live this ordering
+        holds within a single rendered view. Sessions appearing before
+        the first project marker at all are grouped under
+        NO_PROJECT_BUCKET. Does not itself expand anything — see
+        _sync_click_project_header/_sync_expand_paginated_sessions,
+        which must run first for a project's sessions to be present here
+        at all (the sidebar virtualizes them)."""
+        new_session_prefix = "new session in "
+        result: dict[str, list[str]] = {}
+        current_project = self.NO_PROJECT_BUCKET
+        for btn in win.descendants(control_type="Button"):
+            try:
+                name = (btn.window_text() or "").strip()
+            except Exception:
+                continue
+            if not name:
+                continue
+            if name.lower().startswith(new_session_prefix):
+                current_project = name[len(new_session_prefix):]
+                result.setdefault(current_project, [])
+                continue
+            for status_prefix in ("Idle ", "Running "):
+                if name.startswith(status_prefix):
+                    result.setdefault(current_project, []).append(name[len(status_prefix):])
+                    break
+        return result
+
+    @staticmethod
+    def _sync_click_project_header(win, project: str) -> bool:
+        """Clicks [project]'s own plain header button (e.g. "PrivateProject",
+        distinct from its "New session in PrivateProject" button) — confirmed
+        live this is what actually scrolls/expands that project's
+        sessions into the sidebar's rendered range (they are otherwise
+        genuinely absent from the accessibility tree, not merely
+        collapsed). Returns False (a safe no-op, not an error) if no such
+        header exists — some projects (e.g. a very new one) show no
+        separate header button and are already as expanded as they get.
+        Exact match only: the pinned section's "Idle <project>" shortcut
+        must never be mistaken for this button."""
+        for btn in win.descendants(control_type="Button"):
+            try:
+                name = (btn.window_text() or "").strip()
+            except Exception:
+                continue
+            if name == project:
+                try:
+                    btn.click_input()
+                except Exception:
+                    return False
+                return True
+        return False
+
     def _sync_expand_paginated_sessions(self, win) -> None:
         """Confirmed live: a project with many sessions shows a "Show N
         more in <project>" button instead of all of them — without
@@ -507,53 +563,48 @@ class UiBackend(Backend):
                 return
 
     def _sync_list_projects_with_sessions(self) -> dict[str, list[str]]:
-        """Every project's real, currently-visible sidebar sessions,
-        grouped by project — confirmed live that a project's own session
-        buttons ("Idle <title>"/"Running <title>") are listed immediately
-        after that project's own "New session in <project>" button, before
-        the next project's, so a project can be inferred from button
-        order alone without any explicit parent/child UIA relationship to
-        rely on. Sessions appearing before the first project marker at all
-        are grouped under NO_PROJECT_BUCKET rather than dropped.
+        """Every project's real sessions, grouped by project.
+
+        Confirmed live the sidebar's session rows are virtualized: a
+        project's sessions genuinely don't exist in the accessibility
+        tree at all until that project's own header is clicked (see
+        _sync_click_project_header) — and confirmed this is ACCORDION
+        behavior, not independent expansion: expanding one project
+        collapses whichever was previously expanded. An "expand every
+        project, then scan once" approach was tried and confirmed live to
+        only ever capture the LAST project clicked — this instead clicks
+        one project, immediately scans just that view, then moves on,
+        merging results across all of them.
 
         Confirmed live: Desktop's "Pinned" section shows one shortcut per
         pinned PROJECT, styled identically to a real session button
-        ("Idle <project name>"/"Running <project name>") and appearing
-        before any "New session in X" marker — these are not distinct
-        conversations and were seen colliding with that same project's
-        real group found later in the same scan (e.g. "Idle PrivateProject" in
-        the pinned section vs. the real "PrivateProject" project's own
-        sessions). Any NO_PROJECT_BUCKET entry whose title exactly matches
-        a real project name found elsewhere in this scan is dropped as a
-        pinned shortcut rather than reported as a standalone chat."""
+        ("Idle <project name>") and appearing before any "New session in
+        X" marker — not a distinct conversation, and seen colliding with
+        that same project's real group. Any NO_PROJECT_BUCKET entry whose
+        title exactly matches a real project name is dropped as a pinned
+        shortcut rather than reported as a standalone chat."""
         win = self._connect()
-        self._sync_expand_paginated_sessions(win)
-        new_session_prefix = "new session in "
-        result: dict[str, list[str]] = {}
-        current_project = self.NO_PROJECT_BUCKET
-        for btn in win.descendants(control_type="Button"):
-            try:
-                name = (btn.window_text() or "").strip()
-            except Exception:
-                continue
-            if not name:
-                continue
-            lowered = name.lower()
-            if lowered.startswith(new_session_prefix):
-                current_project = name[len(new_session_prefix):]
-                result.setdefault(current_project, [])
-                continue
-            for status_prefix in ("Idle ", "Running "):
-                if name.startswith(status_prefix):
-                    result.setdefault(current_project, []).append(name[len(status_prefix):])
-                    break
-        if self.NO_PROJECT_BUCKET in result:
-            result[self.NO_PROJECT_BUCKET] = [
-                t for t in result[self.NO_PROJECT_BUCKET] if t not in result
-            ]
-        if not result.get(self.NO_PROJECT_BUCKET):
-            result.pop(self.NO_PROJECT_BUCKET, None)
-        return result
+
+        # First pass, no expansion: every project header is confirmed
+        # always present even when its own sessions aren't — this is
+        # purely to discover the full list of project names to iterate.
+        baseline = self._scan_sidebar_buttons(win)
+        project_names = [p for p in baseline if p != self.NO_PROJECT_BUCKET]
+
+        merged: dict[str, list[str]] = {}
+        if self.NO_PROJECT_BUCKET in baseline:
+            merged[self.NO_PROJECT_BUCKET] = list(baseline[self.NO_PROJECT_BUCKET])
+        for project in project_names:
+            self._sync_click_project_header(win, project)
+            self._sync_expand_paginated_sessions(win)
+            scanned = self._scan_sidebar_buttons(win)
+            merged[project] = scanned.get(project, [])
+
+        if self.NO_PROJECT_BUCKET in merged:
+            merged[self.NO_PROJECT_BUCKET] = [t for t in merged[self.NO_PROJECT_BUCKET] if t not in merged]
+        if not merged.get(self.NO_PROJECT_BUCKET):
+            merged.pop(self.NO_PROJECT_BUCKET, None)
+        return merged
 
     async def list_projects(self, timeout_s: float = 10) -> list[str]:
         """Every project currently visible in Claude Desktop's sidebar —

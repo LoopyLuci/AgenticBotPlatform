@@ -64,6 +64,33 @@ def test_simple_reply_with_no_tool_calls(temp_db, monkeypatch, tmp_path):
     assert result.raw["desktop_session_key"].startswith("api-")
 
 
+def test_effort_from_context_reaches_output_config(temp_db, monkeypatch, tmp_path):
+    """A canonical bot.effort.EFFORT_LADDER value passed via context must
+    reach the real request as output_config.effort — confirmed live
+    against platform.claude.com/docs that this is the current, correct
+    field for this deployment's actual model family."""
+    fake_messages = _install_fake_client(monkeypatch, [_response([_text_block("ok")])])
+    _run(ApiBackend().ask("hi", context={"cwd": str(tmp_path / "ws"), "effort": "low"}))
+    assert fake_messages.requests[0]["output_config"] == {"effort": "low"}
+
+
+def test_no_effort_omits_output_config(temp_db, monkeypatch, tmp_path):
+    """Omitting effort must preserve today's behavior exactly — no
+    output_config field at all, letting the API's own "high" default
+    apply, not a guessed value."""
+    fake_messages = _install_fake_client(monkeypatch, [_response([_text_block("ok")])])
+    _run(ApiBackend().ask("hi", context={"cwd": str(tmp_path / "ws")}))
+    assert "output_config" not in fake_messages.requests[0]
+
+
+def test_ultra_effort_collapses_to_anthropics_real_max(temp_db, monkeypatch, tmp_path):
+    """Anthropic's real API has nothing above "max" — Hermes-vocabulary
+    "ultra" must never be sent verbatim."""
+    fake_messages = _install_fake_client(monkeypatch, [_response([_text_block("ok")])])
+    _run(ApiBackend().ask("hi", context={"cwd": str(tmp_path / "ws"), "effort": "ultra"}))
+    assert fake_messages.requests[0]["output_config"] == {"effort": "max"}
+
+
 def test_existing_session_is_reused_not_recreated(temp_db, monkeypatch, tmp_path):
     _install_fake_client(monkeypatch, [_response([_text_block("ok")])])
     result = _run(ApiBackend().ask("hi", context={"cwd": str(tmp_path / "ws"), "desktop_session_key": "api-existing"}))

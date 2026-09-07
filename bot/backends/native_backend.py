@@ -75,6 +75,11 @@ class NativeAgentBackend(Backend):
         # ordinary top-level ask() call, which offers the full tool list
         # exactly as before this hook existed.
         allowed_tools: Optional[frozenset] = context.get("allowed_tools")
+        # Canonical bot.effort.EFFORT_LADDER value (or None) — each
+        # transport maps it onto whatever its own wire protocol actually
+        # supports (bot/effort.py's per-backend mapping functions),
+        # silently doing nothing when there's no equivalent.
+        effort = context.get("effort")
 
         history = db.list_agent_messages(session_key)
         user_entry = self.transport.user_message(prompt)
@@ -106,6 +111,7 @@ class NativeAgentBackend(Backend):
                 max_tokens=self.max_tokens,
                 timeout_s=timeout_s,
                 system_prompt=system_prompt,
+                effort=effort,
             )
             if response.tokens:
                 total_tokens += response.tokens

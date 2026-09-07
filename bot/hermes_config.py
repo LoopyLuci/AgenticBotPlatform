@@ -58,7 +58,18 @@ _DELEGATION_KEYS = (
     "max_concurrent_children",
     "max_spawn_depth",
     "subagent_auto_approve",
+    "reasoning_effort",
 )
+
+# Confirmed against the real installed Hermes Agent source
+# (hermes_cli/config_defaults.py, agent/reasoning_effort.py): Hermes
+# already has this whole feature natively — a global agent.reasoning_effort
+# (the manager/orchestrator's own effort), plus the sibling
+# delegation.reasoning_effort key above (children's effort). Nothing here
+# reimplements Hermes's own real ladder (see bot/effort.py) or its
+# per-provider clamping — this module only reads/writes the two config
+# keys, exactly like it already does for delegation.provider/model.
+_AGENT_KEYS = ("reasoning_effort",)
 
 
 def _yaml():
@@ -119,6 +130,7 @@ def set_delegation_config(
     max_concurrent_children: Optional[int] = None,
     max_spawn_depth: Optional[int] = None,
     subagent_auto_approve: Optional[bool] = None,
+    reasoning_effort: Optional[str] = None,
     hermes_home: Optional[str] = None,
     actor: str = "dashboard",
 ) -> dict[str, Any]:
@@ -141,6 +153,7 @@ def set_delegation_config(
             "max_concurrent_children": max_concurrent_children,
             "max_spawn_depth": max_spawn_depth,
             "subagent_auto_approve": subagent_auto_approve,
+            "reasoning_effort": reasoning_effort,
         }.items()
         if v is not None
     }
@@ -162,6 +175,61 @@ def set_delegation_config(
     db.log_audit(actor=actor, action="hermes_delegation_config", detail=f"{path}: {changes}")
     logger.info("delegation config updated at %s: %s", path, changes)
     return dict(delegation)
+
+
+def read_agent_config(hermes_home: Optional[str] = None) -> dict[str, Any]:
+    """The current `agent:` section's reasoning_effort — Hermes's own
+    manager/orchestrator effort level, distinct from delegation's (its
+    children's effort). {} if never configured (Hermes's own default
+    applies)."""
+    path = _config_path(hermes_home)
+    if not path.is_file():
+        return {}
+    try:
+        yaml = _yaml()
+        with path.open(encoding="utf-8") as f:
+            data = yaml.load(f) or {}
+        agent = dict(data.get("agent") or {})
+        return {k: v for k, v in agent.items() if k in _AGENT_KEYS}
+    except Exception as exc:
+        logger.warning("read_agent_config: failed to read %s: %s", path, exc)
+        return {}
+
+
+def set_agent_config(
+    *,
+    reasoning_effort: Optional[str] = None,
+    hermes_home: Optional[str] = None,
+    actor: str = "dashboard",
+) -> dict[str, Any]:
+    """Merges only the given (non-None) keys into Hermes's own top-level
+    `agent:` section — the manager/orchestrator's OWN effort, as opposed
+    to set_delegation_config's `delegation.reasoning_effort` (its
+    children's). Same comment-preserving round-trip write as
+    set_delegation_config; only the `reasoning_effort` key is ever
+    touched here, everything else under `agent:` (and the rest of the
+    file) is left exactly as it was."""
+    from bot import db
+
+    changes = {k: v for k, v in {"reasoning_effort": reasoning_effort}.items() if v is not None}
+    if not changes:
+        return read_agent_config(hermes_home)
+
+    path = _config_path(hermes_home)
+    yaml = _yaml()
+    data = _load_yaml_or_empty(path, yaml)
+
+    agent = data.get("agent")
+    if agent is None:
+        agent = {}
+        data["agent"] = agent
+    agent.update(changes)
+
+    _atomic_write_yaml(path, data, yaml)
+
+    db.log_audit(actor=actor, action="hermes_agent_config", detail=f"{path}: {changes}")
+    logger.info("agent config updated at %s: %s", path, changes)
+    return dict(agent)
 
 
 def register_botserver_mcp_server(

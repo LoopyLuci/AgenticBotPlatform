@@ -61,6 +61,8 @@ class ProviderTransport:
         tool_schemas: list[dict],
         max_tokens: int,
         timeout_s: float,
+        system_prompt: Optional[str] = None,
+        effort: Optional[str] = None,
     ) -> NormalizedResponse:
         """`history` is exactly what `bot.db.list_agent_messages()`
         returns (oldest-first `{"role","content"}` entries) plus whatever
@@ -68,9 +70,15 @@ class ProviderTransport:
         `tool_schemas` is BotServer's own Anthropic-shaped schema list
         (`bot.agent_runtime.tools.all_tool_schemas()`, optionally
         filtered) — this method converts both into wire format, makes
-        the real call, and returns one NormalizedResponse. Raises
-        bot.backends.base.BackendError on any transport-level failure
-        (timeout, HTTP error, malformed response)."""
+        the real call, and returns one NormalizedResponse. `effort` is a
+        canonical bot.effort.EFFORT_LADDER value (or None to use the
+        transport's/provider's own default) — each concrete transport
+        maps it onto whatever its own wire protocol actually supports
+        (see bot/effort.py's per-backend mapping functions), silently
+        doing nothing when the protocol has no equivalent rather than
+        raising. Raises bot.backends.base.BackendError on any
+        transport-level failure (timeout, HTTP error, malformed
+        response)."""
         raise NotImplementedError
 
     def user_message(self, text: str) -> dict:
