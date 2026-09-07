@@ -426,6 +426,39 @@ async def remove_skill(name: str, instance_id: Optional[int] = None) -> dict:
 
 
 @mcp.tool()
+async def create_plugin(name: str, code: str, description: str = "") -> dict:
+    """Author a brand-new callable tool by writing real Python code —
+    trusted, unsandboxed, full-privilege (same trust level as run_shell).
+    The file must define a module-level setup(api) function; see
+    docs/adr/0007-plugins-are-trusted-local-code.md."""
+    return await _request("POST", "/api/plugins/create", json={"name": name, "code": code, "description": description})
+
+
+@mcp.tool()
+async def enable_plugin(name: str) -> dict:
+    """Re-activate a previously-disabled plugin's tools/commands."""
+    return await _request("POST", f"/api/plugins/{name}/enable")
+
+
+@mcp.tool()
+async def disable_plugin(name: str) -> dict:
+    """Deactivate a plugin's tools/commands without deleting it."""
+    return await _request("POST", f"/api/plugins/{name}/disable")
+
+
+@mcp.tool()
+async def remove_plugin(name: str) -> dict:
+    """Permanently delete a plugin."""
+    return await _request("DELETE", f"/api/plugins/{name}")
+
+
+@mcp.tool()
+async def list_plugins() -> dict:
+    """List every installed plugin (name, description, enabled state, tools/commands it registers)."""
+    return await _request("GET", "/api/plugins")
+
+
+@mcp.tool()
 async def list_available_models(instance_id: Optional[int] = None) -> dict:
     """The full model catalog Claude needs to pick an "optimal free model":
     Claude's own live /v1/models, BotServer's custom_model provider

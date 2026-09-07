@@ -52,7 +52,17 @@ MAX_READ_CHARS = 20000
 # can_target list — a compromised or misbehaving agent using it to
 # re-route its own or another instance's permissions is exactly the kind
 # of consequential change write_file already requires a human for.
-DANGEROUS_TOOLS = {"run_shell", "write_file", "update_agent_config"}
+DANGEROUS_TOOLS = {
+    "run_shell", "write_file", "update_agent_config",
+    # Per the user's explicit choice: agent-authored plugin code is
+    # trusted, unsandboxed, full-process-privilege Python (see
+    # docs/adr/0007-plugins-are-trusted-local-code.md) — the same trust
+    # boundary run_shell already accepts. Creating one writes and
+    # immediately activates new code; re-enabling a previously-disabled
+    # one reactivates existing code. Both go through the same human
+    # approval gate as run_shell/write_file, never auto-installed.
+    "create_plugin", "enable_plugin",
+}
 
 TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
@@ -170,6 +180,57 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "properties": {"name": {"type": "string"}},
             "required": ["name"],
         },
+    },
+    {
+        "name": "create_plugin",
+        "description": (
+            "Author a brand-new callable TOOL by writing real Python code — for capabilities plain instructions "
+            "or a skill can't provide. This is trusted, unsandboxed, full-privilege code (the same trust level "
+            "as run_shell) and REQUIRES human approval before it can run. The file must define a module-level "
+            "setup(api) function calling api.register_tool(name, description, input_schema, handler) and/or "
+            "api.register_command(...) — see an existing plugin under data/plugins/ for the exact shape."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Plugin name — lowercase letters/digits/underscore, starting with a letter."},
+                "description": {"type": "string", "description": "One-line summary of what this plugin adds."},
+                "code": {"type": "string", "description": "The full plugin.py source code."},
+            },
+            "required": ["name", "code"],
+        },
+    },
+    {
+        "name": "enable_plugin",
+        "description": "Re-activate a previously-disabled plugin's tools/commands. Requires human approval.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "disable_plugin",
+        "description": "Deactivate a plugin's tools/commands without deleting it.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "remove_plugin",
+        "description": "Permanently delete a plugin.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "list_plugins",
+        "description": "List every installed plugin (name, description, enabled state, tools/commands it registers).",
+        "input_schema": {"type": "object", "properties": {}},
     },
     {
         "name": "kanban_add_card",
@@ -666,6 +727,59 @@ async def execute_tool(name: str, tool_input: dict, *, workspace: Path, instance
         skill_name = (tool_input.get("name") or "").strip()
         removed = bot_skills.remove(instance_id, skill_name)
         return f"Removed skill {skill_name!r}." if removed else f"No skill named {skill_name!r} found."
+
+    if name == "create_plugin":
+        from bot.envfile import PROJECT_ROOT
+        from bot import plugins as plugin_registry
+
+        plugin_name = (tool_input.get("name") or "").strip()
+        code = tool_input.get("code") or ""
+        if not plugin_name or not code.strip():
+            raise ToolError("name and code are required")
+        # plugins.install() derives its registered name from the FILE's
+        # own stem (Path(path).stem), not its parent directory — the file
+        # must be named <name>.py, not a fixed "plugin.py", or every
+        # agent-authored plugin would register as the same literal name
+        # "plugin" regardless of what was actually requested.
+        plugin_dir = PROJECT_ROOT / "data" / "plugins" / plugin_name
+        plugin_dir.mkdir(parents=True, exist_ok=True)
+        plugin_path = plugin_dir / f"{plugin_name}.py"
+        plugin_path.write_text(code, encoding="utf-8")
+        try:
+            info = plugin_registry.install(str(plugin_path))
+        except plugin_registry.PluginError as exc:
+            raise ToolError(str(exc))
+        return _json_dumps(info)
+
+    if name == "enable_plugin":
+        from bot import plugins as plugin_registry
+
+        plugin_name = (tool_input.get("name") or "").strip()
+        try:
+            return _json_dumps(plugin_registry.enable(plugin_name))
+        except plugin_registry.PluginError as exc:
+            raise ToolError(str(exc))
+
+    if name == "disable_plugin":
+        from bot import plugins as plugin_registry
+
+        plugin_name = (tool_input.get("name") or "").strip()
+        try:
+            return _json_dumps(plugin_registry.disable(plugin_name))
+        except plugin_registry.PluginError as exc:
+            raise ToolError(str(exc))
+
+    if name == "remove_plugin":
+        from bot import plugins as plugin_registry
+
+        plugin_name = (tool_input.get("name") or "").strip()
+        removed = plugin_registry.remove(plugin_name)
+        return f"Removed plugin {plugin_name!r}." if removed else f"No plugin named {plugin_name!r} found."
+
+    if name == "list_plugins":
+        from bot import plugins as plugin_registry
+
+        return _json_dumps(plugin_registry.list_plugins())
 
     if name == "kanban_add_card":
         from bot import kanban

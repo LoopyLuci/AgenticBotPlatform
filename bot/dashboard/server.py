@@ -882,6 +882,29 @@ def build_app() -> FastAPI:
         db.log_audit(actor="dashboard", action="plugin_install", detail=info["name"])
         return info
 
+    @app.post("/api/plugins/create", dependencies=[Depends(_require_token)])
+    async def api_plugins_create(payload: dict = Body(...)):
+        from bot.envfile import PROJECT_ROOT
+        from bot import plugins as plugin_registry
+
+        name = (payload.get("name") or "").strip()
+        code = payload.get("code") or ""
+        if not name or not code.strip():
+            raise HTTPException(status_code=400, detail="name and code are required")
+        # plugins.install() derives its registered name from the FILE's
+        # own stem, not its parent directory — see the matching comment
+        # in bot/agent_runtime/tools.py's create_plugin tool.
+        plugin_dir = PROJECT_ROOT / "data" / "plugins" / name
+        plugin_dir.mkdir(parents=True, exist_ok=True)
+        plugin_path = plugin_dir / f"{name}.py"
+        plugin_path.write_text(code, encoding="utf-8")
+        try:
+            info = plugin_registry.install(str(plugin_path))
+        except plugin_registry.PluginError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        db.log_audit(actor="dashboard", action="plugin_create", detail=info["name"])
+        return info
+
     @app.post("/api/plugins/{name}/enable", dependencies=[Depends(_require_token)])
     async def api_plugins_enable(name: str):
         from bot import plugins as plugin_registry
