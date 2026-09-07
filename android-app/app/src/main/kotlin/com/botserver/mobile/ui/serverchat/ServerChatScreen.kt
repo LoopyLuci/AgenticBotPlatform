@@ -56,7 +56,7 @@ private fun initialsFor(name: String): String =
  * navigation as ChatScreen, but every "conversation" here is another
  * device (or the shared "Server Chat" group room) instead of a bot. */
 @Composable
-fun ServerChatScreen(viewModel: ServerChatViewModel = hiltViewModel()) {
+fun ServerChatScreen(viewModel: ServerChatViewModel = hiltViewModel(), peerDeviceIdToOpen: Int? = null) {
     val context = LocalContext.current
     val conversations by viewModel.conversations.collectAsState()
     val activeId by viewModel.activeConversationId.collectAsState()
@@ -64,6 +64,17 @@ fun ServerChatScreen(viewModel: ServerChatViewModel = hiltViewModel()) {
     val myDeviceId by viewModel.myDeviceId.collectAsState()
     val loadError by viewModel.loadError.collectAsState()
     LaunchedEffect(Unit) { viewModel.start() }
+
+    // Arrives from Devices' "Message this device" action — that screen's
+    // own pre-flight open already confirmed the conversation exists (or
+    // was just recreated after a prior full delete), but it runs on a
+    // separate ViewModel instance scoped to a different nav back-stack
+    // entry, so it has no way to actually open it here. Re-opening by
+    // peer device id (not conversation id) both fetches this device's
+    // conversations and switches straight into the right one.
+    LaunchedEffect(peerDeviceIdToOpen) {
+        if (peerDeviceIdToOpen != null) viewModel.openConversationWith(peerDeviceIdToOpen)
+    }
 
     LaunchedEffect(activeId) {
         while (activeId != null) {

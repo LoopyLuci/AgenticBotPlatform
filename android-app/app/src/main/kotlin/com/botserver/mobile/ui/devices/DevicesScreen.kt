@@ -39,7 +39,7 @@ import java.io.File
  * shareable botserver://pair link. Mirrors the dashboard's Mobile tab. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel(), onOpenServerChat: () -> Unit = {}) {
+fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel(), onOpenServerChat: (Int) -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val activity = rememberFragmentActivity()
@@ -104,7 +104,7 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel(), onOpenServerCha
                                 device = device,
                                 sending = (sendState as? SendState.Sending)?.targetId == device.id,
                                 onSend = { gated("Confirm it's you to send an update to ${device.label}") { viewModel.sendUpdateTo(device) } },
-                                onMessage = { viewModel.messageDevice(device, onOpened = onOpenServerChat) },
+                                onMessage = { viewModel.messageDevice(device) { peerDeviceId -> onOpenServerChat(peerDeviceId) } },
                             )
                         }
                         Spacer(Modifier.height(10.dp))

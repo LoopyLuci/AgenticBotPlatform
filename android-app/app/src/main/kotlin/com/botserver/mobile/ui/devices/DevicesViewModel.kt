@@ -54,12 +54,17 @@ class DevicesViewModel @Inject constructor(
 
     /** Opens (or re-opens, if it was previously fully deleted from
      * Server Chat) a direct conversation with [device], then navigates
-     * there via [onOpened] — the way back to a device after "Delete
-     * chat" removed the conversation entirely. */
-    fun messageDevice(device: DeviceInfo, onOpened: () -> Unit) {
+     * to it — via [onOpened], called with [device].id — the way back to
+     * a device after "Delete chat" removed the conversation entirely.
+     * The Server Chat screen's own ViewModel is a separate instance
+     * (scoped to its own nav back-stack entry), so it has no way to know
+     * a specific conversation should open just because this screen's
+     * pre-flight call succeeded — [onOpened]'s argument is what actually
+     * tells it which one, threaded through as a nav argument. */
+    fun messageDevice(device: DeviceInfo, onOpened: (Int) -> Unit) {
         viewModelScope.launch {
             runCatching { serverChatRepository.openConversation(device.id) }
-                .onSuccess { onOpened() }
+                .onSuccess { onOpened(device.id) }
                 .onFailure { _snackbarMessages.tryEmit(it.message ?: "Couldn't message ${device.label}.") }
         }
     }

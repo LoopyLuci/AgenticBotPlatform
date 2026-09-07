@@ -21,10 +21,12 @@ import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.botserver.mobile.ui.bots.BotsScreen
 import com.botserver.mobile.ui.chat.ChatScreen
 import com.botserver.mobile.ui.devices.DevicesScreen
@@ -66,7 +68,13 @@ fun HomeScreen(onUnpaired: () -> Unit = {}) {
                 val currentRoute = backStackEntry?.destination
                 tabs.forEach { tab ->
                     NavigationBarItem(
-                        selected = currentRoute?.hierarchy?.any { it.route == tab.route } == true,
+                        // Strip any query args before comparing — Server
+                        // Chat's route carries an optional peerDeviceId
+                        // (e.g. "server-chat?peerDeviceId={peerDeviceId}"),
+                        // which would otherwise never equal the plain
+                        // "server-chat" tab route and leave this tab
+                        // permanently unhighlighted while it's active.
+                        selected = currentRoute?.hierarchy?.any { it.route?.substringBefore("?") == tab.route } == true,
                         onClick = {
                             navController.navigate(tab.route) {
                                 popUpTo(navController.graph.findStartDestination().id) { saveState = true }
@@ -87,7 +95,13 @@ fun HomeScreen(onUnpaired: () -> Unit = {}) {
             modifier = Modifier.padding(padding),
         ) {
             composable("chat") { ChatScreen() }
-            composable("server-chat") { ServerChatScreen() }
+            composable(
+                route = "server-chat?peerDeviceId={peerDeviceId}",
+                arguments = listOf(navArgument("peerDeviceId") { type = NavType.IntType; defaultValue = -1 }),
+            ) { backStackEntry ->
+                val peerDeviceId = backStackEntry.arguments?.getInt("peerDeviceId") ?: -1
+                ServerChatScreen(peerDeviceIdToOpen = peerDeviceId.takeIf { it >= 0 })
+            }
             composable("support") { SupportBotScreen() }
             composable("sessions") { SessionsScreen() }
             composable("jobs") { JobsScreen() }
@@ -96,11 +110,17 @@ fun HomeScreen(onUnpaired: () -> Unit = {}) {
             composable("providers") { ProvidersScreen(onBack = { navController.popBackStack() }) }
             composable("devices") {
                 DevicesScreen(
-                    onOpenServerChat = {
-                        navController.navigate("server-chat") {
+                    onOpenServerChat = { peerDeviceId ->
+                        // Deliberately no restoreState here, unlike the
+                        // generic bottom-nav tab switch above — restoring
+                        // a previously *saved* Server Chat back-stack
+                        // entry would bring back its old arguments (or
+                        // none) instead of this specific peerDeviceId,
+                        // silently reopening whatever was open last
+                        // rather than the device the user just picked.
+                        navController.navigate("server-chat?peerDeviceId=$peerDeviceId") {
                             popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                             launchSingleTop = true
-                            restoreState = true
                         }
                     },
                 )
