@@ -683,6 +683,28 @@ CREATE TABLE IF NOT EXISTS external_mcp_servers (
     oauth_tokens_json       TEXT    -- mcp.shared.auth.OAuthToken, JSON
 );
 
+-- An operator-configured lifecycle hook (bot/agent_runtime/hooks.py) —
+-- Claude Code-style local automation scoped to the four events that map
+-- onto real, already-centralized call sites in the native agent loop.
+-- `matcher` is only meaningful for PreToolUse/PostToolUse (a tool name to
+-- match, or NULL/empty to match every tool); ignored for SessionStart/
+-- UserPromptSubmit. `command` is a local shell command run with the
+-- event's JSON on stdin and a JSON decision/context object expected on
+-- stdout — same "trusted local code" boundary as bot/plugins.py
+-- (ADR-0007), so this is dashboard/Telegram-config-only, never
+-- agent-creatable. instance_id NULL means every instance's turns fire it;
+-- non-NULL scopes it to just that one instance.
+CREATE TABLE IF NOT EXISTS agent_hooks (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    event         TEXT NOT NULL,   -- PreToolUse | PostToolUse | SessionStart | UserPromptSubmit
+    matcher       TEXT,
+    command       TEXT NOT NULL,
+    instance_id   INTEGER,
+    enabled       INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agent_hooks_event ON agent_hooks(event, enabled);
+
 -- A small, named markdown document any agent (any backend, any instance)
 -- can read/write via the read_project_context/write_project_context
 -- tools — see bot/shared_context.py. Unlike memory_entries/kanban_*
@@ -1764,6 +1786,57 @@ def set_external_mcp_oauth_tokens(name: str, tokens_json: str) -> None:
     with _lock:
         conn.execute("UPDATE external_mcp_servers SET oauth_tokens_json=? WHERE name=?", (tokens_json, name))
         conn.commit()
+
+
+# --------------------------------------------------------------- agent_hooks
+
+def add_agent_hook(event: str, command: str, *, matcher: Optional[str] = None, instance_id: Optional[int] = None) -> int:
+    conn = get_conn()
+    with _lock:
+        cur = conn.execute(
+            "INSERT INTO agent_hooks (event, matcher, command, instance_id, enabled, created_at) VALUES (?, ?, ?, ?, 1, ?)",
+            (event, matcher, command, instance_id, _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def list_agent_hooks(event: Optional[str] = None, instance_id: Optional[int] = None) -> list[sqlite3.Row]:
+    """Every global (instance_id IS NULL) hook, plus [instance_id]'s own
+    scoped ones when given — omitting both filters lists every row, for
+    the dashboard/Telegram management UI (mirrors
+    list_external_mcp_servers()'s own shape)."""
+    conn = get_conn()
+    clauses = []
+    params: list[Any] = []
+    if event is not None:
+        clauses.append("event=?")
+        params.append(event)
+    if instance_id is not None:
+        clauses.append("(instance_id IS NULL OR instance_id=?)")
+        params.append(instance_id)
+    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    return conn.execute(f"SELECT * FROM agent_hooks{where} ORDER BY id", params).fetchall()
+
+
+def get_agent_hook(hook_id: int) -> Optional[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute("SELECT * FROM agent_hooks WHERE id=?", (hook_id,)).fetchone()
+
+
+def set_agent_hook_enabled(hook_id: int, enabled: bool) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute("UPDATE agent_hooks SET enabled=? WHERE id=?", (1 if enabled else 0, hook_id))
+        conn.commit()
+
+
+def delete_agent_hook(hook_id: int) -> bool:
+    conn = get_conn()
+    with _lock:
+        cur = conn.execute("DELETE FROM agent_hooks WHERE id=?", (hook_id,))
+        conn.commit()
+        return cur.rowcount > 0
 
 
 def count_legacy_items(instance_id: int) -> int:

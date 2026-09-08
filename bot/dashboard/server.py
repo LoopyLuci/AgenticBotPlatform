@@ -1037,6 +1037,58 @@ def build_app() -> FastAPI:
         db.log_audit(actor="dashboard", action="external_mcp_remove", detail=name)
         return {"ok": True}
 
+    @app.get("/api/hooks", dependencies=[Depends(_require_token)])
+    async def api_hooks_list(event: Optional[str] = None):
+        rows = db.list_agent_hooks(event=event)
+        return {
+            "hooks": [
+                {
+                    "id": r["id"], "event": r["event"], "matcher": r["matcher"], "command": r["command"],
+                    "instance_id": r["instance_id"], "enabled": bool(r["enabled"]),
+                }
+                for r in rows
+            ]
+        }
+
+    @app.post("/api/hooks", dependencies=[Depends(_require_token)])
+    async def api_hooks_add(payload: dict = Body(...)):
+        from bot.agent_runtime import hooks as agent_hooks
+
+        event = (payload.get("event") or "").strip()
+        command = (payload.get("command") or "").strip()
+        if event not in agent_hooks.VALID_EVENTS:
+            raise HTTPException(status_code=400, detail=f"event must be one of {sorted(agent_hooks.VALID_EVENTS)}")
+        if not command:
+            raise HTTPException(status_code=400, detail="command is required")
+        hook_id = db.add_agent_hook(
+            event, command, matcher=payload.get("matcher") or None, instance_id=payload.get("instance_id"),
+        )
+        db.log_audit(actor="dashboard", action="agent_hook_add", detail=f"#{hook_id} {event}")
+        return {"ok": True, "id": hook_id}
+
+    @app.post("/api/hooks/{hook_id}/enable", dependencies=[Depends(_require_token)])
+    async def api_hooks_enable(hook_id: int):
+        if db.get_agent_hook(hook_id) is None:
+            raise HTTPException(status_code=404, detail=f"no hook #{hook_id}")
+        db.set_agent_hook_enabled(hook_id, True)
+        db.log_audit(actor="dashboard", action="agent_hook_enable", detail=str(hook_id))
+        return {"ok": True}
+
+    @app.post("/api/hooks/{hook_id}/disable", dependencies=[Depends(_require_token)])
+    async def api_hooks_disable(hook_id: int):
+        if db.get_agent_hook(hook_id) is None:
+            raise HTTPException(status_code=404, detail=f"no hook #{hook_id}")
+        db.set_agent_hook_enabled(hook_id, False)
+        db.log_audit(actor="dashboard", action="agent_hook_disable", detail=str(hook_id))
+        return {"ok": True}
+
+    @app.delete("/api/hooks/{hook_id}", dependencies=[Depends(_require_token)])
+    async def api_hooks_delete(hook_id: int):
+        if not db.delete_agent_hook(hook_id):
+            raise HTTPException(status_code=404, detail=f"no hook #{hook_id}")
+        db.log_audit(actor="dashboard", action="agent_hook_remove", detail=str(hook_id))
+        return {"ok": True}
+
     @app.get("/api/skills", dependencies=[Depends(_require_token)])
     async def api_skills_list(instance_id: Optional[int] = None):
         from bot import skills as bot_skills

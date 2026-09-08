@@ -62,6 +62,8 @@ class NativeAgentBackend(Backend):
         # an already-running ask() finishes rather than being killed.
         estop.check()
 
+        from bot.agent_runtime import hooks
+
         context = context or {}
         session_key = context.get("desktop_session_key")
         lazily_created = session_key is None
@@ -69,6 +71,14 @@ class NativeAgentBackend(Backend):
             session_key = await self.create_session()
 
         instance_id = context.get("instance_id")
+        if lazily_created:
+            # SessionStart (Phase E of the Claude API/Claude Code parity
+            # plan) — fires once per real new session, not on every turn
+            # of an existing one.
+            session_start_context = await hooks.run_session_start(instance_id=instance_id)
+        else:
+            session_start_context = None
+        user_prompt_context = await hooks.run_user_prompt_submit(prompt, instance_id=instance_id)
         chat_id = context.get("chat_id")
         workspace = agent_tools.resolve_workspace(instance_id or 0, context.get("cwd"))
         steer_queue = context.get("steer_queue")
@@ -122,6 +132,12 @@ class NativeAgentBackend(Backend):
             note = vision.dropped_note(dropped, kind="document")
             if note:
                 notes.append(note)
+        if user_prompt_context:
+            # UserPromptSubmit's additionalContext (Phase E) — a hook-
+            # injected note distinct from the vision/document drop notes
+            # above, so kept as its own clearly-labeled block rather than
+            # mixed in with them.
+            notes.insert(0, f"[Context from a UserPromptSubmit hook: {user_prompt_context}]")
         if notes:
             prompt_text = prompt + "\n\n" + "\n".join(notes)
 
@@ -144,6 +160,8 @@ class NativeAgentBackend(Backend):
             tool_schemas = [s for s in tool_schemas if s["name"] in allowed_tools]
 
         system_prompt = _build_system_prompt(instance_id)
+        if session_start_context:
+            system_prompt = f"{system_prompt}\n\n{session_start_context}" if system_prompt else session_start_context
 
         # Resolved once per ask() call, not per iteration — a fallback
         # that kicks in on iteration N stays active for the rest of this

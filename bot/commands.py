@@ -744,6 +744,59 @@ async def cmd_mcp_external(ctx: CmdContext, args: list[str]) -> str:
     return "Usage: /mcp_external list | add <name> stdio|remote ... | enable <name> | disable <name> | remove <name>"
 
 
+async def cmd_hooks(ctx: CmdContext, args: list[str]) -> str:
+    """Manages Claude Code-style lifecycle hooks (bot/agent_runtime/hooks.py)
+    — operator-configured local automation firing on PreToolUse/PostToolUse/
+    SessionStart/UserPromptSubmit. Config-only, mirroring /mcp_external's
+    exact shape — never something an agent's own tool loop can create,
+    since a hook is trusted local code with the same reach as run_shell."""
+    from bot import db
+    from bot.agent_runtime import hooks as agent_hooks
+
+    if not args or args[0] == "list":
+        event_filter = args[1] if len(args) > 1 else None
+        rows = db.list_agent_hooks(event=event_filter)
+        if not rows:
+            return "No hooks configured. Use /hooks add to add one."
+        lines = ["Hooks:"]
+        for row in rows:
+            status = "enabled" if row["enabled"] else "disabled"
+            matcher = f" matcher={row['matcher']}" if row["matcher"] else ""
+            lines.append(f"- #{row['id']} {row['event']}{matcher} ({status}): {row['command']}")
+        return "\n".join(lines)
+
+    if args[0] == "add":
+        if len(args) < 3:
+            return "Usage: /hooks add <PreToolUse|PostToolUse|SessionStart|UserPromptSubmit> <matcher|*> <command...>"
+        event = args[1]
+        if event not in agent_hooks.VALID_EVENTS:
+            return f"event must be one of {sorted(agent_hooks.VALID_EVENTS)}"
+        matcher = None if args[2] == "*" else args[2]
+        command = " ".join(args[3:]).strip()
+        if not command:
+            return "Usage: /hooks add <PreToolUse|PostToolUse|SessionStart|UserPromptSubmit> <matcher|*> <command...>"
+        hook_id = db.add_agent_hook(event, command, matcher=matcher)
+        return f"Added hook #{hook_id}."
+
+    if args[0] in ("enable", "disable", "remove") and len(args) >= 2:
+        try:
+            hook_id = int(args[1])
+        except ValueError:
+            return "hook id must be a number — see /hooks list."
+        if db.get_agent_hook(hook_id) is None:
+            return f"No hook #{hook_id}."
+        if args[0] == "enable":
+            db.set_agent_hook_enabled(hook_id, True)
+            return f"Enabled hook #{hook_id}."
+        if args[0] == "disable":
+            db.set_agent_hook_enabled(hook_id, False)
+            return f"Disabled hook #{hook_id}."
+        db.delete_agent_hook(hook_id)
+        return f"Removed hook #{hook_id}."
+
+    return "Usage: /hooks list [event] | add <event> <matcher|*> <command...> | enable <id> | disable <id> | remove <id>"
+
+
 _DESKTOP_ACTIONS: dict[str, Callable[[], bool]] = {
     "start": desktop.start,
     "stop": desktop.stop,
@@ -1489,6 +1542,7 @@ COMMANDS: dict[str, Callable[[CmdContext, list[str]], Any]] = {
     "auto_manage": cmd_auto_manage,
     "estop": cmd_estop,
     "mcp_external": cmd_mcp_external,
+    "hooks": cmd_hooks,
     "new": cmd_new_session,
     "desktop_projects": cmd_desktop_projects,
     "sessions": cmd_sessions,

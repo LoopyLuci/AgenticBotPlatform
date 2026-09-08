@@ -12,8 +12,20 @@ logger = logging.getLogger("bot.agent_runtime.tool_loop")
 
 
 async def run_one_tool(name, tool_input, *, workspace, instance_id, chat_id, session_key, notify, agent_tools, agent_approval) -> str:
+    from bot.agent_runtime import hooks
+
     try:
-        if agent_tools.is_dangerous(name):
+        # PreToolUse (Phase E of the Claude API/Claude Code parity plan)
+        # runs before the existing dangerous-tool approval check — a
+        # hook's "deny" short-circuits exactly like today's approval
+        # deny; "ask" escalates into that SAME approval flow even for a
+        # tool that isn't itself dangerous, since a hook explicitly
+        # asking for human sign-off is a deliberate escalation, not
+        # something to route around.
+        decision, hook_reason = await hooks.run_pre_tool_use(name, tool_input, instance_id=instance_id)
+        if decision == "deny":
+            return f"Denied by hook{f': {hook_reason}' if hook_reason else '.'}"
+        if agent_tools.is_dangerous(name) or decision == "ask":
             if notify is None:
                 # No chat to ask (e.g. a call with no Telegram context at
                 # all) — approval.request_approval still waits out its
@@ -33,6 +45,7 @@ async def run_one_tool(name, tool_input, *, workspace, instance_id, chat_id, ses
         output = await agent_tools.execute_tool(name, tool_input, workspace=workspace, instance_id=instance_id)
         if agent_tools.is_dangerous(name):
             try_checkpoint(workspace, name, tool_input)
+        await hooks.run_post_tool_use(name, tool_input, output, instance_id=instance_id)
         return output
     except agent_tools.ToolError as exc:
         return f"Error: {exc}"

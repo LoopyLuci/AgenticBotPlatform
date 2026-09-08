@@ -155,6 +155,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.agent_runtime.transports.openai_compatible",
     "bot.agent_runtime.transports.responses_api",
     "bot.agent_runtime.compression",  # depends on transports.base's ProviderTransport type only; pure function, no state
+    "bot.agent_runtime.hooks",  # pure functions, no module-level state — only imported lazily inside tool_loop.py/native_backend.py
     "bot.backends.native_backend",
     "bot.agent_runtime.tools",
     "bot.agent_runtime.checkpoints",

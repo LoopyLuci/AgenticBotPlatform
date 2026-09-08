@@ -512,6 +512,47 @@ async def remove_external_mcp_server(name: str) -> dict:
 
 
 @mcp.tool()
+async def list_hooks(event: Optional[str] = None) -> dict:
+    """List Claude Code-style lifecycle hooks (PreToolUse/PostToolUse/
+    SessionStart/UserPromptSubmit), optionally filtered by event."""
+    params = {"event": event} if event else {}
+    return await _request("GET", "/api/hooks", params=params)
+
+
+@mcp.tool()
+async def add_hook(event: str, command: str, matcher: Optional[str] = None, instance_id: Optional[int] = None) -> dict:
+    """Register a new lifecycle hook — human/operator-initiated only,
+    never something an agent's own tool loop calls on its own (a hook is
+    trusted local code with the same reach as run_shell). event is one of
+    PreToolUse, PostToolUse, SessionStart, UserPromptSubmit. matcher (a
+    tool name) only applies to PreToolUse/PostToolUse — omit it to match
+    every tool. command receives the event's JSON on stdin and is
+    expected to print a JSON {"decision": "allow"|"deny"|"ask", "reason":
+    ..., "additionalContext": ...} object to stdout."""
+    return await _request(
+        "POST", "/api/hooks", json={"event": event, "command": command, "matcher": matcher, "instance_id": instance_id},
+    )
+
+
+@mcp.tool()
+async def enable_hook(hook_id: int) -> dict:
+    """Re-enable a previously-disabled hook."""
+    return await _request("POST", f"/api/hooks/{hook_id}/enable")
+
+
+@mcp.tool()
+async def disable_hook(hook_id: int) -> dict:
+    """Disable a hook without deleting it."""
+    return await _request("POST", f"/api/hooks/{hook_id}/disable")
+
+
+@mcp.tool()
+async def remove_hook(hook_id: int) -> dict:
+    """Permanently delete a hook."""
+    return await _request("DELETE", f"/api/hooks/{hook_id}")
+
+
+@mcp.tool()
 async def get_agent_settings(instance_id: Optional[int] = None) -> dict:
     """Resolved agent/swarm settings for instance_id (or the process-wide
     default if omitted): max_concurrent_children, worker_provider,
