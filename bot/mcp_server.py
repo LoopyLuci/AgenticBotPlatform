@@ -470,7 +470,8 @@ async def list_external_mcp_servers(instance_id: Optional[int] = None) -> dict:
 @mcp.tool()
 async def add_external_mcp_server(
     name: str, transport: str, command: Optional[str] = None, args: Optional[list] = None,
-    url: Optional[str] = None, auth_token: Optional[str] = None, instance_id: Optional[int] = None,
+    url: Optional[str] = None, auth_token: Optional[str] = None, oauth_enabled: bool = False,
+    instance_id: Optional[int] = None,
 ) -> dict:
     """Register and connect to a new third-party MCP server — human/
     operator-initiated only (this tool exists for Claude Desktop/an
@@ -478,12 +479,16 @@ async def add_external_mcp_server(
     calls on its own; connecting to an arbitrary external process/URL is
     a materially bigger trust boundary than a local plugin).
     transport is "stdio" (command + args, run as a local subprocess) or
-    "remote" (url, optionally auth_token as a bearer token)."""
+    "remote" (url, plus either auth_token as a static bearer token, or
+    oauth_enabled=true for a real OAuth 2.1 authorization-code+PKCE flow
+    — the response's "authorization_url", when present, is a link the
+    operator needs to open in a browser to grant consent; call
+    list_external_mcp_servers() afterward to confirm it connected)."""
     return await _request(
         "POST", "/api/mcp-external",
         json={
             "name": name, "transport": transport, "command": command, "args": args or [],
-            "url": url, "auth_token": auth_token, "instance_id": instance_id,
+            "url": url, "auth_token": auth_token, "oauth_enabled": oauth_enabled, "instance_id": instance_id,
         },
     )
 

@@ -672,13 +672,22 @@ async def cmd_mcp_external(ctx: CmdContext, args: list[str]) -> str:
         connected = set(mcp_client.connected_servers())
         lines = ["External MCP servers:"]
         for row in rows:
-            status = "connected" if row["name"] in connected else ("enabled" if row["enabled"] else "disabled")
+            auth_url = mcp_client.oauth_authorization_url(row["name"])
+            if auth_url:
+                status = f"awaiting authorization — open: {auth_url}"
+            elif row["name"] in connected:
+                status = "connected"
+            else:
+                status = "enabled" if row["enabled"] else "disabled"
             lines.append(f"- {row['name']} ({row['transport']}, {status})")
         return "\n".join(lines)
 
     if args[0] == "add":
         if len(args) < 3:
-            return "Usage: /mcp_external add <name> stdio <command> [args...] | /mcp_external add <name> remote <url> [auth_token]"
+            return (
+                "Usage: /mcp_external add <name> stdio <command> [args...] | "
+                "/mcp_external add <name> remote <url> [auth_token|oauth]"
+            )
         name, transport = args[1], args[2]
         if transport not in ("stdio", "remote"):
             return "transport must be 'stdio' or 'remote'"
@@ -691,10 +700,25 @@ async def cmd_mcp_external(ctx: CmdContext, args: list[str]) -> str:
             db.add_external_mcp_server(name, "stdio", command=rest[0], args_json=json.dumps(rest[1:]))
         else:
             if not rest:
-                return "Usage: /mcp_external add <name> remote <url> [auth_token]"
-            db.add_external_mcp_server(name, "remote", url=rest[0], auth_token=rest[1] if len(rest) > 1 else None)
+                return "Usage: /mcp_external add <name> remote <url> [auth_token|oauth]"
+            # A literal "oauth" in the auth-token slot opts this server into
+            # a real OAuth 2.1 flow (dynamic registration + PKCE) instead
+            # of a static bearer token — see mcp_client.py's own docstring
+            # for why that needs a browser step, surfaced below and by
+            # /mcp_external list's "awaiting authorization" status.
+            wants_oauth = len(rest) > 1 and rest[1].lower() == "oauth"
+            db.add_external_mcp_server(
+                name, "remote", url=rest[0],
+                auth_token=None if wants_oauth else (rest[1] if len(rest) > 1 else None),
+                oauth_enabled=wants_oauth,
+            )
         ok = await mcp_client.connect(name)
-        return f"Added {name!r}." + (" Connected." if ok else " Could not connect yet — check its configuration.")
+        if ok:
+            return f"Added {name!r}. Connected."
+        auth_url = mcp_client.oauth_authorization_url(name)
+        if auth_url:
+            return f"Added {name!r}. Open this URL to authorize it:\n{auth_url}"
+        return f"Added {name!r}. Could not connect yet — check its configuration."
 
     if args[0] in ("enable", "disable", "remove") and len(args) >= 2:
         name = args[1]
@@ -703,7 +727,12 @@ async def cmd_mcp_external(ctx: CmdContext, args: list[str]) -> str:
         if args[0] == "enable":
             db.set_external_mcp_server_enabled(name, True)
             ok = await mcp_client.connect(name)
-            return f"Enabled {name!r}." + (" Connected." if ok else " Could not connect — check its configuration.")
+            if ok:
+                return f"Enabled {name!r}. Connected."
+            auth_url = mcp_client.oauth_authorization_url(name)
+            if auth_url:
+                return f"Enabled {name!r}. Open this URL to authorize it:\n{auth_url}"
+            return f"Enabled {name!r}. Could not connect — check its configuration."
         if args[0] == "disable":
             db.set_external_mcp_server_enabled(name, False)
             await mcp_client.disconnect(name)

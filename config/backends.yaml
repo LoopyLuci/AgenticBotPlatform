@@ -104,6 +104,20 @@ native_agent:
   # are summarized into one digest before the real turn continues.
   # 0 (or any value <= 0) disables compression entirely.
   compression_threshold_chars: 60000
+  # Whether a connected external MCP server (bot/agent_runtime/mcp_client.py)
+  # is allowed to ask BotServer to run a real LLM completion on its behalf
+  # (the MCP "sampling" capability) — off by default: unlike calling a
+  # server's own advertised tools (already gated by the operator
+  # explicitly connecting that server), sampling is an open-ended "think
+  # for me" capability that spends the operator's own configured provider
+  # budget with no per-call human step in between. provider/model pick
+  # which BotServer-configured transport actually serves these requests;
+  # provider: null (or "anthropic") means the built-in Claude API,
+  # anything else must be a name from config/providers.yaml.
+  mcp_sampling:
+    enabled: false
+    provider: null
+    model: null
 # Applies an edit to bot/*.py to this already-running process instead of
 # needing the full stop/rebuild/relaunch cycle — see bot/hotreload.py's
 # module docstring for exactly what can and can't hot-reload. Checked

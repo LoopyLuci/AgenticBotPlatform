@@ -1,10 +1,14 @@
 """bot/agent_runtime/mcp_client.py — the external-MCP-server tool
-bridge. `mcp` itself is only imported lazily inside _open_session() (see
-that module's docstring), so these tests never need the real `mcp`
-package installed in this dev shell (it lives only in the pipeline's
-bundled venv, same as tests/test_mcp_server_tools.py already notes) —
-connect()'s own real-network path is exercised by monkeypatching
-_open_session, never by talking to a real subprocess/URL.
+bridge, plus its sampling and OAuth support. `mcp` itself is only
+imported lazily inside _build_session()/handle_sampling_request() (see
+that module's docstring), so most of these tests never need the real
+`mcp` package installed in this dev shell (it lives only in the
+pipeline's bundled venv, same as tests/test_mcp_server_tools.py already
+notes) — connect()'s own real-network path is exercised by monkeypatching
+_build_session, never by talking to a real subprocess/URL. The real
+package IS exercised live outside pytest (see the module's own docstring
+and this session's manual smoke tests) against a genuine stdio server
+subprocess for both tool-calling and sampling.
 """
 from __future__ import annotations
 
@@ -24,15 +28,19 @@ def _run(coro):
 def _clean_registry():
     mcp_client._connections.clear()
     mcp_client._tool_index.clear()
+    mcp_client._owner_tasks.clear()
+    mcp_client._pending_oauth.clear()
+    mcp_client._oauth_state_to_server.clear()
     yield
     mcp_client._connections.clear()
     mcp_client._tool_index.clear()
+    mcp_client._owner_tasks.clear()
+    mcp_client._pending_oauth.clear()
+    mcp_client._oauth_state_to_server.clear()
 
 
 def _fake_connection(name, tools):
-    from contextlib import AsyncExitStack
-
-    return mcp_client._Connection(name=name, stack=AsyncExitStack(), session=object(), tools=tools)
+    return mcp_client._Connection(name=name, session=object(), tools=tools)
 
 
 def test_external_tool_schemas_are_namespaced():
@@ -68,10 +76,10 @@ def test_connect_returns_false_when_row_is_disabled(temp_db):
 def test_connect_registers_the_connection_on_success(temp_db, monkeypatch):
     db.add_external_mcp_server("github", "stdio", command="npx")
 
-    async def _fake_open_session(name, **kwargs):
-        return _fake_connection(name, [{"name": "search_repos", "description": "search", "input_schema": {}}])
+    async def _fake_build_session(stack, name, **kwargs):
+        return object(), [{"name": "search_repos", "description": "search", "input_schema": {}}]
 
-    monkeypatch.setattr(mcp_client, "_open_session", _fake_open_session)
+    monkeypatch.setattr(mcp_client, "_build_session", _fake_build_session)
 
     ok = _run(mcp_client.connect("github"))
 
@@ -83,15 +91,41 @@ def test_connect_registers_the_connection_on_success(temp_db, monkeypatch):
 def test_connect_failure_is_logged_and_swallowed_not_raised(temp_db, monkeypatch):
     db.add_external_mcp_server("broken", "stdio", command="does-not-exist")
 
-    async def _fake_open_session(name, **kwargs):
+    async def _fake_build_session(stack, name, **kwargs):
         raise RuntimeError("spawn failed")
 
-    monkeypatch.setattr(mcp_client, "_open_session", _fake_open_session)
+    monkeypatch.setattr(mcp_client, "_build_session", _fake_build_session)
 
     ok = _run(mcp_client.connect("broken"))
 
     assert ok is False
     assert mcp_client.connected_servers() == []
+
+
+def test_connect_returns_false_and_keeps_running_when_it_exceeds_wait_s(temp_db, monkeypatch):
+    """The background-task design (see connect()'s own docstring): a slow
+    connection attempt (modeling an OAuth authorization wait) doesn't
+    block the caller past `wait_s` — but it isn't cancelled either, and
+    still registers normally once it actually finishes."""
+    db.add_external_mcp_server("slow", "stdio", command="npx")
+    release = asyncio.Event()
+
+    async def _fake_build_session(stack, name, **kwargs):
+        await release.wait()
+        return object(), [{"name": "t", "description": "", "input_schema": {}}]
+
+    monkeypatch.setattr(mcp_client, "_build_session", _fake_build_session)
+
+    async def scenario():
+        ok = await mcp_client.connect("slow", wait_s=0.05)
+        assert ok is False
+        assert mcp_client.connected_servers() == []
+
+        release.set()
+        await asyncio.sleep(0.05)
+        assert mcp_client.connected_servers() == ["slow"]
+
+    _run(scenario())
 
 
 def test_connect_all_enabled_skips_disabled_rows(temp_db, monkeypatch):
@@ -112,20 +146,53 @@ def test_connect_all_enabled_skips_disabled_rows(temp_db, monkeypatch):
     assert calls == ["on"]
 
 
-def test_disconnect_closes_the_stack_and_clears_the_index():
-    closed = []
+def test_disconnect_signals_close_event_and_awaits_the_owner_task():
+    async def scenario():
+        closed = []
+        ready = asyncio.Event()
 
-    class _FakeStack:
-        async def aclose(self):
+        async def _owner():
+            conn = mcp_client._Connection(name="github", session=object(), tools=[])
+            mcp_client._connections["github"] = conn
+            mcp_client._rebuild_tool_index()
+            ready.set()
+            await conn.close_event.wait()
             closed.append(True)
 
-    mcp_client._connections["github"] = mcp_client._Connection(name="github", stack=_FakeStack(), session=object(), tools=[])
-    mcp_client._rebuild_tool_index()
+        task = asyncio.create_task(_owner())
+        mcp_client._owner_tasks["github"] = task
+        await ready.wait()
 
-    _run(mcp_client.disconnect("github"))
+        await mcp_client.disconnect("github")
 
-    assert closed == [True]
-    assert mcp_client.connected_servers() == []
+        assert closed == [True]
+        assert mcp_client.connected_servers() == []
+
+    _run(scenario())
+
+
+def test_disconnect_cancels_an_owner_task_still_stuck_before_registering():
+    """A pending OAuth flow (or a slow subprocess spawn) has an owner task
+    running but no _Connection registered yet — disconnect() must still
+    tear it down, via cancellation since there's no close_event to signal."""
+
+    async def scenario():
+        started = asyncio.Event()
+
+        async def _owner():
+            started.set()
+            await asyncio.Event().wait()  # never set — only cancellation ends this
+
+        task = asyncio.create_task(_owner())
+        mcp_client._owner_tasks["stuck"] = task
+        await started.wait()
+
+        await mcp_client.disconnect("stuck")
+
+        assert task.cancelled()
+        assert "stuck" not in mcp_client._owner_tasks
+
+    _run(scenario())
 
 
 class _FakeToolBlock:
@@ -151,7 +218,7 @@ class _FakeSession:
 
 def test_call_tool_routes_to_the_right_server_and_real_tool_name():
     session = _FakeSession(_FakeCallToolResult("42 repos found"))
-    mcp_client._connections["github"] = mcp_client._Connection(name="github", stack=object(), session=session, tools=[])
+    mcp_client._connections["github"] = mcp_client._Connection(name="github", session=session, tools=[])
     mcp_client._tool_index["mcp_github_search_repos"] = ("github", "search_repos")
 
     out = _run(mcp_client.call_tool("mcp_github_search_repos", {"q": "botserver"}))
@@ -162,7 +229,7 @@ def test_call_tool_routes_to_the_right_server_and_real_tool_name():
 
 def test_call_tool_marks_a_tool_error():
     session = _FakeSession(_FakeCallToolResult("bad request", is_error=True))
-    mcp_client._connections["github"] = mcp_client._Connection(name="github", stack=object(), session=session, tools=[])
+    mcp_client._connections["github"] = mcp_client._Connection(name="github", session=session, tools=[])
     mcp_client._tool_index["mcp_github_search_repos"] = ("github", "search_repos")
 
     out = _run(mcp_client.call_tool("mcp_github_search_repos", {}))
@@ -184,6 +251,7 @@ def test_db_add_list_get_enable_delete_round_trip(temp_db):
     row = db.get_external_mcp_server("github")
     assert row["transport"] == "stdio"
     assert bool(row["enabled"]) is True
+    assert bool(row["oauth_enabled"]) is False
 
     db.set_external_mcp_server_enabled("github", False)
     assert bool(db.get_external_mcp_server("github")["enabled"]) is False
@@ -212,3 +280,14 @@ def test_db_list_scoped_to_an_instance_includes_global_rows(temp_db):
     names = {row["name"] for row in db.list_external_mcp_servers(iid)}
     assert names == {"global-one", "scoped-one"}
     assert {row["name"] for row in db.list_external_mcp_servers()} == {"global-one", "scoped-one", "other-scoped"}
+
+
+def test_db_oauth_client_info_and_tokens_round_trip(temp_db):
+    db.add_external_mcp_server("remote-one", "remote", url="https://example.com/mcp", oauth_enabled=True)
+
+    db.set_external_mcp_oauth_client_info("remote-one", '{"client_id": "abc"}')
+    db.set_external_mcp_oauth_tokens("remote-one", '{"access_token": "xyz"}')
+
+    row = db.get_external_mcp_server("remote-one")
+    assert row["oauth_client_info_json"] == '{"client_id": "abc"}'
+    assert row["oauth_tokens_json"] == '{"access_token": "xyz"}'

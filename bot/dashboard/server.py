@@ -28,7 +28,7 @@ from qrcode.image.pure import PyPNGImage
 from fastapi import Body, Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Response
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from bot import agent_control, attachments, bot_instances, db, desktop, envfile, kanban, outbox, pairing, platform_supervisor, push, setup_wizard, thumbnails
@@ -947,8 +947,14 @@ def build_app() -> FastAPI:
                 {
                     "name": r["name"], "transport": r["transport"], "command": r["command"],
                     "args": json.loads(r["args_json"] or "[]"), "url": r["url"],
-                    "has_auth_token": bool(r["auth_token"]), "enabled": bool(r["enabled"]),
-                    "instance_id": r["instance_id"], "connected": r["name"] in connected,
+                    "has_auth_token": bool(r["auth_token"]), "oauth_enabled": bool(r["oauth_enabled"]),
+                    "enabled": bool(r["enabled"]), "instance_id": r["instance_id"],
+                    "connected": r["name"] in connected,
+                    # Non-None only while an OAuth authorization is
+                    # actually outstanding for this server — the
+                    # dashboard/Telegram surface this as a clickable link
+                    # rather than leaving it as a log-only detail.
+                    "authorization_url": mcp_client.oauth_authorization_url(r["name"]),
                 }
                 for r in rows
             ]
@@ -970,11 +976,34 @@ def build_app() -> FastAPI:
             name, transport,
             command=payload.get("command") or None, args_json=json.dumps(payload.get("args") or []),
             env_json=json.dumps(payload.get("env") or {}), url=payload.get("url") or None,
-            auth_token=payload.get("auth_token") or None, instance_id=payload.get("instance_id"),
+            auth_token=payload.get("auth_token") or None, oauth_enabled=bool(payload.get("oauth_enabled")),
+            instance_id=payload.get("instance_id"),
         )
         db.log_audit(actor="dashboard", action="external_mcp_add", detail=name)
         ok = await mcp_client.connect(name)
-        return {"ok": True, "connected": ok}
+        return {"ok": True, "connected": ok, "authorization_url": mcp_client.oauth_authorization_url(name)}
+
+    @app.get("/api/mcp-external/oauth/callback")
+    async def api_mcp_external_oauth_callback(code: str = "", state: str = "", error: str = ""):
+        """Where the operator's browser lands after granting (or denying)
+        consent for an OAuth-enabled external MCP server — see
+        bot/agent_runtime/mcp_client.py's OAuthClientProvider wiring.
+        Deliberately no auth dependency: the redirecting OAuth provider
+        can't carry BotServer's own dashboard token, and this endpoint's
+        real security boundary is the unguessable, single-use `state`
+        value this process itself minted for the one pending flow it
+        correlates against (deliver_oauth_callback), not a bearer token —
+        the same security model every OAuth redirect endpoint uses."""
+        from bot.agent_runtime import mcp_client
+
+        if error:
+            return HTMLResponse(f"<h3>Authorization failed: {error}</h3><p>You can close this tab.</p>")
+        if mcp_client.deliver_oauth_callback(state, code):
+            return HTMLResponse("<h3>Authorized.</h3><p>You can close this tab and return to BotServer.</p>")
+        return HTMLResponse(
+            "<h3>No matching pending authorization found.</h3>"
+            "<p>It may have already expired — try connecting the server again from the dashboard.</p>"
+        )
 
     @app.post("/api/mcp-external/{name}/enable", dependencies=[Depends(_require_token)])
     async def api_mcp_external_enable(name: str):

@@ -44,7 +44,7 @@ def test_add_list_enable_disable_delete_round_trip(temp_db, monkeypatch):
         headers=_headers(),
     )
     assert resp.status_code == 200
-    assert resp.json() == {"ok": True, "connected": True}
+    assert resp.json() == {"ok": True, "connected": True, "authorization_url": None}
 
     listed = client.get("/api/mcp-external", headers=_headers()).json()["servers"]
     assert len(listed) == 1

@@ -668,10 +668,19 @@ CREATE TABLE IF NOT EXISTS external_mcp_servers (
     args_json     TEXT NOT NULL DEFAULT '[]',
     env_json      TEXT NOT NULL DEFAULT '{}',
     url           TEXT,                      -- remote only
-    auth_token    TEXT,                      -- remote only, optional bearer token
+    auth_token    TEXT,                      -- remote only, optional static bearer token
     enabled       INTEGER NOT NULL DEFAULT 1,
     instance_id   INTEGER,
-    created_at    TEXT NOT NULL
+    created_at    TEXT NOT NULL,
+    -- Real OAuth 2.1 (dynamic client registration + authorization code +
+    -- PKCE) for a remote server that requires it instead of a static
+    -- bearer token — see bot/agent_runtime/mcp_client.py's _DbTokenStorage,
+    -- which reads/writes these two columns for the mcp package's own
+    -- OAuthClientProvider. Mutually exclusive with auth_token in practice
+    -- (a server uses one or the other), never enforced at the schema level.
+    oauth_enabled           INTEGER NOT NULL DEFAULT 0,
+    oauth_client_info_json  TEXT,   -- mcp.shared.auth.OAuthClientInformationFull, JSON
+    oauth_tokens_json       TEXT    -- mcp.shared.auth.OAuthToken, JSON
 );
 
 -- A small, named markdown document any agent (any backend, any instance)
@@ -917,6 +926,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE scheduled_commands ADD COLUMN consecutive_failures INTEGER NOT NULL DEFAULT 0")
     if "last_error" not in scheduled_cols:
         conn.execute("ALTER TABLE scheduled_commands ADD COLUMN last_error TEXT")
+
+    external_mcp_cols = {row["name"] for row in conn.execute("PRAGMA table_info(external_mcp_servers)").fetchall()}
+    if "oauth_enabled" not in external_mcp_cols:
+        conn.execute("ALTER TABLE external_mcp_servers ADD COLUMN oauth_enabled INTEGER NOT NULL DEFAULT 0")
+    if "oauth_client_info_json" not in external_mcp_cols:
+        conn.execute("ALTER TABLE external_mcp_servers ADD COLUMN oauth_client_info_json TEXT")
+    if "oauth_tokens_json" not in external_mcp_cols:
+        conn.execute("ALTER TABLE external_mcp_servers ADD COLUMN oauth_tokens_json TEXT")
 
     presence_cols = {row["name"] for row in conn.execute("PRAGMA table_info(device_presence)").fetchall()}
     if "device_model" not in presence_cols:
@@ -1689,15 +1706,15 @@ def delete_plugin_row(name: str) -> bool:
 def add_external_mcp_server(
     name: str, transport: str, *, command: Optional[str] = None, args_json: str = "[]",
     env_json: str = "{}", url: Optional[str] = None, auth_token: Optional[str] = None,
-    instance_id: Optional[int] = None,
+    oauth_enabled: bool = False, instance_id: Optional[int] = None,
 ) -> int:
     conn = get_conn()
     with _lock:
         cur = conn.execute(
             "INSERT INTO external_mcp_servers "
-            "(name, transport, command, args_json, env_json, url, auth_token, enabled, instance_id, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
-            (name, transport, command, args_json, env_json, url, auth_token, instance_id, _now()),
+            "(name, transport, command, args_json, env_json, url, auth_token, oauth_enabled, enabled, instance_id, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
+            (name, transport, command, args_json, env_json, url, auth_token, 1 if oauth_enabled else 0, instance_id, _now()),
         )
         conn.commit()
         return cur.lastrowid
@@ -1733,6 +1750,20 @@ def delete_external_mcp_server(name: str) -> bool:
         cur = conn.execute("DELETE FROM external_mcp_servers WHERE name=?", (name,))
         conn.commit()
         return cur.rowcount > 0
+
+
+def set_external_mcp_oauth_client_info(name: str, client_info_json: str) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute("UPDATE external_mcp_servers SET oauth_client_info_json=? WHERE name=?", (client_info_json, name))
+        conn.commit()
+
+
+def set_external_mcp_oauth_tokens(name: str, tokens_json: str) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute("UPDATE external_mcp_servers SET oauth_tokens_json=? WHERE name=?", (tokens_json, name))
+        conn.commit()
 
 
 def count_legacy_items(instance_id: int) -> int:
