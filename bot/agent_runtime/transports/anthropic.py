@@ -127,7 +127,15 @@ class AnthropicTransport(ProviderTransport):
         # no dispatch branch needed anywhere in native_backend.py.
         from bot.agent_runtime import anthropic_server_tools
 
-        all_tools = list(tool_schemas) if tool_schemas else []
+        # strict: true (Phase H of the Claude API/Claude Code parity
+        # plan) tightens schema conformance for free on BotServer's own
+        # tool definitions only — never on Anthropic's own server tool
+        # entries (web_search/web_fetch/... below, or mcp_toolset),
+        # which the tool-reference page's own strict-support scoping
+        # doesn't cover the same way a plain client tool does. Copy
+        # rather than mutate: these dicts are the same shared objects
+        # agent_tools.all_tool_schemas() returns on every call.
+        all_tools = [{**schema, "strict": True} for schema in tool_schemas] if tool_schemas else []
         all_tools.extend(anthropic_server_tools.enabled_tool_entries())
 
         if all_tools:
