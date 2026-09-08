@@ -197,6 +197,11 @@ class NativeAgentBackend(Backend):
                 cache_creation_tokens = (cache_creation_tokens or 0) + response.cache_creation_tokens
             if response.cache_read_tokens is not None:
                 cache_read_tokens = (cache_read_tokens or 0) + response.cache_read_tokens
+            if response.thinking_summary and progress is not None and _show_thinking_summary_enabled():
+                try:
+                    await progress(f"🧠 {response.thinking_summary}")
+                except Exception:
+                    logger.exception("progress_notify callback failed")
 
             history.append(response.assistant_message)
             db.append_agent_message(session_key, response.assistant_message["role"], response.assistant_message["content"])
@@ -230,6 +235,12 @@ class NativeAgentBackend(Backend):
                 db.append_agent_message(session_key, entry["role"], entry["content"])
 
         raise BackendError(f"agent loop exceeded {MAX_TOOL_ITERATIONS} tool calls without a final answer")
+
+
+def _show_thinking_summary_enabled() -> bool:
+    from bot.config import config
+
+    return config.current.get("native_agent", {}).get("show_thinking_summary", False)
 
 
 def _resolve_fallback_transport(instance_id) -> Optional[tuple]:

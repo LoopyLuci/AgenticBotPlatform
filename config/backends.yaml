@@ -131,6 +131,14 @@ native_agent:
     # that goes quiet longer than 5 minutes between turns but still wants
     # a warm cache — costs more per cache write, per Anthropic's pricing).
     ttl: "5m"
+  # Surfaces a short excerpt of Claude's real adaptive-thinking text as a
+  # live progress update (AnthropicTransport only — see native_backend.py's
+  # ask() and bot/agent_runtime/transports/anthropic.py's THINKING_SUMMARY_MAX_CHARS)
+  # instead of the chat staying silent until the whole turn finishes.
+  # Off by default: a raw reasoning trace in a Telegram/Discord message is
+  # genuinely noisy for most users — opt in for Claude-Code-like
+  # "Thinking…" visibility.
+  show_thinking_summary: false
 # Applies an edit to bot/*.py to this already-running process instead of
 # needing the full stop/rebuild/relaunch cycle — see bot/hotreload.py's
 # module docstring for exactly what can and can't hot-reload. Checked

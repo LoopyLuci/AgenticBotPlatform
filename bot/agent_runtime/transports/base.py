@@ -48,6 +48,12 @@ class NormalizedResponse:
     # for a transport that DOES support caching but had a full cache miss).
     cache_creation_tokens: Optional[int] = None
     cache_read_tokens: Optional[int] = None
+    # A short excerpt of this turn's real thinking-block text (AnthropicTransport
+    # only, when adaptive thinking actually produced one) — never the reply
+    # itself, purely an optional "what is it thinking" progress signal a
+    # caller may surface (see native_backend.py's show_thinking_summary
+    # config gate). None whenever no thinking block was present.
+    thinking_summary: Optional[str] = None
 
     @property
     def stop(self) -> bool:

@@ -21,6 +21,10 @@ API_MODE = "anthropic_messages"
 
 DEFAULT_PROMPT_CACHING_ENABLED = True
 DEFAULT_PROMPT_CACHING_TTL = "5m"
+# A progress-line excerpt, not the full trace — real thinking blocks can
+# run to thousands of characters, which would flood a Telegram status
+# message far past anything readable as a live "what is it thinking" cue.
+THINKING_SUMMARY_MAX_CHARS = 300
 
 
 def _prompt_caching_config() -> dict:
@@ -153,6 +157,8 @@ class AnthropicTransport(ProviderTransport):
             if getattr(b, "type", "") == "tool_use"
         ]
         text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
+        thinking_text = "".join(b.thinking for b in resp.content if getattr(b, "type", "") == "thinking")
+        thinking_summary = thinking_text[:THINKING_SUMMARY_MAX_CHARS] if thinking_text else None
         return NormalizedResponse(
             text=text,
             tool_calls=tool_calls if resp.stop_reason == "tool_use" else [],
@@ -160,6 +166,7 @@ class AnthropicTransport(ProviderTransport):
             assistant_message={"role": "assistant", "content": assistant_blocks},
             cache_creation_tokens=cache_creation_tokens,
             cache_read_tokens=cache_read_tokens,
+            thinking_summary=thinking_summary,
         )
 
 
@@ -171,6 +178,17 @@ def _serialize_blocks(content) -> list[dict]:
             out.append({"type": "text", "text": block.text})
         elif btype == "tool_use":
             out.append({"type": "tool_use", "id": block.id, "name": block.name, "input": block.input})
+        elif btype == "thinking":
+            # Real fields confirmed against the installed anthropic SDK
+            # (anthropic.types.ThinkingBlock: signature, thinking, type).
+            # Both must round-trip verbatim — the API validates a replayed
+            # thinking block's signature and rejects a mismatched/missing
+            # one, so the previous `{"type": "thinking"}` stub silently
+            # broke adaptive thinking + tool use across a second turn.
+            out.append({"type": "thinking", "thinking": block.thinking, "signature": block.signature})
+        elif btype == "redacted_thinking":
+            # anthropic.types.RedactedThinkingBlock: data, type.
+            out.append({"type": "redacted_thinking", "data": block.data})
         else:
             out.append({"type": btype})
     return out
