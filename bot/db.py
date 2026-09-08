@@ -543,7 +543,15 @@ CREATE TABLE IF NOT EXISTS scheduled_commands (
     enabled       INTEGER NOT NULL DEFAULT 1,
     max_runs      INTEGER,         -- NULL = unlimited
     run_count     INTEGER NOT NULL DEFAULT 0,
-    created_at    TEXT NOT NULL
+    created_at    TEXT NOT NULL,
+    -- Failure-streak tracking (bot/scheduler.py's _fire()/_deliver()) —
+    -- reset to 0 on any successful run, incremented on a failed one;
+    -- once it crosses scheduler.max_consecutive_failures the row is
+    -- auto-disabled and exactly one alert is sent (not a repeat every
+    -- poll). last_error is the most recent failure's message, kept even
+    -- after the row is disabled so a human can see why.
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    last_error    TEXT
 );
 
 -- A per-instance kanban board — see bot/kanban.py, /kanban.
@@ -905,6 +913,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     scheduled_cols = {row["name"] for row in conn.execute("PRAGMA table_info(scheduled_commands)").fetchall()}
     if "thread_id" not in scheduled_cols:
         conn.execute("ALTER TABLE scheduled_commands ADD COLUMN thread_id TEXT")
+    if "consecutive_failures" not in scheduled_cols:
+        conn.execute("ALTER TABLE scheduled_commands ADD COLUMN consecutive_failures INTEGER NOT NULL DEFAULT 0")
+    if "last_error" not in scheduled_cols:
+        conn.execute("ALTER TABLE scheduled_commands ADD COLUMN last_error TEXT")
 
     presence_cols = {row["name"] for row in conn.execute("PRAGMA table_info(device_presence)").fetchall()}
     if "device_model" not in presence_cols:
@@ -1325,6 +1337,11 @@ def list_due_scheduled_commands(now_iso: str) -> list[sqlite3.Row]:
 
 
 def mark_scheduled_command_ran(sched_id: int, next_run_at: str) -> None:
+    """Called right after DISPATCH (not after the dispatched turn actually
+    finishes — a background=True turn's real outcome arrives later via
+    agent_engine.run_turn's on_result callback), so this deliberately does
+    NOT touch consecutive_failures — see reset_scheduled_command_failures()
+    below, called only from that later, real-outcome callback."""
     conn = get_conn()
     with _lock:
         conn.execute(
@@ -1332,6 +1349,29 @@ def mark_scheduled_command_ran(sched_id: int, next_run_at: str) -> None:
             (_now(), next_run_at, sched_id),
         )
         conn.commit()
+
+
+def reset_scheduled_command_failures(sched_id: int) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute("UPDATE scheduled_commands SET consecutive_failures=0 WHERE id=?", (sched_id,))
+        conn.commit()
+
+
+def record_scheduled_command_failure(sched_id: int, error: str) -> int:
+    """Increments this row's failure streak and stores the latest error
+    message — returns the new streak count so the caller (bot/scheduler.py's
+    _fire()) can decide whether it just crossed the auto-disable threshold
+    without a second query."""
+    conn = get_conn()
+    with _lock:
+        conn.execute(
+            "UPDATE scheduled_commands SET consecutive_failures=consecutive_failures+1, last_error=? WHERE id=?",
+            (error, sched_id),
+        )
+        conn.commit()
+        row = conn.execute("SELECT consecutive_failures FROM scheduled_commands WHERE id=?", (sched_id,)).fetchone()
+        return row["consecutive_failures"] if row else 0
 
 
 def set_scheduled_command_enabled(sched_id: int, enabled: bool) -> None:

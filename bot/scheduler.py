@@ -48,12 +48,34 @@ def _iso(dt: datetime) -> str:
     return dt.isoformat(timespec="seconds")
 
 
+def _max_consecutive_failures() -> int:
+    from bot.config import config
+
+    return config.current.get("scheduler", {}).get("max_consecutive_failures", 5)
+
+
 def create(
     instance_id: int, chat_id, kind: str, prompt: str, interval_s: int,
     max_runs: Optional[int] = None, thread_id=None,
 ) -> int:
     if interval_s < 5:
         raise ScheduleError("interval must be at least 5 seconds")
+    # Preflight: confirm the target instance actually exists BEFORE
+    # accepting the schedule — a schedule pointed at a bogus/typo'd
+    # instance id used to just silently no-op every poll cycle forever
+    # (bot/scheduler.py::_fire()'s own existing "instance no longer
+    # exists" branch handles a DELETED instance disappearing later; this
+    # closes the earlier, cheaper-to-catch case of one that was never
+    # valid in the first place). Deliberately does NOT require
+    # enabled=True: _fire() itself never checks that either (only
+    # existence), and enabled=False is a normal, common state for an
+    # instance being staged/paused rather than a sign its schedule is
+    # invalid — a schedule created now should just start working once
+    # the instance is enabled later, not need to be re-created.
+    from bot import bot_instances
+
+    if bot_instances.get_instance(instance_id) is None:
+        raise ScheduleError(f"no bot instance with id {instance_id}")
     next_run = _iso(_now() + timedelta(seconds=interval_s))
     return db.create_scheduled_command(instance_id, chat_id, kind, prompt, interval_s, next_run, max_runs, thread_id=thread_id)
 
@@ -72,6 +94,31 @@ def resume(sched_id: int) -> None:
 
 def remove(sched_id: int) -> None:
     db.delete_scheduled_command(sched_id)
+
+
+async def _record_failure(row, error_text: str) -> None:
+    """Increments the row's failure streak; once it crosses the
+    configured threshold, auto-disables the row and sends exactly ONE
+    alert — disabling removes it from list_due_scheduled_commands' own
+    enabled=1 filter, so it can never fire (and re-alert) again on its
+    own; a human has to /cron resume it after fixing the underlying
+    problem, which is the point."""
+    count = db.record_scheduled_command_failure(row["id"], error_text[:2000])
+    threshold = _max_consecutive_failures()
+    if threshold > 0 and count >= threshold:
+        db.set_scheduled_command_enabled(row["id"], False)
+        logger.warning(
+            "scheduled command %s auto-disabled after %d consecutive failures: %s", row["id"], count, error_text,
+        )
+        try:
+            await outbox.send_message(
+                row["instance_id"], row["chat_id"],
+                f"⚠️ Scheduled command #{row['id']} auto-disabled after {count} consecutive failures.\n"
+                f"Last error: {error_text}\nFix the underlying issue, then /cron resume {row['id']}.",
+                thread_id=row["thread_id"],
+            )
+        except RuntimeError:
+            pass
 
 
 async def _fire(row) -> None:
@@ -111,7 +158,10 @@ async def _fire(row) -> None:
         # Funnels through bot/auto_manage.py's single shared check-in path
         # (the same one the reactive kanban-card trigger uses) instead of
         # the generic dispatch below, so the two triggers can never
-        # diverge in what a check-in actually does.
+        # diverge in what a check-in actually does. auto_manage.run_check_in
+        # already catches its own errors internally (logs, doesn't raise),
+        # so there's no real per-run outcome to track a failure streak
+        # against here — unlike the generic dispatch below.
         from bot import auto_manage
 
         await auto_manage.run_check_in(instance_id, reason="scheduled check-in")
@@ -120,12 +170,15 @@ async def _fire(row) -> None:
         return
 
     async def _deliver(outcome: str, result) -> None:
-        if outcome != "ran":
+        if outcome == "ran":
+            db.reset_scheduled_command_failures(row["id"])
+            try:
+                await outbox.send_message(instance_id, chat_id, f"⏰ {result.text}", thread_id=thread_id)
+            except RuntimeError:
+                pass
             return
-        try:
-            await outbox.send_message(instance_id, chat_id, f"⏰ {result.text}", thread_id=thread_id)
-        except RuntimeError:
-            pass
+        if outcome == "error":
+            await _record_failure(row, str(result))
 
     await agent_engine.run_turn(
         row["prompt"],
@@ -149,8 +202,16 @@ async def run_forever(stop_event: asyncio.Event) -> None:
             for row in due:
                 try:
                     await _fire(row)
-                except Exception:
+                except Exception as exc:
                     logger.exception("scheduled command %s failed", row["id"])
+                    # A synchronous exception straight out of _fire() itself
+                    # (a bug, or a dispatch-time failure) — distinct from
+                    # the normal async "the dispatched turn errored" path,
+                    # which _deliver() above already routes through
+                    # _record_failure(); still counts toward the same
+                    # streak either way, since both are real reasons a
+                    # scheduled command isn't working.
+                    await _record_failure(row, str(exc))
         except Exception:
             logger.exception("scheduler poll failed")
         try:

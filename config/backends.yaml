@@ -132,6 +132,12 @@ retention:
   # checkpoint — ephemeral session-scoped rollback history, not something
   # worth keeping indefinitely once nobody's touched that workspace.
   checkpoints_days: 30
+scheduler:
+  # bot/scheduler.py's failure-streak guard — a scheduled command
+  # (/cron, /loop, /heartbeat) that fails this many times in a row gets
+  # auto-disabled and sends exactly ONE alert to its chat, rather than
+  # silently retrying forever or spamming an alert every poll cycle.
+  max_consecutive_failures: 5
 turn:
   # Real TURN relay for the Android mesh transport's WebRTC fallback (see
   # bot/turn.py) — used when two devices can't reach each other directly
