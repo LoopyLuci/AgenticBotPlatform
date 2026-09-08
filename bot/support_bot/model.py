@@ -112,7 +112,11 @@ class TfidfCentroidModel:
         — see bot/support_bot/model_io.py. A Kotlin port implements the
         same tokenize -> TF*IDF -> cosine-vs-centroid math over this
         exact data to classify identically on Android."""
-        return {"idf": dict(self._idf), "centroids": {k: dict(v) for k, v in self._centroids.items()}}
+        return {
+            "idf": dict(self._idf),
+            "centroids": {k: dict(v) for k, v in self._centroids.items()},
+            "confidence_threshold": CONFIDENCE_THRESHOLD,
+        }
 
     def load_state(self, state: dict) -> None:
         """Replaces this instance's trained state in place (bypassing

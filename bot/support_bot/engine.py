@@ -51,7 +51,19 @@ class SupportBot:
             return await actions.ASYNC_INTENT_HANDLERS[intent](text, actor)
         return actions.INTENT_HANDLERS[intent](text, actor)
 
-    async def handle(self, text: str, actor: str) -> SupportBotReply:
+    async def handle(self, text: str, actor: str, client_intent: Optional[str] = None) -> SupportBotReply:
+        """`client_intent` (Phase 6 of the Support Bot NLU upgrade plan)
+        is an OPTIONAL fast-path hint from a caller that already ran its
+        own local classification (the Android app's on-device Kotlin
+        engine) — used only when it names a real, currently-registered
+        intent; anything else (a stale/unrecognized value, an "unknown"
+        guess, or its absence) falls through to this server's own real
+        classification exactly as before this parameter existed. Every
+        downstream step — the confirm-gate for destructive intents,
+        actual execution — runs identically either way, so a client
+        can never get a destructive action to skip approval just by
+        asserting an intent; it can only ever save a round-trip to
+        recompute what text.classify() would have said anyway."""
         text = (text or "").strip()
         if not text:
             return SupportBotReply(text="Say something and I'll help — try \"help\" for what I can do.", intent="unknown")
@@ -74,7 +86,11 @@ class SupportBot:
                 intent="unknown",
             )
 
-        intent = hybrid.classify(text).intent
+        valid_intents = set(actions.INTENT_HANDLERS) | set(actions.ASYNC_INTENT_HANDLERS)
+        if client_intent and client_intent in valid_intents:
+            intent = client_intent
+        else:
+            intent = hybrid.classify(text).intent
         if intent == "unknown":
             return SupportBotReply(
                 text="I'm not sure what you're asking — try \"help\" to see what I can do.",

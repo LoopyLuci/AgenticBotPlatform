@@ -4,7 +4,15 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class SupportBotAskRequest(val text: String)
+data class SupportBotAskRequest(
+    val text: String,
+    // Optional local-classification fast-path hint (Phase 6 of the
+    // Support Bot NLU upgrade plan, com.botserver.mobile.nlu) — the
+    // server independently re-validates and gates every real action
+    // regardless of this value; see bot/support_bot/engine.py's
+    // handle() docstring for the exact guarantee.
+    @SerialName("client_intent") val clientIntent: String? = null,
+)
 
 @Serializable
 data class SupportBotConfirmRequest(val token: String)

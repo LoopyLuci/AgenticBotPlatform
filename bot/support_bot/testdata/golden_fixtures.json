@@ -1,0 +1,92 @@
+[
+  {
+    "text": "what's the server status",
+    "expected_intent": "status",
+    "expected_confidence": 0.988529
+  },
+  {
+    "text": "list my bots",
+    "expected_intent": "list_bots",
+    "expected_confidence": 0.998298
+  },
+  {
+    "text": "rename bot X",
+    "expected_intent": "bot_edit",
+    "expected_confidence": 0.986949
+  },
+  {
+    "text": "what backend is set as default",
+    "expected_intent": "backend_show",
+    "expected_confidence": 0.992802
+  },
+  {
+    "text": "launch claude desktop",
+    "expected_intent": "desktop_start",
+    "expected_confidence": 0.982834
+  },
+  {
+    "text": "what jobs failed today",
+    "expected_intent": "jobs_list",
+    "expected_confidence": 0.994746
+  },
+  {
+    "text": "database status",
+    "expected_intent": "db_status",
+    "expected_confidence": 0.996917
+  },
+  {
+    "text": "enable confirm destructive actions",
+    "expected_intent": "settings_set",
+    "expected_confidence": 0.994811
+  },
+  {
+    "text": "show me session 5",
+    "expected_intent": "session_show",
+    "expected_confidence": 0.979534
+  },
+  {
+    "text": "list your capabilities",
+    "expected_intent": "help",
+    "expected_confidence": 0.99298
+  },
+  {
+    "text": "restart the bot please",
+    "expected_intent": "bot_restart",
+    "expected_confidence": 0.969736
+  },
+  {
+    "text": "is everything okay",
+    "expected_intent": "unknown",
+    "expected_confidence": 0.164825
+  },
+  {
+    "text": "purple elephants dance sideways",
+    "expected_intent": "unknown",
+    "expected_confidence": 0.05511
+  },
+  {
+    "text": "asdkjqwoe random gibberish text",
+    "expected_intent": "unknown",
+    "expected_confidence": 0.05511
+  },
+  {
+    "text": "what is the weather today",
+    "expected_intent": "backend_show",
+    "expected_confidence": 0.241843
+  },
+  {
+    "text": "HELP ME NOW!!!",
+    "expected_intent": "help",
+    "expected_confidence": 0.507438
+  },
+  {
+    "text": "",
+    "expected_intent": "unknown",
+    "expected_confidence": 0.05511
+  },
+  {
+    "text": "status",
+    "expected_intent": "status",
+    "expected_confidence": 0.99976
+  }
+]

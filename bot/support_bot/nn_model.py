@@ -225,6 +225,7 @@ class NeuralIntentClassifier:
             "hidden_units": _HIDDEN_UNITS,
             "w1": self._mlp.w1.tolist(), "b1": self._mlp.b1.tolist(),
             "w2": self._mlp.w2.tolist(), "b2": self._mlp.b2.tolist(),
+            "confidence_threshold": CONFIDENCE_THRESHOLD,
         }
 
     def load_state(self, state: dict) -> None:

@@ -239,6 +239,27 @@ def _save_current_state(examples: list[tuple[str, str]], *, eval_result: Optiona
     )
 
 
+def export_current_model() -> dict[str, Any]:
+    """Whatever the live singletons currently classify with, in the same
+    portable JSON shape model_io.py persists — served over
+    GET /api/support-bot/model (Phase 6 of the Support Bot NLU upgrade
+    plan) so the Android app's Kotlin engine always has something valid
+    to load, even before any retrain-with-eval has ever run and saved a
+    current.json to disk."""
+    persisted = model_io.load_model(path=model_io.CURRENT_PATH)
+    if persisted is not None:
+        return persisted
+    examples = _gather_examples()
+    return {
+        "format_version": model_io.FORMAT_VERSION,
+        "training_data_hash": model_io.compute_training_hash(examples),
+        "intents": sorted({intent for _, intent in examples}),
+        "tfidf": tfidf_model.model.export_state(),
+        "nn": neural_model.nn_model.export_state(),
+        "eval": {},
+    }
+
+
 def health() -> dict[str, Any]:
     """Self-monitoring summary — see bot/db.py's
     get_support_bot_classification_stats() for exactly what's computed."""

@@ -50,6 +50,7 @@ import com.botserver.mobile.data.dto.TurnCredentialsResponse
 import com.botserver.mobile.data.dto.UploadCompleteResponse
 import com.botserver.mobile.data.dto.UploadInitRequest
 import com.botserver.mobile.data.dto.UploadInitResponse
+import com.botserver.mobile.nlu.ModelFile
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import okhttp3.ResponseBody
@@ -358,4 +359,10 @@ interface ApiService {
 
     @POST("/api/support-bot/confirm")
     suspend fun supportBotConfirm(@Body request: SupportBotConfirmRequest): SupportBotReply
+
+    // The portable model file a Kotlin engine (com.botserver.mobile.nlu)
+    // loads for local, on-device classification — see
+    // bot/support_bot/hybrid.py's export_current_model().
+    @GET("/api/support-bot/model")
+    suspend fun supportBotModel(): ModelFile
 }

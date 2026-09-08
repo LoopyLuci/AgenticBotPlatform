@@ -2352,7 +2352,12 @@ def build_app() -> FastAPI:
         text = (payload.get("text") or "").strip()
         if not text:
             raise HTTPException(status_code=400, detail="payload must be {text: ...}")
-        reply = await support_bot.handle(text, actor="support-bot")
+        # Optional local-classification fast-path hint (Phase 6 of the
+        # Support Bot NLU upgrade plan) — see SupportBot.handle()'s own
+        # docstring for why this can never bypass real server-side
+        # validation/gating.
+        client_intent = (payload.get("client_intent") or "").strip() or None
+        reply = await support_bot.handle(text, actor="support-bot", client_intent=client_intent)
         return {
             "text": reply.text,
             "intent": reply.intent,
@@ -2506,6 +2511,15 @@ def build_app() -> FastAPI:
     # recorded held-out eval (accuracy/per-intent P&R), if any retrain has
     # ever run through the eval-gated path. See bot/support_bot/hybrid.py's
     # health() and bot/support_bot/model_io.py's file schema.
+    # The portable model file a Kotlin engine on Android loads for local,
+    # on-device classification (Phase 6 of the Support Bot NLU upgrade
+    # plan) — see bot/support_bot/hybrid.py's export_current_model() and
+    # model_io.py's file schema. training_data_hash lets the app skip a
+    # re-download when nothing has actually changed.
+    @app.get("/api/support-bot/model", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_support_bot_model():
+        return support_bot_hybrid.export_current_model()
+
     @app.get("/api/support-bot/health", dependencies=[Depends(_require_token_or_api_key)])
     async def api_support_bot_health():
         from bot.support_bot import model_io
