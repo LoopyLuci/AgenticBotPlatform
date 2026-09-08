@@ -72,9 +72,14 @@ def _to_wire_messages(history: list[dict]) -> list[dict]:
 
 
 class OpenAICompatibleTransport(ProviderTransport):
-    def __init__(self, base_url: str, api_key: Optional[str] = None):
+    def __init__(self, base_url: str, api_key: Optional[str] = None, catalog_id: Optional[str] = None):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
+        # Used only to look up a per-vendor quirk profile (see
+        # bot/agent_runtime/provider_quirks.py) — None is fine, it just
+        # means no profile matches and every request behaves exactly as
+        # it did before quirk handling existed.
+        self.catalog_id = catalog_id
 
     def user_message(self, text: str) -> dict:
         return {"role": "user", "content": text}
@@ -116,6 +121,15 @@ class OpenAICompatibleTransport(ProviderTransport):
         openai_effort = effort_module.to_openai_reasoning_effort(effort)
         if openai_effort is not None:
             payload["reasoning_effort"] = openai_effort
+
+        # Real per-vendor wire quirks (confirmed against Hermes Agent's
+        # own per-vendor adapters) — a provider with no matching profile
+        # is completely untouched by this call.
+        from bot.agent_runtime import provider_quirks
+
+        quirk_profile = provider_quirks.profile_for(self.catalog_id, self.base_url)
+        provider_quirks.apply(payload, profile=quirk_profile, effort=effort)
+
         async with httpx.AsyncClient(timeout=timeout_s) as client:
             try:
                 resp = await client.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)

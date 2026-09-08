@@ -28,6 +28,8 @@ def test_defaults_when_nothing_configured(temp_db):
         "worker_model": None,
         "worker_effort": None,
         "manager_effort": None,
+        "fallback_provider": None,
+        "fallback_model": None,
     }
 
 

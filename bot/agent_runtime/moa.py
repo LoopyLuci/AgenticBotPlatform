@@ -52,7 +52,10 @@ def _transport_for(provider: Optional[str], model: str) -> ProviderTransport:
     provider_cfg = provider_registry.get_provider(provider)
     if provider_cfg is None:
         raise BackendError(f"no provider named {provider!r} configured in config/providers.yaml")
-    return OpenAICompatibleTransport(base_url=provider_cfg["base_url"], api_key=provider_registry.get_api_key(provider))
+    return OpenAICompatibleTransport(
+        base_url=provider_cfg["base_url"], api_key=provider_registry.get_api_key(provider),
+        catalog_id=provider_cfg.get("catalog_id"),
+    )
 
 
 async def _single_call(provider: Optional[str], model: str, prompt: str) -> str:

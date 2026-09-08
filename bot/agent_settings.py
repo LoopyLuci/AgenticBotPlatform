@@ -29,7 +29,10 @@ from typing import Any, Optional
 from bot import db
 from bot.agent_runtime.subagents import DEFAULT_MAX_CONCURRENT_CHILDREN
 
-FIELDS = ("max_concurrent_children", "worker_provider", "worker_model", "worker_effort", "manager_effort")
+FIELDS = (
+    "max_concurrent_children", "worker_provider", "worker_model", "worker_effort", "manager_effort",
+    "fallback_provider", "fallback_model",
+)
 
 
 def _hardcoded_default(field: str) -> Any:

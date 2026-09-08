@@ -40,13 +40,16 @@ class CustomModelBackend(Backend):
         api_key: Optional[str] = None,
         max_tokens: int = 4096,
     ):
+        from bot import providers as provider_registry
+
         self.provider_name = provider_name
         self.model_id = model_id
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.max_tokens = max_tokens
+        provider_cfg = provider_registry.get_provider(provider_name) or {}
         self._inner = NativeAgentBackend(
-            OpenAICompatibleTransport(base_url=self.base_url, api_key=api_key),
+            OpenAICompatibleTransport(base_url=self.base_url, api_key=api_key, catalog_id=provider_cfg.get("catalog_id")),
             model=model_id, max_tokens=max_tokens,
             session_prefix="custom", name="custom_model",
         )

@@ -714,6 +714,8 @@ CREATE TABLE IF NOT EXISTS agent_settings (
     worker_model            TEXT,
     worker_effort           TEXT,
     manager_effort          TEXT,
+    fallback_provider       TEXT,
+    fallback_model          TEXT,
     updated_at              TEXT NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_settings_instance_null
@@ -866,6 +868,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE bot_instances ADD COLUMN desktop_workspace_dir TEXT")
     if "desktop_effort" not in instance_cols:
         conn.execute("ALTER TABLE bot_instances ADD COLUMN desktop_effort TEXT NOT NULL DEFAULT 'low'")
+
+    agent_settings_cols = {row["name"] for row in conn.execute("PRAGMA table_info(agent_settings)").fetchall()}
+    if "fallback_provider" not in agent_settings_cols:
+        conn.execute("ALTER TABLE agent_settings ADD COLUMN fallback_provider TEXT")
+    if "fallback_model" not in agent_settings_cols:
+        conn.execute("ALTER TABLE agent_settings ADD COLUMN fallback_model TEXT")
 
     chat_session_cols = {row["name"] for row in conn.execute("PRAGMA table_info(chat_sessions)").fetchall()}
     if "thread_id" not in chat_session_cols:
@@ -1487,7 +1495,10 @@ def delete_context_doc(name: str) -> bool:
 
 # ----------------------------------------------------------- agent_settings
 
-_AGENT_SETTINGS_COLUMNS = ("max_concurrent_children", "worker_provider", "worker_model", "worker_effort", "manager_effort")
+_AGENT_SETTINGS_COLUMNS = (
+    "max_concurrent_children", "worker_provider", "worker_model", "worker_effort", "manager_effort",
+    "fallback_provider", "fallback_model",
+)
 
 
 def get_agent_settings_row(instance_id: Optional[int]) -> Optional[sqlite3.Row]:

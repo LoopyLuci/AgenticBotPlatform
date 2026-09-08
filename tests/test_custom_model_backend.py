@@ -135,6 +135,22 @@ def test_authorization_header_set_when_api_key_present(temp_db, monkeypatch, tmp
     assert fake.requests[0]["headers"]["Authorization"] == "Bearer sk-test"
 
 
+def test_deepseek_quirk_forces_extra_body_thinking_on_the_real_request(temp_db, monkeypatch, tmp_path):
+    """Real confirmed bug (Hermes's own DeepSeek adapter works around
+    this): DeepSeek V4 400s on a second tool call unless extra_body.thinking
+    is explicitly present on every request. Matched here by base_url
+    since this test provider has no configured catalog_id."""
+    fake = _install_fake_client(monkeypatch, [
+        {"choices": [{"message": {"role": "assistant", "content": "ok"}}]},
+    ])
+    backend = CustomModelBackend(
+        provider_name="my_deepseek", model_id="deepseek-v4",
+        base_url="https://api.deepseek.com/v1", api_key="sk-test",
+    )
+    _run(backend.ask("hi", context={"cwd": str(tmp_path / "ws")}))
+    assert fake.requests[0]["json"]["extra_body"]["thinking"] == {"type": "disabled"}
+
+
 def _run(coro):
     import asyncio
 

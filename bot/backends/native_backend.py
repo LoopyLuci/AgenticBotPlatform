@@ -97,6 +97,13 @@ class NativeAgentBackend(Backend):
 
         system_prompt = _build_system_prompt(instance_id)
 
+        # Resolved once per ask() call, not per iteration — a fallback
+        # that kicks in on iteration N stays active for the rest of this
+        # turn (a primary that just failed is likely still down a moment
+        # later), rather than re-attempting the primary every iteration.
+        active_transport = self.transport
+        active_model = self.model
+
         total_tokens = 0
         for _ in range(MAX_TOOL_ITERATIONS):
             if steer_queue is not None:
@@ -105,19 +112,48 @@ class NativeAgentBackend(Backend):
                     steered.append(steer_queue.get_nowait())
                 if steered:
                     steer_text = "[The user sent this mid-turn — take it into account:]\n" + "\n".join(steered)
-                    steer_entry = self.transport.user_message(steer_text)
+                    steer_entry = active_transport.user_message(steer_text)
                     history.append(steer_entry)
                     db.append_agent_message(session_key, steer_entry["role"], steer_entry["content"])
 
-            response = await self.transport.send(
-                model=self.model,
-                history=history,
-                tool_schemas=tool_schemas,
-                max_tokens=self.max_tokens,
-                timeout_s=timeout_s,
-                system_prompt=system_prompt,
-                effort=effort,
-            )
+            try:
+                response = await active_transport.send(
+                    model=active_model,
+                    history=history,
+                    tool_schemas=tool_schemas,
+                    max_tokens=self.max_tokens,
+                    timeout_s=timeout_s,
+                    system_prompt=system_prompt,
+                    effort=effort,
+                )
+            except BackendError as exc:
+                # One bounded retry against a configured fallback
+                # provider/model (bot/agent_settings.py's fallback_provider/
+                # fallback_model) — mirrors Hermes's own real
+                # try_activate_fallback concept at a deliberately bounded
+                # (one hop, not a multi-provider chain) scope, matching
+                # this codebase's existing "one bounded retry" convention
+                # (output_schema validation already works this way). Never
+                # retries an EstopEngagedError — that's not a transport
+                # failure a different provider would fix.
+                from bot.agent_runtime import estop as estop_module
+
+                if isinstance(exc, estop_module.EstopEngagedError) or active_transport is not self.transport:
+                    raise
+                fallback = _resolve_fallback_transport(instance_id)
+                if fallback is None:
+                    raise
+                logger.warning("native backend: primary transport failed (%s) — retrying once against configured fallback", exc)
+                active_transport, active_model = fallback
+                response = await active_transport.send(
+                    model=active_model,
+                    history=history,
+                    tool_schemas=tool_schemas,
+                    max_tokens=self.max_tokens,
+                    timeout_s=timeout_s,
+                    system_prompt=system_prompt,
+                    effort=effort,
+                )
             if response.tokens:
                 total_tokens += response.tokens
 
@@ -144,11 +180,43 @@ class NativeAgentBackend(Backend):
                 )
                 results.append((tc, output))
 
-            for entry in self.transport.tool_result_messages(results):
+            for entry in active_transport.tool_result_messages(results):
                 history.append(entry)
                 db.append_agent_message(session_key, entry["role"], entry["content"])
 
         raise BackendError(f"agent loop exceeded {MAX_TOOL_ITERATIONS} tool calls without a final answer")
+
+
+def _resolve_fallback_transport(instance_id) -> Optional[tuple]:
+    """(transport, model) for this instance's configured
+    fallback_provider/fallback_model (bot/agent_settings.py), or None if
+    neither is configured or the provider can't be resolved — a missing/
+    broken fallback config must never itself raise, since the caller
+    would then lose the ORIGINAL, more informative transport error."""
+    if instance_id is None:
+        return None
+    try:
+        from bot import agent_settings
+
+        settings = agent_settings.get(instance_id)
+        provider_name = settings.get("fallback_provider")
+        model = settings.get("fallback_model")
+        if not provider_name or not model:
+            return None
+        from bot import providers as provider_registry
+        from bot.agent_runtime.transports.openai_compatible import OpenAICompatibleTransport
+
+        provider_cfg = provider_registry.get_provider(provider_name)
+        if provider_cfg is None:
+            return None
+        transport = OpenAICompatibleTransport(
+            base_url=provider_cfg["base_url"], api_key=provider_registry.get_api_key(provider_name),
+            catalog_id=provider_cfg.get("catalog_id"),
+        )
+        return transport, model
+    except Exception:
+        logger.exception("native backend: failed to resolve fallback transport for instance %s", instance_id)
+        return None
 
 
 def _progress_line(tool_name: str, tool_input: dict) -> str:
