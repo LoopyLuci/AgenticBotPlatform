@@ -139,6 +139,18 @@ def _notify_approval(context: ContextTypes.DEFAULT_TYPE, chat_id):
     exec-approval message shape."""
 
     async def _notify(approval_id: int, tool_name: str, tool_input: dict) -> None:
+        from bot.agent_runtime.approval import PLAN_APPROVAL_TOOL_NAME
+
+        if tool_name == PLAN_APPROVAL_TOOL_NAME:
+            # Plan-mode (Phase G of the Claude API/Claude Code parity
+            # plan) — same ea: button UI as a dangerous-tool-call
+            # approval, but showing the actual proposed plan instead of
+            # a tool name/input.
+            body = f"📋 Plan approval required:\n\n{tool_input.get('plan', '')[:3000]}"
+            await context.bot.send_message(
+                chat_id=chat_id, text=body, reply_markup=_approval_keyboard(approval_id)
+            )
+            return
         command = tool_input.get("command") if tool_name == "run_shell" else None
         body = f"⚠️ Approval required: {tool_name}"
         if command:

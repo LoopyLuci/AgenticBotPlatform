@@ -778,6 +778,13 @@ CREATE TABLE IF NOT EXISTS agent_settings (
     manager_effort          TEXT,
     fallback_provider       TEXT,
     fallback_model          TEXT,
+    -- Plan-mode analog (Phase G of the Claude API/Claude Code parity
+    -- plan) — see bot/agent_runtime/approval.py::request_plan_approval()
+    -- and NativeAgentBackend.ask(). NULL/unset falls through the usual
+    -- three-level chain to "off" (bot/agent_settings.py's own
+    -- _hardcoded_default), so an instance with nothing configured
+    -- behaves exactly as before this column existed.
+    require_plan_approval   INTEGER,
     updated_at              TEXT NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_settings_instance_null
@@ -936,6 +943,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE agent_settings ADD COLUMN fallback_provider TEXT")
     if "fallback_model" not in agent_settings_cols:
         conn.execute("ALTER TABLE agent_settings ADD COLUMN fallback_model TEXT")
+    if "require_plan_approval" not in agent_settings_cols:
+        conn.execute("ALTER TABLE agent_settings ADD COLUMN require_plan_approval INTEGER")
 
     chat_session_cols = {row["name"] for row in conn.execute("PRAGMA table_info(chat_sessions)").fetchall()}
     if "thread_id" not in chat_session_cols:
@@ -1628,7 +1637,7 @@ def delete_context_doc(name: str) -> bool:
 
 _AGENT_SETTINGS_COLUMNS = (
     "max_concurrent_children", "worker_provider", "worker_model", "worker_effort", "manager_effort",
-    "fallback_provider", "fallback_model",
+    "fallback_provider", "fallback_model", "require_plan_approval",
 )
 
 

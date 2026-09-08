@@ -31,7 +31,7 @@ from bot.agent_runtime.subagents import DEFAULT_MAX_CONCURRENT_CHILDREN
 
 FIELDS = (
     "max_concurrent_children", "worker_provider", "worker_model", "worker_effort", "manager_effort",
-    "fallback_provider", "fallback_model",
+    "fallback_provider", "fallback_model", "require_plan_approval",
 )
 
 
@@ -46,6 +46,12 @@ def _hardcoded_default(field: str) -> Any:
         from bot.config import config
 
         return config.current.get("native_agent", {}).get("max_concurrent_children", DEFAULT_MAX_CONCURRENT_CHILDREN)
+    if field == "require_plan_approval":
+        # Plan-mode analog (Phase G of the Claude API/Claude Code parity
+        # plan) — off unless explicitly turned on somewhere in the
+        # fallback chain, matching "an instance with nothing configured
+        # behaves exactly as before this field existed."
+        return False
     return None
 
 

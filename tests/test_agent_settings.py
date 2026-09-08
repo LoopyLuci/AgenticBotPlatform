@@ -30,6 +30,7 @@ def test_defaults_when_nothing_configured(temp_db):
         "manager_effort": None,
         "fallback_provider": None,
         "fallback_model": None,
+        "require_plan_approval": False,
     }
 
 

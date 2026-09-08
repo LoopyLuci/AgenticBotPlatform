@@ -89,6 +89,55 @@ def resolve(approval_id: int, outcome: Outcome, actor: str) -> bool:
     return True
 
 
+# Plan-mode's own approval gate (Phase G of the Claude API/Claude Code
+# parity plan) — a synthetic "tool name" so a plan approval reuses the
+# exact same pending_approvals table/ea: button UI/resolve() plumbing as
+# a dangerous-tool-call approval, with zero new table or callback-
+# handling code needed. Never a real tool that execute_tool() would ever
+# see; it exists only to give this kind of approval row a stable label.
+PLAN_APPROVAL_TOOL_NAME = "__plan_approval__"
+
+
+async def request_plan_approval(
+    instance_id: int,
+    chat_id: Any,
+    session_key: str,
+    plan_text: str,
+    notify: Callable[[int, str, dict], Awaitable[None]],
+    timeout_s: float = DEFAULT_TIMEOUT_S,
+) -> bool:
+    """Plan-mode's own approval gate — "propose a plan, get human sign-
+    off, then execute" — distinct from request_approval()'s per-
+    dangerous-tool-call gate above, but built on the exact same
+    primitives (pending_approvals, _waiters/_outcomes, the same ea:
+    Telegram buttons) rather than a second approval subsystem.
+
+    Deliberately does NOT call request_approval() itself: that function's
+    once/session/always/deny outcome vocabulary exists to let a human
+    stop being asked about a specific TOOL for the rest of a session (or
+    forever) — reusing it here would mean a single "Session" or "Always"
+    tap on a plan silently skips reviewing every later plan in that
+    session, or every plan this instance ever proposes again, which
+    defeats plan-mode's entire purpose. Every non-deny outcome (whichever
+    of the four buttons a human taps) collapses to a plain approved=True
+    here instead; nothing is ever pre-approved via is_pre_approved()."""
+    approval_id = db.create_pending_approval(instance_id, chat_id, session_key, PLAN_APPROVAL_TOOL_NAME, {"plan": plan_text})
+    event = asyncio.Event()
+    _waiters[approval_id] = event
+    try:
+        await notify(approval_id, PLAN_APPROVAL_TOOL_NAME, {"plan": plan_text})
+        try:
+            await asyncio.wait_for(event.wait(), timeout=timeout_s)
+        except asyncio.TimeoutError:
+            db.resolve_pending_approval(approval_id, status="expired", resolved_by=None)
+            logger.info("plan approval %s expired after %ss", approval_id, timeout_s)
+            return False
+        outcome = _outcomes.pop(approval_id, "deny")
+        return outcome != "deny"
+    finally:
+        _waiters.pop(approval_id, None)
+
+
 def oldest_pending(instance_id: int, chat_id: Any) -> Optional[dict]:
     rows = db.list_pending_approvals(instance_id, chat_id=chat_id)
     return dict(rows[0]) if rows else None

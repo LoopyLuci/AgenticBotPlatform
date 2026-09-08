@@ -432,6 +432,13 @@ class Router:
             from bot import agent_settings
 
             context.setdefault("effort", agent_settings.get(instance_id)["manager_effort"])
+            # Plan mode (Phase G of the Claude API/Claude Code parity
+            # plan) — an instance-level "always propose a plan first"
+            # toggle, the top-level-ask() equivalent of spawn_subagent's
+            # own per-dispatch plan_first param. Same "harmless to set
+            # unconditionally" reasoning as effort above: only
+            # NativeAgentBackend.ask() ever reads context["plan_first"].
+            context.setdefault("plan_first", agent_settings.get(instance_id)["require_plan_approval"])
 
         # Image-understanding (Phase D of the native-parity plan) is only
         # wired into the native-agent-loop backends (api/custom_model/

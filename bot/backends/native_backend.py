@@ -163,6 +163,24 @@ class NativeAgentBackend(Backend):
         if session_start_context:
             system_prompt = f"{system_prompt}\n\n{session_start_context}" if system_prompt else session_start_context
 
+        # Plan mode (Phase G of the Claude API/Claude Code parity plan) —
+        # "propose a plan, get human sign-off, then execute." context["plan_first"]
+        # is set either directly by a caller (spawn_subagent(plan_first=True))
+        # or by bot/router.py from bot/agent_settings.py's
+        # require_plan_approval field for a top-level instance. Enforced
+        # by literally omitting tool_schemas on this one extra turn, not
+        # just a prompt instruction — a stronger guarantee than asking
+        # nicely, since it's then structurally impossible for that turn
+        # to contain a real tool_use block regardless of what the model
+        # tries to do.
+        if context.get("plan_first"):
+            plan_denial = await self._run_plan_gate(
+                history=history, system_prompt=system_prompt, effort=effort, timeout_s=timeout_s,
+                session_key=session_key, instance_id=instance_id, chat_id=chat_id, notify=notify,
+            )
+            if plan_denial is not None:
+                return plan_denial
+
         # Resolved once per ask() call, not per iteration — a fallback
         # that kicks in on iteration N stays active for the rest of this
         # turn (a primary that just failed is likely still down a moment
@@ -271,6 +289,61 @@ class NativeAgentBackend(Backend):
                 db.append_agent_message(session_key, entry["role"], entry["content"])
 
         raise BackendError(f"agent loop exceeded {MAX_TOOL_ITERATIONS} tool calls without a final answer")
+
+    async def _run_plan_gate(
+        self, *, history: list, system_prompt: str, effort, timeout_s: float,
+        session_key: str, instance_id, chat_id, notify,
+    ) -> Optional[BackendResult]:
+        """Plan mode's own extra turn, run before the real tool-enabled
+        loop starts. Mutates `history`/persists to db.agent_messages
+        exactly like a normal iteration would (the plan proposal and the
+        human's "approved" ack both need to survive into the real turns
+        that follow). Returns a BackendResult only when the plan was
+        denied (the caller should return it immediately, unchanged);
+        returns None when approved, meaning "continue as normal.\""""
+        from bot import db
+        from bot.agent_runtime import approval as agent_approval
+
+        plan_instruction = (
+            "Before doing anything else, propose a short, numbered plan of exactly what you intend "
+            "to do to accomplish this request. Do not take any action yet — just describe the plan "
+            "in your reply; you will get to act on it once it's approved."
+        )
+        plan_system_prompt = f"{system_prompt}\n\n{plan_instruction}" if system_prompt else plan_instruction
+        plan_response = await self.transport.send(
+            model=self.model, history=history, tool_schemas=[], max_tokens=self.max_tokens,
+            timeout_s=timeout_s, system_prompt=plan_system_prompt, effort=effort,
+        )
+        history.append(plan_response.assistant_message)
+        db.append_agent_message(session_key, plan_response.assistant_message["role"], plan_response.assistant_message["content"])
+
+        if notify is None:
+            # No chat to ask — mirrors tool_loop.run_one_tool()'s own
+            # "no notify channel" fallback: request_plan_approval still
+            # waits out its timeout and denies, rather than silently
+            # granting tool access nobody could actually review.
+            async def _no_notify(_id, _name, _input):
+                logger.warning("plan approval needed but no notify channel is set — will time out and deny")
+
+            notify_fn = _no_notify
+        else:
+            notify_fn = notify
+
+        approved = await agent_approval.request_plan_approval(
+            instance_id, chat_id, session_key, plan_response.text, notify=notify_fn,
+            # Read at call time, not relied on as request_plan_approval()'s
+            # own default parameter (which would bind to whatever
+            # DEFAULT_TIMEOUT_S was at module-import time forever) — this
+            # is what actually lets tests/an operator override it.
+            timeout_s=agent_approval.DEFAULT_TIMEOUT_S,
+        )
+        if not approved:
+            return BackendResult(text="Plan denied.", tokens=plan_response.tokens, raw={"plan_denied": True})
+
+        approval_entry = self.transport.user_message("Plan approved — proceed.")
+        history.append(approval_entry)
+        db.append_agent_message(session_key, approval_entry["role"], approval_entry["content"])
+        return None
 
 
 def _show_thinking_summary_enabled() -> bool:
