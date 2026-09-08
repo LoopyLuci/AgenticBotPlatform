@@ -68,6 +68,13 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.agent_runtime.engine", "bot.agent_runtime.approval", "bot.agent_runtime.subagent_registry",
     "bot.platform_supervisor",
     "bot.envfile", "bot.handlers", "bot.outbox", "bot.plugins", "bot.attachments",
+    # Same hazard class as outbox.py/plugins.py above: _connections/
+    # _tool_index are module-level dicts holding LIVE external MCP
+    # subprocess/HTTP sessions (each an open AsyncExitStack). A reload
+    # would wipe the dict references while the real connections stay
+    # open and orphaned — every external tool would vanish from
+    # all_tool_schemas() until a manual reconnect, with no self-healing.
+    "bot.agent_runtime.mcp_client",
     "bot.hotreload",  # never reload the reloader mid-cycle
     "bot.mcp_server",  # a separate process (python -m bot.mcp_server); not part of this one anyway
     "bot.tui.app", "bot.tui.client", "bot.tui.__main__",  # a separate process (python -m bot.tui); not part of this one anyway

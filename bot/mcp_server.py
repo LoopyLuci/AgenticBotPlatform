@@ -459,6 +459,54 @@ async def list_plugins() -> dict:
 
 
 @mcp.tool()
+async def list_external_mcp_servers(instance_id: Optional[int] = None) -> dict:
+    """List every configured external (third-party) MCP server — distinct
+    from BotServer's own MCP server (this one). Shows transport, whether
+    it's enabled, and whether it's currently connected."""
+    params = {"instance_id": instance_id} if instance_id is not None else {}
+    return await _request("GET", "/api/mcp-external", params=params)
+
+
+@mcp.tool()
+async def add_external_mcp_server(
+    name: str, transport: str, command: Optional[str] = None, args: Optional[list] = None,
+    url: Optional[str] = None, auth_token: Optional[str] = None, instance_id: Optional[int] = None,
+) -> dict:
+    """Register and connect to a new third-party MCP server — human/
+    operator-initiated only (this tool exists for Claude Desktop/an
+    operator to configure it, never something an agent's own tool loop
+    calls on its own; connecting to an arbitrary external process/URL is
+    a materially bigger trust boundary than a local plugin).
+    transport is "stdio" (command + args, run as a local subprocess) or
+    "remote" (url, optionally auth_token as a bearer token)."""
+    return await _request(
+        "POST", "/api/mcp-external",
+        json={
+            "name": name, "transport": transport, "command": command, "args": args or [],
+            "url": url, "auth_token": auth_token, "instance_id": instance_id,
+        },
+    )
+
+
+@mcp.tool()
+async def enable_external_mcp_server(name: str) -> dict:
+    """Re-enable and reconnect a previously-disabled external MCP server."""
+    return await _request("POST", f"/api/mcp-external/{name}/enable")
+
+
+@mcp.tool()
+async def disable_external_mcp_server(name: str) -> dict:
+    """Disconnect and disable an external MCP server without deleting it."""
+    return await _request("POST", f"/api/mcp-external/{name}/disable")
+
+
+@mcp.tool()
+async def remove_external_mcp_server(name: str) -> dict:
+    """Disconnect and permanently delete an external MCP server."""
+    return await _request("DELETE", f"/api/mcp-external/{name}")
+
+
+@mcp.tool()
 async def get_agent_settings(instance_id: Optional[int] = None) -> dict:
     """Resolved agent/swarm settings for instance_id (or the process-wide
     default if omitted): max_concurrent_children, worker_provider,

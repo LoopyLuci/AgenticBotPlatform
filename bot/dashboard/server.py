@@ -936,6 +936,78 @@ def build_app() -> FastAPI:
         db.log_audit(actor="dashboard", action="plugin_remove", detail=name)
         return {"ok": True}
 
+    @app.get("/api/mcp-external", dependencies=[Depends(_require_token)])
+    async def api_mcp_external_list(instance_id: Optional[int] = None):
+        from bot.agent_runtime import mcp_client
+
+        rows = db.list_external_mcp_servers(instance_id)
+        connected = set(mcp_client.connected_servers())
+        return {
+            "servers": [
+                {
+                    "name": r["name"], "transport": r["transport"], "command": r["command"],
+                    "args": json.loads(r["args_json"] or "[]"), "url": r["url"],
+                    "has_auth_token": bool(r["auth_token"]), "enabled": bool(r["enabled"]),
+                    "instance_id": r["instance_id"], "connected": r["name"] in connected,
+                }
+                for r in rows
+            ]
+        }
+
+    @app.post("/api/mcp-external", dependencies=[Depends(_require_token)])
+    async def api_mcp_external_add(payload: dict = Body(...)):
+        from bot.agent_runtime import mcp_client
+
+        name = (payload.get("name") or "").strip()
+        transport = (payload.get("transport") or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="name is required")
+        if transport not in ("stdio", "remote"):
+            raise HTTPException(status_code=400, detail="transport must be 'stdio' or 'remote'")
+        if db.get_external_mcp_server(name) is not None:
+            raise HTTPException(status_code=400, detail=f"a server named {name!r} already exists")
+        db.add_external_mcp_server(
+            name, transport,
+            command=payload.get("command") or None, args_json=json.dumps(payload.get("args") or []),
+            env_json=json.dumps(payload.get("env") or {}), url=payload.get("url") or None,
+            auth_token=payload.get("auth_token") or None, instance_id=payload.get("instance_id"),
+        )
+        db.log_audit(actor="dashboard", action="external_mcp_add", detail=name)
+        ok = await mcp_client.connect(name)
+        return {"ok": True, "connected": ok}
+
+    @app.post("/api/mcp-external/{name}/enable", dependencies=[Depends(_require_token)])
+    async def api_mcp_external_enable(name: str):
+        from bot.agent_runtime import mcp_client
+
+        if db.get_external_mcp_server(name) is None:
+            raise HTTPException(status_code=404, detail=f"no external MCP server named {name!r}")
+        db.set_external_mcp_server_enabled(name, True)
+        db.log_audit(actor="dashboard", action="external_mcp_enable", detail=name)
+        ok = await mcp_client.connect(name)
+        return {"ok": True, "connected": ok}
+
+    @app.post("/api/mcp-external/{name}/disable", dependencies=[Depends(_require_token)])
+    async def api_mcp_external_disable(name: str):
+        from bot.agent_runtime import mcp_client
+
+        if db.get_external_mcp_server(name) is None:
+            raise HTTPException(status_code=404, detail=f"no external MCP server named {name!r}")
+        db.set_external_mcp_server_enabled(name, False)
+        await mcp_client.disconnect(name)
+        db.log_audit(actor="dashboard", action="external_mcp_disable", detail=name)
+        return {"ok": True}
+
+    @app.delete("/api/mcp-external/{name}", dependencies=[Depends(_require_token)])
+    async def api_mcp_external_delete(name: str):
+        from bot.agent_runtime import mcp_client
+
+        await mcp_client.disconnect(name)
+        if not db.delete_external_mcp_server(name):
+            raise HTTPException(status_code=404, detail=f"no external MCP server named {name!r}")
+        db.log_audit(actor="dashboard", action="external_mcp_remove", detail=name)
+        return {"ok": True}
+
     @app.get("/api/skills", dependencies=[Depends(_require_token)])
     async def api_skills_list(instance_id: Optional[int] = None):
         from bot import skills as bot_skills

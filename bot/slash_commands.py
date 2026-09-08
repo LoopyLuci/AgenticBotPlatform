@@ -60,6 +60,8 @@ COMMAND_DEFS: tuple[CommandDef, ...] = (
                args_hint="show | enable | disable | set-trigger <..> | set-interval <..> | set-goal <text>"),
     CommandDef("estop", "Global emergency stop — refuse all new agent work until disengaged", category="Config",
                args_hint="status | engage [reason] | disengage"),
+    CommandDef("mcp_external", "Manage third-party external MCP servers (distinct from /mcp)", category="Tools",
+               args_hint="list | add <name> stdio|remote ... | enable <name> | disable <name> | remove <name>"),
     CommandDef("title", "Title this chat's active session", category="Session", args_hint="<name>"),
     CommandDef("profile", "Show this chat's active bot/backend", category="Info"),
     CommandDef("whoami", "Show your slash-command access tier", category="Info"),

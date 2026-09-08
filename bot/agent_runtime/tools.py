@@ -563,11 +563,13 @@ TOOL_SCHEMA_NAMES = frozenset(t["name"] for t in TOOL_SCHEMAS)
 
 def all_tool_schemas() -> list[dict[str, Any]]:
     """Built-in tool schemas plus every tool a loaded plugin has
-    registered (bot/plugins.py) — what a backend should actually offer
-    the model this turn."""
+    registered (bot/plugins.py) plus every tool a currently-connected
+    external MCP server exposes (bot/agent_runtime/mcp_client.py) — what
+    a backend should actually offer the model this turn."""
     from bot import plugins as plugin_registry
+    from bot.agent_runtime import mcp_client
 
-    return TOOL_SCHEMAS + plugin_registry.tool_schemas()
+    return TOOL_SCHEMAS + plugin_registry.tool_schemas() + mcp_client.external_tool_schemas()
 
 
 def is_dangerous(name: str) -> bool:
@@ -1087,5 +1089,10 @@ async def execute_tool(name: str, tool_input: dict, *, workspace: Path, instance
             return await plugin_registry.execute_tool(name, tool_input, workspace=workspace, instance_id=instance_id)
         except KeyError:
             pass
+
+    from bot.agent_runtime import mcp_client
+
+    if mcp_client.has_tool(name):
+        return await mcp_client.call_tool(name, tool_input)
 
     raise ToolError(f"unknown tool {name!r}")

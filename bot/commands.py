@@ -13,6 +13,7 @@ since inline buttons aren't portable across all three platforms.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
@@ -651,6 +652,67 @@ async def cmd_estop(ctx: CmdContext, args: list[str]) -> str:
         return "Emergency stop disengaged — new work can start again."
 
     return "Usage: /estop status | engage [reason] | disengage"
+
+
+async def cmd_mcp_external(ctx: CmdContext, args: list[str]) -> str:
+    """Manages third-party MCP servers connected via
+    bot/agent_runtime/mcp_client.py — distinct from /mcp above, which
+    manages Claude Desktop's own MCP server list for the `ui` backend.
+    Config-only (add/enable/disable/remove) — never something an agent's
+    own tool loop can do, since connecting to an arbitrary external
+    process/URL is a materially bigger trust boundary than a local
+    plugin (see that module's docstring)."""
+    from bot import db
+    from bot.agent_runtime import mcp_client
+
+    if not args or args[0] == "list":
+        rows = db.list_external_mcp_servers()
+        if not rows:
+            return "No external MCP servers configured. Use /mcp_external add to add one."
+        connected = set(mcp_client.connected_servers())
+        lines = ["External MCP servers:"]
+        for row in rows:
+            status = "connected" if row["name"] in connected else ("enabled" if row["enabled"] else "disabled")
+            lines.append(f"- {row['name']} ({row['transport']}, {status})")
+        return "\n".join(lines)
+
+    if args[0] == "add":
+        if len(args) < 3:
+            return "Usage: /mcp_external add <name> stdio <command> [args...] | /mcp_external add <name> remote <url> [auth_token]"
+        name, transport = args[1], args[2]
+        if transport not in ("stdio", "remote"):
+            return "transport must be 'stdio' or 'remote'"
+        if db.get_external_mcp_server(name) is not None:
+            return f"A server named {name!r} already exists — remove it first."
+        rest = args[3:]
+        if transport == "stdio":
+            if not rest:
+                return "Usage: /mcp_external add <name> stdio <command> [args...]"
+            db.add_external_mcp_server(name, "stdio", command=rest[0], args_json=json.dumps(rest[1:]))
+        else:
+            if not rest:
+                return "Usage: /mcp_external add <name> remote <url> [auth_token]"
+            db.add_external_mcp_server(name, "remote", url=rest[0], auth_token=rest[1] if len(rest) > 1 else None)
+        ok = await mcp_client.connect(name)
+        return f"Added {name!r}." + (" Connected." if ok else " Could not connect yet — check its configuration.")
+
+    if args[0] in ("enable", "disable", "remove") and len(args) >= 2:
+        name = args[1]
+        if db.get_external_mcp_server(name) is None:
+            return f"No external MCP server named {name!r}."
+        if args[0] == "enable":
+            db.set_external_mcp_server_enabled(name, True)
+            ok = await mcp_client.connect(name)
+            return f"Enabled {name!r}." + (" Connected." if ok else " Could not connect — check its configuration.")
+        if args[0] == "disable":
+            db.set_external_mcp_server_enabled(name, False)
+            await mcp_client.disconnect(name)
+            return f"Disabled {name!r}."
+        db.delete_external_mcp_server(name)
+        await mcp_client.disconnect(name)
+        return f"Removed {name!r}."
+
+    return "Usage: /mcp_external list | add <name> stdio|remote ... | enable <name> | disable <name> | remove <name>"
 
 
 _DESKTOP_ACTIONS: dict[str, Callable[[], bool]] = {
@@ -1394,6 +1456,7 @@ COMMANDS: dict[str, Callable[[CmdContext, list[str]], Any]] = {
     "agent_settings": cmd_agent_settings,
     "auto_manage": cmd_auto_manage,
     "estop": cmd_estop,
+    "mcp_external": cmd_mcp_external,
     "new": cmd_new_session,
     "desktop_projects": cmd_desktop_projects,
     "sessions": cmd_sessions,

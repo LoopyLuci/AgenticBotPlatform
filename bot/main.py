@@ -142,6 +142,10 @@ async def run() -> None:
 
     plugin_registry.load_enabled()
 
+    from bot.agent_runtime import mcp_client
+
+    await mcp_client.connect_all_enabled()
+
     migrated_id = bot_instances.migrate_legacy_env_instance()
     if migrated_id is not None:
         logger.info("migrated legacy .env Telegram config into bot instance #%s", migrated_id)

@@ -643,6 +643,29 @@ CREATE TABLE IF NOT EXISTS plugins (
     installed_at  TEXT NOT NULL
 );
 
+-- An operator-configured EXTERNAL MCP server (bot/agent_runtime/mcp_client.py)
+-- — a stdio subprocess or a remote Streamable HTTP endpoint whose tools get
+-- merged into all_tool_schemas() namespaced "mcp_<name>_<tool>". Deliberately
+-- never agent-creatable (see that module's docstring) — connecting to an
+-- arbitrary external process/URL is a materially bigger trust boundary than
+-- create_plugin's already-approval-gated local code, so this is dashboard/
+-- Telegram-config-only, same as bot/providers.py's named registry.
+-- instance_id NULL means every instance can use this server's tools;
+-- non-NULL scopes it to just that one bot instance.
+CREATE TABLE IF NOT EXISTS external_mcp_servers (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT NOT NULL UNIQUE,
+    transport     TEXT NOT NULL,            -- "stdio" or "remote"
+    command       TEXT,                      -- stdio only
+    args_json     TEXT NOT NULL DEFAULT '[]',
+    env_json      TEXT NOT NULL DEFAULT '{}',
+    url           TEXT,                      -- remote only
+    auth_token    TEXT,                      -- remote only, optional bearer token
+    enabled       INTEGER NOT NULL DEFAULT 1,
+    instance_id   INTEGER,
+    created_at    TEXT NOT NULL
+);
+
 -- A small, named markdown document any agent (any backend, any instance)
 -- can read/write via the read_project_context/write_project_context
 -- tools — see bot/shared_context.py. Unlike memory_entries/kanban_*
@@ -1590,6 +1613,57 @@ def delete_plugin_row(name: str) -> bool:
         conn.commit()
         return cur.rowcount > 0
         conn.commit()
+
+
+# --------------------------------------------------------- external_mcp_servers
+
+def add_external_mcp_server(
+    name: str, transport: str, *, command: Optional[str] = None, args_json: str = "[]",
+    env_json: str = "{}", url: Optional[str] = None, auth_token: Optional[str] = None,
+    instance_id: Optional[int] = None,
+) -> int:
+    conn = get_conn()
+    with _lock:
+        cur = conn.execute(
+            "INSERT INTO external_mcp_servers "
+            "(name, transport, command, args_json, env_json, url, auth_token, enabled, instance_id, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
+            (name, transport, command, args_json, env_json, url, auth_token, instance_id, _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def list_external_mcp_servers(instance_id: Optional[int] = None) -> list[sqlite3.Row]:
+    """Every global (instance_id IS NULL) server, plus [instance_id]'s own
+    scoped ones when given — omitting instance_id lists every row
+    regardless of scope, for the dashboard/Telegram management UI."""
+    conn = get_conn()
+    if instance_id is None:
+        return conn.execute("SELECT * FROM external_mcp_servers ORDER BY name").fetchall()
+    return conn.execute(
+        "SELECT * FROM external_mcp_servers WHERE instance_id IS NULL OR instance_id=? ORDER BY name", (instance_id,)
+    ).fetchall()
+
+
+def get_external_mcp_server(name: str) -> Optional[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute("SELECT * FROM external_mcp_servers WHERE name=?", (name,)).fetchone()
+
+
+def set_external_mcp_server_enabled(name: str, enabled: bool) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute("UPDATE external_mcp_servers SET enabled=? WHERE name=?", (1 if enabled else 0, name))
+        conn.commit()
+
+
+def delete_external_mcp_server(name: str) -> bool:
+    conn = get_conn()
+    with _lock:
+        cur = conn.execute("DELETE FROM external_mcp_servers WHERE name=?", (name,))
+        conn.commit()
+        return cur.rowcount > 0
 
 
 def count_legacy_items(instance_id: int) -> int:
