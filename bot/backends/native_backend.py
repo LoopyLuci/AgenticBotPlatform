@@ -204,14 +204,14 @@ def _resolve_fallback_transport(instance_id) -> Optional[tuple]:
         if not provider_name or not model:
             return None
         from bot import providers as provider_registry
-        from bot.agent_runtime.transports.openai_compatible import OpenAICompatibleTransport
+        from bot.agent_runtime.transports import build_openai_transport
 
         provider_cfg = provider_registry.get_provider(provider_name)
         if provider_cfg is None:
             return None
-        transport = OpenAICompatibleTransport(
-            base_url=provider_cfg["base_url"], api_key=provider_registry.get_api_key(provider_name),
-            catalog_id=provider_cfg.get("catalog_id"),
+        transport = build_openai_transport(
+            protocol=provider_cfg.get("protocol", "openai"), base_url=provider_cfg["base_url"],
+            api_key=provider_registry.get_api_key(provider_name), catalog_id=provider_cfg.get("catalog_id"),
         )
         return transport, model
     except Exception:

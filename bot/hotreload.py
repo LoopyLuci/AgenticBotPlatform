@@ -144,6 +144,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.agent_runtime.provider_quirks",  # pure data/functions, no bot-internal deps — must precede the transport that imports it
     "bot.agent_runtime.transports.anthropic",
     "bot.agent_runtime.transports.openai_compatible",
+    "bot.agent_runtime.transports.responses_api",
     "bot.backends.native_backend",
     "bot.agent_runtime.tools",
     "bot.agent_runtime.checkpoints",

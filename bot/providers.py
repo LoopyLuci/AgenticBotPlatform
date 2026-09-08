@@ -97,6 +97,10 @@ def set_provider(
     base_url: str,
     *,
     protocol: str = "openai",
+    # "openai" (chat-completions, default) or "responses" (OpenAI's
+    # /v1/responses API — see bot/agent_runtime/transports/responses_api.py
+    # and transports/__init__.py::build_openai_transport, the one place
+    # that picks a transport class from this field).
     api_key_env: Optional[str] = None,
     api_key: Optional[str] = None,
     catalog_id: Optional[str] = None,

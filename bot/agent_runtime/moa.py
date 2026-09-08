@@ -31,9 +31,9 @@ import asyncio
 import logging
 from typing import Any, Optional
 
+from bot.agent_runtime.transports import build_openai_transport
 from bot.agent_runtime.transports.anthropic import AnthropicTransport
 from bot.agent_runtime.transports.base import ProviderTransport
-from bot.agent_runtime.transports.openai_compatible import OpenAICompatibleTransport
 from bot.backends.base import BackendError
 
 logger = logging.getLogger("bot.agent_runtime.moa")
@@ -52,9 +52,9 @@ def _transport_for(provider: Optional[str], model: str) -> ProviderTransport:
     provider_cfg = provider_registry.get_provider(provider)
     if provider_cfg is None:
         raise BackendError(f"no provider named {provider!r} configured in config/providers.yaml")
-    return OpenAICompatibleTransport(
-        base_url=provider_cfg["base_url"], api_key=provider_registry.get_api_key(provider),
-        catalog_id=provider_cfg.get("catalog_id"),
+    return build_openai_transport(
+        protocol=provider_cfg.get("protocol", "openai"), base_url=provider_cfg["base_url"],
+        api_key=provider_registry.get_api_key(provider), catalog_id=provider_cfg.get("catalog_id"),
     )
 
 

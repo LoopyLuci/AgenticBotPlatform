@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from bot.agent_runtime.transports.openai_compatible import OpenAICompatibleTransport
+from bot.agent_runtime.transports import build_openai_transport
 from bot.backends.base import Backend, BackendResult
 from bot.backends.native_backend import NativeAgentBackend
 
@@ -49,7 +49,10 @@ class CustomModelBackend(Backend):
         self.max_tokens = max_tokens
         provider_cfg = provider_registry.get_provider(provider_name) or {}
         self._inner = NativeAgentBackend(
-            OpenAICompatibleTransport(base_url=self.base_url, api_key=api_key, catalog_id=provider_cfg.get("catalog_id")),
+            build_openai_transport(
+                protocol=provider_cfg.get("protocol", "openai"), base_url=self.base_url,
+                api_key=api_key, catalog_id=provider_cfg.get("catalog_id"),
+            ),
             model=model_id, max_tokens=max_tokens,
             session_prefix="custom", name="custom_model",
         )
