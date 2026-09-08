@@ -73,6 +73,11 @@ class ProviderTransport:
     # user_message(images=...), so a transport with no vision support
     # gets exactly today's plain-text call, no images param involved.
     supports_vision: bool = False
+    # True only on AnthropicTransport (Phase C of the Claude API/Claude
+    # Code parity plan) — PDF/text `document` content blocks have no
+    # standardized equivalent across the OpenAI-compatible/Responses API
+    # surface, unlike images, which every transport already serializes.
+    supports_documents: bool = False
 
     async def send(
         self,
@@ -102,13 +107,17 @@ class ProviderTransport:
         response)."""
         raise NotImplementedError
 
-    def user_message(self, text: str, *, images: Optional[list[dict[str, str]]] = None) -> dict:
+    def user_message(
+        self, text: str, *,
+        images: Optional[list[dict[str, str]]] = None, documents: Optional[list[dict[str, str]]] = None,
+    ) -> dict:
         """A user turn (the initial prompt, or a mid-turn /steer
-        injection) in this transport's stored-history shape. `images`,
-        when given, is bot.agent_runtime.vision.prepare()'s own output —
-        a list of {"mime_type", "data_b64"} entries already validated
-        and base64-encoded; a transport with no vision support simply
-        ignores this parameter (ask() only calls it with images when the
+        injection) in this transport's stored-history shape. `images`/
+        `documents`, when given, are bot.agent_runtime.vision.prepare()/
+        prepare_documents()'s own output — a list of {"mime_type",
+        "data_b64"} entries already validated and base64-encoded; a
+        transport with no vision/document support simply ignores the
+        corresponding parameter (ask() only ever passes one when the
         transport declares support — see NativeAgentBackend.ask())."""
         raise NotImplementedError
 

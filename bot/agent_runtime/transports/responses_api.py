@@ -63,8 +63,15 @@ class ResponsesApiTransport(ProviderTransport):
         self.catalog_id = catalog_id
 
     supports_vision = True
+    # No documents support — see openai_compatible.py's identical note;
+    # `documents` is accepted-and-ignored purely to keep every transport's
+    # user_message() signature uniform.
+    supports_documents = False
 
-    def user_message(self, text: str, *, images: Optional[list[dict[str, str]]] = None) -> dict:
+    def user_message(
+        self, text: str, *,
+        images: Optional[list[dict[str, str]]] = None, documents: Optional[list[dict[str, str]]] = None,
+    ) -> dict:
         if not images:
             return {"role": "user", "content": text}
         blocks: list[dict] = [{"type": "input_text", "text": text}]

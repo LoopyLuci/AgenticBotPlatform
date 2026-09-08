@@ -96,8 +96,11 @@ class NativeAgentBackend(Backend):
         from bot.agent_runtime import vision
 
         raw_images = context.get("images")
+        raw_documents = context.get("documents")
         prompt_text = prompt
         image_blocks: list = []
+        document_blocks: list = []
+        notes: list[str] = []
         if raw_images:
             if self.transport.supports_vision:
                 image_blocks, dropped = vision.prepare(raw_images)
@@ -105,7 +108,22 @@ class NativeAgentBackend(Backend):
                 image_blocks, dropped = [], len(raw_images)
             note = vision.dropped_note(dropped)
             if note:
-                prompt_text = f"{prompt}\n\n{note}"
+                notes.append(note)
+        if raw_documents:
+            # PDF/document support (Phase C of the Claude API/Claude Code
+            # parity plan) — scoped to AnthropicTransport only (see
+            # supports_documents on ProviderTransport); every other
+            # transport gets every document dropped with the same honest
+            # note images already get on a non-vision transport.
+            if self.transport.supports_documents:
+                document_blocks, dropped = vision.prepare_documents(raw_documents)
+            else:
+                document_blocks, dropped = [], len(raw_documents)
+            note = vision.dropped_note(dropped, kind="document")
+            if note:
+                notes.append(note)
+        if notes:
+            prompt_text = prompt + "\n\n" + "\n".join(notes)
 
         # Context compression (Phase F of the native-parity plan) — fires
         # at most once per ask() call, before this turn's own new prompt
@@ -117,7 +135,7 @@ class NativeAgentBackend(Backend):
         await compression.maybe_compress(session_key, self.transport, model=self.model)
 
         history = db.list_agent_messages(session_key)
-        user_entry = self.transport.user_message(prompt_text, images=image_blocks or None)
+        user_entry = self.transport.user_message(prompt_text, images=image_blocks or None, documents=document_blocks or None)
         history.append(user_entry)
         db.append_agent_message(session_key, user_entry["role"], user_entry["content"])
 

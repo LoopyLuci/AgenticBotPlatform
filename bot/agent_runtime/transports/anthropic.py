@@ -58,14 +58,31 @@ class AnthropicTransport(ProviderTransport):
         return self._client
 
     supports_vision = True
+    supports_documents = True
 
-    def user_message(self, text: str, *, images: Optional[list[dict[str, str]]] = None) -> dict:
-        if not images:
+    def user_message(
+        self, text: str, *,
+        images: Optional[list[dict[str, str]]] = None, documents: Optional[list[dict[str, str]]] = None,
+    ) -> dict:
+        if not images and not documents:
             return {"role": "user", "content": text}
         blocks: list[dict] = [
             {"type": "image", "source": {"type": "base64", "media_type": img["mime_type"], "data": img["data_b64"]}}
-            for img in images
+            for img in (images or [])
         ]
+        # citations on by default — free correctness/traceability once a
+        # document is attached at all; see the Claude API/Claude Code
+        # parity plan's Phase C for why the raw citation data itself
+        # isn't surfaced in the plain-text chat reply (no bot-server
+        # platform renders structured citation markers today).
+        blocks.extend(
+            {
+                "type": "document",
+                "source": {"type": "base64", "media_type": doc["mime_type"], "data": doc["data_b64"]},
+                "citations": {"enabled": True},
+            }
+            for doc in (documents or [])
+        )
         blocks.append({"type": "text", "text": text})
         return {"role": "user", "content": blocks}
 

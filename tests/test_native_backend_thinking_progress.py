@@ -20,7 +20,7 @@ class _FakeTransport:
     def __init__(self, response):
         self._response = response
 
-    def user_message(self, text, *, images=None):
+    def user_message(self, text, *, images=None, documents=None):
         return {"role": "user", "content": text}
 
     def tool_result_messages(self, results):

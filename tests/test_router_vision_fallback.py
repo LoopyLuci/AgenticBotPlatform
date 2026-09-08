@@ -64,3 +64,23 @@ def test_no_images_is_unaffected(router_with_recording_backend):
 
     assert calls[0]["prompt"] == "what is this?"
     assert "images" not in calls[0]["context"]
+
+
+def test_a_non_vision_backend_gets_the_document_dropped_with_a_note(router_with_recording_backend):
+    router, calls = router_with_recording_backend
+    documents = [{"data": b"%PDF fake", "mime_type": "application/pdf"}]
+
+    _ask(router, backend_override="cli", context={"documents": documents})
+
+    assert "1 attached document could not be processed" in calls[0]["prompt"]
+    assert "documents" not in calls[0]["context"]
+
+
+def test_a_document_capable_backend_family_keeps_the_documents_untouched(router_with_recording_backend):
+    router, calls = router_with_recording_backend
+    documents = [{"data": b"%PDF fake", "mime_type": "application/pdf"}]
+
+    _ask(router, backend_override="api", context={"documents": documents})
+
+    assert calls[0]["prompt"] == "what is this?"
+    assert calls[0]["context"]["documents"] == documents

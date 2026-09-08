@@ -789,6 +789,9 @@ def _ask_context(ctx: CmdContext) -> Optional[dict]:
     images = ctx.session.get("images")
     if images:
         out["images"] = images
+    documents = ctx.session.get("documents")
+    if documents:
+        out["documents"] = documents
     return out or None
 
 

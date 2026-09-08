@@ -87,8 +87,18 @@ class OpenAICompatibleTransport(ProviderTransport):
         self.catalog_id = catalog_id
 
     supports_vision = True
+    # No documents support — `document` blocks are an Anthropic-specific
+    # shape with no standardized OpenAI-compatible equivalent (see the
+    # Claude API/Claude Code parity plan's Phase C). `documents` is
+    # accepted-and-ignored here purely so every transport's user_message()
+    # keeps the same call signature — NativeAgentBackend.ask() never
+    # actually passes it when supports_documents is False.
+    supports_documents = False
 
-    def user_message(self, text: str, *, images: Optional[list[dict[str, str]]] = None) -> dict:
+    def user_message(
+        self, text: str, *,
+        images: Optional[list[dict[str, str]]] = None, documents: Optional[list[dict[str, str]]] = None,
+    ) -> dict:
         if not images:
             return {"role": "user", "content": text}
         blocks: list[dict] = [{"type": "text", "text": text}]

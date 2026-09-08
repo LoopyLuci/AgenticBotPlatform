@@ -449,6 +449,21 @@ class Router:
             if note:
                 effective_prompt = f"{effective_prompt}\n\n{note}"
             context.pop("images", None)
+        # Document support (Phase C of the Claude API/Claude Code parity
+        # plan) is scoped even narrower than vision — only Anthropic-
+        # backed calls within the native-agent loop actually serialize
+        # `document` blocks (NativeAgentBackend.ask() itself already
+        # drops one for custom_model/native_agent-on-a-non-Anthropic-
+        # provider via supports_documents; this only needs to catch the
+        # cli/ui/hermes_* backends that never read context["documents"]
+        # at all, same reasoning as the images check above).
+        if context.get("documents") and not any(name in VISION_CAPABLE_BACKENDS for name in chain):
+            from bot.agent_runtime import vision
+
+            note = vision.dropped_note(len(context["documents"]), kind="document")
+            if note:
+                effective_prompt = f"{effective_prompt}\n\n{note}"
+            context.pop("documents", None)
 
         job_id = db.create_job(
             action_type=action_type,

@@ -106,6 +106,55 @@ def test_anthropic_user_message_without_images_is_unchanged():
     assert t.user_message("hi", images=[]) == {"role": "user", "content": "hi"}
 
 
+def test_anthropic_user_message_with_a_document_enables_citations():
+    t = AnthropicTransport()
+    entry = t.user_message("summarize this", documents=[{"mime_type": "application/pdf", "data_b64": "abc123"}])
+    assert entry["content"] == [
+        {
+            "type": "document",
+            "source": {"type": "base64", "media_type": "application/pdf", "data": "abc123"},
+            "citations": {"enabled": True},
+        },
+        {"type": "text", "text": "summarize this"},
+    ]
+
+
+def test_anthropic_user_message_with_both_images_and_documents():
+    t = AnthropicTransport()
+    entry = t.user_message(
+        "look at both",
+        images=[{"mime_type": "image/png", "data_b64": "img1"}],
+        documents=[{"mime_type": "application/pdf", "data_b64": "doc1"}],
+    )
+    assert entry["content"] == [
+        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "img1"}},
+        {
+            "type": "document",
+            "source": {"type": "base64", "media_type": "application/pdf", "data": "doc1"},
+            "citations": {"enabled": True},
+        },
+        {"type": "text", "text": "look at both"},
+    ]
+
+
+def test_anthropic_transport_declares_document_support():
+    assert AnthropicTransport().supports_documents is True
+
+
+def test_openai_and_responses_transports_do_not_support_documents():
+    from bot.agent_runtime.transports.openai_compatible import OpenAICompatibleTransport
+    from bot.agent_runtime.transports.responses_api import ResponsesApiTransport
+
+    assert OpenAICompatibleTransport(base_url="http://x").supports_documents is False
+    assert ResponsesApiTransport(base_url="http://x").supports_documents is False
+    # Both must still accept the kwarg without raising, even though they
+    # ignore it — NativeAgentBackend.ask() only ever calls with actual
+    # document blocks when supports_documents is True, but the call
+    # signature itself must stay uniform across every transport.
+    assert OpenAICompatibleTransport(base_url="http://x").user_message("hi", documents=[]) == {"role": "user", "content": "hi"}
+    assert ResponsesApiTransport(base_url="http://x").user_message("hi", documents=[]) == {"role": "user", "content": "hi"}
+
+
 def test_openai_user_message_with_images():
     t = OpenAICompatibleTransport(base_url="http://x")
     entry = t.user_message("what is this", images=[{"mime_type": "image/jpeg", "data_b64": "abc123"}])

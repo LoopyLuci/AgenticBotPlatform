@@ -208,7 +208,8 @@ async def _set_reaction(context: ContextTypes.DEFAULT_TYPE, msg, emoji: Optional
 
 
 async def _handle_ask(
-    update: Update, context: ContextTypes.DEFAULT_TYPE, raw: str, images: Optional[list[dict]] = None,
+    update: Update, context: ContextTypes.DEFAULT_TYPE, raw: str,
+    images: Optional[list[dict]] = None, documents: Optional[list[dict]] = None,
 ):
     await update.message.chat.send_action("typing")
     msg = update.message
@@ -229,15 +230,18 @@ async def _handle_ask(
     ctx = _ctx_from(update, context)
     ctx.progress_notify = progress
     # Popped rather than left in ctx.session (== context.user_data, which
-    # persists across turns) — an image should only ever attach to the
-    # one turn that actually sent it, never bleed into a later unrelated
-    # /ask in the same chat. See bot/agent_runtime/vision.py and
+    # persists across turns) — an image/document should only ever attach
+    # to the one turn that actually sent it, never bleed into a later
+    # unrelated /ask in the same chat. See bot/agent_runtime/vision.py and
     # bot/router.py's VISION_CAPABLE_BACKENDS for what happens to this
     # downstream.
     if images:
         ctx.session["images"] = images
+    if documents:
+        ctx.session["documents"] = documents
     reply = await commands.cmd_ask(ctx, raw)
     ctx.session.pop("images", None)
+    ctx.session.pop("documents", None)
 
     if status_msg is not None:
         try:
@@ -703,18 +707,37 @@ async def on_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @require_auth
 async def on_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """A PDF/text document (Phase C of the Claude API/Claude Code parity
+    plan) runs straight through the agent loop like a photo does — "read
+    this and answer" is the whole point of sending one. Any other file
+    type keeps the original, pre-Phase-C behavior (saved to disk,
+    reference it later) since only PDF/text/markdown have a real
+    `document` content block on the Anthropic side (bot/agent_runtime/vision.py's
+    SUPPORTED_DOCUMENT_MIME_TYPES) — what happens downstream if the
+    resolved backend/transport still can't use it either is handled
+    entirely by bot/router.py/native_backend.py's own honest fallback
+    note, not here."""
+    from bot.agent_runtime import vision
+
     doc = update.message.document
     file = await context.bot.get_file(doc.file_id)
     data = bytes(await file.download_as_bytearray())
     rel_path, orig_name = attachments.safe_store(doc.file_name, data)
     db.log_audit(actor=str(update.effective_user.id), action="file_upload", detail=rel_path)
+    caption = (update.message.caption or "").strip()
     db.log_message(
         chat_id=update.effective_chat.id, direction="in", source="telegram",
-        text="", platform="telegram", user_id=update.effective_user.id,
+        text=caption, platform="telegram", user_id=update.effective_user.id,
         username=update.effective_user.username or "", instance_id=context.bot_data.get("instance_id"),
         attachment_path=rel_path, attachment_name=orig_name, attachment_mime=doc.mime_type,
     )
-    if not (update.message.caption or "").strip():
+    if doc.mime_type in vision.SUPPORTED_DOCUMENT_MIME_TYPES:
+        if not caption:
+            asyncio.create_task(push.notify_new_message(context.bot_data.get("instance_name", "Bot"), f"📄 {orig_name}"))
+        prompt = caption or f"Summarize this document ({orig_name})."
+        await _handle_ask(update, context, prompt, documents=[{"data": data, "mime_type": doc.mime_type}])
+        return
+    if not caption:
         # require_auth's wrapper already pushed for a captioned document
         # (it logs+notifies on any non-empty text/caption) — this covers
         # the attachment-only case that leaves that path a no-op.
