@@ -38,12 +38,24 @@ def estimate_dispatch_cost(
     pricing_row: Optional[dict],
     max_children: int,
     assumed_tokens: dict,
+    *,
+    exact_input_tokens: Optional[int] = None,
 ) -> Optional[float]:
     """Worst-case dollar estimate for a dispatch: max_children children,
     each assumed to use assumed_tokens input+output, at pricing_row's
     per-token cost. Returns None when pricing is unavailable for the
     resolved model (can't estimate what we don't know the price of), and
-    0.0 when the model is marked free."""
+    0.0 when the model is marked free.
+
+    `exact_input_tokens` (Phase F of the Claude API/Claude Code parity
+    plan) lets a caller who already has a real, measured count — via
+    AnthropicTransport.count_tokens(), free and exact — replace the
+    assumed input-token heuristic with it. Output tokens stay a heuristic
+    either way (nothing can count tokens a model hasn't generated yet),
+    so this only ever tightens HALF the estimate, and only for an
+    Anthropic-backed resolution specifically — every other provider (and
+    every caller not passing this) keeps today's pure-heuristic behavior
+    unchanged."""
     if not pricing_row:
         return None
     if pricing_row.get("free"):
@@ -52,7 +64,8 @@ def estimate_dispatch_cost(
     output_cost = pricing_row.get("output")
     if input_cost is None or output_cost is None:
         return None
-    per_child = assumed_tokens["input"] * input_cost + assumed_tokens["output"] * output_cost
+    input_tokens = exact_input_tokens if exact_input_tokens is not None else assumed_tokens["input"]
+    per_child = input_tokens * input_cost + assumed_tokens["output"] * output_cost
     return max(0, max_children) * per_child
 
 

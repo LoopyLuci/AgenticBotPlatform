@@ -486,6 +486,56 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "dispatch_batch_completions",
+        "description": (
+            "Submit many independent, plain (no tool use) completions to Anthropic's real Message "
+            "Batches API for later, bulk retrieval at a real ~50% cost discount versus a live call — "
+            "processed asynchronously over minutes to hours, not immediately. Real API constraint: a "
+            "batched completion is one single-shot call, so it can NOT use tools the way spawn_subagent's "
+            "children can — use this only for plain question-answering/summarization/classification work "
+            "at scale, not for anything needing file/shell access. Returns a batch_id immediately; poll "
+            "it with check_batch_status, then read results with get_batch_results once it says \"ended\"."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "tasks": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "custom_id": {"type": "string", "description": "Your own unique id for this task, used to match its result later."},
+                            "goal": {"type": "string"},
+                        },
+                        "required": ["custom_id", "goal"],
+                    },
+                },
+                "model": {"type": "string", "description": "The Anthropic model every task in this batch runs on."},
+                "system_prompt": {"type": "string", "description": "Optional — applied to every task in the batch."},
+            },
+            "required": ["tasks", "model"],
+        },
+    },
+    {
+        "name": "check_batch_status",
+        "description": "Check a Message Batches dispatch's progress (see dispatch_batch_completions). processing_status is \"ended\" once every task has finished (succeeded, errored, canceled, or expired).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"batch_id": {"type": "string"}},
+            "required": ["batch_id"],
+        },
+    },
+    {
+        "name": "get_batch_results",
+        "description": "Fetch a Message Batches dispatch's real results (see dispatch_batch_completions) — only call once check_batch_status reports processing_status \"ended\".",
+        "input_schema": {
+            "type": "object",
+            "properties": {"batch_id": {"type": "string"}},
+            "required": ["batch_id"],
+        },
+    },
+    {
         "name": "get_my_profile",
         "description": (
             "Your own identity as a small markdown document: name, backend, persona, model override, "
@@ -1005,6 +1055,46 @@ async def execute_tool(name: str, tool_input: dict, *, workspace: Path, instance
         aggregator = tool_input.get("aggregator")
         try:
             return await moa.consult(question, references, aggregator)
+        except BackendError as exc:
+            raise ToolError(str(exc))
+
+    if name == "dispatch_batch_completions":
+        from bot.agent_runtime import batches
+        from bot.backends.base import BackendError
+
+        tasks = tool_input.get("tasks")
+        model = tool_input.get("model")
+        if not isinstance(tasks, list) or not tasks:
+            raise ToolError("tasks must be a non-empty array of {custom_id, goal} objects")
+        if not model:
+            raise ToolError("model is required")
+        try:
+            batch_id = await batches.submit(tasks, model=model, system_prompt=tool_input.get("system_prompt"))
+        except BackendError as exc:
+            raise ToolError(str(exc))
+        return _json_dumps({"batch_id": batch_id})
+
+    if name == "check_batch_status":
+        from bot.agent_runtime import batches
+        from bot.backends.base import BackendError
+
+        batch_id = tool_input.get("batch_id")
+        if not batch_id:
+            raise ToolError("batch_id is required")
+        try:
+            return _json_dumps(await batches.status(batch_id))
+        except BackendError as exc:
+            raise ToolError(str(exc))
+
+    if name == "get_batch_results":
+        from bot.agent_runtime import batches
+        from bot.backends.base import BackendError
+
+        batch_id = tool_input.get("batch_id")
+        if not batch_id:
+            raise ToolError("batch_id is required")
+        try:
+            return _json_dumps(await batches.results(batch_id))
         except BackendError as exc:
             raise ToolError(str(exc))
 

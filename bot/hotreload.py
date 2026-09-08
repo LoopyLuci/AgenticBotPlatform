@@ -164,6 +164,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.agent_runtime.subagents",
     "bot.agent_settings",  # depends on subagents.DEFAULT_MAX_CONCURRENT_CHILDREN — must follow it
     "bot.agent_runtime.moa",
+    "bot.agent_runtime.batches",  # pure functions, no module-level state — only imported lazily inside tools.py::execute_tool()
     "bot.backends.api_backend",
     "bot.backends.cli_backend",
     "bot.backends.ui_backend",

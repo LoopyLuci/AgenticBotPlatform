@@ -200,6 +200,29 @@ class AnthropicTransport(ProviderTransport):
             thinking_summary=thinking_summary,
         )
 
+    async def count_tokens(
+        self, *, model: str, history: list[dict], tool_schemas: Optional[list[dict]] = None,
+        system_prompt: Optional[str] = None,
+    ) -> int:
+        """Exact, free (no completion generated) input-token count via the
+        real `client.messages.count_tokens()` endpoint (Phase F of the
+        Claude API/Claude Code parity plan) — tightens
+        bot.swarm_budget's own cost estimate from a worst-case heuristic
+        into a measured number for Anthropic-backed dispatches
+        specifically. `history` is the same stored-history shape send()
+        already accepts."""
+        client = self._get_client()
+        kwargs: dict = {"model": model, "messages": history}
+        if tool_schemas:
+            kwargs["tools"] = tool_schemas
+        if system_prompt:
+            kwargs["system"] = system_prompt
+        try:
+            result = await client.messages.count_tokens(**kwargs)
+        except Exception as exc:
+            raise BackendError(f"anthropic count_tokens error: {exc}") from exc
+        return result.input_tokens
+
 
 def _serialize_blocks(content) -> list[dict]:
     out = []

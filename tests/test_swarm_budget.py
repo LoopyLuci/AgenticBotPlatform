@@ -39,6 +39,30 @@ def test_estimate_paid_model_scales_with_children():
     assert six_children == one_child * 6
 
 
+def test_estimate_uses_exact_input_tokens_when_given():
+    """Phase F of the Claude API/Claude Code parity plan — a real,
+    measured input-token count (from AnthropicTransport.count_tokens())
+    replaces the assumed heuristic for that half of the estimate; output
+    stays heuristic either way."""
+    tokens = {"input": 2000, "output": 1000}
+    heuristic = estimate_dispatch_cost(PAID_ROW, max_children=1, assumed_tokens=tokens)
+    exact = estimate_dispatch_cost(PAID_ROW, max_children=1, assumed_tokens=tokens, exact_input_tokens=500)
+
+    assert exact == 500 * 0.000001 + 1000 * 0.000002
+    assert exact != heuristic
+
+
+def test_estimate_exact_input_tokens_still_scales_with_children():
+    tokens = {"input": 2000, "output": 1000}
+    one_child = estimate_dispatch_cost(PAID_ROW, max_children=1, assumed_tokens=tokens, exact_input_tokens=500)
+    six_children = estimate_dispatch_cost(PAID_ROW, max_children=6, assumed_tokens=tokens, exact_input_tokens=500)
+    assert six_children == one_child * 6
+
+
+def test_estimate_none_pricing_ignores_exact_input_tokens():
+    assert estimate_dispatch_cost(None, max_children=6, assumed_tokens={"input": 2000, "output": 1000}, exact_input_tokens=500) is None
+
+
 def test_check_budget_allows_free_model():
     decision = check_budget(pricing_row=FREE_ROW, max_children=6, confirm=False, cfg=DEFAULT_CFG)
     assert decision.allowed
