@@ -38,6 +38,21 @@ logger = logging.getLogger("bot.router")
 
 VALID_BACKENDS = ("api", "cli", "ui", "hermes_cli", "hermes_gateway", "custom_model", "native_agent")
 
+
+def set_default_backend(backend: str, actor: str) -> dict:
+    """Sets the global default backend (Claude and Hermes each keep their
+    own default-backend config slot — see the historical note in
+    bot/dashboard/server.py's api_set_backend, which now delegates to this
+    function). Shared by that dashboard route and the admin_set_default_backend
+    agent-runtime tool so there's exactly one implementation."""
+    if backend not in VALID_BACKENDS:
+        raise ValueError(f"unknown backend {backend!r}")
+    from bot.models import BACKEND_FAMILY
+
+    key = "default_hermes_backend" if BACKEND_FAMILY.get(backend) == "hermes" else "default_backend"
+    config.set_value([key], backend, actor=actor)
+    return {"ok": True, "version": config.version}
+
 # The subset of VALID_BACKENDS that actually run NativeAgentBackend's
 # tool loop, whose transports know how to serialize context["images"]
 # (see bot/agent_runtime/vision.py and bot/backends/native_backend.py::ask).

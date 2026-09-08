@@ -2794,9 +2794,14 @@ def build_app() -> FastAPI:
         ).fetchone()
         if row is None or not db.is_conversation_participant(conversation_id, device_id):
             raise HTTPException(status_code=404, detail="no such conversation")
+        # The permanent group room can't be deleted OR cleared — it's the
+        # one Server Chat conversation meant to survive forever, including
+        # its history, per the "Admin control surface" plan's permanence
+        # requirement. Direct (1:1) conversations remain fully clearable
+        # and deletable exactly as before.
+        if row["kind"] == "group":
+            raise HTTPException(status_code=400, detail="the group room is permanent and can't be cleared or deleted")
         if full:
-            if row["kind"] == "group":
-                raise HTTPException(status_code=400, detail="the group room can't be deleted, only cleared")
             db.delete_server_chat_conversation(conversation_id)
             return {"ok": True, "deleted_conversation": True}
         count = db.clear_server_chat_messages(conversation_id)
@@ -2828,6 +2833,11 @@ def build_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="no such message")
         if row["sender_device_id"] != device_id:
             raise HTTPException(status_code=403, detail="you can only delete your own messages")
+        conv = db.get_conn().execute(
+            "SELECT kind FROM server_chat_conversations WHERE id=?", (row["conversation_id"],)
+        ).fetchone()
+        if conv is not None and conv["kind"] == "group":
+            raise HTTPException(status_code=400, detail="messages in the permanent group room can't be deleted")
         db.delete_server_chat_message(message_id)
         return {"ok": True}
 
@@ -3057,11 +3067,29 @@ def build_app() -> FastAPI:
         }
 
     @app.post("/api/mobile-keys", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_mobile_keys_create(payload: dict = Body(...), caller: str = Depends(_identify_caller)):
-        from bot import mobile_pairing
+    async def api_mobile_keys_create(
+        payload: dict = Body(...), caller: str = Depends(_identify_caller),
+        caller_device_id: Optional[int] = Depends(_caller_device_id),
+    ):
+        from bot import device_tiers, mobile_pairing
 
         label = (payload.get("label") or "").strip() or "Unnamed device"
-        key_id, plaintext = db.create_api_key(label)
+        requested_tier = (payload.get("tier") or "none").strip()
+        if not device_tiers.is_valid_tier(requested_tier):
+            raise HTTPException(status_code=400, detail=f"unknown permission tier {requested_tier!r}")
+        # The desktop DASHBOARD_TOKEN (caller_device_id is None) is the
+        # unconditional top authority and may mint at any tier; a device
+        # minting a new peer may only grant up to its own tier — see
+        # bot/device_tiers.py's can_mint().
+        if caller_device_id is not None:
+            actor_row = db.get_api_key(caller_device_id)
+            actor_tier = actor_row["permission_tier"] if actor_row else "none"
+            if not device_tiers.can_mint(actor_tier, requested_tier):
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"your device's own tier ({actor_tier}) can't mint a device at tier {requested_tier!r}",
+                )
+        key_id, plaintext = db.create_api_key(label, permission_tier=requested_tier)
         db.create_conversations_for_new_device(key_id)
         # host2/host3 are optional additional, independent paths to the same
         # server (e.g. a Tailscale hostname alongside a LAN IP, alongside a
@@ -3114,6 +3142,65 @@ def build_app() -> FastAPI:
     async def api_mobile_keys_revoke(key_id: int):
         db.revoke_api_key(key_id)
         db.log_audit(actor="dashboard", action="mobile_key_revoke", detail=f"revoked key {key_id}")
+        devices = await asyncio.get_running_loop().run_in_executor(None, db.list_devices)
+        await _manager.broadcast({"type": "device_list", "devices": _annotate_online([dict(d) for d in devices])})
+        return {"ok": True}
+
+    def _resolve_actor_tier(caller_device_id: Optional[int]) -> str:
+        # Desktop (caller_device_id is None) is the unconditional top
+        # authority for device-tier management — see bot/device_tiers.py.
+        if caller_device_id is None:
+            return "unrestricted"
+        row = db.get_api_key(caller_device_id)
+        return row["permission_tier"] if row else "none"
+
+    @app.post("/api/mobile-keys/{key_id}/tier", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_mobile_keys_set_tier(
+        key_id: int, payload: dict = Body(...), caller: str = Depends(_identify_caller),
+        caller_device_id: Optional[int] = Depends(_caller_device_id),
+    ):
+        from bot import device_tiers
+
+        new_tier = (payload.get("tier") or "").strip()
+        if not device_tiers.is_valid_tier(new_tier):
+            raise HTTPException(status_code=400, detail=f"unknown permission tier {new_tier!r}")
+        target = db.get_api_key(key_id)
+        if target is None:
+            raise HTTPException(status_code=404, detail="no such device")
+        actor_tier = _resolve_actor_tier(caller_device_id)
+        is_self = caller_device_id is not None and caller_device_id == key_id
+        if caller_device_id is not None:
+            if not device_tiers.can_manage(actor_tier, target["permission_tier"], is_self=is_self):
+                raise HTTPException(status_code=403, detail="your device can only change the tier of a strictly lower-tier device")
+            if not device_tiers.can_mint(actor_tier, new_tier):
+                raise HTTPException(status_code=403, detail=f"your device's own tier ({actor_tier}) can't grant tier {new_tier!r}")
+        db.set_api_key_tier(key_id, new_tier)
+        db.log_audit(actor=caller, action="mobile_key_set_tier", detail=f"set key {key_id} tier -> {new_tier!r}")
+        devices = await asyncio.get_running_loop().run_in_executor(None, db.list_devices)
+        await _manager.broadcast({"type": "device_list", "devices": _annotate_online([dict(d) for d in devices])})
+        return {"ok": True, "permission_tier": new_tier}
+
+    @app.post("/api/mobile-keys/{key_id}/revoke-by-device", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_mobile_keys_revoke_by_device(
+        key_id: int, caller: str = Depends(_identify_caller),
+        caller_device_id: Optional[int] = Depends(_caller_device_id),
+    ):
+        """Device-callable revoke, distinct from the desktop-only DELETE
+        route above — a device may only revoke a strictly lower-tier
+        device, never itself, never a peer/superior. The desktop route
+        stays the unconditional, ungated path."""
+        from bot import device_tiers
+
+        target = db.get_api_key(key_id)
+        if target is None:
+            raise HTTPException(status_code=404, detail="no such device")
+        if caller_device_id is not None:
+            actor_tier = _resolve_actor_tier(caller_device_id)
+            is_self = caller_device_id == key_id
+            if not device_tiers.can_manage(actor_tier, target["permission_tier"], is_self=is_self):
+                raise HTTPException(status_code=403, detail="your device can only revoke a strictly lower-tier device")
+        db.revoke_api_key(key_id)
+        db.log_audit(actor=caller, action="mobile_key_revoke", detail=f"revoked key {key_id}")
         devices = await asyncio.get_running_loop().run_in_executor(None, db.list_devices)
         await _manager.broadcast({"type": "device_list", "devices": _annotate_online([dict(d) for d in devices])})
         return {"ok": True}

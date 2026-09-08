@@ -417,12 +417,19 @@ CREATE INDEX IF NOT EXISTS idx_tool_approvals_lookup ON tool_approvals(instance_
 -- the single legacy DASHBOARD_TOKEN env value. Only a hash is ever stored;
 -- the plaintext is returned once, at creation, and never again.
 CREATE TABLE IF NOT EXISTS api_keys (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    label         TEXT NOT NULL,
-    key_hash      TEXT NOT NULL UNIQUE,
-    created_at    TEXT NOT NULL,
-    last_used_at  TEXT,
-    revoked_at    TEXT
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    label           TEXT NOT NULL,
+    key_hash        TEXT NOT NULL UNIQUE,
+    created_at      TEXT NOT NULL,
+    last_used_at    TEXT,
+    revoked_at      TEXT,
+    -- Per-device admin capability for the NEW conversational admin surface
+    -- (Server Chat/Support Bot admin actions, device/pairing management,
+    -- destructive local ops, unrestricted shell) — see bot/device_tiers.py.
+    -- Deliberately does NOT affect the pre-existing dashboard REST API's
+    -- own flat "any paired device = desktop parity" model; that's a
+    -- separate, already-deliberate decision this column doesn't touch.
+    permission_tier TEXT NOT NULL DEFAULT 'none'
 );
 
 -- One row per device's current FCM registration token, tied to the mobile
@@ -1007,6 +1014,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         # the dashboard show "Paired Devices" and "Linked Servers" as
         # separate lists instead of one confusing mixed table.
         conn.execute("ALTER TABLE api_keys ADD COLUMN kind TEXT NOT NULL DEFAULT 'device'")
+    if "permission_tier" not in api_key_cols:
+        conn.execute("ALTER TABLE api_keys ADD COLUMN permission_tier TEXT NOT NULL DEFAULT 'none'")
 
     # Safe to create now — the columns above are guaranteed to exist by
     # this point, whether this is a fresh install (created in SCHEMA) or an
@@ -2617,14 +2626,14 @@ def get_support_bot_classification_stats(limit: int = 500) -> dict[str, Any]:
 # ever exists in create_api_key()'s return value; every other accessor sees
 # hashes/metadata only.
 
-def create_api_key(label: str, kind: str = "device") -> tuple[int, str]:
+def create_api_key(label: str, kind: str = "device", permission_tier: str = "none") -> tuple[int, str]:
     plaintext = secrets.token_urlsafe(32)
     key_hash = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
     conn = get_conn()
     with _lock:
         cur = conn.execute(
-            "INSERT INTO api_keys (label, key_hash, created_at, kind) VALUES (?, ?, ?, ?)",
-            (label, key_hash, _now(), kind),
+            "INSERT INTO api_keys (label, key_hash, created_at, kind, permission_tier) VALUES (?, ?, ?, ?, ?)",
+            (label, key_hash, _now(), kind, permission_tier),
         )
         conn.commit()
         return cur.lastrowid, plaintext
@@ -2634,10 +2643,19 @@ def list_api_keys(kind: Optional[str] = None) -> list[sqlite3.Row]:
     conn = get_conn()
     if kind is not None:
         return conn.execute(
-            "SELECT id, label, created_at, last_used_at, revoked_at, kind FROM api_keys WHERE kind=? ORDER BY created_at DESC",
+            "SELECT id, label, created_at, last_used_at, revoked_at, kind, permission_tier FROM api_keys WHERE kind=? ORDER BY created_at DESC",
             (kind,),
         ).fetchall()
-    return conn.execute("SELECT id, label, created_at, last_used_at, revoked_at, kind FROM api_keys ORDER BY created_at DESC").fetchall()
+    return conn.execute("SELECT id, label, created_at, last_used_at, revoked_at, kind, permission_tier FROM api_keys ORDER BY created_at DESC").fetchall()
+
+
+def set_api_key_tier(key_id: int, tier: str) -> None:
+    conn = get_conn()
+    with _lock:
+        cur = conn.execute("UPDATE api_keys SET permission_tier=? WHERE id=?", (tier, key_id))
+        conn.commit()
+        if cur.rowcount == 0:
+            raise ValueError(f"api key {key_id} not found")
 
 
 def update_api_key_label(key_id: int, label: str) -> None:
@@ -2668,7 +2686,7 @@ def revoke_api_key(key_id: int) -> None:
 def get_api_key(key_id: int) -> Optional[sqlite3.Row]:
     conn = get_conn()
     return conn.execute(
-        "SELECT id, label, created_at, last_used_at, revoked_at, kind FROM api_keys WHERE id=?", (key_id,)
+        "SELECT id, label, created_at, last_used_at, revoked_at, kind, permission_tier FROM api_keys WHERE id=?", (key_id,)
     ).fetchone()
 
 
@@ -2865,7 +2883,7 @@ def list_devices() -> list[sqlite3.Row]:
     freshness window without this layer hardcoding one."""
     conn = get_conn()
     return conn.execute(
-        "SELECT ak.id, ak.label, ak.created_at, ak.last_used_at, "
+        "SELECT ak.id, ak.label, ak.created_at, ak.last_used_at, ak.permission_tier, "
         "dp.platform, dp.app_version, dp.device_model, dp.os_version, dp.last_seen "
         "FROM api_keys ak LEFT JOIN device_presence dp ON dp.api_key_id = ak.id "
         "WHERE ak.revoked_at IS NULL AND ak.kind='device' ORDER BY ak.created_at DESC"
