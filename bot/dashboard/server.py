@@ -2435,6 +2435,71 @@ def build_app() -> FastAPI:
         )
         return result
 
+    # Synthetic training-data generation swarm (Phase 4 of the Support
+    # Bot NLU upgrade plan) — free-model-only by hard constraint (see
+    # bot/support_bot/synthetic_gen.py's own docstring). Results land in
+    # a pending review queue, never directly in the live training set.
+    @app.post("/api/support-bot/generate", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_support_bot_generate():
+        from bot.support_bot import synthetic_gen
+
+        result = await synthetic_gen.generate_synthetic_batch()
+        db.log_audit(
+            actor="dashboard", action="support_bot_generate",
+            detail=f"dispatched={result['dispatched']} pending_added={result['pending_added']}",
+        )
+        return result
+
+    @app.get("/api/support-bot/pending", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_support_bot_pending_list(status: str = "pending"):
+        return [dict(r) for r in db.list_support_bot_pending_examples(status=status)]
+
+    @app.post("/api/support-bot/pending/{pending_id}/approve", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_support_bot_pending_approve(pending_id: int):
+        row = db.get_support_bot_pending_example(pending_id)
+        if row is None or row["status"] != "pending":
+            raise HTTPException(status_code=404, detail="no such pending example")
+        db.add_support_bot_phrase(row["phrase"], row["intent"])
+        db.resolve_support_bot_pending_example(pending_id, "approved")
+        counts = support_bot_hybrid.retrain_all()
+        db.log_audit(actor="dashboard", action="support_bot_pending_approve", detail=f"id {pending_id}: {row['phrase']!r} -> {row['intent']}")
+        return {"ok": True, "trained_on": counts}
+
+    @app.post("/api/support-bot/pending/{pending_id}/reject", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_support_bot_pending_reject(pending_id: int):
+        row = db.get_support_bot_pending_example(pending_id)
+        if row is None or row["status"] != "pending":
+            raise HTTPException(status_code=404, detail="no such pending example")
+        db.resolve_support_bot_pending_example(pending_id, "rejected")
+        db.log_audit(actor="dashboard", action="support_bot_pending_reject", detail=f"id {pending_id}")
+        return {"ok": True}
+
+    # Active-learning review (Phase 5 of the Support Bot NLU upgrade
+    # plan) — real classifications the hybrid model disagreed on or
+    # couldn't decide, surfaced for an operator to assign the correct
+    # intent directly (distinct from "add a phrase from scratch": this
+    # starts from real, already-seen user text). Shares db.get_recent_misses()
+    # with synthetic_gen.py's own targeting signal — one query, two consumers.
+    @app.get("/api/support-bot/misses", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_support_bot_misses():
+        return [dict(r) for r in db.get_recent_misses(unreviewed_only=True)]
+
+    @app.post("/api/support-bot/misses/{classification_id}/label", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_support_bot_misses_label(classification_id: int, payload: dict = Body(...)):
+        intent = (payload.get("intent") or "").strip()
+        if not intent:
+            raise HTTPException(status_code=400, detail="payload must be {intent: str}")
+        row = db.get_conn().execute(
+            "SELECT text FROM support_bot_classifications WHERE id=?", (classification_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="no such classification")
+        phrase_id = db.add_support_bot_phrase(row["text"], intent)
+        db.mark_support_bot_classification_reviewed(classification_id)
+        counts = support_bot_hybrid.retrain_all()
+        db.log_audit(actor="dashboard", action="support_bot_miss_label", detail=f"id {classification_id}: {row['text']!r} -> {intent}")
+        return {"ok": True, "phrase_id": phrase_id, "trained_on": counts}
+
     # Self-monitoring: the hybrid classifier's own logged behavior over
     # real traffic — agreement rate between its two sub-models, unknown
     # rate, confidence trends — plus the currently-active model's own

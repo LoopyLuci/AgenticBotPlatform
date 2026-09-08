@@ -150,6 +150,16 @@ native_agent:
     web_fetch: false
     code_execution: false
     tool_search: false
+# Support Bot's own NLU training pipeline — see bot/support_bot/synthetic_gen.py.
+# Hard constraint, per explicit instruction: synthetic-data generation
+# only ever dispatches to a free model. paid_model_overrides lets an
+# operator explicitly opt one specific configured provider into paid
+# generation (provider name -> model id) when that provider has no free
+# model of its own — empty by default, meaning a provider with no free
+# model is simply skipped, never silently downgraded to paid.
+support_bot:
+  synthetic_gen:
+    paid_model_overrides: {}
 # Applies an edit to bot/*.py to this already-running process instead of
 # needing the full stop/rebuild/relaunch cycle — see bot/hotreload.py's
 # module docstring for exactly what can and can't hot-reload. Checked

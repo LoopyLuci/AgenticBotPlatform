@@ -1266,6 +1266,32 @@
         <div id="training-retrain-result" style="margin-top:10px;"></div>
       </div>
 
+      <div class="card" style="margin-top:14px;">
+        <h3>Recent misses <span style="font-weight:400; color:var(--muted); font-size:12px;">— real disagreements &amp; unknowns from live traffic</span></h3>
+        <p class="cardnote">Real messages the hybrid classifier got wrong or couldn't decide on. Assign the correct intent to fix the underlying gap directly — this also feeds synthetic generation's own targeting.</p>
+        <div class="tablewrap" style="margin-top:10px;">
+          <table>
+            <thead><tr><th>Text</th><th>TF-IDF guess</th><th>Neural net guess</th><th>Correct intent</th><th></th></tr></thead>
+            <tbody id="training-misses-tbody"><tr class="emptyrow"><td colspan="5">No unreviewed misses right now.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Synthetic data generation <span style="font-weight:400; color:var(--muted); font-size:12px;">— free models only</span></h3>
+        <p class="cardnote">Dispatches a swarm (one child per configured provider with a known-free model — a provider with none is skipped, never spent on) to write new example phrases for the intents with the fewest examples or the most recent misclassifications. Generated examples land below for review — nothing is added to the live training set until you approve it.</p>
+        <div class="row" style="gap:8px;">
+          <button class="btn primary" id="btn-training-generate">Generate more training data</button>
+        </div>
+        <div class="cardnote" id="training-generate-status"></div>
+        <div class="tablewrap" style="margin-top:12px;">
+          <table>
+            <thead><tr><th>Phrase</th><th>Intent</th><th>Source model</th><th></th></tr></thead>
+            <tbody id="training-pending-tbody"><tr class="emptyrow"><td colspan="4">No pending examples to review.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
     </section>
 
     <section id="platforms">
@@ -2272,8 +2298,12 @@ function startDashboard() {
   pollWhenVisible(refreshPeers, 15000);
   refreshTrainingPhrases();
   refreshTrainingHealth();
+  refreshTrainingPending();
+  refreshTrainingMisses();
   pollWhenVisible(refreshTrainingPhrases, 20000);
   pollWhenVisible(refreshTrainingHealth, 10000);
+  pollWhenVisible(refreshTrainingPending, 20000);
+  pollWhenVisible(refreshTrainingMisses, 20000);
   startServerChatPolling();
 }
 
@@ -2447,6 +2477,78 @@ document.getElementById('btn-training-retrain').onclick = async () => {
   } else {
     resultEl.innerHTML = `<span class="pill"><span class="dot critical"></span>Rejected — model NOT activated</span> <span>${esc(resp.reason || '')}</span>`;
   }
+};
+
+async function refreshTrainingMisses() {
+  if (!getToken()) return;
+  let misses;
+  try {
+    misses = await api('/api/support-bot/misses');
+  } catch (_e) { return; }
+  const tbody = document.getElementById('training-misses-tbody');
+  tbody.innerHTML = misses.length ? misses.map(m => `
+    <tr>
+      <td>${esc(m.text)}</td>
+      <td class="mono">${esc(m.tfidf_intent)}</td>
+      <td class="mono">${esc(m.nn_intent)}</td>
+      <td><select data-miss-intent="${m.id}" style="min-width:140px;">${trainingIntents.map(i => `<option value="${esc(i)}">${esc(i)}</option>`).join('')}</select></td>
+      <td><button class="btn" data-miss-label="${m.id}" style="padding:3px 8px; font-size:11px;">Label</button></td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="5">No unreviewed misses right now.</td></tr>';
+  document.querySelectorAll('[data-miss-label]').forEach(btn => btn.onclick = async () => {
+    const id = btn.dataset.missLabel;
+    const select = document.querySelector(`[data-miss-intent="${id}"]`);
+    await api(`/api/support-bot/misses/${id}/label`, { method: 'POST', body: JSON.stringify({ intent: select.value }) });
+    refreshTrainingMisses();
+    refreshTrainingPhrases();
+    refreshTrainingHealth();
+  });
+}
+
+async function refreshTrainingPending() {
+  if (!getToken()) return;
+  let pending;
+  try {
+    pending = await api('/api/support-bot/pending');
+  } catch (_e) { return; }
+  const tbody = document.getElementById('training-pending-tbody');
+  tbody.innerHTML = pending.length ? pending.map(p => `
+    <tr>
+      <td>${esc(p.phrase)}</td>
+      <td class="mono">${esc(p.intent)}</td>
+      <td class="mono">${esc(p.source_provider)}/${esc(p.source_model)}</td>
+      <td>
+        <button class="btn" data-pending-approve="${p.id}" style="padding:3px 8px; font-size:11px;">Approve</button>
+        <button class="btn" data-pending-reject="${p.id}" style="padding:3px 8px; font-size:11px;">Reject</button>
+      </td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="4">No pending examples to review.</td></tr>';
+  document.querySelectorAll('[data-pending-approve]').forEach(btn => btn.onclick = async () => {
+    await api(`/api/support-bot/pending/${btn.dataset.pendingApprove}/approve`, { method: 'POST' });
+    refreshTrainingPending();
+    refreshTrainingPhrases();
+    refreshTrainingHealth();
+  });
+  document.querySelectorAll('[data-pending-reject]').forEach(btn => btn.onclick = async () => {
+    await api(`/api/support-bot/pending/${btn.dataset.pendingReject}/reject`, { method: 'POST' });
+    refreshTrainingPending();
+  });
+}
+
+document.getElementById('btn-training-generate').onclick = async () => {
+  const statusEl = document.getElementById('training-generate-status');
+  statusEl.textContent = 'Dispatching swarm (free models only)…';
+  let resp;
+  try {
+    resp = await api('/api/support-bot/generate', { method: 'POST' });
+  } catch (e) {
+    statusEl.textContent = 'Generation failed — check the dashboard token.';
+    return;
+  }
+  if (resp.reason && !resp.dispatched) {
+    statusEl.textContent = `Nothing dispatched: ${resp.reason}`;
+    return;
+  }
+  statusEl.textContent = `Dispatched ${resp.dispatched} agent(s), ${resp.pending_added} example(s) added for review.`;
+  refreshTrainingPending();
 };
 
 // ---------------------------------------------------------------- bots ---
