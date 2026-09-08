@@ -206,6 +206,38 @@ class NeuralIntentClassifier:
             return "unknown", confidence
         return intent, confidence
 
+    def export_state(self) -> dict:
+        """Everything predict() needs, in a plain-JSON-serializable shape
+        — see bot/support_bot/model_io.py. A Kotlin port implements the
+        same tokenize -> TF*IDF -> ReLU forward pass -> softmax math over
+        this exact data to classify identically on Android."""
+        assert self._vectorizer is not None and self._mlp is not None
+        return {
+            "vocab": dict(self._vectorizer.vocab),
+            "idf": self._vectorizer.idf.tolist(),
+            "classes": list(self._classes),
+            "hidden_units": _HIDDEN_UNITS,
+            "w1": self._mlp.w1.tolist(), "b1": self._mlp.b1.tolist(),
+            "w2": self._mlp.w2.tolist(), "b2": self._mlp.b2.tolist(),
+        }
+
+    def load_state(self, state: dict) -> None:
+        """Replaces this instance's trained state in place — used to
+        restore a previously-saved model instead of retraining from
+        scratch. CLASSIFIERS in hybrid.py holds a bound method on this
+        same instance, so callers don't need to re-bind anything."""
+        vectorizer = _TfidfVectorizer()
+        vectorizer.vocab = dict(state["vocab"])
+        vectorizer.idf = np.array(state["idf"], dtype=float)
+        self._vectorizer = vectorizer
+        self._classes = list(state["classes"])
+        mlp = _MLP.__new__(_MLP)
+        mlp.w1 = np.array(state["w1"], dtype=float)
+        mlp.b1 = np.array(state["b1"], dtype=float)
+        mlp.w2 = np.array(state["w2"], dtype=float)
+        mlp.b2 = np.array(state["b2"], dtype=float)
+        self._mlp = mlp
+
 
 # Trained once at import time, same lifecycle as model.py's singleton.
 # Call retrain() (or hybrid.retrain_all()) after the Training tab adds or

@@ -48,6 +48,7 @@ from typing import Any, Callable
 
 from bot import db
 from bot.support_bot import model as tfidf_model
+from bot.support_bot import model_io
 from bot.support_bot import nn_model as neural_model
 
 # The pluggable set of sub-models the hybrid votes across. Each entry's
@@ -58,6 +59,34 @@ CLASSIFIERS: list[tuple[str, Callable[[str], tuple[str, float]]]] = [
     ("tfidf", tfidf_model.model.predict),
     ("nn", neural_model.nn_model.predict),
 ]
+
+
+def _load_persisted_state_if_present() -> None:
+    """Both sub-models already train fresh at their own module import
+    time (today's behavior, unchanged as the fallback). If a previously
+    saved model.json exists, load it in place over that fresh training —
+    picks up whatever the last accepted retrain actually was, instead of
+    silently reverting to the static training_data.py baseline on every
+    process restart."""
+    # Explicit module-attribute lookup at call time, not a bare
+    # load_model() call — model_io.load_model's own path= default is
+    # bound at function-definition time, so a test's monkeypatch of
+    # model_io.CURRENT_PATH would silently not apply if this relied on
+    # that default instead.
+    data = model_io.load_model(path=model_io.CURRENT_PATH)
+    if data is None:
+        return
+    try:
+        tfidf_model.model.load_state(data["tfidf"])
+        neural_model.nn_model.load_state(data["nn"])
+    except (KeyError, TypeError):
+        # A malformed/older-shape file must never break Support Bot
+        # startup — the freshly-trained-at-import state (already built
+        # before this function runs) stays in place untouched.
+        pass
+
+
+_load_persisted_state_if_present()
 
 
 @dataclass
@@ -119,11 +148,38 @@ def classify(text: str, *, log: bool = True) -> HybridResult:
 
 def retrain_all() -> dict[str, int]:
     """Retrains every sub-model on the current baseline + Training-tab
-    phrases. Called after every add/delete in the Training tab."""
-    return {
-        "tfidf": tfidf_model.retrain(),
-        "nn": neural_model.retrain(),
-    }
+    phrases, then persists the result to model_io's current.json so a
+    future process restart picks up this retrain instead of reverting to
+    the static training_data.py baseline. Called after every add/delete
+    in the Training tab. See bot/support_bot/eval.py's retrain_all() for
+    the held-out-accuracy-gated version used by the Phase 2+ retrain
+    flow — this plain version has no eval/regression check, matching
+    today's existing add/delete-a-phrase behavior exactly."""
+    n_tfidf = tfidf_model.retrain()
+    n_nn = neural_model.retrain()
+    _save_current_state()
+    return {"tfidf": n_tfidf, "nn": n_nn}
+
+
+def _save_current_state() -> None:
+    from bot.support_bot.training_data import EXAMPLES
+
+    examples = list(EXAMPLES)
+    try:
+        examples += [(row["phrase"], row["intent"]) for row in db.list_support_bot_phrases()]
+    except Exception:
+        pass
+    intents = sorted({intent for _, intent in examples})
+    # Explicit path=model_io.CURRENT_PATH for the same reason noted in
+    # _load_persisted_state_if_present() above — never rely on
+    # save_model's own default parameter value here.
+    model_io.save_model(
+        tfidf_model.model.export_state(),
+        neural_model.nn_model.export_state(),
+        intents,
+        training_hash=model_io.compute_training_hash(examples),
+        path=model_io.CURRENT_PATH,
+    )
 
 
 def health() -> dict[str, Any]:

@@ -107,6 +107,22 @@ class TfidfCentroidModel:
             return "unknown", max(best_score, 0.0)
         return best_intent, best_score
 
+    def export_state(self) -> dict:
+        """Everything predict() needs, in a plain-JSON-serializable shape
+        — see bot/support_bot/model_io.py. A Kotlin port implements the
+        same tokenize -> TF*IDF -> cosine-vs-centroid math over this
+        exact data to classify identically on Android."""
+        return {"idf": dict(self._idf), "centroids": {k: dict(v) for k, v in self._centroids.items()}}
+
+    def load_state(self, state: dict) -> None:
+        """Replaces this instance's trained state in place (bypassing
+        _train) — used to restore a previously-saved model instead of
+        retraining from scratch. CLASSIFIERS in hybrid.py holds a bound
+        method on this same instance, so callers don't need to re-bind
+        anything after calling this."""
+        self._idf = dict(state["idf"])
+        self._centroids = {k: dict(v) for k, v in state["centroids"].items()}
+
 
 def _load_examples() -> list[tuple[str, str]]:
     """The hand-authored baseline plus any phrases added at runtime through
