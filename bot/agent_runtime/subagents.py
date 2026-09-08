@@ -22,6 +22,7 @@ import logging
 from typing import Any, Optional
 
 from bot.agent_runtime import subagent_registry
+from bot.agent_runtime.tools import ADMIN_TOOLS
 from bot.agent_runtime.transports import build_openai_transport
 from bot.agent_runtime.transports.anthropic import AnthropicTransport
 from bot.backends.base import BackendError
@@ -45,7 +46,13 @@ LEAF_BLOCKED_TOOLS = frozenset({
     # a leaf worker must never author or activate new unsandboxed,
     # full-privilege plugin code in the parent's name.
     "create_plugin", "enable_plugin",
-})
+    # Admin control surface (see docs/adr/0008-single-instance-admin-tool-gate.md)
+    # — a leaf child must NEVER inherit admin tools, even one spawned by
+    # the admin instance itself. This computation has no instance_id/
+    # is_admin_instance check of its own (it only ever subtracts from
+    # TOOL_SCHEMA_NAMES), so this frozenset is the ONLY enforcement point
+    # stopping any instance's leaf child from seeing these tools.
+} | ADMIN_TOOLS)
 
 DEFAULT_MAX_CONCURRENT_CHILDREN = 6
 CHILD_TIMEOUT_S = 300.0

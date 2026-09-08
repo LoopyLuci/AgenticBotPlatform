@@ -11,7 +11,10 @@ import logging
 logger = logging.getLogger("bot.agent_runtime.tool_loop")
 
 
-async def run_one_tool(name, tool_input, *, workspace, instance_id, chat_id, session_key, notify, agent_tools, agent_approval) -> str:
+async def run_one_tool(
+    name, tool_input, *, workspace, instance_id, chat_id, session_key, notify, agent_tools, agent_approval,
+    device_tier=None,
+) -> str:
     from bot.agent_runtime import hooks
 
     try:
@@ -25,7 +28,15 @@ async def run_one_tool(name, tool_input, *, workspace, instance_id, chat_id, ses
         decision, hook_reason = await hooks.run_pre_tool_use(name, tool_input, instance_id=instance_id)
         if decision == "deny":
             return f"Denied by hook{f': {hook_reason}' if hook_reason else '.'}"
-        if agent_tools.is_dangerous(name) or decision == "ask":
+        # The "unrestricted" device tier (Server Chat/Support Bot only —
+        # see the "Admin control surface" plan) skips the per-call
+        # approval prompt specifically for run_shell/write_file, since
+        # that tier assignment itself already represents standing
+        # consent. Never applies to a hook-driven "ask" escalation, and
+        # never to any OTHER dangerous tool (admin_* actions stay
+        # approval-gated regardless of device tier).
+        unrestricted_relaxation = device_tier == "unrestricted" and name in ("run_shell", "write_file")
+        if (agent_tools.is_dangerous(name) and not unrestricted_relaxation) or decision == "ask":
             if notify is None:
                 # No chat to ask (e.g. a call with no Telegram context at
                 # all) — approval.request_approval still waits out its
@@ -42,7 +53,9 @@ async def run_one_tool(name, tool_input, *, workspace, instance_id, chat_id, ses
             )
             if outcome == "deny":
                 return "Denied by user."
-        output = await agent_tools.execute_tool(name, tool_input, workspace=workspace, instance_id=instance_id)
+        output = await agent_tools.execute_tool(
+            name, tool_input, workspace=workspace, instance_id=instance_id, device_tier=device_tier
+        )
         if agent_tools.is_dangerous(name):
             try_checkpoint(workspace, name, tool_input)
         await hooks.run_post_tool_use(name, tool_input, output, instance_id=instance_id)

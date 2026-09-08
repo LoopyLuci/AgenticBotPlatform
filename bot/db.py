@@ -792,6 +792,12 @@ CREATE TABLE IF NOT EXISTS agent_settings (
     -- _hardcoded_default), so an instance with nothing configured
     -- behaves exactly as before this column existed.
     require_plan_approval   INTEGER,
+    -- Admin control surface plan — marks the ONE instance whose tool
+    -- loop gets bot/agent_runtime/tools.py's admin_* tools. NULL/unset
+    -- falls through to False via agent_settings.py's own
+    -- _hardcoded_default, so nothing changes for any instance until an
+    -- operator explicitly sets this via the dashboard/MCP channel.
+    is_admin_instance      INTEGER,
     updated_at              TEXT NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_settings_instance_null
@@ -952,6 +958,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE agent_settings ADD COLUMN fallback_model TEXT")
     if "require_plan_approval" not in agent_settings_cols:
         conn.execute("ALTER TABLE agent_settings ADD COLUMN require_plan_approval INTEGER")
+    if "is_admin_instance" not in agent_settings_cols:
+        conn.execute("ALTER TABLE agent_settings ADD COLUMN is_admin_instance INTEGER")
 
     chat_session_cols = {row["name"] for row in conn.execute("PRAGMA table_info(chat_sessions)").fetchall()}
     if "thread_id" not in chat_session_cols:
@@ -1646,7 +1654,7 @@ def delete_context_doc(name: str) -> bool:
 
 _AGENT_SETTINGS_COLUMNS = (
     "max_concurrent_children", "worker_provider", "worker_model", "worker_effort", "manager_effort",
-    "fallback_provider", "fallback_model", "require_plan_approval",
+    "fallback_provider", "fallback_model", "require_plan_approval", "is_admin_instance",
 )
 
 
@@ -1655,6 +1663,14 @@ def get_agent_settings_row(instance_id: Optional[int]) -> Optional[sqlite3.Row]:
     return conn.execute(
         "SELECT * FROM agent_settings WHERE instance_id IS ?", (instance_id,)
     ).fetchone()
+
+
+def find_admin_instance_id() -> Optional[int]:
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT instance_id FROM agent_settings WHERE is_admin_instance=1 AND instance_id IS NOT NULL LIMIT 1"
+    ).fetchone()
+    return row["instance_id"] if row else None
 
 
 def set_agent_settings_row(instance_id: Optional[int], **fields: Any) -> None:

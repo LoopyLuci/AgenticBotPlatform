@@ -90,6 +90,10 @@ class NativeAgentBackend(Backend):
         # ordinary top-level ask() call, which offers the full tool list
         # exactly as before this hook existed.
         allowed_tools: Optional[frozenset] = context.get("allowed_tools")
+        # Per-device permission tier (Server Chat/Support Bot only — see
+        # the "Admin control surface" plan) — None for every ordinary
+        # Telegram-driven turn, which never carries a device identity.
+        device_tier: Optional[str] = context.get("device_tier")
         # Canonical bot.effort.EFFORT_LADDER value (or None) — each
         # transport maps it onto whatever its own wire protocol actually
         # supports (bot/effort.py's per-backend mapping functions),
@@ -156,6 +160,24 @@ class NativeAgentBackend(Backend):
         db.append_agent_message(session_key, user_entry["role"], user_entry["content"])
 
         tool_schemas = agent_tools.all_tool_schemas()
+        # Admin control surface (see docs/adr/0008-single-instance-admin-tool-gate.md):
+        # ADMIN_TOOLS_STANDARD is offered only to the one instance flagged
+        # agent_settings.is_admin_instance=True; ADMIN_TOOLS_ELEVATED
+        # additionally requires an elevated-or-higher device_tier — never
+        # true for a Telegram-driven turn, which carries no device_tier at
+        # all, so those tools are structurally unreachable from Telegram.
+        from bot import agent_settings as _agent_settings
+
+        is_admin_instance = bool(_agent_settings.get(instance_id)["is_admin_instance"])
+        if not is_admin_instance:
+            tool_schemas = [s for s in tool_schemas if s["name"] not in agent_tools.ADMIN_TOOLS_STANDARD]
+        # ADMIN_TOOLS_ELEVATED requires BOTH conditions — being the admin
+        # instance AND an elevated-or-higher device_tier — never device
+        # tier alone, which would otherwise let a non-admin instance's
+        # turn see device/destructive-op tools just by inheriting a
+        # device_tier from context.
+        if not (is_admin_instance and device_tier in ("elevated", "unrestricted")):
+            tool_schemas = [s for s in tool_schemas if s["name"] not in agent_tools.ADMIN_TOOLS_ELEVATED]
         if allowed_tools is not None:
             tool_schemas = [s for s in tool_schemas if s["name"] in allowed_tools]
 
@@ -281,6 +303,7 @@ class NativeAgentBackend(Backend):
                     tc.name, tc.arguments, workspace=workspace,
                     instance_id=instance_id, chat_id=chat_id, session_key=session_key,
                     notify=notify, agent_tools=agent_tools, agent_approval=agent_approval,
+                    device_tier=device_tier,
                 )
                 results.append((tc, output))
 

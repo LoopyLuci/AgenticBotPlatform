@@ -64,6 +64,71 @@ DANGEROUS_TOOLS = {
     "create_plugin", "enable_plugin",
 }
 
+# Admin control surface (see docs/adr/0008-single-instance-admin-tool-gate.md
+# and the "Admin control surface" plan) — fleet-wide administration
+# (other bot instances, global backend config, agent_settings/auto_manage
+# for OTHER instances, the emergency stop, lifecycle hooks). Offered only
+# to the one bot instance flagged agent_settings.is_admin_instance=True
+# (see native_backend.py's schema filter) and defended-in-depth by
+# _require_admin() at dispatch time below. ADMIN_TOOLS_ELEVATED additionally
+# requires the calling turn's context["device_tier"] be "elevated" or
+# "unrestricted" (Server Chat/Support Bot only — Telegram turns never
+# carry a device_tier, so these never reach a Telegram-driven turn).
+ADMIN_TOOLS_STANDARD = frozenset({
+    "admin_list_bot_instances", "admin_get_bot_instance", "admin_create_bot_instance",
+    "admin_update_bot_instance", "admin_delete_bot_instance", "admin_set_default_backend",
+    "admin_get_agent_settings", "admin_set_agent_settings",
+    "admin_get_auto_manage_config", "admin_set_auto_manage_config",
+    "admin_engage_estop", "admin_disengage_estop", "admin_get_estop_status",
+    "admin_list_hooks", "admin_add_hook", "admin_enable_hook", "admin_disable_hook", "admin_remove_hook",
+})
+ADMIN_TOOLS_ELEVATED = frozenset({
+    "admin_list_devices", "admin_mint_device_key", "admin_set_device_tier", "admin_revoke_device",
+    "admin_db_vacuum", "admin_restore_snapshot",
+    "admin_desktop_start", "admin_desktop_stop", "admin_desktop_restart",
+})
+ADMIN_TOOLS = ADMIN_TOOLS_STANDARD | ADMIN_TOOLS_ELEVATED
+
+DANGEROUS_TOOLS |= {
+    "admin_create_bot_instance", "admin_update_bot_instance", "admin_delete_bot_instance",
+    "admin_set_default_backend", "admin_set_agent_settings", "admin_set_auto_manage_config",
+    "admin_engage_estop", "admin_disengage_estop",
+    "admin_add_hook", "admin_enable_hook", "admin_disable_hook", "admin_remove_hook",
+    "admin_mint_device_key", "admin_set_device_tier", "admin_revoke_device",
+    "admin_db_vacuum", "admin_restore_snapshot",
+    "admin_desktop_start", "admin_desktop_stop", "admin_desktop_restart",
+}
+
+
+def _require_admin(instance_id: Optional[int]) -> None:
+    from bot import agent_settings
+
+    if instance_id is None or not agent_settings.get(instance_id)["is_admin_instance"]:
+        raise ToolError("this tool is restricted to the designated admin bot instance")
+
+
+def _require_elevated_device(context_device_tier: Optional[str]) -> None:
+    if context_device_tier not in ("elevated", "unrestricted"):
+        raise ToolError("this tool requires an 'elevated' or 'unrestricted' device permission tier")
+
+
+def _redact_credentials(credentials: dict) -> dict:
+    """Masks any credential-shaped value (token/password/secret/key) to
+    its last 4 characters before it's ever formatted into a tool's return
+    string, which can land in a Telegram/Server-Chat transcript — even
+    for admin_create_bot_instance's own response to a token the operator
+    just supplied, since once it's in a chat transcript that's a second
+    place the secret now lives."""
+    import re
+
+    redacted = {}
+    for key, value in (credentials or {}).items():
+        if isinstance(value, str) and re.search(r"token|password|secret|key", key, re.IGNORECASE):
+            redacted[key] = f"...{value[-4:]}" if len(value) >= 4 else "...(hidden)"
+        else:
+            redacted[key] = value
+    return redacted
+
 TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": "run_shell",
@@ -571,6 +636,205 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "admin_list_bot_instances",
+        "description": "List every bot instance (id, name, platform, backend, enabled) — credentials redacted. Admin-only.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "admin_get_bot_instance",
+        "description": "Full config for one bot instance by id or exact name — credentials redacted. Admin-only.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"target_instance": {"type": "string", "description": "bot_instances.id or exact name."}},
+            "required": ["target_instance"],
+        },
+    },
+    {
+        "name": "admin_create_bot_instance",
+        "description": "Create a new bot instance. Admin-only, requires human approval.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"}, "platform": {"type": "string"}, "backend": {"type": "string"},
+                "credentials": {"type": "object", "description": "e.g. {\"bot_token\": \"...\"} for Telegram."},
+                "allowed_user_ids": {"type": "array", "items": {}, "description": "Platform user ids permitted to use this bot."},
+                "model": {"type": "string"}, "persona": {"type": "string"}, "enabled": {"type": "boolean"},
+            },
+            "required": ["name", "platform", "backend", "credentials", "allowed_user_ids"],
+        },
+    },
+    {
+        "name": "admin_update_bot_instance",
+        "description": "Update any bot instance's config (name/platform/backend/credentials/allowed_user_ids/admin_user_ids/action_overrides/can_target/enabled/model/custom_instructions/persona/hermes_home/desktop_*). Admin-only, requires human approval.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"target_instance": {"type": "string"}, "fields": {"type": "object", "description": "Only the fields to change."}},
+            "required": ["target_instance", "fields"],
+        },
+    },
+    {
+        "name": "admin_delete_bot_instance",
+        "description": "Permanently delete a bot instance. Cannot target the calling admin instance itself. Requires confirm=true. Admin-only, requires human approval.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"target_instance": {"type": "string"}, "confirm": {"type": "boolean"}},
+            "required": ["target_instance", "confirm"],
+        },
+    },
+    {
+        "name": "admin_set_default_backend",
+        "description": "Change the global default backend for new action types (Claude and Hermes each keep their own default slot). Admin-only, requires human approval.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"backend": {"type": "string"}},
+            "required": ["backend"],
+        },
+    },
+    {
+        "name": "admin_get_agent_settings",
+        "description": "Get another instance's agent_settings (max_concurrent_children, worker/fallback provider+model, efforts, require_plan_approval). is_admin_instance is never shown here. Admin-only.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"target_instance": {"type": "string", "description": "Omit for the process-wide default row."}},
+        },
+    },
+    {
+        "name": "admin_set_agent_settings",
+        "description": "Set another instance's agent_settings. is_admin_instance can NEVER be changed through this tool — dashboard/MCP only. Admin-only, requires human approval.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "target_instance": {"type": "string", "description": "Omit for the process-wide default row."},
+                "fields": {"type": "object", "description": "Any agent_settings field except is_admin_instance."},
+            },
+            "required": ["fields"],
+        },
+    },
+    {
+        "name": "admin_get_auto_manage_config",
+        "description": "Get another instance's auto-manage config (enabled, trigger, interval, chat_id, goal_template). Admin-only.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"target_instance": {"type": "string"}},
+            "required": ["target_instance"],
+        },
+    },
+    {
+        "name": "admin_set_auto_manage_config",
+        "description": "Set another instance's auto-manage config. Admin-only, requires human approval.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"target_instance": {"type": "string"}, "fields": {"type": "object"}},
+            "required": ["target_instance", "fields"],
+        },
+    },
+    {
+        "name": "admin_engage_estop",
+        "description": "Engage BotServer's global emergency stop — no new work starts anywhere until disengaged. Admin-only, requires human approval.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"reason": {"type": "string"}},
+        },
+    },
+    {
+        "name": "admin_disengage_estop",
+        "description": "Disengage BotServer's global emergency stop. Admin-only, requires human approval.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "admin_get_estop_status",
+        "description": "Read BotServer's global emergency-stop status. Admin-only.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "admin_list_hooks",
+        "description": "List every configured lifecycle hook (PreToolUse/PostToolUse/SessionStart/UserPromptSubmit). Admin-only.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"event": {"type": "string"}},
+        },
+    },
+    {
+        "name": "admin_add_hook",
+        "description": "Add a lifecycle hook that runs a local shell command on the given event (trusted local code, same trust boundary as run_shell). Admin-only, requires human approval.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "event": {"type": "string", "description": "PreToolUse, PostToolUse, SessionStart, or UserPromptSubmit."},
+                "command": {"type": "string"}, "matcher": {"type": "string"}, "target_instance": {"type": "string", "description": "Omit for a global hook."},
+            },
+            "required": ["event", "command"],
+        },
+    },
+    {
+        "name": "admin_enable_hook",
+        "description": "Enable a previously-disabled hook by id. Admin-only, requires human approval.",
+        "input_schema": {"type": "object", "properties": {"hook_id": {"type": "integer"}}, "required": ["hook_id"]},
+    },
+    {
+        "name": "admin_disable_hook",
+        "description": "Disable a hook by id without deleting it. Admin-only, requires human approval.",
+        "input_schema": {"type": "object", "properties": {"hook_id": {"type": "integer"}}, "required": ["hook_id"]},
+    },
+    {
+        "name": "admin_remove_hook",
+        "description": "Permanently remove a hook by id. Admin-only, requires human approval.",
+        "input_schema": {"type": "object", "properties": {"hook_id": {"type": "integer"}}, "required": ["hook_id"]},
+    },
+    {
+        "name": "admin_list_devices",
+        "description": "List every paired device (id, label, permission_tier, online status) — Android/Server-Chat exclusive, requires an elevated-or-higher calling device tier. Admin-only.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "admin_mint_device_key",
+        "description": "Mint a pairing key for a new device at a given permission tier (capped at the calling device's own tier). Android/Server-Chat exclusive. Admin-only, requires human approval.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"label": {"type": "string"}, "tier": {"type": "string", "description": "none, standard, elevated, or unrestricted."}},
+            "required": ["label"],
+        },
+    },
+    {
+        "name": "admin_set_device_tier",
+        "description": "Change a paired device's permission tier — only a strictly lower-tier device may be targeted, never a peer/superior/self. Android/Server-Chat exclusive. Admin-only, requires human approval.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"key_id": {"type": "integer"}, "tier": {"type": "string"}},
+            "required": ["key_id", "tier"],
+        },
+    },
+    {
+        "name": "admin_revoke_device",
+        "description": "Revoke a paired device's key — only a strictly lower-tier device may be targeted. Android/Server-Chat exclusive. Admin-only, requires human approval.",
+        "input_schema": {"type": "object", "properties": {"key_id": {"type": "integer"}}, "required": ["key_id"]},
+    },
+    {
+        "name": "admin_db_vacuum",
+        "description": "Vacuum the SQLite database. Destructive local operation, Android/Server-Chat exclusive. Admin-only, requires human approval.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "admin_restore_snapshot",
+        "description": "Restore BotServer's config+DB to a previously-created snapshot. Destructive local operation, Android/Server-Chat exclusive. Admin-only, requires human approval.",
+        "input_schema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
+    },
+    {
+        "name": "admin_desktop_start",
+        "description": "Start the local Claude Desktop app. Destructive local operation, Android/Server-Chat exclusive. Admin-only, requires human approval.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "admin_desktop_stop",
+        "description": "Stop the local Claude Desktop app. Destructive local operation, Android/Server-Chat exclusive. Admin-only, requires human approval.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "admin_desktop_restart",
+        "description": "Restart the local Claude Desktop app. Destructive local operation, Android/Server-Chat exclusive. Admin-only, requires human approval.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "read_project_context",
         "description": (
             "Read a shared, cross-instance markdown document — the way a swarm of workers and their manager "
@@ -677,7 +941,10 @@ async def _run_subprocess(args: list[str], cwd: Path) -> str:
     return f"{text}\n[exit code {proc.returncode}]"
 
 
-async def execute_tool(name: str, tool_input: dict, *, workspace: Path, instance_id: Optional[int] = None) -> str:
+async def execute_tool(
+    name: str, tool_input: dict, *, workspace: Path, instance_id: Optional[int] = None,
+    device_tier: Optional[str] = None,
+) -> str:
     if name == "run_shell":
         command = tool_input.get("command") or ""
         if not command.strip():
@@ -1135,6 +1402,359 @@ async def execute_tool(name: str, tool_input: dict, *, workspace: Path, instance
             raise ToolError(str(exc))
         updated = bot_instances.render_profile_markdown(target["id"])
         return f"Updated {target['name']!r} (id {target['id']}).\n\n{updated}"
+
+    if name == "admin_list_bot_instances":
+        _require_admin(instance_id)
+        from bot import bot_instances
+
+        rows = []
+        for row in bot_instances.list_instances():
+            row = dict(row)
+            row["credentials"] = _redact_credentials(row.get("credentials") or {})
+            rows.append(row)
+        return _json_dumps(rows)
+
+    if name == "admin_get_bot_instance":
+        _require_admin(instance_id)
+        from bot import agent_control
+
+        target_ref = tool_input.get("target_instance")
+        if not target_ref:
+            raise ToolError("target_instance is required")
+        target = agent_control.resolve_instance(target_ref)
+        if target is None:
+            raise ToolError(f"no bot instance found matching {target_ref!r}")
+        target = dict(target)
+        target["credentials"] = _redact_credentials(target.get("credentials") or {})
+        return _json_dumps(target)
+
+    if name == "admin_create_bot_instance":
+        _require_admin(instance_id)
+        from bot import bot_instances
+
+        required = ("name", "platform", "backend", "credentials", "allowed_user_ids")
+        missing = [k for k in required if k not in tool_input]
+        if missing:
+            raise ToolError(f"missing required field(s): {missing}")
+        try:
+            new_id = bot_instances.create_instance(
+                name=tool_input["name"], platform=tool_input["platform"], backend=tool_input["backend"],
+                credentials=tool_input["credentials"], allowed_user_ids=tool_input["allowed_user_ids"],
+                model=tool_input.get("model"), persona=tool_input.get("persona"),
+                enabled=tool_input.get("enabled", True), actor=f"agent:{instance_id}",
+            )
+        except bot_instances.ValidationError as exc:
+            raise ToolError(str(exc))
+        created = dict(bot_instances.get_instance(new_id))
+        created["credentials"] = _redact_credentials(created.get("credentials") or {})
+        return f"Created bot instance {new_id}.\n\n{_json_dumps(created)}"
+
+    if name == "admin_update_bot_instance":
+        _require_admin(instance_id)
+        from bot import agent_control, bot_instances
+
+        target_ref = tool_input.get("target_instance")
+        fields = tool_input.get("fields") or {}
+        if not target_ref:
+            raise ToolError("target_instance is required")
+        if not fields:
+            raise ToolError("fields must contain at least one field to update")
+        target = agent_control.resolve_instance(target_ref)
+        if target is None:
+            raise ToolError(f"no bot instance found matching {target_ref!r}")
+        try:
+            bot_instances.update_instance(target["id"], actor=f"agent:{instance_id}", **fields)
+        except bot_instances.ValidationError as exc:
+            raise ToolError(str(exc))
+        updated = dict(bot_instances.get_instance(target["id"]))
+        updated["credentials"] = _redact_credentials(updated.get("credentials") or {})
+        return f"Updated {target['name']!r} (id {target['id']}).\n\n{_json_dumps(updated)}"
+
+    if name == "admin_delete_bot_instance":
+        _require_admin(instance_id)
+        from bot import agent_control, bot_instances
+
+        target_ref = tool_input.get("target_instance")
+        if not target_ref:
+            raise ToolError("target_instance is required")
+        target = agent_control.resolve_instance(target_ref)
+        if target is None:
+            raise ToolError(f"no bot instance found matching {target_ref!r}")
+        if target["id"] == instance_id:
+            raise ToolError("the admin instance cannot delete itself")
+        if not tool_input.get("confirm"):
+            raise ToolError("confirm=true is required to delete a bot instance")
+        bot_instances.delete_instance(target["id"], actor=f"agent:{instance_id}")
+        return f"Deleted bot instance {target['name']!r} (id {target['id']})."
+
+    if name == "admin_set_default_backend":
+        _require_admin(instance_id)
+        from bot.router import set_default_backend
+
+        backend = tool_input.get("backend")
+        if not backend:
+            raise ToolError("backend is required")
+        try:
+            result = set_default_backend(backend, actor=f"agent:{instance_id}")
+        except ValueError as exc:
+            raise ToolError(str(exc))
+        return _json_dumps(result)
+
+    if name == "admin_get_agent_settings":
+        _require_admin(instance_id)
+        from bot import agent_control, agent_settings
+
+        target_ref = tool_input.get("target_instance")
+        target_id = None
+        if target_ref:
+            target = agent_control.resolve_instance(target_ref)
+            if target is None:
+                raise ToolError(f"no bot instance found matching {target_ref!r}")
+            target_id = target["id"]
+        resolved = dict(agent_settings.get(target_id))
+        resolved["is_admin_instance"] = "(hidden — dashboard/MCP only)"
+        return _json_dumps(resolved)
+
+    if name == "admin_set_agent_settings":
+        _require_admin(instance_id)
+        from bot import agent_control, agent_settings
+
+        target_ref = tool_input.get("target_instance")
+        fields = tool_input.get("fields") or {}
+        target_id = None
+        if target_ref:
+            target = agent_control.resolve_instance(target_ref)
+            if target is None:
+                raise ToolError(f"no bot instance found matching {target_ref!r}")
+            target_id = target["id"]
+        if "is_admin_instance" in fields:
+            raise ToolError("is_admin_instance can only be changed via the dashboard/MCP admin channel, never from a bot's own tool loop")
+        try:
+            result = agent_settings.set_settings(target_id, **fields)
+        except ValueError as exc:
+            raise ToolError(str(exc))
+        result = dict(result)
+        result["is_admin_instance"] = "(hidden — dashboard/MCP only)"
+        return _json_dumps(result)
+
+    if name == "admin_get_auto_manage_config":
+        _require_admin(instance_id)
+        from bot import agent_control, auto_manage
+
+        target_ref = tool_input.get("target_instance")
+        if not target_ref:
+            raise ToolError("target_instance is required")
+        target = agent_control.resolve_instance(target_ref)
+        if target is None:
+            raise ToolError(f"no bot instance found matching {target_ref!r}")
+        return _json_dumps(auto_manage.get_config(target["id"]))
+
+    if name == "admin_set_auto_manage_config":
+        _require_admin(instance_id)
+        from bot import agent_control, auto_manage
+
+        target_ref = tool_input.get("target_instance")
+        fields = tool_input.get("fields") or {}
+        if not target_ref:
+            raise ToolError("target_instance is required")
+        target = agent_control.resolve_instance(target_ref)
+        if target is None:
+            raise ToolError(f"no bot instance found matching {target_ref!r}")
+        return _json_dumps(auto_manage.set_config(target["id"], actor=f"agent:{instance_id}", **fields))
+
+    if name == "admin_engage_estop":
+        _require_admin(instance_id)
+        from bot.agent_runtime import estop
+
+        return _json_dumps(estop.engage(tool_input.get("reason"), actor=f"agent:{instance_id}"))
+
+    if name == "admin_disengage_estop":
+        _require_admin(instance_id)
+        from bot.agent_runtime import estop
+
+        return _json_dumps(estop.disengage(actor=f"agent:{instance_id}"))
+
+    if name == "admin_get_estop_status":
+        _require_admin(instance_id)
+        from bot.agent_runtime import estop
+
+        return _json_dumps(estop.status())
+
+    if name == "admin_list_hooks":
+        _require_admin(instance_id)
+        from bot import db as _db
+
+        rows = [dict(r) for r in _db.list_agent_hooks(event=tool_input.get("event"))]
+        return _json_dumps(rows)
+
+    if name == "admin_add_hook":
+        _require_admin(instance_id)
+        from bot import db as _db
+        from bot.agent_runtime import hooks as _hooks
+
+        event = tool_input.get("event")
+        command = tool_input.get("command")
+        if event not in _hooks.VALID_EVENTS:
+            raise ToolError(f"event must be one of {sorted(_hooks.VALID_EVENTS)}")
+        if not command:
+            raise ToolError("command is required")
+        target_instance_id = None
+        target_ref = tool_input.get("target_instance")
+        if target_ref:
+            from bot import agent_control
+
+            target = agent_control.resolve_instance(target_ref)
+            if target is None:
+                raise ToolError(f"no bot instance found matching {target_ref!r}")
+            target_instance_id = target["id"]
+        hook_id = _db.add_agent_hook(event, command, matcher=tool_input.get("matcher"), instance_id=target_instance_id)
+        _db.log_audit(actor=f"agent:{instance_id}", action="hook_add", detail=f"hook {hook_id}: {event} -> {command!r}")
+        return f"Added hook {hook_id} ({event})."
+
+    if name == "admin_enable_hook":
+        _require_admin(instance_id)
+        from bot import db as _db
+
+        hook_id = tool_input.get("hook_id")
+        _db.set_agent_hook_enabled(hook_id, True)
+        _db.log_audit(actor=f"agent:{instance_id}", action="hook_enable", detail=f"hook {hook_id}")
+        return f"Enabled hook {hook_id}."
+
+    if name == "admin_disable_hook":
+        _require_admin(instance_id)
+        from bot import db as _db
+
+        hook_id = tool_input.get("hook_id")
+        _db.set_agent_hook_enabled(hook_id, False)
+        _db.log_audit(actor=f"agent:{instance_id}", action="hook_disable", detail=f"hook {hook_id}")
+        return f"Disabled hook {hook_id}."
+
+    if name == "admin_remove_hook":
+        _require_admin(instance_id)
+        from bot import db as _db
+
+        hook_id = tool_input.get("hook_id")
+        removed = _db.delete_agent_hook(hook_id)
+        if not removed:
+            raise ToolError(f"no such hook {hook_id}")
+        _db.log_audit(actor=f"agent:{instance_id}", action="hook_remove", detail=f"hook {hook_id}")
+        return f"Removed hook {hook_id}."
+
+    if name == "admin_list_devices":
+        _require_admin(instance_id)
+        _require_elevated_device(device_tier)
+        from bot import db as _db
+
+        return _json_dumps([dict(r) for r in _db.list_devices()])
+
+    if name == "admin_mint_device_key":
+        _require_admin(instance_id)
+        _require_elevated_device(device_tier)
+        from bot import db as _db
+        from bot import device_tiers
+
+        label = tool_input.get("label")
+        tier = tool_input.get("tier", "none")
+        if not label:
+            raise ToolError("label is required")
+        if not device_tiers.is_valid_tier(tier):
+            raise ToolError(f"unknown permission tier {tier!r}")
+        if not device_tiers.can_mint(device_tier, tier):
+            raise ToolError(f"this device's own tier ({device_tier}) can't mint a device at tier {tier!r}")
+        key_id, plaintext = _db.create_api_key(label, permission_tier=tier)
+        _db.log_audit(actor=f"agent:{instance_id}", action="mobile_key_create", detail=f"created key {key_id!r} ({label!r}) tier={tier!r}")
+        return f"Minted device key {key_id} ({label!r}, tier={tier!r}). Plaintext key: {plaintext}"
+
+    if name == "admin_set_device_tier":
+        _require_admin(instance_id)
+        _require_elevated_device(device_tier)
+        from bot import db as _db
+        from bot import device_tiers
+
+        key_id = tool_input.get("key_id")
+        new_tier = tool_input.get("tier")
+        if not device_tiers.is_valid_tier(new_tier):
+            raise ToolError(f"unknown permission tier {new_tier!r}")
+        target = _db.get_api_key(key_id)
+        if target is None:
+            raise ToolError(f"no such device {key_id}")
+        if not device_tiers.can_manage(device_tier, target["permission_tier"], is_self=False):
+            raise ToolError("this device can only change the tier of a strictly lower-tier device")
+        if not device_tiers.can_mint(device_tier, new_tier):
+            raise ToolError(f"this device's own tier ({device_tier}) can't grant tier {new_tier!r}")
+        _db.set_api_key_tier(key_id, new_tier)
+        _db.log_audit(actor=f"agent:{instance_id}", action="mobile_key_set_tier", detail=f"set key {key_id} tier -> {new_tier!r}")
+        return f"Set device {key_id}'s tier to {new_tier!r}."
+
+    if name == "admin_revoke_device":
+        _require_admin(instance_id)
+        _require_elevated_device(device_tier)
+        from bot import db as _db
+        from bot import device_tiers
+
+        key_id = tool_input.get("key_id")
+        target = _db.get_api_key(key_id)
+        if target is None:
+            raise ToolError(f"no such device {key_id}")
+        if not device_tiers.can_manage(device_tier, target["permission_tier"], is_self=False):
+            raise ToolError("this device can only revoke a strictly lower-tier device")
+        _db.revoke_api_key(key_id)
+        _db.log_audit(actor=f"agent:{instance_id}", action="mobile_key_revoke", detail=f"revoked key {key_id}")
+        return f"Revoked device {key_id}."
+
+    if name == "admin_db_vacuum":
+        _require_admin(instance_id)
+        _require_elevated_device(device_tier)
+        from bot import db as _db
+
+        _db.vacuum(actor=f"agent:{instance_id}")
+        return "Database vacuumed."
+
+    if name == "admin_restore_snapshot":
+        _require_admin(instance_id)
+        _require_elevated_device(device_tier)
+        from bot import db as _db
+        from bot import snapshots
+
+        snap_name = tool_input.get("name")
+        if not snap_name:
+            raise ToolError("name is required")
+        try:
+            snapshots.restore_snapshot(snap_name)
+        except Exception as exc:
+            raise ToolError(str(exc))
+        _db.log_audit(actor=f"agent:{instance_id}", action="snapshot_restore", detail=snap_name)
+        return f"Restored snapshot {snap_name!r}."
+
+    if name == "admin_desktop_start":
+        _require_admin(instance_id)
+        _require_elevated_device(device_tier)
+        from bot import db as _db
+        from bot import desktop
+
+        ok = desktop.start()
+        _db.log_audit(actor=f"agent:{instance_id}", action="desktop_start", detail="")
+        return f"Claude Desktop start {'succeeded' if ok else 'failed'}."
+
+    if name == "admin_desktop_stop":
+        _require_admin(instance_id)
+        _require_elevated_device(device_tier)
+        from bot import db as _db
+        from bot import desktop
+
+        ok = desktop.stop()
+        _db.log_audit(actor=f"agent:{instance_id}", action="desktop_stop", detail="")
+        return f"Claude Desktop stop {'succeeded' if ok else 'failed'}."
+
+    if name == "admin_desktop_restart":
+        _require_admin(instance_id)
+        _require_elevated_device(device_tier)
+        from bot import db as _db
+        from bot import desktop
+
+        desktop.restart()
+        _db.log_audit(actor=f"agent:{instance_id}", action="desktop_restart", detail="")
+        return "Claude Desktop restart requested."
 
     if name == "read_project_context":
         from bot import shared_context

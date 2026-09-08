@@ -59,6 +59,18 @@ def test_set_then_get_round_trips(temp_db, monkeypatch):
     assert resp2.json()["worker_effort"] == "high"
 
 
+def test_set_is_admin_instance_via_dashboard_route(temp_db, monkeypatch):
+    """is_admin_instance is settable through this operator-authenticated
+    dashboard route (generic FIELDS passthrough) — the self-escalation
+    guard lives on the agent-runtime admin_set_agent_settings tool, not
+    here, since this route is never reachable from a bot's own tool loop."""
+    client = _client(monkeypatch)
+    iid = _make_instance()
+    resp = client.post("/api/agent-settings", json={"instance_id": iid, "is_admin_instance": True}, headers=_auth())
+    assert resp.status_code == 200
+    assert resp.json()["is_admin_instance"] == True  # noqa: E712 (sqlite may return 1, not bool)
+
+
 def test_set_unknown_field_via_extra_payload_key_is_ignored(temp_db, monkeypatch):
     """Only known FIELDS pass through — an unrelated payload key must not
     reach agent_settings.set_settings() and trigger its ValueError."""

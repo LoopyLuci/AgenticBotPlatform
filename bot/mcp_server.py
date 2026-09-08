@@ -569,12 +569,17 @@ async def set_agent_settings(
     worker_model: Optional[str] = None,
     worker_effort: Optional[str] = None,
     manager_effort: Optional[str] = None,
+    is_admin_instance: Optional[bool] = None,
 ) -> dict:
     """Set one or more agent/swarm settings for instance_id (or the
     process-wide default if omitted). Effort values: none, minimal, low,
     medium, high, xhigh, max, ultra. For a Hermes-backed instance, prefer
     configure_delegation/the /agent_settings command instead — Hermes
-    owns worker/manager effort in its own real config, not this table."""
+    owns worker/manager effort in its own real config, not this table.
+    is_admin_instance flags the ONE bot instance whose agent-runtime tool
+    loop gets the admin_* tool set (bot/agent_runtime/tools.py) — settable
+    ONLY through this operator-authenticated MCP/dashboard channel, never
+    from within a bot's own tool loop."""
     payload = {
         "instance_id": instance_id,
         "max_concurrent_children": max_concurrent_children,
@@ -582,6 +587,7 @@ async def set_agent_settings(
         "worker_model": worker_model,
         "worker_effort": worker_effort,
         "manager_effort": manager_effort,
+        "is_admin_instance": is_admin_instance,
     }
     payload = {k: v for k, v in payload.items() if v is not None or k == "instance_id"}
     return await _request("POST", "/api/agent-settings", json=payload)

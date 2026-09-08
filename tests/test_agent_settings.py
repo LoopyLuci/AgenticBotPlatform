@@ -31,6 +31,7 @@ def test_defaults_when_nothing_configured(temp_db):
         "fallback_provider": None,
         "fallback_model": None,
         "require_plan_approval": False,
+        "is_admin_instance": False,
     }
 
 
@@ -61,6 +62,24 @@ def test_partial_update_leaves_other_fields_untouched(temp_db):
     assert resolved["worker_provider"] == "openrouter"
     assert resolved["worker_model"] == "some/model"
     assert resolved["worker_effort"] == "high"
+
+
+def test_is_admin_instance_defaults_false(temp_db):
+    iid = _make_instance()
+    assert agent_settings.get(iid)["is_admin_instance"] == False  # noqa: E712 (sqlite may return 0, not bool)
+
+
+def test_is_admin_instance_round_trips(temp_db):
+    iid = _make_instance()
+    agent_settings.set_settings(iid, is_admin_instance=True)
+    assert agent_settings.get(iid)["is_admin_instance"] == True  # noqa: E712 (sqlite may return 1, not bool)
+
+
+def test_get_admin_instance_id_finds_the_flagged_instance(temp_db):
+    iid = _make_instance()
+    assert agent_settings.get_admin_instance_id() is None
+    agent_settings.set_settings(iid, is_admin_instance=True)
+    assert agent_settings.get_admin_instance_id() == iid
 
 
 def test_explicit_none_clears_a_field_back_to_fallthrough(temp_db):

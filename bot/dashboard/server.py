@@ -2332,18 +2332,14 @@ def build_app() -> FastAPI:
         if backend not in VALID_BACKENDS:
             raise HTTPException(status_code=400, detail=f"unknown backend {backend!r}")
         if action_or_default == "default":
-            # Claude and Hermes each keep their own default-backend slot —
-            # the two are shown as separate segmented pickers in the
-            # dashboard, and must stay separate in storage too: they used to
-            # share config["default_backend"], so picking a Hermes default
-            # silently overwrote the global Claude-oriented fallback every
-            # action_type without its own override falls back to.
-            from bot.models import BACKEND_FAMILY
+            # Delegates to bot.router.set_default_backend — shared with the
+            # admin_set_default_backend agent-runtime tool so there's
+            # exactly one implementation of "Claude and Hermes each keep
+            # their own default-backend slot."
+            from bot.router import set_default_backend
 
-            key = "default_hermes_backend" if BACKEND_FAMILY.get(backend) == "hermes" else "default_backend"
-            config.set_value([key], backend, actor="dashboard")
-        else:
-            config.set_value(["action_overrides", action_or_default, "backend"], backend, actor="dashboard")
+            return set_default_backend(backend, actor="dashboard")
+        config.set_value(["action_overrides", action_or_default, "backend"], backend, actor="dashboard")
         return {"ok": True, "version": config.version}
 
     # ---------------------------------------------------------- support bot

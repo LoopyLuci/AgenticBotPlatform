@@ -32,6 +32,13 @@ from bot.agent_runtime.subagents import DEFAULT_MAX_CONCURRENT_CHILDREN
 FIELDS = (
     "max_concurrent_children", "worker_provider", "worker_model", "worker_effort", "manager_effort",
     "fallback_provider", "fallback_model", "require_plan_approval",
+    # Marks the ONE bot instance whose agent-runtime tool loop gets the
+    # admin_* tool set (see bot/agent_runtime/tools.py's ADMIN_TOOLS_*
+    # and the "Admin control surface" plan). Settable only through the
+    # operator-authenticated dashboard/MCP channel — bot/agent_runtime/
+    # tools.py's own admin_set_agent_settings tool explicitly refuses to
+    # accept this field, so no instance can ever self-promote.
+    "is_admin_instance",
 )
 
 
@@ -52,7 +59,22 @@ def _hardcoded_default(field: str) -> Any:
         # fallback chain, matching "an instance with nothing configured
         # behaves exactly as before this field existed."
         return False
+    if field == "is_admin_instance":
+        # No admin instance configured anywhere must resolve to "nobody
+        # is admin," not None (which downstream `if not ...["is_admin_instance"]`
+        # checks need to treat identically to False anyway, but an
+        # explicit False is clearer than relying on None's falsiness).
+        return False
     return None
+
+
+def get_admin_instance_id() -> Optional[int]:
+    """The one bot_instances.id currently flagged is_admin_instance=True
+    (or None if none is configured) — used by the Server Chat pipeline and
+    Support Bot to resolve which instance's model/provider config backs
+    admin conversations on those surfaces, without either needing to know
+    that id ahead of time."""
+    return db.find_admin_instance_id()
 
 
 def get(instance_id: Optional[int]) -> dict[str, Any]:
