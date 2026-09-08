@@ -117,21 +117,35 @@ class AnthropicTransport(ProviderTransport):
         caching_cfg = _prompt_caching_config()
         caching_enabled = caching_cfg.get("enabled", DEFAULT_PROMPT_CACHING_ENABLED)
         cache_control = _cache_control(caching_cfg.get("ttl", DEFAULT_PROMPT_CACHING_TTL)) if caching_enabled else None
-        if tool_schemas:
+
+        # Anthropic server tools (web_search/web_fetch/code_execution/
+        # tool_search — Phase D of the Claude API/Claude Code parity
+        # plan) — appended alongside BotServer's own client tool schemas.
+        # Anthropic executes these itself and returns results as a
+        # "server_tool_use" block (structurally distinct from "tool_use"),
+        # so they never reach tool_loop.run_one_tool() by construction —
+        # no dispatch branch needed anywhere in native_backend.py.
+        from bot.agent_runtime import anthropic_server_tools
+
+        all_tools = list(tool_schemas) if tool_schemas else []
+        all_tools.extend(anthropic_server_tools.enabled_tool_entries())
+
+        if all_tools:
             if cache_control is not None:
-                # Breakpoint on the LAST tool schema only — Anthropic
+                # Breakpoint on the LAST tool entry only — Anthropic
                 # caches everything up to and including a breakpoint, so
                 # one entry at the end covers the whole (stable-for-the-
-                # session) tools array. Copy rather than mutate: these
-                # dicts are the same shared objects agent_tools.all_tool_schemas()
-                # returns on every call (TOOL_SCHEMAS is a module-level
-                # list) — mutating one in place would leak cache_control
-                # into every other transport/call that reuses it.
-                tools_payload = list(tool_schemas)
+                # session) tools array. Copy rather than mutate: the
+                # BotServer-schema dicts here are the same shared objects
+                # agent_tools.all_tool_schemas() returns on every call
+                # (TOOL_SCHEMAS is a module-level list) — mutating one in
+                # place would leak cache_control into every other
+                # transport/call that reuses it.
+                tools_payload = list(all_tools)
                 tools_payload[-1] = {**tools_payload[-1], "cache_control": cache_control}
                 create_kwargs["tools"] = tools_payload
             else:
-                create_kwargs["tools"] = tool_schemas
+                create_kwargs["tools"] = all_tools
         if system_prompt:
             # A list-of-blocks system param is required to attach
             # cache_control at all (a bare string has nowhere to put it);
@@ -206,6 +220,19 @@ def _serialize_blocks(content) -> list[dict]:
         elif btype == "redacted_thinking":
             # anthropic.types.RedactedThinkingBlock: data, type.
             out.append({"type": "redacted_thinking", "data": block.data})
+        elif hasattr(block, "model_dump"):
+            # Covers server_tool_use and every *_tool_result block
+            # (web_search_tool_result, web_fetch_tool_result,
+            # code_execution_tool_result, tool_search_tool_result — Phase D
+            # of the Claude API/Claude Code parity plan) without hand-
+            # enumerating each one's own rich, evolving shape (encrypted
+            # search-result content, citations, etc.) — these must round-
+            # trip byte-for-byte on a later turn (the API rejects a
+            # multi-turn request whose encrypted_content was dropped or
+            # modified), so a full pydantic dump is the correct fix here,
+            # not a hand-picked field subset the way thinking/tool_use
+            # above are (those two have small, stable, well-known shapes).
+            out.append(block.model_dump(mode="json", exclude_none=True))
         else:
             out.append({"type": btype})
     return out

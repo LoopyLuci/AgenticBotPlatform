@@ -139,6 +139,17 @@ native_agent:
   # genuinely noisy for most users — opt in for Claude-Code-like
   # "Thinking…" visibility.
   show_thinking_summary: false
+  # Anthropic server-executed tools (bot/agent_runtime/anthropic_server_tools.py)
+  # — Anthropic runs these itself and returns results inline; BotServer
+  # never executes them locally. All off by default: each bills real
+  # usage-based cost on top of tokens (e.g. web search is $10/1,000
+  # searches), the same "explicit opt-in for anything with a real cost"
+  # convention mcp_sampling above uses.
+  server_tools:
+    web_search: false
+    web_fetch: false
+    code_execution: false
+    tool_search: false
 # Applies an edit to bot/*.py to this already-running process instead of
 # needing the full stop/rebuild/relaunch cycle — see bot/hotreload.py's
 # module docstring for exactly what can and can't hot-reload. Checked
