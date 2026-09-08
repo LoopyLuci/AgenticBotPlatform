@@ -146,8 +146,11 @@ async def run_batch(
     that's an honest, bounded claim rather than a persistent-process
     guarantee Hermes's own delegate_task(background=true) makes."""
     from bot import agent_settings
+    from bot.agent_runtime import estop
     from bot.agent_runtime.tools import _delegation_depth
     from bot.config import config
+
+    estop.check()
 
     if not tasks:
         return {"dispatch_id": None, "children": []}
@@ -252,6 +255,21 @@ async def _start_child(
     a real asyncio.Task so it has a handle steer_subagent/stop_subagent
     can act on for as long as it's alive."""
     from bot import db
+    from bot.agent_runtime import subagent_registry
+    from bot.config import config
+
+    # Distinct from the per-call asyncio.Semaphore above: this is a
+    # process-wide ceiling across EVERY dispatch, closing the confirmed
+    # gap where repeated spawn_subagent(background=true) calls, each
+    # self-limited only within its own batch, could accumulate unbounded
+    # live tasks over time with nothing tracking the running total.
+    max_global = config.current.get("native_agent", {}).get("max_global_background_children", 20)
+    if subagent_registry.count_live_children() >= max_global:
+        raise BackendError(
+            f"global background-dispatch limit reached ({max_global} live children across all dispatches) — "
+            "wait for some to finish, or raise native_agent.max_global_background_children in config/backends.yaml"
+        )
+
     from bot.agent_runtime.subagent_registry import ChildHandle
 
     goal = (task.get("goal") or "").strip()

@@ -1021,6 +1021,20 @@ def build_app() -> FastAPI:
         db.log_audit(actor="dashboard", action="auto_manage_update", detail=f"instance {instance_id}: {payload}")
         return result
 
+    @app.get("/api/estop", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_estop_get():
+        from bot.agent_runtime import estop
+
+        return estop.status()
+
+    @app.post("/api/estop", dependencies=[Depends(_require_token)])
+    async def api_estop_set(payload: dict = Body(...)):
+        from bot.agent_runtime import estop
+
+        if payload.get("engaged"):
+            return estop.engage(payload.get("reason"), actor="dashboard")
+        return estop.disengage(actor="dashboard")
+
     @app.get("/api/personas", dependencies=[Depends(_require_token_or_api_key)])
     async def api_personas():
         from bot.personas import list_personas

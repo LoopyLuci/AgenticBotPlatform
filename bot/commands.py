@@ -627,6 +627,32 @@ async def cmd_auto_manage(ctx: CmdContext, args: list[str]) -> str:
     return "Usage: /auto_manage show | enable | disable | set-trigger <scheduled|kanban_card_created|both> | set-interval <duration> | set-goal <text>"
 
 
+async def cmd_estop(ctx: CmdContext, args: list[str]) -> str:
+    """Global emergency stop (bot/agent_runtime/estop.py) — engaging it
+    refuses all NEW turns/dispatches/scheduled fires/auto-manage
+    check-ins process-wide until disengaged; anything already running
+    finishes normally, it is never killed mid-turn."""
+    from bot.agent_runtime import estop
+
+    if not args or args[0] == "status":
+        state = estop.status()
+        if not state["engaged"]:
+            return "Emergency stop: not engaged."
+        reason = f" ({state['reason']})" if state["reason"] else ""
+        return f"Emergency stop: ENGAGED{reason} by {state['actor']} at {state['changed_at']}."
+
+    if args[0] == "engage":
+        reason = " ".join(args[1:]) or None
+        estop.engage(reason, actor=ctx.actor)
+        return "Emergency stop ENGAGED — no new work will start until /estop disengage."
+
+    if args[0] == "disengage":
+        estop.disengage(actor=ctx.actor)
+        return "Emergency stop disengaged — new work can start again."
+
+    return "Usage: /estop status | engage [reason] | disengage"
+
+
 _DESKTOP_ACTIONS: dict[str, Callable[[], bool]] = {
     "start": desktop.start,
     "stop": desktop.stop,
@@ -1361,6 +1387,7 @@ COMMANDS: dict[str, Callable[[CmdContext, list[str]], Any]] = {
     "effort": cmd_effort,
     "agent_settings": cmd_agent_settings,
     "auto_manage": cmd_auto_manage,
+    "estop": cmd_estop,
     "new": cmd_new_session,
     "desktop_projects": cmd_desktop_projects,
     "sessions": cmd_sessions,

@@ -151,7 +151,10 @@ async def run_check_in(instance_id: int, reason: str) -> None:
     callers don't need to pre-check either."""
     from bot import bot_instances, db, outbox
     from bot.agent_runtime import engine as agent_engine
+    from bot.agent_runtime import estop
 
+    if estop.is_engaged():
+        return
     try:
         cfg = get_config(instance_id)
     except AutoManageError:

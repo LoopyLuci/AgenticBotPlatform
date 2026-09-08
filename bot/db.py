@@ -719,6 +719,21 @@ CREATE TABLE IF NOT EXISTS agent_settings (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_settings_instance_null
     ON agent_settings ((instance_id IS NULL)) WHERE instance_id IS NULL;
 
+-- Global emergency-stop sentinel (see bot/agent_runtime/estop.py) —
+-- mirrors Hermes Agent's own estop.py concept (a global pause checked by
+-- long-running components before starting new work), DB-backed here
+-- instead of a sentinel file since BotServer already centralizes runtime
+-- state in SQLite. Always exactly one row (id=1); checked at the top of
+-- every new-turn/new-dispatch entry point, never mid-turn — an
+-- already-running turn finishes rather than being killed.
+CREATE TABLE IF NOT EXISTS estop_state (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    engaged    INTEGER NOT NULL DEFAULT 0,
+    reason     TEXT,
+    actor      TEXT,
+    changed_at TEXT NOT NULL
+);
+
 -- Post-hoc per-child delegate_task breakdown, parsed from a completed
 -- swarm_dispatch job's own final reply (see bot/swarm/child_parser.py) —
 -- written once, as a full replace, when the dispatch finishes. This is
@@ -1503,6 +1518,28 @@ def set_agent_settings_row(instance_id: Optional[int], **fields: Any) -> None:
                 f"UPDATE agent_settings SET {set_clause} WHERE instance_id IS ?",
                 list(fields.values()) + [_now(), instance_id],
             )
+        conn.commit()
+
+
+# ------------------------------------------------------------------ estop
+
+def get_estop_state() -> dict[str, Any]:
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM estop_state WHERE id=1").fetchone()
+    if row is None:
+        return {"engaged": False, "reason": None, "actor": None, "changed_at": None}
+    return {"engaged": bool(row["engaged"]), "reason": row["reason"], "actor": row["actor"], "changed_at": row["changed_at"]}
+
+
+def set_estop_state(engaged: bool, reason: Optional[str], actor: str) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute(
+            "INSERT INTO estop_state (id, engaged, reason, actor, changed_at) VALUES (1, ?, ?, ?, ?) "
+            "ON CONFLICT(id) DO UPDATE SET engaged=excluded.engaged, reason=excluded.reason, "
+            "actor=excluded.actor, changed_at=excluded.changed_at",
+            (1 if engaged else 0, reason, actor, _now()),
+        )
         conn.commit()
 
 

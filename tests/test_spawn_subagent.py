@@ -267,6 +267,63 @@ def test_spawn_subagent_tool_returns_json_results(temp_db, monkeypatch, tmp_path
     assert parsed["children"][0]["goal"] == "say hi"
 
 
+class TestGlobalBackgroundCap:
+    def test_refuses_a_new_child_once_the_global_ceiling_is_hit_across_calls(self, temp_db, monkeypatch):
+        """The confirmed gap: each run_batch() call's own semaphore only
+        bounds concurrency WITHIN that call — this must catch
+        accumulation ACROSS separate dispatches sharing one event loop
+        (real production: one long-running process, not a fresh loop per
+        call — asyncio.run() per test call would tear down and orphan any
+        unawaited background task, so both dispatches happen inside one
+        async function here to reflect how the real server actually runs)."""
+        monkeypatch.setattr(config, "_data", {
+            "agent_runtime": {}, "native_agent": {"max_global_background_children": 1},
+        })
+        instance_id = _create_instance()
+
+        class _NeverFinishingBackend(_FakeBackend):
+            async def ask(self, prompt, *, context=None, timeout_s=30):
+                self.calls.append({"prompt": prompt, "context": context})
+                await asyncio.sleep(10)
+                return BackendResult(text="never", tokens=None, raw=None)
+
+        backend = _NeverFinishingBackend([])
+        _patch_inherited_backend(monkeypatch, backend)
+
+        async def scenario():
+            first = await subagents.run_batch(
+                [{"goal": "one"}], parent_instance_id=instance_id, background=True,
+            )
+            assert first["dispatch_id"]
+
+            with pytest.raises(BackendError, match="global background-dispatch limit"):
+                await subagents.run_batch(
+                    [{"goal": "two"}], parent_instance_id=instance_id, background=True,
+                )
+
+            from bot.agent_runtime import subagent_registry
+            dispatch = subagent_registry.get_dispatch(first["dispatch_id"])
+            for handle in dispatch.children.values():
+                handle.task.cancel()
+
+        _run(scenario())
+
+    def test_a_finished_child_frees_up_room_for_the_next_call(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "_data", {
+            "agent_runtime": {}, "native_agent": {"max_global_background_children": 1},
+        })
+        instance_id = _create_instance()
+        backend = _FakeBackend(["done one", "done two"])
+        _patch_inherited_backend(monkeypatch, backend)
+
+        _run(subagents.run_batch([{"goal": "one"}], parent_instance_id=instance_id))
+        # First batch already finished (blocking) by the time run_batch
+        # returns, so its child no longer counts as live.
+        result = _run(subagents.run_batch([{"goal": "two"}], parent_instance_id=instance_id))
+
+        assert result["children"][0]["status"] == "ok"
+
+
 class TestAgentSettingsIntegration:
     """bot/agent_settings.py's unified settings surface must actually
     influence a real dispatch when the caller doesn't override

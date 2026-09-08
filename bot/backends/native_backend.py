@@ -54,8 +54,13 @@ class NativeAgentBackend(Backend):
     async def ask(self, prompt: str, *, context=None, timeout_s: float = 30) -> BackendResult:
         from bot import db
         from bot.agent_runtime import approval as agent_approval
+        from bot.agent_runtime import estop
         from bot.agent_runtime import tool_loop
         from bot.agent_runtime import tools as agent_tools
+
+        # Checked once, at the very start of a new turn — never mid-turn:
+        # an already-running ask() finishes rather than being killed.
+        estop.check()
 
         context = context or {}
         session_key = context.get("desktop_session_key")

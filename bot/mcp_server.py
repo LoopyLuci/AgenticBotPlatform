@@ -522,6 +522,27 @@ async def set_auto_manage_config(
 
 
 @mcp.tool()
+async def get_estop_status() -> dict:
+    """Global emergency-stop status (engaged/reason/actor/changed_at)."""
+    return await _request("GET", "/api/estop")
+
+
+@mcp.tool()
+async def engage_estop(reason: Optional[str] = None) -> dict:
+    """Engage the global emergency stop — refuses all NEW agent
+    turns/dispatches/scheduled fires/auto-manage check-ins process-wide
+    until disengaged. Anything already running finishes normally, it is
+    never killed mid-turn."""
+    return await _request("POST", "/api/estop", json={"engaged": True, "reason": reason})
+
+
+@mcp.tool()
+async def disengage_estop() -> dict:
+    """Disengage the global emergency stop — new agent work can start again."""
+    return await _request("POST", "/api/estop", json={"engaged": False})
+
+
+@mcp.tool()
 async def list_available_models(instance_id: Optional[int] = None) -> dict:
     """The full model catalog Claude needs to pick an "optimal free model":
     Claude's own live /v1/models, BotServer's custom_model provider

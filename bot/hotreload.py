@@ -139,6 +139,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.snapshots",
     "bot.agent_control",
     "bot.backends.base",
+    "bot.agent_runtime.estop",  # depends only on bot.backends.base (EstopEngagedError subclasses BackendError) and db — safe leaf
     "bot.agent_runtime.transports.base",
     "bot.agent_runtime.transports.anthropic",
     "bot.agent_runtime.transports.openai_compatible",

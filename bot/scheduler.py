@@ -77,6 +77,13 @@ def remove(sched_id: int) -> None:
 async def _fire(row) -> None:
     from bot import bot_instances
     from bot.agent_runtime import engine as agent_engine  # deferred: avoids an import cycle at module load
+    from bot.agent_runtime import estop
+
+    if estop.is_engaged():
+        # No alert/failure-streak bump here — this isn't the schedule's
+        # own fault, and it'll simply fire again next poll once the
+        # emergency stop is lifted, same as if it were momentarily busy.
+        return
 
     instance_id, chat_id, thread_id = row["instance_id"], row["chat_id"], row["thread_id"]
 

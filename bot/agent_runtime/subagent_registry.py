@@ -76,6 +76,25 @@ def register_child(dispatch: Dispatch, index: int, handle: ChildHandle) -> None:
     dispatch.children[index] = handle
 
 
+def count_live_children() -> int:
+    """Total not-yet-finished children across EVERY dispatch this
+    process currently holds — distinct from run_batch()'s own per-call
+    asyncio.Semaphore, which only bounds concurrency *within* one
+    spawn_subagent call. Confirmed real gap: an agent calling
+    spawn_subagent(background=true) repeatedly, each call self-limited
+    but never checked against any total, could accumulate unbounded live
+    asyncio.Tasks across separate calls — this is what
+    subagents.py::_start_child() checks against
+    native_agent.max_global_background_children before creating a new
+    child task."""
+    return sum(
+        1
+        for dispatch in _dispatches.values()
+        for handle in dispatch.children.values()
+        if not handle.task.done()
+    )
+
+
 def get_dispatch(dispatch_id: str) -> Optional[Dispatch]:
     return _dispatches.get(dispatch_id)
 
