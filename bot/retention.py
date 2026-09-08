@@ -42,6 +42,14 @@ async def run_once() -> None:
     if total:
         logger.info("pruned %d row(s) older than %d days: %s", total, days, removed)
 
+    checkpoint_days = int(retention_cfg.get("checkpoints_days", 30))
+    if checkpoint_days > 0:
+        from bot.agent_runtime import checkpoints
+
+        removed_stores = checkpoints.gc_old_checkpoints(checkpoint_days)
+        if removed_stores:
+            logger.info("removed %d checkpoint store(s) untouched for %d+ days", removed_stores, checkpoint_days)
+
     vacuum_every = int(retention_cfg.get("auto_vacuum_every_days", 0))
     if vacuum_every > 0:
         since = db.days_since_last_vacuum()

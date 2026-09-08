@@ -9,7 +9,11 @@ from bot.config import config
 
 
 def _set_retention_config(monkeypatch, **overrides):
-    cfg = {"enabled": True, "days": 90, "auto_vacuum_every_days": 0}
+    # checkpoints_days=0 by default so existing tests here don't
+    # incidentally exercise (or, without workspace isolation, create real
+    # directories via) the checkpoint-store GC added alongside this key —
+    # see TestCheckpointRetention below for that behavior's own coverage.
+    cfg = {"enabled": True, "days": 90, "auto_vacuum_every_days": 0, "checkpoints_days": 0}
     cfg.update(overrides)
     monkeypatch.setattr(config, "_data", {"retention": cfg})
 
@@ -61,3 +65,32 @@ def test_retention_disabled_entirely_skips_both_prune_and_vacuum(temp_db, monkey
 
     remaining = temp_db.execute("SELECT COUNT(*) c FROM telemetry_events").fetchone()["c"]
     assert remaining == 1, "retention.enabled=False must skip pruning entirely"
+
+
+class TestCheckpointRetention:
+    def test_checkpoints_days_zero_never_touches_the_store(self, temp_db, monkeypatch, tmp_path):
+        monkeypatch.setattr("bot.envfile.PROJECT_ROOT", tmp_path)
+        _set_retention_config(monkeypatch, checkpoints_days=0)
+
+        asyncio.run(retention.run_once())
+
+        assert not (tmp_path / "data" / "checkpoint_store").exists()
+
+    def test_checkpoints_days_positive_gcs_old_stores(self, temp_db, monkeypatch, tmp_path):
+        import os
+
+        monkeypatch.setattr("bot.envfile.PROJECT_ROOT", tmp_path)
+        from bot.agent_runtime import checkpoints
+
+        workspace = tmp_path / "ws"
+        workspace.mkdir()
+        (workspace / "a.txt").write_text("1")
+        checkpoints.create_checkpoint(workspace, "v1")
+        marker = checkpoints._base_marker(workspace)
+        old_time = marker.stat().st_mtime - 100 * 86400
+        os.utime(marker, (old_time, old_time))
+
+        _set_retention_config(monkeypatch, checkpoints_days=30)
+        asyncio.run(retention.run_once())
+
+        assert not checkpoints._git_dir(workspace).exists()

@@ -115,6 +115,11 @@ retention:
   # frees up, but briefly locks writes, so it's opt-in rather than always
   # on. Set to e.g. 7 to run it automatically at most once a week.
   auto_vacuum_every_days: 0
+  # How long a workspace's shadow checkpoint-git store (bot/agent_runtime/
+  # checkpoints.py, data/checkpoint_store/) is kept after its last
+  # checkpoint — ephemeral session-scoped rollback history, not something
+  # worth keeping indefinitely once nobody's touched that workspace.
+  checkpoints_days: 30
 turn:
   # Real TURN relay for the Android mesh transport's WebRTC fallback (see
   # bot/turn.py) — used when two devices can't reach each other directly
