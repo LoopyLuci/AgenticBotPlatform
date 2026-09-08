@@ -1224,6 +1224,7 @@
           <div class="card kpi"><h3>Unknown rate</h3><div class="value" id="health-unknown">—</div></div>
           <div class="card kpi"><h3>Avg TF-IDF confidence</h3><div class="value" id="health-tfidf-conf">—</div></div>
           <div class="card kpi"><h3>Avg neural net confidence</h3><div class="value" id="health-nn-conf">—</div></div>
+          <div class="card kpi"><h3>Held-out accuracy</h3><div class="value" id="health-eval-accuracy">—</div></div>
         </div>
       </div>
 
@@ -1242,6 +1243,27 @@
             <tbody id="training-phrases-tbody"><tr class="emptyrow"><td colspan="3">No custom phrases added yet.</td></tr></tbody>
           </table>
         </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Bulk import</h3>
+        <p class="cardnote">One "phrase | intent" pair per line — imports and retrains once at the end, not once per line.</p>
+        <textarea id="training-bulk-input" rows="4" style="width:100%; font-family:monospace; font-size:12px;" placeholder="restart the bot | bot_restart&#10;kick the bot back on | bot_restart"></textarea>
+        <div class="row" style="gap:8px; margin-top:8px;">
+          <button class="btn" id="btn-training-bulk-import">Import lines</button>
+        </div>
+        <div class="cardnote" id="training-bulk-status"></div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Retrain &amp; Evaluate</h3>
+        <p class="cardnote">Trains a candidate model on a held-out split, measures its real accuracy, and only activates it if accuracy hasn't regressed past the tolerance below — a bad batch of examples can never silently degrade the live model.</p>
+        <div class="row" style="gap:8px; align-items:center;">
+          <label for="training-retrain-tolerance" style="font-size:12px; color:var(--muted);">Regression tolerance</label>
+          <input type="number" id="training-retrain-tolerance" value="0.02" step="0.01" min="0" style="width:90px;">
+          <button class="btn primary" id="btn-training-retrain">Retrain &amp; Evaluate</button>
+        </div>
+        <div id="training-retrain-result" style="margin-top:10px;"></div>
       </div>
 
     </section>
@@ -2328,6 +2350,8 @@ async function refreshTrainingHealth() {
   document.getElementById('health-unknown').textContent = h.total ? `${(h.unknown_rate * 100).toFixed(0)}%` : '—';
   document.getElementById('health-tfidf-conf').textContent = h.total ? h.avg_tfidf_confidence.toFixed(2) : '—';
   document.getElementById('health-nn-conf').textContent = h.total ? h.avg_nn_confidence.toFixed(2) : '—';
+  const evalAcc = h.eval && h.eval.holdout_accuracy;
+  document.getElementById('health-eval-accuracy').textContent = (evalAcc || evalAcc === 0) ? `${(evalAcc * 100).toFixed(1)}%` : '—';
 }
 
 async function refreshTrainingPhrases() {
@@ -2370,8 +2394,58 @@ document.getElementById('btn-training-add').onclick = async () => {
     phraseInput.value = '';
     statusEl.textContent = 'Added and retrained.';
     refreshTrainingPhrases();
+    refreshTrainingHealth();
   } catch (e) {
     statusEl.textContent = 'Failed to add phrase — check the dashboard token.';
+  }
+};
+
+document.getElementById('btn-training-bulk-import').onclick = async () => {
+  const textarea = document.getElementById('training-bulk-input');
+  const statusEl = document.getElementById('training-bulk-status');
+  const lines = textarea.value.split('\n').map(l => l.trim()).filter(Boolean);
+  const phrases = [];
+  for (const line of lines) {
+    const parts = line.split('|');
+    if (parts.length !== 2) {
+      statusEl.textContent = `Malformed line (expected "phrase | intent"): ${esc(line)}`;
+      return;
+    }
+    phrases.push({ phrase: parts[0].trim(), intent: parts[1].trim() });
+  }
+  if (!phrases.length) {
+    statusEl.textContent = 'Nothing to import.';
+    return;
+  }
+  try {
+    const resp = await api('/api/support-bot/training', { method: 'POST', body: JSON.stringify({ phrases }) });
+    textarea.value = '';
+    statusEl.textContent = `Imported ${resp.ids.length} phrase(s) and retrained.`;
+    refreshTrainingPhrases();
+    refreshTrainingHealth();
+  } catch (e) {
+    statusEl.textContent = 'Bulk import failed — check the format and the dashboard token.';
+  }
+};
+
+document.getElementById('btn-training-retrain').onclick = async () => {
+  const resultEl = document.getElementById('training-retrain-result');
+  const tolerance = parseFloat(document.getElementById('training-retrain-tolerance').value) || 0;
+  resultEl.innerHTML = '<span class="cardnote">Training candidate and evaluating…</span>';
+  let resp;
+  try {
+    resp = await api('/api/support-bot/retrain', { method: 'POST', body: JSON.stringify({ accept_if_regression_under: tolerance }) });
+  } catch (e) {
+    resultEl.innerHTML = '<span class="cardnote">Retrain failed — check the dashboard token.</span>';
+    return;
+  }
+  const acc = resp.eval && resp.eval.holdout_accuracy;
+  const accStr = (acc || acc === 0) ? `${(acc * 100).toFixed(1)}%` : 'n/a';
+  if (resp.accepted) {
+    resultEl.innerHTML = `<span class="pill"><span class="dot good"></span>Accepted</span> <span>New held-out accuracy: <b>${accStr}</b> (n=${resp.eval.n_holdout})</span>`;
+    refreshTrainingHealth();
+  } else {
+    resultEl.innerHTML = `<span class="pill"><span class="dot critical"></span>Rejected — model NOT activated</span> <span>${esc(resp.reason || '')}</span>`;
   }
 };
 

@@ -170,11 +170,17 @@ def _load_examples() -> list[tuple[str, str]]:
 
 
 class NeuralIntentClassifier:
-    def __init__(self) -> None:
+    def __init__(self, examples: Optional[list[tuple[str, str]]] = None) -> None:
+        """`examples=None` (the default, used by the module-level singleton
+        below) trains on the full baseline + Training-tab phrases via
+        _load_examples() — unchanged from before this parameter existed.
+        An explicit `examples` list lets bot/support_bot/eval.py train a
+        standalone candidate classifier on just a train-split subset,
+        without touching the live singleton."""
         self._vectorizer: Optional[_TfidfVectorizer] = None
         self._mlp: Optional[_MLP] = None
         self._classes: list[str] = []
-        self.train(_load_examples())
+        self.train(examples if examples is not None else _load_examples())
 
     def train(self, examples: list[tuple[str, str]]) -> int:
         texts = [t for t, _ in examples]

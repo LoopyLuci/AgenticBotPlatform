@@ -44,7 +44,7 @@ observable, queryable behavior over real traffic, not a static claim.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from bot import db
 from bot.support_bot import model as tfidf_model
@@ -101,27 +101,35 @@ class HybridResult:
     source: str  # "ensemble" | "tfidf" | "nn" | "unknown"
 
 
+def vote(tfidf_intent: str, tfidf_confidence: float, nn_intent: str, nn_confidence: float) -> tuple[str, float, str, bool]:
+    """The hybrid decision rule (see this module's own docstring),
+    extracted as a pure function so bot/support_bot/eval.py can score a
+    CANDIDATE pair of classifiers (trained on a train-only split, never
+    touching the live singletons) with the exact same logic classify()
+    uses in production — one implementation, never two that could drift.
+    Returns (intent, confidence, source, agreed)."""
+    agreed = tfidf_intent == nn_intent and tfidf_intent != "unknown"
+    if agreed:
+        return tfidf_intent, max(tfidf_confidence, nn_confidence), "ensemble", True
+    if tfidf_intent != "unknown" and nn_intent != "unknown":
+        # Both confident, but disagree — trust the more confident one;
+        # ties favor TF-IDF since it's the explainable, auditable model.
+        if tfidf_confidence >= nn_confidence:
+            return tfidf_intent, tfidf_confidence, "tfidf", False
+        return nn_intent, nn_confidence, "nn", False
+    if tfidf_intent != "unknown":
+        return tfidf_intent, tfidf_confidence, "tfidf", False
+    if nn_intent != "unknown":
+        return nn_intent, nn_confidence, "nn", False
+    return "unknown", max(tfidf_confidence, nn_confidence), "unknown", False
+
+
 def classify(text: str, *, log: bool = True) -> HybridResult:
     votes = {name: fn(text) for name, fn in CLASSIFIERS}
     tfidf_intent, tfidf_confidence = votes["tfidf"]
     nn_intent, nn_confidence = votes["nn"]
 
-    agreed = tfidf_intent == nn_intent and tfidf_intent != "unknown"
-    if agreed:
-        intent, confidence, source = tfidf_intent, max(tfidf_confidence, nn_confidence), "ensemble"
-    elif tfidf_intent != "unknown" and nn_intent != "unknown":
-        # Both confident, but disagree — trust the more confident one;
-        # ties favor TF-IDF since it's the explainable, auditable model.
-        if tfidf_confidence >= nn_confidence:
-            intent, confidence, source = tfidf_intent, tfidf_confidence, "tfidf"
-        else:
-            intent, confidence, source = nn_intent, nn_confidence, "nn"
-    elif tfidf_intent != "unknown":
-        intent, confidence, source = tfidf_intent, tfidf_confidence, "tfidf"
-    elif nn_intent != "unknown":
-        intent, confidence, source = nn_intent, nn_confidence, "nn"
-    else:
-        intent, confidence, source = "unknown", max(tfidf_confidence, nn_confidence), "unknown"
+    intent, confidence, source, agreed = vote(tfidf_intent, tfidf_confidence, nn_intent, nn_confidence)
 
     if log:
         try:
@@ -146,22 +154,7 @@ def classify(text: str, *, log: bool = True) -> HybridResult:
     )
 
 
-def retrain_all() -> dict[str, int]:
-    """Retrains every sub-model on the current baseline + Training-tab
-    phrases, then persists the result to model_io's current.json so a
-    future process restart picks up this retrain instead of reverting to
-    the static training_data.py baseline. Called after every add/delete
-    in the Training tab. See bot/support_bot/eval.py's retrain_all() for
-    the held-out-accuracy-gated version used by the Phase 2+ retrain
-    flow — this plain version has no eval/regression check, matching
-    today's existing add/delete-a-phrase behavior exactly."""
-    n_tfidf = tfidf_model.retrain()
-    n_nn = neural_model.retrain()
-    _save_current_state()
-    return {"tfidf": n_tfidf, "nn": n_nn}
-
-
-def _save_current_state() -> None:
+def _gather_examples() -> list[tuple[str, str]]:
     from bot.support_bot.training_data import EXAMPLES
 
     examples = list(EXAMPLES)
@@ -169,6 +162,69 @@ def _save_current_state() -> None:
         examples += [(row["phrase"], row["intent"]) for row in db.list_support_bot_phrases()]
     except Exception:
         pass
+    return examples
+
+
+def retrain_all(accept_if_regression_under: Optional[float] = None) -> dict[str, Any]:
+    """Retrains every sub-model on the current baseline + Training-tab
+    phrases, then persists the result to model_io's current.json so a
+    future process restart picks up this retrain instead of reverting to
+    the static training_data.py baseline. Called after every add/delete
+    in the Training tab.
+
+    `accept_if_regression_under=None` (the default): no eval/regression
+    check — always retrains on 100% of the data and saves, matching the
+    original add/delete-a-phrase behavior exactly (kept as the default so
+    every existing call site is unaffected by this parameter's addition).
+
+    `accept_if_regression_under=<tolerance>`: evaluates a candidate model
+    (trained on a held-out train/holdout split, see bot/support_bot/eval.py)
+    against the holdout set BEFORE touching the live singletons. If a
+    previous model.json exists with its own recorded holdout_accuracy and
+    the candidate's accuracy is more than `tolerance` below it, the retrain
+    is REJECTED — the live singletons and current.json are left completely
+    untouched (reversible by construction: nothing was changed to begin
+    with). Otherwise, retrains the live singletons on the FULL example
+    set (train+holdout combined — holding data back forever after the
+    eval gate has already used it would waste it) and saves, this time
+    with the new eval result attached. Always returns the eval result and
+    an `accepted` flag so a caller (the dashboard's "Retrain & Evaluate"
+    action) can show before/after numbers either way."""
+    examples = _gather_examples()
+
+    if accept_if_regression_under is None:
+        n_tfidf = tfidf_model.retrain()
+        n_nn = neural_model.retrain()
+        _save_current_state(examples)
+        return {"accepted": True, "tfidf": n_tfidf, "nn": n_nn, "eval": None}
+
+    from bot.support_bot import eval as eval_mod
+
+    previous = model_io.load_model(path=model_io.CURRENT_PATH)
+    previous_accuracy = (previous or {}).get("eval", {}).get("holdout_accuracy")
+
+    train, holdout = eval_mod.stratified_split(examples)
+    result = eval_mod.evaluate(train, holdout)
+    new_accuracy = result["holdout_accuracy"]
+
+    if (
+        previous_accuracy is not None
+        and new_accuracy is not None
+        and new_accuracy < previous_accuracy - accept_if_regression_under
+    ):
+        return {
+            "accepted": False,
+            "reason": f"holdout accuracy {new_accuracy:.3f} regressed more than {accept_if_regression_under:.3f} below the active model's {previous_accuracy:.3f}",
+            "eval": result,
+        }
+
+    n_tfidf = tfidf_model.retrain()
+    n_nn = neural_model.retrain()
+    _save_current_state(examples, eval_result=result)
+    return {"accepted": True, "tfidf": n_tfidf, "nn": n_nn, "eval": result}
+
+
+def _save_current_state(examples: list[tuple[str, str]], *, eval_result: Optional[dict[str, Any]] = None) -> None:
     intents = sorted({intent for _, intent in examples})
     # Explicit path=model_io.CURRENT_PATH for the same reason noted in
     # _load_persisted_state_if_present() above — never rely on
@@ -178,6 +234,7 @@ def _save_current_state() -> None:
         neural_model.nn_model.export_state(),
         intents,
         training_hash=model_io.compute_training_hash(examples),
+        eval_result=eval_result,
         path=model_io.CURRENT_PATH,
     )
 

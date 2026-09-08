@@ -112,6 +112,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.effort",  # pure, stateless mapping functions, zero bot-internal deps — must precede hermes_config/the two transports, which import it
     "bot.device_tiers",  # pure, stateless rank-comparison functions, zero bot-internal deps
     "bot.support_bot.model_io",  # pure save/load functions, no module-level mutable state
+    "bot.support_bot.eval",  # pure split/evaluate functions, no module-level mutable state
     "bot.validators",
     "bot.network_info",
     "bot.platform_guides",

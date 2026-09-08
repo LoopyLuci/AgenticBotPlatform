@@ -2389,14 +2389,28 @@ def build_app() -> FastAPI:
 
     @app.post("/api/support-bot/training", dependencies=[Depends(_require_token_or_api_key)])
     async def api_support_bot_training_add(payload: dict = Body(...)):
-        phrase = (payload.get("phrase") or "").strip()
-        intent = (payload.get("intent") or "").strip()
-        if not phrase or not intent:
-            raise HTTPException(status_code=400, detail="payload must be {phrase: str, intent: str}")
-        phrase_id = db.add_support_bot_phrase(phrase, intent)
+        # Accepts either a single {phrase, intent} (unchanged, existing
+        # behavior) or a bulk {phrases: [{phrase, intent}, ...]} import —
+        # Phase 3 of the Support Bot NLU upgrade plan. Either way,
+        # retraining happens once at the end, not once per phrase.
+        bulk = payload.get("phrases")
+        items = bulk if isinstance(bulk, list) else [payload]
+        # Validate every item BEFORE inserting any of them — a bulk
+        # import must never partially apply just because a later item in
+        # the batch turned out malformed.
+        cleaned: list[tuple[str, str]] = []
+        for item in items:
+            phrase = (item.get("phrase") or "").strip()
+            intent = (item.get("intent") or "").strip()
+            if not phrase or not intent:
+                raise HTTPException(status_code=400, detail="every item must be {phrase: str, intent: str}")
+            cleaned.append((phrase, intent))
+        added_ids = [db.add_support_bot_phrase(phrase, intent) for phrase, intent in cleaned]
         counts = support_bot_hybrid.retrain_all()
-        db.log_audit(actor="dashboard", action="support_bot_phrase_add", detail=f"{phrase!r} -> {intent}")
-        return {"ok": True, "id": phrase_id, "trained_on": counts}
+        db.log_audit(actor="dashboard", action="support_bot_phrase_add", detail=f"{len(added_ids)} phrase(s)")
+        if bulk is not None:
+            return {"ok": True, "ids": added_ids, "trained_on": counts}
+        return {"ok": True, "id": added_ids[0], "trained_on": counts}
 
     @app.delete("/api/support-bot/training/{phrase_id}", dependencies=[Depends(_require_token_or_api_key)])
     async def api_support_bot_training_delete(phrase_id: int):
@@ -2405,12 +2419,36 @@ def build_app() -> FastAPI:
         db.log_audit(actor="dashboard", action="support_bot_phrase_delete", detail=f"id {phrase_id}")
         return {"ok": True, "trained_on": counts}
 
+    # Explicit retrain-and-evaluate action (Phase 2/3 of the Support Bot
+    # NLU upgrade plan) — distinct from the implicit retrain that already
+    # happens on every add/delete above (which never gates on accuracy,
+    # matching that existing behavior exactly). This one always runs the
+    # held-out-accuracy regression gate, defaulting to a 2-point-accuracy
+    # tolerance an operator can override.
+    @app.post("/api/support-bot/retrain", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_support_bot_retrain(payload: dict = Body(default={})):
+        tolerance = payload.get("accept_if_regression_under", 0.02)
+        result = support_bot_hybrid.retrain_all(accept_if_regression_under=tolerance)
+        db.log_audit(
+            actor="dashboard", action="support_bot_retrain",
+            detail=f"accepted={result['accepted']}" + (f" reason={result.get('reason')}" if not result["accepted"] else ""),
+        )
+        return result
+
     # Self-monitoring: the hybrid classifier's own logged behavior over
     # real traffic — agreement rate between its two sub-models, unknown
-    # rate, confidence trends. See bot/support_bot/hybrid.py's health().
+    # rate, confidence trends — plus the currently-active model's own
+    # recorded held-out eval (accuracy/per-intent P&R), if any retrain has
+    # ever run through the eval-gated path. See bot/support_bot/hybrid.py's
+    # health() and bot/support_bot/model_io.py's file schema.
     @app.get("/api/support-bot/health", dependencies=[Depends(_require_token_or_api_key)])
     async def api_support_bot_health():
-        return support_bot_hybrid.health()
+        from bot.support_bot import model_io
+
+        health = support_bot_hybrid.health()
+        current = model_io.load_model(path=model_io.CURRENT_PATH)
+        health["eval"] = (current or {}).get("eval") or {}
+        return health
 
     @app.post("/api/mcp/{name}/enable", dependencies=[Depends(_require_token)])
     async def api_mcp_enable(name: str):
