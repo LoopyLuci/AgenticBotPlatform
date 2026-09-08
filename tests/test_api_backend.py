@@ -118,6 +118,20 @@ def test_safe_tool_call_round_trips(temp_db, monkeypatch, tmp_path):
     )
 
 
+def test_cache_token_usage_reaches_backend_result_raw(temp_db, monkeypatch, tmp_path):
+    """Phase A of the Claude-parity plan: prompt-caching telemetry must
+    survive all the way from the SDK response through NormalizedResponse
+    into BackendResult.raw, which is what bot/router.py logs it from."""
+    response = _response([_text_block("ok")])
+    response.usage = SimpleNamespace(input_tokens=5, output_tokens=3, cache_creation_input_tokens=1370, cache_read_input_tokens=0)
+    _install_fake_client(monkeypatch, [response])
+
+    result = _run(ApiBackend().ask("hi", context={"cwd": str(tmp_path / "ws")}))
+
+    assert result.raw["cache_creation_tokens"] == 1370
+    assert result.raw["cache_read_tokens"] == 0
+
+
 def test_missing_api_key_raises_backend_error(temp_db, monkeypatch, tmp_path):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     with pytest.raises(BackendError):

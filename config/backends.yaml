@@ -118,6 +118,19 @@ native_agent:
     enabled: false
     provider: null
     model: null
+  # Anthropic prompt caching (AnthropicTransport only — no equivalent is
+  # standardized across the OpenAI-compatible/Responses API surface) —
+  # a cache_control breakpoint on the (usually large, stable-per-session)
+  # system prompt and tool schema list, cutting cost ~90% and latency
+  # substantially on a cache hit. On by default: it's a pure optimization
+  # with no behavior change, unlike mcp_sampling/server_tools above,
+  # which spend money on a genuinely new capability.
+  prompt_caching:
+    enabled: true
+    # "5m" (Anthropic's own default TTL, cheaper) or "1h" (for a session
+    # that goes quiet longer than 5 minutes between turns but still wants
+    # a warm cache — costs more per cache write, per Anthropic's pricing).
+    ttl: "5m"
 # Applies an edit to bot/*.py to this already-running process instead of
 # needing the full stop/rebuild/relaunch cycle — see bot/hotreload.py's
 # module docstring for exactly what can and can't hot-reload. Checked

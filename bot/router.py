@@ -492,6 +492,15 @@ class Router:
                 result = await backend.ask(effective_prompt, context=context, timeout_s=timeout_s)
                 latency_ms = (time.monotonic() - t0) * 1000
                 db.log_telemetry(component=backend_name, metric="latency_ms", value=latency_ms)
+                if isinstance(result.raw, dict):
+                    # Prompt-caching telemetry (Phase A of the Claude-
+                    # parity plan) — only ever present for Anthropic-
+                    # backed calls; every other backend's raw dict simply
+                    # has no such keys, so this is a no-op for them.
+                    if "cache_creation_tokens" in result.raw:
+                        db.log_telemetry(component=backend_name, metric="cache_creation_tokens", value=result.raw["cache_creation_tokens"])
+                    if "cache_read_tokens" in result.raw:
+                        db.log_telemetry(component=backend_name, metric="cache_read_tokens", value=result.raw["cache_read_tokens"])
                 db.log_connection_event(component=backend_name, event="request_ok")
                 db.mark_job_done(job_id, status="success", result=result.text, tokens=result.tokens)
                 if instance_id is not None and isinstance(result.raw, dict) and result.raw.get("desktop_session_key"):

@@ -19,6 +19,24 @@ from bot.backends.base import BackendError
 
 API_MODE = "anthropic_messages"
 
+DEFAULT_PROMPT_CACHING_ENABLED = True
+DEFAULT_PROMPT_CACHING_TTL = "5m"
+
+
+def _prompt_caching_config() -> dict:
+    from bot.config import config
+
+    return config.current.get("native_agent", {}).get("prompt_caching", {}) or {}
+
+
+def _cache_control(ttl: str) -> dict:
+    # Anthropic's own default TTL (5 minutes) is the bare {"type":
+    # "ephemeral"} shape — "ttl" is only sent at all for the explicit 1h
+    # opt-in, matching the API's own documented usage.
+    if ttl == "1h":
+        return {"type": "ephemeral", "ttl": "1h"}
+    return {"type": "ephemeral"}
+
 
 class AnthropicTransport(ProviderTransport):
     def __init__(self, api_key: Optional[str] = None):
@@ -75,10 +93,33 @@ class AnthropicTransport(ProviderTransport):
         # either a plain string or a list of content blocks) — no
         # conversion needed, unlike the OpenAI-compatible transport.
         create_kwargs = dict(model=model, max_tokens=max_tokens, messages=history)
+        caching_cfg = _prompt_caching_config()
+        caching_enabled = caching_cfg.get("enabled", DEFAULT_PROMPT_CACHING_ENABLED)
+        cache_control = _cache_control(caching_cfg.get("ttl", DEFAULT_PROMPT_CACHING_TTL)) if caching_enabled else None
         if tool_schemas:
-            create_kwargs["tools"] = tool_schemas
+            if cache_control is not None:
+                # Breakpoint on the LAST tool schema only — Anthropic
+                # caches everything up to and including a breakpoint, so
+                # one entry at the end covers the whole (stable-for-the-
+                # session) tools array. Copy rather than mutate: these
+                # dicts are the same shared objects agent_tools.all_tool_schemas()
+                # returns on every call (TOOL_SCHEMAS is a module-level
+                # list) — mutating one in place would leak cache_control
+                # into every other transport/call that reuses it.
+                tools_payload = list(tool_schemas)
+                tools_payload[-1] = {**tools_payload[-1], "cache_control": cache_control}
+                create_kwargs["tools"] = tools_payload
+            else:
+                create_kwargs["tools"] = tool_schemas
         if system_prompt:
-            create_kwargs["system"] = system_prompt
+            # A list-of-blocks system param is required to attach
+            # cache_control at all (a bare string has nowhere to put it);
+            # falls back to the plain string today's callers already send
+            # when caching is off, so nothing changes for them.
+            if cache_control is not None:
+                create_kwargs["system"] = [{"type": "text", "text": system_prompt, "cache_control": cache_control}]
+            else:
+                create_kwargs["system"] = system_prompt
         # Confirmed live against platform.claude.com/docs (matching this
         # deployment's real model family — claude-sonnet-5, claude-opus-5,
         # etc.): output_config.effort is the current, correct control —
@@ -98,8 +139,12 @@ class AnthropicTransport(ProviderTransport):
             raise BackendError(f"anthropic transport error: {exc}") from exc
 
         tokens = None
+        cache_creation_tokens = None
+        cache_read_tokens = None
         if resp.usage:
             tokens = (resp.usage.input_tokens or 0) + (resp.usage.output_tokens or 0)
+            cache_creation_tokens = getattr(resp.usage, "cache_creation_input_tokens", None)
+            cache_read_tokens = getattr(resp.usage, "cache_read_input_tokens", None)
 
         assistant_blocks = _serialize_blocks(resp.content)
         tool_calls = [
@@ -113,6 +158,8 @@ class AnthropicTransport(ProviderTransport):
             tool_calls=tool_calls if resp.stop_reason == "tool_use" else [],
             tokens=tokens,
             assistant_message={"role": "assistant", "content": assistant_blocks},
+            cache_creation_tokens=cache_creation_tokens,
+            cache_read_tokens=cache_read_tokens,
         )
 
 

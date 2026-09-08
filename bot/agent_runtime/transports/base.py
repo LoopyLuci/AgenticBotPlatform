@@ -41,6 +41,13 @@ class NormalizedResponse:
     # assistant turn — appended to `messages` and persisted verbatim by
     # the loop, never constructed by it.
     assistant_message: dict = field(default_factory=dict)
+    # Prompt-caching telemetry (AnthropicTransport only — see its own
+    # send() for how these are populated; every other transport leaves
+    # both None, which NativeAgentBackend.ask() treats as "nothing to
+    # report" rather than "zero," since 0 is itself a meaningful value
+    # for a transport that DOES support caching but had a full cache miss).
+    cache_creation_tokens: Optional[int] = None
+    cache_read_tokens: Optional[int] = None
 
     @property
     def stop(self) -> bool:

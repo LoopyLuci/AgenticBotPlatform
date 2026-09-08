@@ -135,6 +135,13 @@ class NativeAgentBackend(Backend):
         active_model = self.model
 
         total_tokens = 0
+        # Prompt-caching telemetry (AnthropicTransport only — see its
+        # own send()) — None means "this transport doesn't report it,"
+        # 0 means "it does, and this turn had a full cache miss," so
+        # these stay None until at least one response actually reports
+        # a value, rather than starting at 0.
+        cache_creation_tokens: Optional[int] = None
+        cache_read_tokens: Optional[int] = None
         for _ in range(MAX_TOOL_ITERATIONS):
             if steer_queue is not None:
                 steered = []
@@ -186,6 +193,10 @@ class NativeAgentBackend(Backend):
                 )
             if response.tokens:
                 total_tokens += response.tokens
+            if response.cache_creation_tokens is not None:
+                cache_creation_tokens = (cache_creation_tokens or 0) + response.cache_creation_tokens
+            if response.cache_read_tokens is not None:
+                cache_read_tokens = (cache_read_tokens or 0) + response.cache_read_tokens
 
             history.append(response.assistant_message)
             db.append_agent_message(session_key, response.assistant_message["role"], response.assistant_message["content"])
@@ -194,6 +205,10 @@ class NativeAgentBackend(Backend):
                 raw = {"total_tokens": total_tokens}
                 if lazily_created:
                     raw["desktop_session_key"] = session_key
+                if cache_creation_tokens is not None:
+                    raw["cache_creation_tokens"] = cache_creation_tokens
+                if cache_read_tokens is not None:
+                    raw["cache_read_tokens"] = cache_read_tokens
                 return BackendResult(text=response.text, tokens=total_tokens or None, raw=raw)
 
             results = []
