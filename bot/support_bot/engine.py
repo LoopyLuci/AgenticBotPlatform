@@ -14,7 +14,8 @@ from bot import commands as bot_commands
 from bot.config import config
 from bot.support_bot import actions
 from bot.support_bot import hybrid
-from bot.support_bot.training_data import DESTRUCTIVE_INTENTS
+from bot.support_bot.training_data import ADMIN_ONLY_INTENTS, DESTRUCTIVE_INTENTS
+from bot import device_tiers
 
 # Pending confirmations expire quickly — this mirrors a chat confirm
 # prompt, not a durable queue; a stale token just means "ask again."
@@ -51,7 +52,9 @@ class SupportBot:
             return await actions.ASYNC_INTENT_HANDLERS[intent](text, actor)
         return actions.INTENT_HANDLERS[intent](text, actor)
 
-    async def handle(self, text: str, actor: str, client_intent: Optional[str] = None) -> SupportBotReply:
+    async def handle(
+        self, text: str, actor: str, client_intent: Optional[str] = None, device_tier: str = "unrestricted",
+    ) -> SupportBotReply:
         """`client_intent` (Phase 6 of the Support Bot NLU upgrade plan)
         is an OPTIONAL fast-path hint from a caller that already ran its
         own local classification (the Android app's on-device Kotlin
@@ -91,6 +94,17 @@ class SupportBot:
             intent = client_intent
         else:
             intent = hybrid.classify(text).intent
+        required_tier = ADMIN_ONLY_INTENTS.get(intent)
+        if required_tier is not None and not device_tiers.can_mint(device_tier, required_tier):
+            # can_mint()'s "is new_tier <= actor_tier" rank comparison is
+            # exactly the check needed here too: "does the caller's own
+            # tier cover at least the intent's required tier" — reused
+            # rather than adding a second, parallel comparison helper.
+            return SupportBotReply(
+                text=f"That needs at least the {required_tier!r} permission tier — this device is {device_tier!r}.",
+                intent=intent,
+            )
+
         if intent == "unknown":
             return SupportBotReply(
                 text="I'm not sure what you're asking — try \"help\" to see what I can do.",

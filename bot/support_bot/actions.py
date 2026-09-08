@@ -328,6 +328,37 @@ def _db_vacuum(text: str, actor: str) -> str:
     return "Database vacuumed."
 
 
+# Admin control surface plan, Section 4 — same underlying functions the
+# Telegram admin bot's admin_engage_estop/admin_disengage_estop/
+# admin_get_estop_status tools call (bot/agent_runtime/tools.py), gated
+# here by the calling device's own permission_tier instead of an
+# is_admin_instance flag (see training_data.py's ADMIN_ONLY_INTENTS and
+# engine.py's tier check).
+def _estop_status(text: str, actor: str) -> str:
+    from bot.agent_runtime import estop
+
+    state = estop.status()
+    if state["engaged"]:
+        reason = state.get("reason")
+        suffix = f" ({reason})" if reason else ""
+        return f"Emergency stop is ENGAGED{suffix}."
+    return "Emergency stop is not engaged — normal operation."
+
+
+def _estop_engage(text: str, actor: str) -> str:
+    from bot.agent_runtime import estop
+
+    estop.engage(actor=actor)
+    return "Emergency stop engaged — no new work will start until disengaged."
+
+
+def _estop_disengage(text: str, actor: str) -> str:
+    from bot.agent_runtime import estop
+
+    estop.disengage(actor=actor)
+    return "Emergency stop disengaged — normal operation resumed."
+
+
 def _backups_list(text: str, actor: str) -> str:
     env_backups = envfile.list_backups()
     inst_backups = bot_instances.list_backups()
@@ -611,6 +642,9 @@ INTENT_HANDLERS: dict[str, Callable[[str, str], str]] = {
     "claude_setup_check": _claude_setup_check,
     "hermes_setup_check": _hermes_setup_check,
     "help": _help,
+    "estop_status": _estop_status,
+    "estop_engage": _estop_engage,
+    "estop_disengage": _estop_disengage,
 }
 
 ASYNC_INTENT_HANDLERS: dict[str, Callable[[str, str], Any]] = {

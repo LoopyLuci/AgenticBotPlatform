@@ -114,6 +114,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.support_bot.model_io",  # pure save/load functions, no module-level mutable state
     "bot.support_bot.eval",  # pure split/evaluate functions, no module-level mutable state
     "bot.support_bot.synthetic_gen",  # pure async dispatch-building functions, no module-level mutable state
+    "bot.server_chat_admin",  # pure async dispatch functions, no module-level mutable state
     "bot.validators",
     "bot.network_info",
     "bot.platform_guides",

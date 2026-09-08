@@ -534,7 +534,16 @@ CREATE TABLE IF NOT EXISTS server_chat_messages (
     attachment_name   TEXT,
     attachment_mime   TEXT,
     attachment_size   INTEGER,
-    thumbnail_path    TEXT
+    thumbnail_path    TEXT,
+    -- Admin control surface plan, Section 3 — 'message' (default, an
+    -- ordinary chat message) or 'approval_request' (a dangerous-tool
+    -- approval prompt posted by the BotServer admin pipeline, which the
+    -- UI renders with Approve/Deny buttons instead of plain text).
+    -- approval_id is only ever set for the latter, and only ever
+    -- resolves through the SAME bot.agent_runtime.approval state
+    -- machine the Telegram admin bot's dangerous-tool prompts use.
+    kind              TEXT NOT NULL DEFAULT 'message',
+    approval_id       INTEGER
 );
 
 -- A pending APK offer for one paired device — created by the desktop
@@ -977,6 +986,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE agent_settings ADD COLUMN require_plan_approval INTEGER")
     if "is_admin_instance" not in agent_settings_cols:
         conn.execute("ALTER TABLE agent_settings ADD COLUMN is_admin_instance INTEGER")
+
+    server_chat_msg_cols = {row["name"] for row in conn.execute("PRAGMA table_info(server_chat_messages)").fetchall()}
+    if "kind" not in server_chat_msg_cols:
+        conn.execute("ALTER TABLE server_chat_messages ADD COLUMN kind TEXT NOT NULL DEFAULT 'message'")
+    if "approval_id" not in server_chat_msg_cols:
+        conn.execute("ALTER TABLE server_chat_messages ADD COLUMN approval_id INTEGER")
 
     support_bot_class_cols = {row["name"] for row in conn.execute("PRAGMA table_info(support_bot_classifications)").fetchall()}
     if "reviewed" not in support_bot_class_cols:
@@ -3087,11 +3102,19 @@ def redeem_mesh_token(push_id: int, token: str) -> bool:
 
 
 SERVER_CHAT_DESKTOP_DEVICE_ID = 0
+# The synthetic sender identity for the BotServer admin pipeline's own
+# replies in the permanent group room (Admin control surface plan,
+# Section 3) — never a real api_keys.id (those start at 1), never the
+# desktop sentinel (0), so a client can distinguish "a message from
+# BotServer itself" from every real device's own messages.
+SERVER_CHAT_BOT_DEVICE_ID = -1
 
 
 def device_label(device_id: int) -> str:
     if device_id == SERVER_CHAT_DESKTOP_DEVICE_ID:
         return "Desktop"
+    if device_id == SERVER_CHAT_BOT_DEVICE_ID:
+        return "BotServer"
     row = get_conn().execute(
         "SELECT label, revoked_at FROM api_keys WHERE id=?", (device_id,)
     ).fetchone()
@@ -3212,15 +3235,18 @@ def create_server_chat_message(
     attachment_mime: Optional[str] = None,
     attachment_size: Optional[int] = None,
     thumbnail_path: Optional[str] = None,
+    *,
+    kind: str = "message",
+    approval_id: Optional[int] = None,
 ) -> int:
     conn = get_conn()
     with _lock:
         cur = conn.execute(
             "INSERT INTO server_chat_messages "
             "(conversation_id, sender_device_id, ts, text, attachment_path, attachment_name, "
-            "attachment_mime, attachment_size, thumbnail_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "attachment_mime, attachment_size, thumbnail_path, kind, approval_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (conversation_id, sender_device_id, _now(), text, attachment_path, attachment_name,
-             attachment_mime, attachment_size, thumbnail_path),
+             attachment_mime, attachment_size, thumbnail_path, kind, approval_id),
         )
         conn.commit()
         return cur.lastrowid

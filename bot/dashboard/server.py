@@ -2348,7 +2348,7 @@ def build_app() -> FastAPI:
     # the same actions those routes do, just via natural language.
 
     @app.post("/api/support-bot/ask", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_support_bot_ask(payload: dict = Body(...)):
+    async def api_support_bot_ask(payload: dict = Body(...), device_id: Optional[int] = Depends(_caller_device_id)):
         text = (payload.get("text") or "").strip()
         if not text:
             raise HTTPException(status_code=400, detail="payload must be {text: ...}")
@@ -2357,7 +2357,15 @@ def build_app() -> FastAPI:
         # docstring for why this can never bypass real server-side
         # validation/gating.
         client_intent = (payload.get("client_intent") or "").strip() or None
-        reply = await support_bot.handle(text, actor="support-bot", client_intent=client_intent)
+        # Admin control surface plan, Section 4 — the calling device's
+        # own permission_tier gates the new admin-shaped intents
+        # (training_data.ADMIN_ONLY_INTENTS); the desktop dashboard
+        # token itself is the unconditional top authority, same as
+        # every other admin-surface enforcement point in this plan.
+        from bot import server_chat_admin
+
+        device_tier = "unrestricted" if device_id is None else server_chat_admin.resolve_device_tier(device_id)
+        reply = await support_bot.handle(text, actor="support-bot", client_intent=client_intent, device_tier=device_tier)
         return {
             "text": reply.text,
             "intent": reply.intent,
@@ -2963,7 +2971,29 @@ def build_app() -> FastAPI:
         if not db.is_conversation_participant(conversation_id, device_id):
             raise HTTPException(status_code=404, detail="no such conversation")
         msg_id = db.create_server_chat_message(conversation_id, device_id, text)
+        # Admin control surface plan, Section 3 — the permanent group
+        # room doubles as the channel you talk to BotServer in; a no-op
+        # for direct (1:1) conversations and when no admin instance is
+        # configured (see server_chat_admin.py's own guards).
+        from bot import server_chat_admin
+
+        await server_chat_admin.maybe_handle_group_message(conversation_id, device_id, text)
         return {"ok": True, "id": msg_id}
+
+    @app.post("/api/server-chat/approvals/{approval_id}/resolve")
+    async def api_server_chat_approval_resolve(
+        approval_id: int, payload: dict = Body(...), device_id: int = Depends(_require_device_id),
+    ):
+        from bot.agent_runtime import approval as agent_approval
+
+        outcome = (payload.get("outcome") or "").strip()
+        if outcome not in ("once", "session", "always", "deny"):
+            raise HTTPException(status_code=400, detail="outcome must be one of once/session/always/deny")
+        actor = f"device:{device_id}"
+        ok = agent_approval.resolve(approval_id, outcome, actor=actor)
+        if not ok:
+            raise HTTPException(status_code=409, detail="already resolved or no such approval")
+        return {"ok": True}
 
     @app.post("/api/server-chat/send-file")
     async def api_server_chat_send_file(

@@ -291,7 +291,42 @@ EXAMPLES: list[tuple[str, str]] = [
     ("what commands do you support", "help"),
     ("how do i use you", "help"),
     ("list your capabilities", "help"),
+
+    # estop_status — Admin control surface plan, Section 4
+    ("is the emergency stop engaged", "estop_status"),
+    ("check estop status", "estop_status"),
+    ("is everything halted", "estop_status"),
+    ("emergency stop status", "estop_status"),
+
+    # estop_engage
+    ("engage the emergency stop", "estop_engage"),
+    ("halt everything now", "estop_engage"),
+    ("emergency stop the whole system", "estop_engage"),
+    ("stop all new work immediately", "estop_engage"),
+    ("activate the kill switch", "estop_engage"),
+
+    # estop_disengage
+    ("disengage the emergency stop", "estop_disengage"),
+    ("resume normal operation", "estop_disengage"),
+    ("turn off the emergency stop", "estop_disengage"),
+    ("let work start again", "estop_disengage"),
+    ("clear the kill switch", "estop_disengage"),
 ]
+
+# Admin control surface plan, Section 4 — intents that reach the same
+# admin_* capability the Telegram admin bot's tool loop gets
+# (bot/agent_runtime/tools.py's ADMIN_TOOLS_*), gated here by the
+# CALLING DEVICE's own permission_tier (bot/device_tiers.py) rather than
+# an is_admin_instance flag, since Support Bot has no bot_instances
+# concept of its own to be "the admin instance." Maps intent -> the
+# minimum tier required; an intent absent from this dict has no
+# tier requirement (every pre-existing intent keeps working exactly as
+# it always has for any authenticated caller, unchanged by this plan).
+ADMIN_ONLY_INTENTS: dict[str, str] = {
+    "estop_status": "standard",
+    "estop_engage": "elevated",
+    "estop_disengage": "elevated",
+}
 
 # Intents whose action changes state in a way that's disruptive or hard to
 # undo — these route through the confirm flow (bot/support_bot/engine.py)
@@ -307,4 +342,6 @@ DESTRUCTIVE_INTENTS = {
     "db_vacuum",
     "backup_restore",
     "device_revoke",
+    "estop_engage",
+    "estop_disengage",
 }

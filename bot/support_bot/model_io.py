@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Any, Optional
 
@@ -22,7 +23,18 @@ from bot.envfile import PROJECT_ROOT
 
 FORMAT_VERSION = 1
 MODELS_DIR = PROJECT_ROOT / "data" / "support_bot_models"
-CURRENT_PATH = MODELS_DIR / "current.json"
+# hybrid.py loads this path automatically at MODULE IMPORT TIME (not
+# per-call), so unlike every other real-file dependency in this
+# codebase, per-test monkeypatching of model_io.CURRENT_PATH can't help
+# a test that runs after the module has already been imported once in
+# the same process — the persisted-state load already happened. The env
+# var override lets tests/conftest.py redirect this to a throwaway path
+# BEFORE bot.support_bot.hybrid is ever imported anywhere in the test
+# session, so a real production data/support_bot_models/current.json
+# (e.g. from live desktop testing sharing this same checkout) can never
+# silently override what a test expects to be trained fresh from the
+# current bot/support_bot/training_data.py.
+CURRENT_PATH = Path(os.environ.get("BOTSERVER_SUPPORT_BOT_MODEL_PATH") or (MODELS_DIR / "current.json"))
 
 
 def compute_training_hash(examples: list[tuple[str, str]]) -> str:
