@@ -98,6 +98,12 @@ native_agent:
   # self-limited only within its own batch, could otherwise accumulate
   # unbounded live tasks over time. See bot/agent_runtime/subagent_registry.py.
   max_global_background_children: 20
+  # Character-count heuristic (not a real per-provider tokenizer — see
+  # bot/agent_runtime/compression.py's own docstring for why) — once a
+  # session's stored history exceeds this many characters, older turns
+  # are summarized into one digest before the real turn continues.
+  # 0 (or any value <= 0) disables compression entirely.
+  compression_threshold_chars: 60000
 # Applies an edit to bot/*.py to this already-running process instead of
 # needing the full stop/rebuild/relaunch cycle — see bot/hotreload.py's
 # module docstring for exactly what can and can't hot-reload. Checked

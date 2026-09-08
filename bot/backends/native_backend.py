@@ -107,6 +107,15 @@ class NativeAgentBackend(Backend):
             if note:
                 prompt_text = f"{prompt}\n\n{note}"
 
+        # Context compression (Phase F of the native-parity plan) — fires
+        # at most once per ask() call, before this turn's own new prompt
+        # is appended, so a fresh compression digest is never itself
+        # swept back into the next compression's summarized range. See
+        # bot/agent_runtime/compression.py's own docstring.
+        from bot.agent_runtime import compression
+
+        await compression.maybe_compress(session_key, self.transport, model=self.model)
+
         history = db.list_agent_messages(session_key)
         user_entry = self.transport.user_message(prompt_text, images=image_blocks or None)
         history.append(user_entry)

@@ -1187,6 +1187,35 @@ def clear_agent_messages(session_key: str) -> None:
         conn.commit()
 
 
+def compress_agent_messages(session_key: str, *, keep_last_n: int, digest_role: str, digest_content: Any) -> None:
+    """Replaces every message OLDER than the last [keep_last_n] with one
+    synthetic digest entry — see bot/agent_runtime/compression.py. Rows
+    are re-inserted (not updated in place) so the new AUTOINCREMENT ids
+    stay in the correct chronological order: SQLite's id counter only
+    ever increases, so simply deleting the old rows and inserting the
+    digest afterward would give the digest a HIGHER id than the kept
+    "recent" rows it's meant to precede — re-inserting the kept rows
+    after it is what keeps ORDER BY id ASC correct post-compression."""
+    conn = get_conn()
+    with _lock:
+        rows = conn.execute(
+            "SELECT role, content FROM agent_messages WHERE session_key=? ORDER BY id ASC", (session_key,)
+        ).fetchall()
+        to_keep = rows[-keep_last_n:] if keep_last_n > 0 else []
+        conn.execute("DELETE FROM agent_messages WHERE session_key=?", (session_key,))
+        now = _now()
+        conn.execute(
+            "INSERT INTO agent_messages (session_key, role, content, created_at) VALUES (?, ?, ?, ?)",
+            (session_key, digest_role, json.dumps(digest_content), now),
+        )
+        for row in to_keep:
+            conn.execute(
+                "INSERT INTO agent_messages (session_key, role, content, created_at) VALUES (?, ?, ?, ?)",
+                (session_key, row["role"], row["content"], now),
+            )
+        conn.commit()
+
+
 # ------------------------------------------------------ tool approvals ----
 
 def create_pending_approval(instance_id: int, chat_id: Any, session_key: str, tool_name: str, tool_input: dict) -> int:
