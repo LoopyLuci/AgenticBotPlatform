@@ -86,8 +86,29 @@ class NativeAgentBackend(Backend):
         # silently doing nothing when there's no equivalent.
         effort = context.get("effort")
 
+        # Image-understanding (Phase D of the native-parity plan) — see
+        # bot/agent_runtime/vision.py's own docstring. Checked against
+        # THIS call's primary transport (a mid-turn failover swap, if it
+        # ever happens, only affects later iterations' text — the initial
+        # image attach decision is made once, here). A transport with no
+        # vision support gets every image dropped with one honest note
+        # appended to the prompt, never a silent vanish.
+        from bot.agent_runtime import vision
+
+        raw_images = context.get("images")
+        prompt_text = prompt
+        image_blocks: list = []
+        if raw_images:
+            if self.transport.supports_vision:
+                image_blocks, dropped = vision.prepare(raw_images)
+            else:
+                image_blocks, dropped = [], len(raw_images)
+            note = vision.dropped_note(dropped)
+            if note:
+                prompt_text = f"{prompt}\n\n{note}"
+
         history = db.list_agent_messages(session_key)
-        user_entry = self.transport.user_message(prompt)
+        user_entry = self.transport.user_message(prompt_text, images=image_blocks or None)
         history.append(user_entry)
         db.append_agent_message(session_key, user_entry["role"], user_entry["content"])
 

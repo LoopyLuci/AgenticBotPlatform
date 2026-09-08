@@ -86,3 +86,42 @@ def test_wire_messages_tolerates_old_double_wrapped_shape():
 def test_wire_messages_plain_string_content_passthrough():
     history = [{"role": "user", "content": "plain text"}]
     assert _to_wire_messages(history) == [{"role": "user", "content": "plain text"}]
+
+
+# ------------------------------------------------------------ vision -----
+
+def test_anthropic_user_message_with_images():
+    t = AnthropicTransport()
+    entry = t.user_message("what is this", images=[{"mime_type": "image/png", "data_b64": "abc123"}])
+    assert entry["role"] == "user"
+    assert entry["content"] == [
+        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "abc123"}},
+        {"type": "text", "text": "what is this"},
+    ]
+
+
+def test_anthropic_user_message_without_images_is_unchanged():
+    t = AnthropicTransport()
+    assert t.user_message("hi", images=None) == {"role": "user", "content": "hi"}
+    assert t.user_message("hi", images=[]) == {"role": "user", "content": "hi"}
+
+
+def test_openai_user_message_with_images():
+    t = OpenAICompatibleTransport(base_url="http://x")
+    entry = t.user_message("what is this", images=[{"mime_type": "image/jpeg", "data_b64": "abc123"}])
+    assert entry["content"] == [
+        {"type": "text", "text": "what is this"},
+        {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,abc123"}},
+    ]
+
+
+def test_wire_messages_passes_multimodal_content_through_verbatim():
+    t = OpenAICompatibleTransport(base_url="http://x")
+    entry = t.user_message("what is this", images=[{"mime_type": "image/jpeg", "data_b64": "abc123"}])
+    wire = _to_wire_messages([entry])
+    assert wire == [{"role": "user", "content": entry["content"]}]
+
+
+def test_transports_declare_vision_support():
+    assert AnthropicTransport().supports_vision is True
+    assert OpenAICompatibleTransport(base_url="http://x").supports_vision is True

@@ -66,6 +66,11 @@ def _to_wire_messages(history: list[dict]) -> list[dict]:
         elif role == "tool":
             payload = content if isinstance(content, dict) else {}
             wire.append({"role": "tool", "tool_call_id": payload.get("tool_call_id"), "content": payload.get("content")})
+        elif isinstance(content, list):
+            # A multimodal user turn (see user_message(images=...)) —
+            # already wire-ready chat-completions content blocks, passed
+            # through verbatim.
+            wire.append({"role": role, "content": content})
         else:
             wire.append({"role": role, "content": content if isinstance(content, str) else (content or {}).get("content", "")})
     return wire
@@ -81,8 +86,15 @@ class OpenAICompatibleTransport(ProviderTransport):
         # it did before quirk handling existed.
         self.catalog_id = catalog_id
 
-    def user_message(self, text: str) -> dict:
-        return {"role": "user", "content": text}
+    supports_vision = True
+
+    def user_message(self, text: str, *, images: Optional[list[dict[str, str]]] = None) -> dict:
+        if not images:
+            return {"role": "user", "content": text}
+        blocks: list[dict] = [{"type": "text", "text": text}]
+        for img in images:
+            blocks.append({"type": "image_url", "image_url": {"url": f"data:{img['mime_type']};base64,{img['data_b64']}"}})
+        return {"role": "user", "content": blocks}
 
     def tool_result_messages(self, results: list[tuple[ToolCall, str]]) -> list[dict]:
         return [{"role": "tool", "content": {"tool_call_id": tc.id, "content": output}} for tc, output in results]

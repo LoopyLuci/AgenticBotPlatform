@@ -142,6 +142,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.agent_runtime.estop",  # depends only on bot.backends.base (EstopEngagedError subclasses BackendError) and db — safe leaf
     "bot.agent_runtime.transports.base",
     "bot.agent_runtime.provider_quirks",  # pure data/functions, no bot-internal deps — must precede the transport that imports it
+    "bot.agent_runtime.vision",  # pure data/functions, no bot-internal deps — safe leaf, only imported lazily inside native_backend.py::ask()
     "bot.agent_runtime.transports.anthropic",
     "bot.agent_runtime.transports.openai_compatible",
     "bot.agent_runtime.transports.responses_api",

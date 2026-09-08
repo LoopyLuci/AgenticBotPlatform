@@ -62,8 +62,15 @@ class ResponsesApiTransport(ProviderTransport):
         # — see bot/agent_runtime/provider_quirks.py.
         self.catalog_id = catalog_id
 
-    def user_message(self, text: str) -> dict:
-        return {"role": "user", "content": text}
+    supports_vision = True
+
+    def user_message(self, text: str, *, images: Optional[list[dict[str, str]]] = None) -> dict:
+        if not images:
+            return {"role": "user", "content": text}
+        blocks: list[dict] = [{"type": "input_text", "text": text}]
+        for img in images:
+            blocks.append({"type": "input_image", "image_url": f"data:{img['mime_type']};base64,{img['data_b64']}"})
+        return {"role": "user", "content": blocks}
 
     def tool_result_messages(self, results: list[tuple[ToolCall, str]]) -> list[dict]:
         return [{"role": "tool", "content": {"call_id": tc.id, "output": output}} for tc, output in results]
@@ -163,6 +170,10 @@ def _to_input_items(history: list[dict]) -> list[dict]:
         elif role == "tool":
             payload = content if isinstance(content, dict) else {}
             items.append({"type": "function_call_output", "call_id": payload.get("call_id"), "output": payload.get("output")})
+        elif isinstance(content, list):
+            # A multimodal user turn (see user_message(images=...)) —
+            # already wire-ready input blocks, passed through verbatim.
+            items.append({"type": "message", "role": role or "user", "content": content})
         else:
             text = content if isinstance(content, str) else (content or {}).get("content", "")
             items.append({"type": "message", "role": role or "user", "content": [{"type": "input_text", "text": text}]})

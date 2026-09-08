@@ -207,7 +207,9 @@ async def _set_reaction(context: ContextTypes.DEFAULT_TYPE, msg, emoji: Optional
         pass  # reactions are cosmetic — a bot without the permission, or an old Bot API, shouldn't break /ask
 
 
-async def _handle_ask(update: Update, context: ContextTypes.DEFAULT_TYPE, raw: str):
+async def _handle_ask(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, raw: str, images: Optional[list[dict]] = None,
+):
     await update.message.chat.send_action("typing")
     msg = update.message
     await _set_reaction(context, msg, "👀")
@@ -226,7 +228,16 @@ async def _handle_ask(update: Update, context: ContextTypes.DEFAULT_TYPE, raw: s
 
     ctx = _ctx_from(update, context)
     ctx.progress_notify = progress
+    # Popped rather than left in ctx.session (== context.user_data, which
+    # persists across turns) — an image should only ever attach to the
+    # one turn that actually sent it, never bleed into a later unrelated
+    # /ask in the same chat. See bot/agent_runtime/vision.py and
+    # bot/router.py's VISION_CAPABLE_BACKENDS for what happens to this
+    # downstream.
+    if images:
+        ctx.session["images"] = images
     reply = await commands.cmd_ask(ctx, raw)
+    ctx.session.pop("images", None)
 
     if status_msg is not None:
         try:
@@ -709,3 +720,38 @@ async def on_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # the attachment-only case that leaves that path a no-op.
         asyncio.create_task(push.notify_new_message(context.bot_data.get("instance_name", "Bot"), f"📎 {orig_name}"))
     await _reply_chunked(update, f"Saved: {orig_name}. Reference it in your next /ask.", context)
+
+
+@require_auth
+async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """A photo (Telegram's compressed image type, sent by tapping the
+    photo/camera icon — distinct from sending an image as an uncompressed
+    file, which arrives as a Document and is handled by on_document
+    above). Unlike a plain document, a photo runs straight through the
+    agent loop like any other /ask — "here's a picture, what is it" is
+    the whole point of sending one, not a file to reference later.
+    Real visual understanding depends on the resolved backend/model
+    actually supporting it (see bot/agent_runtime/vision.py,
+    bot/router.py's VISION_CAPABLE_BACKENDS) — this handler always sends
+    the image along; what happens if the backend can't use it is handled
+    entirely downstream, not here."""
+    photo = update.message.photo[-1]  # Telegram sends multiple sizes; the last is the largest
+    file = await context.bot.get_file(photo.file_id)
+    data = bytes(await file.download_as_bytearray())
+    mime_type = "image/jpeg"  # Telegram always re-encodes photos as JPEG
+    rel_path, orig_name = attachments.safe_store("photo.jpg", data)
+    db.log_audit(actor=str(update.effective_user.id), action="file_upload", detail=rel_path)
+    caption = (update.message.caption or "").strip()
+    db.log_message(
+        chat_id=update.effective_chat.id, direction="in", source="telegram",
+        text=caption, platform="telegram", user_id=update.effective_user.id,
+        username=update.effective_user.username or "", instance_id=context.bot_data.get("instance_id"),
+        attachment_path=rel_path, attachment_name=orig_name, attachment_mime=mime_type,
+    )
+    if not caption:
+        # Mirrors on_document's own no-caption push notification above —
+        # require_auth's wrapper only pushes when msg.text/msg.caption is
+        # non-empty.
+        asyncio.create_task(push.notify_new_message(context.bot_data.get("instance_name", "Bot"), "🖼️ (photo)"))
+    prompt = caption or "Describe what you see in this image."
+    await _handle_ask(update, context, prompt, images=[{"data": data, "mime_type": mime_type}])

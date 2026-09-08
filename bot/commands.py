@@ -692,6 +692,12 @@ def _ask_context(ctx: CmdContext) -> Optional[dict]:
         out["approval_notify"] = ctx.notify_approval
     if ctx.progress_notify is not None:
         out["progress_notify"] = ctx.progress_notify
+    # Raw {"data": bytes, "mime_type": str} entries for this one turn
+    # (see bot/handlers.py's _handle_ask, bot/agent_runtime/vision.py) —
+    # validated/base64-encoded downstream, never here.
+    images = ctx.session.get("images")
+    if images:
+        out["images"] = images
     return out or None
 
 

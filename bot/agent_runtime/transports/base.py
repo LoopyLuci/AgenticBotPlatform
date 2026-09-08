@@ -53,6 +53,14 @@ class ProviderTransport:
     (openai_compatible.py, `chat_completions` — OpenAI, OpenRouter,
     Ollama, LM Studio, vLLM, llama.cpp's server, etc.)."""
 
+    # True on transports that actually serialize images into the wire
+    # request (AnthropicTransport, OpenAICompatibleTransport,
+    # ResponsesApiTransport as of Phase D of the native-parity plan) —
+    # NativeAgentBackend.ask() checks this before ever calling
+    # user_message(images=...), so a transport with no vision support
+    # gets exactly today's plain-text call, no images param involved.
+    supports_vision: bool = False
+
     async def send(
         self,
         *,
@@ -81,9 +89,14 @@ class ProviderTransport:
         response)."""
         raise NotImplementedError
 
-    def user_message(self, text: str) -> dict:
-        """A plain-text user turn (the initial prompt, or a mid-turn
-        /steer injection) in this transport's stored-history shape."""
+    def user_message(self, text: str, *, images: Optional[list[dict[str, str]]] = None) -> dict:
+        """A user turn (the initial prompt, or a mid-turn /steer
+        injection) in this transport's stored-history shape. `images`,
+        when given, is bot.agent_runtime.vision.prepare()'s own output —
+        a list of {"mime_type", "data_b64"} entries already validated
+        and base64-encoded; a transport with no vision support simply
+        ignores this parameter (ask() only calls it with images when the
+        transport declares support — see NativeAgentBackend.ask())."""
         raise NotImplementedError
 
     def tool_result_messages(self, results: list[tuple[ToolCall, str]]) -> list[dict]:

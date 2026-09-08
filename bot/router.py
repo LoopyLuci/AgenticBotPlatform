@@ -38,6 +38,12 @@ logger = logging.getLogger("bot.router")
 
 VALID_BACKENDS = ("api", "cli", "ui", "hermes_cli", "hermes_gateway", "custom_model", "native_agent")
 
+# The subset of VALID_BACKENDS that actually run NativeAgentBackend's
+# tool loop, whose transports know how to serialize context["images"]
+# (see bot/agent_runtime/vision.py and bot/backends/native_backend.py::ask).
+# cli/ui/hermes_cli/hermes_gateway backends have no equivalent code path.
+VISION_CAPABLE_BACKENDS = frozenset({"api", "custom_model", "native_agent"})
+
 # A bot instance whose backend is crash-looping (every single request
 # fails — bad credentials, a dead binary, a revoked key) used to just keep
 # failing forever with nothing backing off, the same failure shape as the
@@ -426,6 +432,23 @@ class Router:
             from bot import agent_settings
 
             context.setdefault("effort", agent_settings.get(instance_id)["manager_effort"])
+
+        # Image-understanding (Phase D of the native-parity plan) is only
+        # wired into the native-agent-loop backends (api/custom_model/
+        # native_agent — see bot/backends/native_backend.py::ask() and
+        # bot/agent_runtime/vision.py). cli/ui/hermes_cli/hermes_gateway
+        # backends never read context["images"] at all, so without this
+        # check an image sent to one of them would silently vanish with no
+        # trace at all — this makes that failure honest instead, exactly
+        # the same "note appended, never a hard error" treatment
+        # native_backend.py gives an image its own transport can't handle.
+        if context.get("images") and not any(name in VISION_CAPABLE_BACKENDS for name in chain):
+            from bot.agent_runtime import vision
+
+            note = vision.dropped_note(len(context["images"]))
+            if note:
+                effective_prompt = f"{effective_prompt}\n\n{note}"
+            context.pop("images", None)
 
         job_id = db.create_job(
             action_type=action_type,

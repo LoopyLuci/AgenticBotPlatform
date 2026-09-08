@@ -135,6 +135,32 @@ def test_no_output_raises_backend_error(monkeypatch):
         _run(transport.send(model="o-test", history=[transport.user_message("hi")], tool_schemas=[], max_tokens=100, timeout_s=10))
 
 
+def test_user_message_with_images():
+    t = ResponsesApiTransport(base_url="https://example.com/v1")
+    entry = t.user_message("what is this", images=[{"mime_type": "image/png", "data_b64": "abc123"}])
+    assert entry["content"] == [
+        {"type": "input_text", "text": "what is this"},
+        {"type": "input_image", "image_url": "data:image/png;base64,abc123"},
+    ]
+
+
+def test_transport_declares_vision_support():
+    assert ResponsesApiTransport(base_url="https://example.com/v1").supports_vision is True
+
+
+def test_multimodal_input_passes_through_to_the_request(monkeypatch):
+    fake = _install(monkeypatch, {
+        "output": [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "a cat"}]}],
+    })
+    transport = ResponsesApiTransport(base_url="https://example.com/v1")
+    entry = transport.user_message("what is this", images=[{"mime_type": "image/png", "data_b64": "abc123"}])
+
+    _run(transport.send(model="o-test", history=[entry], tool_schemas=[], max_tokens=100, timeout_s=10))
+
+    sent_input = fake.requests[0]["json"]["input"]
+    assert sent_input[0]["content"] == entry["content"]
+
+
 def test_http_error_raises_backend_error(monkeypatch):
     _install(monkeypatch, {"error": "bad request"}, status_code=400)
     transport = ResponsesApiTransport(base_url="https://example.com/v1")

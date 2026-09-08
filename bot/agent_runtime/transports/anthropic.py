@@ -35,8 +35,17 @@ class AnthropicTransport(ProviderTransport):
             self._client = AsyncAnthropic(api_key=api_key)
         return self._client
 
-    def user_message(self, text: str) -> dict:
-        return {"role": "user", "content": text}
+    supports_vision = True
+
+    def user_message(self, text: str, *, images: Optional[list[dict[str, str]]] = None) -> dict:
+        if not images:
+            return {"role": "user", "content": text}
+        blocks: list[dict] = [
+            {"type": "image", "source": {"type": "base64", "media_type": img["mime_type"], "data": img["data_b64"]}}
+            for img in images
+        ]
+        blocks.append({"type": "text", "text": text})
+        return {"role": "user", "content": blocks}
 
     def tool_result_messages(self, results: list[tuple[ToolCall, str]]) -> list[dict]:
         return [
