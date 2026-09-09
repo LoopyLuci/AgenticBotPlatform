@@ -109,11 +109,15 @@
      (transform, on .side itself for the mobile drawer) keeps the toggle
      flawless regardless of how much is on screen in main. */
   .shell { display:grid; grid-template-columns:236px 1fr; min-height:100vh; }
-  html.bs-sidebar-collapsed .shell { grid-template-columns:68px 1fr; }
+  /* Collapsed rail width scales with the viewport (clamp, not a fixed px)
+     so a large desktop/TV-sized window gets a roomier, more legible icon
+     rail instead of the same cramped strip a phone would need — "scale
+     with the display," not "same tiny size everywhere." */
+  html.bs-sidebar-collapsed .shell { grid-template-columns:clamp(68px,6.5vw,100px) 1fr; }
 
   .side { position:sticky; top:0; height:100vh; overflow-y:auto; overflow-x:hidden; background:var(--surface); padding:16px 12px; display:flex; flex-direction:column; gap:18px; box-shadow:1px 0 0 var(--line); transition:transform .22s ease; }
   .brand { display:flex; align-items:center; gap:10px; padding:6px 8px 16px; }
-  .brand .mark { width:36px; height:36px; border-radius:50%; flex:none; object-fit:cover; display:block; box-shadow:0 2px 8px rgba(51,144,236,.35); }
+  .brand .mark { width:clamp(36px,2.6vw,52px); height:clamp(36px,2.6vw,52px); border-radius:50%; flex:none; object-fit:cover; display:block; box-shadow:0 2px 8px rgba(51,144,236,.35); }
   .brand .name { font-family:var(--font-display); font-weight:700; font-size:16px; letter-spacing:0.01em; white-space:nowrap; overflow:hidden; }
   .brand .sub { font-size:10.5px; color:var(--muted); font-family:var(--font-mono); }
   .side-toggle { margin-left:auto; width:28px; height:28px; border-radius:50%; border:none; background:var(--surface-2); color:var(--ink-soft); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:12px; flex:none; padding:0; }
@@ -130,7 +134,7 @@
   nav.sidenav a.active .nav-txt b { color:var(--accent); }
   nav.sidenav a.active .ic { background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:#fff; }
   nav.sidenav a.hidden-by-search { display:none; }
-  nav.sidenav a .ic { width:30px; height:30px; text-align:center; line-height:30px; border-radius:50%; background:var(--surface-2); font-family:var(--font-mono); color:var(--accent); font-size:13px; flex:none; }
+  nav.sidenav a .ic { width:clamp(30px,2vw,42px); height:clamp(30px,2vw,42px); display:flex; align-items:center; justify-content:center; border-radius:50%; background:var(--surface-2); font-family:var(--font-mono); color:var(--accent); font-size:clamp(13px,1vw,17px); flex:none; }
   nav.sidenav a:hover .ic { background:var(--surface-3); }
   nav.sidenav a .nav-txt { display:flex; flex-direction:column; gap:1px; min-width:0; }
   nav.sidenav a .nav-txt b { font-size:13.3px; font-weight:600; color:inherit; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -141,12 +145,17 @@
 
   /* Collapsed icon-rail state — desktop/tablet only; the mobile-drawer
      override below restores full labels regardless of this class, since
-     a narrow-viewport drawer should never also be icon-only. */
+     a narrow-viewport drawer should never also be icon-only. Icons and
+     the brand mark scale up here rather than staying phone-sized — a
+     collapsed rail on a huge display should look like a deliberate,
+     legible icon dock, not a shrunken mobile strip. */
   html.bs-sidebar-collapsed .brand { flex-direction:column; justify-content:center; gap:10px; padding:6px 0 16px; }
+  html.bs-sidebar-collapsed .brand .mark { width:clamp(40px,3.6vw,60px); height:clamp(40px,3.6vw,60px); }
   html.bs-sidebar-collapsed .brand .name, html.bs-sidebar-collapsed .brand .sub { display:none; }
   html.bs-sidebar-collapsed .side-toggle svg { transform:rotate(180deg); }
   html.bs-sidebar-collapsed .side-search { display:none; }
-  html.bs-sidebar-collapsed nav.sidenav a { justify-content:center; padding:8px 4px; }
+  html.bs-sidebar-collapsed nav.sidenav a { justify-content:center; padding:10px 4px; }
+  html.bs-sidebar-collapsed nav.sidenav a .ic { width:clamp(34px,3vw,50px); height:clamp(34px,3vw,50px); font-size:clamp(15px,1.6vw,24px); }
   html.bs-sidebar-collapsed nav.sidenav a .nav-txt { display:none; }
   html.bs-sidebar-collapsed .side-status .row span:first-child { display:none; }
   html.bs-sidebar-collapsed .side-status .row { justify-content:center; }
@@ -175,6 +184,11 @@
     html.bs-sidebar-collapsed .side .side-search { display:block; }
     html.bs-sidebar-collapsed .side nav.sidenav a { justify-content:flex-start; padding:8px 10px; }
     html.bs-sidebar-collapsed .side .side-status .row { justify-content:space-between; }
+    /* The mobile drawer always shows full labels — reset the collapsed
+       rail's larger icon-dock sizing back to normal here too, so a phone
+       never gets oversized icons meant for a big collapsed desktop rail. */
+    html.bs-sidebar-collapsed .side .brand .mark { width:clamp(36px,2.6vw,52px); height:clamp(36px,2.6vw,52px); }
+    html.bs-sidebar-collapsed .side nav.sidenav a .ic { width:clamp(30px,2vw,42px); height:clamp(30px,2vw,42px); font-size:clamp(13px,1vw,17px); }
     .side-toggle { display:none; }
     .side-backdrop {
       display:block; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:55;
@@ -445,7 +459,7 @@
   #wizard.hidden { display:none; }
   .wizard-card { background:var(--surface); border:none; box-shadow:0 12px 40px rgba(0,0,0,.16); border-radius:18px; padding:28px 30px 24px; max-width:580px; width:100%; }
   .wizard-head { display:flex; align-items:center; gap:12px; margin-bottom:6px; }
-  .wizard-head .mark { width:36px; height:36px; border-radius:50%; flex:none; object-fit:cover; display:block; }
+  .wizard-head .mark { width:clamp(36px,3vw,52px); height:clamp(36px,3vw,52px); border-radius:50%; flex:none; object-fit:cover; display:block; }
   .wizard-head .t { font-family:var(--font-display); font-size:19px; font-weight:700; }
   .wizard-head .sub { font-size:11px; color:var(--muted); font-family:var(--font-mono); }
   .wizard-intro { font-size:12.5px; color:var(--ink-soft); margin:10px 0 22px; line-height:1.6; }
@@ -517,7 +531,7 @@
   }
   #boot.expanded #boot-panel { display:flex; }
   #boot .boot-head { display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid rgba(255,255,255,.08); }
-  #boot .boot-head .mark { width:22px; height:22px; border-radius:6px; flex:none; object-fit:cover; display:block; }
+  #boot .boot-head .mark { width:clamp(22px,1.8vw,32px); height:clamp(22px,1.8vw,32px); border-radius:22%; flex:none; object-fit:cover; display:block; }
   #boot .boot-head .t { font-family:var(--font-display); font-size:13px; font-weight:700; color:#fff; }
   #boot .boot-head .sub { font-size:11px; color:#8a8f98; margin-left:auto; }
   #boot .boot-resources { display:flex; gap:16px; padding:9px 16px; border-bottom:1px solid rgba(255,255,255,.08); font-size:11.5px; }
