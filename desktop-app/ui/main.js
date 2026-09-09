@@ -966,7 +966,271 @@ function startDashboardPolling() {
   pollWhenVisible(refreshTrainingPhrases, 20000);
   pollWhenVisible(refreshTrainingHealth, 10000);
   startServerChatPolling();
+  refreshAutomationInstances();
+  refreshHooks();
+  pollWhenVisible(refreshHooks, 20000);
+  refreshAgentSettings();
+  refreshAutoManagePanel();
 }
+
+// ---------------------------------------------------------- automation ---
+// Hooks, agent_settings, auto_manage — all three already have real
+// backend routes and MCP tool exposure (Claude Desktop could already
+// read/write them); this is the first dashboard/desktop UI for any of
+// them. See bot/agent_runtime/hooks.py, bot/agent_settings.py,
+// bot/auto_manage.py.
+const EFFORT_LADDER = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]; // mirrors bot/effort.py
+const automationState = { instances: [] };
+
+async function refreshAutomationInstances() {
+  try {
+    automationState.instances = await api('/api/bots');
+  } catch (_e) { return; }
+  const options = automationState.instances.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('');
+  const hookSel = document.getElementById('hook-new-instance');
+  const hookCurrent = hookSel.value;
+  hookSel.innerHTML = '<option value="">Global (every instance)</option>' + options;
+  hookSel.value = hookCurrent;
+
+  const asSel = document.getElementById('agent-settings-instance');
+  const asCurrent = asSel.value;
+  asSel.innerHTML = '<option value="">Process-wide default</option>' + options;
+  asSel.value = asCurrent;
+
+  const amSel = document.getElementById('auto-manage-instance');
+  const amCurrent = amSel.value;
+  amSel.innerHTML = '<option value="">Pick an instance…</option>' + options;
+  amSel.value = amCurrent;
+}
+
+// -------------------------------------------------------------- hooks ---
+async function refreshHooks() {
+  const tbody = document.getElementById('hooks-tbody');
+  let hooks;
+  try {
+    hooks = (await api('/api/hooks')).hooks;
+  } catch (_e) { return; }
+  const instanceName = (id) => {
+    const inst = automationState.instances.find(b => b.id === id);
+    return inst ? inst.name : `instance ${id}`;
+  };
+  tbody.innerHTML = hooks.length ? hooks.map(h => `
+    <tr>
+      <td class="mono">${esc(h.event)}</td>
+      <td class="mono">${h.matcher ? esc(h.matcher) : '—'}</td>
+      <td class="mono" style="max-width:320px; overflow-wrap:anywhere;">${esc(h.command)}</td>
+      <td>${h.instance_id == null ? 'Global' : esc(instanceName(h.instance_id))}</td>
+      <td><span class="pill"><span class="dot ${h.enabled ? 'good' : ''}"></span>${h.enabled ? 'Enabled' : 'Disabled'}</span></td>
+      <td>
+        <button class="btn" data-hook-toggle="${h.id}" data-hook-enabled="${h.enabled ? '1' : '0'}" style="padding:3px 8px; font-size:11px;">${h.enabled ? 'Disable' : 'Enable'}</button>
+        <button class="btn" data-hook-remove="${h.id}" style="padding:3px 8px; font-size:11px; color:var(--critical);">Remove</button>
+      </td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="6">No hooks configured.</td></tr>';
+
+  tbody.querySelectorAll('[data-hook-toggle]').forEach(btn => btn.onclick = async () => {
+    const id = btn.dataset.hookToggle;
+    const enabling = btn.dataset.hookEnabled === '0';
+    btn.disabled = true;
+    try {
+      await api(`/api/hooks/${id}/${enabling ? 'enable' : 'disable'}`, { method: 'POST' });
+      refreshHooks();
+    } catch (e) {
+      document.getElementById('hook-status').textContent = `Failed: ${e.message || e}`;
+      btn.disabled = false;
+    }
+  });
+  tbody.querySelectorAll('[data-hook-remove]').forEach(btn => btn.onclick = async () => {
+    if (!confirm('Remove this hook? This can\'t be undone.')) return;
+    try {
+      await api(`/api/hooks/${btn.dataset.hookRemove}`, { method: 'DELETE' });
+      refreshHooks();
+    } catch (e) {
+      document.getElementById('hook-status').textContent = `Failed: ${e.message || e}`;
+    }
+  });
+}
+
+document.getElementById('btn-hook-add').onclick = async () => {
+  const statusEl = document.getElementById('hook-status');
+  const event = document.getElementById('hook-new-event').value;
+  const matcher = document.getElementById('hook-new-matcher').value.trim();
+  const instanceVal = document.getElementById('hook-new-instance').value;
+  const command = document.getElementById('hook-new-command').value.trim();
+  if (!command) {
+    statusEl.textContent = 'A command is required.';
+    return;
+  }
+  const btn = document.getElementById('btn-hook-add');
+  btn.disabled = true;
+  try {
+    await api('/api/hooks', {
+      method: 'POST',
+      body: JSON.stringify({
+        event, command, matcher: matcher || null,
+        instance_id: instanceVal ? Number(instanceVal) : null,
+      }),
+    });
+    statusEl.textContent = 'Hook added.';
+    document.getElementById('hook-new-matcher').value = '';
+    document.getElementById('hook-new-command').value = '';
+    refreshHooks();
+  } catch (e) {
+    statusEl.textContent = `Failed to add hook: ${e.message || e}`;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+// ------------------------------------------------------ agent settings ---
+function populateEffortSelect(sel) {
+  sel.innerHTML = '<option value="">(unset — inherit fallback)</option>' + EFFORT_LADDER.map(l => `<option value="${l}">${l}</option>`).join('');
+}
+populateEffortSelect(document.getElementById('as-worker-effort'));
+populateEffortSelect(document.getElementById('as-manager-effort'));
+
+async function refreshAgentSettings() {
+  const instanceVal = document.getElementById('agent-settings-instance').value;
+  const qs = instanceVal ? `?instance_id=${instanceVal}` : '';
+  let settings;
+  try {
+    settings = await api(`/api/agent-settings${qs}`);
+  } catch (_e) { return; }
+  document.getElementById('as-max-concurrent-children').value = settings.max_concurrent_children ?? '';
+  document.getElementById('as-worker-provider').value = settings.worker_provider ?? '';
+  document.getElementById('as-worker-model').value = settings.worker_model ?? '';
+  document.getElementById('as-worker-effort').value = settings.worker_effort ?? '';
+  document.getElementById('as-manager-effort').value = settings.manager_effort ?? '';
+  document.getElementById('as-fallback-provider').value = settings.fallback_provider ?? '';
+  document.getElementById('as-fallback-model').value = settings.fallback_model ?? '';
+  document.getElementById('as-require-plan-approval').checked = !!settings.require_plan_approval;
+  document.getElementById('as-is-admin-instance').checked = !!settings.is_admin_instance;
+}
+document.getElementById('agent-settings-instance').onchange = refreshAgentSettings;
+
+document.getElementById('btn-agent-settings-save').onclick = async () => {
+  const statusEl = document.getElementById('agent-settings-status');
+  const instanceVal = document.getElementById('agent-settings-instance').value;
+  const num = document.getElementById('as-max-concurrent-children').value.trim();
+  const payload = {
+    instance_id: instanceVal ? Number(instanceVal) : null,
+    max_concurrent_children: num ? Number(num) : null,
+    worker_provider: document.getElementById('as-worker-provider').value.trim() || null,
+    worker_model: document.getElementById('as-worker-model').value.trim() || null,
+    worker_effort: document.getElementById('as-worker-effort').value || null,
+    manager_effort: document.getElementById('as-manager-effort').value || null,
+    fallback_provider: document.getElementById('as-fallback-provider').value.trim() || null,
+    fallback_model: document.getElementById('as-fallback-model').value.trim() || null,
+    require_plan_approval: document.getElementById('as-require-plan-approval').checked,
+    is_admin_instance: document.getElementById('as-is-admin-instance').checked,
+  };
+  const btn = document.getElementById('btn-agent-settings-save');
+  btn.disabled = true;
+  try {
+    await api('/api/agent-settings', { method: 'POST', body: JSON.stringify(payload) });
+    statusEl.textContent = 'Saved.';
+    refreshAgentSettings();
+  } catch (e) {
+    statusEl.textContent = `Failed to save: ${e.message || e}`;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+// ---------------------------------------------------------- auto-manage ---
+async function refreshAutoManagePanel() {
+  const statusEl = document.getElementById('auto-manage-status');
+  const instanceVal = document.getElementById('auto-manage-instance').value;
+  if (!instanceVal) {
+    document.getElementById('am-enabled').checked = false;
+    return;
+  }
+  let cfg;
+  try {
+    cfg = await api(`/api/auto-manage/${instanceVal}`);
+  } catch (e) {
+    statusEl.textContent = `Couldn't load: ${e.message || e}`;
+    return;
+  }
+  document.getElementById('am-enabled').checked = !!cfg.enabled;
+  document.getElementById('am-trigger').value = cfg.trigger || 'scheduled';
+  document.getElementById('am-interval').value = cfg.interval || '30m';
+  document.getElementById('am-chat-id').value = cfg.chat_id ?? '';
+  document.getElementById('am-thread-id').value = cfg.thread_id ?? '';
+  document.getElementById('am-goal-template').value = cfg.goal_template || '';
+  statusEl.textContent = '';
+}
+document.getElementById('auto-manage-instance').onchange = refreshAutoManagePanel;
+
+// The enabled checkbox saves immediately (it's the one field with a real
+// side effect — enable() creates a live scheduled_commands row, disable()
+// removes it), rather than waiting for "Save settings", so its state on
+// screen never lies about whether a schedule actually exists right now.
+document.getElementById('am-enabled').onchange = async (e) => {
+  const statusEl = document.getElementById('auto-manage-status');
+  const instanceVal = document.getElementById('auto-manage-instance').value;
+  if (!instanceVal) { e.target.checked = false; return; }
+  const enabling = e.target.checked;
+  try {
+    if (enabling) {
+      const chatId = document.getElementById('am-chat-id').value.trim();
+      if (!chatId) {
+        statusEl.textContent = 'A chat id is required before enabling (where check-ins get delivered).';
+        e.target.checked = false;
+        return;
+      }
+      await api(`/api/auto-manage/${instanceVal}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          enabled: true, chat_id: chatId,
+          thread_id: document.getElementById('am-thread-id').value.trim() || null,
+          trigger: document.getElementById('am-trigger').value,
+          interval: document.getElementById('am-interval').value.trim() || '30m',
+          goal_template: document.getElementById('am-goal-template').value.trim() || null,
+        }),
+      });
+      statusEl.textContent = 'Enabled.';
+    } else {
+      await api(`/api/auto-manage/${instanceVal}`, { method: 'POST', body: JSON.stringify({ enabled: false }) });
+      statusEl.textContent = 'Disabled.';
+    }
+  } catch (err) {
+    statusEl.textContent = `Failed: ${err.message || err}`;
+    e.target.checked = !enabling;
+  }
+};
+
+document.getElementById('btn-auto-manage-save').onclick = async () => {
+  const statusEl = document.getElementById('auto-manage-status');
+  const instanceVal = document.getElementById('auto-manage-instance').value;
+  if (!instanceVal) {
+    statusEl.textContent = 'Pick an instance first.';
+    return;
+  }
+  const btn = document.getElementById('btn-auto-manage-save');
+  btn.disabled = true;
+  try {
+    // Deliberately omits "enabled" — the checkbox above already saves
+    // that immediately, and the route branches on enabled's presence
+    // (true/false triggers enable()/disable(), absent means "just merge
+    // these other fields") — see api_auto_manage_set.
+    await api(`/api/auto-manage/${instanceVal}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        trigger: document.getElementById('am-trigger').value,
+        interval: document.getElementById('am-interval').value.trim() || '30m',
+        chat_id: document.getElementById('am-chat-id').value.trim() || null,
+        thread_id: document.getElementById('am-thread-id').value.trim() || null,
+        goal_template: document.getElementById('am-goal-template').value.trim() || null,
+      }),
+    });
+    statusEl.textContent = 'Saved.';
+    refreshAutoManagePanel();
+  } catch (e) {
+    statusEl.textContent = `Failed to save: ${e.message || e}`;
+  } finally {
+    btn.disabled = false;
+  }
+};
 
 // ---------------------------------------------------------------- bots ---
 let botEditingId = null;
