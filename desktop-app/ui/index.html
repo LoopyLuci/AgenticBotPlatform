@@ -100,12 +100,20 @@
   ::-webkit-scrollbar-track { background:transparent; }
   ::-webkit-scrollbar-thumb { background:var(--surface-3); border-radius:999px; border:2px solid transparent; background-clip:padding-box; }
   ::-webkit-scrollbar-thumb:hover { background:var(--muted); background-clip:padding-box; }
-  .shell { display:grid; grid-template-columns:236px 1fr; min-height:100vh; transition:grid-template-columns .18s ease; }
+  /* NOTE on the collapse toggle deliberately NOT animating grid-template-columns:
+     that property is layout-affecting, and this app's main column holds
+     genuinely heavy content (live-updating tables, SVG charts, KPI grids) —
+     animating the grid track forces the browser to reflow all of it on every
+     single frame of the transition, which is what made the collapse feel slow.
+     Snapping the grid instantly and animating only compositor-cheap properties
+     (transform, on .side itself for the mobile drawer) keeps the toggle
+     flawless regardless of how much is on screen in main. */
+  .shell { display:grid; grid-template-columns:236px 1fr; min-height:100vh; }
   html.bs-sidebar-collapsed .shell { grid-template-columns:68px 1fr; }
 
-  .side { position:sticky; top:0; height:100vh; overflow-y:auto; overflow-x:hidden; background:var(--surface); padding:16px 12px; display:flex; flex-direction:column; gap:18px; box-shadow:1px 0 0 var(--line); transition:padding .18s ease, transform .22s ease; }
+  .side { position:sticky; top:0; height:100vh; overflow-y:auto; overflow-x:hidden; background:var(--surface); padding:16px 12px; display:flex; flex-direction:column; gap:18px; box-shadow:1px 0 0 var(--line); transition:transform .22s ease; }
   .brand { display:flex; align-items:center; gap:10px; padding:6px 8px 16px; }
-  .brand .mark { width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,var(--accent),var(--accent-2)); display:flex; align-items:center; justify-content:center; color:#fff; font-family:var(--font-display); font-weight:700; font-size:14px; flex:none; box-shadow:0 2px 8px rgba(51,144,236,.35); }
+  .brand .mark { width:36px; height:36px; border-radius:50%; flex:none; object-fit:cover; display:block; box-shadow:0 2px 8px rgba(51,144,236,.35); }
   .brand .name { font-family:var(--font-display); font-weight:700; font-size:16px; letter-spacing:0.01em; white-space:nowrap; overflow:hidden; }
   .brand .sub { font-size:10.5px; color:var(--muted); font-family:var(--font-mono); }
   .side-toggle { margin-left:auto; width:28px; height:28px; border-radius:50%; border:none; background:var(--surface-2); color:var(--ink-soft); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:12px; flex:none; padding:0; }
@@ -134,7 +142,7 @@
   /* Collapsed icon-rail state — desktop/tablet only; the mobile-drawer
      override below restores full labels regardless of this class, since
      a narrow-viewport drawer should never also be icon-only. */
-  html.bs-sidebar-collapsed .brand { justify-content:center; padding:6px 0 16px; }
+  html.bs-sidebar-collapsed .brand { flex-direction:column; justify-content:center; gap:10px; padding:6px 0 16px; }
   html.bs-sidebar-collapsed .brand .name, html.bs-sidebar-collapsed .brand .sub { display:none; }
   html.bs-sidebar-collapsed .side-toggle svg { transform:rotate(180deg); }
   html.bs-sidebar-collapsed .side-search { display:none; }
@@ -156,7 +164,7 @@
       z-index:60; transform:translateX(-100%); box-shadow:2px 0 24px rgba(0,0,0,.32);
     }
     .side.mobile-open { transform:translateX(0); }
-    html.bs-sidebar-collapsed .side .brand { justify-content:flex-start; padding:6px 8px 16px; }
+    html.bs-sidebar-collapsed .side .brand { flex-direction:row; justify-content:flex-start; padding:6px 8px 16px; }
     html.bs-sidebar-collapsed .side .brand .name,
     html.bs-sidebar-collapsed .side .brand .sub,
     html.bs-sidebar-collapsed .side .side-search,
@@ -437,7 +445,7 @@
   #wizard.hidden { display:none; }
   .wizard-card { background:var(--surface); border:none; box-shadow:0 12px 40px rgba(0,0,0,.16); border-radius:18px; padding:28px 30px 24px; max-width:580px; width:100%; }
   .wizard-head { display:flex; align-items:center; gap:12px; margin-bottom:6px; }
-  .wizard-head .mark { width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-family:var(--font-mono); flex:none; }
+  .wizard-head .mark { width:36px; height:36px; border-radius:50%; flex:none; object-fit:cover; display:block; }
   .wizard-head .t { font-family:var(--font-display); font-size:19px; font-weight:700; }
   .wizard-head .sub { font-size:11px; color:var(--muted); font-family:var(--font-mono); }
   .wizard-intro { font-size:12.5px; color:var(--ink-soft); margin:10px 0 22px; line-height:1.6; }
@@ -509,7 +517,7 @@
   }
   #boot.expanded #boot-panel { display:flex; }
   #boot .boot-head { display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid rgba(255,255,255,.08); }
-  #boot .boot-head .mark { width:22px; height:22px; border-radius:6px; background:var(--accent); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:11px; flex:none; }
+  #boot .boot-head .mark { width:22px; height:22px; border-radius:6px; flex:none; object-fit:cover; display:block; }
   #boot .boot-head .t { font-family:var(--font-display); font-size:13px; font-weight:700; color:#fff; }
   #boot .boot-head .sub { font-size:11px; color:#8a8f98; margin-left:auto; }
   #boot .boot-resources { display:flex; gap:16px; padding:9px 16px; border-bottom:1px solid rgba(255,255,255,.08); font-size:11.5px; }
@@ -539,7 +547,7 @@
   </div>
   <div id="boot-panel">
     <div class="boot-head">
-      <div class="mark">BS</div>
+      <img class="mark" src="assets/brand-icon.png" alt="BotServer">
       <div class="t">Bot Server</div>
       <div class="sub" id="boot-envline">booting…</div>
     </div>
@@ -559,7 +567,7 @@
 <div id="wizard" class="hidden">
   <div class="wizard-card">
     <div class="wizard-head">
-      <div class="mark">BS</div>
+      <img class="mark" src="assets/brand-icon.png" alt="BotServer">
       <div>
         <div class="t">Let's get set up</div>
         <div class="sub" id="wizard-envpath">—</div>
@@ -594,7 +602,7 @@
   <div class="side-backdrop" id="side-backdrop"></div>
   <aside class="side" id="side">
     <div class="brand">
-      <div class="mark">BS</div>
+      <img class="mark" src="assets/brand-icon.png" alt="BotServer">
       <div><div class="name">Bot Control</div></div>
       <button class="side-toggle" id="btn-side-toggle" type="button" aria-controls="sidenav" aria-expanded="true" title="Collapse sidebar">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 6 9 12 15 18"></polyline></svg>

@@ -58,12 +58,20 @@
   * { box-sizing:border-box; }
   html { scroll-behavior:smooth; }
   body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--font-body); font-size:14px; }
-  .shell { display:grid; grid-template-columns:220px 1fr; min-height:100vh; transition:grid-template-columns .18s ease; }
+  /* NOTE on the collapse toggle deliberately NOT animating grid-template-columns:
+     that property is layout-affecting, and this dashboard's main column holds
+     genuinely heavy content (live-updating tables, SVG charts, KPI grids) —
+     animating the grid track forces the browser to reflow all of it on every
+     single frame of the transition, which is what made the collapse feel slow.
+     Snapping the grid instantly and animating only compositor-cheap properties
+     (opacity/transform, on .side's own children) keeps the toggle itself
+     flawless regardless of how much is on screen in main. */
+  .shell { display:grid; grid-template-columns:220px 1fr; min-height:100vh; }
   html.bs-sidebar-collapsed .shell { grid-template-columns:64px 1fr; }
 
-  .side { position:sticky; top:0; height:100vh; overflow-y:auto; overflow-x:hidden; background:var(--surface); border-right:1px solid var(--line); padding:18px 14px; display:flex; flex-direction:column; gap:22px; transition:padding .18s ease, transform .22s ease; }
+  .side { position:sticky; top:0; height:100vh; overflow-y:auto; overflow-x:hidden; background:var(--surface); border-right:1px solid var(--line); padding:18px 14px; display:flex; flex-direction:column; gap:22px; transition:transform .22s ease; }
   .brand { display:flex; align-items:center; gap:9px; padding:2px 6px 10px; border-bottom:1px solid var(--line); }
-  .brand .mark { width:26px; height:26px; border-radius:7px; background:var(--accent); display:flex; align-items:center; justify-content:center; color:#fff; font-family:var(--font-mono); font-weight:700; font-size:13px; flex:none; }
+  .brand .mark { width:26px; height:26px; border-radius:7px; flex:none; object-fit:cover; display:block; }
   .brand .name { font-family:var(--font-display); font-weight:700; font-size:15px; letter-spacing:0.01em; white-space:nowrap; overflow:hidden; }
   .brand .sub { font-size:10.5px; color:var(--muted); font-family:var(--font-mono); }
   .side-toggle { margin-left:auto; width:26px; height:26px; border-radius:7px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink-soft); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:12px; flex:none; padding:0; }
@@ -80,7 +88,7 @@
 
   /* Collapsed (icon-rail) state — desktop/tablet widths only, see the
      mobile-drawer override below for narrow viewports. */
-  html.bs-sidebar-collapsed .brand { justify-content:center; }
+  html.bs-sidebar-collapsed .brand { flex-direction:column; justify-content:center; gap:8px; padding:2px 0 10px; }
   html.bs-sidebar-collapsed .brand .name, html.bs-sidebar-collapsed .brand .sub { display:none; }
   html.bs-sidebar-collapsed .side-toggle svg { transform:rotate(180deg); }
   html.bs-sidebar-collapsed nav.sidenav a { justify-content:center; padding:8px 4px; }
@@ -108,7 +116,7 @@
     html.bs-sidebar-collapsed .side .side-status .row span:first-child {
       display:revert;
     }
-    html.bs-sidebar-collapsed .side .brand { justify-content:flex-start; }
+    html.bs-sidebar-collapsed .side .brand { flex-direction:row; justify-content:flex-start; padding:2px 6px 10px; }
     html.bs-sidebar-collapsed .side nav.sidenav a { justify-content:flex-start; padding:8px 10px; }
     html.bs-sidebar-collapsed .side .side-status .row { justify-content:space-between; }
     .side-toggle { display:none; }
@@ -307,7 +315,7 @@
   #wizard.hidden { display:none; }
   .wizard-card { background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:28px 30px 24px; max-width:580px; width:100%; }
   .wizard-head { display:flex; align-items:center; gap:12px; margin-bottom:6px; }
-  .wizard-head .mark { width:34px; height:34px; border-radius:9px; background:var(--accent); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-family:var(--font-mono); flex:none; }
+  .wizard-head .mark { width:34px; height:34px; border-radius:9px; flex:none; object-fit:cover; display:block; }
   .wizard-head .t { font-family:var(--font-display); font-size:19px; font-weight:700; }
   .wizard-head .sub { font-size:11px; color:var(--muted); font-family:var(--font-mono); }
   .wizard-intro { font-size:12.5px; color:var(--ink-soft); margin:10px 0 22px; line-height:1.6; }
@@ -359,7 +367,7 @@
 <div id="wizard" class="hidden">
   <div class="wizard-card">
     <div class="wizard-head">
-      <div class="mark">BS</div>
+      <img class="mark" src="/static/brand-icon.png" alt="BotServer">
       <div>
         <div class="t">Let's get set up</div>
         <div class="sub" id="wizard-envpath">—</div>
@@ -394,7 +402,7 @@
   <div class="side-backdrop" id="side-backdrop"></div>
   <aside class="side" id="side">
     <div class="brand">
-      <div class="mark">BS</div>
+      <img class="mark" src="/static/brand-icon.png" alt="BotServer">
       <div><div class="name">Bot Control</div></div>
       <button class="side-toggle" id="btn-side-toggle" type="button" aria-controls="sidenav" aria-expanded="true" title="Collapse sidebar">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 6 9 12 15 18"></polyline></svg>
