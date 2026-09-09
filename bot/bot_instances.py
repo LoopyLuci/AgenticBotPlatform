@@ -269,6 +269,9 @@ def set_desktop_session_key(instance_id: int, key: Optional[str], actor: str = "
 # shape exactly, just snapshotting the whole bot_instances table as JSON
 # instead of a single .env file.
 
+DEFAULT_MAX_BACKUPS = 50
+
+
 def backup_instances(reason: str = "") -> Path:
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
@@ -285,7 +288,37 @@ def backup_instances(reason: str = "") -> Path:
         "instances": [dict(r) for r in rows],
     }
     dest.write_text(json.dumps(snapshot, indent=2), encoding="utf-8")
+    _prune_old_backups()
     return dest
+
+
+def _prune_old_backups(keep: Optional[int] = None) -> int:
+    """Caps data/bot_instances_backups/ at [keep] most-recent files,
+    deleting anything older — called on every backup_instances() write
+    (not just from a daily retention pass) since a busy instance can
+    create/update/delete many times a minute, and an unbounded backup
+    directory eventually makes list_backups()/the dashboard's Bots-tab
+    backups table render tens of thousands of rows, which is exactly
+    the kind of unbounded-DOM growth that made the dashboard genuinely
+    slow to resize/scroll (confirmed: a real leak from tests never
+    isolating BACKUP_DIR left 47,000+ files here — see tests/conftest.py's
+    temp_db fixture, now fixed to redirect this path too). Returns how
+    many files were removed."""
+    if keep is None:
+        from bot.config import config
+
+        keep = int((config.current.get("retention") or {}).get("bot_instances_backups_max_count", DEFAULT_MAX_BACKUPS))
+    if keep < 0 or not BACKUP_DIR.exists():
+        return 0
+    files = sorted(BACKUP_DIR.glob("instances-*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    removed = 0
+    for p in files[keep:]:
+        try:
+            p.unlink()
+            removed += 1
+        except OSError:
+            pass
+    return removed
 
 
 def list_backups() -> list[dict[str, Any]]:

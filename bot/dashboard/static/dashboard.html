@@ -162,7 +162,18 @@
   .btn:hover{ filter:brightness(1.05); }
   .btn:disabled{ opacity:0.5; cursor:not-allowed; }
 
-  section { padding:30px 28px 6px; scroll-margin-top:70px; max-width:1320px; }
+  /* This is a single long scrolling page with ~20 sections all mounted
+     at once (anchor-link navigation, not tab show/hide) — content-visibility
+     tells the browser to skip layout/paint/style work entirely for
+     whichever sections are off-screen, so resizing/scrolling stays fast
+     regardless of how much content a given section (tables, chat history,
+     kanban boards) accumulates. contain-intrinsic-size gives it a
+     placeholder size before a section has ever been measured, and the
+     "auto" keyword makes it remember the section's real last-rendered
+     size afterward instead of guessing forever. Native Chromium behavior
+     already un-skips a section when it's the target of an anchor-link
+     scroll, so #jobs-style navigation is unaffected. */
+  section { padding:30px 28px 6px; scroll-margin-top:70px; max-width:1320px; content-visibility:auto; contain-intrinsic-size:auto 900px; }
   .sec-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
   .sec-head h2 { font-family:var(--font-display); font-size:19px; font-weight:700; margin:0; }
   .sec-head .desc { color:var(--muted); font-size:12.5px; }
@@ -3838,6 +3849,13 @@ async function refreshBotsBackups() {
   try {
     backups = await api('/api/bots/backups');
   } catch (_e) { return; }
+  // Defense-in-depth row cap: the backend now prunes this directory to
+  // retention.bot_instances_backups_max_count (default 50) on every
+  // write, but render at most 50 here regardless — a directory that
+  // somehow grows unbounded again (pre-fix leftovers, a future bug)
+  // should never again turn into a 47,000-row table that makes the
+  // whole dashboard sluggish to resize/scroll.
+  backups = backups.slice(0, 50);
   tbody.innerHTML = backups.length ? backups.map(b => `
     <tr>
       <td class="mono">${esc(b.name)}</td>

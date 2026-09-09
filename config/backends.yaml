@@ -188,6 +188,14 @@ retention:
   # checkpoint — ephemeral session-scoped rollback history, not something
   # worth keeping indefinitely once nobody's touched that workspace.
   checkpoints_days: 30
+  # data/bot_instances_backups/ gets a fresh JSON snapshot on every bot
+  # instance create/update/delete (bot/bot_instances.py's backup_instances()) —
+  # enforced at write time, not just by the daily retention pass, since a
+  # busy instance can trigger many of these a minute. Was previously
+  # unbounded and, compounded by a test-isolation gap, grew to 47,000+
+  # files before this cap existed — kept here as a real, load-bearing
+  # ceiling, not a cosmetic default.
+  bot_instances_backups_max_count: 50
 scheduler:
   # bot/scheduler.py's failure-streak guard — a scheduled command
   # (/cron, /loop, /heartbeat) that fails this many times in a row gets

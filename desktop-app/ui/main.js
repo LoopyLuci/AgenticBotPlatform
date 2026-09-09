@@ -2049,6 +2049,13 @@ async function refreshBotsBackups() {
   try {
     backups = await api('/api/bots/backups');
   } catch (_e) { return; }
+  // Defense-in-depth row cap: the backend now prunes this directory to
+  // retention.bot_instances_backups_max_count (default 50) on every
+  // write, but render at most 50 here regardless — a directory that
+  // somehow grows unbounded again (pre-fix leftovers, a future bug)
+  // should never again turn into a 47,000-row table that makes the
+  // whole app sluggish to resize/scroll.
+  backups = backups.slice(0, 50);
   tbody.innerHTML = backups.length ? backups.map(b => `
     <tr>
       <td class="mono">${esc(b.name)}</td>

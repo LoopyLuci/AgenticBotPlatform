@@ -36,6 +36,17 @@ def temp_db(monkeypatch, tmp_path):
     monkeypatch.setattr(db_module, "_conn", None)
     conn = db_module.get_conn()
     db_module.init_db()
+    # bot_instances.BACKUP_DIR is a module-level constant pointing at the
+    # REAL data/bot_instances_backups/ — not test-isolated by the DB-path
+    # patch above. Without this, every test that creates/updates/deletes a
+    # bot instance (a lot of them) leaks a real JSON file into the shared
+    # project directory forever. Confirmed: this was unpatched for the
+    # project's entire history and left 47,000+ files there, which in turn
+    # made the dashboard's Bots-tab backups table (no row cap) render an
+    # enormous DOM and made the whole app sluggish to resize/scroll.
+    from bot import bot_instances as bot_instances_module
+
+    monkeypatch.setattr(bot_instances_module, "BACKUP_DIR", tmp_path / "bot_instances_backups")
     yield conn
     conn.close()
     monkeypatch.setattr(db_module, "_conn", None)

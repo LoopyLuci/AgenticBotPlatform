@@ -219,7 +219,18 @@
   .btn:active{ transform:scale(.97); }
   .btn:disabled{ opacity:0.5; cursor:not-allowed; }
 
-  section { padding:30px 28px 6px; scroll-margin-top:70px; max-width:1320px; }
+  /* This is a single long scrolling page with ~20 sections all mounted
+     at once (anchor-link navigation, not tab show/hide) — content-visibility
+     tells the browser to skip layout/paint/style work entirely for
+     whichever sections are off-screen, so resizing/scrolling stays fast
+     regardless of how much content a given section (tables, chat history,
+     kanban boards) accumulates. contain-intrinsic-size gives it a
+     placeholder size before a section has ever been measured, and the
+     "auto" keyword makes it remember the section's real last-rendered
+     size afterward instead of guessing forever. Native Chromium behavior
+     already un-skips a section when it's the target of an anchor-link
+     scroll, so #jobs-style navigation is unaffected. */
+  section { padding:30px 28px 6px; scroll-margin-top:70px; max-width:1320px; content-visibility:auto; contain-intrinsic-size:auto 900px; }
   .sec-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
   .sec-head h2 { font-family:var(--font-display); font-size:19px; font-weight:700; margin:0; }
   .sec-head .desc { color:var(--muted); font-size:12.5px; }
