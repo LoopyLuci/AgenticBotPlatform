@@ -577,6 +577,12 @@ function applyAppearanceScale(scale) {
 // that limitation is stated directly in the Appearance card's copy.
 function applyAppearanceIcon(name) {
   document.querySelectorAll('#appearance-icon-picker .icon-choice').forEach(b => b.classList.toggle('active', b.dataset.iconChoice === name));
+  // Every in-UI brand mark (sidebar, boot screen, setup wizard) mirrors the
+  // same choice as the real window/taskbar icon below — one picker, one
+  // icon, everywhere BotServer's own logo appears. These are the only 4
+  // icons that should ever show here; there is no separate "default app
+  // icon" image anymore.
+  document.querySelectorAll('img.mark').forEach(img => { img.src = `assets/icons/${name}.png`; });
   try {
     const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
     if (invoke) invoke('set_app_icon', { iconName: name }).catch(() => {});
