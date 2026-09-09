@@ -16,6 +16,11 @@
       if (theme === 'light' || theme === 'dark') document.documentElement.setAttribute('data-theme', theme);
       var scale = localStorage.getItem('bs-ui-scale');
       if (scale) document.documentElement.style.zoom = scale;
+      // Applied here too (not just after body loads) so a returning viewer's
+      // collapsed sidebar never flashes wide for one frame.
+      if (localStorage.getItem('bs-sidebar-collapsed') === '1') {
+        document.documentElement.classList.add('bs-sidebar-collapsed');
+      }
     } catch (_e) { /* localStorage unavailable (private mode, etc.) — fall back to defaults */ }
   })();
 </script>
@@ -53,23 +58,75 @@
   * { box-sizing:border-box; }
   html { scroll-behavior:smooth; }
   body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--font-body); font-size:14px; }
-  .shell { display:grid; grid-template-columns:220px 1fr; min-height:100vh; }
-  @media (max-width:980px){ .shell{ grid-template-columns:1fr; } .side{ position:static !important; } }
+  .shell { display:grid; grid-template-columns:220px 1fr; min-height:100vh; transition:grid-template-columns .18s ease; }
+  html.bs-sidebar-collapsed .shell { grid-template-columns:64px 1fr; }
 
-  .side { position:sticky; top:0; height:100vh; overflow-y:auto; background:var(--surface); border-right:1px solid var(--line); padding:18px 14px; display:flex; flex-direction:column; gap:22px; }
+  .side { position:sticky; top:0; height:100vh; overflow-y:auto; overflow-x:hidden; background:var(--surface); border-right:1px solid var(--line); padding:18px 14px; display:flex; flex-direction:column; gap:22px; transition:padding .18s ease, transform .22s ease; }
   .brand { display:flex; align-items:center; gap:9px; padding:2px 6px 10px; border-bottom:1px solid var(--line); }
   .brand .mark { width:26px; height:26px; border-radius:7px; background:var(--accent); display:flex; align-items:center; justify-content:center; color:#fff; font-family:var(--font-mono); font-weight:700; font-size:13px; flex:none; }
-  .brand .name { font-family:var(--font-display); font-weight:700; font-size:15px; letter-spacing:0.01em; }
+  .brand .name { font-family:var(--font-display); font-weight:700; font-size:15px; letter-spacing:0.01em; white-space:nowrap; overflow:hidden; }
   .brand .sub { font-size:10.5px; color:var(--muted); font-family:var(--font-mono); }
+  .side-toggle { margin-left:auto; width:26px; height:26px; border-radius:7px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink-soft); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:12px; flex:none; padding:0; }
+  .side-toggle:hover { background:var(--surface-3); color:var(--ink); }
+  .side-toggle svg { transition:transform .18s ease; }
   nav.sidenav { display:flex; flex-direction:column; gap:2px; }
-  nav.sidenav a { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:7px; color:var(--ink-soft); text-decoration:none; font-size:13px; font-weight:600; }
+  nav.sidenav a { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:7px; color:var(--ink-soft); text-decoration:none; font-size:13px; font-weight:600; white-space:nowrap; }
   nav.sidenav a:hover, nav.sidenav a:focus-visible { background:var(--surface-2); color:var(--ink); }
-  nav.sidenav a .ic { width:16px; text-align:center; font-family:var(--font-mono); color:var(--accent); font-size:12px; }
+  nav.sidenav a .ic { width:16px; text-align:center; font-family:var(--font-mono); color:var(--accent); font-size:12px; flex:none; }
+  nav.sidenav a .nav-txt { overflow:hidden; text-overflow:ellipsis; }
   .side-status { margin-top:auto; padding:12px; border-radius:10px; background:var(--surface-2); font-size:11.5px; color:var(--ink-soft); display:flex; flex-direction:column; gap:6px; }
   .side-status .row { display:flex; justify-content:space-between; gap:8px; }
-  .side-status .row b { color:var(--ink); font-family:var(--font-mono); font-weight:600; }
+  .side-status .row b { color:var(--ink); font-family:var(--font-mono); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* Collapsed (icon-rail) state — desktop/tablet widths only, see the
+     mobile-drawer override below for narrow viewports. */
+  html.bs-sidebar-collapsed .brand { justify-content:center; }
+  html.bs-sidebar-collapsed .brand .name, html.bs-sidebar-collapsed .brand .sub { display:none; }
+  html.bs-sidebar-collapsed .side-toggle svg { transform:rotate(180deg); }
+  html.bs-sidebar-collapsed nav.sidenav a { justify-content:center; padding:8px 4px; }
+  html.bs-sidebar-collapsed nav.sidenav a .nav-txt { display:none; }
+  html.bs-sidebar-collapsed .side-status .row span:first-child { display:none; }
+  html.bs-sidebar-collapsed .side-status .row { justify-content:center; }
+  html.bs-sidebar-collapsed .side-status .row b { overflow:visible; text-overflow:clip; }
+
+  .side-backdrop { display:none; }
 
   main { min-width:0; padding:0 0 80px; }
+
+  .mobile-nav-btn { display:none; }
+
+  @media (max-width:980px){
+    .shell, html.bs-sidebar-collapsed .shell { grid-template-columns:1fr; }
+    .side {
+      position:fixed !important; top:0; left:0; height:100vh; width:280px; max-width:85vw;
+      z-index:60; transform:translateX(-100%); box-shadow:2px 0 24px rgba(0,0,0,.28);
+    }
+    .side.mobile-open { transform:translateX(0); }
+    html.bs-sidebar-collapsed .side .brand .name,
+    html.bs-sidebar-collapsed .side .brand .sub,
+    html.bs-sidebar-collapsed .side nav.sidenav a .nav-txt,
+    html.bs-sidebar-collapsed .side .side-status .row span:first-child {
+      display:revert;
+    }
+    html.bs-sidebar-collapsed .side .brand { justify-content:flex-start; }
+    html.bs-sidebar-collapsed .side nav.sidenav a { justify-content:flex-start; padding:8px 10px; }
+    html.bs-sidebar-collapsed .side .side-status .row { justify-content:space-between; }
+    .side-toggle { display:none; }
+    .side-backdrop {
+      display:block; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:55;
+      opacity:0; pointer-events:none; transition:opacity .18s ease;
+    }
+    .side-backdrop.show { opacity:1; pointer-events:auto; }
+    .mobile-nav-btn {
+      display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px;
+      border-radius:8px; border:1px solid var(--line); background:var(--surface); color:var(--ink);
+      cursor:pointer; font-size:16px; flex:none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .shell, .side, .side-backdrop, .side-toggle svg { transition:none !important; }
+  }
 
   .topbar { position:sticky; top:0; z-index:5; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 28px; background:var(--bg); border-bottom:1px solid var(--line); }
   .topbar .title { font-family:var(--font-display); font-size:18px; font-weight:700; }
@@ -334,33 +391,37 @@
 </div>
 
 <div class="shell">
-  <aside class="side">
+  <div class="side-backdrop" id="side-backdrop"></div>
+  <aside class="side" id="side">
     <div class="brand">
       <div class="mark">BS</div>
       <div><div class="name">Bot Control</div></div>
+      <button class="side-toggle" id="btn-side-toggle" type="button" aria-controls="sidenav" aria-expanded="true" title="Collapse sidebar">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 6 9 12 15 18"></polyline></svg>
+      </button>
     </div>
-    <nav class="sidenav">
-      <a href="#overview"><span class="ic">◆</span>Overview</a>
-      <a href="#jobs"><span class="ic">▤</span>Jobs</a>
-      <a href="#telemetry"><span class="ic">◈</span>Connections &amp; Telemetry</a>
-      <a href="#database"><span class="ic">▥</span>Database</a>
-      <a href="#control"><span class="ic">⚙</span>Control Center</a>
-      <a href="#resilience"><span class="ic">↻</span>Resilience</a>
-      <a href="#logs"><span class="ic">▦</span>Live Logs</a>
-      <a href="#chat"><span class="ic">💬</span>Chat</a>
-      <a href="#server-chat"><span class="ic">🖥</span>Server Chat</a>
-      <a href="#support"><span class="ic">🛟</span>Support Bot</a>
-      <a href="#sessions"><span class="ic">🗂</span>Sessions</a>
-      <a href="#bots"><span class="ic">🤖</span>Bots</a>
-      <a href="#models"><span class="ic">🧩</span>Models</a>
-      <a href="#kanban"><span class="ic">🗒</span>Kanban</a>
-      <a href="#swarms"><span class="ic">🐝</span>Swarms</a>
-      <a href="#automation"><span class="ic">🪝</span>Automation</a>
-      <a href="#training"><span class="ic">🎓</span>Training</a>
-      <a href="#platforms"><span class="ic">🔌</span>Platforms</a>
-      <a href="#mobile"><span class="ic">📱</span>Mobile</a>
-      <a href="#files"><span class="ic">📁</span>Files</a>
-      <a href="#servers"><span class="ic">🌐</span>Linked Servers</a>
+    <nav class="sidenav" id="sidenav">
+      <a href="#overview" title="Overview"><span class="ic">◆</span><span class="nav-txt">Overview</span></a>
+      <a href="#jobs" title="Jobs"><span class="ic">▤</span><span class="nav-txt">Jobs</span></a>
+      <a href="#telemetry" title="Connections &amp; Telemetry"><span class="ic">◈</span><span class="nav-txt">Connections &amp; Telemetry</span></a>
+      <a href="#database" title="Database"><span class="ic">▥</span><span class="nav-txt">Database</span></a>
+      <a href="#control" title="Control Center"><span class="ic">⚙</span><span class="nav-txt">Control Center</span></a>
+      <a href="#resilience" title="Resilience"><span class="ic">↻</span><span class="nav-txt">Resilience</span></a>
+      <a href="#logs" title="Live Logs"><span class="ic">▦</span><span class="nav-txt">Live Logs</span></a>
+      <a href="#chat" title="Chat"><span class="ic">💬</span><span class="nav-txt">Chat</span></a>
+      <a href="#server-chat" title="Server Chat"><span class="ic">🖥</span><span class="nav-txt">Server Chat</span></a>
+      <a href="#support" title="Support Bot"><span class="ic">🛟</span><span class="nav-txt">Support Bot</span></a>
+      <a href="#sessions" title="Sessions"><span class="ic">🗂</span><span class="nav-txt">Sessions</span></a>
+      <a href="#bots" title="Bots"><span class="ic">🤖</span><span class="nav-txt">Bots</span></a>
+      <a href="#models" title="Models"><span class="ic">🧩</span><span class="nav-txt">Models</span></a>
+      <a href="#kanban" title="Kanban"><span class="ic">🗒</span><span class="nav-txt">Kanban</span></a>
+      <a href="#swarms" title="Swarms"><span class="ic">🐝</span><span class="nav-txt">Swarms</span></a>
+      <a href="#automation" title="Automation"><span class="ic">🪝</span><span class="nav-txt">Automation</span></a>
+      <a href="#training" title="Training"><span class="ic">🎓</span><span class="nav-txt">Training</span></a>
+      <a href="#platforms" title="Platforms"><span class="ic">🔌</span><span class="nav-txt">Platforms</span></a>
+      <a href="#mobile" title="Mobile"><span class="ic">📱</span><span class="nav-txt">Mobile</span></a>
+      <a href="#files" title="Files"><span class="ic">📁</span><span class="nav-txt">Files</span></a>
+      <a href="#servers" title="Linked Servers"><span class="ic">🌐</span><span class="nav-txt">Linked Servers</span></a>
     </nav>
     <div class="side-status">
       <div class="row"><span>Desktop</span><b id="s-desktop">—</b></div>
@@ -372,6 +433,7 @@
 
   <main>
     <div class="topbar">
+      <button class="mobile-nav-btn" id="btn-mobile-nav" type="button" aria-controls="sidenav" aria-expanded="false" title="Open navigation" aria-label="Open navigation">☰</button>
       <div class="title">Overview</div>
       <div class="pillrow">
         <span class="pill" id="pill-bot"><span class="dot good"></span>Bot online</span>
@@ -1555,6 +1617,53 @@ async function api(path, opts = {}) {
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
+
+// Sidebar collapse (desktop/tablet icon-rail) + mobile overlay drawer.
+// Independent of the rest of dashboard startup so it works even before
+// the first API call resolves.
+(function initSidebar() {
+  var sideToggle = document.getElementById('btn-side-toggle');
+  var mobileBtn = document.getElementById('btn-mobile-nav');
+  var side = document.getElementById('side');
+  var backdrop = document.getElementById('side-backdrop');
+
+  function setCollapsed(collapsed) {
+    document.documentElement.classList.toggle('bs-sidebar-collapsed', collapsed);
+    try { localStorage.setItem('bs-sidebar-collapsed', collapsed ? '1' : '0'); } catch (_e) {}
+    sideToggle.setAttribute('aria-expanded', String(!collapsed));
+    sideToggle.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  }
+  sideToggle.onclick = function () {
+    setCollapsed(!document.documentElement.classList.contains('bs-sidebar-collapsed'));
+  };
+  // Sync the toggle's own aria/title with whatever the pre-paint inline
+  // script already applied from localStorage.
+  setCollapsed(document.documentElement.classList.contains('bs-sidebar-collapsed'));
+
+  function openMobileNav() {
+    side.classList.add('mobile-open');
+    backdrop.classList.add('show');
+    mobileBtn.setAttribute('aria-expanded', 'true');
+  }
+  function closeMobileNav() {
+    side.classList.remove('mobile-open');
+    backdrop.classList.remove('show');
+    mobileBtn.setAttribute('aria-expanded', 'false');
+  }
+  mobileBtn.onclick = function () {
+    if (side.classList.contains('mobile-open')) closeMobileNav(); else openMobileNav();
+  };
+  backdrop.onclick = closeMobileNav;
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && side.classList.contains('mobile-open')) closeMobileNav();
+  });
+  side.querySelectorAll('nav.sidenav a').forEach(function (a) {
+    a.addEventListener('click', closeMobileNav);
+  });
+  window.addEventListener('resize', function () {
+    if (window.innerWidth > 980 && side.classList.contains('mobile-open')) closeMobileNav();
+  });
+})();
 
 function showTokenModal() { document.getElementById('tokenModal').classList.remove('hidden'); }
 function hideTokenModal() { document.getElementById('tokenModal').classList.add('hidden'); }

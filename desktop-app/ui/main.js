@@ -4676,6 +4676,49 @@ function initAndroidPanel() {
   }
 })();
 
+// ------------------------------------------------ sidebar collapse/drawer
+// Icon-rail collapse on desktop/tablet, a true overlay drawer at narrow
+// (mobile-shaped) widths — mirrors bot/dashboard/static/dashboard.html's
+// identical behavior, per this project's standing GUI-parity rule.
+(function initSidebarCollapse() {
+  const sideToggle = document.getElementById('btn-side-toggle');
+  const mobileBtn = document.getElementById('btn-mobile-nav');
+  const side = document.getElementById('side');
+  const backdrop = document.getElementById('side-backdrop');
+  if (!sideToggle || !side || !backdrop) return;
+
+  const setCollapsed = (collapsed) => {
+    document.documentElement.classList.toggle('bs-sidebar-collapsed', collapsed);
+    try { localStorage.setItem('bs-sidebar-collapsed', collapsed ? '1' : '0'); } catch (_e) {}
+    sideToggle.setAttribute('aria-expanded', String(!collapsed));
+    sideToggle.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  };
+  sideToggle.onclick = () => setCollapsed(!document.documentElement.classList.contains('bs-sidebar-collapsed'));
+  setCollapsed(document.documentElement.classList.contains('bs-sidebar-collapsed'));
+
+  const openMobileNav = () => {
+    side.classList.add('mobile-open');
+    backdrop.classList.add('show');
+    if (mobileBtn) mobileBtn.setAttribute('aria-expanded', 'true');
+  };
+  const closeMobileNav = () => {
+    side.classList.remove('mobile-open');
+    backdrop.classList.remove('show');
+    if (mobileBtn) mobileBtn.setAttribute('aria-expanded', 'false');
+  };
+  if (mobileBtn) {
+    mobileBtn.onclick = () => (side.classList.contains('mobile-open') ? closeMobileNav() : openMobileNav());
+  }
+  backdrop.onclick = closeMobileNav;
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && side.classList.contains('mobile-open')) closeMobileNav();
+  });
+  side.querySelectorAll('nav.sidenav a').forEach((a) => a.addEventListener('click', closeMobileNav));
+  window.addEventListener('resize', () => {
+    if (window.innerWidth > 980 && side.classList.contains('mobile-open')) closeMobileNav();
+  });
+})();
+
 // -------------------------------------------------------- slash commands
 // Mirrors bot/commands.py's HELP_TEXT — the same commands Telegram,
 // Discord, Slack, and the Support Bot's dispatch_command() all accept.
