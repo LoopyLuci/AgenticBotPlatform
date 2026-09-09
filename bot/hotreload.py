@@ -149,6 +149,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.swarm.observability",  # only ever imported lazily (inside a function body), so no ordering constraint from anything else here
     "bot.setup_wizard",
     "bot.snapshots",
+    "bot.ui_customize",  # pure functions + disk-backed history, no module-level mutable state; moa/providers/models/dashboard.server are all imported lazily inside function bodies, so no ordering constraint from them
     "bot.agent_control",
     "bot.backends.base",
     "bot.agent_runtime.estop",  # depends only on bot.backends.base (EstopEngagedError subclasses BackendError) and db — safe leaf

@@ -58,11 +58,19 @@ def _transport_for(provider: Optional[str], model: str) -> ProviderTransport:
     )
 
 
-async def _single_call(provider: Optional[str], model: str, prompt: str) -> str:
+async def _single_call(
+    provider: Optional[str], model: str, prompt: str,
+    *, max_tokens: int = MAX_TOKENS, timeout_s: float = CALL_TIMEOUT_S,
+) -> str:
+    """max_tokens/timeout_s default to this module's own short-answer
+    tuning (consult()'s reference/aggregator calls) but are overridable
+    for a caller needing a much larger single completion — e.g.
+    bot/ui_customize.py generating a whole file, which can easily need
+    tens of thousands of output tokens, nothing like a consult() answer."""
     transport = _transport_for(provider, model)
     history = [transport.user_message(prompt)]
     response = await transport.send(
-        model=model, history=history, tool_schemas=[], max_tokens=MAX_TOKENS, timeout_s=CALL_TIMEOUT_S
+        model=model, history=history, tool_schemas=[], max_tokens=max_tokens, timeout_s=timeout_s
     )
     return response.text
 

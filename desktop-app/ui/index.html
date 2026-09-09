@@ -313,6 +313,11 @@
   .term .ts { color:#7a8087; }
   .term .lvl-info{ color:#7fb0e0; } .term .lvl-warn{ color:var(--warning); } .term .lvl-error{ color:#f08b8b; } .term .lvl-debug{ color:#8a8f98; }
 
+  .diffblock { font-family:var(--font-mono); background:var(--surface-2); border-radius:8px; padding:10px 12px; white-space:pre-wrap; word-break:break-word; }
+  .diffblock .diff-add { color:var(--good); }
+  .diffblock .diff-del { color:var(--critical); }
+  .diffblock .diff-hunk { color:var(--muted); }
+
   .visually-hidden { position:absolute !important; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; padding:0; margin:-1px; }
   .chat-card { padding:0; overflow:hidden; }
   .chat-toolbar-label { font-size:11.5px; font-weight:700; color:var(--muted); }
@@ -655,6 +660,7 @@
       <a href="#kanban" data-kw="kanban board cards tasks"><span class="ic">🗒</span><span class="nav-txt"><b>Kanban</b><small>Per-bot task board</small></span></a>
       <a href="#swarms" data-kw="swarms orchestration multi-bot"><span class="ic">🐝</span><span class="nav-txt"><b>Swarms</b><small>Multi-bot orchestration</small></span></a>
       <a href="#automation" data-kw="automation hooks agent settings auto-manage lifecycle"><span class="ic">🪝</span><span class="nav-txt"><b>Automation</b><small>Hooks, agent settings &amp; auto-manage</small></span></a>
+      <a href="#customize" data-kw="customize generative ui ai preview diff"><span class="ic">🪄</span><span class="nav-txt"><b>Customize UI</b><small>Describe a change, preview, apply</small></span></a>
       <a href="#platforms" data-kw="platforms legacy single-bot"><span class="ic">🔌</span><span class="nav-txt"><b>Platforms</b><small>Legacy single-bot config</small></span></a>
       <a href="#mobile" data-kw="mobile android pairing devices"><span class="ic">📱</span><span class="nav-txt"><b>Mobile</b><small>Pair &amp; manage devices</small></span></a>
       <a href="#servers" data-kw="servers linked federation multi-machine"><span class="ic">🌐</span><span class="nav-txt"><b>Linked Servers</b><small>Manage other BotServer installs</small></span></a>
@@ -1685,6 +1691,48 @@
           <textarea id="am-goal-template" rows="2" style="width:100%; margin-top:4px;"></textarea>
         </label>
         <div style="margin-top:12px;"><button class="btn primary" id="btn-auto-manage-save">Save settings</button> <span class="cardnote" id="auto-manage-status" style="display:inline;"></span></div>
+      </div>
+    </section>
+
+    <section id="customize">
+      <div class="sec-head"><h2>Customize UI</h2><span class="desc">Describe a UI change in plain English — the AI generates real, working code, you review a live preview and diff, and nothing touches the real file until you approve it. This cannot guarantee generated code is bug-free; it guarantees nothing is applied unreviewed, and every apply is one click to revert.</span></div>
+
+      <div class="card" id="customize-card">
+        <h3>Describe a change</h3>
+        <label>What would you like to change?<br>
+          <textarea id="customize-instruction" rows="3" style="width:100%; margin-top:4px;" placeholder="e.g. Add a button next to Reload Config labeled 'Ping' that shows an alert"></textarea>
+        </label>
+        <div class="row" style="margin-top:10px;">
+          <select id="customize-target">
+            <option value="dashboard">Browser dashboard — updates live the moment you approve</option>
+            <option value="desktop_html">This desktop app's HTML — needs a rebuild to actually appear</option>
+            <option value="desktop_js">This desktop app's JS — needs a rebuild to actually appear</option>
+          </select>
+          <button class="btn primary" id="btn-customize-generate">Generate</button>
+        </div>
+        <span class="cardnote" id="customize-generate-status"></span>
+      </div>
+
+      <div class="card" id="customize-result-card" style="margin-top:14px; display:none;">
+        <h3>Preview</h3>
+        <div id="customize-explanation" class="cardnote" style="margin-bottom:8px;"></div>
+        <div id="customize-warnings" class="cardnote" style="color:var(--warning, #b8860b); margin-bottom:8px;"></div>
+        <details style="margin-bottom:10px;"><summary style="cursor:pointer;">Diff</summary><pre id="customize-diff" class="diffblock" style="max-height:300px; overflow:auto; font-size:11.5px;"></pre></details>
+        <iframe id="customize-preview-frame" sandbox="allow-scripts" style="width:100%; height:480px; border:1px solid var(--line); border-radius:8px; background:#fff;"></iframe>
+        <div class="row" style="margin-top:10px;">
+          <button class="btn primary" id="btn-customize-approve">Approve &amp; apply</button>
+          <button class="btn" id="btn-customize-reject">Discard</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;" id="customize-history-card">
+        <h3>Change history</h3>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>When</th><th>Target</th><th>Instruction</th><th></th></tr></thead>
+            <tbody id="customize-history-tbody"></tbody>
+          </table>
+        </div>
       </div>
     </section>
 

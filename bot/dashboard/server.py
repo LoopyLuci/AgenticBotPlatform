@@ -2337,6 +2337,53 @@ def build_app() -> FastAPI:
             raise HTTPException(status_code=404, detail=f"no snapshot named {name!r}")
         return {"ok": True}
 
+    @app.post("/api/ui-customize/generate", dependencies=[Depends(_require_token)])
+    async def api_ui_customize_generate(payload: dict = Body(...)):
+        from bot import ui_customize
+
+        target = payload.get("target")
+        instruction = payload.get("instruction")
+        if not target or not instruction:
+            raise HTTPException(status_code=400, detail="payload must be {target, instruction}")
+        try:
+            return await ui_customize.generate_change(target, instruction)
+        except ui_customize.UiCustomizeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.post("/api/ui-customize/apply", dependencies=[Depends(_require_token)])
+    async def api_ui_customize_apply(payload: dict = Body(...)):
+        from bot import ui_customize
+
+        change_id = payload.get("change_id")
+        if not change_id:
+            raise HTTPException(status_code=400, detail="payload must be {change_id}")
+        try:
+            entry = ui_customize.apply_change(change_id, actor="dashboard")
+        except ui_customize.UiCustomizeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        db.log_audit(actor="dashboard", action="ui_customize_apply", detail=f"{entry['target']}: {entry['instruction']}")
+        return entry
+
+    @app.get("/api/ui-customize/history", dependencies=[Depends(_require_token)])
+    async def api_ui_customize_history(target: Optional[str] = None):
+        from bot import ui_customize
+
+        return {"history": ui_customize.list_history(target)}
+
+    @app.post("/api/ui-customize/revert", dependencies=[Depends(_require_token)])
+    async def api_ui_customize_revert(payload: dict = Body(...)):
+        from bot import ui_customize
+
+        entry_id = payload.get("entry_id")
+        if not entry_id:
+            raise HTTPException(status_code=400, detail="payload must be {entry_id}")
+        try:
+            entry = ui_customize.revert_change(entry_id, actor="dashboard")
+        except ui_customize.UiCustomizeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        db.log_audit(actor="dashboard", action="ui_customize_revert", detail=f"{entry['target']}")
+        return entry
+
     @app.post("/api/backend/{action_or_default}/{backend}", dependencies=[Depends(_require_token_or_api_key)])
     async def api_set_backend(action_or_default: str, backend: str):
         if backend not in VALID_BACKENDS:

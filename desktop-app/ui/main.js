@@ -702,6 +702,114 @@ document.getElementById('btn-snapshot-create').onclick = async () => {
   refreshSnapshots();
 };
 
+// ------------------------------------------------------- customize UI ----
+let _customizePendingChange = null; // {change_id, target} for the last generated-but-not-yet-applied change
+
+function _renderDiff(diffText) {
+  if (!diffText) return '';
+  return diffText.split('\n').map(line => {
+    const escaped = esc(line);
+    if (line.startsWith('+') && !line.startsWith('+++')) return `<span class="diff-add">${escaped}</span>`;
+    if (line.startsWith('-') && !line.startsWith('---')) return `<span class="diff-del">${escaped}</span>`;
+    if (line.startsWith('@@')) return `<span class="diff-hunk">${escaped}</span>`;
+    return escaped;
+  }).join('\n');
+}
+
+async function refreshCustomizeHistory() {
+  const tbody = document.getElementById('customize-history-tbody');
+  if (!getToken() || !tbody) return;
+  let data;
+  try {
+    data = await api('/api/ui-customize/history');
+  } catch (_e) { return; }
+  const list = data.history || [];
+  tbody.innerHTML = list.length ? list.map(e => `
+    <tr>
+      <td class="mono">${esc(fmtTime(e.applied_at))}</td>
+      <td>${esc(e.target)}${e.kind === 'revert' ? ' <span class="cardnote">(revert)</span>' : ''}</td>
+      <td>${esc(e.instruction)}</td>
+      <td><button class="btn small" data-customize-revert="${esc(e.entry_id)}">Revert</button></td>
+    </tr>`).join('') : '<tr><td colspan="4" class="cardnote">No changes yet.</td></tr>';
+  tbody.querySelectorAll('[data-customize-revert]').forEach(btn => btn.onclick = async () => {
+    const entryId = btn.dataset.customizeRevert;
+    if (!confirm('Revert this change? The file is restored to exactly what it was right before this change was applied.')) return;
+    try {
+      await api('/api/ui-customize/revert', { method: 'POST', body: JSON.stringify({ entry_id: entryId }) });
+    } catch (e) {
+      alert(e.message || 'Revert failed.');
+      return;
+    }
+    refreshCustomizeHistory();
+  });
+}
+
+document.getElementById('btn-customize-generate').onclick = async () => {
+  const status = document.getElementById('customize-generate-status');
+  const instruction = document.getElementById('customize-instruction').value.trim();
+  const target = document.getElementById('customize-target').value;
+  if (!instruction) { status.textContent = 'Describe what you want changed first.'; return; }
+  status.textContent = 'Generating — this calls a real model and can take a little while for a whole file…';
+  document.getElementById('customize-result-card').style.display = 'none';
+  let result;
+  try {
+    result = await api('/api/ui-customize/generate', { method: 'POST', body: JSON.stringify({ target, instruction }) });
+  } catch (e) {
+    status.textContent = e.message || 'Generation failed.';
+    return;
+  }
+  status.textContent = '';
+  _customizePendingChange = { change_id: result.change_id, target };
+
+  document.getElementById('customize-explanation').textContent = result.explanation || '';
+  const warnEl = document.getElementById('customize-warnings');
+  const warnParts = [];
+  if (result.removed_ids && result.removed_ids.length) warnParts.push(`Removed element id(s): ${result.removed_ids.join(', ')}`);
+  if (result.warnings && result.warnings.length) warnParts.push(...result.warnings);
+  if (!result.valid) warnParts.unshift('⚠ Validation failed — this cannot be applied as-is: ' + (result.errors || []).join('; '));
+  warnEl.innerHTML = warnParts.map(esc).join('<br>');
+  document.getElementById('customize-diff').innerHTML = _renderDiff(result.diff);
+
+  const frame = document.getElementById('customize-preview-frame');
+  if (result.preview_html != null) {
+    frame.srcdoc = result.preview_html;
+    frame.style.display = '';
+  } else {
+    frame.removeAttribute('srcdoc');
+    frame.style.display = 'none';
+  }
+
+  const approveBtn = document.getElementById('btn-customize-approve');
+  approveBtn.disabled = !result.valid;
+  approveBtn.title = result.valid ? '' : 'Cannot apply — validation failed, see the warning above.';
+
+  document.getElementById('customize-result-card').style.display = '';
+};
+
+document.getElementById('btn-customize-approve').onclick = async () => {
+  if (!_customizePendingChange) return;
+  const target = _customizePendingChange.target;
+  const liveNote = target === 'dashboard'
+    ? 'The browser dashboard (any open tab) will reload automatically once applied — this desktop app has its own separate UI and is unaffected either way.'
+    : 'This target needs a rebuild (cargo tauri build) before the change actually appears in this running app.';
+  if (!confirm(`Apply this change to ${target}? A backup is taken first and this is one click to revert. ${liveNote}`)) return;
+  try {
+    await api('/api/ui-customize/apply', { method: 'POST', body: JSON.stringify({ change_id: _customizePendingChange.change_id }) });
+  } catch (e) {
+    alert(e.message || 'Apply failed.');
+    return;
+  }
+  _customizePendingChange = null;
+  document.getElementById('customize-result-card').style.display = 'none';
+  document.getElementById('customize-instruction').value = '';
+  refreshCustomizeHistory();
+};
+
+document.getElementById('btn-customize-reject').onclick = () => {
+  _customizePendingChange = null;
+  document.getElementById('customize-result-card').style.display = 'none';
+};
+
 async function refreshHotReload() {
   const textEl = document.getElementById('hotreload-status-text');
   const tbody = document.getElementById('hotreload-events-tbody');
@@ -944,6 +1052,7 @@ function startDashboardPolling() {
   pollWhenVisible(refreshPlugins, 15000);
   refreshSnapshots();
   pollWhenVisible(refreshSnapshots, 15000);
+  refreshCustomizeHistory();
   refreshHotReload();
   pollWhenVisible(refreshHotReload, 15000);
   refreshKanban();
