@@ -1037,7 +1037,17 @@ def build_app() -> FastAPI:
         db.log_audit(actor="dashboard", action="external_mcp_remove", detail=name)
         return {"ok": True}
 
-    @app.get("/api/hooks", dependencies=[Depends(_require_token)])
+    # Hooks/agent-settings/auto-manage (through the end of api_auto_manage_set
+    # below) are reachable by a paired mobile device key, not just the
+    # desktop token — same tier as /api/bots and /api/config/set (see
+    # _identify_caller's own docstring): a lost/unlocked phone that could
+    # already rewrite bot credentials or config is no more exposed by also
+    # being able to add a hook or flip an agent setting. Widened from the
+    # original desktop-only _require_token when the Android app's own
+    # Automation screen was built, mirroring exactly the same audit-logging
+    # tradeoff api_config_set already makes (actor="dashboard" regardless
+    # of which caller kind actually authenticated).
+    @app.get("/api/hooks", dependencies=[Depends(_require_token_or_api_key)])
     async def api_hooks_list(event: Optional[str] = None):
         rows = db.list_agent_hooks(event=event)
         return {
@@ -1050,7 +1060,7 @@ def build_app() -> FastAPI:
             ]
         }
 
-    @app.post("/api/hooks", dependencies=[Depends(_require_token)])
+    @app.post("/api/hooks", dependencies=[Depends(_require_token_or_api_key)])
     async def api_hooks_add(payload: dict = Body(...)):
         from bot.agent_runtime import hooks as agent_hooks
 
@@ -1066,7 +1076,7 @@ def build_app() -> FastAPI:
         db.log_audit(actor="dashboard", action="agent_hook_add", detail=f"#{hook_id} {event}")
         return {"ok": True, "id": hook_id}
 
-    @app.post("/api/hooks/{hook_id}/enable", dependencies=[Depends(_require_token)])
+    @app.post("/api/hooks/{hook_id}/enable", dependencies=[Depends(_require_token_or_api_key)])
     async def api_hooks_enable(hook_id: int):
         if db.get_agent_hook(hook_id) is None:
             raise HTTPException(status_code=404, detail=f"no hook #{hook_id}")
@@ -1074,7 +1084,7 @@ def build_app() -> FastAPI:
         db.log_audit(actor="dashboard", action="agent_hook_enable", detail=str(hook_id))
         return {"ok": True}
 
-    @app.post("/api/hooks/{hook_id}/disable", dependencies=[Depends(_require_token)])
+    @app.post("/api/hooks/{hook_id}/disable", dependencies=[Depends(_require_token_or_api_key)])
     async def api_hooks_disable(hook_id: int):
         if db.get_agent_hook(hook_id) is None:
             raise HTTPException(status_code=404, detail=f"no hook #{hook_id}")
@@ -1082,7 +1092,7 @@ def build_app() -> FastAPI:
         db.log_audit(actor="dashboard", action="agent_hook_disable", detail=str(hook_id))
         return {"ok": True}
 
-    @app.delete("/api/hooks/{hook_id}", dependencies=[Depends(_require_token)])
+    @app.delete("/api/hooks/{hook_id}", dependencies=[Depends(_require_token_or_api_key)])
     async def api_hooks_delete(hook_id: int):
         if not db.delete_agent_hook(hook_id):
             raise HTTPException(status_code=404, detail=f"no hook #{hook_id}")
@@ -1121,13 +1131,13 @@ def build_app() -> FastAPI:
         db.log_audit(actor="dashboard", action="skill_remove", detail=name)
         return {"ok": True}
 
-    @app.get("/api/agent-settings", dependencies=[Depends(_require_token)])
+    @app.get("/api/agent-settings", dependencies=[Depends(_require_token_or_api_key)])
     async def api_agent_settings_get(instance_id: Optional[int] = None):
         from bot import agent_settings
 
         return agent_settings.get(instance_id)
 
-    @app.post("/api/agent-settings", dependencies=[Depends(_require_token)])
+    @app.post("/api/agent-settings", dependencies=[Depends(_require_token_or_api_key)])
     async def api_agent_settings_set(payload: dict = Body(...)):
         from bot import agent_settings
 
@@ -1140,7 +1150,7 @@ def build_app() -> FastAPI:
         db.log_audit(actor="dashboard", action="agent_settings_update", detail=f"instance {instance_id}: {fields}")
         return result
 
-    @app.get("/api/auto-manage/{instance_id}", dependencies=[Depends(_require_token)])
+    @app.get("/api/auto-manage/{instance_id}", dependencies=[Depends(_require_token_or_api_key)])
     async def api_auto_manage_get(instance_id: int):
         from bot import auto_manage
 
@@ -1149,7 +1159,7 @@ def build_app() -> FastAPI:
         except auto_manage.AutoManageError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
 
-    @app.post("/api/auto-manage/{instance_id}", dependencies=[Depends(_require_token)])
+    @app.post("/api/auto-manage/{instance_id}", dependencies=[Depends(_require_token_or_api_key)])
     async def api_auto_manage_set(instance_id: int, payload: dict = Body(...)):
         from bot import auto_manage
 

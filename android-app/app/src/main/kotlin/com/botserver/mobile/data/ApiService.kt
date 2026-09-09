@@ -1,5 +1,8 @@
 package com.botserver.mobile.data
 
+import com.botserver.mobile.data.dto.AddHookRequest
+import com.botserver.mobile.data.dto.AgentSettings
+import com.botserver.mobile.data.dto.AutoManageConfig
 import com.botserver.mobile.data.dto.BotInstance
 import com.botserver.mobile.data.dto.BotWriteRequest
 import com.botserver.mobile.data.dto.ChatMessage
@@ -32,8 +35,11 @@ import com.botserver.mobile.data.dto.ProviderModelsResponse
 import com.botserver.mobile.data.dto.ProvidersCatalogResponse
 import com.botserver.mobile.data.dto.ProvidersListResponse
 import com.botserver.mobile.data.dto.SetProviderRequest
+import com.botserver.mobile.data.dto.SetAgentSettingsRequest
+import com.botserver.mobile.data.dto.SetAutoManageRequest
 import com.botserver.mobile.data.dto.SetDeviceTierRequest
 import com.botserver.mobile.data.dto.SetDeviceTierResponse
+import com.botserver.mobile.data.dto.HooksListResponse
 import com.botserver.mobile.data.dto.ServerChatApprovalResolveRequest
 import com.botserver.mobile.data.dto.ServerChatConversation
 import com.botserver.mobile.data.dto.ServerChatMessage
@@ -338,6 +344,42 @@ interface ApiService {
 
     @POST("/api/config/set")
     suspend fun setConfig(@Body request: ConfigSetRequest): OkResponse
+
+    // ----------------------------------------------------------- hooks ---
+    // A local command run on PreToolUse/PostToolUse/SessionStart/
+    // UserPromptSubmit — see bot/agent_runtime/hooks.py. Full parity with
+    // the desktop dashboard's Automation section.
+    @GET("/api/hooks")
+    suspend fun hooks(@Query("event") event: String? = null): HooksListResponse
+
+    @POST("/api/hooks")
+    suspend fun addHook(@Body request: AddHookRequest): OkResponse
+
+    @POST("/api/hooks/{hookId}/enable")
+    suspend fun enableHook(@Path("hookId") hookId: Int): OkResponse
+
+    @POST("/api/hooks/{hookId}/disable")
+    suspend fun disableHook(@Path("hookId") hookId: Int): OkResponse
+
+    @DELETE("/api/hooks/{hookId}")
+    suspend fun deleteHook(@Path("hookId") hookId: Int): OkResponse
+
+    // --------------------------------------------------- agent settings ---
+    // Per-instance (or process-wide default when instanceId is omitted)
+    // concurrency/provider/model/effort defaults — see bot/agent_settings.py.
+    @GET("/api/agent-settings")
+    suspend fun agentSettings(@Query("instance_id") instanceId: Int? = null): AgentSettings
+
+    @POST("/api/agent-settings")
+    suspend fun setAgentSettings(@Body request: SetAgentSettingsRequest): AgentSettings
+
+    // ----------------------------------------------------- auto-manage ---
+    // Autonomous manager check-ins — see bot/auto_manage.py.
+    @GET("/api/auto-manage/{instanceId}")
+    suspend fun autoManage(@Path("instanceId") instanceId: Int): AutoManageConfig
+
+    @POST("/api/auto-manage/{instanceId}")
+    suspend fun setAutoManage(@Path("instanceId") instanceId: Int, @Body request: SetAutoManageRequest): AutoManageConfig
 
     // -------------------------------------------------------- providers ---
     // Full parity with the desktop dashboard's Providers + Models page —

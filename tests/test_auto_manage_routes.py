@@ -36,6 +36,21 @@ def test_get_unknown_instance_is_404(temp_db, monkeypatch):
     assert resp.status_code == 404
 
 
+def test_reachable_by_a_paired_device_key_not_just_the_desktop_token(temp_db, monkeypatch):
+    """Widened from the original desktop-only _require_token when the
+    Android app's own Automation screen was built — same tier as
+    /api/bots and /api/config/set (see _identify_caller's docstring)."""
+    from bot import db
+
+    client = _client(monkeypatch)
+    iid = _make_manager_instance()
+    _key_id, plaintext = db.create_api_key("phone", permission_tier="none")
+
+    resp = client.get(f"/api/auto-manage/{iid}", headers={"X-Dashboard-Token": plaintext})
+
+    assert resp.status_code == 200
+
+
 def test_enable_then_get(temp_db, monkeypatch):
     client = _client(monkeypatch)
     iid = _make_manager_instance()

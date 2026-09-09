@@ -44,6 +44,20 @@ def test_get_returns_defaults(temp_db, monkeypatch):
     assert body["worker_effort"] is None
 
 
+def test_reachable_by_a_paired_device_key_not_just_the_desktop_token(temp_db, monkeypatch):
+    """Widened from the original desktop-only _require_token when the
+    Android app's own Automation screen was built — same tier as
+    /api/bots and /api/config/set (see _identify_caller's docstring)."""
+    from bot import db
+
+    client = _client(monkeypatch)
+    _key_id, plaintext = db.create_api_key("phone", permission_tier="none")
+
+    resp = client.get("/api/agent-settings", headers={"X-Dashboard-Token": plaintext})
+
+    assert resp.status_code == 200
+
+
 def test_set_then_get_round_trips(temp_db, monkeypatch):
     client = _client(monkeypatch)
     iid = _make_instance()

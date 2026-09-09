@@ -27,6 +27,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.botserver.mobile.ui.automation.AutomationScreen
 import com.botserver.mobile.ui.bots.BotsScreen
 import com.botserver.mobile.ui.chat.ChatScreen
 import com.botserver.mobile.ui.devices.DevicesScreen
@@ -106,8 +107,15 @@ fun HomeScreen(onUnpaired: () -> Unit = {}) {
             composable("sessions") { SessionsScreen() }
             composable("jobs") { JobsScreen() }
             composable("bots") { BotsScreen() }
-            composable("settings") { SettingsScreen(onOpenProviders = { navController.navigate("providers") }, onUnpaired = onUnpaired) }
+            composable("settings") {
+                SettingsScreen(
+                    onOpenProviders = { navController.navigate("providers") },
+                    onOpenAutomation = { navController.navigate("automation") },
+                    onUnpaired = onUnpaired,
+                )
+            }
             composable("providers") { ProvidersScreen(onBack = { navController.popBackStack() }) }
+            composable("automation") { AutomationScreen(onBack = { navController.popBackStack() }) }
             composable("devices") {
                 DevicesScreen(
                     onOpenServerChat = { peerDeviceId ->

@@ -38,6 +38,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun SettingsScreen(
     onOpenProviders: () -> Unit = {},
+    onOpenAutomation: () -> Unit = {},
     onUnpaired: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
     updateViewModel: com.botserver.mobile.ui.update.AppUpdateViewModel = hiltViewModel(),
@@ -134,6 +135,30 @@ fun SettingsScreen(
                         Text("Providers & Models", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                         Text(
                             "Custom OpenAI-compatible endpoints for custom_model/native_agent — add a key, browse and toggle models",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                    }
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                tonalElevation = 1.dp,
+                onClick = onOpenAutomation,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Automation", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Lifecycle hooks, per-instance agent settings, and autonomous manager check-ins",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         )
