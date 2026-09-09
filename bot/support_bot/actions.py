@@ -10,7 +10,9 @@ already covered by those modules' existing audit logging.
 
 from __future__ import annotations
 
+import contextvars
 import os
+import re
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -20,6 +22,16 @@ from bot.router import VALID_BACKENDS
 from bot.setup_wizard import backend_readiness
 from bot.support_bot import slots
 from bot.swarm import engine as swarm_engine
+
+# The calling device's own permission_tier for the request currently being
+# executed — set by engine.py around each _execute() call (both the direct
+# path in handle() and the confirm-token path in confirm()), read only by
+# handlers that target *another device* by its own tier (device_revoke,
+# device_retier, mobile_key_create's optional tier) — see
+# bot/device_tiers.py. Defaults to "unrestricted" so every pre-existing
+# caller that never threads a device_tier through (tests, direct calls)
+# keeps today's fully-trusted behavior unchanged.
+_caller_device_tier: contextvars.ContextVar[str] = contextvars.ContextVar("_caller_device_tier", default="unrestricted")
 
 
 class ActionError(Exception):
@@ -359,6 +371,96 @@ def _estop_disengage(text: str, actor: str) -> str:
     return "Emergency stop disengaged — normal operation resumed."
 
 
+# Hooks (bot/db.py's agent_hooks table) — list/enable/disable/remove only.
+# "add" is deliberately not exposed here: it needs an arbitrary local
+# shell command as a slot, which chat/voice is a poor, risk-prone
+# capture surface for (no syntax highlighting, no review step, easy to
+# mis-transcribe) — the dashboard's own hook form is the right place to
+# author one. Operating on an existing hook by its numeric id is safe
+# and simple by comparison.
+def _hooks_list(text: str, actor: str) -> str:
+    rows = db.list_agent_hooks()
+    if not rows:
+        return "No hooks configured."
+    return "\n".join(
+        f"- #{r['id']} {r['event']} → {r['command']} ({'enabled' if r['enabled'] else 'disabled'})" for r in rows
+    )
+
+
+def _hook_enable(text: str, actor: str) -> str:
+    hook_id = slots.find_number(text)
+    if hook_id is None:
+        raise ActionError("Which hook? Say its number — ask \"list hooks\" to see them.")
+    if db.get_agent_hook(hook_id) is None:
+        raise ActionError(f"No hook #{hook_id}.")
+    db.set_agent_hook_enabled(hook_id, True)
+    return f"Hook #{hook_id} enabled."
+
+
+def _hook_disable(text: str, actor: str) -> str:
+    hook_id = slots.find_number(text)
+    if hook_id is None:
+        raise ActionError("Which hook? Say its number — ask \"list hooks\" to see them.")
+    if db.get_agent_hook(hook_id) is None:
+        raise ActionError(f"No hook #{hook_id}.")
+    db.set_agent_hook_enabled(hook_id, False)
+    return f"Hook #{hook_id} disabled."
+
+
+def _hook_remove(text: str, actor: str) -> str:
+    hook_id = slots.find_number(text)
+    if hook_id is None:
+        raise ActionError("Which hook? Say its number — ask \"list hooks\" to see them.")
+    if not db.delete_agent_hook(hook_id):
+        raise ActionError(f"No hook #{hook_id}.")
+    return f"Hook #{hook_id} removed."
+
+
+# agent_settings (bot/agent_settings.py) — show, plus a narrow "set
+# worker/manager effort" rather than a fully generic field setter. Most
+# agent_settings fields (provider/model strings, booleans) already have
+# their own natural-language entry points elsewhere (backend_set,
+# model_set); effort is the one field genuinely worth a direct "set
+# <bot>'s effort to <level>" phrase, and its value space is a small,
+# known ladder (bot/effort.py) safe to match against free text.
+def _agent_settings_show(text: str, actor: str) -> str:
+    from bot import agent_settings
+
+    inst = _resolve_instance_or_raise(text)
+    settings = dict(agent_settings.get(inst["id"]))
+    settings["is_admin_instance"] = "(hidden — dashboard/MCP only)"  # matches admin_get_agent_settings's own redaction
+    lines = [f"{k}: {v}" for k, v in settings.items()]
+    return f"Agent settings for {inst['name']!r}:\n" + "\n".join(lines)
+
+
+def _agent_settings_set_effort(text: str, actor: str) -> str:
+    from bot import agent_settings, effort
+
+    inst = _resolve_instance_or_raise(text)
+    level = slots.find_effort_level(text)
+    if level is None:
+        raise ActionError(f"Which effort level? One of: {', '.join(effort.EFFORT_LADDER)}.")
+    field = "manager_effort" if re.search(r"\bmanager\b", text.lower()) else "worker_effort"
+    agent_settings.set_settings(inst["id"], **{field: level})
+    return f"Set {inst['name']!r}'s {field.replace('_', ' ')} to {level!r}."
+
+
+# auto_manage (bot/auto_manage.py) — show only. enable()/disable() need a
+# real chat_id/thread_id destination for the periodic check-in message to
+# go to (it drives a genuine scheduled_commands row), which Support Bot's
+# own request/reply shape has no equivalent of — there's no persistent
+# "chat" backing a support-bot text exchange the way a Telegram/Discord
+# conversation has. Turning auto-manage on/off stays a dashboard (or the
+# target platform's own admin surface) action; reading its current state
+# via chat is unambiguous and safe.
+def _auto_manage_show(text: str, actor: str) -> str:
+    from bot import auto_manage
+
+    inst = _resolve_instance_or_raise(text)
+    cfg = auto_manage.get_config(inst["id"])
+    return f"Auto-manage for {inst['name']!r}: " + ", ".join(f"{k}={v}" for k, v in cfg.items())
+
+
 def _backups_list(text: str, actor: str) -> str:
     env_backups = envfile.list_backups()
     inst_backups = bot_instances.list_backups()
@@ -433,11 +535,41 @@ def _devices_list(text: str, actor: str) -> str:
 
 
 def _device_revoke(text: str, actor: str) -> str:
+    from bot import device_tiers
+
     device = slots.find_device(text)
     if device is None:
         raise ActionError("Which device? Say its label, or check the Mobile tab.")
+    # is_self=False, matching admin_revoke_device's own precedent
+    # (bot/agent_runtime/tools.py) — this layer has no concrete "which
+    # physical device is asking" identity to compare against, only its
+    # tier. Deliberately does NOT bypass this check even at
+    # device_tier="unrestricted" (unlike the dashboard's own desktop-token
+    # route, which is the unconditional authority) — chat/voice is a
+    # convenience surface here, not the final authority; an operator who
+    # needs to revoke a peer/superior device uses the dashboard directly.
+    if not device_tiers.can_manage(_caller_device_tier.get(), device["permission_tier"], is_self=False):
+        raise ActionError("Your device can only revoke a strictly lower-tier device.")
     db.revoke_api_key(device["id"])
     return f"Revoked {device['label']!r} — it can no longer connect."
+
+
+def _device_retier(text: str, actor: str) -> str:
+    from bot import device_tiers
+
+    device = slots.find_device(text)
+    if device is None:
+        raise ActionError("Which device? Say its label.")
+    new_tier = slots.find_tier(text)
+    if new_tier is None:
+        raise ActionError("Which tier? Say none, standard, elevated, or unrestricted.")
+    caller_tier = _caller_device_tier.get()
+    if not device_tiers.can_manage(caller_tier, device["permission_tier"], is_self=False):
+        raise ActionError("Your device can only change the tier of a strictly lower-tier device.")
+    if not device_tiers.can_mint(caller_tier, new_tier):
+        raise ActionError(f"Your device's own tier ({caller_tier}) can't grant tier {new_tier!r}.")
+    db.set_api_key_tier(device["id"], new_tier)
+    return f"Set {device['label']!r}'s permission tier to {new_tier!r}."
 
 
 def _app_update(text: str, actor: str) -> str:
@@ -466,15 +598,26 @@ def _app_update(text: str, actor: str) -> str:
 
 
 async def _mobile_key_create(text: str, actor: str) -> str:
-    from bot import mobile_pairing
+    from bot import device_tiers, mobile_pairing
 
     label = slots.find_quoted(text) or "New device"
-    key_id, plaintext = db.create_api_key(label)
+    # An explicit non-"none" tier request is gated by can_mint (same
+    # ceiling admin_mint_device_key enforces); omitting a tier keeps
+    # today's behavior exactly as it was before device_tiers.py existed —
+    # "none" needs no permission at all, since it grants zero admin
+    # capability.
+    requested_tier = slots.find_tier(text) or "none"
+    if requested_tier != "none":
+        caller_tier = _caller_device_tier.get()
+        if not device_tiers.can_mint(caller_tier, requested_tier):
+            raise ActionError(f"Your device's own tier ({caller_tier}) can't mint a device at tier {requested_tier!r}.")
+    key_id, plaintext = db.create_api_key(label, permission_tier=requested_tier)
     db.create_conversations_for_new_device(key_id)
     host, host2, host3 = await mobile_pairing.detect_hosts()
     pairing_code = mobile_pairing.build_pairing_code(plaintext, host, host2, host3)
+    tier_note = f" at tier {requested_tier!r}" if requested_tier != "none" else ""
     return (
-        f"Created a pairing code for {label!r} (id {key_id}) — paste this whole thing into "
+        f"Created a pairing code for {label!r} (id {key_id}){tier_note} — paste this whole thing into "
         f"the app's pairing screen, no host typing needed:\n\n{pairing_code}\n\n"
         "This is shown once — use the Mobile tab's QR code if you need it again later."
     )
@@ -636,6 +779,14 @@ INTENT_HANDLERS: dict[str, Callable[[str, str], str]] = {
     "settings_set": _settings_set,
     "devices_list": _devices_list,
     "device_revoke": _device_revoke,
+    "device_retier": _device_retier,
+    "hooks_list": _hooks_list,
+    "hook_enable": _hook_enable,
+    "hook_disable": _hook_disable,
+    "hook_remove": _hook_remove,
+    "agent_settings_show": _agent_settings_show,
+    "agent_settings_set_effort": _agent_settings_set_effort,
+    "auto_manage_show": _auto_manage_show,
     "app_update": _app_update,
     "sessions_list": _sessions_list,
     "session_show": _session_show,

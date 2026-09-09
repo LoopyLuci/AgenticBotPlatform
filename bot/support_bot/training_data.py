@@ -241,11 +241,20 @@ EXAMPLES: list[tuple[str, str]] = [
     ("unpair device X", "device_revoke"),
     ("revoke device X's key", "device_revoke"),
 
+    # device_retier — Admin control surface plan, Section 4 expansion
+    ("set device X's permission tier to elevated", "device_retier"),
+    ("change my tablet's tier to standard", "device_retier"),
+    ("grant device X unrestricted access", "device_retier"),
+    ("retier the kindle fire to none", "device_retier"),
+    ("give my other phone elevated permissions", "device_retier"),
+
     # mobile_key_create
     ("generate a new pairing key", "mobile_key_create"),
     ("create a mobile pairing key", "mobile_key_create"),
     ("i need a new pairing key for my tablet", "mobile_key_create"),
     ("pair a new device", "mobile_key_create"),
+    ("pair a new device at elevated tier", "mobile_key_create"),
+    ("create a pairing key with standard permissions", "mobile_key_create"),
 
     # app_update
     ("update the app", "app_update"),
@@ -311,6 +320,42 @@ EXAMPLES: list[tuple[str, str]] = [
     ("turn off the emergency stop", "estop_disengage"),
     ("let work start again", "estop_disengage"),
     ("clear the kill switch", "estop_disengage"),
+
+    # hooks_list — Admin control surface plan, Section 4 expansion
+    ("list hooks", "hooks_list"),
+    ("show configured hooks", "hooks_list"),
+    ("what hooks are set up", "hooks_list"),
+    ("list agent hooks", "hooks_list"),
+
+    # hook_enable
+    ("enable hook 3", "hook_enable"),
+    ("turn on hook number 2", "hook_enable"),
+    ("re-enable hook 5", "hook_enable"),
+
+    # hook_disable
+    ("disable hook 3", "hook_disable"),
+    ("turn off hook number 2", "hook_disable"),
+    ("pause hook 5", "hook_disable"),
+
+    # hook_remove
+    ("remove hook 3", "hook_remove"),
+    ("delete hook number 2", "hook_remove"),
+    ("get rid of hook 5", "hook_remove"),
+
+    # agent_settings_show
+    ("show agent settings for BotServer Control", "agent_settings_show"),
+    ("what are the agent settings for X", "agent_settings_show"),
+    ("show me X's agent config", "agent_settings_show"),
+
+    # agent_settings_set_effort
+    ("set X's worker effort to high", "agent_settings_set_effort"),
+    ("change the manager effort for BotServer Control to max", "agent_settings_set_effort"),
+    ("set X's effort level to medium", "agent_settings_set_effort"),
+
+    # auto_manage_show
+    ("show auto-manage settings for X", "auto_manage_show"),
+    ("is auto-manage on for BotServer Control", "auto_manage_show"),
+    ("what's the auto-manage config for X", "auto_manage_show"),
 ]
 
 # Admin control surface plan, Section 4 — intents that reach the same
@@ -326,6 +371,24 @@ ADMIN_ONLY_INTENTS: dict[str, str] = {
     "estop_status": "standard",
     "estop_engage": "elevated",
     "estop_disengage": "elevated",
+    # devices_list/device_revoke predate device_tiers.py and were
+    # unguarded until now — closing that gap is the first fix under the
+    # "Admin control surface" plan's Section 4 expansion, independent of
+    # the rest of it. Revoking is the same "manage a lower-tier device"
+    # action bot/dashboard/server.py's own device-callable revoke route
+    # gates at elevated-and-can_manage; listing devices is read-only,
+    # gated at standard purely to keep pairing metadata away from
+    # completely unprivileged (tier "none") devices.
+    "devices_list": "standard",
+    "device_revoke": "elevated",
+    "device_retier": "elevated",
+    "hooks_list": "standard",
+    "hook_enable": "elevated",
+    "hook_disable": "elevated",
+    "hook_remove": "elevated",
+    "agent_settings_show": "standard",
+    "agent_settings_set_effort": "elevated",
+    "auto_manage_show": "standard",
 }
 
 # Intents whose action changes state in a way that's disruptive or hard to
@@ -342,6 +405,10 @@ DESTRUCTIVE_INTENTS = {
     "db_vacuum",
     "backup_restore",
     "device_revoke",
+    "device_retier",
+    "hook_disable",
+    "hook_remove",
+    "mobile_key_create",
     "estop_engage",
     "estop_disengage",
 }

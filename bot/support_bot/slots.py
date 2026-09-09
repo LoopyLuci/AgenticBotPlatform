@@ -210,6 +210,33 @@ def find_device(text: str) -> Optional[dict[str, Any]]:
     return None
 
 
+def find_tier(text: str) -> Optional[str]:
+    """Matches a bot/device_tiers.py permission tier keyword — word-boundary
+    matched (not bare substring) so "none" doesn't false-positive inside
+    an unrelated word. Checked longest-first only where it matters
+    (none of these four actually overlap as substrings, but the pattern
+    matches find_effort_level's own defensive ordering below)."""
+    lowered = text.lower()
+    for tier in ("unrestricted", "elevated", "standard", "none"):
+        if re.search(rf"\b{tier}\b", lowered):
+            return tier
+    return None
+
+
+def find_effort_level(text: str) -> Optional[str]:
+    """Matches a bot/effort.py EFFORT_LADDER level. Longest-first so a
+    prefix-shaped level (there are none among the current eight, but this
+    stays defensive against a future addition) can't be shadowed by a
+    shorter one appearing first in the tuple."""
+    from bot.effort import EFFORT_LADDER
+
+    lowered = text.lower()
+    for level in sorted(EFFORT_LADDER, key=len, reverse=True):
+        if re.search(rf"\b{level}\b", lowered):
+            return level
+    return None
+
+
 def find_backup_name(text: str) -> Optional[str]:
     """Fuzzy-matches text against both .env and bot-instance backup
     filenames — the two systems' names are prefixed distinctly ("env-" vs

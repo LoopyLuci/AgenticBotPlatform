@@ -2,96 +2,111 @@
   {
     "text": "what's the server status",
     "expected_intent": "status",
-    "expected_confidence": 0.988226
+    "expected_confidence": 0.985448
   },
   {
     "text": "list my bots",
     "expected_intent": "list_bots",
-    "expected_confidence": 0.998329
+    "expected_confidence": 0.997933
   },
   {
     "text": "rename bot X",
     "expected_intent": "bot_edit",
-    "expected_confidence": 0.984589
+    "expected_confidence": 0.985416
   },
   {
     "text": "what backend is set as default",
     "expected_intent": "backend_show",
-    "expected_confidence": 0.99087
+    "expected_confidence": 0.990603
   },
   {
     "text": "launch claude desktop",
     "expected_intent": "desktop_start",
-    "expected_confidence": 0.980033
+    "expected_confidence": 0.974707
   },
   {
     "text": "what jobs failed today",
     "expected_intent": "jobs_list",
-    "expected_confidence": 0.995391
+    "expected_confidence": 0.994103
   },
   {
     "text": "database status",
     "expected_intent": "db_status",
-    "expected_confidence": 0.995892
+    "expected_confidence": 0.997056
   },
   {
     "text": "enable confirm destructive actions",
     "expected_intent": "settings_set",
-    "expected_confidence": 0.994883
+    "expected_confidence": 0.994023
   },
   {
-    "text": "show me session 5",
-    "expected_intent": "session_show",
-    "expected_confidence": 0.979772
+    "text": "can you update the mobile app for me",
+    "expected_intent": "app_update",
+    "expected_confidence": 0.975319
   },
   {
-    "text": "list your capabilities",
-    "expected_intent": "help",
-    "expected_confidence": 0.991814
+    "text": "help me connect hermes agent",
+    "expected_intent": "hermes_setup_check",
+    "expected_confidence": 0.977993
   },
   {
     "text": "restart the bot please",
     "expected_intent": "bot_restart",
-    "expected_confidence": 0.964042
+    "expected_confidence": 0.965949
   },
   {
     "text": "purple elephants dance sideways",
     "expected_intent": "unknown",
-    "expected_confidence": 0.053052
+    "expected_confidence": 0.048188
   },
   {
     "text": "asdkjqwoe random gibberish text",
     "expected_intent": "unknown",
-    "expected_confidence": 0.053052
+    "expected_confidence": 0.048188
   },
   {
     "text": "HELP ME NOW!!!",
     "expected_intent": "help",
-    "expected_confidence": 0.37908
+    "expected_confidence": 0.380807
   },
   {
     "text": "",
     "expected_intent": "unknown",
-    "expected_confidence": 0.053052
+    "expected_confidence": 0.048188
   },
   {
     "text": "status",
     "expected_intent": "status",
-    "expected_confidence": 0.997658
+    "expected_confidence": 0.998485
   },
   {
     "text": "engage the emergency stop",
     "expected_intent": "estop_engage",
-    "expected_confidence": 0.960854
+    "expected_confidence": 0.961198
   },
   {
     "text": "is the emergency stop engaged",
     "expected_intent": "estop_status",
-    "expected_confidence": 0.960326
+    "expected_confidence": 0.955944
   },
   {
     "text": "disengage the emergency stop",
     "expected_intent": "estop_disengage",
-    "expected_confidence": 0.97105
+    "expected_confidence": 0.969234
+  },
+  {
+    "text": "set device X's permission tier to elevated",
+    "expected_intent": "device_retier",
+    "expected_confidence": 0.974606
+  },
+  {
+    "text": "list hooks",
+    "expected_intent": "hooks_list",
+    "expected_confidence": 0.998638
+  },
+  {
+    "text": "show agent settings for X",
+    "expected_intent": "agent_settings_show",
+    "expected_confidence": 0.968943
   }
 ]

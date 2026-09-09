@@ -33,7 +33,12 @@ class SupportBotReply:
 
 class SupportBot:
     def __init__(self) -> None:
-        self._pending: dict[str, tuple[str, str, str, float]] = {}  # token -> (intent, text, actor, created_at)
+        # token -> (intent, text, actor, created_at, device_tier) — the
+        # caller's device_tier at request time travels with the pending
+        # confirmation so confirm() can re-establish the same
+        # actions._caller_device_tier context a handler like
+        # device_revoke/device_retier reads (see actions.py's own doc).
+        self._pending: dict[str, tuple[str, str, str, float, str]] = {}
         # A literal slash command from the Support Bot panel runs through
         # the exact same dispatch_command() Telegram/Discord/Slack use
         # (bot/commands.py) rather than the NLP classifier — same commands,
@@ -47,10 +52,21 @@ class SupportBot:
             return False
         return bool((config.current.get("security") or {}).get("confirm_destructive", True))
 
-    async def _execute(self, intent: str, text: str, actor: str) -> str:
-        if intent in actions.ASYNC_INTENT_HANDLERS:
-            return await actions.ASYNC_INTENT_HANDLERS[intent](text, actor)
-        return actions.INTENT_HANDLERS[intent](text, actor)
+    async def _execute(self, intent: str, text: str, actor: str, device_tier: str) -> str:
+        # actions._caller_device_tier is read only by the handful of
+        # handlers that target another device by its own tier
+        # (device_revoke/device_retier/mobile_key_create) — set/reset
+        # around every real execution, both the direct path here and the
+        # confirm-token path below, so those handlers see the tier that
+        # was actually in effect when the request was made, not whatever
+        # happened to be set by some other concurrent call.
+        token = actions._caller_device_tier.set(device_tier)
+        try:
+            if intent in actions.ASYNC_INTENT_HANDLERS:
+                return await actions.ASYNC_INTENT_HANDLERS[intent](text, actor)
+            return actions.INTENT_HANDLERS[intent](text, actor)
+        finally:
+            actions._caller_device_tier.reset(token)
 
     async def handle(
         self, text: str, actor: str, client_intent: Optional[str] = None, device_tier: str = "unrestricted",
@@ -113,7 +129,7 @@ class SupportBot:
 
         if self._confirm_required(intent):
             token = uuid.uuid4().hex
-            self._pending[token] = (intent, text, actor, time.time())
+            self._pending[token] = (intent, text, actor, time.time(), device_tier)
             return SupportBotReply(
                 text=f"This will {intent.replace('_', ' ')} — confirm?",
                 intent=intent,
@@ -122,7 +138,7 @@ class SupportBot:
             )
 
         try:
-            reply_text = await self._execute(intent, text, actor)
+            reply_text = await self._execute(intent, text, actor, device_tier)
         except actions.ActionError as exc:
             return SupportBotReply(text=str(exc), intent=intent)
         except Exception as exc:  # noqa: BLE001 - surfaced to the user as plain text, never a stack trace
@@ -133,11 +149,11 @@ class SupportBot:
         pending = self._pending.pop(token, None)
         if pending is None:
             return SupportBotReply(text="That confirmation expired or was already used — ask again.", intent="unknown")
-        intent, text, orig_actor, created_at = pending
+        intent, text, orig_actor, created_at, device_tier = pending
         if time.time() - created_at > CONFIRM_TTL_S:
             return SupportBotReply(text="That confirmation expired — ask again.", intent=intent)
         try:
-            reply_text = await self._execute(intent, text, actor)
+            reply_text = await self._execute(intent, text, actor, device_tier)
         except actions.ActionError as exc:
             return SupportBotReply(text=str(exc), intent=intent)
         except Exception as exc:  # noqa: BLE001
