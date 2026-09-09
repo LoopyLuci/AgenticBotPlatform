@@ -1319,9 +1319,16 @@
           <input type="text" id="mobile-new-host" placeholder="Host:port the phone should reach, e.g. your-tailnet-host:8787">
           <input type="text" id="mobile-new-host2" placeholder="Fallback host:port (optional), e.g. LAN IP if the above is Tailscale">
           <input type="text" id="mobile-new-host3" placeholder="Public URL (optional), e.g. https://you.ts.net via Tailscale Funnel">
+          <select id="mobile-new-tier" title="Permission tier — controls what this device can ask Server Chat / Support Bot to do">
+            <option value="none" selected>No admin access</option>
+            <option value="standard">Standard</option>
+            <option value="elevated">Elevated</option>
+            <option value="unrestricted">Unrestricted</option>
+          </select>
           <button class="btn primary" id="btn-mobile-generate">Generate key</button>
         </div>
         <p class="cardnote" id="mobile-network-info-note">Leave all three blank to auto-fill this machine's own detected LAN/Tailscale/Funnel addresses. Each is an independent path to this server — the app tries them in order and switches automatically if one stops answering, so the phone stays connected from any network without you doing anything.</p>
+        <p class="cardnote">Permission tier controls admin access via Server Chat / Support Bot (see bot/device_tiers.py) — separate from this dashboard's own device parity, which every paired device already has regardless of tier.</p>
         <div class="hidden" id="mobile-new-result" style="margin-top:14px;">
           <p class="cardnote" style="color:var(--warning);">Shown once — this can't be recovered after you leave this page. Scan the QR, or copy the code below and paste it into the app's pairing screen — it already carries every host, no typing required.</p>
           <p class="cardnote" id="mobile-new-hosts-used"></p>
@@ -1342,8 +1349,8 @@
         <p class="cardnote">"Send APK" queues the last APK built on the desktop app for that device — it downloads and prompts to install next time the Android app is opened (there's no way to push to a closed/backgrounded phone without Firebase configured).</p>
         <div class="tablewrap" style="margin-top:6px;">
           <table>
-            <thead><tr><th>Label</th><th>Created</th><th>Last used</th><th>Status</th><th></th></tr></thead>
-            <tbody id="mobile-keys-tbody"><tr class="emptyrow"><td colspan="5">Loading…</td></tr></tbody>
+            <thead><tr><th>Label</th><th>Created</th><th>Last used</th><th>Permission tier</th><th>Status</th><th></th></tr></thead>
+            <tbody id="mobile-keys-tbody"><tr class="emptyrow"><td colspan="6">Loading…</td></tr></tbody>
           </table>
         </div>
         <p class="cardnote" id="mobile-devices-status"></p>
@@ -4767,21 +4774,50 @@ async function refreshMobileKeys() {
   try {
     keys = await api('/api/mobile-keys');
   } catch (_e) { return; }
+  const TIER_OPTIONS = [['none', 'No admin access'], ['standard', 'Standard'], ['elevated', 'Elevated'], ['unrestricted', 'Unrestricted']];
   tbody.innerHTML = keys.length ? keys.map(k => `
     <tr>
       <td>${esc(k.label)}</td>
       <td class="mono">${fmtMobileTime(k.created_at)}</td>
       <td class="mono">${fmtMobileTime(k.last_used_at)}</td>
+      <td>${k.revoked_at ? esc((TIER_OPTIONS.find(([v]) => v === k.permission_tier) || [null, k.permission_tier])[1]) : `
+        <select data-mobile-tier="${k.id}" style="font-size:11.5px; padding:3px 5px;">
+          ${TIER_OPTIONS.map(([v, label]) => `<option value="${v}" ${v === k.permission_tier ? 'selected' : ''}>${esc(label)}</option>`).join('')}
+        </select>`}</td>
       <td><span class="pill"><span class="dot ${k.revoked_at ? '' : 'good'}"></span>${k.revoked_at ? 'Revoked' : 'Active'}</span></td>
       <td>${k.revoked_at ? '' : `
         <button class="btn" data-mobile-send-apk="${k.id}" style="padding:3px 8px; font-size:11px;">Send APK</button>
         <button class="btn" data-mobile-revoke="${k.id}" style="padding:3px 8px; font-size:11px;">Revoke</button>`}</td>
-    </tr>`).join('') : '<tr class="emptyrow"><td colspan="5">No devices paired yet.</td></tr>';
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="6">No devices paired yet.</td></tr>';
 
   tbody.querySelectorAll('[data-mobile-revoke]').forEach(btn => btn.onclick = async () => {
     if (!confirm('Revoke this device\'s key? It loses access to chat/sessions/jobs/bots immediately.')) return;
     await api(`/api/mobile-keys/${btn.dataset.mobileRevoke}`, { method: 'DELETE' });
     refreshMobileKeys();
+  });
+
+  // The dashboard's own DASHBOARD_TOKEN caller is the unconditional top
+  // authority (bot/device_tiers.py — can_manage/can_mint aren't checked
+  // for it at all, see _resolve_actor_tier's caller_device_id is None
+  // branch), so unlike the Android app's own tier picker, there's no
+  // "capped at my own tier" ceiling to compute here — every tier is
+  // always offered and always takes effect immediately on change.
+  tbody.querySelectorAll('[data-mobile-tier]').forEach(sel => {
+    const original = sel.value;
+    sel.onchange = async () => {
+      const keyId = sel.dataset.mobileTier;
+      const newTier = sel.value;
+      sel.disabled = true;
+      try {
+        await api(`/api/mobile-keys/${keyId}/tier`, { method: 'POST', body: JSON.stringify({ tier: newTier }) });
+        document.getElementById('mobile-devices-status').textContent = `Permission tier updated to "${newTier}".`;
+      } catch (e) {
+        sel.value = original;
+        document.getElementById('mobile-devices-status').textContent = `Couldn't change permission tier: ${e.message || e}`;
+      } finally {
+        sel.disabled = false;
+      }
+    };
   });
 
   tbody.querySelectorAll('[data-mobile-send-apk]').forEach(btn => btn.onclick = async () => {
@@ -4850,10 +4886,11 @@ document.getElementById('btn-mobile-generate').onclick = async () => {
   const host = document.getElementById('mobile-new-host').value.trim();
   const host2 = document.getElementById('mobile-new-host2').value.trim();
   const host3 = document.getElementById('mobile-new-host3').value.trim();
+  const tier = document.getElementById('mobile-new-tier').value;
   const btn = document.getElementById('btn-mobile-generate');
   btn.disabled = true;
   try {
-    const res = await api('/api/mobile-keys', { method: 'POST', body: JSON.stringify({ label, host, host2, host3 }) });
+    const res = await api('/api/mobile-keys', { method: 'POST', body: JSON.stringify({ label, host, host2, host3, tier }) });
     document.getElementById('mobile-new-key').textContent = res.pairing_code;
     document.getElementById('mobile-new-qr').src = `data:image/png;base64,${res.qr_png_base64}`;
     const hostsNote = [res.host && `primary ${res.host}`, res.host2 && `fallback ${res.host2}`, res.host3 && `public ${res.host3}`].filter(Boolean).join(', ');
@@ -4863,6 +4900,7 @@ document.getElementById('btn-mobile-generate').onclick = async () => {
     document.getElementById('mobile-new-host').value = '';
     document.getElementById('mobile-new-host2').value = '';
     document.getElementById('mobile-new-host3').value = '';
+    document.getElementById('mobile-new-tier').value = 'none';
     refreshMobileKeys();
   } catch (e) {
     alert('Failed to generate key — check the dashboard token.');

@@ -3288,6 +3288,8 @@ function fmtMobileTime(ts) {
 // would otherwise wipe an in-progress edit out from under someone mid-type.
 const mobileKeysState = { keys: [], devices: [], edits: {} };
 
+const MOBILE_TIER_OPTIONS = [['none', 'No admin access'], ['standard', 'Standard'], ['elevated', 'Elevated'], ['unrestricted', 'Unrestricted']];
+
 function renderMobileKeysTable() {
   const tbody = document.getElementById('mobile-keys-tbody');
   const presenceById = new Map(mobileKeysState.devices.map(d => [d.id, d]));
@@ -3313,12 +3315,16 @@ function renderMobileKeysTable() {
       <td>${deviceInfo}</td>
       <td class="mono">${fmtMobileTime(k.created_at)}</td>
       <td class="mono">${lastSeen}</td>
+      <td>${k.revoked_at ? esc((MOBILE_TIER_OPTIONS.find(([v]) => v === k.permission_tier) || [null, k.permission_tier])[1]) : `
+        <select data-mobile-tier="${k.id}" style="font-size:11.5px; padding:3px 5px;">
+          ${MOBILE_TIER_OPTIONS.map(([v, label]) => `<option value="${v}" ${v === k.permission_tier ? 'selected' : ''}>${esc(label)}</option>`).join('')}
+        </select>`}</td>
       <td><span class="pill"><span class="dot ${statusDot}"></span>${statusLabel}</span></td>
       <td>${k.revoked_at ? '' : `
         <button class="btn" data-mobile-send-apk="${k.id}" style="padding:3px 8px; font-size:11px;">Send APK</button>
         <button class="btn" data-mobile-revoke="${k.id}" style="padding:3px 8px; font-size:11px;">Revoke</button>`}</td>
     </tr>`;
-  }).join('') : '<tr class="emptyrow"><td colspan="6">No devices paired yet.</td></tr>';
+  }).join('') : '<tr class="emptyrow"><td colspan="7">No devices paired yet.</td></tr>';
 
   tbody.querySelectorAll('[data-mobile-label]').forEach(el => el.oninput = () => {
     mobileKeysState.edits[el.dataset.mobileLabel] = el.value;
@@ -3342,6 +3348,29 @@ function renderMobileKeysTable() {
     } finally {
       btn.disabled = false;
     }
+  });
+
+  // The dashboard/desktop DASHBOARD_TOKEN caller is the unconditional top
+  // authority (bot/device_tiers.py — can_manage/can_mint aren't checked
+  // for it at all), so unlike the Android app's own tier picker, there's
+  // no "capped at my own tier" ceiling to compute here — every tier is
+  // always offered and always takes effect immediately on change.
+  tbody.querySelectorAll('[data-mobile-tier]').forEach(sel => {
+    const original = sel.value;
+    sel.onchange = async () => {
+      const keyId = sel.dataset.mobileTier;
+      const newTier = sel.value;
+      sel.disabled = true;
+      try {
+        await api(`/api/mobile-keys/${keyId}/tier`, { method: 'POST', body: JSON.stringify({ tier: newTier }) });
+        document.getElementById('mobile-devices-status').textContent = `Permission tier updated to "${newTier}".`;
+      } catch (e) {
+        sel.value = original;
+        document.getElementById('mobile-devices-status').textContent = `Couldn't change permission tier: ${e.message || e}`;
+      } finally {
+        sel.disabled = false;
+      }
+    };
   });
 }
 
@@ -3414,14 +3443,16 @@ document.getElementById('btn-mobile-generate').onclick = async () => {
   const label = document.getElementById('mobile-new-label').value.trim() || 'Unnamed device';
   const host = document.getElementById('mobile-new-host').value.trim();
   const host2 = document.getElementById('mobile-new-host2').value.trim();
+  const tier = document.getElementById('mobile-new-tier').value;
   const btn = document.getElementById('btn-mobile-generate');
   btn.disabled = true;
   try {
-    const res = await api('/api/mobile-keys', { method: 'POST', body: JSON.stringify({ label, host, host2 }) });
+    const res = await api('/api/mobile-keys', { method: 'POST', body: JSON.stringify({ label, host, host2, tier }) });
     document.getElementById('mobile-new-key').textContent = res.pairing_code;
     document.getElementById('mobile-new-qr').src = `data:image/png;base64,${res.qr_png_base64}`;
     document.getElementById('mobile-new-result').classList.remove('hidden');
     document.getElementById('mobile-new-label').value = '';
+    document.getElementById('mobile-new-tier').value = 'none';
     refreshMobileKeys();
   } catch (e) {
     alert('Failed to generate key — check the dashboard token.');

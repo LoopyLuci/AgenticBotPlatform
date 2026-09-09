@@ -1528,9 +1528,15 @@
           <input type="text" id="mobile-new-label" placeholder="Device label, e.g. \"My Phone\"" style="flex:1;">
           <input type="text" id="mobile-new-host" placeholder="Host:port the phone should reach — auto-filled with this machine's LAN address">
           <input type="text" id="mobile-new-host2" placeholder="Fallback host:port — auto-filled with Tailscale if installed">
+          <select id="mobile-new-tier" title="Permission tier — controls what this device can ask Server Chat / Support Bot to do">
+            <option value="none" selected>No admin access</option>
+            <option value="standard">Standard</option>
+            <option value="elevated">Elevated</option>
+            <option value="unrestricted">Unrestricted</option>
+          </select>
           <button class="btn primary" id="btn-mobile-generate">Generate key</button>
         </div>
-        <p class="cardnote">Both auto-fill on startup (LAN address, then Tailscale as a fallback path) — edit them only if the detected address is wrong. The fallback is a second, independent path to this server; the app automatically switches to it if the first one stops answering.</p>
+        <p class="cardnote">Both auto-fill on startup (LAN address, then Tailscale as a fallback path) — edit them only if the detected address is wrong. The fallback is a second, independent path to this server; the app automatically switches to it if the first one stops answering. Permission tier controls admin access via Server Chat / Support Bot (see bot/device_tiers.py) — separate from this app's own device parity, which every paired device already has regardless of tier.</p>
         <div class="hidden" id="mobile-new-result" style="margin-top:14px;">
           <p class="cardnote" style="color:var(--warning);">Shown once — this can't be recovered after you leave this page. Scan the QR, or copy the code below and paste it into the app's pairing screen — it already carries every host, no typing required.</p>
           <div class="row" style="gap:14px; align-items:flex-start;">
@@ -1554,8 +1560,8 @@
         <p class="cardnote">Labels below are editable — change one and click "Save Devices List Data" to persist it. "Clear Revoked Devices" permanently deletes revoked entries from this list (the devices themselves already lost access the moment they were revoked; this just tidies the list). "Send APK" queues the last APK built below for that device — it downloads and prompts to install next time the Android app is opened (there's no way to push to a closed/backgrounded phone without Firebase configured).</p>
         <div class="tablewrap" style="margin-top:6px;">
           <table>
-            <thead><tr><th>Label</th><th>Device</th><th>Created</th><th>Last seen</th><th>Status</th><th></th></tr></thead>
-            <tbody id="mobile-keys-tbody"><tr class="emptyrow"><td colspan="6">Loading…</td></tr></tbody>
+            <thead><tr><th>Label</th><th>Device</th><th>Created</th><th>Last seen</th><th>Permission tier</th><th>Status</th><th></th></tr></thead>
+            <tbody id="mobile-keys-tbody"><tr class="emptyrow"><td colspan="7">Loading…</td></tr></tbody>
           </table>
         </div>
         <p class="cardnote" id="mobile-devices-status"></p>
