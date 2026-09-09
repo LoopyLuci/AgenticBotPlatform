@@ -41,6 +41,17 @@ FIELDS = (
     "is_admin_instance",
 )
 
+# SQLite has no real boolean type — a row's require_plan_approval/
+# is_admin_instance columns come back as Python int (0/1), not bool.
+# json.dumps() renders an int as a bare 0/1, not true/false, which a
+# strictly-typed JSON client (kotlinx.serialization on Android, in
+# particular) rejects outright as an invalid boolean literal — found via
+# real on-device testing of the Android Automation screen, not a
+# hypothetical. get() below casts these two back to real bool before
+# ever handing the resolved dict to a caller (route, agent-runtime tool,
+# or Support Bot handler alike).
+_BOOL_FIELDS = frozenset({"require_plan_approval", "is_admin_instance"})
+
 
 def _hardcoded_default(field: str) -> Any:
     if field == "max_concurrent_children":
@@ -92,6 +103,8 @@ def get(instance_id: Optional[int]) -> dict[str, Any]:
             value = default_row[field]
         if value is None:
             value = _hardcoded_default(field)
+        if field in _BOOL_FIELDS:
+            value = bool(value)
         resolved[field] = value
     return resolved
 

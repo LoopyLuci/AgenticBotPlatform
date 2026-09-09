@@ -92,6 +92,25 @@ def test_explicit_none_clears_a_field_back_to_fallthrough(temp_db):
     assert agent_settings.get(iid)["worker_effort"] == "medium"
 
 
+def test_boolean_fields_are_real_bool_not_sqlite_int(temp_db):
+    """SQLite has no real boolean type — get_agent_settings_row()'s
+    columns come back as Python int (0/1). json.dumps() renders an int
+    as a bare 0/1, not true/false, which a strictly-typed JSON client
+    (kotlinx.serialization on Android) rejects outright — found via real
+    on-device testing of the Android Automation screen, not a
+    hypothetical. get() must always cast these back to real bool."""
+    iid = _make_instance()
+
+    default = agent_settings.get(None)
+    assert default["require_plan_approval"] is False
+    assert default["is_admin_instance"] is False
+
+    agent_settings.set_settings(iid, require_plan_approval=True, is_admin_instance=True)
+    resolved = agent_settings.get(iid)
+    assert resolved["require_plan_approval"] is True
+    assert resolved["is_admin_instance"] is True
+
+
 def test_unknown_field_is_rejected(temp_db):
     iid = _make_instance()
     with pytest.raises(ValueError, match="unknown"):
