@@ -2826,14 +2826,103 @@ async function deleteServerChatMessage(messageId, rowEl) {
   }
 }
 
+// Resolves a dangerous-tool approval raised by the Server Chat admin
+// pipeline (bot/server_chat_admin.py) — outcome is one of "once" |
+// "session" | "always" | "deny" (bot/agent_runtime/approval.py). Mutates
+// [bubble] in place rather than tracking resolved state separately,
+// since this row is never re-rendered by a later poll
+// (appendServerChatMessages only ever fetches messages after lastId).
+async function resolveServerChatApproval(approvalId, outcome, bubble) {
+  const actions = bubble.querySelector('.approval-actions');
+  if (actions) actions.querySelectorAll('button').forEach(b => b.disabled = true);
+  try {
+    await api(`/api/server-chat/approvals/${approvalId}/resolve`, { method: 'POST', body: JSON.stringify({ outcome }) });
+    if (actions) actions.remove();
+    const resolved = document.createElement('div');
+    resolved.className = 'approval-resolved ' + (outcome === 'deny' ? 'deny' : 'approve');
+    resolved.textContent = outcome === 'deny' ? 'Denied' : `Approved (${outcome})`;
+    bubble.appendChild(resolved);
+  } catch (e) {
+    if (actions) actions.querySelectorAll('button').forEach(b => b.disabled = false);
+    alert("Couldn't resolve that request — it may have already timed out. " + (e.message || e));
+  }
+}
+
 function appendServerChatMessages(rows) {
   const win = document.getElementById('serverchat-panels');
   const atBottom = win.scrollHeight - win.scrollTop - win.clientHeight < 60;
   rows.forEach(m => {
     const row = document.createElement('div');
+    row.dataset.serverchatMsgId = String(m.id);
+
+    if (m.kind === 'approval_request' && m.approval_id != null) {
+      row.className = 'chat-row in';
+      const bubble = document.createElement('div');
+      bubble.className = 'chat-bubble approval-request';
+      const title = document.createElement('div');
+      title.className = 'approval-title';
+      title.textContent = '📋 Approval needed';
+      bubble.appendChild(title);
+      if (m.text) {
+        const textEl = document.createElement('div');
+        textEl.textContent = m.text;
+        bubble.appendChild(textEl);
+      }
+      const meta = document.createElement('span');
+      meta.className = 'chat-meta';
+      meta.textContent = fmtChatTime(m.ts);
+      bubble.appendChild(meta);
+
+      const actions = document.createElement('div');
+      actions.className = 'approval-actions';
+      const approveBtn = document.createElement('button');
+      approveBtn.type = 'button';
+      approveBtn.className = 'btn primary';
+      approveBtn.textContent = 'Approve';
+      approveBtn.onclick = () => resolveServerChatApproval(m.approval_id, 'once', bubble);
+      actions.appendChild(approveBtn);
+      const denyBtn = document.createElement('button');
+      denyBtn.type = 'button';
+      denyBtn.className = 'btn danger';
+      denyBtn.textContent = 'Deny';
+      denyBtn.onclick = () => resolveServerChatApproval(m.approval_id, 'deny', bubble);
+      actions.appendChild(denyBtn);
+
+      // "More" reveals the other two outcomes (session/always) — kept
+      // out of the primary two buttons to match the Android card's own
+      // primary-Approve/Deny-plus-overflow shape.
+      const more = document.createElement('div');
+      more.className = 'approval-more';
+      const moreBtn = document.createElement('button');
+      moreBtn.type = 'button';
+      moreBtn.className = 'btn';
+      moreBtn.textContent = 'More ▾';
+      const moreMenu = document.createElement('div');
+      moreMenu.className = 'approval-more-menu hidden';
+      const sessionBtn = document.createElement('button');
+      sessionBtn.type = 'button';
+      sessionBtn.textContent = 'Approve for this session';
+      sessionBtn.onclick = () => { moreMenu.classList.add('hidden'); resolveServerChatApproval(m.approval_id, 'session', bubble); };
+      const alwaysBtn = document.createElement('button');
+      alwaysBtn.type = 'button';
+      alwaysBtn.textContent = 'Always approve this tool';
+      alwaysBtn.onclick = () => { moreMenu.classList.add('hidden'); resolveServerChatApproval(m.approval_id, 'always', bubble); };
+      moreMenu.appendChild(sessionBtn);
+      moreMenu.appendChild(alwaysBtn);
+      moreBtn.onclick = () => moreMenu.classList.toggle('hidden');
+      more.appendChild(moreBtn);
+      more.appendChild(moreMenu);
+      actions.appendChild(more);
+
+      bubble.appendChild(actions);
+      row.appendChild(bubble);
+      win.appendChild(row);
+      serverChatState.lastId = Math.max(serverChatState.lastId, m.id);
+      return;
+    }
+
     const isOut = m.sender_device_id === SERVER_CHAT_MY_DEVICE_ID;
     row.className = 'chat-row ' + (isOut ? 'out' : 'in');
-    row.dataset.serverchatMsgId = String(m.id);
     const bubble = document.createElement('div');
     bubble.className = 'chat-bubble';
     if (m.text) {
