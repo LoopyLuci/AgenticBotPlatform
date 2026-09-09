@@ -2,6 +2,7 @@ package com.botserver.mobile.ui.devices
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.botserver.mobile.data.DeviceTiers
 import com.botserver.mobile.data.DevicesRepository
 import com.botserver.mobile.data.MeshServer
 import com.botserver.mobile.data.NewDevicePairing
@@ -15,6 +16,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
@@ -71,6 +73,30 @@ class DevicesViewModel @Inject constructor(
 
     private val _devices = MutableStateFlow<List<DeviceInfo>>(emptyList())
     val devices: StateFlow<List<DeviceInfo>> = _devices
+
+    // This device's own identity/tier, resolved once from Server Chat's
+    // whoami (0 is a safe "not yet resolved" sentinel — it can never
+    // match a real /api/devices row, since desktop, the only caller that
+    // whoami maps to 0, has no api_keys row of its own at all). myTier
+    // defaults to "none" (hide everything) rather than assuming
+    // "unrestricted" until the real row is actually found — a wrong
+    // client-side guess here can only ever hide a manage action the
+    // server would have allowed, never show one it would refuse.
+    private val _myDeviceId = MutableStateFlow(0)
+    val myDeviceId: StateFlow<Int> = _myDeviceId
+
+    private val _myTier = MutableStateFlow("none")
+    val myTier: StateFlow<String> = _myTier
+
+    init {
+        viewModelScope.launch {
+            runCatching { serverChatRepository.myDeviceId() }.onSuccess { _myDeviceId.value = it }
+        }
+        viewModelScope.launch {
+            combine(_devices, _myDeviceId) { devices, myId -> devices.find { it.id == myId }?.permissionTier ?: "none" }
+                .collect { _myTier.value = it }
+        }
+    }
 
     private var presenceStarted = false
 
@@ -177,10 +203,10 @@ class DevicesViewModel @Inject constructor(
         }
     }
 
-    fun generate(label: String) {
+    fun generate(label: String, tier: String = "none") {
         _state.value = GenerateState.Generating
         viewModelScope.launch {
-            _state.value = runCatching { repository.createPairingForNewDevice(label.ifBlank { "New device" }) }
+            _state.value = runCatching { repository.createPairingForNewDevice(label.ifBlank { "New device" }, tier) }
                 .fold(
                     onSuccess = { GenerateState.Ready(it) },
                     onFailure = { e -> GenerateState.Error(e.message ?: "Couldn't generate a key — check your connection.") },
@@ -194,5 +220,37 @@ class DevicesViewModel @Inject constructor(
 
     fun reset() {
         _state.value = GenerateState.Idle
+    }
+
+    /** Tiers this device may currently offer minting a new device at,
+     * capped at its own tier — see DeviceTiers.mintableTiers(). */
+    fun mintableTiers(): List<String> = DeviceTiers.mintableTiers(_myTier.value)
+
+    /** Whether this device's own tier permits changing [target]'s tier or
+     * revoking it — decides only whether the UI *offers* the action; the
+     * server enforces the real check on every call regardless. */
+    fun canManage(target: DeviceInfo): Boolean =
+        DeviceTiers.canManage(_myTier.value, target.permissionTier, isSelf = target.id == _myDeviceId.value)
+
+    fun changeDeviceTier(device: DeviceInfo, newTier: String) {
+        viewModelScope.launch {
+            runCatching { repository.setDeviceTier(device.id, newTier) }
+                .onSuccess {
+                    _snackbarMessages.tryEmit("${device.label} is now '$newTier'.")
+                    refreshDevices()
+                }
+                .onFailure { e -> _snackbarMessages.tryEmit(e.message ?: "Couldn't change ${device.label}'s tier.") }
+        }
+    }
+
+    fun revokeDevice(device: DeviceInfo) {
+        viewModelScope.launch {
+            runCatching { repository.revokeDevice(device.id) }
+                .onSuccess {
+                    _snackbarMessages.tryEmit("${device.label} revoked.")
+                    refreshDevices()
+                }
+                .onFailure { e -> _snackbarMessages.tryEmit(e.message ?: "Couldn't revoke ${device.label}.") }
+        }
     }
 }

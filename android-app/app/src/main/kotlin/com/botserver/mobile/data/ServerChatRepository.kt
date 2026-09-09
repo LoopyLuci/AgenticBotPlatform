@@ -3,6 +3,7 @@ package com.botserver.mobile.data
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import com.botserver.mobile.data.dto.ServerChatApprovalResolveRequest
 import com.botserver.mobile.data.dto.ServerChatConversation
 import com.botserver.mobile.data.dto.ServerChatMessage
 import com.botserver.mobile.data.dto.ServerChatSendRequest
@@ -63,6 +64,15 @@ class ServerChatRepository @Inject constructor(
      * message that peer again afterward. */
     suspend fun deleteConversation(conversationId: Int) {
         apiService.clearServerChatConversation(conversationId, full = true)
+    }
+
+    /** Resolves a pending dangerous-tool approval raised by the Server
+     * Chat admin pipeline (bot/server_chat_admin.py) — [outcome] is one
+     * of "once" | "session" | "always" | "deny" (bot/agent_runtime/
+     * approval.py's Outcome). Throws (409 surfaced as an HTTP exception)
+     * if it's already resolved or no live waiter exists for it. */
+    suspend fun resolveApproval(approvalId: Int, outcome: String) {
+        apiService.resolveServerChatApproval(approvalId, ServerChatApprovalResolveRequest(outcome))
     }
 
     /** Opens or re-opens a direct conversation with another paired

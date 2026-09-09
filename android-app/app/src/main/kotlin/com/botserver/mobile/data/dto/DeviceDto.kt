@@ -19,6 +19,11 @@ data class DeviceInfo(
     @SerialName("os_version") val osVersion: String? = null,
     @SerialName("last_seen") val lastSeen: String? = null,
     val online: Boolean = false,
+    // "none" | "standard" | "elevated" | "unrestricted" — see
+    // bot/device_tiers.py. Always present in the real JSON (db.list_devices()
+    // already selects api_keys.permission_tier), defaulted here only for
+    // any older cached/mocked row that predates this field.
+    @SerialName("permission_tier") val permissionTier: String = "none",
 )
 
 @Serializable

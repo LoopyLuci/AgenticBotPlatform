@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import com.botserver.mobile.data.dto.CreateMobileKeyRequest
 import com.botserver.mobile.data.dto.DeviceInfo
+import com.botserver.mobile.data.dto.SetDeviceTierRequest
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -25,15 +26,20 @@ class DevicesRepository @Inject constructor(
     private val credentials: CredentialStore,
     private val liveEvents: LiveEventsClient,
 ) {
-    suspend fun createPairingForNewDevice(label: String): NewDevicePairing {
+    suspend fun createPairingForNewDevice(label: String, tier: String = "none"): NewDevicePairing {
         // Pass this device's own known-working hosts as a starting point
         // (it already has a real, working host/host2/host3 for this
         // server — see CredentialStore) — but the server still resolves
         // and returns the actual self-contained pairing_code, so any
         // slot this device left blank still gets auto-filled server-side
-        // exactly like the dashboard's own "Generate a key" does.
+        // exactly like the dashboard's own "Generate a key" does. [tier]
+        // is capped server-side at this device's own tier regardless of
+        // what's passed (see bot/device_tiers.py's can_mint()).
         val res = apiService.createMobileKey(
-            CreateMobileKeyRequest(label = label, host = credentials.host, host2 = credentials.host2, host3 = credentials.host3),
+            CreateMobileKeyRequest(
+                label = label, host = credentials.host, host2 = credentials.host2, host3 = credentials.host3,
+                tier = tier,
+            ),
         )
         val bytes = Base64.decode(res.qrPngBase64, Base64.DEFAULT)
         val qr = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
@@ -49,4 +55,15 @@ class DevicesRepository @Inject constructor(
      * LiveEventsClient connection (see its doc) rather than this
      * repository opening its own second socket. */
     fun liveDevices(): Flow<List<DeviceInfo>> = liveEvents.deviceList
+
+    /** Changes another device's tier — server enforces can_manage/can_mint
+     * itself; a 403 here means this device's own tier doesn't actually
+     * permit it (the UI should already have hidden the action in that
+     * case, via DeviceTiers.canManage, but the server is the real gate). */
+    suspend fun setDeviceTier(keyId: Int, tier: String): String =
+        apiService.setDeviceTier(keyId, SetDeviceTierRequest(tier)).permissionTier
+
+    suspend fun revokeDevice(keyId: Int) {
+        apiService.revokeDeviceByDevice(keyId)
+    }
 }

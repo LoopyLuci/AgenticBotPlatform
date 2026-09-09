@@ -32,6 +32,20 @@ class ServerChatViewModel @Inject constructor(private val repository: ServerChat
     private val _loadError = MutableStateFlow<String?>(null)
     val loadError: StateFlow<String?> = _loadError
 
+    // The approval currently being resolved (if any) — lets the card show
+    // a spinner on just the button that was tapped rather than freezing
+    // the whole conversation while the round trip is in flight.
+    private val _resolvingApprovalId = MutableStateFlow<Int?>(null)
+    val resolvingApprovalId: StateFlow<Int?> = _resolvingApprovalId
+
+    // approval_id -> the outcome it was resolved with, kept client-side
+    // only (the underlying server_chat_messages row never changes) so a
+    // card doesn't keep offering Approve/Deny forever after it's already
+    // been acted on in this session. Reset per-conversation in
+    // openConversation()/closeConversation() below.
+    private val _resolvedApprovals = MutableStateFlow<Map<Int, String>>(emptyMap())
+    val resolvedApprovals: StateFlow<Map<Int, String>> = _resolvedApprovals
+
     private var lastId = 0
     private var listStarted = false
 
@@ -73,6 +87,7 @@ class ServerChatViewModel @Inject constructor(private val repository: ServerChat
     fun openConversation(id: Int) {
         _activeConversationId.value = id
         _messages.value = emptyList()
+        _resolvedApprovals.value = emptyMap()
         lastId = 0
         refreshMessages()
     }
@@ -80,6 +95,7 @@ class ServerChatViewModel @Inject constructor(private val repository: ServerChat
     fun closeConversation() {
         _activeConversationId.value = null
         _messages.value = emptyList()
+        _resolvedApprovals.value = emptyMap()
         lastId = 0
     }
 
@@ -166,6 +182,25 @@ class ServerChatViewModel @Inject constructor(private val repository: ServerChat
                 }
                 .onFailure { _snackbarMessages.tryEmit(it.message ?: "Couldn't delete this conversation.") }
             refreshConversations()
+        }
+    }
+
+    /** Resolves a pending dangerous-tool approval rendered from an
+     * approval_request message — [outcome] is "once" | "session" |
+     * "always" | "deny". A 409 (already resolved elsewhere, or timed
+     * out) is surfaced via the snackbar rather than silently ignored,
+     * since the card would otherwise look actionable forever. */
+    fun resolveApproval(approvalId: Int, outcome: String) {
+        _resolvingApprovalId.value = approvalId
+        viewModelScope.launch {
+            runCatching { repository.resolveApproval(approvalId, outcome) }
+                .onSuccess {
+                    _snackbarMessages.tryEmit(if (outcome == "deny") "Denied." else "Approved.")
+                    _resolvedApprovals.value = _resolvedApprovals.value + (approvalId to outcome)
+                    refreshMessages()
+                }
+                .onFailure { e -> _snackbarMessages.tryEmit(e.message ?: "Couldn't resolve that request — it may have already timed out.") }
+            _resolvingApprovalId.value = null
         }
     }
 

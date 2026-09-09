@@ -63,6 +63,8 @@ fun ServerChatScreen(viewModel: ServerChatViewModel = hiltViewModel(), peerDevic
     val messages by viewModel.messages.collectAsState()
     val myDeviceId by viewModel.myDeviceId.collectAsState()
     val loadError by viewModel.loadError.collectAsState()
+    val resolvingApprovalId by viewModel.resolvingApprovalId.collectAsState()
+    val resolvedApprovals by viewModel.resolvedApprovals.collectAsState()
     LaunchedEffect(Unit) { viewModel.start() }
 
     // Arrives from Devices' "Message this device" action — that screen's
@@ -114,6 +116,9 @@ fun ServerChatScreen(viewModel: ServerChatViewModel = hiltViewModel(), peerDevic
             onClearChat = { active?.let { viewModel.deleteConversation(it) } },
             isGroup = active?.kind == "group",
             snackbarMessages = viewModel.snackbarMessages,
+            resolvingApprovalId = resolvingApprovalId,
+            resolvedApprovals = resolvedApprovals,
+            onResolveApproval = { approvalId, outcome -> viewModel.resolveApproval(approvalId, outcome) },
         )
     }
 }
@@ -255,6 +260,9 @@ private fun ServerChatConversationScreen(
     onClearChat: () -> Unit,
     isGroup: Boolean,
     snackbarMessages: kotlinx.coroutines.flow.SharedFlow<String>,
+    resolvingApprovalId: Int?,
+    resolvedApprovals: Map<Int, String>,
+    onResolveApproval: (Int, String) -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var confirmClearOpen by remember { mutableStateOf(false) }
@@ -325,22 +333,31 @@ private fun ServerChatConversationScreen(
                 contentPadding = PaddingValues(vertical = 12.dp),
             ) {
                 items(messages, key = { it.id }) { message ->
-                    val isOut = message.senderDeviceId == myDeviceId
-                    ServerChatBubble(
-                        message = message,
-                        isOut = isOut,
-                        onOpen = {
-                            scope.launch {
-                                runCatching { onDownload(message.id, message.attachmentName ?: "file") }
-                                    .onSuccess { file -> openFile(context, file, message.attachmentMime) }
-                            }
-                        },
-                        onDelete = if (isOut) ({ onDeleteMessage(message) }) else null,
-                        onExportChat = {
-                            val file = exportServerChatFile(context, conversation?.title ?: "server-chat", messages, myDeviceId)
-                            shareServerChatExportFile(context, file)
-                        },
-                    )
+                    if (message.kind == "approval_request" && message.approvalId != null) {
+                        ApprovalRequestCard(
+                            message = message,
+                            resolving = resolvingApprovalId == message.approvalId,
+                            resolvedOutcome = resolvedApprovals[message.approvalId],
+                            onResolve = { outcome -> onResolveApproval(message.approvalId, outcome) },
+                        )
+                    } else {
+                        val isOut = message.senderDeviceId == myDeviceId
+                        ServerChatBubble(
+                            message = message,
+                            isOut = isOut,
+                            onOpen = {
+                                scope.launch {
+                                    runCatching { onDownload(message.id, message.attachmentName ?: "file") }
+                                        .onSuccess { file -> openFile(context, file, message.attachmentMime) }
+                                }
+                            },
+                            onDelete = if (isOut) ({ onDeleteMessage(message) }) else null,
+                            onExportChat = {
+                                val file = exportServerChatFile(context, conversation?.title ?: "server-chat", messages, myDeviceId)
+                                shareServerChatExportFile(context, file)
+                            },
+                        )
+                    }
                 }
             }
             ServerChatComposer(onSend = onSend, onSendFile = onSendFile)
@@ -475,6 +492,70 @@ private fun ServerChatBubble(
             text = { SelectionContainer { Text(message.text, style = MaterialTheme.typography.bodyMedium) } },
             confirmButton = { TextButton(onClick = { selectTextOpen = false }) { Text("Close") } },
         )
+    }
+}
+
+/** Renders a `kind == "approval_request"` message — a dangerous tool call
+ * raised by the Server Chat admin pipeline (bot/server_chat_admin.py)
+ * waiting on a human decision, mirroring the same once/session/always/deny
+ * outcomes the Telegram admin bot's own inline-keyboard approval offers
+ * (bot/agent_runtime/approval.py). [resolvedOutcome] is client-side-only
+ * (the underlying message row never changes) so the buttons don't keep
+ * offering an action already taken earlier in this same screen visit. */
+@Composable
+private fun ApprovalRequestCard(
+    message: ServerChatMessage,
+    resolving: Boolean,
+    resolvedOutcome: String?,
+    onResolve: (String) -> Unit,
+) {
+    var moreOpen by remember { mutableStateOf(false) }
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+        Surface(
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            shape = RoundedCornerShape(16.dp),
+            shadowElevation = 1.dp,
+            modifier = Modifier.widthIn(max = 320.dp),
+        ) {
+            Column(Modifier.padding(14.dp)) {
+                Text("📋 Approval needed", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Text(message.text, style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(12.dp))
+                if (resolvedOutcome != null) {
+                    Text(
+                        if (resolvedOutcome == "deny") "Denied" else "Approved (${resolvedOutcome})",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (resolvedOutcome == "deny") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary,
+                    )
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Button(onClick = { onResolve("once") }, enabled = !resolving) {
+                            if (resolving) CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                            else Text("Approve")
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedButton(onClick = { onResolve("deny") }, enabled = !resolving) { Text("Deny") }
+                        Box {
+                            IconButton(onClick = { moreOpen = true }, enabled = !resolving) {
+                                Icon(Icons.Filled.MoreVert, contentDescription = "More approval options", modifier = Modifier.size(18.dp))
+                            }
+                            DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("Approve for this session") },
+                                    onClick = { moreOpen = false; onResolve("session") },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Always approve this tool") },
+                                    onClick = { moreOpen = false; onResolve("always") },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

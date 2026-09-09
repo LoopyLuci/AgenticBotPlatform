@@ -4,6 +4,7 @@ import android.content.Intent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -33,6 +34,17 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
+/** Display label for a permission tier — "none" reads as "No admin
+ * access" rather than the bare backend keyword, everywhere a tier is
+ * shown to a human. See bot/device_tiers.py's TIERS. */
+private fun tierLabel(tier: String): String = when (tier) {
+    "none" -> "No admin access"
+    "standard" -> "Standard"
+    "elevated" -> "Elevated"
+    "unrestricted" -> "Unrestricted"
+    else -> tier
+}
+
 /** Lets an already-paired device onboard a *new* one without a PC: share
  * this app's own APK (any OS share target — Bluetooth, Nearby Share, etc.)
  * and hand over a freshly minted pairing key, as a scannable QR or a
@@ -53,7 +65,9 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel(), onOpenServerCha
     val refreshing by viewModel.refreshing.collectAsState()
     val updateState by viewModel.updateState.collectAsState()
     val sendState by viewModel.sendState.collectAsState()
+    val myTier by viewModel.myTier.collectAsState()
     var label by remember { mutableStateOf("") }
+    var selectedTier by remember { mutableStateOf("none") }
     var apkShareError by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(Unit) { viewModel.startPresence() }
@@ -69,6 +83,12 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel(), onOpenServerCha
         val downloaded = updateState as? UpdateState.Downloaded ?: return@LaunchedEffect
         context.startActivity(viewModel.installIntent(downloaded.file))
         viewModel.dismissUpdate()
+    }
+    // Keep the selected mint tier valid as this device's own tier
+    // resolves/changes — never leave a stale selection above what this
+    // device can actually grant.
+    LaunchedEffect(myTier) {
+        if (selectedTier !in viewModel.mintableTiers()) selectedTier = "none"
     }
 
     Scaffold(
@@ -105,6 +125,16 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel(), onOpenServerCha
                                 sending = (sendState as? SendState.Sending)?.targetId == device.id,
                                 onSend = { gated("Confirm it's you to send an update to ${device.label}") { viewModel.sendUpdateTo(device) } },
                                 onMessage = { viewModel.messageDevice(device) { peerDeviceId -> onOpenServerChat(peerDeviceId) } },
+                                canManage = viewModel.canManage(device),
+                                mintableTiers = viewModel.mintableTiers(),
+                                onChangeTier = { newTier ->
+                                    gated("Confirm it's you to change ${device.label}'s permission tier") {
+                                        viewModel.changeDeviceTier(device, newTier)
+                                    }
+                                },
+                                onRevoke = {
+                                    gated("Confirm it's you to revoke ${device.label}") { viewModel.revokeDevice(device) }
+                                },
                             )
                         }
                         Spacer(Modifier.height(10.dp))
@@ -223,8 +253,29 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel(), onOpenServerCha
                         enabled = state !is GenerateState.Generating,
                     )
                     Spacer(Modifier.height(12.dp))
+                    Text("Permission tier", style = MaterialTheme.typography.labelMedium)
+                    Text(
+                        "Controls what the new device can ask Server Chat / Support Bot to do — capped at this device's own tier (${tierLabel(myTier)}).",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    ) {
+                        viewModel.mintableTiers().forEach { tier ->
+                            FilterChip(
+                                selected = selectedTier == tier,
+                                onClick = { selectedTier = tier },
+                                label = { Text(tierLabel(tier)) },
+                                enabled = state !is GenerateState.Generating,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
                     Button(
-                        onClick = { viewModel.generate(label) },
+                        onClick = { viewModel.generate(label, selectedTier) },
                         enabled = state !is GenerateState.Generating,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
@@ -264,7 +315,7 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel(), onOpenServerCha
                                     }
                                     context.startActivity(Intent.createChooser(intent, "Share pairing link"))
                                 }) { Text("Share pairing link") }
-                                TextButton(onClick = { viewModel.reset(); label = "" }) { Text("Done") }
+                                TextButton(onClick = { viewModel.reset(); label = ""; selectedTier = "none" }) { Text("Done") }
                             }
                         }
                         else -> {}
@@ -276,8 +327,19 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel(), onOpenServerCha
 }
 
 @Composable
-private fun DeviceRow(device: DeviceInfo, sending: Boolean, onSend: () -> Unit, onMessage: () -> Unit) {
+private fun DeviceRow(
+    device: DeviceInfo,
+    sending: Boolean,
+    onSend: () -> Unit,
+    onMessage: () -> Unit,
+    canManage: Boolean,
+    mintableTiers: List<String>,
+    onChangeTier: (String) -> Unit,
+    onRevoke: () -> Unit,
+) {
     var menuOpen by remember { mutableStateOf(false) }
+    var tierPickerOpen by remember { mutableStateOf(false) }
+    var revokeConfirmOpen by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -300,10 +362,13 @@ private fun DeviceRow(device: DeviceInfo, sending: Boolean, onSend: () -> Unit, 
                 // X-Device-Model/X-Device-OS-Version headers) takes priority
                 // over the bare platform string, which is only a fallback
                 // for older presence rows recorded before this existed.
+                // The permission tier is always shown last so "none" (the
+                // common case, no admin access) doesn't crowd out identity.
                 listOfNotNull(
                     device.deviceModel ?: device.platform,
                     device.osVersion,
                     if (device.online) "Online" else "Offline",
+                    tierLabel(device.permissionTier),
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -322,8 +387,72 @@ private fun DeviceRow(device: DeviceInfo, sending: Boolean, onSend: () -> Unit, 
                     text = { Text("Message this device") },
                     onClick = { menuOpen = false; onMessage() },
                 )
+                // Only offered when this device's own tier can actually
+                // manage the target (see DeviceTiers.canManage) — the
+                // server re-checks regardless, this just avoids showing
+                // an action that would 403.
+                if (canManage) {
+                    DropdownMenuItem(
+                        text = { Text("Change permission tier") },
+                        onClick = { menuOpen = false; tierPickerOpen = true },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Revoke", color = MaterialTheme.colorScheme.error) },
+                        onClick = { menuOpen = false; revokeConfirmOpen = true },
+                    )
+                }
             }
         }
+    }
+
+    if (tierPickerOpen) {
+        var pending by remember { mutableStateOf(device.permissionTier) }
+        AlertDialog(
+            onDismissRequest = { tierPickerOpen = false },
+            title = { Text("Change ${device.label}'s permission tier") },
+            text = {
+                Column {
+                    Text(
+                        "Controls what this device can ask Server Chat / Support Bot to do.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(bottom = 12.dp),
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                        // A device can only ever be moved to a tier this
+                        // device itself can mint/manage — mirrors
+                        // bot/device_tiers.py's can_mint() ceiling.
+                        (mintableTiers + device.permissionTier).distinct().forEach { tier ->
+                            FilterChip(
+                                selected = pending == tier,
+                                onClick = { pending = tier },
+                                label = { Text(tierLabel(tier)) },
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { tierPickerOpen = false; onChangeTier(pending) },
+                    enabled = pending != device.permissionTier,
+                ) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { tierPickerOpen = false }) { Text("Cancel") } },
+        )
+    }
+
+    if (revokeConfirmOpen) {
+        AlertDialog(
+            onDismissRequest = { revokeConfirmOpen = false },
+            title = { Text("Revoke ${device.label}?") },
+            text = { Text("This device will immediately lose access to this server. This can't be undone from here — it would need to be paired again.") },
+            confirmButton = {
+                TextButton(onClick = { revokeConfirmOpen = false; onRevoke() }) {
+                    Text("Revoke", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { revokeConfirmOpen = false }) { Text("Cancel") } },
+        )
     }
 }
 

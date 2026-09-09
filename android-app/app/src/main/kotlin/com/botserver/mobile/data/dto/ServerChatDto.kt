@@ -40,6 +40,13 @@ data class ServerChatMessage(
     @SerialName("attachment_name") val attachmentName: String? = null,
     @SerialName("attachment_mime") val attachmentMime: String? = null,
     @SerialName("attachment_size") val attachmentSize: Long? = null,
+    // "message" (default) | "approval_request" — see bot/db.py's
+    // server_chat_messages.kind and the admin pipeline
+    // (bot/server_chat_admin.py). An approval_request always carries a
+    // non-null approvalId to resolve via
+    // POST /api/server-chat/approvals/{id}/resolve.
+    val kind: String = "message",
+    @SerialName("approval_id") val approvalId: Int? = null,
 )
 
 @Serializable
@@ -72,3 +79,9 @@ data class OpenServerChatConversationResponse(
 data class ServerChatWhoAmI(
     @SerialName("device_id") val deviceId: Int,
 )
+
+/** POST /api/server-chat/approvals/{id}/resolve — bot/dashboard/server.py's
+ * api_server_chat_approval_resolve(), a thin proxy onto
+ * bot/agent_runtime/approval.py's own resolve() state machine. */
+@Serializable
+data class ServerChatApprovalResolveRequest(val outcome: String)

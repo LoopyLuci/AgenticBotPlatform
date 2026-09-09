@@ -32,6 +32,9 @@ import com.botserver.mobile.data.dto.ProviderModelsResponse
 import com.botserver.mobile.data.dto.ProvidersCatalogResponse
 import com.botserver.mobile.data.dto.ProvidersListResponse
 import com.botserver.mobile.data.dto.SetProviderRequest
+import com.botserver.mobile.data.dto.SetDeviceTierRequest
+import com.botserver.mobile.data.dto.SetDeviceTierResponse
+import com.botserver.mobile.data.dto.ServerChatApprovalResolveRequest
 import com.botserver.mobile.data.dto.ServerChatConversation
 import com.botserver.mobile.data.dto.ServerChatMessage
 import com.botserver.mobile.data.dto.ServerChatSendRequest
@@ -124,6 +127,17 @@ interface ApiService {
 
     @GET("/api/devices")
     suspend fun devices(): List<DeviceInfo>
+
+    // Device-callable tier management — bot/dashboard/server.py's
+    // api_mobile_keys_set_tier()/api_mobile_keys_revoke_by_device(),
+    // both distinct from the desktop-only DELETE /api/mobile-keys/{id}.
+    // The server enforces can_manage/can_mint itself (403 otherwise); the
+    // client only decides whether to *offer* these (see DeviceTiers.kt).
+    @POST("/api/mobile-keys/{keyId}/tier")
+    suspend fun setDeviceTier(@Path("keyId") keyId: Int, @Body request: SetDeviceTierRequest): SetDeviceTierResponse
+
+    @POST("/api/mobile-keys/{keyId}/revoke-by-device")
+    suspend fun revokeDeviceByDevice(@Path("keyId") keyId: Int): OkResponse
 
     // The server's own live-detected LAN/Tailscale/Funnel addresses (see
     // bot/network_info.py) — polled opportunistically by HostSyncRepository
@@ -219,6 +233,16 @@ interface ApiService {
     // its id is gone.
     @POST("/api/server-chat/conversations")
     suspend fun openServerChatConversation(@Body request: com.botserver.mobile.data.dto.OpenServerChatConversationRequest): com.botserver.mobile.data.dto.OpenServerChatConversationResponse
+
+    // Resolves a pending dangerous-tool approval raised by the Server Chat
+    // admin pipeline (bot/server_chat_admin.py) — a thin proxy onto
+    // bot/agent_runtime/approval.py's resolve(). 409 if it's already
+    // resolved or no live waiter exists for it.
+    @POST("/api/server-chat/approvals/{approvalId}/resolve")
+    suspend fun resolveServerChatApproval(
+        @Path("approvalId") approvalId: Int,
+        @Body request: ServerChatApprovalResolveRequest,
+    ): OkResponse
 
     @GET("/api/sessions")
     suspend fun sessions(
