@@ -1,0 +1,94 @@
+# Permissions for this app's own #[tauri::command]s (defined in src/lib.rs,
+# src/android.rs, src/update.rs, src/network.rs), NOT plugin commands.
+#
+# These were never explicitly declared before because the main window's
+# document always loaded from Tauri's bundled-asset origin, which Tauri
+# does not subject to the same ACL enforcement as a "remote" origin. Once
+# the window navigates to the live BotServer HTTP server (see
+# capabilities/default.json's "remote" field and desktop-app/ui/main.js's
+# hideBootOverlay()), every invoke() — including these app-level commands,
+# not just core:* ones — is checked against ACL, and calls to any command
+# without a matching permission here fail with "not allowed by ACL"
+# (confirmed live: get_dashboard_token failed exactly this way before this
+# file existed). One permission per command, referenced by capabilities/
+# default.json's "permissions" array as "allow-<command-name>".
+
+[[permission]]
+identifier = "allow-start-server"
+description = "Allows starting the managed bot server process."
+commands.allow = ["start_server"]
+
+[[permission]]
+identifier = "allow-stop-server"
+description = "Allows stopping the managed bot server process."
+commands.allow = ["stop_server"]
+
+[[permission]]
+identifier = "allow-restart-server"
+description = "Allows restarting the managed bot server process."
+commands.allow = ["restart_server"]
+
+[[permission]]
+identifier = "allow-server-status"
+description = "Allows reading the managed bot server process's status."
+commands.allow = ["server_status"]
+
+[[permission]]
+identifier = "allow-set-app-icon"
+description = "Allows switching the app's window/tray icon."
+commands.allow = ["set_app_icon"]
+
+[[permission]]
+identifier = "allow-get-dashboard-token"
+description = "Allows reading the dashboard token resolved from .env at startup."
+commands.allow = ["get_dashboard_token"]
+
+[[permission]]
+identifier = "allow-android-env-status"
+description = "Allows checking the local Android build environment (SDK/adb/Gradle)."
+commands.allow = ["android_env_status"]
+
+[[permission]]
+identifier = "allow-list-adb-devices"
+description = "Allows listing connected Android devices via adb."
+commands.allow = ["list_adb_devices"]
+
+[[permission]]
+identifier = "allow-build-android-apk"
+description = "Allows building the Android app APK via Gradle."
+commands.allow = ["build_android_apk"]
+
+[[permission]]
+identifier = "allow-install-android-apk"
+description = "Allows installing a built APK onto a connected device via adb."
+commands.allow = ["install_android_apk"]
+
+[[permission]]
+identifier = "allow-pair-android-device"
+description = "Allows pairing a connected Android device via the botserver:// deep link."
+commands.allow = ["pair_android_device"]
+
+[[permission]]
+identifier = "allow-detect-lan-host"
+description = "Allows detecting the local LAN host address."
+commands.allow = ["detect_lan_host"]
+
+[[permission]]
+identifier = "allow-detect-tailscale-host"
+description = "Allows detecting a Tailscale host address."
+commands.allow = ["detect_tailscale_host"]
+
+[[permission]]
+identifier = "allow-check-for-update"
+description = "Allows checking for an available app update."
+commands.allow = ["check_for_update"]
+
+[[permission]]
+identifier = "allow-download-update"
+description = "Allows downloading an available app update."
+commands.allow = ["download_update"]
+
+[[permission]]
+identifier = "allow-install-update"
+description = "Allows installing a downloaded app update."
+commands.allow = ["install_update"]

@@ -4432,10 +4432,14 @@ function hideBootOverlay() {
   // caching layer). This is what makes "edit desktop-app/ui/* and see it
   // without a rebuild" actually true: from this point on, the window's
   // real document is the live-served one, not a frozen build-time copy.
-  // Guarded by location.protocol so this fires exactly once — on the
-  // live-served copy, location.protocol is "http:", not "tauri:", so
-  // this whole boot flow (which re-runs after navigating) skips it.
-  if (IS_TAURI && location.protocol === 'tauri:') {
+  // Guarded by hostname, not protocol: the embedded copy's real origin
+  // varies by platform (macOS/Linux: "tauri://localhost", protocol
+  // "tauri:"; Windows/WebView2: "http://tauri.localhost/", protocol
+  // "http:" — confirmed live, an earlier "tauri:" literal check silently
+  // never matched on Windows). The live-served copy's hostname is always
+  // "127.0.0.1" (API_BASE), which the embedded copy's hostname never is
+  // on any platform — so this fires exactly once, everywhere.
+  if (IS_TAURI && location.hostname !== '127.0.0.1') {
     window.location.href = `${API_BASE}/desktop-ui/?booted=1`;
   }
 }

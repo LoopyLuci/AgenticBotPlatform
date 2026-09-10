@@ -11,6 +11,22 @@
     "core:window:allow-close",
     "core:window:allow-minimize",
     "core:window:allow-maximize",
-    "core:event:default"
+    "core:event:default",
+    "allow-start-server",
+    "allow-stop-server",
+    "allow-restart-server",
+    "allow-server-status",
+    "allow-set-app-icon",
+    "allow-get-dashboard-token",
+    "allow-android-env-status",
+    "allow-list-adb-devices",
+    "allow-build-android-apk",
+    "allow-install-android-apk",
+    "allow-pair-android-device",
+    "allow-detect-lan-host",
+    "allow-detect-tailscale-host",
+    "allow-check-for-update",
+    "allow-download-update",
+    "allow-install-update"
   ]
 }
