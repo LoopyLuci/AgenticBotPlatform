@@ -52,7 +52,7 @@ def test_generate_returns_a_valid_change(temp_db, monkeypatch, tmp_path):
     new_content = original.replace("ok</section>", 'ok<button id="new-btn">Ping</button></section>')
 
     async def fake_generate_raw(target, instruction, current_content):
-        return f"EXPLANATION: added a button\n```html\n{new_content}\n```\n"
+        return "added a button", new_content
 
     monkeypatch.setattr(ui_customize, "_generate_raw", fake_generate_raw)
 
@@ -76,7 +76,7 @@ def test_apply_writes_the_file_and_history_shows_it(temp_db, monkeypatch, tmp_pa
     new_content = original.replace("ok</section>", 'ok<button id="new-btn">Ping</button></section>')
 
     async def fake_generate_raw(target, instruction, current_content):
-        return f"EXPLANATION: added a button\n```html\n{new_content}\n```\n"
+        return "added a button", new_content
 
     monkeypatch.setattr(ui_customize, "_generate_raw", fake_generate_raw)
     monkeypatch.setattr(ui_customize, "_broadcast_static_file_changed", lambda: None)

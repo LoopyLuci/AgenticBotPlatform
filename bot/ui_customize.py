@@ -97,15 +97,29 @@ EXPLANATION: <one or two sentences describing what you changed>
 """
 
 
-async def _pick_default_free_model() -> tuple[Optional[str], str]:
-    """The cheapest (alphabetically first) free model from any configured
-    provider — mirrors bot/support_bot/synthetic_gen.py's
-    _free_provider_models() selection order exactly, simplified to just
-    the first hit, since this feature only ever needs one model per
-    call. Falls back to a real Anthropic model if no free custom model
-    is configured anywhere (Anthropic itself has no concept of "free,"
-    but a from-scratch install with zero custom providers configured
-    still needs to be able to use this feature at all)."""
+# This project's model-pricing data (bot/model_pricing.py /
+# custom_models_with_pricing()) doesn't track context-window size — only
+# free/input-cost/output-cost. Regenerating a whole multi-thousand-line
+# file needs a model whose context window can hold the ENTIRE file twice
+# over (once as input, once as the generated output) — a small "mini"
+# model can silently truncate mid-file with no error, just a malformed
+# response _extract_generation() then correctly refuses to guess at.
+# Absent real context-length metadata, this is a plain name-substring
+# heuristic for free-tier models commonly shipped with large (100k+)
+# context windows — checked in order, first match wins; anything not
+# matched falls through to the plain alphabetical-first pick as before.
+_LARGE_CONTEXT_FREE_MODEL_HINTS = (
+    "gemini", "deepseek", "llama-3.1", "llama-3.3", "qwen", "grok", "glm-4.5", "kimi",
+)
+
+
+async def _candidate_free_models() -> list[tuple[Optional[str], str]]:
+    """Every free model from any configured provider, ranked with
+    likely-large-context ones first (see _LARGE_CONTEXT_FREE_MODEL_HINTS)
+    then the rest alphabetically — a ranked list, not a single pick, so
+    _generate_raw() can retry against the next candidate if one turns
+    out too small for the file being edited. Falls back to a real
+    Anthropic model if no free custom model is configured anywhere."""
     from bot import providers as providers_mod
     from bot.models import custom_models_with_pricing
 
@@ -113,34 +127,66 @@ async def _pick_default_free_model() -> tuple[Optional[str], str]:
         priced, _source = await custom_models_with_pricing()
     except Exception:
         priced = {}
+
+    all_free: list[tuple[Optional[str], str]] = []
     for provider_name in sorted(providers_mod.list_providers()):
         entries = priced.get(provider_name, [])
-        free_entry = next((e for e in sorted(entries, key=lambda e: e["id"]) if e.get("free")), None)
-        if free_entry:
-            return provider_name, free_entry["id"]
-    return None, "claude-sonnet-5"
+        for entry in sorted(entries, key=lambda e: e["id"]):
+            if entry.get("free"):
+                all_free.append((provider_name, entry["id"]))
+
+    if not all_free:
+        return [(None, "claude-sonnet-5")]
+
+    def _rank(candidate: tuple[Optional[str], str]) -> tuple[int, str]:
+        _, model_id = candidate
+        lowered = model_id.lower()
+        for i, hint in enumerate(_LARGE_CONTEXT_FREE_MODEL_HINTS):
+            if hint in lowered:
+                return (i, model_id)
+        return (len(_LARGE_CONTEXT_FREE_MODEL_HINTS), model_id)
+
+    return sorted(all_free, key=_rank)
+
+
+class _MalformedGenerationError(UiCustomizeError):
+    """Raised by _extract_generation() specifically — distinguished from
+    a general UiCustomizeError so _generate_raw() can catch exactly this
+    (a parse failure, most often caused by the model truncating a large
+    file mid-output) and retry against a different candidate model,
+    without also swallowing genuinely unrelated errors."""
 
 
 def _extract_generation(raw: str) -> tuple[str, str]:
     """Parses the marker-delimited "EXPLANATION: ...\\n```lang\\n...\\n```"
-    format. Raises UiCustomizeError with a clear reason on anything else
-    — never silently guesses at a malformed response."""
+    format. Raises _MalformedGenerationError with a clear reason on
+    anything else — never silently guesses at a malformed response."""
     m = re.search(r"EXPLANATION:\s*(.*?)\n```[a-zA-Z]*\n(.*)\n```\s*$", raw, re.S)
     if not m:
-        raise UiCustomizeError(
-            "the model's reply didn't match the expected EXPLANATION + fenced-code-block format — "
-            "refusing to guess at what it meant"
+        raise _MalformedGenerationError(
+            "the model's reply didn't match the expected EXPLANATION + fenced-code-block format — most "
+            "often this means the model ran out of output space partway through a large file, rather than "
+            "genuinely misunderstanding the request"
         )
     explanation = m.group(1).strip()
     new_content = m.group(2)
     return explanation, new_content
 
 
-async def _generate_raw(target: str, instruction: str, current_content: str) -> str:
+_MAX_MODEL_ATTEMPTS = 3
+
+
+async def _generate_raw(target: str, instruction: str, current_content: str) -> tuple[str, str]:
+    """Returns (explanation, new_content). Tries up to _MAX_MODEL_ATTEMPTS
+    candidate free models in rank order (see _candidate_free_models()),
+    moving to the next one whenever a candidate's response doesn't parse
+    — this is exactly the failure mode a too-small-context model produces
+    on a large file, so retrying against a different model is the right
+    response, not just failing outright on the first miss."""
     # _single_call is moa.py's internal single-shot completion helper (no
     # tool loop needed for a read+generate task) — reused directly rather
     # than going through consult()'s multi-reference wrapper, since this
-    # only ever needs exactly one model call.
+    # only ever needs exactly one model call per attempt.
     from bot.agent_runtime.moa import _single_call
 
     filename = _target_path(target).name
@@ -148,11 +194,24 @@ async def _generate_raw(target: str, instruction: str, current_content: str) -> 
     prompt = _PROMPT_TEMPLATE.format(filename=filename, instruction=instruction, lang=lang)
     prompt += f"\n\nCurrent file content:\n```{lang}\n{current_content}\n```\n"
 
-    provider, model = await _pick_default_free_model()
-    # Generating a whole file needs far more headroom than moa.py's own
-    # MAX_TOKENS=4096 (tuned for short consult() answers) — a several
-    # thousand line HTML file can easily need 20-30k+ output tokens.
-    return await _single_call(provider, model, prompt, max_tokens=32000, timeout_s=300.0)
+    candidates = (await _candidate_free_models())[:_MAX_MODEL_ATTEMPTS]
+    last_error: Optional[Exception] = None
+    for provider, model in candidates:
+        # Generating a whole file needs far more headroom than moa.py's
+        # own MAX_TOKENS=4096 (tuned for short consult() answers) — a
+        # several-thousand-line HTML file can easily need tens of
+        # thousands of output tokens.
+        raw = await _single_call(provider, model, prompt, max_tokens=32000, timeout_s=300.0)
+        try:
+            return _extract_generation(raw)
+        except _MalformedGenerationError as exc:
+            last_error = exc
+            continue
+    raise UiCustomizeError(
+        f"tried {len(candidates)} free model(s) and none returned a complete response for this file — "
+        "it's likely too large for any currently-configured free model's context window; try a smaller, "
+        "more targeted instruction, or configure a provider with a larger-context free tier"
+    ) from last_error
 
 
 # ------------------------------------------------------------- validation --
@@ -366,8 +425,7 @@ async def generate_change(target: str, instruction: str) -> dict:
         raise UiCustomizeError(f"target file does not exist: {path}")
     original_content = path.read_text(encoding="utf-8")
 
-    raw = await _generate_raw(target, instruction, original_content)
-    explanation, new_content = _extract_generation(raw)
+    explanation, new_content = await _generate_raw(target, instruction, original_content)
     result = validate_change(target, original_content, new_content)
 
     diff_lines = list(

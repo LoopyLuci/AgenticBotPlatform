@@ -124,6 +124,78 @@ def test_extract_generation_raises_on_malformed_output():
         ui_customize._extract_generation("not the expected format at all")
 
 
+def test_generate_raw_retries_the_next_candidate_on_a_truncated_response(monkeypatch):
+    """The real-world failure mode this covers: a small free model
+    truncates mid-file on a large document, producing a response that
+    doesn't match the EXPLANATION+fence format. _generate_raw() must
+    move on to the next ranked candidate rather than failing outright."""
+    calls = []
+
+    async def fake_candidates():
+        return [(None, "small-model"), ("openrouter", "gemini-large-context:free")]
+
+    async def fake_single_call(provider, model, prompt, *, max_tokens, timeout_s):
+        calls.append(model)
+        if model == "small-model":
+            return "EXPLANATION: cut off\n```html\n<html>truncated no closing fence"
+        return "EXPLANATION: done\n```html\n<html>ok</html>\n```\n"
+
+    monkeypatch.setattr(ui_customize, "_candidate_free_models", fake_candidates)
+    import bot.agent_runtime.moa as moa_module
+
+    monkeypatch.setattr(moa_module, "_single_call", fake_single_call)
+
+    explanation, content = asyncio.run(ui_customize._generate_raw("dashboard", "do something", "<html></html>"))
+    assert explanation == "done"
+    assert content == "<html>ok</html>"
+    assert calls == ["small-model", "gemini-large-context:free"]
+
+
+def test_generate_raw_raises_a_clear_error_when_every_candidate_fails(monkeypatch):
+    async def fake_candidates():
+        return [(None, "a"), (None, "b")]
+
+    async def fake_single_call(provider, model, prompt, *, max_tokens, timeout_s):
+        return "not the expected format"
+
+    monkeypatch.setattr(ui_customize, "_candidate_free_models", fake_candidates)
+    import bot.agent_runtime.moa as moa_module
+
+    monkeypatch.setattr(moa_module, "_single_call", fake_single_call)
+
+    with pytest.raises(ui_customize.UiCustomizeError, match="too large"):
+        asyncio.run(ui_customize._generate_raw("dashboard", "do something", "<html></html>"))
+
+
+def test_candidate_free_models_ranks_large_context_hints_first(monkeypatch):
+    async def fake_pricing():
+        return (
+            {
+                "openrouter": [
+                    {"id": "cohere/north-mini-code:free", "free": True},
+                    {"id": "google/gemini-2-flash:free", "free": True},
+                    {"id": "meta/llama-3.1-70b:free", "free": True},
+                ]
+            },
+            "live",
+        )
+
+    class _FakeProviders:
+        @staticmethod
+        def list_providers():
+            return {"openrouter": {}}
+
+    monkeypatch.setattr("bot.models.custom_models_with_pricing", fake_pricing)
+    monkeypatch.setattr("bot.providers.list_providers", _FakeProviders.list_providers)
+
+    ranked = asyncio.run(ui_customize._candidate_free_models())
+    ranked_ids = [m for _, m in ranked]
+    # gemini and llama-3.1 both match large-context hints and must sort
+    # before the unhinted "mini" model, regardless of alphabetical order.
+    assert ranked_ids.index("google/gemini-2-flash:free") < ranked_ids.index("cohere/north-mini-code:free")
+    assert ranked_ids.index("meta/llama-3.1-70b:free") < ranked_ids.index("cohere/north-mini-code:free")
+
+
 # --------------------------------------------------------- generate/apply --
 
 def test_generate_change_caches_pending_without_writing_real_file(_isolated_paths, monkeypatch):
@@ -132,7 +204,7 @@ def test_generate_change_caches_pending_without_writing_real_file(_isolated_path
     new_content = original.replace("ok</section>", 'ok<button id="new-btn">Ping</button></section>', 1)
 
     async def fake_generate_raw(target, instruction, current_content):
-        return f"EXPLANATION: added a Ping button\n```html\n{new_content}\n```\n"
+        return "added a Ping button", new_content
 
     monkeypatch.setattr(ui_customize, "_generate_raw", fake_generate_raw)
 
