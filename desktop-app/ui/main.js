@@ -91,6 +91,102 @@ function connectDevicesSocket() {
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
 
+// Shared copy-to-clipboard helper for every chat surface (Chat, Server
+// Chat, Support Bot, Sessions) — navigator.clipboard.writeText() first
+// (works everywhere this app actually runs: HTTPS, localhost, and the
+// Tauri desktop shell's own origin all count as "secure contexts"), with
+// a hidden-textarea execCommand('copy') fallback for the rare browser
+// context where the Clipboard API itself is unavailable. `label` names
+// what got copied for the toast ("Message", "Conversation").
+function copyText(text, label) {
+  const done = () => showCopyToast(`${label || 'Text'} copied.`);
+  const fail = () => showCopyToast(`Couldn't copy ${label ? label.toLowerCase() : 'that'}.`);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, () => _copyViaTextarea(text) ? done() : fail());
+  } else {
+    _copyViaTextarea(text) ? done() : fail();
+  }
+}
+
+function _copyViaTextarea(text) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (_e) {
+    return false;
+  }
+}
+
+let _copyToastTimer = null;
+function showCopyToast(message) {
+  let toast = document.getElementById('copy-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'copy-toast';
+    toast.style.cssText = 'position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--panel, #222); color:var(--fg, #fff); padding:8px 16px; border-radius:6px; font-size:12px; box-shadow:0 2px 10px rgba(0,0,0,.3); z-index:9999; opacity:0; transition:opacity .15s;';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.style.opacity = '1';
+  clearTimeout(_copyToastTimer);
+  _copyToastTimer = setTimeout(() => { toast.style.opacity = '0'; }, 1800);
+}
+
+// Builds a plain-text transcript ("[meta] Who: text" per line) from
+// whatever's currently rendered in a chat window — used by every
+// surface's "Copy conversation" button. Skips structured, non-text rows
+// (Server Chat's approval-request cards, Sessions' job-prompt items)
+// rather than trying to summarize them.
+function _textWithLineBreaks(el) {
+  const clone = el.cloneNode(true);
+  clone.querySelectorAll('br').forEach(br => br.replaceWith('\n'));
+  return clone.textContent;
+}
+
+function transcriptFromWindow(winEl) {
+  const lines = [];
+  winEl.querySelectorAll('.chat-row').forEach(row => {
+    const bubble = row.querySelector('.chat-bubble');
+    if (!bubble || bubble.classList.contains('approval-request') || bubble.classList.contains('job-prompt')) return;
+    const meta = bubble.querySelector('.chat-meta');
+    let text = '';
+    for (const child of bubble.children) {
+      if (child === meta || child.tagName === 'BUTTON' || child.classList.contains('chat-attachment')) continue;
+      text += (text ? '\n' : '') + _textWithLineBreaks(child);
+    }
+    if (!text) return;
+    const who = row.classList.contains('out') ? 'You' : 'Them';
+    const metaText = meta ? meta.textContent : '';
+    lines.push(metaText ? `[${metaText}] ${who}: ${text}` : `${who}: ${text}`);
+  });
+  return lines.join('\n');
+}
+
+// A small "⧉" copy icon button, wired to copy `getText()`'s result
+// (called at click time, not eagerly — cheap for a bubble that's never
+// clicked, and always copies the CURRENT text even if the caller
+// mutates it after creating the button, though nothing here does today).
+function makeCopyButton(getText, label) {
+  const btn = document.createElement('button');
+  btn.className = 'msg-copy-btn';
+  btn.type = 'button';
+  btn.title = `Copy ${(label || 'message').toLowerCase()}`;
+  btn.textContent = '⧉';
+  btn.style.cssText = 'background:none; border:none; cursor:pointer; opacity:.5; font-size:12px; padding:0 2px; margin-left:6px; vertical-align:middle;';
+  btn.onmouseenter = () => { btn.style.opacity = '1'; };
+  btn.onmouseleave = () => { btn.style.opacity = '.5'; };
+  btn.onclick = (e) => { e.stopPropagation(); copyText(getText(), label); };
+  return btn;
+}
+
 // Custom dropdown standing in for native <select> where it matters: Chrome
 // force-closes an open native select popup the instant the underlying page
 // scrolls, even for a scroll the user meant to apply to the page behind it,
@@ -2839,6 +2935,7 @@ function appendChatMessages(instanceId, rows) {
       const textEl = document.createElement('div');
       textEl.textContent = m.text;
       bubble.appendChild(textEl);
+      bubble.appendChild(makeCopyButton(() => m.text, 'Message'));
     }
     if (m.attachment_path) {
       if (m.thumbnail_path) {
@@ -2969,6 +3066,11 @@ document.getElementById('chat-recipient').onchange = (e) => {
 document.getElementById('btn-chat-export').onclick = () => {
   if (!chatState.activeInstanceId) return;
   downloadUrl(`/api/chat/messages/export?instance_id=${chatState.activeInstanceId}`);
+};
+document.getElementById('btn-chat-copy').onclick = () => {
+  const win = document.querySelector('#chat-panels .chat-window.active');
+  if (!win) return;
+  copyText(transcriptFromWindow(win), 'Conversation');
 };
 document.getElementById('btn-chat-clear').onclick = async () => {
   const instanceId = chatState.activeInstanceId;
@@ -3183,6 +3285,10 @@ document.getElementById('btn-serverchat-export').onclick = () => {
   if (!serverChatState.activeId) return;
   downloadUrl(`/api/server-chat/conversations/${serverChatState.activeId}/export`);
 };
+document.getElementById('btn-serverchat-copy').onclick = () => {
+  const win = document.getElementById('serverchat-panels');
+  copyText(transcriptFromWindow(win), 'Conversation');
+};
 document.getElementById('btn-serverchat-clear').onclick = async () => {
   if (!serverChatState.activeId) return;
   const conv = serverChatState.conversations.find(c => c.id === serverChatState.activeId);
@@ -3327,6 +3433,7 @@ function appendServerChatMessages(rows) {
       const textEl = document.createElement('div');
       textEl.textContent = m.text;
       bubble.appendChild(textEl);
+      bubble.appendChild(makeCopyButton(() => m.text, 'Message'));
     }
     if (m.attachment_path) {
       const att = document.createElement('a');
@@ -3517,7 +3624,10 @@ function renderSessionItem(kind, item) {
   if (kind === 'message') {
     row.className = 'chat-row ' + (item.direction === 'in' ? 'in' : 'out');
     bubble.className = 'chat-bubble' + (item.source === 'dashboard' ? ' from-dashboard' : '');
-    if (item.text) bubble.appendChild(Object.assign(document.createElement('div'), { textContent: item.text }));
+    if (item.text) {
+      bubble.appendChild(Object.assign(document.createElement('div'), { textContent: item.text }));
+      bubble.appendChild(makeCopyButton(() => item.text, 'Message'));
+    }
     if (item.attachment_path) {
       if (item.thumbnail_path) {
         const img = document.createElement('img');
@@ -3573,6 +3683,7 @@ async function openSession(sessionId) {
   card.classList.remove('hidden');
   card.scrollIntoView({ behavior: 'smooth', block: 'start' });
   document.getElementById('btn-session-export').onclick = () => downloadUrl(`/api/sessions/${encodeURIComponent(sessionId)}/export`);
+  document.getElementById('btn-session-copy').onclick = () => copyText(transcriptFromWindow(win), 'Conversation');
   document.getElementById('btn-session-delete').onclick = async () => {
     if (!confirm(`Delete session "${detail.session.title || 'Untitled'}"? This permanently removes its messages and jobs — export first if you want a copy.`)) return;
     await api(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
@@ -5198,7 +5309,15 @@ function attachSlashMenu(input) {
     row.className = 'chat-row ' + dir;
     const bubble = document.createElement('div');
     bubble.className = 'chat-bubble';
-    bubble.innerHTML = esc(text).replace(/\n/g, '<br>');
+    // A dedicated child div (not bubble.innerHTML directly) so
+    // transcriptFromWindow()'s per-child iteration — which every other
+    // surface's bubble shape already relies on — sees this message's
+    // text as one element, same as everywhere else, with the copy
+    // button as a separate sibling rather than mixed into raw content.
+    const textEl = document.createElement('div');
+    textEl.innerHTML = esc(text).replace(/\n/g, '<br>');
+    bubble.appendChild(textEl);
+    bubble.appendChild(makeCopyButton(() => text, 'Message'));
     row.appendChild(bubble);
     win.appendChild(row);
     win.scrollTop = win.scrollHeight;
@@ -5255,4 +5374,23 @@ function attachSlashMenu(input) {
     }
   });
   attachSlashMenu(input);
+
+  const copyBtn = document.getElementById('btn-support-bot-copy');
+  if (copyBtn) copyBtn.onclick = () => copyText(transcriptFromWindow(win), 'Conversation');
+  const exportBtn = document.getElementById('btn-support-bot-export');
+  if (exportBtn) exportBtn.onclick = () => {
+    // Support Bot turns aren't persisted server-side (engine.py is
+    // stateless per-turn) — this exports whatever's currently rendered
+    // in this window, the same DOM-transcript source Copy uses.
+    const transcript = transcriptFromWindow(win);
+    const blob = new Blob([transcript], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `support-bot-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
 })();

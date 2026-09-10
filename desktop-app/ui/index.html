@@ -1079,6 +1079,7 @@
                 <label for="chat-recipient" class="chat-toolbar-label" id="chat-recipient-label">Send to</label>
                 <select id="chat-recipient"></select>
               </div>
+              <button class="btn" id="btn-chat-copy" title="Copy this conversation as plain text">⧉</button>
               <button class="btn" id="btn-chat-export" title="Download this bot's full chat history as JSON">⬇</button>
               <button class="btn" id="btn-chat-clear" title="Delete this bot's full chat history" style="color:var(--critical);">🗑</button>
             </div>
@@ -1119,6 +1120,7 @@
               <div class="chat-header-txt">
                 <div class="chat-header-name" id="serverchat-header-name">Select a conversation</div>
               </div>
+              <button class="btn" id="btn-serverchat-copy" title="Copy this conversation as plain text">⧉</button>
               <button class="btn" id="btn-serverchat-export" title="Download this conversation's history as JSON">⬇</button>
               <button class="btn" id="btn-serverchat-clear" title="Delete this conversation's history" style="color:var(--critical);">🗑</button>
             </div>
@@ -1142,6 +1144,10 @@
     <section id="support-bot">
       <div class="sec-head"><h2>Support Bot</h2><span class="desc">A small assistant built directly into BotServer — no external model, no internet call, just this app's own local classifier wired to the same status/backend/model/MCP/bot/desktop actions the dashboard already has.</span></div>
       <div class="card chat-card">
+        <div class="chat-toolbar">
+          <button class="btn" id="btn-support-bot-copy" title="Copy this conversation as plain text">⧉ Copy</button>
+          <button class="btn" id="btn-support-bot-export" title="Download this conversation as a JSON file">⬇ Export</button>
+        </div>
         <div class="chat-window" id="support-bot-window">
           <div class="chat-row in"><div class="chat-bubble">Ask me things like "what's the status", "restart the discord bot", "enable the filesystem mcp server", or "set the api model to claude-opus-5".</div></div>
         </div>
@@ -1284,6 +1290,7 @@
         <div class="sec-head">
           <h2 id="session-detail-title">Session</h2>
           <div style="display:flex; gap:6px;">
+            <button class="btn" id="btn-session-copy" title="Copy this conversation as plain text">⧉ Copy</button>
             <button class="btn" id="btn-session-export">⬇ Export</button>
             <button class="btn" id="btn-session-delete" style="color:var(--critical);">🗑 Delete</button>
             <button class="btn" id="btn-session-close">✕ Close</button>
