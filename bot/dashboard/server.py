@@ -43,6 +43,15 @@ from bot.swarm import engine as swarm_engine
 from bot.swarm import strategies as swarm_strategies
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+# Serves the desktop app's own UI source fresh from disk (see
+# bot/ui_customize.py's module docstring and the "never needs a rebuild"
+# fix) — the compiled Tauri window navigates here once its embedded boot
+# sequence confirms this server is up, so a plain file edit (or a Customize
+# UI apply) takes effect on the window's next reload with no cargo tauri
+# build in between. Only meaningful on a dev checkout where desktop-app/
+# actually exists alongside bot/ — absent in a headless-only deployment,
+# in which case this mount is simply never reachable, not an error.
+DESKTOP_UI_DIR = envfile.PROJECT_ROOT / "desktop-app" / "ui"
 LOG_FILE = envfile.PROJECT_ROOT / "logs" / "bot.log"
 logger = logging.getLogger(__name__)
 
@@ -470,6 +479,14 @@ def build_app() -> FastAPI:
         return FileResponse(STATIC_DIR / "dashboard.html")
 
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+    if DESKTOP_UI_DIR.is_dir():
+        # html=True auto-serves index.html at /desktop-ui/ and correctly
+        # resolves its relative main.js/assets/* references against this
+        # same mount — StaticFiles already reads fresh from disk on every
+        # request (no caching layer), which is the entire "live update"
+        # mechanism this needs, same as the /static mount above.
+        app.mount("/desktop-ui", StaticFiles(directory=str(DESKTOP_UI_DIR), html=True), name="desktop-ui")
 
     # ------------------------------------------------------ ops endpoints --
     # Unauthenticated by design, like a load balancer's/orchestrator's health

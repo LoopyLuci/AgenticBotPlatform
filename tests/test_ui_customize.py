@@ -282,7 +282,7 @@ def test_apply_change_writes_file_backs_up_and_broadcasts(_isolated_paths, monke
     new_content = original.replace("ok</section>", 'ok<button id="new-btn">Ping</button></section>', 1)
 
     broadcast_calls = []
-    monkeypatch.setattr(ui_customize, "_broadcast_static_file_changed", lambda: broadcast_calls.append(1))
+    monkeypatch.setattr(ui_customize, "_broadcast_static_file_changed", lambda t: broadcast_calls.append(t))
 
     ui_customize._ensure_dirs()
     change_id = "abc123"
@@ -298,7 +298,7 @@ def test_apply_change_writes_file_backs_up_and_broadcasts(_isolated_paths, monke
     entry = ui_customize.apply_change(change_id)
     assert dashboard.read_text(encoding="utf-8") == new_content
     assert entry["kind"] == "apply"
-    assert broadcast_calls == [1]
+    assert broadcast_calls == ["dashboard"]
     assert not (ui_customize.PENDING_ROOT / f"{change_id}.json").exists()
 
     history = ui_customize.list_history()
@@ -306,6 +306,34 @@ def test_apply_change_writes_file_backs_up_and_broadcasts(_isolated_paths, monke
 
     backup_path = ui_customize.BACKUPS_ROOT / entry["backup_file"]
     assert backup_path.read_text(encoding="utf-8") == original
+
+
+def test_apply_change_broadcasts_for_desktop_targets_too(_isolated_paths, monkeypatch):
+    """Regression coverage for the 'never needs a rebuild' fix — applying
+    a desktop_js change must broadcast static_file_changed with that real
+    target, not just "dashboard", so an open desktop window (now loaded
+    from the live /desktop-ui/ server, not an embedded build-time copy)
+    knows to reload."""
+    _, desktop_js = _isolated_paths
+    new_content = "function esc(x){return x;}\nfunction extra(){}\n"
+
+    broadcast_calls = []
+    monkeypatch.setattr(ui_customize, "_broadcast_static_file_changed", lambda t: broadcast_calls.append(t))
+
+    ui_customize._ensure_dirs()
+    change_id = "def456"
+    (ui_customize.PENDING_ROOT / f"{change_id}.json").write_text(
+        json.dumps({
+            "change_id": change_id, "target": "desktop_js", "instruction": "add a function",
+            "explanation": "added it", "new_content": new_content, "errors": [], "warnings": [],
+            "removed_ids": [], "created_at": "now",
+        }),
+        encoding="utf-8",
+    )
+
+    ui_customize.apply_change(change_id)
+    assert desktop_js.read_text(encoding="utf-8") == new_content
+    assert broadcast_calls == ["desktop_js"]
 
 
 def test_apply_change_raises_for_unknown_change_id(_isolated_paths):
@@ -336,7 +364,7 @@ def test_revert_change_restores_exact_prior_content(_isolated_paths, monkeypatch
     original = dashboard.read_text(encoding="utf-8")
     new_content = original.replace("ok</section>", 'ok<button id="new-btn">Ping</button></section>', 1)
 
-    monkeypatch.setattr(ui_customize, "_broadcast_static_file_changed", lambda: None)
+    monkeypatch.setattr(ui_customize, "_broadcast_static_file_changed", lambda t: None)
     ui_customize._ensure_dirs()
     change_id = "abc123"
     (ui_customize.PENDING_ROOT / f"{change_id}.json").write_text(
@@ -365,7 +393,7 @@ def test_revert_change_raises_for_unknown_entry(_isolated_paths):
 
 
 def test_list_history_filters_by_target(_isolated_paths, monkeypatch):
-    monkeypatch.setattr(ui_customize, "_broadcast_static_file_changed", lambda: None)
+    monkeypatch.setattr(ui_customize, "_broadcast_static_file_changed", lambda t: None)
     ui_customize._ensure_dirs()
     ui_customize._save_manifest([
         {"entry_id": "1", "target": "dashboard", "kind": "apply"},

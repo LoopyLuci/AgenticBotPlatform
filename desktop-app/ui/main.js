@@ -72,6 +72,14 @@ function connectDevicesSocket() {
         renderMobileKeysTable();
       } else if ((msg.type === 'job_tool_event' || msg.type === 'job_children_update') && msg.job_id === openDelegationDetailJobId) {
         renderDelegationDetail(msg.job_id);
+      } else if (msg.type === 'static_file_changed' && (msg.target === 'desktop_html' || msg.target === 'desktop_js')) {
+        // Only meaningful once this window's real document is the live-served
+        // /desktop-ui/ copy (see hideBootOverlay()) rather than the embedded
+        // build-time one — a reload of the embedded copy would just show the
+        // same frozen bytes again. In practice this window is always on the
+        // live copy by the time anything could have applied a Customize UI
+        // change, since that requires the dashboard to be up and reachable.
+        setTimeout(() => location.reload(), 800);
       }
     } catch (_e) { /* malformed frame, ignore */ }
   };
@@ -791,7 +799,7 @@ document.getElementById('btn-customize-approve').onclick = async () => {
   const target = _customizePendingChange.target;
   const liveNote = target === 'dashboard'
     ? 'The browser dashboard (any open tab) will reload automatically once applied — this desktop app has its own separate UI and is unaffected either way.'
-    : 'This target needs a rebuild (cargo tauri build) before the change actually appears in this running app.';
+    : 'This desktop window (and any other open one) will reload automatically once applied — no rebuild needed.';
   if (!confirm(`Apply this change to ${target}? A backup is taken first and this is one click to revert. ${liveNote}`)) return;
   try {
     await api('/api/ui-customize/apply', { method: 'POST', body: JSON.stringify({ change_id: _customizePendingChange.change_id }) });
@@ -4417,6 +4425,19 @@ document.getElementById('boot-pill').onclick = () => {
 function hideBootOverlay() {
   setBootPill('ok', 'Bot Server running');
   setTimeout(collapseBoot, 400);
+  // One-time navigation off the embedded, baked-into-the-binary copy of
+  // this page onto the SAME live BotServer HTTP server the browser
+  // dashboard already uses (bot/dashboard/server.py's new /desktop-ui
+  // mount, StaticFiles reading fresh from disk every request — no
+  // caching layer). This is what makes "edit desktop-app/ui/* and see it
+  // without a rebuild" actually true: from this point on, the window's
+  // real document is the live-served one, not a frozen build-time copy.
+  // Guarded by location.protocol so this fires exactly once — on the
+  // live-served copy, location.protocol is "http:", not "tauri:", so
+  // this whole boot flow (which re-runs after navigating) skips it.
+  if (IS_TAURI && location.protocol === 'tauri:') {
+    window.location.href = `${API_BASE}/desktop-ui/?booted=1`;
+  }
 }
 
 async function autoFillToken() {
@@ -4432,11 +4453,21 @@ async function initTauriBoot() {
   const { listen } = window.__TAURI__.event;
   const { invoke } = window.__TAURI__.core;
 
+  // We only ever reach the live-served copy (see hideBootOverlay()) after
+  // the embedded copy already confirmed the server is up — re-running the
+  // "starting the bot process…" animation here would be a pointless flash
+  // of a state that's already false. Server-log/status/resource listeners
+  // and the stop/restart buttons still need wiring, since those matter for
+  // the rest of this window's lifetime, not just first boot.
+  const alreadyBooted = new URLSearchParams(location.search).get('booted') === '1';
+
   await autoFillToken();
-  document.getElementById('boot-envline').textContent = 'spawning python -m bot.main';
   document.getElementById('server-controls').classList.remove('hidden');
-  setBootPill('starting', 'Starting the bot process…');
-  expandBoot(); // first boot: show progress by default, same as before — but as a corner panel, not a full-screen block
+  if (!alreadyBooted) {
+    document.getElementById('boot-envline').textContent = 'spawning python -m bot.main';
+    setBootPill('starting', 'Starting the bot process…');
+    expandBoot(); // first boot: show progress by default, same as before — but as a corner panel, not a full-screen block
+  }
 
   await listen('server-log', (evt) => {
     const { stream, line } = evt.payload;
@@ -4483,6 +4514,9 @@ async function initTauriBoot() {
     if (ready) { hideBootOverlay(); refreshAll(); }
   };
 
+  if (alreadyBooted) {
+    setBootPill('ok', 'Bot Server running');
+  } else {
   bootLine('waiting for the dashboard API to answer on 127.0.0.1:8787 …', 'meta');
   const ready = await waitForServerReady();
   if (ready) {
@@ -4513,6 +4547,7 @@ async function initTauriBoot() {
       setBootPill('ok', 'Bot Server running');
       hideBootOverlay();
     })();
+  }
   }
   checkSetupAndProceed(startDashboardPolling);
 }

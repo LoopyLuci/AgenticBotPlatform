@@ -559,23 +559,29 @@ def apply_change(change_id: str, *, actor: str = "dashboard") -> dict:
 
     pending_path.unlink(missing_ok=True)
 
-    if target == "dashboard":
-        _broadcast_static_file_changed()
+    _broadcast_static_file_changed(target)
 
     return entry
 
 
-def _broadcast_static_file_changed() -> None:
+def _broadcast_static_file_changed(target: str) -> None:
     """Best-effort — the dashboard route calling apply_change()/
     revert_change() is itself already inside the running server process,
     so this reuses the exact same broadcast helper bot/db.py's listener
     registry uses for job_update/chat_message, called directly rather
     than through that registry (nothing about _broadcast_soon requires
-    going through db.py — it's a plain function taking a payload dict)."""
+    going through db.py — it's a plain function taking a payload dict).
+    Fires for every target, not just "dashboard": once bot/dashboard/
+    server.py's /desktop-ui mount serves desktop-app/ui/* fresh from
+    disk (see that mount's own comment), a change to those files is
+    exactly as "live" as a dashboard.html change — an open desktop
+    window's WS handler (main.js's connectDevicesSocket) reloads on this
+    same broadcast type, just checking msg.target for its own values
+    instead of "dashboard"."""
     try:
         from bot.dashboard.server import _broadcast_soon
 
-        _broadcast_soon({"type": "static_file_changed", "target": "dashboard"})
+        _broadcast_soon({"type": "static_file_changed", "target": target})
     except Exception:  # pragma: no cover - never let a broadcast failure break apply/revert
         pass
 
@@ -624,7 +630,6 @@ def revert_change(entry_id: str, *, actor: str = "dashboard") -> dict:
     manifest.insert(0, new_entry)
     _save_manifest(manifest)
 
-    if target == "dashboard":
-        _broadcast_static_file_changed()
+    _broadcast_static_file_changed(target)
 
     return new_entry

@@ -79,7 +79,7 @@ def test_apply_writes_the_file_and_history_shows_it(temp_db, monkeypatch, tmp_pa
         return "added a button", new_content
 
     monkeypatch.setattr(ui_customize, "_generate_raw", fake_generate_raw)
-    monkeypatch.setattr(ui_customize, "_broadcast_static_file_changed", lambda: None)
+    monkeypatch.setattr(ui_customize, "_broadcast_static_file_changed", lambda t: None)
 
     client = _client(monkeypatch)
     gen = client.post(
