@@ -182,8 +182,24 @@ async def run_batch(
 
     if not provider and not model and settings["worker_provider"] and settings["worker_model"]:
         provider, model = settings["worker_provider"], settings["worker_model"]
-    default_backend = _resolve_named_backend(provider, model) if (provider and model) else _resolve_inherited_backend(parent_instance_id)
     batch_effort = effort if effort is not None else settings["worker_effort"]
+
+    # Resolved lazily (only if some task actually lacks its own explicit
+    # provider/model) — a caller like generate_synthetic_batch() gives
+    # every task its own provider/model and has no parent instance
+    # context at all, so eagerly requiring one here would wrongly block
+    # an otherwise-fully-specified batch.
+    _default_backend: Optional[NativeAgentBackend] = None
+    _default_backend_resolved = False
+
+    def _get_default_backend() -> NativeAgentBackend:
+        nonlocal _default_backend, _default_backend_resolved
+        if not _default_backend_resolved:
+            _default_backend = (
+                _resolve_named_backend(provider, model) if (provider and model) else _resolve_inherited_backend(parent_instance_id)
+            )
+            _default_backend_resolved = True
+        return _default_backend
 
     allowed_tools = None
     if role == "leaf":
@@ -193,13 +209,20 @@ async def run_batch(
 
     dispatch = subagent_registry.new_dispatch(parent_instance_id)
     token = _delegation_depth.set(depth + 1)
+    # Each child's own resolved model, keyed by index — used only for the
+    # exceptional (cancelled/errored-before-returning) path below, since
+    # that's the one place we need a model label without re-deriving a
+    # shared default_backend that might never have been (or need to be)
+    # resolved at all.
+    child_models: dict[int, Optional[str]] = {}
     try:
         for i, task in enumerate(tasks):
             task_provider = task.get("provider")
             task_model = task.get("model")
             if bool(task_provider) != bool(task_model):
                 raise BackendError(f"task {i}: provider and model must both be given, or both omitted")
-            task_backend = _resolve_named_backend(task_provider, task_model) if (task_provider and task_model) else default_backend
+            task_backend = _resolve_named_backend(task_provider, task_model) if (task_provider and task_model) else _get_default_backend()
+            child_models[i] = getattr(task_backend, "model", None)
             task_effort = task.get("effort") or batch_effort
             handle = await _start_child(
                 dispatch, i, task, task_backend, semaphore, allowed_tools, parent_instance_id, task_effort
@@ -235,12 +258,12 @@ async def run_batch(
         if isinstance(outcome, BaseException):
             status = "stopped" if isinstance(outcome, asyncio.CancelledError) else "error"
             children.append({
-                # default_backend.model here is only an informational
-                # label for this exceptional (cancelled/errored-before-
-                # returning) path — a task-level model override, if any,
-                # was already recorded in the handle's own goal/session
-                # data, not tracked redundantly on ChildHandle itself.
-                "index": index, "goal": handle.goal, "model": default_backend.model,
+                # child_models[index] here is only an informational label
+                # for this exceptional (cancelled/errored-before-returning)
+                # path — a task-level model override, if any, was already
+                # recorded in the handle's own goal/session data, not
+                # tracked redundantly on ChildHandle itself.
+                "index": index, "goal": handle.goal, "model": child_models.get(index),
                 "status": status, "result_excerpt": str(outcome)[:500] or status,
             })
         else:
