@@ -61,31 +61,22 @@ def pick_target_intents(n: int = DEFAULT_TARGET_INTENT_COUNT) -> list[str]:
         pass
 
     all_intents = set(counts) | set(miss_counts)
+    if allowed_intents is not None:
+        all_intents &= set(allowed_intents)
     ranked = sorted(all_intents, key=lambda i: (counts.get(i, 0), -miss_counts.get(i, 0)))
     return ranked[:n]
 
 
 async def _free_provider_models(paid_overrides: dict[str, str]) -> list[tuple[str, str]]:
-    """Every configured provider paired with its cheapest (alphabetically
-    first) free model id, using the exact same auto-pick order the
-    existing native-agent dispatch already uses — plus any provider
-    explicitly named in paid_overrides. A provider with neither a known
-    free model nor an explicit override is skipped entirely."""
-    from bot import providers as providers_mod
-    from bot.models import custom_models_with_pricing
+    """Thin wrapper over bot/support_bot/model_providers.py's shared
+    helper — kept as a module-level name here since existing call sites
+    and tests already reference `synthetic_gen._free_provider_models`;
+    the real logic now lives in one place, reused by
+    bot/support_bot/llm_fallback.py's Tier 2 too (next-generation
+    modular hybrid plan, Phase 6)."""
+    from bot.support_bot.model_providers import free_provider_models
 
-    priced, _source = await custom_models_with_pricing()
-    selected: list[tuple[str, str]] = []
-    for provider_name in sorted(providers_mod.list_providers()):
-        entries = priced.get(provider_name, [])
-        free_entry = next((e for e in sorted(entries, key=lambda e: e["id"]) if e["free"]), None)
-        if free_entry:
-            selected.append((provider_name, free_entry["id"]))
-        elif provider_name in paid_overrides:
-            selected.append((provider_name, paid_overrides[provider_name]))
-        # else: no free model and no explicit opt-in for this provider —
-        # skipped, never silently downgraded to a paid model.
-    return selected
+    return await free_provider_models(paid_overrides)
 
 
 def _build_goal(target_intents: list[str]) -> str:
