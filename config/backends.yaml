@@ -160,6 +160,25 @@ native_agent:
 support_bot:
   synthetic_gen:
     paid_model_overrides: {}
+  # Tier 1.5 of the Support Bot NLU cascade (next-generation modular
+  # hybrid plan) — an OPTIONAL, server-only semantic layer, off by
+  # default. Enabling it requires the `sentence-transformers` extra to
+  # be installed (see bot/support_bot/embeddings.py's module docstring
+  # for why this is never a hard dependency of BotServer itself) — a
+  # real ML/torch dependency, unlike every other classifier in this
+  # subsystem, which is why it stays feature-flagged and measured before
+  # ever being turned on by default. Never touches Android — the
+  # on-device Tier 0 classifiers are and remain 100% classical.
+  tier1_5_embeddings:
+    enabled: false
+    model_name: "sentence-transformers/all-MiniLM-L6-v2"
+    # "boost": classical result wins outright when confident; only when
+    # classical is NOT confident does an embedding match get to supply
+    # an answer (a tie-breaker/fallback, not a vote). "weighted": blend
+    # classical and embedding confidence by `weight` regardless of
+    # either one's own confidence.
+    fusion: "boost"
+    weight: 0.3
 # Applies an edit to bot/*.py to this already-running process instead of
 # needing the full stop/rebuild/relaunch cycle — see bot/hotreload.py's
 # module docstring for exactly what can and can't hot-reload. Checked
