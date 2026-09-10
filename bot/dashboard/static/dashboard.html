@@ -1511,15 +1511,45 @@
 
       <div class="card" style="margin-top:14px;">
         <h3>Synthetic data generation <span style="font-weight:400; color:var(--muted); font-size:12px;">— free models only</span></h3>
-        <p class="cardnote">Dispatches a swarm (one child per configured provider with a known-free model — a provider with none is skipped, never spent on) to write new example phrases for the intents with the fewest examples or the most recent misclassifications. Generated examples land below for review — nothing is added to the live training set until you approve it.</p>
+        <p class="cardnote">Dispatches a swarm (one child per configured provider with a known-free model — a provider with none is skipped, never spent on) to write new example phrases for the intents with the fewest examples or the most recent misclassifications. A phrase 2+ independent free models write with near-identical wording is auto-approved straight into the live set (still shown below, with an "auto" badge); everything else lands in review.</p>
         <div class="row" style="gap:8px;">
           <button class="btn primary" id="btn-training-generate">Generate more training data</button>
         </div>
         <div class="cardnote" id="training-generate-status"></div>
+        <div class="row" style="gap:8px; margin-top:14px; align-items:center; flex-wrap:wrap;">
+          <label for="training-generate-run-module" style="font-size:12px; color:var(--muted);">Run until target —</label>
+          <select id="training-generate-run-module"><option value="">Every intent (system-wide)</option></select>
+          <input type="number" id="training-generate-run-target" value="20" min="1" style="width:80px;" title="Target examples per intent">
+          <span style="font-size:12px; color:var(--muted);">examples/intent</span>
+          <button class="btn" id="btn-training-generate-run">Run</button>
+        </div>
+        <div class="cardnote" id="training-generate-run-status"></div>
         <div class="tablewrap" style="margin-top:12px;">
           <table>
             <thead><tr><th>Phrase</th><th>Intent</th><th>Source model</th><th></th></tr></thead>
             <tbody id="training-pending-tbody"><tr class="emptyrow"><td colspan="4">No pending examples to review.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Approved examples <span style="font-weight:400; color:var(--muted); font-size:12px;">— human or auto-approved, revertible</span></h3>
+        <p class="cardnote">Every approval — a manual click or the 2-model-agreement auto-approve rule — is reversible: reverting deletes the exact live phrase it created and retrains.</p>
+        <div class="tablewrap" style="margin-top:10px;">
+          <table>
+            <thead><tr><th>Phrase</th><th>Intent</th><th>Approved by</th><th></th></tr></thead>
+            <tbody id="training-approved-tbody"><tr class="emptyrow"><td colspan="4">No approved examples yet.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Knowledge Modules <span style="font-weight:400; color:var(--muted); font-size:12px;">— independently trainable/toggleable intent groups</span></h3>
+        <p class="cardnote">Disabling a module removes it from classification instantly, without deleting its trained model — re-enabling is free. Retraining one module never touches any other.</p>
+        <div class="tablewrap" style="margin-top:10px;">
+          <table>
+            <thead><tr><th>Module</th><th>Intents</th><th>Version</th><th>Enabled</th><th></th></tr></thead>
+            <tbody id="training-modules-tbody"><tr class="emptyrow"><td colspan="5">Loading…</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -2695,6 +2725,8 @@ function startDashboard() {
   refreshTrainingHealth();
   refreshTrainingPending();
   refreshTrainingMisses();
+  refreshTrainingApproved();
+  refreshKnowledgeModules();
   pollWhenVisible(refreshTrainingPhrases, 20000);
   pollWhenVisible(refreshTrainingHealth, 10000);
   pollWhenVisible(refreshTrainingPending, 20000);
@@ -3206,9 +3238,92 @@ document.getElementById('btn-training-generate').onclick = async () => {
     statusEl.textContent = `Nothing dispatched: ${resp.reason}`;
     return;
   }
-  statusEl.textContent = `Dispatched ${resp.dispatched} agent(s), ${resp.pending_added} example(s) added for review.`;
+  statusEl.textContent = `Dispatched ${resp.dispatched} agent(s), ${resp.pending_added} example(s) added for review${resp.auto_approved ? `, ${resp.auto_approved} auto-approved` : ''}.`;
   refreshTrainingPending();
+  refreshTrainingApproved();
 };
+
+document.getElementById('btn-training-generate-run').onclick = async () => {
+  const statusEl = document.getElementById('training-generate-run-status');
+  const moduleId = document.getElementById('training-generate-run-module').value || null;
+  const targetPerIntent = parseInt(document.getElementById('training-generate-run-target').value, 10) || 20;
+  statusEl.textContent = 'Running until target (this can take a while — one batch per iteration)…';
+  let resp;
+  try {
+    resp = await api('/api/support-bot/generate/run', {
+      method: 'POST', body: JSON.stringify({ module_id: moduleId, target_per_intent: targetPerIntent }),
+    });
+  } catch (e) {
+    statusEl.textContent = 'Run failed — check the dashboard token.';
+    return;
+  }
+  statusEl.textContent = `${resp.batches_run} batch(es), ${resp.total_pending_added} example(s) added (${resp.total_auto_approved} auto-approved) — stopped: ${esc(resp.stopped_reason)}.`;
+  refreshTrainingPending();
+  refreshTrainingApproved();
+};
+
+async function refreshTrainingApproved() {
+  if (!getToken()) return;
+  let approved;
+  try {
+    approved = await api('/api/support-bot/pending?status=approved');
+  } catch (_e) { return; }
+  const tbody = document.getElementById('training-approved-tbody');
+  tbody.innerHTML = approved.length ? approved.map(p => `
+    <tr>
+      <td>${esc(p.phrase)}</td>
+      <td class="mono">${esc(p.intent)}</td>
+      <td class="mono">${p.approved_by ? `<span class="pill" title="${esc(p.source_provider)}/${esc(p.source_model)}"><span class="dot good"></span>auto</span>` : 'human'}</td>
+      <td><button class="btn" data-approved-revert="${p.id}" style="padding:3px 8px; font-size:11px;">Revert</button></td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="4">No approved examples yet.</td></tr>';
+  document.querySelectorAll('[data-approved-revert]').forEach(btn => btn.onclick = async () => {
+    await api(`/api/support-bot/pending/${btn.dataset.approvedRevert}/revert`, { method: 'POST' });
+    refreshTrainingApproved();
+    refreshTrainingPhrases();
+    refreshTrainingHealth();
+  });
+}
+
+async function refreshKnowledgeModules() {
+  if (!getToken()) return;
+  let modules;
+  try {
+    modules = await api('/api/support-bot/manifest');
+  } catch (_e) { return; }
+  const tbody = document.getElementById('training-modules-tbody');
+  const ids = Object.keys(modules).sort();
+  tbody.innerHTML = ids.length ? ids.map(id => {
+    const m = modules[id];
+    return `
+    <tr>
+      <td><b>${esc(m.display_name)}</b><div class="cardnote">${esc(m.description || '')}</div></td>
+      <td class="mono" style="font-size:11px;">${(m.intents || []).length}</td>
+      <td class="mono" style="font-size:11px;">${m.version ? esc(m.version.slice(0, 14)) + '…' : 'never trained'}</td>
+      <td><input type="checkbox" data-module-enabled="${esc(id)}" ${m.enabled ? 'checked' : ''} ${m.unloadable === false ? 'disabled title="always-resident"' : ''}></td>
+      <td><button class="btn" data-module-retrain="${esc(id)}" style="padding:3px 8px; font-size:11px;">Retrain</button></td>
+    </tr>`;
+  }).join('') : '<tr class="emptyrow"><td colspan="5">No Knowledge Modules registered.</td></tr>';
+  document.querySelectorAll('[data-module-enabled]').forEach(cb => cb.onchange = async () => {
+    await api(`/api/support-bot/modules/${cb.dataset.moduleEnabled}/enabled`, {
+      method: 'POST', body: JSON.stringify({ enabled: cb.checked }),
+    });
+  });
+  document.querySelectorAll('[data-module-retrain]').forEach(btn => btn.onclick = async () => {
+    btn.textContent = 'Retraining…';
+    try {
+      await api(`/api/support-bot/modules/${btn.dataset.moduleRetrain}/retrain`, { method: 'POST', body: JSON.stringify({}) });
+    } finally {
+      btn.textContent = 'Retrain';
+      refreshKnowledgeModules();
+    }
+  });
+
+  const select = document.getElementById('training-generate-run-module');
+  const prevValue = select.value;
+  select.innerHTML = '<option value="">Every intent (system-wide)</option>' +
+    ids.map(id => `<option value="${esc(id)}">${esc(modules[id].display_name)}</option>`).join('');
+  if (ids.includes(prevValue)) select.value = prevValue;
+}
 
 // ---------------------------------------------------------------- bots ---
 let botEditingId = null;

@@ -1165,6 +1165,7 @@
           <div class="card kpi"><h3>Unknown rate</h3><div class="value" id="health-unknown">—</div></div>
           <div class="card kpi"><h3>Avg TF-IDF confidence</h3><div class="value" id="health-tfidf-conf">—</div></div>
           <div class="card kpi"><h3>Avg neural net confidence</h3><div class="value" id="health-nn-conf">—</div></div>
+          <div class="card kpi"><h3>Held-out accuracy</h3><div class="value" id="health-eval-accuracy">—</div></div>
         </div>
       </div>
 
@@ -1181,6 +1182,83 @@
           <table>
             <thead><tr><th>Phrase</th><th>Intent</th><th></th></tr></thead>
             <tbody id="training-phrases-tbody"><tr class="emptyrow"><td colspan="3">No custom phrases added yet.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Bulk import</h3>
+        <p class="cardnote">One "phrase | intent" pair per line — imports and retrains once at the end, not once per line.</p>
+        <textarea id="training-bulk-input" rows="4" style="width:100%; font-family:monospace; font-size:12px;" placeholder="restart the bot | bot_restart&#10;kick the bot back on | bot_restart"></textarea>
+        <div class="row" style="gap:8px; margin-top:8px;">
+          <button class="btn" id="btn-training-bulk-import">Import lines</button>
+        </div>
+        <div class="cardnote" id="training-bulk-status"></div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Retrain &amp; Evaluate</h3>
+        <p class="cardnote">Trains a candidate model on a held-out split, measures its real accuracy, and only activates it if accuracy hasn't regressed past the tolerance below — a bad batch of examples can never silently degrade the live model.</p>
+        <div class="row" style="gap:8px; align-items:center;">
+          <label for="training-retrain-tolerance" style="font-size:12px; color:var(--muted);">Regression tolerance</label>
+          <input type="number" id="training-retrain-tolerance" value="0.02" step="0.01" min="0" style="width:90px;">
+          <button class="btn primary" id="btn-training-retrain">Retrain &amp; Evaluate</button>
+        </div>
+        <div id="training-retrain-result" style="margin-top:10px;"></div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Recent misses <span style="font-weight:400; color:var(--muted); font-size:12px;">— real disagreements &amp; unknowns from live traffic</span></h3>
+        <p class="cardnote">Real messages the hybrid classifier got wrong or couldn't decide on. Assign the correct intent to fix the underlying gap directly — this also feeds synthetic generation's own targeting.</p>
+        <div class="tablewrap" style="margin-top:10px;">
+          <table>
+            <thead><tr><th>Text</th><th>TF-IDF guess</th><th>Neural net guess</th><th>Correct intent</th><th></th></tr></thead>
+            <tbody id="training-misses-tbody"><tr class="emptyrow"><td colspan="5">No unreviewed misses right now.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Synthetic data generation <span style="font-weight:400; color:var(--muted); font-size:12px;">— free models only</span></h3>
+        <p class="cardnote">Dispatches a swarm (one child per configured provider with a known-free model — a provider with none is skipped, never spent on) to write new example phrases for the intents with the fewest examples or the most recent misclassifications. A phrase 2+ independent free models write with near-identical wording is auto-approved straight into the live set (still shown below, with an "auto" badge); everything else lands in review.</p>
+        <div class="row" style="gap:8px;">
+          <button class="btn primary" id="btn-training-generate">Generate more training data</button>
+        </div>
+        <div class="cardnote" id="training-generate-status"></div>
+        <div class="row" style="gap:8px; margin-top:14px; align-items:center; flex-wrap:wrap;">
+          <label for="training-generate-run-module" style="font-size:12px; color:var(--muted);">Run until target —</label>
+          <select id="training-generate-run-module"><option value="">Every intent (system-wide)</option></select>
+          <input type="number" id="training-generate-run-target" value="20" min="1" style="width:80px;" title="Target examples per intent">
+          <span style="font-size:12px; color:var(--muted);">examples/intent</span>
+          <button class="btn" id="btn-training-generate-run">Run</button>
+        </div>
+        <div class="cardnote" id="training-generate-run-status"></div>
+        <div class="tablewrap" style="margin-top:12px;">
+          <table>
+            <thead><tr><th>Phrase</th><th>Intent</th><th>Source model</th><th></th></tr></thead>
+            <tbody id="training-pending-tbody"><tr class="emptyrow"><td colspan="4">No pending examples to review.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Approved examples <span style="font-weight:400; color:var(--muted); font-size:12px;">— human or auto-approved, revertible</span></h3>
+        <p class="cardnote">Every approval — a manual click or the 2-model-agreement auto-approve rule — is reversible: reverting deletes the exact live phrase it created and retrains.</p>
+        <div class="tablewrap" style="margin-top:10px;">
+          <table>
+            <thead><tr><th>Phrase</th><th>Intent</th><th>Approved by</th><th></th></tr></thead>
+            <tbody id="training-approved-tbody"><tr class="emptyrow"><td colspan="4">No approved examples yet.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Knowledge Modules <span style="font-weight:400; color:var(--muted); font-size:12px;">— independently trainable/toggleable intent groups</span></h3>
+        <p class="cardnote">Disabling a module removes it from classification instantly, without deleting its trained model — re-enabling is free. Retraining one module never touches any other.</p>
+        <div class="tablewrap" style="margin-top:10px;">
+          <table>
+            <thead><tr><th>Module</th><th>Intents</th><th>Version</th><th>Enabled</th><th></th></tr></thead>
+            <tbody id="training-modules-tbody"><tr class="emptyrow"><td colspan="5">Loading…</td></tr></tbody>
           </table>
         </div>
       </div>

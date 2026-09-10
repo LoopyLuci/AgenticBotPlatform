@@ -1086,6 +1086,10 @@ function startDashboardPolling() {
   connectDevicesSocket();
   refreshTrainingPhrases();
   refreshTrainingHealth();
+  refreshTrainingMisses();
+  refreshTrainingPending();
+  refreshTrainingApproved();
+  refreshKnowledgeModules();
   pollWhenVisible(refreshTrainingPhrases, 20000);
   pollWhenVisible(refreshTrainingHealth, 10000);
   startServerChatPolling();
@@ -4082,6 +4086,7 @@ document.getElementById('btn-peer-gen-token').onclick = async () => {
 let trainingIntents = [];
 
 async function refreshTrainingHealth() {
+  if (!getToken()) return;
   let h;
   try {
     h = await api('/api/support-bot/health');
@@ -4091,9 +4096,12 @@ async function refreshTrainingHealth() {
   document.getElementById('health-unknown').textContent = h.total ? `${(h.unknown_rate * 100).toFixed(0)}%` : '—';
   document.getElementById('health-tfidf-conf').textContent = h.total ? h.avg_tfidf_confidence.toFixed(2) : '—';
   document.getElementById('health-nn-conf').textContent = h.total ? h.avg_nn_confidence.toFixed(2) : '—';
+  const evalAcc = h.eval && h.eval.holdout_accuracy;
+  document.getElementById('health-eval-accuracy').textContent = (evalAcc || evalAcc === 0) ? `${(evalAcc * 100).toFixed(1)}%` : '—';
 }
 
 async function refreshTrainingPhrases() {
+  if (!getToken()) return;
   let data;
   try {
     data = await api('/api/support-bot/training');
@@ -4132,10 +4140,215 @@ document.getElementById('btn-training-add').onclick = async () => {
     phraseInput.value = '';
     statusEl.textContent = 'Added and retrained.';
     refreshTrainingPhrases();
+    refreshTrainingHealth();
   } catch (e) {
     statusEl.textContent = 'Failed to add phrase — check the dashboard token.';
   }
 };
+
+document.getElementById('btn-training-bulk-import').onclick = async () => {
+  const textarea = document.getElementById('training-bulk-input');
+  const statusEl = document.getElementById('training-bulk-status');
+  const lines = textarea.value.split('\n').map(l => l.trim()).filter(Boolean);
+  const phrases = [];
+  for (const line of lines) {
+    const parts = line.split('|');
+    if (parts.length !== 2) {
+      statusEl.textContent = `Malformed line (expected "phrase | intent"): ${esc(line)}`;
+      return;
+    }
+    phrases.push({ phrase: parts[0].trim(), intent: parts[1].trim() });
+  }
+  if (!phrases.length) {
+    statusEl.textContent = 'Nothing to import.';
+    return;
+  }
+  try {
+    const resp = await api('/api/support-bot/training', { method: 'POST', body: JSON.stringify({ phrases }) });
+    textarea.value = '';
+    statusEl.textContent = `Imported ${resp.ids.length} phrase(s) and retrained.`;
+    refreshTrainingPhrases();
+    refreshTrainingHealth();
+  } catch (e) {
+    statusEl.textContent = 'Bulk import failed — check the format and the dashboard token.';
+  }
+};
+
+document.getElementById('btn-training-retrain').onclick = async () => {
+  const resultEl = document.getElementById('training-retrain-result');
+  const tolerance = parseFloat(document.getElementById('training-retrain-tolerance').value) || 0;
+  resultEl.innerHTML = '<span class="cardnote">Training candidate and evaluating…</span>';
+  let resp;
+  try {
+    resp = await api('/api/support-bot/retrain', { method: 'POST', body: JSON.stringify({ accept_if_regression_under: tolerance }) });
+  } catch (e) {
+    resultEl.innerHTML = '<span class="cardnote">Retrain failed — check the dashboard token.</span>';
+    return;
+  }
+  const acc = resp.eval && resp.eval.holdout_accuracy;
+  const accStr = (acc || acc === 0) ? `${(acc * 100).toFixed(1)}%` : 'n/a';
+  if (resp.accepted) {
+    resultEl.innerHTML = `<span class="pill"><span class="dot good"></span>Accepted</span> <span>New held-out accuracy: <b>${accStr}</b> (n=${resp.eval.n_holdout})</span>`;
+    refreshTrainingHealth();
+  } else {
+    resultEl.innerHTML = `<span class="pill"><span class="dot critical"></span>Rejected — model NOT activated</span> <span>${esc(resp.reason || '')}</span>`;
+  }
+};
+
+async function refreshTrainingMisses() {
+  if (!getToken()) return;
+  let misses;
+  try {
+    misses = await api('/api/support-bot/misses');
+  } catch (_e) { return; }
+  const tbody = document.getElementById('training-misses-tbody');
+  tbody.innerHTML = misses.length ? misses.map(m => `
+    <tr>
+      <td>${esc(m.text)}</td>
+      <td class="mono">${esc(m.tfidf_intent)}</td>
+      <td class="mono">${esc(m.nn_intent)}</td>
+      <td><select data-miss-intent="${m.id}" style="min-width:140px;">${trainingIntents.map(i => `<option value="${esc(i)}">${esc(i)}</option>`).join('')}</select></td>
+      <td><button class="btn" data-miss-label="${m.id}" style="padding:3px 8px; font-size:11px;">Label</button></td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="5">No unreviewed misses right now.</td></tr>';
+  document.querySelectorAll('[data-miss-label]').forEach(btn => btn.onclick = async () => {
+    const id = btn.dataset.missLabel;
+    const select = document.querySelector(`[data-miss-intent="${id}"]`);
+    await api(`/api/support-bot/misses/${id}/label`, { method: 'POST', body: JSON.stringify({ intent: select.value }) });
+    refreshTrainingMisses();
+    refreshTrainingPhrases();
+    refreshTrainingHealth();
+  });
+}
+
+async function refreshTrainingPending() {
+  if (!getToken()) return;
+  let pending;
+  try {
+    pending = await api('/api/support-bot/pending');
+  } catch (_e) { return; }
+  const tbody = document.getElementById('training-pending-tbody');
+  tbody.innerHTML = pending.length ? pending.map(p => `
+    <tr>
+      <td>${esc(p.phrase)}</td>
+      <td class="mono">${esc(p.intent)}</td>
+      <td class="mono">${esc(p.source_provider)}/${esc(p.source_model)}</td>
+      <td>
+        <button class="btn" data-pending-approve="${p.id}" style="padding:3px 8px; font-size:11px;">Approve</button>
+        <button class="btn" data-pending-reject="${p.id}" style="padding:3px 8px; font-size:11px;">Reject</button>
+      </td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="4">No pending examples to review.</td></tr>';
+  document.querySelectorAll('[data-pending-approve]').forEach(btn => btn.onclick = async () => {
+    await api(`/api/support-bot/pending/${btn.dataset.pendingApprove}/approve`, { method: 'POST' });
+    refreshTrainingPending();
+    refreshTrainingPhrases();
+    refreshTrainingHealth();
+  });
+  document.querySelectorAll('[data-pending-reject]').forEach(btn => btn.onclick = async () => {
+    await api(`/api/support-bot/pending/${btn.dataset.pendingReject}/reject`, { method: 'POST' });
+    refreshTrainingPending();
+  });
+}
+
+document.getElementById('btn-training-generate').onclick = async () => {
+  const statusEl = document.getElementById('training-generate-status');
+  statusEl.textContent = 'Dispatching swarm (free models only)…';
+  let resp;
+  try {
+    resp = await api('/api/support-bot/generate', { method: 'POST' });
+  } catch (e) {
+    statusEl.textContent = 'Generation failed — check the dashboard token.';
+    return;
+  }
+  if (resp.reason && !resp.dispatched) {
+    statusEl.textContent = `Nothing dispatched: ${resp.reason}`;
+    return;
+  }
+  statusEl.textContent = `Dispatched ${resp.dispatched} agent(s), ${resp.pending_added} example(s) added for review${resp.auto_approved ? `, ${resp.auto_approved} auto-approved` : ''}.`;
+  refreshTrainingPending();
+  refreshTrainingApproved();
+};
+
+document.getElementById('btn-training-generate-run').onclick = async () => {
+  const statusEl = document.getElementById('training-generate-run-status');
+  const moduleId = document.getElementById('training-generate-run-module').value || null;
+  const targetPerIntent = parseInt(document.getElementById('training-generate-run-target').value, 10) || 20;
+  statusEl.textContent = 'Running until target (this can take a while — one batch per iteration)…';
+  let resp;
+  try {
+    resp = await api('/api/support-bot/generate/run', {
+      method: 'POST', body: JSON.stringify({ module_id: moduleId, target_per_intent: targetPerIntent }),
+    });
+  } catch (e) {
+    statusEl.textContent = 'Run failed — check the dashboard token.';
+    return;
+  }
+  statusEl.textContent = `${resp.batches_run} batch(es), ${resp.total_pending_added} example(s) added (${resp.total_auto_approved} auto-approved) — stopped: ${esc(resp.stopped_reason)}.`;
+  refreshTrainingPending();
+  refreshTrainingApproved();
+};
+
+async function refreshTrainingApproved() {
+  if (!getToken()) return;
+  let approved;
+  try {
+    approved = await api('/api/support-bot/pending?status=approved');
+  } catch (_e) { return; }
+  const tbody = document.getElementById('training-approved-tbody');
+  tbody.innerHTML = approved.length ? approved.map(p => `
+    <tr>
+      <td>${esc(p.phrase)}</td>
+      <td class="mono">${esc(p.intent)}</td>
+      <td class="mono">${p.approved_by ? `<span class="pill" title="${esc(p.source_provider)}/${esc(p.source_model)}"><span class="dot good"></span>auto</span>` : 'human'}</td>
+      <td><button class="btn" data-approved-revert="${p.id}" style="padding:3px 8px; font-size:11px;">Revert</button></td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="4">No approved examples yet.</td></tr>';
+  document.querySelectorAll('[data-approved-revert]').forEach(btn => btn.onclick = async () => {
+    await api(`/api/support-bot/pending/${btn.dataset.approvedRevert}/revert`, { method: 'POST' });
+    refreshTrainingApproved();
+    refreshTrainingPhrases();
+    refreshTrainingHealth();
+  });
+}
+
+async function refreshKnowledgeModules() {
+  if (!getToken()) return;
+  let modules;
+  try {
+    modules = await api('/api/support-bot/manifest');
+  } catch (_e) { return; }
+  const tbody = document.getElementById('training-modules-tbody');
+  const ids = Object.keys(modules).sort();
+  tbody.innerHTML = ids.length ? ids.map(id => {
+    const m = modules[id];
+    return `
+    <tr>
+      <td><b>${esc(m.display_name)}</b><div class="cardnote">${esc(m.description || '')}</div></td>
+      <td class="mono" style="font-size:11px;">${(m.intents || []).length}</td>
+      <td class="mono" style="font-size:11px;">${m.version ? esc(m.version.slice(0, 14)) + '…' : 'never trained'}</td>
+      <td><input type="checkbox" data-module-enabled="${esc(id)}" ${m.enabled ? 'checked' : ''} ${m.unloadable === false ? 'disabled title="always-resident"' : ''}></td>
+      <td><button class="btn" data-module-retrain="${esc(id)}" style="padding:3px 8px; font-size:11px;">Retrain</button></td>
+    </tr>`;
+  }).join('') : '<tr class="emptyrow"><td colspan="5">No Knowledge Modules registered.</td></tr>';
+  document.querySelectorAll('[data-module-enabled]').forEach(cb => cb.onchange = async () => {
+    await api(`/api/support-bot/modules/${cb.dataset.moduleEnabled}/enabled`, {
+      method: 'POST', body: JSON.stringify({ enabled: cb.checked }),
+    });
+  });
+  document.querySelectorAll('[data-module-retrain]').forEach(btn => btn.onclick = async () => {
+    btn.textContent = 'Retraining…';
+    try {
+      await api(`/api/support-bot/modules/${btn.dataset.moduleRetrain}/retrain`, { method: 'POST', body: JSON.stringify({}) });
+    } finally {
+      btn.textContent = 'Retrain';
+      refreshKnowledgeModules();
+    }
+  });
+
+  const select = document.getElementById('training-generate-run-module');
+  const prevValue = select.value;
+  select.innerHTML = '<option value="">Every intent (system-wide)</option>' +
+    ids.map(id => `<option value="${esc(id)}">${esc(modules[id].display_name)}</option>`).join('');
+  if (ids.includes(prevValue)) select.value = prevValue;
+}
 
 // ------------------------------------------------------------ updates ----
 let latestUpdateInfo = null;
