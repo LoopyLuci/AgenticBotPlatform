@@ -83,6 +83,15 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.support_bot.model", "bot.support_bot.training_data", "bot.support_bot.hybrid",
     "bot.support_bot.actions", "bot.support_bot.nn_model", "bot.support_bot.slots",
     "bot.support_bot.engine",
+    # _module_classifiers is a module-level cache of live, trained
+    # classifier-pair instances (same hazard class as hybrid.py/model.py
+    # above) — a reload would silently drop every cached module pair
+    # while anything already holding a reference keeps using the old one.
+    "bot.support_bot.cascade",
+    # _backend is a module-level cache of a loaded (and, if enabled,
+    # heavyweight) sentence-transformers model instance — same hazard
+    # class as cascade.py's _module_classifiers above.
+    "bot.support_bot.embeddings",
     # Module-level `_zeroconf`/`_service_info` singleton for a real
     # registered mDNS service (see start()/stop()) — a reload would rebind
     # the module's own names to None while the old Zeroconf instance is
@@ -112,8 +121,13 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.effort",  # pure, stateless mapping functions, zero bot-internal deps — must precede hermes_config/the two transports, which import it
     "bot.device_tiers",  # pure, stateless rank-comparison functions, zero bot-internal deps
     "bot.support_bot.model_io",  # pure save/load functions, no module-level mutable state
+    "bot.support_bot.knowledge_modules",  # static registry built once at import, never mutated afterward
+    "bot.support_bot.module_manifest",  # pure read/write-manifest functions, no module-level mutable state
     "bot.support_bot.eval",  # pure split/evaluate functions, no module-level mutable state
+    "bot.support_bot.calibration",  # pure isotonic-regression functions, no module-level mutable state
     "bot.support_bot.synthetic_gen",  # pure async dispatch-building functions, no module-level mutable state
+    "bot.support_bot.model_providers",  # pure async provider-selection function, no module-level mutable state
+    "bot.support_bot.llm_fallback",  # pure async dispatch functions, no module-level mutable state
     "bot.server_chat_admin",  # pure async dispatch functions, no module-level mutable state
     "bot.validators",
     "bot.network_info",

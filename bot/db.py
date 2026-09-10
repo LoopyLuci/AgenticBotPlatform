@@ -468,7 +468,8 @@ CREATE TABLE IF NOT EXISTS support_bot_phrases (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     phrase     TEXT NOT NULL,
     intent     TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    module_id  TEXT
 );
 
 -- Self-monitoring log for the Support Bot's hybrid classifier
@@ -1060,6 +1061,23 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE api_keys ADD COLUMN kind TEXT NOT NULL DEFAULT 'device'")
     if "permission_tier" not in api_key_cols:
         conn.execute("ALTER TABLE api_keys ADD COLUMN permission_tier TEXT NOT NULL DEFAULT 'none'")
+
+    pending_example_cols = {row["name"] for row in conn.execute("PRAGMA table_info(support_bot_pending_examples)").fetchall()}
+    if "source_kind" not in pending_example_cols:
+        conn.execute("ALTER TABLE support_bot_pending_examples ADD COLUMN source_kind TEXT")
+    if "approved_by" not in pending_example_cols:
+        conn.execute("ALTER TABLE support_bot_pending_examples ADD COLUMN approved_by TEXT")
+    if "resulting_phrase_id" not in pending_example_cols:
+        conn.execute("ALTER TABLE support_bot_pending_examples ADD COLUMN resulting_phrase_id INTEGER")
+
+    phrase_cols = {row["name"] for row in conn.execute("PRAGMA table_info(support_bot_phrases)").fetchall()}
+    if "module_id" not in phrase_cols:
+        # Nullable by design — see bot/support_bot/knowledge_modules.py's
+        # module docstring: a NULL here is resolved at read time by
+        # looking the phrase's intent up against the live module
+        # registry, so no destructive backfill is needed for rows that
+        # predate Knowledge Modules.
+        conn.execute("ALTER TABLE support_bot_phrases ADD COLUMN module_id TEXT")
 
     # Safe to create now — the columns above are guaranteed to exist by
     # this point, whether this is a fresh install (created in SCHEMA) or an
@@ -2597,7 +2615,7 @@ def list_support_bot_phrases() -> list[sqlite3.Row]:
     return conn.execute("SELECT * FROM support_bot_phrases ORDER BY intent, id").fetchall()
 
 
-def add_support_bot_phrase(phrase: str, intent: str) -> int:
+def add_support_bot_phrase(phrase: str, intent: str, *, module_id: Optional[str] = None) -> int:
     phrase = (phrase or "").strip()
     intent = (intent or "").strip()
     if not phrase or not intent:
@@ -2605,8 +2623,8 @@ def add_support_bot_phrase(phrase: str, intent: str) -> int:
     conn = get_conn()
     with _lock:
         cur = conn.execute(
-            "INSERT INTO support_bot_phrases (phrase, intent, created_at) VALUES (?, ?, ?)",
-            (phrase, intent, _now()),
+            "INSERT INTO support_bot_phrases (phrase, intent, created_at, module_id) VALUES (?, ?, ?, ?)",
+            (phrase, intent, _now(), module_id),
         )
         conn.commit()
         return cur.lastrowid
