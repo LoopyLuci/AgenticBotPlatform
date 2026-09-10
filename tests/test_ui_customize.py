@@ -151,6 +151,32 @@ def test_generate_raw_retries_the_next_candidate_on_a_truncated_response(monkeyp
     assert calls == ["small-model", "gemini-large-context:free"]
 
 
+def test_generate_raw_enforces_a_hard_wall_clock_timeout(monkeypatch):
+    """Regression test for a real bug found live: httpx's own timeout_s
+    only bounds gaps between individual reads, not a request's total
+    duration — a provider that trickles occasional bytes during a very
+    long generation can sail past timeout_s without ever violating a
+    single read. asyncio.wait_for() must enforce a real ceiling
+    regardless of what the transport does internally."""
+    monkeypatch.setattr(ui_customize, "_PER_CALL_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(ui_customize, "_WAIT_FOR_BUFFER_S", 0.0)
+
+    async def fake_candidates():
+        return [(None, "slow-model")]
+
+    async def fake_single_call(provider, model, prompt, *, max_tokens, timeout_s):
+        await asyncio.sleep(5)  # never actually reached within the tiny test timeout
+        return "EXPLANATION: too slow\n```html\n<html></html>\n```\n"
+
+    monkeypatch.setattr(ui_customize, "_candidate_free_models", fake_candidates)
+    import bot.agent_runtime.moa as moa_module
+
+    monkeypatch.setattr(moa_module, "_single_call", fake_single_call)
+
+    with pytest.raises(ui_customize.UiCustomizeError, match="timed out"):
+        asyncio.run(ui_customize._generate_raw("dashboard", "do something", "<html></html>"))
+
+
 def test_generate_raw_raises_a_clear_error_when_every_candidate_fails(monkeypatch):
     async def fake_candidates():
         return [(None, "a"), (None, "b")]

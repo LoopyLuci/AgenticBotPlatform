@@ -26,6 +26,7 @@ JSON-Schema validation, which fits small objects, not whole files.
 
 from __future__ import annotations
 
+import asyncio
 import difflib
 import html.parser
 import json
@@ -174,6 +175,13 @@ def _extract_generation(raw: str) -> tuple[str, str]:
 
 
 _MAX_MODEL_ATTEMPTS = 3
+_PER_CALL_TIMEOUT_S = 300.0
+# wait_for's own deadline is set slightly above the transport's requested
+# timeout_s (not equal to it) so a transport that fails cleanly at
+# timeout_s raises its own real error/message first, in the ordinary
+# case — the wait_for wrapper exists purely as a hard backstop for when
+# that clean failure doesn't happen (see _generate_raw's docstring).
+_WAIT_FOR_BUFFER_S = 30.0
 
 
 async def _generate_raw(target: str, instruction: str, current_content: str) -> tuple[str, str]:
@@ -201,16 +209,37 @@ async def _generate_raw(target: str, instruction: str, current_content: str) -> 
         # own MAX_TOKENS=4096 (tuned for short consult() answers) — a
         # several-thousand-line HTML file can easily need tens of
         # thousands of output tokens.
-        raw = await _single_call(provider, model, prompt, max_tokens=32000, timeout_s=300.0)
+        #
+        # Wrapped in asyncio.wait_for() on top of the transport's own
+        # timeout_s, not instead of it: httpx's timeout only bounds the
+        # gap between individual reads, not the request's total wall-clock
+        # duration — a slow provider proxy that trickles occasional
+        # keep-alive bytes during a very long generation can sail past
+        # timeout_s without ever violating any single read, and did
+        # exactly that during live verification of this feature (a call
+        # ran 15+ minutes with the process visibly idle, not hung, just
+        # waiting on a free-tier model that never actually stalled long
+        # enough to trip httpx's own timeout). asyncio.wait_for() enforces
+        # a real ceiling regardless of the transport's internal timing.
+        try:
+            raw = await asyncio.wait_for(
+                _single_call(provider, model, prompt, max_tokens=32000, timeout_s=_PER_CALL_TIMEOUT_S),
+                timeout=_PER_CALL_TIMEOUT_S + _WAIT_FOR_BUFFER_S,
+            )
+        except asyncio.TimeoutError as exc:
+            last_error = exc
+            continue
         try:
             return _extract_generation(raw)
         except _MalformedGenerationError as exc:
             last_error = exc
             continue
+    cause = "timed out" if isinstance(last_error, asyncio.TimeoutError) else "returned an incomplete response"
     raise UiCustomizeError(
-        f"tried {len(candidates)} free model(s) and none returned a complete response for this file — "
-        "it's likely too large for any currently-configured free model's context window; try a smaller, "
-        "more targeted instruction, or configure a provider with a larger-context free tier"
+        f"tried {len(candidates)} free model(s) and every one {cause} for this file — it's likely too "
+        "large for any currently-configured free model (either its context window can't hold the whole "
+        "file, or a free tier is simply too slow/overloaded right now); try again, try a smaller more "
+        "targeted instruction, or configure a provider with a larger-context free tier"
     ) from last_error
 
 
