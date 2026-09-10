@@ -403,7 +403,57 @@ def _require_mobile_key_id(x_dashboard_token: Optional[str] = Header(default=Non
     return key_id
 
 
+_SUPPORT_BOT_TRAINING_OPS_SKILL = """Support Bot intent-classifier training operations.
+
+Use the support_bot_* MCP tools for all of this — never hand-edit
+bot/support_bot/training_data.py for routine data growth; that file is
+the hand-authored BASELINE, not where ongoing training happens.
+
+- support_bot_generate_training_data(module_id=None, target_per_intent=20)
+  — runs the free-model-only synthetic swarm until every targeted intent
+  reaches target_per_intent examples. Pass module_id to scope one
+  Knowledge Module at a time (see support_bot_list_knowledge_modules for
+  the list) instead of the whole system.
+- support_bot_list_pending_examples(status="pending", module_id=None) /
+  support_bot_review_pending_example(pending_id, decision) — the human
+  review queue. decision is approve/reject/revert.
+- Auto-approve rule: a (phrase, intent) pair 2+ independent free models
+  produce with near-identical wording in the SAME generation batch is
+  auto-approved straight into the live training set (still visible in
+  the pending list, filtered to status=approved, with an audit trail —
+  never silent). Anything less certain lands as a normal pending item
+  for a human to review.
+- support_bot_list_knowledge_modules() / support_bot_set_module_enabled()
+  / support_bot_retrain_module() — Knowledge Modules are independently
+  trainable/toggleable groups of intents (e.g. "bots", "mcp", "backups").
+  Disabling a module never deletes its trained model; re-enabling is
+  instant.
+"""
+
+
+def _seed_support_bot_training_ops_skill() -> None:
+    """Idempotent — registers the support-bot-training-ops runtime skill
+    exactly once (checks for it by name first), never overwrites an
+    operator's own edits to it on a later run. Wrapped defensively: a
+    DB hiccup here must never prevent the dashboard app from building."""
+    try:
+        if db.get_skill(None, "support-bot-training-ops") is not None:
+            return
+        from bot import skills as skills_module
+
+        skills_module.create(
+            None, "support-bot-training-ops",
+            "Support Bot intent-classifier training operations — generate training data, "
+            "review pending examples, and manage Knowledge Modules via the support_bot_* MCP tools.",
+            _SUPPORT_BOT_TRAINING_OPS_SKILL, global_=True,
+        )
+    except Exception:
+        pass
+
+
 def build_app() -> FastAPI:
+    _seed_support_bot_training_ops_skill()
+
     from contextlib import asynccontextmanager
 
     @asynccontextmanager
@@ -2537,6 +2587,32 @@ def build_app() -> FastAPI:
         )
         return result
 
+    # The scaling driver (next-generation modular hybrid plan, Phase 8) —
+    # loops generate_synthetic_batch() until every targeted intent
+    # reaches `target_per_intent` examples, `max_batches` is hit, or a
+    # batch reports a budget refusal. `module_id` scopes a run to one
+    # Knowledge Module at a time — resumable, since re-running later
+    # picks up wherever counts currently stand.
+    @app.post("/api/support-bot/generate/run", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_support_bot_generate_run(payload: dict = Body(default={})):
+        from bot.support_bot import synthetic_gen
+
+        target_per_intent = payload.get("target_per_intent", 20)
+        module_id = payload.get("module_id")
+        max_batches = payload.get("max_batches", synthetic_gen.DEFAULT_MAX_BATCHES)
+        result = await synthetic_gen.run_until_target(
+            target_per_intent, module_id=module_id, max_batches=max_batches,
+        )
+        db.log_audit(
+            actor="dashboard", action="support_bot_generate_run",
+            detail=(
+                f"module={module_id!r} target={target_per_intent} batches={result['batches_run']} "
+                f"pending_added={result['total_pending_added']} auto_approved={result['total_auto_approved']} "
+                f"stopped={result['stopped_reason']!r}"
+            ),
+        )
+        return result
+
     @app.get("/api/support-bot/pending", dependencies=[Depends(_require_token_or_api_key)])
     async def api_support_bot_pending_list(status: str = "pending"):
         return [dict(r) for r in db.list_support_bot_pending_examples(status=status)]
@@ -2546,8 +2622,8 @@ def build_app() -> FastAPI:
         row = db.get_support_bot_pending_example(pending_id)
         if row is None or row["status"] != "pending":
             raise HTTPException(status_code=404, detail="no such pending example")
-        db.add_support_bot_phrase(row["phrase"], row["intent"])
-        db.resolve_support_bot_pending_example(pending_id, "approved")
+        phrase_id = db.add_support_bot_phrase(row["phrase"], row["intent"])
+        db.resolve_support_bot_pending_example(pending_id, "approved", resulting_phrase_id=phrase_id)
         counts = support_bot_hybrid.retrain_all()
         db.log_audit(actor="dashboard", action="support_bot_pending_approve", detail=f"id {pending_id}: {row['phrase']!r} -> {row['intent']}")
         return {"ok": True, "trained_on": counts}
@@ -2560,6 +2636,21 @@ def build_app() -> FastAPI:
         db.resolve_support_bot_pending_example(pending_id, "rejected")
         db.log_audit(actor="dashboard", action="support_bot_pending_reject", detail=f"id {pending_id}")
         return {"ok": True}
+
+    # Undoes a previously-approved pending example (human OR auto-approved
+    # — see synthetic_gen.py's 2-model-agreement rule, Phase 7 of the
+    # next-generation modular hybrid plan) — deletes the exact live
+    # phrase it created and retrains, so an operator can always walk back
+    # an approval that turned out wrong, auto-approved or not.
+    @app.post("/api/support-bot/pending/{pending_id}/revert", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_support_bot_pending_revert(pending_id: int):
+        row = db.get_support_bot_pending_example(pending_id)
+        if row is None or row["status"] != "approved":
+            raise HTTPException(status_code=404, detail="no such approved pending example")
+        deleted_phrase_id = db.revert_support_bot_pending_example(pending_id)
+        counts = support_bot_hybrid.retrain_all()
+        db.log_audit(actor="dashboard", action="support_bot_pending_revert", detail=f"id {pending_id}: deleted phrase {deleted_phrase_id}")
+        return {"ok": True, "trained_on": counts}
 
     # Active-learning review (Phase 5 of the Support Bot NLU upgrade
     # plan) — real classifications the hybrid model disagreed on or

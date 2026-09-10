@@ -504,7 +504,10 @@ CREATE TABLE IF NOT EXISTS support_bot_pending_examples (
     source_model     TEXT NOT NULL,
     status           TEXT NOT NULL DEFAULT 'pending',  -- pending | approved | rejected
     created_at       TEXT NOT NULL,
-    resolved_at      TEXT
+    resolved_at      TEXT,
+    source_kind      TEXT,        -- NULL/'synthetic' (default, synthetic_gen.py's batches) | 'llm_fallback_live' (a real production miss Tier 2 just labeled, see bot/support_bot/llm_fallback.py) | 'auto:2-model-agreement'
+    approved_by      TEXT,        -- NULL (human, via the dashboard Approve button) | 'auto:2-model-agreement' (see synthetic_gen.py's auto-approve rule)
+    resulting_phrase_id INTEGER   -- the support_bot_phrases.id this approval created, if status='approved' — lets revert_support_bot_pending_example() delete the exact right live phrase, never a fragile text match
 );
 
 -- Server Chat — a permanent, bot-independent messaging/file-transfer
@@ -2721,13 +2724,30 @@ def mark_support_bot_classification_reviewed(classification_id: int) -> None:
 # bot/support_bot/synthetic_gen.py's own module docstring for why these
 # are never inserted directly into support_bot_phrases.
 
-def add_support_bot_pending_example(phrase: str, intent: str, *, source_provider: str, source_model: str) -> int:
+def add_support_bot_pending_example(
+    phrase: str, intent: str, *, source_provider: str, source_model: str,
+    source_kind: Optional[str] = None, status: str = "pending", approved_by: Optional[str] = None,
+    resulting_phrase_id: Optional[int] = None,
+) -> int:
+    """`source_kind` distinguishes a synthetic-gen batch phrase (None,
+    the default — every existing call site) from a real production miss
+    Tier 2 just labeled live (`"llm_fallback_live"`, see
+    bot/support_bot/llm_fallback.py) — purely informational, the
+    approve/reject/retrain flow is identical either way. `status`/
+    `approved_by` let a caller insert an already-approved row directly
+    (synthetic_gen.py's auto-approve rule, Phase 7) without a separate
+    resolve_support_bot_pending_example() call — the row still lands in
+    this same table, just pre-resolved, so it's never invisible to a
+    human reviewing the pending list filtered to status=approved."""
     conn = get_conn()
+    now = _now()
     with _lock:
         cur = conn.execute(
-            "INSERT INTO support_bot_pending_examples (phrase, intent, source_provider, source_model, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (phrase, intent, source_provider, source_model, _now()),
+            "INSERT INTO support_bot_pending_examples "
+            "(phrase, intent, source_provider, source_model, created_at, source_kind, status, resolved_at, approved_by, resulting_phrase_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (phrase, intent, source_provider, source_model, now, source_kind, status,
+             now if status != "pending" else None, approved_by, resulting_phrase_id),
         )
         conn.commit()
         return cur.lastrowid
@@ -2747,14 +2767,41 @@ def get_support_bot_pending_example(pending_id: int) -> Optional[sqlite3.Row]:
     return conn.execute("SELECT * FROM support_bot_pending_examples WHERE id=?", (pending_id,)).fetchone()
 
 
-def resolve_support_bot_pending_example(pending_id: int, status: str) -> None:
+def resolve_support_bot_pending_example(
+    pending_id: int, status: str, *, resulting_phrase_id: Optional[int] = None,
+) -> None:
     conn = get_conn()
     with _lock:
         conn.execute(
-            "UPDATE support_bot_pending_examples SET status=?, resolved_at=? WHERE id=?",
-            (status, _now(), pending_id),
+            "UPDATE support_bot_pending_examples SET status=?, resolved_at=?, resulting_phrase_id=? WHERE id=?",
+            (status, _now(), resulting_phrase_id, pending_id),
         )
         conn.commit()
+
+
+def revert_support_bot_pending_example(pending_id: int) -> Optional[int]:
+    """Undoes a previously-approved pending example: deletes the exact
+    live phrase it created (via resulting_phrase_id, never a text match)
+    and marks the pending row 'reverted' — distinct from 'rejected'
+    (a human/auto approval that turned out wrong) so the pending list can
+    show an accurate history rather than making a reverted approval look
+    like it was simply never approved. Returns the deleted phrase_id, or
+    None if this pending row was never actually approved (nothing to
+    revert) — callers should treat None as a no-op, not necessarily an
+    error, since a double-click on "revert" must be safe."""
+    conn = get_conn()
+    row = get_support_bot_pending_example(pending_id)
+    if row is None or row["resulting_phrase_id"] is None:
+        return None
+    phrase_id = row["resulting_phrase_id"]
+    with _lock:
+        conn.execute("DELETE FROM support_bot_phrases WHERE id=?", (phrase_id,))
+        conn.execute(
+            "UPDATE support_bot_pending_examples SET status=?, resolved_at=? WHERE id=?",
+            ("reverted", _now(), pending_id),
+        )
+        conn.commit()
+    return phrase_id
 
 
 # ---------------------------------------------------------- api keys ------
