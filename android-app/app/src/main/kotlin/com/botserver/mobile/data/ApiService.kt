@@ -428,7 +428,27 @@ interface ApiService {
 
     // The portable model file a Kotlin engine (com.botserver.mobile.nlu)
     // loads for local, on-device classification — see
-    // bot/support_bot/hybrid.py's export_current_model().
+    // bot/support_bot/hybrid.py's export_current_model(). `module`
+    // omitted returns the single global model (unchanged); a real
+    // Knowledge Module id returns that module's own model instead —
+    // next-generation modular hybrid plan, Phase 4.
     @GET("/api/support-bot/model")
-    suspend fun supportBotModel(): ModelFile
+    suspend fun supportBotModel(@Query("module") module: String? = null): ModelFile
+
+    // Every registered Knowledge Module's id, intents, and current
+    // enabled/version state — next-generation modular hybrid plan,
+    // Phase 4. Lets this app discover which per-module models to fetch
+    // without hardcoding the module registry.
+    @GET("/api/support-bot/manifest")
+    suspend fun supportBotManifest(): Map<String, com.botserver.mobile.data.dto.SupportBotModuleInfo>
+
+    // Tier 1 of the Support Bot NLU cascade — a pure classify-only call
+    // against the server's always-freshest, unpartitioned model, used
+    // when this device's own on-device Tier 0 (per-module) classifiers
+    // come back "unknown." Never executes anything — see
+    // SupportBotRepository.kt.
+    @POST("/api/support-bot/classify")
+    suspend fun supportBotClassify(
+        @Body request: com.botserver.mobile.data.dto.SupportBotClassifyRequest,
+    ): com.botserver.mobile.data.dto.SupportBotClassifyResponse
 }

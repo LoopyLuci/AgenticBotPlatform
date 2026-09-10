@@ -2599,8 +2599,118 @@ def build_app() -> FastAPI:
     # model_io.py's file schema. training_data_hash lets the app skip a
     # re-download when nothing has actually changed.
     @app.get("/api/support-bot/model", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_support_bot_model():
-        return support_bot_hybrid.export_current_model()
+    async def api_support_bot_model(module: Optional[str] = None):
+        # `module` (next-generation modular hybrid plan, Phase 4) is
+        # optional and additive: omitted, this route is byte-for-byte
+        # what it's always been — the single global, unpartitioned
+        # model. Given a real Knowledge Module id, returns that module's
+        # OWN persisted model_io-shaped JSON instead, falling back to a
+        # freshly-built export (same "never error, train on the spot"
+        # contract as hybrid.export_current_model()'s own fallback) if
+        # that module has never been retrain_module()'d yet.
+        if module is None:
+            return support_bot_hybrid.export_current_model()
+
+        from bot.support_bot import cascade, knowledge_modules, model_io, module_manifest
+
+        if knowledge_modules.MODULE_REGISTRY.get(module) is None:
+            raise HTTPException(status_code=404, detail=f"no such Knowledge Module: {module!r}")
+        persisted = model_io.load_model(path=module_manifest.module_path(module))
+        if persisted is not None:
+            return persisted
+        pair = cascade.get_module_classifiers(module)
+        module_examples = cascade._examples_for_module(module)
+        nn_state = pair.nn.export_state() if hasattr(pair.nn, "export_state") else {}
+        return {
+            "format_version": model_io.FORMAT_VERSION,
+            "training_data_hash": model_io.compute_training_hash(module_examples),
+            "intents": sorted({intent for _, intent in module_examples}),
+            "tfidf": pair.tfidf.export_state(),
+            "nn": nn_state,
+            "eval": {},
+            "calibration": {},
+        }
+
+    # Knowledge Module enable/disable/retrain (next-generation modular
+    # hybrid plan, Phase 9's reusable-surfaces) — the MCP tools proxy
+    # these same three routes.
+    @app.post("/api/support-bot/modules/{module_id}/enabled", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_support_bot_module_set_enabled(module_id: str, payload: dict = Body(...)):
+        from bot.support_bot import module_manifest
+
+        enabled = payload.get("enabled")
+        if not isinstance(enabled, bool):
+            raise HTTPException(status_code=400, detail="payload must be {enabled: bool}")
+        try:
+            module_manifest.set_enabled(module_id, enabled)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        db.log_audit(actor="dashboard", action="support_bot_module_set_enabled", detail=f"{module_id}: {enabled}")
+        return {"ok": True}
+
+    @app.post("/api/support-bot/modules/{module_id}/retrain", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_support_bot_module_retrain(module_id: str, payload: dict = Body(default={})):
+        from bot.support_bot import cascade
+
+        tolerance = payload.get("accept_if_regression_under")
+        try:
+            result = cascade.retrain_module(module_id, tolerance)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        db.log_audit(
+            actor="dashboard", action="support_bot_module_retrain",
+            detail=f"{module_id}: accepted={result['accepted']}" + (f" reason={result.get('reason')}" if not result["accepted"] else ""),
+        )
+        return result
+
+    # The Knowledge Module list — every registered module's id, display
+    # name, intents, and current runtime state (enabled/version) — so a
+    # caller (the Android app deciding which per-module models to fetch,
+    # or a future desktop admin panel) never has to hardcode the module
+    # registry itself. Next-generation modular hybrid plan, Phase 4.
+    @app.get("/api/support-bot/manifest", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_support_bot_manifest():
+        from bot.support_bot import knowledge_modules, module_manifest
+
+        manifest = module_manifest.load_manifest()
+        return {
+            module_id: {
+                "display_name": spec.display_name,
+                "description": spec.description,
+                "intents": list(spec.intents),
+                "unloadable": spec.unloadable,
+                **manifest[module_id],
+            }
+            for module_id, spec in knowledge_modules.MODULE_REGISTRY.items()
+        }
+
+    # Tier 1 of the Support Bot NLU cascade (next-generation modular
+    # hybrid plan) — a pure classify-only endpoint, distinct from
+    # /api/support-bot/ask (which classifies AND executes). Always runs
+    # the single global, unpartitioned hybrid.classify() — the same
+    # always-freshest-trained model /api/support-bot/model without a
+    # `module` param serves, which is exactly what makes this tier
+    # useful to a caller whose own on-device Tier 0 module partition
+    # came back "unknown": a full-corpus model sees every intent at
+    # once, so it can resolve cases a module-partitioned client can't.
+    # Deliberately does NOT accept or trust a caller-supplied intent —
+    # unlike /ask's client_intent fast-path, this endpoint's entire job
+    # is to classify, so it always computes its own answer.
+    @app.post("/api/support-bot/classify", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_support_bot_classify(payload: dict = Body(...)):
+        text = (payload.get("text") or "").strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="payload must be {text: ...}")
+        from bot.support_bot import cascade
+
+        intent, confidence, source = await cascade.classify_full_cascade(text)
+        current = support_bot_hybrid.export_current_model()
+        return {
+            "intent": intent,
+            "confidence": confidence,
+            "source": source,
+            "server_model_version": current.get("training_data_hash"),
+        }
 
     @app.get("/api/support-bot/health", dependencies=[Depends(_require_token_or_api_key)])
     async def api_support_bot_health():
