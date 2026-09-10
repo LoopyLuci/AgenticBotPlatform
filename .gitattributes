@@ -4,3 +4,12 @@
 # converts scripts/run.sh to CRLF on checkout/commit, breaking it for
 # every Linux user even though it looks fine in an editor on Windows.
 *.sh text eol=lf
+
+# cargo fmt / cargo build always write Rust manifests and source with LF,
+# regardless of platform. Without this, Windows' core.autocrlf=true keeps
+# re-flagging desktop-app/src-tauri/Cargo.toml (and .rs files) as modified
+# after every build even when the real content never changed — a false
+# "dirty" signal git status has shown, unprompted, across multiple builds.
+*.rs text eol=lf
+Cargo.toml text eol=lf
+Cargo.lock text eol=lf
