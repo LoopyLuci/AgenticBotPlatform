@@ -24,6 +24,16 @@ misbehaves or hard-fails on several real, commonly-used providers:
 - **Ollama Cloud**: has a real, undocumented `max` reasoning tier one
   step above `xhigh` that the generic 3-tier passthrough would collapse
   away.
+- **OpenCode Zen/Go**: requires an `x-opencode-session` header (a stable
+  per-conversation id — OpenCode's own usage/cost-caching page keys off
+  it) on every request, or free-tier models reject the call outright
+  with a `MissingSessionID` error. Confirmed against OpenCode's own
+  issue tracker (earendil-works/pi#4847), which documents this exact
+  header plus an optional `x-opencode-client` self-identifying label
+  used only for their own usage stats — NOT a value that needs to claim
+  to be their own CLI; any honest client name is fine and is the
+  documented, sanctioned way third-party tools (pi, OpenClaw, etc.) call
+  this API.
 
 Matching is done by keyword against the provider's `catalog_id` (from
 config/providers.yaml) AND its base_url, not an exact string — real
@@ -45,11 +55,13 @@ class QuirkProfile:
         mutually_exclusive_thinking_and_effort: bool = False,
         clamp_effort_to: Optional[set] = None,
         effort_field_override: Optional[str] = None,
+        needs_opencode_session_header: bool = False,
     ):
         self.force_thinking_extra_body = force_thinking_extra_body
         self.mutually_exclusive_thinking_and_effort = mutually_exclusive_thinking_and_effort
         self.clamp_effort_to = clamp_effort_to
         self.effort_field_override = effort_field_override
+        self.needs_opencode_session_header = needs_opencode_session_header
 
 
 _PROFILES: dict[str, QuirkProfile] = {
@@ -61,6 +73,7 @@ _PROFILES: dict[str, QuirkProfile] = {
     "glm": QuirkProfile(force_thinking_extra_body=True),
     "openrouter": QuirkProfile(clamp_effort_to={"low", "medium", "high"}),
     "ollama": QuirkProfile(),  # no clamp needed — this transport already treats "max" as a valid passthrough value
+    "opencode": QuirkProfile(needs_opencode_session_header=True),
 }
 
 
@@ -73,6 +86,28 @@ def profile_for(catalog_id: Optional[str], base_url: str) -> Optional[QuirkProfi
         if keyword in haystack:
             return profile
     return None
+
+
+# Self-identifying client label sent via the (optional, per OpenCode's
+# own docs) x-opencode-client header — used only for OpenCode's own
+# per-tool usage stats, same purpose as any provider's User-Agent
+# convention. Always this project's own honest name, never a value
+# claiming to be OpenCode's own CLI.
+OPENCODE_CLIENT_LABEL = "botserver"
+
+
+def extra_headers(*, profile: Optional[QuirkProfile], session_id: Optional[str]) -> dict[str, str]:
+    """Additional HTTP headers a provider's quirk profile requires,
+    beyond the transport's own Content-Type/Authorization — currently
+    just OpenCode Zen/Go's required session header. A provider with no
+    profile (or no header-related quirk) gets an empty dict, changing
+    nothing about today's request shape."""
+    if profile is None or not profile.needs_opencode_session_header:
+        return {}
+    headers = {"x-opencode-client": OPENCODE_CLIENT_LABEL}
+    if session_id:
+        headers["x-opencode-session"] = session_id
+    return headers
 
 
 def apply(payload: dict[str, Any], *, profile: Optional[QuirkProfile], effort: Optional[str]) -> None:

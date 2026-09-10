@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from typing import Optional
 
 import httpx
@@ -85,6 +86,13 @@ class OpenAICompatibleTransport(ProviderTransport):
         # means no profile matches and every request behaves exactly as
         # it did before quirk handling existed.
         self.catalog_id = catalog_id
+        # Generated once per transport instance (which itself lives for
+        # one bot instance's/subagent's whole conversation — see
+        # CustomModelBackend/NativeAgentBackend) rather than per request,
+        # matching OpenCode's own "stable per-conversation id" contract
+        # for its x-opencode-session header. Harmless to generate even
+        # for providers that never use it — see provider_quirks.py.
+        self._session_id = uuid.uuid4().hex
 
     supports_vision = True
     # No documents support — `document` blocks are an Anthropic-specific
@@ -151,6 +159,7 @@ class OpenAICompatibleTransport(ProviderTransport):
 
         quirk_profile = provider_quirks.profile_for(self.catalog_id, self.base_url)
         provider_quirks.apply(payload, profile=quirk_profile, effort=effort)
+        headers.update(provider_quirks.extra_headers(profile=quirk_profile, session_id=self._session_id))
 
         async with httpx.AsyncClient(timeout=timeout_s) as client:
             try:
