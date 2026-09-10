@@ -151,6 +151,34 @@ def test_generate_raw_retries_the_next_candidate_on_a_truncated_response(monkeyp
     assert calls == ["small-model", "gemini-large-context:free"]
 
 
+def test_generate_raw_retries_the_next_candidate_on_a_rate_limit(monkeypatch):
+    """Regression test for a real bug found live: a 429 (upstream
+    rate-limited) from the first candidate propagated as an unhandled
+    BackendError and killed the whole call instead of falling through
+    to the next ranked candidate, which succeeded fine seconds later."""
+    from bot.backends.base import BackendError
+
+    calls = []
+
+    async def fake_candidates():
+        return [(None, "rate-limited-model"), (None, "second-model")]
+
+    async def fake_single_call(provider, model, prompt, *, max_tokens, timeout_s):
+        calls.append(model)
+        if model == "rate-limited-model":
+            raise BackendError("returned 429: rate limited upstream")
+        return "EXPLANATION: done\n```html\n<html>ok</html>\n```\n"
+
+    monkeypatch.setattr(ui_customize, "_candidate_free_models", fake_candidates)
+    import bot.agent_runtime.moa as moa_module
+
+    monkeypatch.setattr(moa_module, "_single_call", fake_single_call)
+
+    explanation, content = asyncio.run(ui_customize._generate_raw("dashboard", "do something", "<html></html>"))
+    assert explanation == "done"
+    assert calls == ["rate-limited-model", "second-model"]
+
+
 def test_generate_raw_enforces_a_hard_wall_clock_timeout(monkeypatch):
     """Regression test for a real bug found live: httpx's own timeout_s
     only bounds gaps between individual reads, not a request's total

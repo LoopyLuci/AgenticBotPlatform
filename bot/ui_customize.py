@@ -196,6 +196,7 @@ async def _generate_raw(target: str, instruction: str, current_content: str) -> 
     # than going through consult()'s multi-reference wrapper, since this
     # only ever needs exactly one model call per attempt.
     from bot.agent_runtime.moa import _single_call
+    from bot.backends.base import BackendError
 
     filename = _target_path(target).name
     lang = "html" if _is_html_target(target) else "javascript"
@@ -229,12 +230,26 @@ async def _generate_raw(target: str, instruction: str, current_content: str) -> 
         except asyncio.TimeoutError as exc:
             last_error = exc
             continue
+        except BackendError as exc:
+            # A live 429 (upstream rate-limited) surfaced here during
+            # verification: a genuinely retryable, per-provider failure
+            # (rate limit, a transient 5xx, a network error) — exactly
+            # the kind of thing a *different* candidate model is likely
+            # to succeed at immediately, so this must fall through to the
+            # next one too, not just malformed-output/timeout.
+            last_error = exc
+            continue
         try:
             return _extract_generation(raw)
         except _MalformedGenerationError as exc:
             last_error = exc
             continue
-    cause = "timed out" if isinstance(last_error, asyncio.TimeoutError) else "returned an incomplete response"
+    if isinstance(last_error, asyncio.TimeoutError):
+        cause = "timed out"
+    elif isinstance(last_error, BackendError):
+        cause = f"failed ({last_error})"
+    else:
+        cause = "returned an incomplete response"
     raise UiCustomizeError(
         f"tried {len(candidates)} free model(s) and every one {cause} for this file — it's likely too "
         "large for any currently-configured free model (either its context window can't hold the whole "
