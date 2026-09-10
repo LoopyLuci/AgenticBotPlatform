@@ -425,6 +425,94 @@ async def remove_skill(name: str, instance_id: Optional[int] = None) -> dict:
     return await _request("DELETE", f"/api/skills/{name}", params=params)
 
 
+# --------------------------------------------------- support bot NLU ------
+# The next-generation modular hybrid Support Bot NLU cascade's reusable
+# surface (Phase 9) — generate more training data, review what the
+# free-model swarm and live production misses produced, and manage
+# Knowledge Modules, all as MCP tools any client (this one included) can
+# call directly instead of hand-editing bot/support_bot/training_data.py
+# or clicking through the dashboard. See the "support-bot-training-ops"
+# skill (bot/skills.py) and this repo's .claude/skills/support-bot-nlu/
+# for the fuller playbook these tools are meant to be reached for.
+
+@mcp.tool()
+async def support_bot_generate_training_data(
+    module_id: Optional[str] = None, target_per_intent: Optional[int] = None,
+) -> dict:
+    """Runs the free-model-only synthetic training-data swarm for the
+    Support Bot's intent classifier, looping until every targeted intent
+    reaches target_per_intent examples (default 20), max_batches is hit,
+    or a budget refusal stops it. module_id scopes the run to one
+    Knowledge Module (see support_bot_list_knowledge_modules) instead of
+    every intent in the system — omit it to target the intents needing
+    it most system-wide. A (phrase, intent) pair 2+ independent free
+    models agree on (near-identical wording) is auto-approved straight
+    into the live training set; everything else lands in the pending
+    review queue (support_bot_list_pending_examples)."""
+    return await _request(
+        "POST", "/api/support-bot/generate/run",
+        json={"module_id": module_id, "target_per_intent": target_per_intent or 20},
+    )
+
+
+@mcp.tool()
+async def support_bot_list_pending_examples(status: str = "pending", module_id: Optional[str] = None) -> dict:
+    """Lists Support Bot training examples awaiting review — status one
+    of pending/approved/rejected/reverted. module_id is applied
+    client-side (the underlying route doesn't filter by module), useful
+    for narrowing a long list to one area."""
+    rows = await _request("GET", "/api/support-bot/pending", params={"status": status})
+    if isinstance(rows, list) and module_id is not None:
+        from bot.support_bot import knowledge_modules
+
+        module_intents = set(knowledge_modules.intents_for_module(module_id))
+        rows = [row for row in rows if row.get("intent") in module_intents]
+    return {"examples": rows} if isinstance(rows, list) else rows
+
+
+@mcp.tool()
+async def support_bot_review_pending_example(pending_id: int, decision: str) -> dict:
+    """Resolves one pending Support Bot training example. decision is
+    one of: approve (adds it to the live training set and retrains),
+    reject (discards it), revert (undoes a PREVIOUSLY approved one —
+    human or auto-approved — by deleting the live phrase it created)."""
+    if decision not in ("approve", "reject", "revert"):
+        return {"error": "decision must be one of: approve, reject, revert"}
+    return await _request("POST", f"/api/support-bot/pending/{pending_id}/{decision}")
+
+
+@mcp.tool()
+async def support_bot_list_knowledge_modules() -> dict:
+    """Lists every Knowledge Module: id, display name, intents, whether
+    it's enabled, and its current trained version (a training-data hash,
+    or null if it's never been retrained-with-eval)."""
+    return await _request("GET", "/api/support-bot/manifest")
+
+
+@mcp.tool()
+async def support_bot_set_module_enabled(module_id: str, enabled: bool) -> dict:
+    """Enables or disables a Knowledge Module for classification —
+    disabling never deletes its trained model (re-enabling is instant),
+    only removes it from consideration. The always-resident core_status
+    module can't be disabled."""
+    return await _request("POST", f"/api/support-bot/modules/{module_id}/enabled", json={"enabled": enabled})
+
+
+@mcp.tool()
+async def support_bot_retrain_module(module_id: str, accept_if_regression_under: Optional[float] = None) -> dict:
+    """Retrains one Knowledge Module's classifier pair on its current
+    training data. Pass accept_if_regression_under (e.g. 0.02) to gate
+    the retrain on a held-out accuracy check — the retrain is rejected
+    (nothing changes) if it would regress accuracy by more than that
+    tolerance versus the module's currently active model. Omit it to
+    always retrain unconditionally, matching the Training tab's
+    plain add/delete behavior."""
+    return await _request(
+        "POST", f"/api/support-bot/modules/{module_id}/retrain",
+        json={"accept_if_regression_under": accept_if_regression_under},
+    )
+
+
 @mcp.tool()
 async def create_plugin(name: str, code: str, description: str = "") -> dict:
     """Author a brand-new callable tool by writing real Python code —
