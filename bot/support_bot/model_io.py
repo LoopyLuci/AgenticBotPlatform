@@ -48,7 +48,8 @@ def compute_training_hash(examples: list[tuple[str, str]]) -> str:
 
 def save_model(
     tfidf_state: dict[str, Any], nn_state: dict[str, Any], intents: list[str], *,
-    training_hash: str, eval_result: Optional[dict[str, Any]] = None, path: Path = CURRENT_PATH,
+    training_hash: str, eval_result: Optional[dict[str, Any]] = None,
+    calibration: Optional[dict[str, Any]] = None, path: Path = CURRENT_PATH,
 ) -> None:
     data = {
         "format_version": FORMAT_VERSION,
@@ -57,6 +58,13 @@ def save_model(
         "tfidf": tfidf_state,
         "nn": nn_state,
         "eval": eval_result or {},
+        # Confidence calibration (bot/support_bot/calibration.py) — an
+        # additive field, safe for older readers: Android's ModelFile
+        # deserializer already uses `ignoreUnknownKeys = true`
+        # (ModelRepository.kt), and load_model() below doesn't require
+        # this key either, so a model saved before calibration existed
+        # (or a module too small to fit one) loads exactly as before.
+        "calibration": calibration or {},
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")

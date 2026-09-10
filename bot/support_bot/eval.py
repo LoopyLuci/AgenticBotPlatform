@@ -101,3 +101,30 @@ def evaluate(train: list[tuple[str, str]], holdout: list[tuple[str, str]]) -> di
         "n_train": len(train),
         "n_holdout": len(holdout),
     }
+
+
+def collect_confidence_correctness(train: list[tuple[str, str]], holdout: list[tuple[str, str]]) -> list[tuple[float, bool]]:
+    """The raw material for bot/support_bot/calibration.py's isotonic
+    fit: for every holdout example, the hybrid decision's own final
+    confidence score alongside whether that decision was actually
+    correct. A fresh candidate pair, trained on `train` only — same
+    "never touch the live singletons" contract as evaluate() above, and
+    intentionally kept as a separate function rather than folded into
+    evaluate()'s own return value, so a caller that only wants
+    holdout_accuracy (most callers) doesn't pay for building this list
+    too."""
+    if not holdout:
+        return []
+
+    candidate_tfidf = TfidfCentroidModel(train)
+    candidate_nn = NeuralIntentClassifier(train)
+
+    pairs: list[tuple[float, bool]] = []
+    for text, true_intent in holdout:
+        tfidf_intent, tfidf_confidence = candidate_tfidf.predict(text)
+        nn_intent, nn_confidence = candidate_nn.predict(text)
+        predicted_intent, confidence, _source, _agreed = hybrid.vote(
+            tfidf_intent, tfidf_confidence, nn_intent, nn_confidence
+        )
+        pairs.append((confidence, predicted_intent == true_intent))
+    return pairs
