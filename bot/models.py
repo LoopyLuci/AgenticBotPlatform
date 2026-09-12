@@ -370,7 +370,14 @@ async def _fetch_custom_models(name: str, entry: dict, provider_registry) -> Opt
             resp = await client.get(f"{base_url}/models", headers=headers)
             resp.raise_for_status()
             data = resp.json()
-        ids = sorted(m["id"] for m in data.get("data", []) if m.get("id"))
+        # .get("data", []) only substitutes the default when the key is
+        # ABSENT — a server that returns {"data": null} (some
+        # OpenAI-compatible endpoints do this for an empty/not-yet-ready
+        # model list) makes .get() return None itself, and iterating
+        # over that raised a bare "'NoneType' object is not iterable"
+        # every 30s once such a server started responding. `or []`
+        # covers both cases.
+        ids = sorted(m["id"] for m in (data.get("data") or []) if m.get("id"))
         return ids or None
     except Exception as exc:
         logger.warning("live_custom_models: fetch failed for provider %r: %s", name, exc)
