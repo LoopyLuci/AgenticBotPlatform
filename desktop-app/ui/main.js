@@ -1899,7 +1899,7 @@ document.getElementById('provider-catalog-input').addEventListener('input', (e) 
 // provider offers, with an individual enable/disable toggle, free-first
 // per provider (pre-sorted by the backend).
 
-async function refreshModelsPage() {
+async function refreshModelsPage(refreshProviderName) {
   const list = document.getElementById('models-page-list');
   const empty = document.getElementById('models-page-empty');
   if (!getToken() || !list) return;
@@ -1921,7 +1921,13 @@ async function refreshModelsPage() {
   const blocks = await Promise.all(providersList.map(async (p) => {
     let models = [];
     try {
-      const data = await api(`/api/providers/${encodeURIComponent(p.name)}/models`);
+      // Only the provider the user clicked "Refresh" on bypasses caches
+      // (model_pricing's 24h models.dev cache — the provider's own live
+      // /models fetch is already always live) — every other provider's
+      // block still uses its cache, so clicking one Refresh doesn't
+      // silently re-fetch everything and stall the whole page.
+      const qs = p.name === refreshProviderName ? '?refresh=true' : '';
+      const data = await api(`/api/providers/${encodeURIComponent(p.name)}/models${qs}`);
       models = data.models || [];
     } catch (_e) { /* provider unreachable — show what we can */ }
     const rows = models.length ? models.map(m => `
@@ -1940,6 +1946,7 @@ async function refreshModelsPage() {
       <details data-provider="${esc(p.name)}" ${openNames.has(p.name) ? 'open' : ''} style="margin-bottom:10px;">
         <summary style="cursor:pointer; font-weight:600; padding:6px 0;">${esc(p.name)} <span class="cardnote">(${models.length} model${models.length === 1 ? '' : 's'})</span></summary>
         <div style="margin:6px 0; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <button type="button" class="secondary" data-refresh-models="${esc(p.name)}" title="Re-fetch this provider's model list and pricing, bypassing caches">⟳ Refresh</button>
           <button type="button" class="secondary" data-toggle-paid="${esc(p.name)}" data-enable="0">Turn Off All Paid</button>
           <button type="button" class="secondary" data-toggle-paid="${esc(p.name)}" data-enable="1">Turn On All Paid Models</button>
           ${hiddenNote}
@@ -1954,6 +1961,15 @@ async function refreshModelsPage() {
   }));
 
   list.innerHTML = blocks.join('');
+  list.querySelectorAll('[data-refresh-models]').forEach(btn => btn.onclick = async () => {
+    // refreshModelsPage() rebuilds the whole list's innerHTML on
+    // completion (replacing this exact button), so there's nothing to
+    // re-enable afterward — the "Refreshing…" label is the only
+    // feedback needed for the brief window before that happens.
+    btn.disabled = true;
+    btn.textContent = '⟳ Refreshing…';
+    await refreshModelsPage(btn.dataset.refreshModels);
+  });
   list.querySelectorAll('[data-model-toggle]').forEach(cb => cb.onchange = async () => {
     try {
       await api(`/api/providers/${encodeURIComponent(cb.dataset.modelToggle)}/models/toggle`, {

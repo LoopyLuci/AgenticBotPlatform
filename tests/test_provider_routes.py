@@ -62,7 +62,7 @@ def test_provider_models_route_returns_browse_result(temp_db, monkeypatch, tmp_p
 
     from bot import models as models_module
 
-    async def fake_browse(name):
+    async def fake_browse(name, refresh=False):
         return [{"id": "free-model:free", "free": True, "input": None, "output": None, "enabled": True}]
 
     monkeypatch.setattr(models_module, "browse_provider_models", fake_browse)

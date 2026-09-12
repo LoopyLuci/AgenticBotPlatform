@@ -815,13 +815,13 @@ def build_app() -> FastAPI:
         return {"providers": await model_pricing.list_known_providers()}
 
     @app.get("/api/providers/{name}/models", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_provider_models(name: str):
+    async def api_provider_models(name: str, refresh: bool = False):
         from bot import models as models_module
         from bot import providers
 
         if providers.get_provider(name) is None:
             raise HTTPException(status_code=404, detail=f"no provider named {name!r}")
-        return {"models": await models_module.browse_provider_models(name)}
+        return {"models": await models_module.browse_provider_models(name, refresh=refresh)}
 
     @app.post("/api/providers/{name}/models/toggle", dependencies=[Depends(_require_token_or_api_key)])
     async def api_provider_model_toggle(name: str, payload: dict = Body(...)):
