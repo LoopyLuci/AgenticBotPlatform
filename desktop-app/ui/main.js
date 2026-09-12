@@ -4801,6 +4801,19 @@ async function initTauriBoot() {
     const { stream, line } = evt.payload;
     bootLine(line, stream === 'stderr' ? 'stderr' : 'stdout');
   });
+  // spawn_internal() starts streaming logs from Tauri's setup hook, which
+  // fires before this listener above even exists — a fast-crashing server
+  // (its whole traceback) can emit and finish well inside that window.
+  // Tauri doesn't replay past events to a late listener, so without this
+  // backfill a fast crash showed up as "Server process exited" with an
+  // empty log panel: the real error was never lost, just never delivered.
+  try {
+    const backlog = await invoke('get_boot_log');
+    for (const { stream, line } of backlog) {
+      bootLine(line, stream === 'stderr' ? 'stderr' : 'stdout');
+    }
+    if (backlog.length) expandBoot();
+  } catch (_e) { /* older build without get_boot_log — live events only */ }
   await listen('server-status', (evt) => {
     const { running, pid } = evt.payload;
     document.getElementById('boot-pid').textContent = pid || '—';

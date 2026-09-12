@@ -39,7 +39,14 @@
       "../../bot": "bot",
       "../../config": "config",
       "../../.venv": ".venv",
-      "../../requirements.txt": "requirements.txt"
+      "../../requirements.txt": "requirements.txt",
+      "../ui": "desktop-app/ui",
+      "icons/icon.ico": "icon.ico"
+    },
+    "windows": {
+      "nsis": {
+        "installerHooks": "windows/hooks.nsh"
+      }
     }
   }
 }

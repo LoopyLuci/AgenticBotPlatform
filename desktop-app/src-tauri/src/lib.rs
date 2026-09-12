@@ -46,6 +46,30 @@ pub(crate) fn no_window(cmd: &mut Command) -> &mut Command {
 
 struct ServerState {
     child: Mutex<Option<Child>>,
+    // Every "server-log"/"server-status" event is also mirrored here so a
+    // late-attaching frontend listener can catch up. Real gap found live:
+    // spawn_internal() runs in Tauri's .setup() hook, which fires well
+    // before the frontend's async boot sequence gets around to calling
+    // listen('server-log', ...) — a fast-crashing python process (its
+    // whole traceback, plus the final "not running" status) could emit
+    // and finish well within that window, and Tauri's event system does
+    // NOT replay past events to a listener that registers late. Without
+    // this, that showed up as "Server process exited" with an empty log
+    // panel — the exact symptom, not a hypothetical. Capped so a
+    // long-running, chatty server can't grow this unboundedly.
+    log_backlog: Mutex<Vec<LogLine>>,
+}
+
+const LOG_BACKLOG_CAP: usize = 2000;
+
+fn push_backlog(state: &ServerState, line: LogLine) {
+    if let Ok(mut backlog) = state.log_backlog.lock() {
+        backlog.push(line);
+        let len = backlog.len();
+        if len > LOG_BACKLOG_CAP {
+            backlog.drain(0..len - LOG_BACKLOG_CAP);
+        }
+    }
 }
 
 #[derive(Clone, Serialize)]
@@ -167,13 +191,12 @@ fn spawn_internal(app: &AppHandle, state: &State<ServerState>) -> Result<(), Str
                 if cfg!(debug_assertions) {
                     eprintln!("[bot stdout] {line}");
                 }
-                let _ = handle.emit(
-                    "server-log",
-                    LogLine {
-                        stream: "stdout".into(),
-                        line,
-                    },
-                );
+                let payload = LogLine {
+                    stream: "stdout".into(),
+                    line,
+                };
+                push_backlog(&handle.state::<ServerState>(), payload.clone());
+                let _ = handle.emit("server-log", payload);
             }
         });
     }
@@ -184,13 +207,12 @@ fn spawn_internal(app: &AppHandle, state: &State<ServerState>) -> Result<(), Str
                 if cfg!(debug_assertions) {
                     eprintln!("[bot stderr] {line}");
                 }
-                let _ = handle.emit(
-                    "server-log",
-                    LogLine {
-                        stream: "stderr".into(),
-                        line,
-                    },
-                );
+                let payload = LogLine {
+                    stream: "stderr".into(),
+                    line,
+                };
+                push_backlog(&handle.state::<ServerState>(), payload.clone());
+                let _ = handle.emit("server-log", payload);
             }
         });
     }
@@ -212,18 +234,77 @@ fn spawn_internal(app: &AppHandle, state: &State<ServerState>) -> Result<(), Str
         let sys_pid = Pid::from_u32(pid);
         loop {
             thread::sleep(Duration::from_millis(1500));
-            sys.refresh_processes(ProcessesToUpdate::Some(&[sys_pid]), true);
-            match sys.process(sys_pid) {
-                Some(proc_) => {
-                    let sample = ResourceSample {
-                        cpu_percent: proc_.cpu_usage(),
-                        mem_mb: proc_.memory() as f64 / 1024.0 / 1024.0,
-                    };
-                    if handle.emit("server-resources", sample).is_err() {
-                        break;
+
+            // try_wait() on the REAL Child, not just "is this pid still in
+            // the OS process table" via sysinfo — that distinction matters:
+            // sysinfo told us a process was gone but never why, so a
+            // process that died before writing a single byte to stdout/
+            // stderr (a silent native crash — antivirus-quarantined venv
+            // DLL, missing runtime dependency, etc.) produced a "Server
+            // process exited" status with a genuinely empty log panel, no
+            // bug in the log-delivery path at all — there was simply
+            // nothing captured to deliver. try_wait() always gives a real
+            // exit status, so this now guarantees at least one diagnostic
+            // log line exists for every exit, even a silent one.
+            let state = handle.state::<ServerState>();
+            let wait_result = {
+                let mut guard = match state.child.lock() {
+                    Ok(g) => g,
+                    Err(_) => break,
+                };
+                match guard.as_mut() {
+                    Some(child) => child.try_wait(),
+                    None => break, // stopped/replaced from elsewhere (stop_server/restart_server)
+                }
+            };
+
+            match wait_result {
+                Ok(None) => {
+                    // Still running — sample resources for the GUI's CPU/RAM readout.
+                    sys.refresh_processes(ProcessesToUpdate::Some(&[sys_pid]), true);
+                    if let Some(proc_) = sys.process(sys_pid) {
+                        let sample = ResourceSample {
+                            cpu_percent: proc_.cpu_usage(),
+                            mem_mb: proc_.memory() as f64 / 1024.0 / 1024.0,
+                        };
+                        if handle.emit("server-resources", sample).is_err() {
+                            break;
+                        }
                     }
                 }
-                None => {
+                Ok(Some(status)) => {
+                    if let Ok(mut guard) = state.child.lock() {
+                        *guard = None;
+                    }
+                    let payload = LogLine {
+                        stream: "stderr".into(),
+                        line: format!(
+                            "bot.main exited: {status} — if no error appears above, it produced \
+                             no output before dying (check logs/bot.log, or run `python -m bot.main` \
+                             directly from a terminal in the install directory for the full traceback)"
+                        ),
+                    };
+                    push_backlog(&state, payload.clone());
+                    let _ = handle.emit("server-log", payload);
+                    let _ = handle.emit(
+                        "server-status",
+                        ServerStatusPayload {
+                            running: false,
+                            pid: None,
+                        },
+                    );
+                    break;
+                }
+                Err(e) => {
+                    if let Ok(mut guard) = state.child.lock() {
+                        *guard = None;
+                    }
+                    let payload = LogLine {
+                        stream: "stderr".into(),
+                        line: format!("failed to check bot.main's exit status: {e}"),
+                    };
+                    push_backlog(&state, payload.clone());
+                    let _ = handle.emit("server-log", payload);
                     let _ = handle.emit(
                         "server-status",
                         ServerStatusPayload {
@@ -286,6 +367,19 @@ fn restart_server(app: AppHandle, state: State<ServerState>) -> Result<(), Strin
     );
     thread::sleep(Duration::from_millis(300));
     spawn_internal(&app, &state)
+}
+
+/// Everything emitted as a "server-log" event so far, oldest first — lets
+/// the frontend backfill whatever it missed by not having its listener
+/// attached yet (see ServerState::log_backlog's doc comment for the real
+/// race this closes).
+#[tauri::command]
+fn get_boot_log(state: State<ServerState>) -> Result<Vec<LogLine>, String> {
+    state
+        .log_backlog
+        .lock()
+        .map(|backlog| backlog.clone())
+        .map_err(|_| "state poisoned".to_string())
 }
 
 /// Reads the resolved .env's DASHBOARD_TOKEN so the GUI can unlock itself
@@ -363,11 +457,94 @@ fn server_status(state: State<ServerState>) -> Result<ServerStatusPayload, Strin
     })
 }
 
+/// Re-points the Start Menu/Desktop shortcuts (if they exist) at the
+/// standalone $INSTDIR\icon.ico instead of whatever they currently
+/// reference, so a future icon change never needs a rebuild — just
+/// overwrite icon.ico (see scripts/sync_desktop_app.ps1) and the next
+/// launch fixes the shortcuts up.
+///
+/// Deliberately done here, at every startup, rather than only once in
+/// the NSIS installer's own postinstall hook: Tauri's default installer
+/// template only creates the Desktop shortcut immediately for silent/
+/// passive installs — for a normal interactive install it's created
+/// later, from the FINISH PAGE's "create desktop shortcut" checkbox
+/// callback (MUI_FINISHPAGE_SHOWREADME_FUNCTION), which runs AFTER
+/// NSIS_HOOK_POSTINSTALL. A hook-only fix would silently miss that
+/// shortcut on the single most common install path. Running this at
+/// every launch instead is timing-independent and self-healing (it also
+/// fixes a shortcut the user recreates or that Windows regenerates
+/// later) at the cost of one cheap, idempotent PowerShell call per
+/// shortcut per startup. Only touches a shortcut that already exists —
+/// never creates one the user didn't already have.
+#[cfg(target_os = "windows")]
+fn fix_shortcut_icons(app: &AppHandle) {
+    let Ok((project_root, _)) = resolve_paths(app) else {
+        return;
+    };
+    // project_root is the install dir in release mode (where icon.ico
+    // lands per tauri.conf.json's resources mapping) and the dev repo
+    // root in debug mode (where icons/icon.ico lives directly).
+    let icon_path = if cfg!(debug_assertions) {
+        project_root
+            .join("desktop-app")
+            .join("src-tauri")
+            .join("icons")
+            .join("icon.ico")
+    } else {
+        project_root.join("icon.ico")
+    };
+    if !icon_path.exists() {
+        return;
+    }
+    let icon_path_str = icon_path.display().to_string();
+
+    let start_menu = dirs_next_start_menu();
+    let desktop = dirs_next_desktop();
+    for dir in [start_menu, desktop].into_iter().flatten() {
+        let lnk = dir.join("BotServer.lnk");
+        if !lnk.exists() {
+            continue;
+        }
+        let ps = format!(
+            "$sh = New-Object -ComObject WScript.Shell; \
+             $lnk = $sh.CreateShortcut('{}'); \
+             $wanted = '{},0'; \
+             if ($lnk.IconLocation -ne $wanted) {{ $lnk.IconLocation = $wanted; $lnk.Save() }}",
+            lnk.display(),
+            icon_path_str.replace('\'', "''"),
+        );
+        let mut cmd = Command::new("powershell");
+        cmd.args(["-NoProfile", "-NonInteractive", "-Command", &ps]);
+        let _ = no_window(&mut cmd).output();
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn dirs_next_start_menu() -> Option<PathBuf> {
+    std::env::var_os("APPDATA").map(PathBuf::from).map(|p| {
+        p.join("Microsoft")
+            .join("Windows")
+            .join("Start Menu")
+            .join("Programs")
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn dirs_next_desktop() -> Option<PathBuf> {
+    std::env::var_os("USERPROFILE")
+        .map(PathBuf::from)
+        .map(|p| p.join("Desktop"))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn fix_shortcut_icons(_app: &AppHandle) {}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(ServerState {
             child: Mutex::new(None),
+            log_backlog: Mutex::new(Vec::new()),
         })
         .invoke_handler(tauri::generate_handler![
             start_server,
@@ -376,6 +553,7 @@ pub fn run() {
             server_status,
             set_app_icon,
             get_dashboard_token,
+            get_boot_log,
             android_env_status,
             list_adb_devices,
             build_android_apk,
@@ -389,18 +567,19 @@ pub fn run() {
         ])
         .setup(|app| {
             let handle = app.handle().clone();
+            let icon_fix_handle = handle.clone();
+            thread::spawn(move || fix_shortcut_icons(&icon_fix_handle));
             let state = handle.state::<ServerState>();
             if let Err(e) = spawn_internal(&handle, &state) {
                 if cfg!(debug_assertions) {
                     eprintln!("[bot-server] spawn_internal failed: {e}");
                 }
-                let _ = handle.emit(
-                    "server-log",
-                    LogLine {
-                        stream: "stderr".into(),
-                        line: format!("startup error: {e}"),
-                    },
-                );
+                let payload = LogLine {
+                    stream: "stderr".into(),
+                    line: format!("startup error: {e}"),
+                };
+                push_backlog(&state, payload.clone());
+                let _ = handle.emit("server-log", payload);
             }
             Ok(())
         })
