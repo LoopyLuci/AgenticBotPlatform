@@ -24,7 +24,7 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::no_window;
 
@@ -202,6 +202,21 @@ pub fn download_update(app: AppHandle, url: String) -> Result<String, String> {
         },
     );
 
+    // A connection drop mid-download can surface as a clean EOF rather than
+    // an io::Error, which the read loop above would otherwise treat as
+    // "done" — silently handing install_update() a truncated installer
+    // that passes its own exists()-only check and gets run with /S. Content-
+    // Length isn't always present (some CDNs omit it), so this only rejects
+    // the case it can actually detect rather than requiring a value that
+    // isn't guaranteed to exist.
+    if let Some(expected) = total_bytes {
+        if downloaded != expected {
+            return Err(format!(
+                "download incomplete: got {downloaded} of {expected} bytes — try again"
+            ));
+        }
+    }
+
     let dest = std::env::temp_dir().join("BotServer-update-setup.exe");
     std::fs::write(&dest, &bytes).map_err(|e| format!("couldn't save installer: {e}"))?;
     Ok(dest.to_string_lossy().to_string())
@@ -220,6 +235,16 @@ pub fn install_update(app: AppHandle, installer_path: String) -> Result<(), Stri
         std::env::current_exe().map_err(|e| format!("couldn't resolve own path: {e}"))?;
     let _ = app.emit("update-phase", "installing");
 
+    // std::process::exit() below is a hard process exit, not a window
+    // close — it never fires WindowEvent::CloseRequested, so the bot.main
+    // child this app spawned would otherwise keep running as an orphan
+    // holding the dashboard port straight through the update, competing
+    // with (or blocking) the freshly-installed version's own attempt to
+    // start it. Stop it explicitly here, the same way a real window close
+    // does.
+    crate::stop_bot_server(app.state::<crate::ServerState>().inner());
+    crate::android::stop_android_build(app.state::<crate::android::AndroidBuildState>().inner());
+
     #[cfg(target_os = "windows")]
     {
         let mut installer_cmd = Command::new(&installer);
@@ -227,21 +252,30 @@ pub fn install_update(app: AppHandle, installer_path: String) -> Result<(), Stri
             .arg("/S")
             .stdout(Stdio::null())
             .stderr(Stdio::null());
-        no_window(&mut installer_cmd)
+        let installer_child = no_window(&mut installer_cmd)
             .spawn()
             .map_err(|e| format!("couldn't launch installer: {e}"))?;
 
-        // A detached helper that waits for the silent install to finish,
-        // then relaunches the freshly-updated exe — this process exits
-        // right after spawning it, releasing the file lock the installer
-        // needs to replace this very binary.
+        // A detached helper that waits for the silent install to ACTUALLY
+        // finish, then relaunches the freshly-updated exe — this process
+        // exits right after spawning it, releasing the file lock the
+        // installer needs to replace this very binary. Previously this
+        // used a blind `timeout /t 6`, which had no relationship to how
+        // long the install genuinely takes (AV scanning the installer, a
+        // slow disk, machine under load) — too short either relaunches the
+        // OLD exe while the installer still holds it open, or races a
+        // partially-written new one. Wait-Process can wait on an arbitrary
+        // PID it didn't itself spawn, so it waits for the real installer
+        // process specifically, however long that takes, with no guess
+        // involved.
         let relaunch_cmd = format!(
-            "timeout /t 6 /nobreak >nul & start \"\" \"{}\"",
-            current_exe.display()
+            "Wait-Process -Id {} -ErrorAction SilentlyContinue; Start-Process -FilePath '{}'",
+            installer_child.id(),
+            current_exe.display().to_string().replace('\'', "''"),
         );
-        let mut relauncher = Command::new("cmd");
+        let mut relauncher = Command::new("powershell");
         relauncher
-            .args(["/C", &relaunch_cmd])
+            .args(["-NoProfile", "-NonInteractive", "-Command", &relaunch_cmd])
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         no_window(&mut relauncher)

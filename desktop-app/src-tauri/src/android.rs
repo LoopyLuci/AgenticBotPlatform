@@ -11,12 +11,53 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::Mutex;
 use std::thread;
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::no_window;
+
+/// Tracks the running `gradlew assembleDebug` child's PID, if any, so it
+/// can be torn down on app close the same way the Python bot server
+/// already is. Without this, closing the app (or the update-install path,
+/// which does a hard process exit) while a build was running orphaned
+/// gradlew.bat and every JVM it spawns — including, potentially, a
+/// long-lived Gradle daemon — with nothing left to reach them from inside
+/// this process ever again. Stores just the PID (not the owned Child)
+/// since the Child itself is already exclusively owned by the dedicated
+/// wait() thread below; a plain Copy u32 avoids needing shared ownership
+/// of something that isn't Clone.
+#[derive(Default)]
+pub(crate) struct AndroidBuildState {
+    pid: Mutex<Option<u32>>,
+}
+
+/// Stops the running gradlew build, if any — called from the same window-
+/// close path as stop_bot_server(). Kills by PID directly (taskkill /T /F,
+/// same as terminate_child() uses for the Python side) since this state
+/// only ever holds a PID, not an owned Child.
+pub(crate) fn stop_android_build(state: &AndroidBuildState) {
+    let pid = match state.pid.lock() {
+        Ok(mut guard) => guard.take(),
+        Err(_) => return,
+    };
+    if let Some(pid) = pid {
+        #[cfg(target_os = "windows")]
+        {
+            let mut cmd = Command::new("taskkill");
+            cmd.args(["/PID", &pid.to_string(), "/T", "/F"])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+            let _ = no_window(&mut cmd).status();
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = pid; // Android builds are only wired up on Windows today.
+        }
+    }
+}
 
 #[derive(Clone, Serialize)]
 struct BuildLogLine {
@@ -176,7 +217,7 @@ pub fn list_adb_devices() -> Result<Vec<AdbDevice>, String> {
 }
 
 #[tauri::command]
-pub fn build_android_apk(app: AppHandle) -> Result<(), String> {
+pub fn build_android_apk(app: AppHandle, state: State<AndroidBuildState>) -> Result<(), String> {
     let project_dir = find_android_project_dir()
         .ok_or_else(|| "android-app/ source tree not found next to this app — this feature only works on the machine used for development.".to_string())?;
 
@@ -188,6 +229,9 @@ pub fn build_android_apk(app: AppHandle) -> Result<(), String> {
     let mut child = no_window(&mut cmd)
         .spawn()
         .map_err(|e| format!("failed to start gradlew: {e}"))?;
+    if let Ok(mut guard) = state.pid.lock() {
+        *guard = Some(child.id());
+    }
 
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -224,6 +268,14 @@ pub fn build_android_apk(app: AppHandle) -> Result<(), String> {
     let handle = app.clone();
     thread::spawn(move || {
         let status = child.wait();
+        // Clear the tracked PID once gradlew genuinely exits on its own —
+        // otherwise a later window close (well after this build finished)
+        // would run taskkill against a PID that's long gone (harmless,
+        // but pointless) and, worse, treat a *later* build's own PID
+        // tracking as already-occupied.
+        if let Ok(mut guard) = handle.state::<AndroidBuildState>().pid.lock() {
+            *guard = None;
+        }
         let apk_path = project_dir
             .join("app")
             .join("build")
