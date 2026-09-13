@@ -18,7 +18,7 @@ use serde::Serialize;
 use sysinfo::{Pid, ProcessesToUpdate, System};
 use tauri::{AppHandle, Emitter, Manager, State};
 
-mod android;
+pub(crate) mod android;
 use android::{
     android_env_status, build_android_apk, install_android_apk, list_adb_devices,
     pair_android_device,
@@ -44,7 +44,7 @@ pub(crate) fn no_window(cmd: &mut Command) -> &mut Command {
     cmd
 }
 
-struct ServerState {
+pub(crate) struct ServerState {
     child: Mutex<Option<Child>>,
     // Every "server-log"/"server-status" event is also mirrored here so a
     // late-attaching frontend listener can catch up. Real gap found live:
@@ -95,7 +95,7 @@ struct ResourceSample {
 /// on the pid we spawned only kills that launcher stub and leaves the real
 /// interpreter (and the whole bot process) running as an orphan holding the
 /// dashboard port. `taskkill /T` kills the entire process tree instead.
-fn terminate_child(mut child: Child) {
+pub(crate) fn terminate_child(mut child: Child) {
     let pid = child.id();
     #[cfg(target_os = "windows")]
     {
@@ -110,6 +110,25 @@ fn terminate_child(mut child: Child) {
         let _ = child.kill();
     }
     let _ = child.wait();
+}
+
+/// Stops the running bot.main child, if any — the one place this needs to
+/// happen from two call sites that used to duplicate it: the window's own
+/// CloseRequested handler, and install_update()'s std::process::exit(0)
+/// path. That second path used to skip this entirely (a hard process exit
+/// never fires CloseRequested), leaving the Python server running as an
+/// orphan holding the dashboard port after every update — confirmed as a
+/// real gap, not hypothetical: the freshly-installed new version's own
+/// spawn_internal() would then either fail to bind the port or end up
+/// running alongside a competing leftover instance.
+pub(crate) fn stop_bot_server(state: &ServerState) {
+    let mut guard = match state.child.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    if let Some(child) = guard.take() {
+        terminate_child(child);
+    }
 }
 
 /// Where the Python side lives: bundled next to the packaged app (resources)
@@ -260,16 +279,22 @@ fn spawn_internal(app: &AppHandle, state: &State<ServerState>) -> Result<(), Str
 
             match wait_result {
                 Ok(None) => {
-                    // Still running — sample resources for the GUI's CPU/RAM readout.
+                    // Still running — sample resources for the GUI's CPU/RAM
+                    // readout. A failed emit here (e.g. the window was mid-
+                    // reload for a moment) must NOT break out of this loop —
+                    // this same loop is also this process's only crash
+                    // detector (the try_wait() call above). Breaking here
+                    // used to silently disable crash detection for the rest
+                    // of the app's lifetime after one transient emit
+                    // failure, leaving server-status stuck reporting
+                    // "running" forever even after a real crash.
                     sys.refresh_processes(ProcessesToUpdate::Some(&[sys_pid]), true);
                     if let Some(proc_) = sys.process(sys_pid) {
                         let sample = ResourceSample {
                             cpu_percent: proc_.cpu_usage(),
                             mem_mb: proc_.memory() as f64 / 1024.0 / 1024.0,
                         };
-                        if handle.emit("server-resources", sample).is_err() {
-                            break;
-                        }
+                        let _ = handle.emit("server-resources", sample);
                     }
                 }
                 Ok(Some(status)) => {
@@ -546,6 +571,7 @@ pub fn run() {
             child: Mutex::new(None),
             log_backlog: Mutex::new(Vec::new()),
         })
+        .manage(android::AndroidBuildState::default())
         .invoke_handler(tauri::generate_handler![
             start_server,
             stop_server,
@@ -585,14 +611,8 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
-                let state = window.state::<ServerState>();
-                let mut guard = match state.child.lock() {
-                    Ok(g) => g,
-                    Err(_) => return,
-                };
-                if let Some(child) = guard.take() {
-                    terminate_child(child);
-                }
+                stop_bot_server(window.state::<ServerState>().inner());
+                android::stop_android_build(window.state::<android::AndroidBuildState>().inner());
             }
         })
         .run(tauri::generate_context!())
