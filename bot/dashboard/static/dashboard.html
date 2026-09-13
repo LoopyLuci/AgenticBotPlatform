@@ -1885,20 +1885,46 @@ function _copyViaTextarea(text) {
   }
 }
 
-let _copyToastTimer = null;
-function showCopyToast(message) {
-  let toast = document.getElementById('copy-toast');
-  if (!toast) {
-    toast = document.createElement('div');
-    toast.id = 'copy-toast';
-    toast.style.cssText = 'position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--panel, #222); color:var(--fg, #fff); padding:8px 16px; border-radius:6px; font-size:12px; box-shadow:0 2px 10px rgba(0,0,0,.3); z-index:9999; opacity:0; transition:opacity .15s;';
-    document.body.appendChild(toast);
+// General-purpose toast system — used to be hardcoded for the clipboard-
+// copy confirmation only (a single fixed slot, background:var(--panel,
+// #222)/color:var(--fg, #fff), NEITHER of which is a real token this
+// app's design system defines — see the :root blocks above, the real
+// names are --surface-3/--ink/etc — so every toast silently rendered at
+// its literal fallback color, never adapting to the light theme).
+// Generalized so the many `catch (_e) { return; }` sites across this
+// file that silently no-op on a failed refresh/action can surface
+// something to the operator instead of freezing without explanation.
+// Supports stacking (each toast is its own element, oldest on top) since
+// more than one thing can legitimately fail/succeed close together.
+let _toastContainer = null;
+function _getToastContainer() {
+  if (!_toastContainer || !_toastContainer.isConnected) {
+    _toastContainer = document.createElement('div');
+    _toastContainer.id = 'toast-container';
+    _toastContainer.style.cssText = 'position:fixed; bottom:20px; left:50%; transform:translateX(-50%); display:flex; flex-direction:column-reverse; gap:8px; align-items:center; z-index:9999; pointer-events:none;';
+    document.body.appendChild(_toastContainer);
   }
-  toast.textContent = message;
-  toast.style.opacity = '1';
-  clearTimeout(_copyToastTimer);
-  _copyToastTimer = setTimeout(() => { toast.style.opacity = '0'; }, 1800);
+  return _toastContainer;
 }
+
+function showToast(message, type) {
+  // type: 'success' (default) | 'error' | 'info' — only changes the
+  // accent stripe and how long it stays up; an error gets more time to
+  // read since it's more likely to need actual attention.
+  const accent = type === 'error' ? 'var(--critical)' : type === 'info' ? 'var(--ink-soft)' : 'var(--good)';
+  const el = document.createElement('div');
+  el.style.cssText = `background:var(--surface-3); color:var(--ink); padding:8px 16px; border-radius:6px; font-size:12px; box-shadow:0 4px 16px rgba(0,0,0,.25); border-left:3px solid ${accent}; opacity:0; transition:opacity .15s; max-width:360px; text-align:center;`;
+  el.textContent = message;
+  _getToastContainer().appendChild(el);
+  requestAnimationFrame(() => { el.style.opacity = '1'; });
+  const dwell = type === 'error' ? 4000 : 1800;
+  setTimeout(() => {
+    el.style.opacity = '0';
+    setTimeout(() => el.remove(), 200);
+  }, dwell);
+}
+
+function showCopyToast(message) { showToast(message, 'success'); }
 
 // A small "⧉" copy icon button, wired to copy `getText()`'s result
 // (called at click time, not eagerly — cheap for a bubble that's never
@@ -4200,35 +4226,65 @@ async function refreshBots() {
     const bot = bots.find(b => b.id === Number(btn.dataset.botEdit));
     if (bot) _loadBotIntoForm(bot);
   });
-  document.querySelectorAll('[data-bot-circuit-reset]').forEach(a => a.onclick = async (e) => {
+  // Every mutating bot-lifecycle action below shares the same guard: no
+  // disable-while-pending meant a fast double-click could fire two
+  // mutating requests before the grid re-rendered (which itself can take
+  // up to 15s if the user's focus is inside it — see the note above),
+  // and no try/catch meant a thrown error (401, network blip) was an
+  // unhandled promise rejection — refreshBots() never ran, the button
+  // never recovered any state, and the user saw literally nothing happen
+  // with no explanation. _guardedBotAction wraps both fixes in one place
+  // so each handler below stays a one-liner.
+  async function _guardedBotAction(btn, action, failureVerb) {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    try {
+      await action();
+    } catch (e) {
+      showToast(e.message || `Couldn't ${failureVerb} that bot.`, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+  document.querySelectorAll('[data-bot-circuit-reset]').forEach(a => a.onclick = (e) => {
     e.preventDefault();
-    await api(`/api/bots/${a.dataset.botCircuitReset}/circuit/reset`, { method: 'POST' });
-    refreshBots();
+    _guardedBotAction(a, async () => {
+      await api(`/api/bots/${a.dataset.botCircuitReset}/circuit/reset`, { method: 'POST' });
+      refreshBots();
+    }, 'reset the circuit breaker for');
   });
-  document.querySelectorAll('[data-bot-toggle]').forEach(btn => btn.onclick = async () => {
+  document.querySelectorAll('[data-bot-toggle]').forEach(btn => btn.onclick = () => {
     const id = Number(btn.dataset.botToggle);
     const bot = bots.find(b => b.id === id);
-    await api(`/api/bots/${id}/${bot.enabled ? 'disable' : 'enable'}`, { method: 'POST' });
-    refreshBots();
+    _guardedBotAction(btn, async () => {
+      await api(`/api/bots/${id}/${bot.enabled ? 'disable' : 'enable'}`, { method: 'POST' });
+      refreshBots();
+    }, bot.enabled ? 'disable' : 'enable');
   });
-  document.querySelectorAll('[data-bot-startstop]').forEach(btn => btn.onclick = async () => {
+  document.querySelectorAll('[data-bot-startstop]').forEach(btn => btn.onclick = () => {
     const id = Number(btn.dataset.botStartstop);
     const bot = bots.find(b => b.id === id);
-    await api(`/api/bots/${id}/${bot.live_running ? 'stop' : 'start'}`, { method: 'POST' });
-    refreshBots();
+    _guardedBotAction(btn, async () => {
+      await api(`/api/bots/${id}/${bot.live_running ? 'stop' : 'start'}`, { method: 'POST' });
+      refreshBots();
+    }, bot.live_running ? 'stop' : 'start');
   });
-  document.querySelectorAll('[data-bot-restart]').forEach(btn => btn.onclick = async () => {
-    await api(`/api/bots/${btn.dataset.botRestart}/restart`, { method: 'POST' });
-    refreshBots();
+  document.querySelectorAll('[data-bot-restart]').forEach(btn => btn.onclick = () => {
+    _guardedBotAction(btn, async () => {
+      await api(`/api/bots/${btn.dataset.botRestart}/restart`, { method: 'POST' });
+      refreshBots();
+    }, 'restart');
   });
-  document.querySelectorAll('[data-bot-delete]').forEach(btn => btn.onclick = async () => {
+  document.querySelectorAll('[data-bot-delete]').forEach(btn => btn.onclick = () => {
     const id = Number(btn.dataset.botDelete);
     const bot = bots.find(b => b.id === id);
     if (!confirm(`Delete bot "${bot.name}"? It's stopped immediately; job/chat history stays but keeps this id as a reference. A backup is taken first.`)) return;
-    await api(`/api/bots/${id}`, { method: 'DELETE' });
-    if (botEditingId === id) _resetBotForm();
-    refreshBots();
-    refreshBotsBackups();
+    _guardedBotAction(btn, async () => {
+      await api(`/api/bots/${id}`, { method: 'DELETE' });
+      if (botEditingId === id) _resetBotForm();
+      refreshBots();
+      refreshBotsBackups();
+    }, 'delete');
   });
 }
 
