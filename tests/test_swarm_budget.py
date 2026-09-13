@@ -125,3 +125,24 @@ def test_check_budget_hard_cap_not_overridable_by_confirm():
 def test_check_budget_defaults_max_children_to_config_cap_when_unspecified():
     decision = check_budget(pricing_row=FREE_ROW, max_children=None, confirm=False, cfg=DEFAULT_CFG)
     assert decision.allowed
+
+
+def test_check_budget_survives_a_partially_overridden_assumed_tokens_config():
+    # A real crash found live: an operator overriding
+    # swarm_budget.assumed_tokens_per_child in config/backends.yaml with
+    # only ONE of the two keys (a natural partial edit, since input/output
+    # look like independent tunables) used to raise an uncaught KeyError
+    # inside estimate_dispatch_cost()'s direct assumed_tokens["input"]/
+    # ["output"] indexing — reachable from a live dashboard route with no
+    # try/except around check_budget(), surfacing as an opaque 500.
+    cfg = dict(DEFAULT_CFG, assumed_tokens_per_child={"output": 5000})
+    decision = check_budget(pricing_row=PAID_ROW, max_children=1, confirm=True, cfg=cfg)
+    assert decision.allowed  # must not raise, and the missing "input" falls back to the default
+
+
+def test_check_budget_survives_a_null_assumed_tokens_config():
+    # Same bug class, the other trigger: the config key present but
+    # explicitly null (a YAML section header with nothing under it).
+    cfg = dict(DEFAULT_CFG, assumed_tokens_per_child=None)
+    decision = check_budget(pricing_row=PAID_ROW, max_children=1, confirm=True, cfg=cfg)
+    assert decision.allowed

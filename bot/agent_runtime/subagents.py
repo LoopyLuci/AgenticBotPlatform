@@ -163,7 +163,7 @@ async def run_batch(
     if not tasks:
         return {"dispatch_id": None, "children": []}
 
-    max_depth = config.current.get("agent_runtime", {}).get("max_delegation_depth", 2)
+    max_depth = (config.current.get("agent_runtime") or {}).get("max_delegation_depth", 2)
     depth = _delegation_depth.get()
     if depth >= max_depth:
         raise BackendError(
@@ -294,7 +294,7 @@ async def _start_child(
     # gap where repeated spawn_subagent(background=true) calls, each
     # self-limited only within its own batch, could accumulate unbounded
     # live tasks over time with nothing tracking the running total.
-    max_global = config.current.get("native_agent", {}).get("max_global_background_children", 20)
+    max_global = (config.current.get("native_agent") or {}).get("max_global_background_children", 20)
     if subagent_registry.count_live_children() >= max_global:
         raise BackendError(
             f"global background-dispatch limit reached ({max_global} live children across all dispatches) — "

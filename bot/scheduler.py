@@ -51,7 +51,7 @@ def _iso(dt: datetime) -> str:
 def _max_consecutive_failures() -> int:
     from bot.config import config
 
-    return config.current.get("scheduler", {}).get("max_consecutive_failures", 5)
+    return (config.current.get("scheduler") or {}).get("max_consecutive_failures", 5)
 
 
 def create(

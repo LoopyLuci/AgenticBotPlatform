@@ -6,10 +6,20 @@ sentinel file, since BotServer already centralizes runtime state in
 SQLite rather than the filesystem.
 
 Checked at the top of every new-turn/new-dispatch entry point —
-`NativeAgentBackend.ask()`, `subagents.run_batch()`,
+`NativeAgentBackend.ask()`, `Router.ask()`, `subagents.run_batch()`,
 `scheduler._fire()`, `auto_manage.run_check_in()` — never mid-turn: an
 already-running turn finishes rather than being killed, matching
 Hermes's own "checked before new work" semantics exactly.
+
+`Router.ask()`'s check (not just `NativeAgentBackend.ask()`'s) matters
+because it's the one shared entry point every backend type flows
+through: `NativeAgentBackend` (backing api/custom_model/native_agent)
+already checked estop itself, but cli/ui/hermes_cli/hermes_gateway
+backends never did and have no shared base class of their own to add it
+to — a real gap where engaging the estop silently failed to block new
+turns on any bot instance configured with one of those four, found and
+closed by adding the check at Router.ask() instead of duplicating it
+across every backend implementation.
 """
 
 from __future__ import annotations

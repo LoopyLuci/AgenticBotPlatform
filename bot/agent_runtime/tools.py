@@ -1221,7 +1221,7 @@ async def execute_tool(
         if not target_ref or not prompt:
             raise ToolError("both target_instance and prompt are required")
 
-        max_depth = config.current.get("agent_runtime", {}).get("max_delegation_depth", 2)
+        max_depth = (config.current.get("agent_runtime") or {}).get("max_delegation_depth", 2)
         depth = _delegation_depth.get()
         if depth >= max_depth:
             raise ToolError(

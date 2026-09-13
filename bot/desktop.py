@@ -237,8 +237,17 @@ def load_mcp_config() -> dict[str, Any]:
         return {"mcpServers": {}, "mcpServers_disabled": {}}
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    data.setdefault("mcpServers", {})
-    data.setdefault("mcpServers_disabled", {})
+    # setdefault() alone only fills these in when the key is ABSENT — a
+    # config that ever ends up with "mcpServers": null (a plausible state
+    # after an external tool or manual edit clears the section) left
+    # every downstream .items()/[...] access in this module (all of which
+    # go through this one function first) crashing with AttributeError/
+    # KeyError instead of just seeing an empty server list. Fixed at this
+    # single choke point rather than patching each call site.
+    if data.get("mcpServers") is None:
+        data["mcpServers"] = {}
+    if data.get("mcpServers_disabled") is None:
+        data["mcpServers_disabled"] = {}
     return data
 
 
