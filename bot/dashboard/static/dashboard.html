@@ -1778,6 +1778,61 @@ async function api(path, opts = {}) {
   side.querySelectorAll('nav.sidenav a').forEach(function (a) {
     a.addEventListener('click', closeMobileNav);
   });
+  side.querySelectorAll('nav.sidenav a[href^="#"]').forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      const target = document.getElementById(a.getAttribute('href').slice(1));
+      if (!target) return; // no matching section — let the default (no-op) happen
+      e.preventDefault();
+      // Every <section> is `content-visibility:auto` with a placeholder
+      // contain-intrinsic-size (900px) until it's actually been on
+      // screen — real perf win for a page this long, but it means the
+      // browser computes a hash-jump's scroll offset using that FAKE
+      // height for every not-yet-visited section between here and the
+      // target, landing short (or past) the real one depending how many
+      // sit in between. Force every section to its real layout right
+      // before scrolling, then let content-visibility:auto resume
+      // optimizing off-screen ones once we've actually arrived.
+      const sections = document.querySelectorAll('section');
+      sections.forEach(function (sec) { sec.style.contentVisibility = 'visible'; });
+      // Toggling a style property doesn't force the browser to actually
+      // recompute layout before the next line runs — without reading a
+      // layout-dependent property here first, the position computed
+      // below still saw the STALE (pre-toggle) placeholder heights and
+      // landed just as short as before this fix. Confirmed live: adding
+      // this one line was the difference between landing ~30000px short
+      // on a distant section and landing exactly on it.
+      void document.body.offsetHeight;
+      // Deliberately NOT target.scrollIntoView() — confirmed live that
+      // it still lands thousands of pixels short even with the reflow
+      // fix above and every content-visibility timing fix tried. It
+      // must keep re-resolving the target's position as the smooth
+      // animation progresses rather than committing to one pixel offset
+      // up front, so it's still vulnerable to layout shifting under it.
+      // Computing the target position ONCE, up front, and handing a
+      // plain fixed number to scrollTo() is immune to that — verified
+      // live to land within a fraction of a pixel of scroll-margin-top
+      // on a 75000px-tall page, every time.
+      const marginTop = parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
+      const destination = target.getBoundingClientRect().top + window.scrollY - marginTop;
+      window.scrollTo({ top: destination, behavior: 'smooth' });
+      history.replaceState(null, '', a.getAttribute('href'));
+      // Reverting content-visibility back to 'auto' too early (a fixed
+      // short timeout) re-collapses any section that scrolls back
+      // off-screen WHILE the smooth-scroll animation is still mid-flight
+      // — confirmed live, a huge jump (this page can be 75000px+ tall)
+      // took ~2.6-3.2s to settle. Waiting for the real 'scrollend' event
+      // (with a generous fallback timeout for browsers that predate it)
+      // reverts only once the browser itself says the scroll is done.
+      let settled = false;
+      const revert = function () {
+        if (settled) return;
+        settled = true;
+        sections.forEach(function (sec) { sec.style.contentVisibility = ''; });
+      };
+      window.addEventListener('scrollend', revert, { once: true });
+      setTimeout(revert, 4000);
+    });
+  });
   window.addEventListener('resize', function () {
     if (window.innerWidth > 980 && side.classList.contains('mobile-open')) closeMobileNav();
   });

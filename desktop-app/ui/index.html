@@ -228,8 +228,15 @@
      placeholder size before a section has ever been measured, and the
      "auto" keyword makes it remember the section's real last-rendered
      size afterward instead of guessing forever. Native Chromium behavior
-     already un-skips a section when it's the target of an anchor-link
-     scroll, so #jobs-style navigation is unaffected. */
+     un-skips a section once it BECOMES the target of an anchor-link
+     scroll — but that alone doesn't make navigation unaffected: every
+     OTHER not-yet-visited section between the top of the page and the
+     target still reports its placeholder 900px height right up until
+     the jump, so the browser computes the target's scroll offset using
+     the wrong cumulative height for any of those and lands short (or
+     past) the real target — confirmed live, not hypothetical. See
+     main.js's sidenav click handler, which forces every section to its
+     real layout immediately before scrolling to work around this. */
   section { padding:30px 28px 6px; scroll-margin-top:70px; max-width:1320px; content-visibility:auto; contain-intrinsic-size:auto 900px; }
   .sec-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
   .sec-head h2 { font-family:var(--font-display); font-size:19px; font-weight:700; margin:0; }
