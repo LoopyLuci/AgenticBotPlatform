@@ -372,7 +372,7 @@ class NativeAgentBackend(Backend):
 def _show_thinking_summary_enabled() -> bool:
     from bot.config import config
 
-    return config.current.get("native_agent", {}).get("show_thinking_summary", False)
+    return (config.current.get("native_agent") or {}).get("show_thinking_summary", False)
 
 
 def _resolve_fallback_transport(instance_id) -> Optional[tuple]:

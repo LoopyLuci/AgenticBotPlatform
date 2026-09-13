@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import csv
+import hmac
 import io
 import json
 import logging
@@ -219,13 +220,28 @@ db.on_job_tool_event(_on_job_tool_event)
 db.on_job_children_set(_on_job_children_set)
 
 
+def _tokens_match(provided: Optional[str], expected: str) -> bool:
+    """Constant-time comparison for every secret check in this file — a
+    plain ==/!= (what every one of these used until this fix) leaks
+    timing information proportional to how many leading bytes match,
+    since CPython's string comparison short-circuits on the first
+    mismatch. Every check here gates the entire dashboard/mobile API
+    surface, so this is the one place worth being careful, not a
+    theoretical nitpick. hmac.compare_digest requires both arguments to
+    actually be strings (or both bytes) — a missing header (None) is
+    just treated as "doesn't match" rather than raising a TypeError."""
+    if provided is None:
+        return False
+    return hmac.compare_digest(provided, expected)
+
+
 def _require_token(x_dashboard_token: Optional[str] = Header(default=None)) -> None:
     expected = os.environ.get("DASHBOARD_TOKEN")
     if not expected:
         # No token configured: refuse mutating calls outright rather than
         # silently running with no auth at all.
         raise HTTPException(status_code=503, detail="DASHBOARD_TOKEN is not set in .env")
-    if x_dashboard_token != expected:
+    if not _tokens_match(x_dashboard_token, expected):
         raise HTTPException(status_code=401, detail="invalid dashboard token")
 
 
@@ -243,7 +259,7 @@ def _require_token_or_bootstrap(x_dashboard_token: Optional[str] = Header(defaul
     expected = os.environ.get("DASHBOARD_TOKEN")
     if not expected:
         return
-    if x_dashboard_token != expected:
+    if not _tokens_match(x_dashboard_token, expected):
         raise HTTPException(status_code=401, detail="invalid dashboard token")
 
 
@@ -282,7 +298,7 @@ def _identify_caller(
     device on the same LAN can be told exactly where to dial this one for a
     direct APK transfer, without this server ever brokering the bytes."""
     expected = os.environ.get("DASHBOARD_TOKEN")
-    if expected and x_dashboard_token == expected:
+    if expected and _tokens_match(x_dashboard_token, expected):
         return "dashboard"
     client_host = request.client.host if request.client else None
     if db.verify_api_key(
@@ -321,7 +337,7 @@ def _caller_device_id(
     Used by the mesh APK-push routes, which need to know whose device is
     volunteering to be the transfer's origin."""
     expected = os.environ.get("DASHBOARD_TOKEN")
-    if expected and x_dashboard_token == expected:
+    if expected and _tokens_match(x_dashboard_token, expected):
         return None
     client_host = request.client.host if request.client else None
     key_id = db.verify_api_key(
@@ -356,7 +372,7 @@ def _caller_thread_identity(
     entirely from auth already on the request; the client never gets to
     declare its own identity."""
     expected = os.environ.get("DASHBOARD_TOKEN")
-    if expected and x_dashboard_token == expected:
+    if expected and _tokens_match(x_dashboard_token, expected):
         return "dashboard", "dashboard", "Dashboard"
     key_id = db.verify_api_key(
         x_dashboard_token or "",
@@ -382,7 +398,7 @@ def _require_device_id(x_dashboard_token: Optional[str] = Header(default=None)) 
     as one undifferentiated tier (_require_token_or_api_key); Server Chat
     is the one place that actually needs to know *which* device is asking."""
     expected = os.environ.get("DASHBOARD_TOKEN")
-    if expected and x_dashboard_token == expected:
+    if expected and _tokens_match(x_dashboard_token, expected):
         return db.SERVER_CHAT_DESKTOP_DEVICE_ID
     key_id = db.verify_api_key(x_dashboard_token or "")
     if key_id is not None:
@@ -522,7 +538,11 @@ def build_app() -> FastAPI:
                     last_snapshot = snapshot
                     await _manager.broadcast({"type": "device_list", "devices": annotated})
             except Exception:
-                pass
+                # This loop runs for the whole life of the process — a
+                # silently-swallowed exception here doesn't just miss one
+                # broadcast, it degrades the Devices view's "live" feel
+                # indefinitely with nothing in the logs to explain why.
+                logger.exception("presence broadcaster iteration failed")
 
     @app.get("/")
     async def index():
@@ -2027,7 +2047,7 @@ def build_app() -> FastAPI:
             pricing_row=pricing_row,
             max_children=max_children,
             confirm=bool(payload.get("confirm")),
-            cfg=config.current.get("swarm_budget", {}),
+            cfg=(config.current.get("swarm_budget") or {}),
         )
         if not decision.allowed:
             db.log_audit(
@@ -2113,7 +2133,7 @@ def build_app() -> FastAPI:
             pricing_row=pricing_row,
             max_children=max_children or len(tasks),
             confirm=bool(payload.get("confirm")),
-            cfg=config.current.get("swarm_budget", {}),
+            cfg=(config.current.get("swarm_budget") or {}),
         )
         if not decision.allowed:
             db.log_audit(
@@ -2315,7 +2335,7 @@ def build_app() -> FastAPI:
     async def api_get_swarm_budget():
         from bot import swarm_budget
 
-        cfg = config.current.get("swarm_budget", {})
+        cfg = (config.current.get("swarm_budget") or {})
         return {
             "enabled": cfg.get("enabled", True),
             "max_children": cfg.get("max_children", swarm_budget.DEFAULT_MAX_CHILDREN),

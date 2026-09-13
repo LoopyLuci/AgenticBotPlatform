@@ -292,7 +292,7 @@ class HermesGatewayBackend(Backend):
         try:
             from bot.config import config
 
-            if not config.current.get("swarm_observability", {}).get("live_tool_events", True):
+            if not (config.current.get("swarm_observability") or {}).get("live_tool_events", True):
                 return None
             from bot.swarm import observability
 

@@ -20,7 +20,7 @@ from bot.config import config
 
 
 def current_mode() -> str:
-    return config.current.get("agent_control", {}).get("mode", "trust_all")
+    return (config.current.get("agent_control") or {}).get("mode", "trust_all")
 
 
 def resolve_instance(name_or_id: Any) -> Optional[dict[str, Any]]:

@@ -380,6 +380,19 @@ class Router:
         chat_id: Optional[Any] = None,
         thread_id: Optional[Any] = None,
     ) -> BackendResult:
+        # Checked here, at the ONE shared entry point every backend's
+        # ask() flows through, rather than inside each backend
+        # implementation individually — that's how this gap happened in
+        # the first place: NativeAgentBackend.ask() (which backs api/
+        # custom_model/native_agent) checks estop itself, but cli, ui,
+        # hermes_cli, and hermes_gateway backends never did, so engaging
+        # the global e-stop silently failed to block new turns on any bot
+        # instance configured with one of those four backends — a real
+        # gap in a documented safety guarantee, not a hypothetical one.
+        from bot.agent_runtime import estop
+
+        estop.check()
+
         if instance_id is not None:
             self._check_circuit(instance_id)
 

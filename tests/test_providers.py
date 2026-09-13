@@ -48,6 +48,34 @@ def test_set_provider_rejects_empty_base_url():
         providers.set_provider("name", "")
 
 
+def test_set_provider_rejects_cloud_metadata_ip():
+    # A real SSRF-with-credential-injection primitive: this base_url gets
+    # used verbatim as an outbound HTTP target later, with whatever
+    # api_key this same call configures sent along with it. 169.254.169.254
+    # is the well-known AWS/Azure/GCP instance-metadata address handing
+    # out real IAM credentials to anything on the host that can reach it.
+    with pytest.raises(ValueError, match="link-local"):
+        providers.set_provider("evil", "http://169.254.169.254/latest/meta-data/")
+
+
+def test_set_provider_still_allows_loopback_and_private_lan():
+    # The fix must not break this project's own core documented use case
+    # — a self-hosted Ollama/LM Studio/vLLM server on 127.0.0.1 or the
+    # local network is the whole point of "custom_model" providers.
+    providers.set_provider("local", "http://127.0.0.1:11434/v1")
+    providers.set_provider("lan", "http://192.168.1.50:8080/v1")
+    assert "local" in providers.list_providers()
+    assert "lan" in providers.list_providers()
+
+
+def test_set_provider_allows_a_plain_hostname_unchecked():
+    # Only a literal IP is checked — a real hostname can't be cheaply
+    # verified without a live DNS lookup inside a synchronous config-save
+    # call, so it's allowed through (same as before this fix).
+    providers.set_provider("cloud", "https://openrouter.ai/api/v1")
+    assert "cloud" in providers.list_providers()
+
+
 def test_delete_provider():
     providers.set_provider("temp", "http://x")
     assert providers.delete_provider("temp") is True

@@ -101,7 +101,14 @@ def check_budget(
         )
 
     deny_unpriced = cfg.get("deny_unpriced_paid_models", False)
-    assumed_tokens = cfg.get("assumed_tokens_per_child", DEFAULT_ASSUMED_TOKENS)
+    # Merged with the default rather than used as-is: a config override
+    # naturally edited as two independent tunables (e.g. only overriding
+    # "output") previously left "input" missing entirely, and
+    # estimate_dispatch_cost()'s direct assumed_tokens["input"]/["output"]
+    # indexing crashed with an uncaught KeyError on the very next line —
+    # confirmed reachable from the dashboard's swarm-dispatch route with
+    # no try/except around check_budget(), surfacing as an opaque 500.
+    assumed_tokens = {**DEFAULT_ASSUMED_TOKENS, **(cfg.get("assumed_tokens_per_child") or {})}
     estimated = estimate_dispatch_cost(pricing_row, effective_children, assumed_tokens)
 
     if estimated is None:

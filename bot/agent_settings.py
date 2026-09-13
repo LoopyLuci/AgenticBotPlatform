@@ -63,7 +63,7 @@ def _hardcoded_default(field: str) -> Any:
         # the new settings surface at all.
         from bot.config import config
 
-        return config.current.get("native_agent", {}).get("max_concurrent_children", DEFAULT_MAX_CONCURRENT_CHILDREN)
+        return (config.current.get("native_agent") or {}).get("max_concurrent_children", DEFAULT_MAX_CONCURRENT_CHILDREN)
     if field == "require_plan_approval":
         # Plan-mode analog (Phase G of the Claude API/Claude Code parity
         # plan) — off unless explicitly turned on somewhere in the

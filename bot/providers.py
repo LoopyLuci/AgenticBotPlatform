@@ -20,8 +20,10 @@ ships with real documentation comments, not just data.
 
 from __future__ import annotations
 
+import ipaddress
 import os
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 from bot.config import ConfigManager
 from bot.envfile import PROJECT_ROOT
@@ -29,6 +31,41 @@ from bot.envfile import PROJECT_ROOT
 PROVIDERS_PATH = PROJECT_ROOT / "config" / "providers.yaml"
 
 _manager = ConfigManager(path=PROVIDERS_PATH)
+
+
+def _reject_cloud_metadata_target(base_url: str) -> None:
+    """A custom provider's base_url is later used verbatim as a real
+    outbound HTTP target (bot/backends/custom_model_backend.py), with
+    whatever api_key/headers this same call configures sent along with
+    it — a full SSRF-with-credential-injection primitive for whoever can
+    reach this route (any paired mobile device, not just the desktop
+    dashboard token holder). Deliberately does NOT block loopback/private-
+    LAN targets in general: a self-hosted Ollama/LM Studio/vLLM server on
+    127.0.0.1 or the local network is this feature's whole documented
+    purpose, not something to break. What it does block is the one class
+    of target with no legitimate reason to ever be an LLM endpoint: the
+    link-local range (169.254.0.0/16 / fe80::/10) that every major cloud
+    provider (AWS/Azure/GCP) uses for its instance-metadata service —
+    169.254.169.254 specifically hands out IAM/service-account
+    credentials to anything on the host that can reach it. Only checks a
+    LITERAL IP in the URL — a hostname that resolves to that range via
+    DNS rebinding isn't caught here, a narrower guarantee than a full
+    SSRF fix but one that closes the actual exploitable case (someone
+    just typing the well-known metadata IP) without adding a live DNS
+    resolution + revalidation step to a synchronous config-save call."""
+    host = urlparse(base_url).hostname
+    if not host:
+        return
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return  # a real hostname, not a literal IP — nothing to check here
+    if ip.is_link_local:
+        raise ValueError(
+            f"base_url resolves to a link-local address ({host}) — this range is used by "
+            "cloud instance-metadata services (e.g. 169.254.169.254) and is refused for any "
+            "custom provider, since its api_key/headers would be sent to whatever's actually there"
+        )
 
 
 def _yaml():
@@ -112,6 +149,7 @@ def set_provider(
         raise ValueError("provider name may not contain '/' — it's used as the <provider>/<model_id> separator")
     if not base_url or not base_url.strip():
         raise ValueError("base_url is required")
+    _reject_cloud_metadata_target(base_url)
 
     entry: dict = {"base_url": base_url.strip(), "protocol": protocol}
     if api_key_env:
