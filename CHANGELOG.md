@@ -66,6 +66,40 @@ app's own version (the Android app versions independently — see its own
 - The bottom Terminal/Activity panel could get permanently minimized
   with no way to reopen it (a page-load state that never synced the
   panel's initial collapsed state with its reopen button's visibility).
+- The floating "Open Terminal" reopen button was rendered directly
+  underneath the always-visible collapsed panel header bar (a z-index
+  overlap), making it completely unclickable in practice. Removed it
+  entirely — the panel's own minimize button now toggles open/closed,
+  so there's only one control to find.
+- The Activity tab could load empty and stay that way if its first
+  `/api/activity` fetch raced the dashboard token or otherwise failed
+  transiently; switching to it now retries the load if it's still
+  empty.
+- Port 8787 already being in use (a leftover orphaned process, another
+  instance, a crash that didn't release the socket) used to crash the
+  whole app outright with no recovery. Fixed at both layers: the
+  desktop app now checks whether an existing listener on that port is
+  actually a healthy dashboard (adopts it instead of duplicate-spawning)
+  or a dead/foreign process (verifies it's really our own `bot.main`
+  before killing it, then frees the port before spawning); the Python
+  side's dashboard startup now retries with backoff on a bind failure
+  instead of taking the whole process down with it — including fixing a
+  real asyncio gotcha where `uvicorn`'s `sys.exit()` on bind failure
+  wasn't being caught by the retry logic at all because `SystemExit`
+  isn't captured by `asyncio.Task`'s result-retrieval machinery the way
+  normal exceptions are.
+- Any uncaught exception on the main thread or a background thread used
+  to only ever print to stderr, easy to miss entirely on a GUI app with
+  no visible console. Both are now also logged to `logs/bot.log` and
+  the Activity tab so nothing fails silently.
+- `bot/hotreload.py`'s and `bot/config.py`'s file watchers could be
+  permanently and silently killed by a real (if rare) `watchfiles`
+  failure — a deleted watched path, a permission change, an OS-level
+  file-watching hiccup — disabling hot-reload or config-file watching
+  for the rest of the process's life with no visible sign short of a
+  restart. Both now restart themselves automatically on such a failure,
+  matching the self-healing already in place for the scheduler,
+  retention, and peer-health-check background loops.
 
 ### Added
 - Copy and Save buttons on the Terminal/Activity panel, acting on
