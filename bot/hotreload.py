@@ -112,6 +112,16 @@ DENYLIST: frozenset[str] = frozenset({
     # duplicate delivery of every future log record — instead of the one
     # ring buffer this whole feature assumes there is exactly one of.
     "bot.activity_log",
+    # Same hazard as activity_log.py's _handler above (a module-level
+    # logging.Handler singleton already attached to the root logger),
+    # plus a second module-level singleton of its own: `telemetry`, an
+    # in-memory _Telemetry instance holding live counters/recent-events
+    # state that every self-healing hook (platform_supervisor, etc.)
+    # holds a reference to via `from bot.diagnostics import telemetry` —
+    # a reload would rebind the module's own name to a fresh instance
+    # while every existing reference keeps incrementing the orphaned old
+    # one, silently freezing the Diagnostics tab's counters.
+    "bot.diagnostics",
 })
 
 # module dotted-name -> the platform name to pass to

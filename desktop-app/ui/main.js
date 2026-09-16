@@ -463,6 +463,50 @@ document.getElementById('btn-vacuum').onclick = async () => { await api('/api/da
 document.getElementById('btn-export-json').onclick = () => downloadUrl(`/api/export/${document.getElementById('export-table').value}?format=json`);
 document.getElementById('btn-export-csv').onclick = () => downloadUrl(`/api/export/${document.getElementById('export-table').value}?format=csv`);
 
+// ------------------------------------------------------------ diagnostics
+const DIAG_INFO_LABELS = {
+  app_version: 'App version', python_version: 'Python', platform: 'Platform',
+  processor: 'Processor', pid: 'PID', memory_rss_mb: 'Memory (MB)',
+  cpu_percent: 'CPU %', disk_free_gb: 'Disk free (GB)',
+};
+const DIAG_COUNTER_LABELS = {
+  'crash_reports.written': 'Crash reports written',
+  'platform.crash': 'Bot instance crashes',
+  'platform.auto_restart': 'Bot instances auto-restarted',
+  'log.warning': 'Warnings logged',
+  'log.error': 'Errors logged',
+  'log.critical': 'Critical events logged',
+};
+async function refreshDiagnostics() {
+  const [summary, crashReports] = await Promise.all([
+    api('/api/diagnostics/summary'),
+    api('/api/diagnostics/crash-reports?limit=30'),
+  ]);
+
+  document.getElementById('diag-system-info').innerHTML = Object.entries(DIAG_INFO_LABELS)
+    .filter(([key]) => summary.system_info[key] !== undefined)
+    .map(([key, label]) => `<tr><td>${esc(label)}</td><td class="mono">${esc(String(summary.system_info[key]))}</td></tr>`)
+    .join('');
+
+  const counters = summary.telemetry.counters || {};
+  const counterRows = Object.entries(DIAG_COUNTER_LABELS)
+    .map(([key, label]) => `<tr><td>${esc(label)}</td><td class="mono">${counters[key] || 0}</td></tr>`)
+    .join('');
+  document.getElementById('diag-counters').innerHTML = counterRows
+    + `<tr><td>Uptime</td><td class="mono">${Math.round(summary.telemetry.uptime_s / 60)} min</td></tr>`;
+
+  const events = summary.telemetry.recent_events || [];
+  document.getElementById('diag-events').innerHTML = events.slice().reverse().map(e => `
+    <div class="tlitem"><div class="v">${esc(e.category)}</div><div class="d">${esc(e.detail)}</div><div class="m">${new Date(e.ts * 1000).toLocaleTimeString()}</div></div>`).join('')
+    || '<p class="cardnote">No self-healing events recorded yet — good sign.</p>';
+
+  document.getElementById('diag-crash-count').textContent = `(${summary.crash_report_count} total, showing most recent)`;
+  document.getElementById('diag-crash-list').innerHTML = crashReports.reports.map(r => `
+    <div class="tlitem"><div class="v">${esc(r.level)}${r.exception_type ? ' · ' + esc(r.exception_type) : ''}</div><div class="d">${esc(r.message)}</div><div class="m">${fmtTime(r.iso_time)} · ${esc(r.logger)}</div></div>`).join('')
+    || '<p class="cardnote">No crash reports — nothing has crashed since this process started.</p>';
+}
+document.getElementById('btn-diag-bundle').onclick = () => downloadUrl('/api/diagnostics/bundle');
+
 // ---------------------------------------------------------------- control
 // Live-fetched model lists: Claude models come from Anthropic's own
 // /v1/models (via ANTHROPIC_API_KEY), Hermes models come from Hermes
@@ -1244,6 +1288,8 @@ function startDashboardPolling() {
   pollWhenVisible(refreshDelegationActivity, 15000);
   refreshSwarmBudget();
   pollWhenVisible(refreshSwarmBudget, 15000);
+  refreshDiagnostics();
+  pollWhenVisible(refreshDiagnostics, 15000);
   refreshMobileKeys();
   pollWhenVisible(refreshMobileKeys, 15000);
   refreshPeers();
