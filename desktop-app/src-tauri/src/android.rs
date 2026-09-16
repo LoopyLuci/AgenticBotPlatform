@@ -355,7 +355,11 @@ pub fn pair_android_device(
         );
     }
     let adb = require_adb()?;
-    let mut uri = format!("agenticbotplatform://pair?host={}&key={}", host.trim(), key.trim());
+    let mut uri = format!(
+        "agenticbotplatform://pair?host={}&key={}",
+        host.trim(),
+        key.trim()
+    );
     if let Some(h2) = host2.as_deref().map(str::trim).filter(|h| !h.is_empty()) {
         uri.push_str(&format!("&host2={h2}"));
     }

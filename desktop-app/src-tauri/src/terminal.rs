@@ -55,7 +55,10 @@ struct Session {
 /// it to drop into another shell entirely.
 #[tauri::command]
 pub(crate) fn terminal_start(app: AppHandle, state: State<TerminalState>) -> Result<(), String> {
-    let mut guard = state.inner.lock().map_err(|_| "state poisoned".to_string())?;
+    let mut guard = state
+        .inner
+        .lock()
+        .map_err(|_| "state poisoned".to_string())?;
     if guard.is_some() {
         return Ok(());
     }
@@ -138,7 +141,10 @@ pub(crate) fn terminal_start(app: AppHandle, state: State<TerminalState>) -> Res
 /// a real terminal.
 #[tauri::command]
 pub(crate) fn terminal_write(state: State<TerminalState>, data: String) -> Result<(), String> {
-    let mut guard = state.inner.lock().map_err(|_| "state poisoned".to_string())?;
+    let mut guard = state
+        .inner
+        .lock()
+        .map_err(|_| "state poisoned".to_string())?;
     match guard.as_mut() {
         Some(session) => session
             .writer
@@ -154,8 +160,15 @@ pub(crate) fn terminal_write(state: State<TerminalState>, data: String) -> Resul
 /// REPL's line editing) to wrap and redraw correctly instead of assuming
 /// a stale 80x24.
 #[tauri::command]
-pub(crate) fn terminal_resize(state: State<TerminalState>, cols: u16, rows: u16) -> Result<(), String> {
-    let guard = state.inner.lock().map_err(|_| "state poisoned".to_string())?;
+pub(crate) fn terminal_resize(
+    state: State<TerminalState>,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    let guard = state
+        .inner
+        .lock()
+        .map_err(|_| "state poisoned".to_string())?;
     match guard.as_ref() {
         Some(session) => session
             .master
