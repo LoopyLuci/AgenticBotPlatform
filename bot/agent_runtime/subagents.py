@@ -3,7 +3,7 @@ bot.agent_runtime.tools.delegate_to_instance's proven single-hop
 mechanism (an LLM decides mid-turn, a nested await, a contextvars-based
 depth guard) into the real Hermes Agent delegate_task shape: a BATCH of
 children, run concurrently, with role-based tool stripping and optional
-structured-output contracts. No subprocess and no thread pool — BotServer
+structured-output contracts. No subprocess and no thread pool — AgenticBotPlatform
 is asyncio-native throughout, so `asyncio.gather` under an
 `asyncio.Semaphore` replaces what Hermes's own DaemonThreadPoolExecutor
 does for the same reason.
@@ -76,7 +76,7 @@ def _resolve_inherited_backend(parent_instance_id: Optional[int]) -> NativeAgent
     instance's own resolved backend/model, matching Hermes's own
     _resolve_delegation_credentials() inheritance behavior. Only
     api/custom_model parents make sense here: those are the only two
-    backends that run BotServer's own tool loop at all (and therefore
+    backends that run AgenticBotPlatform's own tool loop at all (and therefore
     the only ones spawn_subagent is ever called from)."""
     if parent_instance_id is None:
         raise BackendError(

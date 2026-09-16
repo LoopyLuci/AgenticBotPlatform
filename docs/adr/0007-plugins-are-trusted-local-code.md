@@ -7,11 +7,11 @@
 
 Phase B of the multi-provider/plugin/platforms roadmap (see the session's
 own plan log) called for a plugin API: a way to add new agent tools and
-slash commands to BotServer without editing core code. Before writing
+slash commands to AgenticBotPlatform without editing core code. Before writing
 `bot/plugins.py`, the codebase's actual security posture was checked, not
 assumed: `bot/agent_runtime/tools.py`'s `run_shell` is a bare
 `asyncio.create_subprocess_shell` with the full privileges of the
-BotServer process, gated only by a human-approval prompt
+AgenticBotPlatform process, gated only by a human-approval prompt
 (`bot/agent_runtime/approval.py`), not a sandbox or allowlist. The
 project's own documented security model (`bot/agent_control.py`'s
 docstring) is "single trusted operator, the dashboard token is the real
@@ -27,7 +27,7 @@ explicitly rather than let the feature's existence imply otherwise.
 
 A plugin is exactly as trusted as a `run_shell` command the operator
 already approved: it runs in-process, as plain Python, with the full
-privileges of the BotServer process. `bot/plugins.py`'s `install(path)`
+privileges of the AgenticBotPlatform process. `bot/plugins.py`'s `install(path)`
 only ever loads a `plugin.py` file already sitting on this machine's
 disk — nothing fetches code over a network, mirroring `bot/skills.py`'s
 existing "local install, not a hosted hub" precedent for the exact same
@@ -59,11 +59,11 @@ make.
 Installing a plugin is a decision on par with running a shell command
 found on the internet and approving it — the dashboard's "Plugins" card
 says this plainly, not just this ADR. There's no technical barrier
-stopping a malicious `plugin.py` from doing anything the BotServer
+stopping a malicious `plugin.py` from doing anything the AgenticBotPlatform
 process itself can do (read the database, call `run_shell` directly,
 exfiltrate secrets from `.env`). That's an accepted cost of shipping a
 real extension point on a codebase whose stated perimeter is already
-"trust the operator," not a gap introduced by this feature. If BotServer
+"trust the operator," not a gap introduced by this feature. If AgenticBotPlatform
 ever needs to run plugins from operators it doesn't fully trust (a real
 marketplace, multi-tenant hosting), that requires revisiting this
 decision and `ADR-0003`'s single-process assumption together, not just

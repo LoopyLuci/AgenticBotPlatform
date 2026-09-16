@@ -1,4 +1,4 @@
-"""Point-in-time snapshot/restore for BotServer's own config and data —
+"""Point-in-time snapshot/restore for AgenticBotPlatform's own config and data —
 the safety net for live development (an agent editing this codebase
 while the app keeps running) to recover from a bad change without
 reaching for a full backup/rebuild. Complements bot/config.py's

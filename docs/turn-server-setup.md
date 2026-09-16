@@ -6,7 +6,7 @@ relay. STUN alone can't get two devices talking when either one sits
 behind a symmetric NAT or a strict firewall — that's what a TURN server
 fixes, by relaying the actual bytes when a direct path can't be found.
 
-BotServer does **not** run a TURN relay itself. It only mints short-lived
+AgenticBotPlatform does **not** run a TURN relay itself. It only mints short-lived
 credentials (`bot/turn.py`, `GET /api/turn/credentials`) for a real TURN
 server you run — [coturn](https://github.com/coturn/coturn) is the
 standard open-source choice and is what this doc assumes.
@@ -20,7 +20,7 @@ standard open-source choice and is what this doc assumes.
 
 ## 2. Pick a shared secret
 
-Generate one random secret — this is what BotServer and coturn both use to
+Generate one random secret — this is what AgenticBotPlatform and coturn both use to
 independently verify credentials, with nothing else shared between them:
 
 ```bash
@@ -34,7 +34,7 @@ listening-port=3478
 fingerprint
 use-auth-secret
 static-auth-secret=<the secret from step 2>
-realm=botserver.local
+realm=agenticbotplatform.local
 # TLS is optional but recommended if this box has a real certificate:
 # tls-listening-port=5349
 # cert=/etc/coturn/cert.pem
@@ -43,7 +43,7 @@ realm=botserver.local
 
 `use-auth-secret` + `static-auth-secret` is coturn's REST API auth mode —
 it means coturn needs no user database at all; it just recomputes the same
-HMAC BotServer used to mint each credential and checks it matches.
+HMAC AgenticBotPlatform used to mint each credential and checks it matches.
 
 Restart coturn: `sudo systemctl restart coturn` (or re-run the container).
 
@@ -51,7 +51,7 @@ Make sure UDP/TCP port 3478 (and 5349 if using TLS) are reachable from the
 internet — a TURN server sitting behind the same NAT it's meant to help
 traverse defeats the purpose.
 
-## 4. Configure BotServer
+## 4. Configure AgenticBotPlatform
 
 In the dashboard's Control Center → **TURN Server (WebRTC mesh relay)**
 card (mirrored in the desktop app):

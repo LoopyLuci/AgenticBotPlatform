@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "BotServerMobile"
+rootProject.name = "AgenticBotPlatformMobile"
 include(":app")

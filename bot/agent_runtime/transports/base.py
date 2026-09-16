@@ -93,7 +93,7 @@ class ProviderTransport:
         """`history` is exactly what `bot.db.list_agent_messages()`
         returns (oldest-first `{"role","content"}` entries) plus whatever
         this turn's loop has appended so far in that same shape.
-        `tool_schemas` is BotServer's own Anthropic-shaped schema list
+        `tool_schemas` is AgenticBotPlatform's own Anthropic-shaped schema list
         (`bot.agent_runtime.tools.all_tool_schemas()`, optionally
         filtered) — this method converts both into wire format, makes
         the real call, and returns one NormalizedResponse. `effort` is a

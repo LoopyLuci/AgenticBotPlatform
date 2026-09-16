@@ -1,4 +1,4 @@
-# R8 rules for BotServer's mobile app. Retrofit, OkHttp, Hilt, and
+# R8 rules for AgenticBotPlatform's mobile app. Retrofit, OkHttp, Hilt, and
 # kotlinx-serialization all ship their own consumer-proguard-rules bundled
 # in their AARs, so this file starts minimal on purpose: flip
 # isMinifyEnabled on, build a release APK, smoke-test every screen, and
@@ -11,13 +11,13 @@
 # reflection over generated Companion.serializer() methods.
 -keepattributes *Annotation*, InnerClasses
 -dontnote kotlinx.serialization.AnnotationsKt
--keepclassmembers class com.botserver.mobile.data.dto.** {
+-keepclassmembers class com.agenticbotplatform.mobile.data.dto.** {
     *** Companion;
 }
--keepclasseswithmembers class com.botserver.mobile.data.dto.** {
+-keepclasseswithmembers class com.agenticbotplatform.mobile.data.dto.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
--keep,includedescriptorclasses class com.botserver.mobile.data.dto.**$$serializer { *; }
+-keep,includedescriptorclasses class com.agenticbotplatform.mobile.data.dto.**$$serializer { *; }
 
 # Strip verbose/debug android.util.Log calls (and their string-building
 # arguments) from the release binary — real diagnostics still work fine:

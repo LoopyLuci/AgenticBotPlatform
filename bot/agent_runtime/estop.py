@@ -2,7 +2,7 @@
 (confirmed against its real source: a global pause sentinel checked by
 long-running components like cron and its gateway before starting new
 work). DB-backed here (a single-row `estop_state` table) instead of a
-sentinel file, since BotServer already centralizes runtime state in
+sentinel file, since AgenticBotPlatform already centralizes runtime state in
 SQLite rather than the filesystem.
 
 Checked at the top of every new-turn/new-dispatch entry point —

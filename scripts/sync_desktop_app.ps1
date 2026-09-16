@@ -1,13 +1,13 @@
 <#
 .SYNOPSIS
-  Lightweight "no rebuild, no reinstall" update path for BotServer's
+  Lightweight "no rebuild, no reinstall" update path for AgenticBotPlatform's
   installed desktop app.
 
 .DESCRIPTION
   Copies just the hot-reloadable pieces — the Python backend, config,
   the desktop UI's HTML/JS, and the standalone app icon — over the real
-  installed copy at $env:LOCALAPPDATA\BotServer. Does NOT touch
-  bot-server.exe, Cargo/Rust code, or the bundled .venv: a change to any
+  installed copy at $env:LOCALAPPDATA\AgenticBotPlatform. Does NOT touch
+  agentic-bot-platform.exe, Cargo/Rust code, or the bundled .venv: a change to any
   of those still needs a real `cargo tauri build` + reinstall (see
   scripts/publish_release.py). This script covers the routine case —
   everyday feature/UI work — not that one.
@@ -18,7 +18,7 @@
   signal needed. The desktop UI's JS/HTML is served live from disk
   (bot/dashboard/server.py's /desktop-ui/ route) but the WEBVIEW WINDOW
   still needs to reload to fetch the new files — press Ctrl+R inside
-  the BotServer window, or relaunch it.
+  the AgenticBotPlatform window, or relaunch it.
 
   Run this yourself, directly, from a normal terminal — not through
   Claude Code or any other MSIX/Desktop-Bridge-packaged app's spawned
@@ -33,10 +33,10 @@
 $ErrorActionPreference = 'Stop'
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$InstallDir = Join-Path $env:LOCALAPPDATA 'BotServer'
+$InstallDir = Join-Path $env:LOCALAPPDATA 'AgenticBotPlatform'
 
 if (-not (Test-Path $InstallDir)) {
-    Write-Error "BotServer isn't installed at $InstallDir — run the NSIS installer first (see scripts/publish_release.py)."
+    Write-Error "AgenticBotPlatform isn't installed at $InstallDir — run the NSIS installer first (see scripts/publish_release.py)."
     exit 1
 }
 
@@ -61,7 +61,7 @@ Copy-Item (Join-Path $RepoRoot 'desktop-app\src-tauri\icons\icon.ico') (Join-Pat
 Write-Host ""
 Write-Host "Synced."
 Write-Host "  - Python backend: hot-reloads automatically (bot/hotreload.py's watcher)."
-Write-Host "  - Desktop UI: reload the BotServer window (Ctrl+R) or relaunch it to fetch the new files."
-Write-Host "  - Icon: the app self-heals its Start Menu/Desktop shortcut icons on every launch (fix_shortcut_icons() in lib.rs) — just relaunch BotServer. Unpin/re-pin the taskbar icon if it still doesn't refresh (Windows sometimes caches a pinned icon separately)."
+Write-Host "  - Desktop UI: reload the AgenticBotPlatform window (Ctrl+R) or relaunch it to fetch the new files."
+Write-Host "  - Icon: the app self-heals its Start Menu/Desktop shortcut icons on every launch (fix_shortcut_icons() in lib.rs) — just relaunch AgenticBotPlatform. Unpin/re-pin the taskbar icon if it still doesn't refresh (Windows sometimes caches a pinned icon separately)."
 Write-Host ""
 Write-Host "Note: this always copies FROM $RepoRoot — any change made only inside the installed copy's bot/ or config/ would be overwritten by this sync."

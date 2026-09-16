@@ -4,7 +4,7 @@ into rows for bot.db.set_job_children().
 
 This is the "post-hoc" half of Phase 9's hybrid swarm-observability
 design — a Hermes gateway's own delegate_task children never reach
-BotServer individually (see bot/swarm/observability.py's docstring for
+AgenticBotPlatform individually (see bot/swarm/observability.py's docstring for
 why), so the only per-child detail available is what the orchestrator
 chooses to report back in its own final reply. Parsing that is
 inherently best-effort: a missing or malformed block must never break

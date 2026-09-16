@@ -1,4 +1,4 @@
-"""bot/scheduler.py's Phase G hardening (native-BotServer-agents plan):
+"""bot/scheduler.py's Phase G hardening (native-AgenticBotPlatform-agents plan):
 preflight validation at create() time, and failure-streak tracking that
 auto-disables a row and sends exactly one alert once it crosses
 scheduler.max_consecutive_failures.

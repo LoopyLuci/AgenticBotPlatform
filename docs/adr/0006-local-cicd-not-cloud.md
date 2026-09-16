@@ -9,7 +9,7 @@ This project used a GitHub Actions workflow (`.github/workflows/ci.yml`)
 for a short time — byte-compiling, running `pytest`, `pip-audit`, and the
 Rust `fmt`/`clippy`/`cargo check` checks, plus a Docker image build and a
 bare-metal boot smoke test, all on GitHub's own cloud runners, triggered
-on every push to `main`. The explicit requirement is that BotServer's
+on every push to `main`. The explicit requirement is that AgenticBotPlatform's
 own CI/CD have no dependency on any third-party cloud service — it must
 run entirely on the machine that owns the code.
 

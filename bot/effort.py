@@ -1,5 +1,5 @@
 """Canonical "how hard should the model think" vocabulary, shared across
-every backend BotServer talks to.
+every backend AgenticBotPlatform talks to.
 
 Three real, different vocabularies exist for this same underlying concept:
 - Claude Desktop's own UI slider (bot/backends/ui_backend.py's EFFORT_LEVELS):
@@ -15,7 +15,7 @@ Three real, different vocabularies exist for this same underlying concept:
   (agent.reasoning_effort), per-model (agent.reasoning_overrides), and
   per-delegation/child-agent (delegation.reasoning_effort).
 
-This module picks Hermes's real 8-level ladder as BotServer's own canonical
+This module picks Hermes's real 8-level ladder as AgenticBotPlatform's own canonical
 vocabulary (it's the most granular and already has genuine prior art, not
 invented for this project) and provides honest, explicit downward mappings
 to whatever a given backend actually supports — never inventing a

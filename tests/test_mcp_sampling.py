@@ -1,7 +1,7 @@
 """bot/agent_runtime/mcp_client.py's MCP sampling support —
 handle_sampling_request() is the real SamplingFnT callback wired into
 every ClientSession this module opens; a connected server can ask
-BotServer to run a real LLM completion on its behalf. Live-verified
+AgenticBotPlatform to run a real LLM completion on its behalf. Live-verified
 separately (outside pytest) against a real stdio MCP server subprocess
 genuinely calling ServerSession.create_message() — these tests cover the
 unit-level branches (disabled by default, provider resolution, message

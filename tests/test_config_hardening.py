@@ -1,5 +1,5 @@
 """bot/config.py's ConfigManager — the hot-reload path every part of
-BotServer trusts to never hand back a broken config. Covers the one real
+AgenticBotPlatform trusts to never hand back a broken config. Covers the one real
 gap found while hardening it for live development: a YAML file that
 parses fine (so the existing try/except around yaml.safe_load never
 fires) but has the wrong root shape (a list instead of a mapping) used

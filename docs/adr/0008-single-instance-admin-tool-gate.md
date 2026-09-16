@@ -6,7 +6,7 @@
 ## Context
 
 Per the operator's request, one designated bot instance (Telegram, Server
-Chat, or Support Bot) needed real conversational control over BotServer
+Chat, or Support Bot) needed real conversational control over AgenticBotPlatform
 itself — creating/updating/deleting other bot instances, changing the
 global default backend, managing another instance's `agent_settings`/
 auto-manage config, engaging the emergency stop, and managing lifecycle
@@ -15,7 +15,7 @@ local operations, and unrestricted shell/file access reserved for
 Android/Server-Chat only.
 
 ADR-0007 established that a *tool*, once it exists and is approved, runs
-with the full privileges of the BotServer process — that's a decision
+with the full privileges of the AgenticBotPlatform process — that's a decision
 about code trust. It never addressed a different question: *which
 conversational surface (which bot instance, which paired device) should
 be allowed to invoke an already-trusted, already-powerful tool at all.*
@@ -76,12 +76,12 @@ retrofitting it to respect `permission_tier` would be a separate, much
 larger change with its own blast radius, and wasn't what was asked for.
 `permission_tier` and `is_admin_instance` only govern the *new*
 conversational admin surface (agent-runtime tools, Server Chat's
-BotServer pipeline, Support Bot's new actions) and device/pairing
+AgenticBotPlatform pipeline, Support Bot's new actions) and device/pairing
 management itself.
 
 This is not a general RBAC system: there's no role hierarchy beyond the
 four fixed device tiers, no per-tool custom policy, and no concept of
-"admin instance" beyond the single boolean flag. If BotServer ever needs
+"admin instance" beyond the single boolean flag. If AgenticBotPlatform ever needs
 finer-grained, per-tool authorization independent of these two axes,
 that's a new decision to make deliberately, not an extension implied by
 this one.

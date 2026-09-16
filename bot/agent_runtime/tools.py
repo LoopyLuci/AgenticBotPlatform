@@ -606,7 +606,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "Your own identity as a small markdown document: name, backend, persona, model override, "
             "which other instances you can target, and your own custom instructions. Call this whenever "
             "you need to state your own bot_instances name (e.g. as source_instance for delegate_to_instance "
-            "or the botserver MCP tools) rather than guessing it."
+            "or the agenticbotplatform MCP tools) rather than guessing it."
         ),
         "input_schema": {"type": "object", "properties": {}},
     },
@@ -730,7 +730,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     },
     {
         "name": "admin_engage_estop",
-        "description": "Engage BotServer's global emergency stop — no new work starts anywhere until disengaged. Admin-only, requires human approval.",
+        "description": "Engage AgenticBotPlatform's global emergency stop — no new work starts anywhere until disengaged. Admin-only, requires human approval.",
         "input_schema": {
             "type": "object",
             "properties": {"reason": {"type": "string"}},
@@ -738,12 +738,12 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     },
     {
         "name": "admin_disengage_estop",
-        "description": "Disengage BotServer's global emergency stop. Admin-only, requires human approval.",
+        "description": "Disengage AgenticBotPlatform's global emergency stop. Admin-only, requires human approval.",
         "input_schema": {"type": "object", "properties": {}},
     },
     {
         "name": "admin_get_estop_status",
-        "description": "Read BotServer's global emergency-stop status. Admin-only.",
+        "description": "Read AgenticBotPlatform's global emergency-stop status. Admin-only.",
         "input_schema": {"type": "object", "properties": {}},
     },
     {
@@ -816,7 +816,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     },
     {
         "name": "admin_restore_snapshot",
-        "description": "Restore BotServer's config+DB to a previously-created snapshot. Destructive local operation, Android/Server-Chat exclusive. Admin-only, requires human approval.",
+        "description": "Restore AgenticBotPlatform's config+DB to a previously-created snapshot. Destructive local operation, Android/Server-Chat exclusive. Admin-only, requires human approval.",
         "input_schema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
     },
     {

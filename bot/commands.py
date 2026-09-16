@@ -402,7 +402,7 @@ async def real_time_model_label(instance: dict) -> str:
         return f"{model} (Claude Code CLI's own default)" if model else "(Claude Code CLI's own default — not detected)"
 
     if backend == "ui":
-        return "(selected in Claude Desktop — not visible to BotServer)"
+        return "(selected in Claude Desktop — not visible to AgenticBotPlatform)"
 
     if backend in ("custom_model", "native_agent"):
         return "(no model configured — set one with /model, as '<provider>/<model_id>')"
@@ -444,6 +444,49 @@ async def cmd_mcp(ctx: CmdContext, args: list[str]) -> str:
     if args[0] == "logs" and len(args) >= 2:
         return "\n".join(desktop.tail_mcp_log(args[1], lines=30))
     return "Usage: /mcp list | enable <name> | disable <name> | logs <name>"
+
+
+async def cmd_devices(ctx: CmdContext, args: list[str]) -> str:
+    """Paired-device management as a command — the same actions the
+    dashboard's Devices tab exposes as buttons (bot/dashboard/server.py's
+    /api/mobile-keys/* routes), reused here rather than reimplemented so
+    there's exactly one place that enforces tier rules. This command
+    always acts with the desktop's own unrestricted authority (matching
+    _resolve_actor_tier's "caller_device_id is None" case in server.py) —
+    it's only reachable from the terminal panel's own authenticated
+    dashboard-token session, never from a paired device's own connection."""
+    from bot import device_tiers
+
+    if not args or args[0] == "list":
+        devices = db.list_devices()  # already excludes revoked devices
+        if not devices:
+            return "No paired devices."
+        lines = [f"{d['id']}: {db.device_label(d['id'])} — tier={d['permission_tier']}" for d in devices]
+        return "\n".join(lines)
+    if args[0] == "revoke" and len(args) >= 2:
+        try:
+            key_id = int(args[1])
+        except ValueError:
+            return f"not a device id: {args[1]!r}"
+        if db.get_api_key(key_id) is None:
+            return f"no such device: {key_id}"
+        db.revoke_api_key(key_id)
+        db.log_audit(actor=ctx.actor, action="mobile_key_revoke", detail=f"revoked key {key_id} via /devices")
+        return f"Revoked device {key_id}."
+    if args[0] == "retier" and len(args) >= 3:
+        try:
+            key_id = int(args[1])
+        except ValueError:
+            return f"not a device id: {args[1]!r}"
+        new_tier = args[2]
+        if not device_tiers.is_valid_tier(new_tier):
+            return f"unknown permission tier {new_tier!r} — valid: {', '.join(device_tiers.TIERS)}"
+        if db.get_api_key(key_id) is None:
+            return f"no such device: {key_id}"
+        db.set_api_key_tier(key_id, new_tier)
+        db.log_audit(actor=ctx.actor, action="mobile_key_set_tier", detail=f"set key {key_id} tier -> {new_tier!r} via /devices")
+        return f"Device {key_id} tier set to {new_tier!r}."
+    return "Usage: /devices list | revoke <id> | retier <id> <tier>"
 
 
 async def cmd_project(ctx: CmdContext, args: list[str]) -> str:
@@ -947,7 +990,7 @@ async def cmd_steer(ctx: CmdContext, raw: str) -> str:
     waiting for it to finish — delivered at the next tool-call boundary
     for the api backend's own loop (see api_backend.py), or as an
     immediately-following prompt for other backends (there's no tool-call
-    boundary BotServer can see inside an external program's own loop)."""
+    boundary AgenticBotPlatform can see inside an external program's own loop)."""
     text = raw.strip()
     if not text:
         return "Usage: /steer <text>"
@@ -1122,7 +1165,7 @@ async def cmd_new_session(ctx: CmdContext, args: list[str]) -> str:
 async def cmd_desktop_projects(ctx: CmdContext, args: list[str]) -> str:
     """Browse and continue REAL, already-existing Claude Desktop
     projects/chats — distinct from /sessions and /resume, which only know
-    about sessions BotServer itself created via /new. This surfaces
+    about sessions AgenticBotPlatform itself created via /new. This surfaces
     whatever's actually sitting in the live sidebar, including chats a
     human created by hand, and lets this chat be pointed at one of them
     directly. Only meaningful for a "ui"-backend instance."""
@@ -1275,7 +1318,7 @@ async def cmd_commands(ctx: CmdContext, args: list[str]) -> str:
 async def cmd_profile(ctx: CmdContext, args: list[str]) -> str:
     """Shows this chat's active bot instance name and backend — the closest
     equivalent to Hermes's /profile (active profile name + home directory),
-    adapted since BotServer's unit is a bot instance, not a CLI profile."""
+    adapted since AgenticBotPlatform's unit is a bot instance, not a CLI profile."""
     if ctx.instance_id is None:
         return "This chat isn't linked to a bot instance."
     from bot import bot_instances
@@ -1536,6 +1579,7 @@ COMMANDS: dict[str, Callable[[CmdContext, list[str]], Any]] = {
     "backend": cmd_backend,
     "model": cmd_model,
     "mcp": cmd_mcp,
+    "devices": cmd_devices,
     "project": cmd_project,
     "effort": cmd_effort,
     "agent_settings": cmd_agent_settings,

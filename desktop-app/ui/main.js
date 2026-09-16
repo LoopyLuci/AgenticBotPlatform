@@ -10,6 +10,29 @@ const state = { jobFilter: 'all', logLevel: 'all', configCache: null };
 function getToken() { return localStorage.getItem('dashboard_token') || ''; }
 function setToken(t) { localStorage.setItem('dashboard_token', t); }
 
+// The one-time boot navigation (hideBootOverlay(), below) goes from the
+// embedded copy's own origin to this live-served page's origin
+// (127.0.0.1) — a real cross-origin navigation, and localStorage is
+// always origin-scoped, so a token an earlier autoFillToken() call
+// stored on the EMBEDDED origin is invisible here no matter what. Rather
+// than depend on window.__TAURI__/invoke() still being usable after that
+// navigation (untested, and gated by Tauri's remote-origin ACL — a real,
+// separate failure mode of its own), the embedded page hands the token
+// across in the navigation URL itself: plain, synchronous, and immune to
+// both problems. Runs before anything else touches getToken() this page
+// load, and scrubs the token from the visible URL/history immediately so
+// it doesn't linger in the address bar or history.
+(function adoptTokenFromBootNavigation() {
+  const params = new URLSearchParams(location.search);
+  const carried = params.get('token');
+  if (carried) {
+    setToken(carried);
+    params.delete('token');
+    const clean = location.pathname + (params.toString() ? '?' + params.toString() : '') + location.hash;
+    history.replaceState(null, '', clean);
+  }
+})();
+
 async function api(path, opts = {}) {
   const headers = Object.assign({}, opts.headers || {});
   const token = getToken();
@@ -72,6 +95,12 @@ function connectDevicesSocket() {
         renderMobileKeysTable();
       } else if ((msg.type === 'job_tool_event' || msg.type === 'job_children_update') && msg.job_id === openDelegationDetailJobId) {
         renderDelegationDetail(msg.job_id);
+      } else if (msg.type === 'activity_entry') {
+        // terminal-panel.js (loaded after this file) defines this if the
+        // Activity tab exists on this page — kept as an optional global
+        // hook rather than an import so this file never needs to know
+        // that panel exists at all.
+        if (typeof window.onActivityEntry === 'function') window.onActivityEntry(msg.entry);
       } else if (msg.type === 'static_file_changed' && (msg.target === 'desktop_html' || msg.target === 'desktop_js')) {
         // Only meaningful once this window's real document is the live-served
         // /desktop-ui/ copy (see hideBootOverlay()) rather than the embedded
@@ -709,7 +738,7 @@ function applyAppearanceIcon(name) {
   document.querySelectorAll('#appearance-icon-picker .icon-choice').forEach(b => b.classList.toggle('active', b.dataset.iconChoice === name));
   // Every in-UI brand mark (sidebar, boot screen, setup wizard) mirrors the
   // same choice as the real window/taskbar icon below — one picker, one
-  // icon, everywhere BotServer's own logo appears. These are the only 4
+  // icon, everywhere AgenticBotPlatform's own logo appears. These are the only 4
   // icons that should ever show here; there is no separate "default app
   // icon" image anymore.
   document.querySelectorAll('img.mark').forEach(img => { img.src = `assets/icons/${name}.png`; });
@@ -4584,7 +4613,7 @@ async function installUpdateFlow() {
   const proceed = confirm(
     `Download and install version ${latestUpdateInfo.latest_version}?\n\n` +
     'The installer will run silently, then this app will restart automatically. ' +
-    'Any unsaved work in other apps is unaffected — this only restarts Bot Server.'
+    'Any unsaved work in other apps is unaffected — this only restarts Agentic Bot Platform.'
   );
   if (!proceed) return;
   const { invoke } = window.__TAURI__.core;
@@ -4819,10 +4848,10 @@ document.getElementById('boot-pill').onclick = () => {
 };
 
 function hideBootOverlay() {
-  setBootPill('ok', 'Bot Server running');
+  setBootPill('ok', 'Agentic Bot Platform running');
   setTimeout(collapseBoot, 400);
   // One-time navigation off the embedded, baked-into-the-binary copy of
-  // this page onto the SAME live BotServer HTTP server the browser
+  // this page onto the SAME live AgenticBotPlatform HTTP server the browser
   // dashboard already uses (bot/dashboard/server.py's new /desktop-ui
   // mount, StaticFiles reading fresh from disk every request — no
   // caching layer). This is what makes "edit desktop-app/ui/* and see it
@@ -4836,7 +4865,12 @@ function hideBootOverlay() {
   // "127.0.0.1" (API_BASE), which the embedded copy's hostname never is
   // on any platform — so this fires exactly once, everywhere.
   if (IS_TAURI && location.hostname !== '127.0.0.1') {
-    window.location.href = `${API_BASE}/desktop-ui/?booted=1`;
+    // Carry this origin's already-auto-filled token across the
+    // navigation — see adoptTokenFromBootNavigation() above for why this
+    // can't just rely on localStorage or a post-navigation invoke() call.
+    const token = getToken();
+    const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
+    window.location.href = `${API_BASE}/desktop-ui/?booted=1${tokenParam}`;
   }
 }
 
@@ -4846,7 +4880,19 @@ async function autoFillToken() {
     const { invoke } = window.__TAURI__.core;
     const token = await invoke('get_dashboard_token');
     if (token) setToken(token);
-  } catch (_e) { /* no .env resolved yet, or python missing — fall back to manual entry */ }
+  } catch (e) {
+    // A genuinely missing .env (brand-new install, not yet booted once)
+    // is expected and silent. Anything else — python crashed, the
+    // resolved project root is wrong — is exactly the kind of failure
+    // that used to vanish with zero trail, leaving only "why am I being
+    // asked to paste a token that's sitting right there in .env?" with
+    // no way to tell why. Surface it in the boot log, which is already
+    // user-visible, instead of only the browser console.
+    console.error('autoFillToken failed:', e);
+    if (typeof bootLine === 'function') {
+      bootLine('dashboard token auto-fill failed: ' + e, 'stderr');
+    }
+  }
 }
 
 async function initTauriBoot() {
@@ -4886,8 +4932,7 @@ async function initTauriBoot() {
     }
     if (backlog.length) expandBoot();
   } catch (_e) { /* older build without get_boot_log — live events only */ }
-  await listen('server-status', (evt) => {
-    const { running, pid } = evt.payload;
+  function applyServerStatus({ running, pid }) {
     document.getElementById('boot-pid').textContent = pid || '—';
     if (!running) {
       document.getElementById('boot-status').innerHTML = '';
@@ -4899,7 +4944,20 @@ async function initTauriBoot() {
       setBootPill('err', 'Server stopped — click for details');
       expandBoot();
     }
-  });
+  }
+  await listen('server-status', (evt) => applyServerStatus(evt.payload));
+  // spawn_internal() emits its one and only "server-status" event the
+  // instant the child spawns — typically well before this listener above
+  // even exists (same fast-event/late-listener gap get_boot_log's backlog
+  // fetch solves for logs, just with no periodic re-emit to eventually
+  // self-correct it: server-status while healthy only fires this once,
+  // ever). Missing it left the PID field stuck on its placeholder "—" for
+  // the rest of the window's life even though the server was running
+  // fine. Ask for the current status directly instead of only waiting on
+  // a future event that may already have happened.
+  try {
+    applyServerStatus(await invoke('server_status'));
+  } catch (_e) { /* older build without this permission/command — event-only */ }
   await listen('server-resources', (evt) => {
     const { cpu_percent, mem_mb } = evt.payload;
     document.getElementById('boot-cpu').textContent = cpu_percent.toFixed(1) + '%';
@@ -4928,7 +4986,7 @@ async function initTauriBoot() {
   };
 
   if (alreadyBooted) {
-    setBootPill('ok', 'Bot Server running');
+    setBootPill('ok', 'Agentic Bot Platform running');
   } else {
   bootLine('waiting for the dashboard API to answer on 127.0.0.1:8787 …', 'meta');
   const ready = await waitForServerReady();
@@ -4957,7 +5015,7 @@ async function initTauriBoot() {
       }
       bootLine('— ready —', 'meta');
       document.getElementById('boot-status').textContent = 'Ready.';
-      setBootPill('ok', 'Bot Server running');
+      setBootPill('ok', 'Agentic Bot Platform running');
       hideBootOverlay();
     })();
   }
@@ -4976,7 +5034,7 @@ if (IS_TAURI) {
 
 // ------------------------------------------------------------ android ----
 // Desktop-shell-only: builds the Android app with Gradle, installs it on a
-// connected device with adb, and auto-pairs it via the botserver://pair deep
+// connected device with adb, and auto-pairs it via the agenticbotplatform://pair deep
 // link (see android.rs) — the browser-served dashboard.html has no OS
 // process access and doesn't get this section at all.
 const androidState = { apkPath: null, deviceState: {}, deviceModels: {} };

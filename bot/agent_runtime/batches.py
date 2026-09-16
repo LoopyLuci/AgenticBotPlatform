@@ -6,7 +6,7 @@ Real, confirmed API constraint that reshapes this module's scope versus
 a naive reading of "batch dispatch": a batch request is one complete,
 single-shot Messages API call — there is no synchronous channel to feed
 a `tool_result` back mid-batch, so a batched completion cannot run
-BotServer's own interactive tool-calling loop (`tool_loop.run_one_tool()`)
+AgenticBotPlatform's own interactive tool-calling loop (`tool_loop.run_one_tool()`)
 the way a live `spawn_subagent` child does. This module is therefore a
 genuinely different, narrower capability: plain (no-tools) completions,
 submitted in bulk and fetched later — NOT a drop-in `spawn_subagent(batch=True)`

@@ -19,6 +19,7 @@ vars to load) so it can run before anything else in bot/main.py.
 from __future__ import annotations
 
 import re
+import secrets
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -212,6 +213,26 @@ def get_var(key: str) -> Optional[str]:
         if m:
             return m.group(1).strip().strip('"').strip("'")
     return None
+
+
+def ensure_dashboard_token() -> str:
+    """Guarantees DASHBOARD_TOKEN exists in .env, generating and persisting
+    a fresh one the first time this ever runs on a given install — the
+    manual-paste prompt in the dashboard UI should only ever be a fallback
+    for someone editing .env by hand, never something a normal boot
+    requires. Idempotent: a token already present is returned unchanged.
+    Safe to call before bot.config/bot.db exist yet (a brand-new install's
+    very first boot), since it only touches the .env file itself."""
+    existing = get_var("DASHBOARD_TOKEN")
+    if existing:
+        return existing
+    token = secrets.token_hex(24)
+    content = read_content()
+    if content and not content.endswith("\n"):
+        content += "\n"
+    content += f"DASHBOARD_TOKEN={token}\n"
+    write_content(content, actor="auto-generate")
+    return token
 
 
 if __name__ == "__main__":

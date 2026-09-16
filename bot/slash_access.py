@@ -7,7 +7,7 @@ get whatever's in their scope's allowed-command list plus a hard floor of
 {"help", "start", "whoami"} so they can always find out their own tier.
 
 Simplified from Hermes's two independent per-scope admin lists (DM admin
-list and group admin list) to one admin_user_ids per instance — BotServer
+list and group admin list) to one admin_user_ids per instance — AgenticBotPlatform
 instances are already single-owner-scoped (bot_instances.allowed_user_ids
 gates who can talk to the bot at all), so a bot's admin(s) don't
 meaningfully differ between a DM and a group the bot is also in. The

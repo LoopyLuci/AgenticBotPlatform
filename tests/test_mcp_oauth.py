@@ -1,6 +1,6 @@
 """bot/agent_runtime/mcp_client.py's OAuth 2.1 harness — the pieces
 around mcp.client.auth.OAuthClientProvider (dynamic client registration,
-authorization code + PKCE) that BotServer itself owns: correlating the
+authorization code + PKCE) that AgenticBotPlatform itself owns: correlating the
 dashboard's OAuth redirect-callback route back to the pending connect()
 call that's waiting on it, and persisting tokens/client info against the
 right external_mcp_servers row. `_DbTokenStorage` imports mcp.shared.auth

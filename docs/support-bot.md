@@ -5,7 +5,7 @@ Bot** tab, and the Android app's equivalent **Support** tab, both talking
 to the exact same server-side engine over `POST /api/support-bot/ask` and
 `/api/support-bot/confirm` (there is no separate "mobile" intelligence) —
 that understands both plain English and every slash command, and can
-carry out any server-management task Bot Server exposes: restart Claude
+carry out any server-management task Agentic Bot Platform exposes: restart Claude
 Desktop, show or change the default backend, list/enable/disable MCP
 servers, enable/disable/restart a bot instance, inspect jobs and swarms,
 run diagnostics, manage backups and paired devices, browse sessions, and

@@ -1,4 +1,4 @@
-# Bot Server
+# Agentic Bot Platform
 
 Run any number of independent bots at once — a Claude bot and a separate
 Hermes Agent bot, each on Telegram, Discord, Slack, Matrix, and/or
@@ -50,7 +50,7 @@ this is just the map:
 | **Training** | Add phrasings to teach the Support Bot's hybrid classifier (retrains both sub-models live), view its self-monitoring "Model health" panel, and give any bot instance persistent custom instructions/persona. |
 | **Platforms** | Legacy single-bot-per-platform `.env` fields — superseded by the Bots tab, kept for transparency. |
 | **Mobile** | Mobile pairing keys + QR codes, paired-device list with live online/offline status, and the Android one-click build/install/pair panel. |
-| **Linked Servers** | Link another BotServer install (a laptop, a home PC, a VPS) to see and manage its bots from here — see "Linking servers" below. |
+| **Linked Servers** | Link another AgenticBotPlatform install (a laptop, a home PC, a VPS) to see and manage its bots from here — see "Linking servers" below. |
 
 ## Documentation
 
@@ -63,8 +63,8 @@ get their own deep-dive doc:
 - **[docs/connecting-claude-and-hermes.md](docs/connecting-claude-and-hermes.md)**
   — complete setup for Claude Desktop and Hermes Agent (CLI, gateway, and
   the separate Hermes Desktop app), including the one real gotcha (shared
-  platform tokens between Hermes's own gateway and a Bot Server instance).
-- **[docs/sessions.md](docs/sessions.md)** — how Bot Server links each
+  platform tokens between Hermes's own gateway and a Agentic Bot Platform instance).
+- **[docs/sessions.md](docs/sessions.md)** — how Agentic Bot Platform links each
   bot instance to one specific real chat/session inside Claude Desktop or
   Hermes, so messages never land in the wrong (or an unlinked) window.
 - **[docs/mobile-access.md](docs/mobile-access.md)** — pairing the Android
@@ -352,7 +352,7 @@ curl -X POST -H "X-Dashboard-Token: $DASHBOARD_TOKEN" \
 An agent driving this app through the MCP server (see "Controlling this
 app over MCP" below) has the same two actions as tools —
 `create_snapshot`/`restore_snapshot`/`list_snapshots` — so the natural
-habit for an agent about to make a risky change to BotServer's own
+habit for an agent about to make a risky change to AgenticBotPlatform's own
 code/data is: snapshot first, make the change, restore if it goes wrong.
 
 **Python code hot-reload** (`bot/hotreload.py`) applies most edits to
@@ -387,7 +387,7 @@ immediately), or from the dashboard's new "Hot Reload" card (Control
 Center tab), which also shows recent reload events and a manual
 "Reload now" button. An agent driving this app over MCP has
 `hot_reload_status`/`trigger_hot_reload` as tools — the natural habit
-after editing BotServer's own code is to call `trigger_hot_reload` and
+after editing AgenticBotPlatform's own code is to call `trigger_hot_reload` and
 confirm it applied instead of guessing.
 
 See `bot/hotreload.py`'s module docstring for the full reasoning behind
@@ -396,7 +396,7 @@ that keeps the classification from silently rotting as the codebase
 grows (parses every file's real imports and asserts nothing is missing
 and the fixed reload order is genuinely valid).
 
-## Plugin API — extend BotServer without editing core code
+## Plugin API — extend AgenticBotPlatform without editing core code
 
 A plugin is a single local `plugin.py` file that registers new agent
 tools and/or new slash commands. Install one from the dashboard's
@@ -441,7 +441,7 @@ dashboard's "Plugins" card (enable/disable/remove) or the matching
 
 **Trust model, stated plainly** (see
 [ADR-0007](docs/adr/0007-plugins-are-trusted-local-code.md)): a plugin
-runs in-process with the full privileges of the BotServer process — the
+runs in-process with the full privileges of the AgenticBotPlatform process — the
 same trust level `run_shell` already has, no sandbox, no code review, no
 signature check. `install()` only ever loads a file already on this
 machine's disk; nothing here fetches code from a network, so this is
@@ -491,7 +491,7 @@ trust, exactly as you would before approving a shell command.
    cd desktop-app\src-tauri
    cargo tauri dev
    ```
-   **Production build** (produces `bot-server.exe`, with the venv
+   **Production build** (produces `agentic-bot-platform.exe`, with the venv
    and bot code bundled alongside it so it runs standalone):
    ```powershell
    cd desktop-app\src-tauri
@@ -504,7 +504,7 @@ trust, exactly as you would before approving a shell command.
 
 ### Linux
 
-Every file needed to build and run Bot Server on Linux is already in this
+Every file needed to build and run Agentic Bot Platform on Linux is already in this
 repo — nothing above is Windows-only at the source level, just the
 `.ps1` scripts, which have a `.sh` counterpart for every step.
 
@@ -542,7 +542,7 @@ repo — nothing above is Windows-only at the source level, just the
    cd desktop-app/src-tauri
    cargo tauri dev
    ```
-   **Production build** (produces a `bot-server` binary, with the venv
+   **Production build** (produces a `agentic-bot-platform` binary, with the venv
    and bot code bundled alongside it — build the venv with `./scripts/run.sh`
    *first*, since the bundle step packages whatever `.venv/` already
    exists; a Windows-built `.venv` isn't usable here and vice versa):
@@ -578,7 +578,7 @@ cd desktop-app/src-tauri && cargo tauri dev   # or `cargo tauri build`
 ```
 
 `nix build` (using the flake's `packages.default`) is also available, but
-it only produces the raw `bot-server` Rust binary — **not** the
+it only produces the raw `agentic-bot-platform` Rust binary — **not** the
 self-contained Windows-style bundle with a `.venv` baked in. Bundling a
 pip-installed venv into an immutable `/nix/store` path fights Nix's
 model, so the Nix package expects to be run from a checkout with its own
@@ -605,9 +605,9 @@ known-and-ignored issue.
 Qubes AppVMs run ordinary Fedora or Debian templates under the hood, so
 the Fedora/Debian instructions above apply as-is inside the AppVM — there
 is no Qubes-specific build step. A few things worth knowing about running
-Bot Server *in* a Qubes AppVM specifically, though:
+Agentic Bot Platform *in* a Qubes AppVM specifically, though:
 
-- **Networking is opt-in per VM.** Bot Server's dashboard binds to
+- **Networking is opt-in per VM.** Agentic Bot Platform's dashboard binds to
   `127.0.0.1` only and never needs inbound connections from outside its
   own VM, so it works in a fully network-isolated AppVM for local-only use
   (`ui`/`api`/`cli` backends talking to a locally-installed model/CLI). Any
@@ -619,7 +619,7 @@ Bot Server *in* a Qubes AppVM specifically, though:
   other app in Qubes — e.g. a bot instance handling an untrusted public
   Telegram bot in a different AppVM than one used for your own private
   Claude Desktop automation, rather than running every bot instance in one
-  VM. Bot Server itself has no Qubes-awareness (no `qrexec` integration,
+  VM. Agentic Bot Platform itself has no Qubes-awareness (no `qrexec` integration,
   no inter-VM policy) — this is a deployment-topology recommendation, not
   a built-in feature.
 - **The MCP self-register flow** (`POST /api/mcp/self-register`, Control
@@ -633,7 +633,7 @@ Bot Server *in* a Qubes AppVM specifically, though:
 
 ## Using the desktop app
 
-Launch `bot-server.exe` (or `cargo tauri dev` while developing).
+Launch `agentic-bot-platform.exe` (or `cargo tauri dev` while developing).
 The window opens straight into a terminal-style boot screen — it spawns
 `python -m bot.main` itself, streams every log line and a live CPU/RAM
 reading for that process as it comes up, then automatically swaps over to
@@ -678,7 +678,7 @@ On macOS, the equivalent is a launchd LaunchAgent:
 ```bash
 ./scripts/install_service_macos.sh
 ```
-Registers `~/Library/LaunchAgents/com.botserver.app.plist` (no sudo
+Registers `~/Library/LaunchAgents/com.agenticbotplatform.app.plist` (no sudo
 needed — a per-user agent); unregister with `launchctl unload` (the
 script prints the exact command). All three are also offered
 automatically at the end of `scripts/install.ps1` / `scripts/install.sh`.
@@ -690,7 +690,7 @@ terminal, `bot/tui/` is a full Textual-based terminal app with the same
 bot-management capability as the browser dashboard — add/edit/delete
 bots for all 5 platforms, start/stop/restart/enable/disable, live field
 validation and setup help per platform, and a schedules panel — talking
-to an **already-running** BotServer's dashboard HTTP API rather than
+to an **already-running** AgenticBotPlatform's dashboard HTTP API rather than
 the database directly, so it works against a remote/federated install
 exactly like the desktop app does, not just a local one.
 
@@ -702,7 +702,7 @@ exactly like the desktop app does, not just a local one.
 or directly: `python -m bot.tui`. On first launch it asks for a
 host:port (defaults to `127.0.0.1:8787`) and a dashboard token
 (auto-filled from the local `.env` when run on the same machine that's
-running BotServer). Bootstrapping the `.env` itself (the Anthropic key,
+running AgenticBotPlatform). Bootstrapping the `.env` itself (the Anthropic key,
 `DASHBOARD_TOKEN`) is still `scripts/setup.py`'s job — that has to work
 before any server or API exists to connect to; the TUI is the ongoing
 "manage bots" tool used once one is already up, the terminal-world
@@ -717,7 +717,7 @@ dashboard token, plus the optional Claude Desktop path — and share one
 validator (`bot/setup_wizard.py`) so a field that passes in one passes in
 the other. Platform/bot credentials are separate and not part of this
 wizard at all: the wizard only gates on the core fields above, and
-BotServer starts and the dashboard/desktop UI is fully usable with zero
+AgenticBotPlatform starts and the dashboard/desktop UI is fully usable with zero
 bots configured — add your first one afterward from the **Bots** tab
 (or the terminal UI), see the section below.
 
@@ -873,7 +873,7 @@ simulated:
   persistent conversation thread with the bot the same way each real
   Telegram user does. There's no recipient picker in this mode: you're
   just you. This path **never touches `outbox.py` or any platform
-  SDK** — it's the Bot Server App's own real channel, logged with
+  SDK** — it's the Agentic Bot Platform App's own real channel, logged with
   `platform="app"` rather than disguised as whichever platform the target
   instance happens to also use. File attachments aren't supported yet in
   this mode (the attach button disables itself).
@@ -923,8 +923,8 @@ how `api`/`cli` behave.
 
 **Important:** Hermes Agent has its own built-in Telegram/Discord/Slack
 adapters (`hermes gateway run`). Never configure the same platform bot
-token in both Hermes's own gateway and a Bot Server instance — pick one
-owner per token. Use Bot Server's bot instances as the sole platform
+token in both Hermes's own gateway and a Agentic Bot Platform instance — pick one
+owner per token. Use Agentic Bot Platform's bot instances as the sole platform
 connection, and Hermes purely as a backend engine behind them. See
 **[docs/connecting-claude-and-hermes.md](docs/connecting-claude-and-hermes.md)**
 for the full setup walkthrough, including exactly how to check for and
@@ -940,7 +940,7 @@ interactive `hermes` usage.
 
 ### Multi-provider model routing — "any model from anywhere"
 
-There are two independent ways to point a bot at a model Bot Server has no
+There are two independent ways to point a bot at a model Agentic Bot Platform has no
 built-in knowledge of, and they solve different problems:
 
 **Direct, no Hermes required — the `custom_model` backend.** Register a
@@ -966,7 +966,7 @@ providers:
 Then set a bot instance's backend to `custom_model` and its model to
 `<provider_name>/<model_id>` (e.g. `local_ollama/llama3.1`) — either in
 the Add/Edit Bot form's Model field, or via `/model` in that bot's chat.
-This backend runs Bot Server's **own** tool-use loop against it (real
+This backend runs Agentic Bot Platform's **own** tool-use loop against it (real
 shell/file/git access, the same one the `api` backend uses for Anthropic
 — see `bot/agent_runtime/`), so a local model gets genuine agentic
 capability, not just a passthrough chat. `/gateway` and the dashboard's
@@ -979,15 +979,15 @@ Hermes Agent already has rich native multi-provider support of its own
 (`~/.hermes/config.yaml`'s `provider: custom` and `providers:` map,
 including `lmstudio`/`ollama`/`vllm`/`llamacpp` aliases) — see Hermes's
 own `cli-config.yaml.example` for the full schema. Point Hermes itself at
-a local or custom model server there, then set a Bot Server instance's
+a local or custom model server there, then set a Agentic Bot Platform instance's
 backend to `hermes_cli` or `hermes_gateway` with `model` matching that
 Hermes-side provider/model name. Hermes then runs the model as a full
-agent using **its own** tool loop (not Bot Server's) — this is the path
+agent using **its own** tool loop (not Agentic Bot Platform's) — this is the path
 to reach for when you specifically want Hermes's own agent behavior
 layered on top of a model it doesn't natively ship a name for, rather
-than Bot Server's simpler tool set. Bot Server passes the `model` string
+than Agentic Bot Platform's simpler tool set. Agentic Bot Platform passes the `model` string
 through to Hermes verbatim and does no provider logic of its own here —
-nothing on Bot Server's side needs to change for this path to work.
+nothing on Agentic Bot Platform's side needs to change for this path to work.
 
 ## Swarms — multi-bot collaboration
 
@@ -1034,7 +1034,7 @@ full step breakdown.
 Beyond swarms, any bot instance (or Claude Desktop itself, via the MCP
 tools above) can directly ask *another* bot instance a one-off question
 and get its reply back — `POST /api/agent/ask` /
-`mcp__bot-server__ask_instance` `{source_instance, target_instance,
+`mcp__agentic-bot-platform__ask_instance` `{source_instance, target_instance,
 prompt}` — without setting up a whole swarm for a single cross-bot query.
 `source_instance` is self-declared (by name or id) rather than verified
 against a live credential, so it isn't a security boundary on its own —
@@ -1110,7 +1110,7 @@ prompt to another registered bot instance and get its reply back) and
 `agent_control` allowlist described below, three snapshot tools —
 `create_snapshot`, `list_snapshots`, `restore_snapshot` — for an agent
 (Claude, Hermes, or anything else driving this MCP server) to protect
-itself while editing BotServer's own code, and two hot-reload tools —
+itself while editing AgenticBotPlatform's own code, and two hot-reload tools —
 `hot_reload_status`, `trigger_hot_reload` — to confirm an edit actually
 applied instead of guessing: see "Live-development safety net" below.
 It's a thin client: every tool
@@ -1120,14 +1120,14 @@ the same `DASHBOARD_TOKEN`, so there's exactly one place
 
 Fastest way to wire it up: Control Center -> Environment ->
 **Register with Claude Desktop**, or `POST /api/mcp/self-register`. That
-writes a `bot-server` entry into `claude_desktop_config.json`
+writes a `agentic-bot-platform` entry into `claude_desktop_config.json`
 pointing at this project's own venv python, so it shows up (and can be
 toggled) right alongside every other MCP server in the **MCP servers**
 card. It's idempotent — safe to click again after a token rotation or a
 venv rebuild, since it always overwrites that one entry with current
 values. For Claude Code instead:
 ```powershell
-claude mcp add bot-server -- .\.venv\Scripts\python.exe -m bot.mcp_server
+claude mcp add agentic-bot-platform -- .\.venv\Scripts\python.exe -m bot.mcp_server
 ```
 Either way the dashboard API itself has to actually be running first
 (launch the desktop app, or `python -m bot.main`) — the MCP server has no
@@ -1202,7 +1202,7 @@ belongs to which bot, two instances could end up typing into the same
 window, or a message could land in whatever chat happened to be open
 rather than the one you meant.
 
-Bot Server closes that gap by requiring every `ui`/`hermes_gateway` bot
+Agentic Bot Platform closes that gap by requiring every `ui`/`hermes_gateway` bot
 instance to be **linked** to one specific, already-created chat/session
 before it can send anything:
 
@@ -1223,9 +1223,9 @@ See **[docs/sessions.md](docs/sessions.md)** for the full mechanics,
 config knobs for tuning Claude Desktop's UI automation, and
 troubleshooting.
 
-## Linking servers — manage several BotServer installs from one dashboard
+## Linking servers — manage several AgenticBotPlatform installs from one dashboard
 
-If you run BotServer on more than one machine (a home PC and a laptop, say,
+If you run AgenticBotPlatform on more than one machine (a home PC and a laptop, say,
 each with its own database and its own Telegram bot), the **Linked
 Servers** tab lets either admin see and manage the other's bots from their
 own dashboard — without merging databases, sharing one bot, or standing up

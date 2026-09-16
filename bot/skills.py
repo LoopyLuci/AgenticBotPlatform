@@ -4,7 +4,7 @@ agent loop can pull in on demand via the read_skill tool
 
 This is a deliberately smaller scope than the real Hermes Agent's own
 skills system (search/browse/audit against a hosted hub, install
-approval workflow, bundles) — BotServer has no marketplace equivalent to
+approval workflow, bundles) — AgenticBotPlatform has no marketplace equivalent to
 point that at. What's here is real and complete for what it is: drop a
 skill file on disk, `/skills install <path>` registers its contents,
 `/skills list` shows what's available, and the model can request the

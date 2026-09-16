@@ -1,5 +1,5 @@
 """Generative UI: describe a change in plain English, get a real,
-working modification of BotServer's own dashboard/desktop-app HTML+JS,
+working modification of AgenticBotPlatform's own dashboard/desktop-app HTML+JS,
 review a live preview and diff, and only touch the real file on
 explicit approval — with an instant, exact revert if anything's wrong.
 
@@ -78,7 +78,7 @@ def _is_html_target(target: str) -> bool:
 
 # ------------------------------------------------------------- generation --
 
-_PROMPT_TEMPLATE = """You are editing one real, live file inside a running application called BotServer.
+_PROMPT_TEMPLATE = """You are editing one real, live file inside a running application called AgenticBotPlatform.
 File: {filename}
 This file is the ENTIRE current content — it is a single self-contained HTML document with inline <style> and <script> blocks (or, for a .js file, plain JavaScript). Do not assume any other file exists alongside it for style/script — everything is inline.
 

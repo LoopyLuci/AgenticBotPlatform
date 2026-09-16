@@ -221,10 +221,10 @@ def test_call_tool_routes_to_the_right_server_and_real_tool_name():
     mcp_client._connections["github"] = mcp_client._Connection(name="github", session=session, tools=[])
     mcp_client._tool_index["mcp_github_search_repos"] = ("github", "search_repos")
 
-    out = _run(mcp_client.call_tool("mcp_github_search_repos", {"q": "botserver"}))
+    out = _run(mcp_client.call_tool("mcp_github_search_repos", {"q": "agenticbotplatform"}))
 
     assert out == "42 repos found"
-    assert session.calls == [("search_repos", {"q": "botserver"})]
+    assert session.calls == [("search_repos", {"q": "agenticbotplatform"})]
 
 
 def test_call_tool_marks_a_tool_error():

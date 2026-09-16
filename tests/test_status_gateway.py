@@ -108,7 +108,7 @@ def test_real_time_model_label_api_uses_configured_default(temp_db, monkeypatch)
 def test_real_time_model_label_ui_states_its_own_limitation(temp_db):
     instance = {"backend": "ui", "model": None}
     label = _run(commands.real_time_model_label(instance))
-    assert "not visible to BotServer" in label
+    assert "not visible to AgenticBotPlatform" in label
 
 
 def test_real_time_model_label_cli_reads_real_settings_file(temp_db, monkeypatch, tmp_path):

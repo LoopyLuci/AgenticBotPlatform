@@ -1,4 +1,4 @@
-# Installs the pre-push hook that runs BotServer's local CI/CD pipeline
+# Installs the pre-push hook that runs AgenticBotPlatform's local CI/CD pipeline
 # (scripts/local_pipeline.py) before every push. .git/hooks isn't
 # version-controlled, so this copies the tracked source in
 # scripts/git-hooks/ into place — re-run any time to pick up hook changes.

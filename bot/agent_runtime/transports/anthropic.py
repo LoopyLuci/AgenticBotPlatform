@@ -1,6 +1,6 @@
 """Anthropic Messages API transport — extracted from what
 bot/backends/api_backend.py used to do inline. Anthropic's own wire shape
-already matches BotServer's TOOL_SCHEMAS (`{name, description,
+already matches AgenticBotPlatform's TOOL_SCHEMAS (`{name, description,
 input_schema}`) and its own stored-history convention (a plain string
 for a simple text turn, a list of content blocks for anything richer),
 so this transport does the least translation work of the two — its main
@@ -73,7 +73,7 @@ class AnthropicTransport(ProviderTransport):
         # citations on by default — free correctness/traceability once a
         # document is attached at all; see the Claude API/Claude Code
         # parity plan's Phase C for why the raw citation data itself
-        # isn't surfaced in the plain-text chat reply (no bot-server
+        # isn't surfaced in the plain-text chat reply (no agentic-bot-platform
         # platform renders structured citation markers today).
         blocks.extend(
             {
@@ -120,7 +120,7 @@ class AnthropicTransport(ProviderTransport):
 
         # Anthropic server tools (web_search/web_fetch/code_execution/
         # tool_search — Phase D of the Claude API/Claude Code parity
-        # plan) — appended alongside BotServer's own client tool schemas.
+        # plan) — appended alongside AgenticBotPlatform's own client tool schemas.
         # Anthropic executes these itself and returns results as a
         # "server_tool_use" block (structurally distinct from "tool_use"),
         # so they never reach tool_loop.run_one_tool() by construction —
@@ -128,7 +128,7 @@ class AnthropicTransport(ProviderTransport):
         from bot.agent_runtime import anthropic_server_tools
 
         # strict: true (Phase H of the Claude API/Claude Code parity
-        # plan) tightens schema conformance for free on BotServer's own
+        # plan) tightens schema conformance for free on AgenticBotPlatform's own
         # tool definitions only — never on Anthropic's own server tool
         # entries (web_search/web_fetch/... below, or mcp_toolset),
         # which the tool-reference page's own strict-support scoping
@@ -144,7 +144,7 @@ class AnthropicTransport(ProviderTransport):
                 # caches everything up to and including a breakpoint, so
                 # one entry at the end covers the whole (stable-for-the-
                 # session) tools array. Copy rather than mutate: the
-                # BotServer-schema dicts here are the same shared objects
+                # AgenticBotPlatform-schema dicts here are the same shared objects
                 # agent_tools.all_tool_schemas() returns on every call
                 # (TOOL_SCHEMAS is a module-level list) — mutating one in
                 # place would leak cache_control into every other

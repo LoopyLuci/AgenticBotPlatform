@@ -3,7 +3,7 @@
 # is not required for a per-user logon task.
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-$exe = Join-Path $root "desktop-app\src-tauri\target\release\bot-server.exe"
+$exe = Join-Path $root "desktop-app\src-tauri\target\release\agentic-bot-platform.exe"
 $runScript = Join-Path $root "scripts\run.ps1"
 
 if (Test-Path $exe) {
@@ -20,5 +20,5 @@ $trigger = New-ScheduledTaskTrigger -AtLogOn
 $settings = New-ScheduledTaskSettingsSet -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1) `
     -ExecutionTimeLimit (New-TimeSpan -Days 0) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 
-Register-ScheduledTask -TaskName "BotServer" -Action $action -Trigger $trigger -Settings $settings -Force
-Write-Host "Registered scheduled task 'BotServer' — runs at logon, restarts on failure." -ForegroundColor Green
+Register-ScheduledTask -TaskName "AgenticBotPlatform" -Action $action -Trigger $trigger -Settings $settings -Force
+Write-Host "Registered scheduled task 'AgenticBotPlatform' — runs at logon, restarts on failure." -ForegroundColor Green

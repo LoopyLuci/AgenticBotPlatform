@@ -7,7 +7,7 @@ resolved" guard so a late button tap can never claim an outcome that
 already timed out or was answered elsewhere.
 
 The wait itself is a plain asyncio.Event living in this process's memory
-(there's exactly one BotServer process, so that's sufficient — no need for
+(there's exactly one AgenticBotPlatform process, so that's sufficient — no need for
 cross-process signaling); bot/db.py's pending_approvals table is the
 durable/audit side a Telegram message edit or dashboard view reads back.
 """

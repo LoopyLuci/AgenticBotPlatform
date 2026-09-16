@@ -59,7 +59,7 @@ agent_control:
 # This is a worst-case ESTIMATE gate (max_children x assumed tokens/child x
 # the resolved model's known per-token price), not a real spend tracker —
 # the Hermes gateway backend never reports actual token usage back to
-# BotServer today, a real, documented limitation (see that module's
+# AgenticBotPlatform today, a real, documented limitation (see that module's
 # docstring). Refuses to dispatch (never configures Hermes's own delegation
 # config, never sends anything) when the estimate can't be trusted or
 # exceeds these caps; a swarm_dispatch_blocked audit entry is logged either
@@ -105,13 +105,13 @@ native_agent:
   # 0 (or any value <= 0) disables compression entirely.
   compression_threshold_chars: 60000
   # Whether a connected external MCP server (bot/agent_runtime/mcp_client.py)
-  # is allowed to ask BotServer to run a real LLM completion on its behalf
+  # is allowed to ask AgenticBotPlatform to run a real LLM completion on its behalf
   # (the MCP "sampling" capability) — off by default: unlike calling a
   # server's own advertised tools (already gated by the operator
   # explicitly connecting that server), sampling is an open-ended "think
   # for me" capability that spends the operator's own configured provider
   # budget with no per-call human step in between. provider/model pick
-  # which BotServer-configured transport actually serves these requests;
+  # which AgenticBotPlatform-configured transport actually serves these requests;
   # provider: null (or "anthropic") means the built-in Claude API,
   # anything else must be a name from config/providers.yaml.
   mcp_sampling:
@@ -140,7 +140,7 @@ native_agent:
   # "Thinking…" visibility.
   show_thinking_summary: false
   # Anthropic server-executed tools (bot/agent_runtime/anthropic_server_tools.py)
-  # — Anthropic runs these itself and returns results inline; BotServer
+  # — Anthropic runs these itself and returns results inline; AgenticBotPlatform
   # never executes them locally. All off by default: each bills real
   # usage-based cost on top of tokens (e.g. web search is $10/1,000
   # searches), the same "explicit opt-in for anything with a real cost"
@@ -164,7 +164,7 @@ support_bot:
   # hybrid plan) — an OPTIONAL, server-only semantic layer, off by
   # default. Enabling it requires the `sentence-transformers` extra to
   # be installed (see bot/support_bot/embeddings.py's module docstring
-  # for why this is never a hard dependency of BotServer itself) — a
+  # for why this is never a hard dependency of AgenticBotPlatform itself) — a
   # real ML/torch dependency, unlike every other classifier in this
   # subsystem, which is why it stays feature-flagged and measured before
   # ever being turned on by default. Never touches Android — the
@@ -228,7 +228,7 @@ turn:
   # default: enabling it requires an actual TURN server (coturn is the
   # standard choice) running with the same shared secret configured below
   # (coturn's `use-auth-secret` + `static-auth-secret`) — see
-  # docs/turn-server-setup.md. BotServer only ever mints short-lived
+  # docs/turn-server-setup.md. AgenticBotPlatform only ever mints short-lived
   # HMAC credentials from this secret; it never runs the relay itself.
   enabled: false
   secret: null

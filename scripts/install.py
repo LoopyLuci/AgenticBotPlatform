@@ -1,8 +1,8 @@
 #!/usr/bin/env python
-"""Bot Server installer — hardware/software-environment-aware.
+"""Agentic Bot Platform installer — hardware/software-environment-aware.
 
 Detects the OS, Linux distro family, and CPU architecture, then installs
-everything Bot Server needs to run and build on *this* machine specifically
+everything Agentic Bot Platform needs to run and build on *this* machine specifically
 (not a generic checklist): Rust + Cargo, the Tauri CLI, the native GUI
 libraries Tauri needs on Linux (skipped entirely on Windows/macOS, where
 they don't apply), the Python virtualenv + `requirements.txt`, and finally
@@ -66,7 +66,7 @@ SECTIONS = [
     "Detected environment", "Python", "Rust + Cargo", "Tauri CLI",
     "Linux native GUI libraries (WebKitGTK, GTK3, AppIndicator, ...)",
     "Python virtual environment + dependencies",
-    "Bot Server configuration (.env, at least one bot instance)",
+    "Agentic Bot Platform configuration (.env, at least one bot instance)",
     "Production build", "Start at login", "Summary", "Done",
 ]
 
@@ -419,7 +419,7 @@ def ensure_venv_and_requirements(args) -> bool:
 
 
 def run_setup_wizard(args) -> bool:
-    Step.head("Bot Server configuration (.env, at least one bot instance)")
+    Step.head("Agentic Bot Platform configuration (.env, at least one bot instance)")
     venv_dir = ROOT / ".venv"
     py = venv_dir / ("Scripts/python.exe" if IS_WINDOWS else "bin/python")
     if not py.exists():
@@ -483,7 +483,7 @@ def offer_autostart(args) -> None:
         return
     Step.head("Start at login")
     label = "Windows Task Scheduler" if IS_WINDOWS else ("a launchd agent" if IS_MACOS else "a systemd --user service")
-    if not confirm(f"Register Bot Server to start automatically at login via {label}?", args.yes):
+    if not confirm(f"Register Agentic Bot Platform to start automatically at login via {label}?", args.yes):
         return
     if IS_WINDOWS:
         subprocess.run(
@@ -512,7 +512,7 @@ def main() -> None:
     JSON_MODE = args.json
 
     if not JSON_MODE:
-        print("Bot Server — installer")
+        print("Agentic Bot Platform — installer")
     print_environment_report()
 
     results = {

@@ -20,7 +20,7 @@ from bot.agent_runtime import checkpoints
 def _isolated_store(tmp_path, monkeypatch):
     # Redirect the shadow store to a throwaway directory so tests never
     # touch the real repo's data/checkpoint_store/.
-    monkeypatch.setattr("bot.envfile.PROJECT_ROOT", tmp_path / "botserver_root")
+    monkeypatch.setattr("bot.envfile.PROJECT_ROOT", tmp_path / "agenticbotplatform_root")
 
 
 def _git(args, cwd):

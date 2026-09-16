@@ -1,8 +1,8 @@
 """Thin httpx wrapper over the dashboard's REST API — the TUI's only way
-of talking to BotServer, deliberately never importing bot.* business-logic
+of talking to AgenticBotPlatform, deliberately never importing bot.* business-logic
 modules directly. This keeps exactly one implementation of validation/
 CRUD/lifecycle (the dashboard/API layer, bot/dashboard/server.py) and lets
-the TUI manage a remote/federated BotServer exactly like the desktop app
+the TUI manage a remote/federated AgenticBotPlatform exactly like the desktop app
 already does, not just a local one.
 """
 

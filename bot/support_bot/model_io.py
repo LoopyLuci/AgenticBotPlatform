@@ -34,7 +34,7 @@ MODELS_DIR = PROJECT_ROOT / "data" / "support_bot_models"
 # (e.g. from live desktop testing sharing this same checkout) can never
 # silently override what a test expects to be trained fresh from the
 # current bot/support_bot/training_data.py.
-CURRENT_PATH = Path(os.environ.get("BOTSERVER_SUPPORT_BOT_MODEL_PATH") or (MODELS_DIR / "current.json"))
+CURRENT_PATH = Path(os.environ.get("AGENTICBOTPLATFORM_SUPPORT_BOT_MODEL_PATH") or (MODELS_DIR / "current.json"))
 
 
 def compute_training_hash(examples: list[tuple[str, str]]) -> str:

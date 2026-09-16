@@ -28,8 +28,8 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::no_window;
 
-const REPO: &str = "LoopyLuci/BotServer";
-const USER_AGENT: &str = "BotServer-Updater";
+const REPO: &str = "LoopyLuci/AgenticBotPlatform";
+const USER_AGENT: &str = "AgenticBotPlatform-Updater";
 
 // A single failed GET to GitHub — a momentary DNS hiccup, a corporate
 // proxy/AV product intercepting HTTPS and stalling the handshake, a
@@ -217,7 +217,7 @@ pub fn download_update(app: AppHandle, url: String) -> Result<String, String> {
         }
     }
 
-    let dest = std::env::temp_dir().join("BotServer-update-setup.exe");
+    let dest = std::env::temp_dir().join("AgenticBotPlatform-update-setup.exe");
     std::fs::write(&dest, &bytes).map_err(|e| format!("couldn't save installer: {e}"))?;
     Ok(dest.to_string_lossy().to_string())
 }

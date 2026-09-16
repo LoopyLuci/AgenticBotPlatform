@@ -3,7 +3,7 @@ of the Claude API/Claude Code parity plan) — operator-configured local
 automation triggered at real points in the tool-calling loop.
 
 Deliberately scoped to the four events that map cleanly onto real,
-already-centralized BotServer call sites, not Claude Code's full ~20-
+already-centralized AgenticBotPlatform call sites, not Claude Code's full ~20-
 event surface: `PreToolUse`/`PostToolUse` (both fire from
 `bot.agent_runtime.tool_loop.run_one_tool()`, the one choke point every
 tool call already passes through), `SessionStart` (fires on

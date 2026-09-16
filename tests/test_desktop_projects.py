@@ -1,7 +1,7 @@
 """/desktop_projects (bot.commands.cmd_desktop_projects) and
 Router.link_existing_desktop_session — browsing and continuing REAL,
 already-existing Claude Desktop projects/chats, as opposed to /sessions
-and /resume which only know about sessions BotServer itself created via
+and /resume which only know about sessions AgenticBotPlatform itself created via
 /new. See bot/backends/ui_backend.py's list_projects_with_sessions() for
 how project/session grouping is inferred from the live sidebar.
 """

@@ -100,14 +100,14 @@ class TestSessionButtons:
         backend = UiBackend()
         win = _win([
             _button("Idle PrivateProject"),
-            _button("Running BotServer"),
+            _button("Running AgenticBotPlatform"),
             _button("New"),  # not a session row — must be excluded
             _button("More options for PrivateProject"),  # not a session row either
         ])
 
         items = backend._session_buttons(win)
 
-        assert set(items.keys()) == {"PrivateProject", "BotServer"}
+        assert set(items.keys()) == {"PrivateProject", "AgenticBotPlatform"}
 
 
 class TestListProjects:
@@ -355,7 +355,7 @@ class TestListProjectsWithSessions:
     def test_sessions_before_any_project_marker_are_bucketed_separately(self):
         backend = UiBackend()
         win = _win([
-            _button("Running BotServer"),
+            _button("Running AgenticBotPlatform"),
             _button("New session in PrivateProject"),
             _button("Idle Fix the login bug"),
         ])
@@ -363,7 +363,7 @@ class TestListProjectsWithSessions:
 
         grouped = backend._sync_list_projects_with_sessions()
 
-        assert grouped[UiBackend.NO_PROJECT_BUCKET] == ["BotServer"]
+        assert grouped[UiBackend.NO_PROJECT_BUCKET] == ["AgenticBotPlatform"]
         assert grouped["PrivateProject"] == ["Fix the login bug"]
 
     def test_a_project_with_no_sessions_yet_still_appears(self):

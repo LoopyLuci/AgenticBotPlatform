@@ -75,7 +75,7 @@ MAX_ATTACHMENT_BYTES = int(os.environ.get("MAX_ATTACHMENT_BYTES", 5 * 1024 * 102
 # mirrors each platform adapter's own in-memory self._sessions dict (e.g.
 # discord_platform.py's DiscordPlatformInstance), so /project and other
 # session-scoped slash commands behave identically whether the message came
-# from a real platform or through the Bot Server App's own real channel.
+# from a real platform or through the Agentic Bot Platform App's own real channel.
 # Intentionally not persisted — same lifetime as the platform adapters' own
 # equivalents.
 _app_chat_sessions: dict[tuple[int, str], dict] = {}
@@ -218,6 +218,21 @@ db.on_message_logged(_on_message_logged)
 db.on_job_changed(_on_job_changed)
 db.on_job_tool_event(_on_job_tool_event)
 db.on_job_children_set(_on_job_children_set)
+
+
+def _on_activity_entry(entry) -> None:
+    # Same best-effort/degrade-to-next-poll shape as every other
+    # _broadcast_soon call site — see its own docstring. Log records can
+    # originate from any thread (a background job, an executor callback),
+    # not just the event loop thread that's actually able to broadcast
+    # live, so a missed live push here is expected and fine: the Activity
+    # tab's own poll/reconnect logic still picks it up.
+    _broadcast_soon({"type": "activity_entry", "entry": entry.__dict__})
+
+
+from bot import activity_log as _activity_log  # noqa: E402 — after db.on_*() registration, matching this block's own convention
+
+_activity_log.subscribe(_on_activity_entry)
 
 
 def _tokens_match(provided: Optional[str], expected: str) -> bool:
@@ -573,6 +588,56 @@ def build_app() -> FastAPI:
         status_code = 200 if db_ok else 503
         return JSONResponse({"status": "ok" if db_ok else "degraded", "db_ok": db_ok}, status_code=status_code)
 
+    @app.get("/api/activity", dependencies=[Depends(_require_token)])
+    async def api_activity(since_id: int = 0, limit: int = 200):
+        """Backs the GUI's Activity tab — every log record this process
+        has emitted (bot/activity_log.py's ring buffer over the SAME
+        root-logger handler chain logs/bot.log already uses), not a
+        separate parallel event system. `since_id` lets a client that's
+        already caught up ask for only what's new instead of re-fetching
+        the whole buffer on every poll."""
+        from bot import activity_log
+
+        return {"entries": activity_log.recent(limit=min(limit, 2000), since_id=since_id)}
+
+    @app.post("/api/terminal/exec", dependencies=[Depends(_require_token)])
+    async def api_terminal_exec(payload: dict = Body(...)):
+        """The scoped terminal panel's only way of doing anything — runs
+        exactly one ABP slash command (bot/commands.py::dispatch_command,
+        the SAME dispatcher every Telegram/Discord/Slack handler already
+        uses) and returns its reply text. Deliberately not a raw-shell
+        route: this is reachable from the plain browser dashboard, which
+        this app can expose to the public internet via Tailscale Funnel —
+        real system-shell access lives only in the desktop app's own
+        Tauri terminal (desktop-app/src-tauri/src/terminal.rs), which a
+        browser can never reach regardless of network exposure. Strict
+        _require_token (not _require_token_or_api_key): a paired mobile
+        device has no business typing raw commands into this console."""
+        text = (payload.get("text") or "").strip()
+        instance_id = payload.get("instance_id")
+        if not text:
+            return {"output": ""}
+        if not text.startswith("/"):
+            return {"output": f"Not a recognized command: {text!r}. Commands start with / — try /help."}
+        instance_name = ""
+        if instance_id is not None:
+            instance = bot_instances.get_instance(int(instance_id))
+            if instance is None:
+                return {"output": f"no such bot instance: {instance_id}"}
+            instance_name = instance["name"]
+        session = _app_chat_sessions.setdefault((instance_id, "terminal"), {})
+        cmd_ctx = bot_commands.CmdContext(
+            instance_id=int(instance_id) if instance_id is not None else None,
+            instance_name=instance_name, user_id="terminal", chat_id="terminal",
+            actor="terminal:dashboard", session=session,
+        )
+        try:
+            reply = await bot_commands.dispatch_command(text, cmd_ctx)
+        except Exception as exc:
+            logger.exception("terminal command failed: %s", text)
+            return {"output": f"error: {exc}"}
+        return {"output": reply if reply is not None else f"Unknown command: {text!r}. Try /help."}
+
     @app.get("/metrics", dependencies=[Depends(_require_token_or_api_key)])
     async def metrics():
         # Hand-rolled Prometheus text exposition format rather than the
@@ -581,30 +646,30 @@ def build_app() -> FastAPI:
         # rewrite), and a handful of gauges/counters don't need a library.
         overview = db.get_overview()
         lines = [
-            "# HELP botserver_up Always 1 if this endpoint responded at all.",
-            "# TYPE botserver_up gauge",
-            "botserver_up 1",
-            "# HELP botserver_jobs_running Jobs currently running.",
-            "# TYPE botserver_jobs_running gauge",
-            f"botserver_jobs_running {overview.get('jobs_running', 0)}",
-            "# HELP botserver_jobs_queued Jobs currently queued.",
-            "# TYPE botserver_jobs_queued gauge",
-            f"botserver_jobs_queued {overview.get('jobs_queued', 0)}",
-            "# HELP botserver_jobs_completed_today Jobs completed successfully today (resets at midnight local time).",
-            "# TYPE botserver_jobs_completed_today counter",
-            f"botserver_jobs_completed_today {overview.get('completed_today', 0)}",
-            "# HELP botserver_jobs_failed_today Jobs failed today (resets at midnight local time).",
-            "# TYPE botserver_jobs_failed_today counter",
-            f"botserver_jobs_failed_today {overview.get('failed_today', 0)}",
-            "# HELP botserver_job_success_rate_7d Fraction of jobs that succeeded over the trailing 7 days.",
-            "# TYPE botserver_job_success_rate_7d gauge",
-            f"botserver_job_success_rate_7d {overview.get('success_rate_7d', 0.0)}",
-            "# HELP botserver_job_avg_duration_ms Average job duration in milliseconds.",
-            "# TYPE botserver_job_avg_duration_ms gauge",
-            f"botserver_job_avg_duration_ms {overview.get('avg_duration_ms', 0)}",
-            "# HELP botserver_db_size_bytes SQLite database file size in bytes.",
-            "# TYPE botserver_db_size_bytes gauge",
-            f"botserver_db_size_bytes {db.get_db_size_bytes()}",
+            "# HELP agenticbotplatform_up Always 1 if this endpoint responded at all.",
+            "# TYPE agenticbotplatform_up gauge",
+            "agenticbotplatform_up 1",
+            "# HELP agenticbotplatform_jobs_running Jobs currently running.",
+            "# TYPE agenticbotplatform_jobs_running gauge",
+            f"agenticbotplatform_jobs_running {overview.get('jobs_running', 0)}",
+            "# HELP agenticbotplatform_jobs_queued Jobs currently queued.",
+            "# TYPE agenticbotplatform_jobs_queued gauge",
+            f"agenticbotplatform_jobs_queued {overview.get('jobs_queued', 0)}",
+            "# HELP agenticbotplatform_jobs_completed_today Jobs completed successfully today (resets at midnight local time).",
+            "# TYPE agenticbotplatform_jobs_completed_today counter",
+            f"agenticbotplatform_jobs_completed_today {overview.get('completed_today', 0)}",
+            "# HELP agenticbotplatform_jobs_failed_today Jobs failed today (resets at midnight local time).",
+            "# TYPE agenticbotplatform_jobs_failed_today counter",
+            f"agenticbotplatform_jobs_failed_today {overview.get('failed_today', 0)}",
+            "# HELP agenticbotplatform_job_success_rate_7d Fraction of jobs that succeeded over the trailing 7 days.",
+            "# TYPE agenticbotplatform_job_success_rate_7d gauge",
+            f"agenticbotplatform_job_success_rate_7d {overview.get('success_rate_7d', 0.0)}",
+            "# HELP agenticbotplatform_job_avg_duration_ms Average job duration in milliseconds.",
+            "# TYPE agenticbotplatform_job_avg_duration_ms gauge",
+            f"agenticbotplatform_job_avg_duration_ms {overview.get('avg_duration_ms', 0)}",
+            "# HELP agenticbotplatform_db_size_bytes SQLite database file size in bytes.",
+            "# TYPE agenticbotplatform_db_size_bytes gauge",
+            f"agenticbotplatform_db_size_bytes {db.get_db_size_bytes()}",
         ]
         return Response("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
 
@@ -775,7 +840,7 @@ def build_app() -> FastAPI:
         # instance_id opts into real per-model pricing/free-tier data for
         # that specific instance's own live Hermes gateway — see
         # bot.models.hermes_models_with_pricing. This is the payload the
-        # bot-server MCP server's list_available_models tool proxies
+        # agentic-bot-platform MCP server's list_available_models tool proxies
         # verbatim so Claude can make an actual "optimal free model"
         # decision instead of guessing from the id-suffix heuristic the
         # plain "live" section above still uses.
@@ -886,7 +951,7 @@ def build_app() -> FastAPI:
     # -------------------------------------------------------------- files --
     # Read-only, allowlisted access to specific directories on this
     # machine (see bot/file_share.py) — how a file that lives outside
-    # BotServer's own data (e.g. a freshly built Android APK) gets reached
+    # AgenticBotPlatform's own data (e.g. a freshly built Android APK) gets reached
     # "from anywhere" over the same Funnel/Tailscale/LAN paths + auth
     # everything else already uses. Browsing/downloading within an
     # already-configured root is token-or-api-key (works from a paired
@@ -1076,7 +1141,7 @@ def build_app() -> FastAPI:
         consent for an OAuth-enabled external MCP server — see
         bot/agent_runtime/mcp_client.py's OAuthClientProvider wiring.
         Deliberately no auth dependency: the redirecting OAuth provider
-        can't carry BotServer's own dashboard token, and this endpoint's
+        can't carry AgenticBotPlatform's own dashboard token, and this endpoint's
         real security boundary is the unguessable, single-use `state`
         value this process itself minted for the one pending flow it
         correlates against (deliver_oauth_callback), not a bearer token —
@@ -1086,7 +1151,7 @@ def build_app() -> FastAPI:
         if error:
             return HTMLResponse(f"<h3>Authorization failed: {error}</h3><p>You can close this tab.</p>")
         if mcp_client.deliver_oauth_callback(state, code):
-            return HTMLResponse("<h3>Authorized.</h3><p>You can close this tab and return to BotServer.</p>")
+            return HTMLResponse("<h3>Authorized.</h3><p>You can close this tab and return to AgenticBotPlatform.</p>")
         return HTMLResponse(
             "<h3>No matching pending authorization found.</h3>"
             "<p>It may have already expired — try connecting the server again from the dashboard.</p>"
@@ -1932,8 +1997,8 @@ def build_app() -> FastAPI:
         """Looser than _require_hermes_gateway_instance — accepts both
         Hermes backends. MCP-server registration is a property of the
         underlying `hermes` install's own config.yaml, not of which
-        subprocess-management strategy BotServer uses to talk to it, so
-        registering bot-server's MCP server works identically for
+        subprocess-management strategy AgenticBotPlatform uses to talk to it, so
+        registering agentic-bot-platform's MCP server works identically for
         hermes_cli (no gateway/eviction needed at all — hermes_cli spawns
         a fresh `hermes -z` process per call, which re-reads config.yaml
         fresh every time) and hermes_gateway (needs the eviction dance
@@ -2186,7 +2251,7 @@ def build_app() -> FastAPI:
     async def api_hermes_enable_swarm_tools(instance_id: int):
         """Gives this Hermes instance's own agent the same cross-instance
         organizing ability Claude gets via this MCP server and api-backend
-        agents get via delegate_to_instance: registers bot-server's own
+        agents get via delegate_to_instance: registers agentic-bot-platform's own
         MCP server into the instance's mcp_servers config. For
         hermes_gateway this also evicts the cached backend so the NEXT
         call spawns a fresh gateway process that actually loads it
@@ -2198,7 +2263,7 @@ def build_app() -> FastAPI:
 
         instance = _require_hermes_backed_instance(instance_id)
         token = os.environ.get("DASHBOARD_TOKEN") or envfile.get_var("DASHBOARD_TOKEN")
-        registration = hermes_config.register_botserver_mcp_server(
+        registration = hermes_config.register_agenticbotplatform_mcp_server(
             hermes_home=instance.get("hermes_home"), dashboard_token=token, actor="dashboard",
         )
         note = "takes effect on this instance's next message"
@@ -2214,7 +2279,7 @@ def build_app() -> FastAPI:
         from bot import hermes_config
 
         instance = _require_hermes_backed_instance(instance_id)
-        removed = hermes_config.unregister_botserver_mcp_server(hermes_home=instance.get("hermes_home"), actor="dashboard")
+        removed = hermes_config.unregister_agenticbotplatform_mcp_server(hermes_home=instance.get("hermes_home"), actor="dashboard")
         if removed and instance.get("backend") == "hermes_gateway":
             await router.evict_backend(
                 "hermes_gateway", model_override=instance.get("model"), hermes_home=instance.get("hermes_home")
@@ -2225,8 +2290,8 @@ def build_app() -> FastAPI:
     async def api_hermes_swarm_tools_status():
         """For the dashboard's swarm-tools panel: every Hermes-backed
         instance (hermes_cli or hermes_gateway) with whether it currently
-        has bot-server's MCP server registered in its own config (see
-        hermes_config.is_botserver_mcp_registered) — a config-file read,
+        has agentic-bot-platform's MCP server registered in its own config (see
+        hermes_config.is_agenticbotplatform_mcp_registered) — a config-file read,
         not a live "is the running gateway actually connected to it"
         check, since that would require spawning/probing every
         instance's gateway just to render a panel."""
@@ -2241,7 +2306,7 @@ def build_app() -> FastAPI:
                 "name": instance["name"],
                 "backend": instance["backend"],
                 "hermes_home": instance.get("hermes_home"),
-                "swarm_tools_enabled": hermes_config.is_botserver_mcp_registered(instance.get("hermes_home")),
+                "swarm_tools_enabled": hermes_config.is_agenticbotplatform_mcp_registered(instance.get("hermes_home")),
             })
         return {"instances": rows}
 
@@ -2965,7 +3030,7 @@ def build_app() -> FastAPI:
     # on_message) — genuinely processed, genuinely replied to. Nothing here
     # is simulated: the sender's identity comes from real request auth (see
     # _caller_thread_identity), not a client-declared value, and is logged
-    # as platform="app" — the Bot Server App's own real channel — rather
+    # as platform="app" — the Agentic Bot Platform App's own real channel — rather
     # than disguised as whichever platform the target instance happens to
     # also use. Never touches outbox.py or any platform SDK.
     @app.post("/api/chat/send-to-bot", dependencies=[Depends(_require_token_or_api_key)])
@@ -3267,7 +3332,7 @@ def build_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="no such conversation")
         msg_id = db.create_server_chat_message(conversation_id, device_id, text)
         # Admin control surface plan, Section 3 — the permanent group
-        # room doubles as the channel you talk to BotServer in; a no-op
+        # room doubles as the channel you talk to AgenticBotPlatform in; a no-op
         # for direct (1:1) conversations and when no admin instance is
         # configured (see server_chat_admin.py's own guards).
         from bot import server_chat_admin
@@ -3650,7 +3715,7 @@ def build_app() -> FastAPI:
         return {"ok": True, "purged": n}
 
     # ------------------------------------------------------------ peers ----
-    # Linking this BotServer installation to another one (see bot/peers.py)
+    # Linking this AgenticBotPlatform installation to another one (see bot/peers.py)
     # so an admin running several boxes (a home PC, a laptop, a VPS) can
     # see and manage every one of them from any single dashboard.
     #
@@ -3710,7 +3775,7 @@ def build_app() -> FastAPI:
         my_base_url = (payload.get("my_base_url") or "").strip() or None
         if not name or not pairing_token:
             raise HTTPException(status_code=400, detail="payload must be {name, pairing_token, my_base_url?}")
-        my_name = os.environ.get("BOTSERVER_NAME") or socket.gethostname()
+        my_name = os.environ.get("AGENTICBOTPLATFORM_NAME") or socket.gethostname()
         try:
             peer = await peers.link_peer(name, pairing_token, my_name, my_base_url)
         except peers.PeerError as exc:
@@ -3726,7 +3791,7 @@ def build_app() -> FastAPI:
         api_key = payload.get("api_key") or ""
         base_url = payload.get("base_url")
         pairing_token = payload.get("pairing_token") or ""
-        my_name = os.environ.get("BOTSERVER_NAME") or socket.gethostname()
+        my_name = os.environ.get("AGENTICBOTPLATFORM_NAME") or socket.gethostname()
         try:
             result = peers.accept_handshake(name, api_key, base_url, my_name, pairing_token)
         except peers.PeerError as exc:
@@ -3948,7 +4013,7 @@ def build_app() -> FastAPI:
         if not path.is_file():
             raise HTTPException(status_code=404, detail="APK file no longer available — ask the desktop app to send again")
         db.mark_apk_push_downloaded(push_id)
-        return FileResponse(path, media_type="application/vnd.android.package-archive", filename="BotServer.apk")
+        return FileResponse(path, media_type="application/vnd.android.package-archive", filename="AgenticBotPlatform.apk")
 
     # ------------------------------------------------------------ devices --
     # Live presence view — /api/devices for the initial snapshot on screen
@@ -3978,7 +4043,7 @@ def build_app() -> FastAPI:
         # be logged. Either is accepted; the header wins if both are present.
         supplied = x_dashboard_token or token
         expected = os.environ.get("DASHBOARD_TOKEN")
-        authed = bool(expected and supplied == expected)
+        authed = bool(expected and _tokens_match(supplied, expected))
         device_id = None if authed else db.verify_api_key(supplied or "")
         if not authed and device_id is None:
             await websocket.close(code=4401)

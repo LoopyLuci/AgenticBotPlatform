@@ -1,4 +1,4 @@
-"""Shared per-tool-call execution helper for backends that run BotServer's
+"""Shared per-tool-call execution helper for backends that run AgenticBotPlatform's
 own tool-use loop (currently ApiBackend and CustomModelBackend) — approval
 gating, execution, and auto-checkpointing in one place so the two
 backends can't silently drift on this shared, security-relevant path.

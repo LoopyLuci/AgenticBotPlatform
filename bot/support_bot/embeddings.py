@@ -13,7 +13,7 @@ module never imports `sentence_transformers` at module scope — only
 lazily, inside `_load_backend()`, and only when
 `config/backends.yaml`'s `support_bot.tier1_5_embeddings.enabled` is
 true AND something actually calls `classify_via_embeddings()`. A
-BotServer install that never enables this tier never needs the
+AgenticBotPlatform install that never enables this tier never needs the
 dependency installed at all; one that does gets a clear, actionable
 error (not a silent ImportError swallowed into "unknown") if it enabled
 the flag without installing the extra.

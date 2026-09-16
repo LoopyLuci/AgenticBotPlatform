@@ -254,7 +254,7 @@ CREATE TABLE IF NOT EXISTS pairing_codes (
     denied_at    TEXT
 );
 
--- Another BotServer installation this one is linked to (see bot/peers.py)
+-- Another AgenticBotPlatform installation this one is linked to (see bot/peers.py)
 -- — e.g. a home PC and a laptop each running their own independent bot
 -- fleet, linked so either admin can see and manage the other's bots from
 -- their own dashboard, without merging databases or sharing one Telegram
@@ -541,7 +541,7 @@ CREATE TABLE IF NOT EXISTS server_chat_messages (
     thumbnail_path    TEXT,
     -- Admin control surface plan, Section 3 — 'message' (default, an
     -- ordinary chat message) or 'approval_request' (a dangerous-tool
-    -- approval prompt posted by the BotServer admin pipeline, which the
+    -- approval prompt posted by the AgenticBotPlatform admin pipeline, which the
     -- UI renders with Approve/Deny buttons instead of plain text).
     -- approval_id is only ever set for the latter, and only ever
     -- resolves through the SAME bot.agent_runtime.approval state
@@ -836,7 +836,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_settings_instance_null
 -- Global emergency-stop sentinel (see bot/agent_runtime/estop.py) —
 -- mirrors Hermes Agent's own estop.py concept (a global pause checked by
 -- long-running components before starting new work), DB-backed here
--- instead of a sentinel file since BotServer already centralizes runtime
+-- instead of a sentinel file since AgenticBotPlatform already centralizes runtime
 -- state in SQLite. Always exactly one row (id=1); checked at the top of
 -- every new-turn/new-dispatch entry point, never mid-turn — an
 -- already-running turn finishes rather than being killed.
@@ -1056,7 +1056,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
     api_key_cols = {row["name"] for row in conn.execute("PRAGMA table_info(api_keys)").fetchall()}
     if "kind" not in api_key_cols:
         # 'device' (default, every key minted before this column existed)
-        # vs 'peer_server' — a credential a linked BotServer installation
+        # vs 'peer_server' — a credential a linked AgenticBotPlatform installation
         # uses to call this one (see bot/peers.py). Same auth check either
         # way (verify_api_key doesn't care), but keeping them tagged lets
         # the dashboard show "Paired Devices" and "Linked Servers" as
@@ -2874,7 +2874,7 @@ def get_api_key(key_id: int) -> Optional[sqlite3.Row]:
 
 
 # ------------------------------------------------------- peer servers -----
-# Other BotServer installations this one is linked to — see SCHEMA's
+# Other AgenticBotPlatform installations this one is linked to — see SCHEMA's
 # peer_servers comment and bot/peers.py for the linking handshake.
 
 def create_peer_server(name: str, base_url: str, outbound_api_key: str, inbound_api_key_id: int) -> int:
@@ -3167,11 +3167,11 @@ def redeem_mesh_token(push_id: int, token: str) -> bool:
 
 
 SERVER_CHAT_DESKTOP_DEVICE_ID = 0
-# The synthetic sender identity for the BotServer admin pipeline's own
+# The synthetic sender identity for the AgenticBotPlatform admin pipeline's own
 # replies in the permanent group room (Admin control surface plan,
 # Section 3) — never a real api_keys.id (those start at 1), never the
 # desktop sentinel (0), so a client can distinguish "a message from
-# BotServer itself" from every real device's own messages.
+# AgenticBotPlatform itself" from every real device's own messages.
 SERVER_CHAT_BOT_DEVICE_ID = -1
 
 
@@ -3179,7 +3179,7 @@ def device_label(device_id: int) -> str:
     if device_id == SERVER_CHAT_DESKTOP_DEVICE_ID:
         return "Desktop"
     if device_id == SERVER_CHAT_BOT_DEVICE_ID:
-        return "BotServer"
+        return "AgenticBotPlatform"
     row = get_conn().execute(
         "SELECT label, revoked_at FROM api_keys WHERE id=?", (device_id,)
     ).fetchone()
@@ -3444,7 +3444,7 @@ def get_message(message_id: int) -> Optional[sqlite3.Row]:
 
 def delete_message(message_id: int) -> bool:
     """Deletes one row from this bot's local message history (plus its
-    attachment file, if any) — a log-management action on BotServer's
+    attachment file, if any) — a log-management action on AgenticBotPlatform's
     own stored copy, not a retraction from the real Telegram/Discord/etc
     conversation (this app has no such capability against those
     platforms). Unlike Server Chat's delete_server_chat_message, there's

@@ -1,6 +1,6 @@
 """Hand-authored training phrases for the Support Bot's intent classifier.
 
-Every management action BotServer exposes gets its own intent with a spread
+Every management action AgenticBotPlatform exposes gets its own intent with a spread
 of natural phrasings — this is the entire "training set" the pure-Python
 TF-IDF/centroid model in model.py learns from at import time. Add more
 phrasings here (not code) to improve recognition for a given intent.
@@ -343,18 +343,18 @@ EXAMPLES: list[tuple[str, str]] = [
     ("get rid of hook 5", "hook_remove"),
 
     # agent_settings_show
-    ("show agent settings for BotServer Control", "agent_settings_show"),
+    ("show agent settings for AgenticBotPlatform Control", "agent_settings_show"),
     ("what are the agent settings for X", "agent_settings_show"),
     ("show me X's agent config", "agent_settings_show"),
 
     # agent_settings_set_effort
     ("set X's worker effort to high", "agent_settings_set_effort"),
-    ("change the manager effort for BotServer Control to max", "agent_settings_set_effort"),
+    ("change the manager effort for AgenticBotPlatform Control to max", "agent_settings_set_effort"),
     ("set X's effort level to medium", "agent_settings_set_effort"),
 
     # auto_manage_show
     ("show auto-manage settings for X", "auto_manage_show"),
-    ("is auto-manage on for BotServer Control", "auto_manage_show"),
+    ("is auto-manage on for AgenticBotPlatform Control", "auto_manage_show"),
     ("what's the auto-manage config for X", "auto_manage_show"),
 ]
 

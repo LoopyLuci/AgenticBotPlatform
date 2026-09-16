@@ -1,13 +1,13 @@
 """Direct Anthropic API backend — no dependency on any local app being
-open, and the one backend family where BotServer itself runs a real
+open, and the one backend family where AgenticBotPlatform itself runs a real
 tool-use loop (shell/file/git tools — see bot/agent_runtime/tools.py)
 instead of delegating to an external program's own agent loop. That's a
 deliberate architectural choice, not an oversight: for cli/ui/hermes_cli/
 hermes_gateway, the actual tool execution happens inside Claude Code,
-Claude Desktop, or Hermes Agent's own process, which BotServer doesn't
+Claude Desktop, or Hermes Agent's own process, which AgenticBotPlatform doesn't
 control and can't safely intercept mid-turn — only here (and in
 custom_model_backend.py, which shares this exact loop via
-bot/backends/native_backend.py), where BotServer itself decides what
+bot/backends/native_backend.py), where AgenticBotPlatform itself decides what
 runs, can /approve, /deny, /steer, and mid-turn tool-call-granularity
 control be fully real rather than simulated.
 

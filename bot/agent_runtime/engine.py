@@ -4,13 +4,13 @@ every backend, runs as a real asyncio.Task this module tracks, so "stop
 the thing that's running for this chat" is genuinely possible everywhere.
 
 What differs per backend is what "stop" and "steer" actually reach: for
-`api`, BotServer owns the tool loop itself (see bot/backends/api_backend.py
+`api`, AgenticBotPlatform owns the tool loop itself (see bot/backends/api_backend.py
 and tools.py/approval.py), so steering can inject a message at the next
 tool-call boundary and a cancelled task interrupts mid-loop. For
 `cli`/`hermes_cli`, cancelling this task also kills the underlying
 subprocess (see those backends' CancelledError handling) — a real stop,
 just at whole-request granularity, not a tool-call boundary, because
-there is no tool-call boundary BotServer can see inside those programs.
+there is no tool-call boundary AgenticBotPlatform can see inside those programs.
 For `ui`/`hermes_gateway`, cancelling only stops *us* from waiting on the
 result; the external app keeps doing whatever it was already doing — a
 real, documented limit of automating another program's UI/API rather than

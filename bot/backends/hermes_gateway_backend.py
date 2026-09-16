@@ -11,7 +11,7 @@ this session (not guessed from docs):
     process and port — but the underlying agent *gateway* (session store,
     MCP connections, cwd) is still the one shared machine-wide instance
     Hermes calls "single" gateway mode; there is currently no flag that
-    fully sandboxes agent state per Bot Server instance. This is worth
+    fully sandboxes agent state per Agentic Bot Platform instance. This is worth
     knowing (a prompt sent here can see the same sessions/MCP servers as
     the user's own interactive `hermes` usage) even though it doesn't
     block a working integration.
@@ -146,7 +146,7 @@ class HermesGatewayBackend(Backend):
             # Confirmed live: a persisted desktop_session_key can outlive
             # the actual Hermes session it names — its gateway process
             # died (this project's own hermes_gateway backends spawn a
-            # real subprocess per Backend object; a BotServer restart, or
+            # real subprocess per Backend object; a AgenticBotPlatform restart, or
             # this backend's own process exiting for any reason, discards
             # it) and Hermes's session store is in-memory/lazy (confirmed
             # against the real gateway source — a session has no state.db

@@ -5,7 +5,7 @@
 
 ## Context
 
-BotServer runs as a single Python process per install. Every write —
+AgenticBotPlatform runs as a single Python process per install. Every write —
 jobs, telemetry, chat history, config changes — needs to go somewhere,
 and SQLite (`check_same_thread=False`, WAL mode) was chosen for zero
 setup cost (no separate database server to install, configure, or back
