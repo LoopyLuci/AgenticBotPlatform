@@ -20,7 +20,6 @@
   const resizeHandle = document.getElementById('term-resize-handle');
   const btnMinimize = document.getElementById('term-minimize');
   const btnMaximize = document.getElementById('term-maximize');
-  const reopenBtn = document.getElementById('term-reopen-btn');
   const tabTerminal = document.getElementById('term-tab-terminal');
   const tabActivity = document.getElementById('term-tab-activity');
   const viewTerminal = document.getElementById('term-view-terminal');
@@ -38,17 +37,22 @@
   let panelHeight = 320;
   let unseenActivity = 0;
 
-  // The static HTML starts the panel collapsed (so it doesn't cover the
-  // GUI before the user ever asks for it) but starts the reopen button
-  // hidden too, independently — nothing synced the two at load time, so
-  // the panel was permanently, unrecoverably minimized with no visible
-  // way to bring it back. setCollapsed() below only runs in response to
-  // a button click, never at page load, so this has to be explicit here.
-  reopenBtn.classList.toggle('hidden', !panel.classList.contains('collapsed'));
-
+  // One button toggles both directions — a separate floating "reopen"
+  // button used to exist here, but it rendered UNDER the collapsed
+  // panel's own header bar (a genuine z-index bug: the header stays
+  // visible at z-index 400 even while collapsed, the floating button sat
+  // at 399), making it genuinely invisible/unreachable behind that bar.
+  // The header itself never goes away when collapsed, so its own
+  // minimize/restore button is reachable either way — no second control
+  // is needed at all.
+  function updateMinimizeButton() {
+    const collapsed = panel.classList.contains('collapsed');
+    btnMinimize.textContent = collapsed ? '⌃' : '━';
+    btnMinimize.title = collapsed ? 'Open Terminal' : 'Minimize';
+  }
   function setCollapsed(collapsed) {
     panel.classList.toggle('collapsed', collapsed);
-    reopenBtn.classList.toggle('hidden', !collapsed);
+    updateMinimizeButton();
     if (!collapsed) {
       unseenActivity = 0;
       updateActivityBadge();
@@ -56,8 +60,8 @@
       fitXterm();
     }
   }
-  btnMinimize.onclick = () => setCollapsed(true);
-  reopenBtn.onclick = () => setCollapsed(false);
+  updateMinimizeButton();
+  btnMinimize.onclick = () => setCollapsed(!panel.classList.contains('collapsed'));
   btnMaximize.onclick = () => {
     panel.classList.toggle('maximized');
     fitXterm();
@@ -89,7 +93,16 @@
     tabActivity.classList.toggle('active', !isTerminal);
     viewTerminal.classList.toggle('active', isTerminal);
     viewActivity.classList.toggle('active', !isTerminal);
-    if (!isTerminal) { unseenActivity = 0; updateActivityBadge(); }
+    if (!isTerminal) {
+      unseenActivity = 0;
+      updateActivityBadge();
+      // Self-heals a first load that raced the dashboard token not being
+      // set yet (or any other transient /api/activity failure) — rather
+      // than staying empty forever because the one-shot call at panel
+      // init happened to fail, retry every time a human actually looks
+      // at this tab and finds nothing there yet.
+      if (!activityList.children.length) loadInitialActivity();
+    }
     if (isTerminal) fitXterm();
   }
   tabTerminal.onclick = () => selectTab('terminal');
