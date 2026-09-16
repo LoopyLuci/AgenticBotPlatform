@@ -195,6 +195,38 @@ fn resolve_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf), String> {
     Ok((root, python))
 }
 
+/// Runs `python -c "import bot.main"` in `project_root` and returns
+/// whatever it printed (stdout+stderr combined) if that failed — see the
+/// call site in spawn_internal's crash-detection loop for why this exists.
+/// Safe to run any number of times: importing bot.main executes every
+/// top-level statement in the file but never calls main() itself, which
+/// only happens behind `if __name__ == "__main__":`.
+fn diagnose_startup_crash(
+    project_root: &std::path::Path,
+    python: &std::path::Path,
+) -> Option<String> {
+    let mut cmd = Command::new(python);
+    cmd.args(["-c", "import bot.main"])
+        .current_dir(project_root)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let output = no_window(&mut cmd).output().ok()?;
+    if output.status.success() {
+        return None;
+    }
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
 fn python_actually_works(python: &std::path::Path) -> bool {
     if !python.is_file() {
         return false;
@@ -351,6 +383,64 @@ fn winget_install_python_311() -> bool {
         .unwrap_or(false)
 }
 
+/// A representative sample of this project's heaviest compiled/native
+/// dependencies (Pillow, cryptography, numpy — see requirements.txt).
+/// `python_actually_works` only proves the launcher stub itself starts;
+/// a Python that starts fine can still crash the whole process outright
+/// (no catchable Python exception, no output at all) importing a .pyd
+/// compiled against a different interpreter build/CRT than the one
+/// pyvenv.cfg now points at — confirmed live as exactly this failure mode
+/// one repair tier further than the "No Python at" bug this file already
+/// fixes once. Running the import in a SEPARATE subprocess (never
+/// in-process here) means a hard crash on the target machine only fails
+/// this check, instead of taking the whole desktop app down with it.
+fn python_fully_works(python: &std::path::Path) -> bool {
+    if !python_actually_works(python) {
+        return false;
+    }
+    let mut cmd = Command::new(python);
+    cmd.args(["-c", "import PIL.Image, cryptography, numpy"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    no_window(&mut cmd)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Reinstalls this project's dependencies into the bundled venv using its
+/// OWN launcher stub (already repointed at a working interpreter by
+/// rewrite_pyvenv_cfg) — replaces whatever compiled wheels shipped with
+/// this release with ones actually built for the interpreter running on
+/// this machine, rather than trusting the dev machine's originals to be
+/// binary-compatible with it. Slower and needs network, so this only ever
+/// runs as a second-tier repair, after a cheap pyvenv.cfg-only fix has
+/// already been tried and failed python_fully_works().
+fn reinstall_dependencies(
+    root: &std::path::Path,
+    venv_python: &std::path::Path,
+) -> Result<(), String> {
+    let requirements = root.join("requirements.txt");
+    if !requirements.is_file() {
+        return Err(format!(
+            "requirements.txt not found at {}",
+            requirements.display()
+        ));
+    }
+    let mut cmd = Command::new(venv_python);
+    cmd.args(["-m", "pip", "install", "--upgrade", "--no-input", "-r"])
+        .arg(&requirements)
+        .current_dir(root);
+    let status = no_window(&mut cmd)
+        .status()
+        .map_err(|e| format!("failed to run pip via {}: {e}", venv_python.display()))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("pip install -r requirements.txt exited {status}"))
+    }
+}
+
 fn repair_bundled_venv(root: &std::path::Path, python: &std::path::Path) -> Result<(), String> {
     let mut replacement = find_compatible_system_python();
     if replacement.is_none() && winget_install_python_311() {
@@ -366,15 +456,25 @@ fn repair_bundled_venv(root: &std::path::Path, python: &std::path::Path) -> Resu
     })?;
     let pyvenv_cfg = root.join(".venv").join("pyvenv.cfg");
     rewrite_pyvenv_cfg(&pyvenv_cfg, &replacement)?;
-    if python_actually_works(python) {
+    if python_fully_works(python) {
+        return Ok(());
+    }
+
+    // The launcher stub itself starts against the repointed interpreter,
+    // but something in the venv's existing site-packages doesn't load
+    // correctly under it (a different CPython build/CRT than these
+    // compiled wheels were built for). Reinstall fresh against whatever
+    // is actually running here instead of guessing at a third interpreter.
+    reinstall_dependencies(root, python)?;
+    if python_fully_works(python) {
         Ok(())
     } else {
         Err(format!(
-            "found a Python install at {} but the bundled venv still won't start after \
-             repairing {} — its installed packages may be incompatible with that \
-             interpreter's exact version",
-            replacement.display(),
-            pyvenv_cfg.display()
+            "found a Python install at {} and reinstalled this project's dependencies \
+             against it, but the bundled venv still won't fully start — see logs\\bot.log \
+             or run `python -m bot.main` directly from a terminal in the install directory \
+             for the full traceback",
+            replacement.display()
         ))
     }
 }
@@ -519,6 +619,8 @@ fn spawn_internal(app: &AppHandle, state: &State<ServerState>) -> Result<(), Str
     );
 
     let handle = app.clone();
+    let diag_python = python.clone();
+    let diag_root = project_root.clone();
     thread::spawn(move || {
         let mut sys = System::new();
         let sys_pid = Pid::from_u32(pid);
@@ -572,13 +674,37 @@ fn spawn_internal(app: &AppHandle, state: &State<ServerState>) -> Result<(), Str
                     if let Ok(mut guard) = state.child.lock() {
                         *guard = None;
                     }
+                    let mut line = format!(
+                        "bot.main exited: {status} — if no error appears above, it produced \
+                         no output before dying (check logs/bot.log, or run `python -m bot.main` \
+                         directly from a terminal in the install directory for the full traceback)"
+                    );
+                    // A crash this early (before setup_logging() even runs,
+                    // or a native import crashing the interpreter outright)
+                    // can leave both stdout/stderr and logs/bot.log
+                    // completely empty — confirmed live: a second machine's
+                    // silent exit 120/103 with zero captured output, forcing
+                    // the user to manually re-run this exact command from a
+                    // terminal to get anything actionable. Running it here
+                    // automatically means the boot log always has a real
+                    // traceback for a startup crash, not just a bare exit
+                    // code — a plain module import runs every top-level
+                    // statement bot.main itself would (dotenv, token
+                    // generation, LOG_DIR creation) without ever reaching
+                    // the `if __name__ == "__main__":` guard, so it can't
+                    // start a second bot instance or bind the dashboard
+                    // port out from under anything.
+                    if !status.success() {
+                        if let Some(diag) = diagnose_startup_crash(&diag_root, &diag_python) {
+                            line.push_str(
+                                "\n\ndiagnostic `python -c \"import bot.main\"` output:\n",
+                            );
+                            line.push_str(&diag);
+                        }
+                    }
                     let payload = LogLine {
                         stream: "stderr".into(),
-                        line: format!(
-                            "bot.main exited: {status} — if no error appears above, it produced \
-                             no output before dying (check logs/bot.log, or run `python -m bot.main` \
-                             directly from a terminal in the install directory for the full traceback)"
-                        ),
+                        line,
                     };
                     push_backlog(&state, payload.clone());
                     let _ = handle.emit("server-log", payload);
