@@ -4909,6 +4909,14 @@ async function autoFillToken() {
   }
 }
 
+// Set by applyServerStatus() the moment a "server-status" event reports
+// the child process has exited — checked by the background retry loop in
+// initTauriBoot() so it can stop silently polling a port nothing will ever
+// answer on again, instead of looping forever with a stale "still trying"
+// message that used to fight the real "Server process exited" one for the
+// same DOM element.
+let serverConfirmedExited = false;
+
 async function initTauriBoot() {
   const { listen } = window.__TAURI__.event;
   const { invoke } = window.__TAURI__.core;
@@ -4949,6 +4957,12 @@ async function initTauriBoot() {
   function applyServerStatus({ running, pid }) {
     document.getElementById('boot-pid').textContent = pid || '—';
     if (!running) {
+      // Also tells the "waiting for the dashboard API" retry loop below
+      // to give up — without this it can't distinguish "not started yet"
+      // from "started and already died," and used to keep silently
+      // HTTP-polling forever, its own stale "still trying in the
+      // background" message overwriting this exact one on every attempt.
+      serverConfirmedExited = true;
       document.getElementById('boot-status').innerHTML = '';
       const err = document.createElement('span');
       err.className = 'boot-error';
@@ -4988,6 +5002,7 @@ async function initTauriBoot() {
     expandBoot();
   };
   document.getElementById('btn-server-restart').onclick = async () => {
+    serverConfirmedExited = false; // give the new attempt a clean slate
     document.getElementById('boot-lines').innerHTML = '';
     document.getElementById('boot-spinner').classList.remove('hidden');
     document.getElementById('boot-status').textContent = 'Restarting…';
@@ -5008,6 +5023,13 @@ async function initTauriBoot() {
     bootLine('— ready —', 'meta');
     document.getElementById('boot-status').textContent = 'Ready.';
     hideBootOverlay();
+  } else if (serverConfirmedExited) {
+    // applyServerStatus() already showed the real "Server process
+    // exited, restart it above" message — no point overwriting that
+    // specific, actionable state with a generic "still trying" one, and
+    // no point starting a background poll loop against a port nothing
+    // will ever answer on again until a human clicks Restart.
+    bootLine('— bot.main exited before the dashboard API ever came up; not retrying automatically —', 'meta');
   } else {
     document.getElementById('boot-status').innerHTML = '';
     const err = document.createElement('span');
@@ -5021,16 +5043,24 @@ async function initTauriBoot() {
     // A slow-but-not-dead server (first-run JIT warmup, AV scanning a
     // freshly built exe, a one-off hiccup) shouldn't leave this panel
     // stuck showing a stale "timed out" error forever — keep checking
-    // until it actually answers, then recover to Ready like normal.
+    // until it actually answers, then recover to Ready like normal. Bails
+    // out early if the process is confirmed to have actually exited
+    // meanwhile, rather than polling a dead port forever with an
+    // increasingly misleading "still trying" message.
     (async () => {
       let recovered = false;
-      while (!recovered) {
+      while (!recovered && !serverConfirmedExited) {
         recovered = await waitForServerReady(10);
       }
-      bootLine('— ready —', 'meta');
-      document.getElementById('boot-status').textContent = 'Ready.';
-      setBootPill('ok', 'Agentic Bot Platform running');
-      hideBootOverlay();
+      if (recovered) {
+        bootLine('— ready —', 'meta');
+        document.getElementById('boot-status').textContent = 'Ready.';
+        setBootPill('ok', 'Agentic Bot Platform running');
+        hideBootOverlay();
+      }
+      // else: serverConfirmedExited is true — applyServerStatus() already
+      // put up the real "Server process exited" message; nothing more to
+      // do here but stop polling.
     })();
   }
   }
