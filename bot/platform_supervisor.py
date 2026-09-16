@@ -19,12 +19,23 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from bot import bot_instances
 
 logger = logging.getLogger("bot.platform_supervisor")
+
+# A crashed instance restarts itself with exponential backoff instead of
+# staying dead until someone notices and clicks restart — the same
+# "recover automatically" treatment every other background loop in this
+# app already gets. The attempt counter resets once an instance has gone
+# long enough without crashing again that it's clearly not stuck in a
+# tight failure loop.
+_RESTART_RESET_AFTER_S = 300.0
+_RESTART_MAX_BACKOFF_S = 60.0
+_restart_state: dict[int, dict[str, float]] = {}
 
 
 @dataclass
@@ -120,8 +131,36 @@ def _done_callback(instance_id: int, name: str) -> Any:
         handle = _handles.get(instance_id)
         if handle is not None and handle.task is task:
             _handles.pop(instance_id, None)
+        if exc is not None:
+            asyncio.create_task(_restart_after_crash(instance_id, name))
 
     return _cb
+
+
+async def _restart_after_crash(instance_id: int, name: str) -> None:
+    """Bring a crashed instance back up on its own, backing off if it
+    keeps crashing right away (a real config/code problem) instead of
+    hot-looping restarts, but recovering fast from a one-off transient
+    failure."""
+    now = time.monotonic()
+    state = _restart_state.setdefault(instance_id, {"attempt": 0, "last_crash": 0.0})
+    if now - state["last_crash"] > _RESTART_RESET_AFTER_S:
+        state["attempt"] = 0
+    state["attempt"] += 1
+    state["last_crash"] = now
+    delay = min(2 ** state["attempt"], _RESTART_MAX_BACKOFF_S)
+    logger.warning(
+        "bot instance %r (id=%s) crashed — restarting automatically in %.0fs (attempt %d)",
+        name, instance_id, delay, state["attempt"],
+    )
+    await asyncio.sleep(delay)
+    row = bot_instances.get_instance(instance_id)
+    if row is None or not row["enabled"] or instance_id in _handles:
+        return  # deleted, disabled, or already restarted (e.g. a manual restart) meanwhile
+    try:
+        await start_instance(row)
+    except Exception as exc:
+        logger.error("failed to auto-restart bot instance %r (id=%s) after crash: %s", name, instance_id, exc)
 
 
 async def start_instance(row: dict[str, Any]) -> None:
@@ -139,6 +178,7 @@ async def start_instance(row: dict[str, Any]) -> None:
 
 
 async def stop_instance(instance_id: int) -> None:
+    _restart_state.pop(instance_id, None)
     handle = _handles.pop(instance_id, None)
     if handle is None:
         return
