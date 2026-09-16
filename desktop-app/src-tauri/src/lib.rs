@@ -208,6 +208,8 @@ fn diagnose_startup_crash(
     let mut cmd = Command::new(python);
     cmd.args(["-c", "import bot.main"])
         .current_dir(project_root)
+        .env("PYTHONFAULTHANDLER", "1")
+        .env("PYTHONUNBUFFERED", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let output = no_window(&mut cmd).output().ok()?;
@@ -566,6 +568,19 @@ fn spawn_internal(app: &AppHandle, state: &State<ServerState>) -> Result<(), Str
     let mut cmd = Command::new(&python);
     cmd.args(["-m", "bot.main"])
         .current_dir(&project_root)
+        // PYTHONUNBUFFERED: stdout is block-buffered by default once it's
+        // not a real console (exactly the case here, piped to this Rust
+        // process) — a crash between a print()/log flush and the next one
+        // could silently lose whatever was sitting in that buffer,
+        // producing genuinely empty captured output even for an ordinary
+        // Python exception. PYTHONFAULTHANDLER: prints a low-level Python
+        // stack trace on a fatal signal (access violation, stack
+        // overflow) — the one class of crash an exception handler can
+        // never catch at all, confirmed as a real possibility here (a
+        // second machine's bot.main died with exit code 120 and zero
+        // output, even from a direct `python -c "import bot.main"` probe).
+        .env("PYTHONUNBUFFERED", "1")
+        .env("PYTHONFAULTHANDLER", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut child = no_window(&mut cmd)
