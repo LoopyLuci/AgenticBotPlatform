@@ -38,6 +38,14 @@
   let panelHeight = 320;
   let unseenActivity = 0;
 
+  // The static HTML starts the panel collapsed (so it doesn't cover the
+  // GUI before the user ever asks for it) but starts the reopen button
+  // hidden too, independently — nothing synced the two at load time, so
+  // the panel was permanently, unrecoverably minimized with no visible
+  // way to bring it back. setCollapsed() below only runs in response to
+  // a button click, never at page load, so this has to be explicit here.
+  reopenBtn.classList.toggle('hidden', !panel.classList.contains('collapsed'));
+
   function setCollapsed(collapsed) {
     panel.classList.toggle('collapsed', collapsed);
     reopenBtn.classList.toggle('hidden', !collapsed);
@@ -333,6 +341,66 @@
   window.onActivityEntry = function (entry) {
     if (entry.id <= lastSeenId) return; // already have it from the initial /api/activity load
     appendActivityRow(entry);
+  };
+
+  // ------------------------------------------------------ copy / save -----
+  // Both buttons act on whichever tab is currently active, so there's one
+  // pair of controls in the header instead of duplicating them per tab.
+  function terminalTabText() {
+    if (USE_REAL_SHELL && term) {
+      // xterm keeps the whole scrollback in term.buffer.active, not just
+      // what's currently painted on screen — walk every line, not just
+      // the visible viewport, so Save/Copy captures the full session.
+      const buf = term.buffer.active;
+      const lines = [];
+      for (let i = 0; i < buf.length; i++) {
+        const line = buf.getLine(i);
+        if (line) lines.push(line.translateToString(true));
+      }
+      // Trim trailing blank lines xterm pads the buffer with.
+      while (lines.length && lines[lines.length - 1] === '') lines.pop();
+      return lines.join('\n');
+    }
+    const output = document.getElementById('scoped-output');
+    return output ? output.textContent : '';
+  }
+
+  function activityTabText() {
+    const lines = [];
+    for (const row of activityList.children) {
+      if (row.classList.contains('a-hidden')) continue; // respect the active level/text filter
+      const ts = row.querySelector('.a-ts');
+      lines.push(`[${ts ? ts.textContent : '?'}] ${row.dataset.level} ${row.dataset.logger}: ${row.dataset.message}`);
+    }
+    return lines.join('\n');
+  }
+
+  function activeTabLabel() {
+    return tabTerminal.classList.contains('active') ? 'Terminal' : 'Activity';
+  }
+  function activeTabText() {
+    return tabTerminal.classList.contains('active') ? terminalTabText() : activityTabText();
+  }
+
+  document.getElementById('term-copy').onclick = () => {
+    const text = activeTabText();
+    if (!text) { showCopyToast('Nothing to copy yet.'); return; }
+    copyText(text, activeTabLabel());
+  };
+  document.getElementById('term-save').onclick = () => {
+    const text = activeTabText();
+    if (!text) { showCopyToast('Nothing to save yet.'); return; }
+    const label = activeTabLabel().toLowerCase();
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `abp-${label}-${stamp}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   };
 
   loadInstancesForSelect();
