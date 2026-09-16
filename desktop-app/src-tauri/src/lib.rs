@@ -210,6 +210,15 @@ fn diagnose_startup_crash(
         .current_dir(project_root)
         .env("PYTHONFAULTHANDLER", "1")
         .env("PYTHONUNBUFFERED", "1")
+        // Forces UTF-8 for stdio regardless of this machine's system code
+        // page — a non-UTF8 console code page (common on non-English
+        // Windows installs, but also just a plain/minimal one) can make
+        // Python's OWN exception-printing machinery raise
+        // UnicodeEncodeError trying to print a message containing a
+        // character the active code page can't represent, silently
+        // eating the very traceback that would explain the real crash.
+        .env("PYTHONUTF8", "1")
+        .env("PYTHONIOENCODING", "utf-8:backslashreplace")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let output = no_window(&mut cmd).output().ok()?;
@@ -443,6 +452,34 @@ fn reinstall_dependencies(
     }
 }
 
+/// Installs the Visual C++ Redistributable via winget — separate from
+/// Python itself, this is what compiled extension modules (cryptography's
+/// _rust.pyd, etc.) actually link against at runtime on Windows, and it is
+/// NOT something python.org's own installer bundles for third-party
+/// packages. A fresh/minimal Windows Server install very commonly lacks
+/// it entirely, which is the single most common real-world cause of "a
+/// compiled Python extension won't load, with no catchable exception at
+/// all" on Windows — a plausible, well-targeted explanation for a
+/// dependency-import crash that survives even a full reinstall of the
+/// exact same wheels (reinstalling identical wheels can't fix a missing
+/// SYSTEM dll they all link against).
+fn winget_install_vcredist() -> bool {
+    let mut cmd = Command::new("winget");
+    cmd.args([
+        "install",
+        "-e",
+        "--id",
+        "Microsoft.VCRedist.2015+.x64",
+        "--accept-source-agreements",
+        "--accept-package-agreements",
+        "--silent",
+    ]);
+    no_window(&mut cmd)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
 fn repair_bundled_venv(root: &std::path::Path, python: &std::path::Path) -> Result<(), String> {
     let mut replacement = find_compatible_system_python();
     if replacement.is_none() && winget_install_python_311() {
@@ -462,11 +499,19 @@ fn repair_bundled_venv(root: &std::path::Path, python: &std::path::Path) -> Resu
         return Ok(());
     }
 
-    // The launcher stub itself starts against the repointed interpreter,
-    // but something in the venv's existing site-packages doesn't load
-    // correctly under it (a different CPython build/CRT than these
-    // compiled wheels were built for). Reinstall fresh against whatever
-    // is actually running here instead of guessing at a third interpreter.
+    // Try the cheap, likely-real fix first: a missing system DLL these
+    // compiled wheels link against, not a wheel/interpreter mismatch.
+    winget_install_vcredist();
+    if python_fully_works(python) {
+        return Ok(());
+    }
+
+    // Still failing — the launcher stub itself starts against the
+    // repointed interpreter, but something in the venv's existing
+    // site-packages doesn't load correctly under it (a different CPython
+    // build than these compiled wheels were built for). Reinstall fresh
+    // against whatever is actually running here instead of guessing at a
+    // third interpreter.
     reinstall_dependencies(root, python)?;
     if python_fully_works(python) {
         Ok(())
@@ -543,6 +588,141 @@ mod pyvenv_repair_tests {
     }
 }
 
+#[cfg(test)]
+mod netstat_parsing_tests {
+    use super::parse_netstat_listening_pids;
+
+    const SAMPLE: &str = "\
+Active Connections
+
+  Proto  Local Address          Foreign Address        State           PID
+  TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       2164
+  TCP    0.0.0.0:445            0.0.0.0:0              LISTENING       4
+  TCP    0.0.0.0:8787           0.0.0.0:0              LISTENING       36600
+  TCP    127.0.0.1:8787         127.0.0.1:51022        ESTABLISHED     36600
+  TCP    [::]:8787              [::]:0                 LISTENING       36600
+";
+
+    #[test]
+    fn finds_pid_listening_on_the_target_port() {
+        assert_eq!(
+            parse_netstat_listening_pids(SAMPLE, 8787),
+            vec![36600, 36600]
+        );
+    }
+
+    #[test]
+    fn ignores_non_listening_states_on_the_same_port() {
+        // The ESTABLISHED row for :8787 must never contribute a PID —
+        // only LISTENING rows indicate something is bound to the port
+        // itself, which is the only thing a bind() conflict cares about.
+        let pids = parse_netstat_listening_pids(SAMPLE, 8787);
+        assert!(pids.iter().all(|&p| p == 36600));
+    }
+
+    #[test]
+    fn ignores_unrelated_ports() {
+        assert_eq!(parse_netstat_listening_pids(SAMPLE, 445), vec![4]);
+        assert!(parse_netstat_listening_pids(SAMPLE, 9999).is_empty());
+    }
+
+    #[test]
+    fn empty_input_yields_no_pids() {
+        assert!(parse_netstat_listening_pids("", 8787).is_empty());
+    }
+}
+
+/// bot/main.py's own DASHBOARD_PORT default (bot/main.py:178) — the
+/// desktop app has always hardcoded this same default itself (see
+/// desktop-app/ui/main.js's API_BASE), so this isn't introducing a new
+/// assumption, just naming the existing one for the port-conflict check
+/// below.
+const DASHBOARD_PORT: u16 = 8787;
+
+fn port_in_use(port: u16) -> bool {
+    std::net::TcpListener::bind(("127.0.0.1", port)).is_err()
+}
+
+fn dashboard_is_healthy(port: u16) -> bool {
+    ureq::get(&format!("http://127.0.0.1:{port}/healthz"))
+        .timeout(Duration::from_secs(2))
+        .call()
+        .is_ok()
+}
+
+/// PIDs currently LISTENING on `port`, parsed from `netstat -ano` — the
+/// standard way to map a port back to its owning process on Windows
+/// without pulling in a new dependency for this one lookup.
+fn pids_listening_on_port(port: u16) -> Vec<u32> {
+    let output = match Command::new("netstat").arg("-ano").output() {
+        Ok(o) => o,
+        Err(_) => return Vec::new(),
+    };
+    parse_netstat_listening_pids(&String::from_utf8_lossy(&output.stdout), port)
+}
+
+/// Pure parsing logic split out from pids_listening_on_port() purely so
+/// it's testable against fixed sample text without actually shelling out
+/// to netstat.
+fn parse_netstat_listening_pids(netstat_output: &str, port: u16) -> Vec<u32> {
+    let needle = format!(":{port}");
+    let mut pids = Vec::new();
+    for line in netstat_output.lines() {
+        if !line.contains("LISTENING") {
+            continue;
+        }
+        // netstat -ano columns: Proto  Local Address  Foreign Address  State  PID
+        let mut cols = line.split_whitespace();
+        let Some(local_addr) = cols.nth(1) else {
+            continue;
+        };
+        if !local_addr.ends_with(&needle) {
+            continue;
+        }
+        if let Some(pid_str) = line.split_whitespace().last() {
+            if let Ok(pid) = pid_str.parse::<u32>() {
+                pids.push(pid);
+            }
+        }
+    }
+    pids
+}
+
+/// Stops only OUR OWN bot.main process(es) found listening on `port` —
+/// verified by command line containing "bot.main" before ever touching
+/// it, never an arbitrary unrelated process that happens to be using
+/// this port on this machine. Best-effort and silent: the caller's own
+/// bounded wait-and-recheck loop is what actually decides whether this
+/// worked, not this function's return value.
+fn stop_our_python_on_port(port: u16) {
+    let pids = pids_listening_on_port(port);
+    if pids.is_empty() {
+        return;
+    }
+    let mut sys = System::new();
+    sys.refresh_processes(ProcessesToUpdate::All, true);
+    for pid in pids {
+        let Some(process) = sys.process(Pid::from_u32(pid)) else {
+            continue;
+        };
+        let cmd_line = process
+            .cmd()
+            .iter()
+            .map(|s| s.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join(" ");
+        if !cmd_line.contains("bot.main") {
+            continue;
+        }
+        let mut kill_cmd = Command::new("taskkill");
+        kill_cmd
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let _ = no_window(&mut kill_cmd).status();
+    }
+}
+
 fn spawn_internal(app: &AppHandle, state: &State<ServerState>) -> Result<(), String> {
     let mut guard = state
         .child
@@ -565,6 +745,38 @@ fn spawn_internal(app: &AppHandle, state: &State<ServerState>) -> Result<(), Str
         ));
     }
 
+    // Confirmed live (reproduced on the dev machine while testing this
+    // exact release): a leftover bot.main from a previous run/crash can
+    // still be holding DASHBOARD_PORT when this one tries to bind it,
+    // which uvicorn reports as "[Errno 10048] ... only one usage of each
+    // socket address" and then the whole process exits — with THAT error
+    // line genuinely printed, but a small, generic-looking exit code
+    // (varies: 1, 3, ...) that gave no hint of "port conflict" on its
+    // own. If something is already answering there, it's a real,
+    // still-healthy previous instance — don't spawn a duplicate that can
+    // only fail the same way; just adopt the fact that the dashboard is
+    // already up. If the port is bound but nothing answers (a genuine
+    // zombie), stop only OUR OWN leftover python.exe process(es) there —
+    // verified by command line, never an arbitrary unrelated process —
+    // then proceed to spawn fresh.
+    if port_in_use(DASHBOARD_PORT) {
+        if dashboard_is_healthy(DASHBOARD_PORT) {
+            return Ok(());
+        }
+        stop_our_python_on_port(DASHBOARD_PORT);
+        // Windows can take a moment to actually release a just-closed
+        // socket even after the owning process is gone (TIME_WAIT-style
+        // delay) — a short, bounded wait here is cheaper and more
+        // reliable than immediately racing a bind that's likely to fail
+        // anyway and starting this whole crash cycle over again.
+        for _ in 0..20 {
+            if !port_in_use(DASHBOARD_PORT) {
+                break;
+            }
+            thread::sleep(Duration::from_millis(250));
+        }
+    }
+
     let mut cmd = Command::new(&python);
     cmd.args(["-m", "bot.main"])
         .current_dir(&project_root)
@@ -581,6 +793,12 @@ fn spawn_internal(app: &AppHandle, state: &State<ServerState>) -> Result<(), Str
         // output, even from a direct `python -c "import bot.main"` probe).
         .env("PYTHONUNBUFFERED", "1")
         .env("PYTHONFAULTHANDLER", "1")
+        // See diagnose_startup_crash()'s identical env vars for why —
+        // forces UTF-8 stdio regardless of this machine's system code
+        // page, so Python's own exception printer can't silently eat a
+        // traceback by failing to encode it.
+        .env("PYTHONUTF8", "1")
+        .env("PYTHONIOENCODING", "utf-8:backslashreplace")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut child = no_window(&mut cmd)
