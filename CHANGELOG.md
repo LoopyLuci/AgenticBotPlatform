@@ -8,6 +8,25 @@ app's own version (the Android app versions independently — see its own
 
 ## [Unreleased]
 
+### Added
+- A bot instance (Telegram/Discord/Slack/Matrix/WhatsApp) that crashes
+  now restarts itself automatically with backoff instead of sitting
+  dead until someone notices in the dashboard and clicks restart. A
+  deliberate stop, or a disabled/deleted instance, never triggers a
+  restart.
+- A new Diagnostics tab (dashboard and desktop app): system info,
+  local-only self-healing/error telemetry counters (crash reports
+  written, bot-instance crashes and auto-restarts, warnings/errors/
+  criticals logged), recent self-healing events, a crash-report list,
+  and a "Download support bundle" button that zips everything useful
+  for a bug report — system info, telemetry, recent crash reports, and
+  the bot.log tail — into one file. Every CRITICAL-level event (reserved
+  for genuinely uncaught exceptions and unrecoverable startup failures)
+  now also writes a structured JSON crash report with the full
+  traceback and recent Activity-tab context. Nothing here is ever sent
+  anywhere automatically — it's all local, viewed in the dashboard, and
+  exported only when a human clicks the button.
+
 ### Changed
 - Renamed the project from BotServer to AgenticBotPlatform (a name
   collision with unrelated existing software). Covers display strings,
