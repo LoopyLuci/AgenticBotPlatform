@@ -1,6 +1,6 @@
 [package]
 name = "agentic-bot-platform"
-version = "0.7.16"
+version = "0.7.17"
 description = "All-in-one desktop shell for Agentic Bot Platform: boots and supervises the Python bot process and hosts its dashboard in one window."
 edition = "2021"
 
