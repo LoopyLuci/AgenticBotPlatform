@@ -1,7 +1,7 @@
 """Ephemeral TURN credentials for the Android mesh transport's WebRTC
 fallback (see android-app's WebRtcMeshClient.kt) — the standard RFC 5766-
 style "shared secret" mechanism coturn's REST API auth (`use-auth-secret`)
-implements natively, so BotServer never runs a TURN relay itself or keeps a
+implements natively, so AgenticBotPlatform never runs a TURN relay itself or keeps a
 TURN user database: it just mints short-lived username/credential pairs
 from one secret shared with the actual coturn process, which verifies them
 independently using the exact same HMAC. See docs/turn-server-setup.md for

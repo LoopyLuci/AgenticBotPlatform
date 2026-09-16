@@ -8,11 +8,11 @@ plugins {
 }
 
 android {
-    namespace = "com.botserver.mobile"
+    namespace = "com.agenticbotplatform.mobile"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.botserver.mobile"
+        applicationId = "com.agenticbotplatform.mobile"
         minSdk = 26
         targetSdk = 35
         versionCode = 16

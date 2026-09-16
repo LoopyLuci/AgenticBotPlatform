@@ -21,18 +21,18 @@ from pathlib import Path
 # fresh from the current bot/support_bot/training_data.py. See
 # model_io.py's own comment on CURRENT_PATH for the full explanation.
 os.environ.setdefault(
-    "BOTSERVER_SUPPORT_BOT_MODEL_PATH",
-    str(Path(tempfile.gettempdir()) / "botserver_pytest_support_bot_model.json"),
+    "AGENTICBOTPLATFORM_SUPPORT_BOT_MODEL_PATH",
+    str(Path(tempfile.gettempdir()) / "agenticbotplatform_pytest_support_bot_model.json"),
 )
 # Same rationale, for bot/support_bot/module_manifest.py's per-Knowledge-
 # Module persisted models and manifest — see that module's own comment.
 os.environ.setdefault(
-    "BOTSERVER_SUPPORT_BOT_MODULES_DIR",
-    str(Path(tempfile.gettempdir()) / "botserver_pytest_support_bot_modules"),
+    "AGENTICBOTPLATFORM_SUPPORT_BOT_MODULES_DIR",
+    str(Path(tempfile.gettempdir()) / "agenticbotplatform_pytest_support_bot_modules"),
 )
 os.environ.setdefault(
-    "BOTSERVER_SUPPORT_BOT_MANIFEST_PATH",
-    str(Path(tempfile.gettempdir()) / "botserver_pytest_support_bot_manifest.json"),
+    "AGENTICBOTPLATFORM_SUPPORT_BOT_MANIFEST_PATH",
+    str(Path(tempfile.gettempdir()) / "agenticbotplatform_pytest_support_bot_manifest.json"),
 )
 
 import pytest

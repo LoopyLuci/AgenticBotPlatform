@@ -1,7 +1,7 @@
-# Bot Server — Android app
+# Agentic Bot Platform — Android app
 
 Kotlin + Jetpack Compose + Material 3 native app for pairing with a running
-BotServer instance over Tailscale (see `../docs/mobile-access.md`). Mirrors
+AgenticBotPlatform instance over Tailscale (see `../docs/mobile-access.md`). Mirrors
 the desktop dashboard's Chat, Support Bot, Sessions, Jobs, and Bots tabs
 (seven bottom-nav tabs total), plus QR-code pairing and push notifications
 for new inbound messages. Every chat composer (Chat and Support) pops the
@@ -30,13 +30,13 @@ Firebase project, so `FirebaseMessaging` will never successfully register a
 token against it. Real push notifications need:
 
 1. Create a free project at https://console.firebase.google.com.
-2. Add an Android app to it with package name `com.botserver.mobile`.
+2. Add an Android app to it with package name `com.agenticbotplatform.mobile`.
 3. Download the real `google-services.json` it gives you and replace
    `app/google-services.json` in this repo with it.
-4. On the BotServer side, generate a service account key for that same
+4. On the AgenticBotPlatform side, generate a service account key for that same
    Firebase project (Project settings → Service accounts → Generate new
    private key), save the JSON somewhere on the server machine, and set
-   `FCM_SERVICE_ACCOUNT_JSON=<path to that file>` in BotServer's `.env`.
+   `FCM_SERVICE_ACCOUNT_JSON=<path to that file>` in AgenticBotPlatform's `.env`.
    `bot/push.py` is a no-op until this is set — nothing breaks if you skip
    it, you just won't get push notifications, only the app's normal 2s
    chat polling while it's open.
@@ -69,6 +69,6 @@ token against it. Real push notifications need:
   The manual host/key entry fallback on the pairing screen exists
   specifically so pairing still works without ever exercising the camera
   path — test that path first if you haven't scanned a real code yet.
-- **The `botserver://pair` deep link is parsed but not yet wired** to
+- **The `agenticbotplatform://pair` deep link is parsed but not yet wired** to
   `MainActivity`'s launch intent (see the `TODO` there) — QR scan is the
   fully-wired primary path.

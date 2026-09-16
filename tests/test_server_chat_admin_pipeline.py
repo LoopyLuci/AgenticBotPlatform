@@ -1,5 +1,5 @@
 """bot/server_chat_admin.py — the permanent Server Chat group room
-doubling as the channel you talk to BotServer in (Section 3 of the
+doubling as the channel you talk to AgenticBotPlatform in (Section 3 of the
 "Admin control surface" plan). Every test mocks bot.router.router.ask
 directly — never a real LLM call.
 """

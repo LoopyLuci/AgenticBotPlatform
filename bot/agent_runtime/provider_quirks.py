@@ -93,7 +93,7 @@ def profile_for(catalog_id: Optional[str], base_url: str) -> Optional[QuirkProfi
 # per-tool usage stats, same purpose as any provider's User-Agent
 # convention. Always this project's own honest name, never a value
 # claiming to be OpenCode's own CLI.
-OPENCODE_CLIENT_LABEL = "botserver"
+OPENCODE_CLIENT_LABEL = "agenticbotplatform"
 
 
 def extra_headers(*, profile: Optional[QuirkProfile], session_id: Optional[str]) -> dict[str, str]:

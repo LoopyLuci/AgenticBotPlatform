@@ -1,11 +1,11 @@
 [package]
-name = "bot-server"
+name = "agentic-bot-platform"
 version = "0.7.12"
-description = "All-in-one desktop shell for Bot Server: boots and supervises the Python bot process and hosts its dashboard in one window."
+description = "All-in-one desktop shell for Agentic Bot Platform: boots and supervises the Python bot process and hosts its dashboard in one window."
 edition = "2021"
 
 [lib]
-name = "bot_server_lib"
+name = "agentic_bot_platform_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -22,6 +22,12 @@ sysinfo = "0.32"
 # then one installer download), so a lightweight blocking client is a
 # better fit than reqwest's async runtime and much larger dependency tree.
 ureq = { version = "2", default-features = false, features = ["tls"] }
+# Real embedded terminal (src/terminal.rs) — ConPTY on Windows via the same
+# portable-pty crate WezTerm itself uses, so interactive programs (git's
+# pager, python's REPL, colored output) behave like a real terminal instead
+# of the garbled mess plain piped stdio produces for anything that isn't a
+# straight-line, non-interactive command.
+portable-pty = "0.8"
 
 [profile.release]
 panic = "abort"

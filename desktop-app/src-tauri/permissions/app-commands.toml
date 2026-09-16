@@ -4,7 +4,7 @@
 # These were never explicitly declared before because the main window's
 # document always loaded from Tauri's bundled-asset origin, which Tauri
 # does not subject to the same ACL enforcement as a "remote" origin. Once
-# the window navigates to the live BotServer HTTP server (see
+# the window navigates to the live AgenticBotPlatform HTTP server (see
 # capabilities/default.json's "remote" field and desktop-app/ui/main.js's
 # hideBootOverlay()), every invoke() — including these app-level commands,
 # not just core:* ones — is checked against ACL, and calls to any command
@@ -65,7 +65,7 @@ commands.allow = ["install_android_apk"]
 
 [[permission]]
 identifier = "allow-pair-android-device"
-description = "Allows pairing a connected Android device via the botserver:// deep link."
+description = "Allows pairing a connected Android device via the agenticbotplatform:// deep link."
 commands.allow = ["pair_android_device"]
 
 [[permission]]
@@ -92,3 +92,23 @@ commands.allow = ["download_update"]
 identifier = "allow-install-update"
 description = "Allows installing a downloaded app update."
 commands.allow = ["install_update"]
+
+[[permission]]
+identifier = "allow-terminal-start"
+description = "Allows starting the embedded real-shell terminal session."
+commands.allow = ["terminal_start"]
+
+[[permission]]
+identifier = "allow-terminal-write"
+description = "Allows sending keystrokes/input to the embedded terminal session."
+commands.allow = ["terminal_write"]
+
+[[permission]]
+identifier = "allow-terminal-resize"
+description = "Allows resizing the embedded terminal's pty to match the panel's dimensions."
+commands.allow = ["terminal_resize"]
+
+[[permission]]
+identifier = "allow-terminal-stop"
+description = "Allows stopping the embedded terminal session."
+commands.allow = ["terminal_stop"]

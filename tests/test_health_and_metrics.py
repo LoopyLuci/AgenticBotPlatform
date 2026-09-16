@@ -50,9 +50,9 @@ def test_metrics_is_prometheus_text_format_with_real_numbers(temp_db, monkeypatc
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/plain")
     body = resp.text
-    assert "botserver_up 1" in body
-    assert "# TYPE botserver_jobs_running gauge" in body
-    assert "botserver_db_size_bytes" in body
+    assert "agenticbotplatform_up 1" in body
+    assert "# TYPE agenticbotplatform_jobs_running gauge" in body
+    assert "agenticbotplatform_db_size_bytes" in body
 
 
 def test_metrics_reflects_real_job_counts(temp_db, monkeypatch):
@@ -68,4 +68,4 @@ def test_metrics_reflects_real_job_counts(temp_db, monkeypatch):
 
     client = TestClient(build_app())
     body = client.get("/metrics", headers=_AUTH).text
-    assert "botserver_jobs_completed_today 1" in body
+    assert "agenticbotplatform_jobs_completed_today 1" in body

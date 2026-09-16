@@ -279,7 +279,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # -------------------------------------------------------------- models ----
 # /model with no args opens an inline-keyboard picker scoped to THIS bot's
 # own connected backend only — not a chooser across every model backend
-# BotServer supports regardless of what this bot actually uses. Reads and
+# AgenticBotPlatform supports regardless of what this bot actually uses. Reads and
 # writes bot_instances.model (the same per-instance override field the
 # dashboard's own per-bot Model dropdown edits), via
 # commands.instance_model_page()/apply_instance_model(). Discord/Slack keep
@@ -546,7 +546,7 @@ async def cmd_project(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # here instead of the plain-text "/new confirm" fallback commands.py's
 # cmd_new_session offers Discord/Slack. Pending confirmations are
 # in-memory only (a monotonic counter, same shape as approval.py's) since
-# there's exactly one BotServer process; "always" is remembered per
+# there's exactly one AgenticBotPlatform process; "always" is remembered per
 # (instance, chat, thread) for the rest of this process's run, not
 # persisted — a fresh restart asks again once, which is a fine default.
 

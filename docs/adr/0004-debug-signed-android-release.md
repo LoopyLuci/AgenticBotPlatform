@@ -8,7 +8,7 @@
 Android requires every APK to be signed. A "release" build type normally
 implies a real, private signing identity used to publish to the Play
 Store and to let future updates verify they come from the same
-publisher. BotServer's Android app is not distributed through the Play
+publisher. AgenticBotPlatform's Android app is not distributed through the Play
 Store — it's downloaded from GitHub Releases and sideloaded.
 
 ## Decision

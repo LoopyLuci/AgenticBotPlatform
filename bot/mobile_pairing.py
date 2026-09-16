@@ -1,6 +1,6 @@
 """Self-contained mobile pairing codes.
 
-A pairing code is one string — "botserver://pair?host=...&host2=...
+A pairing code is one string — "agenticbotplatform://pair?host=...&host2=...
 &host3=...&key=..." — that carries every host this machine is reachable
 at (LAN, Tailscale-direct, a public Tailscale Funnel URL) alongside the
 device's secret key, so pairing the Android app never requires typing a
@@ -67,4 +67,4 @@ def build_pairing_code(key: str, host: str = "", host2: str = "", host3: str = "
         params.append(f"host2={urllib.parse.quote(host2, safe='')}")
     if host3:
         params.append(f"host3={urllib.parse.quote(host3, safe='')}")
-    return "botserver://pair?" + "&".join(params)
+    return "agenticbotplatform://pair?" + "&".join(params)

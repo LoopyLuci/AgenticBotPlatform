@@ -1,6 +1,6 @@
 """bot/agent_runtime/vision.py — image validation/base64-prep for the
 native agent loop's image-understanding support (Phase D of the
-native-BotServer-agents plan)."""
+native-AgenticBotPlatform-agents plan)."""
 from __future__ import annotations
 
 import base64

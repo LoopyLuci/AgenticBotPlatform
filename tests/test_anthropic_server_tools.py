@@ -99,7 +99,7 @@ def test_send_appends_an_enabled_server_tool_alongside_client_tools(monkeypatch)
     ))
 
     sent_tools = fake.requests[0]["tools"]
-    # Phase H adds strict:true to BotServer's own client tool schemas —
+    # Phase H adds strict:true to AgenticBotPlatform's own client tool schemas —
     # the server tool entry below must NOT get it.
     assert {"name": "run_shell", "description": "", "input_schema": {}, "strict": True} in sent_tools
     assert {"type": "web_search_20260318", "name": "web_search"} in sent_tools

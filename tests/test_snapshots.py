@@ -1,5 +1,5 @@
 """bot/snapshots.py — the point-in-time snapshot/restore safety net for
-BotServer's own config + database, meant to let an agent editing this
+AgenticBotPlatform's own config + database, meant to let an agent editing this
 codebase recover from a bad change without a full backup/rebuild.
 Exercises real file/DB copies against temp paths, not mocks, since a
 restore that silently does the wrong thing is exactly the failure mode

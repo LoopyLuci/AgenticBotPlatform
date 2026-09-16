@@ -1,5 +1,5 @@
 """Per-device permission tiers for the conversational admin surface
-(Server Chat's BotServer pipeline, Support Bot's new admin actions, and
+(Server Chat's AgenticBotPlatform pipeline, Support Bot's new admin actions, and
 device/pairing management itself) — see the "Admin control surface" plan.
 
 Deliberately narrow and separate from the pre-existing dashboard REST

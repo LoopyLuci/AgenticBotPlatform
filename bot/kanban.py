@@ -1,7 +1,7 @@
 """A per-instance kanban board — /kanban. Real persistence (bot/db.py's
 kanban_boards/kanban_cards tables), scoped down from the real Hermes
 Agent's 30+ subcommand multi-profile board to the core operations that
-don't depend on anything BotServer doesn't have (no multi-profile
+don't depend on anything AgenticBotPlatform doesn't have (no multi-profile
 collaboration layer here — one board set per bot instance).
 """
 

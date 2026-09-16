@@ -27,6 +27,10 @@
     "allow-detect-tailscale-host",
     "allow-check-for-update",
     "allow-download-update",
-    "allow-install-update"
+    "allow-install-update",
+    "allow-terminal-start",
+    "allow-terminal-write",
+    "allow-terminal-resize",
+    "allow-terminal-stop"
   ]
 }

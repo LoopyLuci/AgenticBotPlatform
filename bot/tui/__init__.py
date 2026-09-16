@@ -1,1 +1,1 @@
-"""BotServer's Textual terminal UI — see bot/tui/app.py."""
+"""AgenticBotPlatform's Textual terminal UI — see bot/tui/app.py."""

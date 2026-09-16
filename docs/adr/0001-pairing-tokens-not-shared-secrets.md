@@ -5,7 +5,7 @@
 
 ## Context
 
-Server-to-server linking (federation) lets one BotServer install manage
+Server-to-server linking (federation) lets one AgenticBotPlatform install manage
 bots running on another machine. The naive approach — copy the target
 server's real `DASHBOARD_TOKEN` into the linking server's config — works,
 but means a long-lived, full-access credential now exists in two places,

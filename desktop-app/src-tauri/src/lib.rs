@@ -24,8 +24,10 @@ use android::{
     pair_android_device,
 };
 mod network;
+mod terminal;
 mod updater;
 use network::{detect_lan_host, detect_tailscale_host};
+use terminal::{stop_terminal, terminal_resize, terminal_start, terminal_stop, terminal_write, TerminalState};
 use updater::{check_for_update, download_update, install_update};
 
 /// Passed to CreateProcess on Windows so spawning a console app (python.exe,
@@ -419,18 +421,36 @@ fn get_boot_log(state: State<ServerState>) -> Result<Vec<LogLine>, String> {
 fn get_dashboard_token(app: AppHandle) -> Result<Option<String>, String> {
     let (project_root, python) = resolve_paths(&app)?;
     if !python.exists() {
-        return Ok(None);
+        return Err(format!("python not found at {}", python.display()));
     }
     let mut cmd = Command::new(&python);
     cmd.args(["-m", "bot.envfile", "--print-token"])
         .current_dir(&project_root)
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        .stderr(Stdio::piped());
     let output = no_window(&mut cmd)
         .output()
-        .map_err(|e| format!("failed to read dashboard token: {e}"))?;
+        .map_err(|e| format!("failed to spawn {}: {e}", python.display()))?;
     let token = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok(if token.is_empty() { None } else { Some(token) })
+    if token.is_empty() {
+        // Surface whatever Python actually said instead of silently
+        // falling back to the manual-entry dialog with no trail at all —
+        // this exact silent-failure shape (a working `-m bot.envfile
+        // --print-token` invocation from a shell, but an empty result
+        // from here) is what made a real DASHBOARD_TOKEN-not-found bug
+        // undebuggable the first time it happened.
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if !output.status.success() || !stderr.is_empty() {
+            return Err(format!(
+                "bot.envfile --print-token exited {} in {}: {}",
+                output.status,
+                project_root.display(),
+                if stderr.is_empty() { "(no stderr)" } else { &stderr }
+            ));
+        }
+        return Ok(None); // exited 0, printed nothing — genuinely no token in .env yet
+    }
+    Ok(Some(token))
 }
 
 /// The 4 selectable app icons, embedded at compile time (`include_bytes!`)
@@ -526,7 +546,7 @@ fn fix_shortcut_icons(app: &AppHandle) {
     let start_menu = dirs_next_start_menu();
     let desktop = dirs_next_desktop();
     for dir in [start_menu, desktop].into_iter().flatten() {
-        let lnk = dir.join("BotServer.lnk");
+        let lnk = dir.join("AgenticBotPlatform.lnk");
         if !lnk.exists() {
             continue;
         }
@@ -572,6 +592,7 @@ pub fn run() {
             log_backlog: Mutex::new(Vec::new()),
         })
         .manage(android::AndroidBuildState::default())
+        .manage(TerminalState::default())
         .invoke_handler(tauri::generate_handler![
             start_server,
             stop_server,
@@ -589,7 +610,11 @@ pub fn run() {
             detect_tailscale_host,
             check_for_update,
             download_update,
-            install_update
+            install_update,
+            terminal_start,
+            terminal_write,
+            terminal_resize,
+            terminal_stop
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -598,7 +623,7 @@ pub fn run() {
             let state = handle.state::<ServerState>();
             if let Err(e) = spawn_internal(&handle, &state) {
                 if cfg!(debug_assertions) {
-                    eprintln!("[bot-server] spawn_internal failed: {e}");
+                    eprintln!("[agentic-bot-platform] spawn_internal failed: {e}");
                 }
                 let payload = LogLine {
                     stream: "stderr".into(),
@@ -613,6 +638,7 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 stop_bot_server(window.state::<ServerState>().inner());
                 android::stop_android_build(window.state::<android::AndroidBuildState>().inner());
+                stop_terminal(window.state::<TerminalState>().inner());
             }
         })
         .run(tauri::generate_context!())

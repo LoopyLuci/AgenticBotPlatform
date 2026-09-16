@@ -1,6 +1,6 @@
-"""Server Chat's BotServer admin conversation pipeline — Section 3 of
+"""Server Chat's AgenticBotPlatform admin conversation pipeline — Section 3 of
 the "Admin control surface" plan. The permanent group room doubles as
-the channel you talk to BotServer in: any message posted there (per
+the channel you talk to AgenticBotPlatform in: any message posted there (per
 the user's own choice of design) is routed through the designated
 admin bot instance's own agent loop — the same admin_* tools a
 Telegram admin bot gets, additionally gated by the SENDING DEVICE's own

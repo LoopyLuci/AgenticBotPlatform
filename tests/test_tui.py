@@ -16,7 +16,7 @@ import pytest
 
 from bot import bot_instances
 from bot.dashboard.server import build_app
-from bot.tui.app import BotServerTUI
+from bot.tui.app import AgenticBotPlatformTUI
 from bot.tui.client import DashboardClient
 from bot.tui.screens.add_bot import AddBotScreen
 from bot.tui.screens.bot_detail import BotDetailScreen
@@ -46,7 +46,7 @@ def test_bot_list_screen_renders_real_bots(dashboard_client):
     _create_instance(name="beta")
 
     async def _run():
-        app = BotServerTUI()
+        app = AgenticBotPlatformTUI()
         async with app.run_test() as pilot:
             app.client = dashboard_client
             await app.push_screen(BotListScreen())
@@ -63,7 +63,7 @@ def test_bot_list_screen_empty_state(dashboard_client):
     async def _run():
         from textual.widgets import Label
 
-        app = BotServerTUI()
+        app = AgenticBotPlatformTUI()
         async with app.run_test() as pilot:
             app.client = dashboard_client
             await app.push_screen(BotListScreen())
@@ -78,7 +78,7 @@ def test_add_bot_flow_creates_a_real_row(dashboard_client):
     async def _run():
         from textual.widgets import Input, Select
 
-        app = BotServerTUI()
+        app = AgenticBotPlatformTUI()
         async with app.run_test(size=(120, 60)) as pilot:
             app.client = dashboard_client
             await app.push_screen(AddBotScreen())
@@ -106,7 +106,7 @@ def test_bot_detail_screen_edits_and_schedules(dashboard_client):
         from textual.widgets import Button, Input
 
         bot = await dashboard_client.get_bot(instance_id)
-        app = BotServerTUI()
+        app = AgenticBotPlatformTUI()
         async with app.run_test(size=(120, 80)) as pilot:
             app.client = dashboard_client
             await app.push_screen(BotDetailScreen(bot))

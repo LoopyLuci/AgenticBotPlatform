@@ -1,6 +1,6 @@
 """First screen: which dashboard to connect to. Defaults to the local
 instance's own .env (bot/envfile.py) when run on the same machine — a
-remote/federated BotServer just needs its own host:port and token typed
+remote/federated AgenticBotPlatform just needs its own host:port and token typed
 in, same as the desktop app already supports.
 """
 
@@ -21,7 +21,7 @@ class ConnectScreen(Screen):
         from bot import envfile
 
         default_token = envfile.get_var("DASHBOARD_TOKEN") or ""
-        yield Static("BotServer — connect to a dashboard", id="title")
+        yield Static("AgenticBotPlatform — connect to a dashboard", id="title")
         with Vertical(id="connect-form"):
             yield Label("Host:port", classes="field-label")
             yield Input(value="127.0.0.1:8787", id="connect-host")

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bot Control — Bot Server Dashboard</title>
+<title>Bot Control — Agentic Bot Platform Dashboard</title>
 <script>
   // Applied synchronously, before the stylesheet below paints anything, so
   // a saved theme/scale preference never flashes the wrong look for one
@@ -572,6 +572,67 @@
   #boot .boot-status { font-size:11.5px; color:#c9cdd3; }
   #boot .boot-error { color:var(--critical); font-size:11.5px; }
   @media (prefers-reduced-motion: reduce) { #boot .boot-lines .line { animation:none; opacity:1; } #boot .boot-spinner { animation:none; } }
+
+  /* ---------------------------------------------------- terminal panel --- */
+  .term-panel {
+    position:fixed; left:0; right:0; bottom:0; z-index:400;
+    display:flex; flex-direction:column;
+    height:320px; min-height:120px; max-height:80vh;
+    background:var(--surface); border-top:1px solid var(--line);
+    box-shadow:0 -8px 24px rgba(0,0,0,.25);
+    transition:transform .18s ease;
+  }
+  .term-panel.collapsed { transform:translateY(calc(100% - 40px)); }
+  .term-panel.maximized { height:92vh; }
+  .term-resize-handle { position:absolute; top:-4px; left:0; right:0; height:8px; cursor:ns-resize; z-index:1; }
+  .term-header { display:flex; align-items:center; justify-content:space-between; height:40px; flex:none; padding:0 8px 0 4px; border-bottom:1px solid var(--line); background:var(--surface-2); }
+  .term-tabs { display:flex; align-items:stretch; height:100%; }
+  .term-tab { background:none; border:none; color:var(--ink-soft); font:inherit; font-size:12.5px; font-weight:600; padding:0 16px; cursor:pointer; border-bottom:2px solid transparent; display:flex; align-items:center; gap:6px; }
+  .term-tab:hover { color:var(--ink); }
+  .term-tab.active { color:var(--ink); border-bottom-color:var(--accent); }
+  .term-badge { background:var(--critical, #e0473e); color:#fff; font-size:10px; font-weight:700; border-radius:10px; padding:1px 6px; line-height:1.4; }
+  .term-controls { display:flex; align-items:center; gap:6px; }
+  .term-instance-select { background:var(--surface-3); color:var(--ink); border:1px solid var(--line); border-radius:6px; font-size:11.5px; padding:4px 8px; max-width:180px; }
+  .term-icon-btn { background:none; border:none; color:var(--ink-soft); font-size:14px; width:28px; height:28px; border-radius:6px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+  .term-icon-btn:hover { background:var(--surface-3); color:var(--ink); }
+  .term-body { flex:1; min-height:0; position:relative; }
+  .term-view { position:absolute; inset:0; display:none; flex-direction:column; }
+  .term-view.active { display:flex; }
+  #xterm-container { flex:1; padding:6px 10px; min-height:0; }
+  #xterm-container .xterm { height:100%; }
+  .term-reopen-btn {
+    position:fixed; right:18px; bottom:18px; z-index:399;
+    width:44px; height:44px; border-radius:50%; border:1px solid var(--line);
+    background:var(--accent); color:#fff; font-size:18px; cursor:pointer;
+    box-shadow:0 4px 14px rgba(0,0,0,.3);
+  }
+  .term-reopen-btn:hover { filter:brightness(1.08); }
+
+  .activity-toolbar { display:flex; align-items:center; gap:8px; padding:8px 10px; border-bottom:1px solid var(--line); flex:none; }
+  .activity-toolbar select, .activity-toolbar input[type="text"] { background:var(--surface-3); color:var(--ink); border:1px solid var(--line); border-radius:6px; font-size:11.5px; padding:5px 8px; }
+  .activity-toolbar input[type="text"] { flex:1; min-width:120px; }
+  .activity-autoscroll { display:flex; align-items:center; gap:5px; font-size:11.5px; color:var(--ink-soft); white-space:nowrap; }
+  .activity-list { flex:1; overflow-y:auto; font-family:var(--font-mono); font-size:11.5px; padding:4px 0; }
+  .activity-row { display:flex; gap:8px; padding:3px 12px; align-items:baseline; border-bottom:1px solid var(--surface-2); }
+  .activity-row:hover { background:var(--surface-2); }
+  .activity-row .a-ts { color:var(--muted); flex:none; }
+  .activity-row .a-level { flex:none; font-weight:700; border-radius:4px; padding:0 5px; font-size:10px; text-transform:uppercase; }
+  .activity-row .a-level.INFO { color:var(--accent); background:var(--accent-soft); }
+  .activity-row .a-level.WARNING { color:var(--warning, #fab219); background:var(--warning-soft); }
+  .activity-row .a-level.ERROR, .activity-row .a-level.CRITICAL { color:var(--critical); background:var(--critical-soft); }
+  .activity-row .a-logger { flex:none; color:var(--ink-soft); max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .activity-row .a-msg { color:var(--ink); white-space:pre-wrap; word-break:break-word; }
+  .activity-row.a-hidden { display:none; }
+
+  /* Browser dashboard has no real pty — its terminal view is a plain
+     input+scrollback REPL instead of xterm.js. Shared class names so the
+     activity-tab CSS above applies identically to both surfaces. */
+  .scoped-output { flex:1; overflow-y:auto; font-family:var(--font-mono); font-size:12px; padding:8px 12px; white-space:pre-wrap; word-break:break-word; }
+  .scoped-line-cmd { color:var(--accent); }
+  .scoped-line-err { color:var(--critical); }
+  .scoped-inputline { display:flex; align-items:center; gap:8px; padding:8px 12px; border-top:1px solid var(--line); flex:none; }
+  .scoped-prompt { color:var(--accent); font-family:var(--font-mono); font-weight:700; }
+  .scoped-inputline input { flex:1; background:none; border:none; outline:none; color:var(--ink); font-family:var(--font-mono); font-size:12.5px; }
 </style>
 </head>
 <body>
@@ -584,8 +645,8 @@
   </div>
   <div id="boot-panel">
     <div class="boot-head">
-      <img class="mark" src="assets/icons/vaporwave.png" alt="BotServer">
-      <div class="t">Bot Server</div>
+      <img class="mark" src="assets/icons/vaporwave.png" alt="AgenticBotPlatform">
+      <div class="t">Agentic Bot Platform</div>
       <div class="sub" id="boot-envline">booting…</div>
     </div>
     <div class="boot-resources">
@@ -604,7 +665,7 @@
 <div id="wizard" class="hidden">
   <div class="wizard-card">
     <div class="wizard-head">
-      <img class="mark" src="assets/icons/vaporwave.png" alt="BotServer">
+      <img class="mark" src="assets/icons/vaporwave.png" alt="AgenticBotPlatform">
       <div>
         <div class="t">Let's get set up</div>
         <div class="sub" id="wizard-envpath">—</div>
@@ -639,7 +700,7 @@
   <div class="side-backdrop" id="side-backdrop"></div>
   <aside class="side" id="side">
     <div class="brand">
-      <img class="mark" src="assets/icons/vaporwave.png" alt="BotServer">
+      <img class="mark" src="assets/icons/vaporwave.png" alt="AgenticBotPlatform">
       <div><div class="name">Bot Control</div></div>
       <button class="side-toggle" id="btn-side-toggle" type="button" aria-controls="sidenav" aria-expanded="true" title="Collapse sidebar">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 6 9 12 15 18"></polyline></svg>
@@ -670,7 +731,7 @@
       <a href="#customize" data-kw="customize generative ui ai preview diff"><span class="ic">🪄</span><span class="nav-txt"><b>Customize UI</b><small>Describe a change, preview, apply</small></span></a>
       <a href="#platforms" data-kw="platforms legacy single-bot"><span class="ic">🔌</span><span class="nav-txt"><b>Platforms</b><small>Legacy single-bot config</small></span></a>
       <a href="#mobile" data-kw="mobile android pairing devices"><span class="ic">📱</span><span class="nav-txt"><b>Mobile</b><small>Pair &amp; manage devices</small></span></a>
-      <a href="#servers" data-kw="servers linked federation multi-machine"><span class="ic">🌐</span><span class="nav-txt"><b>Linked Servers</b><small>Manage other BotServer installs</small></span></a>
+      <a href="#servers" data-kw="servers linked federation multi-machine"><span class="ic">🌐</span><span class="nav-txt"><b>Linked Servers</b><small>Manage other AgenticBotPlatform installs</small></span></a>
       <a href="#updates" data-kw="updates upgrade version install"><span class="ic">⬆</span><span class="nav-txt"><b>Updates</b><small>Check &amp; install the latest version</small></span></a>
     </nav>
     <div class="side-status">
@@ -937,7 +998,7 @@
 
       <div class="card" style="margin-top:14px;" id="hotreload-card">
         <h3>Hot Reload</h3>
-        <p class="cardnote">Applies an edit to BotServer's own <code>bot/*.py</code> to this already-running process — most files take effect on the very next call; Discord/Slack/Matrix code gets a brief reconnect; a documented set of core files (routing, the database connection, the dashboard itself) still need a full restart, reported here as "restart required" rather than silently skipped.</p>
+        <p class="cardnote">Applies an edit to AgenticBotPlatform's own <code>bot/*.py</code> to this already-running process — most files take effect on the very next call; Discord/Slack/Matrix code gets a brief reconnect; a documented set of core files (routing, the database connection, the dashboard itself) still need a full restart, reported here as "restart required" rather than silently skipped.</p>
         <div class="settingrow">
           <div><div class="st" id="hotreload-status-text">Checking…</div><div class="sd" id="hotreload-status-detail"></div></div>
           <button class="btn" id="btn-hotreload-run">Reload now</button>
@@ -970,7 +1031,7 @@
 
       <div class="card" style="margin-top:14px;">
         <h3>TURN Server (WebRTC mesh relay)</h3>
-        <p class="cardnote">Used by the Android app's WebRTC fallback for mesh APK transfers, when two devices can't reach each other directly (symmetric NAT, restrictive firewalls). BotServer never runs the relay itself — this only mints short-lived credentials for a real TURN server (coturn) you run separately with the same shared secret. See docs/turn-server-setup.md.</p>
+        <p class="cardnote">Used by the Android app's WebRTC fallback for mesh APK transfers, when two devices can't reach each other directly (symmetric NAT, restrictive firewalls). AgenticBotPlatform never runs the relay itself — this only mints short-lived credentials for a real TURN server (coturn) you run separately with the same shared secret. See docs/turn-server-setup.md.</p>
         <div class="settingrow"><div><div class="st">Enabled</div><div class="sd">Turn on once a coturn server is actually running and reachable</div></div><div class="toggle" id="tg-turn-enabled" data-path="turn,enabled"></div></div>
         <div class="settingrow"><div><div class="st">Shared secret</div><div class="sd">Must exactly match coturn's static-auth-secret</div></div><input type="password" id="turn-secret" placeholder="(not set) — leave blank to keep unchanged" style="min-width:260px;"></div>
         <div class="settingrow"><div><div class="st">TURN URLs</div><div class="sd">Comma-separated, e.g. turn:host:3478?transport=udp, turn:host:3478?transport=tcp</div></div><input type="text" id="turn-urls" placeholder="turn:host:3478?transport=udp" style="min-width:320px;"></div>
@@ -988,7 +1049,7 @@
         <div class="settingrow"><div class="st">Currently loaded from</div><span class="mono" id="env-resolved">—</span></div>
         <div id="env-candidates" style="margin-top:6px;"></div>
         <div style="display:flex; gap:8px; margin-top:10px;">
-          <input type="text" id="env-custom-path" placeholder="custom path, e.g. Z:\Projects\BotServer\.env" style="flex:1; padding:8px 10px; border-radius:7px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font-family:var(--font-mono); font-size:12px;">
+          <input type="text" id="env-custom-path" placeholder="custom path, e.g. Z:\Projects\AgenticBotPlatform\.env" style="flex:1; padding:8px 10px; border-radius:7px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font-family:var(--font-mono); font-size:12px;">
           <button class="btn" id="btn-env-set">Use this path</button>
           <button class="btn" id="btn-env-auto">Auto-detect</button>
         </div>
@@ -1020,7 +1081,7 @@
 
       <div class="card" style="margin-top:14px;">
         <h3>Control this app over MCP</h3>
-        <p class="cardnote">Registers this app's own control server (<code class="mono">bot/mcp_server.py</code>) with Claude Desktop as an MCP server named <code class="mono">bot-server</code>, so Claude Desktop (or Claude Code via <code class="mono">claude mcp add</code>) can check status, list jobs, flip backends, and start/stop/restart Claude Desktop itself &mdash; the same things this dashboard can do, but callable as MCP tools instead of clicks.</p>
+        <p class="cardnote">Registers this app's own control server (<code class="mono">bot/mcp_server.py</code>) with Claude Desktop as an MCP server named <code class="mono">agentic-bot-platform</code>, so Claude Desktop (or Claude Code via <code class="mono">claude mcp add</code>) can check status, list jobs, flip backends, and start/stop/restart Claude Desktop itself &mdash; the same things this dashboard can do, but callable as MCP tools instead of clicks.</p>
         <button class="btn" id="btn-mcp-self-register">Register with Claude Desktop</button>
         <div id="mcp-self-register-status" class="msg"></div>
       </div>
@@ -1149,7 +1210,7 @@
     </section>
 
     <section id="support-bot">
-      <div class="sec-head"><h2>Support Bot</h2><span class="desc">A small assistant built directly into BotServer — no external model, no internet call, just this app's own local classifier wired to the same status/backend/model/MCP/bot/desktop actions the dashboard already has.</span></div>
+      <div class="sec-head"><h2>Support Bot</h2><span class="desc">A small assistant built directly into AgenticBotPlatform — no external model, no internet call, just this app's own local classifier wired to the same status/backend/model/MCP/bot/desktop actions the dashboard already has.</span></div>
       <div class="card chat-card">
         <div class="chat-toolbar">
           <button class="btn" id="btn-support-bot-copy" title="Copy this conversation as plain text">⧉ Copy</button>
@@ -1530,7 +1591,7 @@
             <input type="text" id="provider-catalog-input" list="provider-catalog-options" placeholder="Pick a known provider (optional)…" autocomplete="off" spellcheck="false" style="flex:1;">
             <datalist id="provider-catalog-options"></datalist>
           </div>
-          <div class="cardnote" style="margin:4px 0 8px;">Picking one fills in its real endpoint below — or just fill in the fields yourself for a custom/local server. Some well-known providers (Anthropic, OpenAI, Google, Bedrock) use their own SDK protocol rather than a generic endpoint and aren't listed here; BotServer only speaks the OpenAI-compatible wire format for this backend family today.</div>
+          <div class="cardnote" style="margin:4px 0 8px;">Picking one fills in its real endpoint below — or just fill in the fields yourself for a custom/local server. Some well-known providers (Anthropic, OpenAI, Google, Bedrock) use their own SDK protocol rather than a generic endpoint and aren't listed here; AgenticBotPlatform only speaks the OpenAI-compatible wire format for this backend family today.</div>
           <div class="row">
             <input type="text" id="provider-new-name" placeholder="name, e.g. local_ollama" autocomplete="off" spellcheck="false" style="max-width:180px;">
             <input type="text" id="provider-new-url" placeholder="base URL, e.g. http://127.0.0.1:11434/v1" autocomplete="off" spellcheck="false">
@@ -1906,7 +1967,7 @@
     </section>
 
     <section id="servers">
-      <div class="sec-head"><h2>Linked Servers</h2><span class="desc">Other BotServer installations you run — each keeps its own database and Telegram bot, linked here so you can see and manage them from one place</span></div>
+      <div class="sec-head"><h2>Linked Servers</h2><span class="desc">Other AgenticBotPlatform installations you run — each keeps its own database and Telegram bot, linked here so you can see and manage them from one place</span></div>
 
       <div class="card">
         <h3>1. Generate a pairing token (for someone linking into THIS server)</h3>
@@ -1999,6 +2060,45 @@
   </main>
 </div>
 
+<div id="term-panel" class="term-panel collapsed">
+  <div class="term-resize-handle" id="term-resize-handle"></div>
+  <div class="term-header" id="term-header">
+    <div class="term-tabs">
+      <button class="term-tab active" data-term-tab="terminal" id="term-tab-terminal">Terminal</button>
+      <button class="term-tab" data-term-tab="activity" id="term-tab-activity">Activity<span class="term-badge hidden" id="term-activity-badge">0</span></button>
+    </div>
+    <div class="term-controls">
+      <select id="term-instance-select" class="term-instance-select" title="Bot instance context for /commands that need one"><option value="">No instance context</option></select>
+      <button class="term-icon-btn" id="term-minimize" title="Minimize">━</button>
+      <button class="term-icon-btn" id="term-maximize" title="Maximize/restore">⛶</button>
+    </div>
+  </div>
+  <div class="term-body">
+    <div class="term-view active" id="term-view-terminal">
+      <div id="xterm-container"></div>
+    </div>
+    <div class="term-view" id="term-view-activity">
+      <div class="activity-toolbar">
+        <select id="activity-level-filter">
+          <option value="">All levels</option>
+          <option value="ERROR">Error</option>
+          <option value="WARNING">Warning</option>
+          <option value="INFO">Info</option>
+        </select>
+        <input id="activity-search" type="text" placeholder="Filter by text…">
+        <label class="activity-autoscroll"><input type="checkbox" id="activity-autoscroll" checked> Auto-scroll</label>
+        <button class="term-icon-btn" id="activity-clear" title="Clear (visual only — the log itself is untouched)">Clear</button>
+      </div>
+      <div id="activity-list" class="activity-list"></div>
+    </div>
+  </div>
+</div>
+<button class="term-reopen-btn hidden" id="term-reopen-btn" title="Open Terminal">⌨</button>
+
+<link rel="stylesheet" href="vendor/xterm/xterm.min.css">
+<script src="vendor/xterm/xterm.min.js"></script>
+<script src="vendor/xterm/addon-fit.min.js"></script>
 <script src="main.js"></script>
+<script src="terminal-panel.js"></script>
 </body>
 </html>

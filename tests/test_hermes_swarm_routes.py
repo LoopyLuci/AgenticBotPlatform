@@ -4,7 +4,7 @@ comment-preserving read/write of Hermes's own ~/.hermes/config.yaml.
 
 Exercised against the real FastAPI app via TestClient (matching
 test_schedule_routes.py's precedent) with router.ask() and the Hermes
-config file itself faked — this is about BotServer's own routing/config
+config file itself faked — this is about AgenticBotPlatform's own routing/config
 logic, not a live Hermes process or a real home-directory file.
 """
 
@@ -96,7 +96,7 @@ def test_set_delegation_config_no_op_with_no_changes(tmp_path, monkeypatch, temp
     assert not path.exists()  # never created a file for a no-op call
 
 
-def test_register_botserver_mcp_server_preserves_existing_mcp_servers_and_comments(tmp_path, monkeypatch, temp_db):
+def test_register_agenticbotplatform_mcp_server_preserves_existing_mcp_servers_and_comments(tmp_path, monkeypatch, temp_db):
     path = tmp_path / "config.yaml"
     path.write_text(
         "# a real user comment that must survive\n"
@@ -107,18 +107,18 @@ def test_register_botserver_mcp_server_preserves_existing_mcp_servers_and_commen
         encoding="utf-8",
     )
 
-    result = hermes_config.register_botserver_mcp_server(hermes_home=str(tmp_path), dashboard_token="tok-123")
+    result = hermes_config.register_agenticbotplatform_mcp_server(hermes_home=str(tmp_path), dashboard_token="tok-123")
 
-    assert result["name"] == "botserver"
+    assert result["name"] == "agenticbotplatform"
     text = path.read_text(encoding="utf-8")
     assert "a real user comment that must survive" in text
     assert "agentic_toolkit" in text  # untouched sibling entry survives
     assert "some-other-python" in text
-    assert "botserver" in text
+    assert "agenticbotplatform" in text
     assert "bot.mcp_server" in text
 
 
-def test_register_botserver_mcp_server_uses_stable_python_not_sys_executable(tmp_path, monkeypatch, temp_db):
+def test_register_agenticbotplatform_mcp_server_uses_stable_python_not_sys_executable(tmp_path, monkeypatch, temp_db):
     # Regression: this used to hardcode sys.executable, which resolves to
     # the Tauri-bundled venv in production — a long-lived Hermes-spawned
     # MCP server process from that path blocked a real `cargo tauri
@@ -126,7 +126,7 @@ def test_register_botserver_mcp_server_uses_stable_python_not_sys_executable(tmp
     # envfile.stable_python_executable() instead.
     monkeypatch.setattr(envfile, "stable_python_executable", lambda: "Z:/stable/python.exe")
 
-    result = hermes_config.register_botserver_mcp_server(hermes_home=str(tmp_path))
+    result = hermes_config.register_agenticbotplatform_mcp_server(hermes_home=str(tmp_path))
 
     assert result["command"] == "Z:/stable/python.exe"
     text = (tmp_path / "config.yaml").read_text(encoding="utf-8")
@@ -134,15 +134,15 @@ def test_register_botserver_mcp_server_uses_stable_python_not_sys_executable(tmp
     assert sys.executable not in text
 
 
-def test_register_botserver_mcp_server_is_idempotent(tmp_path, monkeypatch, temp_db):
+def test_register_agenticbotplatform_mcp_server_is_idempotent(tmp_path, monkeypatch, temp_db):
     path = tmp_path / "config.yaml"
 
-    first = hermes_config.register_botserver_mcp_server(hermes_home=str(tmp_path))
-    second = hermes_config.register_botserver_mcp_server(hermes_home=str(tmp_path))
+    first = hermes_config.register_agenticbotplatform_mcp_server(hermes_home=str(tmp_path))
+    second = hermes_config.register_agenticbotplatform_mcp_server(hermes_home=str(tmp_path))
 
-    assert first["name"] == second["name"] == "botserver"
+    assert first["name"] == second["name"] == "agenticbotplatform"
     text = path.read_text(encoding="utf-8")
-    assert text.count("botserver:") == 1  # overwritten in place, not duplicated
+    assert text.count("agenticbotplatform:") == 1  # overwritten in place, not duplicated
 
 
 # --------------------------------------------------------------------- routes
@@ -490,7 +490,7 @@ def test_dispatch_route_parses_child_breakdown_into_job_children(temp_db, monkey
 # ------------------------------------------------ Hermes-organizes-swarms too
 # The reverse direction: giving a Hermes agent itself the same
 # cross-instance organizing ability Claude has via this MCP server, by
-# registering bot-server's own MCP server into the Hermes instance's own
+# registering agentic-bot-platform's own MCP server into the Hermes instance's own
 # config.yaml mcp_servers section.
 
 
@@ -511,7 +511,7 @@ def test_enable_swarm_tools_registers_mcp_server_and_evicts_backend(temp_db, mon
 
     assert resp.status_code == 200
     body = resp.json()
-    assert body["registration"]["name"] == "botserver"
+    assert body["registration"]["name"] == "agenticbotplatform"
     assert evicted == [("hermes_gateway", None, str(tmp_path / "home"))]
 
     delegation = hermes_config.read_delegation_config(str(tmp_path / "home"))  # sanity: file is real YAML
@@ -519,7 +519,7 @@ def test_enable_swarm_tools_registers_mcp_server_and_evicts_backend(temp_db, mon
     assert config_path.is_file()
     text = config_path.read_text(encoding="utf-8")
     assert "mcp_servers" in text
-    assert "botserver" in text
+    assert "agenticbotplatform" in text
     assert "bot.mcp_server" in text
 
 
@@ -552,16 +552,16 @@ def test_enable_swarm_tools_works_for_hermes_cli_with_no_eviction(temp_db, monke
 
     assert resp.status_code == 200
     body = resp.json()
-    assert body["registration"]["name"] == "botserver"
+    assert body["registration"]["name"] == "agenticbotplatform"
     assert "fresh gateway spawn" not in body["note"]
     assert evicted == []  # no eviction needed for hermes_cli
-    assert hermes_config.is_botserver_mcp_registered(str(tmp_path / "home")) is True
+    assert hermes_config.is_agenticbotplatform_mcp_registered(str(tmp_path / "home")) is True
 
 
 def test_disable_swarm_tools_works_for_hermes_cli_with_no_eviction(temp_db, monkeypatch, tmp_path):
     client = _client(monkeypatch)
     instance_id = _create_hermes_instance(backend="hermes_cli", hermes_home=str(tmp_path / "home"))
-    hermes_config.register_botserver_mcp_server(hermes_home=str(tmp_path / "home"))
+    hermes_config.register_agenticbotplatform_mcp_server(hermes_home=str(tmp_path / "home"))
 
     from bot.router import router
 
@@ -582,53 +582,53 @@ def test_disable_swarm_tools_works_for_hermes_cli_with_no_eviction(temp_db, monk
 # --------------------------------------------------- swarm-tools status panel
 
 
-def test_is_botserver_mcp_registered_false_when_no_file(tmp_path, monkeypatch):
-    assert hermes_config.is_botserver_mcp_registered(str(tmp_path / "nope")) is False
+def test_is_agenticbotplatform_mcp_registered_false_when_no_file(tmp_path, monkeypatch):
+    assert hermes_config.is_agenticbotplatform_mcp_registered(str(tmp_path / "nope")) is False
 
 
-def test_is_botserver_mcp_registered_true_after_registering(tmp_path, monkeypatch, temp_db):
+def test_is_agenticbotplatform_mcp_registered_true_after_registering(tmp_path, monkeypatch, temp_db):
     home = str(tmp_path)
-    assert hermes_config.is_botserver_mcp_registered(home) is False
+    assert hermes_config.is_agenticbotplatform_mcp_registered(home) is False
 
-    hermes_config.register_botserver_mcp_server(hermes_home=home)
+    hermes_config.register_agenticbotplatform_mcp_server(hermes_home=home)
 
-    assert hermes_config.is_botserver_mcp_registered(home) is True
+    assert hermes_config.is_agenticbotplatform_mcp_registered(home) is True
 
 
-def test_unregister_botserver_mcp_server_removes_entry(tmp_path, monkeypatch, temp_db):
+def test_unregister_agenticbotplatform_mcp_server_removes_entry(tmp_path, monkeypatch, temp_db):
     home = str(tmp_path)
-    hermes_config.register_botserver_mcp_server(hermes_home=home)
-    assert hermes_config.is_botserver_mcp_registered(home) is True
+    hermes_config.register_agenticbotplatform_mcp_server(hermes_home=home)
+    assert hermes_config.is_agenticbotplatform_mcp_registered(home) is True
 
-    removed = hermes_config.unregister_botserver_mcp_server(hermes_home=home)
+    removed = hermes_config.unregister_agenticbotplatform_mcp_server(hermes_home=home)
 
     assert removed is True
-    assert hermes_config.is_botserver_mcp_registered(home) is False
+    assert hermes_config.is_agenticbotplatform_mcp_registered(home) is False
 
 
-def test_unregister_botserver_mcp_server_no_op_when_absent(tmp_path, monkeypatch, temp_db):
+def test_unregister_agenticbotplatform_mcp_server_no_op_when_absent(tmp_path, monkeypatch, temp_db):
     home = str(tmp_path)
-    removed = hermes_config.unregister_botserver_mcp_server(hermes_home=home)
+    removed = hermes_config.unregister_agenticbotplatform_mcp_server(hermes_home=home)
     assert removed is False
 
 
 def test_unregister_preserves_sibling_mcp_servers_and_comments(tmp_path, monkeypatch, temp_db):
     home = str(tmp_path)
     path = tmp_path / "config.yaml"
-    hermes_config.register_botserver_mcp_server(hermes_home=home)
+    hermes_config.register_agenticbotplatform_mcp_server(hermes_home=home)
     # Hand-add a sibling entry + comment, simulating a real user's config.
     text = path.read_text(encoding="utf-8")
     path.write_text("# a real user comment\n" + text.replace(
         "mcp_servers:\n", "mcp_servers:\n  agentic_toolkit:\n    command: some-python\n    args: [\"-m\", \"x\"]\n",
     ), encoding="utf-8")
 
-    hermes_config.unregister_botserver_mcp_server(hermes_home=home)
+    hermes_config.unregister_agenticbotplatform_mcp_server(hermes_home=home)
 
     final_text = path.read_text(encoding="utf-8")
     assert "a real user comment" in final_text
     assert "agentic_toolkit" in final_text
     assert "some-python" in final_text
-    assert "botserver" not in final_text
+    assert "agenticbotplatform" not in final_text
 
 
 def test_disable_route_evicts_only_when_something_was_removed(temp_db, monkeypatch, tmp_path):
@@ -650,7 +650,7 @@ def test_disable_route_evicts_only_when_something_was_removed(temp_db, monkeypat
     assert resp.json()["removed"] is False
     assert evicted == []
 
-    hermes_config.register_botserver_mcp_server(hermes_home=str(tmp_path / "home"))
+    hermes_config.register_agenticbotplatform_mcp_server(hermes_home=str(tmp_path / "home"))
     resp = client.post(f"/api/hermes/{instance_id}/disable-swarm-tools", headers=_headers())
     assert resp.status_code == 200
     assert resp.json()["removed"] is True
@@ -666,7 +666,7 @@ def test_swarm_tools_status_lists_both_hermes_backends_with_flag(temp_db, monkey
     )
     _create_cli_instance()  # backend="cli" (Claude Code) — not a Hermes backend, must be excluded
 
-    hermes_config.register_botserver_mcp_server(hermes_home=str(tmp_path / "a"))
+    hermes_config.register_agenticbotplatform_mcp_server(hermes_home=str(tmp_path / "a"))
 
     resp = client.get("/api/hermes/swarm-tools-status", headers=_headers())
 

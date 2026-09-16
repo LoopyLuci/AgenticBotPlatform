@@ -173,7 +173,7 @@ def _rows_from_gateway_payload(payload: dict) -> dict[str, list[dict]]:
     ..., "output": ...} once `_apply_pricing` has run) into
     {provider_slug: [{"id", "free", "input", "output"}, ...]}. Tolerant of
     whatever subset of fields a given payload actually has — this reads
-    a third-party process's live JSON, not a contract BotServer controls.
+    a third-party process's live JSON, not a contract AgenticBotPlatform controls.
 
     Keyed by each row's `slug` (e.g. "nous", "openrouter"), NOT its `name`
     (e.g. "Nous Portal", "OpenRouter") — `slug` is the literal value

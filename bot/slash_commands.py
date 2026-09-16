@@ -45,6 +45,7 @@ COMMAND_DEFS: tuple[CommandDef, ...] = (
     CommandDef("model", "Show or change the model (interactive picker)", category="Config",
                args_hint="[show | set <backend> <model>]", aliases=("menu",)),
     CommandDef("mcp", "Manage MCP servers", category="Tools", args_hint="list | enable | disable | logs <name>"),
+    CommandDef("devices", "Manage paired devices", category="Tools", args_hint="list | revoke <id> | retier <id> <tier>", admin_only=True),
     CommandDef("project", "Set the working directory for the next /ask", category="Session", args_hint="open <path>"),
     CommandDef("new", "Start a new session (fresh history)", category="Session",
                aliases=("new_session",), busy_policy="interrupt_then_dispatch"),
@@ -109,7 +110,7 @@ ALIASES: dict[str, str] = {
 
 # Pins the commands worth seeing first in Telegram's "/" menu when there
 # isn't room for everything (mirrors the intent of Hermes's
-# _TELEGRAM_MENU_PRIORITY, sized down to what BotServer actually has).
+# _TELEGRAM_MENU_PRIORITY, sized down to what AgenticBotPlatform actually has).
 _TELEGRAM_MENU_PRIORITY: tuple[str, ...] = (
     "help", "ask", "stop", "status", "gateway", "new", "sessions", "resume", "model", "backend", "mcp", "project",
     "background", "queue", "steer", "pause", "agents", "approve", "deny",

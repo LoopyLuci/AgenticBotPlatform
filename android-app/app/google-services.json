@@ -1,15 +1,15 @@
 {
   "project_info": {
     "project_number": "000000000000",
-    "project_id": "botserver-mobile-placeholder",
-    "storage_bucket": "botserver-mobile-placeholder.appspot.com"
+    "project_id": "agenticbotplatform-mobile-placeholder",
+    "storage_bucket": "agenticbotplatform-mobile-placeholder.appspot.com"
   },
   "client": [
     {
       "client_info": {
         "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
         "android_client_info": {
-          "package_name": "com.botserver.mobile"
+          "package_name": "com.agenticbotplatform.mobile"
         }
       },
       "oauth_client": [],

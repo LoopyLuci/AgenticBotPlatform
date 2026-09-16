@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Publishes one BotServer release — the single, repeatable process for
+"""Publishes one AgenticBotPlatform release — the single, repeatable process for
 "a new version, out on GitHub, with the right file attached for each app's
 own auto-updater to actually find."
 
@@ -13,8 +13,8 @@ script). That let two real bugs slip in silently:
    correctly saw "0.7.10 is newer than my 0.4.0" but could never actually
    install it.
 2. The desktop asset uploaded to those releases was the bare
-   `bot-server.exe` (the raw, unpacked binary) instead of the real NSIS
-   installer (`bundle/nsis/BotServer_<ver>_x64-setup.exe`) that
+   `agentic-bot-platform.exe` (the raw, unpacked binary) instead of the real NSIS
+   installer (`bundle/nsis/AgenticBotPlatform_<ver>_x64-setup.exe`) that
    `cargo tauri build` actually produces. updater.rs specifically looks for
    an asset whose name ends in "-setup.exe" (the only thing `install_update()`
    can silently run with NSIS's `/S` flag) — a bare .exe doesn't match, so
@@ -178,7 +178,7 @@ def main() -> None:
     if existing_tags:
         die(f"tag {tag} already exists — pick a new version")
 
-    print(f"\n=== Publishing BotServer {tag} ===\n")
+    print(f"\n=== Publishing AgenticBotPlatform {tag} ===\n")
 
     bump_cargo_toml(version)
     bump_tauri_conf(version)

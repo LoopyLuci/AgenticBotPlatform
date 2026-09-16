@@ -1,14 +1,14 @@
 services:
-  botserver:
+  agenticbotplatform:
     build: .
     ports:
       - "8787:8787"
     volumes:
       - ./.env:/app/.env
-      - botserver-data:/app/data
-      - botserver-config:/app/config
+      - agenticbotplatform-data:/app/data
+      - agenticbotplatform-config:/app/config
     restart: unless-stopped
 
 volumes:
-  botserver-data:
-  botserver-config:
+  agenticbotplatform-data:
+  agenticbotplatform-config:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Bot Server installer — visual GUI.
+"""Agentic Bot Platform installer — visual GUI.
 
 A real-time, visual front end for scripts/install.py: same
 hardware/software-aware detection and installation logic, no separate
@@ -85,7 +85,7 @@ class InstallerApp:
         self.tk, self.ttk, self.scrolledtext, self.messagebox = tk, ttk, scrolledtext, messagebox
 
         self.root = tk.Tk()
-        self.root.title("Bot Server — Installer")
+        self.root.title("Agentic Bot Platform — Installer")
         self.root.geometry("760x560")
         self.root.minsize(640, 480)
 
@@ -109,7 +109,7 @@ class InstallerApp:
         self.detect_frame = ttk.Frame(self.root, padding=16)
         self.detect_frame.pack(fill="both", expand=True)
 
-        ttk.Label(self.detect_frame, text="Bot Server Installer", font=("Segoe UI", 16, "bold")).pack(anchor="w")
+        ttk.Label(self.detect_frame, text="Agentic Bot Platform Installer", font=("Segoe UI", 16, "bold")).pack(anchor="w")
         ttk.Label(self.detect_frame, text="Detecting this machine's hardware and software environment…",
                   foreground="#666").pack(anchor="w", pady=(2, 12))
 
@@ -128,7 +128,7 @@ class InstallerApp:
         self.var_system_deps = tk.BooleanVar(value=True)
         ttk.Checkbutton(opts, text="Build the production desktop app when done (cargo tauri build)",
                         variable=self.var_build).pack(anchor="w")
-        ttk.Checkbutton(opts, text="Register Bot Server to start at login",
+        ttk.Checkbutton(opts, text="Register Agentic Bot Platform to start at login",
                         variable=self.var_autostart).pack(anchor="w")
         ttk.Checkbutton(opts, text="Install missing system packages (Rust, Tauri CLI, native libs) — uncheck if already installed",
                         variable=self.var_system_deps).pack(anchor="w")
@@ -253,7 +253,7 @@ class InstallerApp:
         self.progress_frame = ttk.Frame(self.root, padding=16)
         self.progress_frame.pack(fill="both", expand=True)
 
-        ttk.Label(self.progress_frame, text="Installing Bot Server…", font=("Segoe UI", 16, "bold")).pack(anchor="w")
+        ttk.Label(self.progress_frame, text="Installing Agentic Bot Platform…", font=("Segoe UI", 16, "bold")).pack(anchor="w")
         self.current_step_var = tk.StringVar(value="Starting…")
         ttk.Label(self.progress_frame, textvariable=self.current_step_var, foreground="#666").pack(anchor="w", pady=(2, 8))
 

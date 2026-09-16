@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Registers a launchd LaunchAgent that launches Bot Server at login and
+# Registers a launchd LaunchAgent that launches Agentic Bot Platform at login and
 # restarts it automatically if it exits. macOS equivalent of
 # scripts/install_task.ps1 (Windows Task Scheduler) and
 # scripts/install_service.sh (Linux systemd --user) — same two behaviors
@@ -12,10 +12,10 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-exe="$root/desktop-app/src-tauri/target/release/bot-server"
+exe="$root/desktop-app/src-tauri/target/release/agentic-bot-platform"
 run_script="$root/scripts/run.sh"
 agents_dir="$HOME/Library/LaunchAgents"
-plist="$agents_dir/com.botserver.app.plist"
+plist="$agents_dir/com.agenticbotplatform.app.plist"
 
 mkdir -p "$agents_dir"
 
@@ -35,7 +35,7 @@ cat > "$plist" <<EOF
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.botserver.app</string>
+    <string>com.agenticbotplatform.app</string>
     <key>ProgramArguments</key>
     <array>
         $program_args
@@ -60,6 +60,6 @@ EOF
 launchctl unload "$plist" >/dev/null 2>&1 || true
 launchctl load "$plist"
 
-echo "Registered LaunchAgent 'com.botserver.app' — runs at login, restarts on failure (unless it exits cleanly)."
-echo "Start it now with: launchctl start com.botserver.app"
+echo "Registered LaunchAgent 'com.agenticbotplatform.app' — runs at login, restarts on failure (unless it exits cleanly)."
+echo "Start it now with: launchctl start com.agenticbotplatform.app"
 echo "Unregister later with: launchctl unload $plist && rm $plist"

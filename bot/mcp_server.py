@@ -23,8 +23,8 @@ Run standalone for testing:
 To use from Claude Desktop or Claude Code, register it as an MCP server
 pointing at this project's venv python running `-m bot.mcp_server` — see
 desktop.py's register_self_mcp() for the Claude Desktop case, or run
-`claude mcp add bot-server -- <path to .venv>\\Scripts\\python.exe -m bot.mcp_server`
-(Windows) or `claude mcp add bot-server -- <path to .venv>/bin/python -m bot.mcp_server`
+`claude mcp add agentic-bot-platform -- <path to .venv>\\Scripts\\python.exe -m bot.mcp_server`
+(Windows) or `claude mcp add agentic-bot-platform -- <path to .venv>/bin/python -m bot.mcp_server`
 (Linux/macOS) for Claude Code. Either way the dashboard API itself must
 already be running (launch the built app, or `python -m bot.main`) — this
 process is a thin client, not a second copy of the server.
@@ -63,7 +63,7 @@ logging.getLogger().setLevel(logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger("bot.mcp_server")
 
-mcp = MCPServer("bot-server")
+mcp = MCPServer("agentic-bot-platform")
 
 # A single long-lived client instead of one per tool call: this process
 # lives for the whole Claude Desktop/Code session, so paying connection
@@ -218,10 +218,10 @@ async def get_setup_status() -> dict:
 
 @mcp.tool()
 async def create_snapshot(label: Optional[str] = None) -> dict:
-    """Take a point-in-time snapshot of BotServer's own config (backends.yaml,
+    """Take a point-in-time snapshot of AgenticBotPlatform's own config (backends.yaml,
     providers.yaml) and database — safe to call at any time, never stops
     or interrupts the running app. Call this BEFORE making a risky change
-    to BotServer's own code/config/data (a migration, a bulk edit, an
+    to AgenticBotPlatform's own code/config/data (a migration, a bulk edit, an
     experimental refactor) so restore_snapshot can undo it if something
     goes wrong. `label` is an optional short tag (e.g. "before-db-migration")
     to make the snapshot easier to find in list_snapshots later."""
@@ -256,7 +256,7 @@ async def hot_reload_status() -> dict:
 async def trigger_hot_reload() -> dict:
     """Force a full hot-reload cycle right now over every hot-reloadable
     bot/*.py module, regardless of whether anything actually changed on
-    disk — useful right after editing BotServer's own code to confirm it
+    disk — useful right after editing AgenticBotPlatform's own code to confirm it
     applied instead of waiting for the file watcher. Does nothing (and
     reports "restart_required"/"degraded") if the change touched a file
     that can't be safely hot-reloaded — see bot/hotreload.py's module
@@ -549,7 +549,7 @@ async def list_plugins() -> dict:
 @mcp.tool()
 async def list_external_mcp_servers(instance_id: Optional[int] = None) -> dict:
     """List every configured external (third-party) MCP server — distinct
-    from BotServer's own MCP server (this one). Shows transport, whether
+    from AgenticBotPlatform's own MCP server (this one). Shows transport, whether
     it's enabled, and whether it's currently connected."""
     params = {"instance_id": instance_id} if instance_id is not None else {}
     return await _request("GET", "/api/mcp-external", params=params)
@@ -733,7 +733,7 @@ async def disengage_estop() -> dict:
 @mcp.tool()
 async def list_available_models(instance_id: Optional[int] = None) -> dict:
     """The full model catalog Claude needs to pick an "optimal free model":
-    Claude's own live /v1/models, BotServer's custom_model provider
+    Claude's own live /v1/models, AgenticBotPlatform's custom_model provider
     registry's live catalogs, and (pass instance_id for a specific
     hermes_gateway-backed bot instance) that instance's own live,
     pricing-annotated Hermes inventory — real `free: bool` per model, not
@@ -806,7 +806,7 @@ async def set_hermes_agent_config(instance_id: int, reasoning_effort: str) -> di
     own reasoning depth, distinct from configure_delegation's
     reasoning_effort (its children's). Confirmed against Hermes's real
     source: there is no tool Hermes's own agent can call to change its
-    own effort mid-turn — this MCP tool, reachable because BotServer's
+    own effort mid-turn — this MCP tool, reachable because AgenticBotPlatform's
     own MCP server is registered into the Hermes instance (see
     enable_hermes_swarm_tools), is the only self-service way to do it
     without a human typing the gateway's /reasoning command."""
@@ -834,7 +834,7 @@ async def dispatch_swarm_goal(
     Hermes agent-loop context) — this tool's real leverage is the config
     + prompt it sends, trusting Hermes's own agent to do the delegating.
     There is no external steer/stop for an individual sub-agent spawned
-    this way; cancelling only stops BotServer's own wait, not the
+    this way; cancelling only stops AgenticBotPlatform's own wait, not the
     underlying Hermes task (see the Hermes-swarm plan's Phase 3 notes).
     This call blocks until the whole swarm run (parent + every child)
     finishes — call list_available_models first if you want to see what
@@ -938,14 +938,14 @@ async def set_swarm_budget_config(
 async def enable_hermes_swarm_tools(instance_id: int) -> dict:
     """Gives a Hermes-backed instance's own agent (hermes_cli or
     hermes_gateway) the SAME cross-instance organizing ability you
-    (Claude) have through this very MCP server: registers bot-server's
+    (Claude) have through this very MCP server: registers agentic-bot-platform's
     own MCP control server into that Hermes instance's config, so its
     agent can call ask_instance, run_swarm, dispatch_swarm_goal,
     list_available_models, create_bot_instance, and configure_delegation
     itself, mid-turn — reaching OTHER bot instances (Claude- or
     Hermes-backed), not just the sub-agents it can already spawn via its
     own native delegate_task. This is what lets a Hermes agent organize
-    and use a swarm of BotServer agents, not only a swarm of its own
+    and use a swarm of AgenticBotPlatform agents, not only a swarm of its own
     children.
 
     Takes effect on that instance's NEXT message, not this call.
@@ -959,7 +959,7 @@ async def enable_hermes_swarm_tools(instance_id: int) -> dict:
     own bot_instances name as `source_instance` — this Hermes agent won't
     know its own name unless told. Give it that context via its
     custom_instructions (e.g. "your bot_instances name is 'worker-1' —
-    use the botserver MCP tools' source_instance='worker-1' to reach
+    use the agenticbotplatform MCP tools' source_instance='worker-1' to reach
     other agents"), set through the dashboard's Bots tab or a direct
     PUT /api/bots/{id} call."""
     return await _request("POST", f"/api/hermes/{instance_id}/enable-swarm-tools", timeout=30.0)
@@ -967,7 +967,7 @@ async def enable_hermes_swarm_tools(instance_id: int) -> dict:
 
 @mcp.tool()
 async def disable_hermes_swarm_tools(instance_id: int) -> dict:
-    """Reverses enable_hermes_swarm_tools — removes bot-server's MCP
+    """Reverses enable_hermes_swarm_tools — removes agentic-bot-platform's MCP
     server from this Hermes instance's config, so its agent can no longer
     call ask_instance/run_swarm/dispatch_swarm_goal/etc. itself. Also
     takes effect on the instance's next message, not this call."""
@@ -977,7 +977,7 @@ async def disable_hermes_swarm_tools(instance_id: int) -> dict:
 @mcp.tool()
 async def hermes_swarm_tools_status() -> dict:
     """Every Hermes-backed bot instance (hermes_cli or hermes_gateway)
-    and whether it currently has bot-server's MCP server registered
+    and whether it currently has agentic-bot-platform's MCP server registered
     (enable_hermes_swarm_tools) — the same data the dashboard's
     swarm-tools panel shows. A config-file read, not a live check of
     whether a running gateway actually connected — see the route's own
@@ -1013,7 +1013,7 @@ async def run_swarm(source_instance: str, swarm: str, prompt: str) -> dict:
 
 
 if __name__ == "__main__":
-    logger.info("bot-server MCP server starting (dashboard at %s)", BASE_URL)
+    logger.info("agentic-bot-platform MCP server starting (dashboard at %s)", BASE_URL)
     try:
         mcp.run(transport="stdio")
     finally:
@@ -1032,4 +1032,4 @@ if __name__ == "__main__":
                 asyncio.run(_client.aclose())
             except Exception:
                 pass
-        logger.info("bot-server MCP server exiting")
+        logger.info("agentic-bot-platform MCP server exiting")

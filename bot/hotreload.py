@@ -1,4 +1,4 @@
-"""Python code hot-reload for BotServer's own `bot/*.py` source — applies
+"""Python code hot-reload for AgenticBotPlatform's own `bot/*.py` source — applies
 an edit to the already-running process instead of requiring the full
 stop/rebuild/relaunch cycle `scripts/local_pipeline.py` uses today.
 
@@ -20,7 +20,7 @@ tiers (see DENYLIST/PLATFORM_MODULES/RELOAD_ORDER below):
   name again; only tearing down and reconstructing the connection makes
   it call into freshly-reloaded code.
 - **Leaf/business-logic** (everything else — commands, validators,
-  plugins-of-BotServer-itself... see RELOAD_ORDER): reloaded only, no
+  plugins-of-AgenticBotPlatform-itself... see RELOAD_ORDER): reloaded only, no
   restart of anything, takes effect on the very next call, because every
   call site reaches these through a fresh attribute/global lookup at
   call time against the live module `__dict__` `importlib.reload()`
@@ -101,6 +101,16 @@ DENYLIST: frozenset[str] = frozenset({
     # module changes rarely and a stale advertisement is harmless (the
     # dashboard's real HTTP server is unaffected either way).
     "bot.mdns_advertise",
+    # _handler is a module-level singleton logging.Handler already
+    # ATTACHED to the real root logger (see install()) — the exact same
+    # hazard as mdns_advertise.py's _zeroconf singleton above: a reload
+    # would rebind this module's own `_handler` name to a fresh None
+    # while the old handler instance keeps sitting in the root logger's
+    # handler list, live and orphaned. Any code that then calls
+    # install()/subscribe() again gets a second handler layered on top —
+    # duplicate delivery of every future log record — instead of the one
+    # ring buffer this whole feature assumes there is exactly one of.
+    "bot.activity_log",
 })
 
 # module dotted-name -> the platform name to pass to
@@ -274,7 +284,7 @@ async def run_cycle(
     """Parameterized so tests can drive this against a throwaway package
     under tmp_path instead of mutating real bot/*.py files. The real
     watch loop and the manual "reload now" trigger both call this with
-    BotServer's own constants (the defaults above)."""
+    AgenticBotPlatform's own constants (the defaults above)."""
     relevant = [p for p in changed_files if p.suffix == ".py" and p.name != "__init__.py"]
     if not relevant:
         return {"status": "no_change", "detail": "no relevant .py files changed"}

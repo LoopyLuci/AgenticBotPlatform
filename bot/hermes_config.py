@@ -1,5 +1,5 @@
 """Reads/writes the `delegation:` section of Hermes Agent's own
-config.yaml — a third-party file BotServer does not own.
+config.yaml — a third-party file AgenticBotPlatform does not own.
 
 This is deliberately narrow: only the `delegation` mapping is ever
 touched, and only the keys explicitly passed to set_delegation() are
@@ -232,15 +232,15 @@ def set_agent_config(
     return dict(agent)
 
 
-def register_botserver_mcp_server(
+def register_agenticbotplatform_mcp_server(
     *,
     hermes_home: Optional[str] = None,
     dashboard_token: Optional[str] = None,
     actor: str = "dashboard",
 ) -> dict[str, Any]:
-    """Registers BotServer's own MCP control server (bot/mcp_server.py)
+    """Registers AgenticBotPlatform's own MCP control server (bot/mcp_server.py)
     into this Hermes instance's `mcp_servers:` section under the name
-    "botserver", pointing at this project's own top-level .venv python
+    "agenticbotplatform", pointing at this project's own top-level .venv python
     (see envfile.stable_python_executable) rather than sys.executable —
     mirrors bot/desktop.py's register_self_mcp() for Claude Desktop
     (same fix, same reason: sys.executable would resolve to the
@@ -254,7 +254,7 @@ def register_botserver_mcp_server(
     This is what completes the "Hermes can organize swarms too" half of
     the Hermes-swarm plan: a Hermes agent already gets its own delegate_task
     for spawning its own children (Phase 3), but had no way to reach
-    OTHER BotServer bot_instances (a different Hermes worker, or a
+    OTHER AgenticBotPlatform bot_instances (a different Hermes worker, or a
     Claude-backed one) the way Claude itself can via this same MCP
     server, or an `api`-backend agent can via delegate_to_instance
     (Phase 4). Registering this server gives a Hermes agent — mid-turn,
@@ -264,7 +264,7 @@ def register_botserver_mcp_server(
     create_bot_instance/configure_delegation, closing the loop in both
     directions.
 
-    Idempotent — re-running overwrites the one "botserver" entry (so it
+    Idempotent — re-running overwrites the one "agenticbotplatform" entry (so it
     stays correct after a token rotation). Takes effect only once this
     instance's Hermes gateway process is restarted — `mcp_servers` are
     read at gateway startup, not hot-reloaded — so the caller is expected
@@ -287,7 +287,7 @@ def register_botserver_mcp_server(
     if mcp_servers is None:
         mcp_servers = {}
         data["mcp_servers"] = mcp_servers
-    mcp_servers["botserver"] = {
+    mcp_servers["agenticbotplatform"] = {
         "command": python,
         "args": ["-m", "bot.mcp_server"],
         "env": env_vars,
@@ -297,20 +297,20 @@ def register_botserver_mcp_server(
 
     _atomic_write_yaml(path, data, yaml)
 
-    db.log_audit(actor=actor, action="hermes_mcp_register", detail=f"{path}: botserver -> {python}")
-    logger.info("registered botserver MCP server at %s -> %s", path, python)
-    return {"name": "botserver", "command": python, "config_path": str(path)}
+    db.log_audit(actor=actor, action="hermes_mcp_register", detail=f"{path}: agenticbotplatform -> {python}")
+    logger.info("registered agenticbotplatform MCP server at %s -> %s", path, python)
+    return {"name": "agenticbotplatform", "command": python, "config_path": str(path)}
 
 
-def is_botserver_mcp_registered(hermes_home: Optional[str] = None) -> bool:
+def is_agenticbotplatform_mcp_registered(hermes_home: Optional[str] = None) -> bool:
     """Whether this instance's Hermes config currently has the
-    "botserver" entry under `mcp_servers:` — i.e. whether
-    register_botserver_mcp_server() has been run for it (and not since
+    "agenticbotplatform" entry under `mcp_servers:` — i.e. whether
+    register_agenticbotplatform_mcp_server() has been run for it (and not since
     unregistered). Read-only, no write, so safe to call on every
     dashboard render. Does NOT reflect whether the instance's live
     gateway process has actually picked up the change yet — mcp_servers
     are read at gateway startup, so a freshly-registered entry only takes
-    effect after the next spawn (see register_botserver_mcp_server's
+    effect after the next spawn (see register_agenticbotplatform_mcp_server's
     docstring); this only reports what the config FILE says."""
     path = _config_path(hermes_home)
     if not path.is_file():
@@ -320,13 +320,13 @@ def is_botserver_mcp_registered(hermes_home: Optional[str] = None) -> bool:
         with path.open(encoding="utf-8") as f:
             data = yaml.load(f) or {}
     except Exception as exc:
-        logger.warning("is_botserver_mcp_registered: failed to read %s: %s", path, exc)
+        logger.warning("is_agenticbotplatform_mcp_registered: failed to read %s: %s", path, exc)
         return False
-    return "botserver" in (data.get("mcp_servers") or {})
+    return "agenticbotplatform" in (data.get("mcp_servers") or {})
 
 
-def unregister_botserver_mcp_server(hermes_home: Optional[str] = None, actor: str = "dashboard") -> bool:
-    """Removes the "botserver" entry from this instance's `mcp_servers:`
+def unregister_agenticbotplatform_mcp_server(hermes_home: Optional[str] = None, actor: str = "dashboard") -> bool:
+    """Removes the "agenticbotplatform" entry from this instance's `mcp_servers:`
     section, if present. Returns whether an entry was actually removed.
     Same "takes effect on next gateway spawn" caveat as registering —
     the caller is expected to evict/reconnect the backend afterward."""
@@ -338,12 +338,12 @@ def unregister_botserver_mcp_server(hermes_home: Optional[str] = None, actor: st
     yaml = _yaml()
     data = _load_yaml_or_empty(path, yaml)
     mcp_servers = data.get("mcp_servers") or {}
-    if "botserver" not in mcp_servers:
+    if "agenticbotplatform" not in mcp_servers:
         return False
-    del mcp_servers["botserver"]
+    del mcp_servers["agenticbotplatform"]
     _atomic_write_yaml(path, data, yaml)
-    db.log_audit(actor=actor, action="hermes_mcp_unregister", detail=f"{path}: removed botserver")
-    logger.info("unregistered botserver MCP server at %s", path)
+    db.log_audit(actor=actor, action="hermes_mcp_unregister", detail=f"{path}: removed agenticbotplatform")
+    logger.info("unregistered agenticbotplatform MCP server at %s", path)
     return True
 
 

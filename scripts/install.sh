@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bot Server installer — Linux/macOS bootstrap.
+# Agentic Bot Platform installer — Linux/macOS bootstrap.
 #
 # Thin entry point: its only job is to guarantee a real Python 3.11+ is on
 # PATH (installing it via the native package manager if it's missing —
@@ -26,7 +26,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
-echo "Bot Server — Linux/macOS bootstrap"
+echo "Agentic Bot Platform — Linux/macOS bootstrap"
 
 find_python() {
     for cmd in python3.12 python3.11 python3 python; do

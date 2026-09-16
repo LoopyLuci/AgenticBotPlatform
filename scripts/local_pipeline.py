@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""BotServer's local CI/CD pipeline — 100% on this machine, no cloud runner.
+"""AgenticBotPlatform's local CI/CD pipeline — 100% on this machine, no cloud runner.
 
 Replaces the GitHub Actions workflow this project used to push every
 commit's checks to GitHub's own servers for. This runs the same checks
@@ -135,7 +135,7 @@ def changed_files() -> Optional[set[str]]:
     or None if that can't be determined — an unknown scope always means
     "run everything", never "assume nothing changed"."""
     range_spec = None
-    if os.environ.get("BOTSERVER_LOCAL_PIPELINE_HOOK") == "1":
+    if os.environ.get("AGENTICBOTPLATFORM_LOCAL_PIPELINE_HOOK") == "1":
         # git feeds a pre-push hook "<local ref> <local sha> <remote ref>
         # <remote sha>" lines on stdin — only read it under this env var
         # (set solely by scripts/git-hooks/pre-push) so a manual run of
@@ -163,12 +163,12 @@ def changed_files() -> Optional[set[str]]:
     return {line.strip().replace(os.sep, "/") for line in out.splitlines() if line.strip()}
 
 
-_EXE_NAME = "bot-server.exe" if IS_WINDOWS else "bot-server"
+_EXE_NAME = "agentic-bot-platform.exe" if IS_WINDOWS else "agentic-bot-platform"
 _EXE_PATH = ROOT / "desktop-app" / "src-tauri" / "target" / "release" / _EXE_NAME
 
 
 def find_running_instance() -> Optional[int]:
-    """PID of a currently-running bot-server(.exe), or None. Real, not
+    """PID of a currently-running agentic-bot-platform(.exe), or None. Real, not
     theoretical: on Windows, Tauri's own build script re-copies
     tauri.conf.json's bundle.resources (the whole .venv) into
     target/release/ on every cargo check/clippy/build — see the existing
@@ -229,7 +229,7 @@ def find_mcp_server_pids() -> list[int]:
     compiled extension modules (cryptography's _rust.pyd, etc.) mapped
     into memory — Tauri's build script then fails with a locked-file
     error that looks identical to, but has a different root cause than,
-    bot-server.exe still running."""
+    agentic-bot-platform.exe still running."""
     if IS_WINDOWS:
         out = subprocess.run(
             ["powershell.exe", "-NoProfile", "-Command",
@@ -363,7 +363,7 @@ def check_docker() -> Optional[bool]:
     if not info_ok:
         Step.skip("Docker daemon not running — skipping (Docker is optional, see README)")
         return None
-    ok, out = _run(["docker", "build", "-t", "botserver:local-ci", str(ROOT)])
+    ok, out = _run(["docker", "build", "-t", "agenticbotplatform:local-ci", str(ROOT)])
     if not ok:
         Step.err("docker build failed:\n" + out[-4000:])
         return False
@@ -379,24 +379,24 @@ def _service_restart_command() -> Optional[list[str]]:
     if IS_WINDOWS:
         check = subprocess.run(
             ["powershell.exe", "-NoProfile", "-Command",
-             "if (Get-ScheduledTask -TaskName BotServer -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"],
+             "if (Get-ScheduledTask -TaskName AgenticBotPlatform -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"],
             capture_output=True,
         )
         if check.returncode != 0:
             return None
         return ["powershell.exe", "-NoProfile", "-Command",
-                "Stop-ScheduledTask -TaskName BotServer -ErrorAction SilentlyContinue; "
-                "Start-ScheduledTask -TaskName BotServer"]
+                "Stop-ScheduledTask -TaskName AgenticBotPlatform -ErrorAction SilentlyContinue; "
+                "Start-ScheduledTask -TaskName AgenticBotPlatform"]
     if IS_MACOS:
-        plist = Path.home() / "Library" / "LaunchAgents" / "com.botserver.app.plist"
+        plist = Path.home() / "Library" / "LaunchAgents" / "com.agenticbotplatform.app.plist"
         if not plist.exists():
             return None
-        return ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/com.botserver.app"]
+        return ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/com.agenticbotplatform.app"]
     if IS_LINUX:
-        unit = Path.home() / ".config" / "systemd" / "user" / "bot-server.service"
+        unit = Path.home() / ".config" / "systemd" / "user" / "agentic-bot-platform.service"
         if not unit.exists():
             return None
-        return ["systemctl", "--user", "restart", "bot-server.service"]
+        return ["systemctl", "--user", "restart", "agentic-bot-platform.service"]
     return None
 
 
@@ -423,7 +423,7 @@ def deploy(was_running: bool) -> bool:
         return True
 
     if was_running:
-        Step.doing("relaunching bot-server (it was running before this pipeline started)")
+        Step.doing("relaunching agentic-bot-platform (it was running before this pipeline started)")
         relaunch_bare()
         Step.ok("relaunched — this build is now live")
     else:
@@ -457,7 +457,7 @@ def main() -> int:
     real_stdout, real_stderr = sys.stdout, sys.stderr
     sys.stdout = sys.stderr = _Tee()
     try:
-        print("BotServer local CI/CD pipeline")
+        print("AgenticBotPlatform local CI/CD pipeline")
 
         Step.head("Change detection")
         changed = changed_files()
@@ -485,7 +485,7 @@ def main() -> int:
         if was_running:
             Step.head("Stopping the running instance")
             Step.doing(f"a build check can't succeed while its own bundled venv is in "
-                       f"use — stopping bot-server (pid {running_pid})")
+                       f"use — stopping agentic-bot-platform (pid {running_pid})")
             stop_instance(running_pid)
             Step.ok("stopped")
 

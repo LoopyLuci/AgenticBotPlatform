@@ -10,7 +10,7 @@ example response shapes) — so these never reach
 dispatch code is needed anywhere in `native_backend.py` for them.
 `AnthropicTransport.send()` (`bot/agent_runtime/transports/anthropic.py`)
 is the only wiring point: it appends `enabled_tool_entries()` to the
-request's own `tools` array alongside BotServer's client tool schemas.
+request's own `tools` array alongside AgenticBotPlatform's client tool schemas.
 
 Off by default per-tool (`config/backends.yaml`'s `native_agent.server_tools`)
 — each bills real usage-based cost on top of tokens (e.g. web search is
@@ -28,7 +28,7 @@ pin as Anthropic ships new dated releases).
 
 from __future__ import annotations
 
-# name (the config key BotServer's own operator toggles) -> the real
+# name (the config key AgenticBotPlatform's own operator toggles) -> the real
 # Anthropic tool-type string sent on the wire.
 TOOL_TYPES: dict[str, str] = {
     "web_search": "web_search_20260318",

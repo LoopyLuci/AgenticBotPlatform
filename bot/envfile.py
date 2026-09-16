@@ -4,7 +4,7 @@ edit its contents in place.
 Two supported locations, checked in order, plus an explicit override:
   1. an explicit path set via config/backends.yaml's `env_file` key
      (settable from the dashboard's Control Center -> Environment card)
-  2. Z:\\Projects\\BotServer\\.env (this project's own .env)
+  2. Z:\\Projects\\AgenticBotPlatform\\.env (this project's own .env)
   3. ~/.claude/.env (a global .env shared with other Claude tooling)
 
 Every write through write_content()/restore_backup() is preceded by a
@@ -19,6 +19,7 @@ vars to load) so it can run before anything else in bot/main.py.
 from __future__ import annotations
 
 import re
+import secrets
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -37,7 +38,7 @@ import yaml
 # relative path only if this exact install ever moves or doesn't exist
 # (e.g. this code ends up on a different machine).
 _DEV_ROOT = Path(__file__).resolve().parent.parent
-_CANONICAL_ROOT = Path(r"Z:\Projects\BotServer")
+_CANONICAL_ROOT = Path(r"Z:\Projects\AgenticBotPlatform")
 PROJECT_ROOT = _CANONICAL_ROOT if _CANONICAL_ROOT.exists() else _DEV_ROOT
 
 PROJECT_ENV = PROJECT_ROOT / ".env"
@@ -212,6 +213,26 @@ def get_var(key: str) -> Optional[str]:
         if m:
             return m.group(1).strip().strip('"').strip("'")
     return None
+
+
+def ensure_dashboard_token() -> str:
+    """Guarantees DASHBOARD_TOKEN exists in .env, generating and persisting
+    a fresh one the first time this ever runs on a given install — the
+    manual-paste prompt in the dashboard UI should only ever be a fallback
+    for someone editing .env by hand, never something a normal boot
+    requires. Idempotent: a token already present is returned unchanged.
+    Safe to call before bot.config/bot.db exist yet (a brand-new install's
+    very first boot), since it only touches the .env file itself."""
+    existing = get_var("DASHBOARD_TOKEN")
+    if existing:
+        return existing
+    token = secrets.token_hex(24)
+    content = read_content()
+    if content and not content.endswith("\n"):
+        content += "\n"
+    content += f"DASHBOARD_TOKEN={token}\n"
+    write_content(content, actor="auto-generate")
+    return token
 
 
 if __name__ == "__main__":

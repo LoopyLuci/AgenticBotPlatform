@@ -6,7 +6,7 @@ drops unsolicited inbound connections by default (a timeout, not a clean
 rejection — the exact symptom that made this hard to diagnose from the
 error message alone the first time around).
 
-Only manages one specifically-named rule per port ("BotServer Dashboard
+Only manages one specifically-named rule per port ("AgenticBotPlatform Dashboard
 (TCP <port>)") rather than trying to determine whether the port is
 *somehow* already reachable through some other rule, group policy, or
 third-party firewall product — that's not reliably decidable from the
@@ -39,7 +39,7 @@ def is_supported() -> bool:
 
 
 def _rule_name(port: int) -> str:
-    return f"BotServer Dashboard (TCP {port})"
+    return f"AgenticBotPlatform Dashboard (TCP {port})"
 
 
 def has_inbound_rule(port: int) -> Optional[bool]:

@@ -40,8 +40,8 @@ from bot.support_bot.model_io import MODELS_DIR
 # ever imported, so a real data/support_bot_models/ left behind by live
 # desktop testing in this same checkout can never leak into (or be
 # overwritten by) a test run.
-MODULES_DIR = Path(os.environ.get("BOTSERVER_SUPPORT_BOT_MODULES_DIR") or (MODELS_DIR / "modules"))
-MANIFEST_PATH = Path(os.environ.get("BOTSERVER_SUPPORT_BOT_MANIFEST_PATH") or (MODELS_DIR / "manifest.json"))
+MODULES_DIR = Path(os.environ.get("AGENTICBOTPLATFORM_SUPPORT_BOT_MODULES_DIR") or (MODELS_DIR / "modules"))
+MANIFEST_PATH = Path(os.environ.get("AGENTICBOTPLATFORM_SUPPORT_BOT_MANIFEST_PATH") or (MODELS_DIR / "manifest.json"))
 
 
 def _now() -> str:

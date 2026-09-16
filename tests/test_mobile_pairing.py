@@ -59,7 +59,7 @@ def test_detect_hosts_skips_detection_entirely_when_all_three_given(monkeypatch)
 def test_build_pairing_code_embeds_all_three_hosts_and_the_key():
     code = mobile_pairing.build_pairing_code("secret-key", "192.168.1.50:8787", "100.101.98.77:8787", "https://x.ts.net")
 
-    assert code.startswith("botserver://pair?")
+    assert code.startswith("agenticbotplatform://pair?")
     assert "host=192.168.1.50%3A8787" in code
     assert "host2=100.101.98.77%3A8787" in code
     assert "host3=https%3A%2F%2Fx.ts.net" in code
@@ -69,7 +69,7 @@ def test_build_pairing_code_embeds_all_three_hosts_and_the_key():
 def test_build_pairing_code_omits_blank_slots():
     code = mobile_pairing.build_pairing_code("secret-key")
 
-    assert code == "botserver://pair?key=secret-key"
+    assert code == "agenticbotplatform://pair?key=secret-key"
 
 
 def test_build_pairing_code_url_encodes_special_characters_in_the_key():

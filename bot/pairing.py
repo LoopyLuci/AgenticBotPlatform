@@ -7,7 +7,7 @@ that source directly): short unambiguous codes, a TTL, a rate limit per
 user, and a cap on how many codes can be pending at once — the same
 constants Hermes uses, since they're sane defaults, not something specific
 to Hermes's own storage. Approval there is CLI-only; here it's a dashboard
-action (bot/dashboard/server.py's /api/pairing endpoints) since BotServer
+action (bot/dashboard/server.py's /api/pairing endpoints) since AgenticBotPlatform
 has no CLI a chat-bot owner would reach for — approving a specific,
 already-issued code from a list is unambiguous, so there's no equivalent to
 Hermes's "5 failed manual code entries -> lockout" (there's no free-text

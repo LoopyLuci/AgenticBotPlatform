@@ -1,5 +1,5 @@
 """NativeAgentBackend.ask()'s image-understanding wiring (Phase D of the
-native-BotServer-agents plan) — context["images"] threaded into a
+native-AgenticBotPlatform-agents plan) — context["images"] threaded into a
 vision-capable transport's user_message(), or dropped with an honest
 note when the transport can't handle it. Uses CustomModelBackend (a real
 OpenAICompatibleTransport, supports_vision=True) for the real end-to-end

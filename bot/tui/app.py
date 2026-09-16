@@ -1,12 +1,12 @@
-"""BotServer TUI — the terminal-world equivalent of the browser dashboard,
-built on Textual. Talks to a running BotServer's dashboard HTTP API over
+"""AgenticBotPlatform TUI — the terminal-world equivalent of the browser dashboard,
+built on Textual. Talks to a running AgenticBotPlatform's dashboard HTTP API over
 bot/tui/client.py's DashboardClient, never importing bot.* business-logic
 modules directly, so it works against a remote/federated install exactly
 like the desktop app already does. Run with `python -m bot.tui`.
 
 Bootstrapping the .env this app needs to even start (ANTHROPIC_API_KEY,
 DASHBOARD_TOKEN) is scripts/setup.py's job, not this one's — this is the
-ongoing "manage bots" terminal app, used after a BotServer instance is
+ongoing "manage bots" terminal app, used after a AgenticBotPlatform instance is
 already up, the same way the dashboard is used after the GUI setup
 wizard finishes.
 """
@@ -19,10 +19,10 @@ from bot.tui.client import DashboardClient
 from bot.tui.screens.connect import ConnectScreen
 
 
-class BotServerTUI(App):
+class AgenticBotPlatformTUI(App):
     """Root app — owns the one DashboardClient for the whole session."""
 
-    TITLE = "BotServer"
+    TITLE = "AgenticBotPlatform"
     CSS_PATH = "app.tcss"
 
     client: DashboardClient | None = None
@@ -36,7 +36,7 @@ class BotServerTUI(App):
 
 
 def main() -> None:
-    BotServerTUI().run()
+    AgenticBotPlatformTUI().run()
 
 
 if __name__ == "__main__":

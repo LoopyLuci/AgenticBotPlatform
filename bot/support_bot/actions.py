@@ -649,7 +649,7 @@ def _session_show(text: str, actor: str) -> str:
 # ---------------------------------------- claude/hermes connection setup --
 def _find_hermes_env_path() -> Optional[Path]:
     """Best-effort — Hermes Agent is a separate external tool with its own
-    config location, not something Bot Server installs or owns. Only
+    config location, not something Agentic Bot Platform installs or owns. Only
     checks the Windows default location Hermes itself uses; a missing
     result just means "couldn't check," not "not installed.\""""
     local_appdata = os.environ.get("LOCALAPPDATA")
@@ -717,12 +717,12 @@ def _hermes_setup_check(text: str, actor: str) -> str:
     if conflicts:
         lines.append(
             f"⚠️ Token conflict: {', '.join(conflicts)} share a platform token with Hermes's own gateway "
-            f"config ({hermes_env}). If Hermes's gateway starts, it will fight Bot Server for that token "
+            f"config ({hermes_env}). If Hermes's gateway starts, it will fight Agentic Bot Platform for that token "
             "(a 'Conflict: terminated by other getUpdates request' error). Comment out that platform's "
             "token in Hermes's own .env — see docs/connecting-claude-and-hermes.md for exact steps."
         )
     else:
-        lines.append("No token conflicts found between Hermes's own gateway config and Bot Server's bot instances.")
+        lines.append("No token conflicts found between Hermes's own gateway config and Agentic Bot Platform's bot instances.")
     return "\n".join(lines)
 
 

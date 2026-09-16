@@ -1,5 +1,5 @@
-"""Advertises this BotServer install on the local network via mDNS/DNS-SD
-(`_botserver._tcp.local.`) so the Android app's NsdDiscoveryClient can find
+"""Advertises this AgenticBotPlatform install on the local network via mDNS/DNS-SD
+(`_agenticbotplatform._tcp.local.`) so the Android app's NsdDiscoveryClient can find
 a live server without any stored IP — the server-side half of hardening
 mobile connectivity for "any network, any condition": when a phone's
 configured host(s) stop answering (a DHCP lease changed the LAN IP, a
@@ -23,7 +23,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-SERVICE_TYPE = "_botserver._tcp.local."
+SERVICE_TYPE = "_agenticbotplatform._tcp.local."
 
 _zeroconf = None
 _service_info = None
@@ -48,8 +48,8 @@ def start(port: Optional[int] = None) -> None:
             logger.info("mdns_advertise: no LAN address detected — skipping mDNS advertisement")
             return
 
-        hostname = socket.gethostname().split(".")[0] or "botserver"
-        service_name = f"BotServer on {hostname}.{SERVICE_TYPE}"
+        hostname = socket.gethostname().split(".")[0] or "agenticbotplatform"
+        service_name = f"AgenticBotPlatform on {hostname}.{SERVICE_TYPE}"
         info = ServiceInfo(
             SERVICE_TYPE,
             service_name,

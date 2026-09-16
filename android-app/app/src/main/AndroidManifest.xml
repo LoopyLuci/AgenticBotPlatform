@@ -21,15 +21,15 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
-        android:name=".BotServerApp"
+        android:name=".AgenticBotPlatformApp"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
-        android:theme="@style/Theme.BotServerMobile"
+        android:theme="@style/Theme.AgenticBotPlatformMobile"
         android:usesCleartextTraffic="true">
         <!--
-          Cleartext (plain HTTP) is required: BotServer has no TLS of its
+          Cleartext (plain HTTP) is required: AgenticBotPlatform has no TLS of its
           own by design (see docs/mobile-access.md) — the intended transport
           is a Tailscale tunnel or a trusted LAN, both already private, so
           this app talks plain HTTP *to a private address*, never to the
@@ -49,20 +49,20 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.BotServerMobile">
+            android:theme="@style/Theme.AgenticBotPlatformMobile">
             <!-- No MAIN/LAUNCHER intent-filter here — the launcher entry
                  point is one of the activity-aliases below instead, so the
                  visible launcher icon can be switched at runtime (Settings
                  > Appearance > App icon) via
                  PackageManager.setComponentEnabledSetting() without needing
                  a reinstall. See ui/appearance/AppIconSwitcher.kt. -->
-            <!-- botserver://pair?host=...&key=... deep link, for pairing via
+            <!-- agenticbotplatform://pair?host=...&key=... deep link, for pairing via
                  a shared link as an alternative to scanning the QR directly. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="botserver" android:host="pair" />
+                <data android:scheme="agenticbotplatform" android:host="pair" />
             </intent-filter>
         </activity>
 

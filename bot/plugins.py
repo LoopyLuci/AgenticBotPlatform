@@ -1,6 +1,6 @@
 """A local, file-backed plugin system — lets a bit of Python already on
 this machine's disk register new agent tools and/or slash commands into
-BotServer without editing core code.
+AgenticBotPlatform without editing core code.
 
 Trust model (see docs/adr/0007-plugins-are-trusted-local-code.md): a
 plugin is trusted local code that runs in-process with the full
@@ -146,7 +146,7 @@ def _unregister_plugin(name: str) -> None:
 
 
 def _load_module(name: str, path: Path) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(f"botserver_plugin_{name}", path)
+    spec = importlib.util.spec_from_file_location(f"agenticbotplatform_plugin_{name}", path)
     if spec is None or spec.loader is None:
         raise PluginError(f"couldn't load {path} as a Python module")
     module = importlib.util.module_from_spec(spec)

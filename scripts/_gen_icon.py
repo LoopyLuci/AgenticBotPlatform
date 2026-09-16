@@ -34,5 +34,5 @@ def make_png(path: str) -> None:
 
 
 if __name__ == "__main__":
-    make_png(r"Z:\Projects\BotServer\desktop-app\src-tauri\icon-source.png")
+    make_png(r"Z:\Projects\AgenticBotPlatform\desktop-app\src-tauri\icon-source.png")
     print("wrote icon-source.png")

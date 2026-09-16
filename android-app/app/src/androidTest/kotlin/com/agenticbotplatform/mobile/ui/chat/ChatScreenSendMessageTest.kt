@@ -1,0 +1,136 @@
+package com.agenticbotplatform.mobile.ui.chat
+
+import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
+import androidx.room.Room
+import androidx.test.espresso.Espresso.closeSoftKeyboard
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import com.agenticbotplatform.mobile.data.ApiService
+import com.agenticbotplatform.mobile.data.ChatRepository
+import com.agenticbotplatform.mobile.data.LiveEventsClient
+import com.agenticbotplatform.mobile.data.dto.BotInstanceSummary
+import com.agenticbotplatform.mobile.data.dto.ChatRecipientsResponse
+import com.agenticbotplatform.mobile.data.dto.ModelPickerResponse
+import com.agenticbotplatform.mobile.data.dto.OkResponse
+import com.agenticbotplatform.mobile.data.dto.SendMessageRequest
+import com.agenticbotplatform.mobile.data.dto.SendToBotResponse
+import com.agenticbotplatform.mobile.data.db.AppDatabase
+import com.agenticbotplatform.mobile.ui.model.ModelPickerViewModel
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.mockk
+import kotlinx.serialization.json.Json
+import okhttp3.OkHttpClient
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+/** Send-a-message flow: open the one bot's conversation from the chat list,
+ * type into the composer, tap send, confirm the request actually reaches
+ * ApiService with the typed text. ApiService is faked — this is about the
+ * screen -> ViewModel -> Repository wiring, not a real round trip (that
+ * path's chunking/pruning/cursor logic already has direct unit-test
+ * coverage in ChatRepositorySendFileTest and the Room tests). LiveEventsClient
+ * is real but harmlessly unable to connect in a test environment (no real
+ * AgenticBotPlatform listening) — its reconnect loop backs off in the background and
+ * never blocks this test. */
+@RunWith(AndroidJUnit4::class)
+class ChatScreenSendMessageTest {
+    @get:Rule
+    val composeRule = createAndroidComposeRule<ComponentActivity>()
+
+    private lateinit var db: AppDatabase
+    private lateinit var apiService: ApiService
+
+    @Before
+    fun setUp() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
+        apiService = mockk(relaxed = true)
+        coEvery { apiService.chatRecipients() } returns ChatRecipientsResponse(
+            instances = listOf(BotInstanceSummary(id = 1, name = "Test Bot", platform = "telegram", allowedIds = listOf("12345"), connected = true)),
+        )
+        coEvery { apiService.chatMessages(any(), any(), any()) } returns emptyList()
+        coEvery { apiService.sendMessage(any()) } returns OkResponse(ok = true)
+    }
+
+    @After
+    fun tearDown() {
+        db.close()
+    }
+
+    @Test
+    fun typingAMessageAndTappingSendReachesTheApiWithThatText() {
+        val liveEvents = LiveEventsClient(OkHttpClient(), Json { ignoreUnknownKeys = true; isLenient = true })
+        val repository = ChatRepository(apiService, db.chatDao(), liveEvents, InstrumentationRegistry.getInstrumentation().targetContext)
+        val viewModel = ChatViewModel(repository)
+        val modelPickerViewModel = ModelPickerViewModel(apiService)
+
+        composeRule.setContent {
+            ChatScreen(viewModel = viewModel, modelPickerViewModel = modelPickerViewModel)
+        }
+
+        // Give the initial recipients fetch (triggered by start()'s first,
+        // immediate iteration) a moment to land, then open its conversation —
+        // ChatScreen's landing view is the bot list, not the composer; a row
+        // tap is what actually switches to the conversation screen.
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            viewModel.uiState.value.instances.isNotEmpty()
+        }
+        composeRule.onNodeWithText("Test Bot").performClick()
+
+        composeRule.onNodeWithTag("chat-message-input").performTextInput("Hello there")
+        closeSoftKeyboard()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("chat-send").performClick()
+
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            // sendMessage() is called asynchronously off the click; poll the
+            // fake's recorded call rather than assume it lands the same frame.
+            try {
+                coVerify(exactly = 1) { apiService.sendMessage(SendMessageRequest(1, "12345", "Hello there")) }
+                true
+            } catch (e: AssertionError) {
+                false
+            }
+        }
+    }
+
+    @Test
+    fun typingSlashModelInChatWithBotModeOpensThePickerInsteadOfSendingIt() {
+        coEvery { apiService.sendToBot(any()) } returns SendToBotResponse(ok = true, reply = "should never be called")
+        coEvery { apiService.modelPicker(1, null, 0) } returns ModelPickerResponse(mode = "models", backend = "api", models = listOf("m1"))
+        val liveEvents = LiveEventsClient(OkHttpClient(), Json { ignoreUnknownKeys = true; isLenient = true })
+        val repository = ChatRepository(apiService, db.chatDao(), liveEvents, InstrumentationRegistry.getInstrumentation().targetContext)
+        val viewModel = ChatViewModel(repository)
+        val modelPickerViewModel = ModelPickerViewModel(apiService)
+
+        composeRule.setContent {
+            ChatScreen(viewModel = viewModel, modelPickerViewModel = modelPickerViewModel)
+        }
+
+        composeRule.waitUntil(timeoutMillis = 5_000) { viewModel.uiState.value.instances.isNotEmpty() }
+        composeRule.onNodeWithText("Test Bot").performClick()
+        viewModel.setMode(ChatMode.CHAT_WITH_BOT)
+
+        composeRule.onNodeWithTag("chat-message-input").performTextInput("/model")
+        closeSoftKeyboard()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("chat-send").performClick()
+
+        composeRule.waitUntil(timeoutMillis = 5_000) { modelPickerViewModel.state.value.visible }
+        assertEquals(1, modelPickerViewModel.state.value.instanceId)
+        // The whole point: this must never round-trip as a real chat
+        // message to the bot — that's the exact "plain-text summary
+        // instead of a picker" bug this interception fixes.
+        coVerify(exactly = 0) { apiService.sendToBot(any()) }
+    }
+}

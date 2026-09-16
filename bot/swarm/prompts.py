@@ -5,7 +5,7 @@ These exist as reviewable, testable text — not string concatenation
 scattered through the MCP tool/dashboard route — because the prompt IS
 the actual control surface here. delegate_task cannot be invoked as an
 external RPC (see bot/hermes_config.py's module docstring and the plan
-file for why); the only lever BotServer has over a Hermes instance's
+file for why); the only lever AgenticBotPlatform has over a Hermes instance's
 delegation behavior, beyond configuring delegation.provider/model ahead
 of time, is what this prompt asks it to do with delegate_task once it's
 running.

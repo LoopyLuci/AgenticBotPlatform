@@ -120,11 +120,11 @@ def ensure_repo(workspace: Path) -> None:
     try:
         _run(["config", "user.name"], workspace)
     except CheckpointError:
-        _run(["config", "user.name", "BotServer Agent"], workspace)
+        _run(["config", "user.name", "AgenticBotPlatform Agent"], workspace)
     try:
         _run(["config", "user.email"], workspace)
     except CheckpointError:
-        _run(["config", "user.email", "agent@botserver.local"], workspace)
+        _run(["config", "user.email", "agent@agenticbotplatform.local"], workspace)
 
 
 def session_start_commit(workspace: Path) -> str:

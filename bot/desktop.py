@@ -297,7 +297,7 @@ def disable_mcp(name: str) -> bool:
 
 def register_self_mcp(actor: str = "dashboard") -> dict[str, Any]:
     """Adds this app's own control server (bot/mcp_server.py) to Claude
-    Desktop's claude_desktop_config.json under the name "bot-server",
+    Desktop's claude_desktop_config.json under the name "agentic-bot-platform",
     pointing at this project's own top-level .venv python (see
     envfile.stable_python_executable) — deliberately NOT sys.executable,
     which would resolve to whichever interpreter happens to be running
@@ -314,9 +314,9 @@ def register_self_mcp(actor: str = "dashboard") -> dict[str, Any]:
     Claude Desktop (or Claude Code, via the equivalent `claude mcp add`)
     can drive this app back, over MCP instead of Telegram/HTTP/GUI.
 
-    Idempotent — re-running just overwrites the one "bot-server" entry with
+    Idempotent — re-running just overwrites the one "agentic-bot-platform" entry with
     the current python path and token, so it stays correct after a token
-    rotation or a venv rebuild. Also drops a stale "telegram-bot-server"
+    rotation or a venv rebuild. Also drops a stale "telegram-agentic-bot-platform"
     entry left over from before the project was renamed. Sets PYTHONPATH
     explicitly rather than relying on an MCP client honoring a "cwd" key
     (not all do), since `-m bot.mcp_server` needs the project root
@@ -337,13 +337,13 @@ def register_self_mcp(actor: str = "dashboard") -> dict[str, Any]:
     }
     data = load_mcp_config()
     data.setdefault("mcpServers", {})
-    data["mcpServers"]["bot-server"] = entry
-    data["mcpServers"].pop("telegram-bot-server", None)
-    data.get("mcpServers_disabled", {}).pop("bot-server", None)
-    data.get("mcpServers_disabled", {}).pop("telegram-bot-server", None)
+    data["mcpServers"]["agentic-bot-platform"] = entry
+    data["mcpServers"].pop("telegram-agentic-bot-platform", None)
+    data.get("mcpServers_disabled", {}).pop("agentic-bot-platform", None)
+    data.get("mcpServers_disabled", {}).pop("telegram-agentic-bot-platform", None)
     _save_mcp_config(data)
-    db.log_audit(actor=actor, action="mcp_self_register", detail=f"registered bot-server -> {python}")
-    return {"name": "bot-server", "command": python, "cwd": project_root}
+    db.log_audit(actor=actor, action="mcp_self_register", detail=f"registered agentic-bot-platform -> {python}")
+    return {"name": "agentic-bot-platform", "command": python, "cwd": project_root}
 
 
 def tail_mcp_log(name: str, lines: int = 50) -> list[str]:

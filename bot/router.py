@@ -659,7 +659,7 @@ class Router:
     async def list_desktop_projects_with_sessions(self) -> dict[str, list[str]]:
         """Every project's real, currently-open chats in the actual
         Claude Desktop window — the live data behind letting a user
-        browse what already exists (not just what BotServer itself has
+        browse what already exists (not just what AgenticBotPlatform itself has
         created) before choosing one to continue. See
         UiBackend.list_projects_with_sessions() for how project/session
         grouping is inferred."""
@@ -699,7 +699,7 @@ class Router:
         this instance made via create_session() at some point, for this
         chat or any other one) instead of creating a new one — the actual
         conversation on the backend side is whatever it was left as; this
-        only changes which key BotServer's ask() sends future messages to.
+        only changes which key AgenticBotPlatform's ask() sends future messages to.
         Raises BackendError if the id doesn't belong to this instance."""
         target = db.get_chat_session(chat_session_id)
         if target is None or target["instance_id"] != instance_id:

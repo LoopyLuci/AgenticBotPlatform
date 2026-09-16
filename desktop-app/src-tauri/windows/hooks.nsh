@@ -1,4 +1,4 @@
-; BotServer's own icon lives as a standalone external .ico file
+; AgenticBotPlatform's own icon lives as a standalone external .ico file
 ; ($INSTDIR\icon.ico, bundled via tauri.conf.json's "resources") rather
 ; than only the one baked into ${MAINBINARYNAME}.exe's own PE resources.
 ; Windows shortcuts can point at an external icon file (CreateShortcut's

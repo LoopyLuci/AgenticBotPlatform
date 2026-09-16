@@ -1,7 +1,7 @@
 # Session linking — never sending into the wrong chat
 
 `ui` (Claude Desktop UI automation) and `hermes_gateway` (Hermes Agent's
-JSON-RPC gateway) are different from Bot Server's other three backends in
+JSON-RPC gateway) are different from Agentic Bot Platform's other three backends in
 one important way: they each drive a **real, persistent conversation** in
 a real desktop app, not a single stateless request/response call. That
 raises a real risk once more than one bot instance can route to them —
@@ -9,7 +9,7 @@ without tracking which real chat belongs to which bot instance, messages
 could land in whatever chat happens to be open, or two instances could
 fight over the same window.
 
-Bot Server closes that gap with an explicit **session link**: every
+Agentic Bot Platform closes that gap with an explicit **session link**: every
 `ui`/`hermes_gateway` bot instance is tied to one specific,
 already-created chat/session, stored as `bot_instances.desktop_session_key`,
 and every message re-selects that exact chat before sending — never

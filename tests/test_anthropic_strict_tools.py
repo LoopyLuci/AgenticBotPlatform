@@ -1,4 +1,4 @@
-"""AnthropicTransport.send() adds strict: true to BotServer's own client
+"""AnthropicTransport.send() adds strict: true to AgenticBotPlatform's own client
 tool schemas (Phase H, the last phase of the Claude API/Claude Code
 parity plan) — free schema-conformance tightening. Anthropic's own
 server tool entries (web_search/web_fetch/code_execution/tool_search,

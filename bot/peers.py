@@ -1,4 +1,4 @@
-"""Server-to-server federation: linking two independent BotServer
+"""Server-to-server federation: linking two independent AgenticBotPlatform
 installations (e.g. a home PC and a laptop, each with their own database,
 config, and Telegram bot) so either admin can see and manage the other's
 bots and status from their own dashboard — without merging databases,

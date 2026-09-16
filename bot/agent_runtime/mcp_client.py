@@ -1,7 +1,7 @@
-"""External MCP client — lets BotServer's own native agent loop use
+"""External MCP client — lets AgenticBotPlatform's own native agent loop use
 tools from a third-party MCP server (a local stdio subprocess, or a
 remote Streamable HTTP endpoint), the mirror image of bot/mcp_server.py
-(which makes BotServer itself an MCP *server* for Claude Desktop/Hermes).
+(which makes AgenticBotPlatform itself an MCP *server* for Claude Desktop/Hermes).
 
 Deliberately human/operator-configured only, never agent-creatable —
 connecting to an arbitrary external process or URL is a materially
@@ -33,7 +33,7 @@ Also implements the two other real MCP client capabilities beyond tool-
 calling, both real-API-confirmed against the installed mcp==2.0.0
 package before writing any of this:
 
-- **Sampling**: a connected server can ask BotServer to run a real LLM
+- **Sampling**: a connected server can ask AgenticBotPlatform to run a real LLM
   completion on its behalf (`ClientSession(sampling_callback=...)`).
   Off by default (`config/backends.yaml`'s `native_agent.mcp_sampling.enabled`)
   — unlike calling a server's own advertised tools, this spends the
@@ -60,7 +60,7 @@ package before writing any of this:
   `GET /api/mcp-external/oauth/callback` route (which the operator's
   browser lands on after granting consent) or `OAUTH_CALLBACK_TIMEOUT_S`
   elapses. Elicitation (a server prompting the user for input mid-tool-
-  call) remains deferred — BotServer's turn-based chat model has no
+  call) remains deferred — AgenticBotPlatform's turn-based chat model has no
   obvious place for a server-initiated mid-turn prompt, a materially
   harder design question than either of the two capabilities above.
 """
@@ -291,7 +291,7 @@ def _flatten_sampling_content(content) -> tuple[str, list[dict]]:
 
 async def handle_sampling_request(context, params):
     """The real SamplingFnT callback (mcp.client.session) — a connected
-    server asking BotServer to run one LLM completion on its behalf.
+    server asking AgenticBotPlatform to run one LLM completion on its behalf.
     Never raises: any failure (disabled, misconfigured, transport error)
     comes back as a real MCP ErrorData, which is a normal, protocol-level
     outcome a well-behaved server already has to handle."""
@@ -301,7 +301,7 @@ async def handle_sampling_request(context, params):
     if not cfg.get("enabled", False):
         return types.ErrorData(
             code=types.INVALID_REQUEST,
-            message="MCP sampling is disabled for this BotServer install (native_agent.mcp_sampling.enabled)",
+            message="MCP sampling is disabled for this AgenticBotPlatform install (native_agent.mcp_sampling.enabled)",
         )
 
     try:
@@ -360,7 +360,7 @@ async def _build_session(
             from mcp.shared.auth import OAuthClientMetadata
 
             metadata = OAuthClientMetadata(
-                redirect_uris=[_dashboard_oauth_redirect_uri()], client_name="BotServer",
+                redirect_uris=[_dashboard_oauth_redirect_uri()], client_name="AgenticBotPlatform",
                 grant_types=["authorization_code", "refresh_token"], response_types=["code"],
                 token_endpoint_auth_method="none",
             )

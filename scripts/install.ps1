@@ -1,4 +1,4 @@
-# Bot Server installer — Windows bootstrap.
+# Agentic Bot Platform installer — Windows bootstrap.
 #
 # Thin entry point: its only job is to guarantee a real Python 3.11+ is on
 # PATH (installing it via winget if it's missing), then hand off to
@@ -27,7 +27,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-Write-Host "Bot Server — Windows bootstrap" -ForegroundColor Cyan
+Write-Host "Agentic Bot Platform — Windows bootstrap" -ForegroundColor Cyan
 
 function Find-Python {
     foreach ($cmd in @("py", "python", "python3")) {

@@ -2,7 +2,7 @@
 
 Deliberately not backed by numpy/sklearn/torch/Ollama/any external
 inference service — the user explicitly wants a model that's genuinely
-built into BotServer and runs on nothing but the local machine's own
+built into AgenticBotPlatform and runs on nothing but the local machine's own
 Python interpreter. This is real, if simple, machine learning: TF-IDF
 vectors computed from bot/support_bot/training_data.py, one centroid
 vector per intent, classification by cosine similarity to the nearest

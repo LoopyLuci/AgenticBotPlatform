@@ -6,7 +6,7 @@ returns bare model ids only). Sourced from models.dev's public catalog
 {models: {model_id: {..., "cost": {"input": $/1M tokens, "output": $/1M
 tokens}}}}} shape — verified against the real endpoint, not assumed),
 the same general pricing source Hermes Agent's own code falls back to
-for providers it has no bespoke fetcher for. BotServer goes straight to
+for providers it has no bespoke fetcher for. AgenticBotPlatform goes straight to
 this one general source for every provider rather than accumulating
 Hermes's per-provider bespoke fetchers (OpenRouter-specific, Nous-
 specific, etc.) — one real public feed already covers the practical
@@ -129,7 +129,7 @@ async def list_known_providers(refresh: bool = False) -> list[dict[str, Any]]:
     """`[{"id", "name", "api", "env"}, ...]` — every models.dev provider
     that has a real base URL (its `api` field), sorted by display name.
     Powers the catalog-assisted "add provider" picker: selecting one
-    gives BotServer a real base_url and a suggested API-key env var name
+    gives AgenticBotPlatform a real base_url and a suggested API-key env var name
     without the user hand-typing an endpoint. Excludes providers whose
     SDK uses a native protocol rather than a generic OpenAI-compatible
     URL (confirmed against the real catalog: Anthropic, OpenAI, Google,

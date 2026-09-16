@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Registers a systemd --user service that launches Bot Server at login and
+# Registers a systemd --user service that launches Agentic Bot Platform at login and
 # restarts it automatically if it exits. Linux equivalent of
 # scripts/install_task.ps1 (Windows Task Scheduler) — same two behaviors
 # (run at login, restart on failure), different OS mechanism, since
@@ -11,10 +11,10 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-exe="$root/desktop-app/src-tauri/target/release/bot-server"
+exe="$root/desktop-app/src-tauri/target/release/agentic-bot-platform"
 run_script="$root/scripts/run.sh"
 unit_dir="$HOME/.config/systemd/user"
-unit_file="$unit_dir/bot-server.service"
+unit_file="$unit_dir/agentic-bot-platform.service"
 
 mkdir -p "$unit_dir"
 
@@ -29,7 +29,7 @@ fi
 
 cat > "$unit_file" <<EOF
 [Unit]
-Description=Bot Server
+Description=Agentic Bot Platform
 
 [Service]
 Type=simple
@@ -44,9 +44,9 @@ WantedBy=default.target
 EOF
 
 systemctl --user daemon-reload
-systemctl --user enable bot-server.service
+systemctl --user enable agentic-bot-platform.service
 
-echo "Registered systemd --user service 'bot-server' — runs at login, restarts on failure."
-echo "Start it now with: systemctl --user start bot-server"
+echo "Registered systemd --user service 'agentic-bot-platform' — runs at login, restarts on failure."
+echo "Start it now with: systemctl --user start agentic-bot-platform"
 echo "Note: for this to run at login without an active graphical session, you may need:"
 echo "  sudo loginctl enable-linger \$USER"

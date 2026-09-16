@@ -1,5 +1,5 @@
 """GET/POST/DELETE /api/files* — the routes backing "grab a file that
-lives outside BotServer's own data (e.g. a freshly built Android APK)
+lives outside AgenticBotPlatform's own data (e.g. a freshly built Android APK)
 from anywhere," built on bot/file_share.py's allowlisted-root model.
 Exercised against the real FastAPI app via TestClient, with the registry
 isolated to a temp config/file_share.yaml so no test touches this

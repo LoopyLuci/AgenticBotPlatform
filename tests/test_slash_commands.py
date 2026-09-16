@@ -10,7 +10,7 @@ from bot import slash_commands
 def test_menu_resolves_to_the_model_command():
     # Real Hermes Agent has no native "/menu" command either (confirmed
     # by reading its source) — this alias exists purely so a user's
-    # muscle memory from other agent tools still lands on BotServer's
+    # muscle memory from other agent tools still lands on AgenticBotPlatform's
     # real interactive model picker instead of "Unknown command".
     assert slash_commands.resolve_command("menu") == "model"
 

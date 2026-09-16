@@ -4,7 +4,7 @@ anywhere" backend. Talks to whatever base_url a named provider
 speaking the OpenAI chat-completions wire format that Ollama, LM Studio,
 vLLM, llama.cpp's server, OpenRouter, and real OpenAI all implement.
 
-Reuses BotServer's own tool-use loop (bot/agent_runtime/tools.py's
+Reuses AgenticBotPlatform's own tool-use loop (bot/agent_runtime/tools.py's
 execute_tool()/DANGEROUS_TOOLS, approval.py, checkpoints.py) exactly like
 bot/backends/api_backend.py does for Anthropic — a local model gets real
 shell/file/git tool access, not just a passthrough chat. Both backends

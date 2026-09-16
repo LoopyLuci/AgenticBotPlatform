@@ -152,7 +152,7 @@ def main() -> None:
         _print_status(status)
         sys.exit(0 if status["ready"] else 1)
 
-    print("Bot Server — setup")
+    print("Agentic Bot Platform — setup")
     _print_status(status)
 
     if args.all:
@@ -181,9 +181,9 @@ def main() -> None:
         _print_status(status)
         if status["ready"]:
             if platform.system() == "Windows":
-                print("\nNext: .\\scripts\\run.ps1  (or, once built, launch BotServer.exe)")
+                print("\nNext: .\\scripts\\run.ps1  (or, once built, launch AgenticBotPlatform.exe)")
             else:
-                print("\nNext: ./scripts/run.sh  (or, once built, launch the bot-server binary)")
+                print("\nNext: ./scripts/run.sh  (or, once built, launch the agentic-bot-platform binary)")
     except (KeyboardInterrupt, EOFError):
         print("\nAborted.")
         sys.exit(1)

@@ -53,13 +53,13 @@ def test_requirements_change_needs_docker_and_deploy():
 
 
 def test_changed_files_falls_back_to_none_outside_a_git_repo(monkeypatch, tmp_path):
-    monkeypatch.delenv("BOTSERVER_LOCAL_PIPELINE_HOOK", raising=False)
+    monkeypatch.delenv("AGENTICBOTPLATFORM_LOCAL_PIPELINE_HOOK", raising=False)
     monkeypatch.setattr(local_pipeline, "ROOT", tmp_path)
     assert local_pipeline.changed_files() is None
 
 
 def test_changed_files_reads_hook_stdin(monkeypatch):
-    monkeypatch.setenv("BOTSERVER_LOCAL_PIPELINE_HOOK", "1")
+    monkeypatch.setenv("AGENTICBOTPLATFORM_LOCAL_PIPELINE_HOOK", "1")
 
     def fake_run(cmd, cwd=None, retries=0):
         assert cmd[:3] == ["git", "diff", "--name-only"]
@@ -75,7 +75,7 @@ def test_changed_files_reads_hook_stdin(monkeypatch):
 
 
 def test_changed_files_new_remote_ref_falls_back_to_merge_base(monkeypatch):
-    monkeypatch.setenv("BOTSERVER_LOCAL_PIPELINE_HOOK", "1")
+    monkeypatch.setenv("AGENTICBOTPLATFORM_LOCAL_PIPELINE_HOOK", "1")
     calls = []
 
     def fake_run(cmd, cwd=None, retries=0):

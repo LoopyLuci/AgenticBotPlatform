@@ -1,12 +1,29 @@
 # Changelog
 
-All notable changes to BotServer are documented here. Format follows
+All notable changes to AgenticBotPlatform are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning
 follows [Semantic Versioning](https://semver.org/) for the desktop
 app's own version (the Android app versions independently — see its own
 `versionName`/`versionCode` in `android-app/app/build.gradle.kts`).
 
 ## [Unreleased]
+
+### Changed
+- Renamed the project from BotServer to AgenticBotPlatform (a name
+  collision with unrelated existing software). Covers display strings,
+  the desktop app's window title/`productName`/identifier
+  (`com.agenticbotplatform.app`), the Rust crate/lib names
+  (`agentic-bot-platform` / `agentic_bot_platform_lib`), the Android
+  package (`com.agenticbotplatform.mobile`), the mobile pairing deep-link
+  scheme (`agenticbotplatform://pair`), the mDNS service type
+  (`_agenticbotplatform._tcp.local.`), internal env var names
+  (`AGENTICBOTPLATFORM_*`), and docs/scripts throughout. The Python
+  package (`bot/`) and Android's on-device storage identifiers
+  (credential store, database file name, shared-prefs names) were
+  deliberately left unchanged to avoid breaking imports and existing
+  installs' stored data. The GitHub repo was also renamed to
+  `LoopyLuci/AgenticBotPlatform` (GitHub redirects the old URL); both
+  auto-updaters now point at the new repo name.
 
 ## [0.4.0] — 2026-08-30
 
@@ -20,26 +37,26 @@ app's own version (the Android app versions independently — see its own
 - **Critical**: `bot/main.py` crashed on startup (`SystemExit`) whenever
   zero bot instances were configured, and it did this *before* the
   dashboard/API server was even built — a fresh install could never
-  reach the "Add a bot" UI needed to fix itself. BotServer now starts
+  reach the "Add a bot" UI needed to fix itself. AgenticBotPlatform now starts
   and the dashboard/desktop UI is fully usable with zero bots; adding
   the first one is just a normal Bots-tab action, not a precondition.
   The setup wizard's own "Ready" gate no longer requires a bot/platform
   to already exist either, for the same reason.
 - `scripts/local_pipeline.py`'s deploy step could fail with a Windows
-  "file in use" error even after correctly stopping `bot-server.exe`,
+  "file in use" error even after correctly stopping `agentic-bot-platform.exe`,
   because a separate `python -m bot.mcp_server` process (spawned by an
   MCP client from the same bundled `target/release/.venv` a Rust
   check/build needs to overwrite) could independently hold the same
   compiled extension modules memory-mapped. The pipeline now finds and
   stops any such process before a Rust check or deploy, the same way it
-  already handles `bot-server.exe` itself.
+  already handles `agentic-bot-platform.exe` itself.
 
 ### Added
 - A Textual-based terminal UI (`bot/tui/`, launch via `scripts/tui.sh`/
   `scripts/tui.ps1` or `python -m bot.tui`): add/edit/delete bots across
   all 5 platforms, start/stop/restart/enable/disable, live per-field
   validation and setup help, and a schedules panel — talking to an
-  already-running BotServer's dashboard HTTP API, so it manages a
+  already-running AgenticBotPlatform's dashboard HTTP API, so it manages a
   remote/federated install exactly like the desktop app does. A third
   way to manage bots alongside the browser dashboard and desktop app,
   for headless machines, SSH sessions, or terminal-first workflows.
@@ -122,7 +139,7 @@ app's own version (the Android app versions independently — see its own
   to any OpenAI-compatible endpoint (a local Ollama/LM Studio/vLLM/
   llama.cpp server, OpenRouter, or real OpenAI) via a named provider
   registry (`config/providers.yaml`, managed from the dashboard's new
-  "Model providers" card) — runs Bot Server's own shell/file/git tool
+  "Model providers" card) — runs Agentic Bot Platform's own shell/file/git tool
   loop against it, the same one the `api` backend already uses for
   Anthropic. `/gateway`, `/model`, and the dashboard's model picker all
   treat it as its own family. Phase A of a larger roadmap (plugin API,
@@ -229,7 +246,7 @@ app's own version (the Android app versions independently — see its own
   lists.
 - Cross-network WebRTC fallback and real TURN support for mesh APK
   transfers between devices that can't reach each other directly.
-- Server-to-server linking (federation): link multiple BotServer
+- Server-to-server linking (federation): link multiple AgenticBotPlatform
   installs and manage every one's bots from a single dashboard, using a
   short-lived, single-use, self-describing pairing token rather than
   ever pasting a real dashboard token into another server's UI.
@@ -251,11 +268,11 @@ First public release. One desktop app running any number of independent
 Claude/Hermes Agent bots across Telegram, Discord, and Slack at once,
 plus a native Android companion.
 
-[Unreleased]: https://github.com/LoopyLuci/BotServer/compare/v0.4.0...HEAD
-[0.4.0]: https://github.com/LoopyLuci/BotServer/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/LoopyLuci/BotServer/compare/v0.2.2...v0.3.0
-[0.2.2]: https://github.com/LoopyLuci/BotServer/compare/v0.2.1...v0.2.2
-[0.2.1]: https://github.com/LoopyLuci/BotServer/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/LoopyLuci/BotServer/compare/v0.1.1...v0.2.0
-[0.1.1]: https://github.com/LoopyLuci/BotServer/compare/v0.1.0...v0.1.1
-[0.1.0]: https://github.com/LoopyLuci/BotServer/releases/tag/v0.1.0
+[Unreleased]: https://github.com/LoopyLuci/AgenticBotPlatform/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/LoopyLuci/AgenticBotPlatform/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/LoopyLuci/AgenticBotPlatform/compare/v0.2.2...v0.3.0
+[0.2.2]: https://github.com/LoopyLuci/AgenticBotPlatform/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/LoopyLuci/AgenticBotPlatform/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/LoopyLuci/AgenticBotPlatform/compare/v0.1.1...v0.2.0
+[0.1.1]: https://github.com/LoopyLuci/AgenticBotPlatform/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/LoopyLuci/AgenticBotPlatform/releases/tag/v0.1.0

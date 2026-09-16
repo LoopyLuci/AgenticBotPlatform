@@ -16,10 +16,15 @@ import signal
 from dotenv import load_dotenv
 
 from bot.envfile import PROJECT_ROOT as ROOT
-from bot.envfile import resolve as resolve_env_path
+from bot.envfile import ensure_dashboard_token, resolve as resolve_env_path
 
 _env_path = resolve_env_path()
 load_dotenv(_env_path)
+# A fresh install's .env has no DASHBOARD_TOKEN yet — generate and persist
+# one now rather than ever asking a human to invent/paste one. Must run
+# after load_dotenv() (so an existing token already in the process's
+# real env wins) but before anything reads DASHBOARD_TOKEN.
+os.environ.setdefault("DASHBOARD_TOKEN", ensure_dashboard_token())
 
 LOG_DIR = ROOT / "logs"
 LOG_DIR.mkdir(exist_ok=True)
@@ -39,6 +44,10 @@ def setup_logging() -> None:
     root.addHandler(file_handler)
     root.addHandler(console_handler)
     logging.getLogger("httpx").setLevel(logging.WARNING)
+
+    from bot import activity_log
+
+    activity_log.install()
 
 
 logger = logging.getLogger("bot.main")

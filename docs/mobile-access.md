@@ -1,6 +1,6 @@
 # Mobile access — pairing the Android app over the internet
 
-BotServer's dashboard API binds to `127.0.0.1` by default and is protected
+AgenticBotPlatform's dashboard API binds to `127.0.0.1` by default and is protected
 by a single `DASHBOARD_TOKEN`. To let the Android app reach it from
 anywhere (not just the same machine), you need two things: the server
 reachable from your phone, and a mobile API key it can authenticate with.
@@ -10,7 +10,7 @@ This doc covers the first part — key generation is in the dashboard's
 ## Why Tailscale, not a public port
 
 For a personal, single-user setup, [Tailscale](https://tailscale.com) is
-the recommended way to reach BotServer remotely: it creates a private,
+the recommended way to reach AgenticBotPlatform remotely: it creates a private,
 encrypted (WireGuard) network between your devices, so your phone reaches
 the server machine at a stable address exactly as if it were on the same
 LAN — no public port ever opens on your router, no TLS certificate to
@@ -22,7 +22,7 @@ client software) to reach the API — not the case here.
 
 ## Setup
 
-1. **Install Tailscale on the machine running BotServer** (Windows):
+1. **Install Tailscale on the machine running AgenticBotPlatform** (Windows):
    download from https://tailscale.com/download, sign in with the account
    you'll use on your phone too.
 2. **Install Tailscale on your phone** (Android/iOS), sign into the same
@@ -31,7 +31,7 @@ client software) to reach the API — not the case here.
 3. **Find the server machine's tailnet address** — open the Tailscale app
    or run `tailscale ip` on the server machine. Either the `100.x.y.z` IP
    or the MagicDNS hostname works.
-4. **Bind BotServer to be reachable from the tailnet interface**, not just
+4. **Bind AgenticBotPlatform to be reachable from the tailnet interface**, not just
    loopback. Set in `.env`:
    ```
    DASHBOARD_HOST=0.0.0.0
@@ -50,7 +50,7 @@ client software) to reach the API — not the case here.
    tailnet host:port (e.g. `your-pc-name.your-tailnet.ts.net:8787`) so the
    QR code embeds the right address. Scan it with the Android app's
    pairing screen.
-6. **Restart BotServer** for the `DASHBOARD_HOST` change to take effect.
+6. **Restart AgenticBotPlatform** for the `DASHBOARD_HOST` change to take effect.
 
 ## One-click build, install & pair (desktop app, on the dev machine)
 
@@ -61,7 +61,7 @@ it), the Mobile tab has an **Android app** card that does the manual steps
 below for you: builds a debug APK with Gradle, installs it on a device
 connected over USB (enable USB debugging in Developer Options first, and
 accept the authorization prompt on the phone), and pairs it automatically
-by firing the same `botserver://pair` link the QR encodes directly on the
+by firing the same `agenticbotplatform://pair` link the QR encodes directly on the
 device via `adb`. Pick the device from the dropdown (refresh if it's not
 listed) and click **Build, install & pair**.
 
@@ -87,7 +87,7 @@ whatever the app picks up on its next 2-second chat poll while it's open.
 See `android-app/README.md`'s "Before push notifications will actually
 work" section for the full setup (a free Firebase project, replacing the
 checked-in placeholder `google-services.json`, and setting
-`FCM_SERVICE_ACCOUNT_JSON` in BotServer's `.env`). Until that's done,
+`FCM_SERVICE_ACCOUNT_JSON` in AgenticBotPlatform's `.env`). Until that's done,
 `bot/push.py` stays a harmless no-op — nothing else about the app or
 server depends on it.
 
@@ -99,6 +99,6 @@ server depends on it.
   for browser-based clients; the native Android app sends no `Origin`
   header, so it's unaffected either way.
 - No TLS/certificate code was added — Tailscale's own tunnel is already
-  the encrypted transport, so plain HTTP between BotServer and the app is
+  the encrypted transport, so plain HTTP between AgenticBotPlatform and the app is
   fine over a tailnet connection (it would not be fine over the open
   internet, which is exactly what this setup avoids ever doing).

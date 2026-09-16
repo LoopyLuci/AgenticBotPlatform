@@ -164,13 +164,13 @@ def test_hook_enable_disable_remove_require_elevated_tier(temp_db):
 
 # ----------------------------------------------------------- agent_settings
 def test_agent_settings_show_requires_standard_tier_and_hides_admin_flag(temp_db):
-    instance_id = _make_instance("BotServer Control")
+    instance_id = _make_instance("AgenticBotPlatform Control")
     bot = SupportBot()
 
-    refused = _run(bot.handle("show agent settings for BotServer Control", actor="test", device_tier="none"))
+    refused = _run(bot.handle("show agent settings for AgenticBotPlatform Control", actor="test", device_tier="none"))
     assert "permission tier" in refused.text.lower()
 
-    reply = _run(bot.handle("show agent settings for BotServer Control", actor="test", device_tier="standard"))
+    reply = _run(bot.handle("show agent settings for AgenticBotPlatform Control", actor="test", device_tier="standard"))
     assert "worker_provider" in reply.text
     assert "hidden" in reply.text.lower()  # is_admin_instance never surfaced
 
@@ -178,24 +178,24 @@ def test_agent_settings_show_requires_standard_tier_and_hides_admin_flag(temp_db
 def test_agent_settings_set_effort_requires_elevated_tier(temp_db):
     from bot import agent_settings
 
-    instance_id = _make_instance("BotServer Control")
+    instance_id = _make_instance("AgenticBotPlatform Control")
     bot = SupportBot()
 
-    refused = _run(bot.handle("set BotServer Control's worker effort to high", actor="test", device_tier="standard"))
+    refused = _run(bot.handle("set AgenticBotPlatform Control's worker effort to high", actor="test", device_tier="standard"))
     assert "permission tier" in refused.text.lower()
 
-    reply = _run(bot.handle("set BotServer Control's worker effort to high", actor="test", device_tier="elevated"))
+    reply = _run(bot.handle("set AgenticBotPlatform Control's worker effort to high", actor="test", device_tier="elevated"))
     assert reply.applied is True
     assert agent_settings.get(instance_id)["worker_effort"] == "high"
 
 
 # -------------------------------------------------------------- auto_manage
 def test_auto_manage_show_requires_standard_tier(temp_db):
-    _make_instance("BotServer Control")
+    _make_instance("AgenticBotPlatform Control")
     bot = SupportBot()
 
-    refused = _run(bot.handle("show auto-manage settings for BotServer Control", actor="test", device_tier="none"))
+    refused = _run(bot.handle("show auto-manage settings for AgenticBotPlatform Control", actor="test", device_tier="none"))
     assert "permission tier" in refused.text.lower()
 
-    reply = _run(bot.handle("show auto-manage settings for BotServer Control", actor="test", device_tier="standard"))
+    reply = _run(bot.handle("show auto-manage settings for AgenticBotPlatform Control", actor="test", device_tier="standard"))
     assert "enabled=" in reply.text.lower()

@@ -1,7 +1,7 @@
 //! One-click Android workflow for the desktop shell: locate the Android SDK
 //! and this repo's `android-app/` source next to the running exe, build a
 //! debug APK with Gradle, install it on a connected device with adb, and
-//! auto-pair it by firing the same `botserver://pair` deep link the manual
+//! auto-pair it by firing the same `agenticbotplatform://pair` deep link the manual
 //! QR flow already produces — all via plain `std::process::Command`, the
 //! same pattern `lib.rs` already uses to supervise the Python bot process.
 //! Personal-dev-machine feature: no SDK provisioning, no bundling the
@@ -334,7 +334,7 @@ pub fn install_android_apk(serial: String, apk_path: String) -> Result<(), Strin
     }
 }
 
-/// Fires the botserver://pair deep link on the device via adb, exactly as
+/// Fires the agenticbotplatform://pair deep link on the device via adb, exactly as
 /// if the user had tapped a shared link. `adb shell` joins every arg after
 /// "shell" into one string forwarded verbatim to the device's shell, so the
 /// whole `am start ...` command — including the URI's `&` query separators —
@@ -355,7 +355,7 @@ pub fn pair_android_device(
         );
     }
     let adb = require_adb()?;
-    let mut uri = format!("botserver://pair?host={}&key={}", host.trim(), key.trim());
+    let mut uri = format!("agenticbotplatform://pair?host={}&key={}", host.trim(), key.trim());
     if let Some(h2) = host2.as_deref().map(str::trim).filter(|h| !h.is_empty()) {
         uri.push_str(&format!("&host2={h2}"));
     }

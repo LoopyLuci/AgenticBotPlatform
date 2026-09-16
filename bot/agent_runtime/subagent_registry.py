@@ -11,7 +11,7 @@ later turn, for background dispatches — see subagents.py's background
 mode) can act on it.
 
 Deliberately in-memory, not persisted: a handle is only ever useful while
-its asyncio.Task is actually alive in this process. If BotServer restarts,
+its asyncio.Task is actually alive in this process. If AgenticBotPlatform restarts,
 any in-flight children die with it (same as they always would have), and
 their ephemeral_sessions rows simply stay at whatever status they last
 reached — nothing here needs to survive a restart to be correct.

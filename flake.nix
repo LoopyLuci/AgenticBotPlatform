@@ -1,5 +1,5 @@
 {
-  description = "Bot Server desktop shell — Nix dev shell and package for NixOS/Nix users";
+  description = "Agentic Bot Platform desktop shell — Nix dev shell and package for NixOS/Nix users";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -60,7 +60,7 @@
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath tauriRuntimeDeps;
 
           shellHook = ''
-            echo "Bot Server Nix dev shell — Rust $(rustc --version), $(python3 --version)"
+            echo "Agentic Bot Platform Nix dev shell — Rust $(rustc --version), $(python3 --version)"
             echo "Next: ./scripts/run.sh to set up the venv, then cd desktop-app/src-tauri && cargo tauri dev"
           '';
         };
@@ -69,12 +69,12 @@
         # a Nix derivation (the idiomatic Nix unit), NOT the Windows-style
         # self-contained bundle with a Python venv baked in (bundling a
         # pip-installed venv into an immutable /nix/store path fights Nix's
-        # model — see devShell note above). Run the resulting `bot-server`
+        # model — see devShell note above). Run the resulting `agentic-bot-platform`
         # binary from the repo root, alongside a `.venv` set up via
         # `./scripts/run.sh`, same as the "Development" build in README.md,
         # not the standalone Windows-style production bundle.
         packages.default = pkgs.rustPlatform.buildRustPackage {
-          pname = "bot-server";
+          pname = "agentic-bot-platform";
           version = "0.1.1";
           src = ./desktop-app/src-tauri;
           cargoLock.lockFile = ./desktop-app/src-tauri/Cargo.lock;
@@ -95,13 +95,13 @@
           installPhase = ''
             runHook preInstall
             mkdir -p $out/bin
-            cp target/release/bot-server $out/bin/
+            cp target/release/agentic-bot-platform $out/bin/
             runHook postInstall
           '';
 
           meta = with pkgs.lib; {
-            description = "All-in-one desktop shell for Bot Server";
-            homepage = "https://github.com/LoopyLuci/BotServer";
+            description = "All-in-one desktop shell for Agentic Bot Platform";
+            homepage = "https://github.com/LoopyLuci/AgenticBotPlatform";
             # No LICENSE file exists in the repo yet — add one and set this
             # field once it does.
             platforms = platforms.linux;

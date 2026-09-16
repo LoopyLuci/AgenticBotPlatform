@@ -113,7 +113,7 @@ def test_disabled_falls_back_to_todays_plain_shapes(monkeypatch):
 
     assert fake.requests[0]["system"] == "sys"
     # strict:true (Phase H) is independent of caching being on/off — it's
-    # still added to BotServer's own schemas, just with no cache_control.
+    # still added to AgenticBotPlatform's own schemas, just with no cache_control.
     assert fake.requests[0]["tools"] == [{**tools[0], "strict": True}]
     assert "cache_control" not in fake.requests[0]["tools"][0]
 
