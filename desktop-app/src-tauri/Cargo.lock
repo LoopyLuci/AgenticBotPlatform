@@ -10,7 +10,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "agentic-bot-platform"
-version = "0.7.19"
+version = "0.7.20"
 dependencies = [
  "portable-pty",
  "serde",
