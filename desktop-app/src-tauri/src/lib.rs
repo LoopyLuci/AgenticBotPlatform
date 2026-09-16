@@ -411,9 +411,14 @@ fn get_boot_log(state: State<ServerState>) -> Result<Vec<LogLine>, String> {
         .map_err(|_| "state poisoned".to_string())
 }
 
-/// Reads the resolved .env's DASHBOARD_TOKEN so the GUI can unlock itself
-/// without the user pasting a token they'd have to go find in a text file
-/// first. Shells out to `bot.envfile`'s own resolver (same override ->
+/// Reads (generating on first call) the resolved .env's DASHBOARD_TOKEN so
+/// the GUI can unlock itself without the user ever pasting a token they'd
+/// have to go find in a text file first — `bot.envfile --print-token`
+/// itself calls the same idempotent ensure_dashboard_token() bot.main does
+/// at its own startup, so whichever of the two processes gets there first
+/// on a brand-new install wins and the other just reads back that value;
+/// there is no longer a race where this can legitimately come back empty.
+/// Shells out to `bot.envfile`'s own resolver (same override ->
 /// project .env -> ~/.claude/.env order the running server uses) rather
 /// than duplicating that logic in Rust, so this can never disagree with
 /// what the server actually loaded. Local-only: this never leaves the

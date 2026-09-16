@@ -40,9 +40,23 @@ async function api(path, opts = {}) {
   if (opts.method && opts.method !== 'GET') {
     headers['Content-Type'] = 'application/json';
   }
-  const res = await fetch(API_BASE + path, Object.assign({}, opts, { headers }));
+  let res = await fetch(API_BASE + path, Object.assign({}, opts, { headers }));
+  if ((res.status === 401 || res.status === 503) && IS_TAURI) {
+    // Desktop app: the token is always auto-generated on disk and
+    // auto-filled at boot — a 401 here means what's in localStorage is
+    // stale (e.g. a rotated/regenerated .env), never that a human needs to
+    // find and paste one. Re-pull the real one from disk and retry once
+    // instead of ever falling through to the manual-entry modal below,
+    // which is a browser-fallback-only affordance.
+    await autoFillToken();
+    const retried = getToken();
+    if (retried && retried !== token) {
+      const retryHeaders = Object.assign({}, headers, { 'X-Dashboard-Token': retried });
+      res = await fetch(API_BASE + path, Object.assign({}, opts, { headers: retryHeaders }));
+    }
+  }
   if (res.status === 401 || res.status === 503) {
-    showTokenModal();
+    if (!IS_TAURI) showTokenModal();
     throw new Error('unauthorized');
   }
   if (!res.ok) throw new Error(await res.text());
