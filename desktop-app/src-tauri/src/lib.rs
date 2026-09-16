@@ -156,22 +156,289 @@ fn venv_python(venv_root: &std::path::Path) -> PathBuf {
 }
 
 fn resolve_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf), String> {
-    if cfg!(debug_assertions) {
+    let (root, python) = if cfg!(debug_assertions) {
         let dev_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .and_then(|p| p.parent())
             .ok_or_else(|| "could not resolve project root".to_string())?
             .to_path_buf();
         let python = venv_python(&dev_root);
-        return Ok((dev_root, python));
+        (dev_root, python)
+    } else {
+        let res_dir = app
+            .path()
+            .resource_dir()
+            .map_err(|e| format!("could not resolve resource_dir: {e}"))?;
+        let python = venv_python(&res_dir);
+        (res_dir, python)
+    };
+
+    // The bundled .venv (tauri.conf.json's resources: "../../.venv") is
+    // whatever `python -m venv` produced on the machine that built this
+    // release — on Windows that's a small redirector stub at
+    // .venv/Scripts/python.exe, NOT a portable copy of the interpreter. It
+    // embeds the exact base-install path it was created against in
+    // pyvenv.cfg's `home`/`executable` fields, and refuses to run at all
+    // if that exact path doesn't exist on the machine it's launched on —
+    // confirmed live: a second machine without Python at that literal
+    // path failed immediately with "No Python at '<path>'", well before
+    // bot.main could even start. The bundled venv's site-packages
+    // (compiled cp311 extensions included) work fine against ANY
+    // compatible 3.11.x interpreter — only this recorded pointer is
+    // wrong — so self-heal it in place here, the same "fix it at every
+    // launch, not just at install time" pattern windows/hooks.nsh's own
+    // comment already documents for the shortcut-icon problem, since an
+    // install-time-only fix can't cover every install path either.
+    if cfg!(target_os = "windows") && !python_actually_works(&python) {
+        repair_bundled_venv(&root, &python)?;
+    }
+    Ok((root, python))
+}
+
+fn python_actually_works(python: &std::path::Path) -> bool {
+    if !python.is_file() {
+        return false;
+    }
+    let mut cmd = Command::new(python);
+    cmd.arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    no_window(&mut cmd)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn python_reports_311(python: &std::path::Path) -> bool {
+    let mut cmd = Command::new(python);
+    cmd.arg("--version");
+    match no_window(&mut cmd).output() {
+        Ok(output) => {
+            let text = format!(
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            text.contains("3.11")
+        }
+        Err(_) => false,
+    }
+}
+
+/// Searches this machine for a working Python 3.11 (the bundled venv's
+/// compiled extensions are built for the cp311 ABI specifically, so a
+/// 3.12+/3.10- interpreter would load but likely crash importing them) —
+/// the Python Launcher (py.exe, on PATH with any official python.org
+/// install regardless of what "python" itself resolves to), then the
+/// standard fixed install locations a python.org installer or `winget
+/// install Python.Python.3.11` would use, then whatever "python" resolves
+/// to on PATH as a last resort.
+fn find_compatible_system_python() -> Option<PathBuf> {
+    if let Ok(output) = Command::new("py")
+        .args(["-3.11", "-c", "import sys; print(sys.executable)"])
+        .output()
+    {
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                let candidate = PathBuf::from(path);
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+        }
     }
 
-    let res_dir = app
-        .path()
-        .resource_dir()
-        .map_err(|e| format!("could not resolve resource_dir: {e}"))?;
-    let python = venv_python(&res_dir);
-    Ok((res_dir, python))
+    let mut candidates: Vec<PathBuf> = vec![
+        PathBuf::from(r"C:\Program Files\Python311\python.exe"),
+        PathBuf::from(r"C:\Python311\python.exe"),
+    ];
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        candidates.push(
+            PathBuf::from(local_app_data)
+                .join("Programs")
+                .join("Python")
+                .join("Python311")
+                .join("python.exe"),
+        );
+    }
+    for candidate in &candidates {
+        if candidate.is_file() && python_reports_311(candidate) {
+            return Some(candidate.clone());
+        }
+    }
+
+    if let Ok(output) = Command::new("where").arg("python").output() {
+        if output.status.success() {
+            for line in String::from_utf8_lossy(&output.stdout).lines() {
+                let candidate = PathBuf::from(line.trim());
+                if candidate.is_file() && python_reports_311(&candidate) {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Rewrites `<venv_root>/.venv/pyvenv.cfg`'s `home`/`executable` fields to
+/// point at `python` in place — see resolve_paths()'s own comment for why
+/// this needs to exist at all. Preserves every other line (version,
+/// command, include-system-site-packages, …) exactly as the venv's own
+/// creation recorded them; those are purely informational to a reader,
+/// never consulted by the Windows launcher stub at run time.
+fn rewrite_pyvenv_cfg(
+    pyvenv_cfg: &std::path::Path,
+    python: &std::path::Path,
+) -> Result<(), String> {
+    let home = python
+        .parent()
+        .ok_or_else(|| "resolved python path has no parent directory".to_string())?;
+    let existing = std::fs::read_to_string(pyvenv_cfg)
+        .map_err(|e| format!("couldn't read {}: {e}", pyvenv_cfg.display()))?;
+
+    let mut wrote_home = false;
+    let mut wrote_executable = false;
+    let mut lines: Vec<String> = existing
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("home ") || trimmed.starts_with("home=") {
+                wrote_home = true;
+                format!("home = {}", home.display())
+            } else if trimmed.starts_with("executable ") || trimmed.starts_with("executable=") {
+                wrote_executable = true;
+                format!("executable = {}", python.display())
+            } else {
+                line.to_string()
+            }
+        })
+        .collect();
+    if !wrote_home {
+        lines.push(format!("home = {}", home.display()));
+    }
+    if !wrote_executable {
+        lines.push(format!("executable = {}", python.display()));
+    }
+    std::fs::write(pyvenv_cfg, lines.join("\n") + "\n")
+        .map_err(|e| format!("couldn't write {}: {e}", pyvenv_cfg.display()))
+}
+
+/// Last resort when no compatible Python is already on this machine —
+/// silently installs one via winget (the same mechanism scripts/install.ps1
+/// already uses for its own, separate from-source install path, except
+/// pinned to 3.11 specifically here: this repair exists to satisfy the
+/// bundled venv's cp311-compiled extensions, and a 3.12+ install wouldn't
+/// do that). winget ships by default on any Windows 10/11 machine current
+/// enough to have App Installer, which covers the overwhelming majority of
+/// real targets; a machine without even winget available still gets the
+/// same clear "install Python 3.11 yourself" error as before.
+fn winget_install_python_311() -> bool {
+    let mut cmd = Command::new("winget");
+    cmd.args([
+        "install",
+        "-e",
+        "--id",
+        "Python.Python.3.11",
+        "--accept-source-agreements",
+        "--accept-package-agreements",
+        "--silent",
+    ]);
+    no_window(&mut cmd)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn repair_bundled_venv(root: &std::path::Path, python: &std::path::Path) -> Result<(), String> {
+    let mut replacement = find_compatible_system_python();
+    if replacement.is_none() && winget_install_python_311() {
+        replacement = find_compatible_system_python();
+    }
+    let replacement = replacement.ok_or_else(|| {
+        "The bundled Python runtime can't start on this machine (its recorded base install \
+         is missing), no compatible Python 3.11 install was found on this machine, and an \
+         automatic install via winget didn't succeed either. Install Python 3.11 from \
+         https://python.org (check \"Add to PATH\" during setup), then restart \
+         AgenticBotPlatform."
+            .to_string()
+    })?;
+    let pyvenv_cfg = root.join(".venv").join("pyvenv.cfg");
+    rewrite_pyvenv_cfg(&pyvenv_cfg, &replacement)?;
+    if python_actually_works(python) {
+        Ok(())
+    } else {
+        Err(format!(
+            "found a Python install at {} but the bundled venv still won't start after \
+             repairing {} — its installed packages may be incompatible with that \
+             interpreter's exact version",
+            replacement.display(),
+            pyvenv_cfg.display()
+        ))
+    }
+}
+
+#[cfg(test)]
+mod pyvenv_repair_tests {
+    use super::rewrite_pyvenv_cfg;
+    use std::path::PathBuf;
+
+    #[test]
+    fn rewrites_home_and_executable_in_place() {
+        let dir =
+            std::env::temp_dir().join(format!("abp_pyvenv_repair_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg_path = dir.join("pyvenv.cfg");
+        std::fs::write(
+            &cfg_path,
+            "home = C:\\Program Files\\Python311\n\
+             include-system-site-packages = false\n\
+             version = 3.11.9\n\
+             executable = C:\\Program Files\\Python311\\python.exe\n\
+             command = C:\\Program Files\\Python311\\python.exe -m venv Z:\\old\\.venv\n",
+        )
+        .unwrap();
+
+        let replacement =
+            PathBuf::from(r"C:\Users\someone\AppData\Local\Programs\Python\Python311\python.exe");
+        rewrite_pyvenv_cfg(&cfg_path, &replacement).unwrap();
+
+        let rewritten = std::fs::read_to_string(&cfg_path).unwrap();
+        assert!(
+            rewritten.contains(r"home = C:\Users\someone\AppData\Local\Programs\Python\Python311")
+        );
+        assert!(rewritten.contains(
+            r"executable = C:\Users\someone\AppData\Local\Programs\Python\Python311\python.exe"
+        ));
+        // Untouched, purely informational lines survive as-is.
+        assert!(rewritten.contains("include-system-site-packages = false"));
+        assert!(rewritten.contains("version = 3.11.9"));
+        assert!(rewritten
+            .contains(r"command = C:\Program Files\Python311\python.exe -m venv Z:\old\.venv"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn adds_missing_keys_instead_of_erroring() {
+        let dir = std::env::temp_dir().join(format!(
+            "abp_pyvenv_repair_test_missing_keys_{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg_path = dir.join("pyvenv.cfg");
+        std::fs::write(&cfg_path, "version = 3.11.9\n").unwrap();
+
+        let replacement = PathBuf::from(r"C:\Python311\python.exe");
+        rewrite_pyvenv_cfg(&cfg_path, &replacement).unwrap();
+
+        let rewritten = std::fs::read_to_string(&cfg_path).unwrap();
+        assert!(rewritten.contains(r"home = C:\Python311"));
+        assert!(rewritten.contains(r"executable = C:\Python311\python.exe"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
 
 fn spawn_internal(app: &AppHandle, state: &State<ServerState>) -> Result<(), String> {
