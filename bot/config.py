@@ -161,11 +161,25 @@ class ConfigManager:
         self.reload(actor=actor)
 
     async def watch_forever(self) -> None:
-        """Background task: watch the config file and hot-reload on change."""
+        """Background task: watch the config file and hot-reload on change.
+
+        reload() itself never raises (bad YAML/wrong shape/callback
+        failures are all caught internally and logged) — the real risk
+        here is awatch() dying outright (a deleted watched file, a
+        permission change, an OS-level file-watching backend hiccup), a
+        real documented watchfiles failure mode that would otherwise
+        leave config file changes silently, permanently unnoticed for
+        the rest of the process's life with no visible sign short of a
+        restart. Re-enters the watch fresh after a short delay instead."""
         from watchfiles import awatch
 
-        async for _changes in awatch(str(self.path)):
-            self.reload(actor="file-watch")
+        while True:
+            try:
+                async for _changes in awatch(str(self.path)):
+                    self.reload(actor="file-watch")
+            except Exception:
+                logger.exception("config file watcher crashed — restarting it")
+                await asyncio.sleep(2)
 
 
 # Module-level singleton — every part of the app shares one config view.

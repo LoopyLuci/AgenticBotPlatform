@@ -42,6 +42,7 @@ risk compounding a half-applied module with more reload attempts.
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import logging
 import py_compile
@@ -386,17 +387,39 @@ async def watch_forever() -> None:
     watch_forever() in bot/main.py): watches bot/ for .py changes and
     hot-reloads on each one, unless hot_reload_enabled is off in
     config/backends.yaml (checked live, every event, so toggling it in
-    the dashboard takes effect without a restart)."""
+    the dashboard takes effect without a restart).
+
+    Two-layer defense against silently going dark forever: a bad
+    individual reload cycle (run_cycle() raising) only skips that one
+    cycle, never taking the whole watcher down with it; and if awatch()
+    itself dies (a real, documented watchfiles failure mode — a deleted
+    watched directory, a permission change, an OS-level file-watching
+    backend hiccup), the whole watch is re-entered fresh after a short
+    delay instead of leaving hot-reload permanently, silently disabled
+    for the rest of the process's life with no way to notice short of a
+    restart. The same class of bug this project's dashboard-port-bind
+    crash already demonstrated once for a different subsystem."""
     from watchfiles import awatch
 
-    async for changes in awatch(str(BOT_PKG_DIR)):
+    while True:
         try:
-            from bot.config import config
+            async for changes in awatch(str(BOT_PKG_DIR)):
+                try:
+                    from bot.config import config
 
-            if not config.current.get("hot_reload_enabled", True):
-                continue
+                    if not config.current.get("hot_reload_enabled", True):
+                        continue
+                except Exception:
+                    pass
+                changed_paths = [Path(p) for _change, p in changes]
+                try:
+                    await run_cycle(
+                        changed_paths,
+                        shutdown_backends=_shutdown_backends,
+                        restart_instances_for_platform=_restart_platform_instances,
+                    )
+                except Exception:
+                    logger.exception("hot-reload cycle failed for %s", changed_paths)
         except Exception:
-            pass
-        changed_paths = [Path(p) for _change, p in changes]
-        await run_cycle(changed_paths, shutdown_backends=_shutdown_backends,
-                         restart_instances_for_platform=_restart_platform_instances)
+            logger.exception("hot-reload file watcher crashed — restarting it")
+            await asyncio.sleep(2)
