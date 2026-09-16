@@ -97,3 +97,28 @@ def test_a_broken_subscriber_does_not_break_logging():
     activity_log.subscribe(_bad_callback)
     logging.getLogger("t").info("still works")  # must not raise
     assert len(activity_log.recent()) == 1
+
+
+def test_a_subscriber_that_logs_does_not_recurse_infinitely():
+    """Confirmed live: bot.dashboard.server's _on_activity_entry falls
+    back to logger.warning(...) when called outside a running event loop
+    — since this handler sits on the root logger, that warning re-enters
+    emit() on the same thread, which used to re-notify subscribers, which
+    warned again, forever (a real crash, not hypothetical: exhausts the
+    recursion limit or the actual C stack). The record still gets
+    buffered either way — only the *live* subscriber notification for a
+    record produced from inside another notification is skipped, which is
+    exactly the record that would otherwise start the cycle."""
+    activity_log.install()
+    calls = []
+
+    def _logs_during_its_own_callback(entry):
+        calls.append(entry)
+        logging.getLogger("t").warning("re-entrant warning from a subscriber")
+
+    activity_log.subscribe(_logs_during_its_own_callback)
+    logging.getLogger("t").info("trigger")  # must not raise/recurse
+
+    assert len(calls) == 1  # the re-entrant warning did NOT also notify subscribers
+    messages = [e["message"] for e in activity_log.recent()]
+    assert messages == ["trigger", "re-entrant warning from a subscriber"]

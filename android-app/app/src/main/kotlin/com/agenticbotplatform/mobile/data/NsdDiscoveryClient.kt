@@ -14,7 +14,10 @@ import javax.inject.Singleton
 
 /** Finds a real, live AgenticBotPlatform instance on the local network via mDNS/
  * DNS-SD (Android's NsdManager) — the client half of bot/mdns_advertise.py's
- * `_agenticbotplatform._tcp.local.` advertisement. This is the last-resort fallback
+ * `_agenticbot._tcp.local.` advertisement (shortened from the full project
+ * name — DNS-SD service type labels are conventionally capped at 15 bytes,
+ * which "agenticbotplatform" alone violates; must match SERVICE_TYPE below
+ * exactly). This is the last-resort fallback
  * DynamicHostInterceptor reaches for only when BOTH of a device's paired
  * hosts stop answering (e.g. a DHCP lease changed the LAN IP, or a
  * Tailscale hostname stopped resolving) — it's what lets the app heal
@@ -110,7 +113,7 @@ class NsdDiscoveryClient @Inject constructor(@ApplicationContext private val con
     }
 
     companion object {
-        const val SERVICE_TYPE = "_agenticbotplatform._tcp."
+        const val SERVICE_TYPE = "_agenticbot._tcp."
         private const val TAG = "NsdDiscoveryClient"
     }
 }

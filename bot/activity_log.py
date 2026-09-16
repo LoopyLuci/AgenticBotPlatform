@@ -39,6 +39,23 @@ class _RingBufferHandler(logging.Handler):
         self._next_id = 1
         self._lock = threading.Lock()
         self._subscribers: list[Callable[[ActivityEntry], None]] = []
+        # Re-entrancy guard: this handler is attached to the ROOT logger, so
+        # anything a subscriber does that itself logs — even indirectly,
+        # even at WARNING/ERROR — comes right back through this same
+        # emit() on the same thread. Confirmed live: bot.dashboard.server's
+        # _on_activity_entry falls back to logger.warning(...) when called
+        # outside a running event loop, which re-enters here, re-notifies
+        # subscribers, warns again, and so on — a real, deterministic
+        # infinite-recursion crash (eventually a RecursionError, logged as
+        # "--- Logging error ---", or a hard native stack-overflow crash
+        # with zero output before it, depending on exactly where the C
+        # stack finally gives out) rather than a hypothetical one. A
+        # thread-local flag means this can't happen no matter what a
+        # current or future subscriber does inside its callback — the
+        # record itself is still buffered either way, only the live
+        # subscriber notification for a record logged *during* another
+        # notification is skipped.
+        self._dispatching = threading.local()
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
@@ -56,12 +73,19 @@ class _RingBufferHandler(logging.Handler):
             entry.id = self._next_id
             self._next_id += 1
             self._buf.append(entry)
-            callbacks = list(self._subscribers)
-        for cb in callbacks:
-            try:
-                cb(entry)
-            except Exception:
-                pass  # a broken subscriber must never take down logging itself
+            if not getattr(self._dispatching, "active", False):
+                callbacks = list(self._subscribers)
+        if not callbacks:
+            return
+        self._dispatching.active = True
+        try:
+            for cb in callbacks:
+                try:
+                    cb(entry)
+                except Exception:
+                    pass  # a broken subscriber must never take down logging itself
+        finally:
+            self._dispatching.active = False
 
     def recent(self, limit: int = 200, since_id: int = 0) -> list[ActivityEntry]:
         with self._lock:

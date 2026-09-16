@@ -1,5 +1,5 @@
 """Advertises this AgenticBotPlatform install on the local network via mDNS/DNS-SD
-(`_agenticbotplatform._tcp.local.`) so the Android app's NsdDiscoveryClient can find
+(`_agenticbot._tcp.local.`) so the Android app's NsdDiscoveryClient can find
 a live server without any stored IP — the server-side half of hardening
 mobile connectivity for "any network, any condition": when a phone's
 configured host(s) stop answering (a DHCP lease changed the LAN IP, a
@@ -23,7 +23,16 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-SERVICE_TYPE = "_agenticbotplatform._tcp.local."
+# DNS-SD service type labels are conventionally capped at 15 bytes
+# (zeroconf enforces this and raises if violated) — the project's full
+# "agenticbotplatform" name is 19 bytes, so this uses the shorter
+# "agenticbot" label instead. Confirmed live: the rename from "botserver"
+# (fit fine) to "agenticbotplatform" broke this outright, silently
+# disabling mDNS discovery/mobile pairing on every install ("mdns_advertise:
+# failed to start ... Service name (agenticbotplatform) must be <= 15
+# bytes") until this was caught. Must match Android's
+# NsdDiscoveryClient.SERVICE_TYPE exactly.
+SERVICE_TYPE = "_agenticbot._tcp.local."
 
 _zeroconf = None
 _service_info = None

@@ -128,6 +128,24 @@ def test_start_never_raises_when_zeroconf_explodes(monkeypatch):
     assert mdns_advertise._zeroconf is None
 
 
+def test_service_type_label_fits_dns_sd_15_byte_limit():
+    """The `_FakeZeroconf`/`_FakeServiceInfo` doubles above accept any
+    string, so they can never catch this — confirmed live: the
+    BotServer -> AgenticBotPlatform rename changed SERVICE_TYPE from
+    "_botserver._tcp.local." (fits) to "_agenticbotplatform._tcp.local."
+    (19 bytes), which the REAL zeroconf library rejects outright
+    ("Service name (agenticbotplatform) must be <= 15 bytes"), silently
+    disabling mDNS advertisement (and therefore Android's discovery
+    fallback) on every install until this test existed. Must also stay
+    in sync with Android's NsdDiscoveryClient.SERVICE_TYPE by hand — no
+    single source of truth spans both languages here."""
+    label = mdns_advertise.SERVICE_TYPE.split(".")[0].lstrip("_")
+    assert len(label.encode("utf-8")) <= 15, (
+        f"SERVICE_TYPE label {label!r} is {len(label.encode('utf-8'))} bytes, "
+        "over the DNS-SD 15-byte limit zeroconf enforces"
+    )
+
+
 def test_stop_never_raises_when_unregister_fails(monkeypatch):
     _reset()
     _fake_addresses(monkeypatch, lan="192.168.1.50")

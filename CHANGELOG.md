@@ -15,8 +15,9 @@ app's own version (the Android app versions independently — see its own
   (`com.agenticbotplatform.app`), the Rust crate/lib names
   (`agentic-bot-platform` / `agentic_bot_platform_lib`), the Android
   package (`com.agenticbotplatform.mobile`), the mobile pairing deep-link
-  scheme (`agenticbotplatform://pair`), the mDNS service type
-  (`_agenticbotplatform._tcp.local.`), internal env var names
+  scheme (`agenticbotplatform://pair`, later shortened to
+  `_agenticbot._tcp.local.` for the mDNS service type — see Fixed below),
+  internal env var names
   (`AGENTICBOTPLATFORM_*`), and docs/scripts throughout. The Python
   package (`bot/`) and Android's on-device storage identifiers
   (credential store, database file name, shared-prefs names) were
@@ -24,6 +25,51 @@ app's own version (the Android app versions independently — see its own
   installs' stored data. The GitHub repo was also renamed to
   `LoopyLuci/AgenticBotPlatform` (GitHub redirects the old URL); both
   auto-updaters now point at the new repo name.
+
+### Fixed
+- The rename above broke mDNS/DNS-SD advertisement outright: the full
+  `_agenticbotplatform._tcp.local.` service type is 19 bytes, over the
+  15-byte limit `zeroconf` enforces, so `mdns_advertise.start()` failed
+  every single time with `Service name (agenticbotplatform) must be <=
+  15 bytes` — silently disabling the Android app's on-LAN discovery
+  fallback on every install since the rename shipped. Shortened to
+  `_agenticbot._tcp.local.` (Android's `NsdDiscoveryClient.SERVICE_TYPE`
+  updated to match).
+- A logging feedback loop that could crash the bot process outright with
+  zero output: `bot/activity_log.py`'s ring buffer handler sits on the
+  root logger and calls subscriber callbacks synchronously from
+  `emit()`; `bot/dashboard/server.py`'s activity-entry subscriber falls
+  back to `logger.warning(...)` when invoked with no running event loop
+  (routine during early startup), which re-entered the same handler on
+  the same thread, re-notified subscribers, warned again, and so on —
+  observed live as a burst of identical warnings followed by a
+  `RecursionError` (printed by Python's own logging module as
+  `--- Logging error ---`) and, in the worst case, an unrecoverable
+  crash with no traceback at all. The ring buffer handler now guards
+  against this re-entrancy directly, independent of what any current or
+  future subscriber does inside its callback.
+- The desktop app's bundled Python runtime only ever worked on the exact
+  machine it was built on — Windows venvs embed an absolute base-install
+  path, and any other machine failed immediately with `No Python at
+  '<path>'` before the bot could even start. The app now detects this
+  and repairs itself in place: it finds (or silently installs via
+  winget) a compatible Python 3.11, verifies the venv's actual compiled
+  dependencies (Pillow, cryptography, numpy) load correctly under it —
+  not just that the interpreter starts — and reinstalls them fresh if
+  they don't.
+- The Dashboard Token could still prompt for manual entry on a
+  brand-new install: the desktop app's boot-time token read could win a
+  race against the server's own auto-generation and come back empty.
+  The token is now guaranteed to exist by the time it's requested, and
+  the desktop app no longer falls back to the manual-entry dialog on any
+  auth error.
+- The bottom Terminal/Activity panel could get permanently minimized
+  with no way to reopen it (a page-load state that never synced the
+  panel's initial collapsed state with its reopen button's visibility).
+
+### Added
+- Copy and Save buttons on the Terminal/Activity panel, acting on
+  whichever tab is currently active.
 
 ## [0.4.0] — 2026-08-30
 
