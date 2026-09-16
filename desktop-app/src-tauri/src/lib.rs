@@ -27,7 +27,9 @@ mod network;
 mod terminal;
 mod updater;
 use network::{detect_lan_host, detect_tailscale_host};
-use terminal::{stop_terminal, terminal_resize, terminal_start, terminal_stop, terminal_write, TerminalState};
+use terminal::{
+    stop_terminal, terminal_resize, terminal_start, terminal_stop, terminal_write, TerminalState,
+};
 use updater::{check_for_update, download_update, install_update};
 
 /// Passed to CreateProcess on Windows so spawning a console app (python.exe,
@@ -445,7 +447,11 @@ fn get_dashboard_token(app: AppHandle) -> Result<Option<String>, String> {
                 "bot.envfile --print-token exited {} in {}: {}",
                 output.status,
                 project_root.display(),
-                if stderr.is_empty() { "(no stderr)" } else { &stderr }
+                if stderr.is_empty() {
+                    "(no stderr)"
+                } else {
+                    &stderr
+                }
             ));
         }
         return Ok(None); // exited 0, printed nothing — genuinely no token in .env yet
