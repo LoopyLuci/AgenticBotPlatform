@@ -128,6 +128,10 @@ def _done_callback(instance_id: int, name: str) -> Any:
         if exc is not None:
             logger.error("bot instance %r (id=%s) ended with an error: %s", name, instance_id, exc, exc_info=exc)
             bot_instances.record_error(instance_id, str(exc))
+            from bot.diagnostics import telemetry
+
+            telemetry.increment("platform.crash")
+            telemetry.record_event("platform_crash", f"{name} (id={instance_id}): {exc}")
         handle = _handles.get(instance_id)
         if handle is not None and handle.task is task:
             _handles.pop(instance_id, None)
@@ -161,6 +165,10 @@ async def _restart_after_crash(instance_id: int, name: str) -> None:
         await start_instance(row)
     except Exception as exc:
         logger.error("failed to auto-restart bot instance %r (id=%s) after crash: %s", name, instance_id, exc)
+    else:
+        from bot.diagnostics import telemetry
+
+        telemetry.increment("platform.auto_restart")
 
 
 async def start_instance(row: dict[str, Any]) -> None:

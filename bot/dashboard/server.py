@@ -600,6 +600,46 @@ def build_app() -> FastAPI:
 
         return {"entries": activity_log.recent(limit=min(limit, 2000), since_id=since_id)}
 
+    @app.get("/api/diagnostics/summary", dependencies=[Depends(_require_token)])
+    async def api_diagnostics_summary():
+        """Backs the GUI's Diagnostics tab: system info, local-only
+        telemetry counters (error rates, self-heal/auto-restart counts),
+        and how many crash reports are on disk. Nothing here is ever sent
+        anywhere on its own — see /api/diagnostics/bundle for the
+        exportable version a human can attach to a bug report."""
+        from bot import diagnostics
+
+        return {
+            "system_info": diagnostics.system_info(),
+            "telemetry": diagnostics.telemetry.snapshot(),
+            "crash_report_count": len(diagnostics.list_crash_reports(limit=diagnostics.MAX_CRASH_REPORTS)),
+        }
+
+    @app.get("/api/diagnostics/crash-reports", dependencies=[Depends(_require_token)])
+    async def api_diagnostics_crash_reports(limit: int = 50):
+        from bot import diagnostics
+
+        return {"reports": diagnostics.list_crash_reports(limit=min(limit, diagnostics.MAX_CRASH_REPORTS))}
+
+    @app.get("/api/diagnostics/crash-reports/{report_id}", dependencies=[Depends(_require_token)])
+    async def api_diagnostics_crash_report_detail(report_id: str):
+        from bot import diagnostics
+
+        report = diagnostics.get_crash_report(report_id)
+        if report is None:
+            raise HTTPException(status_code=404, detail="no such crash report")
+        return report
+
+    @app.get("/api/diagnostics/bundle", dependencies=[Depends(_require_token)])
+    async def api_diagnostics_bundle():
+        """Builds (fresh, on demand — never pre-generated/cached) a zip of
+        system info, telemetry, recent crash reports, and the bot.log
+        tail for the user to download and attach to a bug report."""
+        from bot import diagnostics
+
+        path = diagnostics.build_support_bundle()
+        return FileResponse(path, filename=path.name, media_type="application/zip")
+
     @app.post("/api/terminal/exec", dependencies=[Depends(_require_token)])
     async def api_terminal_exec(payload: dict = Body(...)):
         """The scoped terminal panel's only way of doing anything — runs
@@ -670,6 +710,20 @@ def build_app() -> FastAPI:
             "# HELP agenticbotplatform_db_size_bytes SQLite database file size in bytes.",
             "# TYPE agenticbotplatform_db_size_bytes gauge",
             f"agenticbotplatform_db_size_bytes {db.get_db_size_bytes()}",
+        ]
+        from bot import diagnostics
+
+        telemetry_counters = diagnostics.telemetry.snapshot()["counters"]
+        lines += [
+            "# HELP agenticbotplatform_crash_reports_total Crash reports written since process start.",
+            "# TYPE agenticbotplatform_crash_reports_total counter",
+            f"agenticbotplatform_crash_reports_total {telemetry_counters.get('crash_reports.written', 0)}",
+            "# HELP agenticbotplatform_platform_crashes_total Bot instance crashes since process start.",
+            "# TYPE agenticbotplatform_platform_crashes_total counter",
+            f"agenticbotplatform_platform_crashes_total {telemetry_counters.get('platform.crash', 0)}",
+            "# HELP agenticbotplatform_platform_auto_restarts_total Automatic bot-instance restarts since process start.",
+            "# TYPE agenticbotplatform_platform_auto_restarts_total counter",
+            f"agenticbotplatform_platform_auto_restarts_total {telemetry_counters.get('platform.auto_restart', 0)}",
         ]
         return Response("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
 

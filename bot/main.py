@@ -87,9 +87,10 @@ def setup_logging() -> None:
     sys.excepthook = _log_uncaught_exception
     threading.excepthook = _log_uncaught_thread_exception
 
-    from bot import activity_log
+    from bot import activity_log, diagnostics
 
     activity_log.install()
+    diagnostics.install()
 
 
 logger = logging.getLogger("bot.main")

@@ -710,6 +710,7 @@
       <a href="#database" data-kw="database storage maintenance"><span class="ic">▥</span><span class="nav-txt"><b>Database</b><small>Storage &amp; maintenance</small></span></a>
       <a href="#control" data-kw="control center backends models security settings"><span class="ic">⚙</span><span class="nav-txt"><b>Control Center</b><small>Backends, models &amp; security</small></span></a>
       <a href="#resilience" data-kw="resilience hot reload health"><span class="ic">↻</span><span class="nav-txt"><b>Resilience</b><small>Hot reload &amp; health checks</small></span></a>
+      <a href="#diagnostics" data-kw="diagnostics crash reports telemetry system info support bundle"><span class="ic">🩺</span><span class="nav-txt"><b>Diagnostics</b><small>Crash reports, telemetry &amp; support bundle</small></span></a>
       <a href="#logs" data-kw="live logs streaming tail"><span class="ic">▦</span><span class="nav-txt"><b>Live Logs</b><small>Streaming tail</small></span></a>
       <a href="#chat" data-kw="chat message conversation"><span class="ic">💬</span><span class="nav-txt"><b>Chat</b><small>Talk to any connected bot</small></span></a>
       <a href="#server-chat" data-kw="server chat devices files desktop android"><span class="ic">🖥</span><span class="nav-txt"><b>Server Chat</b><small>Message &amp; send files between devices</small></span></a>
@@ -1099,6 +1100,37 @@
       <div class="card" style="margin-top:14px;">
         <h3>Config change history</h3>
         <div class="timeline" id="config-history"></div>
+      </div>
+    </section>
+
+    <section id="diagnostics">
+      <div class="sec-head"><h2>Diagnostics</h2><span class="desc">System info, error telemetry, and crash reports — all local, nothing sent anywhere automatically</span></div>
+
+      <div class="grid g3">
+        <div class="card">
+          <h3>System</h3>
+          <table style="margin-top:6px;"><tbody id="diag-system-info"></tbody></table>
+        </div>
+        <div class="card">
+          <h3>Self-healing counters</h3>
+          <p class="cardnote">Since this process last started.</p>
+          <table style="margin-top:6px;"><tbody id="diag-counters"></tbody></table>
+        </div>
+        <div class="card">
+          <h3>Support bundle</h3>
+          <p class="cardnote">Zips system info, telemetry, recent crash reports, and the bot.log tail into one file to attach to a bug report. Nothing is sent anywhere — you download it and share it yourself.</p>
+          <button class="btn" id="btn-diag-bundle" style="margin-top:10px;">Download support bundle</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Recent self-healing events</h3>
+        <div class="timeline" id="diag-events"></div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Crash reports <span class="cardnote" id="diag-crash-count"></span></h3>
+        <div class="timeline" id="diag-crash-list"></div>
       </div>
     </section>
 
