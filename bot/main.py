@@ -12,6 +12,8 @@ import logging
 import logging.handlers
 import os
 import signal
+import sys
+import threading
 
 from dotenv import load_dotenv
 
@@ -30,6 +32,43 @@ LOG_DIR = ROOT / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
 
+def _log_uncaught_exception(exc_type, exc_value, exc_tb) -> None:
+    """sys.excepthook replacement — catches anything that escapes all the
+    way to the top of the main thread uncaught. Every OTHER error path in
+    this file already flows through logging (a normal try/except that
+    calls logger.exception/.error, or _handle_asyncio_exception below for
+    a task's own unhandled exception) and therefore already reaches both
+    logs/bot.log and the Activity tab (bot/activity_log.py's ring buffer
+    sits on the root logger) — this is specifically the one class of
+    error that wouldn't: a genuinely unhandled exception that unwinds the
+    whole process. Without this, that exact class of failure printed to
+    stderr only (Python's default behavior) and left zero trace in either
+    place, exactly the kind of silent, hard-to-diagnose crash this
+    project has hit more than once. Still calls the real default hook
+    afterward, so a direct terminal run keeps seeing the traceback too."""
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+        return
+    logging.getLogger("bot.uncaught").critical(
+        "unhandled exception reached the top level — the process is about to exit",
+        exc_info=(exc_type, exc_value, exc_tb),
+    )
+    sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+
+def _log_uncaught_thread_exception(args: threading.ExceptHookArgs) -> None:
+    """threading.excepthook replacement — sys.excepthook above only ever
+    fires for the main thread; this is the same safety net for any other
+    (a background worker, an asyncio.to_thread call, a library's own
+    thread) that lets an exception escape uncaught."""
+    thread_name = args.thread.name if args.thread is not None else "?"
+    logging.getLogger("bot.uncaught").critical(
+        "unhandled exception in thread %r", thread_name,
+        exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+    )
+    threading.__excepthook__(args)
+
+
 def setup_logging() -> None:
     fmt = logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s", "%H:%M:%S")
     file_handler = logging.handlers.RotatingFileHandler(
@@ -44,6 +83,9 @@ def setup_logging() -> None:
     root.addHandler(file_handler)
     root.addHandler(console_handler)
     logging.getLogger("httpx").setLevel(logging.WARNING)
+
+    sys.excepthook = _log_uncaught_exception
+    threading.excepthook = _log_uncaught_thread_exception
 
     from bot import activity_log
 
@@ -139,6 +181,93 @@ async def build_telegram_instance(row: dict) -> "telegram.ext.Application":
     return application
 
 
+async def _start_dashboard(dash_app, host: str, port: int, *, max_attempts: int = 8, retry_delay_s: float = 2.0):
+    """Binds and starts the dashboard's uvicorn server, retrying on a bind
+    failure instead of letting it take the whole process down.
+
+    uvicorn's own Server.startup() calls `sys.exit(uvicorn.config.
+    STARTUP_FAILURE)` — literally `3` — directly on an OSError from
+    binding the socket (confirmed by reading uvicorn/server.py and
+    uvicorn/config.py). That SystemExit propagates straight out of
+    `asyncio.run(run())` and kills the entire interpreter, Telegram/
+    Discord/etc. bots included, over what is very often a transient,
+    self-resolving port conflict — most commonly a previous instance of
+    this exact process that hasn't fully released the socket yet (the
+    desktop app's own Rust side now also detects and handles this before
+    ever spawning bot.main, but this process can just as well be started
+    directly, by an older desktop build, or with something else briefly
+    holding the port for any other reason — this needs to be safe on its
+    own, not only when something else's pre-check has already run).
+
+    A dead uvicorn.Server can't be restarted, so this builds a brand new
+    Config/Server/task each attempt. Returns (server, dashboard_task)
+    once genuinely bound and accepting connections, or (None, None) if
+    every attempt failed — the caller keeps every OTHER subsystem
+    (Telegram/Discord bots, scheduler, retention, mDNS, hot-reload)
+    running either way, rather than taking the whole process down over
+    the dashboard API alone.
+
+    Critical detail that broke the first version of this fix: a Task
+    whose coroutine raises SystemExit/KeyboardInterrupt is NOT handled
+    like a Task raising a normal Exception — asyncio's own Task-stepping
+    machinery deliberately lets those two propagate straight out of the
+    event loop instead of storing them for a later `.result()`/
+    `.exception()` call, confirmed by reproducing this fix's exact
+    failure live (the retry loop below never even ran a second attempt;
+    the whole process still died on the very first one). Catching
+    SystemExit has to happen INSIDE the same coroutine frame uvicorn
+    raises it from — _serve() below — never after the fact via the
+    task's own result."""
+    import uvicorn
+
+    async def _serve(server: "uvicorn.Server") -> None:
+        try:
+            await server.serve()
+        except SystemExit:
+            # uvicorn's own bind-failure signal (see this function's
+            # docstring) — swallowed here, at the source, so it can never
+            # reach asyncio's Task-stepping machinery as an uncaught
+            # BaseException and take the whole event loop down with it.
+            pass
+
+    for attempt in range(1, max_attempts + 1):
+        uv_config = uvicorn.Config(dash_app, host=host, port=port, log_level="warning", loop="asyncio")
+        server = uvicorn.Server(uv_config)
+        dashboard_task = asyncio.create_task(_serve(server))
+        for _ in range(100):  # 100 x 0.05s = 5s
+            if server.started or dashboard_task.done():
+                break
+            await asyncio.sleep(0.05)
+        if server.started:
+            if attempt > 1:
+                logger.info("dashboard API bound %s:%s on attempt %s/%s", host, port, attempt, max_attempts)
+            return server, dashboard_task
+        # Bind failed — uvicorn's own logger.error(exc) already printed
+        # the real OSError above this. Make sure the task is actually
+        # finished (it should be, _serve() already swallowed the
+        # SystemExit) before starting a fresh attempt.
+        if not dashboard_task.done():
+            dashboard_task.cancel()
+        try:
+            await dashboard_task
+        except asyncio.CancelledError:
+            pass
+        logger.warning(
+            "dashboard API failed to bind %s:%s (attempt %s/%s)",
+            host, port, attempt, max_attempts,
+        )
+        if attempt < max_attempts:
+            await asyncio.sleep(retry_delay_s)
+    logger.critical(
+        "dashboard API could not bind %s:%s after %s attempts — continuing WITHOUT it. "
+        "Telegram/Discord/other configured platforms are still running normally. Close "
+        "whatever else is using this port (check `netstat -ano | findstr :%s` on Windows) "
+        "and restart AgenticBotPlatform to restore the dashboard/GUI.",
+        host, port, max_attempts, port,
+    )
+    return None, None
+
+
 async def run() -> None:
     from bot import bot_instances, db, platform_supervisor
     from bot.config import config
@@ -168,16 +297,13 @@ async def run() -> None:
             "available to add one from the Bots tab"
         )
 
-    # dashboard app, sharing this process/loop
-    import uvicorn
-
+    # dashboard app, sharing this process/loop — see _start_dashboard()
+    # above for the actual uvicorn.Server construction/retry.
     from bot.dashboard.server import build_app
 
     dash_app = build_app()
     host = os.environ.get("DASHBOARD_HOST", "127.0.0.1")
     port = int(os.environ.get("DASHBOARD_PORT", "8787"))
-    uv_config = uvicorn.Config(dash_app, host=host, port=port, log_level="warning", loop="asyncio")
-    server = uvicorn.Server(uv_config)
 
     stop_event = asyncio.Event()
 
@@ -192,7 +318,6 @@ async def run() -> None:
         except NotImplementedError:
             pass  # Windows doesn't support add_signal_handler for SIGTERM
 
-    dashboard_task = asyncio.create_task(server.serve())
     watch_task = asyncio.create_task(config.watch_forever())
 
     from bot import hotreload
@@ -232,19 +357,38 @@ async def run() -> None:
     # Android app's NsdDiscoveryClient, never a startup dependency.
     await asyncio.to_thread(mdns_advertise.start, port)
 
-    # server.serve() just got scheduled, not confirmed running — uvicorn
-    # sets Server.started once it's actually bound and accepting
-    # connections. Wait for that (bounded, so a real bind failure still
-    # surfaces promptly) before claiming "listening": logging this before
-    # it's true is exactly the kind of thing that makes a startup failure
-    # look like a working server in the log.
-    for _ in range(100):  # 100 x 0.05s = 5s
-        if server.started or dashboard_task.done():
-            break
-        await asyncio.sleep(0.05)
-    if dashboard_task.done():
-        dashboard_task.result()  # re-raise the real bind error, if any
-    logger.info("Dashboard listening on http://%s:%s", host, port)
+    # Holds whatever _start_dashboard() last returned, read by the
+    # shutdown path below — a plain dict since dashboard_supervisor()
+    # reassigns it from inside a background task, and shutdown needs to
+    # see whatever the CURRENT values are at that point, not whatever
+    # they were at the moment this task was created.
+    dashboard_state: dict[str, object] = {"server": None, "task": None}
+
+    async def dashboard_supervisor() -> None:
+        """_start_dashboard()'s own max_attempts is a bounded initial
+        burst (fast retries for the common case: something releases the
+        port within a few seconds). If that's genuinely not enough —
+        whatever's holding the port sticks around much longer — keep
+        trying indefinitely in the background at a much slower interval
+        instead of requiring the user to notice and manually restart the
+        whole app once it clears on its own. Exits as soon as either a
+        bind succeeds or the process is shutting down."""
+        server, task = await _start_dashboard(dash_app, host, port)
+        while server is None and not stop_event.is_set():
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=30)
+                break  # stop_event fired while waiting — shutting down, stop trying
+            except asyncio.TimeoutError:
+                pass
+            if stop_event.is_set():
+                break
+            server, task = await _start_dashboard(dash_app, host, port, max_attempts=1)
+        dashboard_state["server"] = server
+        dashboard_state["task"] = task
+        if server is not None:
+            logger.info("Dashboard listening on http://%s:%s", host, port)
+
+    dashboard_supervisor_task = asyncio.create_task(dashboard_supervisor())
 
     try:
         await stop_event.wait()
@@ -256,8 +400,12 @@ async def run() -> None:
         await peers_health_task  # same shutdown contract as scheduler_task
         await retention_task  # same shutdown contract as scheduler_task
         await asyncio.to_thread(mdns_advertise.stop)
-        server.should_exit = True
-        await dashboard_task
+        await dashboard_supervisor_task  # let its own retry loop notice stop_event and exit
+        server = dashboard_state["server"]
+        dashboard_task = dashboard_state["task"]
+        if server is not None:  # None if every bind attempt ever failed
+            server.should_exit = True
+            await dashboard_task
         await platform_supervisor.stop_all()
         from bot.router import router as _router
 
