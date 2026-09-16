@@ -237,6 +237,15 @@ def ensure_dashboard_token() -> str:
 
 if __name__ == "__main__":
     if "--print-token" in sys.argv:
-        print(get_var("DASHBOARD_TOKEN") or "")
+        # Generates on first call, not just reads — the desktop app's Rust
+        # get_dashboard_token command shells out to exactly this on every
+        # boot, racing bot.main's own ensure_dashboard_token() call in the
+        # spawned server process. A brand-new install has no .env yet, so a
+        # plain read here could lose that race and print nothing, which is
+        # what used to send the JS side straight to the manual-paste modal
+        # on a fresh machine. ensure_dashboard_token() is idempotent (safe
+        # for both processes to call), so whichever gets here first wins
+        # and the other just reads back the same persisted value.
+        print(ensure_dashboard_token())
     else:
         print(f"resolved .env: {resolve()}", file=sys.stderr)
