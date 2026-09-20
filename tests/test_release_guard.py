@@ -479,3 +479,11 @@ def test_retry_reevaluates_a_callable_command_each_attempt():
 
     res = g.run_with_retry(command, attempts=3, sleep=lambda s: None, runner=run, log=lambda s: None)
     assert res.ok and calls == [["create"], ["upload"]]
+
+
+def test_cargo_lock_sync_only_reports_in_a_dry_run(repo):
+    lock = _cargo(repo, "0.7.26", "\n")
+    before = lock.read_bytes()
+    c = g.sync_cargo_lock("0.7.28", repo, apply=False)
+    assert c.ok and c.warn and "would update" in c.detail
+    assert lock.read_bytes() == before
