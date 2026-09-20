@@ -43,8 +43,8 @@ def test_a_trace_never_contains_prompts_replies_or_file_contents(tmp_path, monke
     import contextlib
 
     @contextlib.contextmanager
-    def spy(root, approvals):
-        with real(root, approvals):
+    def spy(root, approvals, *rest):
+        with real(root, approvals, *rest):
             yield
             seen["events"] = trace.get_store().events(limit=5000)
 

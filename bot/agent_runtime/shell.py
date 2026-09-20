@@ -19,14 +19,12 @@ from __future__ import annotations
 
 import asyncio
 import itertools
-import os
-import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from bot.agent_runtime import toolspec
+from bot.agent_runtime import sandbox, toolspec
 from bot.agent_runtime.errors import ToolError, safe_path
 
 DEFAULT_TIMEOUT_S = 60
@@ -59,27 +57,9 @@ _jobs: dict[str, dict[str, Job]] = {}
 _counters: dict[str, itertools.count] = {}   # per session, so a session's first job is always job1
 
 
-def _spawn_kwargs() -> dict:
-    return {} if os.name == "nt" else {"start_new_session": True}
-
-
 def kill_tree(proc) -> None:
-    """Stop the process and everything it started."""
-    pid = getattr(proc, "pid", None)
-    if pid is None:
-        return
-    try:
-        if os.name == "nt":
-            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, timeout=15)
-        else:
-            import signal
-
-            os.killpg(os.getpgid(pid), signal.SIGKILL)
-    except (OSError, subprocess.SubprocessError):
-        try:
-            proc.kill()
-        except (ProcessLookupError, OSError):
-            pass
+    """Stop the process and everything it started (and the container, for the docker sandbox)."""
+    sandbox.kill(proc)
 
 
 def _clean_timeout(value) -> int:
@@ -101,13 +81,8 @@ def _resolve_cwd(workspace: Path, cwd: Optional[str]) -> Path:
     return target
 
 
-async def _start(command: str, cwd: Path) -> asyncio.subprocess.Process:
-    try:
-        return await asyncio.create_subprocess_shell(
-            command, cwd=str(cwd), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
-            **_spawn_kwargs())
-    except OSError as exc:
-        raise ToolError(str(exc)) from exc
+async def _start(command: str, cwd: Path, workspace: Path) -> asyncio.subprocess.Process:
+    return await sandbox.start(command, cwd, workspace)
 
 
 def _decode(data: bytes) -> str:
@@ -120,9 +95,9 @@ async def run_command(command: str, *, workspace: Path, cwd: Optional[str] = Non
         raise ToolError("command can't be empty")
     where = _resolve_cwd(workspace, cwd)
     if background:
-        return await _start_job(command, where)
+        return await _start_job(command, where, workspace)
     limit = _clean_timeout(timeout)
-    proc = await _start(command, where)
+    proc = await _start(command, where, workspace)
     chunks: list[bytes] = []
     size = 0
 
@@ -193,12 +168,12 @@ async def _pump(job: Job) -> None:
         raise
 
 
-async def _start_job(command: str, cwd: Path) -> str:
+async def _start_job(command: str, cwd: Path, workspace: Path) -> str:
     jobs = _session_jobs()
     _reap(jobs)
     if sum(1 for j in jobs.values() if j.running) >= MAX_JOBS_PER_SESSION:
         raise ToolError(f"{MAX_JOBS_PER_SESSION} background jobs are already running; stop one with shell_kill first")
-    proc = await _start(command, cwd)
+    proc = await _start(command, cwd, workspace)
     job = Job(id=f"job{next(_counters.setdefault(toolspec.current_session(), itertools.count(1)))}", command=command[:200], cwd=str(cwd), proc=proc)
     job.pump = asyncio.ensure_future(_pump(job))
     jobs[job.id] = job

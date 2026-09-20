@@ -88,6 +88,19 @@ app's own version (the Android app versions independently — see its own
     stream reply text as it is generated, others deliver it whole. A turn given
     `context["stream_notify"]` receives the events; on failover it is told to discard
     what it showed. Dashboards, the desktop app, Android and chat channels adopt it next.
+- **Agent security: permissions, untrusted-content defence, credential protection, sandbox (roadmap P2,
+  `docs/agents/security.md`).** Permission rules (allow / ask / deny by tool, class and a pattern on the
+  command, path, host or query) and modes (default, plan, accept_edits, bypass), with a host lock. Shell
+  allow-rules never match a command containing an operator, so `git status*` cannot smuggle in `; rm -rf`.
+  A conversation that read web or untrusted-MCP content can no longer auto-run changes: allows become asks,
+  standing approvals are ignored, delegation needs approval. Commands no longer inherit the server's API
+  keys (credential-shaped variables are removed), secrets are redacted from tool output, and a call that
+  carries one to an external tool is refused. Optional docker sandbox (no network, limits, fails closed).
+  MCP servers are untrusted by default and a tool whose description changes is blocked until approved. Hooks
+  gain `PostToolUseFailure`, `Stop`, `SubagentStop`, `PreCompact`, `Notification`, `SessionEnd`, input
+  rewriting and HTTP hooks. New API under `/api/agent/*`, `/api/instances/{id}/permissions`, `/api/mcp/pins`.
+  Behaviour change: `run_shell` now runs with a scrubbed environment; set `sandbox.env.mode: inherit` for the
+  old behaviour.
 - **Agent editing, search and shell tools; a sturdier loop (roadmap P1).**
   New tools for the native agent: `edit_file`, `multi_edit` and `apply_patch` (careful
   matching, atomic, all-or-nothing), `grep`, `glob`, `todo_write` / `todo_read`, and

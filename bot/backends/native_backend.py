@@ -61,6 +61,10 @@ class NativeAgentBackend(Backend):
         from bot.agent_runtime import trace
 
         ctx = context or {}
+        from bot.agent_runtime import permissions
+
+        # A caller may set the permission mode for this run ("plan" makes it read-only).
+        mode_token = permissions.mode_var.set(ctx.get("permission_mode"))
         run = trace.begin(
             agent=self.name, model=self.model, transport=type(self.transport).__name__,
             instance_id=ctx.get("instance_id"), session=ctx.get("desktop_session_key") or "",
@@ -75,6 +79,8 @@ class NativeAgentBackend(Backend):
             except Exception as exc:  # noqa: BLE001 — recorded, then re-raised unchanged
                 run.end("failed", error=f"{type(exc).__name__}: {exc}")
                 raise
+            finally:
+                permissions.mode_var.reset(mode_token)
             run.end("ok")
             if run.run_id and isinstance(getattr(result, "raw", None), dict):
                 result.raw["trace_run"] = run.run_id
@@ -182,7 +188,7 @@ class NativeAgentBackend(Backend):
         # bot/agent_runtime/compression.py's own docstring.
         from bot.agent_runtime import compression
 
-        if await compression.maybe_compress(session_key, self.transport, model=self.model):
+        if await compression.maybe_compress(session_key, self.transport, model=self.model, instance_id=instance_id):
             trace.active().note("history compacted")
 
         history = db.list_agent_messages(session_key)
@@ -284,10 +290,13 @@ class NativeAgentBackend(Backend):
         cache_creation_tokens: Optional[int] = None
         cache_read_tokens: Optional[int] = None
         watch = loop_guard.Watchdog(loop_guard.limits())
+        stop_hook_blocks = 0
         while True:
             stop_reason = watch.before_call(total_tokens)
             if stop_reason:
                 trace.active().note(f"stopped: {stop_reason}", level="warn")
+                await hooks.run_notification("turn_stopped", f"The turn was stopped because {stop_reason}.",
+                                             instance_id=instance_id)
                 return await self._wrap_up(
                     stop_reason, history=history, transport=active_transport, model=active_model,
                     system_prompt=system_prompt, effort=effort, timeout_s=timeout_s, session_key=session_key,
@@ -352,6 +361,15 @@ class NativeAgentBackend(Backend):
             db.append_agent_message(session_key, response.assistant_message["role"], response.assistant_message["content"])
 
             if response.stop:
+                # A Stop hook may ask the agent to carry on (twice at most, so a hook cannot loop it forever).
+                if stop_hook_blocks < 2:
+                    follow = await hooks.run_stop(response.text, instance_id=instance_id)
+                    if follow:
+                        stop_hook_blocks += 1
+                        entry = active_transport.user_message(f"[A Stop hook asks you to keep going: {follow}]")
+                        history.append(entry)
+                        db.append_agent_message(session_key, entry["role"], entry["content"])
+                        continue
                 raw = {"total_tokens": total_tokens}
                 if lazily_created:
                     raw["desktop_session_key"] = session_key

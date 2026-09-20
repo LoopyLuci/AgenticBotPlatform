@@ -25,7 +25,7 @@ turn entirely over a summarization call's own failure.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from bot.agent_runtime.transports.base import ProviderTransport
 
@@ -89,7 +89,8 @@ def _render_transcript(history: list[dict]) -> str:
     return "\n".join(f"{entry.get('role', '?')}: {_flatten(entry.get('content'))}" for entry in history)
 
 
-async def maybe_compress(session_key: str, transport: ProviderTransport, *, model: str) -> bool:
+async def maybe_compress(session_key: str, transport: ProviderTransport, *, model: str,
+                         instance_id: Optional[int] = None) -> bool:
     """Returns whether it actually compressed anything this call."""
     from bot import db
 
@@ -105,9 +106,14 @@ async def maybe_compress(session_key: str, transport: ProviderTransport, *, mode
 
     to_summarize = history[:-KEEP_LAST_N_MESSAGES]
     transcript = _render_transcript(to_summarize)
+    # A PreCompact hook may add instructions for the summary ("keep every file path").
+    from bot.agent_runtime import hooks
+
+    extra = await hooks.run_pre_compact(instance_id=instance_id, messages=len(to_summarize))
+    prompt_head = DIGEST_PROMPT if not extra else DIGEST_PROMPT.replace("\n\n---\n\n", f"\n\nAlso: {extra}\n\n---\n\n")
 
     try:
-        digest_request = transport.user_message(DIGEST_PROMPT + transcript)
+        digest_request = transport.user_message(prompt_head + transcript)
         response = await transport.send(
             model=model, history=[digest_request], tool_schemas=[],
             max_tokens=DIGEST_MAX_TOKENS, timeout_s=DIGEST_TIMEOUT_S,

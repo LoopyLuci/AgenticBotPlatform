@@ -1155,6 +1155,9 @@ async def cmd_new_session(ctx: CmdContext, args: list[str]) -> str:
         return "/new needs a bot instance — this chat isn't linked to one."
     if agent_engine.is_running(ctx.instance_id, ctx.chat_id, ctx.thread_id) and not (args and args[0] == "confirm"):
         return "A message is still in flight for this chat. Reply `/new confirm` to start a new session anyway."
+    from bot.agent_runtime import hooks as agent_hooks_events
+
+    await agent_hooks_events.run_session_end(instance_id=ctx.instance_id, reason="new_session")
     try:
         key = await router.create_session(ctx.instance_id, chat_id=ctx.chat_id, thread_id=ctx.thread_id)
     except BackendError as exc:

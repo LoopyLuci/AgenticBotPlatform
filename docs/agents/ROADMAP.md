@@ -10,7 +10,7 @@
 |---|---|---|
 | P0 | Foundations: eval harness, traces, `ToolSpec`, prompt builder, streaming | **Built** (see below for what remains) |
 | P1 | Core coding toolset and a better loop | **Built** (interactive PTY and a stateful shell are not) |
-| P2 | Permissions, sandboxing, prompt-injection defence, hooks v2 | Design |
+| P2 | Permissions, sandboxing, prompt-injection defence, hooks v2 | **Built** (docker backend untested against a real daemon) |
 | P3 | Context and memory | Design |
 | P4 | Agents, skills and commands | Design |
 | P5 | Code intelligence and developer surfaces | Design |
@@ -116,18 +116,24 @@ Acceptance: eval suite edit / refactor / search / planning / shell tasks pass in
 mode (met, 17 of 17); no existing test regresses (see the commit); a live-model run
 against the same tasks is still open (needs a provider key and your go-ahead to spend).
 
-### P2 — Permissions, sandbox, security (L; before broad sidecar use)
+### P2 — Permissions, sandbox, security (L) — built; see [security.md](security.md)
 
-* Rule engine: allow/ask/deny on tool, argument pattern and path; modes (plan,
-  default, accept-edits, bypass); persisted per-agent and per-project allows; host
-  policy can lock any of it.
-* Sandbox interface: restricted local, Docker, SSH, WSL and Windows job objects;
-  Modal/Daytona later. Network egress policy; secrets injected, never transcribed.
-* Prompt-injection defence: untrusted-content tagging for web and MCP results,
-  trust levels per MCP server, confirmation before a tainted context triggers a
-  dangerous action, tool-description pinning against tool poisoning.
-* Hooks v2: ~12 events (`PostToolUseFailure`, `Stop`, `SubagentStop`, `PreCompact`,
-  `Notification`, `SessionEnd`…), `updatedInput`, HTTP hooks.
+| Deliverable | State |
+|---|---|
+| Rule engine: allow / ask / deny on tool, class, and a pattern on the command / path / host / query; modes plan, default, accept_edits, bypass; strict matching of shell allow-rules; per-bot rules; host lock | Built |
+| Untrusted-content escalation: a session that read web or untrusted-MCP content cannot auto-run changes, ignores standing approvals, and cannot delegate without a person's approval | Built, enforced in the tool loop |
+| Credential protection: redaction of secrets in tool output, refusal of outbound calls carrying a secret (also %-encoded), and a scrubbed environment for commands | Built |
+| MCP: untrusted-by-default servers, per-server trust setting, tool-description pinning with an approval flow | Built |
+| Sandbox interface with `local` (scrubbed environment) and `docker` (no network, limits, capabilities dropped, fails closed) backends | Built. **Docker tested against a stand-in `docker` program only**; no daemon was available |
+| SSH, WSL, Windows job-object backends; network egress control for the local backend | **Not built.** Remote execution needs the file tools to run remotely too (P6's cloud computer); the local backend cannot restrict the network |
+| Hooks v2: ten events, `updatedInput`, blocking `Stop`, `PreCompact` context, HTTP hooks | Built. Not built: async hooks, MCP-tool / prompt / agent hook types |
+| API: `/api/agent/permissions`, `/api/instances/{id}/permissions`, `/api/mcp/pins`, `/api/agent/taint` | Built. No dashboard screen for them yet |
+| `web_fetch` / `web_search` on by default | **Not done, on purpose:** they stay off until an operator enables them, even though the defences now exist |
+| Eval: six security tasks that fail when their defence is removed | Built |
+
+Acceptance: a page containing instructions cannot get a command run; a deny rule holds; a
+credential never reaches output or a request; plan mode changes nothing (all met, as eval tasks
+and unit tests).
 
 ### P3 — Context and memory (L)
 

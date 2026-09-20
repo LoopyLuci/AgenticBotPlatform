@@ -509,11 +509,53 @@ async def connect_all_enabled() -> None:
             await connect(row["name"])
 
 
+# Tools whose description or schema changed since they were pinned (see mcp_pins.py): neither
+# offered to the model nor callable until a person approves the change.
+_blocked: dict[str, tuple[str, str]] = {}
+
+
 def _rebuild_tool_index() -> None:
+    from bot.agent_runtime import mcp_pins
+
     _tool_index.clear()
+    _blocked.clear()
     for server_name, conn in _connections.items():
         for tool in conn.tools:
-            _tool_index[f"{TOOL_PREFIX}{server_name}_{tool['name']}"] = (server_name, tool["name"])
+            full = f"{TOOL_PREFIX}{server_name}_{tool['name']}"
+            if mcp_pins.observe(server_name, tool) == "changed":
+                _blocked[full] = (server_name, tool["name"])
+                continue
+            _tool_index[full] = (server_name, tool["name"])
+
+
+def server_for_tool(name: str) -> Optional[str]:
+    entry = _tool_index.get(name)
+    return entry[0] if entry else None
+
+
+def pin_report() -> list[dict]:
+    """Every connected tool with its pin status ("ok", "new" or "changed") for a review screen."""
+    from bot.agent_runtime import mcp_pins
+
+    rows = []
+    for server_name, conn in _connections.items():
+        for tool in conn.tools:
+            rows.append({"server": server_name, "tool": tool["name"], "status": mcp_pins.status(server_name, tool),
+                         "description": str(tool.get("description", ""))[:500]})
+    return rows
+
+
+def approve_pin(server: str, tool_name: str) -> bool:
+    """Approve the tool's current description/schema and re-enable it."""
+    from bot.agent_runtime import mcp_pins
+
+    conn = _connections.get(server)
+    tool = next((t for t in (conn.tools if conn else []) if t["name"] == tool_name), None)
+    if tool is None:
+        return False
+    mcp_pins.approve(server, tool)
+    _rebuild_tool_index()
+    return True
 
 
 def external_tool_schemas() -> list[dict[str, Any]]:
@@ -523,6 +565,8 @@ def external_tool_schemas() -> list[dict[str, Any]]:
     schemas = []
     for server_name, conn in _connections.items():
         for tool in conn.tools:
+            if f"{TOOL_PREFIX}{server_name}_{tool['name']}" not in _tool_index:
+                continue                                       # blocked by pinning
             schemas.append({
                 "name": f"{TOOL_PREFIX}{server_name}_{tool['name']}",
                 "description": f"[{server_name}] {tool['description']}",

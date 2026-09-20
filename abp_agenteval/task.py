@@ -32,6 +32,11 @@ class Task:
     approvals: dict[str, str] = field(default_factory=dict)      # tool -> "deny"; anything else is approved
     max_iterations: int = 20
     tags: tuple = ()
+    # Settings for tasks that test the security layer:
+    config: dict = field(default_factory=dict)         # merged over `native_agent` in the config for this run
+    permission_mode: Optional[str] = None               # default | plan | accept_edits | bypass
+    fake_pages: dict[str, str] = field(default_factory=dict)   # url -> body returned by web_fetch (no network)
+    env: dict[str, str] = field(default_factory=dict)           # server environment variables for this run
 
 
 @dataclass

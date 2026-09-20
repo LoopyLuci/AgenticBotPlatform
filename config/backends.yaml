@@ -123,6 +123,26 @@ native_agent:
     enabled: false
     deny_hosts: []
     allow_hosts: []
+  # Permission rules and modes (bot/agent_runtime/permissions.py; see docs/agents/security.md).
+  # A rule is {decision: allow|ask|deny, tool: <name>|class:<permission>|*, match: <pattern>}.
+  permissions:
+    mode: default            # default | plan | accept_edits | bypass
+    allow_bypass: false      # bypass mode is ignored unless this is true
+    locked: false            # true: per-bot settings cannot change the rules or the mode
+    rules: []
+  # Where run_shell commands run and what environment they get (bot/agent_runtime/sandbox.py).
+  # `secrets` mode removes credential-shaped variables (API keys, tokens, passwords) from the
+  # environment a command sees; `backend: docker` runs each command in a locked-down container.
+  sandbox:
+    backend: local           # local | docker
+    env:
+      mode: secrets          # secrets | minimal | inherit
+  # External MCP servers are untrusted by default: reading their output marks the session as having
+  # read untrusted content, so a person must approve changes. Name servers you trust:
+  #   mcp_trust: {my-internal-server: trusted}
+  mcp_trust: {}
+  # A pinned MCP tool whose description or schema changes is blocked until a person approves it.
+  mcp_pinning: true
   max_concurrent_children: 6
   # Process-wide ceiling on live spawn_subagent children across EVERY
   # dispatch, not just one call's own max_concurrent_children — closes a
