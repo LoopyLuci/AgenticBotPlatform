@@ -86,10 +86,30 @@ def test_generate_refuses_to_overwrite_an_existing_key(tmp_path):
         us.generate_key(path)
 
 
-def test_publish_release_signs_before_it_tags_or_pushes():
-    """The release must abort on a missing key BEFORE any irreversible step."""
-    source = (Path(__file__).resolve().parent.parent / "scripts" / "publish_release.py").read_text(encoding="utf-8")
-    sign = source.index("update_signing.sign_installer")
-    assert sign < source.index('run(["git", "tag", tag])')
-    assert sign < source.index('run(["git", "push"])')
+def _release_source() -> str:
+    return (Path(__file__).resolve().parent.parent / "scripts" / "publish_release.py").read_text(encoding="utf-8")
+
+
+def test_publish_release_checks_the_signing_key_before_any_irreversible_step():
+    source = _release_source()
+    first_sign = source.index("update_signing.sign_installer")
+    assert first_sign < source.index('run(["git", "tag", tag])')
+    assert first_sign < source.index('run(["git", "push"])')
+
+
+def test_the_real_signature_is_made_after_the_pushes_and_right_before_the_upload():
+    """The pre-push hook rebuilds the installer during `git push`, replacing
+    the file. Signing before it signed bytes that were never uploaded, so
+    installed apps rejected the update (shipped once in v0.7.24)."""
+    source = _release_source()
+    pushed = source.index('run(["git", "push", "origin", tag])')
+    final_sign = source.rindex("update_signing.sign_installer")
+    upload = source.index('"gh", "release", "create"')
+    assert pushed < final_sign < upload
     assert "str(installer_sig)" in source
+
+
+def test_the_published_assets_are_verified_after_upload():
+    source = _release_source()
+    assert source.index('"gh", "release", "create"') < source.rindex("verify_published_assets(tag, installer, installer_sig)")
+    assert "sha256:" in source and "update_signing.verify(" in source
