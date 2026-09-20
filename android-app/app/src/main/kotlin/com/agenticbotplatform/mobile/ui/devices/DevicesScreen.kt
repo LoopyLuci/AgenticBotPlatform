@@ -62,6 +62,7 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel(), onOpenServerCha
     }
     val state by viewModel.state.collectAsState()
     val devices by viewModel.devices.collectAsState()
+    val load by viewModel.load.collectAsState()
     val refreshing by viewModel.refreshing.collectAsState()
     val updateState by viewModel.updateState.collectAsState()
     val sendState by viewModel.sendState.collectAsState()
@@ -116,8 +117,22 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel(), onOpenServerCha
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
                     )
+                    (load as? DevicesViewModel.DevicesLoad.Failed)?.let { failed ->
+                        Text(
+                            failed.message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(bottom = 8.dp),
+                        )
+                    }
                     if (devices.isEmpty()) {
-                        Text("No other devices paired yet.", style = MaterialTheme.typography.bodySmall)
+                        when (load) {
+                            is DevicesViewModel.DevicesLoad.Loading -> Text("Loading…", style = MaterialTheme.typography.bodySmall)
+                            // Failed: the error above says why; "Update Devices" retries.
+                            is DevicesViewModel.DevicesLoad.Failed -> Unit
+                            is DevicesViewModel.DevicesLoad.Loaded ->
+                                Text("No other devices paired yet.", style = MaterialTheme.typography.bodySmall)
+                        }
                     } else {
                         devices.forEach { device ->
                             DeviceRow(

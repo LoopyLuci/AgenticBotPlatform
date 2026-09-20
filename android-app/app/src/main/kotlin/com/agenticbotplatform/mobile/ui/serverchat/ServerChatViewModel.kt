@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.agenticbotplatform.mobile.data.ServerChatRepository
+import com.agenticbotplatform.mobile.data.UserFacingError
 import com.agenticbotplatform.mobile.data.dto.ServerChatConversation
 import com.agenticbotplatform.mobile.data.dto.ServerChatMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -31,6 +32,11 @@ class ServerChatViewModel @Inject constructor(private val repository: ServerChat
 
     private val _loadError = MutableStateFlow<String?>(null)
     val loadError: StateFlow<String?> = _loadError
+
+    /** True once the conversation list has loaded successfully at least once, so
+     * "no conversations" (loaded, empty) is never confused with "still loading". */
+    private val _loaded = MutableStateFlow(false)
+    val loaded: StateFlow<Boolean> = _loaded
 
     // The approval currently being resolved (if any) — lets the card show
     // a spinner on just the button that was tapped rather than freezing
@@ -79,8 +85,8 @@ class ServerChatViewModel @Inject constructor(private val repository: ServerChat
     fun refreshConversations() {
         viewModelScope.launch {
             runCatching { repository.conversations() }
-                .onSuccess { _conversations.value = it; _loadError.value = null }
-                .onFailure { _loadError.value = it.message ?: "Couldn't load conversations." }
+                .onSuccess { _conversations.value = it; _loadError.value = null; _loaded.value = true }
+                .onFailure { _loadError.value = UserFacingError.message(it, "Couldn't load conversations.") }
         }
     }
 

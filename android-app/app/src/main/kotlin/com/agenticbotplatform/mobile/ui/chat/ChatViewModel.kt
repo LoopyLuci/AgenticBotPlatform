@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.agenticbotplatform.mobile.data.ChatRepository
+import com.agenticbotplatform.mobile.data.UserFacingError
 import com.agenticbotplatform.mobile.data.dto.BotInstanceSummary
 import com.agenticbotplatform.mobile.data.dto.ChatMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -49,6 +50,9 @@ data class ChatUiState(
     val activeInstanceId: Int? = null,
     val messages: List<ChatMessage> = emptyList(),
     val loadError: String? = null,
+    /** True once the bot list has loaded successfully at least once — so "no bots"
+     * (loaded, empty) is never confused with "not loaded yet" or "couldn't load". */
+    val loaded: Boolean = false,
     val downloads: Map<Int, DownloadState> = emptyMap(),
     val sendFileError: String? = null,
     val sendingFile: Boolean = false,
@@ -106,7 +110,9 @@ class ChatViewModel @Inject constructor(private val repository: ChatRepository) 
             while (true) {
                 refreshRecipients()
                 _uiState.value.activeInstanceId?.let { repository.refreshMessages(it) }
-                delay(60_000)
+                // After a failure, look again soon rather than leaving the error up
+                // for a full minute — a momentary network blip should heal itself.
+                delay(if (_uiState.value.loadError != null) 10_000 else 60_000)
             }
         }
     }
@@ -116,10 +122,15 @@ class ChatViewModel @Inject constructor(private val repository: ChatRepository) 
             .onSuccess { instances ->
                 _uiState.update { s ->
                     val active = s.activeInstanceId ?: instances.firstOrNull()?.id
-                    s.copy(instances = instances, activeInstanceId = active, loadError = null)
+                    s.copy(instances = instances, activeInstanceId = active, loadError = null, loaded = true)
                 }
             }
-            .onFailure { e -> _uiState.update { it.copy(loadError = e.message) } }
+            .onFailure { e -> _uiState.update { it.copy(loadError = UserFacingError.message(e)) } }
+    }
+
+    /** The Retry button on the chat list's error state. */
+    fun retryLoad() {
+        viewModelScope.launch { refreshRecipients() }
     }
 
     fun switchInstance(instanceId: Int) {

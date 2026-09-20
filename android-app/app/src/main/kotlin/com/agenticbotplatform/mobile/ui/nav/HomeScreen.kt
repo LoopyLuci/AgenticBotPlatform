@@ -18,6 +18,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -62,6 +65,12 @@ fun HomeScreen(onUnpaired: () -> Unit = {}) {
     hiltViewModel<HomeViewModel>()
     val navController = rememberNavController()
 
+    // Eight tabs in one bar: on a narrow phone each gets ~45dp, on a tablet held
+    // upright ~100dp. A label that doesn't fit used to WRAP onto a second line
+    // ("Server / Chat"), which pushed that one tab's icon up and left the row
+    // misaligned. Labels now stay on one line; on a narrow phone only the selected
+    // tab shows its label (the standard Material pattern for crowded bars).
+    val compact = LocalConfiguration.current.screenWidthDp < 720
     Scaffold(
         bottomBar = {
             NavigationBar {
@@ -84,7 +93,8 @@ fun HomeScreen(onUnpaired: () -> Unit = {}) {
                             }
                         },
                         icon = { Icon(tab.icon, contentDescription = tab.label) },
-                        label = { Text(tab.label) },
+                        label = { Text(tab.label, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis, fontSize = 11.sp) },
+                        alwaysShowLabel = !compact,
                     )
                 }
             }

@@ -48,7 +48,15 @@ def test_runtime_directories_and_secret_files_are_gitignored():
 
 
 def test_env_example_and_project_skills_stay_committable():
-    for path in (".env.example", ".claude/skills/support-bot-nlu/SKILL.md"):
+    # The runtime-state rules are root-anchored: an unanchored `data/` once hid
+    # the Android app's whole `data` package, so new files there were silently
+    # left out of commits.
+    for path in (
+        ".env.example",
+        ".claude/skills/support-bot-nlu/SKILL.md",
+        "android-app/app/src/main/kotlin/com/agenticbotplatform/mobile/data/New.kt",
+        "android-app/app/src/test/kotlin/com/agenticbotplatform/mobile/data/NewTest.kt",
+    ):
         result = subprocess.run(
             ["git", "check-ignore", "-q", path], cwd=PROJECT_ROOT, capture_output=True,
         )

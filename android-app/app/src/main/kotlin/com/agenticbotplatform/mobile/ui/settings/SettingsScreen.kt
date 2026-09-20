@@ -29,6 +29,7 @@ import com.agenticbotplatform.mobile.ui.appearance.AppIcon
 import com.agenticbotplatform.mobile.ui.appearance.AppearanceViewModel
 import com.agenticbotplatform.mobile.ui.appearance.ThemeMode
 import com.agenticbotplatform.mobile.ui.appearance.UiDensity
+import com.agenticbotplatform.mobile.ui.components.ErrorState
 import kotlinx.coroutines.launch
 
 /** Mirrors the desktop dashboard's Control Center card-for-card: backend
@@ -53,6 +54,12 @@ fun SettingsScreen(
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
+            return@Scaffold
+        }
+        // First load failed: say so plainly, with Retry, instead of showing the
+        // full settings form (all defaults) with a one-line error above it.
+        if (!state.loaded && state.error != null) {
+            Box(Modifier.padding(padding)) { ErrorState(state.error!!, onRetry = { viewModel.retry() }) }
             return@Scaffold
         }
         Column(

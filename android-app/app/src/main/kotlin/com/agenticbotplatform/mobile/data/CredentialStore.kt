@@ -64,17 +64,30 @@ class CredentialStore @Inject constructor(@ApplicationContext context: Context) 
         get() = prefs.getString(KEY_API_KEY, null)
         set(value) = prefs.edit().putString(KEY_API_KEY, value).apply()
 
+    /** The paired server's random, non-secret identity (its /healthz
+     * `server_id`), learned when pairing succeeds. Any address the app is
+     * about to adopt — from the server's own address list or from mDNS — must
+     * report this same id (see ServerIdentity), so a different AgenticBotPlatform
+     * on the network can never silently take over. Null for a pairing that
+     * predates server ids: those keep the old, unverified behaviour until the
+     * id is learned. */
+    var serverId: String?
+        get() = prefs.getString(KEY_SERVER_ID, null)
+        set(value) = prefs.edit().putString(KEY_SERVER_ID, value).apply()
+
     val isPaired: Boolean
         get() = !host.isNullOrBlank() && !apiKey.isNullOrBlank()
 
     fun clear() {
-        prefs.edit().remove(KEY_HOST).remove(KEY_HOST2).remove(KEY_HOST3).remove(KEY_LAST_GOOD).remove(KEY_API_KEY).apply()
+        prefs.edit().remove(KEY_HOST).remove(KEY_HOST2).remove(KEY_HOST3).remove(KEY_LAST_GOOD).remove(KEY_API_KEY).remove(KEY_SERVER_ID).apply()
     }
 
     /** Normalizes user/QR-supplied host input into a full base URL — accepts
      * "host:port", "http://host:port", "https://host" (e.g. a Funnel URL),
      * or a bare host (defaults to :8787, AgenticBotPlatform's default dashboard
      * port). */
+    fun normalizeHost(raw: String?): String = normalize(raw)
+
     private fun normalize(raw: String?): String {
         val h = raw?.trim().orEmpty()
         return when {
@@ -123,6 +136,7 @@ class CredentialStore @Inject constructor(@ApplicationContext context: Context) 
         private const val KEY_HOST3 = "host3"
         private const val KEY_LAST_GOOD = "last_good_host"
         private const val KEY_API_KEY = "api_key"
+        private const val KEY_SERVER_ID = "server_id"
         const val SLOT_HOST = "host"
         const val SLOT_HOST2 = "host2"
         const val SLOT_HOST3 = "host3"

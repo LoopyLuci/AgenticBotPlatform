@@ -44,6 +44,9 @@ import coil.compose.AsyncImage
 import com.agenticbotplatform.mobile.data.dto.BotInstanceSummary
 import com.agenticbotplatform.mobile.data.dto.ChatMessage
 import com.agenticbotplatform.mobile.di.PLACEHOLDER_BASE_URL
+import com.agenticbotplatform.mobile.ui.components.EmptyState
+import com.agenticbotplatform.mobile.ui.components.ErrorState
+import com.agenticbotplatform.mobile.ui.components.LoadingState
 import com.agenticbotplatform.mobile.ui.components.SlashCommandSuggestions
 import kotlinx.coroutines.launch
 
@@ -73,12 +76,15 @@ fun ChatScreen(
 
     if (state.instances.isEmpty()) {
         Scaffold(topBar = { ChatListTopBar() }) { padding ->
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text(
-                    state.loadError ?: "No paired bots yet — add one in the desktop dashboard's Bots tab.",
-                    modifier = Modifier.padding(24.dp),
-                    textAlign = TextAlign.Center,
-                )
+            // Three different situations that used to all be a line of text:
+            // couldn't load (say so, with Retry), still loading (spinner), or
+            // genuinely no bots (the calm empty message).
+            Box(Modifier.padding(padding)) {
+                when {
+                    state.loadError != null -> ErrorState(state.loadError!!, onRetry = { viewModel.retryLoad() })
+                    !state.loaded -> LoadingState()
+                    else -> EmptyState("No paired bots yet — add one in the desktop dashboard's Bots tab.")
+                }
             }
         }
         return
