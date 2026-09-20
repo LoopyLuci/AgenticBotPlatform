@@ -206,11 +206,22 @@ def build_desktop(version: str) -> Path:
             f"no *-setup.exe found in {nsis_dir} after `cargo tauri build` — this is exactly the "
             "file updater.rs's check_for_update() looks for; publishing without it would reproduce the original bug."
         )
-    installer = candidates[-1]
-    if version not in installer.name:
-        print(f"WARNING: installer name {installer.name!r} doesn't contain {version!r} — "
-              "check tauri.conf.json's version took effect.")
-    print(f"desktop installer: {installer}")
+    # EXACTLY this version's installer. The folder keeps every earlier build,
+    # and taking the alphabetically last one shipped a stale 0.7.99 installer
+    # ("0.7.99" sorts after "0.7.28") whose app then reports version 0.7.99 and
+    # never updates again.
+    matching = [c for c in candidates if f"_{version}_" in c.name]
+    if len(matching) != 1:
+        raise ReleaseError(
+            f"expected exactly one installer for {version} in {nsis_dir}, found {[c.name for c in matching]} "
+            f"(the folder holds: {[c.name for c in candidates][-4:]}) — check tauri.conf.json's version took effect."
+        )
+    installer = matching[0]
+    embedded = guard.installer_product_version(installer)
+    if embedded is not None and embedded != version:
+        raise ReleaseError(f"{installer.name} identifies itself as version {embedded}, not {version} — "
+                           "refusing to ship an installer whose app would report the wrong version")
+    print(f"desktop installer: {installer} (embedded version {embedded or 'unchecked'})")
     return installer
 
 
@@ -257,6 +268,12 @@ def verify_published_assets(tag: str, installer: Path, sig: Path, *, attempts: i
             sleep(delay)
     else:
         raise ReleaseError(f"published {tag} but couldn't read its asset digests back: {result.output.strip()[:200]}")
+    # A release must carry exactly ONE installer, and it must be ours. Comparing
+    # only our own files to themselves cannot notice a wrong or extra installer.
+    stray = sorted(n for n in published if n.endswith("-setup.exe") and n != installer.name)
+    if stray:
+        raise ReleaseError(f"{tag} IS PUBLISHED with an unexpected installer attached: {stray} "
+                           f"(expected only {installer.name}). Remove it: gh release delete-asset {tag} <name> --yes")
     for path in (installer, sig):
         local = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
         if published.get(path.name) != local:
