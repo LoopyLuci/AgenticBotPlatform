@@ -95,7 +95,9 @@
 
   * { box-sizing:border-box; }
   html { scroll-behavior:smooth; }
-  body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--font-body); font-size:14px; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--font-body); font-size:14px;
+         /* window = [ shell (sidebar + main) ] over [ bottom bar ]; nothing scrolls at this level */
+         height:100vh; height:100dvh; overflow:hidden; display:flex; flex-direction:column; }
   ::-webkit-scrollbar { width:9px; height:9px; }
   ::-webkit-scrollbar-track { background:transparent; }
   ::-webkit-scrollbar-thumb { background:var(--surface-3); border-radius:999px; border:2px solid transparent; background-clip:padding-box; }
@@ -108,14 +110,14 @@
      Snapping the grid instantly and animating only compositor-cheap properties
      (transform, on .side itself for the mobile drawer) keeps the toggle
      flawless regardless of how much is on screen in main. */
-  .shell { display:grid; grid-template-columns:236px 1fr; min-height:100vh; }
+  .shell { display:grid; grid-template-columns:236px 1fr; grid-template-rows:minmax(0,1fr); flex:1 1 auto; min-height:0; }
   /* Collapsed rail width scales with the viewport (clamp, not a fixed px)
      so a large desktop/TV-sized window gets a roomier, more legible icon
      rail instead of the same cramped strip a phone would need — "scale
      with the display," not "same tiny size everywhere." */
   html.bs-sidebar-collapsed .shell { grid-template-columns:clamp(68px,6.5vw,100px) 1fr; }
 
-  .side { position:sticky; top:0; height:100vh; overflow-y:auto; overflow-x:hidden; background:var(--surface); padding:16px 12px; display:flex; flex-direction:column; gap:18px; box-shadow:1px 0 0 var(--line); transition:transform .22s ease; }
+  .side { position:relative; min-height:0; overflow-y:auto; overflow-x:hidden; background:var(--surface); padding:16px 12px; display:flex; flex-direction:column; gap:18px; box-shadow:1px 0 0 var(--line); transition:transform .22s ease; }
   .brand { display:flex; align-items:center; gap:10px; padding:6px 8px 16px; }
   .brand .mark { width:clamp(36px,2.6vw,52px); height:clamp(36px,2.6vw,52px); border-radius:50%; flex:none; object-fit:cover; display:block; box-shadow:0 2px 8px rgba(51,144,236,.35); }
   .brand .name { font-family:var(--font-display); font-weight:700; font-size:16px; letter-spacing:0.01em; white-space:nowrap; overflow:hidden; }
@@ -164,7 +166,8 @@
   .side-backdrop { display:none; }
   .mobile-nav-btn { display:none; }
 
-  main { min-width:0; padding:0 0 var(--term-clearance, 60px); }
+  /* main is the page's scroller (not the window), so it ends exactly where the bottom bar begins */
+  main { min-width:0; min-height:0; overflow:auto; overscroll-behavior:contain; outline:none; padding:0 0 24px; }
 
   @media (max-width:980px){
     .shell, html.bs-sidebar-collapsed .shell { grid-template-columns:1fr; }
@@ -575,15 +578,20 @@
 
   /* ---------------------------------------------------- terminal panel --- */
   .term-panel {
-    position:fixed; left:0; right:0; bottom:0; z-index:400;
+    /* A real row at the bottom of the window (body is a flex column), NOT an
+       overlay: the content above it gets the remaining height and scrolls
+       inside itself, so nothing can ever sit underneath this bar. */
+    position:relative; flex:none; z-index:10;
     display:flex; flex-direction:column;
     height:320px; min-height:120px; max-height:80vh;
     background:var(--surface); border-top:1px solid var(--line);
     box-shadow:0 -8px 24px rgba(0,0,0,.25);
-    transition:transform .18s ease;
   }
-  .term-panel.collapsed { transform:translateY(calc(100% - 40px)); }
-  .term-panel.maximized { height:92vh; }
+  /* !important: dragging the resize handle writes an inline height, which
+     would otherwise beat these state classes. */
+  .term-panel.collapsed { height:40px !important; min-height:40px !important; }
+  .term-panel.collapsed .term-body { display:none; }
+  .term-panel.maximized { height:92vh !important; max-height:none !important; }
   .term-resize-handle { position:absolute; top:-4px; left:0; right:0; height:8px; cursor:ns-resize; z-index:1; }
   .term-header { display:flex; align-items:center; justify-content:space-between; height:40px; flex:none; padding:0 8px 0 4px; border-bottom:1px solid var(--line); background:var(--surface-2); }
   .term-tabs { display:flex; align-items:stretch; height:100%; }
@@ -598,6 +606,52 @@
   .term-body { flex:1; min-height:0; position:relative; }
   .term-view { position:absolute; inset:0; display:none; flex-direction:column; }
   .term-view.active { display:flex; }
+
+  /* ---- Responsive safety net --------------------------------------------
+     Found by driving the page at phone width (375px): the terminal bar's own
+     header (tabs + instance picker + six icon buttons) is ~430px wide and
+     forced the whole page wider; a <select> sizes itself to its widest
+     <option> (~530px); flex form rows can't shrink their inputs below their
+     natural width; and tables have a fixed intrinsic width. Sections use
+     content-visibility:auto, which CLIPS overflow, so those controls were
+     silently cut off rather than scrolling. Nothing below changes a layout
+     that already fits. */
+  select, textarea, input:not([type=checkbox]):not([type=radio]):not([type=range]) { max-width:100%; }
+  .card, .grid > *, .settingrow > * { min-width:0; }
+  .settingrow { flex-wrap:wrap; }
+  /* a long unbreakable token (e.g. PreToolUse/PostToolUse/…, a path, a URL) wraps instead of overflowing */
+  main { overflow-wrap:anywhere; }
+  /* Chat (desktop UI): the header row must wrap, and the fixed 280px list
+     pane beside the conversation stacks above it on narrow windows. At the
+     app's own minimum window width (960px) the Clear button sat 24px off the
+     edge; on a phone the conversation pane was ~95px wide. */
+  .chat-convo-header { flex-wrap:wrap; row-gap:8px; }
+  .chat-header-recipient select { min-width:0; max-width:100%; }
+  @media (max-width:1100px) {
+    .chat-header-recipient select { min-width:140px; }
+  }
+  @media (max-width:760px) {
+    .chat-shell { flex-direction:column; height:auto; }
+    .chat-list-pane { width:auto; border-right:none; border-bottom:1px solid var(--line); max-height:220px; }
+    .chat-convo-pane { min-height:460px; }
+    .chat-convo-header::after { display:none; }
+    .chat-header-txt { max-width:none; flex:1 1 40%; }
+    .chat-header-recipient { flex:1 1 100%; flex-wrap:wrap; }
+  }
+  .wizard-field .row { flex-wrap:wrap; }
+  .wizard-field .row > input, .wizard-field .row > select { flex:1 1 150px; min-width:0; }
+  .term-header, .term-tabs, .term-controls { min-width:0; }
+  .term-header { overflow:hidden; }
+  @media (max-width:980px) {
+    table { display:block; max-width:100%; overflow-x:auto; }
+  }
+  @media (max-width:640px) {
+    .term-tab { padding:0 10px; }
+    .term-instance-select { display:none; }
+    .term-icon-btn { width:26px; }
+    .term-controls { gap:2px; }
+    .term-header { padding:0 4px 0 2px; }
+  }
   #xterm-container { flex:1; padding:6px 10px; min-height:0; }
   #xterm-container .xterm { height:100%; }
 
@@ -736,7 +790,7 @@
     </div>
   </aside>
 
-  <main>
+  <main tabindex="-1">
     <div class="topbar">
       <button class="mobile-nav-btn" id="btn-mobile-nav" type="button" aria-controls="sidenav" aria-expanded="false" title="Open navigation" aria-label="Open navigation">☰</button>
       <div class="title">Overview</div>
