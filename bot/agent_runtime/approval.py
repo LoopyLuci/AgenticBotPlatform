@@ -42,13 +42,16 @@ async def request_approval(
     tool_input: dict,
     notify: Callable[[int, str, dict], Awaitable[None]],
     timeout_s: float = DEFAULT_TIMEOUT_S,
+    force: bool = False,
 ) -> Outcome:
     """Blocks until a human resolves this call (or it times out, treated
     as a deny). `notify` is awaited once, synchronously, before the wait
     begins — it should send whatever a human sees (a Telegram message with
     ea: buttons) — so there's no race between the message existing and a
     tap on it trying to resolve an approval id that isn't registered yet."""
-    if is_pre_approved(instance_id, session_key, tool_name):
+    # `force` = ask a person even if they earlier said "session" or "always" for this tool: used when the
+    # conversation has read untrusted content, where a standing approval must not carry over.
+    if not force and is_pre_approved(instance_id, session_key, tool_name):
         return "once"
 
     approval_id = db.create_pending_approval(instance_id, chat_id, session_key, tool_name, tool_input)
@@ -63,6 +66,8 @@ async def request_approval(
             logger.info("approval %s (%s) expired after %ss", approval_id, tool_name, timeout_s)
             return "deny"
         outcome = _outcomes.pop(approval_id, "deny")
+        if force and outcome in ("session", "always"):
+            outcome = "once"                    # an answer given under suspicion is never a standing grant
         if outcome == "session":
             db.grant_tool_approval(instance_id, tool_name, session_key=session_key)
         elif outcome == "always":

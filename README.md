@@ -77,8 +77,9 @@ get their own deep-dive doc:
   the settings that matter for integrating ABP into your own architecture.
 - **[docs/agents/ROADMAP.md](docs/agents/ROADMAP.md)** — how developed the native
   agent is, what it lacks against other agent products, and the phased plan to close
-  the gap; **[docs/agents/evals.md](docs/agents/evals.md)** — running and writing
-  agent evals.
+  the gap; **[docs/agents/security.md](docs/agents/security.md)** — permissions,
+  untrusted-content defence, credential protection and the sandbox;
+  **[docs/agents/evals.md](docs/agents/evals.md)** — running and writing agent evals.
 - **[docs/cicd/](docs/cicd/README.md)** — the design for the CI/CD platform
   (telemetry, ML workers, dashboards, updates, failover), and
   **[docs/cicd/configuration.md](docs/cicd/configuration.md)**, the specification

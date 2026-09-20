@@ -356,6 +356,9 @@ async def _run_one_child(
                 text = text_or_error
                 status = "ok" if ok else "error"
             db.finish_ephemeral_session(session_id, status=status, result=text)
+            from bot.agent_runtime import hooks
+
+            await hooks.run_subagent_stop(text, instance_id=parent_instance_id)
             return {"index": index, "goal": goal, "model": backend.model, "status": status, "result_excerpt": text[:500]}
         except asyncio.CancelledError:
             # stop_subagent() already wrote the "stopped" status/result —

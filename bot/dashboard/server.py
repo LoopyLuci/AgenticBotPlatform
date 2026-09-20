@@ -660,6 +660,11 @@ def build_app() -> FastAPI:
 
     cicd_api.register(app, _require_token_or_api_key)
 
+    # Agent security (/api/agent/permissions, /api/mcp/pins, ...): rules, pins, untrusted-content marks.
+    from bot.dashboard import agent_security_api
+
+    agent_security_api.register(app, _require_token_or_api_key, _require_token)
+
     # ------------------------------------------------------ ops endpoints --
     # Unauthenticated by design, like a load balancer's/orchestrator's health
     # probe is expected to be — neither returns anything a token would need

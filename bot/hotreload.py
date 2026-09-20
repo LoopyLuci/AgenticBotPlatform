@@ -76,7 +76,7 @@ def _enabled_by_default() -> bool:
 # each entry (several were found only by grepping every candidate file
 # for module-level mutable containers, not by inspection alone).
 DENYLIST: frozenset[str] = frozenset({
-    "bot.main", "bot.router", "bot.db", "bot.config", "bot.dashboard.server", "bot.dashboard.cicd_api",
+    "bot.main", "bot.router", "bot.db", "bot.config", "bot.dashboard.server", "bot.dashboard.cicd_api", "bot.dashboard.agent_security_api",
     "bot.agent_runtime.engine", "bot.agent_runtime.approval", "bot.agent_runtime.subagent_registry",
     "bot.platform_supervisor",
     "bot.envfile", "bot.handlers", "bot.outbox", "bot.plugins", "bot.attachments",
@@ -97,6 +97,11 @@ DENYLIST: frozenset[str] = frozenset({
     # errors.py defines ToolError, which callers catch by identity: a reloaded copy would
     # be a different class and their `except ToolError` would stop matching.
     "bot.agent_runtime.errors", "bot.agent_runtime.state",
+    # Security layer: permissions.py holds the run-mode ContextVar, taint.py the set of tainted
+    # sessions, secrets_guard.py the injected-secret table, mcp_pins.py its warn-once set, and
+    # sandbox.py is only ever imported by the (denied) shell module. A reload would reset them.
+    "bot.agent_runtime.permissions", "bot.agent_runtime.taint", "bot.agent_runtime.secrets_guard",
+    "bot.agent_runtime.mcp_pins", "bot.agent_runtime.sandbox",
     "bot.hotreload",  # never reload the reloader mid-cycle
     "bot.mcp_server",  # a separate process (python -m bot.mcp_server); not part of this one anyway
     "bot.tui.app", "bot.tui.client", "bot.tui.__main__",  # a separate process (python -m bot.tui); not part of this one anyway

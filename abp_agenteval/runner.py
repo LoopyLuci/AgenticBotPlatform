@@ -19,7 +19,7 @@ class EvalError(RuntimeError):
 
 
 @contextlib.contextmanager
-def isolated_environment(root: Path, approvals: dict[str, str]):
+def isolated_environment(root: Path, approvals: dict[str, str], task: Optional[Task] = None):
     """A private database and trace store for the run, auto-answered approvals
     (approve everything except what the task says to deny) and no auto-checkpoint
     (those are covered by their own tests and would write into the real store)."""
@@ -36,14 +36,16 @@ def isolated_environment(root: Path, approvals: dict[str, str]):
     os.environ["ABP_AGENT_TRACE_DB"] = str(root / "traces.db")
     os.environ["ABP_AGENT_STATE_DIR"] = str(root / "state")      # todo lists and other agent state stay in the throwaway root
 
-    async def policy(instance_id, chat_id, session_key, tool_name, tool_input, notify, timeout_s=0):
+    async def policy(instance_id, chat_id, session_key, tool_name, tool_input, notify, timeout_s=0, **_):
         return "deny" if approvals.get(tool_name) == "deny" else "once"
 
     approval.request_approval = policy
     tool_loop.try_checkpoint = lambda *a, **k: None
+    undo = _apply_task_settings(task) if task is not None else (lambda: None)
     try:
         yield
     finally:
+        undo()
         try:
             if db_module._conn is not None:
                 db_module._conn.close()
@@ -59,6 +61,45 @@ def isolated_environment(root: Path, approvals: dict[str, str]):
             os.environ.pop("ABP_AGENT_STATE_DIR", None)
         else:
             os.environ["ABP_AGENT_STATE_DIR"] = saved[5]
+
+
+def _merge(base: dict, extra: dict) -> dict:
+    out = dict(base)
+    for key, value in extra.items():
+        out[key] = _merge(out[key], value) if isinstance(value, dict) and isinstance(out.get(key), dict) else value
+    return out
+
+
+def _apply_task_settings(task: Task):
+    """Config overlay, environment variables and canned web pages for one task; returns the undo."""
+    import os
+
+    from bot.agent_runtime import taint, web
+    from bot.config import config
+
+    undo = []
+    if task.config:
+        saved = config._data
+        config._data = {**saved, "native_agent": _merge(saved.get("native_agent") or {}, task.config)}
+        undo.append(lambda: setattr(config, "_data", saved))
+    for name, value in task.env.items():
+        previous = os.environ.get(name)
+        os.environ[name] = value
+        undo.append(lambda n=name, p=previous: os.environ.pop(n, None) if p is None else os.environ.__setitem__(n, p))
+    if task.fake_pages:
+        real_fetch = web.fetch
+
+        async def fake_fetch(url):
+            key = url if url in task.fake_pages else url.split("?")[0]      # a query string does not change the page
+            if key not in task.fake_pages:
+                raise web.ToolError(f"no such page in this eval: {url}")
+            return url, 200, "text/html", task.fake_pages[key].encode("utf-8")
+
+        web.fetch = fake_fetch
+        undo.append(lambda: setattr(web, "fetch", real_fetch))
+    taint.forget_all()
+    undo.append(taint.forget_all)
+    return lambda: [fn() for fn in reversed(undo)]
 
 
 def _materialise(base: Path, files: dict[str, str]) -> None:
@@ -84,12 +125,14 @@ def run_task(task: Task, make_transport: Callable[[Task], Any], *, model: str = 
     reply, error, run_id, started = "", None, None, time.monotonic()
     summary: dict = {}
     try:
-        with isolated_environment(root, task.approvals):
+        with isolated_environment(root, task.approvals, task):
             transport = make_transport(task)
             backend = NativeAgentBackend(transport, model=model, name="eval")
             try:
-                result = asyncio.run(backend.ask(task.prompt, context={
-                    "cwd": str(workspace), "source": "eval"}, timeout_s=timeout_s))
+                ctx = {"cwd": str(workspace), "source": "eval"}
+                if task.permission_mode:
+                    ctx["permission_mode"] = task.permission_mode
+                result = asyncio.run(backend.ask(task.prompt, context=ctx, timeout_s=timeout_s))
                 reply = result.text or ""
                 run_id = (result.raw or {}).get("trace_run") if isinstance(result.raw, dict) else None
             except Exception as exc:  # noqa: BLE001 — a failed run is a result, not a crash

@@ -128,3 +128,50 @@ def test_render_lists_failures():
                         "checks": [{"name": "x", "ok": False, "detail": "why"}]}]}
     text = rep.render(bad)
     assert "FAIL" in text and "why" in text
+
+
+# ---- the security tasks must fail when the defence they test is removed -------------------
+def _task(task_id):
+    return next(t for t in seed_suite() if t.id == task_id)
+
+
+def _passes(task_id):
+    return run_task(_task(task_id), _make)["passed"]
+
+
+@pytest.mark.parametrize("task_id", ["plan_mode_is_read_only", "deny_rule_holds", "allow_rule_is_not_a_loophole",
+                                     "web_injection_is_contained", "credentials_stay_out_of_sight",
+                                     "credentials_are_not_sent_out"])
+def test_each_security_task_passes_with_the_defence_in_place(task_id):
+    assert _passes(task_id)
+
+
+def test_security_tasks_detect_a_missing_permission_layer(monkeypatch):
+    from bot.agent_runtime import permissions
+
+    monkeypatch.setattr(permissions, "decide", lambda *a, **k: permissions.Verdict("default"))
+    assert not _passes("plan_mode_is_read_only")
+    assert not _passes("deny_rule_holds")
+
+
+def test_security_tasks_detect_a_missing_taint_escalation(monkeypatch):
+    from bot.agent_runtime import taint
+
+    monkeypatch.setattr(taint, "is_tainted", lambda session: False)
+    assert not _passes("web_injection_is_contained")
+
+
+def test_security_tasks_detect_a_missing_allow_rule_strictness(monkeypatch):
+    from bot.agent_runtime import permissions
+
+    monkeypatch.setattr(permissions, "_OPERATORS", __import__("re").compile(r"(?!x)x"))     # matches nothing
+    assert not _passes("allow_rule_is_not_a_loophole")
+
+
+def test_security_tasks_detect_leaking_credentials(monkeypatch):
+    from bot.agent_runtime import secrets_guard
+
+    monkeypatch.setattr(secrets_guard, "is_secret_name", lambda name: False)
+    assert not _passes("credentials_stay_out_of_sight")
+    monkeypatch.setattr(secrets_guard, "find_secret", lambda value, environ=None: None)
+    assert not _passes("credentials_are_not_sent_out")
