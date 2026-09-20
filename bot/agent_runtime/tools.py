@@ -883,13 +883,16 @@ def all_tool_schemas() -> list[dict[str, Any]]:
     from bot import plugins as plugin_registry
     from bot.agent_runtime import mcp_client
 
-    return TOOL_SCHEMAS + plugin_registry.tool_schemas() + mcp_client.external_tool_schemas()
+    from bot.agent_runtime import toolspec
+
+    return TOOL_SCHEMAS + toolspec.registered_schemas() + plugin_registry.tool_schemas() + mcp_client.external_tool_schemas()
 
 
 def is_dangerous(name: str) -> bool:
     from bot import plugins as plugin_registry
+    from bot.agent_runtime import toolspec
 
-    return name in DANGEROUS_TOOLS or plugin_registry.is_dangerous_tool(name)
+    return name in DANGEROUS_TOOLS or toolspec.registered_dangerous(name) or plugin_registry.is_dangerous_tool(name)
 
 
 class ToolError(Exception):
@@ -945,6 +948,13 @@ async def execute_tool(
     name: str, tool_input: dict, *, workspace: Path, instance_id: Optional[int] = None,
     device_tier: Optional[str] = None,
 ) -> str:
+    from bot.agent_runtime import toolspec
+
+    if toolspec.has_handler(name):
+        return await toolspec.dispatch(
+            name, tool_input, workspace=workspace, instance_id=instance_id, device_tier=device_tier
+        )
+
     if name == "run_shell":
         command = tool_input.get("command") or ""
         if not command.strip():

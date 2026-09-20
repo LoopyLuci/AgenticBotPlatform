@@ -14,7 +14,7 @@ import asyncio
 import os
 from typing import Optional
 
-from bot.agent_runtime.transports.base import NormalizedResponse, ProviderTransport, ToolCall
+from bot.agent_runtime.transports.base import NormalizedResponse, ProviderTransport, StreamEvent, ToolCall
 from bot.backends.base import BackendError
 
 API_MODE = "anthropic_messages"
@@ -97,18 +97,12 @@ class AnthropicTransport(ProviderTransport):
             }
         ]
 
-    async def send(
-        self,
-        *,
-        model: str,
-        history: list[dict],
-        tool_schemas: list[dict],
-        max_tokens: int,
-        timeout_s: float,
-        system_prompt: Optional[str] = None,
-        effort: Optional[str] = None,
-    ) -> NormalizedResponse:
-        client = self._get_client()
+    def _build_kwargs(
+        self, *, model: str, history: list[dict], tool_schemas: list[dict], max_tokens: int,
+        system_prompt: Optional[str], effort: Optional[str],
+    ) -> dict:
+        """Everything about the request except how it is sent, so send() and
+        send_stream() cannot drift apart."""
         # Anthropic's stored-history shape IS the wire shape already
         # (each entry is exactly {"role","content"} with content already
         # either a plain string or a list of content blocks) — no
@@ -174,39 +168,69 @@ class AnthropicTransport(ProviderTransport):
         anthropic_effort = effort_module.to_anthropic(effort)
         if anthropic_effort is not None:
             create_kwargs["output_config"] = {"effort": anthropic_effort}
+        return create_kwargs
+
+    async def send(
+        self,
+        *,
+        model: str,
+        history: list[dict],
+        tool_schemas: list[dict],
+        max_tokens: int,
+        timeout_s: float,
+        system_prompt: Optional[str] = None,
+        effort: Optional[str] = None,
+    ) -> NormalizedResponse:
+        client = self._get_client()
+        create_kwargs = self._build_kwargs(
+            model=model, history=history, tool_schemas=tool_schemas, max_tokens=max_tokens,
+            system_prompt=system_prompt, effort=effort,
+        )
         try:
             resp = await asyncio.wait_for(client.messages.create(**create_kwargs), timeout=timeout_s)
         except asyncio.TimeoutError as exc:
             raise BackendError(f"anthropic transport timed out after {timeout_s}s") from exc
         except Exception as exc:
             raise BackendError(f"anthropic transport error: {exc}") from exc
+        return _normalize(resp)
 
-        tokens = None
-        cache_creation_tokens = None
-        cache_read_tokens = None
-        if resp.usage:
-            tokens = (resp.usage.input_tokens or 0) + (resp.usage.output_tokens or 0)
-            cache_creation_tokens = getattr(resp.usage, "cache_creation_input_tokens", None)
-            cache_read_tokens = getattr(resp.usage, "cache_read_input_tokens", None)
+    supports_streaming = True
 
-        assistant_blocks = _serialize_blocks(resp.content)
-        tool_calls = [
-            ToolCall(id=b.id, name=b.name, arguments=b.input)
-            for b in resp.content
-            if getattr(b, "type", "") == "tool_use"
-        ]
-        text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
-        thinking_text = "".join(b.thinking for b in resp.content if getattr(b, "type", "") == "thinking")
-        thinking_summary = thinking_text[:THINKING_SUMMARY_MAX_CHARS] if thinking_text else None
-        return NormalizedResponse(
-            text=text,
-            tool_calls=tool_calls if resp.stop_reason == "tool_use" else [],
-            tokens=tokens,
-            assistant_message={"role": "assistant", "content": assistant_blocks},
-            cache_creation_tokens=cache_creation_tokens,
-            cache_read_tokens=cache_read_tokens,
-            thinking_summary=thinking_summary,
+    async def send_stream(
+        self,
+        *,
+        on_event,
+        model: str,
+        history: list[dict],
+        tool_schemas: list[dict],
+        max_tokens: int,
+        timeout_s: float,
+        system_prompt: Optional[str] = None,
+        effort: Optional[str] = None,
+    ) -> NormalizedResponse:
+        """Same request as send(), but reply text is handed to `on_event` as it
+        arrives. The returned response is the SDK's assembled final message, so
+        history, tool calls and usage are exactly what send() would have produced."""
+        client = self._get_client()
+        create_kwargs = self._build_kwargs(
+            model=model, history=history, tool_schemas=tool_schemas, max_tokens=max_tokens,
+            system_prompt=system_prompt, effort=effort,
         )
+
+        async def _run():
+            async with client.messages.stream(**create_kwargs) as stream:
+                async for text in stream.text_stream:
+                    if text:
+                        await on_event(StreamEvent("text", text))
+                return await stream.get_final_message()
+
+        try:
+            resp = await asyncio.wait_for(_run(), timeout=timeout_s)
+        except asyncio.TimeoutError as exc:
+            raise BackendError(f"anthropic transport timed out after {timeout_s}s") from exc
+        except Exception as exc:
+            raise BackendError(f"anthropic transport error: {exc}") from exc
+        return _normalize(resp)
 
     async def count_tokens(
         self, *, model: str, history: list[dict], tool_schemas: Optional[list[dict]] = None,
@@ -230,6 +254,35 @@ class AnthropicTransport(ProviderTransport):
         except Exception as exc:
             raise BackendError(f"anthropic count_tokens error: {exc}") from exc
         return result.input_tokens
+
+
+def _normalize(resp) -> NormalizedResponse:
+    tokens = None
+    cache_creation_tokens = None
+    cache_read_tokens = None
+    if resp.usage:
+        tokens = (resp.usage.input_tokens or 0) + (resp.usage.output_tokens or 0)
+        cache_creation_tokens = getattr(resp.usage, "cache_creation_input_tokens", None)
+        cache_read_tokens = getattr(resp.usage, "cache_read_input_tokens", None)
+
+    assistant_blocks = _serialize_blocks(resp.content)
+    tool_calls = [
+        ToolCall(id=b.id, name=b.name, arguments=b.input)
+        for b in resp.content
+        if getattr(b, "type", "") == "tool_use"
+    ]
+    text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
+    thinking_text = "".join(b.thinking for b in resp.content if getattr(b, "type", "") == "thinking")
+    thinking_summary = thinking_text[:THINKING_SUMMARY_MAX_CHARS] if thinking_text else None
+    return NormalizedResponse(
+        text=text,
+        tool_calls=tool_calls if resp.stop_reason == "tool_use" else [],
+        tokens=tokens,
+        assistant_message={"role": "assistant", "content": assistant_blocks},
+        cache_creation_tokens=cache_creation_tokens,
+        cache_read_tokens=cache_read_tokens,
+        thinking_summary=thinking_summary,
+    )
 
 
 def _serialize_blocks(content) -> list[dict]:

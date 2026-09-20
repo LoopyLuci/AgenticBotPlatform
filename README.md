@@ -75,6 +75,10 @@ get their own deep-dive doc:
 - **[docs/install.md](docs/install.md)** — pick your setup (desktop, headless
   server, submodule/sidecar, phone) with copy-paste, script-friendly commands and
   the settings that matter for integrating ABP into your own architecture.
+- **[docs/agents/ROADMAP.md](docs/agents/ROADMAP.md)** — how developed the native
+  agent is, what it lacks against other agent products, and the phased plan to close
+  the gap; **[docs/agents/evals.md](docs/agents/evals.md)** — running and writing
+  agent evals.
 - **[docs/cicd/](docs/cicd/README.md)** — the design for the CI/CD platform
   (telemetry, ML workers, dashboards, updates, failover), and
   **[docs/cicd/configuration.md](docs/cicd/configuration.md)**, the specification

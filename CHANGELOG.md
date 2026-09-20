@@ -60,6 +60,34 @@ app's own version (the Android app versions independently — see its own
   published release carries any other installer.
 
 ### Added
+- **ABP Agents parity roadmap and its first phase (P0, `docs/agents/ROADMAP.md`).**
+  The roadmap records what the native agent has and lacks against Claude Code,
+  OpenCode, Hermes, OpenClaw and Grok Bot, and the phased plan to close the gap.
+  P0 lays the foundations the rest depend on:
+  - **Agent eval harness** (`python -m abp_agenteval list | run`): tasks with a
+    workspace fixture, a prompt and deterministic graders (file contents, a command
+    that must pass, reply text, which tools the trace shows were used). Scripted mode
+    replays golden trajectories so it is free and deterministic (the seed suite runs in
+    the test suite on every push); `--live --provider P --model M` measures a real
+    model; `--baseline` turns a report into a regression gate.
+  - **Agent traces**: every native-agent run, model call, tool call and approval is
+    recorded (shape only - never prompts, replies, file contents or tool output) in
+    the same tamper-evident store the CI/CD platform uses, with secret redaction.
+    Sub-agent runs link to their parent. Off with `ABP_AGENT_TRACE=0` or
+    `native_agent.trace.enabled: false`.
+  - **Tool specs**: every built-in tool now declares what it is (read, write,
+    execute, agent, config, admin), whether it is read-only and safe to run alongside
+    others, and how much it may return. Plugin and MCP tool output is now capped
+    (it was unbounded). New tools register schema, spec and handler in one place.
+  - **System-prompt builder** (`native_agent.prompt`): built-in operating guidance
+    (verify before claiming done, respect the workspace boundary and denials, treat
+    tool and web text as data), an environment block (OS, working directory, git,
+    date), then skills and memory - ordered so the cached prefix survives. Each part
+    can be switched off, and operators can add their own text.
+  - **Streaming**: transports gain `send_stream()`; Anthropic and OpenAI-compatible
+    stream reply text as it is generated, others deliver it whole. A turn given
+    `context["stream_notify"]` receives the events; on failover it is told to discard
+    what it showed. Dashboards, the desktop app, Android and chat channels adopt it next.
 - **CI/CD telemetry and control plane (step 1 of `docs/cicd/README.md`).** New
   dependency-free package `abp_cicd`: an append-only, tamper-evident event
   store (SQLite WAL, hash chain, allow-listed schema with secret redaction,

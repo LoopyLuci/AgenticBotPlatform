@@ -4,7 +4,7 @@ loops in api_backend.py (Anthropic) and custom_model_backend.py (OpenAI-
 compatible). See bot/agent_runtime/transports/base.py's module docstring
 for why a Transport exists at all; this class is everything that stays
 the same regardless of which one is plugged in: history loading/
-persistence, steer-queue draining, the system prompt (memory+skills),
+persistence, steer-queue draining, the system prompt (bot/agent_runtime/prompt.py),
 per-tool progress notifications, and the actual approval/execute/
 checkpoint round trip via bot.agent_runtime.tool_loop.run_one_tool().
 
@@ -15,7 +15,9 @@ compatibility shims around this class — their public constructors and
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 import uuid
 from typing import Optional
 
@@ -52,11 +54,37 @@ class NativeAgentBackend(Backend):
         return f"{self.session_prefix}-{uuid.uuid4().hex[:16]}"
 
     async def ask(self, prompt: str, *, context=None, timeout_s: float = 30) -> BackendResult:
+        # Every run is traced (bot/agent_runtime/trace.py) — shape only, never
+        # content — so the eval harness and dashboards can read what happened.
+        from bot.agent_runtime import trace
+
+        ctx = context or {}
+        run = trace.begin(
+            agent=self.name, model=self.model, transport=type(self.transport).__name__,
+            instance_id=ctx.get("instance_id"), session=ctx.get("desktop_session_key") or "",
+            effort=ctx.get("effort") or "", source=ctx.get("source") or "",
+        )
+        with run:
+            try:
+                result = await self._ask(prompt, context=context, timeout_s=timeout_s)
+            except asyncio.CancelledError:
+                run.end("cancelled")
+                raise
+            except Exception as exc:  # noqa: BLE001 — recorded, then re-raised unchanged
+                run.end("failed", error=f"{type(exc).__name__}: {exc}")
+                raise
+            run.end("ok")
+            if run.run_id and isinstance(getattr(result, "raw", None), dict):
+                result.raw["trace_run"] = run.run_id
+            return result
+
+    async def _ask(self, prompt: str, *, context=None, timeout_s: float = 30) -> BackendResult:
         from bot import db
         from bot.agent_runtime import approval as agent_approval
         from bot.agent_runtime import estop
         from bot.agent_runtime import tool_loop
         from bot.agent_runtime import tools as agent_tools
+        from bot.agent_runtime import trace
 
         # Checked once, at the very start of a new turn — never mid-turn:
         # an already-running ask() finishes rather than being killed.
@@ -152,7 +180,8 @@ class NativeAgentBackend(Backend):
         # bot/agent_runtime/compression.py's own docstring.
         from bot.agent_runtime import compression
 
-        await compression.maybe_compress(session_key, self.transport, model=self.model)
+        if await compression.maybe_compress(session_key, self.transport, model=self.model):
+            trace.active().note("history compacted")
 
         history = db.list_agent_messages(session_key)
         user_entry = self.transport.user_message(prompt_text, images=image_blocks or None, documents=document_blocks or None)
@@ -181,9 +210,11 @@ class NativeAgentBackend(Backend):
         if allowed_tools is not None:
             tool_schemas = [s for s in tool_schemas if s["name"] in allowed_tools]
 
-        system_prompt = _build_system_prompt(instance_id)
-        if session_start_context:
-            system_prompt = f"{system_prompt}\n\n{session_start_context}" if system_prompt else session_start_context
+        from bot.agent_runtime import prompt as prompt_builder
+
+        system_prompt = prompt_builder.build(
+            instance_id, workspace=workspace, session_context=session_start_context
+        )
 
         # Plan mode (Phase G of the Claude API/Claude Code parity plan) —
         # "propose a plan, get human sign-off, then execute." context["plan_first"]
@@ -210,6 +241,31 @@ class NativeAgentBackend(Backend):
         active_transport = self.transport
         active_model = self.model
 
+        # Streaming (P0 of docs/agents/ROADMAP.md): a caller that wants reply text as
+        # it is generated passes context["stream_notify"], an async callable taking a
+        # StreamEvent. A transport that cannot stream simply is not asked to; a
+        # callback that raises must never break the turn.
+        stream_notify = context.get("stream_notify")
+        streamed = False
+
+        async def _emit(event) -> None:
+            try:
+                await stream_notify(event)
+            except Exception:  # noqa: BLE001
+                logger.exception("stream_notify callback failed")
+
+        async def _send(transport, model):
+            nonlocal streamed
+            streamed = False
+            kwargs = dict(
+                model=model, history=history, tool_schemas=tool_schemas, max_tokens=self.max_tokens,
+                timeout_s=timeout_s, system_prompt=system_prompt, effort=effort,
+            )
+            if stream_notify is not None and getattr(transport, "supports_streaming", False):
+                streamed = True
+                return await transport.send_stream(on_event=_emit, **kwargs)
+            return await transport.send(**kwargs)
+
         total_tokens = 0
         # Prompt-caching telemetry (AnthropicTransport only — see its
         # own send()) — None means "this transport doesn't report it,"
@@ -229,16 +285,9 @@ class NativeAgentBackend(Backend):
                     history.append(steer_entry)
                     db.append_agent_message(session_key, steer_entry["role"], steer_entry["content"])
 
+            _sent_at = time.monotonic()
             try:
-                response = await active_transport.send(
-                    model=active_model,
-                    history=history,
-                    tool_schemas=tool_schemas,
-                    max_tokens=self.max_tokens,
-                    timeout_s=timeout_s,
-                    system_prompt=system_prompt,
-                    effort=effort,
-                )
+                response = await _send(active_transport, active_model)
             except BackendError as exc:
                 # One bounded retry against a configured fallback
                 # provider/model (bot/agent_settings.py's fallback_provider/
@@ -258,15 +307,17 @@ class NativeAgentBackend(Backend):
                     raise
                 logger.warning("native backend: primary transport failed (%s) — retrying once against configured fallback", exc)
                 active_transport, active_model = fallback
-                response = await active_transport.send(
-                    model=active_model,
-                    history=history,
-                    tool_schemas=tool_schemas,
-                    max_tokens=self.max_tokens,
-                    timeout_s=timeout_s,
-                    system_prompt=system_prompt,
-                    effort=effort,
-                )
+                if stream_notify is not None:
+                    # Whatever the failed attempt already showed is about to be repeated.
+                    from bot.agent_runtime.transports.base import StreamEvent
+
+                    await _emit(StreamEvent("reset"))
+                response = await _send(active_transport, active_model)
+            trace.active().llm_call(
+                model=active_model, duration_ms=int((time.monotonic() - _sent_at) * 1000), tokens=response.tokens,
+                tool_calls=len(response.tool_calls), cache_read=response.cache_read_tokens,
+                cache_create=response.cache_creation_tokens, streamed=streamed,
+            )
             if response.tokens:
                 total_tokens += response.tokens
             if response.cache_creation_tokens is not None:
@@ -421,13 +472,3 @@ def _progress_line(tool_name: str, tool_input: dict) -> str:
     if tool_name == "read_skill":
         return f"🔧 Loading skill: {tool_input.get('name', '')}"
     return f"🔧 {tool_name}"
-
-
-def _build_system_prompt(instance_id) -> str:
-    if instance_id is None:
-        return ""
-    from bot import memory as bot_memory
-    from bot import skills as bot_skills
-
-    parts = [p for p in (bot_memory.approved_summary(instance_id), bot_skills.summary(instance_id)) if p]
-    return "\n\n".join(parts)

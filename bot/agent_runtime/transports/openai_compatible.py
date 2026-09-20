@@ -29,7 +29,7 @@ from typing import Optional
 
 import httpx
 
-from bot.agent_runtime.transports.base import NormalizedResponse, ProviderTransport, ToolCall
+from bot.agent_runtime.transports.base import NormalizedResponse, ProviderTransport, StreamEvent, ToolCall
 from bot.backends.base import BackendError
 
 logger = logging.getLogger("bot.agent_runtime.transports.openai_compatible")
@@ -117,17 +117,11 @@ class OpenAICompatibleTransport(ProviderTransport):
     def tool_result_messages(self, results: list[tuple[ToolCall, str]]) -> list[dict]:
         return [{"role": "tool", "content": {"tool_call_id": tc.id, "content": output}} for tc, output in results]
 
-    async def send(
-        self,
-        *,
-        model: str,
-        history: list[dict],
-        tool_schemas: list[dict],
-        max_tokens: int,
-        timeout_s: float,
-        system_prompt: Optional[str] = None,
-        effort: Optional[str] = None,
-    ) -> NormalizedResponse:
+    def _build_request(
+        self, *, model: str, history: list[dict], tool_schemas: list[dict], max_tokens: int,
+        system_prompt: Optional[str], effort: Optional[str],
+    ) -> tuple[dict, dict]:
+        """(payload, headers) — shared by send() and send_stream()."""
         wire_messages = _to_wire_messages(history)
         if system_prompt:
             wire_messages = [{"role": "system", "content": system_prompt}] + wire_messages
@@ -160,7 +154,23 @@ class OpenAICompatibleTransport(ProviderTransport):
         quirk_profile = provider_quirks.profile_for(self.catalog_id, self.base_url)
         provider_quirks.apply(payload, profile=quirk_profile, effort=effort)
         headers.update(provider_quirks.extra_headers(profile=quirk_profile, session_id=self._session_id))
+        return payload, headers
 
+    async def send(
+        self,
+        *,
+        model: str,
+        history: list[dict],
+        tool_schemas: list[dict],
+        max_tokens: int,
+        timeout_s: float,
+        system_prompt: Optional[str] = None,
+        effort: Optional[str] = None,
+    ) -> NormalizedResponse:
+        payload, headers = self._build_request(
+            model=model, history=history, tool_schemas=tool_schemas, max_tokens=max_tokens,
+            system_prompt=system_prompt, effort=effort,
+        )
         async with httpx.AsyncClient(timeout=timeout_s) as client:
             try:
                 resp = await client.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)
@@ -176,31 +186,123 @@ class OpenAICompatibleTransport(ProviderTransport):
             except Exception as exc:
                 raise BackendError(f"openai-compatible transport ({self.base_url}) error: {exc}") from exc
 
-        usage = data.get("usage") or {}
-        tokens = (usage.get("prompt_tokens") or 0) + (usage.get("completion_tokens") or 0)
+        return _normalize(data, self.base_url)
 
-        choices = data.get("choices") or []
-        if not choices:
-            raise BackendError(f"openai-compatible transport ({self.base_url}) returned no choices")
-        message = choices[0].get("message") or {}
-        tool_calls_raw = message.get("tool_calls") or []
+    supports_streaming = True
 
-        tool_calls = []
-        for tc in tool_calls_raw:
-            fn = tc.get("function") or {}
-            try:
-                args = json.loads(fn.get("arguments") or "{}")
-            except json.JSONDecodeError:
-                args = {}
-            tool_calls.append(ToolCall(id=tc.get("id"), name=fn.get("name", ""), arguments=args))
-
-        assistant_payload: dict = {"content": message.get("content")}
-        if tool_calls_raw:
-            assistant_payload["tool_calls"] = tool_calls_raw
-
-        return NormalizedResponse(
-            text=message.get("content") or "",
-            tool_calls=tool_calls,
-            tokens=tokens or None,
-            assistant_message={"role": "assistant", "content": assistant_payload},
+    async def send_stream(
+        self,
+        *,
+        on_event,
+        model: str,
+        history: list[dict],
+        tool_schemas: list[dict],
+        max_tokens: int,
+        timeout_s: float,
+        system_prompt: Optional[str] = None,
+        effort: Optional[str] = None,
+    ) -> NormalizedResponse:
+        """Server-sent-events variant of send(): reply text goes to `on_event` as it
+        arrives and the deltas are assembled into the same NormalizedResponse."""
+        payload, headers = self._build_request(
+            model=model, history=history, tool_schemas=tool_schemas, max_tokens=max_tokens,
+            system_prompt=system_prompt, effort=effort,
         )
+        payload["stream"] = True
+        payload["stream_options"] = {"include_usage": True}
+        url = f"{self.base_url}/chat/completions"
+        async with httpx.AsyncClient(timeout=timeout_s) as client:
+            try:
+                try:
+                    return await self._consume_stream(client, url, payload, headers, on_event)
+                except _RetryWithoutUsage:
+                    # A few OpenAI-compatible servers reject stream_options; usage is optional.
+                    payload.pop("stream_options", None)
+                    return await self._consume_stream(client, url, payload, headers, on_event)
+            except httpx.TimeoutException as exc:
+                raise BackendError(f"openai-compatible transport ({self.base_url}) timed out after {timeout_s}s") from exc
+            except BackendError:
+                raise
+            except Exception as exc:
+                raise BackendError(f"openai-compatible transport ({self.base_url}) error: {exc}") from exc
+
+    async def _consume_stream(self, client, url, payload, headers, on_event) -> NormalizedResponse:
+        text_parts: list[str] = []
+        calls: dict[int, dict] = {}
+        usage: dict = {}
+        async with client.stream("POST", url, json=payload, headers=headers) as resp:
+            if resp.status_code >= 400:
+                body = (await resp.aread()).decode("utf-8", "replace")
+                if resp.status_code in (400, 422) and "stream_options" in body and "stream_options" in payload:
+                    raise _RetryWithoutUsage()
+                raise BackendError(
+                    f"openai-compatible transport ({self.base_url}) returned {resp.status_code}: {body[:500]}")
+            async for line in resp.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                chunk = line[5:].strip()
+                if chunk == "[DONE]":
+                    break
+                try:
+                    event = json.loads(chunk)
+                except json.JSONDecodeError:
+                    continue
+                if event.get("usage"):
+                    usage = event["usage"]
+                for choice in event.get("choices") or []:
+                    delta = choice.get("delta") or {}
+                    if delta.get("content"):
+                        text_parts.append(delta["content"])
+                        await on_event(StreamEvent("text", delta["content"]))
+                    for tc in delta.get("tool_calls") or []:
+                        slot = calls.setdefault(tc.get("index", 0), {"id": None, "name": "", "arguments": ""})
+                        if tc.get("id"):
+                            slot["id"] = tc["id"]
+                        fn = tc.get("function") or {}
+                        if fn.get("name"):
+                            slot["name"] += fn["name"]
+                        if fn.get("arguments"):
+                            slot["arguments"] += fn["arguments"]
+        message: dict = {"content": "".join(text_parts) or None}
+        if calls:
+            message["tool_calls"] = [
+                {"id": c["id"] or f"call_{i}", "type": "function",
+                 "function": {"name": c["name"], "arguments": c["arguments"]}}
+                for i, c in sorted(calls.items())
+            ]
+        return _normalize({"usage": usage, "choices": [{"message": message}]}, self.base_url)
+
+
+class _RetryWithoutUsage(Exception):
+    pass
+
+
+def _normalize(data: dict, base_url: str) -> NormalizedResponse:
+    usage = data.get("usage") or {}
+    tokens = (usage.get("prompt_tokens") or 0) + (usage.get("completion_tokens") or 0)
+
+    choices = data.get("choices") or []
+    if not choices:
+        raise BackendError(f"openai-compatible transport ({base_url}) returned no choices")
+    message = choices[0].get("message") or {}
+    tool_calls_raw = message.get("tool_calls") or []
+
+    tool_calls = []
+    for tc in tool_calls_raw:
+        fn = tc.get("function") or {}
+        try:
+            args = json.loads(fn.get("arguments") or "{}")
+        except json.JSONDecodeError:
+            args = {}
+        tool_calls.append(ToolCall(id=tc.get("id"), name=fn.get("name", ""), arguments=args))
+
+    assistant_payload: dict = {"content": message.get("content")}
+    if tool_calls_raw:
+        assistant_payload["tool_calls"] = tool_calls_raw
+
+    return NormalizedResponse(
+        text=message.get("content") or "",
+        tool_calls=tool_calls,
+        tokens=tokens or None,
+        assistant_message={"role": "assistant", "content": assistant_payload},
+    )

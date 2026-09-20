@@ -15,7 +15,7 @@ from typing import Any
 MAX_STR = 500
 MAX_INPUT_KEYS = 20
 
-STATUSES = ("ok", "failed", "skipped", "running", "rolled_back", "aborted", "unknown")
+STATUSES = ("ok", "failed", "skipped", "running", "rolled_back", "aborted", "denied", "cancelled", "unknown")
 
 # kind -> {field: type}. `inputs` is the one free-form field (flat scalars only).
 KINDS: dict[str, dict[str, type]] = {
@@ -69,12 +69,15 @@ def _clean_inputs(value: Any) -> dict:
     return out
 
 
-def sanitize(kind: str, data: dict | None) -> dict:
+def sanitize(kind: str, data: dict | None, kinds: dict[str, dict[str, type]] | None = None) -> dict:
     """Keep only declared fields, coerced to their declared type. Raises
-    ValueError for an unknown kind (a programming error, not bad data)."""
-    if kind not in KINDS:
+    ValueError for an unknown kind (a programming error, not bad data). `kinds`
+    lets another store (the agent trace) reuse the same allow-list and redaction
+    with its own schema."""
+    kinds = KINDS if kinds is None else kinds
+    if kind not in kinds:
         raise ValueError(f"unknown event kind {kind!r}")
-    schema = KINDS[kind]
+    schema = kinds[kind]
     out: dict[str, Any] = {}
     for name, value in (data or {}).items():
         typ = schema.get(name)

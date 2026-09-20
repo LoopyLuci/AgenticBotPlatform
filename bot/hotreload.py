@@ -87,6 +87,10 @@ DENYLIST: frozenset[str] = frozenset({
     # open and orphaned — every external tool would vanish from
     # all_tool_schemas() until a manual reconnect, with no self-healing.
     "bot.agent_runtime.mcp_client",
+    # trace.py holds a ContextVar naming the in-flight run and a cache of open event
+    # stores; toolspec.py holds the registry of registered tools. A reload would drop
+    # both while runs and registrations made against the old objects are still live.
+    "bot.agent_runtime.trace", "bot.agent_runtime.toolspec",
     "bot.hotreload",  # never reload the reloader mid-cycle
     "bot.mcp_server",  # a separate process (python -m bot.mcp_server); not part of this one anyway
     "bot.tui.app", "bot.tui.client", "bot.tui.__main__",  # a separate process (python -m bot.tui); not part of this one anyway
@@ -212,6 +216,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.agent_runtime.transports.responses_api",
     "bot.agent_runtime.compression",  # depends on transports.base's ProviderTransport type only; pure function, no state
     "bot.agent_runtime.hooks",  # pure functions, no module-level state — only imported lazily inside tool_loop.py/native_backend.py
+    "bot.agent_runtime.prompt",  # pure functions over config, no state — only imported lazily inside native_backend.py::ask()
     "bot.backends.native_backend",
     "bot.agent_runtime.tools",
     "bot.agent_runtime.checkpoints",
