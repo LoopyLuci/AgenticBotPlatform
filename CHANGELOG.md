@@ -8,6 +8,27 @@ app's own version (the Android app versions independently — see its own
 
 ## [Unreleased]
 
+### Added
+- **MIT license.** The repository now carries a `LICENSE` file (it had none,
+  which left third parties with no right to use or embed it), and the README,
+  `Cargo.toml` and `flake.nix` declare it.
+- **`ABP_HOME`** — set it in the process environment to keep all of ABP's
+  mutable state (`.env`, `config/`, `data/`, `logs/`) in a directory of your
+  choice instead of beside the code, for ABP embedded in another server as a
+  submodule/sidecar. The directory is created and the default routing config
+  seeded on first run; the global `~/.claude/.env` is never read; hot reload
+  defaults to off. New guide: `docs/embedding.md`.
+
+### Changed
+- The project root is no longer a hardcoded developer path. `bot/envfile.py`
+  used to prefer `Z:\Projects\AgenticBotPlatform` on any machine where that
+  directory existed. It now separates `CODE_ROOT` (the running package, UI
+  assets, venv) from `PROJECT_ROOT` (state), and a built app running from a
+  `cargo tauri build` output inside a source checkout still shares that
+  checkout's `.env`/config/data — detected from the layout, not a path.
+- A read-only install directory no longer crashes at import: the log
+  directory falls back to the system temp directory.
+
 ### Security
 - **Installer no longer ships the developer's provider API keys.** The
   bundle included the whole `config/` folder, so the gitignored

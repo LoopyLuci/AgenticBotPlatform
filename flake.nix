@@ -102,8 +102,7 @@
           meta = with pkgs.lib; {
             description = "All-in-one desktop shell for Agentic Bot Platform";
             homepage = "https://github.com/LoopyLuci/AgenticBotPlatform";
-            # No LICENSE file exists in the repo yet — add one and set this
-            # field once it does.
+            license = licenses.mit;
             platforms = platforms.linux;
           };
         };

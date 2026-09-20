@@ -1,11 +1,24 @@
 """Resolves which .env file to load secrets from, and lets the dashboard
 edit its contents in place.
 
-Two supported locations, checked in order, plus an explicit override:
+Locations, checked in order:
   1. an explicit path set via config/backends.yaml's `env_file` key
      (settable from the dashboard's Control Center -> Environment card)
-  2. Z:\\Projects\\AgenticBotPlatform\\.env (this project's own .env)
-  3. ~/.claude/.env (a global .env shared with other Claude tooling)
+  2. `<state root>/.env` (this install's own .env — see "Roots" below)
+  3. ~/.claude/.env (a global .env shared with other Claude tooling) —
+     NOT consulted when ABP_HOME is set: an embedded/sidecar deployment
+     must never read another tool's secrets by accident.
+
+Roots (two different things this module used to conflate):
+  * CODE_ROOT  — where the running `bot` package, the desktop UI assets and
+                 the bundled .venv live.
+  * PROJECT_ROOT — the STATE root: `.env`, `config/`, `data/` (the database,
+                 attachments, snapshots ...) and `logs/`. Kept under this
+                 name because every module already imports it.
+  By default both are the same directory. Set the ABP_HOME environment
+  variable to keep all mutable state somewhere else — e.g. when ABP is a git
+  submodule/sidecar of another server, so nothing is ever written inside the
+  (possibly read-only) checkout and two hosts don't share one database.
 
 Every write through write_content()/restore_backup() is preceded by a
 timestamped copy into data/env_backups/ — nothing is ever overwritten
@@ -18,6 +31,7 @@ vars to load) so it can run before anything else in bot/main.py.
 
 from __future__ import annotations
 
+import os
 import re
 import secrets
 import shutil
@@ -28,18 +42,60 @@ from typing import Any, Optional
 
 import yaml
 
-# This app's real home is always this one fixed install, not wherever a
-# particular copy of bot/ happens to be running from. A release build's
-# bundled resources live under desktop-app/.../target/release/, a
-# different folder from the source tree `cargo tauri dev` runs against —
-# without pinning to the canonical root, each of those silently keeps its
-# own separate .env/config/backups, so a value entered through one build
-# doesn't show up when running the other. Falls back to the __file__-
-# relative path only if this exact install ever moves or doesn't exist
-# (e.g. this code ends up on a different machine).
-_DEV_ROOT = Path(__file__).resolve().parent.parent
-_CANONICAL_ROOT = Path(r"Z:\Projects\AgenticBotPlatform")
-PROJECT_ROOT = _CANONICAL_ROOT if _CANONICAL_ROOT.exists() else _DEV_ROOT
+_PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _checkout_behind_build_output(package_root: Path) -> Optional[Path]:
+    """`cargo tauri build` bundles a COPY of bot/ into
+    <checkout>/desktop-app/src-tauri/target/<profile>/, a different folder
+    from the source tree `python -m bot.main` runs against. A developer's
+    built app and their source run should share one .env/config/database,
+    or a value entered through one silently doesn't exist in the other. So
+    when this package is running from such a build output INSIDE a source
+    checkout, that checkout is the root. (This used to be a hardcoded
+    developer path, `Z:\\Projects\\AgenticBotPlatform`, that took over on any
+    machine where it happened to exist.)"""
+    parts = package_root.parts
+    if len(parts) >= 5 and parts[-2] == "target" and parts[-3] == "src-tauri" and parts[-4] == "desktop-app":
+        checkout = package_root.parents[3]
+        if (checkout / "bot" / "main.py").is_file():
+            return checkout
+    return None
+
+
+def resolve_roots(package_root: Path, environ: Any) -> tuple[Path, Path, bool]:
+    """(code_root, state_root, abp_home_active) for a package location and
+    environment. Pure, so the rules are unit-testable."""
+    code_root = _checkout_behind_build_output(package_root) or package_root
+    home = (environ.get("ABP_HOME") or "").strip()
+    if not home:
+        return code_root, code_root, False
+    state_root = Path(os.path.expandvars(home)).expanduser().resolve()
+    return code_root, state_root, True
+
+
+CODE_ROOT, PROJECT_ROOT, ABP_HOME_ACTIVE = resolve_roots(_PACKAGE_ROOT, os.environ)
+
+
+def prepare_state_dir(state_root: Path, code_root: Path) -> None:
+    """Make an ABP_HOME directory usable on first run: create the layout and
+    seed the default routing config (the same job scripts/docker-entrypoint.sh
+    does for a fresh Docker volume). Never overwrites anything that exists,
+    and fails with a message that names the variable instead of a bare
+    traceback from deep inside some later import."""
+    try:
+        for sub in ("config", "data", "logs"):
+            (state_root / sub).mkdir(parents=True, exist_ok=True)
+        target = state_root / "config" / "backends.yaml"
+        default = code_root / "config" / "backends.yaml"
+        if not target.exists() and default.is_file():
+            shutil.copy2(default, target)
+    except OSError as exc:
+        raise SystemExit(f"ABP_HOME={state_root} is not usable ({exc}). Point it at a writable directory.") from exc
+
+
+if ABP_HOME_ACTIVE:
+    prepare_state_dir(PROJECT_ROOT, CODE_ROOT)
 
 PROJECT_ENV = PROJECT_ROOT / ".env"
 GLOBAL_ENV = Path.home() / ".claude" / ".env"
@@ -52,7 +108,7 @@ def stable_python_executable() -> str:
     keep running independently of this app's own build/deploy cycle
     (a registered MCP server another program spawns and may keep alive
     across turns) — deliberately this project's own top-level `.venv`
-    under PROJECT_ROOT, NOT sys.executable.
+    under CODE_ROOT, NOT sys.executable.
 
     sys.executable resolves to whichever interpreter happens to be
     running the CURRENT process, which for the actual running app is the
@@ -61,17 +117,19 @@ def stable_python_executable() -> str:
     deploy. A long-lived external process still holding that
     interpreter's DLLs open (confirmed live: a Hermes agent's registered
     MCP server subprocess did exactly this) makes the next build fail
-    with a Windows file-in-use error. PROJECT_ROOT/.venv is never a
+    with a Windows file-in-use error. CODE_ROOT/.venv is never a
     build target, so pointing there instead avoids the whole failure
     class. Falls back to sys.executable if that venv doesn't exist on
     this machine (e.g. a bare end-user install with no source checkout)."""
     rel = ("Scripts", "python.exe") if sys.platform == "win32" else ("bin", "python")
-    candidate = PROJECT_ROOT / ".venv" / rel[0] / rel[1]
+    candidate = CODE_ROOT / ".venv" / rel[0] / rel[1]
     return str(candidate) if candidate.is_file() else sys.executable
 
 
 def candidates() -> list[Path]:
-    return [PROJECT_ENV, GLOBAL_ENV]
+    # With ABP_HOME set this is an isolated/embedded deployment: never fall
+    # back to the global ~/.claude/.env that other tools share.
+    return [PROJECT_ENV] if ABP_HOME_ACTIVE else [PROJECT_ENV, GLOBAL_ENV]
 
 
 def configured_override() -> Optional[Path]:

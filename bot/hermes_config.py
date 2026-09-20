@@ -348,6 +348,6 @@ def unregister_agenticbotplatform_mcp_server(hermes_home: Optional[str] = None, 
 
 
 def _project_root():
-    from bot.envfile import PROJECT_ROOT
+    from bot.envfile import CODE_ROOT
 
-    return PROJECT_ROOT
+    return CODE_ROOT

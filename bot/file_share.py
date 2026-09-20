@@ -33,7 +33,7 @@ from typing import Any, Optional
 import yaml as _pyyaml
 
 from bot.config import ConfigManager
-from bot.envfile import PROJECT_ROOT
+from bot.envfile import CODE_ROOT, PROJECT_ROOT
 
 FILE_SHARE_PATH = PROJECT_ROOT / "config" / "file_share.yaml"
 
@@ -43,7 +43,7 @@ FILE_SHARE_PATH = PROJECT_ROOT / "config" / "file_share.yaml"
 # rename/remove like any other afterward, nothing here is special-cased
 # beyond existing by default.
 _DEFAULT_ROOTS = {
-    "android-builds": str(PROJECT_ROOT / "android-app" / "app" / "build" / "outputs" / "apk"),
+    "android-builds": str(CODE_ROOT / "android-app" / "app" / "build" / "outputs" / "apk"),
 }
 
 

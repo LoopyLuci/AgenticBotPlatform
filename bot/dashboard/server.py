@@ -53,7 +53,7 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 # build in between. Only meaningful on a dev checkout where desktop-app/
 # actually exists alongside bot/ — absent in a headless-only deployment,
 # in which case this mount is simply never reachable, not an error.
-DESKTOP_UI_DIR = envfile.PROJECT_ROOT / "desktop-app" / "ui"
+DESKTOP_UI_DIR = envfile.CODE_ROOT / "desktop-app" / "ui"
 LOG_FILE = envfile.PROJECT_ROOT / "logs" / "bot.log"
 logger = logging.getLogger(__name__)
 

@@ -37,7 +37,7 @@ from collections import Counter, deque
 from pathlib import Path
 from typing import Any, Optional
 
-from bot.envfile import PROJECT_ROOT
+from bot.envfile import CODE_ROOT, PROJECT_ROOT
 
 LOG_DIR = PROJECT_ROOT / "logs"
 CRASH_DIR = LOG_DIR / "crash_reports"
@@ -55,7 +55,7 @@ def _read_app_version() -> str:
     if env_version:
         return env_version
     try:
-        conf_path = PROJECT_ROOT / "desktop-app" / "src-tauri" / "tauri.conf.json"
+        conf_path = CODE_ROOT / "desktop-app" / "src-tauri" / "tauri.conf.json"
         return json.loads(conf_path.read_text(encoding="utf-8"))["version"]
     except Exception:
         return "unknown"
