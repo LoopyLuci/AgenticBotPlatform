@@ -182,7 +182,10 @@ async def build_telegram_instance(row: dict) -> "telegram.ext.Application":
     return application
 
 
-async def _start_dashboard(dash_app, host: str, port: int, *, max_attempts: int = 8, retry_delay_s: float = 2.0):
+async def _start_dashboard(
+    dash_app, host: str, port: int, *, max_attempts: int = 8, retry_delay_s: float = 2.0,
+    giveup_is_critical: bool = True,
+):
     """Binds and starts the dashboard's uvicorn server, retrying on a bind
     failure instead of letting it take the whole process down.
 
@@ -259,7 +262,10 @@ async def _start_dashboard(dash_app, host: str, port: int, *, max_attempts: int 
         )
         if attempt < max_attempts:
             await asyncio.sleep(retry_delay_s)
-    logger.critical(
+    # Only the FIRST give-up is a CRITICAL (which also writes a crash report). The
+    # supervisor's later once-every-30s retries pass giveup_is_critical=False —
+    # otherwise a port held for a while wrote a crash report every 30 seconds.
+    (logger.critical if giveup_is_critical else logger.warning)(
         "dashboard API could not bind %s:%s after %s attempts — continuing WITHOUT it. "
         "Telegram/Discord/other configured platforms are still running normally. Close "
         "whatever else is using this port (check `netstat -ano | findstr :%s` on Windows) "
@@ -383,7 +389,9 @@ async def run() -> None:
                 pass
             if stop_event.is_set():
                 break
-            server, task = await _start_dashboard(dash_app, host, port, max_attempts=1)
+            server, task = await _start_dashboard(
+                dash_app, host, port, max_attempts=1, giveup_is_critical=False,
+            )
         dashboard_state["server"] = server
         dashboard_state["task"] = task
         if server is not None:

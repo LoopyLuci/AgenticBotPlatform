@@ -37,7 +37,7 @@
     ],
     "resources": {
       "../../bot": "bot",
-      "../../config": "config",
+      "../../config/backends.yaml": "config/backends.yaml",
       "../../.venv": ".venv",
       "../../requirements.txt": "requirements.txt",
       "../ui": "desktop-app/ui",

@@ -61,8 +61,12 @@ def _diff_summary(old: dict, new: dict) -> str:
 class ConfigManager:
     """Thread-safe, hot-reloadable view of config/backends.yaml."""
 
-    def __init__(self, path: Path = CONFIG_PATH):
+    def __init__(self, path: Path = CONFIG_PATH, missing_ok: bool = False):
         self.path = path
+        # For an optional, user-created file (providers.yaml): a fresh
+        # install has none, and that must mean "empty", not an import-time
+        # crash. Left False for files the app can't run without.
+        self.missing_ok = missing_ok
         self._lock = threading.Lock()
         self._data: dict[str, Any] = {}
         self.version = 0
@@ -70,6 +74,8 @@ class ConfigManager:
         self._load_initial()
 
     def _read_yaml(self) -> dict:
+        if self.missing_ok and not self.path.exists():
+            return {}
         with open(self.path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
 

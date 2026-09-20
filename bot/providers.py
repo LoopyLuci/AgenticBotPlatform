@@ -30,7 +30,9 @@ from bot.envfile import PROJECT_ROOT
 
 PROVIDERS_PATH = PROJECT_ROOT / "config" / "providers.yaml"
 
-_manager = ConfigManager(path=PROVIDERS_PATH)
+# providers.yaml is per-user (it holds API keys) and gitignored, so it is
+# deliberately NOT shipped in the installer — a fresh install has none.
+_manager = ConfigManager(path=PROVIDERS_PATH, missing_ok=True)
 
 
 def _reject_cloud_metadata_target(base_url: str) -> None:

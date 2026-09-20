@@ -791,6 +791,7 @@ fn spawn_internal(app: &AppHandle, state: &State<ServerState>) -> Result<(), Str
         // never catch at all, confirmed as a real possibility here (a
         // second machine's bot.main died with exit code 120 and zero
         // output, even from a direct `python -c "import bot.main"` probe).
+        .env("AGENTICBOTPLATFORM_VERSION", env!("CARGO_PKG_VERSION"))
         .env("PYTHONUNBUFFERED", "1")
         .env("PYTHONFAULTHANDLER", "1")
         // See diagnose_startup_crash()'s identical env vars for why —
