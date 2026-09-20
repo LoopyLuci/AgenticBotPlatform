@@ -1282,3 +1282,52 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+#[cfg(test)]
+mod capability_tests {
+    use std::str::FromStr;
+    use tauri::utils::acl::RemoteUrlPattern;
+
+    fn remote_patterns() -> Vec<RemoteUrlPattern> {
+        let raw = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/capabilities/default.json"
+        ))
+        .expect("capabilities/default.json");
+        let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        json["remote"]["urls"]
+            .as_array()
+            .expect("remote.urls")
+            .iter()
+            .map(|u| RemoteUrlPattern::from_str(u.as_str().unwrap()).unwrap())
+            .collect()
+    }
+
+    fn allowed(url: &str) -> bool {
+        let parsed = url.parse().unwrap();
+        remote_patterns().iter().any(|p| p.test(&parsed))
+    }
+
+    // Tauri matches a remote capability against the request's ORIGIN
+    // (scheme + host + port — never a path), so a `/desktop-ui/*` pattern
+    // silently matched nothing and broke the desktop app's own IPC (found by
+    // probing the real window). The narrowest thing that works is the
+    // dashboard's own origin: the page the boot code navigates to
+    // (main.js: `${API_BASE}/desktop-ui/?booted=1&token=...`) MUST keep IPC.
+    #[test]
+    fn the_dashboard_origin_keeps_ipc() {
+        assert!(allowed("http://127.0.0.1:8787/"));
+        assert!(allowed(
+            "http://127.0.0.1:8787/desktop-ui/?booted=1&token=abc"
+        ));
+    }
+
+    #[test]
+    fn no_other_host_or_port_gets_ipc() {
+        assert!(!allowed("http://127.0.0.1:9999/"));
+        assert!(!allowed("http://127.0.0.1:3000/desktop-ui/"));
+        assert!(!allowed("http://localhost:8787/"));
+        assert!(!allowed("http://evil.example/"));
+        assert!(!allowed("https://127.0.0.1:8787/"));
+    }
+}

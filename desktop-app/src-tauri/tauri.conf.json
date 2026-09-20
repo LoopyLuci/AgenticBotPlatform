@@ -5,7 +5,7 @@
   "identifier": "com.agenticbotplatform.app",
   "build": {
     "frontendDist": "../ui",
-    "beforeBuildCommand": "python -c \"import pathlib,runpy;p=next(q for q in (pathlib.Path.cwd()/'../scripts/stage_bundle.py',pathlib.Path.cwd()/'../../scripts/stage_bundle.py') if q.exists());runpy.run_path(str(p),run_name='__main__')\""
+    "beforeBuildCommand": "python ../scripts/stage_bundle.py || python ../../scripts/stage_bundle.py"
   },
   "app": {
     "withGlobalTauri": true,
