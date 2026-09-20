@@ -29,6 +29,18 @@ app's own version (the Android app versions independently — see its own
 - A read-only install directory no longer crashes at import: the log
   directory falls back to the system temp directory.
 
+### Fixed
+- The provider-warning spam was only half fixed in 0.7.22: the Models page
+  polls every 30 seconds through a second code path (`browse_provider_models`)
+  that had no backoff, so an unreachable provider still logged a WARNING per
+  poll on a running install. That path now shares the same failure backoff
+  (a working provider is still fetched live; an explicit Refresh always
+  tries and logs).
+- The release script signed the update installer before the repo's pre-push
+  hook rebuilt it, so v0.7.24's published signature didn't match its
+  installer. It now signs immediately before uploading and reads the
+  published assets back to verify their hashes and signature.
+
 ### Security
 - **Installer no longer ships the developer's provider API keys.** The
   bundle included the whole `config/` folder, so the gitignored
