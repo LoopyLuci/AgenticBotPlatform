@@ -80,19 +80,26 @@ class CmdResult:
         return self.rc == 0
 
 
-def _run(cmd: list[str], cwd: Path = ROOT, timeout: Optional[float] = 60) -> CmdResult:
-    """Never raises: a missing tool is rc 127, a hang is rc 124."""
+def _run(cmd: list[str], cwd: Path = ROOT, timeout: Optional[float] = 60,
+         stderr_on_success: bool = True) -> CmdResult:
+    """Never raises: a missing tool is rc 127, a hang is rc 124. With
+    stderr_on_success=False, stderr is only included when the command failed,
+    so stdout can be parsed without warnings mixed into it."""
     try:
         p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
     except FileNotFoundError:
         return CmdResult(127, f"{cmd[0]}: not found")
     except subprocess.TimeoutExpired:
         return CmdResult(124, f"{' '.join(cmd)}: timed out after {timeout}s")
-    return CmdResult(p.returncode, (p.stdout or "") + (p.stderr or ""))
+    out, err = p.stdout or "", p.stderr or ""
+    return CmdResult(p.returncode, out + err if (stderr_on_success or p.returncode != 0) else out)
 
 
 def git(*args: str, root: Path = ROOT, timeout: Optional[float] = 60) -> CmdResult:
-    return _run(["git", *args], cwd=root, timeout=timeout)
+    """Output is stdout only on success: git prints warnings (CRLF conversion,
+    hints) to stderr, and callers parse this output as file lists, SHAs and
+    branch names. A CRLF warning once got parsed as a list of changed files."""
+    return _run(["git", *args], cwd=root, timeout=timeout, stderr_on_success=False)
 
 
 def _norm(p: object) -> str:

@@ -487,3 +487,17 @@ def test_cargo_lock_sync_only_reports_in_a_dry_run(repo):
     c = g.sync_cargo_lock("0.7.28", repo, apply=False)
     assert c.ok and c.warn and "would update" in c.detail
     assert lock.read_bytes() == before
+
+
+def test_git_warnings_never_leak_into_parsed_output(repo):
+    """A CRLF-conversion warning (stderr) was once parsed as a list of changed
+    files and made a release refuse to commit."""
+    _git(repo, "config", "core.autocrlf", "true")
+    _git(repo, "config", "core.safecrlf", "warn")
+    (repo / "README.md").write_text("line one\nline two\n", encoding="utf-8", newline="\n")
+    diff = g.git("diff", "--name-only", root=repo)
+    assert diff.ok and diff.output.split() == ["README.md"]
+    assert g.check_clean_tree(repo).detail.split() == ["M", "README.md"]
+    # failures still carry stderr, so error messages stay useful
+    bad = g.git("rev-parse", "--verify", "no-such-ref", root=repo)
+    assert not bad.ok and bad.output.strip()
