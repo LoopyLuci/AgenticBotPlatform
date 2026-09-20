@@ -38,12 +38,12 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-from bot.envfile import PROJECT_ROOT
+from bot.envfile import CODE_ROOT, PROJECT_ROOT
 
 TARGETS = {
-    "dashboard": PROJECT_ROOT / "bot" / "dashboard" / "static" / "dashboard.html",
-    "desktop_html": PROJECT_ROOT / "desktop-app" / "ui" / "index.html",
-    "desktop_js": PROJECT_ROOT / "desktop-app" / "ui" / "main.js",
+    "dashboard": CODE_ROOT / "bot" / "dashboard" / "static" / "dashboard.html",
+    "desktop_html": CODE_ROOT / "desktop-app" / "ui" / "index.html",
+    "desktop_js": CODE_ROOT / "desktop-app" / "ui" / "main.js",
 }
 
 HISTORY_ROOT = PROJECT_ROOT / "data" / "ui_customize_history"

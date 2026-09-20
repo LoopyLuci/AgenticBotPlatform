@@ -69,6 +69,9 @@ get their own deep-dive doc:
   Hermes, so messages never land in the wrong (or an unlinked) window.
 - **[docs/mobile-access.md](docs/mobile-access.md)** — pairing the Android
   app over Tailscale, push notifications, one-click build/install/pair.
+- **[docs/embedding.md](docs/embedding.md)** — running ABP as a submodule/
+  sidecar inside another server: where state lives (`ABP_HOME`), ports,
+  tokens, and what to lock down.
 - **[android-app/README.md](android-app/README.md)** — the Android app's
   own architecture and build instructions.
 
@@ -1429,3 +1432,7 @@ incremental reuse of that space.
   is gitignored for the same reason — never commit it.
 - The `cli` backend defaults to `allowed_tools: []` — chat-originated
   prompts get no file/shell access unless you widen that per action type.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

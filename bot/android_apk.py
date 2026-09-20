@@ -10,11 +10,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-from bot.envfile import PROJECT_ROOT
+from bot.envfile import CODE_ROOT
 
 
 def latest_apk_path() -> Path:
-    return PROJECT_ROOT / "android-app" / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
+    return CODE_ROOT / "android-app" / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
 
 
 def apk_version_label(path: Path) -> str:

@@ -35,7 +35,17 @@ if not os.environ.get("DASHBOARD_TOKEN"):
     os.environ["DASHBOARD_TOKEN"] = ensure_dashboard_token()
 
 LOG_DIR = ROOT / "logs"
-LOG_DIR.mkdir(exist_ok=True)
+try:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    # A read-only checkout (ABP embedded as a submodule without ABP_HOME) must
+    # not die here, at import time, before logging exists to say why. Log to
+    # the temp dir instead; setting ABP_HOME is the real fix for state.
+    import tempfile
+    from pathlib import Path
+
+    LOG_DIR = Path(tempfile.gettempdir()) / "agenticbotplatform-logs"
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _log_uncaught_exception(exc_type, exc_value, exc_tb) -> None:

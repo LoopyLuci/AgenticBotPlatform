@@ -3,6 +3,7 @@ name = "agentic-bot-platform"
 version = "0.7.24"
 description = "All-in-one desktop shell for Agentic Bot Platform: boots and supervises the Python bot process and hosts its dashboard in one window."
 edition = "2021"
+license = "MIT"
 
 [lib]
 name = "agentic_bot_platform_lib"

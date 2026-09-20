@@ -51,12 +51,23 @@ import time
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
-from bot.envfile import PROJECT_ROOT
+from bot import envfile
+from bot.envfile import CODE_ROOT
 
 logger = logging.getLogger("bot.hotreload")
 
-BOT_PKG_DIR = PROJECT_ROOT / "bot"
+BOT_PKG_DIR = CODE_ROOT / "bot"
 PKG_DOTTED_PREFIX = "bot"
+
+
+def _enabled_by_default() -> bool:
+    """Hot reload re-executes modules from the `bot/` source tree while the
+    app runs — a development convenience. When ABP is embedded in a host
+    (ABP_HOME set, e.g. as a git submodule/sidecar) that tree is the host's
+    dependency: a `git submodule update` while running would trigger partial
+    reloads of a half-updated package. So it defaults OFF there; an explicit
+    `hot_reload_enabled` in config/backends.yaml still wins either way."""
+    return not envfile.ABP_HOME_ACTIVE
 
 # Holds live singleton/subprocess/socket/connection state, or hands bare
 # function objects to an external library that never re-looks-up the
@@ -254,11 +265,11 @@ def _record(status: str, detail: str) -> None:
 
 
 def status() -> dict[str, Any]:
-    enabled = True
+    enabled = _enabled_by_default()
     try:
         from bot.config import config
 
-        enabled = bool(config.current.get("hot_reload_enabled", True))
+        enabled = bool(config.current.get("hot_reload_enabled", _enabled_by_default()))
     except Exception:
         pass
     return {"enabled": enabled, "degraded": _degraded, "recent_events": list(_last_events)}
@@ -417,7 +428,7 @@ async def watch_forever() -> None:
                 try:
                     from bot.config import config
 
-                    if not config.current.get("hot_reload_enabled", True):
+                    if not config.current.get("hot_reload_enabled", _enabled_by_default()):
                         continue
                 except Exception:
                     pass

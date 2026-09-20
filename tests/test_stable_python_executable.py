@@ -16,7 +16,7 @@ from bot import envfile
 
 
 def test_prefers_project_venv_when_it_exists(tmp_path, monkeypatch):
-    monkeypatch.setattr(envfile, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(envfile, "CODE_ROOT", tmp_path)
     monkeypatch.setattr(sys, "platform", "win32")
     venv_python = tmp_path / ".venv" / "Scripts" / "python.exe"
     venv_python.parent.mkdir(parents=True)
@@ -28,7 +28,7 @@ def test_prefers_project_venv_when_it_exists(tmp_path, monkeypatch):
 
 
 def test_falls_back_to_sys_executable_when_no_project_venv(tmp_path, monkeypatch):
-    monkeypatch.setattr(envfile, "PROJECT_ROOT", tmp_path)  # no .venv under here
+    monkeypatch.setattr(envfile, "CODE_ROOT", tmp_path)  # no .venv under here
 
     result = envfile.stable_python_executable()
 
@@ -36,7 +36,7 @@ def test_falls_back_to_sys_executable_when_no_project_venv(tmp_path, monkeypatch
 
 
 def test_uses_unix_layout_on_non_windows(tmp_path, monkeypatch):
-    monkeypatch.setattr(envfile, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(envfile, "CODE_ROOT", tmp_path)
     monkeypatch.setattr(sys, "platform", "linux")
     venv_python = tmp_path / ".venv" / "bin" / "python"
     venv_python.parent.mkdir(parents=True)
@@ -49,11 +49,11 @@ def test_uses_unix_layout_on_non_windows(tmp_path, monkeypatch):
 
 def test_never_returns_a_bundled_release_path(tmp_path, monkeypatch):
     # The whole point: never resolve to a path cargo tauri build would
-    # need to overwrite. Simulate PROJECT_ROOT pointing at a real repo
+    # need to overwrite. Simulate CODE_ROOT pointing at a real repo
     # layout with a bundled build dir but no top-level .venv, and confirm
     # the result is sys.executable (this test's own interpreter), not
     # anything containing "target/release".
-    monkeypatch.setattr(envfile, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(envfile, "CODE_ROOT", tmp_path)
     (tmp_path / "desktop-app" / "src-tauri" / "target" / "release" / ".venv" / "Scripts").mkdir(parents=True)
     bundled = tmp_path / "desktop-app" / "src-tauri" / "target" / "release" / ".venv" / "Scripts" / "python.exe"
     bundled.write_text("", encoding="utf-8")

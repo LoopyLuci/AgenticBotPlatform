@@ -324,7 +324,7 @@ def register_self_mcp(actor: str = "dashboard") -> dict[str, Any]:
     from.
     """
     python = envfile.stable_python_executable()
-    project_root = str(envfile.PROJECT_ROOT)
+    project_root = str(envfile.CODE_ROOT)
     token = os.environ.get("DASHBOARD_TOKEN", "")
     env_vars = {"PYTHONPATH": project_root}
     if token:
