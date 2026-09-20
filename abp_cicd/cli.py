@@ -8,6 +8,8 @@
     python -m abp_cicd decisions | workers | events [--follow] | verify
     python -m abp_cicd export FILE.jsonl   # local store only
     python -m abp_cicd prune DAYS          # local store only
+    python -m abp_cicd tui                 # interactive terminal dashboard
+    python -m abp_cicd gui                 # desktop dashboard window (ABP_CI-CD_GUI)
 
 `--json` prints exactly what the HTTP API returns. Source: `--source local`
 reads the event store directly (no server needed); `--source http` uses
@@ -130,6 +132,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("verify")
     sub.add_parser("export").add_argument("file")
     sub.add_parser("prune").add_argument("days", type=float)
+    sub.add_parser("tui", help="interactive terminal dashboard")
+    g = sub.add_parser("gui", help="desktop dashboard window (ABP_CI-CD_GUI)")
+    g.add_argument("--tab", help="open on this panel (overview, runs, steps, decisions, workers, events, integrity)")
     return p
 
 
@@ -153,6 +158,13 @@ def main(argv: Optional[list[str]] = None) -> int:
                 print(f"pruned {store.prune(args.days)} events older than {args.days:g} days")
             return 0
         t = choose(args.source, args.db, args.url, args.token)
+        if args.cmd == "tui":
+            from .tui import run as run_tui
+            run_tui(t)
+            return 0
+        if args.cmd == "gui":
+            from .gui import launch
+            return launch(t, tab=args.tab)
         if args.cmd == "status":
             _emit(args, t.summary(), render_summary)
         elif args.cmd == "runs":

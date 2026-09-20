@@ -72,6 +72,15 @@ app's own version (the Android app versions independently — see its own
   `/api/cicd/*` serves the same data (with an SSE stream); the API, CLI and
   a local read all go through one service layer and a parity test fails if
   they drift. The installer bundle and Docker image ship the package.
+- **Dashboards for the pipeline (step 2 of `docs/cicd/README.md`).** A terminal
+  dashboard (`python -m abp_cicd tui`) and the native desktop dashboard
+  **ABP_CI-CD_GUI** (`python -m abp_cicd gui`, or double-click
+  `scripts/ABP_CI-CD_GUI.pyw`), with an overview, runs with a step timeline
+  (Gantt) and a plain-language explanation, step-timing statistics, decisions,
+  ML worker status (stale when silent), a live event tail, and log-integrity
+  verification. Both are built from one set of panel definitions and charts
+  drawn through a toolkit-independent painter; tests fail if either client lacks
+  a panel or a service capability is shown nowhere.
 - The Rust check rebuilds the staged bundle when a bundled resource is
   missing (previously a confusing `tauri_build` failure after a resource was
   added).

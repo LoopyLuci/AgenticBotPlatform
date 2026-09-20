@@ -1,8 +1,9 @@
 # ABP CI/CD platform — design
 
-> **Status: design, mostly not built.** This page is the agreed plan. Every
-> section says what exists today and what does not, so nothing here should be
-> read as a description of current behaviour. Settings for the planned features
+> **Status: build steps 1-2 are done; the rest is design.** This page is the agreed
+> plan. The table below and each section say what exists today and what does not,
+> so nothing here should be read as a description of current behaviour unless it
+> is marked **Built**. Settings for the planned features
 > are specified in [configuration.md](configuration.md).
 
 ## What exists today
@@ -18,7 +19,8 @@
 | Release and pipeline runs recorded as traces (steps, timings, decisions, rollbacks, flaky re-runs) | **Built** (build step 1) |
 | Control-plane API `/api/cicd/*` (summary, runs, run detail, explain, step stats, decisions, workers, events, SSE stream, chain check) | **Built** (build step 1) |
 | CLI `python -m abp_cicd` (local or over HTTP, `--json` identical to the API) and the parity test between service, API and CLI | **Built** (build step 1) |
-| TUI, `ABP_CI-CD_GUI`, ML workers, update policy engine, A/B slots, standby instance | **Not built** — this document |
+| Terminal dashboard (`python -m abp_cicd tui`, Textual) and the native desktop dashboard `ABP_CI-CD_GUI` (`python -m abp_cicd gui`, or double-click `scripts/ABP_CI-CD_GUI.pyw`; Tkinter), both built from the same panel definitions, with a parity test | **Built** (build step 2) |
+| ML workers, update policy engine, A/B slots, standby instance | **Not built** — this document |
 
 ## Principles
 
@@ -91,8 +93,9 @@ pipeline do that?" from data.
 
 ### ABP_CI-CD_GUI, CLI and TUI
 
-- **GUI**: native Python, launched as `python -m abp_cicd.gui` (or a desktop
-  shortcut). It only talks to the API, so it also works against a remote server.
+- **GUI**: native Python (Tkinter), launched as `python -m abp_cicd gui`, `python -m abp_cicd.gui`
+  or by double-clicking `scripts/ABP_CI-CD_GUI.pyw`. It reads through a transport (local store or HTTP),
+  so it also works against a remote server. It is DPI-aware and fetches on a background thread.
 - **CLI**: `abp-cicd status | runs | run <id> | workers | models | decisions |
   policy | snapshot | update`, with `--json` on every command.
 - **TUI**: Textual, same panels, live via SSE.
