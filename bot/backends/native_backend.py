@@ -21,12 +21,14 @@ import time
 import uuid
 from typing import Optional
 
+from bot.agent_runtime import loop_guard, toolspec
 from bot.agent_runtime.transports.base import ProviderTransport
 from bot.backends.base import Backend, BackendError, BackendResult
 
 logger = logging.getLogger("bot.backends.native")
 
-MAX_TOOL_ITERATIONS = 20
+# Kept for anything that imported it; the real limit is native_agent.limits (see loop_guard.py).
+MAX_TOOL_ITERATIONS = loop_guard.DEFAULT_MAX_ITERATIONS
 
 
 class NativeAgentBackend(Backend):
@@ -184,6 +186,13 @@ class NativeAgentBackend(Backend):
             trace.active().note("history compacted")
 
         history = db.list_agent_messages(session_key)
+        dangling =self.transport.dangling_tool_calls(history) if hasattr(self.transport, "dangling_tool_calls") else []
+        if dangling:
+            # A previous turn was cut off after the model asked for tools; answer those calls so the
+            # provider accepts the conversation again.
+            for entry in self.transport.tool_result_messages([(tc, "Cancelled: this call did not finish.") for tc in dangling]):
+                history.append(entry)
+                db.append_agent_message(session_key, entry["role"], entry["content"])
         user_entry = self.transport.user_message(prompt_text, images=image_blocks or None, documents=document_blocks or None)
         history.append(user_entry)
         db.append_agent_message(session_key, user_entry["role"], user_entry["content"])
@@ -274,7 +283,16 @@ class NativeAgentBackend(Backend):
         # a value, rather than starting at 0.
         cache_creation_tokens: Optional[int] = None
         cache_read_tokens: Optional[int] = None
-        for _ in range(MAX_TOOL_ITERATIONS):
+        watch = loop_guard.Watchdog(loop_guard.limits())
+        while True:
+            stop_reason = watch.before_call(total_tokens)
+            if stop_reason:
+                trace.active().note(f"stopped: {stop_reason}", level="warn")
+                return await self._wrap_up(
+                    stop_reason, history=history, transport=active_transport, model=active_model,
+                    system_prompt=system_prompt, effort=effort, timeout_s=timeout_s, session_key=session_key,
+                    total_tokens=total_tokens, lazily_created=lazily_created,
+                )
             if steer_queue is not None:
                 steered = []
                 while not steer_queue.empty():
@@ -343,26 +361,69 @@ class NativeAgentBackend(Backend):
                     raw["cache_read_tokens"] = cache_read_tokens
                 return BackendResult(text=response.text, tokens=total_tokens or None, raw=raw)
 
-            results = []
-            for tc in response.tool_calls:
+            results: list = []
+
+            async def _one(tc):
                 if progress is not None:
                     try:
                         await progress(_progress_line(tc.name, tc.arguments))
                     except Exception:
                         logger.exception("progress_notify callback failed")
-                output = await tool_loop.run_one_tool(
+                return await tool_loop.run_one_tool(
                     tc.name, tc.arguments, workspace=workspace,
                     instance_id=instance_id, chat_id=chat_id, session_key=session_key,
                     notify=notify, agent_tools=agent_tools, agent_approval=agent_approval,
                     device_tier=device_tier,
                 )
-                results.append((tc, output))
 
+            try:
+                await loop_guard.run_calls(response.tool_calls, _one, toolspec.is_concurrency_safe, results)
+            except BaseException:
+                # Cancelled (or failed) part-way: every tool call the model made still needs an
+                # answer in the history, or the next turn is rejected by the provider.
+                done = {id(tc) for tc, _ in results}
+                for tc in response.tool_calls:
+                    if id(tc) not in done:
+                        results.append((tc, "Cancelled: this call did not finish."))
+                for entry in active_transport.tool_result_messages(results):
+                    history.append(entry)
+                    db.append_agent_message(session_key, entry["role"], entry["content"])
+                raise
+
+            notes = watch.after_round(results)
+            results = [(tc, out + note) for (tc, out), note in zip(results, notes)]
             for entry in active_transport.tool_result_messages(results):
                 history.append(entry)
                 db.append_agent_message(session_key, entry["role"], entry["content"])
 
-        raise BackendError(f"agent loop exceeded {MAX_TOOL_ITERATIONS} tool calls without a final answer")
+    async def _wrap_up(self, reason: str, *, history: list, transport, model: str, system_prompt: str, effort,
+                       timeout_s: float, session_key: str, total_tokens: int, lazily_created: bool) -> BackendResult:
+        """A turn hit a limit or got stuck. Ask for a short summary with no tools, and return it as the
+        reply. Nothing is lost: the session keeps every step, so "continue" resumes."""
+        from bot import db
+
+        raw: dict = {"total_tokens": total_tokens, "stopped": reason}
+        if lazily_created:
+            raw["desktop_session_key"] = session_key
+        prompt = (f"[The turn was stopped because {reason}. In a few sentences, say what you have done so far and "
+                  "what remains. Do not call tools.]")
+        try:
+            entry = transport.user_message(prompt)
+            history.append(entry)
+            db.append_agent_message(session_key, entry["role"], entry["content"])
+            response = await transport.send(
+                model=model, history=history, tool_schemas=[], max_tokens=self.max_tokens, timeout_s=timeout_s,
+                system_prompt=system_prompt, effort=effort,
+            )
+            db.append_agent_message(session_key, response.assistant_message["role"], response.assistant_message["content"])
+            text = response.text.strip()
+            if response.tokens:
+                raw["total_tokens"] = total_tokens + response.tokens
+        except Exception:  # noqa: BLE001 - the summary is a courtesy; failing to get one must not lose the turn
+            logger.exception("native backend: could not get a wrap-up summary")
+            text = ""
+        notice = f"(Stopped: {reason}. Say \"continue\" to carry on.)"
+        return BackendResult(text=f"{text}\n\n{notice}" if text else notice, tokens=raw["total_tokens"] or None, raw=raw)
 
     async def _run_plan_gate(
         self, *, history: list, system_prompt: str, effort, timeout_s: float,

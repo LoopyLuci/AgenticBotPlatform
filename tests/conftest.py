@@ -47,6 +47,7 @@ def _isolated_cicd_event_store(monkeypatch, tmp_path):
     monkeypatch.setenv("ABP_CICD_DB", str(tmp_path / "cicd-events.db"))
     # Same for agent traces (bot/agent_runtime/trace.py): every native-agent turn records one.
     monkeypatch.setenv("ABP_AGENT_TRACE_DB", str(tmp_path / "agent-traces.db"))
+    monkeypatch.setenv("ABP_AGENT_STATE_DIR", str(tmp_path / "agent-state"))
     monkeypatch.delenv("ABP_CICD_RUN", raising=False)
 
 

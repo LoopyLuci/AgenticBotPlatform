@@ -114,6 +114,14 @@ class OpenAICompatibleTransport(ProviderTransport):
             blocks.append({"type": "image_url", "image_url": {"url": f"data:{img['mime_type']};base64,{img['data_b64']}"}})
         return {"role": "user", "content": blocks}
 
+    def dangling_tool_calls(self, history: list[dict]) -> list[ToolCall]:
+        if not history or history[-1].get("role") != "assistant":
+            return []
+        payload = history[-1].get("content")
+        calls = payload.get("tool_calls") if isinstance(payload, dict) else None
+        return [ToolCall(id=c.get("id"), name=(c.get("function") or {}).get("name", ""), arguments={})
+                for c in (calls or []) if c.get("id")]
+
     def tool_result_messages(self, results: list[tuple[ToolCall, str]]) -> list[dict]:
         return [{"role": "tool", "content": {"tool_call_id": tc.id, "content": output}} for tc, output in results]
 

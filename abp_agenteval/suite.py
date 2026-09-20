@@ -18,7 +18,7 @@ _TEST = ("from mathutil import add\n"
          "print('ok')\n")
 
 
-def seed_suite() -> list[Task]:
+def _base_suite() -> list[Task]:
     return [
         Task(
             id="create_file", category="files", title="Create a file with exact content",
@@ -88,3 +88,9 @@ def seed_suite() -> list[Task]:
                      g.within_iterations(3)],
         ),
     ]
+
+
+def seed_suite() -> list[Task]:
+    from .suite_p1 import p1_suite
+
+    return _base_suite() + p1_suite()

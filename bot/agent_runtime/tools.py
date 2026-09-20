@@ -24,6 +24,8 @@ import json as _json_module
 from pathlib import Path
 from typing import Any, Optional
 
+from bot.agent_runtime.errors import ToolError, safe_path  # noqa: E402 - shared with tool modules
+
 from bot.envfile import PROJECT_ROOT
 
 
@@ -132,25 +134,45 @@ def _redact_credentials(credentials: dict) -> dict:
 TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": "run_shell",
-        "description": "Run a shell command in the session's working directory. Requires human approval.",
+        "description": (
+            "Run a shell command in the session's working directory. Requires human approval. Each call is a "
+            "fresh shell (cd and exported variables do not carry over); use cwd to run in a sub-folder. "
+            "Commands stop after timeout seconds (default 60, at most 600). For anything long-running - a dev "
+            "server, a watcher, a big build - pass background=true: it returns a job id at once; read output "
+            "with shell_output, stop it with shell_kill."
+        ),
         "input_schema": {
             "type": "object",
-            "properties": {"command": {"type": "string", "description": "The shell command to run."}},
+            "properties": {
+                "command": {"type": "string", "description": "The shell command to run."},
+                "timeout": {"type": "integer", "description": "Seconds before it is stopped (default 60, max 600)."},
+                "cwd": {"type": "string", "description": "Folder to run in, inside the working directory."},
+                "background": {"type": "boolean", "description": "Start it and return a job id immediately."},
+            },
             "required": ["command"],
         },
     },
     {
         "name": "read_file",
-        "description": "Read a text file's contents, relative to the working directory.",
+        "description": (
+            "Read a file, relative to the working directory. Text files come back as they are; add offset (first "
+            "line, 1-based) and limit (number of lines) for a slice of a long file, or line_numbers for numbered "
+            "lines. Notebooks (.ipynb) are shown as cells. Read a file before changing it."
+        ),
         "input_schema": {
             "type": "object",
-            "properties": {"path": {"type": "string"}},
+            "properties": {
+                "path": {"type": "string"},
+                "offset": {"type": "integer", "description": "First line to show (1-based)."},
+                "limit": {"type": "integer", "description": "How many lines to show."},
+                "line_numbers": {"type": "boolean"},
+            },
             "required": ["path"],
         },
     },
     {
         "name": "write_file",
-        "description": "Write (overwrite) a text file, relative to the working directory. Creates parent directories as needed. Requires human approval.",
+        "description": "Write (overwrite) a text file, relative to the working directory. Creates parent directories as needed. An existing file must have been read first; to change part of a file prefer edit_file. Requires human approval.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -895,10 +917,6 @@ def is_dangerous(name: str) -> bool:
     return name in DANGEROUS_TOOLS or toolspec.registered_dangerous(name) or plugin_registry.is_dangerous_tool(name)
 
 
-class ToolError(Exception):
-    pass
-
-
 def resolve_workspace(instance_id: int, cwd_override: Optional[str]) -> Path:
     if cwd_override:
         path = Path(cwd_override).expanduser().resolve()
@@ -909,13 +927,7 @@ def resolve_workspace(instance_id: int, cwd_override: Optional[str]) -> Path:
     return path
 
 
-def _safe_path(workspace: Path, rel_path: str) -> Path:
-    candidate = (workspace / rel_path).resolve() if not Path(rel_path).is_absolute() else Path(rel_path).resolve()
-    try:
-        candidate.relative_to(workspace)
-    except ValueError:
-        raise ToolError(f"path {rel_path!r} is outside the working directory ({workspace})")
-    return candidate
+_safe_path = safe_path
 
 
 async def _run_subprocess(args: list[str], cwd: Path) -> str:
@@ -956,27 +968,37 @@ async def execute_tool(
         )
 
     if name == "run_shell":
-        command = tool_input.get("command") or ""
-        if not command.strip():
-            raise ToolError("command can't be empty")
-        return await _run_subprocess([command], workspace)
+        from bot.agent_runtime import shell
+
+        return await shell.run_command(
+            tool_input.get("command") or "", workspace=workspace, cwd=tool_input.get("cwd"),
+            timeout=tool_input.get("timeout") if tool_input.get("timeout") is not None else SHELL_TIMEOUT_S,
+            background=bool(tool_input.get("background")),
+        )
 
     if name == "read_file":
-        path = _safe_path(workspace, tool_input.get("path") or "")
+        from bot.agent_runtime import coding_tools
+
+        rel = tool_input.get("path") or ""
+        path = _safe_path(workspace, rel)
         if not path.exists():
             raise ToolError(f"{tool_input.get('path')!r} does not exist")
         if not path.is_file():
             raise ToolError(f"{tool_input.get('path')!r} is not a file")
-        text = path.read_text(encoding="utf-8", errors="replace")
-        if len(text) > MAX_READ_CHARS:
-            text = text[:MAX_READ_CHARS] + f"\n… truncated ({len(text)} chars total)"
-        return text
+        return coding_tools.read_text(
+            path, rel, offset=tool_input.get("offset"), limit=tool_input.get("limit"),
+            numbered=bool(tool_input.get("line_numbers")), max_chars=MAX_READ_CHARS,
+        )
 
     if name == "write_file":
+        from bot.agent_runtime import coding_tools
+
         path = _safe_path(workspace, tool_input.get("path") or "")
         content = tool_input.get("content", "")
+        coding_tools.check_overwrite(path, tool_input.get("path") or "")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
+        coding_tools.record_read(path)
         return f"Wrote {len(content)} chars to {tool_input.get('path')}"
 
     if name == "list_dir":
@@ -1816,3 +1838,9 @@ async def execute_tool(
         return await mcp_client.call_tool(name, tool_input)
 
     raise ToolError(f"unknown tool {name!r}")
+
+
+# Tools that register themselves (schema + spec + handler in one place; see toolspec.py).
+from bot.agent_runtime import coding_tools as _coding_tools  # noqa: E402,F401
+from bot.agent_runtime import shell as _shell  # noqa: E402,F401
+from bot.agent_runtime import web as _web  # noqa: E402,F401

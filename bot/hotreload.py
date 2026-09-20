@@ -91,6 +91,12 @@ DENYLIST: frozenset[str] = frozenset({
     # stores; toolspec.py holds the registry of registered tools. A reload would drop
     # both while runs and registrations made against the old objects are still live.
     "bot.agent_runtime.trace", "bot.agent_runtime.toolspec",
+    # coding_tools.py keeps per-session read tracking and registers tools at import time.
+    "bot.agent_runtime.coding_tools", "bot.agent_runtime.shell",  # shell.py holds the live background-job table
+    "bot.agent_runtime.web",  # registers its tools at import time
+    # errors.py defines ToolError, which callers catch by identity: a reloaded copy would
+    # be a different class and their `except ToolError` would stop matching.
+    "bot.agent_runtime.errors", "bot.agent_runtime.state",
     "bot.hotreload",  # never reload the reloader mid-cycle
     "bot.mcp_server",  # a separate process (python -m bot.mcp_server); not part of this one anyway
     "bot.tui.app", "bot.tui.client", "bot.tui.__main__",  # a separate process (python -m bot.tui); not part of this one anyway
@@ -217,6 +223,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.agent_runtime.compression",  # depends on transports.base's ProviderTransport type only; pure function, no state
     "bot.agent_runtime.hooks",  # pure functions, no module-level state — only imported lazily inside tool_loop.py/native_backend.py
     "bot.agent_runtime.prompt",  # pure functions over config, no state — only imported lazily inside native_backend.py::ask()
+    "bot.agent_runtime.loop_guard",  # pure functions plus a per-turn Watchdog object; no module state
     "bot.backends.native_backend",
     "bot.agent_runtime.tools",
     "bot.agent_runtime.checkpoints",
