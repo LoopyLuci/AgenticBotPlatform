@@ -51,3 +51,7 @@ PLAN.md
 *.key
 *.jks
 *.keystore
+
+# Release/pipeline coordination state (see scripts/release_guard.py)
+/.pipeline.lock
+/.release_journal.json

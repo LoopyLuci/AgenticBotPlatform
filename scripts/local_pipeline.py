@@ -51,12 +51,16 @@ import datetime
 import io
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import release_guard  # noqa: E402  (shared pre-flight / lock-healing helpers)
 
 ROOT = Path(__file__).resolve().parent.parent
 IS_WINDOWS = platform.system() == "Windows"
@@ -95,14 +99,31 @@ def _venv_python() -> str:
     return str(py) if py.exists() else sys.executable
 
 
-def _run(cmd: list[str], cwd: Optional[Path] = None, retries: int = 0) -> tuple[bool, str]:
+PYTEST_TIMEOUT = 45 * 60
+BUILD_TIMEOUT = 30 * 60
+# More failures than this is a real regression, not flakiness — don't re-run.
+FLAKY_RERUN_LIMIT = 10
+
+
+def _run(cmd: list[str], cwd: Optional[Path] = None, retries: int = 0,
+         timeout: Optional[float] = BUILD_TIMEOUT) -> tuple[bool, str]:
     """Runs `cmd`, returning (ok, combined output). Retries on failure — a
     transient file lock (e.g. an antivirus scan mid-build) shouldn't fail
-    the whole pipeline the way a real compile error should."""
+    the whole pipeline the way a real compile error should. A step that hangs
+    is killed after `timeout` and reported as a failure instead of wedging the
+    push forever."""
     attempt = 0
     result = None
     while True:
-        result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+        try:
+            result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            partial = exc.stdout or ""
+            if isinstance(partial, bytes):
+                partial = partial.decode("utf-8", "replace")
+            return False, f"{' '.join(cmd)}: timed out after {timeout:.0f}s\n{partial[-2000:]}"
+        except FileNotFoundError:
+            return False, f"{cmd[0]}: not found"
         if result.returncode == 0 or attempt >= retries:
             break
         attempt += 1
@@ -291,10 +312,24 @@ def check_python() -> bool:
         return False
     Step.ok("every .py file compiles")
 
-    ok, out = _run([py, "-m", "pytest", "-q"], cwd=ROOT)
+    ok, out = _run([py, "-m", "pytest", "-q", "-rf"], cwd=ROOT, timeout=PYTEST_TIMEOUT)
     if not ok:
-        Step.err("pytest failed:\n" + out[-4000:])
-        return False
+        # A test that fails once and passes alone is a flake (a busy port, a
+        # timing race), not a regression: re-run ONLY the failures once. A
+        # real failure fails again and still blocks; a flake is reported, not
+        # silently forgiven.
+        failed_ids = re.findall(r"(?m)^FAILED (\S+)", out)
+        if failed_ids and len(failed_ids) <= FLAKY_RERUN_LIMIT:
+            Step.warn(f"{len(failed_ids)} test(s) failed — re-running just those once to tell a flake from a real failure")
+            ok2, out2 = _run([py, "-m", "pytest", "-q", "-rf", *failed_ids], cwd=ROOT, timeout=PYTEST_TIMEOUT)
+            if not ok2:
+                Step.err("pytest failed (and failed again on re-run):\n" + out2[-4000:])
+                return False
+            Step.warn("passed on re-run — FLAKY, please look at: " + ", ".join(failed_ids))
+            out = out2
+        else:
+            Step.err("pytest failed:\n" + out[-4000:])
+            return False
     Step.ok(out.strip().splitlines()[-1] if out.strip() else "tests passed")
 
     ok, out = _run([py, "-m", "pip_audit", "-r", str(ROOT / "requirements.txt"), "--strict"])
@@ -439,6 +474,27 @@ def main() -> int:
     parser.add_argument("--no-deploy", action="store_true", help="run checks only, skip the rebuild/restart step")
     args = parser.parse_args()
 
+    # The release script runs this whole pipeline once on the release commit
+    # (before tagging) and tells the pre-push hook so. Re-running it — worse,
+    # rebuilding the app over the installer about to be signed and uploaded —
+    # would only add time and risk.
+    passed = release_guard.pipeline_already_passed(ROOT)
+    if passed:
+        print("AgenticBotPlatform local CI/CD pipeline\n"
+              f"  [ok]   already verified at {passed[:10]} by the release gate — nothing to re-run")
+        return 0
+
+    # One pipeline/release at a time. A push made from inside a release is a
+    # descendant of the release process and may re-enter.
+    try:
+        with release_guard.PipelineLock(ROOT / ".pipeline.lock", "pipeline"):
+            return _run_pipeline(args)
+    except release_guard.Busy as exc:
+        print(f"  [ERR]  {exc} — wait for it to finish (or delete .pipeline.lock if it is stale)", file=sys.stderr)
+        return 1
+
+
+def _run_pipeline(args: argparse.Namespace) -> int:
     log_dir = ROOT / "logs" / "local_pipeline"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / f"{datetime.datetime.now():%Y%m%d-%H%M%S}.log"
@@ -499,6 +555,14 @@ def main() -> int:
                            f"it respawns on its own next tool call")
                 stop_mcp_servers(mcp_pids)
                 Step.ok("stopped")
+
+            # Anything else running out of the built app or the staged venv
+            # (an orphaned backend whose parent exe was killed, say) pins files
+            # the rebuild must overwrite — the exact failure that broke a
+            # release. Stop it and prove the files are free.
+            healed = release_guard.heal_locks(ROOT, log=Step.doing)
+            if healed.still_locked:
+                Step.warn("still locked by something outside this repo: " + ", ".join(healed.still_locked[:3]))
 
         results: dict[str, Optional[bool]] = {"python": check_python()}
         results["rust"] = check_rust() if rust_needed else None
