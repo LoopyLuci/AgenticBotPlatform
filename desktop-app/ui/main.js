@@ -184,7 +184,7 @@ function _getToastContainer() {
   if (!_toastContainer || !_toastContainer.isConnected) {
     _toastContainer = document.createElement('div');
     _toastContainer.id = 'toast-container';
-    _toastContainer.style.cssText = 'position:fixed; bottom:20px; left:50%; transform:translateX(-50%); display:flex; flex-direction:column-reverse; gap:8px; align-items:center; z-index:9999; pointer-events:none;';
+    _toastContainer.style.cssText = 'position:fixed; bottom:calc(var(--term-panel-h, 40px) + 20px); left:50%; transform:translateX(-50%); display:flex; flex-direction:column-reverse; gap:8px; align-items:center; z-index:9999; pointer-events:none;';
     document.body.appendChild(_toastContainer);
   }
   return _toastContainer;
@@ -5468,8 +5468,10 @@ function initAndroidPanel() {
       // live to land within a fraction of a pixel of scroll-margin-top
       // on a 75000px-tall page, every time.
       const marginTop = parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
-      const destination = target.getBoundingClientRect().top + window.scrollY - marginTop;
-      window.scrollTo({ top: destination, behavior: 'smooth' });
+      // main (not the window) is the scroller now — measure against it.
+      const scroller = document.querySelector('main');
+      const destination = target.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - marginTop;
+      scroller.scrollTo({ top: destination, behavior: 'smooth' });
       history.replaceState(null, '', a.getAttribute('href'));
       // Reverting content-visibility back to 'auto' too early (a fixed
       // short timeout) re-collapses any section that scrolls back
@@ -5484,7 +5486,7 @@ function initAndroidPanel() {
         settled = true;
         sections.forEach((sec) => { sec.style.contentVisibility = ''; });
       };
-      window.addEventListener('scrollend', revert, { once: true });
+      document.querySelector('main').addEventListener('scrollend', revert, { once: true });
       setTimeout(revert, 4000);
     });
   });

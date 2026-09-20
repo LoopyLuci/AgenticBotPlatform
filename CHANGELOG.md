@@ -8,6 +8,27 @@ app's own version (the Android app versions independently — see its own
 
 ## [Unreleased]
 
+### Fixed
+- **The Terminal/Activity bar is now the bottom of the window.** It used to
+  float (`position:fixed`) over a page that scrolled as a whole, with a
+  padding guess to keep content clear of it, so content near the bottom and
+  the lower items of the sidebar could end up underneath it. The window is
+  now a real layout — the sidebar and the content each scroll inside their
+  own space, and the bar is the last row — so nothing can be hidden behind
+  it at any window size or in any bar state (collapsed, open, dragged,
+  maximized). Jump-to-section links and toast messages were updated to match.
+  Checked live at 375, 414, 768, 960, 1366, 1920 and 2560px wide and down to
+  480px tall, in both the dashboard and the desktop UI.
+- **Layouts that overflowed the screen** (found while testing at phone
+  width): the terminal bar's own header was ~430px wide and widened the whole
+  page; `<select>` menus sized themselves to their longest option; form rows
+  couldn't shrink or wrap; tables and long unbreakable strings (e.g.
+  `PreToolUse/PostToolUse/…`) spilled out and were silently clipped by
+  `content-visibility`. The desktop UI's Chat header also sat 24px past the
+  edge at the app's own minimum window width, and its 280px list pane left
+  ~95px for the conversation on a phone. All now wrap, shrink or scroll
+  inside their own space.
+
 ### Added
 - **MIT license.** The repository now carries a `LICENSE` file (it had none,
   which left third parties with no right to use or embed it), and the README,

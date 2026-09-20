@@ -57,7 +57,9 @@
   }
   * { box-sizing:border-box; }
   html { scroll-behavior:smooth; }
-  body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--font-body); font-size:14px; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--font-body); font-size:14px;
+         /* window = [ shell (sidebar + main) ] over [ bottom bar ]; nothing scrolls at this level */
+         height:100vh; height:100dvh; overflow:hidden; display:flex; flex-direction:column; }
   /* NOTE on the collapse toggle deliberately NOT animating grid-template-columns:
      that property is layout-affecting, and this dashboard's main column holds
      genuinely heavy content (live-updating tables, SVG charts, KPI grids) —
@@ -66,14 +68,14 @@
      Snapping the grid instantly and animating only compositor-cheap properties
      (opacity/transform, on .side's own children) keeps the toggle itself
      flawless regardless of how much is on screen in main. */
-  .shell { display:grid; grid-template-columns:220px 1fr; min-height:100vh; }
+  .shell { display:grid; grid-template-columns:220px 1fr; grid-template-rows:minmax(0,1fr); flex:1 1 auto; min-height:0; }
   /* Collapsed rail width scales with the viewport (clamp, not a fixed px)
      so a large desktop/TV-sized window gets a roomier, more legible icon
      rail instead of the same cramped strip a phone would need — "scale
      with the display," not "same tiny size everywhere." */
   html.bs-sidebar-collapsed .shell { grid-template-columns:clamp(64px,6vw,96px) 1fr; }
 
-  .side { position:sticky; top:0; height:100vh; overflow-y:auto; overflow-x:hidden; background:var(--surface); border-right:1px solid var(--line); padding:18px 14px; display:flex; flex-direction:column; gap:22px; transition:transform .22s ease; }
+  .side { position:relative; min-height:0; overflow-y:auto; overflow-x:hidden; background:var(--surface); border-right:1px solid var(--line); padding:18px 14px; display:flex; flex-direction:column; gap:22px; transition:transform .22s ease; }
   .brand { display:flex; align-items:center; gap:9px; padding:2px 6px 10px; border-bottom:1px solid var(--line); }
   .brand .mark { width:clamp(26px,2.2vw,40px); height:clamp(26px,2.2vw,40px); border-radius:22%; flex:none; object-fit:cover; display:block; }
   .brand .name { font-family:var(--font-display); font-weight:700; font-size:15px; letter-spacing:0.01em; white-space:nowrap; overflow:hidden; }
@@ -108,7 +110,8 @@
 
   .side-backdrop { display:none; }
 
-  main { min-width:0; padding:0 0 var(--term-clearance, 60px); }
+  /* main is the page's scroller (not the window), so it ends exactly where the bottom bar begins */
+  main { min-width:0; min-height:0; overflow:auto; overscroll-behavior:contain; outline:none; padding:0 0 24px; }
 
   .mobile-nav-btn { display:none; }
 
@@ -393,15 +396,20 @@
 
   /* ---------------------------------------------------- terminal panel --- */
   .term-panel {
-    position:fixed; left:0; right:0; bottom:0; z-index:400;
+    /* A real row at the bottom of the window (body is a flex column), NOT an
+       overlay: the content above it gets the remaining height and scrolls
+       inside itself, so nothing can ever sit underneath this bar. */
+    position:relative; flex:none; z-index:10;
     display:flex; flex-direction:column;
     height:320px; min-height:120px; max-height:80vh;
     background:var(--surface); border-top:1px solid var(--line);
     box-shadow:0 -8px 24px rgba(0,0,0,.25);
-    transition:transform .18s ease;
   }
-  .term-panel.collapsed { transform:translateY(calc(100% - 40px)); }
-  .term-panel.maximized { height:92vh; }
+  /* !important: dragging the resize handle writes an inline height, which
+     would otherwise beat these state classes. */
+  .term-panel.collapsed { height:40px !important; min-height:40px !important; }
+  .term-panel.collapsed .term-body { display:none; }
+  .term-panel.maximized { height:92vh !important; max-height:none !important; }
   .term-resize-handle { position:absolute; top:-4px; left:0; right:0; height:8px; cursor:ns-resize; z-index:1; }
   .term-header { display:flex; align-items:center; justify-content:space-between; height:40px; flex:none; padding:0 8px 0 4px; border-bottom:1px solid var(--line); background:var(--surface-2); }
   .term-tabs { display:flex; align-items:stretch; height:100%; }
@@ -416,6 +424,35 @@
   .term-body { flex:1; min-height:0; position:relative; }
   .term-view { position:absolute; inset:0; display:none; flex-direction:column; }
   .term-view.active { display:flex; }
+
+  /* ---- Responsive safety net --------------------------------------------
+     Found by driving the page at phone width (375px): the terminal bar's own
+     header (tabs + instance picker + six icon buttons) is ~430px wide and
+     forced the whole page wider; a <select> sizes itself to its widest
+     <option> (~530px); flex form rows can't shrink their inputs below their
+     natural width; and tables have a fixed intrinsic width. Sections use
+     content-visibility:auto, which CLIPS overflow, so those controls were
+     silently cut off rather than scrolling. Nothing below changes a layout
+     that already fits. */
+  select, textarea, input:not([type=checkbox]):not([type=radio]):not([type=range]) { max-width:100%; }
+  .card, .grid > *, .settingrow > * { min-width:0; }
+  .settingrow { flex-wrap:wrap; }
+  /* a long unbreakable token (e.g. PreToolUse/PostToolUse/…, a path, a URL) wraps instead of overflowing */
+  main { overflow-wrap:anywhere; }
+  .wizard-field .row { flex-wrap:wrap; }
+  .wizard-field .row > input, .wizard-field .row > select { flex:1 1 150px; min-width:0; }
+  .term-header, .term-tabs, .term-controls { min-width:0; }
+  .term-header { overflow:hidden; }
+  @media (max-width:980px) {
+    table { display:block; max-width:100%; overflow-x:auto; }
+  }
+  @media (max-width:640px) {
+    .term-tab { padding:0 10px; }
+    .term-instance-select { display:none; }
+    .term-icon-btn { width:26px; }
+    .term-controls { gap:2px; }
+    .term-header { padding:0 4px 0 2px; }
+  }
   #xterm-container { flex:1; padding:6px 10px; min-height:0; }
   #xterm-container .xterm { height:100%; }
 
@@ -525,7 +562,7 @@
     </div>
   </aside>
 
-  <main>
+  <main tabindex="-1">
     <div class="topbar">
       <button class="mobile-nav-btn" id="btn-mobile-nav" type="button" aria-controls="sidenav" aria-expanded="false" title="Open navigation" aria-label="Open navigation">☰</button>
       <div class="title">Overview</div>
@@ -1899,8 +1936,10 @@ async function api(path, opts = {}) {
       // live to land within a fraction of a pixel of scroll-margin-top
       // on a 75000px-tall page, every time.
       const marginTop = parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
-      const destination = target.getBoundingClientRect().top + window.scrollY - marginTop;
-      window.scrollTo({ top: destination, behavior: 'smooth' });
+      // main (not the window) is the scroller now — measure against it.
+      const scroller = document.querySelector('main');
+      const destination = target.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - marginTop;
+      scroller.scrollTo({ top: destination, behavior: 'smooth' });
       history.replaceState(null, '', a.getAttribute('href'));
       // Reverting content-visibility back to 'auto' too early (a fixed
       // short timeout) re-collapses any section that scrolls back
@@ -1915,7 +1954,7 @@ async function api(path, opts = {}) {
         settled = true;
         sections.forEach(function (sec) { sec.style.contentVisibility = ''; });
       };
-      window.addEventListener('scrollend', revert, { once: true });
+      document.querySelector('main').addEventListener('scrollend', revert, { once: true });
       setTimeout(revert, 4000);
     });
   });
@@ -1987,7 +2026,7 @@ function _getToastContainer() {
   if (!_toastContainer || !_toastContainer.isConnected) {
     _toastContainer = document.createElement('div');
     _toastContainer.id = 'toast-container';
-    _toastContainer.style.cssText = 'position:fixed; bottom:20px; left:50%; transform:translateX(-50%); display:flex; flex-direction:column-reverse; gap:8px; align-items:center; z-index:9999; pointer-events:none;';
+    _toastContainer.style.cssText = 'position:fixed; bottom:calc(var(--term-panel-h, 40px) + 20px); left:50%; transform:translateX(-50%); display:flex; flex-direction:column-reverse; gap:8px; align-items:center; z-index:9999; pointer-events:none;';
     document.body.appendChild(_toastContainer);
   }
   return _toastContainer;

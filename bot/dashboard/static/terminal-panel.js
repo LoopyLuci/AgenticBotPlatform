@@ -50,18 +50,16 @@
     btnMinimize.textContent = collapsed ? '⌃' : '━';
     btnMinimize.title = collapsed ? 'Open Terminal' : 'Minimize';
   }
-  // The panel is `position:fixed` over the bottom of the window — an open
-  // (or resized/maximized) panel sits on top of whatever page content is
-  // under it unless `main`'s own bottom padding grows to match. This var
-  // is that clearance, kept in sync with the panel's ACTUAL rendered
-  // height (via getBoundingClientRect, not the CSS class alone) so it
-  // stays correct through collapse, drag-resize, and maximize alike —
-  // see main{padding-bottom:var(--term-clearance,...)} in the stylesheet.
-  function syncClearance() {
-    const collapsed = panel.classList.contains('collapsed');
-    const height = collapsed ? 40 : panel.getBoundingClientRect().height;
-    document.documentElement.style.setProperty('--term-clearance', (height + 20) + 'px');
+  // The panel is a real row at the bottom of the window (body is a flex
+  // column), so the content above it already ends where it begins — nothing
+  // to reserve space for. The one thing that still needs its height is the
+  // fixed-position toast stack, which must sit ABOVE the bar, not on it:
+  // --term-panel-h is kept equal to the panel's actual rendered height
+  // (collapsed, drag-resized, maximized, window-resized alike).
+  function syncPanelHeight() {
+    document.documentElement.style.setProperty('--term-panel-h', panel.getBoundingClientRect().height + 'px');
   }
+  function syncClearance() { syncPanelHeight(); }
   function setCollapsed(collapsed) {
     panel.classList.toggle('collapsed', collapsed);
     updateMinimizeButton();
@@ -101,7 +99,18 @@
       if (dragging) { dragging = false; document.body.style.userSelect = ''; }
     });
   })();
-  window.addEventListener('resize', syncClearance); // maximized height is 92vh — a window resize changes it
+  // Any change to the panel's real size (collapse, drag, maximize, window resize)
+  // re-syncs the toast offset and re-fits the terminal.
+  if (typeof ResizeObserver === 'function') {
+    let queued = false;
+    new ResizeObserver(() => {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => { queued = false; syncPanelHeight(); fitXterm(); });
+    }).observe(panel);
+  } else {
+    window.addEventListener('resize', syncPanelHeight);
+  }
 
   // ------------------------------------------------------------- tabs -----
   function selectTab(name) {
