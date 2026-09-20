@@ -370,6 +370,31 @@ async def live_custom_models() -> Optional[dict[str, list[str]]]:
     return grouped or None
 
 
+async def _fetch_custom_models_with_backoff(
+    name: str, entry: dict, provider_registry, *, force: bool = False,
+) -> Optional[list[str]]:
+    """The Models page's fetch: LIVE for a provider that is working (a model
+    just pulled into Ollama should show up without waiting on a cache), but a
+    provider known to be down is not re-fetched — and not re-logged at WARNING
+    — on every 30s poll. It shares live_custom_models()'s failure/backoff
+    state, so the same dead endpoint backs off once for both. `force` (the
+    page's explicit per-provider Refresh) always tries and always logs."""
+    now = time.monotonic()
+    cached = _custom_cache.get(name)
+    failures = cached.get("failures", 0) if cached is not None else 0
+    if not force and failures > 0:
+        if now - cached["at"] < min(_CUSTOM_CACHE_TTL_S * (2 ** failures), _CUSTOM_CACHE_MAX_TTL_S):
+            return None
+    if failures > 0 and not force:
+        models = await _fetch_custom_models(name, entry, provider_registry, warn=False)
+    else:
+        models = await _fetch_custom_models(name, entry, provider_registry)
+    _custom_cache[name] = {
+        "at": now, "models": models, "failures": 0 if models is not None else failures + 1,
+    }
+    return models
+
+
 async def _fetch_custom_models(name: str, entry: dict, provider_registry, warn: bool = True) -> Optional[list[str]]:
     try:
         import httpx
@@ -495,7 +520,7 @@ async def browse_provider_models(provider_name: str, refresh: bool = False) -> l
         for m in await model_pricing.list_models_for_provider(catalog_id, refresh=refresh):
             by_id[m["id"]] = dict(m)
 
-    live_ids = await _fetch_custom_models(provider_name, entry, provider_registry)
+    live_ids = await _fetch_custom_models_with_backoff(provider_name, entry, provider_registry, force=refresh)
     is_local = _is_local_base_url(entry.get("base_url", ""))
     for model_id in (live_ids or []):
         if model_id not in by_id:
