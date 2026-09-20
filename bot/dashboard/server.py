@@ -482,6 +482,29 @@ def _seed_support_bot_training_ops_skill() -> None:
         pass
 
 
+class _NoCacheStaticFiles(StaticFiles):
+    """Plain StaticFiles sends no Cache-Control header at all, which makes
+    a browser (or a WebView2-embedded one, i.e. the desktop app) apply its
+    own heuristic freshness lifetime from Last-Modified — often long
+    enough that a real page reload keeps serving JS/HTML from BEFORE an
+    app update even though the file on disk changed, with no error and no
+    visible sign anything is stale. Confirmed live: after rebuilding with
+    a real fix, the actual browser-triggered <script> load kept returning
+    the pre-fix bytes (same request that a plain fetch()/curl — bypassing
+    whatever heuristic cache the navigation path used — correctly saw as
+    fresh), while ETag/Last-Modified were already present and correct.
+    `no-cache` (not `no-store`) still lets the ETag-based 304 flow work —
+    a client that already has the current version costs a small cheap
+    revalidation request, not a full re-download — but a client's own
+    cache duration decision is REMOVED as a source of ever seeing stale
+    JS/HTML after an update."""
+
+    def file_response(self, *args, **kwargs) -> Response:
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 def build_app() -> FastAPI:
     _seed_support_bot_training_ops_skill()
 
@@ -561,17 +584,20 @@ def build_app() -> FastAPI:
 
     @app.get("/")
     async def index():
-        return FileResponse(STATIC_DIR / "dashboard.html")
+        return FileResponse(STATIC_DIR / "dashboard.html", headers={"Cache-Control": "no-cache"})
 
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+    app.mount("/static", _NoCacheStaticFiles(directory=str(STATIC_DIR)), name="static")
 
     if DESKTOP_UI_DIR.is_dir():
         # html=True auto-serves index.html at /desktop-ui/ and correctly
         # resolves its relative main.js/assets/* references against this
         # same mount — StaticFiles already reads fresh from disk on every
-        # request (no caching layer), which is the entire "live update"
-        # mechanism this needs, same as the /static mount above.
-        app.mount("/desktop-ui", StaticFiles(directory=str(DESKTOP_UI_DIR), html=True), name="desktop-ui")
+        # request server-side (no server caching layer); _NoCacheStaticFiles
+        # is what stops the CLIENT (a browser's, or WebView2's, own
+        # heuristic cache) from separately deciding to keep serving an
+        # old version anyway — see its own docstring for how that was
+        # confirmed live.
+        app.mount("/desktop-ui", _NoCacheStaticFiles(directory=str(DESKTOP_UI_DIR), html=True), name="desktop-ui")
 
     # ------------------------------------------------------ ops endpoints --
     # Unauthenticated by design, like a load balancer's/orchestrator's health

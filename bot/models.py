@@ -279,6 +279,7 @@ def live_hermes_models() -> Optional[dict[str, list[str]]]:
 
 
 _CUSTOM_CACHE_TTL_S = 300.0
+_CUSTOM_CACHE_MAX_TTL_S = 3600.0  # cap the failure backoff at 1h between retries
 _custom_cache: dict[str, dict] = {}  # provider_name -> {"at": float, "models": Optional[list[str]]}
 
 
@@ -344,11 +345,23 @@ async def live_custom_models() -> Optional[dict[str, list[str]]]:
     grouped: dict[str, list[str]] = {}
     for name, entry in configured.items():
         cached = _custom_cache.get(name)
-        if cached is not None and (now - cached["at"]) < _CUSTOM_CACHE_TTL_S:
+        # A provider that keeps failing gets checked less and less often
+        # instead of every fixed TTL forever (a genuinely offline local
+        # endpoint — Ollama not running, a typo'd base_url — would
+        # otherwise log a WARNING on every single expiry, indefinitely).
+        failures = cached.get("failures", 0) if cached is not None else 0
+        effective_ttl = min(_CUSTOM_CACHE_TTL_S * (2 ** failures), _CUSTOM_CACHE_MAX_TTL_S)
+        if cached is not None and (now - cached["at"]) < effective_ttl:
             models = cached["models"]
         else:
-            models = await _fetch_custom_models(name, entry, provider_registry)
-            _custom_cache[name] = {"at": now, "models": models}
+            if failures > 0:
+                models = await _fetch_custom_models(name, entry, provider_registry, warn=False)
+            else:
+                models = await _fetch_custom_models(name, entry, provider_registry)
+            _custom_cache[name] = {
+                "at": now, "models": models,
+                "failures": 0 if models is not None else failures + 1,
+            }
         if models is not None:
             effective = await _resolve_effective_enabled(name, entry, models)
             visible = [m for m in models if effective.get(m)]
@@ -357,7 +370,7 @@ async def live_custom_models() -> Optional[dict[str, list[str]]]:
     return grouped or None
 
 
-async def _fetch_custom_models(name: str, entry: dict, provider_registry) -> Optional[list[str]]:
+async def _fetch_custom_models(name: str, entry: dict, provider_registry, warn: bool = True) -> Optional[list[str]]:
     try:
         import httpx
 
@@ -380,7 +393,13 @@ async def _fetch_custom_models(name: str, entry: dict, provider_registry) -> Opt
         ids = sorted(m["id"] for m in (data.get("data") or []) if m.get("id"))
         return ids or None
     except Exception as exc:
-        logger.warning("live_custom_models: fetch failed for provider %r: %s", name, exc)
+        # Only the FIRST failure (a fresh problem worth noticing) logs at
+        # WARNING — a provider still down on a later, backed-off retry
+        # logs at DEBUG instead, so an offline local endpoint doesn't
+        # spam the log/Activity tab forever. See live_custom_models()'s
+        # own backoff logic for what decides `warn`.
+        level = logging.WARNING if warn else logging.DEBUG
+        logger.log(level, "live_custom_models: fetch failed for provider %r: %s", name, exc)
         return None
 
 
