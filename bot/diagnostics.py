@@ -47,6 +47,12 @@ MAX_RECENT_EVENTS = 500
 
 
 def _read_app_version() -> str:
+    # The desktop app passes its own version in; an installed copy has no
+    # tauri.conf.json next to bot/ to read it from (crash reports from an
+    # installed machine said "unknown"). The file is the dev-checkout fallback.
+    env_version = os.environ.get("AGENTICBOTPLATFORM_VERSION")
+    if env_version:
+        return env_version
     try:
         conf_path = PROJECT_ROOT / "desktop-app" / "src-tauri" / "tauri.conf.json"
         return json.loads(conf_path.read_text(encoding="utf-8"))["version"]

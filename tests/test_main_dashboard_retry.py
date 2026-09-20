@@ -111,3 +111,23 @@ def test_a_bind_failure_never_escapes_as_an_uncaught_systemexit(monkeypatch):
         await task
 
     asyncio.run(_run())  # must not raise SystemExit
+
+
+def test_later_giveups_from_the_supervisor_are_not_critical(monkeypatch, caplog):
+    """CRITICAL writes a crash report (bot/diagnostics.py). The supervisor
+    retries every 30s while the port stays held — only the first give-up may
+    be CRITICAL, or a held port wrote a crash report every 30 seconds."""
+    FakeServer, _attempts = _make_fake_server_class(fail_times=99)
+    _patch_uvicorn(monkeypatch, FakeServer)
+
+    async def _run():
+        return await bot_main._start_dashboard(
+            dash_app=None, host="127.0.0.1", port=1234, max_attempts=1, retry_delay_s=0.01,
+            giveup_is_critical=False,
+        )
+
+    with caplog.at_level("WARNING", logger="bot.main"):
+        asyncio.run(_run())
+
+    giveups = [r for r in caplog.records if "could not bind" in r.message]
+    assert giveups and all(r.levelname == "WARNING" for r in giveups)
