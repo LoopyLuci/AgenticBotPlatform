@@ -8,6 +8,25 @@ app's own version (the Android app versions independently — see its own
 
 ## [Unreleased]
 
+### Fixed
+- The bottom Terminal/Activity panel covered the bottom of the page
+  whenever it was open: it is `position:fixed` over the window, but the
+  page's bottom padding was a static 80px regardless of the panel's
+  height. The padding now follows the panel's real height (collapse,
+  drag-resize, maximize and window resize), so page content is never
+  hidden behind it.
+- The dashboard and desktop UI's static files (`/`, `/static/*`,
+  `/desktop-ui/*`) were served with no `Cache-Control` header, leaving a
+  browser or the desktop app's embedded webview free to keep running
+  JS/HTML from before an update after a normal reload. They now send
+  `no-cache`; ETag revalidation still returns a cheap 304 when nothing
+  changed.
+- An unreachable custom model provider (a local Ollama that isn't
+  running, a mistyped base URL) logged a WARNING every time its
+  5-minute cache entry expired, forever. Failing providers now back off
+  (up to one hour between retries) and only the first failure in a run
+  logs at WARNING; later ones log at DEBUG until the provider recovers.
+
 ### Added
 - A bot instance (Telegram/Discord/Slack/Matrix/WhatsApp) that crashes
   now restarts itself automatically with backoff instead of sitting
