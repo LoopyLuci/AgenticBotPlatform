@@ -155,6 +155,40 @@ def build_desktop(version: str) -> Path:
     return installer
 
 
+def current_installer(previous: Path) -> Path:
+    """The installer as it is on disk NOW (a push-time rebuild may have
+    replaced the one build_desktop() returned)."""
+    if not previous.is_file():
+        die(f"installer {previous} disappeared after the push — refusing to sign/upload a guess")
+    return previous
+
+
+def verify_published_assets(tag: str, installer: Path, sig: Path) -> None:
+    """After upload: the installer/.sig GitHub recorded must be byte-identical
+    to what was signed, and the signature must verify against the key embedded
+    in the app. Fails loudly (the release exists at this point, so say so)."""
+    import hashlib
+
+    result = subprocess.run(
+        ["gh", "api", f"repos/{{owner}}/{{repo}}/releases/tags/{tag}", "--jq",
+         '.assets[] | "\\(.name) \\(.digest)"'],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        die(f"published {tag} but couldn't read its assets back to verify them: {result.stderr.strip()}")
+    published = dict(line.rsplit(" ", 1) for line in result.stdout.splitlines() if " " in line)
+    for path in (installer, sig):
+        local = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+        if published.get(path.name) != local:
+            die(
+                f"{tag} IS PUBLISHED but the uploaded {path.name} ({published.get(path.name)}) does not match "
+                f"the local file ({local}). Fix it before anyone updates: re-sign and `gh release upload {tag} --clobber`."
+            )
+    if not update_signing.verify(installer.read_bytes(), sig.read_bytes(), update_signing.embedded_public_key()):
+        die(f"{tag} IS PUBLISHED but its signature does not verify against the key embedded in the app.")
+    print(f"verified: published {installer.name} and its signature match and verify")
+
+
 def build_android() -> Path:
     gradlew = ANDROID_DIR / ("gradlew.bat" if IS_WINDOWS else "gradlew")
     if not gradlew.exists():
@@ -193,19 +227,33 @@ def main() -> None:
 
     installer = build_desktop(version)
     # Installed apps refuse an update installer with no valid detached
-    # signature (updater.rs). Sign BEFORE tagging/pushing so a missing or
-    # wrong key stops the release instead of publishing an update nobody
-    # can install. See scripts/update_signing.py.
+    # signature (updater.rs). Prove the signing key is present and matches
+    # the one embedded in the app BEFORE tagging/pushing, so a missing or
+    # wrong key stops the release instead of publishing an update nobody can
+    # install. (Only a dry check here — see below for where it really signs.)
     try:
-        installer_sig = update_signing.sign_installer(installer)
+        update_signing.sign_installer(installer)
     except (FileNotFoundError, ValueError, TypeError) as exc:
         die(f"can't sign the update installer: {exc}")
-    print(f"update signature: {installer_sig}")
     apk = build_android()
 
     run(["git", "tag", tag])
     run(["git", "push"])
     run(["git", "push", "origin", tag])
+
+    # Sign AFTER the pushes, immediately before uploading. The repo's
+    # pre-push hook (scripts/local_pipeline.py) rebuilds the desktop app
+    # during `git push` and that OVERWRITES the installer file — signing
+    # earlier signed bytes that were no longer the ones uploaded, and a
+    # signature that doesn't match its installer makes every installed app
+    # reject the update (this shipped once, in v0.7.24, and was repaired by
+    # hand). Nothing builds between this signature and the upload.
+    installer = current_installer(installer)
+    try:
+        installer_sig = update_signing.sign_installer(installer)
+    except (FileNotFoundError, ValueError, TypeError) as exc:
+        die(f"can't sign the update installer: {exc}")
+    print(f"update signature: {installer_sig}")
 
     run([
         "gh", "release", "create", tag,
@@ -215,6 +263,7 @@ def main() -> None:
         str(installer_sig),
         str(apk),
     ])
+    verify_published_assets(tag, installer, installer_sig)
 
     print(f"\n=== {tag} published ===")
     print(f"  desktop: {installer.name}")
