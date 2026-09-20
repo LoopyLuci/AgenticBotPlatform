@@ -203,9 +203,12 @@ async def run_batch(
 
     allowed_tools = None
     if role == "leaf":
+        from bot.agent_runtime import toolspec
         from bot.agent_runtime.tools import TOOL_SCHEMA_NAMES
 
-        allowed_tools = frozenset(TOOL_SCHEMA_NAMES) - LEAF_BLOCKED_TOOLS
+        # Built-in tools plus the first-class registered ones (edit, search, shell jobs, ...) that
+        # are switched on; never plugin or MCP tools, which a leaf worker has never had.
+        allowed_tools = (frozenset(TOOL_SCHEMA_NAMES) | toolspec.registered_names()) - LEAF_BLOCKED_TOOLS
 
     dispatch = subagent_registry.new_dispatch(parent_instance_id)
     token = _delegation_depth.set(depth + 1)

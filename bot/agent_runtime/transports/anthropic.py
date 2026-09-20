@@ -86,6 +86,15 @@ class AnthropicTransport(ProviderTransport):
         blocks.append({"type": "text", "text": text})
         return {"role": "user", "content": blocks}
 
+    def dangling_tool_calls(self, history: list[dict]) -> list[ToolCall]:
+        if not history or history[-1].get("role") != "assistant":
+            return []
+        content = history[-1].get("content")
+        if not isinstance(content, list):
+            return []
+        return [ToolCall(id=b["id"], name=b.get("name", ""), arguments=b.get("input") or {})
+                for b in content if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("id")]
+
     def tool_result_messages(self, results: list[tuple[ToolCall, str]]) -> list[dict]:
         return [
             {

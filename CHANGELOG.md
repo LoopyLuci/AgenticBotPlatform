@@ -88,6 +88,20 @@ app's own version (the Android app versions independently — see its own
     stream reply text as it is generated, others deliver it whole. A turn given
     `context["stream_notify"]` receives the events; on failover it is told to discard
     what it showed. Dashboards, the desktop app, Android and chat channels adopt it next.
+- **Agent editing, search and shell tools; a sturdier loop (roadmap P1).**
+  New tools for the native agent: `edit_file`, `multi_edit` and `apply_patch` (careful
+  matching, atomic, all-or-nothing), `grep`, `glob`, `todo_write` / `todo_read`, and
+  `shell_output` / `shell_list` / `shell_kill` for background jobs. `run_shell` gains a
+  timeout, a `cwd` and `background`, and stops the whole process tree when it times out or
+  is cancelled. `read_file` gains offset / limit / line numbers and reads notebooks.
+  Changing an existing file now requires that the agent read it first and that it has not
+  changed since. Large tool output is saved in full under `.abp-tool-output/` in the
+  workspace instead of being cut. `web_fetch` / `web_search` exist but are off until
+  `native_agent.web.enabled`. The loop runs consecutive read-only calls in parallel, ends a
+  turn that hits a step / time / token limit (`native_agent.limits`) with a summary rather
+  than an error, notices when the agent is going in circles, answers open tool calls when a
+  turn is cancelled so the session stays valid, and repairs sessions an earlier cancellation
+  left dangling. Not included: an interactive terminal and a shell that remembers `cd`.
 - **CI/CD telemetry and control plane (step 1 of `docs/cicd/README.md`).** New
   dependency-free package `abp_cicd`: an append-only, tamper-evident event
   store (SQLite WAL, hash chain, allow-listed schema with secret redaction,

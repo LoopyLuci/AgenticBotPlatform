@@ -107,3 +107,11 @@ def within_iterations(limit: int) -> Grader:
         n = ctx.trace.get("iterations", 0)
         return Check(f"finished within {limit} model calls", n <= limit, f"took {n}")
     return check
+
+
+def glob_exists(pattern: str, *, label: str = "") -> Grader:
+    """At least one file in the workspace matches the glob (dot-folders included)."""
+    def check(ctx: Context) -> Check:
+        found = list(ctx.workspace.glob(pattern))
+        return Check(label or f"a file matches {pattern}", bool(found), "" if found else "none found")
+    return check

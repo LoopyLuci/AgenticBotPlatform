@@ -29,11 +29,12 @@ def isolated_environment(root: Path, approvals: dict[str, str]):
     from bot.agent_runtime import approval, tool_loop
 
     saved = (db_module.DB_PATH, db_module._conn, os.environ.get("ABP_AGENT_TRACE_DB"),
-             approval.request_approval, tool_loop.try_checkpoint)
+             approval.request_approval, tool_loop.try_checkpoint, os.environ.get("ABP_AGENT_STATE_DIR"))
     db_module.DB_PATH = root / "eval.db"
     db_module._conn = None
     db_module.init_db()
     os.environ["ABP_AGENT_TRACE_DB"] = str(root / "traces.db")
+    os.environ["ABP_AGENT_STATE_DIR"] = str(root / "state")      # todo lists and other agent state stay in the throwaway root
 
     async def policy(instance_id, chat_id, session_key, tool_name, tool_input, notify, timeout_s=0):
         return "deny" if approvals.get(tool_name) == "deny" else "once"
@@ -54,6 +55,10 @@ def isolated_environment(root: Path, approvals: dict[str, str]):
         else:
             os.environ["ABP_AGENT_TRACE_DB"] = saved[2]
         approval.request_approval, tool_loop.try_checkpoint = saved[3], saved[4]
+        if saved[5] is None:
+            os.environ.pop("ABP_AGENT_STATE_DIR", None)
+        else:
+            os.environ["ABP_AGENT_STATE_DIR"] = saved[5]
 
 
 def _materialise(base: Path, files: dict[str, str]) -> None:

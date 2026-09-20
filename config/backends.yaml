@@ -103,6 +103,26 @@ native_agent:
     guidance: true
     environment: true
     extra: ""
+  # Limits for one turn of the agent loop (bot/agent_runtime/loop_guard.py); 0 turns a
+  # limit off. Reaching one is not an error: the agent summarises what is done and what
+  # remains, and "continue" picks up where it stopped.
+  limits:
+    max_iterations: 30
+    max_seconds: 0
+    max_tokens: 0
+  # Changing an existing file (edit_file, apply_patch, write_file over a file) requires
+  # that the agent read it earlier in the session and that it has not changed since.
+  require_read_before_write: true
+  # web_fetch / web_search (bot/agent_runtime/web.py). Off by default. When on, web_fetch
+  # reaches only the public internet and marks everything it returns as untrusted;
+  # web_search additionally needs a provider:
+  #   search: {provider: searxng, base_url: "http://127.0.0.1:8080"}
+  #   search: {provider: brave, api_key_env: BRAVE_API_KEY}     # or tavily
+  # deny_hosts / allow_hosts take exact hosts or *.suffix patterns.
+  web:
+    enabled: false
+    deny_hosts: []
+    allow_hosts: []
   max_concurrent_children: 6
   # Process-wide ceiling on live spawn_subagent children across EVERY
   # dispatch, not just one call's own max_concurrent_children — closes a

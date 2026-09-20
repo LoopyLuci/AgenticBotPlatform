@@ -18,7 +18,10 @@ get conservative defaults. New first-class tools (P1 onward) register through
 
 from __future__ import annotations
 
+import contextvars
+import hashlib
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
 PERMISSIONS = ("read", "write", "execute", "network", "agent", "config", "admin", "external")
@@ -39,6 +42,10 @@ class ToolSpec:
     concurrency_safe: bool = False
     max_output_chars: int = DEFAULT_MAX_OUTPUT_CHARS
     origin: str = "builtin"          # builtin | registered | plugin | mcp
+    # None = derive from read_only (anything that can change something asks first).
+    # A registered tool may say False for a change that is safe to make unprompted
+    # (its own scratch state), or True for a read that is sensitive.
+    needs_approval: Optional[bool] = None
 
     def __post_init__(self) -> None:
         if self.permission not in PERMISSIONS:
@@ -77,7 +84,19 @@ _BUILTIN: dict[str, tuple[str, bool, bool]] = {
              "admin_desktop_stop", "admin_desktop_restart"),
 }
 
-_registered: dict[str, tuple[dict, ToolSpec, Handler]] = {}
+# Output ceilings tighter than the default, for tools whose output is bulky and rarely all useful.
+_CAPS: dict[str, int] = {"run_shell": 12_000, "git_diff": 20_000}
+
+_registered: dict[str, tuple[dict, ToolSpec, Handler, Optional[Callable[[], bool]]]] = {}
+
+# The session a tool call belongs to, set by the tool loop around each call so a
+# handler (todo list, background jobs, file-read tracking) can key its state without
+# every tool signature growing a parameter.
+session_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("tool_session", default=None)
+
+
+def current_session() -> str:
+    return session_var.get() or "default"
 
 
 def builtin_names() -> frozenset[str]:
@@ -91,7 +110,8 @@ def spec_for(name: str) -> ToolSpec:
         return _registered[name][1]
     if name in _BUILTIN:
         permission, read_only, concurrency_safe = _BUILTIN[name]
-        return ToolSpec(name, permission, read_only, concurrency_safe)
+        return ToolSpec(name, permission, read_only, concurrency_safe,
+                        max_output_chars=_CAPS.get(name, DEFAULT_MAX_OUTPUT_CHARS))
     origin = "plugin" if _is_plugin(name) else "mcp" if _is_mcp(name) else "external"
     return ToolSpec(name, "external", origin=origin)
 
@@ -122,39 +142,78 @@ def is_concurrency_safe(name: str) -> bool:
     return spec_for(name).concurrency_safe
 
 
-def limit_output(name: str, text: str) -> str:
+SPILL_DIR = ".abp-tool-output"
+
+
+def _spill(workspace: Path, name: str, text: str) -> Optional[str]:
+    """Save the full text inside the workspace (so read_file and grep can reach it) and
+    return its relative path. The folder carries its own .gitignore so it never lands in a commit."""
+    try:
+        folder = Path(workspace) / SPILL_DIR
+        folder.mkdir(parents=True, exist_ok=True)
+        gi = folder / ".gitignore"
+        if not gi.exists():
+            gi.write_text("*" + chr(10), encoding="utf-8")
+        digest = hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()[:10]
+        target = folder / f"{name}-{digest}.txt"
+        if not target.exists():
+            target.write_text(text, encoding="utf-8", errors="replace")
+        return f"{SPILL_DIR}/{target.name}"
+    except OSError:
+        return None
+
+
+def limit_output(name: str, text: str, workspace: Optional[Path] = None) -> str:
     """Cap what a tool call puts into the context. Cuts at the ceiling and says so,
-    keeping the tail too — for command and log output the end is usually what matters."""
+    keeping the tail too - for command and log output the end is usually what matters.
+    With a workspace the full text is saved and the note says where, so nothing is lost."""
     cap = spec_for(name).max_output_chars
     if not isinstance(text, str) or len(text) <= cap:
         return text
     head = int(cap * 0.7)
     tail = cap - head
     omitted = len(text) - head - tail
-    return f"{text[:head]}\n… [{omitted} characters omitted] …\n{text[-tail:]}"
+    saved = _spill(workspace, name, text) if workspace is not None else None
+    where = (f"; the full output is saved at {saved} - use read_file with offset/limit or grep to look at it"
+             if saved else "")
+    return f"{text[:head]}\n... [{omitted} characters omitted{where}] ...\n{text[-tail:]}"
 
 
 # ---- first-class registered tools (P1 onward) ---------------------------------
-def register(schema: dict, spec: ToolSpec, handler: Handler) -> None:
+def register(schema: dict, spec: ToolSpec, handler: Handler, enabled: Optional[Callable[[], bool]] = None) -> None:
     """Add a tool: its schema, its spec and its handler in one place. The handler is
-    `async def handler(tool_input, *, workspace, instance_id, device_tier) -> str`."""
+    `async def handler(tool_input, *, workspace, instance_id, device_tier) -> str`.
+    `enabled`, if given, is checked each turn: a tool that is switched off is neither
+    offered to the model nor callable."""
     if schema.get("name") != spec.name:
         raise ValueError("schema name and spec name differ")
     if spec.name in _BUILTIN:
         raise ValueError(f"{spec.name!r} is already a built-in tool")
-    _registered[spec.name] = (schema, spec, handler)
+    _registered[spec.name] = (schema, spec, handler, enabled)
 
 
 def unregister(name: str) -> None:
     _registered.pop(name, None)
 
 
+def _on(entry: tuple) -> bool:
+    try:
+        return entry[3] is None or bool(entry[3]())
+    except Exception:  # noqa: BLE001 - a broken switch must not take the turn down
+        return False
+
+
 def registered_schemas() -> list[dict[str, Any]]:
-    return [entry[0] for entry in _registered.values()]
+    return [entry[0] for entry in _registered.values() if _on(entry)]
+
+
+def registered_names() -> frozenset[str]:
+    """Names of the registered tools that are currently switched on."""
+    return frozenset(name for name, entry in _registered.items() if _on(entry))
 
 
 def has_handler(name: str) -> bool:
-    return name in _registered
+    return name in _registered and _on(_registered[name])
 
 
 async def dispatch(name: str, tool_input: dict, **context: Any) -> str:
@@ -162,6 +221,9 @@ async def dispatch(name: str, tool_input: dict, **context: Any) -> str:
 
 
 def registered_dangerous(name: str) -> bool:
-    """A registered tool needs approval unless it is read-only."""
+    """Whether a registered tool must be approved before it runs."""
     entry: Optional[tuple] = _registered.get(name)
-    return bool(entry and not entry[1].read_only)
+    if not entry:
+        return False
+    spec = entry[1]
+    return spec.needs_approval if spec.needs_approval is not None else not spec.read_only

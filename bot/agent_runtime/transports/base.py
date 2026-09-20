@@ -143,6 +143,12 @@ class ProviderTransport:
         transport declares support — see NativeAgentBackend.ask())."""
         raise NotImplementedError
 
+    def dangling_tool_calls(self, history: list[dict]) -> list[ToolCall]:
+        """Tool calls at the end of `history` that no result answers (a turn that was cut off
+        after the model asked for tools). Providers reject a conversation in that state, so the
+        loop answers them before continuing. The base implementation finds none."""
+        return []
+
     def tool_result_messages(self, results: list[tuple[ToolCall, str]]) -> list[dict]:
         """One or more stored-history entries carrying this iteration's
         tool outputs back to the model — some protocols (Anthropic) batch

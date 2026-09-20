@@ -59,7 +59,8 @@ async def _run_one_tool(
         # assignment itself already represents standing consent. Never
         # applies to a hook-driven "ask" escalation, and never to any OTHER
         # dangerous tool (admin_* actions stay approval-gated regardless).
-        unrestricted_relaxation = device_tier == "unrestricted" and name in ("run_shell", "write_file")
+        unrestricted_relaxation = device_tier == "unrestricted" and name in (
+            "run_shell", "write_file", "edit_file", "multi_edit", "apply_patch")
         if (agent_tools.is_dangerous(name) and not unrestricted_relaxation) or decision == "ask":
             if notify is None:
                 # No chat to ask — approval.request_approval still waits out
@@ -81,12 +82,16 @@ async def _run_one_tool(
                 return "Denied by user."
         elif unrestricted_relaxation:
             outcome["approval"] = "tier"
-        output = await agent_tools.execute_tool(
-            name, tool_input, workspace=workspace, instance_id=instance_id, device_tier=device_tier
-        )
+        session_token = toolspec.session_var.set(session_key)
+        try:
+            output = await agent_tools.execute_tool(
+                name, tool_input, workspace=workspace, instance_id=instance_id, device_tier=device_tier
+            )
+        finally:
+            toolspec.session_var.reset(session_token)
         if agent_tools.is_dangerous(name):
             try_checkpoint(workspace, name, tool_input)
-        output = toolspec.limit_output(name, output)
+        output = toolspec.limit_output(name, output, workspace)
         await hooks.run_post_tool_use(name, tool_input, output, instance_id=instance_id)
         return output
     except agent_tools.ToolError as exc:
