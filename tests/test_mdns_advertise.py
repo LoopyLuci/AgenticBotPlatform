@@ -159,3 +159,15 @@ def test_stop_never_raises_when_unregister_fails(monkeypatch):
     monkeypatch.setattr(zc, "unregister_service", _boom)
 
     mdns_advertise.stop()  # must not raise
+
+
+def test_start_is_a_no_op_when_disabled_by_environment(monkeypatch):
+    _reset()
+    _fake_addresses(monkeypatch, lan="192.168.1.50")
+    _patch_zeroconf(monkeypatch)
+    monkeypatch.setenv("ABP_DISABLE_MDNS", "1")
+
+    mdns_advertise.start(port=9999)
+
+    assert _FakeZeroconf.instances == []
+    assert mdns_advertise._zeroconf is None

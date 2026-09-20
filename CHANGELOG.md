@@ -50,6 +50,38 @@ app's own version (the Android app versions independently — see its own
   on narrow widths.
 
 ### Added
+- **A hardened, self-healing release pipeline** (`scripts/release_guard.py`,
+  used by `publish_release.py` and `local_pipeline.py`). A release used to
+  bump versions and commit before discovering — mid-build — that a leftover
+  backend process held a file in the staged venv open, leaving a half-made
+  release commit to undo by hand. Now:
+  - **Pre-flight, before anything is modified:** git state (on `main`, not
+    behind origin, no rebase/merge in progress, stale `index.lock` cleared),
+    tracked files committed, no source files hidden by `.gitignore`, version
+    newer than every tag and unused locally and on origin, the signing key
+    matches the key embedded in the app, tools/`gh` login/network/disk.
+    `Cargo.lock` is synced automatically. `--dry-run` runs only this.
+  - **Lock healing:** processes running out of the built app or staged venv
+    are stopped and the files proven free before a build; a locked-file build
+    error heals and retries.
+  - **Transactional:** each step is journalled (`.release_journal.json`);
+    failures roll back what never left the machine (release commit, tag,
+    uncommitted bumps) without discarding unrelated edits, never rewrite what
+    was pushed, and `--resume` finishes an interrupted release. HEAD and the
+    tracked tree are re-verified before each irreversible step.
+  - **Gate before tagging:** the full pipeline runs once on the release
+    commit; the pre-push hook then skips itself for that exact commit instead
+    of re-running it or rebuilding over the installer about to be signed.
+  - **Bundle smoke test:** the staged installer bundle must boot and answer
+    `/healthz` (throwaway state dir, random port, mDNS off) before it is tagged.
+  - **Retries** with backoff for network steps; a half-created GitHub release
+    is completed by upload rather than re-created; asset digests are re-read
+    until GitHub has computed them.
+  - `local_pipeline.py`: one pipeline at a time (`.pipeline.lock`), a failed
+    test is re-run once and reported as flaky if it then passes, and every
+    step has a timeout.
+- `ABP_DISABLE_MDNS=1` turns off the LAN (mDNS) advertisement, for throwaway
+  and test instances.
 - `/healthz` reports a random, non-secret `server_id` (persisted in
   `data/server_id`), so a paired phone can tell its own server from another
   ABP on the same network.

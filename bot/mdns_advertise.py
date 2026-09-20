@@ -46,6 +46,12 @@ def start(port: Optional[int] = None) -> None:
     global _zeroconf, _service_info
     if _zeroconf is not None:
         return
+    # A throwaway instance (the release pipeline's bundle smoke test, an
+    # isolated test run) must not announce itself to phones on the LAN — a
+    # stale advertisement of a dead instance is exactly what confuses them.
+    if os.environ.get("ABP_DISABLE_MDNS", "").strip().lower() in ("1", "true", "yes", "on"):
+        logger.info("mdns_advertise: disabled by ABP_DISABLE_MDNS")
+        return
     try:
         from zeroconf import ServiceInfo, Zeroconf
 
