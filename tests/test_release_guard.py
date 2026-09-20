@@ -514,3 +514,15 @@ def test_a_line_ending_or_timestamp_phantom_is_not_a_change(repo):
     assert g.check_clean_tree(repo).ok
     (repo / "Cargo.toml").write_bytes(b"[package]\nname = 'y'\n")         # a real change still counts
     assert not g.check_clean_tree(repo).ok
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="reads Windows file properties")
+def test_installer_product_version_is_really_read_from_the_file(tmp_path):
+    """The probe once returned None for every file, silently turning the
+    embedded-version check into a no-op. Use a real binary with a known version."""
+    import shutil
+    exe = tmp_path / "it's here.exe"                     # a quote in the path must survive
+    shutil.copy(Path(sys.executable).parent / "python.exe", exe)
+    version = g.installer_product_version(exe)
+    assert version is not None and version.count(".") >= 2
+    assert g.installer_product_version(tmp_path / "missing.exe") is None

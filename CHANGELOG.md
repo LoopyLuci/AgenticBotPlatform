@@ -49,6 +49,16 @@ app's own version (the Android app versions independently — see its own
   on narrow screens; labels are now single-line and hidden on unselected tabs
   on narrow widths.
 
+### Fixed
+- **v0.7.28 first shipped the wrong installer** (a leftover `0.7.99` build
+  from a local repro, which sorted after `0.7.28`); the release script took
+  the alphabetically last installer and its verification compared the file
+  with itself. The release was repaired minutes after publishing (correct,
+  signed installer attached; the wrong assets removed and read back). The
+  script now selects exactly this version's installer, reads the version the
+  installer identifies itself as and refuses a mismatch, and fails if the
+  published release carries any other installer.
+
 ### Added
 - **A hardened, self-healing release pipeline** (`scripts/release_guard.py`,
   used by `publish_release.py` and `local_pipeline.py`). A release used to

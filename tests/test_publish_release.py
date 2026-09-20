@@ -281,3 +281,48 @@ def test_version_bumps_keep_each_files_own_line_endings(env, eol):
             assert b"\r" not in data, rel
         else:
             assert data.count(b"\r\n") == data.count(b"\n"), rel
+
+
+# ---- installer selection (a stale 0.7.99 installer once shipped as 0.7.28) ---------------
+def _nsis(tmp_path, monkeypatch, names):
+    d = tmp_path / "desk"
+    nsis = d / "target" / "release" / "bundle" / "nsis"
+    nsis.mkdir(parents=True)
+    for n in names:
+        (nsis / n).write_bytes(b"x")
+    monkeypatch.setattr(pr, "DESKTOP_DIR", d)
+    monkeypatch.setattr(pr, "retrying", lambda *a, **k: None)   # skip the real cargo build
+    return nsis
+
+
+def test_the_installer_for_this_exact_version_is_chosen_not_the_alphabetically_last(tmp_path, monkeypatch):
+    nsis = _nsis(tmp_path, monkeypatch, ["App_0.7.28_x64-setup.exe", "App_0.7.99_x64-setup.exe", "App_0.7.9_x64-setup.exe"])
+    monkeypatch.setattr(g, "installer_product_version", lambda p: "0.7.28")
+    assert pr.build_desktop("0.7.28") == nsis / "App_0.7.28_x64-setup.exe"
+
+
+def test_a_missing_installer_for_the_version_is_an_error_not_a_fallback(tmp_path, monkeypatch):
+    _nsis(tmp_path, monkeypatch, ["App_0.7.99_x64-setup.exe"])
+    with pytest.raises(pr.ReleaseError, match="exactly one installer"):
+        pr.build_desktop("0.7.28")
+
+
+def test_an_installer_that_identifies_as_another_version_is_refused(tmp_path, monkeypatch):
+    _nsis(tmp_path, monkeypatch, ["App_0.7.28_x64-setup.exe"])
+    monkeypatch.setattr(g, "installer_product_version", lambda p: "0.7.99")
+    with pytest.raises(pr.ReleaseError, match="identifies itself as version 0.7.99"):
+        pr.build_desktop("0.7.28")
+
+
+def test_a_stray_installer_on_the_published_release_is_caught(tmp_path, monkeypatch):
+    inst = tmp_path / "App_0.7.28_x64-setup.exe"
+    sig = tmp_path / "App_0.7.28_x64-setup.exe.sig"
+    inst.write_bytes(b"installer")
+    sig.write_bytes(b"sig")
+    import hashlib
+    d = lambda b: "sha256:" + hashlib.sha256(b).hexdigest()  # noqa: E731
+    listing = "\n".join([f"{inst.name} {d(b'installer')}", f"{sig.name} {d(b'sig')}",
+                         "App_0.7.99_x64-setup.exe sha256:abc", "app-debug.apk sha256:def"])
+    monkeypatch.setattr(g, "_run", lambda *a, **k: g.CmdResult(0, listing))
+    with pytest.raises(pr.ReleaseError, match="unexpected installer"):
+        pr.verify_published_assets("v0.7.28", inst, sig, sleep=lambda s: None)

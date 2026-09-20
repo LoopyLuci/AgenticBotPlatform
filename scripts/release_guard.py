@@ -766,6 +766,18 @@ def smoke_test_bundle(stage_dir: Path, *, timeout: float = 90.0, python: Optiona
 # --------------------------------------------------------------------------- #
 # Pre-push handshake
 # --------------------------------------------------------------------------- #
+def installer_product_version(installer: Path) -> Optional[str]:
+    """The version an installer identifies itself as (its file properties), read
+    independently of its file name. None where that can't be read (non-Windows)."""
+    if not IS_WINDOWS:
+        return None
+    quoted = str(installer).replace("'", "''")   # PowerShell single-quote escaping
+    r = _run(["powershell", "-NoProfile", "-Command",
+              f"(Get-Item -LiteralPath '{quoted}').VersionInfo.ProductVersion"], timeout=60)
+    v = r.output.strip().splitlines()[-1].strip() if r.ok and r.output.strip() else ""
+    return v if re.fullmatch(r"\d+\.\d+\.\d+(\.\d+)?", v) else None
+
+
 def head_sha(root: Path = ROOT) -> str:
     return git("rev-parse", "HEAD", root=root).output.strip()
 
