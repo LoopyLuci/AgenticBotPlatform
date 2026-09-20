@@ -19,10 +19,11 @@
 //! desktop-app/ui/main.js. Nothing here runs unattended.
 
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -30,6 +31,54 @@ use crate::no_window;
 
 const REPO: &str = "LoopyLuci/AgenticBotPlatform";
 const USER_AGENT: &str = "AgenticBotPlatform-Updater";
+
+/// Ed25519 public key every update installer must be signed with. The
+/// matching private key lives only on the release machine, outside this
+/// repo (see scripts/update_signing.py). Without a signature check, the
+/// only thing standing between a hijacked GitHub account/release and code
+/// execution on every installed copy was "the download came from GitHub".
+/// If this key is ever rotated, installed copies can only be updated
+/// manually once (they'd reject the new signature) — keep the private key
+/// backed up.
+const UPDATE_PUBLIC_KEY: [u8; 32] = [
+    0xb6, 0x8c, 0x84, 0x87, 0x1b, 0xdb, 0x0c, 0xc3, 0x9b, 0x56, 0x6a, 0x09, 0xa5, 0x37, 0x44, 0x96,
+    0x9e, 0x5d, 0x57, 0x73, 0xcd, 0xc1, 0xf5, 0x50, 0xf2, 0xbd, 0x7c, 0xed, 0xaf, 0xaf, 0x21, 0xd2,
+];
+
+/// Nothing legitimate is anywhere near this large (the installer is ~50 MB,
+/// bundled Python included); a cap keeps a hostile/broken response from
+/// filling memory, since the whole file is buffered to verify it.
+const MAX_INSTALLER_BYTES: u64 = 400 * 1024 * 1024;
+const MAX_SIGNATURE_BYTES: u64 = 1024;
+
+/// The ONLY place an update installer is ever written and run from. The
+/// frontend used to pass any path to install_update(); now that path is
+/// only compared against this one, so a compromised UI can't point the
+/// updater at an arbitrary executable.
+fn update_installer_path() -> PathBuf {
+    std::env::temp_dir().join("AgenticBotPlatform-update-setup.exe")
+}
+
+/// Only this project's own GitHub release assets, over HTTPS.
+fn is_trusted_download_url(url: &str) -> bool {
+    let prefix = format!("https://github.com/{REPO}/releases/download/");
+    url.starts_with(&prefix)
+        && !url.contains("..")
+        && !url.contains('\\')
+        && !url.chars().any(|c| c.is_control() || c.is_whitespace())
+}
+
+fn verify_signature(public_key: &[u8; 32], data: &[u8], signature: &[u8]) -> Result<(), String> {
+    let key = VerifyingKey::from_bytes(public_key)
+        .map_err(|e| format!("built-in update key is invalid: {e}"))?;
+    let sig_bytes: [u8; 64] = signature
+        .try_into()
+        .map_err(|_| "update signature file is not a 64-byte Ed25519 signature".to_string())?;
+    key.verify(data, &Signature::from_bytes(&sig_bytes))
+        .map_err(|_| {
+            "update signature does not match this installer — refusing to install it".to_string()
+        })
+}
 
 // A single failed GET to GitHub — a momentary DNS hiccup, a corporate
 // proxy/AV product intercepting HTTPS and stalling the handshake, a
@@ -120,12 +169,20 @@ pub fn check_for_update() -> Result<UpdateInfo, String> {
     // Only Windows installers are auto-updatable today (this app only
     // ships a Windows build) — match the NSIS setup asset by its own
     // naming convention (see the release workflow: "*-setup.exe").
+    // An installer with no matching `<name>.sig` asset is never offered:
+    // download_update() would refuse it anyway, and a dead "Download"
+    // button is worse than a plain "no auto-update for this release".
     let download_url = if cfg!(target_os = "windows") {
         release
             .assets
             .iter()
             .find(|a| a.name.ends_with("-setup.exe"))
+            .filter(|installer| {
+                let sig_name = format!("{}.sig", installer.name);
+                release.assets.iter().any(|a| a.name == sig_name)
+            })
             .map(|a| a.browser_download_url.clone())
+            .filter(|url| is_trusted_download_url(url))
     } else {
         None
     };
@@ -155,6 +212,11 @@ struct DownloadProgress {
 /// what can otherwise be a multi-minute wait on a slow connection.
 #[tauri::command]
 pub fn download_update(app: AppHandle, url: String) -> Result<String, String> {
+    if !is_trusted_download_url(&url) {
+        return Err(format!(
+            "refusing to download an update from outside https://github.com/{REPO}/releases/"
+        ));
+    }
     let response = ureq::get(&url)
         .set("User-Agent", USER_AGENT)
         .timeout(Duration::from_secs(300))
@@ -165,6 +227,13 @@ pub fn download_update(app: AppHandle, url: String) -> Result<String, String> {
         .header("Content-Length")
         .and_then(|v| v.parse::<u64>().ok());
 
+    if let Some(t) = total_bytes {
+        if t > MAX_INSTALLER_BYTES {
+            return Err(format!(
+                "update is {t} bytes, larger than the {MAX_INSTALLER_BYTES}-byte limit"
+            ));
+        }
+    }
     let mut reader = response.into_reader();
     let mut bytes = Vec::new();
     let mut buf = [0u8; 64 * 1024];
@@ -179,6 +248,9 @@ pub fn download_update(app: AppHandle, url: String) -> Result<String, String> {
         }
         bytes.extend_from_slice(&buf[..n]);
         downloaded += n as u64;
+        if downloaded > MAX_INSTALLER_BYTES {
+            return Err("update download exceeded the size limit — aborting".to_string());
+        }
         // Emitting on every 64KB chunk would flood the frontend with
         // events for a large file; coalesce to roughly once per 256KB.
         if downloaded / (256 * 1024) != last_emit_kb {
@@ -217,7 +289,30 @@ pub fn download_update(app: AppHandle, url: String) -> Result<String, String> {
         }
     }
 
-    let dest = std::env::temp_dir().join("AgenticBotPlatform-update-setup.exe");
+    // Verify BEFORE anything touches the disk: fetch the detached signature
+    // published next to the installer and check it against the public key
+    // built into this binary. Any failure — missing .sig, wrong key,
+    // tampered bytes — means nothing is written and nothing can be run.
+    let sig_url = format!("{url}.sig");
+    let sig_response = ureq::get(&sig_url)
+        .set("User-Agent", USER_AGENT)
+        .timeout(Duration::from_secs(30))
+        .call()
+        .map_err(|e| {
+            format!("couldn't fetch the update's signature ({e}) — refusing to install an unsigned update")
+        })?;
+    let mut sig_bytes = Vec::new();
+    sig_response
+        .into_reader()
+        .take(MAX_SIGNATURE_BYTES + 1)
+        .read_to_end(&mut sig_bytes)
+        .map_err(|e| format!("couldn't read the update's signature: {e}"))?;
+    if sig_bytes.len() as u64 > MAX_SIGNATURE_BYTES {
+        return Err("update signature file is unexpectedly large".to_string());
+    }
+    verify_signature(&UPDATE_PUBLIC_KEY, &bytes, &sig_bytes)?;
+
+    let dest = update_installer_path();
     std::fs::write(&dest, &bytes).map_err(|e| format!("couldn't save installer: {e}"))?;
     Ok(dest.to_string_lossy().to_string())
 }
@@ -227,9 +322,14 @@ pub fn download_update(app: AppHandle, url: String) -> Result<String, String> {
 /// this process would otherwise be holding open.
 #[tauri::command]
 pub fn install_update(app: AppHandle, installer_path: String) -> Result<(), String> {
-    let installer = PathBuf::from(&installer_path);
+    // The frontend's path is only sanity-checked, never trusted: the one
+    // file this will ever run is the one download_update() verified.
+    let installer = update_installer_path();
+    if Path::new(&installer_path) != installer.as_path() {
+        return Err("refusing to run an installer from an unexpected location".to_string());
+    }
     if !installer.exists() {
-        return Err(format!("installer not found at {installer_path}"));
+        return Err(format!("installer not found at {}", installer.display()));
     }
     let current_exe =
         std::env::current_exe().map_err(|e| format!("couldn't resolve own path: {e}"))?;
@@ -288,4 +388,68 @@ pub fn install_update(app: AppHandle, installer_path: String) -> Result<(), Stri
     }
 
     std::process::exit(0);
+}
+
+#[cfg(test)]
+mod signature_tests {
+    use super::*;
+    use ed25519_dalek::{Signer, SigningKey};
+
+    fn keypair() -> (SigningKey, [u8; 32]) {
+        let sk = SigningKey::from_bytes(&[7u8; 32]);
+        let pk = sk.verifying_key().to_bytes();
+        (sk, pk)
+    }
+
+    #[test]
+    fn accepts_a_valid_signature() {
+        let (sk, pk) = keypair();
+        let sig = sk.sign(b"installer bytes").to_bytes();
+        assert!(verify_signature(&pk, b"installer bytes", &sig).is_ok());
+    }
+
+    #[test]
+    fn rejects_tampered_installer_bytes() {
+        let (sk, pk) = keypair();
+        let sig = sk.sign(b"installer bytes").to_bytes();
+        assert!(verify_signature(&pk, b"installer bytez", &sig).is_err());
+    }
+
+    #[test]
+    fn rejects_a_signature_from_a_different_key() {
+        let (_sk, pk) = keypair();
+        let attacker = SigningKey::from_bytes(&[9u8; 32]);
+        let sig = attacker.sign(b"installer bytes").to_bytes();
+        assert!(verify_signature(&pk, b"installer bytes", &sig).is_err());
+    }
+
+    #[test]
+    fn rejects_a_malformed_signature_file() {
+        let (_sk, pk) = keypair();
+        assert!(verify_signature(&pk, b"x", &[0u8; 10]).is_err());
+        assert!(verify_signature(&pk, b"x", &[]).is_err());
+    }
+
+    #[test]
+    fn the_embedded_public_key_is_a_valid_ed25519_point() {
+        assert!(VerifyingKey::from_bytes(&UPDATE_PUBLIC_KEY).is_ok());
+    }
+
+    #[test]
+    fn only_this_projects_https_release_assets_are_trusted() {
+        let ok =
+            "https://github.com/LoopyLuci/AgenticBotPlatform/releases/download/v1.0.0/x-setup.exe";
+        assert!(is_trusted_download_url(ok));
+        for bad in [
+            "http://github.com/LoopyLuci/AgenticBotPlatform/releases/download/v1/x.exe",
+            "https://evil.example/LoopyLuci/AgenticBotPlatform/releases/download/v1/x.exe",
+            "https://github.com/someone-else/AgenticBotPlatform/releases/download/v1/x.exe",
+            "https://github.com.evil.example/LoopyLuci/AgenticBotPlatform/releases/download/v1/x.exe",
+            "https://github.com/LoopyLuci/AgenticBotPlatform/releases/download/../../x.exe",
+            "https://github.com/LoopyLuci/AgenticBotPlatform/releases/download/v1/x .exe",
+            "file:///C:/Windows/System32/cmd.exe",
+        ] {
+            assert!(!is_trusted_download_url(bad), "should reject {bad}");
+        }
+    }
 }

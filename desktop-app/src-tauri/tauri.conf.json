@@ -4,7 +4,8 @@
   "version": "0.7.23",
   "identifier": "com.agenticbotplatform.app",
   "build": {
-    "frontendDist": "../ui"
+    "frontendDist": "../ui",
+    "beforeBuildCommand": "python -c \"import pathlib,runpy;p=next(q for q in (pathlib.Path.cwd()/'../scripts/stage_bundle.py',pathlib.Path.cwd()/'../../scripts/stage_bundle.py') if q.exists());runpy.run_path(str(p),run_name='__main__')\""
   },
   "app": {
     "withGlobalTauri": true,
@@ -36,9 +37,9 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../../bot": "bot",
-      "../../config/backends.yaml": "config/backends.yaml",
-      "../../.venv": ".venv",
+      "stage/bot": "bot",
+      "stage/config/backends.yaml": "config/backends.yaml",
+      "stage/.venv": ".venv",
       "../../requirements.txt": "requirements.txt",
       "../ui": "desktop-app/ui",
       "icons/icon.ico": "icon.ico"

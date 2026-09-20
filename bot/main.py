@@ -26,7 +26,13 @@ load_dotenv(_env_path)
 # one now rather than ever asking a human to invent/paste one. Must run
 # after load_dotenv() (so an existing token already in the process's
 # real env wins) but before anything reads DASHBOARD_TOKEN.
-os.environ.setdefault("DASHBOARD_TOKEN", ensure_dashboard_token())
+# `setdefault` is not enough: a blank `DASHBOARD_TOKEN=` line makes
+# load_dotenv() put an EMPTY STRING in the environment, setdefault then
+# keeps it, and the process ran with no token at all (which also opened
+# the token-bootstrap routes). Only generate when there is no real value —
+# a host that supplies its own token never gets its .env rewritten.
+if not os.environ.get("DASHBOARD_TOKEN"):
+    os.environ["DASHBOARD_TOKEN"] = ensure_dashboard_token()
 
 LOG_DIR = ROOT / "logs"
 LOG_DIR.mkdir(exist_ok=True)

@@ -2,7 +2,11 @@ services:
   agenticbotplatform:
     build: .
     ports:
-      - "8787:8787"
+      # Loopback only. The dashboard can run shell hooks and read provider keys,
+      # so it must not be reachable from the network by default. To expose it,
+      # put an authenticating reverse proxy / Tailscale in front and change
+      # this deliberately (e.g. "100.x.y.z:8787:8787").
+      - "127.0.0.1:8787:8787"
     volumes:
       - ./.env:/app/.env
       - agenticbotplatform-data:/app/data

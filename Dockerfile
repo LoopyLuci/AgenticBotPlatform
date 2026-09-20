@@ -18,8 +18,11 @@ COPY bot ./bot
 # (and gets bind-mounted over for persistence), /app/config.default is
 # the entrypoint's seed source for a fresh or emptied mount — see
 # scripts/docker-entrypoint.sh.
-COPY config ./config
-COPY config ./config.default
+# ONLY the tracked, keyless default. `COPY config ./config` also swept in the
+# gitignored config/providers.yaml (provider API keys) from whatever checkout
+# built the image, baking the builder's secrets into every layer.
+COPY config/backends.yaml ./config/backends.yaml
+COPY config/backends.yaml ./config.default/backends.yaml
 COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 

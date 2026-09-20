@@ -27,6 +27,7 @@ import json
 import logging
 import os
 import platform as _platform
+import re
 import sys
 import threading
 import time
@@ -96,6 +97,47 @@ class _Telemetry:
 telemetry = _Telemetry()
 
 
+_REDACTED = "[REDACTED]"
+
+# Well-known credential shapes. Crash reports and support bundles are made to
+# be pasted into public bug reports, and tracebacks/log lines routinely carry
+# a URL with a token in it, an Authorization header, or a provider error that
+# echoes a key back — so everything that leaves this module goes through
+# redact() first.
+_SECRET_PATTERNS = [
+    re.compile(r"\bsk-[A-Za-z0-9_\-]{12,}"),  # OpenAI / OpenRouter / opencode / many providers
+    re.compile(r"\bbot\d{6,}:[A-Za-z0-9_\-]{25,}"),  # Telegram bot token
+    re.compile(r"\b[\w\-]{20,}\.[\w\-]{6,}\.[\w\-]{20,}\b"),  # Discord bot token / JWT
+    re.compile(r"\bxox[abprs]-[A-Za-z0-9\-]{10,}"),  # Slack
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}"),  # GitHub
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),  # AWS access key id
+    re.compile(r"\bAIza[0-9A-Za-z_\-]{30,}"),  # Google API key
+    re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=\-]{12,}"),
+]
+# key=value / "key": "value" forms where the NAME says it is a secret.
+_SECRET_KV = re.compile(
+    r"(?i)\b((?:x-dashboard-)?token|api[_\-]?key|secret|password|passwd|authorization|access[_\-]?token"
+    r"|app[_\-]?secret|verify[_\-]token)(\"?\s*[:=]\s*\"?)([^\s\"'&,;}\]]{6,})"
+)
+_SECRET_ENV_KEY = re.compile(r"(?i)(key|token|secret|password|passwd)")
+
+
+def redact(text: str) -> str:
+    """Best-effort removal of credentials from text about to be written to a
+    crash report or support bundle. Deliberately errs toward over-redacting:
+    a mangled log line is cheap, a leaked key is not."""
+    if not text:
+        return text
+    # Exact values of this process's own secrets (whatever their shape).
+    for name, value in os.environ.items():
+        if len(value) >= 8 and _SECRET_ENV_KEY.search(name):
+            text = text.replace(value, _REDACTED)
+    for pattern in _SECRET_PATTERNS:
+        text = pattern.sub(_REDACTED, text)
+    return _SECRET_KV.sub(lambda m: f"{m.group(1)}{m.group(2)}{_REDACTED}", text)
+
+
 def _next_report_id() -> str:
     return time.strftime("%Y%m%d-%H%M%S", time.localtime()) + f"-{int((time.time() % 1) * 1_000_000):06d}"
 
@@ -146,7 +188,7 @@ def write_crash_report(record: logging.LogRecord) -> Optional[str]:
             "recent_activity": activity_log.recent(limit=50),
         }
         path = CRASH_DIR / f"{report_id}.json"
-        path.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
+        path.write_text(redact(json.dumps(report, indent=2, default=str)), encoding="utf-8")
         _prune_dir(CRASH_DIR, "*.json", MAX_CRASH_REPORTS)
         telemetry.increment("crash_reports.written")
         telemetry.record_event("crash", record.getMessage())
@@ -253,17 +295,19 @@ def build_support_bundle() -> Path:
     bundle_path = BUNDLE_DIR / f"support-bundle-{_next_report_id()}.zip"
 
     with zipfile.ZipFile(bundle_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("system_info.json", json.dumps(system_info(), indent=2, default=str))
-        zf.writestr("telemetry.json", json.dumps(telemetry.snapshot(), indent=2, default=str))
+        zf.writestr("system_info.json", redact(json.dumps(system_info(), indent=2, default=str)))
+        zf.writestr("telemetry.json", redact(json.dumps(telemetry.snapshot(), indent=2, default=str)))
         for report in list_crash_reports(limit=20):
             full = get_crash_report(report["id"])
             if full is not None:
-                zf.writestr(f"crash_reports/{report['id']}.json", json.dumps(full, indent=2, default=str))
+                # Re-redacted here too: reports written before redaction existed
+                # (or by an older version) may still hold raw credentials.
+                zf.writestr(f"crash_reports/{report['id']}.json", redact(json.dumps(full, indent=2, default=str)))
         log_path = LOG_DIR / "bot.log"
         if log_path.is_file():
             try:
                 lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-2000:]
-                zf.writestr("bot_log_tail.txt", "\n".join(lines))
+                zf.writestr("bot_log_tail.txt", redact("\n".join(lines)))
             except OSError:
                 pass
 

@@ -54,8 +54,10 @@ build step fails or produces the wrong file):
   6. Builds the Android debug APK (`gradlew assembleDebug`) and verifies it
      exists.
   7. Tags `v<version>` and pushes the commit + tag.
-  8. `gh release create` with both real build artifacts attached — nothing
-     else, so there's no ambiguity about which file is which app's.
+  8. `gh release create` with both real build artifacts attached, plus the
+     installer's detached `.sig` (the desktop app refuses updates without
+     it — see scripts/update_signing.py; the signing key stays outside the
+     repo and the release aborts before tagging if it's missing).
 """
 from __future__ import annotations
 
@@ -64,6 +66,8 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+
+import update_signing
 
 ROOT = Path(__file__).resolve().parent.parent
 DESKTOP_DIR = ROOT / "desktop-app" / "src-tauri"
@@ -188,6 +192,15 @@ def main() -> None:
     run(["git", "commit", "-m", f"Release {tag}"])
 
     installer = build_desktop(version)
+    # Installed apps refuse an update installer with no valid detached
+    # signature (updater.rs). Sign BEFORE tagging/pushing so a missing or
+    # wrong key stops the release instead of publishing an update nobody
+    # can install. See scripts/update_signing.py.
+    try:
+        installer_sig = update_signing.sign_installer(installer)
+    except (FileNotFoundError, ValueError, TypeError) as exc:
+        die(f"can't sign the update installer: {exc}")
+    print(f"update signature: {installer_sig}")
     apk = build_android()
 
     run(["git", "tag", tag])
@@ -199,6 +212,7 @@ def main() -> None:
         "--title", title,
         "--notes", notes,
         str(installer),
+        str(installer_sig),
         str(apk),
     ])
 

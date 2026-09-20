@@ -11,3 +11,11 @@ scripts
 .env
 __pycache__
 *.pyc
+# Per-user files that hold secrets — never part of an image, whatever COPY says
+config/providers.yaml
+config/file_share.yaml
+.env.*
+*.pem
+*.key
+logs
+.claude

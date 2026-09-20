@@ -8,6 +8,58 @@ app's own version (the Android app versions independently — see its own
 
 ## [Unreleased]
 
+### Security
+- **Installer no longer ships the developer's provider API keys.** The
+  bundle included the whole `config/` folder, so the gitignored
+  `config/providers.yaml` (holding real API keys) went out inside every
+  published installer. Only `config/backends.yaml` ships now; a missing
+  `providers.yaml` starts as empty. If you installed any earlier release,
+  its `config\providers.yaml` came from the release, not from you — treat
+  keys in it as exposed and rotate them.
+- **Creating or enabling an agent hook now needs permission tier
+  `unrestricted`** (the desktop token always may). Hooks run a shell
+  command as the server user, and until now any paired device — even at
+  tier `none` — could create one via `POST /api/hooks`, i.e. a paired
+  phone could run code on the server. Listing, disabling and deleting
+  hooks are unchanged. Raise a device's tier in the Devices view if it
+  legitimately manages hooks.
+- **Reflected XSS fixed** in the unauthenticated MCP OAuth callback
+  (`?error=` was echoed into HTML unescaped, on the same origin that holds
+  the dashboard token). Every response now also carries `nosniff`,
+  `Referrer-Policy: no-referrer` and a CSP limited to `object-src`,
+  `base-uri` and `frame-ancestors`.
+- **A blank `DASHBOARD_TOKEN=` no longer leaves the server without a
+  token.** `.env.example` ships that line blank; `load_dotenv` turned it
+  into an empty string that `setdefault` preserved, so the process ran
+  token-less and the token-bootstrap routes (`/api/env/content` — every
+  provider key — and `/api/setup/*`) were open to anyone who could reach
+  the port. A real token is now always generated (filling the blank line
+  in place), and those bootstrap routes only ever answer this machine.
+- **Desktop updates are now cryptographically verified.** The updater
+  downloaded any URL and ran it silently with no integrity check. It now
+  only fetches this repository's HTTPS release assets, requires a detached
+  Ed25519 signature (`<installer>.sig`) that verifies against a key built
+  into the app before anything is written, caps download size, and only
+  ever runs the one file it verified. Releases are signed by
+  `scripts/update_signing.py` with a key kept outside the repo; the
+  release aborts if it is missing. Apps from before this change can't
+  verify, so they update to this version once as before.
+- The desktop window's IPC (terminal, token, updater commands) is granted
+  only to `http://127.0.0.1:8787/desktop-ui/*` instead of every page on
+  every localhost port.
+- Support bundles and crash reports — built to be pasted into public bug
+  reports — now redact API keys, bot/Slack/GitHub/AWS tokens, bearer
+  headers, `token=`/`password=` style values and this process's own secret
+  environment values.
+- Docker: the image no longer copies the whole `config/` folder (which
+  baked the builder's `providers.yaml` into every layer), and compose
+  publishes the dashboard on `127.0.0.1` only.
+- The installer bundle is built from a filtered copy (`scripts/stage_bundle.py`):
+  no `pytest`/`pip-audit`, no `__pycache__`, no `activate` scripts or
+  pip/pytest launcher `.exe`s, and no build-machine paths (`pyvenv.cfg`'s
+  `command =` line, embedded interpreter paths, the developer's username).
+  The build fails if any personal path is still found.
+
 ### Fixed
 - The bottom Terminal/Activity panel covered the bottom of the page
   whenever it was open: it is `position:fixed` over the window, but the

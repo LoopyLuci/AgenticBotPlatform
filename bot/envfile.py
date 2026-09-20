@@ -228,9 +228,17 @@ def ensure_dashboard_token() -> str:
         return existing
     token = secrets.token_hex(24)
     content = read_content()
-    if content and not content.endswith("\n"):
-        content += "\n"
-    content += f"DASHBOARD_TOKEN={token}\n"
+    # .env.example / the setup wizard ship a blank `DASHBOARD_TOKEN=`. Fill
+    # THAT line in — appending a second one left the blank first line in
+    # place, and get_var() (first match wins) kept reading "" on every boot,
+    # generating and appending yet another token each time.
+    blank = re.compile(r"^DASHBOARD_TOKEN=[ \t]*(?:\"\"|'')?[ \t]*\r?$", re.MULTILINE)
+    if blank.search(content):
+        content = blank.sub(f"DASHBOARD_TOKEN={token}", content, count=1)
+    else:
+        if content and not content.endswith("\n"):
+            content += "\n"
+        content += f"DASHBOARD_TOKEN={token}\n"
     write_content(content, actor="auto-generate")
     return token
 
