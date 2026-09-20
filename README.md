@@ -72,6 +72,14 @@ get their own deep-dive doc:
 - **[docs/embedding.md](docs/embedding.md)** — running ABP as a submodule/
   sidecar inside another server: where state lives (`ABP_HOME`), ports,
   tokens, and what to lock down.
+- **[docs/install.md](docs/install.md)** — pick your setup (desktop, headless
+  server, submodule/sidecar, phone) with copy-paste, script-friendly commands and
+  the settings that matter for integrating ABP into your own architecture.
+- **[docs/cicd/](docs/cicd/README.md)** — the design for the CI/CD platform
+  (telemetry, ML workers, dashboards, updates, failover), and
+  **[docs/cicd/configuration.md](docs/cicd/configuration.md)**, the specification
+  for update, standby and host-locked policy settings. Both are plans, and say
+  clearly which parts are not built yet.
 - **[android-app/README.md](android-app/README.md)** — the Android app's
   own architecture and build instructions.
 
