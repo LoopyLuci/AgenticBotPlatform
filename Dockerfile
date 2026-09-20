@@ -14,6 +14,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY bot ./bot
+COPY abp_cicd ./abp_cicd
 # Kept twice: /app/config is where the app reads/writes its live config
 # (and gets bind-mounted over for persistence), /app/config.default is
 # the entrypoint's seed source for a fresh or emptied mount — see

@@ -60,6 +60,21 @@ app's own version (the Android app versions independently — see its own
   published release carries any other installer.
 
 ### Added
+- **CI/CD telemetry and control plane (step 1 of `docs/cicd/README.md`).** New
+  dependency-free package `abp_cicd`: an append-only, tamper-evident event
+  store (SQLite WAL, hash chain, allow-listed schema with secret redaction,
+  JSONL export, retention that keeps the chain verifiable), a recorder, read
+  models, and a CLI (`python -m abp_cicd status | runs | run | explain | steps |
+  decisions | workers | events --follow | verify | export | prune`). The
+  release and pipeline scripts now record every run — steps and timings,
+  decisions (why a step was skipped), flaky re-runs, self-healing, rollbacks
+  and outcomes — and a release links to the pipeline gate it launched.
+  `/api/cicd/*` serves the same data (with an SSE stream); the API, CLI and
+  a local read all go through one service layer and a parity test fails if
+  they drift. The installer bundle and Docker image ship the package.
+- The Rust check rebuilds the staged bundle when a bundled resource is
+  missing (previously a confusing `tauri_build` failure after a resource was
+  added).
 - **A hardened, self-healing release pipeline** (`scripts/release_guard.py`,
   used by `publish_release.py` and `local_pipeline.py`). A release used to
   bump versions and commit before discovering — mid-build — that a leftover

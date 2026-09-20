@@ -100,3 +100,14 @@ def test_the_scan_also_finds_paths_embedded_in_exe_launchers(tmp_path):
     (exe / "tool.exe").write_bytes(b"MZ\0\0" + PERSONAL.encode("utf-16-le") + b"\0")
     hits = sb.scan_for_personal_paths(tmp_path, [PERSONAL])
     assert [h[0].name for h in hits] == ["tool.exe"]
+
+
+def test_the_cicd_telemetry_package_ships_beside_bot(project):
+    """abp_cicd is a sibling of bot/ (standalone scripts and the CLI import it
+    without the bot package); the installed app's server imports it for /api/cicd."""
+    (project / "abp_cicd" / "__pycache__").mkdir(parents=True)
+    (project / "abp_cicd" / "store.py").write_text("X = 1\n", encoding="utf-8")
+    (project / "abp_cicd" / "__pycache__" / "store.cpython-311.pyc").write_bytes(b"\0")
+    out = _stage(project)
+    assert (out / "abp_cicd" / "store.py").is_file()
+    assert not list((out / "abp_cicd").rglob("__pycache__"))

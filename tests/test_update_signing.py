@@ -99,7 +99,7 @@ def test_publish_release_checks_the_signing_key_before_any_irreversible_step():
     import release_guard
 
     assert "check_signing()" in inspect.getsource(release_guard.run_preflight)
-    main = inspect.getsource(publish_release._main_locked)
+    main = inspect.getsource(publish_release._main_body)
     assert main.index("run_preflight(") < main.index("_run_release(")
 
 

@@ -67,6 +67,12 @@ import release_guard as guard
 import update_signing
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from abp_cicd import recorder  # noqa: E402  (telemetry: every release is recorded)
+
+# The run being recorded. A no-op until main() starts a real one, so helpers
+# and tests can call into this module without any telemetry side effects.
+_RUN: recorder.Run = recorder.Run(None, "release")
 DESKTOP_DIR = ROOT / "desktop-app" / "src-tauri"
 CARGO_TOML = DESKTOP_DIR / "Cargo.toml"
 TAURI_CONF = DESKTOP_DIR / "tauri.conf.json"
@@ -86,6 +92,8 @@ class ReleaseError(Exception):
 
 def die(msg: str) -> None:
     print(f"\n[FAILED] {msg}\n", file=sys.stderr)
+    _RUN.note(msg, "error")
+    _RUN.finish("failed", msg[:300])
     sys.exit(1)
 
 
@@ -300,7 +308,8 @@ def _run_release(args: argparse.Namespace, journal: guard.Journal) -> None:
             print(f"\n=== {name}: already done — skipping ===")
             return
         step(name)
-        fn()
+        with _RUN.step(name):
+            fn()
 
     # 1. bump ---------------------------------------------------------------
     def bump():
@@ -334,6 +343,8 @@ def _run_release(args: argparse.Namespace, journal: guard.Journal) -> None:
         assert_stable(state["head"])
         if args.skip_gate:
             print("!! --skip-gate: NOT running the full pipeline before tagging — the pre-push hook will run it instead")
+            _RUN.decision(actor="operator", decision="skip the pipeline gate", reason="--skip-gate was passed",
+                          rule="release.gate")
         else:
             py = ROOT / ".venv" / ("Scripts/python.exe" if IS_WINDOWS else "bin/python")
             cmd = [str(py if py.exists() else sys.executable), str(ROOT / "scripts" / "local_pipeline.py"), "--no-deploy"]
@@ -453,6 +464,19 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def _main_locked(args: argparse.Namespace) -> None:
+    """Runs the release inside a recorded run, so its steps, timings, rollbacks
+    and outcome land in the CI/CD event store (see docs/cicd/README.md)."""
+    global _RUN
+    with recorder.start_run("release", version=args.version, title=args.title,
+                            branch=guard.git("rev-parse", "--abbrev-ref", "HEAD", root=ROOT).output.strip()) as run:
+        _RUN = run
+        try:
+            _main_body(args)
+        finally:
+            _RUN = recorder.Run(None, "release")
+
+
+def _main_body(args: argparse.Namespace) -> None:
     version, tag = args.version, f"v{args.version}"
     print(f"\n=== Publishing AgenticBotPlatform {tag} ===")
 
@@ -475,14 +499,21 @@ def _main_locked(args: argparse.Namespace) -> None:
             die("HEAD is not where the interrupted release left it — resolve that first")
 
     step("Pre-flight")
-    checks = guard.run_preflight(version, ROOT, resume=args.resume)
-    heal = guard.heal_locks(ROOT)
-    checks.append(guard.Check("build outputs are not locked", heal.ok,
-                              ", ".join(heal.still_locked[:3]) or (f"stopped {', '.join(heal.stopped)}" if heal.stopped else ""),
-                              "close whatever holds them", fixed=bool(heal.stopped) and heal.ok))
-    if not args.resume:
-        checks.append(guard.sync_cargo_lock(version, ROOT, apply=False))  # report only; the bump step applies it
-    blocking = guard.report(checks)
+    with _RUN.step("preflight") as pf:
+        checks = guard.run_preflight(version, ROOT, resume=args.resume)
+        heal = guard.heal_locks(ROOT)
+        checks.append(guard.Check("build outputs are not locked", heal.ok,
+                                  ", ".join(heal.still_locked[:3]) or (f"stopped {', '.join(heal.stopped)}" if heal.stopped else ""),
+                                  "close whatever holds them", fixed=bool(heal.stopped) and heal.ok))
+        if not args.resume:
+            checks.append(guard.sync_cargo_lock(version, ROOT, apply=False))  # report only; the bump step applies it
+        blocking = guard.report(checks)
+        healed = [c.name for c in checks if c.fixed]
+        if healed:
+            _RUN.decision(actor="release_guard", decision="self-healed before building", reason="; ".join(healed)[:300],
+                          rule="preflight")
+        if blocking:
+            pf.set(status="failed", detail="; ".join(c.name for c in blocking)[:300])
     if blocking:
         die(f"pre-flight failed ({len(blocking)} problem(s)) — nothing was changed")
     if args.dry_run:
@@ -503,8 +534,13 @@ def _main_locked(args: argparse.Namespace) -> None:
         actions = guard.rollback(journal, ROOT)
         for a in actions:
             print(f"  rollback: {a}")
-        if not journal.is_done("pushed"):
+            _RUN.note(a, "warn")
+        pushed = journal.is_done("pushed")
+        if not pushed:
             journal.clear()
+        # rolled_back = the release was undone cleanly; failed = it is left partly done (pushed)
+        _RUN.finish("failed" if pushed or any("NOT rolled back" in a or "COULD NOT" in a for a in actions)
+                    else "rolled_back", f"{type(exc).__name__}: {msg}"[:300])
         raise SystemExit(1)
 
     journal.clear()

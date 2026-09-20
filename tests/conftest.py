@@ -40,6 +40,14 @@ import pytest
 from bot import db as db_module
 
 
+@pytest.fixture(autouse=True)
+def _isolated_cicd_event_store(monkeypatch, tmp_path):
+    """Instrumented scripts (release, pipeline) record into the CI/CD event
+    store. No test may ever write into the real one, so every test gets its own."""
+    monkeypatch.setenv("ABP_CICD_DB", str(tmp_path / "cicd-events.db"))
+    monkeypatch.delenv("ABP_CICD_RUN", raising=False)
+
+
 @pytest.fixture
 def temp_db(monkeypatch, tmp_path):
     monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "test.db")

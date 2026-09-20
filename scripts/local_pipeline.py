@@ -63,6 +63,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import release_guard  # noqa: E402  (shared pre-flight / lock-healing helpers)
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from abp_cicd import recorder  # noqa: E402  (telemetry: every pipeline run is recorded)
+
+# The run being recorded; a no-op until _run_pipeline starts a real one.
+_RUN: "recorder.Run" = recorder.Run(None, "pipeline")
 IS_WINDOWS = platform.system() == "Windows"
 IS_MACOS = platform.system() == "Darwin"
 IS_LINUX = platform.system() == "Linux"
@@ -326,6 +331,10 @@ def check_python() -> bool:
                 Step.err("pytest failed (and failed again on re-run):\n" + out2[-4000:])
                 return False
             Step.warn("passed on re-run — FLAKY, please look at: " + ", ".join(failed_ids))
+            _RUN.note("flaky tests (failed once, passed on re-run): " + ", ".join(failed_ids), "warn")
+            _RUN.decision(actor="rules", decision="accept flaky tests after one re-run",
+                          reason=f"{len(failed_ids)} test(s) passed when re-run alone", rule="flaky_rerun",
+                          inputs={"tests": len(failed_ids)})
             out = out2
         else:
             Step.err("pytest failed:\n" + out[-4000:])
@@ -346,6 +355,19 @@ def check_rust() -> Optional[bool]:
         Step.skip("cargo not on PATH — skipping (install Rust to enable this check)")
         return None
     src_tauri = ROOT / "desktop-app" / "src-tauri"
+
+    # tauri_build fails if any bundled resource is missing, and the staged copy
+    # only refreshes on a full build. After a resource is added (or a stage
+    # folder is deleted) rebuild it instead of failing with a confusing error.
+    missing = release_guard.missing_bundle_resources(ROOT)
+    if missing:
+        Step.doing(f"staged bundle is out of date (missing {', '.join(missing)}) — re-running stage_bundle.py")
+        ok, out = _run([_venv_python(), str(ROOT / "scripts" / "stage_bundle.py")], cwd=ROOT)
+        if not ok:
+            Step.err("couldn't rebuild the staged bundle:\n" + out[-2000:])
+            return False
+        _RUN.decision(actor="rules", decision="rebuild the staged bundle", rule="stale_stage",
+                      reason=f"missing resources: {', '.join(missing)}"[:300])
 
     ok, out = _run(["cargo", "fmt", "--check"], cwd=src_tauri)
     if not ok:
@@ -482,6 +504,9 @@ def main() -> int:
     if passed:
         print("AgenticBotPlatform local CI/CD pipeline\n"
               f"  [ok]   already verified at {passed[:10]} by the release gate — nothing to re-run")
+        with recorder.start_run("pipeline", title="pre-push (already verified)") as run:
+            run.decision(actor="release_gate", decision="skip the pipeline", rule="pipeline_already_passed",
+                         reason=f"commit {passed[:10]} was verified by the release gate")
         return 0
 
     # One pipeline/release at a time. A push made from inside a release is a
@@ -494,7 +519,32 @@ def main() -> int:
         return 1
 
 
+def _timed(name: str, fn):
+    """Runs one check as a recorded step: True -> ok, False -> failed, None -> skipped."""
+    with _RUN.step(name) as st:
+        result = fn()
+        if result is None:
+            st.set(status="skipped", skipped_reason="tool not installed or not applicable")
+        elif result is False:
+            st.set(status="failed")
+        return result
+
+
 def _run_pipeline(args: argparse.Namespace) -> int:
+    """Runs the pipeline inside a recorded run (see docs/cicd/README.md)."""
+    global _RUN
+    trigger = "pre-push" if os.environ.get("AGENTICBOTPLATFORM_LOCAL_PIPELINE_HOOK") == "1" else "manual"
+    with recorder.start_run("pipeline", title=trigger) as run:
+        _RUN = run
+        try:
+            code = _run_pipeline_body(args)
+        finally:
+            _RUN = recorder.Run(None, "pipeline")
+        run.finish("ok" if code == 0 else "failed", "" if code == 0 else "pipeline failed")
+        return code
+
+
+def _run_pipeline_body(args: argparse.Namespace) -> int:
     log_dir = ROOT / "logs" / "local_pipeline"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / f"{datetime.datetime.now():%Y%m%d-%H%M%S}.log"
@@ -526,6 +576,12 @@ def _run_pipeline(args: argparse.Namespace) -> int:
             android_needed = _matches(changed, ANDROID_PREFIXES)
             deploy_needed = _matches(changed, DEPLOY_PREFIXES)
             Step.ok(f"{len(changed)} file(s) changed since the last push")
+            for name, needed, why in (("rust", rust_needed, "no desktop-app/src-tauri changes"),
+                                      ("docker", docker_needed, "no Docker-relevant changes"),
+                                      ("android", android_needed, "no android-app changes")):
+                if not needed:
+                    _RUN.decision(actor="rules", decision=f"skip {name}", reason=why, rule="change_detection",
+                                  inputs={"files_changed": len(changed)})
             if not rust_needed:
                 Step.skip("no desktop-app/src-tauri changes — skipping Rust fmt/clippy/check")
             if not docker_needed:
@@ -564,10 +620,14 @@ def _run_pipeline(args: argparse.Namespace) -> int:
             if healed.still_locked:
                 Step.warn("still locked by something outside this repo: " + ", ".join(healed.still_locked[:3]))
 
-        results: dict[str, Optional[bool]] = {"python": check_python()}
-        results["rust"] = check_rust() if rust_needed else None
-        results["android"] = check_android() if android_needed else None
-        results["docker"] = check_docker() if docker_needed else None
+        results: dict[str, Optional[bool]] = {"python": _timed("python", check_python)}
+        for name, needed, fn in (("rust", rust_needed, check_rust), ("android", android_needed, check_android),
+                                 ("docker", docker_needed, check_docker)):
+            if needed:
+                results[name] = _timed(name, fn)
+            else:
+                results[name] = None
+                _RUN.record_step(name, "skipped", 0, skipped_reason="not affected by this change")
 
         failed = [name for name, ok in results.items() if ok is False]
         skipped = [name for name, ok in results.items() if ok is None]
@@ -594,7 +654,11 @@ def _run_pipeline(args: argparse.Namespace) -> int:
             Step.skip("nothing deploy-relevant changed — leaving the running instance untouched")
             return 0
 
-        if not deploy(was_running):
+        with _RUN.step("deploy") as st:
+            deployed = deploy(was_running)
+            if not deployed:
+                st.set(status="failed")
+        if not deployed:
             restore_prior_state(was_running)
             return 1
 
