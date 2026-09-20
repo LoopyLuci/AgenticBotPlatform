@@ -136,6 +136,7 @@ class ResponsesApiTransport(ProviderTransport):
 
         usage = data.get("usage") or {}
         tokens = (usage.get("input_tokens") or 0) + (usage.get("output_tokens") or 0)
+        input_tokens = usage.get("input_tokens") or None
 
         output = data.get("output") or []
         if not output:
@@ -162,6 +163,7 @@ class ResponsesApiTransport(ProviderTransport):
             text="".join(text_parts),
             tool_calls=tool_calls,
             tokens=tokens or None,
+            input_tokens=input_tokens,
             assistant_message={"role": "assistant", "content": {"output": output}},
         )
 

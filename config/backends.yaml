@@ -143,6 +143,17 @@ native_agent:
   mcp_trust: {}
   # A pinned MCP tool whose description or schema changes is blocked until a person approves it.
   mcp_pinning: true
+  # Context management (bot/agent_runtime/context_window.py): when the conversation reaches this share
+  # of the model's window, old tool outputs are cleared (the most recent ones are kept), and if that is
+  # not enough the older conversation is summarised. Tell it a model's real window if it is unknown:
+  context:
+    compact_at: 0.70
+    keep_tool_results: 6
+  context_windows: {}       # e.g. {my-local-model: 32768}
+  # AGENTS.md / CLAUDE.md in the working directory are added to the system prompt (project_rules.py).
+  project_rules:
+    enabled: true
+    max_chars: 40000
   max_concurrent_children: 6
   # Process-wide ceiling on live spawn_subagent children across EVERY
   # dispatch, not just one call's own max_concurrent_children — closes a

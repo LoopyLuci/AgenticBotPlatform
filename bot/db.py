@@ -944,6 +944,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "session_id" not in cols:
         conn.execute("ALTER TABLE messages ADD COLUMN session_id INTEGER")
 
+    mem_cols = {row["name"] for row in conn.execute("PRAGMA table_info(memory_entries)").fetchall()}
+    if "kind" not in mem_cols:
+        conn.execute("ALTER TABLE memory_entries ADD COLUMN kind TEXT NOT NULL DEFAULT 'fact'")
+    if "uses" not in mem_cols:
+        conn.execute("ALTER TABLE memory_entries ADD COLUMN uses INTEGER NOT NULL DEFAULT 0")
+    if "last_used" not in mem_cols:
+        conn.execute("ALTER TABLE memory_entries ADD COLUMN last_used TEXT")
+
     job_cols = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
     if "instance_id" not in job_cols:
         conn.execute("ALTER TABLE jobs ADD COLUMN instance_id INTEGER")
@@ -1302,16 +1310,18 @@ def append_agent_message(session_key: str, role: str, content: Any) -> int:
         return cur.lastrowid
 
 
-def list_agent_messages(session_key: str, limit: int = 200) -> list[dict]:
+def list_agent_messages(session_key: str, limit: int = 2000) -> list[dict]:
     """Oldest-first, ready to feed straight into the Anthropic Messages API
     as the `messages` list (each row's content is already in that shape —
     see agent_messages' schema comment)."""
     conn = get_conn()
+    # The NEWEST `limit` messages, oldest first. (It used to return the first 200, so a long agent session
+    # silently lost its most recent turns.)
     rows = conn.execute(
-        "SELECT role, content FROM agent_messages WHERE session_key=? ORDER BY id ASC LIMIT ?",
+        "SELECT role, content FROM agent_messages WHERE session_key=? ORDER BY id DESC LIMIT ?",
         (session_key, limit),
     ).fetchall()
-    return [{"role": r["role"], "content": json.loads(r["content"])} for r in rows]
+    return [{"role": r["role"], "content": json.loads(r["content"])} for r in reversed(rows)]
 
 
 def clear_agent_messages(session_key: str) -> None:
@@ -1601,12 +1611,13 @@ def delete_kanban_card(card_id: int) -> None:
 
 # ------------------------------------------------------------------ memory
 
-def create_memory_entry(instance_id: int, content: str, source: str = "user", status: str = "pending") -> int:
+def create_memory_entry(instance_id: int, content: str, source: str = "user", status: str = "pending",
+                        kind: str = "fact") -> int:
     conn = get_conn()
     with _lock:
         cur = conn.execute(
-            "INSERT INTO memory_entries (instance_id, content, status, source, created_at) VALUES (?, ?, ?, ?, ?)",
-            (instance_id, content, status, source, _now()),
+            "INSERT INTO memory_entries (instance_id, content, status, source, created_at, kind) VALUES (?, ?, ?, ?, ?, ?)",
+            (instance_id, content, status, source, _now(), kind),
         )
         conn.commit()
         return cur.lastrowid
@@ -1624,6 +1635,22 @@ def list_memory_entries(instance_id: int, status: Optional[str] = None) -> list[
             "SELECT * FROM memory_entries WHERE instance_id=? AND status=? ORDER BY id DESC", (instance_id, status)
         ).fetchall()
     return conn.execute("SELECT * FROM memory_entries WHERE instance_id=? ORDER BY id DESC", (instance_id,)).fetchall()
+
+
+def touch_memory_entry(entry_id: int) -> None:
+    """A memory was confirmed again (someone saved it a second time): it is fresh, and used."""
+    conn = get_conn()
+    with _lock:
+        conn.execute("UPDATE memory_entries SET uses = uses + 1, last_used = ? WHERE id = ?", (_now(), entry_id))
+        conn.commit()
+
+
+def delete_memory_entry(entry_id: int, instance_id: int) -> bool:
+    conn = get_conn()
+    with _lock:
+        cur = conn.execute("DELETE FROM memory_entries WHERE id = ? AND instance_id = ?", (entry_id, instance_id))
+        conn.commit()
+        return cur.rowcount > 0
 
 
 def resolve_memory_entry(entry_id: int, status: str) -> None:

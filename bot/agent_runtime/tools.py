@@ -208,7 +208,11 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         ),
         "input_schema": {
             "type": "object",
-            "properties": {"content": {"type": "string", "description": "The fact to remember, in plain English."}},
+            "properties": {
+                "content": {"type": "string", "description": "The fact to remember, in plain English."},
+                "kind": {"type": "string", "enum": ["user", "feedback", "project", "reference", "fact"],
+                         "description": "user = who they are; feedback = how they want you to work; project = about the work; reference = where things are."},
+            },
             "required": ["content"],
         },
     },
@@ -1022,11 +1026,14 @@ async def execute_tool(
             raise ToolError("content can't be empty")
         if instance_id is None:
             raise ToolError("save_memory needs an instance context")
-        entry_id, approved = bot_memory.remember(instance_id, content, source="tool")
+        result = bot_memory.remember_full(instance_id, content, source="tool", kind=tool_input.get("kind") or "fact")
+        entry_id, approved = result["id"], result["approved"]
+        if result["duplicate"]:
+            return f"Already remembered as memory #{entry_id}; refreshed it instead of saving a second copy."
         return (
-            f"Saved as memory #{entry_id} (approved, active now)."
+            f"Saved as memory #{entry_id} ({result['kind']}; approved, active now)."
             if approved
-            else f"Saved as memory #{entry_id}, pending human approval (/memory approve {entry_id})."
+            else f"Saved as memory #{entry_id} ({result['kind']}), pending human approval (/memory approve {entry_id})."
         )
 
     if name == "read_skill":
@@ -1844,3 +1851,5 @@ async def execute_tool(
 from bot.agent_runtime import coding_tools as _coding_tools  # noqa: E402,F401
 from bot.agent_runtime import shell as _shell  # noqa: E402,F401
 from bot.agent_runtime import web as _web  # noqa: E402,F401
+from bot.agent_runtime import repo_map as _repo_map  # noqa: E402,F401
+from bot.agent_runtime import search_index as _search_index  # noqa: E402,F401

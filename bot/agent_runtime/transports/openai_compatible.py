@@ -114,6 +114,21 @@ class OpenAICompatibleTransport(ProviderTransport):
             blocks.append({"type": "image_url", "image_url": {"url": f"data:{img['mime_type']};base64,{img['data_b64']}"}})
         return {"role": "user", "content": blocks}
 
+    def prune_tool_results(self, history: list[dict], keep: int) -> tuple[list[dict], int]:
+        from bot.agent_runtime import context_window
+
+        holders = [i for i, e in enumerate(history) if e.get("role") == "tool"]
+        old = set(holders[:-keep] if keep > 0 else holders)
+        out, cleared = [], 0
+        for i, entry in enumerate(history):
+            payload = entry.get("content")
+            if i in old and isinstance(payload, dict) and isinstance(payload.get("content"), str) \
+                    and not payload["content"].startswith("[Output cleared"):
+                entry = {**entry, "content": {**payload, "content": context_window.placeholder(len(payload["content"]), payload["content"])}}
+                cleared += 1
+            out.append(entry)
+        return out, cleared
+
     def dangling_tool_calls(self, history: list[dict]) -> list[ToolCall]:
         if not history or history[-1].get("role") != "assistant":
             return []
@@ -312,5 +327,6 @@ def _normalize(data: dict, base_url: str) -> NormalizedResponse:
         text=message.get("content") or "",
         tool_calls=tool_calls,
         tokens=tokens or None,
+        input_tokens=usage.get("prompt_tokens") or None,
         assistant_message={"role": "assistant", "content": assistant_payload},
     )

@@ -90,18 +90,18 @@ def _render_transcript(history: list[dict]) -> str:
 
 
 async def maybe_compress(session_key: str, transport: ProviderTransport, *, model: str,
-                         instance_id: Optional[int] = None) -> bool:
+                         instance_id: Optional[int] = None, force: bool = False) -> bool:
     """Returns whether it actually compressed anything this call."""
     from bot import db
 
     threshold = threshold_chars()
-    if threshold <= 0:
+    if threshold <= 0 and not force:
         return False
 
     history = db.list_agent_messages(session_key)
     if len(history) <= KEEP_LAST_N_MESSAGES:
         return False
-    if _history_char_count(history) <= threshold:
+    if not force and _history_char_count(history) <= threshold:
         return False
 
     to_summarize = history[:-KEEP_LAST_N_MESSAGES]

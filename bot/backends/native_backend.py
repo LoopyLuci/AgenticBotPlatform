@@ -21,7 +21,7 @@ import time
 import uuid
 from typing import Optional
 
-from bot.agent_runtime import loop_guard, toolspec
+from bot.agent_runtime import context_window, loop_guard, toolspec
 from bot.agent_runtime.transports.base import ProviderTransport
 from bot.backends.base import Backend, BackendError, BackendResult
 
@@ -262,6 +262,10 @@ class NativeAgentBackend(Backend):
         # callback that raises must never break the turn.
         stream_notify = context.get("stream_notify")
         streamed = False
+        # What is actually sent may be a shortened view of `history` (old tool outputs cleared); the stored
+        # conversation is never shortened by that.
+        view = {"history": history, "chars": 0}
+        summaries = 0
 
         async def _emit(event) -> None:
             try:
@@ -273,7 +277,7 @@ class NativeAgentBackend(Backend):
             nonlocal streamed
             streamed = False
             kwargs = dict(
-                model=model, history=history, tool_schemas=tool_schemas, max_tokens=self.max_tokens,
+                model=model, history=view["history"], tool_schemas=tool_schemas, max_tokens=self.max_tokens,
                 timeout_s=timeout_s, system_prompt=system_prompt, effort=effort,
             )
             if stream_notify is not None and getattr(transport, "supports_streaming", False):
@@ -312,6 +316,19 @@ class NativeAgentBackend(Backend):
                     history.append(steer_entry)
                     db.append_agent_message(session_key, steer_entry["role"], steer_entry["content"])
 
+            report = context_window.manage(history, active_transport, active_model, system_prompt, tool_schemas)
+            if report.needs_summary and summaries < 2:
+                # Still too full after clearing old tool outputs: summarise the older conversation.
+                if await compression.maybe_compress(session_key, active_transport, model=active_model,
+                                                    instance_id=instance_id, force=True):
+                    summaries += 1
+                    history[:] = db.list_agent_messages(session_key)
+                    report = context_window.manage(history, active_transport, active_model, system_prompt, tool_schemas)
+                    trace.active().note("context summarised mid-turn")
+            if report.notes:
+                trace.active().note("; ".join(report.notes))
+            view["history"] = report.history
+            view["chars"] = context_window.measure_chars(report.history, system_prompt, tool_schemas)
             _sent_at = time.monotonic()
             try:
                 response = await _send(active_transport, active_model)
@@ -340,6 +357,7 @@ class NativeAgentBackend(Backend):
 
                     await _emit(StreamEvent("reset"))
                 response = await _send(active_transport, active_model)
+            context_window.observe(active_model, view["chars"], response.input_tokens)
             trace.active().llm_call(
                 model=active_model, duration_ms=int((time.monotonic() - _sent_at) * 1000), tokens=response.tokens,
                 tool_calls=len(response.tool_calls), cache_read=response.cache_read_tokens,

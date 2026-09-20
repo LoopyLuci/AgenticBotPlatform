@@ -88,6 +88,14 @@ app's own version (the Android app versions independently — see its own
     stream reply text as it is generated, others deliver it whole. A turn given
     `context["stream_notify"]` receives the events; on failover it is told to discard
     what it showed. Dashboards, the desktop app, Android and chat channels adopt it next.
+- **Agent context and memory (roadmap P3).** The loop now watches how full the model's window is (token
+  estimates calibrated on the provider's own counts) and, before each call, clears old tool outputs and if
+  needed summarises older conversation; Anthropic requests carry a moving cache breakpoint. New tools:
+  `repo_map` (outline of the codebase), `code_search` (SQLite FTS5 keyword index of the project),
+  `session_search` (earlier conversations of the same bot). AGENTS.md / CLAUDE.md in the working directory
+  and `@imports` are added to the system prompt (labelled untrusted; they cannot grant permissions). Memories
+  gain kinds (user, feedback, project, reference), de-duplication, fading with age, `/memory list` and
+  `/memory forget`. Fixed: a long agent session used to load its oldest 200 messages instead of its newest.
 - **Agent security: permissions, untrusted-content defence, credential protection, sandbox (roadmap P2,
   `docs/agents/security.md`).** Permission rules (allow / ask / deny by tool, class and a pattern on the
   command, path, host or query) and modes (default, plan, accept_edits, bypass), with a host lock. Shell
