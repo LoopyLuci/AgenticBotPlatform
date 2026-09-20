@@ -526,3 +526,14 @@ def test_installer_product_version_is_really_read_from_the_file(tmp_path):
     version = g.installer_product_version(exe)
     assert version is not None and version.count(".") >= 2
     assert g.installer_product_version(tmp_path / "missing.exe") is None
+
+
+def test_missing_bundle_resources_are_detected(tmp_path):
+    d = tmp_path / "desktop-app" / "src-tauri"
+    (d / "stage" / "bot").mkdir(parents=True)
+    (d / "tauri.conf.json").write_text(json.dumps({"bundle": {"resources": {
+        "stage/bot": "bot", "stage/abp_cicd": "abp_cicd"}}}), encoding="utf-8")
+    assert g.missing_bundle_resources(tmp_path) == ["stage/abp_cicd"]
+    (d / "stage" / "abp_cicd").mkdir()
+    assert g.missing_bundle_resources(tmp_path) == []
+    assert g.missing_bundle_resources(tmp_path / "nowhere") == []

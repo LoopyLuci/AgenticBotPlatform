@@ -14,7 +14,11 @@
 | Update signing, HTTPS-only pinned download URL | **Built** (`updater.rs`) |
 | Diagnostics, crash reports, support bundle, Prometheus counters | **Built** (`bot/diagnostics.py`) |
 | Process supervision with backoff, config/code hot reload with a denylist | **Built** |
-| Telemetry event store, `/api/cicd/*`, ML workers, dashboards, CLI/TUI/GUI, update policy engine, A/B slots, standby instance | **Not built** — this document |
+| Telemetry event store (`abp_cicd`): append-only SQLite, hash chain, allow-listed schema with redaction, export, retention | **Built** (build step 1) |
+| Release and pipeline runs recorded as traces (steps, timings, decisions, rollbacks, flaky re-runs) | **Built** (build step 1) |
+| Control-plane API `/api/cicd/*` (summary, runs, run detail, explain, step stats, decisions, workers, events, SSE stream, chain check) | **Built** (build step 1) |
+| CLI `python -m abp_cicd` (local or over HTTP, `--json` identical to the API) and the parity test between service, API and CLI | **Built** (build step 1) |
+| TUI, `ABP_CI-CD_GUI`, ML workers, update policy engine, A/B slots, standby instance | **Not built** — this document |
 
 ## Principles
 

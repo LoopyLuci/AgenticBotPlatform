@@ -38,6 +38,7 @@
     ],
     "resources": {
       "stage/bot": "bot",
+      "stage/abp_cicd": "abp_cicd",
       "stage/config/backends.yaml": "config/backends.yaml",
       "stage/.venv": ".venv",
       "../../requirements.txt": "requirements.txt",

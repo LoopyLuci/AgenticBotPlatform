@@ -766,6 +766,20 @@ def smoke_test_bundle(stage_dir: Path, *, timeout: float = 90.0, python: Optiona
 # --------------------------------------------------------------------------- #
 # Pre-push handshake
 # --------------------------------------------------------------------------- #
+def missing_bundle_resources(root: Path = ROOT) -> list[str]:
+    """Tauri resource sources (tauri.conf.json `bundle.resources`) that don't
+    exist. tauri_build validates them even for a plain `cargo check`, so a stage
+    folder built before a new resource was added makes the Rust check fail until
+    scripts/stage_bundle.py is re-run."""
+    conf = root / DESKTOP_REL / "tauri.conf.json"
+    try:
+        resources = json.loads(conf.read_text(encoding="utf-8")).get("bundle", {}).get("resources", {})
+    except (OSError, ValueError):
+        return []
+    keys = resources.keys() if isinstance(resources, dict) else resources
+    return [k for k in keys if not (root / DESKTOP_REL / k).exists()]
+
+
 def installer_product_version(installer: Path) -> Optional[str]:
     """The version an installer identifies itself as (its file properties), read
     independently of its file name. None where that can't be read (non-Windows)."""

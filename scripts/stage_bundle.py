@@ -99,6 +99,10 @@ def stage(stage_dir: Path = STAGE, markers: list[str] | None = None) -> None:
     stage_dir.mkdir(parents=True)
 
     shutil.copytree(ROOT / "bot", stage_dir / "bot", ignore=_bot_ignore)
+    # The CI/CD telemetry package is a sibling of bot/ (standalone scripts and the CLI
+    # import it without the bot package), so it ships beside it.
+    if (ROOT / "abp_cicd").is_dir():
+        shutil.copytree(ROOT / "abp_cicd", stage_dir / "abp_cicd", ignore=_bot_ignore)
     shutil.copytree(ROOT / ".venv", stage_dir / ".venv", ignore=_venv_ignore, symlinks=True)
     cfg = stage_dir / ".venv" / "pyvenv.cfg"
     if cfg.is_file():

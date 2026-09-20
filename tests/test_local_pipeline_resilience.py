@@ -92,3 +92,24 @@ def test_a_second_pipeline_is_refused_while_one_is_running(monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["local_pipeline.py"])
     assert lp.main() == 1
     assert "another release run is active" in capsys.readouterr().err
+
+
+def test_a_stale_staged_bundle_is_rebuilt_before_the_rust_check(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, cwd=None, retries=0, timeout=None):
+        calls.append(cmd)
+        return True, ""
+    monkeypatch.setattr(lp, "_run", fake_run)
+    monkeypatch.setattr(lp.shutil, "which", lambda name: "/usr/bin/cargo")
+    monkeypatch.setattr(release_guard, "missing_bundle_resources", lambda root: ["stage/abp_cicd"])
+    assert lp.check_rust() is True
+    assert "stage_bundle.py" in str(calls[0])          # rebuilt first
+    assert calls[1][:2] == ["cargo", "fmt"]            # then the normal checks
+
+
+def test_a_failing_stage_rebuild_fails_the_rust_check(monkeypatch):
+    monkeypatch.setattr(lp, "_run", lambda *a, **k: (False, "no venv"))
+    monkeypatch.setattr(lp.shutil, "which", lambda name: "/usr/bin/cargo")
+    monkeypatch.setattr(release_guard, "missing_bundle_resources", lambda root: ["stage/abp_cicd"])
+    assert lp.check_rust() is False

@@ -655,6 +655,11 @@ def build_app() -> FastAPI:
         # confirmed live.
         app.mount("/desktop-ui", _NoCacheStaticFiles(directory=str(DESKTOP_UI_DIR), html=True), name="desktop-ui")
 
+    # CI/CD control plane (/api/cicd/*) — thin wrappers over abp_cicd.service.
+    from bot.dashboard import cicd_api
+
+    cicd_api.register(app, _require_token_or_api_key)
+
     # ------------------------------------------------------ ops endpoints --
     # Unauthenticated by design, like a load balancer's/orchestrator's health
     # probe is expected to be — neither returns anything a token would need
