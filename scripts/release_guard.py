@@ -197,11 +197,14 @@ def check_index_lock(root: Path = ROOT) -> Check:
 
 
 def check_clean_tree(root: Path = ROOT) -> Check:
-    # Heal stat-only "modified" entries (touched mtime / line-ending churn
-    # after a build) before judging.
+    """Tracked files must match HEAD in CONTENT. Compared with `git diff` (which
+    applies the same line-ending conversion as a commit) rather than `git
+    status`: after a build, status can flag a file as modified when only its
+    timestamp or CRLF/LF form changed and the diff is empty - that phantom once
+    aborted a release at the very last step."""
     git("update-index", "-q", "--refresh", root=root)
-    r = git("status", "--porcelain", "--untracked-files=no", root=root)
-    dirty = [ln for ln in r.output.splitlines() if ln.strip()]
+    r = git("diff", "--name-only", "HEAD", root=root)
+    dirty = [ln.strip() for ln in r.output.splitlines() if ln.strip()]
     return Check("tracked files are committed", not dirty and r.ok, "; ".join(dirty[:6]),
                  "commit or stash them — a release commit must contain only the version bump")
 

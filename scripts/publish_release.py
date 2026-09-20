@@ -135,29 +135,42 @@ def retrying(cmd, *, cwd: Path | None = None, attempts: int = 3, base_delay: flo
     return res
 
 
+def _read_text(path: Path) -> tuple[str, str]:
+    """(text normalised to "\n", the file's own line ending). Text-mode I/O
+    would silently rewrite every line ending to the platform's - CRLF on
+    Windows - and .gitattributes forces some of these files to LF."""
+    raw = path.read_bytes().decode("utf-8")
+    return raw.replace("\r\n", "\n"), ("\r\n" if "\r\n" in raw else "\n")
+
+
+def _write_text(path: Path, text: str, eol: str) -> None:
+    path.write_bytes(text.replace("\n", eol).encode("utf-8"))
+
+
 def validate_version(v: str) -> None:
     if not re.fullmatch(r"\d+\.\d+\.\d+", v):
         die(f"version must be X.Y.Z (e.g. 0.7.11), got {v!r}")
 
 
 def bump_cargo_toml(version: str) -> None:
-    text = CARGO_TOML.read_text(encoding="utf-8")
+    text, eol = _read_text(CARGO_TOML)
     new_text, n = re.subn(r'(?m)^version = "[^"]*"', f'version = "{version}"', text, count=1)
     if n != 1:
         raise ReleaseError(f"couldn't find a `version = \"...\"` line in {CARGO_TOML}")
-    CARGO_TOML.write_text(new_text, encoding="utf-8")
+    _write_text(CARGO_TOML, new_text, eol)
     print(f"bumped {CARGO_TOML.relative_to(ROOT)} -> {version}")
 
 
 def bump_tauri_conf(version: str) -> None:
-    data = json.loads(TAURI_CONF.read_text(encoding="utf-8"))
+    text, eol = _read_text(TAURI_CONF)
+    data = json.loads(text)
     data["version"] = version
-    TAURI_CONF.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    _write_text(TAURI_CONF, json.dumps(data, indent=2) + "\n", eol)
     print(f"bumped {TAURI_CONF.relative_to(ROOT)} -> {version}")
 
 
 def bump_android_gradle(version: str) -> None:
-    text = ANDROID_GRADLE.read_text(encoding="utf-8")
+    text, eol = _read_text(ANDROID_GRADLE)
     text, n1 = re.subn(r'(?m)^(\s*versionName = )"[^"]*"', rf'\1"{version}"', text, count=1)
     if n1 != 1:
         raise ReleaseError(f"couldn't find a `versionName = \"...\"` line in {ANDROID_GRADLE}")
@@ -166,7 +179,7 @@ def bump_android_gradle(version: str) -> None:
         raise ReleaseError(f"couldn't find a `versionCode = N` line in {ANDROID_GRADLE}")
     new_code = int(m.group(1)) + 1
     text = re.sub(r"(?m)^(\s*versionCode = )\d+", rf"\g<1>{new_code}", text, count=1)
-    ANDROID_GRADLE.write_text(text, encoding="utf-8")
+    _write_text(ANDROID_GRADLE, text, eol)
     print(f"bumped {ANDROID_GRADLE.relative_to(ROOT)} -> versionName {version}, versionCode {new_code}")
 
 
