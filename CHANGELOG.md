@@ -29,7 +29,30 @@ app's own version (the Android app versions independently — see its own
   ~95px for the conversation on a phone. All now wrap, shrink or scroll
   inside their own space.
 
+- **Android: an unreachable server no longer hangs or shows raw errors.**
+  Found by testing on a real tablet. With the server down, Settings spun for
+  50s+, Server Chat sat on "Loading…" and then printed a raw exception, Chat
+  printed the exception with no way to retry, and Devices claimed "No other
+  devices paired yet." Every screen now shows a plain explanation with a
+  Retry button (loading / error / empty are distinct states), and once every
+  saved address has failed, further requests fail immediately for a few
+  seconds instead of each repeating the ~20s failover cycle. LAN/loopback
+  addresses use a 3s connect timeout so a dead one doesn't delay the next.
+- **Android: the app could adopt the wrong server.** After pairing it
+  overwrote its working address with whatever the server *reported* about
+  itself (a LAN IP it wasn't listening on, a Funnel URL), and mDNS discovery
+  would adopt any ABP on the network — on a test network it switched to an
+  unrelated machine and would have sent the API key there. Addresses are now
+  only adopted if they answer as the server this device paired with (see
+  Added), and cleartext identity probes carry no credentials.
+- **Android: the bottom-navigation label "Server Chat" wrapped** in portrait
+  on narrow screens; labels are now single-line and hidden on unselected tabs
+  on narrow widths.
+
 ### Added
+- `/healthz` reports a random, non-secret `server_id` (persisted in
+  `data/server_id`), so a paired phone can tell its own server from another
+  ABP on the same network.
 - **MIT license.** The repository now carries a `LICENSE` file (it had none,
   which left third parties with no right to use or embed it), and the README,
   `Cargo.toml` and `flake.nix` declare it.

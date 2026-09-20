@@ -6,6 +6,7 @@ import com.agenticbotplatform.mobile.data.DeviceTiers
 import com.agenticbotplatform.mobile.data.DevicesRepository
 import com.agenticbotplatform.mobile.data.MeshServer
 import com.agenticbotplatform.mobile.data.NewDevicePairing
+import com.agenticbotplatform.mobile.data.UserFacingError
 import com.agenticbotplatform.mobile.data.PendingUpdateCoordinator
 import com.agenticbotplatform.mobile.data.ServerChatRepository
 import com.agenticbotplatform.mobile.data.UpdateRepository
@@ -73,6 +74,25 @@ class DevicesViewModel @Inject constructor(
 
     private val _devices = MutableStateFlow<List<DeviceInfo>>(emptyList())
     val devices: StateFlow<List<DeviceInfo>> = _devices
+
+    /** Whether the device list has actually loaded. An empty list used to mean
+     * three different things — still loading, couldn't load, and genuinely no
+     * other devices — and the screen said "No other devices paired yet." for
+     * all of them. */
+    sealed interface DevicesLoad {
+        data object Loading : DevicesLoad
+        data object Loaded : DevicesLoad
+        data class Failed(val message: String) : DevicesLoad
+    }
+
+    private val _load = MutableStateFlow<DevicesLoad>(DevicesLoad.Loading)
+    val load: StateFlow<DevicesLoad> = _load
+
+    private suspend fun loadDevices() {
+        runCatching { repository.devices() }
+            .onSuccess { _devices.value = it; _load.value = DevicesLoad.Loaded }
+            .onFailure { _load.value = DevicesLoad.Failed(UserFacingError.message(it)) }
+    }
 
     // This device's own identity/tier, resolved once from Server Chat's
     // whoami (0 is a safe "not yet resolved" sentinel — it can never
@@ -180,7 +200,7 @@ class DevicesViewModel @Inject constructor(
     fun refreshDevices() {
         viewModelScope.launch {
             _refreshing.value = true
-            runCatching { repository.devices() }.onSuccess { _devices.value = it }
+            loadDevices()
             _refreshing.value = false
         }
     }
@@ -193,10 +213,10 @@ class DevicesViewModel @Inject constructor(
         if (presenceStarted) return
         presenceStarted = true
         viewModelScope.launch {
-            runCatching { repository.devices() }.onSuccess { _devices.value = it }
+            loadDevices()
             while (true) {
                 runCatching {
-                    repository.liveDevices().collect { list -> _devices.value = list }
+                    repository.liveDevices().collect { list -> _devices.value = list; _load.value = DevicesLoad.Loaded }
                 }
                 delay(4000)
             }

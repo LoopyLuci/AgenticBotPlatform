@@ -2,7 +2,9 @@ package com.agenticbotplatform.mobile.data
 
 import com.agenticbotplatform.mobile.diagnostics.AppLog
 import com.google.firebase.messaging.FirebaseMessaging
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import java.net.URI
 import java.net.URLDecoder
 import javax.inject.Inject
@@ -17,6 +19,7 @@ class PairingRepository @Inject constructor(
     private val credentials: CredentialStore,
     private val apiService: ApiService,
     private val pushRepository: PushRepository,
+    private val identity: ServerIdentity = ServerIdentity(),
 ) {
     /** Parses the agenticbotplatform://pair?host=...&host2=...&host3=...&key=... URI
      * the dashboard's Mobile tab QR encodes (see bot/dashboard/server.py's
@@ -66,6 +69,7 @@ class PairingRepository @Inject constructor(
         credentials.host2 = host2
         credentials.host3 = host3
         credentials.apiKey = payload.key
+        credentials.serverId = null // a different server may be being paired — never carry the old identity over
         credentials.lastGoodHost = CredentialStore.SLOT_HOST
         AppLog.i(TAG, "pairAndVerify: stored credentials, calling chatRecipients() to verify")
 
@@ -74,6 +78,16 @@ class PairingRepository @Inject constructor(
 
         return result.fold(
             onSuccess = {
+                // Learn WHICH server this is (its /healthz server_id) from the
+                // address that just answered, so later address refreshes and
+                // mDNS discovery can only ever adopt this same server.
+                // Best-effort: a server too old to report an id just leaves it
+                // unset (the previous, unverified behaviour).
+                withContext(Dispatchers.IO) {
+                    credentials.candidateUrls().firstOrNull()?.let { base ->
+                        (identity.probe(base) as? ServerIdentity.Probe.Abp)?.serverId?.let { credentials.serverId = it }
+                    }
+                }
                 // FCM tokens are typically issued at first app launch,
                 // before pairing exists to send them to — register
                 // whatever the current one is now that there's

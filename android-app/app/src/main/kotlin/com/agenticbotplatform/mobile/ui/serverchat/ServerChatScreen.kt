@@ -40,6 +40,9 @@ import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.agenticbotplatform.mobile.data.dto.ServerChatConversation
 import com.agenticbotplatform.mobile.data.dto.ServerChatMessage
+import com.agenticbotplatform.mobile.ui.components.EmptyState
+import com.agenticbotplatform.mobile.ui.components.ErrorState
+import com.agenticbotplatform.mobile.ui.components.LoadingState
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -63,6 +66,7 @@ fun ServerChatScreen(viewModel: ServerChatViewModel = hiltViewModel(), peerDevic
     val messages by viewModel.messages.collectAsState()
     val myDeviceId by viewModel.myDeviceId.collectAsState()
     val loadError by viewModel.loadError.collectAsState()
+    val loaded by viewModel.loaded.collectAsState()
     val resolvingApprovalId by viewModel.resolvingApprovalId.collectAsState()
     val resolvedApprovals by viewModel.resolvedApprovals.collectAsState()
     LaunchedEffect(Unit) { viewModel.start() }
@@ -97,6 +101,8 @@ fun ServerChatScreen(viewModel: ServerChatViewModel = hiltViewModel(), peerDevic
         ServerChatListScreen(
             conversations = conversations,
             loadError = loadError,
+            loaded = loaded,
+            onRetry = { viewModel.refreshConversations() },
             onSelect = { viewModel.openConversation(it) },
             onDelete = { viewModel.deleteConversation(it) },
             snackbarMessages = viewModel.snackbarMessages,
@@ -128,6 +134,8 @@ fun ServerChatScreen(viewModel: ServerChatViewModel = hiltViewModel(), peerDevic
 private fun ServerChatListScreen(
     conversations: List<ServerChatConversation>,
     loadError: String?,
+    loaded: Boolean,
+    onRetry: () -> Unit,
     onSelect: (Int) -> Unit,
     onDelete: (ServerChatConversation) -> Unit,
     snackbarMessages: kotlinx.coroutines.flow.SharedFlow<String>,
@@ -146,12 +154,14 @@ private fun ServerChatListScreen(
         },
     ) { padding ->
         if (conversations.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text(
-                    loadError ?: "Loading…",
-                    modifier = Modifier.padding(24.dp),
-                    textAlign = TextAlign.Center,
-                )
+            // "Couldn't load" (say why, with Retry), "still loading" and "loaded, but
+            // there are none" used to all be the same line of text.
+            Box(Modifier.padding(padding)) {
+                when {
+                    loadError != null -> ErrorState(loadError, onRetry = onRetry)
+                    !loaded -> LoadingState()
+                    else -> EmptyState("No conversations yet.")
+                }
             }
             return@Scaffold
         }

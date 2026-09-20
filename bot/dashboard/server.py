@@ -668,7 +668,16 @@ def build_app() -> FastAPI:
         except Exception:
             db_ok = False
         status_code = 200 if db_ok else 503
-        return JSONResponse({"status": "ok" if db_ok else "degraded", "db_ok": db_ok}, status_code=status_code)
+        # server_id: a random, non-secret identifier for THIS install, so the
+        # Android app can tell "my server at a new address" from "some other
+        # ABP on the network" before adopting an address (see
+        # bot/server_identity.py).
+        from bot import server_identity
+
+        return JSONResponse(
+            {"status": "ok" if db_ok else "degraded", "db_ok": db_ok, "server_id": server_identity.get_server_id()},
+            status_code=status_code,
+        )
 
     @app.get("/api/activity", dependencies=[Depends(_require_token)])
     async def api_activity(since_id: int = 0, limit: int = 200):

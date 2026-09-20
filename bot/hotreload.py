@@ -133,6 +133,10 @@ DENYLIST: frozenset[str] = frozenset({
     # while every existing reference keeps incrementing the orphaned old
     # one, silently freezing the Diagnostics tab's counters.
     "bot.diagnostics",
+    # Caches this install's identity in a module-level variable (and its
+    # write is lock-guarded) — nothing worth re-executing mid-run, and a reload
+    # would only re-read the same file.
+    "bot.server_identity",
 })
 
 # module dotted-name -> the platform name to pass to

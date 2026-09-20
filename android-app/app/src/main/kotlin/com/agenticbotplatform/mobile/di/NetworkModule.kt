@@ -9,6 +9,7 @@ import com.agenticbotplatform.mobile.data.CredentialStore
 import com.agenticbotplatform.mobile.data.MeshPortHolder
 import com.agenticbotplatform.mobile.data.NsdDiscoveryClient
 import com.agenticbotplatform.mobile.data.PrivateNetworkGuard
+import com.agenticbotplatform.mobile.data.ServerIdentity
 import com.agenticbotplatform.mobile.diagnostics.AppLog
 import dagger.Module
 import dagger.Provides
@@ -82,7 +83,22 @@ const val PLACEHOLDER_BASE_URL = "http://127.0.0.1:8787"
 internal class DynamicHostInterceptor(
     private val credentials: CredentialStore,
     private val nsdDiscovery: NsdDiscoveryClient,
+    private val identity: ServerIdentity = ServerIdentity(),
+    private val nowMs: () -> Long = System::currentTimeMillis,
 ) : Interceptor {
+    /** Once EVERY address (and mDNS) has failed, further requests fail
+     * immediately for a few seconds instead of each one repeating the whole
+     * ~20s failover cycle. A screen that makes two sequential calls used to
+     * spin for 40s+ before it could say anything went wrong; now the first
+     * failure is the slow one and the rest are instant. Keyed on the current
+     * hosts + key so re-pairing (or a re-synced address) is never held back
+     * by a failure recorded against the old ones. */
+    @Volatile private var failFastUntilMs = 0L
+    @Volatile private var failFastFingerprint = ""
+
+    private fun fingerprint(candidates: List<String>): String =
+        candidates.joinToString("|") + "#" + (credentials.apiKey?.hashCode() ?: 0)
+
     private fun rebuild(original: Request, base: String): Request? {
         val target = base.toHttpUrlOrNull() ?: return null
         if (target.scheme == "http" && !PrivateNetworkGuard.isAllowedHost(target.host)) {
@@ -119,12 +135,17 @@ internal class DynamicHostInterceptor(
         if (candidates.isEmpty()) {
             AppLog.w("DynamicHostInterceptor", "$path: no candidate hosts configured at all — pairing never completed?")
         }
+        val fingerprint = fingerprint(candidates)
+        if (nowMs() < failFastUntilMs && fingerprint == failFastFingerprint) {
+            throw IOException(UNREACHABLE_MESSAGE)
+        }
         var lastError: IOException? = null
         for (base in candidates) {
             try {
                 val req = rebuild(original, base) ?: continue
-                val response = chain.proceed(req)
+                val response = proceedWithHostTimeout(chain, req)
                 credentials.markGood(base)
+                failFastUntilMs = 0L
                 AppLog.d("DynamicHostInterceptor", "$path: succeeded via $base")
                 return response
             } catch (e: IOException) {
@@ -132,8 +153,26 @@ internal class DynamicHostInterceptor(
                 lastError = e
             }
         }
-        return discoverAndRetry(chain, original, lastError ?: IOException("no host configured"))
+        return try {
+            discoverAndRetry(chain, original, lastError ?: IOException("no host configured")).also { failFastUntilMs = 0L }
+        } catch (e: IOException) {
+            failFastFingerprint = fingerprint
+            failFastUntilMs = nowMs() + FAIL_FAST_WINDOW_MS
+            throw e
+        }
     }
+
+    /** A LAN or loopback address either answers within a moment or is
+     * black-holed (wrong network, firewalled) — waiting the client's full 6s
+     * connect timeout on it just delays reaching the next address. Tailscale
+     * and https/Funnel hosts keep the full timeout: their first handshake can
+     * legitimately take longer (relay setup). */
+    private fun proceedWithHostTimeout(chain: Interceptor.Chain, req: Request): Response =
+        if (req.url.scheme == "http" && isLanOrLoopback(req.url.host)) {
+            chain.withConnectTimeout(LAN_CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS).proceed(req)
+        } else {
+            chain.proceed(req)
+        }
 
     /** Last resort once every configured host (LAN, Tailscale, Funnel —
      * whichever are set) has failed on this same request: look for this
@@ -154,11 +193,33 @@ internal class DynamicHostInterceptor(
         }
         AppLog.i("DynamicHostInterceptor", "mDNS discovery found $discovered")
         val discoveredBase = "http://$discovered"
+        // mDNS finds ANY AgenticBotPlatform on the network — a second machine,
+        // a test instance, a stale advertisement of an old one. Only adopt it
+        // (and send our key to it) if it reports the identity this device was
+        // paired with. A pairing that never learned an id keeps the old
+        // behaviour.
+        val expectedId = credentials.serverId
+        if (!expectedId.isNullOrEmpty() && !identity.isPairedServer(discoveredBase, expectedId)) {
+            AppLog.w("DynamicHostInterceptor", "mDNS found $discovered but it isn't the paired server (id mismatch or unreachable) — ignoring it")
+            throw lastError
+        }
         val req = rebuild(original, discoveredBase) ?: throw lastError
         val response = chain.proceed(req)
         credentials.host = discovered
         credentials.markGood(discoveredBase)
         return response
+    }
+
+    private companion object {
+        const val UNREACHABLE_MESSAGE = "Can't reach the server — every saved address failed a moment ago."
+        const val FAIL_FAST_WINDOW_MS = 8_000L
+        const val LAN_CONNECT_TIMEOUT_MS = 3_000
+
+        fun isLanOrLoopback(host: String): Boolean {
+            val p = host.split('.').mapNotNull { it.toIntOrNull() }
+            if (p.size != 4) return false
+            return p[0] == 10 || p[0] == 127 || (p[0] == 192 && p[1] == 168) || (p[0] == 172 && p[1] in 16..31)
+        }
     }
 }
 
@@ -168,7 +229,7 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(credentials: CredentialStore, nsdDiscovery: NsdDiscoveryClient): OkHttpClient =
+    fun provideOkHttpClient(credentials: CredentialStore, nsdDiscovery: NsdDiscoveryClient, identity: ServerIdentity): OkHttpClient =
         OkHttpClient.Builder()
             // Short-ish connect timeout so a dead host fails fast into the
             // interceptor's fallback instead of stalling the UI for
@@ -184,8 +245,12 @@ object NetworkModule {
             // a background poll); a bigger pool means more of those reuse an
             // already-warm connection instead of paying a fresh handshake.
             .connectionPool(okhttp3.ConnectionPool(10, 5, TimeUnit.MINUTES))
-            .addInterceptor(DynamicHostInterceptor(credentials, nsdDiscovery))
+            .addInterceptor(DynamicHostInterceptor(credentials, nsdDiscovery, identity))
             .build()
+
+    @Provides
+    @Singleton
+    fun provideServerIdentity(): ServerIdentity = ServerIdentity()
 
     @Provides
     @Singleton

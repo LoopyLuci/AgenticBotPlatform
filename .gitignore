@@ -41,8 +41,8 @@ PLAN.md
 # Whole runtime directories — nothing under these is source. (The narrower
 # entries above missed e.g. data/checkpoint_store/ and rotated logs/bot.log.1,
 # so a stray `git add .` could commit agent workspaces and logs.)
-data/
-logs/
+/data/
+/logs/
 
 # Secrets / signing material must never be committed
 .env.*

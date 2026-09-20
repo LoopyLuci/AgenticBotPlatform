@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.agenticbotplatform.mobile.data.CredentialStore
 import com.agenticbotplatform.mobile.data.SettingsRepository
+import com.agenticbotplatform.mobile.data.UserFacingError
 import com.agenticbotplatform.mobile.data.dto.agentControlMode
 import com.agenticbotplatform.mobile.data.dto.confirmDestructive
 import com.agenticbotplatform.mobile.data.dto.defaultBackend
@@ -11,6 +12,8 @@ import com.agenticbotplatform.mobile.data.dto.defaultHermesBackend
 import com.agenticbotplatform.mobile.data.dto.uiAutomationEnabled
 import com.agenticbotplatform.mobile.data.dto.verboseTelemetry
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -19,6 +22,10 @@ import javax.inject.Inject
 
 data class SettingsUiState(
     val loading: Boolean = true,
+    /** True once the settings have loaded successfully at least once. Until then a
+     * failure is shown as a full error state with Retry — not as a tiny line above
+     * controls that look usable but hold only defaults. */
+    val loaded: Boolean = false,
     val error: String? = null,
     val defaultBackend: String = "cli",
     val defaultHermesBackend: String = "hermes_gateway",
@@ -50,19 +57,32 @@ class SettingsViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState
 
+    /** The error state's Retry: back to the spinner, then load again. */
+    fun retry() {
+        _uiState.update { it.copy(loading = true, error = null) }
+        refresh()
+    }
+
     fun refresh() {
         viewModelScope.launch {
-            val configResult = runCatching { repository.config() }
-            val modelsResult = runCatching { repository.models() }
+            // Both requests at once. They used to run one after the other, and
+            // with the server unreachable each spent its own ~20s failing over —
+            // 40s+ of spinner before anything could be said.
+            val (configResult, modelsResult) = coroutineScope {
+                val c = async { runCatching { repository.config() } }
+                val m = async { runCatching { repository.models() } }
+                c.await() to m.await()
+            }
             val config = configResult.getOrNull()
             val models = modelsResult.getOrNull()
             if (config == null) {
-                _uiState.update { it.copy(loading = false, error = configResult.exceptionOrNull()?.message) }
+                _uiState.update { it.copy(loading = false, error = UserFacingError.message(configResult.exceptionOrNull())) }
                 return@launch
             }
             _uiState.update {
                 it.copy(
                     loading = false,
+                    loaded = true,
                     error = null,
                     defaultBackend = config.defaultBackend ?: it.defaultBackend,
                     defaultHermesBackend = config.defaultHermesBackend ?: it.defaultHermesBackend,
