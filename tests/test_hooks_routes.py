@@ -72,21 +72,27 @@ def test_enable_disable_delete_404_on_unknown_id(temp_db, monkeypatch):
     assert client.delete("/api/hooks/999", headers=_headers()).status_code == 404
 
 
-def test_reachable_by_a_paired_device_key_not_just_the_desktop_token(temp_db, monkeypatch):
-    """Widened from the original desktop-only _require_token when the
-    Android app's own Automation screen was built — same tier as
-    /api/bots and /api/config/set (see _identify_caller's docstring)."""
+def test_a_paired_device_can_list_and_disable_hooks_but_creating_needs_unrestricted(temp_db, monkeypatch):
+    """The Android Automation screen manages hooks with a device key, so
+    listing/disabling/deleting stay open to any paired device. CREATING (and
+    enabling) one runs a shell command as the server user, so it needs the
+    `unrestricted` tier — before that, a phone at tier `none` could run code
+    on the server (see _require_tier in bot/dashboard/server.py)."""
     from bot import db
 
     client = _client(monkeypatch)
-    _key_id, plaintext = db.create_api_key("phone", permission_tier="none")
+    _id, low = db.create_api_key("phone", permission_tier="none")
+    _id, high = db.create_api_key("trusted-phone", permission_tier="unrestricted")
+    low_h, high_h = {"X-Dashboard-Token": low}, {"X-Dashboard-Token": high}
+    body = {"event": "PreToolUse", "command": "echo hi"}
 
-    resp = client.post(
-        "/api/hooks", json={"event": "PreToolUse", "command": "echo hi"}, headers={"X-Dashboard-Token": plaintext},
-    )
+    assert client.post("/api/hooks", json=body, headers=low_h).status_code == 403
+    hook_id = client.post("/api/hooks", json=body, headers=high_h).json()["id"]
 
-    assert resp.status_code == 200
-    assert client.get("/api/hooks", headers={"X-Dashboard-Token": plaintext}).json()["hooks"]
+    assert client.get("/api/hooks", headers=low_h).json()["hooks"]
+    assert client.post(f"/api/hooks/{hook_id}/disable", headers=low_h).status_code == 200
+    assert client.post(f"/api/hooks/{hook_id}/enable", headers=low_h).status_code == 403
+    assert client.delete(f"/api/hooks/{hook_id}", headers=low_h).status_code == 200
 
 
 def test_list_filters_by_event(temp_db, monkeypatch):

@@ -4,7 +4,7 @@
   "description": "Capabilities for the main window",
   "windows": ["main"],
   "remote": {
-    "urls": ["http://127.0.0.1:*"]
+    "urls": ["http://127.0.0.1:8787/desktop-ui/*"]
   },
   "permissions": [
     "core:default",

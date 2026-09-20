@@ -13,6 +13,7 @@ import asyncio
 import base64
 import csv
 import hmac
+import html
 import io
 import json
 import logging
@@ -260,7 +261,10 @@ def _require_token(x_dashboard_token: Optional[str] = Header(default=None)) -> N
         raise HTTPException(status_code=401, detail="invalid dashboard token")
 
 
-def _require_token_or_bootstrap(x_dashboard_token: Optional[str] = Header(default=None)) -> None:
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1"})
+
+
+def _require_token_or_bootstrap(request: Request, x_dashboard_token: Optional[str] = Header(default=None)) -> None:
     """Same check as _require_token, except: if no DASHBOARD_TOKEN is
     configured yet, allow the request through instead of 503ing.
 
@@ -273,6 +277,15 @@ def _require_token_or_bootstrap(x_dashboard_token: Optional[str] = Header(defaul
     """
     expected = os.environ.get("DASHBOARD_TOKEN")
     if not expected:
+        # This window exists so the very first token can be set. It must
+        # never be open to the network: bot/main.py now always generates a
+        # token at startup, so in practice it is closed — but if it ever
+        # is open (a blank value slipping through), only a caller on this
+        # same machine may use it, never anyone who can merely reach the
+        # port (Docker, Tailscale Funnel).
+        client_host = request.client.host if request.client else ""
+        if client_host not in _LOOPBACK_HOSTS:
+            raise HTTPException(status_code=503, detail="DASHBOARD_TOKEN is not set; configure it from this machine")
         return
     if not _tokens_match(x_dashboard_token, expected):
         raise HTTPException(status_code=401, detail="invalid dashboard token")
@@ -367,6 +380,30 @@ def _caller_device_id(
     if key_id is None:
         raise HTTPException(status_code=401, detail="invalid dashboard token or api key")
     return key_id
+
+
+def _require_tier(minimum: str):
+    """Dependency factory: the desktop DASHBOARD_TOKEN always passes; a
+    paired device's key must be at permission tier `minimum` or higher.
+    Guards the few REST routes that are effectively "run a command as the
+    server user" (agent hooks), which the flat "any paired device = desktop
+    parity" model would otherwise hand to a phone at tier `none` — the
+    `unrestricted` tier already means "may run_shell without an approval
+    prompt", so it is the honest bar for creating one."""
+    from bot import device_tiers
+
+    def _dep(device_id: Optional[int] = Depends(_caller_device_id)) -> None:
+        if device_id is None:
+            return
+        row = db.get_api_key(device_id)
+        tier = row["permission_tier"] if row else "none"
+        if device_tiers.TIER_RANK.get(tier, 0) < device_tiers.TIER_RANK[minimum]:
+            raise HTTPException(
+                status_code=403,
+                detail=f"this route needs permission tier {minimum!r} or higher (this device is {tier!r})",
+            )
+
+    return _dep
 
 
 def _caller_thread_identity(
@@ -559,6 +596,25 @@ def build_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def _security_headers(request: Request, call_next):
+        """Baseline hardening headers on every response. Deliberately NOT a
+        script-src policy: the dashboard is one large page of inline
+        script/handlers, so a script-src that blocks inline would break it
+        outright, and a policy that allows it ('unsafe-inline') would only
+        look protective. What these DO buy: no MIME sniffing of an uploaded
+        or user-influenced response into HTML/JS, no framing by another
+        site (clickjacking), no <base>/<object> injection, and no Referer
+        leaking the URL (which can carry a WebSocket token) to other hosts.
+        The real XSS defence is escaping at each sink."""
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault(
+            "Content-Security-Policy", "object-src 'none'; base-uri 'self'; frame-ancestors 'self'",
+        )
+        return response
 
     async def _presence_broadcaster():
         """Periodically diffs the device-presence snapshot and pushes it to
@@ -1229,7 +1285,7 @@ def build_app() -> FastAPI:
         from bot.agent_runtime import mcp_client
 
         if error:
-            return HTMLResponse(f"<h3>Authorization failed: {error}</h3><p>You can close this tab.</p>")
+            return HTMLResponse(f"<h3>Authorization failed: {html.escape(error)}</h3><p>You can close this tab.</p>")
         if mcp_client.deliver_oauth_callback(state, code):
             return HTMLResponse("<h3>Authorized.</h3><p>You can close this tab and return to AgenticBotPlatform.</p>")
         return HTMLResponse(
@@ -1292,7 +1348,7 @@ def build_app() -> FastAPI:
             ]
         }
 
-    @app.post("/api/hooks", dependencies=[Depends(_require_token_or_api_key)])
+    @app.post("/api/hooks", dependencies=[Depends(_require_tier("unrestricted"))])
     async def api_hooks_add(payload: dict = Body(...)):
         from bot.agent_runtime import hooks as agent_hooks
 
@@ -1308,7 +1364,7 @@ def build_app() -> FastAPI:
         db.log_audit(actor="dashboard", action="agent_hook_add", detail=f"#{hook_id} {event}")
         return {"ok": True, "id": hook_id}
 
-    @app.post("/api/hooks/{hook_id}/enable", dependencies=[Depends(_require_token_or_api_key)])
+    @app.post("/api/hooks/{hook_id}/enable", dependencies=[Depends(_require_tier("unrestricted"))])
     async def api_hooks_enable(hook_id: int):
         if db.get_agent_hook(hook_id) is None:
             raise HTTPException(status_code=404, detail=f"no hook #{hook_id}")

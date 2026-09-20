@@ -37,16 +37,25 @@ def test_installer_does_not_bundle_env_or_local_secret_files():
 def test_every_bundled_config_file_is_tracked_by_git():
     """Anything bundled from config/ must be a committed default — an
     untracked file there is by definition local/per-user."""
-    for source in _resources():
-        normalized = source.replace("\\", "/")
-        if "/config/" not in normalized:
-            continue
-        rel = normalized.split("../../", 1)[-1]
+    # Sources now come from the staged copy (scripts/stage_bundle.py), so the
+    # check is on what lands in the install's config/ directory.
+    shipped_config = [dest for dest in _resources().values() if dest.replace("\\", "/").startswith("config/")]
+    assert shipped_config == ["config/backends.yaml"]
+    for rel in shipped_config:
         tracked = subprocess.run(
             ["git", "ls-files", "--error-unmatch", rel],
             cwd=PROJECT_ROOT, capture_output=True, text=True,
         )
         assert tracked.returncode == 0, f"{rel} is bundled but not tracked by git"
+
+
+def test_the_installer_bundles_the_filtered_stage_copy_not_the_dev_tree():
+    resources = _resources()
+    assert resources["stage/.venv"] == ".venv"
+    assert resources["stage/bot"] == "bot"
+    assert "../../.venv" not in resources and "../../bot" not in resources
+    conf = json.loads(TAURI_CONF.read_text(encoding="utf-8"))
+    assert "stage_bundle.py" in conf["build"]["beforeBuildCommand"]
 
 
 def test_missing_optional_config_loads_as_empty(tmp_path):
