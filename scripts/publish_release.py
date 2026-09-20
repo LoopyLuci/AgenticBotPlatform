@@ -406,6 +406,13 @@ def main(argv: list[str] | None = None) -> None:
 
     validate_version(args.version)
     tag = f"v{args.version}"
+    # Windows consoles default to a legacy code page that turns the dashes in
+    # our messages into garbage (or raises); the log file is UTF-8 anyway.
+    for stream in (sys.__stdout__, sys.__stderr__):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
     sys.stdout = sys.stderr = _Tee(ROOT / "logs" / "release" / f"{datetime.datetime.now():%Y%m%d-%H%M%S}-{tag}.log")
 
     try:
@@ -444,7 +451,7 @@ def _main_locked(args: argparse.Namespace) -> None:
                               ", ".join(heal.still_locked[:3]) or (f"stopped {', '.join(heal.stopped)}" if heal.stopped else ""),
                               "close whatever holds them", fixed=bool(heal.stopped) and heal.ok))
     if not args.resume:
-        checks.append(guard.sync_cargo_lock(version, ROOT))
+        checks.append(guard.sync_cargo_lock(version, ROOT, apply=not args.dry_run))
     blocking = guard.report(checks)
     if blocking:
         die(f"pre-flight failed ({len(blocking)} problem(s)) — nothing was changed")

@@ -240,10 +240,11 @@ def check_version(version: str, root: Path = ROOT, check_remote: bool = True,
     return out
 
 
-def sync_cargo_lock(version: str, root: Path = ROOT) -> Check:
+def sync_cargo_lock(version: str, root: Path = ROOT, apply: bool = True) -> Check:
     """Cargo.lock records this package's own version; if it lags the release
     version, cargo rewrites it during the build and leaves the tree dirty.
-    Fix it up front (the release commit includes it)."""
+    Fix it up front (the release commit includes it). With apply=False (a dry
+    run) it only reports what it would change."""
     desk = root / DESKTOP_REL
     toml = desk / "Cargo.toml"
     lock = desk / "Cargo.lock"
@@ -260,6 +261,9 @@ def sync_cargo_lock(version: str, root: Path = ROOT) -> Check:
                      "run cargo generate-lockfile")
     if hit.group(2) == version:
         return Check("Cargo.lock matches the release version", True)
+    if not apply:
+        return Check("Cargo.lock matches the release version", True,
+                     f"would update {hit.group(2)} -> {version}", warn=True)
     lock.write_bytes(pat.sub(lambda mm: mm.group(1) + version + mm.group(3), text, count=1).encode("utf-8"))
     return Check("Cargo.lock matches the release version", True, f"updated {hit.group(2)} -> {version}", fixed=True)
 
@@ -328,13 +332,13 @@ def report(checks: list[Check], out=print) -> list[Check]:
     for c in checks:
         if c.blocking:
             blocking.append(c)
-            out(f"  [FAIL] {c.name}" + (f" — {c.detail}" if c.detail else ""))
+            out(f"  [FAIL] {c.name}" + (f" - {c.detail}" if c.detail else ""))
             if c.hint:
                 out(f"         fix: {c.hint}")
         elif c.fixed:
-            out(f"  [fixed] {c.name} — {c.detail}")
+            out(f"  [fixed] {c.name} - {c.detail}")
         elif c.warn:
-            out(f"  [warn] {c.name} — {c.detail}")
+            out(f"  [warn] {c.name} - {c.detail}")
         else:
             out(f"  [ok]   {c.name}")
     return blocking
