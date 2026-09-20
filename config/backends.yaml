@@ -91,6 +91,18 @@ swarm_observability:
 # the existing agent_runtime.max_delegation_depth key (not duplicated
 # here) — this section only holds concerns unique to a batch of children.
 native_agent:
+  # Agent traces (bot/agent_runtime/trace.py): what each run did - tool, status,
+  # timing, sizes - never prompts, replies, file contents or tool output.
+  # ABP_AGENT_TRACE=0 also turns it off.
+  trace:
+    enabled: true
+  # The system prompt (bot/agent_runtime/prompt.py). guidance = the built-in
+  # operating rules; environment = OS, working directory, git, date; extra = a
+  # block of your own text added after the guidance.
+  prompt:
+    guidance: true
+    environment: true
+    extra: ""
   max_concurrent_children: 6
   # Process-wide ceiling on live spawn_subagent children across EVERY
   # dispatch, not just one call's own max_concurrent_children — closes a

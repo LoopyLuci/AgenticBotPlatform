@@ -59,8 +59,9 @@ def _digest(prev: str, v: int, ts: float, kind: str, run_id: Optional[str], step
 
 
 class EventStore:
-    def __init__(self, path: Path | str):
+    def __init__(self, path: Path | str, kinds: Optional[dict] = None):
         self.path = Path(path)
+        self.kinds = kinds          # None = the CI/CD schema; another store passes its own allow-list
         self._ready = False
 
     # ---- connection -------------------------------------------------------
@@ -99,7 +100,7 @@ class EventStore:
     # ---- writing ----------------------------------------------------------
     def append(self, kind: str, data: Optional[dict] = None, *, run_id: Optional[str] = None,
                step: Optional[str] = None, ts: Optional[float] = None) -> dict:
-        clean = events.sanitize(kind, data)
+        clean = events.sanitize(kind, data, self.kinds)
         payload = json.dumps(clean, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         stamp = float(ts if ts is not None else time.time())
         conn = self._connect()

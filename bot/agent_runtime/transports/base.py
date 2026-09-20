@@ -33,6 +33,15 @@ class ToolCall:
 
 
 @dataclass
+class StreamEvent:
+    """One piece of a reply as it is produced. `kind` is "text" (a delta to append)
+    or "reset" (discard what was shown so far — a retry against another provider is
+    starting, and would otherwise repeat the text)."""
+    kind: str
+    text: str = ""
+
+
+@dataclass
 class NormalizedResponse:
     text: str
     tool_calls: list[ToolCall] = field(default_factory=list)
@@ -78,6 +87,19 @@ class ProviderTransport:
     # standardized equivalent across the OpenAI-compatible/Responses API
     # surface, unlike images, which every transport already serializes.
     supports_documents: bool = False
+    # True where send_stream() delivers text as it is generated. The default
+    # send_stream() below still works everywhere — it just delivers the whole
+    # reply at once — so callers may always use it.
+    supports_streaming: bool = False
+
+    async def send_stream(self, *, on_event, **kwargs) -> "NormalizedResponse":
+        """Like send(), but reply text is passed to `await on_event(StreamEvent)` as it
+        arrives. Same arguments, same return value. The base implementation does not
+        stream: it calls send() and delivers the finished text as one event."""
+        response = await self.send(**kwargs)
+        if response.text:
+            await on_event(StreamEvent("text", response.text))
+        return response
 
     async def send(
         self,

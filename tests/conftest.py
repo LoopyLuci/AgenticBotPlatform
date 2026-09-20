@@ -45,6 +45,8 @@ def _isolated_cicd_event_store(monkeypatch, tmp_path):
     """Instrumented scripts (release, pipeline) record into the CI/CD event
     store. No test may ever write into the real one, so every test gets its own."""
     monkeypatch.setenv("ABP_CICD_DB", str(tmp_path / "cicd-events.db"))
+    # Same for agent traces (bot/agent_runtime/trace.py): every native-agent turn records one.
+    monkeypatch.setenv("ABP_AGENT_TRACE_DB", str(tmp_path / "agent-traces.db"))
     monkeypatch.delenv("ABP_CICD_RUN", raising=False)
 
 
