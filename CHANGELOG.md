@@ -45,8 +45,13 @@ app's own version (the Android app versions independently — see its own
   release aborts if it is missing. Apps from before this change can't
   verify, so they update to this version once as before.
 - The desktop window's IPC (terminal, token, updater commands) is granted
-  only to `http://127.0.0.1:8787/desktop-ui/*` instead of every page on
-  every localhost port.
+  only to the dashboard's own origin, `http://127.0.0.1:8787`, instead of
+  every localhost port — so another local web app on a different port can
+  no longer reach it. Tauri matches this against the request origin (no
+  path), so it can't be narrowed to a single page: any script that runs in
+  a dashboard page still has IPC, which is why the XSS fix and the
+  escaping of every rendered value matter. A unit test now pins the
+  pattern, and it was verified against the real window.
 - Support bundles and crash reports — built to be pasted into public bug
   reports — now redact API keys, bot/Slack/GitHub/AWS tokens, bearer
   headers, `token=`/`password=` style values and this process's own secret
