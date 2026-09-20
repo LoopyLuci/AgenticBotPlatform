@@ -63,6 +63,9 @@ class NormalizedResponse:
     # caller may surface (see native_backend.py's show_thinking_summary
     # config gate). None whenever no thinking block was present.
     thinking_summary: Optional[str] = None
+    # Tokens the provider counted in what it was sent (including cached ones) - the loop compares this
+    # with the characters it sent to calibrate its own estimate (see context_window.py).
+    input_tokens: Optional[int] = None
 
     @property
     def stop(self) -> bool:
@@ -142,6 +145,11 @@ class ProviderTransport:
         corresponding parameter (ask() only ever passes one when the
         transport declares support — see NativeAgentBackend.ask())."""
         raise NotImplementedError
+
+    def prune_tool_results(self, history: list[dict], keep: int) -> tuple[list[dict], int]:
+        """A copy of `history` with all but the `keep` most recent tool outputs replaced by a short note,
+        and how many were replaced. The base implementation clears nothing."""
+        return history, 0
 
     def dangling_tool_calls(self, history: list[dict]) -> list[ToolCall]:
         """Tool calls at the end of `history` that no result answers (a turn that was cut off

@@ -13,9 +13,8 @@ Operators tune it under `native_agent.prompt` in config/backends.yaml:
         environment: true     # OS, working directory, git, date (default on)
         extra: ""             # a block of your own text, added after the guidance
 
-Nothing here reads files from the working directory. Project instruction files
-(AGENTS.md, CLAUDE.md) are a separate, later step (roadmap P3) because they are
-untrusted text that arrives with a repository and need their own handling.
+Project instruction files (AGENTS.md, CLAUDE.md) are read by project_rules.py and
+added after the operator text; see that module for how they are treated.
 """
 
 from __future__ import annotations
@@ -87,6 +86,11 @@ def sections(instance_id: Optional[int], *, workspace: Optional[Path] = None,
     extra = str(cfg.get("extra") or "").strip()
     if extra:
         out.append(("operator", extra))
+    from bot.agent_runtime import project_rules
+
+    project = project_rules.load(workspace)
+    if project:
+        out.append(("project", project))
     if instance_id is not None:
         from bot import memory as bot_memory
         from bot import skills as bot_skills

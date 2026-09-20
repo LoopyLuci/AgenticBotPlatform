@@ -11,6 +11,7 @@ shape.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from typing import Optional
 
@@ -86,6 +87,29 @@ class AnthropicTransport(ProviderTransport):
         blocks.append({"type": "text", "text": text})
         return {"role": "user", "content": blocks}
 
+    def prune_tool_results(self, history: list[dict], keep: int) -> tuple[list[dict], int]:
+        from bot.agent_runtime import context_window
+
+        holders = [i for i, e in enumerate(history) if isinstance(e.get("content"), list)
+                   and any(isinstance(b, dict) and b.get("type") == "tool_result" for b in e["content"])]
+        old = set(holders[:-keep] if keep > 0 else holders)
+        out, cleared = [], 0
+        for i, entry in enumerate(history):
+            if i not in old:
+                out.append(entry)
+                continue
+            blocks = []
+            for b in entry["content"]:
+                if isinstance(b, dict) and b.get("type") == "tool_result":
+                    body = b.get("content")
+                    text = body if isinstance(body, str) else json.dumps(body, default=str)
+                    if not text.startswith("[Output cleared"):
+                        b = {**b, "content": context_window.placeholder(len(text), text)}
+                        cleared += 1
+                blocks.append(b)
+            out.append({**entry, "content": blocks})
+        return out, cleared
+
     def dangling_tool_calls(self, history: list[dict]) -> list[ToolCall]:
         if not history or history[-1].get("role") != "assistant":
             return []
@@ -116,10 +140,13 @@ class AnthropicTransport(ProviderTransport):
         # (each entry is exactly {"role","content"} with content already
         # either a plain string or a list of content blocks) — no
         # conversion needed, unlike the OpenAI-compatible transport.
-        create_kwargs = dict(model=model, max_tokens=max_tokens, messages=history)
         caching_cfg = _prompt_caching_config()
         caching_enabled = caching_cfg.get("enabled", DEFAULT_PROMPT_CACHING_ENABLED)
         cache_control = _cache_control(caching_cfg.get("ttl", DEFAULT_PROMPT_CACHING_TTL)) if caching_enabled else None
+        # A breakpoint on the LAST message caches the whole conversation so far; each turn it moves forward, so
+        # the next call re-reads everything up to here from the cache instead of paying for it again.
+        messages = _with_message_breakpoint(history, cache_control) if cache_control is not None else history
+        create_kwargs = dict(model=model, max_tokens=max_tokens, messages=messages)
 
         # Anthropic server tools (web_search/web_fetch/code_execution/
         # tool_search — Phase D of the Claude API/Claude Code parity
@@ -265,14 +292,32 @@ class AnthropicTransport(ProviderTransport):
         return result.input_tokens
 
 
+def _with_message_breakpoint(history: list[dict], cache_control: dict) -> list[dict]:
+    """`history` with cache_control on the final block of the final message (copied, never mutated)."""
+    if not history:
+        return history
+    last = history[-1]
+    content = last.get("content")
+    if isinstance(content, str):
+        blocks = [{"type": "text", "text": content, "cache_control": cache_control}]
+    elif isinstance(content, list) and content and isinstance(content[-1], dict) \
+            and content[-1].get("type") not in ("thinking", "redacted_thinking"):
+        blocks = [*content[:-1], {**content[-1], "cache_control": cache_control}]
+    else:
+        return history
+    return [*history[:-1], {**last, "content": blocks}]
+
+
 def _normalize(resp) -> NormalizedResponse:
     tokens = None
     cache_creation_tokens = None
     cache_read_tokens = None
+    input_tokens = None
     if resp.usage:
         tokens = (resp.usage.input_tokens or 0) + (resp.usage.output_tokens or 0)
         cache_creation_tokens = getattr(resp.usage, "cache_creation_input_tokens", None)
         cache_read_tokens = getattr(resp.usage, "cache_read_input_tokens", None)
+        input_tokens = ((resp.usage.input_tokens or 0) + (cache_creation_tokens or 0) + (cache_read_tokens or 0)) or None
 
     assistant_blocks = _serialize_blocks(resp.content)
     tool_calls = [
@@ -291,6 +336,7 @@ def _normalize(resp) -> NormalizedResponse:
         cache_creation_tokens=cache_creation_tokens,
         cache_read_tokens=cache_read_tokens,
         thinking_summary=thinking_summary,
+        input_tokens=input_tokens,
     )
 
 

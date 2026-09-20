@@ -102,6 +102,9 @@ DENYLIST: frozenset[str] = frozenset({
     # sandbox.py is only ever imported by the (denied) shell module. A reload would reset them.
     "bot.agent_runtime.permissions", "bot.agent_runtime.taint", "bot.agent_runtime.secrets_guard",
     "bot.agent_runtime.mcp_pins", "bot.agent_runtime.sandbox",
+    "bot.agent_runtime.project_rules",  # imported by prompt.py; reloaded with it is not needed and is safe to skip
+    "bot.agent_runtime.repo_map", "bot.agent_runtime.search_index",  # register their tools at import time; repo_map caches
+    "bot.agent_runtime.context_window",  # holds the learned chars-per-token ratio per model
     "bot.hotreload",  # never reload the reloader mid-cycle
     "bot.mcp_server",  # a separate process (python -m bot.mcp_server); not part of this one anyway
     "bot.tui.app", "bot.tui.client", "bot.tui.__main__",  # a separate process (python -m bot.tui); not part of this one anyway

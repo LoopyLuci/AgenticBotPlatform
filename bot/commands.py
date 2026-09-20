@@ -1501,13 +1501,27 @@ async def cmd_memory(ctx: CmdContext, raw: str) -> str:
     if sub == "approval" and len(args) >= 2 and args[1] in ("on", "off"):
         memory.set_approval_required(ctx.instance_id, args[1] == "on", actor=str(ctx.user_id))
         return f"Memory approval gate: {args[1]}."
+    if sub == "list":
+        kind = args[1].lower() if len(args) > 1 else None
+        rows = memory.listing(ctx.instance_id, kind)
+        if not rows:
+            return "No memories yet." if kind is None else f"No {kind} memories."
+        return "Memories:\n" + "\n".join(f"  #{r['id']} [{r.get('kind', 'fact')}] {r['content'][:100]!r}" for r in rows)
+    if sub == "forget" and len(args) >= 2 and args[1].isdigit():
+        return f"Forgot #{args[1]}." if memory.forget(ctx.instance_id, int(args[1])) else "Not found."
     if sub == "add":
         content = raw.strip()[3:].strip() if raw.strip().lower().startswith("add") else ""
+        kind = "fact"
+        head, _, rest = content.partition(":")
+        if rest and head.strip().lower() in memory.KINDS:
+            kind, content = head.strip().lower(), rest.strip()
         if not content:
-            return "Usage: /memory add <text>"
-        entry_id, approved = memory.remember(ctx.instance_id, content, source="user")
-        return f"Saved as #{entry_id}" + ("." if approved else ", pending approval.")
-    return "Usage: /memory [pending] | approve <id> | reject <id> | approval on|off | add <text>"
+            return "Usage: /memory add [user|feedback|project|reference:] <text>"
+        result = memory.remember_full(ctx.instance_id, content, source="user", kind=kind)
+        if result["duplicate"]:
+            return f"Already remembered as #{result['id']}; refreshed it."
+        return f"Saved as #{result['id']} ({result['kind']})" + ("." if result["approved"] else ", pending approval.")
+    return "Usage: /memory [pending] | list [kind] | approve <id> | reject <id> | forget <id> | approval on|off | add [kind:] <text>"
 
 
 # ----------------------------------------------------------------- skills -

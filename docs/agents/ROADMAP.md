@@ -11,7 +11,7 @@
 | P0 | Foundations: eval harness, traces, `ToolSpec`, prompt builder, streaming | **Built** (see below for what remains) |
 | P1 | Core coding toolset and a better loop | **Built** (interactive PTY and a stateful shell are not) |
 | P2 | Permissions, sandboxing, prompt-injection defence, hooks v2 | **Built** (docker backend untested against a real daemon) |
-| P3 | Context and memory | Design |
+| P3 | Context and memory | **Built** (no embeddings, no tree-sitter, no user model) |
 | P4 | Agents, skills and commands | Design |
 | P5 | Code intelligence and developer surfaces | Design |
 | P6 | Browser, computer use, routines (the Grok Bot pillar) | Design |
@@ -135,15 +135,21 @@ Acceptance: a page containing instructions cannot get a command run; a deny rule
 credential never reaches output or a request; plan mode changes nothing (all met, as eval tasks
 and unit tests).
 
-### P3 — Context and memory (L)
+### P3 — Context and memory (L) — built, with limits stated below
 
-* Real token counting, per-model windows, compaction at thresholds mid-loop, old
-  tool-result clearing, cache breakpoints.
-* Hierarchical AGENTS.md/CLAUDE.md loading with `@imports`.
-* Repo map (tree-sitter) and optional code index (FTS5, embeddings later).
-* Session-search tool (FTS5); typed memories (user, feedback, project, reference)
-  with dedupe, decay and a review UI that keeps the approval gate; optional user
-  model, off by default.
+| Deliverable | State |
+|---|---|
+| Token estimate calibrated against each provider's own count; per-model context windows (table + `context_windows` override) | Built. There is no offline tokenizer, so counts are estimates that converge on the real ratio after a few calls |
+| Mid-turn context management: old tool outputs cleared before each model call once the window is 70 % full, then summarised if still too full | Built (Anthropic and OpenAI-compatible transports; the Responses transport does not clear outputs) |
+| Moving prompt-cache breakpoint on the last message (Anthropic) | Built |
+| Fix: a long session used to return its *oldest* 200 messages, silently dropping the newest | Fixed (`list_agent_messages` returns the newest 2000) |
+| AGENTS.md / CLAUDE.md / .claude/CLAUDE.md from the working directory, plus your own AGENTS.md, with `@imports` | Built. Labelled untrusted in the prompt; they cannot grant permissions. Nested per-folder files and parent folders are **not** read |
+| `repo_map`: Python via `ast`; JS/TS, Go, Rust, Java/Kotlin/C#, Swift, Ruby, PHP via regular expressions; ranked by how often other files mention a file's symbols; token budget; cached | Built. **Heuristic, not tree-sitter** (not installed); no call graph |
+| `code_search`: SQLite FTS5 index per workspace, incremental, identifier parts (`refresh_token`, `parseHttp`) searchable, BM25 ranking | Built. Keyword index only: **no embeddings**, so it will not link synonyms |
+| `session_search`: FTS5 over earlier conversations of the same bot instance (never another instance's); cleared conversations disappear from it | Built |
+| Typed memories (user, feedback, project, reference, fact), de-duplication (same words and numbers, so "port 8080" and "port 8081" stay separate), fading from the prompt with age unless re-confirmed, `/memory list / forget`, approval gate kept | Built. Fading never deletes; only a person deletes |
+| Optional user model (Hermes/Honcho-style) | **Not built**; typed `user` memories are the nearest thing |
+| Eval: `search_by_concept`, `orient_with_repo_map` | Built |
 
 ### P4 — Agents, skills, commands (M–L)
 
