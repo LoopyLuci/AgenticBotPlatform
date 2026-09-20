@@ -259,3 +259,25 @@ def test_dry_run_stops_after_preflight_and_touches_nothing(env):
     pr._main_locked(args)
     assert _git(r, "status", "--porcelain", "--untracked-files=no") == ""
     assert env["builds"] == 0 and not pr.JOURNAL_PATH.exists()
+
+
+@pytest.mark.parametrize("eol", [b"\n", b"\r\n"])
+def test_version_bumps_keep_each_files_own_line_endings(env, eol):
+    """A bump that rewrote LF files as CRLF (Windows text-mode I/O) made git flag
+    Cargo.toml as modified after the build and aborted a release."""
+    r = env["repo"]
+    files = ("desktop-app/src-tauri/Cargo.toml", "desktop-app/src-tauri/tauri.conf.json",
+             "android-app/app/build.gradle.kts")
+    for rel in files:
+        p = r / rel
+        p.write_bytes(p.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", eol))
+    pr.bump_cargo_toml("0.7.28")
+    pr.bump_tauri_conf("0.7.28")
+    pr.bump_android_gradle("0.7.28")
+    for rel in files:
+        data = (r / rel).read_bytes()
+        assert b"0.7.28" in data
+        if eol == b"\n":
+            assert b"\r" not in data, rel
+        else:
+            assert data.count(b"\r\n") == data.count(b"\n"), rel

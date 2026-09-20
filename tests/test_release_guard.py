@@ -497,7 +497,20 @@ def test_git_warnings_never_leak_into_parsed_output(repo):
     (repo / "README.md").write_text("line one\nline two\n", encoding="utf-8", newline="\n")
     diff = g.git("diff", "--name-only", root=repo)
     assert diff.ok and diff.output.split() == ["README.md"]
-    assert g.check_clean_tree(repo).detail.split() == ["M", "README.md"]
+    assert g.check_clean_tree(repo).detail.split() == ["README.md"]
     # failures still carry stderr, so error messages stay useful
     bad = g.git("rev-parse", "--verify", "no-such-ref", root=repo)
     assert not bad.ok and bad.output.strip()
+
+
+def test_a_line_ending_or_timestamp_phantom_is_not_a_change(repo):
+    """After a build git status can flag a file as modified while its diff is
+    empty (line-ending form / mtime only). That must not count as dirty."""
+    (repo / ".gitattributes").write_text("*.toml text eol=lf\n", encoding="utf-8")
+    (repo / "Cargo.toml").write_bytes(b"[package]\nname = 'x'\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "toml")
+    (repo / "Cargo.toml").write_bytes(b"[package]\r\nname = 'x'\r\n")   # CRLF form of identical content
+    assert g.check_clean_tree(repo).ok
+    (repo / "Cargo.toml").write_bytes(b"[package]\nname = 'y'\n")         # a real change still counts
+    assert not g.check_clean_tree(repo).ok
