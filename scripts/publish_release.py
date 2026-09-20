@@ -451,7 +451,7 @@ def _main_locked(args: argparse.Namespace) -> None:
                               ", ".join(heal.still_locked[:3]) or (f"stopped {', '.join(heal.stopped)}" if heal.stopped else ""),
                               "close whatever holds them", fixed=bool(heal.stopped) and heal.ok))
     if not args.resume:
-        checks.append(guard.sync_cargo_lock(version, ROOT, apply=not args.dry_run))
+        checks.append(guard.sync_cargo_lock(version, ROOT, apply=False))  # report only; the bump step applies it
     blocking = guard.report(checks)
     if blocking:
         die(f"pre-flight failed ({len(blocking)} problem(s)) — nothing was changed")

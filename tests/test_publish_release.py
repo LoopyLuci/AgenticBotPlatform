@@ -237,3 +237,25 @@ def test_a_half_created_release_is_completed_by_upload_not_recreated(env, monkey
     monkeypatch.setattr(pr, "release_exists", lambda tag: True)
     _run(env)
     assert env["gh"][0][:3] == ["gh", "release", "upload"] and "--clobber" in env["gh"][0]
+
+
+def test_a_failed_preflight_changes_nothing(env, monkeypatch):
+    r = env["repo"]
+    base = _git(r, "rev-parse", "HEAD")
+    monkeypatch.setattr(g, "run_preflight", lambda *a, **k: [g.Check("update signing key matches the app", False,
+                                                                     "no key", "restore it")])
+    with pytest.raises(SystemExit):
+        _run(env)
+    assert _git(r, "rev-parse", "HEAD") == base
+    assert _git(r, "status", "--porcelain", "--untracked-files=no") == ""
+    assert not pr.JOURNAL_PATH.exists()
+    assert env["builds"] == 0 and env["gate"] == 0
+
+
+def test_dry_run_stops_after_preflight_and_touches_nothing(env):
+    r = env["repo"]
+    args = _args()
+    args.dry_run = True
+    pr._main_locked(args)
+    assert _git(r, "status", "--porcelain", "--untracked-files=no") == ""
+    assert env["builds"] == 0 and not pr.JOURNAL_PATH.exists()

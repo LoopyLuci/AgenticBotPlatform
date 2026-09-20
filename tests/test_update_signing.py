@@ -91,25 +91,48 @@ def _release_source() -> str:
 
 
 def test_publish_release_checks_the_signing_key_before_any_irreversible_step():
-    source = _release_source()
-    first_sign = source.index("update_signing.sign_installer")
-    assert first_sign < source.index('run(["git", "tag", tag])')
-    assert first_sign < source.index('run(["git", "push"])')
+    """The key check is part of the pre-flight that runs before anything is
+    modified — long before a tag or push (behaviour: tests/test_publish_release.py)."""
+    import inspect
+
+    import publish_release
+    import release_guard
+
+    assert "check_signing()" in inspect.getsource(release_guard.run_preflight)
+    main = inspect.getsource(publish_release._main_locked)
+    assert main.index("run_preflight(") < main.index("_run_release(")
+
+
+def test_the_signing_preflight_rejects_a_missing_or_mismatched_key(monkeypatch):
+    import release_guard
+
+    monkeypatch.setattr(us, "load_private_key", lambda *a, **k: (_ for _ in ()).throw(FileNotFoundError("no key")))
+    assert not release_guard.check_signing().ok
+
+    other = Ed25519PrivateKey.generate()
+    monkeypatch.setattr(us, "load_private_key", lambda *a, **k: other)
+    monkeypatch.setattr(us, "embedded_public_key", lambda *a, **k: bytes(32))
+    bad = release_guard.check_signing()
+    assert not bad.ok and "not the one embedded" in bad.detail
+
+    monkeypatch.setattr(us, "embedded_public_key", lambda *a, **k: us.public_key_bytes(other))
+    assert release_guard.check_signing().ok
 
 
 def test_the_real_signature_is_made_after_the_pushes_and_right_before_the_upload():
-    """The pre-push hook rebuilds the installer during `git push`, replacing
-    the file. Signing before it signed bytes that were never uploaded, so
-    installed apps rejected the update (shipped once in v0.7.24)."""
+    """The pre-push hook used to rebuild the installer during `git push`,
+    replacing the file. Signing before it signed bytes that were never
+    uploaded, so installed apps rejected the update (shipped once in
+    v0.7.24)."""
     source = _release_source()
-    pushed = source.index('run(["git", "push", "origin", tag])')
+    pushed = source.index('"git", "push", "origin", tag')
     final_sign = source.rindex("update_signing.sign_installer")
     upload = source.index('"gh", "release", "create"')
     assert pushed < final_sign < upload
-    assert "str(installer_sig)" in source
+    assert "str(sig)" in source
 
 
 def test_the_published_assets_are_verified_after_upload():
     source = _release_source()
-    assert source.index('"gh", "release", "create"') < source.rindex("verify_published_assets(tag, installer, installer_sig)")
+    assert source.index('"gh", "release", "create"') < source.rindex("verify_published_assets(tag, current_installer")
     assert "sha256:" in source and "update_signing.verify(" in source
