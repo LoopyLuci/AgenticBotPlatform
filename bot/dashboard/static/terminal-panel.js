@@ -50,9 +50,22 @@
     btnMinimize.textContent = collapsed ? '⌃' : '━';
     btnMinimize.title = collapsed ? 'Open Terminal' : 'Minimize';
   }
+  // The panel is `position:fixed` over the bottom of the window — an open
+  // (or resized/maximized) panel sits on top of whatever page content is
+  // under it unless `main`'s own bottom padding grows to match. This var
+  // is that clearance, kept in sync with the panel's ACTUAL rendered
+  // height (via getBoundingClientRect, not the CSS class alone) so it
+  // stays correct through collapse, drag-resize, and maximize alike —
+  // see main{padding-bottom:var(--term-clearance,...)} in the stylesheet.
+  function syncClearance() {
+    const collapsed = panel.classList.contains('collapsed');
+    const height = collapsed ? 40 : panel.getBoundingClientRect().height;
+    document.documentElement.style.setProperty('--term-clearance', (height + 20) + 'px');
+  }
   function setCollapsed(collapsed) {
     panel.classList.toggle('collapsed', collapsed);
     updateMinimizeButton();
+    syncClearance();
     if (!collapsed) {
       unseenActivity = 0;
       updateActivityBadge();
@@ -61,9 +74,11 @@
     }
   }
   updateMinimizeButton();
+  syncClearance();
   btnMinimize.onclick = () => setCollapsed(!panel.classList.contains('collapsed'));
   btnMaximize.onclick = () => {
     panel.classList.toggle('maximized');
+    syncClearance();
     fitXterm();
   };
 
@@ -79,12 +94,14 @@
       const delta = startY - e.clientY;
       panelHeight = Math.max(120, Math.min(window.innerHeight * 0.85, startHeight + delta));
       panel.style.height = panelHeight + 'px';
+      syncClearance();
       fitXterm();
     });
     window.addEventListener('mouseup', () => {
       if (dragging) { dragging = false; document.body.style.userSelect = ''; }
     });
   })();
+  window.addEventListener('resize', syncClearance); // maximized height is 92vh — a window resize changes it
 
   // ------------------------------------------------------------- tabs -----
   function selectTab(name) {
