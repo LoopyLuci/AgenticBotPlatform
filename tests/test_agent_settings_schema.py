@@ -259,3 +259,18 @@ def test_dangerous_settings_say_when_their_warning_applies():
     for f in schema.FIELDS:
         if f["danger"] and f["type"] == "enum":
             assert f["danger_value"] in [c[0] for c in f["choices"]], f["id"]
+
+
+def test_a_bots_own_agent_settings_are_separate_from_what_it_inherits(client):
+    bot_id = _add_agent_bot()
+    assert client.post("/api/agent-settings", json={"instance_id": None, "max_concurrent_children": 9}, headers=TOKEN).status_code == 200
+    resolved = client.get(f"/api/agent-settings?instance_id={bot_id}", headers=TOKEN).json()
+    own = client.get(f"/api/agent-settings?instance_id={bot_id}&own=true", headers=TOKEN).json()
+    assert resolved["max_concurrent_children"] == 9          # inherited from the process-wide default
+    assert own["max_concurrent_children"] is None           # but not something this bot set itself
+    assert set(own) == set(resolved)
+
+    client.post("/api/agent-settings", json={"instance_id": bot_id, "max_concurrent_children": 3, "require_plan_approval": True}, headers=TOKEN)
+    own = client.get(f"/api/agent-settings?instance_id={bot_id}&own=true", headers=TOKEN).json()
+    assert own["max_concurrent_children"] == 3 and own["require_plan_approval"] is True
+    assert own["worker_model"] is None

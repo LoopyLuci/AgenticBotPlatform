@@ -238,7 +238,8 @@ export const operations = {
   "path": "/api/agent-settings",
   "path_params": [],
   "query_params": [
-   "instance_id"
+   "instance_id",
+   "own"
   ]
  },
  "GET /api/agent/config": {
@@ -2518,7 +2519,8 @@ export const operations = {
   "path": "/api/agent-settings",
   "path_params": [],
   "query_params": [
-   "instance_id"
+   "instance_id",
+   "own"
   ]
  },
  "api_agent_settings_set_api_agent_settings_post": {

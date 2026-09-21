@@ -184,3 +184,85 @@ def test_the_agent_bot_button_opens_that_bots_settings(served_dashboard, browser
     assert page.evaluate("window.abpAgents.state.tab") == "subagents"
     assert page.evaluate("document.getElementById('agent-settings-instance').value") != ""
     assert errors == [], errors
+
+
+# ------------------------------------------------------------------ the ABP Agent part of the bot form
+def _bot_id():
+    from bot import db
+
+    return db.get_conn().execute("select id from bot_instances where name='Research bot'").fetchone()["id"]
+
+
+def _api(page, method, path, body=None):
+    return page.evaluate(
+        "async ([m, p, b]) => { const r = await fetch(p, {method: m, headers: {'X-Dashboard-Token': getToken(), 'Content-Type': 'application/json'}, body: b ? JSON.stringify(b) : undefined}); return r.json(); }",
+        [method, path, body])
+
+
+def test_the_form_defaults_to_abp_agent_and_shows_its_settings(served_dashboard, browser):
+    for path in ("/", "/desktop-ui/"):
+        page, errors = _open(browser, served_dashboard + path)
+        assert errors == [], errors
+        assert page.evaluate("document.getElementById('bot-new-backend').value") == "native_agent"
+        panel = page.locator("#bot-agent-panel")
+        assert panel.is_visible()
+        options = page.evaluate("[...document.getElementById('bot-agent-permission').options].map(o => o.value)")
+        assert options == ["", "plan", "default", "accept_edits", "bypass"]
+        page.wait_for_function("document.getElementById('bot-agent-global').textContent.includes('Global defaults')", timeout=10000)
+        page.select_option("#bot-new-backend", "cli")
+        assert not panel.is_visible()
+        page.select_option("#bot-new-backend", "custom_model")
+        assert panel.is_visible()  # every backend that runs the ABP agent loop gets the panel
+
+
+def test_editing_a_bot_shows_only_what_it_set_itself_and_saves_only_what_changed(served_dashboard, browser, agent_bot):
+    page, errors = _open(browser, served_dashboard + "/")
+    bot = _bot_id()
+    _api(page, "POST", "/api/agent-settings", {"instance_id": None, "max_concurrent_children": 9})  # a process-wide default
+    _api(page, "PUT", f"/api/instances/{bot}/permissions", {"mode": "plan"})
+    _api(page, "POST", "/api/agent-settings", {"instance_id": bot, "worker_provider": "local", "worker_model": "small", "worker_effort": "low"})
+
+    page.evaluate(f"abpBotAgentForm.load({bot})")
+    page.wait_for_function("document.getElementById('bot-agent-permission').value === 'plan'", timeout=10000)
+    assert page.input_value("#bot-agent-worker-model") == "local/small"
+    assert page.input_value("#bot-agent-worker-effort") == "low"
+    assert page.input_value("#bot-agent-max-children") == ""                      # the 9 is inherited, not the bot's own
+    assert page.get_attribute("#bot-agent-max-children", "placeholder") == "9 (default)"
+
+    # saving with nothing changed sends nothing
+    seen = []
+    page.on("request", lambda r: seen.append((r.method, r.url)) if r.method in ("PUT", "POST") else None)
+    page.evaluate(f"abpBotAgentForm.save({bot})")
+    page.wait_for_timeout(800)
+    assert seen == []
+
+    # change a few things, and only those are written
+    page.fill("#bot-agent-max-children", "4")
+    page.select_option("#bot-agent-permission", "accept_edits")
+    page.check("#bot-agent-plan-approval")
+    page.evaluate(f"abpBotAgentForm.save({bot})")
+    page.wait_for_function(f"fetch('/api/agent-settings?instance_id={bot}&own=true', {{headers: {{'X-Dashboard-Token': getToken()}}}}).then(r => r.json()).then(o => o.max_concurrent_children === 4)", timeout=10000)
+    own = _api(page, "GET", f"/api/agent-settings?instance_id={bot}&own=true")
+    assert own["max_concurrent_children"] == 4 and own["require_plan_approval"] is True
+    assert own["worker_model"] == "small" and own["worker_effort"] == "low"      # untouched values kept
+    assert _api(page, "GET", f"/api/instances/{bot}/permissions")["instance"]["mode"] == "accept_edits"
+    assert errors == [], errors
+
+
+def test_a_new_bot_left_at_the_defaults_writes_no_agent_settings_and_clearing_follows_the_default(served_dashboard, browser, agent_bot):
+    page, errors = _open(browser, served_dashboard + "/")
+    bot = _bot_id()
+    page.evaluate("abpBotAgentForm.reset()")
+    seen = []
+    page.on("request", lambda r: seen.append(r.url) if r.method in ("PUT", "POST") else None)
+    page.evaluate(f"abpBotAgentForm.save({bot})")
+    page.wait_for_timeout(600)
+    assert seen == []
+
+    _api(page, "PUT", f"/api/instances/{bot}/permissions", {"mode": "plan"})
+    page.evaluate(f"abpBotAgentForm.load({bot})")
+    page.wait_for_function("document.getElementById('bot-agent-permission').value === 'plan'", timeout=10000)
+    page.select_option("#bot-agent-permission", "")
+    page.evaluate(f"abpBotAgentForm.save({bot})")
+    page.wait_for_function(f"fetch('/api/instances/{bot}/permissions', {{headers: {{'X-Dashboard-Token': getToken()}}}}).then(r => r.json()).then(o => !o.instance.mode)", timeout=10000)
+    assert errors == [], errors

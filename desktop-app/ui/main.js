@@ -674,8 +674,7 @@ function refreshBotModelOptions() {
   document.getElementById('bot-new-model-options').innerHTML = options.map(name => `<option value="${esc(name)}"></option>`).join('');
   const help = document.getElementById('bot-new-model-help');
   const input = document.getElementById('bot-new-model');
-  const agentHint = document.getElementById('bot-agent-hint');
-  if (agentHint) agentHint.classList.toggle('hidden', !['native_agent', 'api', 'custom_model'].includes(backend));
+  if (window.abpBotAgentForm) window.abpBotAgentForm.sync();
   if (backend === 'custom_model' || backend === 'native_agent') {
     help.textContent = 'Required for this backend: "<provider>/<model_id>", where <provider> is one configured on the Models tab.';
     input.placeholder = 'e.g. local_ollama/llama3.1';
@@ -1773,7 +1772,7 @@ function _resetBotForm() {
   botEditingId = null;
   document.getElementById('bot-new-name').value = '';
   document.getElementById('bot-new-platform').value = 'telegram';
-  document.getElementById('bot-new-backend').value = 'cli';
+  document.getElementById('bot-new-backend').value = 'native_agent';  // ABP Agent is the default for a new bot
   document.getElementById('bot-new-model').value = '';
   document.getElementById('bot-new-token').value = '';
   document.getElementById('bot-new-apptoken').value = '';
@@ -1801,6 +1800,7 @@ function _resetBotForm() {
   refreshBotModelOptions();
   renderPlatformGuide(document.getElementById('bot-new-platform').value);
   renderCanTargetCheckboxes(null, []);
+  if (window.abpBotAgentForm) window.abpBotAgentForm.reset();
 }
 
 function _loadBotIntoForm(bot) {
@@ -1836,6 +1836,7 @@ function _loadBotIntoForm(bot) {
   refreshBotModelOptions();
   renderPlatformGuide(bot.platform);
   renderCanTargetCheckboxes(bot.id, bot.can_target || []);
+  if (window.abpBotAgentForm) window.abpBotAgentForm.load(bot.id);
   document.getElementById('btn-bot-create').textContent = 'Save changes';
   document.getElementById('bots').scrollIntoView({ behavior: 'smooth' });
 }
@@ -2536,13 +2537,17 @@ document.getElementById('btn-bot-create').onclick = async () => {
   };
   statusEl.textContent = 'Saving…';
   try {
+    let savedId = botEditingId;
     if (botEditingId) {
       await api(`/api/bots/${botEditingId}`, { method: 'PUT', body: JSON.stringify(payload) });
       statusEl.textContent = 'Saved — use Restart on this bot\'s row to apply.';
     } else {
-      await api('/api/bots', { method: 'POST', body: JSON.stringify(payload) });
+      const created = await api('/api/bots', { method: 'POST', body: JSON.stringify(payload) });
+      savedId = created.id;
       statusEl.textContent = 'Added and starting…';
     }
+    // The ABP Agent settings in the form (permission mode, sub-agent limits, models, effort) belong to the bot that now exists.
+    if (window.abpBotAgentForm && savedId) await window.abpBotAgentForm.save(savedId);
     _resetBotForm();
     refreshBots();
     refreshBotsBackups();

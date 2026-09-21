@@ -1546,10 +1546,11 @@ def build_app() -> FastAPI:
         return {"ok": True}
 
     @app.get("/api/agent-settings", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_agent_settings_get(instance_id: Optional[int] = None):
+    async def api_agent_settings_get(instance_id: Optional[int] = None, own: bool = False):
         from bot import agent_settings
 
-        return agent_settings.get(instance_id)
+        # own=true returns only what this instance has set itself (None where it inherits), not the resolved values.
+        return agent_settings.get_own(instance_id) if own else agent_settings.get(instance_id)
 
     @app.post("/api/agent-settings", dependencies=[Depends(_require_token_or_api_key)])
     async def api_agent_settings_set(payload: dict = Body(...)):

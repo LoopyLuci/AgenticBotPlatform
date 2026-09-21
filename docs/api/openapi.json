@@ -547,6 +547,16 @@
       }
      },
      {
+      "in": "query",
+      "name": "own",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Own",
+       "type": "boolean"
+      }
+     },
+     {
       "in": "header",
       "name": "x-dashboard-token",
       "required": false,
