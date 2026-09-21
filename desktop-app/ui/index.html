@@ -538,8 +538,9 @@
      "can't reach the server yet" empty states, same as an expired token
      does today). Collapsed by default to a status pill; expands on click
      or automatically when there's something worth seeing (an error, or
-     the very first boot). */
-  #boot { position:fixed; right:16px; bottom:16px; z-index:100; width:380px; max-width:calc(100vw - 32px); font-family:var(--font-mono); }
+     the very first boot). It sits just above the Terminal/Activity bar
+     (--term-panel-h is that bar's live height), never on top of it. */
+  #boot { position:fixed; right:16px; bottom:min(calc(var(--term-panel-h, 40px) + 12px), calc(100vh - 56px)); z-index:100; width:380px; max-width:calc(100vw - 32px); font-family:var(--font-mono); }
   #boot.hidden { display:none; }
   #boot-pill {
     display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--line); border-radius:10px;
@@ -731,18 +732,6 @@
   </div>
 </div>
 
-<div class="modal-backdrop hidden" id="tokenModal">
-  <div class="modal">
-    <h3>Dashboard token</h3>
-    <p>Needed for any control action (start/stop/reload/toggle). The desktop app reads this from your .env automatically on boot — you're only seeing this because none was found there yet, or you're using the browser fallback dashboard. Stored only in this browser.</p>
-    <input id="tokenInput" type="password" placeholder="paste DASHBOARD_TOKEN">
-    <div class="row">
-      <button class="btn" id="tokenCancel">Cancel</button>
-      <button class="btn primary" id="tokenSave">Save</button>
-    </div>
-  </div>
-</div>
-
 <div class="shell">
   <div class="side-backdrop" id="side-backdrop"></div>
   <aside class="side" id="side">
@@ -803,7 +792,6 @@
           <button class="btn" id="btn-server-restart">Restart server</button>
         </span>
         <button class="btn" id="btn-reload-config">Reload config</button>
-        <button class="btn" id="btn-token">Set token</button>
       </div>
     </div>
 
@@ -1683,6 +1671,15 @@
             <button class="btn" id="btn-provider-add">Add</button>
           </div>
           <span class="cardnote" id="provider-new-status"></span>
+        </div>
+
+        <h3 style="margin-top:22px;">Deleted providers</h3>
+        <p class="cardnote">Removing a provider keeps a copy here: its address, its settings and its API key (stored encrypted). <b>Restore</b> puts it back exactly as it was, with its models switched the way you had them. If its key has been rotated since, paste the new one first. <b>Forget</b> deletes the copy for good.</p>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Name</th><th>Base URL</th><th>API key</th><th>Removed</th><th></th></tr></thead>
+            <tbody id="providers-deleted-tbody"></tbody>
+          </table>
         </div>
       </div>
 

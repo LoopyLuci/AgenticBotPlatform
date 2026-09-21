@@ -121,6 +121,15 @@ export const operations = {
   ],
   "query_params": []
  },
+ "DELETE /api/providers/store/{name}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/providers/store/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
  "DELETE /api/providers/{name}": {
   "body": false,
   "method": "DELETE",
@@ -1002,6 +1011,15 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/providers/store": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/providers/store",
+  "path_params": [],
+  "query_params": [
+   "status"
+  ]
+ },
  "GET /api/providers/{name}/models": {
   "body": false,
   "method": "GET",
@@ -1306,6 +1324,20 @@ export const operations = {
   "query_params": [
    "sig"
   ]
+ },
+ "GET /desktop-ui/": {
+  "body": false,
+  "method": "GET",
+  "path": "/desktop-ui/",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /desktop-ui/index.html": {
+  "body": false,
+  "method": "GET",
+  "path": "/desktop-ui/index.html",
+  "path_params": [],
+  "query_params": []
  },
  "GET /healthz": {
   "body": false,
@@ -1948,6 +1980,15 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "POST /api/providers/store/{name}/restore": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/providers/store/{name}/restore",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
  "POST /api/providers/{name}/models/toggle": {
   "body": true,
   "method": "POST",
@@ -2034,13 +2075,6 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/setup/apply",
-  "path_params": [],
-  "query_params": []
- },
- "POST /api/setup/generate-token": {
-  "body": false,
-  "method": "POST",
-  "path": "/api/setup/generate-token",
   "path_params": [],
   "query_params": []
  },
@@ -3710,12 +3744,39 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "api_providers_purge_api_providers_store__name__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/providers/store/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "api_providers_restore_api_providers_store__name__restore_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/providers/store/{name}/restore",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
  "api_providers_set_api_providers_post": {
   "body": true,
   "method": "POST",
   "path": "/api/providers",
   "path_params": [],
   "query_params": []
+ },
+ "api_providers_store_api_providers_store_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/providers/store",
+  "path_params": [],
+  "query_params": [
+   "status"
+  ]
  },
  "api_push_register_api_push_register_post": {
   "body": true,
@@ -3938,13 +3999,6 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/api/setup/detect-desktop",
-  "path_params": [],
-  "query_params": []
- },
- "api_setup_generate_token_api_setup_generate_token_post": {
-  "body": false,
-  "method": "POST",
-  "path": "/api/setup/generate-token",
   "path_params": [],
   "query_params": []
  },
@@ -4545,6 +4599,20 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/agent/taint/clear",
+  "path_params": [],
+  "query_params": []
+ },
+ "desktop_ui_index_desktop_ui__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/desktop-ui/",
+  "path_params": [],
+  "query_params": []
+ },
+ "desktop_ui_index_desktop_ui_index_html_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/desktop-ui/index.html",
   "path_params": [],
   "query_params": []
  },

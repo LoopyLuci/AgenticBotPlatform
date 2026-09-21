@@ -673,10 +673,15 @@ the dashboard once the server answers. From there:
 - **The dashboard token fills itself in.** The desktop app reads
   `DASHBOARD_TOKEN` straight out of the resolved `.env` on boot (via a
   Tauri command that shells out to `python -m bot.envfile --print-token`)
-  and unlocks every control action automatically — no more pasting it in
-  by hand. **Set token** (top bar) still exists as a manual override, and
-  is the only option in the browser-fallback dashboard, a different trust
-  boundary where auto-reading the token isn't appropriate.
+  and unlocks every control action automatically. **There is no screen,
+  dialog or button that asks for it, anywhere** (the old "Set token"
+  button is gone). The dashboard page served at `http://127.0.0.1:8787/` is
+  handed the token by the server itself, but only for a plain page load
+  from this machine: a loopback client and Host, no forwarding headers, no
+  `Origin` and no cross-site fetch. Anything reaching it another way (a
+  proxy, Tailscale Funnel, another machine) gets no token and is told to open
+  the dashboard from the desktop app, so a remote party can never be given
+  it. The page is never cached, since it can carry the token.
 - No console window ever flashes up behind the app — every process it
   spawns (`python.exe`, `taskkill.exe`) is launched with `CREATE_NO_WINDOW`.
 
@@ -736,7 +741,7 @@ equivalent of the dashboard.
 Both the terminal (`scripts\setup.py`) and the GUI (shown automatically by
 the desktop app, or reopen it any time from Control Center -> Environment
 -> "Open setup wizard") walk the same core fields — Anthropic API key,
-dashboard token, plus the optional Claude Desktop path — and share one
+plus the optional Claude Desktop path (the dashboard token is never asked for) — and share one
 validator (`bot/setup_wizard.py`) so a field that passes in one passes in
 the other. Platform/bot credentials are separate and not part of this
 wizard at all: the wizard only gates on the core fields above, and
@@ -748,9 +753,9 @@ What "as easy as possible" means concretely here:
 - **Format validation, not just presence.** A pasted value that doesn't
   look like a real token/key gets flagged immediately with what's wrong,
   rather than failing silently at runtime three steps later.
-- **`DASHBOARD_TOKEN` generates itself** — a Generate button in the GUI,
-  automatic in the CLI, either way you never need to run a separate
-  `python -c "import secrets..."` command by hand.
+- **`DASHBOARD_TOKEN` generates itself** — the bot creates it at startup if
+  it is missing, and every UI receives it automatically. It is not a wizard
+  field, so there is nothing to paste or generate by hand.
 - **Claude Desktop's path auto-detects** — Auto-detect in the GUI, tried
   automatically in the CLI, via the same `desktop.find_exe_path()` logic
   the rest of the app uses.
@@ -773,7 +778,7 @@ saved.
 Control Center -> Environment has, below the path picker:
 
 - **A textarea with the live contents of the resolved `.env` file.** Loads
-  once you've set the dashboard token (Set token, top bar); "Reload from
+  once the ABP server is reachable (the token is supplied automatically); "Reload from
   disk" re-fetches it if something else changed the file underneath you.
 - **Save (backs up first)** — writes the textarea back to disk. Every save
   snapshots whatever was there beforehand into
@@ -985,6 +990,20 @@ providers:
     api_key_env: OPENROUTER_API_KEY
     protocol: openai
 ```
+
+**Removing a provider is never final.** Every provider that has been
+configured is kept in a provider store (`data/provider_store.db`, separate from
+the main database so a snapshot restore cannot swallow it). **Remove** moves a
+provider to **Deleted providers** on the Models page, with its address,
+settings and API key (kept encrypted with the vault key, never returned by the
+API); **Restore** puts it back exactly as it was, with its per-model on/off
+choices intact, and takes an optional replacement key for one that has since
+been rotated; **Forget** deletes the copy for good. A provider that vanishes
+from the file by a hand edit or a restored snapshot is noticed and kept too.
+To rebuild providers that were removed before this store existed, from an
+install's config history:
+`python -m bot.provider_store recover --from <state folder>` (their keys are not
+recoverable from history, so restore them with a new one).
 
 Then set a bot instance's backend to `custom_model` and its model to
 `<provider_name>/<model_id>` (e.g. `local_ollama/llama3.1`) — either in

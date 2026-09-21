@@ -7,7 +7,7 @@ const API_BASE = IS_TAURI ? 'http://127.0.0.1:8787' : '';
 
 const state = { jobFilter: 'all', logLevel: 'all', configCache: null };
 
-function getToken() { return localStorage.getItem('dashboard_token') || ''; }
+function getToken() { return window.__ABP_TOKEN__ || localStorage.getItem('dashboard_token') || ''; }
 function setToken(t) { localStorage.setItem('dashboard_token', t); }
 
 // The one-time boot navigation (hideBootOverlay(), below) goes from the
@@ -56,24 +56,24 @@ async function api(path, opts = {}) {
     }
   }
   if (res.status === 401 || res.status === 503) {
-    if (!IS_TAURI) showTokenModal();
+    showAuthNotice();
     throw new Error('unauthorized');
   }
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
-function showTokenModal() { document.getElementById('tokenModal').classList.remove('hidden'); }
-function hideTokenModal() { document.getElementById('tokenModal').classList.add('hidden'); }
-document.getElementById('btn-token').onclick = showTokenModal;
-document.getElementById('tokenCancel').onclick = hideTokenModal;
-document.getElementById('tokenSave').onclick = () => {
-  setToken(document.getElementById('tokenInput').value.trim());
-  hideTokenModal();
-  refreshEnvEditor(true);
-  refreshEnvBackups();
-  connectDevicesSocket();
-};
+// The token is never typed in. The desktop app reads it from disk and the server puts it in the page when the
+// page is loaded from this machine. If that did not work there is nothing to enter: say so, once, and move on.
+function showAuthNotice() {
+  if (document.getElementById('authNotice')) return;
+  const n = document.createElement('div');
+  n.id = 'authNotice';
+  n.setAttribute('role', 'status');
+  n.style.cssText = 'position:fixed; left:50%; top:12px; transform:translateX(-50%); z-index:300; max-width:560px; padding:10px 16px; border-radius:8px; background:var(--surface-3, var(--surface)); color:var(--ink); border-left:3px solid var(--critical); box-shadow:0 4px 18px rgba(0,0,0,.3); font-size:12.5px; line-height:1.5;';
+  n.textContent = 'This page could not sign in to the ABP server by itself. Open it from the ABP desktop app on the machine that runs the bot, or wait for the bot to finish starting and reload.';
+  document.body.appendChild(n);
+}
 
 // ---------------------------------------------------- live device presence
 // A WebSocket to /api/ws carries device-presence deltas (pairing, going
@@ -1094,7 +1094,7 @@ async function refreshEnvEditor(force) {
   const editor = document.getElementById('env-editor');
   if (!getToken()) {
     editor.value = '';
-    editor.placeholder = 'Set the dashboard token above, then click "Reload from disk".';
+    editor.placeholder = 'Waiting for the ABP server, then click "Reload from disk".';
     return;
   }
   if (envEditorLoaded && !force) return;
@@ -1106,7 +1106,7 @@ async function refreshEnvEditor(force) {
 async function refreshEnvBackups() {
   const tbody = document.getElementById('env-backups-tbody');
   if (!getToken()) {
-    tbody.innerHTML = '<tr class="emptyrow"><td colspan="4">Unlock with the dashboard token to view.</td></tr>';
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="4">Connecting to the ABP server…</td></tr>';
     return;
   }
   const backups = await api('/api/env/backups');
@@ -1141,7 +1141,7 @@ document.getElementById('btn-env-save').onclick = async () => {
       : 'Saved. Restart the server to apply.';
     refreshEnvBackups();
   } catch (e) {
-    statusEl.textContent = 'Save failed — check the dashboard token and try again.';
+    statusEl.textContent = 'Save failed — check that the ABP server is running and try again.';
   }
 };
 document.getElementById('btn-env-editor-reload').onclick = () => refreshEnvEditor(true);
@@ -1157,7 +1157,7 @@ document.getElementById('btn-mcp-self-register').onclick = async () => {
     refreshMcp();
   } catch (e) {
     statusEl.className = 'msg bad';
-    statusEl.textContent = 'Failed — check the dashboard token and try again.';
+    statusEl.textContent = 'Failed — check that the ABP server is running and try again.';
   }
 };
 
@@ -2016,10 +2016,76 @@ async function refreshProviders() {
       <td><button class="btn small" data-provider-delete="${esc(p.name)}">Remove</button></td>
     </tr>`).join('') : '<tr><td colspan="4" class="cardnote">No custom providers configured yet.</td></tr>';
   tbody.querySelectorAll('[data-provider-delete]').forEach(btn => btn.onclick = async () => {
-    await api(`/api/providers/${encodeURIComponent(btn.dataset.providerDelete)}`, { method: 'DELETE' });
+    const name = btn.dataset.providerDelete;
+    try {
+      await api(`/api/providers/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    } catch (e) {
+      showToast(`Could not remove ${name}: ${e.message || e}`, 'error');
+      return;
+    }
+    showToast(`Removed ${name}. You can restore it from Deleted providers below.`, 'info');
     refreshProviders();
     refreshModels();
     refreshModelsPage();
+  });
+  refreshDeletedProviders();
+}
+
+// The provider store keeps every removed provider (bot/provider_store.py): restore puts one back as it was,
+// forget deletes the copy for good. The API never returns a key, only whether one is kept.
+async function refreshDeletedProviders() {
+  const tbody = document.getElementById('providers-deleted-tbody');
+  if (!getToken() || !tbody) return;
+  let data;
+  try {
+    data = await api('/api/providers/store?status=deleted');
+  } catch (_e) { return; }
+  const list = data.providers || [];
+  const removedAt = (p) => {
+    const when = p.deleted_at ? new Date(p.deleted_at).toLocaleString() : '';
+    const rebuilt = (p.source === 'history' || p.source === 'recovered') ? ' <span class="cardnote">(rebuilt from history, no key)</span>' : '';
+    return esc(when) + rebuilt;
+  };
+  tbody.innerHTML = list.length ? list.map(p => `
+    <tr>
+      <td>${esc(p.name)}</td>
+      <td><code>${esc(p.base_url)}</code></td>
+      <td>${p.api_key_env ? 'env: ' + esc(p.api_key_env) : (p.has_key ? 'kept (encrypted)' : '(none)')}</td>
+      <td>${removedAt(p)}</td>
+      <td>
+        <input type="text" class="provider-restore-key" placeholder="new API key (optional)" autocomplete="off" spellcheck="false" style="max-width:180px;">
+        <button class="btn small" data-provider-restore="${esc(p.name)}">Restore</button>
+        <button class="btn small" data-provider-forget="${esc(p.name)}">Forget</button>
+      </td>
+    </tr>`).join('') : '<tr><td colspan="5" class="cardnote">Nothing removed. A provider you remove is kept here so you can restore it.</td></tr>';
+  tbody.querySelectorAll('[data-provider-restore]').forEach(btn => btn.onclick = async () => {
+    const name = btn.dataset.providerRestore;
+    const key = btn.closest('tr').querySelector('.provider-restore-key').value.trim();
+    try {
+      await api(`/api/providers/store/${encodeURIComponent(name)}/restore`, {
+        method: 'POST',
+        body: JSON.stringify(key ? { api_key: key } : {}),
+      });
+    } catch (e) {
+      showToast(`Could not restore ${name}: ${e.message || e}`, 'error');
+      return;
+    }
+    showToast(`Restored ${name}`, 'success');
+    refreshProviders();
+    refreshModels();
+    refreshModelsPage();
+  });
+  tbody.querySelectorAll('[data-provider-forget]').forEach(btn => btn.onclick = async () => {
+    const name = btn.dataset.providerForget;
+    if (!confirm(`Forget ${name} for good? Its saved key and model settings are deleted and it cannot be restored.`)) return;
+    try {
+      await api(`/api/providers/store/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    } catch (e) {
+      showToast(`Could not forget ${name}: ${e.message || e}`, 'error');
+      return;
+    }
+    showToast(`Forgot ${name}`, 'info');
+    refreshDeletedProviders();
   });
 }
 
@@ -2239,7 +2305,7 @@ document.getElementById('btn-provider-add').onclick = async () => {
 async function refreshBots() {
   const grid = document.getElementById('bots-grid');
   if (!getToken()) {
-    grid.innerHTML = '<p class="cardnote">Unlock with the dashboard token to view.</p>';
+    grid.innerHTML = '<p class="cardnote">Connecting to the ABP server…</p>';
     return;
   }
   // This runs on a 15s timer — rebuilding the grid's innerHTML while the
@@ -2465,7 +2531,7 @@ document.getElementById('btn-bot-create').onclick = async () => {
 async function refreshBotsBackups() {
   const tbody = document.getElementById('bots-backups-tbody');
   if (!getToken()) {
-    tbody.innerHTML = '<tr class="emptyrow"><td colspan="4">Unlock with the dashboard token to view.</td></tr>';
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="4">Connecting to the ABP server…</td></tr>';
     return;
   }
   let backups;
@@ -2547,7 +2613,7 @@ async function refreshSwarms() {
   const tbody = document.getElementById('swarms-tbody');
   const runSelect = document.getElementById('swarm-run-select');
   if (!getToken()) {
-    tbody.innerHTML = '<tr class="emptyrow"><td colspan="4">Unlock with the dashboard token to view.</td></tr>';
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="4">Connecting to the ABP server…</td></tr>';
     return;
   }
   let swarms;
@@ -2593,7 +2659,7 @@ async function refreshSwarms() {
 async function refreshSwarmToolsPanel() {
   const tbody = document.getElementById('swarm-tools-tbody');
   if (!getToken()) {
-    tbody.innerHTML = '<tr class="emptyrow"><td colspan="5">Unlock with the dashboard token to view.</td></tr>';
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="5">Connecting to the ABP server…</td></tr>';
     return;
   }
   let data;
@@ -2653,7 +2719,7 @@ async function _loadContextDocIntoForm(name) {
 async function refreshContextDocs() {
   const tbody = document.getElementById('context-docs-tbody');
   if (!getToken()) {
-    tbody.innerHTML = '<tr class="emptyrow"><td colspan="5">Unlock with the dashboard token to view.</td></tr>';
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="5">Connecting to the ABP server…</td></tr>';
     return;
   }
   let data;
@@ -2822,7 +2888,7 @@ let openDelegationDetailJobId = null;
 async function refreshDelegationActivity() {
   const tbody = document.getElementById('delegation-activity-tbody');
   if (!getToken()) {
-    tbody.innerHTML = '<tr class="emptyrow"><td colspan="4">Unlock with the dashboard token to view.</td></tr>';
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="4">Connecting to the ABP server…</td></tr>';
     return;
   }
   let data;
@@ -3008,7 +3074,7 @@ async function downloadUrl(path) {
     a.remove();
     URL.revokeObjectURL(url);
   } catch (e) {
-    alert('Export failed — check the dashboard token.');
+    alert('Export failed — check that the ABP server is running.');
   }
 }
 
@@ -3029,7 +3095,7 @@ async function downloadAttachment(messageId, name) {
     a.remove();
     URL.revokeObjectURL(url);
   } catch (e) {
-    alert('Download failed — check the dashboard token.');
+    alert('Download failed — check that the ABP server is running.');
   }
 }
 
@@ -3365,8 +3431,8 @@ async function sendChatMessage() {
     await refreshChat(chatState.activeInstanceId);
   } catch (e) {
     statusEl.textContent = chatState.mode === 'bot'
-      ? 'Send failed — check the dashboard token and that this bot instance exists.'
-      : 'Send failed — check the dashboard token and that this bot is running.';
+      ? 'Send failed — check that the ABP server is running and that this bot instance exists.'
+      : 'Send failed — check that the ABP server is running and that this bot is running.';
   } finally {
     btn.disabled = false;
   }
@@ -3522,7 +3588,7 @@ async function downloadServerChatAttachment(messageId, name) {
     a.remove();
     URL.revokeObjectURL(url);
   } catch (e) {
-    alert('Download failed — check the dashboard token.');
+    alert('Download failed — check that the ABP server is running.');
   }
 }
 
@@ -3712,7 +3778,7 @@ async function sendServerChatMessage() {
     await refreshServerChatMessages();
     await refreshServerChatList();
   } catch (e) {
-    statusEl.textContent = 'Send failed — check the dashboard token.';
+    statusEl.textContent = 'Send failed — check that the ABP server is running.';
   } finally {
     btn.disabled = false;
   }
@@ -3981,7 +4047,7 @@ async function refreshPlatforms() {
         refreshPlatforms();
         refreshChatRecipients();
       } catch (e) {
-        statusEl.textContent = 'Save failed — check the dashboard token and try again.';
+        statusEl.textContent = 'Save failed — check that the ABP server is running and try again.';
       }
     });
   } catch (_e) { /* token not set yet */ }
@@ -4170,7 +4236,7 @@ document.getElementById('btn-mobile-generate').onclick = async () => {
     document.getElementById('mobile-new-tier').value = 'none';
     refreshMobileKeys();
   } catch (e) {
-    alert('Failed to generate key — check the dashboard token.');
+    alert('Failed to generate key — check that the ABP server is running.');
   } finally {
     btn.disabled = false;
   }
@@ -4459,7 +4525,7 @@ document.getElementById('btn-training-add').onclick = async () => {
     refreshTrainingPhrases();
     refreshTrainingHealth();
   } catch (e) {
-    statusEl.textContent = 'Failed to add phrase — check the dashboard token.';
+    statusEl.textContent = 'Failed to add phrase — check that the ABP server is running.';
   }
 };
 
@@ -4499,7 +4565,7 @@ document.getElementById('btn-training-retrain').onclick = async () => {
   try {
     resp = await api('/api/support-bot/retrain', { method: 'POST', body: JSON.stringify({ accept_if_regression_under: tolerance }) });
   } catch (e) {
-    resultEl.innerHTML = '<span class="cardnote">Retrain failed — check the dashboard token.</span>';
+    resultEl.innerHTML = '<span class="cardnote">Retrain failed — check that the ABP server is running.</span>';
     return;
   }
   const acc = resp.eval && resp.eval.holdout_accuracy;
@@ -4573,7 +4639,7 @@ document.getElementById('btn-training-generate').onclick = async () => {
   try {
     resp = await api('/api/support-bot/generate', { method: 'POST' });
   } catch (e) {
-    statusEl.textContent = 'Generation failed — check the dashboard token.';
+    statusEl.textContent = 'Generation failed — check that the ABP server is running.';
     return;
   }
   if (resp.reason && !resp.dispatched) {
@@ -4596,7 +4662,7 @@ document.getElementById('btn-training-generate-run').onclick = async () => {
       method: 'POST', body: JSON.stringify({ module_id: moduleId, target_per_intent: targetPerIntent }),
     });
   } catch (e) {
-    statusEl.textContent = 'Run failed — check the dashboard token.';
+    statusEl.textContent = 'Run failed — check that the ABP server is running.';
     return;
   }
   statusEl.textContent = `${resp.batches_run} batch(es), ${resp.total_pending_added} example(s) added (${resp.total_auto_approved} auto-approved) — stopped: ${esc(resp.stopped_reason)}.`;
@@ -4807,12 +4873,10 @@ function renderWizardFields(status) {
   renderWizardBackends(status);
   const container = document.getElementById('wizard-fields');
   container.innerHTML = Object.entries(status.fields).map(([key, f]) => {
-    const isToken = key === 'DASHBOARD_TOKEN';
     const isDesktop = key === 'CLAUDE_DESKTOP_EXE';
     const already = f.present && f.valid;
     const placeholder = already ? 'already set — leave blank to keep' : (isDesktop ? 'optional — Auto-detect or paste a path' : '');
-    const extraBtn = isToken ? `<button class="btn" data-generate="${key}" type="button">Generate</button>`
-      : isDesktop ? `<button class="btn" data-detect="${key}" type="button">Auto-detect</button>` : '';
+    const extraBtn = isDesktop ? `<button class="btn" data-detect="${key}" type="button">Auto-detect</button>` : '';
     const msgText = f.present ? f.message : (f.required ? 'not set yet' : '');
     const msgClass = f.present ? (f.valid ? 'good' : 'bad') : '';
     return `
@@ -4827,10 +4891,6 @@ function renderWizardFields(status) {
       </div>`;
   }).join('');
 
-  container.querySelectorAll('[data-generate]').forEach(btn => btn.onclick = async () => {
-    const res = await api('/api/setup/generate-token', { method: 'POST' });
-    container.querySelector(`input[data-field="${btn.dataset.generate}"]`).value = res.token;
-  });
   container.querySelectorAll('[data-detect]').forEach(btn => btn.onclick = async () => {
     const res = await api('/api/setup/detect-desktop');
     const input = container.querySelector(`input[data-field="${btn.dataset.detect}"]`);
@@ -4870,7 +4930,7 @@ document.getElementById('btn-wizard-save').onclick = async () => {
       renderWizardFields(res.status);
     }
   } catch (e) {
-    statusEl.textContent = 'Save failed — check the dashboard token and try again.';
+    statusEl.textContent = 'Save failed — check that the ABP server is running and try again.';
   }
 };
 
@@ -5297,7 +5357,7 @@ async function pairAndroidDevice(serial) {
     refreshMobileKeys();
   } catch (e) {
     androidStep('Key generation failed.');
-    alert('Failed to generate a pairing key — check the dashboard token.');
+    alert('Failed to generate a pairing key — check that the ABP server is running.');
     return false;
   }
   androidStep('Pairing device…');

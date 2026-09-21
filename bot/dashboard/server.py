@@ -24,6 +24,7 @@ import socket
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlsplit
 
 import qrcode
 from qrcode.image.pure import PyPNGImage
@@ -289,6 +290,48 @@ def _require_token_or_bootstrap(request: Request, x_dashboard_token: Optional[st
         return
     if not _tokens_match(x_dashboard_token, expected):
         raise HTTPException(status_code=401, detail="invalid dashboard token")
+
+
+_LOCAL_PAGE_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+_FORWARDING_HEADERS = ("x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "forwarded", "x-real-ip")
+
+
+def _is_local_page_request(request: Request) -> bool:
+    """True only for a plain page load by a browser or webview on THIS machine.
+
+    The dashboard token is never typed in: the page is handed it when it is loaded from here. So this has to be
+    strict. The client must be loopback and the Host header must name loopback (a name that resolves to it, a
+    Funnel or a reverse proxy in front does not count). Nothing may say the request was forwarded. And it must
+    not be a script fetching the page from another web app: those carry an Origin header or a cors / cross-site
+    Sec-Fetch marker, which a page load never does."""
+    client = request.client.host if request.client else ""
+    if client not in _LOOPBACK_HOSTS:
+        return False
+    host = urlsplit("//" + (request.headers.get("host") or "")).hostname or ""
+    if host not in _LOCAL_PAGE_HOSTS:
+        return False
+    if any(request.headers.get(h) for h in _FORWARDING_HEADERS):
+        return False
+    if request.headers.get("origin"):
+        return False
+    if request.headers.get("sec-fetch-mode") == "cors" or request.headers.get("sec-fetch-site") == "cross-site":
+        return False
+    return True
+
+
+def _page_with_token(path: Path, request: Request) -> HTMLResponse:
+    """An HTML page of the dashboard, with the auto-generated DASHBOARD_TOKEN placed in it for a local page load
+    (see _is_local_page_request). A page that carries the token is never stored anywhere; any other keeps the
+    revalidate-every-time caching the dashboard has always had."""
+    html = path.read_text(encoding="utf-8")
+    token = os.environ.get("DASHBOARD_TOKEN")
+    cache = "no-cache"
+    if token and _is_local_page_request(request):
+        literal = json.dumps(token).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+        snippet = f"<script>window.__ABP_TOKEN__={literal};</script>"
+        html = html.replace("</head>", snippet + "</head>", 1)
+        cache = "no-store"
+    return HTMLResponse(html, headers={"Cache-Control": cache})
 
 
 def _mesh_port_header(x_mesh_port: Optional[str] = Header(default=None)) -> Optional[int]:
@@ -639,8 +682,18 @@ def build_app() -> FastAPI:
                 logger.exception("presence broadcaster iteration failed")
 
     @app.get("/")
-    async def index():
-        return FileResponse(STATIC_DIR / "dashboard.html", headers={"Cache-Control": "no-cache"})
+    async def index(request: Request):
+        return _page_with_token(STATIC_DIR / "dashboard.html", request)
+
+    # The desktop app's own UI, served here too once the bot is up. Registered before the static mount below so
+    # these two paths get the token; every other file under /desktop-ui/ is served as it always was.
+    @app.get("/desktop-ui/")
+    @app.get("/desktop-ui/index.html")
+    async def desktop_ui_index(request: Request):
+        page = DESKTOP_UI_DIR / "index.html"
+        if not page.is_file():
+            raise HTTPException(status_code=404, detail="desktop UI is not installed")
+        return _page_with_token(page, request)
 
     app.mount("/static", _NoCacheStaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -1064,6 +1117,37 @@ def build_app() -> FastAPI:
 
         if not providers.delete_provider(name, actor="dashboard"):
             raise HTTPException(status_code=404, detail=f"no provider named {name!r}")
+        return {"ok": True, "restorable": True}
+
+    # Removing a provider keeps it in the provider store (bot/provider_store.py); these list what has been
+    # removed, bring one back, or forget one for good. Keys are never returned, only whether one is stored.
+    @app.get("/api/providers/store", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_providers_store(status: Optional[str] = None):
+        from bot import providers
+
+        if status not in (None, "active", "deleted"):
+            raise HTTPException(status_code=400, detail="status must be 'active' or 'deleted'")
+        return {"providers": providers.store_listing(status)}
+
+    @app.post("/api/providers/store/{name}/restore", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_providers_restore(name: str, payload: dict = Body(default={})):
+        from bot import providers
+
+        try:
+            providers.restore_provider(name, api_key=(payload or {}).get("api_key") or None, actor="dashboard")
+        except ValueError as exc:
+            conflict = "already configured" in str(exc)
+            raise HTTPException(status_code=409 if conflict else 404, detail=str(exc))
+        db.log_audit(actor="dashboard", action="provider_restore", detail=name)
+        return {"ok": True}
+
+    @app.delete("/api/providers/store/{name}", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_providers_purge(name: str):
+        from bot import provider_store
+
+        if not provider_store.purge(name):
+            raise HTTPException(status_code=404, detail=f"no removed provider named {name!r}")
+        db.log_audit(actor="dashboard", action="provider_purge", detail=name)
         return {"ok": True}
 
     @app.get("/api/providers/catalog", dependencies=[Depends(_require_token_or_api_key)])
@@ -1588,10 +1672,6 @@ def build_app() -> FastAPI:
     @app.get("/api/setup/status", dependencies=[Depends(_require_token_or_bootstrap)])
     async def api_setup_status():
         return setup_wizard.check_status()
-
-    @app.post("/api/setup/generate-token", dependencies=[Depends(_require_token_or_bootstrap)])
-    async def api_setup_generate_token():
-        return {"token": setup_wizard.generate_dashboard_token()}
 
     @app.get("/api/setup/detect-desktop", dependencies=[Depends(_require_token_or_bootstrap)])
     async def api_setup_detect_desktop():

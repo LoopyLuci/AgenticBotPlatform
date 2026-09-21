@@ -24,7 +24,6 @@ from dotenv import dotenv_values
 from bot import envfile
 from bot.validators import (
     validate_anthropic_key as _validate_anthropic_key,
-    validate_dashboard_token as _validate_dashboard_token,
     validate_desktop_path as _validate_desktop_path,
     validate_discord_token as _validate_discord_token,
     validate_slack_app_token as _validate_slack_app_token,
@@ -46,12 +45,8 @@ FIELDS: dict[str, dict[str, Any]] = {
         "label": "Anthropic API key",
         "help": "console.anthropic.com/settings/keys",
     },
-    "DASHBOARD_TOKEN": {
-        "required": True,
-        "validate": _validate_dashboard_token,
-        "label": "Dashboard token",
-        "help": "Any random string — Generate makes one for you.",
-    },
+    # DASHBOARD_TOKEN is deliberately not a field: nobody is ever asked for it. bot.main generates it at startup
+    # (envfile.ensure_dashboard_token) and every UI receives it automatically.
     "CLAUDE_DESKTOP_EXE": {
         "required": False,
         "validate": _validate_desktop_path,
@@ -266,8 +261,7 @@ def backend_readiness() -> dict[str, dict[str, Any]]:
 
 
 def _dynamic_required(key: str, active: set[str]) -> bool:
-    # DASHBOARD_TOKEN is fixed-required (the dashboard's own security
-    # boundary, independent of chat platform). ANTHROPIC_API_KEY depends on
+    # ANTHROPIC_API_KEY depends on
     # whether anything's actually routed to the api backend. CLAUDE_DESKTOP_EXE
     # stays optional even when ui is active, since it auto-detects at
     # runtime either way. Which messaging platform to use lives entirely in
