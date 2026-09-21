@@ -227,3 +227,35 @@ def test_the_agent_routes_need_the_token(client):
                          ("get", "/api/agent/tools"), ("post", "/api/agent/config"), ("post", "/api/agent/config/reset")):
         response = getattr(client, method)(path)
         assert response.status_code in (401, 403, 503), (path, response.status_code)
+
+
+# ------------------------------------------------------------------ per-bot permission mode
+def _add_agent_bot(name="agent-bot"):
+    from bot import db
+
+    conn = db.get_conn()
+    cur = conn.execute("INSERT INTO bot_instances (name, platform, backend, credentials, enabled, created_at, updated_at) "
+                       "VALUES (?, 'telegram', 'native_agent', '{}', 1, datetime('now'), datetime('now'))", (name,))
+    conn.commit()
+    return cur.lastrowid
+
+
+def test_a_bots_own_permission_mode_can_be_set_and_cleared_back_to_the_global_default(client):
+    bot_id = _add_agent_bot()
+    own = lambda: client.get("/api/agent/overview", headers=TOKEN).json()["bots"][0]["permission_mode_own"]  # noqa: E731
+    assert own() is None
+    assert client.put(f"/api/instances/{bot_id}/permissions", json={"mode": "plan"}, headers=TOKEN).status_code == 200
+    assert own() == "plan"
+    assert client.put(f"/api/instances/{bot_id}/permissions", json={"mode": ""}, headers=TOKEN).status_code == 200
+    assert own() is None  # follows the global default again
+    assert client.put(f"/api/instances/{bot_id}/permissions", json={"mode": "wild"}, headers=TOKEN).status_code == 400
+
+
+def test_dangerous_settings_say_when_their_warning_applies():
+    by = schema.BY_ID
+    assert by["native_agent.permissions.allow_bypass"]["danger_value"] is True
+    assert by["native_agent.sandbox.backend"]["danger_value"] == "local"
+    assert by["native_agent.sandbox.env.mode"]["danger_value"] == "inherit"
+    for f in schema.FIELDS:
+        if f["danger"] and f["type"] == "enum":
+            assert f["danger_value"] in [c[0] for c in f["choices"]], f["id"]

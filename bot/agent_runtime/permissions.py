@@ -287,7 +287,7 @@ def set_instance_settings(instance_id: int, *, mode: Optional[str] = None, rules
 
     if is_locked():
         raise PermissionError("permissions are locked by the host configuration")
-    if mode is not None and mode not in MODES:
+    if mode is not None and mode != "" and mode not in MODES:
         raise ValueError(f"mode must be one of {', '.join(MODES)}")
     if rules is not None:
         problems = validate_rules(rules)
@@ -298,7 +298,9 @@ def set_instance_settings(instance_id: int, *, mode: Optional[str] = None, rules
         raise KeyError(f"no bot instance {instance_id}")
     overrides = dict(inst.get("action_overrides") or {})
     stored = dict(overrides.get("permissions") or {})
-    if mode is not None:
+    if mode == "":
+        stored.pop("mode", None)  # an empty mode clears the bot's own choice, so it follows the global default again
+    elif mode is not None:
         stored["mode"] = mode
     if rules is not None:
         stored["rules"] = [dict(r) for r in rules]

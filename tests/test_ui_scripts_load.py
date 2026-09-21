@@ -29,8 +29,15 @@ def _free_port() -> int:
 
 
 @pytest.fixture
-def served_dashboard(monkeypatch, temp_db):
+def served_dashboard(monkeypatch, temp_db, tmp_path):
     monkeypatch.setenv("DASHBOARD_TOKEN", "unused-dashboard-token")
+    # The pages fetch each provider's models; never let a test read the real providers.yaml or reach out over the network.
+    from bot import providers
+    from bot.config import ConfigManager
+
+    empty = tmp_path / "providers.yaml"
+    empty.write_text("providers: {}\n", encoding="utf-8")
+    monkeypatch.setattr(providers, "_manager", ConfigManager(path=empty))
     port = _free_port()
     server = uvicorn.Server(uvicorn.Config(build_app(), host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=server.run, daemon=True)
@@ -100,3 +107,80 @@ def test_the_top_bar_pill_is_rendered_by_the_script(served_dashboard, browser):
     text = page.evaluate("document.getElementById('pill-bot').textContent")
     assert "bots" in text or "bot" in text
     assert page.evaluate("!!document.getElementById('pill-reload')") is False
+
+
+# ------------------------------------------------------------------ the ABP Agents page
+@pytest.fixture
+def agent_bot(temp_db):
+    from bot import db
+
+    conn = db.get_conn()
+    conn.execute("INSERT INTO bot_instances (name, platform, backend, model, credentials, enabled, created_at, updated_at) "
+                 "VALUES ('Research bot', 'telegram', 'native_agent', 'local/model', '{}', 1, datetime('now'), datetime('now'))")
+    conn.commit()
+
+
+def _agents_page(browser, base, tmp_path, monkeypatch):
+    """Open the Agents page with config/backends.yaml pointed at a temp copy, so saving never touches the real one."""
+    import shutil
+
+    from bot.config import config
+
+    copy = tmp_path / "backends.yaml"
+    shutil.copy(config.path, copy)
+    monkeypatch.setattr(config, "path", copy)
+    page, errors = _open(browser, base + "/")
+    page.wait_for_function("window.abpAgents && window.abpAgents.state.loaded", timeout=15000)
+    return page, errors, copy
+
+
+def test_the_agents_page_lists_tabs_bots_and_readiness(served_dashboard, browser, agent_bot, tmp_path, monkeypatch):
+    page, errors, _ = _agents_page(browser, served_dashboard, tmp_path, monkeypatch)
+    assert errors == [], errors
+    tabs = page.evaluate("[...document.querySelectorAll('.agents-tab')].map(t => t.textContent.trim())")
+    assert tabs == ["Overview", "Runtime", "Safety", "Tools", "Sub-agents & swarms", "Skills", "Models"]
+    page.wait_for_function("document.querySelector('#agents-body .ag-check')", timeout=15000)
+    assert "Research bot" in page.evaluate("document.getElementById('agents-body').textContent")
+    assert page.evaluate("document.querySelectorAll('#agents-body .ag-check').length") >= 5
+
+
+def test_editing_a_setting_saves_it_and_a_bad_value_is_refused_with_a_reason(served_dashboard, browser, agent_bot, tmp_path, monkeypatch):
+    import yaml
+
+    page, errors, copy = _agents_page(browser, served_dashboard, tmp_path, monkeypatch)
+    page.evaluate("window.abpAgents.setTab('runtime')")
+    box = page.locator('[data-f="native_agent.limits.max_iterations"]')
+    box.fill("9")
+    assert page.locator("#ag-save").is_visible()
+    page.locator("#ag-save").click()
+    page.wait_for_function("document.getElementById('agents-savebar').classList.contains('hidden')", timeout=10000)
+    assert yaml.safe_load(copy.read_text(encoding="utf-8"))["native_agent"]["limits"]["max_iterations"] == 9
+
+    bad = page.locator('[data-f="native_agent.context.compact_at"]')
+    bad.fill("5")
+    page.locator("#ag-save").click()
+    err = page.locator('[data-row="native_agent.context.compact_at"] .ag-err')
+    err.wait_for(state="visible", timeout=10000)
+    assert "at most" in err.inner_text()
+    assert yaml.safe_load(copy.read_text(encoding="utf-8"))["native_agent"]["context"]["compact_at"] != 5
+    assert errors == [], errors
+
+
+def test_a_dangerous_setting_shows_its_warning_only_while_it_applies(served_dashboard, browser, agent_bot, tmp_path, monkeypatch):
+    page, errors, _ = _agents_page(browser, served_dashboard, tmp_path, monkeypatch)
+    page.evaluate("window.abpAgents.setTab('safety')")
+    warning = page.locator('[data-row="native_agent.permissions.allow_bypass"] .ag-danger')
+    assert not warning.is_visible()
+    page.locator('[data-f="native_agent.permissions.allow_bypass"]').check()
+    assert warning.is_visible()
+    page.locator('[data-f="native_agent.permissions.allow_bypass"]').uncheck()
+    assert not warning.is_visible()
+
+
+def test_the_agent_bot_button_opens_that_bots_settings(served_dashboard, browser, agent_bot, tmp_path, monkeypatch):
+    page, errors, _ = _agents_page(browser, served_dashboard, tmp_path, monkeypatch)
+    page.wait_for_function("document.querySelector('[data-bot-agent]')", timeout=20000)
+    page.locator("[data-bot-agent]").first.click()
+    assert page.evaluate("window.abpAgents.state.tab") == "subagents"
+    assert page.evaluate("document.getElementById('agent-settings-instance').value") != ""
+    assert errors == [], errors

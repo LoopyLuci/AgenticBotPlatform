@@ -674,6 +674,8 @@ function refreshBotModelOptions() {
   document.getElementById('bot-new-model-options').innerHTML = options.map(name => `<option value="${esc(name)}"></option>`).join('');
   const help = document.getElementById('bot-new-model-help');
   const input = document.getElementById('bot-new-model');
+  const agentHint = document.getElementById('bot-agent-hint');
+  if (agentHint) agentHint.classList.toggle('hidden', !['native_agent', 'api', 'custom_model'].includes(backend));
   if (backend === 'custom_model' || backend === 'native_agent') {
     help.textContent = 'Required for this backend: "<provider>/<model_id>", where <provider> is one configured on the Models tab.';
     input.placeholder = 'e.g. local_ollama/llama3.1';
@@ -2368,6 +2370,7 @@ async function refreshBots() {
       ${b.circuit && b.circuit.open ? `<div class="bc-error">Paused after ${b.circuit.consecutive_failures} consecutive failures — retrying automatically, or <a href="#" data-bot-circuit-reset="${b.id}">retry now</a>.</div>` : ''}
       <div class="bc-actions">
         <button class="btn" data-bot-edit="${b.id}" style="padding:3px 8px; font-size:11px;">Edit</button>
+        ${['native_agent', 'api', 'custom_model'].includes(b.backend) ? `<button class="btn" data-bot-agent="${b.id}" style="padding:3px 8px; font-size:11px;">Agent settings</button>` : ''}
         <button class="btn" data-bot-toggle="${b.id}" style="padding:3px 8px; font-size:11px;">${b.enabled ? 'Disable' : 'Enable'}</button>
         ${b.enabled ? `<button class="btn" data-bot-startstop="${b.id}" style="padding:3px 8px; font-size:11px;">${b.live_running ? 'Stop' : 'Start'}</button>
         <button class="btn" data-bot-restart="${b.id}" style="padding:3px 8px; font-size:11px;">Restart</button>` : ''}
@@ -2388,6 +2391,8 @@ async function refreshBots() {
     const id = Number(el.dataset.botModel);
     await api(`/api/bots/${id}`, { method: 'PUT', body: JSON.stringify({ model: value || null }) });
   });
+  document.querySelectorAll('[data-bot-agent]').forEach(btn => btn.onclick = () => window.abpAgents && window.abpAgents.openBot(btn.dataset.botAgent));
+  document.querySelectorAll('[data-go-agents]').forEach(a => a.onclick = (e) => { e.preventDefault(); window.abpAgents && window.abpAgents.goTo('agents:overview'); });
   document.querySelectorAll('[data-bot-edit]').forEach(btn => btn.onclick = () => {
     const bot = bots.find(b => b.id === Number(btn.dataset.botEdit));
     if (bot) _loadBotIntoForm(bot);
