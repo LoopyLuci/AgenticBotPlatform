@@ -88,6 +88,20 @@ app's own version (the Android app versions independently — see its own
     stream reply text as it is generated, others deliver it whole. A turn given
     `context["stream_notify"]` receives the events; on failover it is told to discard
     what it showed. Dashboards, the desktop app, Android and chat channels adopt it next.
+- **Model knowledge, limits and usage (roadmap PM).** ABP now knows each model's context window, output limit,
+  abilities, price, knowledge cutoff and published free-tier limits (requests and tokens per minute and day,
+  with the source and the date checked; `config/model_limits.yaml`), counts every model call, reads the
+  provider's rate-limit headers, and holds a call back - or fails over to the fallback model - before a used-up
+  free model would only answer 429, saying when it frees up in your time zone. New: agent tools `model_info`
+  and `find_models`, `/modelinfo` (`/limits`), `/api/models/*`, MCP `get_model_info` / `get_model_usage` /
+  `find_models`; your own limits under `native_agent.models`. Published figures can be out of date and most
+  providers publish none; see `docs/agents/models.md`. Requires `tzdata`.
+- **Named agents, skill packs and custom commands (roadmap P4).** Agents defined in Markdown
+  (`.claude/agents`, `.opencode/agent`, `.abp/agents`) with `spawn_subagent agent=...`, optional git-worktree
+  isolation and a definition that can only narrow what a child may do; SKILL.md packs loaded on demand
+  (`read_skill_file`); `/skills fetch <git url>` into a quarantine with a security scan and signature check,
+  approved only by a person; optional skill drafts written after long tasks (off by default, human approval);
+  Markdown slash commands. See `docs/agents/skills-and-agents.md`.
 - **Agent context and memory (roadmap P3).** The loop now watches how full the model's window is (token
   estimates calibrated on the provider's own counts) and, before each call, clears old tool outputs and if
   needed summarises older conversation; Anthropic requests carry a moving cache breakpoint. New tools:

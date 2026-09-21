@@ -96,6 +96,8 @@ COMMAND_DEFS: tuple[CommandDef, ...] = (
     CommandDef("skills", "Manage locally-installed skills", category="Tools",
                args_hint="list | install <path> | remove <name> | inspect <name>"),
     CommandDef("usage", "Show this bot's token usage", category="Info"),
+    CommandDef("modelinfo", "What a model can do, and what is left of its free allowance", category="Info",
+               args_hint="[provider/model] | usage | refresh", aliases=("limits",)),
     CommandDef("insights", "Show recent activity by day", category="Info", args_hint="[days]"),
     CommandDef("start_desktop", "Start Claude Desktop", category="Desktop"),
     CommandDef("stop_desktop", "Stop Claude Desktop", category="Desktop"),

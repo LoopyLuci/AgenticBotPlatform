@@ -227,6 +227,7 @@ class AnthropicTransport(ProviderTransport):
         except asyncio.TimeoutError as exc:
             raise BackendError(f"anthropic transport timed out after {timeout_s}s") from exc
         except Exception as exc:
+            self.capture(getattr(exc, "response", None))
             raise BackendError(f"anthropic transport error: {exc}") from exc
         return _normalize(resp)
 
@@ -265,6 +266,7 @@ class AnthropicTransport(ProviderTransport):
         except asyncio.TimeoutError as exc:
             raise BackendError(f"anthropic transport timed out after {timeout_s}s") from exc
         except Exception as exc:
+            self.capture(getattr(exc, "response", None))
             raise BackendError(f"anthropic transport error: {exc}") from exc
         return _normalize(resp)
 

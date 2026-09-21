@@ -469,6 +469,10 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                                 "enum": ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
                                 "description": "Override the batch-level effort for just this task.",
                             },
+                            "agent": {"type": "string", "description": "Run this task as a named agent (see list_agents): it gets that "
+                                      "agent's instructions and only its tools - explore, plan, reviewer, general, or a project's own."},
+                            "isolation": {"type": "string", "enum": ["worktree"], "description": "Run in its own git worktree so it cannot "
+                                          "disturb your files; kept (with its branch) only if it changed something."},
                         },
                         "required": ["goal"],
                     },
@@ -1044,6 +1048,11 @@ async def execute_tool(
             raise ToolError("read_skill needs an instance context")
         content = bot_skills.get_content(instance_id, skill_name)
         if content is None:
+            from bot import skill_packs
+
+            pack = skill_packs.get(workspace, skill_name)
+            if pack is not None:
+                return skill_packs.render(pack)
             raise ToolError(f"no skill named {skill_name!r} — see the system prompt's skill list")
         return content
 
@@ -1069,7 +1078,11 @@ async def execute_tool(
 
         if instance_id is None:
             raise ToolError("list_skills needs an instance context")
-        return _json_dumps(bot_skills.list_for_instance(instance_id))
+        from bot import skill_packs
+
+        packs = [{"name": s.name, "description": s.description[:200], "kind": "pack", "source": s.source, "files": len(s.files)}
+                 for s in skill_packs.discover(workspace).values()]
+        return _json_dumps(bot_skills.list_for_instance(instance_id) + packs)
 
     if name == "create_skill":
         from bot import bot_instances, skills as bot_skills
@@ -1313,7 +1326,7 @@ async def execute_tool(
             result = await subagents.run_batch(
                 tasks, role=role, provider=provider, model=model, effort=effort,
                 max_children=max_children, parent_instance_id=instance_id,
-                background=background,
+                background=background, workspace=workspace,
             )
         except BackendError as exc:
             raise ToolError(str(exc))
@@ -1853,3 +1866,6 @@ from bot.agent_runtime import shell as _shell  # noqa: E402,F401
 from bot.agent_runtime import web as _web  # noqa: E402,F401
 from bot.agent_runtime import repo_map as _repo_map  # noqa: E402,F401
 from bot.agent_runtime import search_index as _search_index  # noqa: E402,F401
+from bot.agent_runtime import agent_defs as _agent_defs  # noqa: E402,F401
+from bot import skill_packs as _skill_packs  # noqa: E402,F401
+from bot.agent_runtime import model_tools as _model_tools  # noqa: E402,F401

@@ -18,13 +18,18 @@ async def free_provider_models(paid_overrides: dict[str, str]) -> list[tuple[str
     free model nor an explicit override is skipped entirely, never
     silently downgraded to paid."""
     from bot import providers as providers_mod
+    from bot.agent_runtime import usage_limits
     from bot.models import custom_models_with_pricing
 
     priced, _source = await custom_models_with_pricing()
     selected: list[tuple[str, str]] = []
     for provider_name in sorted(providers_mod.list_providers()):
         entries = priced.get(provider_name, [])
-        free_entry = next((e for e in sorted(entries, key=lambda e: e["id"]) if e["free"]), None)
+        # A free model whose allowance is used up right now is passed over for the next free one
+        # (bot/agent_runtime/usage_limits.py); with no known limit it is never passed over.
+        key = usage_limits.key_for_provider(provider_name)
+        free_entry = next((e for e in sorted(entries, key=lambda e: e["id"])
+                           if e["free"] and usage_limits.headroom(key, e["id"]) != 0.0), None)
         if free_entry:
             selected.append((provider_name, free_entry["id"]))
         elif provider_name in paid_overrides:

@@ -65,7 +65,36 @@ def _cfg() -> dict:
         return {}
 
 
-def window_for(model: str) -> int:
+def builtin_window(model: str) -> Optional[int]:
+    """The window from the built-in family table, or None if the model is not in it."""
+    base = str(model or "").rsplit("/", 1)[-1]
+    for rx, n in _WINDOWS:
+        if rx.search(base):
+            return n
+    return None
+
+
+_catalog_windows: dict = {}
+
+
+def _catalog_window(model: str, provider: str) -> Optional[int]:
+    key = (provider, model)
+    if key not in _catalog_windows:
+        try:
+            from bot import model_catalog
+
+            info = model_catalog.lookup(provider, model)
+            _catalog_windows[key] = info.context if info.sources.get("context") == "catalog" else None
+        except Exception:  # noqa: BLE001
+            _catalog_windows[key] = None
+    return _catalog_windows[key]
+
+
+def window_for(model: str, provider: str = "") -> int:
+    """Your override, else what the catalog says, else the built-in family table, else a default.
+    Exception: for Claude models the SMALLER of catalog and table wins - a window that is too small
+    only compacts early, one that is too large makes the provider refuse the call, and Claude's larger
+    windows are a separate opt-in."""
     overrides = _cfg().get("context_windows") or {}
     name = str(model or "")
     for key, value in overrides.items():
@@ -74,11 +103,11 @@ def window_for(model: str) -> int:
                 return max(1024, int(value))
             except (TypeError, ValueError):
                 continue
-    base = name.rsplit("/", 1)[-1]
-    for rx, n in _WINDOWS:
-        if rx.search(base):
-            return n
-    return DEFAULT_WINDOW
+    catalog, builtin = _catalog_window(name, str(provider or "")), builtin_window(name)
+    if catalog and builtin and "claude" in name.lower():
+        return max(1024, min(catalog, builtin))      # a larger Claude window is a separate opt-in; stay on the safe side
+    known = catalog or builtin
+    return max(1024, known) if known else DEFAULT_WINDOW
 
 
 def ratio_for(model: str) -> float:
@@ -96,6 +125,7 @@ def observe(model: str, chars_sent: int, input_tokens: Optional[int]) -> None:
 
 def forget_calibration() -> None:
     _ratios.clear()
+    _catalog_windows.clear()
 
 
 # ---- measuring ------------------------------------------------------------------
@@ -149,7 +179,7 @@ def manage(history: list[dict], transport, model: str, system_prompt: Optional[s
         keep = int(cfg.get("keep_tool_results", DEFAULT_KEEP_TOOL_RESULTS))
     except (TypeError, ValueError):
         compact_at, keep = DEFAULT_COMPACT_AT, DEFAULT_KEEP_TOOL_RESULTS
-    window = window_for(model)
+    window = window_for(model, getattr(transport, "provider_key", ""))
     before = estimate_tokens(history, model, system_prompt, tool_schemas)
     report = Report(history=history, window=window, before=before, after=before)
     if compact_at <= 0 or before <= window * compact_at:

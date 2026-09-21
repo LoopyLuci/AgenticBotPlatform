@@ -8,6 +8,12 @@
     POST /api/mcp/pins/approve                  approve a changed tool
     GET  /api/agent/taint?session=KEY           has this session read untrusted content
     POST /api/agent/taint/clear                 a person clears the mark
+    GET  /api/skills/packs                      installed skill packs
+    POST /api/skills/fetch                      fetch a pack from a git URL into quarantine (scan report returned)
+    GET  /api/skills/quarantine                 packs waiting for a person, with their scan reports
+    POST /api/skills/quarantine/approve|reject  a person's decision
+    GET  /api/skills/drafts                     skills the agent drafted from a task
+    POST /api/skills/drafts/approve|reject      a person's decision
 
 Reads follow the dashboard's normal auth (the desktop token or a paired device's key);
 anything that changes something needs the dashboard token itself, so a paired phone cannot
@@ -37,6 +43,16 @@ class _PinBody(BaseModel):
 
 class _SessionBody(BaseModel):
     session: str
+
+
+class _NameBody(BaseModel):
+    name: str
+
+
+class _FetchBody(BaseModel):
+    url: str
+    ref: Optional[str] = None
+    subdir: str = ""
 
 
 def _rule_dicts(rules) -> list[dict]:
@@ -107,3 +123,54 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         was = taint.is_tainted(body.session)
         taint.clear(body.session)
         return {"session": body.session, "cleared": was}
+
+    # ---- skill packs: quarantine and drafts --------------------------------------------
+    import asyncio
+
+    from bot import skill_install, skill_packs
+    from bot.agent_runtime import skill_learning
+    from bot.agent_runtime.errors import ToolError
+
+    def _guard(fn, *a):
+        try:
+            return fn(*a)
+        except ToolError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.get("/api/skills/packs", dependencies=read)
+    async def get_packs():
+        return {"packs": [{"name": s.name, "description": s.description[:300], "source": s.source, "files": len(s.files),
+                           "problems": list(s.problems)} for s in skill_packs.discover(None).values()]}
+
+    @app.post("/api/skills/fetch", dependencies=write)
+    async def fetch_pack(body: _FetchBody):
+        try:
+            return await asyncio.to_thread(skill_install.install_from_git, body.url, body.ref, body.subdir)
+        except ToolError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.get("/api/skills/quarantine", dependencies=read)
+    async def get_quarantine():
+        return {"packs": skill_install.list_quarantine()}
+
+    @app.post("/api/skills/quarantine/approve", dependencies=write)
+    async def approve_pack(body: _NameBody):
+        return _guard(skill_install.approve, body.name)
+
+    @app.post("/api/skills/quarantine/reject", dependencies=write)
+    async def reject_pack(body: _NameBody):
+        _guard(skill_install.reject, body.name)
+        return {"rejected": True}
+
+    @app.get("/api/skills/drafts", dependencies=read)
+    async def get_drafts():
+        return {"drafts": skill_learning.list_drafts()}
+
+    @app.post("/api/skills/drafts/approve", dependencies=write)
+    async def approve_draft(body: _NameBody):
+        return _guard(skill_learning.approve_draft, body.name)
+
+    @app.post("/api/skills/drafts/reject", dependencies=write)
+    async def reject_draft(body: _NameBody):
+        _guard(skill_learning.reject_draft, body.name)
+        return {"rejected": True}

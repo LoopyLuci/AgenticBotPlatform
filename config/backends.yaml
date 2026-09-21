@@ -154,6 +154,22 @@ native_agent:
   project_rules:
     enabled: true
     max_chars: 40000
+  # What ABP knows about each model and how much of its free allowance is used (model_catalog.py, usage_limits.py).
+  # Published limits live in config/model_limits.yaml with their source and date; yours below replace them.
+  models:
+    enforce: true            # hold a call back / fail over when a known limit is used up (false = count and report only)
+    max_wait_s: 15           # the longest a call is delayed to stay under a per-minute limit
+    timezone: ""             # for reset times, e.g. America/New_York; blank = this computer's
+    limits: {}               # e.g. {"openrouter/*:free": {rpm: 20, rpd: 1000}, "google/gemini-2.5-flash": {rpm: 10, rpd: 250, reset: pacific_midnight}}
+    overrides: {}            # e.g. {"myprovider/my-model": {context: 32768, tool_call: true, vision: false}}
+  # Skill packs (SKILL.md folders) fetched from git wait in quarantine for a person's approval (skill_install.py).
+  skills:
+    allowed_hosts: []        # extra git hosts to fetch from, besides github.com, gitlab.com, bitbucket.org, codeberg.org
+    trusted_keys: []         # Ed25519 public keys (hex) whose signatures are reported as "trusted"
+  # After a long task the agent may draft a skill for a person to review; never installed on its own.
+  skill_learning:
+    enabled: false
+    min_tool_calls: 8
   max_concurrent_children: 6
   # Process-wide ceiling on live spawn_subagent children across EVERY
   # dispatch, not just one call's own max_concurrent_children — closes a
