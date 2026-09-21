@@ -158,7 +158,8 @@
   .pillrow { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
   .pill { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:999px; font-size:12px; font-weight:600; background:var(--surface-2); color:var(--ink-soft); border:1px solid var(--line); }
   .pill .dot { width:7px; height:7px; border-radius:50%; flex:none; }
-  .dot.good{ background:var(--good); } .dot.warning{ background:var(--warning); } .dot.critical{ background:var(--critical); }
+  .dot.good{ background:var(--good); } .dot.warning{ background:var(--warning); } .dot.critical{ background:var(--critical); } .dot.neutral{ background:var(--muted); }
+  .pill .pill-sub { font-weight:500; color:var(--muted); }
   .btn { font-family:var(--font-body); font-size:12.5px; font-weight:700; padding:7px 13px; border-radius:7px; border:1px solid var(--line); background:var(--surface); color:var(--ink); cursor:pointer; }
   .btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
   .btn.danger { color:var(--critical); border-color:var(--critical); background:transparent; }
@@ -555,8 +556,7 @@
       <button class="mobile-nav-btn" id="btn-mobile-nav" type="button" aria-controls="sidenav" aria-expanded="false" title="Open navigation" aria-label="Open navigation">☰</button>
       <div class="title">Overview</div>
       <div class="pillrow">
-        <span class="pill" id="pill-bot"><span class="dot good"></span>Bot online</span>
-        <span class="pill" id="pill-reload"><span class="dot good"></span>Hot-reload armed</span>
+        <span class="pill" id="pill-bot" aria-live="polite"><span class="dot neutral"></span>Checking bots…</span>
         <span class="pill hidden" id="pill-mcp-warn"><span class="dot warning"></span><span id="pill-mcp-warn-text"></span></span>
         <button class="btn" id="btn-reload-config">Reload config</button>
       </div>
@@ -2150,6 +2150,27 @@ function statusChip(status) {
 }
 
 // ---------------------------------------------------------------- overview
+// The top-bar pill: how many bots have an agent working right now, with a short line of telemetry, and the
+// per-bot breakdown in its tooltip. (It used to be a fixed online label.)
+function renderBotPill(ov) {
+  const pill = document.getElementById('pill-bot');
+  if (!pill) return;
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const bots = ov.bots_running_agents || 0;
+  const jobs = ov.jobs_running || 0;
+  const queued = ov.jobs_queued || 0;
+  const label = bots ? `${plural(bots, 'bot', 'bots')} running agents` : 'No bots running agents';
+  const bits = [];
+  if (jobs) bits.push(plural(jobs, 'agent job', 'agent jobs'));
+  if (queued) bits.push(`${queued} queued`);
+  if (!bots) bits.push(`${plural(ov.bots_enabled || 0, 'bot', 'bots')} enabled`);
+  pill.innerHTML = `<span class="dot ${bots ? 'good' : 'neutral'}"></span>${esc(label)}` +
+    (bits.length ? `<span class="pill-sub">· ${esc(bits.join(' · '))}</span>` : '');
+  const lines = (ov.active_bots || []).map(b => `${b.name}: ${plural(b.jobs, 'job', 'jobs')} running`);
+  lines.push(`${plural(ov.bots_enabled || 0, 'bot', 'bots')} enabled`, `${(ov.tokens_today || 0).toLocaleString()} tokens today`);
+  pill.title = lines.join('\n');
+}
+
 async function refreshOverview() {
   const ov = await api('/api/overview');
   document.getElementById('k-running').textContent = ov.jobs_running;
@@ -2166,10 +2187,7 @@ async function refreshOverview() {
   document.getElementById('reload-version').textContent = 'v' + ov.config_version;
   document.getElementById('s-refreshed').textContent = new Date().toLocaleTimeString();
 
-  const pillBot = document.getElementById('pill-bot');
-  pillBot.innerHTML = `<span class="dot good"></span>Bot online`;
-  const pillReload = document.getElementById('pill-reload');
-  pillReload.innerHTML = `<span class="dot good"></span>Hot-reload armed`;
+  renderBotPill(ov);
   document.getElementById('inflight-chip').textContent = ov.jobs_running + ' in-flight' + (ov.jobs_running === 0 ? ' — safe to reload' : '');
   document.getElementById('inflight-chip').className = 'chip ' + (ov.jobs_running === 0 ? 'good' : 'warning');
 }

@@ -313,6 +313,27 @@ function statusChip(status) {
 }
 
 // ---------------------------------------------------------------- overview
+// The top-bar pill: how many bots have an agent working right now, with a short line of telemetry, and the
+// per-bot breakdown in its tooltip. (It used to be a fixed online label.)
+function renderBotPill(ov) {
+  const pill = document.getElementById('pill-bot');
+  if (!pill) return;
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const bots = ov.bots_running_agents || 0;
+  const jobs = ov.jobs_running || 0;
+  const queued = ov.jobs_queued || 0;
+  const label = bots ? `${plural(bots, 'bot', 'bots')} running agents` : 'No bots running agents';
+  const bits = [];
+  if (jobs) bits.push(plural(jobs, 'agent job', 'agent jobs'));
+  if (queued) bits.push(`${queued} queued`);
+  if (!bots) bits.push(`${plural(ov.bots_enabled || 0, 'bot', 'bots')} enabled`);
+  pill.innerHTML = `<span class="dot ${bots ? 'good' : 'neutral'}"></span>${esc(label)}` +
+    (bits.length ? `<span class="pill-sub">· ${esc(bits.join(' · '))}</span>` : '');
+  const lines = (ov.active_bots || []).map(b => `${b.name}: ${plural(b.jobs, 'job', 'jobs')} running`);
+  lines.push(`${plural(ov.bots_enabled || 0, 'bot', 'bots')} enabled`, `${(ov.tokens_today || 0).toLocaleString()} tokens today`);
+  pill.title = lines.join('\n');
+}
+
 async function refreshOverview() {
   const ov = await api('/api/overview');
   document.getElementById('k-running').textContent = ov.jobs_running;
@@ -329,10 +350,7 @@ async function refreshOverview() {
   document.getElementById('reload-version').textContent = 'v' + ov.config_version;
   document.getElementById('s-refreshed').textContent = new Date().toLocaleTimeString();
 
-  const pillBot = document.getElementById('pill-bot');
-  pillBot.innerHTML = `<span class="dot good"></span>Bot online`;
-  const pillReload = document.getElementById('pill-reload');
-  pillReload.innerHTML = `<span class="dot good"></span>Hot-reload armed`;
+  renderBotPill(ov);
   document.getElementById('inflight-chip').textContent = ov.jobs_running + ' in-flight' + (ov.jobs_running === 0 ? ' — safe to reload' : '');
   document.getElementById('inflight-chip').className = 'chip ' + (ov.jobs_running === 0 ? 'good' : 'warning');
 }

@@ -3554,8 +3554,22 @@ def get_overview() -> dict[str, Any]:
     tokens_today = conn.execute(
         "SELECT COALESCE(SUM(tokens),0) t FROM jobs WHERE date(created_at)=date('now')"
     ).fetchone()["t"]
+    # Which bots have an agent working right now: one entry per bot instance with at least one running job.
+    # Jobs with no instance (the pre-multi-instance / global path) count together as one "default" bot.
+    active = conn.execute(
+        "SELECT j.instance_id AS instance_id, b.name AS name, COUNT(*) AS jobs "
+        "FROM jobs j LEFT JOIN bot_instances b ON b.id = j.instance_id "
+        "WHERE j.status='running' GROUP BY j.instance_id ORDER BY jobs DESC, b.name"
+    ).fetchall()
+    active_bots = [
+        {"instance_id": r["instance_id"], "name": r["name"] or "default", "jobs": r["jobs"]} for r in active
+    ]
+    bots_enabled = conn.execute("SELECT COUNT(*) c FROM bot_instances WHERE enabled=1").fetchone()["c"]
     return {
         "jobs_running": running,
+        "bots_running_agents": len(active_bots),
+        "active_bots": active_bots,
+        "bots_enabled": bots_enabled,
         "jobs_queued": queued,
         "completed_today": completed_today,
         "failed_today": failed_today,

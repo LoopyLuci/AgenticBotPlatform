@@ -20,6 +20,11 @@ app's own version (the Android app versions independently — see its own
   `DELETE /api/providers/store/{name}`.
 
 ### Changed
+- **The top-bar "Bot online" pill now shows live bot activity, and "Hot-reload armed" is gone.** The pill reads, for
+  example, "2 bots running agents · 4 agent jobs · 1 queued": the number of bot instances with at least one running job
+  right now (jobs with no instance count together as one default bot), the running and queued jobs, and, when idle,
+  how many bots are enabled. Hover for the per-bot breakdown and tokens today. `GET /api/overview` gained
+  `bots_running_agents`, `active_bots` and `bots_enabled`.
 - **The dashboard token is never asked for, anywhere.** The "Set token" button and the paste dialog are gone from the
   dashboard and the desktop app, the setup wizard no longer has a token field (or a Generate button, or the
   `/api/setup/generate-token` route), and the terminal wizard generates it silently. The server places the
