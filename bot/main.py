@@ -175,6 +175,7 @@ async def build_telegram_instance(row: dict) -> "telegram.ext.Application":
     application.add_handler(CallbackQueryHandler(handlers.on_callback))
     application.add_handler(MessageHandler(filters.Document.ALL, handlers.on_document))
     application.add_handler(MessageHandler(filters.PHOTO, handlers.on_photo))
+    application.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handlers.on_voice))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.on_text))
 
     await application.initialize()

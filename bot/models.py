@@ -32,6 +32,8 @@ BACKEND_FAMILY: dict[str, str] = {
     "hermes_gateway": "hermes",
     "custom_model": "custom",
     "native_agent": "custom",
+    "opencode": "custom",       # provider/model strings, like custom_model; the model itself is resolved by that product
+    "openclaw": "custom",
 }
 
 # The one hardcoded model id in this module — not a "list of choices" (the

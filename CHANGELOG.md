@@ -88,6 +88,38 @@ app's own version (the Android app versions independently — see its own
     stream reply text as it is generated, others deliver it whole. A turn given
     `context["stream_notify"]` receives the events; on failover it is told to discard
     what it showed. Dashboards, the desktop app, Android and chat channels adopt it next.
+- **Learning, efficiency and compatibility (roadmap P8-P9).** `python -m abp_trajectory export` writes finished runs as redacted JSONL
+  transcripts (opt-in, `--confirm`); `/route` and a `suggest_model` tool rank your models for a task (advice only; quality is a
+  measured eval pass rate when one was recorded, otherwise a labelled guess); `python -m abp_agenteval compare` runs the evals per
+  prompt / tool-wording variant and `page` writes a static results page; `python -m abp_import claude-code|opencode` turns another
+  product's permissions, hooks and MCP servers into ABP's (dry run by default, never widens permissions); plugins can declare
+  `REQUIRES_SDK` against a versioned SDK. No live model has run the evals yet, so nothing here compares models or products.
+- **Channels, paired-phone nodes, voice and a canvas (roadmap P7).** Four new bot platforms - e-mail (IMAP/SMTP; only
+  authenticated mail from allowed senders is answered), SMS through Twilio (signature-checked webhook), Signal through a
+  signal-cli REST bridge, iMessage through BlueBubbles - selectable in the dashboard, desktop app and terminal UI. Paired
+  phones can be asked by the agent for a photo, the screen, the location or the clipboard (`node_invoke`), with consent per
+  capability starting at "deny"; only the server half exists, the Android app does not implement it yet. Telegram voice
+  messages are transcribed (Groq/OpenAI-compatible Whisper endpoints or your own command) and can be answered by voice; a
+  `canvas_update` tool draws a live page in a no-network sandbox. All of it tested against fakes only; see
+  `docs/agents/channels-and-devices.md`. Adding a new channel is now: one adapter module plus a guide entry.
+- **Browser, stored logins, routines and approvals (roadmap P6).** An optional browser for the agent (Playwright;
+  off by default): it reads pages, clicks and fills forms, treats everything a page says as untrusted, checks every
+  request the page makes against the public-internet rules, never types passwords or codes itself, and hands
+  CAPTCHAs, codes and payments to a person (`browser_handoff`, which is asked every time even in bypass mode). A
+  small encrypted vault (`python -m bot.vault`) holds logins that are filled into their own site without the model
+  seeing them. `/routine` runs and schedules tasks the agent saved as parameterised routines. `/api/approvals`
+  shows what the agent is waiting on with a diff or command preview and lets a person decide from any surface; paired
+  phones are pushed a summary. Tested with a real Edge against local pages only. Not built: the shared cloud computer
+  and native computer use. See `docs/agents/browser-and-routines.md`.
+- **Developer surfaces (roadmap P5).** `python -m abp_run` runs the agent once without a chat channel (JSON
+  output, exit codes, read-only mode, approvals denied unless allowed); `python -m abp_acp` lets editors that
+  speak the Agent Client Protocol use it; after an edit the agent can be shown a formatter's and a language
+  server's verdict, and gets an `lsp` tool (off until configured; checked by hand against rust-analyzer);
+  `/export` and `/api/agent/sessions/<key>/export` produce a redacted transcript; the dashboard API now has a
+  committed OpenAPI document with a Python client and a generated JavaScript client; a GitHub Action reviews pull
+  requests read-only; `opencode` and `openclaw` are new backend names that hand a turn to those products (their
+  own permissions apply, not ABP's). Several of these have only been tested against stand-ins; see
+  `docs/agents/developer-surfaces.md` for exactly what was and was not run.
 - **Model knowledge, limits and usage (roadmap PM).** ABP now knows each model's context window, output limit,
   abilities, price, knowledge cutoff and published free-tier limits (requests and tokens per minute and day,
   with the source and the date checked; `config/model_limits.yaml`), counts every model call, reads the

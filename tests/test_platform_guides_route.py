@@ -16,12 +16,12 @@ def _client(monkeypatch):
     return TestClient(build_app())
 
 
-def test_platform_guides_needs_no_auth_and_covers_all_five_platforms(temp_db, monkeypatch):
+def test_platform_guides_needs_no_auth_and_covers_every_platform(temp_db, monkeypatch):
     client = _client(monkeypatch)
     resp = client.get("/api/platform-guides")
     assert resp.status_code == 200
     body = resp.json()
-    assert set(body.keys()) == {"telegram", "discord", "slack", "matrix", "whatsapp"}
+    assert set(body.keys()) == {"telegram", "discord", "slack", "matrix", "whatsapp", "email", "sms", "signal", "imessage"}
     for platform, guide in body.items():
         assert guide["label"]
         assert guide["fields"]

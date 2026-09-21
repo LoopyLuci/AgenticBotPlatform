@@ -46,6 +46,9 @@ class ToolSpec:
     # A registered tool may say False for a change that is safe to make unprompted
     # (its own scratch state), or True for a read that is sensitive.
     needs_approval: Optional[bool] = None
+    # True = a person must be asked every time, whatever the mode or rules say (a rule may still deny, plan mode still
+    # blocks it). For a tool whose whole purpose is to hand something to a human, such as browser_handoff.
+    always_ask: bool = False
 
     def __post_init__(self) -> None:
         if self.permission not in PERMISSIONS:

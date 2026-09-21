@@ -14,7 +14,7 @@ from textual.widgets import Button, Footer, Input, Label, Select, Static
 
 from bot.tui.client import ApiError
 
-PLATFORMS = ("telegram", "discord", "slack", "matrix", "whatsapp")
+from bot.bot_instances import PLATFORMS, STRING_ID_PLATFORMS
 BACKENDS = ("cli", "api", "ui", "hermes_cli", "hermes_gateway", "custom_model")
 
 
@@ -57,7 +57,7 @@ class AddBotScreen(Screen):
         widgets = []
         for field_name, meta in guide["fields"].items():
             widgets.append(Label(meta.get("label", field_name), classes="field-label"))
-            widgets.append(Input(id=f"cred-{field_name}", password="token" in field_name or "secret" in field_name))
+            widgets.append(Input(id=f"cred-{field_name}", password="token" in field_name or "secret" in field_name or "password" in field_name))
             if meta.get("help"):
                 widgets.append(Label(meta["help"], classes="field-help"))
         if widgets:
@@ -97,7 +97,7 @@ class AddBotScreen(Screen):
             return
         status = self.query_one("#add-bot-status", Label)
         platform = str(self.query_one("#field-platform", Select).value)
-        is_string_id = platform in ("slack", "matrix", "whatsapp")
+        is_string_id = platform in STRING_ID_PLATFORMS
         allowed_raw = [s.strip() for s in self.query_one("#field-allowed", Input).value.split(",") if s.strip()]
         admin_raw = [s.strip() for s in self.query_one("#field-admins", Input).value.split(",") if s.strip()]
         payload = {

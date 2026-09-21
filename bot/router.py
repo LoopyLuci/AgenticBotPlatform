@@ -36,7 +36,7 @@ from bot.config import config
 
 logger = logging.getLogger("bot.router")
 
-VALID_BACKENDS = ("api", "cli", "ui", "hermes_cli", "hermes_gateway", "custom_model", "native_agent")
+VALID_BACKENDS = ("api", "cli", "ui", "hermes_cli", "hermes_gateway", "custom_model", "native_agent", "opencode", "openclaw")
 
 
 def set_default_backend(backend: str, actor: str) -> dict:
@@ -255,6 +255,16 @@ class Router:
                 base_url=provider["base_url"],
                 api_key=providers.get_api_key(provider_name),
                 max_tokens=b_cfg.get("max_tokens", 4096),
+            )
+        if name in ("opencode", "openclaw"):
+            # Another agent product does the work (bot/backends/external_agent_backend.py). ABP's own permission
+            # rules and tool loop do not apply inside it.
+            from bot.backends.external_agent_backend import OpenClawBackend, OpenCodeBackend
+
+            cls = OpenCodeBackend if name == "opencode" else OpenClawBackend
+            return cls(
+                binary=b_cfg.get("binary", name), model=model_override or b_cfg.get("model"), agent=b_cfg.get("agent"),
+                extra_args=b_cfg.get("extra_args", []), cwd=b_cfg.get("cwd"), auto_approve=bool(b_cfg.get("auto_approve", False)),
             )
         raise ValueError(f"unknown backend {name!r}")
 

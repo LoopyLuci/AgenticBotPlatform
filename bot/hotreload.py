@@ -76,7 +76,7 @@ def _enabled_by_default() -> bool:
 # each entry (several were found only by grepping every candidate file
 # for module-level mutable containers, not by inspection alone).
 DENYLIST: frozenset[str] = frozenset({
-    "bot.main", "bot.router", "bot.db", "bot.config", "bot.dashboard.server", "bot.dashboard.cicd_api", "bot.dashboard.agent_security_api", "bot.dashboard.models_info_api",
+    "bot.main", "bot.router", "bot.db", "bot.config", "bot.dashboard.server", "bot.dashboard.cicd_api", "bot.dashboard.agent_security_api", "bot.dashboard.models_info_api", "bot.dashboard.approvals_api", "bot.dashboard.channels_api",
     "bot.agent_runtime.engine", "bot.agent_runtime.approval", "bot.agent_runtime.subagent_registry",
     "bot.platform_supervisor",
     "bot.envfile", "bot.handlers", "bot.outbox", "bot.plugins", "bot.attachments",
@@ -103,6 +103,12 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.agent_runtime.permissions", "bot.agent_runtime.taint", "bot.agent_runtime.secrets_guard",
     "bot.agent_runtime.mcp_pins", "bot.agent_runtime.sandbox",
     "bot.agent_runtime.project_rules",  # imported by prompt.py; reloaded with it is not needed and is safe to skip
+    "bot.agent_runtime.code_intel",  # running language servers are process state
+    "bot.model_router", "bot.agent_runtime.trajectory",  # registers a tool / reads the trace store
+    "bot.nodes", "bot.canvas", "bot.voice", "bot.platforms._relay",
+    "bot.platforms.email_platform", "bot.platforms.sms_platform", "bot.platforms.signal_platform", "bot.platforms.imessage_platform",  # long-running adapters
+    "bot.agent_runtime.browser", "bot.vault", "bot.routines", "bot.approvals_view",  # a running browser / encrypted store / registered tools
+    "bot.agent_runtime.session_export", "bot.backends.external_agent_backend",  # imported by denied modules (dashboard, router)
     "bot.model_catalog", "bot.agent_runtime.usage_limits", "bot.agent_runtime.model_tools",  # usage counters and per-process caches
     "bot.custom_commands", "bot.agent_runtime.skill_learning",  # small, stateless, but imported by denied modules only
     "bot.skill_packs", "bot.skill_install",  # skill_packs registers read_skill_file at import time

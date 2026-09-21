@@ -221,6 +221,8 @@ def decide(tool: str, tool_input: dict, *, rules: list[Rule], mode: str = "defau
     for rule in rules:
         if rule.decision == "ask" and rule_applies(rule, tool, subj):
             return Verdict("ask", rule.note or "a rule asks for approval", "rule")
+    if spec.always_ask:
+        return Verdict("ask", "this tool hands something to a person, so a person is always asked", "tool")
 
     allowed, source = False, ""
     if not is_admin:

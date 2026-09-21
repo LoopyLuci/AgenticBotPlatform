@@ -112,6 +112,61 @@ def validate_whatsapp_verify_token(v: str) -> tuple[bool, str]:
     return False, "pick any string at least 6 characters — you'll enter this same value in Meta's webhook config"
 
 
+_HOST = re.compile(r"^(?=.{1,253}$)([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$")
+_E164 = re.compile(r"^\+[1-9][0-9]{6,14}$")
+
+
+def validate_host(v: str) -> tuple[bool, str]:
+    if _HOST.match(v) and not v.isdigit():
+        return True, "looks like a host name"
+    return False, "should be a host name such as imap.example.com"
+
+
+def validate_nonempty(v: str) -> tuple[bool, str]:
+    return (True, "looks good") if v.strip() else (False, "cannot be empty")
+
+
+def validate_e164(v: str) -> tuple[bool, str]:
+    if _E164.match(v):
+        return True, "looks like a valid phone number"
+    return False, "should be a phone number with country code, like +15551234567"
+
+
+def validate_http_url(v: str) -> tuple[bool, str]:
+    if re.match(r"^https?://[^\s/]+", v):
+        return True, "looks like a valid address"
+    return False, "should be a full address such as http://localhost:8080"
+
+
+def validate_twilio_sid(v: str) -> tuple[bool, str]:
+    if re.match(r"^AC[0-9a-fA-F]{32}$", v):
+        return True, "looks like a Twilio Account SID"
+    return False, "should be the Account SID from the Twilio console (starts with AC, 34 characters)"
+
+
+def validate_secret_16(v: str) -> tuple[bool, str]:
+    if len(v) >= 16:
+        return True, "looks good"
+    return False, "should be at least 16 characters"
+
+
+def validate_allowed_for(platform: str, ids: list[str]) -> tuple[bool, str]:
+    """The allow-list entries of the string-id channels: e-mail addresses, or phone numbers in international form."""
+    if platform == "email":
+        if all(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", i.strip()) for i in ids):
+            return True, ""
+        return False, "allowed users for e-mail must be e-mail addresses"
+    if platform in ("sms", "signal"):
+        if all(_E164.match(re.sub(r"[\s().-]", "", i.strip())) for i in ids):
+            return True, ""
+        return False, f"allowed users for {platform} must be phone numbers with country code, like +15551234567"
+    if platform == "imessage":
+        if all(_E164.match(re.sub(r"[\s().-]", "", i.strip())) or re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", i.strip()) for i in ids):
+            return True, ""
+        return False, "allowed users for iMessage must be phone numbers (+15551234567) or Apple ID e-mail addresses"
+    return True, ""
+
+
 def validate_port(v: str) -> tuple[bool, str]:
     if v.isdigit() and 1 <= int(v) <= 65535:
         return True, "valid port"
@@ -137,6 +192,10 @@ PLATFORM_TOKEN_VALIDATORS = {
         "app_secret": validate_whatsapp_app_secret,
         "verify_token": validate_whatsapp_verify_token,
     },
+    "email": {"imap_host": validate_host, "smtp_host": validate_host, "username": validate_nonempty, "password": validate_nonempty},
+    "sms": {"account_sid": validate_twilio_sid, "auth_token": validate_secret_16, "from_number": validate_e164},
+    "signal": {"api_url": validate_http_url, "number": validate_e164},
+    "imessage": {"server_url": validate_http_url, "password": validate_nonempty, "webhook_token": validate_secret_16},
 }
 
 

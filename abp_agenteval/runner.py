@@ -132,7 +132,15 @@ def run_task(task: Task, make_transport: Callable[[Task], Any], *, model: str = 
                 ctx = {"cwd": str(workspace), "source": "eval"}
                 if task.permission_mode:
                     ctx["permission_mode"] = task.permission_mode
-                result = asyncio.run(backend.ask(task.prompt, context=ctx, timeout_s=timeout_s))
+                async def turn():
+                    from bot.agent_runtime import code_intel
+
+                    try:
+                        return await backend.ask(task.prompt, context=ctx, timeout_s=timeout_s)
+                    finally:
+                        await code_intel.shutdown_all()        # language servers must not outlive this task's event loop
+
+                result = asyncio.run(turn())
                 reply = result.text or ""
                 run_id = (result.raw or {}).get("trace_run") if isinstance(result.raw, dict) else None
             except Exception as exc:  # noqa: BLE001 — a failed run is a result, not a crash

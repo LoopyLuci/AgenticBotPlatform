@@ -915,7 +915,23 @@ def all_tool_schemas() -> list[dict[str, Any]]:
 
     from bot.agent_runtime import toolspec
 
-    return TOOL_SCHEMAS + toolspec.registered_schemas() + plugin_registry.tool_schemas() + mcp_client.external_tool_schemas()
+    schemas = TOOL_SCHEMAS + toolspec.registered_schemas() + plugin_registry.tool_schemas() + mcp_client.external_tool_schemas()
+    overrides = _description_overrides()
+    if overrides:
+        # `native_agent.tool_descriptions: {tool: text}` replaces a tool's description, so wording can be compared by running
+        # the evals (python -m abp_agenteval compare). Only the description changes; never the name or the parameters.
+        schemas = [{**s, "description": overrides[s["name"]]} if s.get("name") in overrides else s for s in schemas]
+    return schemas
+
+
+def _description_overrides() -> dict[str, str]:
+    try:
+        from bot.config import config
+
+        raw = ((config.current.get("native_agent") or {}).get("tool_descriptions")) or {}
+    except Exception:  # noqa: BLE001
+        return {}
+    return {str(k): str(v) for k, v in raw.items() if isinstance(v, str) and v.strip()}
 
 
 def is_dangerous(name: str) -> bool:
@@ -1007,7 +1023,10 @@ async def execute_tool(
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         coding_tools.record_read(path)
-        return f"Wrote {len(content)} chars to {tool_input.get('path')}"
+        from bot.agent_runtime import code_intel
+
+        follow = await code_intel.after_writes([path], workspace)
+        return f"Wrote {len(content)} chars to {tool_input.get('path')}{follow}"
 
     if name == "list_dir":
         path = _safe_path(workspace, tool_input.get("path") or ".")
@@ -1869,3 +1888,9 @@ from bot.agent_runtime import search_index as _search_index  # noqa: E402,F401
 from bot.agent_runtime import agent_defs as _agent_defs  # noqa: E402,F401
 from bot import skill_packs as _skill_packs  # noqa: E402,F401
 from bot.agent_runtime import model_tools as _model_tools  # noqa: E402,F401
+from bot.agent_runtime import code_intel as _code_intel  # noqa: E402,F401
+from bot.agent_runtime import browser as _browser  # noqa: E402,F401
+from bot import routines as _routines  # noqa: E402,F401
+from bot import canvas as _canvas  # noqa: E402,F401
+from bot import nodes as _nodes  # noqa: E402,F401
+from bot import model_router as _model_router  # noqa: E402,F401

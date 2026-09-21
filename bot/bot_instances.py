@@ -17,6 +17,10 @@ Platform-specific `credentials` JSON shapes:
   slack:     {"bot_token": "...", "app_token": "..."}
   matrix:    {"homeserver": "...", "user_id": "...", "access_token": "...", "device_id": "..." (optional)}
   whatsapp:  {"phone_number_id": "...", "access_token": "...", "app_secret": "...", "verify_token": "..."}
+  email:     {"imap_host", "imap_port", "smtp_host", "smtp_port", "username", "password"} (+ optional security / from_address / mailbox)
+  sms:       {"account_sid": "AC...", "auth_token": "...", "from_number": "+E.164"}   (Twilio)
+  signal:    {"api_url": "http://...", "number": "+E.164"}                            (signal-cli REST bridge)
+  imessage:  {"server_url": "http://...", "password": "...", "webhook_token": "..."}  (BlueBubbles)
 """
 
 from __future__ import annotations
@@ -31,7 +35,9 @@ from bot import db, envfile
 from bot.personas import DEFAULT_PERSONA
 from bot.validators import PLATFORM_TOKEN_VALIDATORS, validate_user_ids
 
-PLATFORMS = ("telegram", "discord", "slack", "matrix", "whatsapp")
+PLATFORMS = ("telegram", "discord", "slack", "matrix", "whatsapp", "email", "sms", "signal", "imessage")
+# Platforms whose user ids are strings (Telegram and Discord use numbers). E-mail addresses and phone numbers are strings too.
+STRING_ID_PLATFORMS = ("slack", "matrix", "whatsapp", "email", "sms", "signal", "imessage")
 
 BACKUP_DIR = envfile.PROJECT_ROOT / "data" / "bot_instances_backups"
 
@@ -66,6 +72,11 @@ def _validate_allowed_ids(platform: str, allowed_user_ids: list[Any]) -> None:
         ok, msg = validate_user_ids(",".join(str(i) for i in allowed_user_ids))
         if not ok:
             raise ValidationError(msg)
+    from bot.validators import validate_allowed_for
+
+    ok, msg = validate_allowed_for(platform, [str(i) for i in allowed_user_ids])
+    if not ok:
+        raise ValidationError(msg)
 
 
 def _row_to_dict(row) -> dict[str, Any]:

@@ -267,6 +267,24 @@ async def _handle_ask(
         await _set_reaction(context, msg, "👎" if reply.startswith("Backend failed:") else "👍")
 
     await _reply_chunked(update, reply, context)
+    if context.user_data.pop("voice_reply", False) and reply and reply != "Stopped." and not reply.startswith("Backend failed:"):
+        await _speak_reply(update, reply)
+
+
+async def _speak_reply(update: Update, reply: str) -> None:
+    """Also send the reply as audio (bot/voice.py), for someone who spoke to the bot. A failure here never affects the text reply."""
+    import io
+
+    from bot import voice
+
+    try:
+        audio, mime, ext = await voice.synthesize(reply)
+        if mime == "audio/ogg":
+            await update.message.reply_voice(voice=audio)
+        else:
+            await update.message.reply_document(document=io.BytesIO(audio), filename=f"reply.{ext}")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("could not send a spoken reply: %s", exc)
 
 
 # --------------------------------------------------------------- status ---
@@ -764,6 +782,37 @@ async def on_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # the attachment-only case that leaves that path a no-op.
         asyncio.create_task(push.notify_new_message(context.bot_data.get("instance_name", "Bot"), f"📎 {orig_name}"))
     await _reply_chunked(update, f"Saved: {orig_name}. Reference it in your next /ask.", context)
+
+
+@require_auth
+async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """A voice message (or audio file): transcribed with the configured speech-to-text engine (bot/voice.py) and then handled as
+    if the person had typed it - same permissions, same approvals. The reply starts with what was heard, so a mistaken transcript
+    is visible, and is also spoken back if `voice.reply_with_voice` is on. Without a configured engine the person is told so."""
+    from bot import voice
+
+    msg = update.message
+    media = msg.voice or msg.audio
+    if media is None:
+        return
+    if not voice.stt_enabled():
+        await msg.reply_text("Voice messages need speech-to-text, which isn't set up (voice.stt in config/backends.yaml).")
+        return
+    if (media.file_size or 0) > voice.max_bytes():
+        await msg.reply_text("That voice message is too long for me to transcribe.")
+        return
+    await msg.chat.send_action("typing")
+    file = await context.bot.get_file(media.file_id)
+    data = bytes(await file.download_as_bytearray())
+    try:
+        heard = await voice.transcribe(data, getattr(media, "mime_type", None) or "audio/ogg")
+    except voice.VoiceError as exc:
+        await msg.reply_text(f"I couldn't transcribe that: {exc}")
+        return
+    db.log_audit(actor=str(update.effective_user.id), action="voice_message", detail=f"{len(data)} bytes, {len(heard)} characters heard")
+    await msg.reply_text(f"Heard: {heard}")
+    context.user_data["voice_reply"] = voice.reply_with_voice()
+    await _handle_ask(update, context, heard)
 
 
 @require_auth

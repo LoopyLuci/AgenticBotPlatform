@@ -43,11 +43,34 @@ def unregister(name: str) -> None:
     _extra.pop(name, None)
 
 
+_vault_cache: dict = {"stamp": None, "items": {}}
+
+
+def _vault_secrets() -> dict[str, str]:
+    """Passwords and TOTP secrets in the credential vault (bot/vault.py), re-read only when the file changes.
+    Never raises: redaction must not be able to fail the agent."""
+    try:
+        from bot import vault
+
+        path = vault._dir() / "vault.enc"
+        stamp = (path.stat().st_mtime_ns, str(path))
+    except Exception:  # noqa: BLE001
+        return {}
+    if _vault_cache["stamp"] != stamp:
+        try:
+            items = {k: v for k, v in vault.secrets() if len(v) >= MIN_LENGTH}
+        except Exception:  # noqa: BLE001
+            items = {}
+        _vault_cache.update(stamp=stamp, items=items)
+    return _vault_cache["items"]
+
+
 def known_secrets(environ: Optional[dict] = None) -> dict[str, str]:
     env = os.environ if environ is None else environ
     found = {k: v for k, v in env.items()
              if is_secret_name(k) and isinstance(v, str) and len(v) >= MIN_LENGTH and not _BORING.match(v.strip())}
     found.update(_extra)
+    found.update(_vault_secrets())
     return found
 
 

@@ -34,6 +34,19 @@ def is_pre_approved(instance_id: int, session_key: str, tool_name: str) -> bool:
     return db.has_tool_approval(instance_id, session_key, tool_name)
 
 
+def _push_to_phones(instance_id: int, tool_name: str, tool_input: dict, approval_id: int) -> None:
+    """A push notification for paired phones (bot/push.py), so an approval is not only in the chat that asked.
+    Best effort and fire-and-forget: it can never delay or fail the approval itself."""
+    try:
+        from bot import approvals_view, bot_instances, push
+
+        instance = bot_instances.get_instance(instance_id) or {}
+        summary = approvals_view.preview(tool_name, tool_input)["summary"]
+        asyncio.get_running_loop().create_task(push.notify_approval(instance.get("name") or f"bot {instance_id}", summary, approval_id))
+    except Exception:  # noqa: BLE001
+        logger.debug("approval push skipped", exc_info=True)
+
+
 async def request_approval(
     instance_id: int,
     chat_id: Any,
@@ -55,6 +68,7 @@ async def request_approval(
         return "once"
 
     approval_id = db.create_pending_approval(instance_id, chat_id, session_key, tool_name, tool_input)
+    _push_to_phones(instance_id, tool_name, tool_input, approval_id)
     event = asyncio.Event()
     _waiters[approval_id] = event
     try:

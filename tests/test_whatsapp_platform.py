@@ -153,7 +153,8 @@ def test_process_message_dispatches_command(temp_db, monkeypatch):
         raise AssertionError("router.ask should not run for a slash command")
 
     monkeypatch.setattr("bot.platforms.whatsapp_platform.router.ask", fail_ask)
-    fake = _install_fake_client(monkeypatch, [_FakeResponse(200)])
+    # /help is longer than one WhatsApp message (4096 characters), so it goes out in several pieces.
+    fake = _install_fake_client(monkeypatch, [_FakeResponse(200) for _ in range(5)])
     msg = {"from": "15551234567", "type": "text", "text": {"body": "/help"}}
     _run(whatsapp_platform._process_message(instance, msg, "Alice"))
     assert fake.calls, "expected a reply to be sent"

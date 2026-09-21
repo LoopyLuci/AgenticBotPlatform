@@ -1467,6 +1467,10 @@
               <option value="slack">Slack</option>
               <option value="matrix">Matrix</option>
               <option value="whatsapp">WhatsApp</option>
+              <option value="email">E-mail</option>
+              <option value="sms">SMS (Twilio)</option>
+              <option value="signal">Signal</option>
+              <option value="imessage">iMessage (BlueBubbles)</option>
             </select>
           </div>
         </div>
@@ -1526,6 +1530,7 @@
           <label style="margin-top:8px; display:block;">Device ID (optional)</label>
           <div class="row"><input type="text" id="bot-new-matrix-device" placeholder="leave blank to auto-assign" autocomplete="off" spellcheck="false"></div>
         </div>
+        <div class="wizard-field" id="bot-new-generic-fields" style="display:none;"></div>
         <div class="wizard-field" id="bot-new-whatsapp-fields" style="display:none;">
           <label>Phone Number ID</label>
           <div class="row"><input type="text" id="bot-new-whatsapp-phoneid" placeholder="1234567890" autocomplete="off" spellcheck="false"></div>

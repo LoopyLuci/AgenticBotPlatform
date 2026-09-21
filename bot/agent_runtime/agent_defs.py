@@ -49,7 +49,7 @@ MAX_FILE_BYTES = 60_000
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,47}$")
 
 READ_TOOLS = ("read_file", "list_dir", "grep", "glob", "repo_map", "code_search", "session_search", "git_status",
-              "git_diff", "todo_read", "read_skill", "list_skills", "read_skill_file", "model_info", "find_models")
+              "git_diff", "todo_read", "read_skill", "list_skills", "read_skill_file", "model_info", "find_models", "lsp")
 # Claude Code / OpenCode tool names -> ours
 ALIASES: dict[str, tuple[str, ...]] = {
     "read": ("read_file", "list_dir"), "grep": ("grep", "code_search"), "glob": ("glob", "repo_map"),

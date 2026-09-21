@@ -133,6 +133,58 @@ async def notify_apk_push(api_key_id: int, push_id: int, version_label: Optional
         logger.warning("notify_apk_push failed: %s", exc)
 
 
+async def notify_approval(instance_name: str, summary: str, approval_id: int) -> None:
+    """Tell paired phones the agent is waiting for a person. Fire-and-forget, never raises. The push carries only the
+    one-line summary and the approval id; the diff or command is fetched from /api/approvals/<id> once the phone opens it."""
+    try:
+        account = _service_account()
+        if account is None:
+            return
+        tokens = [row["fcm_token"] for row in db.list_push_tokens()]
+        if not tokens:
+            return
+        access_token = await _access_token(account)
+        if access_token is None:
+            return
+        url = f"https://fcm.googleapis.com/v1/projects/{account['project_id']}/messages:send"
+        headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for token in tokens:
+                payload = {"message": {"token": token, "notification": {"title": f"{instance_name} needs approval", "body": summary[:120]},
+                                       "data": {"kind": "approval", "approval_id": str(approval_id), "instance_name": instance_name}}}
+                try:
+                    await client.post(url, headers=headers, json=payload)
+                except Exception as exc:
+                    logger.warning("FCM approval push failed for one device: %s", exc)
+    except Exception as exc:
+        logger.warning("notify_approval failed: %s", exc)
+
+
+async def notify_node_command(device_id: int) -> None:
+    """Wake a paired phone that has a command waiting (see bot/nodes.py). A data-only message: it carries no content, only the
+    request to open its poll connection. Best effort, never raises."""
+    try:
+        account = _service_account()
+        if account is None:
+            return
+        row = db.get_conn().execute("SELECT fcm_token FROM push_tokens WHERE api_key_id=?", (device_id,)).fetchone() \
+            if "api_key_id" in {r["name"] for r in db.get_conn().execute("PRAGMA table_info(push_tokens)").fetchall()} else None
+        tokens = [row["fcm_token"]] if row else [r["fcm_token"] for r in db.list_push_tokens()]
+        access_token = await _access_token(account)
+        if access_token is None or not tokens:
+            return
+        url = f"https://fcm.googleapis.com/v1/projects/{account['project_id']}/messages:send"
+        headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for token in tokens:
+                try:
+                    await client.post(url, headers=headers, json={"message": {"token": token, "data": {"kind": "node_command"}}})
+                except Exception as exc:
+                    logger.warning("FCM node wake failed for one device: %s", exc)
+    except Exception as exc:
+        logger.warning("notify_node_command failed: %s", exc)
+
+
 async def notify_new_message(instance_name: str, text: str) -> None:
     """Fire-and-forget — call via asyncio.create_task(...), never awaited
     for its result. Swallows all errors internally; logs, doesn't raise."""

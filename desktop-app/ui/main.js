@@ -1588,7 +1588,47 @@ function _tokenFieldKey(platform) {
   return (platform === 'matrix' || platform === 'whatsapp') ? 'access_token' : 'bot_token';
 }
 
+// Channels added later (e-mail, SMS, Signal, iMessage) draw their credential fields from /api/platform-guides, so a new
+// channel needs no new form markup. Fields marked optional in the guide are skipped when left empty.
+const GENERIC_PLATFORMS = ['email', 'sms', 'signal', 'imessage'];
+const STRING_ID_PLATFORMS = ['slack', 'matrix', 'whatsapp', ...GENERIC_PLATFORMS];
+
+function renderGenericFields(platform, values) {
+  const box = document.getElementById('bot-new-generic-fields');
+  const tokenField = document.getElementById('bot-new-token-field');
+  const generic = GENERIC_PLATFORMS.includes(platform);
+  if (tokenField) tokenField.style.display = generic ? 'none' : '';
+  box.style.display = generic ? '' : 'none';
+  if (!generic) { box.innerHTML = ''; box.dataset.platform = ''; return; }
+  if (!values && box.dataset.platform === platform && box.children.length) return;   // keep what the person already typed
+  const guide = platformGuidesCache[platform];
+  if (!guide) return;
+  box.innerHTML = '';
+  box.dataset.platform = platform;
+  for (const [name, meta] of Object.entries(guide.fields)) {
+    const secret = /token|secret|password/i.test(name);
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `<label style="margin-top:8px; display:block;">${esc(meta.label || name)}${meta.optional ? ' (optional)' : ''}</label>` +
+      `<div class="row"><input type="${secret ? 'password' : 'text'}" data-gen-field="${esc(name)}" autocomplete="off" spellcheck="false"></div>` +
+      (meta.help ? `<div class="help">${esc(meta.help)}</div>` : '');
+    box.appendChild(wrap);
+    const input = wrap.querySelector('input');
+    input.value = (values && values[name]) || '';
+    if (!meta.optional) wireCredentialValidation(input, () => platform, () => name);
+  }
+}
+
+function collectGenericCredentials() {
+  const creds = {};
+  document.querySelectorAll('#bot-new-generic-fields [data-gen-field]').forEach(el => {
+    const v = el.value.trim();
+    if (v) creds[el.dataset.genField] = v;
+  });
+  return creds;
+}
+
 function renderPlatformGuide(platform) {
+  renderGenericFields(platform);
   const guide = platformGuidesCache[platform];
   if (!guide) return;
   const tokenField = guide.fields[_tokenFieldKey(platform)];
@@ -1723,6 +1763,8 @@ function _resetBotForm() {
   document.getElementById('bot-new-whatsapp-phoneid').value = '';
   document.getElementById('bot-new-whatsapp-appsecret').value = '';
   document.getElementById('bot-new-whatsapp-verifytoken').value = '';
+  document.getElementById('bot-new-generic-fields').innerHTML = '';
+  document.getElementById('bot-new-generic-fields').dataset.platform = '';
   document.getElementById('bot-new-allowed').value = '';
   document.getElementById('bot-new-admins').value = '';
   document.getElementById('bot-new-instructions').value = '';
@@ -1761,6 +1803,7 @@ function _loadBotIntoForm(bot) {
   document.getElementById('bot-new-whatsapp-phoneid').value = bot.credentials.phone_number_id || '';
   document.getElementById('bot-new-whatsapp-appsecret').value = bot.credentials.app_secret || '';
   document.getElementById('bot-new-whatsapp-verifytoken').value = bot.credentials.verify_token || '';
+  renderGenericFields(bot.platform, bot.credentials);
   document.getElementById('bot-new-allowed').value = (bot.allowed_user_ids || []).join(', ');
   document.getElementById('bot-new-admins').value = (bot.admin_user_ids || []).join(', ');
   document.getElementById('bot-new-instructions').value = bot.custom_instructions || '';
@@ -2354,6 +2397,8 @@ document.getElementById('btn-bot-create').onclick = async () => {
     };
     const deviceId = document.getElementById('bot-new-matrix-device').value.trim();
     if (deviceId) credentials.device_id = deviceId;
+  } else if (GENERIC_PLATFORMS.includes(platform)) {
+    credentials = collectGenericCredentials();
   } else if (platform === 'whatsapp') {
     credentials = {
       phone_number_id: document.getElementById('bot-new-whatsapp-phoneid').value.trim(),
@@ -2365,7 +2410,7 @@ document.getElementById('btn-bot-create').onclick = async () => {
     credentials = { bot_token: document.getElementById('bot-new-token').value.trim() };
     if (platform === 'slack') credentials.app_token = document.getElementById('bot-new-apptoken').value.trim();
   }
-  const isStringId = platform === 'slack' || platform === 'matrix' || platform === 'whatsapp';
+  const isStringId = STRING_ID_PLATFORMS.includes(platform);
   const allowed_user_ids = document.getElementById('bot-new-allowed').value
     .split(',').map(s => s.trim()).filter(Boolean)
     .map(s => (isStringId ? s : Number(s)));

@@ -83,7 +83,9 @@ class BotDetailScreen(Screen):
 
     async def _save(self) -> None:
         status = self.query_one("#detail-status", Label)
-        is_string_id = self.bot["platform"] in ("slack", "matrix", "whatsapp")
+        from bot.bot_instances import STRING_ID_PLATFORMS
+
+        is_string_id = self.bot["platform"] in STRING_ID_PLATFORMS
         allowed_raw = [s.strip() for s in self.query_one("#field-allowed", Input).value.split(",") if s.strip()]
         admin_raw = [s.strip() for s in self.query_one("#field-admins", Input).value.split(",") if s.strip()]
         try:
