@@ -21,7 +21,7 @@ import time
 import uuid
 from typing import Optional
 
-from bot.agent_runtime import context_window, loop_guard, toolspec
+from bot.agent_runtime import context_window, loop_guard, toolspec, usage_limits
 from bot.agent_runtime.transports.base import ProviderTransport
 from bot.backends.base import Backend, BackendError, BackendResult
 
@@ -228,7 +228,10 @@ class NativeAgentBackend(Backend):
         from bot.agent_runtime import prompt as prompt_builder
 
         system_prompt = prompt_builder.build(
-            instance_id, workspace=workspace, session_context=session_start_context
+            instance_id, workspace=workspace, session_context=session_start_context,
+            agent_prompt=context.get("agent_prompt"),
+            include_agents=(allowed_tools is None or "spawn_subagent" in allowed_tools),
+            model_line=_model_line(self.transport, self.model),
         )
 
         # Plan mode (Phase G of the Claude API/Claude Code parity plan) —
@@ -276,6 +279,7 @@ class NativeAgentBackend(Backend):
         async def _send(transport, model):
             nonlocal streamed
             streamed = False
+            usage_limits.current_model.set((getattr(transport, "provider_key", ""), model))
             kwargs = dict(
                 model=model, history=view["history"], tool_schemas=tool_schemas, max_tokens=self.max_tokens,
                 timeout_s=timeout_s, system_prompt=system_prompt, effort=effort,
@@ -295,6 +299,7 @@ class NativeAgentBackend(Backend):
         cache_read_tokens: Optional[int] = None
         watch = loop_guard.Watchdog(loop_guard.limits())
         stop_hook_blocks = 0
+        tool_calls_made = 0
         while True:
             stop_reason = watch.before_call(total_tokens)
             if stop_reason:
@@ -388,6 +393,13 @@ class NativeAgentBackend(Backend):
                         history.append(entry)
                         db.append_agent_message(session_key, entry["role"], entry["content"])
                         continue
+                from bot.agent_runtime import skill_learning
+
+                if skill_learning.enabled():
+                    # A long task may be worth a skill draft (never installed without a person's approval).
+                    await skill_learning.maybe_draft(
+                        transport=active_transport, model=active_model, history=history, session=session_key,
+                        tool_calls=tool_calls_made, run_id=trace.active().run_id or "")
                 raw = {"total_tokens": total_tokens}
                 if lazily_created:
                     raw["desktop_session_key"] = session_key
@@ -426,6 +438,7 @@ class NativeAgentBackend(Backend):
                     db.append_agent_message(session_key, entry["role"], entry["content"])
                 raise
 
+            tool_calls_made += len(results)
             notes = watch.after_round(results)
             results = [(tc, out + note) for (tc, out), note in zip(results, notes)]
             for entry in active_transport.tool_result_messages(results):
@@ -521,6 +534,16 @@ def _show_thinking_summary_enabled() -> bool:
     from bot.config import config
 
     return (config.current.get("native_agent") or {}).get("show_thinking_summary", False)
+
+
+def _model_line(transport, model) -> Optional[str]:
+    """One line telling the agent what it is running on. Never raises."""
+    try:
+        from bot import model_catalog
+
+        return model_catalog.prompt_line(getattr(transport, "provider_key", ""), model)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _resolve_fallback_transport(instance_id) -> Optional[tuple]:

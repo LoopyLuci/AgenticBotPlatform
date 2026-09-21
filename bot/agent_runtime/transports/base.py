@@ -94,6 +94,39 @@ class ProviderTransport:
     # send_stream() below still works everywhere — it just delivers the whole
     # reply at once — so callers may always use it.
     supports_streaming: bool = False
+    # The most recent rate-limit headers this provider sent (lower-cased), and the HTTP status of the
+    # last failed call - read by usage_limits.py after every call. Transports fill them in.
+    rate_headers: dict = {}
+    last_status: Optional[int] = None
+
+    @property
+    def provider_key(self) -> str:
+        """Which provider this talks to, for model info and rate-limit accounting: the catalog id
+        when the provider has one, else the host of its base URL, else "anthropic" for the native API."""
+        explicit = getattr(self, "catalog_id", None)
+        if explicit:
+            return str(explicit)
+        base = getattr(self, "base_url", None)
+        if base:
+            from urllib.parse import urlparse
+
+            return (urlparse(str(base)).hostname or str(base)).lower()
+        return "anthropic" if type(self).__name__.lower().startswith("anthropic") else type(self).__name__.lower()
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        from bot.agent_runtime import usage_limits
+
+        usage_limits.install(cls)  # every send() / send_stream() is counted and held to the model's limits
+
+    def capture(self, response) -> None:
+        """Remember the rate-limit headers and status of an HTTP response (for usage_limits)."""
+        try:
+            self.last_status = int(response.status_code)
+            self.rate_headers = {k.lower(): v for k, v in response.headers.items()
+                                 if k.lower().startswith(("x-ratelimit", "anthropic-ratelimit")) or k.lower() == "retry-after"}
+        except Exception:  # noqa: BLE001
+            pass
 
     async def send_stream(self, *, on_event, **kwargs) -> "NormalizedResponse":
         """Like send(), but reply text is passed to `await on_event(StreamEvent)` as it

@@ -695,6 +695,15 @@ async def on_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     canonical = slash_commands.resolve_command(cmd_raw)
     if canonical is None:
+        # Not a built-in: it may be a Markdown command file (.claude/commands/<name>.md, ...), which is a saved
+        # prompt for the agent - so it needs the same permission /ask does.
+        instance_id = context.bot_data.get("instance_id")
+        instance = bot_instances.get_instance(instance_id) if instance_id is not None else None
+        allowed = instance is None or slash_access.can_run(instance, update.effective_user.id, _scope_of(update), "ask")
+        reply = await commands.dispatch_command(f"/{cmd_raw} {args_text}".strip(), _ctx_from(update, context)) if allowed else None
+        if reply is not None:
+            await _reply_chunked(update, reply, context)
+            return
         await _reply_chunked(update, f"Unknown command: /{cmd_raw}\nUse /help to see available commands.", context)
         return
 

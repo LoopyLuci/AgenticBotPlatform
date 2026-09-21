@@ -79,7 +79,9 @@ get their own deep-dive doc:
   agent is, what it lacks against other agent products, and the phased plan to close
   the gap; **[docs/agents/security.md](docs/agents/security.md)** — permissions,
   untrusted-content defence, credential protection and the sandbox;
-  **[docs/agents/evals.md](docs/agents/evals.md)** — running and writing agent evals.
+  **[docs/agents/evals.md](docs/agents/evals.md)** — running and writing agent evals;
+  **[docs/agents/skills-and-agents.md](docs/agents/skills-and-agents.md)** — named agents, skill packs, custom commands;
+  **[docs/agents/models.md](docs/agents/models.md)** — what ABP knows about each model and its free-tier allowance.
 - **[docs/cicd/](docs/cicd/README.md)** — the design for the CI/CD platform
   (telemetry, ML workers, dashboards, updates, failover), and
   **[docs/cicd/configuration.md](docs/cicd/configuration.md)**, the specification

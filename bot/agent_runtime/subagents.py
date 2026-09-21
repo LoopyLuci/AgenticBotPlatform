@@ -122,6 +122,7 @@ async def run_batch(
     max_children: Optional[int] = None,
     parent_instance_id: Optional[int] = None,
     background: bool = False,
+    workspace: Optional[Any] = None,
 ) -> dict[str, Any]:
     """`tasks`: [{"goal": str, "output_schema": dict|None, "provider":
     str|None, "model": str|None, "effort": str|None}, ...] — a task's own
@@ -220,6 +221,7 @@ async def run_batch(
     child_models: dict[int, Optional[str]] = {}
     try:
         for i, task in enumerate(tasks):
+            task = _apply_agent(task, i, workspace)
             task_provider = task.get("provider")
             task_model = task.get("model")
             if bool(task_provider) != bool(task_model):
@@ -272,6 +274,45 @@ async def run_batch(
         else:
             children.append(outcome)
     return {"dispatch_id": dispatch.dispatch_id, "children": children}
+
+
+def _workspace_of(parent_instance_id):
+    from bot.agent_runtime import tools as agent_tools
+
+    return agent_tools.resolve_workspace(parent_instance_id or 0, None)
+
+
+def _apply_agent(task: dict, index: int, workspace) -> dict:
+    """A copy of `task` with a named agent's settings resolved in (roadmap P4, agent_defs.py). The
+    definition can only narrow a child: its tools are intersected with what the child would have, and
+    its model is used only if it names a configured provider."""
+    name = task.get("agent")
+    isolation = task.get("isolation")
+    if isolation not in (None, "", "worktree"):
+        raise BackendError(f"task {index}: isolation must be 'worktree'")
+    if not name and not isolation:
+        return task
+    task = dict(task)
+    task["_workspace"] = workspace
+    if isolation:
+        task["_isolation"] = "worktree"
+    if not name:
+        return task
+    from bot.agent_runtime import agent_defs
+
+    d = agent_defs.resolve(str(name), workspace)
+    if d is None:
+        raise BackendError(f"task {index}: no agent named {name!r} (list_agents shows the ones available)")
+    task["_agent"] = d
+    if d.isolation == "worktree":
+        task["_isolation"] = "worktree"
+    if d.model and not (task.get("provider") and task.get("model")):
+        from bot import providers as provider_registry
+
+        provider, _, model = d.model.partition("/")
+        if provider_registry.get_provider(provider) is not None:
+            task["provider"], task["model"] = provider, model
+    return task
 
 
 async def _start_child(
@@ -339,8 +380,26 @@ async def _run_one_child(
         return {"index": index, "goal": "", "model": backend.model, "status": "error", "result_excerpt": "empty goal"}
 
     output_schema = task.get("output_schema")
+    agent = task.get("_agent")
     async with semaphore:
         context: dict[str, Any] = {"instance_id": parent_instance_id, "steer_queue": steer_queue}
+        if agent is not None:
+            from bot.agent_runtime import agent_defs
+
+            allowed_tools = agent_defs.restrict_tools(allowed_tools, agent)
+            context["agent_prompt"] = agent.prompt
+            if agent.mode == "plan":
+                context["permission_mode"] = "plan"
+        worktree = None
+        if task.get("_isolation") == "worktree":
+            from bot.agent_runtime import errors, worktrees
+
+            try:
+                worktree = await asyncio.to_thread(worktrees.create, task.get("_workspace") or _workspace_of(parent_instance_id), (agent.name if agent else "agent"))
+            except errors.ToolError as exc:
+                db.finish_ephemeral_session(session_id, status="error", result=str(exc))
+                return {"index": index, "goal": goal, "model": backend.model, "status": "error", "result_excerpt": str(exc)[:500]}
+            context["cwd"] = str(worktree.path)
         if allowed_tools is not None:
             context["allowed_tools"] = allowed_tools
         if effort is not None:
@@ -355,11 +414,24 @@ async def _run_one_child(
                 )
                 text = text_or_error
                 status = "ok" if ok else "error"
+            outcome: dict[str, Any] = {"index": index, "goal": goal, "model": backend.model, "status": status,
+                                       "result_excerpt": text[:500]}
+            if agent is not None:
+                outcome["agent"] = agent.name
+            if worktree is not None:
+                from bot.agent_runtime import worktrees
+
+                info = await asyncio.to_thread(worktrees.finish, worktree)
+                worktree = None
+                if info.get("kept"):
+                    outcome["worktree"] = info
+                    text += f"\n[Its changes are in {info['path']} on branch {info['branch']}; nothing was merged.]"
+                    outcome["result_excerpt"] = text[:500]
             db.finish_ephemeral_session(session_id, status=status, result=text)
             from bot.agent_runtime import hooks
 
             await hooks.run_subagent_stop(text, instance_id=parent_instance_id)
-            return {"index": index, "goal": goal, "model": backend.model, "status": status, "result_excerpt": text[:500]}
+            return outcome
         except asyncio.CancelledError:
             # stop_subagent() already wrote the "stopped" status/result —
             # don't overwrite it with a generic cancellation message.

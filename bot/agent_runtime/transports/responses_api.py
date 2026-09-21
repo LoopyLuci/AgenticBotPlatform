@@ -122,6 +122,7 @@ class ResponsesApiTransport(ProviderTransport):
         async with httpx.AsyncClient(timeout=timeout_s) as client:
             try:
                 resp = await client.post(f"{self.base_url}/responses", json=payload, headers=headers)
+                self.capture(resp)
                 resp.raise_for_status()
                 data = resp.json()
             except httpx.TimeoutException as exc:

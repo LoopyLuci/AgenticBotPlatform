@@ -1,0 +1,60 @@
+# Published free-tier / rate limits that ABP knows about (bot/model_catalog.py reads this).
+#
+# READ THIS FIRST: providers change these numbers without notice. Every entry says where it came
+# from and when it was checked. ABP treats them as a starting point only:
+#   * limits the provider reports in response headers (observed) replace them while running;
+#   * limits you set under native_agent.models.limits in backends.yaml replace them always.
+# A field that is missing means "not published", not "unlimited".
+#
+# provider   the models.dev provider id (or a providers.yaml catalog_id)
+# match      a glob against the model id (first entry that matches wins)
+# scope      model = one counter per model; provider = every matching model shares one counter
+# reset      how the daily figures reset: rolling (24 h window) | utc_midnight | pacific_midnight
+version: 1
+checked: "2026-09-20"
+entries:
+  - provider: openrouter
+    match: "*:free"
+    scope: provider
+    rpm: 20
+    rpd: 50
+    reset: utc_midnight
+    note: "50 requests a day; 1000 a day once $10 of credit has ever been bought (set rpd: 1000 under native_agent.models.limits if you have)."
+    source: https://openrouter.ai/docs/api-reference/limits
+    checked: "2026-09-20"
+  - provider: google
+    match: "*"
+    scope: model
+    reset: pacific_midnight
+    note: "Limits are per project (not per key) on RPM, TPM and RPD, and vary by model; Google publishes the numbers only in AI Studio. Daily quota resets at midnight Pacific. Set your figures under native_agent.models.limits."
+    source: https://ai.google.dev/gemini-api/docs/rate-limits
+    checked: "2026-09-20"
+  - provider: groq
+    match: "openai/gpt-oss-*"
+    scope: model
+    rpm: 30
+    rpd: 1000
+    tpm: 8000
+    tpd: 200000
+    reset: rolling
+    note: "Free plan."
+    source: https://console.groq.com/docs/rate-limits
+    checked: "2026-09-20"
+  - provider: groq
+    match: "*prompt-guard*"
+    scope: model
+    rpm: 30
+    rpd: 14400
+    tpm: 15000
+    tpd: 500000
+    reset: rolling
+    note: "Free plan."
+    source: https://console.groq.com/docs/rate-limits
+    checked: "2026-09-20"
+  - provider: groq
+    match: "*"
+    scope: model
+    reset: rolling
+    note: "Free-plan limits differ per model; the provider sends the live figures in response headers, which ABP records."
+    source: https://console.groq.com/docs/rate-limits
+    checked: "2026-09-20"

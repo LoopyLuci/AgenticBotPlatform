@@ -197,6 +197,7 @@ class OpenAICompatibleTransport(ProviderTransport):
         async with httpx.AsyncClient(timeout=timeout_s) as client:
             try:
                 resp = await client.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)
+                self.capture(resp)
                 resp.raise_for_status()
                 data = resp.json()
             except httpx.TimeoutException as exc:
@@ -254,6 +255,7 @@ class OpenAICompatibleTransport(ProviderTransport):
         calls: dict[int, dict] = {}
         usage: dict = {}
         async with client.stream("POST", url, json=payload, headers=headers) as resp:
+            self.capture(resp)
             if resp.status_code >= 400:
                 body = (await resp.aread()).decode("utf-8", "replace")
                 if resp.status_code in (400, 422) and "stream_options" in body and "stream_options" in payload:

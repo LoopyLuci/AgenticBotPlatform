@@ -12,7 +12,8 @@
 | P1 | Core coding toolset and a better loop | **Built** (interactive PTY and a stateful shell are not) |
 | P2 | Permissions, sandboxing, prompt-injection defence, hooks v2 | **Built** (docker backend untested against a real daemon) |
 | P3 | Context and memory | **Built** (no embeddings, no tree-sitter, no user model) |
-| P4 | Agents, skills and commands | Design |
+| P4 | Agents, skills and commands | **Built** (no registry; git fetch untested against a real remote) |
+| PM | Model knowledge, limits and usage (added later) | **Built** (API and chat only; no dashboard screen) |
 | P5 | Code intelligence and developer surfaces | Design |
 | P6 | Browser, computer use, routines (the Grok Bot pillar) | Design |
 | P7 | Channels, devices and voice | Design |
@@ -151,18 +152,37 @@ and unit tests).
 | Optional user model (Hermes/Honcho-style) | **Not built**; typed `user` memories are the nearest thing |
 | Eval: `search_by_concept`, `orient_with_repo_map` | Built |
 
-### P4 — Agents, skills, commands (M–L)
+### P4 — Agents, skills, commands (M–L) — built; see [skills-and-agents.md](skills-and-agents.md)
 
-* Markdown agent definitions (frontmatter: tools, model, permissions, prompt),
-  compatible with `.claude/agents` and OpenCode agents; built-ins explore, plan,
-  build, general, reviewer; named subagent invocation with isolated context,
-  worktree isolation and background notifications.
-* SKILL.md standard with progressive disclosure, bundled scripts/resources and
-  allowed-tools; install from a git URL or registry with security scan and
-  signature check.
-* Autonomous skill learning: draft into a review queue and evaluate before
-  enabling. Nothing self-installs.
-* Markdown custom slash commands.
+| Deliverable | State |
+|---|---|
+| Markdown agent definitions (front matter: tools, model, mode, isolation, prompt) from `.claude/agents`, `.opencode/agent(s)`, `.abp/agents` and the user's folder; built-ins explore, plan, reviewer, general; `spawn_subagent` takes `agent`; `list_agents` | Built. A definition can only **narrow** a child (fewer tools, read-only, a model); it cannot grant anything. Not built: hooks inside a definition, agents in sub-folders |
+| Git-worktree isolation for a sub-agent (`isolation: worktree`), removed if unchanged | Built and tested against real git. Background-child notifications already existed |
+| SKILL.md packs with progressive disclosure (`read_skill`, `read_skill_file`), from `.claude/skills`, `.agents/skills`, `.abp/skills` and the user's folder | Built. `allowed-tools` is information only |
+| Install from a git URL into **quarantine**: allowed hosts only, shallow clone, scan (pipe-to-shell, decode-exec, credential paths, symlinks, binaries, size), Ed25519 signature check, approval by a person only | Built. Tested with a faked `git clone`; **never run against a real remote**. A signature never rescues a blocked pack. No public registry or search |
+| Skill learning: after a long task, one no-tools question; a clean answer becomes a **draft** a person approves or rejects | Built, **off by default**. Evaluating a draft before enabling it is not built (a person reads it) |
+| Markdown custom slash commands (`$ARGUMENTS`, `$1`..`$9`) from `.claude/commands`, `.opencode/command(s)`, `.abp/commands`, the user's folder; work in chat and `/commands` lists them | Built |
+| API `/api/skills/*`; `/skills fetch|quarantine|approve|reject|drafts|approve-draft|reject-draft` (admins) | Built. No dashboard screen |
+| Eval: `follow_a_skill_pack`, `list_agents_then_delegate_read_only` | Built |
+
+### PM — Model knowledge, limits and usage (M) — built; see [models.md](models.md)
+
+Added at the owner's request: ABP must understand each model's context window, its request and token
+allowance per minute and per day (especially for free models), and everything else an agent or a person
+would want to know about a model.
+
+| Deliverable | State |
+|---|---|
+| One lookup per `provider/model`: identity, context window, output limit, modalities, tool / reasoning / structured-output support, knowledge cutoff, release date, open weights, price (in, out, cache), free or not; each group records its source (override, curated, catalog, builtin) | Built (models.dev catalog, downloaded and cached; nothing new to install) |
+| Published free-tier limits with source URL and date checked (`config/model_limits.yaml`): OpenRouter free, Groq free, Google's reset rule | Built. **Provider numbers change without notice**, they were read by an assistant summarising each provider's docs page, and most providers publish none - a missing figure is `None`, never "unlimited" |
+| Your own limits and overrides (`native_agent.models.limits`, `.overrides`, patterns like `openrouter/*:free`) | Built |
+| Usage counted for every call of every transport (persisted): requests and tokens per minute and per day, 429s, in-flight calls; calendar (UTC or Pacific) or rolling day windows; shared free-tier counters | Built |
+| Provider headers (`x-ratelimit-*`, `anthropic-ratelimit-*`, `retry-after`) parsed and remembered | Built. Some providers send them only on errors; the Anthropic SDK path records them on errors only |
+| Enforcement: wait briefly for a per-minute limit; refuse at once, with the reset time in your time zone, for a daily limit / 429 / concurrency cap; the loop fails over to the fallback model with no wasted call; used-up free models skipped when picking swarm models | Built and tested with fake transports. **Not exercised against a real provider's 429** |
+| Agent tools `model_info`, `find_models`; a stable prompt line about its own model; `/modelinfo` (`/limits`); `/api/models/*`; MCP `get_model_info`, `get_model_usage`, `find_models` | Built |
+| Context windows from the catalog (smaller of catalog and table for Claude) | Built |
+| Dashboard and desktop screens for usage and limits | **Not built** (API only) |
+| Eval: `know_your_allowance` | Built |
 
 ### P5 — Code intelligence and developer surfaces (L)
 

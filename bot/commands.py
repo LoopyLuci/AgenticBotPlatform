@@ -1315,7 +1315,15 @@ async def cmd_topic(ctx: CmdContext, args: list[str]) -> str:
 
 async def cmd_commands(ctx: CmdContext, args: list[str]) -> str:
     page = int(args[0]) if args and args[0].isdigit() else 1
-    return slash_commands.commands_page(page)
+    text = slash_commands.commands_page(page)
+    from bot import custom_commands
+    from bot.agent_runtime import tools as _agent_tools
+
+    try:
+        extra = custom_commands.listing(_agent_tools.resolve_workspace(ctx.instance_id or 0, (ctx.session or {}).get("project_cwd")))
+    except Exception:  # noqa: BLE001
+        extra = ""
+    return f"{text}\n\n{extra}" if extra and page == 1 else text
 
 
 async def cmd_profile(ctx: CmdContext, args: list[str]) -> str:
@@ -1548,7 +1556,66 @@ async def cmd_skills(ctx: CmdContext, args: list[str]) -> str:
     if sub == "inspect" and len(args) >= 2:
         content = skills.get_content(ctx.instance_id, args[1])
         return content if content is not None else "Not found."
-    return "Usage: /skills list | install <path> | remove <name> | inspect <name>"
+    if sub in ("packs", "fetch", "quarantine", "approve", "reject", "drafts", "approve-draft", "reject-draft"):
+        return await _skills_admin(ctx, sub, args)
+    return ("Usage: /skills list | install <path> | remove <name> | inspect <name> | packs | "
+            "fetch <git-url> [ref] | quarantine | approve <name> | reject <name> | drafts | approve-draft <name> | reject-draft <name>")
+
+
+async def _skills_admin(ctx: CmdContext, sub: str, args: list[str]) -> str:
+    """Skill packs: listing, fetching from git, the quarantine, and drafts the agent wrote. Anything that
+    installs, or that reaches the network, is for the bot's admins only."""
+    import asyncio
+
+    from bot import bot_instances, skill_install, skill_packs, slash_access
+    from bot.agent_runtime import skill_learning
+    from bot.agent_runtime.errors import ToolError
+
+    if sub == "packs":
+        packs = skill_packs.discover(None)
+        return "Skill packs:\n" + "\n".join(f"  {s.name}: {s.description[:100]}" for s in packs.values()) if packs else "No skill packs."
+    instance = bot_instances.get_instance(ctx.instance_id) if ctx.instance_id is not None else None
+    if instance is None or not slash_access.is_admin(instance, ctx.user_id):
+        return "Only this bot's admins can fetch, approve or reject skills."
+    try:
+        if sub == "fetch":
+            if not args[1:]:
+                return "Usage: /skills fetch <https git url> [ref]"
+            info = await asyncio.to_thread(skill_install.install_from_git, args[1], args[2] if len(args) > 2 else None)
+            return _describe_quarantined(info)
+        if sub == "quarantine":
+            held = skill_install.list_quarantine()
+            return "Quarantine:\n" + "\n".join(
+                f"  {i['quarantine_name']}: {'OK to approve' if i['ok'] else 'BLOCKED'}, {len(i['findings'])} finding(s), signature {i['signature']}"
+                for i in held) if held else "Nothing in quarantine."
+        if sub in ("approve", "reject") and len(args) >= 2:
+            if sub == "approve":
+                out = skill_install.approve(args[1])
+                return f"Installed {out['installed']}."
+            skill_install.reject(args[1])
+            return f"Removed {args[1]} from quarantine."
+        if sub == "drafts":
+            drafts = skill_learning.list_drafts()
+            return "Skill drafts written by the agent:\n" + "\n".join(
+                f"  {d['name']}: {d['description'][:100]}" + (f"  (similar to: {', '.join(d['similar_to'])})" if d.get("similar_to") else "")
+                for d in drafts) if drafts else "No drafts."
+        if sub == "approve-draft" and len(args) >= 2:
+            return f"Installed {skill_learning.approve_draft(args[1])['installed']}."
+        if sub == "reject-draft" and len(args) >= 2:
+            skill_learning.reject_draft(args[1])
+            return f"Removed draft {args[1]}."
+    except ToolError as exc:
+        return str(exc)
+    return "Usage: /skills fetch <url> [ref] | quarantine | approve <name> | reject <name> | drafts | approve-draft <name> | reject-draft <name>"
+
+
+def _describe_quarantined(info: dict) -> str:
+    lines = [f"Fetched {info['name']!r} into quarantine ({info['files']} files). Signature: {info['signature']}."]
+    for f in info["findings"][:12]:
+        lines.append(f"  [{f['severity']}] {f['file']}: {f['message']}")
+    lines.append("It can be approved with /skills approve " + info["quarantine_name"] if info["ok"]
+                 else "It has blocking findings and cannot be approved.")
+    return "\n".join(lines)
 
 
 # ------------------------------------------------------------------ usage -
@@ -1561,6 +1628,41 @@ async def cmd_usage(ctx: CmdContext, args: list[str]) -> str:
         f"Tokens today: {u['tokens_today']} ({u['jobs_today']} jobs)\n"
         f"Tokens total: {u['tokens_total']} ({u['jobs_total']} jobs)"
     )
+
+
+async def cmd_modelinfo(ctx: CmdContext, args: list[str]) -> str:
+    """Capabilities, price and limits of a model, and how much of its allowance is used (roadmap PM)."""
+    from bot import bot_instances, model_catalog
+    from bot.agent_runtime import usage_limits
+
+    sub = args[0].lower() if args else ""
+    if sub == "refresh":
+        source = await model_catalog.refresh(force=True)
+        return f"Model catalog: {source}."
+    if sub == "usage":
+        rows = usage_limits.report(1)
+        if not rows:
+            return "No model calls in the last 24 hours."
+        return "Last 24 hours:\n" + "\n".join(
+            f"  {r['provider']}/{r['model']}: {r['calls']} calls, {r['tokens']:,} tokens"
+            + (f", {r['rate_limited']} rate-limited" if r["rate_limited"] else "") for r in rows[:25])
+    ref = args[0] if args else ""
+    if not ref and ctx.instance_id is not None:
+        inst = bot_instances.get_instance(ctx.instance_id) or {}
+        ref = str(inst.get("model") or "")
+    if not ref:
+        return "Usage: /modelinfo <provider/model> | usage | refresh"
+    provider, _, model = ref.partition("/") if "/" in ref else ("anthropic", "", ref)
+    info = model_catalog.lookup(provider, model)
+    snap = usage_limits.snapshot(provider, model)
+    lines = [model_catalog.describe(info)]
+    for w in snap["windows"]:
+        lines.append(f"  {w['name']}: {w['used']:,} of {w['limit']:,} used, {w['remaining']:,} left; "
+                     f"frees up {usage_limits.show_time(w['resets_at'])} (in {usage_limits.show_span(w['resets_in_s'])})")
+    if snap["blocked_until"]:
+        lines.append(f"  the provider asked us to wait until {usage_limits.show_time(snap['blocked_until'])}")
+    lines.append(f"  last 24 h: {snap['calls_24h']} calls, {snap['tokens_24h']:,} tokens")
+    return "\n".join(lines)
 
 
 async def cmd_insights(ctx: CmdContext, args: list[str]) -> str:
@@ -1624,6 +1726,7 @@ COMMANDS: dict[str, Callable[[CmdContext, list[str]], Any]] = {
     "topic": cmd_topic,
     "skills": cmd_skills,
     "usage": cmd_usage,
+    "modelinfo": cmd_modelinfo,
     "insights": cmd_insights,
     "commands": cmd_commands,
 }
@@ -1672,6 +1775,18 @@ async def dispatch_command(text: str, ctx: CmdContext) -> Optional[str]:
     handler = COMMANDS.get(cmd)
     if handler is not None:
         return await handler(ctx, args)
+
+    # A Markdown command file (.claude/commands/name.md, ...) is a saved prompt: send its text to the agent.
+    from bot import custom_commands
+    from bot.agent_runtime import tools as _agent_tools
+
+    try:
+        workspace = _agent_tools.resolve_workspace(ctx.instance_id or 0, (ctx.session or {}).get("project_cwd"))
+    except Exception:  # noqa: BLE001
+        workspace = None
+    prompt = custom_commands.expand(cmd, args_text, workspace)
+    if prompt is not None:
+        return await _RAW_ARG_COMMANDS["ask"](ctx, prompt)
 
     from bot import plugins as plugin_registry
 

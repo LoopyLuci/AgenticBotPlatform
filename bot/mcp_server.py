@@ -425,6 +425,29 @@ async def remove_skill(name: str, instance_id: Optional[int] = None) -> dict:
     return await _request("DELETE", f"/api/skills/{name}", params=params)
 
 
+# ------------------------------------------------ model knowledge ------
+@mcp.tool()
+async def get_model_info(provider: str, model: str) -> dict:
+    """Everything ABP knows about a model: context window, output limit, tools/vision/reasoning support,
+    price, knowledge cutoff, published rate limits (requests and tokens per minute and per day, with the source
+    and date each was checked), and how much of that allowance has been used and is left right now."""
+    return await _request("GET", "/api/models/info", params={"provider": provider, "model": model})
+
+
+@mcp.tool()
+async def get_model_usage(days: int = 1) -> dict:
+    """Calls, tokens and rate-limit hits per model over the last `days` days."""
+    return await _request("GET", "/api/models/usage", params={"days": days})
+
+
+@mcp.tool()
+async def find_models(provider: str = "", query: str = "", free_only: bool = False, min_context: int = 0, needs: str = "") -> dict:
+    """Catalogued models that fit a need, largest context first, with current headroom (null = no known limit,
+    0 = used up). `needs` is a comma list of: tools, reasoning, vision, structured."""
+    return await _request("GET", "/api/models/find", params={"provider": provider, "query": query, "free_only": free_only,
+                                                             "min_context": min_context, "needs": needs})
+
+
 # --------------------------------------------------- support bot NLU ------
 # The next-generation modular hybrid Support Bot NLU cascade's reusable
 # surface (Phase 9) — generate more training data, review what the

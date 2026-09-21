@@ -49,6 +49,14 @@ def _isolated_cicd_event_store(monkeypatch, tmp_path):
     monkeypatch.setenv("ABP_AGENT_TRACE_DB", str(tmp_path / "agent-traces.db"))
     monkeypatch.setenv("ABP_AGENT_STATE_DIR", str(tmp_path / "agent-state"))
     monkeypatch.delenv("ABP_CICD_RUN", raising=False)
+    # The model catalog (models.dev) is a downloaded cache; a test must never see the developer's copy.
+    from bot import model_catalog, model_pricing
+    from bot.agent_runtime import context_window
+
+    monkeypatch.setattr(model_pricing, "CACHE_PATH", tmp_path / "models-dev-cache.json")
+    monkeypatch.setitem(model_pricing._memory_cache, "data", None)
+    monkeypatch.setattr(model_catalog, "_disk", {"mtime": None, "data": None})
+    context_window._catalog_windows.clear()
 
 
 @pytest.fixture

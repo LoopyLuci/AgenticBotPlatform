@@ -77,7 +77,9 @@ def _is_git_repo(path: Path) -> bool:
 
 
 def sections(instance_id: Optional[int], *, workspace: Optional[Path] = None,
-             session_context: Optional[str] = None, now: Optional[_dt.datetime] = None) -> list[tuple[str, str]]:
+             session_context: Optional[str] = None, now: Optional[_dt.datetime] = None,
+             agent_prompt: Optional[str] = None, include_agents: bool = False,
+             model_line: Optional[str] = None) -> list[tuple[str, str]]:
     """(name, text) for every non-empty section, in prompt order."""
     cfg = _config()
     out: list[tuple[str, str]] = []
@@ -86,11 +88,22 @@ def sections(instance_id: Optional[int], *, workspace: Optional[Path] = None,
     extra = str(cfg.get("extra") or "").strip()
     if extra:
         out.append(("operator", extra))
+    if agent_prompt:
+        out.append(("agent", "Your role for this task:\n" + agent_prompt.strip()))
     from bot.agent_runtime import project_rules
 
     project = project_rules.load(workspace)
     if project:
         out.append(("project", project))
+    from bot import skill_packs
+
+    packs = skill_packs.summary(workspace)
+    if packs:
+        out.append(("skill_packs", packs))
+    if include_agents:
+        from bot.agent_runtime import agent_defs
+
+        out.append(("agents", agent_defs.summary(workspace)))
     if instance_id is not None:
         from bot import memory as bot_memory
         from bot import skills as bot_skills
@@ -101,6 +114,8 @@ def sections(instance_id: Optional[int], *, workspace: Optional[Path] = None,
         memory = bot_memory.approved_summary(instance_id)
         if memory:
             out.append(("memory", memory))
+    if model_line:
+        out.append(("model", model_line))
     if _flag(cfg, "environment"):
         out.append(("environment", environment(workspace, now)))
     if session_context:
@@ -109,6 +124,8 @@ def sections(instance_id: Optional[int], *, workspace: Optional[Path] = None,
 
 
 def build(instance_id: Optional[int], *, workspace: Optional[Path] = None,
-          session_context: Optional[str] = None, now: Optional[_dt.datetime] = None) -> str:
-    return "\n\n".join(text for _, text in sections(instance_id, workspace=workspace,
-                                                    session_context=session_context, now=now))
+          session_context: Optional[str] = None, now: Optional[_dt.datetime] = None,
+          agent_prompt: Optional[str] = None, include_agents: bool = False, model_line: Optional[str] = None) -> str:
+    return "\n\n".join(text for _, text in sections(
+        instance_id, workspace=workspace, session_context=session_context, now=now,
+        agent_prompt=agent_prompt, include_agents=include_agents, model_line=model_line))
