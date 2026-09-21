@@ -81,7 +81,12 @@ get their own deep-dive doc:
   untrusted-content defence, credential protection and the sandbox;
   **[docs/agents/evals.md](docs/agents/evals.md)** — running and writing agent evals;
   **[docs/agents/skills-and-agents.md](docs/agents/skills-and-agents.md)** — named agents, skill packs, custom commands;
-  **[docs/agents/models.md](docs/agents/models.md)** — what ABP knows about each model and its free-tier allowance.
+  **[docs/agents/models.md](docs/agents/models.md)** — what ABP knows about each model and its free-tier allowance;
+  **[docs/agents/developer-surfaces.md](docs/agents/developer-surfaces.md)** — headless runs, the editor protocol, language servers, SDKs, PR review;
+  **[docs/agents/browser-and-routines.md](docs/agents/browser-and-routines.md)** — the agent's browser, stored logins, routines, approvals;
+  **[docs/agents/channels-and-devices.md](docs/agents/channels-and-devices.md)** — e-mail, SMS, Signal and iMessage channels, paired-phone nodes, voice, the canvas;
+  **[docs/agents/learning-and-compatibility.md](docs/agents/learning-and-compatibility.md)** — trajectory export, the model router, importers, plugin SDK versioning;
+  **[docs/agents/README.md](docs/agents/README.md)** — the index to all of the above.
 - **[docs/cicd/](docs/cicd/README.md)** — the design for the CI/CD platform
   (telemetry, ML workers, dashboards, updates, failover), and
   **[docs/cicd/configuration.md](docs/cicd/configuration.md)**, the specification

@@ -138,7 +138,7 @@ def test_builtin_read_only_agents_have_no_write_or_shell_tools():
     for name in ("explore", "plan", "reviewer"):
         d = agent_defs.BUILTINS[name]
         assert d.mode == "plan" and not ({"run_shell", "write_file", "edit_file", "apply_patch", "spawn_subagent"} & d.tools)
-        assert all(t in tools.TOOL_SCHEMA_NAMES or t in toolspec.registered_names() for t in d.tools), name
+        assert all(t in tools.TOOL_SCHEMA_NAMES or t in toolspec._registered for t in d.tools), name       # incl. tools that are only offered when enabled (lsp)
 
 
 def test_list_agents_tool_reports_them_with_problems(tmp_path):

@@ -670,6 +670,19 @@ def build_app() -> FastAPI:
 
     models_info_api.register(app, _require_token_or_api_key, _require_token)
 
+    # Approvals as reviewable objects (/api/approvals): a preview of what the agent wants to do, and a way to decide.
+    from bot.dashboard import approvals_api
+
+    def _caller_is_owner(device_id: Optional[int] = Depends(_caller_device_id)) -> bool:
+        return device_id is None          # the dashboard token itself, not a paired device's key
+
+    approvals_api.register(app, _require_token_or_api_key, _require_token, _caller_is_owner)
+
+    # Channels added in P7 (SMS and iMessage webhooks), the canvas, and paired-phone nodes.
+    from bot.dashboard import channels_api
+
+    channels_api.register(app, _require_token_or_api_key, _require_token, _caller_device_id)
+
     # ------------------------------------------------------ ops endpoints --
     # Unauthenticated by design, like a load balancer's/orchestrator's health
     # probe is expected to be — neither returns anything a token would need

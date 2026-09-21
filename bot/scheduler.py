@@ -170,6 +170,10 @@ async def _fire(row) -> None:
         return
 
     async def _deliver(outcome: str, result) -> None:
+        if row["kind"] == "routine":
+            from bot import routines
+
+            routines.record_scheduled_run(row["id"], "ok" if outcome == "ran" else outcome, getattr(result, "text", None) or str(result))
         if outcome == "ran":
             db.reset_scheduled_command_failures(row["id"])
             try:

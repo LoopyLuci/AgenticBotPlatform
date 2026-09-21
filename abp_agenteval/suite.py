@@ -96,5 +96,7 @@ def seed_suite() -> list[Task]:
     from .suite_p3 import p3_suite
     from .suite_p4 import p4_suite
     from .suite_pm import pm_suite
+    from .suite_p5 import p5_suite
+    from .suite_p6 import p6_suite
 
-    return _base_suite() + p1_suite() + p2_suite() + p3_suite() + p4_suite() + pm_suite()
+    return _base_suite() + p1_suite() + p2_suite() + p3_suite() + p4_suite() + pm_suite() + p5_suite() + p6_suite()

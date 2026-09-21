@@ -57,6 +57,21 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
             r["headroom"] = usage_limits.headroom(r["provider"], r["model"])
         return {"models": rows}
 
+    @app.get("/api/agent/sessions/{session_key:path}/export", dependencies=write)
+    async def export_session(session_key: str, format: str = Query("md", pattern="^(md|json)$")):
+        """A conversation as Markdown or JSON, shortened and with secrets removed. Needs the dashboard token itself
+        (a paired device's key is not enough): a conversation may hold things its owner did not mean to share."""
+        from fastapi.responses import PlainTextResponse
+
+        from bot.agent_runtime import session_export
+
+        try:
+            text = session_export.export_session(session_key, format)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        media = "application/json" if format == "json" else "text/markdown; charset=utf-8"
+        return PlainTextResponse(text, media_type=media)
+
     @app.post("/api/models/refresh", dependencies=write)
     async def refresh_catalog():
         return {"source": await model_catalog.refresh(force=True), "age_s": model_catalog.catalog_age_s()}

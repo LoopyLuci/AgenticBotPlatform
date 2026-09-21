@@ -1,0 +1,10 @@
+{
+  "name": "abp-sdk",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "abp.mjs",
+  "types": "abp.d.ts",
+  "description": "Client for the ABP dashboard API (generated)",
+  "license": "UNLICENSED",
+  "private": true
+}

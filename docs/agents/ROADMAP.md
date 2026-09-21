@@ -1,10 +1,17 @@
 # ABP Agents — parity roadmap
 
-> **Status: P0 is built (its live-model measurement and surface adoption of streaming remain); everything after it is design.** This page is the
-> agreed plan for bringing the native ABP agent (and the platform around it) to
-> parity with the leading agent products. Each phase says what exists today and
-> what does not, so nothing here should be read as a description of current
-> behaviour. Update the status table as phases ship.
+> **Status (2026-09-20): every phase P0-P9 has been built as far as it can be verified on one Windows machine with no live model, no real
+> third-party accounts and no phone app work. "Built" in the table means code plus tests; the ledger below says what has and has not been run
+> against the real thing.** This page is the plan and the record: each phase says what exists and what does not, so it is not a description
+> of behaviour you can assume. Nothing has been pushed or released.
+
+> **What has never run against the real thing:** a live model on the eval suite (so no measured comparison with any other product); Docker with a
+> daemon; a real git remote (skill fetch); Zed or any ACP editor; pyright and typescript-language-server (rust-analyzer *was* used); a GitHub
+> runner; the real OpenCode and OpenClaw programs; Gmail / a real mailbox, Twilio, a Signal bridge, BlueBubbles; a real Whisper service or Piper;
+> real websites in the browser tool (a real Edge against local pages *was* used); Firebase push; and the Android app, which implements none of
+> the new node, approval or canvas surfaces. **Not built at all:** the shared cloud computer, native computer use, Google Chat, Teams, Hermes /
+> OpenClaw importers, a VS Code extension, dashboard screens for traces / permissions / usage / vault / routines, and consumption of streaming
+> by the UIs.
 
 | Phase | What | Status |
 |---|---|---|
@@ -14,11 +21,11 @@
 | P3 | Context and memory | **Built** (no embeddings, no tree-sitter, no user model) |
 | P4 | Agents, skills and commands | **Built** (no registry; git fetch untested against a real remote) |
 | PM | Model knowledge, limits and usage (added later) | **Built** (API and chat only; no dashboard screen) |
-| P5 | Code intelligence and developer surfaces | Design |
-| P6 | Browser, computer use, routines (the Grok Bot pillar) | Design |
-| P7 | Channels, devices and voice | Design |
-| P8 | Learning and efficiency | Design |
-| P9 | Compatibility and docs | Continuous |
+| P5 | Code intelligence and developer surfaces | **Built** (none of it run against Zed, pyright, a GitHub runner or the real OpenCode / OpenClaw; no VS Code extension) |
+| P6 | Browser, computer use, routines (the Grok Bot pillar) | **Partly built** (browser, vault, routines, approvals; not the cloud computer or computer use) |
+| P7 | Channels, devices and voice | **Partly built** (four new channels, node protocol, voice, canvas - all against fakes; no Google Chat / Teams; Android does not implement nodes) |
+| P8 | Learning and efficiency | **Built** (the router and the tuning harness have never had a live model to measure) |
+| P9 | Compatibility and docs | **Partly built** (no Hermes / OpenClaw importers; no public benchmark) |
 
 ## 1. What "ABP Agents" are today
 
@@ -184,48 +191,62 @@ would want to know about a model.
 | Dashboard and desktop screens for usage and limits | **Not built** (API only) |
 | Eval: `know_your_allowance` | Built |
 
-### P5 — Code intelligence and developer surfaces (L)
+### P5 — Code intelligence and developer surfaces (L) — built; see [developer-surfaces.md](developer-surfaces.md)
 
-* LSP client (diagnostics fed back after edits, symbols, references), formatters on
-  write.
-* ACP server so editors can use ABP as an agent; later a VS Code extension.
-* Headless `abp run` (JSON output, exit codes), OpenAPI spec with Python and TS
-  SDKs, GitHub Action for PR review, session share/export.
-* `opencode` and `openclaw` delegating backends.
+| Deliverable | State |
+|---|---|
+| LSP client: diagnostics shown to the agent after every edit, and an `lsp` tool (diagnostics, symbols, definition, references, hover) | Built, off until configured. Tested against a stand-in server and **by hand against a real rust-analyzer**, which showed that modern servers answer diagnostics on request and refuse while loading (both handled). **Not run against pyright or typescript-language-server** |
+| Formatters on write (no shell, scrubbed environment, timeout; the agent's "I read this" record is refreshed) | Built, off until configured. Tested with a stand-in formatter; no real formatter (ruff, prettier) is installed here |
+| Headless `python -m abp_run` (ephemeral by default, JSON output, exit codes, approvals denied unless allowed) | Built |
+| ACP server `python -m abp_acp` for editors | Built and tested with a stand-in client and a real pipe. **Never run against Zed** or another real editor |
+| OpenAPI document (`docs/api/openapi.json`, kept current by a test) with a Python client and a generated JavaScript client with type declarations | Built. Python client tested in-process, JavaScript client against a live server. Not published to PyPI / npm |
+| GitHub Action that reviews a PR read-only and keeps one comment updated | Built. Tested with a real git repository, a scripted model and a faked GitHub API. **Never run on a GitHub runner** |
+| Conversation export (`/export`, `/api/agent/sessions/<key>/export`; Markdown or JSON; secrets removed) | Built. **No hosted "share link"**: ABP has no public server to host one |
+| `opencode` and `openclaw` delegating backends | Built, tested against a stand-in program only (neither is installed). ABP's own permissions and traces do not apply inside them; output parsing is a best reading of their docs |
+| VS Code extension | **Not built** |
+| Eval: `fix_what_the_language_server_reports` | Built |
 
-### P6 — Browser, computer use, routines (XL)
+### P6 — Browser, computer use, routines (XL) — partly built; see [browser-and-routines.md](browser-and-routines.md)
 
-* Playwright browser tool using accessibility-tree snapshots, screenshots as
-  fallback, persistent per-agent profiles.
-* Shared cloud computer: a container with browser and desktop, live view in desktop
-  and Android, pause / take over / return control.
-* Credential vault with human hand-off for passwords, 2FA and CAPTCHAs; the agent
-  never handles them.
-* Routines: record a workflow once, generalise it into a parameterised routine,
-  schedule it, keep run history and an active toggle (built on scheduler + kanban).
-* Approvals as first-class objects: push notification, diff preview, approve/deny
-  from Android.
-* Native computer-use tool for models that support it.
+| Deliverable | State |
+|---|---|
+| Browser tools (`browser`, `browser_act`, `browser_handoff`) on Playwright: numbered-element snapshots, persistent per-profile logins, every request checked against the public-internet rules, downloads refused, page content marks the session untrusted | Built, off by default. **Tested with a real Microsoft Edge against local pages** (including a proof that a page cannot reach a non-allowed address); **not tested on real websites**. Screenshots are saved as files, not shown to the model; shadow DOM, canvas and frames are not covered |
+| Credential vault (`python -m bot.vault`) with the agent never seeing a secret: filled only into the site an entry belongs to, redacted from output, blocked from leaving in requests; TOTP codes | Built. RFC 6238 vectors pass. **The key file sits beside the vault unless `ABP_VAULT_KEY` is set**, so it protects against backups and casual reads, not against someone who owns the machine |
+| Human hand-off: `browser_handoff` is always put to a person (also in bypass mode); the agent refuses to type passwords, card numbers and one-time codes | Built. A person can act in the page only with `headless: false` |
+| Routines: the agent writes a parameterised template after doing a task (`routine_save`); `/routine run / schedule / pause / resume / history / delete`; runs recorded in history | Built on the existing scheduler. **Not a click recorder**: a routine is a prompt, not a replay. No dashboard screen |
+| Approvals as objects: `/api/approvals` with a diff / command preview, deciding from any surface, standing grants only with the dashboard token, a phone push notification when one is created | Built and tested. **Push is untested against a real Firebase project** and the **Android app does not show them yet** |
+| Shared cloud computer (container with a browser and desktop, live view, take-over) | **Not built** - needs infrastructure this repository does not have |
+| Native computer-use tool | **Not built** - the transports do not carry images in tool results, and there is no display to control |
+| Eval: `handoff_reaches_a_person_even_in_bypass_mode`, `save_a_task_as_a_routine` | Built |
 
-### P7 — Channels, devices, voice (L)
+### P7 — Channels, devices, voice (L) — partly built; see [channels-and-devices.md](channels-and-devices.md)
 
-* Signal, iMessage (bridge), Google Chat, Teams, email, SMS; per-channel policy and
-  pairing.
-* Android as a node (camera, screen, location, notifications, device-local
-  actions) with per-capability consent.
-* Local STT, TTS, voice memos, push-to-talk; wake word later.
-* Proactive heartbeat and a Canvas-style live artifact surface.
+| Deliverable | State |
+|---|---|
+| E-mail, SMS (Twilio), Signal (signal-cli bridge) and iMessage (BlueBubbles) channels, with per-channel allow-lists, forged-sender protection for e-mail, Twilio signature checking, and forms in the dashboard, desktop app and terminal UI | Built. **Tested against fakes only** (in-process IMAP/SMTP servers, a fake Twilio, bridge and BlueBubbles); never run against a real mailbox, Twilio account, Signal bridge or Mac. Twilio's signature algorithm reproduces the example in Twilio's own documentation |
+| Google Chat, Microsoft Teams | **Not built** - they need Google / Microsoft sign-in flows that cannot be tested here |
+| Paired phones as nodes (camera, screen, location, clipboard, notification) with per-capability consent that starts at deny, `node_invoke` / `node_list` tools, long-poll protocol, push wake-up | Server half built and tested over real HTTP with a reference node. **The Android app does not implement it**: no real phone has answered a command |
+| Speech to text (OpenAI-compatible endpoint such as Groq's free Whisper, or your own command) and text to speech (endpoint, Windows speech, or command); Telegram voice messages transcribed and optionally answered by voice | Built. Windows speech verified producing a real WAV; **not tested against a real Whisper service, Piper or whisper.cpp**. Voice on the other channels and in the apps is not done; no wake word, no push-to-talk |
+| Canvas: a live page the agent draws, in a no-network sandbox behind signed links | Built and tested. A web page only; not embedded in the desktop or Android apps |
+| Proactive heartbeat | Already existed (`/heartbeat`); nothing added |
+| Eval | None added: these are integrations, checked by their own tests |
 
-### P8 — Learning and efficiency (M)
+### P8 — Learning and efficiency (M) — built; see [learning-and-compatibility.md](learning-and-compatibility.md)
 
-* Trajectory export and compression for evals and optional fine-tuning.
-* Small advisory router that picks a cheap or strong model per task class.
-* Prompt and tool-description tuning driven by eval scores.
+| Deliverable | State |
+|---|---|
+| Trajectory export (`python -m abp_trajectory`): finished runs as JSONL chat transcripts with tool calls, secrets removed, tool output shortened, optional PII masking, duplicates dropped; opt-in with `--confirm` | Built and tested. Not "compression" in the model sense; it shortens and de-duplicates. Nothing scores whether an answer was right |
+| Advisory model router (`/route`, `suggest_model`): classifies the task, filters by ability and remaining allowance, ranks on quality / economy / headroom | Built. **Advisory only.** Quality is a measured eval pass rate when one was recorded (`abp_agenteval run --live --record`), otherwise a coarse guess from the catalog that is labelled as a guess. No live model has been evaluated, so today every recommendation rests on the guess |
+| Prompt and tool-description tuning driven by eval scores: `abp_agenteval compare` runs the suite per variant of `prompt.extra` / `tool_descriptions` | Built and tested for its mechanics. **Never run with a live model**, which is the only way it produces evidence (scripted runs cannot tell variants apart, and it says so); a difference of two tasks or fewer is reported as noise |
 
-### P9 — Compatibility and docs (S, continuous)
+### P9 — Compatibility and docs (S, continuous) — partly built; see [learning-and-compatibility.md](learning-and-compatibility.md)
 
-* Importers for Claude Code, OpenCode, Hermes and OpenClaw configuration.
-* Install, embedding and policy docs; public benchmark page; plugin SDK versioning.
+| Deliverable | State |
+|---|---|
+| Importers: Claude Code (`settings.json`, `settings.local.json`, `.mcp.json`) and OpenCode (`opencode.json(c)`) into permission rules, hooks and MCP servers; dry run by default; never widens permissions | Built and tested against sample files written from the documented formats, **not against real installs**. **Hermes and OpenClaw importers not built** (formats not checked) |
+| Plugin SDK versioning: `SDK_VERSION`, `REQUIRES_SDK` / `PLUGIN_VERSION`, a refusal that names both versions | Built. See [plugin-sdk.md](plugin-sdk.md) |
+| Results page (`abp_agenteval page`) and a committed one | Built. The committed page shows a **scripted** run and says it is not a model comparison; no live run and no peer product has been evaluated, so there is no public benchmark yet |
+| Docs: this index ([README.md](README.md)), developer surfaces, models, browser and routines, channels, learning and compatibility, plugin SDK, security, evals | Written. Install and embedding docs for the agent specifically are in [developer-surfaces.md](developer-surfaces.md); the platform-level ones already existed |
 
 ## 4. Order
 

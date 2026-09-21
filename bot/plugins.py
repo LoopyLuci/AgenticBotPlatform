@@ -31,6 +31,15 @@ existing cmd_* functions.
 An optional module-level `PLUGIN_DESCRIPTION` string is shown in the
 plugin list. `setup()` raising any exception aborts the install/enable
 and leaves nothing registered.
+
+**Versioning.** The plugin API has a version, `SDK_VERSION` (semantic: a breaking change to
+what `setup(api)` and the handlers may rely on bumps the major number; additions bump the
+minor). A plugin can say which versions it was written for with a module-level
+`REQUIRES_SDK = ">=1.0,<2"` (clauses joined by commas; `>=`, `>`, `<=`, `<`, `==`, `!=`), and an
+optional `PLUGIN_VERSION = "1.2.0"` shown in the plugin list. A plugin that requires a version
+this build does not provide is refused with a message saying which version it needs and which
+one is installed; a plugin that says nothing is assumed to want the 1.x line it was written
+against. See docs/agents/plugin-sdk.md.
 """
 
 from __future__ import annotations
@@ -50,6 +59,29 @@ from bot.slash_commands import CommandDef
 logger = logging.getLogger("bot.plugins")
 
 _NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+SDK_VERSION = "1.0"
+_CLAUSE = re.compile(r"^\s*(>=|<=|==|!=|>|<)\s*(\d+(?:\.\d+)*)\s*$")
+
+
+def _parse_version(text: str) -> tuple[int, ...]:
+    parts = [int(p) for p in str(text).strip().split(".")]
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts)
+
+
+def sdk_satisfies(requirement: str, version: str = SDK_VERSION) -> bool:
+    """Does `version` meet a requirement like ">=1.0,<2"? Raises ValueError for one that cannot be read."""
+    have = _parse_version(version)
+    for clause in str(requirement).split(","):
+        m = _CLAUSE.match(clause)
+        if not m:
+            raise ValueError(f"cannot read {clause.strip()!r} in REQUIRES_SDK (use >=, >, <=, <, ==, != and a version)")
+        op, want = m.group(1), _parse_version(m.group(2))
+        if not {">=": have >= want, ">": have > want, "<=": have <= want, "<": have < want, "==": have == want, "!=": have != want}[op]:
+            return False
+    return True
 
 # name -> {"description", "input_schema", "handler", "dangerous", "plugin"}
 _tools: dict[str, dict[str, Any]] = {}
@@ -161,6 +193,14 @@ def _activate(name: str, path: Path) -> ModuleType:
     """Loads and runs setup() for a plugin, leaving nothing registered on
     any failure (either a bad module or a setup() that raises)."""
     module = _load_module(name, path)
+    requirement = getattr(module, "REQUIRES_SDK", None)
+    if requirement is not None:
+        try:
+            compatible = sdk_satisfies(str(requirement))
+        except ValueError as exc:
+            raise PluginError(str(exc)) from exc
+        if not compatible:
+            raise PluginError(f"{path.name} needs plugin SDK {requirement}, but this build provides {SDK_VERSION}")
     setup_fn = getattr(module, "setup", None)
     if not callable(setup_fn):
         raise PluginError(f"{path.name} has no setup(api) function")
@@ -221,6 +261,9 @@ def describe(name: str) -> dict:
         "path": row["path"] if row else "",
         "tools": sorted(t for t, d in _tools.items() if d["plugin"] == name),
         "commands": sorted(c for c, d in _commands.items() if d["plugin"] == name),
+        "version": str(getattr(_loaded.get(name), "PLUGIN_VERSION", "") or ""),
+        "requires_sdk": str(getattr(_loaded.get(name), "REQUIRES_SDK", "") or ""),
+        "sdk_version": SDK_VERSION,
     }
 
 

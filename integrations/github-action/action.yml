@@ -1,0 +1,41 @@
+name: ABP pull request review
+description: >
+  Reviews a pull request with an ABP agent (read-only: it cannot write files, run commands or use the web)
+  and posts the review as a single comment that is updated on each push.
+inputs:
+  model:
+    description: "provider/model, e.g. anthropic/claude-sonnet-5 (set ANTHROPIC_API_KEY in the workflow env) or a provider defined in ABP's config/providers.yaml"
+    required: true
+  github-token:
+    description: "Token used to read the PR and post the comment (needs pull-requests: write)"
+    default: ${{ github.token }}
+  max-diff-chars:
+    description: "The diff is cut to this many characters before it is shown to the model"
+    default: "60000"
+  instructions:
+    description: "Extra review guidance, e.g. 'focus on security and error handling'"
+    default: ""
+  post:
+    description: "Post the review as a PR comment (false = only print it in the job log)"
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+    - name: Install ABP
+      shell: bash
+      run: pip install -r "${{ github.action_path }}/../../requirements.txt"
+    - name: Review
+      shell: bash
+      env:
+        ABP_MODEL: ${{ inputs.model }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        ABP_MAX_DIFF_CHARS: ${{ inputs.max-diff-chars }}
+        ABP_REVIEW_INSTRUCTIONS: ${{ inputs.instructions }}
+        ABP_POST: ${{ inputs.post }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        BASE_REF: ${{ github.event.pull_request.base.sha }}
+        HEAD_REF: ${{ github.event.pull_request.head.sha }}
+      run: python "${{ github.action_path }}/review.py"

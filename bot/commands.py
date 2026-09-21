@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
@@ -1630,6 +1631,105 @@ async def cmd_usage(ctx: CmdContext, args: list[str]) -> str:
     )
 
 
+def _kv(tokens: list[str]) -> dict:
+    out = {}
+    for t in tokens:
+        key, sep, val = t.partition("=")
+        if sep and key:
+            out[key] = val
+    return out
+
+
+async def cmd_routine(ctx: CmdContext, raw: str) -> str:
+    """Saved tasks (roadmap P6). The agent creates them with its routine_save tool; this runs and schedules them."""
+    import shlex
+
+    from bot import routines
+
+    if ctx.instance_id is None:
+        return "This chat isn't linked to a bot instance."
+    try:
+        words = shlex.split(raw)
+    except ValueError:
+        return "Could not read that (unbalanced quotes?)."
+    sub = words[0].lower() if words else "list"
+    name = words[1] if len(words) > 1 else ""
+    if sub == "list":
+        items = routines.listing(ctx.instance_id)
+        if not items:
+            return "No routines yet. Do a task with the agent, then ask it to save that as a routine."
+        lines = ["Routines:"]
+        for r in items:
+            sched = ", ".join(f"#{s['id']} every {s['interval_s']}s {'on' if s['enabled'] else 'paused'}" for s in r["schedules"]) or "not scheduled"
+            lines.append(f"  {r['name']}({', '.join(r['params'])}): {r['description'][:70] or '(no description)'} - {sched}")
+        return "\n".join(lines)
+    routine = routines.get(ctx.instance_id, name) if name else None
+    if sub in ("show", "run", "schedule", "pause", "resume", "history", "delete") and routine is None:
+        return f"No routine named {name!r}. /routine list" if name else "Usage: /routine <list|show|run|schedule|pause|resume|history|delete> <name>"
+    try:
+        if sub == "show":
+            params = "\n".join(f"  {k}: {v.get('description', '')}" + (f" (default {v['default']})" if 'default' in v else "") for k, v in routine["params"].items())
+            return f"{routine['name']}: {routine['description']}\n\nTemplate:\n{routine['template']}\n\nParameters:\n{params or '  none'}"
+        if sub == "run":
+            prompt = routines.render(routine, _kv(words[2:]))
+            routines.record_run(routine["id"], "started", "run by hand")
+            return await _RAW_ARG_COMMANDS["ask"](ctx, prompt)
+        if sub == "schedule":
+            rest = words[2:]
+            if not rest or rest[0].lower() != "every" or len(rest) < 2:
+                return "Usage: /routine schedule <name> every <interval> [k=v ...]"
+            from bot import scheduler
+
+            sid = routines.schedule(routine, ctx.chat_id, scheduler.parse_duration(rest[1]), _kv(rest[2:]), thread_id=ctx.thread_id)
+            return f"Scheduled {routine['name']} as #{sid}, every {rest[1]}. /routine pause {routine['name']} stops it."
+        if sub in ("pause", "resume"):
+            n = routines.set_active(routine["id"], sub == "resume")
+            return f"{'Resumed' if sub == 'resume' else 'Paused'} {n} schedule(s) of {routine['name']}." if n else f"{routine['name']} has no schedules."
+        if sub == "history":
+            rows = routines.history(routine["id"], 10)
+            return "\n".join(f"  {time.strftime('%Y-%m-%d %H:%M', time.localtime(r['started_at']))} {r['outcome']} {r['summary'][:80]}" for r in rows) or "Never run."
+        if sub == "delete":
+            routines.delete(routine["id"])
+            return f"Deleted {routine['name']} and its schedules."
+    except (routines.RoutineError, ValueError) as exc:
+        return str(exc)
+    except Exception as exc:  # scheduler.ScheduleError and friends
+        return str(exc)
+    return "Usage: /routine list | show <name> | run <name> [k=v ...] | schedule <name> every <interval> [k=v ...] | pause <name> | resume <name> | history <name> | delete <name>"
+
+
+async def cmd_route(ctx: CmdContext, raw: str) -> str:
+    """Advice on which model to use for a task (bot/model_router.py). It ranks; it never switches anything."""
+    from bot import model_router
+
+    task = raw.strip()
+    if not task:
+        return "Usage: /route <describe the task in a sentence or two>"
+    cls, ranked, skipped = model_router.recommend(task)
+    return model_router.describe(cls, ranked, skipped)
+
+
+async def cmd_export(ctx: CmdContext, args: list[str]) -> str:
+    """The current conversation as a Markdown transcript with secrets removed (roadmap P5). Long ones are cut for
+    chat; the dashboard route /api/agent/sessions/<key>/export returns the whole thing."""
+    from bot.agent_runtime import session_export
+
+    if ctx.instance_id is None:
+        return "/export needs a bot instance - this chat isn't linked to one."
+    active = db.get_active_chat_session(ctx.instance_id, ctx.chat_id, thread_id=ctx.thread_id)
+    if active is None:
+        return "There is no conversation to export yet."
+    fmt = "json" if args and args[0].lower() == "json" else "md"
+    try:
+        text = session_export.export_session(active["desktop_session_key"], fmt, title=active["title"] or "Agent conversation")
+    except LookupError as exc:
+        return str(exc)
+    limit = 3500
+    if len(text) > limit:
+        text = text[:limit] + f"\n\n... cut for chat ({len(text) - limit} more characters). The full export: /api/agent/sessions/{active['desktop_session_key']}/export"
+    return text
+
+
 async def cmd_modelinfo(ctx: CmdContext, args: list[str]) -> str:
     """Capabilities, price and limits of a model, and how much of its allowance is used (roadmap PM)."""
     from bot import bot_instances, model_catalog
@@ -1727,6 +1827,7 @@ COMMANDS: dict[str, Callable[[CmdContext, list[str]], Any]] = {
     "skills": cmd_skills,
     "usage": cmd_usage,
     "modelinfo": cmd_modelinfo,
+    "export": cmd_export,
     "insights": cmd_insights,
     "commands": cmd_commands,
 }
@@ -1743,6 +1844,8 @@ _RAW_ARG_COMMANDS: dict[str, Callable[[CmdContext, str], Any]] = {
     "loop": cmd_loop,
     "heartbeat": cmd_heartbeat,
     "memory": cmd_memory,
+    "routine": cmd_routine,
+    "route": cmd_route,
 }
 
 _DESKTOP_COMMANDS = {

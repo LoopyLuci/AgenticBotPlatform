@@ -1,0 +1,2 @@
+# Optional: the agent browser (bot/agent_runtime/browser.py). Also needs a browser: Edge or Chrome, or `playwright install chromium`.
+playwright>=1.40

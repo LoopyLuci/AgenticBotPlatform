@@ -119,4 +119,60 @@ PLATFORM_GUIDES: dict[str, dict] = {
             "In Meta's App Dashboard -> WhatsApp -> Configuration, set the webhook URL to <your public HTTPS domain>/webhooks/whatsapp with the same verify token — one webhook per App, shared by every WhatsApp instance on this install.",
         ],
     },
+    "email": {
+        "label": "E-mail",
+        "fields": {
+            "imap_host": {"label": "IMAP server", "help": "Where the bot's inbox is read, e.g. imap.example.com."},
+            "imap_port": {"label": "IMAP port", "help": "993 for the usual encrypted connection.", "optional": True},
+            "smtp_host": {"label": "SMTP server", "help": "Where replies are sent from, e.g. smtp.example.com."},
+            "smtp_port": {"label": "SMTP port", "help": "587 (STARTTLS) or 465 (SSL).", "optional": True},
+            "username": {"label": "Username", "help": "Usually the bot's own e-mail address."},
+            "password": {"label": "Password", "help": "An app password if your provider offers them. OAuth-only providers are not supported."},
+            "smtp_security": {"label": "SMTP security", "help": "starttls (default), ssl or none.", "optional": True},
+            "from_address": {"label": "From address", "help": "Only if different from the username.", "optional": True},
+        },
+        "setup_guide": [
+            "Create a mailbox for the bot (not your own — anything you send it is read by an agent).",
+            "Enter its IMAP and SMTP details. Only the addresses listed under Allowed user IDs are answered, and only when the mail provider reports the message passed SPF, DKIM or DMARC.",
+            "Put those addresses (comma-separated) in the Allowed user ID(s) field below.",
+        ],
+    },
+    "sms": {
+        "label": "SMS (Twilio)",
+        "fields": {
+            "account_sid": {"label": "Account SID", "help": "From the Twilio console; starts with AC."},
+            "auth_token": {"label": "Auth token", "help": "From the Twilio console. It also signs every incoming request, so keep it secret."},
+            "from_number": {"label": "Twilio phone number", "help": "The number that receives texts, with country code: +15551234567."},
+        },
+        "setup_guide": [
+            "Buy or use a Twilio number that can receive SMS.",
+            "In the number's settings, set 'A message comes in' to a webhook (HTTP POST) at <your public HTTPS domain>/webhooks/sms. Behind a proxy, also set sms.public_url in config/backends.yaml to that exact URL.",
+            "Put the phone numbers allowed to text the bot (with country code, comma-separated) in Allowed user ID(s). Replies are billed by Twilio.",
+        ],
+    },
+    "signal": {
+        "label": "Signal",
+        "fields": {
+            "api_url": {"label": "Bridge address", "help": "Your signal-cli-rest-api server, e.g. http://localhost:8080."},
+            "number": {"label": "Bot's Signal number", "help": "The number registered with the bridge, with country code."},
+        },
+        "setup_guide": [
+            "Run the signal-cli-rest-api container and register or link a spare phone number with it (see that project's README).",
+            "Enter its address and the bot's number. The bridge holds the Signal keys and sees messages in the clear, so run it on a machine you trust.",
+            "Put the phone numbers allowed to message the bot in Allowed user ID(s). Group messages are ignored.",
+        ],
+    },
+    "imessage": {
+        "label": "iMessage (BlueBubbles)",
+        "fields": {
+            "server_url": {"label": "BlueBubbles server address", "help": "e.g. http://192.168.1.20:1234 — a Mac signed in to iMessage runs the server."},
+            "password": {"label": "Server password", "help": "The password set in BlueBubbles."},
+            "webhook_token": {"label": "Webhook token", "help": "Any secret string, 16+ characters. You will put the same value in the webhook URL."},
+        },
+        "setup_guide": [
+            "Install BlueBubbles on a Mac that is signed in to iMessage.",
+            "In BlueBubbles add a webhook for New Messages: <your public HTTPS domain>/webhooks/bluebubbles?token=<the webhook token>.",
+            "Put the phone numbers or Apple IDs allowed to message the bot in Allowed user ID(s). Group chats are ignored.",
+        ],
+    },
 }

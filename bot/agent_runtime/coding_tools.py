@@ -112,6 +112,9 @@ def _save(path: Path, text: str, eol: str) -> None:
     try:
         tmp.write_bytes(data)
         os.replace(tmp, path)
+        from bot.agent_runtime import code_intel
+
+        code_intel.note_written(path)     # formatters and language servers follow up (code_intel.py)
     finally:
         if tmp.exists():
             try:
@@ -650,6 +653,8 @@ def _schema(name: str, description: str, properties: dict, required: list[str]) 
 
 
 def register_all() -> None:
+    from bot.agent_runtime import code_intel
+
     S = {"type": "string"}
     toolspec.register(_schema(
         "edit_file",
@@ -658,19 +663,19 @@ def register_all() -> None:
         "empty old_string, or use write_file. Set replace_all to change every occurrence. Prefer this to write_file "
         "for changes to existing files.",
         {"path": S, "old_string": S, "new_string": S, "replace_all": {"type": "boolean"}},
-        ["path", "old_string", "new_string"]), toolspec.ToolSpec("edit_file", "write", origin="registered"), _edit_file)
+        ["path", "old_string", "new_string"]), toolspec.ToolSpec("edit_file", "write", origin="registered"), code_intel.followup(_edit_file))
     toolspec.register(_schema(
         "multi_edit",
         "Make several edits to one file in one call, applied in order; if any edit fails nothing is changed. "
         "Read the file first.",
         {"path": S, "edits": {"type": "array", "items": {"type": "object", "properties": {
             "old_string": S, "new_string": S, "replace_all": {"type": "boolean"}}, "required": ["old_string", "new_string"]}}},
-        ["path", "edits"]), toolspec.ToolSpec("multi_edit", "write", origin="registered"), _multi_edit)
+        ["path", "edits"]), toolspec.ToolSpec("multi_edit", "write", origin="registered"), code_intel.followup(_multi_edit))
     toolspec.register(_schema(
         "apply_patch",
         "Apply a unified diff ('--- a/file', '+++ b/file', '@@ -l,c +l,c @@' hunks) to one or more files, "
         "including creating (--- /dev/null) and deleting (+++ /dev/null) files. All or nothing.",
-        {"patch": S}, ["patch"]), toolspec.ToolSpec("apply_patch", "write", origin="registered"), _apply_patch)
+        {"patch": S}, ["patch"]), toolspec.ToolSpec("apply_patch", "write", origin="registered"), code_intel.followup(_apply_patch))
     toolspec.register(_schema(
         "grep",
         "Search file contents with a regular expression. output_mode: content (matching lines with line numbers, "

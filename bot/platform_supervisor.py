@@ -57,7 +57,7 @@ def _build_credentials_set(row: dict[str, Any]) -> Any:
     (Slack member IDs and Matrix user IDs like @name:server are never
     numeric)."""
     ids = row["allowed_user_ids"]
-    if row["platform"] in ("slack", "matrix", "whatsapp"):
+    if row["platform"] in bot_instances.STRING_ID_PLATFORMS and row["platform"] not in ("telegram", "discord"):
         return {str(i) for i in ids}
     return {int(i) for i in ids}
 
@@ -114,9 +114,20 @@ async def _run_whatsapp(row: dict[str, Any]) -> None:
     await run_instance(row)  # runs until cancelled
 
 
+def _runner_for(module: str):
+    async def _run(row: dict[str, Any]) -> None:
+        import importlib
+
+        await importlib.import_module(f"bot.platforms.{module}").run_instance(row)  # runs until cancelled
+
+    return _run
+
+
 _RUNNERS = {
     "discord": _run_discord, "slack": _run_slack, "telegram": _run_telegram,
     "matrix": _run_matrix, "whatsapp": _run_whatsapp,
+    "email": _runner_for("email_platform"), "sms": _runner_for("sms_platform"),
+    "signal": _runner_for("signal_platform"), "imessage": _runner_for("imessage_platform"),
 }
 
 

@@ -32,6 +32,19 @@ backends:
     binary: hermes
     port: 8799
     model: null
+  # Other agent products as engines (bot/backends/external_agent_backend.py). Their own tools and permission
+  # handling apply, not ABP's. Flags follow each product's docs; put corrections in extra_args.
+  opencode:
+    binary: opencode
+    model: null            # provider/model as OpenCode names it
+    agent: null
+    auto_approve: false    # true passes --auto: it approves whatever OpenCode has not been told to deny
+    extra_args: []
+  openclaw:
+    binary: openclaw
+    model: null
+    agent: null
+    extra_args: []
 timeouts:
   api: 30
   cli: 60
@@ -45,6 +58,8 @@ timeouts:
   # immediately.
   hermes_cli: 300
   hermes_gateway: 900
+  opencode: 600
+  openclaw: 600
 env_file: null
 desktop:
   exe_path: null
@@ -162,6 +177,26 @@ native_agent:
     timezone: ""             # for reset times, e.g. America/New_York; blank = this computer's
     limits: {}               # e.g. {"openrouter/*:free": {rpm: 20, rpd: 1000}, "google/gemini-2.5-flash": {rpm: 10, rpd: 250, reset: pacific_midnight}}
     overrides: {}            # e.g. {"myprovider/my-model": {context: 32768, tool_call: true, vision: false}}
+  # A browser for the agent (bot/agent_runtime/browser.py). Off. Needs `pip install playwright` and a browser (Edge and
+  # Chrome are found automatically). Pages are untrusted; passwords are only ever filled from the vault (bot/vault.py).
+  browser:
+    enabled: false
+    headless: true           # false shows the window so a person can solve a CAPTCHA or type a code (browser_handoff)
+    channel: ""              # "msedge" / "chrome"; blank tries Playwright's Chromium, then Edge, then Chrome
+    profile: default
+    trusted_sites: []        # hosts whose pages are not treated as untrusted content
+    allow_private_hosts: []  # loopback / private hosts the agent may open (local development only)
+    max_elements: 80
+  # After an edit: run a formatter, and show the agent what a language server thinks (bot/agent_runtime/code_intel.py).
+  # Off until you list something. Nothing is bundled; the programs must be installed.
+  code_intel:
+    formatters: {}           # e.g. {".py": ["ruff", "format", "{path}"], ".rs": ["rustfmt", "{path}"]}
+    lsp:
+      enabled: false
+      wait_s: 4              # how long to wait for a server's verdict after an edit
+      max_problems: 10
+      include_warnings: false
+      servers: {}            # e.g. {rust: {command: ["rust-analyzer"], extensions: [".rs"]}, python: {command: ["pyright-langserver", "--stdio"], extensions: [".py"]}}
   # Skill packs (SKILL.md folders) fetched from git wait in quarantine for a person's approval (skill_install.py).
   skills:
     allowed_hosts: []        # extra git hosts to fetch from, besides github.com, gitlab.com, bitbucket.org, codeberg.org
@@ -313,3 +348,30 @@ turn:
   secret: null
   urls: []
   ttl_s: 3600
+# Channels and voice added in roadmap P7. See bot/platforms/*_platform.py and bot/voice.py for what each setting does.
+email:
+  poll_interval_s: 30
+  require_authentication: true   # ignore mail whose provider did not record a passing SPF/DKIM/DMARC result (a From address is easy to forge)
+  max_replies_per_hour: 20       # per sender
+sms:
+  public_url: ""                 # the exact webhook URL configured at Twilio, if this server sits behind a proxy
+signal:
+  poll_interval_s: 2
+canvas:
+  max_bytes: 500000
+voice:
+  stt:
+    engine: "off"                # off | openai_compatible | command
+    base_url: https://api.groq.com/openai/v1
+    api_key_env: GROQ_API_KEY
+    model: whisper-large-v3
+    language: ""
+  tts:
+    engine: "off"                # off | openai_compatible | sapi | command
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    model: tts-1
+    voice: alloy
+    format: opus
+  reply_with_voice: false
+  max_seconds: 300
