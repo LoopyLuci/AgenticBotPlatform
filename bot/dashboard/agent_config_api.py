@@ -103,7 +103,8 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
             bots.append({
                 "id": inst["id"], "name": inst["name"], "platform": inst["platform"], "enabled": bool(inst.get("enabled")),
                 "backend": inst["backend"], "backend_label": AGENT_BACKENDS[inst["backend"]], "model": inst.get("model"),
-                "permission_mode": mode, "permission_rules": len(rules),
+                "permission_mode": mode, "permission_mode_own": permissions.instance_settings(inst["id"])["mode"],
+                "permission_rules": len(rules),
                 "max_concurrent_children": settings["max_concurrent_children"], "worker_model": settings["worker_model"],
                 "worker_effort": settings["worker_effort"], "manager_effort": settings["manager_effort"],
                 "plan_approval": bool(settings["require_plan_approval"]), "is_admin": bool(settings["is_admin_instance"]),

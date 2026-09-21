@@ -395,6 +395,47 @@
   .botcard .bc-actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:auto; padding-top:8px; border-top:1px solid var(--line); }
   .botcard .bc-error { font-size:11px; color:var(--critical); }
 
+  /* ------------------------------------------------------------ ABP Agents page --- */
+  .agents-tabs { display:flex; flex-wrap:wrap; gap:2px; margin:10px 0 14px; border-bottom:1px solid var(--line); }
+  .agents-tab { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border:none; background:none; color:var(--ink-soft); font:inherit; font-size:13px; font-weight:600; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; }
+  .agents-tab:hover { color:var(--ink); }
+  .agents-tab.active { color:var(--ink); border-bottom-color:var(--accent); }
+  .ag-dot { width:7px; height:7px; border-radius:50%; background:var(--warning); }
+  .ag-badge, .ag-count { font-size:11px; font-weight:700; padding:1px 7px; border-radius:999px; background:var(--surface-2); color:var(--ink-soft); }
+  .ag-badge { background:var(--warning-soft); color:var(--warning); }
+  .ag-card { margin-top:12px; }
+  .ag-row { display:grid; grid-template-columns:minmax(220px,1fr) minmax(220px,1.1fr); gap:4px 22px; padding:12px 0; border-top:1px solid var(--line); }
+  .ag-card > h3 + .ag-row { border-top:none; }
+  .ag-row.dirty { background:linear-gradient(90deg, var(--accent-soft), transparent 40%); }
+  .ag-help { color:var(--muted); font-size:12px; margin-top:3px; line-height:1.45; }
+  .ag-mod { color:var(--accent); font-size:11px; font-weight:700; margin-left:4px; }
+  .ag-applies { color:var(--muted); font-size:11px; margin-left:8px; font-weight:500; }
+  .ag-ctl input[type=text], .ag-ctl input[type=number], .ag-ctl select, .ag-ctl textarea { width:100%; box-sizing:border-box; }
+  #agents select, #agents textarea, #agents input[type=number] { background:var(--surface-2); color:var(--ink); border:1px solid var(--line); border-radius:7px; padding:8px 10px; font-family:var(--font-mono); font-size:12.5px; }
+  #agents select:disabled { opacity:.55; }
+  #agents a { color:var(--accent); }
+  .ag-num { display:flex; align-items:center; gap:8px; } .ag-num input { flex:1; min-width:0; max-width:220px; } .ag-num small { color:var(--muted); white-space:nowrap; flex:none; }
+  .ag-switch { display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-weight:600; }
+  .ag-meta { color:var(--muted); font-size:11px; margin-top:5px; }
+  .ag-danger { grid-column:1 / -1; font-size:12px; color:var(--warning); background:var(--warning-soft); border-radius:6px; padding:6px 10px; }
+  .ag-err { grid-column:1 / -1; font-size:12px; color:var(--critical); }
+  .ag-adv { display:flex; align-items:center; gap:8px; margin:14px 2px 4px; color:var(--ink-soft); font-size:12.5px; cursor:pointer; }
+  .ag-savebar { position:sticky; bottom:0; z-index:5; display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:16px; padding:10px 14px; background:var(--surface); border:1px solid var(--accent); border-radius:10px; box-shadow:0 -4px 18px rgba(0,0,0,.18); }
+  .ag-stats { display:flex; flex-wrap:wrap; gap:12px; }
+  .ag-stats > div { flex:1; min-width:110px; padding:12px 14px; border-radius:10px; background:var(--surface); box-shadow:0 0 0 1px var(--line) inset; }
+  .ag-stats b { display:block; font-size:22px; } .ag-stats span { color:var(--muted); font-size:12px; }
+  .ag-check { display:flex; align-items:center; gap:12px; padding:9px 0; border-top:1px solid var(--line); }
+  .ag-card > h3 + .ag-check { border-top:none; }
+  .ag-check > div { flex:1; }
+  .ag-mark { width:22px; height:22px; border-radius:50%; display:grid; place-items:center; font-weight:800; font-size:13px; flex:none; }
+  .ag-check.ok .ag-mark { background:var(--good-soft); color:var(--good); } .ag-check.warn .ag-mark { background:var(--warning-soft); color:var(--warning); }
+  .ag-steps { margin:8px 0 0 18px; padding:0; line-height:1.9; } .ag-steps li { margin-bottom:2px; }
+  .ag-toolgroup h4 { margin:14px 0 4px; text-transform:capitalize; } .ag-toolgroup h4 small { color:var(--muted); font-weight:500; }
+  .ag-review { display:flex; justify-content:space-between; gap:14px; align-items:flex-start; padding:10px 0; border-top:1px solid var(--line); }
+  .ag-review .ag-actions { display:flex; gap:6px; flex:none; }
+  .ag-yaml { margin:6px 0 0 18px; line-height:1.8; }
+  @media (max-width:820px) { .ag-row { grid-template-columns:1fr; } }
+
   /* ---------------------------------------------------- terminal panel --- */
   .term-panel {
     /* A real row at the bottom of the window (body is a flex column), NOT an
@@ -534,6 +575,7 @@
       <a href="#bots" title="Bots"><span class="ic">🤖</span><span class="nav-txt">Bots</span></a>
       <a href="#models" title="Models"><span class="ic">🧩</span><span class="nav-txt">Models</span></a>
       <a href="#kanban" title="Kanban"><span class="ic">🗒</span><span class="nav-txt">Kanban</span></a>
+      <a href="#agents" title="ABP Agents"><span class="ic">🤖</span><span class="nav-txt">ABP Agents</span></a>
       <a href="#swarms" title="Swarms"><span class="ic">🐝</span><span class="nav-txt">Swarms</span></a>
       <a href="#automation" title="Automation"><span class="ic">🪝</span><span class="nav-txt">Automation</span></a>
       <a href="#customize" title="Customize UI"><span class="ic">🪄</span><span class="nav-txt">Customize UI</span></a>
@@ -1082,11 +1124,12 @@
               </optgroup>
               <optgroup label="Custom / local">
                 <option value="custom_model">custom_model (any OpenAI-compatible endpoint)</option>
-                <option value="native_agent">native_agent (custom endpoint + spawn_subagent/consult_models)</option>
+                <option value="native_agent">native_agent — ABP Agent (tools, memory, sub-agents, swarms)</option>
               </optgroup>
             </select>
           </div>
         </div>
+        <div class="cardnote hidden" id="bot-agent-hint" style="margin:2px 0 10px;">This bot runs <b>ABP's own agent</b>: it can use tools, remember things, run sub-agents and swarms. How careful it is, which tools it has and its sub-agent limits are on the <a href="#agents" data-go-agents>ABP Agents</a> page; after you add it, use <b>Agent settings</b> on its card.</div>
         <div class="wizard-field" id="bot-new-model-field">
           <label>Model override (optional)</label>
           <div class="help" id="bot-new-model-help">Leave blank to use this backend's configured default. Options are live models actually available to this backend.</div>
@@ -1320,6 +1363,39 @@
       </div>
     </section>
 
+    <section id="agents">
+      <div class="sec-head"><h2>ABP Agents</h2><span class="desc">Everything about ABP's own agent in one place: which bots use it, how careful it is, what tools it has, and how it runs sub-agents and swarms.</span></div>
+      <div id="agents-root">
+        <div class="agents-tabs" id="agents-tabs" role="tablist"></div>
+        <div id="agents-body"><p class="cardnote">Connecting to the ABP server…</p></div>
+        <div id="agents-static-subagents" class="hidden">
+        <div class="card" style="margin-top:12px;">
+          <h3>Agent settings <span style="font-weight:400; color:var(--muted); font-size:12px;">— per-instance concurrency, provider/model, and effort defaults</span></h3>
+          <p class="cardnote">Pick an instance to edit its own settings, or leave it on "Process-wide default" to edit the fallback every instance with nothing configured inherits from. <code>is_admin_instance</code> marks the one instance whose tool loop gets the <code>admin_*</code> tool set (Server Chat / Telegram admin pipeline) — settable only here, never through an instance's own tool loop.</p>
+          <div class="row" style="gap:8px; margin-top:10px; align-items:center;">
+            <label for="agent-settings-instance" class="chat-toolbar-label">Instance</label>
+            <select id="agent-settings-instance"><option value="">Process-wide default</option></select>
+          </div>
+          <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; margin-top:12px;">
+            <label>Max concurrent children<br><input type="number" id="as-max-concurrent-children" min="1" style="width:100%;"></label>
+            <label>Worker provider<br><input type="text" id="as-worker-provider" style="width:100%;"></label>
+            <label>Worker model<br><input type="text" id="as-worker-model" style="width:100%;"></label>
+            <label>Worker effort<br><select id="as-worker-effort" style="width:100%;"></select></label>
+            <label>Manager effort<br><select id="as-manager-effort" style="width:100%;"></select></label>
+            <label>Fallback provider<br><input type="text" id="as-fallback-provider" style="width:100%;"></label>
+            <label>Fallback model<br><input type="text" id="as-fallback-model" style="width:100%;"></label>
+            <label style="display:flex; align-items:center; gap:6px; margin-top:18px;"><input type="checkbox" id="as-require-plan-approval"> Require plan approval</label>
+            <label style="display:flex; align-items:center; gap:6px; margin-top:18px;"><input type="checkbox" id="as-is-admin-instance"> Is admin instance</label>
+          </div>
+          <div style="margin-top:12px;"><button class="btn primary" id="btn-agent-settings-save">Save</button> <span class="cardnote" id="agent-settings-status" style="display:inline;"></span></div>
+        </div>
+          <div class="card ag-card"><h3>Swarms</h3><p class="cardnote">A swarm is a group of bots working together on one prompt. Create, run and watch them on the Swarms page; their spending limits are above.
+            <button class="btn" data-go="swarms" style="padding:3px 9px; font-size:11px; margin-left:6px;">Open Swarms</button></p></div>
+        </div>
+        <div class="ag-savebar hidden" id="agents-savebar"></div>
+      </div>
+    </section>
+
     <section id="swarms">
       <div class="sec-head"><h2>Swarms</h2><span class="desc">Groups of bots working together on one prompt — fan out to several bots and merge the answers, have a leader pick the best one, relay drafts through a pipeline, decompose into subtasks, or build a fully custom step graph.</span></div>
 
@@ -1481,27 +1557,6 @@
             <tbody id="hooks-tbody"><tr class="emptyrow"><td colspan="6">Loading…</td></tr></tbody>
           </table>
         </div>
-      </div>
-
-      <div class="card" style="margin-top:14px;">
-        <h3>Agent settings <span style="font-weight:400; color:var(--muted); font-size:12px;">— per-instance concurrency, provider/model, and effort defaults</span></h3>
-        <p class="cardnote">Pick an instance to edit its own settings, or leave it on "Process-wide default" to edit the fallback every instance with nothing configured inherits from. <code>is_admin_instance</code> marks the one instance whose tool loop gets the <code>admin_*</code> tool set (Server Chat / Telegram admin pipeline) — settable only here, never through an instance's own tool loop.</p>
-        <div class="row" style="gap:8px; margin-top:10px; align-items:center;">
-          <label for="agent-settings-instance" class="chat-toolbar-label">Instance</label>
-          <select id="agent-settings-instance"><option value="">Process-wide default</option></select>
-        </div>
-        <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; margin-top:12px;">
-          <label>Max concurrent children<br><input type="number" id="as-max-concurrent-children" min="1" style="width:100%;"></label>
-          <label>Worker provider<br><input type="text" id="as-worker-provider" style="width:100%;"></label>
-          <label>Worker model<br><input type="text" id="as-worker-model" style="width:100%;"></label>
-          <label>Worker effort<br><select id="as-worker-effort" style="width:100%;"></select></label>
-          <label>Manager effort<br><select id="as-manager-effort" style="width:100%;"></select></label>
-          <label>Fallback provider<br><input type="text" id="as-fallback-provider" style="width:100%;"></label>
-          <label>Fallback model<br><input type="text" id="as-fallback-model" style="width:100%;"></label>
-          <label style="display:flex; align-items:center; gap:6px; margin-top:18px;"><input type="checkbox" id="as-require-plan-approval"> Require plan approval</label>
-          <label style="display:flex; align-items:center; gap:6px; margin-top:18px;"><input type="checkbox" id="as-is-admin-instance"> Is admin instance</label>
-        </div>
-        <div style="margin-top:12px;"><button class="btn primary" id="btn-agent-settings-save">Save</button> <span class="cardnote" id="agent-settings-status" style="display:inline;"></span></div>
       </div>
 
       <div class="card" style="margin-top:14px;">
@@ -2556,6 +2611,8 @@ function refreshBotModelOptions() {
   document.getElementById('bot-new-model-options').innerHTML = options.map(name => `<option value="${esc(name)}"></option>`).join('');
   const help = document.getElementById('bot-new-model-help');
   const input = document.getElementById('bot-new-model');
+  const agentHint = document.getElementById('bot-agent-hint');
+  if (agentHint) agentHint.classList.toggle('hidden', !['native_agent', 'api', 'custom_model'].includes(backend));
   if (backend === 'custom_model' || backend === 'native_agent') {
     help.textContent = 'Required for this backend: "<provider>/<model_id>", where <provider> is one configured on the Models tab.';
     input.placeholder = 'e.g. local_ollama/llama3.1';
@@ -4504,6 +4561,7 @@ async function refreshBots() {
       ${b.circuit && b.circuit.open ? `<div class="bc-error">Paused after ${b.circuit.consecutive_failures} consecutive failures — retrying automatically, or <a href="#" data-bot-circuit-reset="${b.id}">retry now</a>.</div>` : ''}
       <div class="bc-actions">
         <button class="btn" data-bot-edit="${b.id}" style="padding:3px 8px; font-size:11px;">Edit</button>
+        ${['native_agent', 'api', 'custom_model'].includes(b.backend) ? `<button class="btn" data-bot-agent="${b.id}" style="padding:3px 8px; font-size:11px;">Agent settings</button>` : ''}
         <button class="btn" data-bot-toggle="${b.id}" style="padding:3px 8px; font-size:11px;">${b.enabled ? 'Disable' : 'Enable'}</button>
         ${b.enabled ? `<button class="btn" data-bot-startstop="${b.id}" style="padding:3px 8px; font-size:11px;">${b.live_running ? 'Stop' : 'Start'}</button>
         <button class="btn" data-bot-restart="${b.id}" style="padding:3px 8px; font-size:11px;">Restart</button>` : ''}
@@ -4523,6 +4581,8 @@ async function refreshBots() {
     const id = Number(el.dataset.botModel);
     await api(`/api/bots/${id}`, { method: 'PUT', body: JSON.stringify({ model: value || null }) });
   });
+  document.querySelectorAll('[data-bot-agent]').forEach(btn => btn.onclick = () => window.abpAgents && window.abpAgents.openBot(btn.dataset.botAgent));
+  document.querySelectorAll('[data-go-agents]').forEach(a => a.onclick = (e) => { e.preventDefault(); window.abpAgents && window.abpAgents.goTo('agents:overview'); });
   document.querySelectorAll('[data-bot-edit]').forEach(btn => btn.onclick = () => {
     const bot = bots.find(b => b.id === Number(btn.dataset.botEdit));
     if (bot) _loadBotIntoForm(bot);
@@ -6750,5 +6810,6 @@ checkSetupAndProceed(startDashboard);
 </div>
 
 <script src="/static/terminal-panel.js"></script>
+<script src="/static/agents-panel.js"></script>
 </body>
 </html>

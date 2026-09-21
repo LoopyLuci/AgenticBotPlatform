@@ -43,10 +43,10 @@ _PERMISSION_MODE_HELP = {
 
 def _f(key: str, type: str, label: str, help: str, tab: str, section: str, default: Any, *, root: str = "native_agent",
        min: Optional[float] = None, max: Optional[float] = None, choices: Optional[list] = None, nullable: bool = False,
-       advanced: bool = False, danger: str = "", applies: str = "next turn", unit: str = "") -> dict:
+       advanced: bool = False, danger: str = "", danger_value: Any = True, applies: str = "next turn", unit: str = "") -> dict:
     return {"id": f"{root}.{key}", "root": root, "key": key, "type": type, "label": label, "help": help, "tab": tab,
             "section": section, "default": default, "min": min, "max": max, "choices": choices, "nullable": nullable,
-            "advanced": advanced, "danger": danger, "applies": applies, "unit": unit}
+            "advanced": advanced, "danger": danger, "danger_value": danger_value, "applies": applies, "unit": unit}
 
 
 R, S, T, W, M = "runtime", "safety", "tools", "subagents", "models"
@@ -79,9 +79,10 @@ FIELDS: list[dict] = [
     _f("require_read_before_write", "bool", "Read a file before changing it", "An agent must read an existing file before it may overwrite or edit it, so it cannot clobber what it has not seen.", S, "Approval", True),
     _f("sandbox.backend", "enum", "Where commands run", "Local runs shell commands directly on this computer. Docker runs them in a container (needs Docker).", S, "Sandbox", "local",
        choices=[[b, {"local": "Local - on this computer", "docker": "Docker - in a container"}[b]] for b in sandbox.BACKENDS], applies="new sessions",
-       danger="Local commands run with this computer's own access."),
+       danger="Local commands run with this computer's own access.", danger_value="local"),
     _f("sandbox.env.mode", "enum", "Environment passed to commands", "Which environment variables a command can see.", S, "Sandbox", "secrets",
-       choices=[["secrets", "Secrets removed - everything except keys and tokens"], ["minimal", "Minimal - only what is needed to run"], ["inherit", "Inherit - everything, including keys"]], applies="new sessions"),
+       choices=[["secrets", "Secrets removed - everything except keys and tokens"], ["minimal", "Minimal - only what is needed to run"], ["inherit", "Inherit - everything, including keys"]], applies="new sessions",
+       danger="Commands can read every key and token in this app's environment.", danger_value="inherit"),
     _f("mcp_pinning", "bool", "Pin MCP tool descriptions", "Block an MCP tool whose description or inputs change after you approved it, since that is how a tool can be turned against you.", S, "External tools", True),
     # ------------------------------------------------------------------ tools
     _f("web.enabled", "bool", "Web search and fetch", "Let agents search the web and read pages. Content from the web is treated as untrusted.", T, "Web", False),

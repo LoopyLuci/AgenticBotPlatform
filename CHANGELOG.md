@@ -9,6 +9,15 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **An ABP Agents page, in the dashboard and the desktop app.** Until now ABP's own agent had no settings screen: its ~60
+  settings could only be changed by editing `config/backends.yaml`, and permissions, skills, sub-agent limits and the tool
+  list had no GUI. The new page has an Overview with readiness checks and the bots that run an ABP agent, and tabs for
+  Runtime, Safety, Tools, Sub-agents & swarms, Skills and Models. Every setting has a label, help, its default and a reset;
+  changes are staged and validated together and saved without losing the config file's comments. Bots on an agent backend
+  get an **Agent settings** button on their card, and the Add-bot form explains the **ABP Agent** backend. Also new: a
+  tool inventory, per-bot permission modes (with "follow the default"), reviewing skill packs and drafts, and installing a
+  skill pack from git. Routes: `/api/agent/config[/schema|/reset]`, `/api/agent/overview`, `/api/agent/tools`. The per-bot
+  agent-settings card moved here from Automation. See `docs/agents/agents-page.md`.
 - **Removing a model provider is no longer final.** Every provider ever configured is kept in a provider store
   (`data/provider_store.db`, its own file so a snapshot restore cannot swallow it). Remove moves a provider to a new
   **Deleted providers** list on the Models page (dashboard and desktop app) with its address, settings and API key, the
@@ -20,6 +29,8 @@ app's own version (the Android app versions independently — see its own
   `DELETE /api/providers/store/{name}`.
 
 ### Changed
+- **Chat opens in "Chat with Bot"** (it was "Send from Server") in the dashboard, the desktop app and the Android app. Send from
+  Server is one click away.
 - **The top-bar "Bot online" pill now shows live bot activity, and "Hot-reload armed" is gone.** The pill reads, for
   example, "2 bots running agents · 4 agent jobs · 1 queued": the number of bot instances with at least one running job
   right now (jobs with no instance count together as one default bot), the running and queued jobs, and, when idle,
@@ -32,6 +43,15 @@ app's own version (the Android app versions independently — see its own
   no forwarding headers, no `Origin`, no cross-site fetch); any other route gets no token and a one-line notice.
 
 ### Fixed
+- **The desktop window no longer sits on "Starting the bot process…" forever.** Two causes. The boot panel kept its "Starting…"
+  text and a spinning indicator after the server was up (only the small pill said "running"), so any time the panel was
+  opened it looked like loading never finished; it now ends in "Ready." with the spinner stopped. And the readiness check
+  polled every 500 ms with an attempt counter; it now starts at 100 ms with a time budget, and a failing setup step can no
+  longer stop it from ever checking the server.
+- **Start-up is faster and no longer waits on the bots.** The dashboard now starts before external MCP servers and chat
+  platforms connect (a slow or unreachable bot used to delay the whole UI), and the Support Bot's neural net is no longer
+  trained on every start: it loads its saved model, or trains once on first use / in a background warm-up. The dashboard
+  answers about 3 seconds after launch, down from about 5.
 - **The "Agentic Bot Platform running" pill no longer sits on top of the Terminal/Activity bar.** It is anchored to the
   bar's live height, so it stays just above it when the bar is collapsed, open, drag-resized or maximized, and follows
   window resizes.
