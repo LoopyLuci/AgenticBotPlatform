@@ -41,12 +41,33 @@ def test_the_per_bot_agent_settings_card_lives_on_the_agents_page_not_in_automat
     assert text.count('id="btn-agent-settings-save"') == 1  # moved, not duplicated
 
 
+def test_the_bot_form_script_is_identical_in_both_apps():
+    dash = (ROOT / "bot/dashboard/static/bot-agent-form.js").read_text(encoding="utf-8")
+    desk = (ROOT / "desktop-app/ui/bot-agent-form.js").read_text(encoding="utf-8")
+    assert dash == desk
+    assert "own=true" in dash and "/permissions" in dash
+
+
 @pytest.mark.parametrize("name", ["dashboard", "desktop"])
-def test_the_bot_form_explains_the_abp_agent_backend(name):
+def test_the_bot_form_offers_abp_agent_first_and_has_its_settings_panel(name):
     text = PAGES[name]
-    assert 'id="bot-agent-hint"' in text
-    assert "native_agent — ABP Agent" in text
+    select = text[text.index('<select id="bot-new-backend">'):]
+    select = select[:select.index("</select>")]
+    assert select.index("ABP Agent (recommended)") < select.index("Claude apps") < select.index("Hermes Agent")
+    assert select.index('value="native_agent"') < select.index('value="cli"')
     assert "custom endpoint + spawn_subagent" not in text
+    for element in ("bot-agent-panel", "bot-agent-permission", "bot-agent-max-children", "bot-agent-worker-model",
+                    "bot-agent-fallback", "bot-agent-worker-effort", "bot-agent-manager-effort", "bot-agent-plan-approval"):
+        assert f'id="{element}"' in text
+    assert re.search(r'<script src="(/static/)?bot-agent-form\.js"></script>', text)
+
+
+@pytest.mark.parametrize("rel", ["bot/dashboard/static/dashboard.html", "desktop-app/ui/main.js"])
+def test_the_form_hooks_the_agent_panel_into_reset_load_and_save(rel):
+    text = (ROOT / rel).read_text(encoding="utf-8")
+    assert "document.getElementById('bot-new-backend').value = 'native_agent'" in text  # ABP Agent is the default
+    assert "abpBotAgentForm.reset()" in text and "abpBotAgentForm.load(bot.id)" in text
+    assert "abpBotAgentForm.save(savedId)" in text and "savedId = created.id" in text
 
 
 @pytest.mark.parametrize("rel", ["bot/dashboard/static/dashboard.html", "desktop-app/ui/main.js"])

@@ -10,9 +10,14 @@ tool-using loop. Bots on the Claude CLI, Hermes or other backends have their own
 
 1. **Give it a model.** On the **Models** page, add a provider (an API key, or a local server such as Ollama). Free models are
    marked, and each model's context window and rate limits are shown.
-2. **Create the bot.** On the **Bots** page, choose the **ABP Agent** backend and enter the model as `provider/model`. A note
-   under the backend list explains what this backend does and links here.
-3. **Tune it.** A bot's card has an **Agent settings** button that opens that bot's settings on this page.
+2. **Create the bot.** On the **Bots** page, **ABP Agent** is the first backend in the list and the default for a new bot.
+   Enter the model as `provider/model`. The form then shows an **ABP Agent settings** panel with this bot's own settings:
+   how careful it is (its permission mode), how many sub-agents it may run at once, the model and effort for its
+   sub-agents, a fallback model, and whether it must ask you to approve a plan first. Anything left blank follows the
+   global defaults, which the panel summarises. The panel also appears for `api` and `custom_model`, which run the same
+   ABP agent loop.
+3. **Tune it later.** Editing a bot fills the panel from what that bot has set itself (not values it inherits, so saving
+   never pins a default). A bot's card has an **Agent settings** button that opens the fuller per-bot settings on this page.
 4. **Add swarms** (optional). Define them on the **Swarms** page; their spending limits are on the *Sub-agents & swarms* tab.
 
 The **Overview** tab checks each of these for you (a provider exists, a bot uses an ABP agent, approvals are on, the swarm

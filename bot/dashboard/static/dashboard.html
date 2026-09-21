@@ -414,6 +414,13 @@
   #agents select, #agents textarea, #agents input[type=number] { background:var(--surface-2); color:var(--ink); border:1px solid var(--line); border-radius:7px; padding:8px 10px; font-family:var(--font-mono); font-size:12.5px; }
   #agents select:disabled { opacity:.55; }
   #agents a { color:var(--accent); }
+  #bot-agent-panel select, #bot-agent-panel input[type=number] { background:var(--surface-2); color:var(--ink); border:1px solid var(--line); border-radius:7px; padding:8px 10px; font-family:var(--font-mono); font-size:12.5px; width:100%; box-sizing:border-box; }
+  #bot-agent-panel a { color:var(--accent); }
+  .ag-formgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:12px 16px; margin-top:8px; }
+  .ag-formgrid label { display:flex; flex-direction:column; align-items:stretch; gap:4px; font-size:12px; color:var(--ink-soft); font-weight:600; text-align:left; }
+  #bot-agent-panel input[type=text] { width:100%; box-sizing:border-box; }
+  .ag-formgrid label.check { flex-direction:row; align-items:center; justify-content:flex-start; gap:8px; grid-column:1 / -1; font-weight:500; }
+  .ag-formgrid label.check input { flex:none; margin:0; }
   .ag-num { display:flex; align-items:center; gap:8px; } .ag-num input { flex:1; min-width:0; max-width:220px; } .ag-num small { color:var(--muted); white-space:nowrap; flex:none; }
   .ag-switch { display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-weight:600; }
   .ag-meta { color:var(--muted); font-size:11px; margin-top:5px; }
@@ -1113,28 +1120,44 @@
           <label>Backend</label>
           <div class="row">
             <select id="bot-new-backend">
-              <optgroup label="Claude">
-                <option value="cli">cli (Claude Code CLI)</option>
-                <option value="api">api (Anthropic API)</option>
-                <option value="ui">ui (Claude Desktop automation)</option>
+              <optgroup label="ABP Agent (recommended)">
+                <option value="native_agent">ABP Agent — ABP's own agent: tools, memory, sub-agents, swarms</option>
+              </optgroup>
+              <optgroup label="ABP Agent with a specific model service">
+                <option value="custom_model">custom_model — any OpenAI-compatible endpoint (runs the ABP Agent loop)</option>
+                <option value="api">api — Anthropic API (runs the ABP Agent loop)</option>
+              </optgroup>
+              <optgroup label="Claude apps">
+                <option value="cli">cli — Claude Code CLI</option>
+                <option value="ui">ui — Claude Desktop automation</option>
               </optgroup>
               <optgroup label="Hermes Agent">
-                <option value="hermes_cli">hermes_cli (Hermes Agent CLI)</option>
-                <option value="hermes_gateway">hermes_gateway (Hermes Agent gateway)</option>
-              </optgroup>
-              <optgroup label="Custom / local">
-                <option value="custom_model">custom_model (any OpenAI-compatible endpoint)</option>
-                <option value="native_agent">native_agent — ABP Agent (tools, memory, sub-agents, swarms)</option>
+                <option value="hermes_cli">hermes_cli — Hermes Agent CLI</option>
+                <option value="hermes_gateway">hermes_gateway — Hermes Agent gateway</option>
               </optgroup>
             </select>
           </div>
         </div>
-        <div class="cardnote hidden" id="bot-agent-hint" style="margin:2px 0 10px;">This bot runs <b>ABP's own agent</b>: it can use tools, remember things, run sub-agents and swarms. How careful it is, which tools it has and its sub-agent limits are on the <a href="#agents" data-go-agents>ABP Agents</a> page; after you add it, use <b>Agent settings</b> on its card.</div>
         <div class="wizard-field" id="bot-new-model-field">
           <label>Model override (optional)</label>
           <div class="help" id="bot-new-model-help">Leave blank to use this backend's configured default. Options are live models actually available to this backend.</div>
           <div class="row"><input type="text" id="bot-new-model" list="bot-new-model-options" placeholder="e.g. claude-opus-5" autocomplete="off" spellcheck="false"></div>
           <datalist id="bot-new-model-options"></datalist>
+        </div>
+        <div class="wizard-field hidden" id="bot-agent-panel">
+          <label>ABP Agent settings</label>
+          <div class="help">This bot answers with <b>ABP's own agent</b>: it can use tools, remember things, and run sub-agents and swarms. These are this bot's own settings. Anything left blank follows the global defaults, which are set on the ABP Agents page.</div>
+          <div class="ag-formgrid">
+            <label>How careful it is<select id="bot-agent-permission"></select></label>
+            <label>Sub-agents at once<input type="number" id="bot-agent-max-children" min="1" max="64" step="1" placeholder="default"></label>
+            <label>Sub-agent model (provider/model)<input type="text" id="bot-agent-worker-model" list="bot-new-model-options" placeholder="same as this bot" autocomplete="off" spellcheck="false"></label>
+            <label>Fallback model (provider/model)<input type="text" id="bot-agent-fallback" list="bot-new-model-options" placeholder="none" autocomplete="off" spellcheck="false"></label>
+            <label>Sub-agent effort<select id="bot-agent-worker-effort"></select></label>
+            <label>Manager effort<select id="bot-agent-manager-effort"></select></label>
+            <label class="check"><input type="checkbox" id="bot-agent-plan-approval" style="width:auto;"> Ask me to approve a plan before sub-agents start</label>
+          </div>
+          <div class="help" id="bot-agent-global" style="margin-top:8px;"></div>
+          <div class="row" style="margin-top:6px;"><button type="button" class="btn" data-go-agents>All ABP Agent settings (limits, tools, safety) →</button></div>
         </div>
         <div class="wizard-field">
           <label>Persona</label>
@@ -2611,8 +2634,7 @@ function refreshBotModelOptions() {
   document.getElementById('bot-new-model-options').innerHTML = options.map(name => `<option value="${esc(name)}"></option>`).join('');
   const help = document.getElementById('bot-new-model-help');
   const input = document.getElementById('bot-new-model');
-  const agentHint = document.getElementById('bot-agent-hint');
-  if (agentHint) agentHint.classList.toggle('hidden', !['native_agent', 'api', 'custom_model'].includes(backend));
+  if (window.abpBotAgentForm) window.abpBotAgentForm.sync();
   if (backend === 'custom_model' || backend === 'native_agent') {
     help.textContent = 'Required for this backend: "<provider>/<model_id>", where <provider> is one configured on the Models tab.';
     input.placeholder = 'e.g. local_ollama/llama3.1';
@@ -3964,7 +3986,7 @@ function _resetBotForm() {
   botEditingId = null;
   document.getElementById('bot-new-name').value = '';
   document.getElementById('bot-new-platform').value = 'telegram';
-  document.getElementById('bot-new-backend').value = 'cli';
+  document.getElementById('bot-new-backend').value = 'native_agent';  // ABP Agent is the default for a new bot
   document.getElementById('bot-new-model').value = '';
   document.getElementById('bot-new-token').value = '';
   document.getElementById('bot-new-apptoken').value = '';
@@ -3992,6 +4014,7 @@ function _resetBotForm() {
   refreshBotModelOptions();
   renderPlatformGuide(document.getElementById('bot-new-platform').value);
   renderCanTargetCheckboxes(null, []);
+  if (window.abpBotAgentForm) window.abpBotAgentForm.reset();
 }
 
 function _loadBotIntoForm(bot) {
@@ -4027,6 +4050,7 @@ function _loadBotIntoForm(bot) {
   refreshBotModelOptions();
   renderPlatformGuide(bot.platform);
   renderCanTargetCheckboxes(bot.id, bot.can_target || []);
+  if (window.abpBotAgentForm) window.abpBotAgentForm.load(bot.id);
   document.getElementById('btn-bot-create').textContent = 'Save changes';
   document.getElementById('bots').scrollIntoView({ behavior: 'smooth' });
 }
@@ -4711,13 +4735,17 @@ document.getElementById('btn-bot-create').onclick = async () => {
   };
   statusEl.textContent = 'Saving…';
   try {
+    let savedId = botEditingId;
     if (botEditingId) {
       await api(`/api/bots/${botEditingId}`, { method: 'PUT', body: JSON.stringify(payload) });
       statusEl.textContent = 'Saved — use Restart on this bot\'s row to apply.';
     } else {
-      await api('/api/bots', { method: 'POST', body: JSON.stringify(payload) });
+      const created = await api('/api/bots', { method: 'POST', body: JSON.stringify(payload) });
+      savedId = created.id;
       statusEl.textContent = 'Added and starting…';
     }
+    // The ABP Agent settings in the form (permission mode, sub-agent limits, models, effort) belong to the bot that now exists.
+    if (window.abpBotAgentForm && savedId) await window.abpBotAgentForm.save(savedId);
     _resetBotForm();
     refreshBots();
     refreshBotsBackups();
@@ -6811,5 +6839,6 @@ checkSetupAndProceed(startDashboard);
 
 <script src="/static/terminal-panel.js"></script>
 <script src="/static/agents-panel.js"></script>
+<script src="/static/bot-agent-form.js"></script>
 </body>
 </html>

@@ -109,6 +109,18 @@ def get(instance_id: Optional[int]) -> dict[str, Any]:
     return resolved
 
 
+def get_own(instance_id: Optional[int]) -> dict[str, Any]:
+    """Only what [instance_id] has set itself: every key in FIELDS is present, None where it is not set and the value
+    would be inherited. get() above resolves the fallback chain; a form that shows inherited values as if they were the
+    bot's own, and saves them back, would silently pin them, so it needs this."""
+    row = db.get_agent_settings_row(instance_id) if instance_id is not None else None
+    own: dict[str, Any] = {}
+    for field in FIELDS:
+        value = row[field] if row is not None else None
+        own[field] = bool(value) if (value is not None and field in _BOOL_FIELDS) else value
+    return own
+
+
 def set_settings(instance_id: Optional[int], **fields: Any) -> dict[str, Any]:
     """Merges only the given fields into [instance_id]'s row (None
     instance_id targets the process-wide default row). Pass a field as

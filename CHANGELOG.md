@@ -9,6 +9,12 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **ABP Agent is now the first backend when you add a bot, and the form has its settings.** The Add / Edit a bot form used to
+  bury ABP Agent at the bottom of a "Custom / local" group, default to the Claude CLI, and offer no agent settings. ABP Agent
+  is now first (and the default for a new bot), the choices are labelled by what they do, and choosing ABP Agent, `api` or
+  `custom_model` shows an **ABP Agent settings** panel: permission mode, sub-agents at once, sub-agent model and effort,
+  manager effort, a fallback model, and plan approval, with the global defaults it starts from summarised. It saves with the
+  bot, and editing a bot loads only what that bot set itself. `GET /api/agent-settings` gained `?own=true`.
 - **An ABP Agents page, in the dashboard and the desktop app.** Until now ABP's own agent had no settings screen: its ~60
   settings could only be changed by editing `config/backends.yaml`, and permissions, skills, sub-agent limits and the tool
   list had no GUI. The new page has an Overview with readiness checks and the bots that run an ABP agent, and tabs for
