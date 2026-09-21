@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
+import re
 import threading
 from pathlib import Path
 from typing import Any, Callable
@@ -24,6 +25,26 @@ from bot.envfile import PROJECT_ROOT
 logger = logging.getLogger("bot.config")
 
 CONFIG_PATH = PROJECT_ROOT / "config" / "backends.yaml"
+
+
+_SECRET_KEY_NAME = re.compile(r"(?i)(secret|token|password|passwd|api[_\-]?key|private[_\-]?key|credential)")
+
+
+def _is_secret_key(name: object) -> bool:
+    return isinstance(name, str) and bool(_SECRET_KEY_NAME.search(name))
+
+
+def _scrub(value: Any) -> Any:
+    """A copy of ``value`` with every secret-named entry replaced, at any depth.
+
+    A provider added in one reload arrives as a whole dict (``None -> {...,
+    'api_key': ...}``), so masking only the top-level key name would still
+    print the key inside it."""
+    if isinstance(value, dict):
+        return {k: ("<hidden>" if _is_secret_key(k) and v not in (None, "") else _scrub(v)) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_scrub(v) for v in value]
+    return value
 
 
 def _diff_summary(old: dict, new: dict) -> str:
@@ -39,15 +60,17 @@ def _diff_summary(old: dict, new: dict) -> str:
             if isinstance(ov, dict) and isinstance(nv, dict):
                 walk(ov, nv, prefix=f"{path}.")
             elif ov != nv:
-                # Never write a secret's actual value into the audit
-                # trail/config_history — both are served back verbatim by
-                # GET /api/config, which (like most reads here) has no auth
-                # gate, so a raw value in the diff summary would leak it
-                # just as much as putting it in the config dict itself.
-                if k == "secret":
+                # Never write a secret's actual value into the log, the audit
+                # trail or config_history — the last two are served back
+                # verbatim by GET /api/config, and the log ends up in support
+                # bundles, so a raw value in the diff summary leaks it just as
+                # much as putting it in the config dict itself. That covers a
+                # secret-named key (api_key, token, ...) and secrets nested
+                # inside a dict that was added or removed whole.
+                if _is_secret_key(k):
                     changes.append(f"{path}: changed")
                 else:
-                    changes.append(f"{path}: {ov!r} -> {nv!r}")
+                    changes.append(f"{path}: {_scrub(ov)!r} -> {_scrub(nv)!r}")
 
     try:
         walk(old, new)
