@@ -60,6 +60,9 @@
     document.documentElement.style.setProperty('--term-panel-h', panel.getBoundingClientRect().height + 'px');
   }
   function syncClearance() { syncPanelHeight(); }
+  // The panel's max-height is a share of the window, so resizing the window
+  // can change its height without any of the handlers below firing.
+  window.addEventListener('resize', syncPanelHeight);
   function setCollapsed(collapsed) {
     panel.classList.toggle('collapsed', collapsed);
     updateMinimizeButton();

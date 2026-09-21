@@ -79,6 +79,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.main", "bot.router", "bot.db", "bot.config", "bot.dashboard.server", "bot.dashboard.cicd_api", "bot.dashboard.agent_security_api", "bot.dashboard.models_info_api", "bot.dashboard.approvals_api", "bot.dashboard.channels_api",
     "bot.agent_runtime.engine", "bot.agent_runtime.approval", "bot.agent_runtime.subagent_registry",
     "bot.platform_supervisor",
+    "bot.provider_store",  # owns a lock and the path of the on-disk provider store; a reload would orphan both
     "bot.envfile", "bot.handlers", "bot.outbox", "bot.plugins", "bot.attachments",
     # Same hazard class as outbox.py/plugins.py above: _connections/
     # _tool_index are module-level dicts holding LIVE external MCP

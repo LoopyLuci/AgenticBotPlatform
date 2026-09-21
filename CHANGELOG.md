@@ -8,7 +8,31 @@ app's own version (the Android app versions independently — see its own
 
 ## [Unreleased]
 
+### Added
+- **Removing a model provider is no longer final.** Every provider ever configured is kept in a provider store
+  (`data/provider_store.db`, its own file so a snapshot restore cannot swallow it). Remove moves a provider to a new
+  **Deleted providers** list on the Models page (dashboard and desktop app) with its address, settings and API key, the
+  key stored encrypted with the vault key and never returned by the API. Restore puts it back as it was, with its
+  per-model on/off choices, and accepts a replacement key; Forget deletes the copy for good. A provider that
+  disappears by a hand edit or a restored snapshot is kept too, and
+  `python -m bot.provider_store recover --from <state folder>` rebuilds removed providers from an install's config
+  history (without their keys). New routes: `GET /api/providers/store`, `POST /api/providers/store/{name}/restore`,
+  `DELETE /api/providers/store/{name}`.
+
+### Changed
+- **The dashboard token is never asked for, anywhere.** The "Set token" button and the paste dialog are gone from the
+  dashboard and the desktop app, the setup wizard no longer has a token field (or a Generate button, or the
+  `/api/setup/generate-token` route), and the terminal wizard generates it silently. The server places the
+  auto-generated token in the dashboard page for a plain page load from this machine only (loopback client and Host,
+  no forwarding headers, no `Origin`, no cross-site fetch); any other route gets no token and a one-line notice.
+
 ### Fixed
+- **The "Agentic Bot Platform running" pill no longer sits on top of the Terminal/Activity bar.** It is anchored to the
+  bar's live height, so it stays just above it when the bar is collapsed, open, drag-resized or maximized, and follows
+  window resizes.
+- **A config reload no longer writes provider API keys into the log and audit trail.** The change summary only hid a
+  key named exactly `secret`, so adding a provider printed its `api_key` into `logs/bot.log`, `config_history` and the
+  audit log, which the API serves back and support bundles include. Any secret-named key is now masked at any depth.
 - **The Terminal/Activity bar is now the bottom of the window.** It used to
   float (`position:fixed`) over a page that scrolled as a whole, with a
   padding guess to keep content clear of it, so content near the bottom and

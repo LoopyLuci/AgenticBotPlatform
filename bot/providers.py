@@ -21,12 +21,15 @@ ships with real documentation comments, not just data.
 from __future__ import annotations
 
 import ipaddress
+import logging
 import os
 from typing import Any, Optional
 from urllib.parse import urlparse
 
 from bot.config import ConfigManager
 from bot.envfile import PROJECT_ROOT
+
+logger = logging.getLogger("bot.providers")
 
 PROVIDERS_PATH = PROJECT_ROOT / "config" / "providers.yaml"
 
@@ -174,17 +177,60 @@ def set_provider(
         data["providers"] = providers
     providers[name] = entry
     _write(data, yaml, actor)
+    _remember(lambda store: store.record_saved(name, entry, actor=actor))
 
 
 def delete_provider(name: str, actor: str = "dashboard") -> bool:
+    """Remove a provider from the live registry. It is kept in the provider store (bot/provider_store.py) with its
+    settings and its key, so restore_provider() can bring it back."""
     yaml = _yaml()
     data = _load_yaml_or_empty(_manager.path, yaml)
     providers = data.get("providers") or {}
     if name not in providers:
         return False
+    kept = dict(providers[name])
     del providers[name]
     _write(data, yaml, actor)
+    _remember(lambda store: store.record_deleted(name, kept, actor=actor))
     return True
+
+
+def restore_provider(name: str, *, api_key: Optional[str] = None, actor: str = "dashboard") -> None:
+    """Put a removed provider back, exactly as it was (its own stored key unless `api_key` replaces it).
+    Raises ValueError if there is no such removed provider, or a provider of that name is configured now."""
+    from bot import provider_store
+
+    if get_provider(name) is not None:
+        raise ValueError(f"a provider named {name!r} is already configured; remove or rename it first")
+    try:
+        stored = provider_store.stored_entry(name)
+    except KeyError:
+        raise ValueError(f"no removed provider named {name!r}") from None
+    key = api_key or stored["api_key"]
+    set_provider(
+        name, stored["base_url"], protocol=stored["protocol"] or "openai",
+        api_key_env=stored["api_key_env"] or None, api_key=None if stored["api_key_env"] else (key or None),
+        catalog_id=stored["catalog_id"] or None, actor=actor,
+    )
+
+
+def store_listing(status: Optional[str] = None) -> list[dict]:
+    """Every provider the store knows (active and removed), after reconciling it with the file."""
+    from bot import provider_store
+
+    provider_store.sync(list_providers())
+    return provider_store.list_all(status)
+
+
+def _remember(action) -> None:
+    """Record a change in the provider store. The store is a safety net, so a failure in it must never undo or
+    block the config change that has already been written."""
+    try:
+        from bot import provider_store
+
+        action(provider_store)
+    except Exception:
+        logger.warning("provider store could not record a change", exc_info=True)
 
 
 def _write(data: dict, yaml, actor: str) -> None:

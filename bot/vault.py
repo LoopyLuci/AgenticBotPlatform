@@ -68,6 +68,19 @@ def _fernet() -> Fernet:
     return Fernet(key_file.read_bytes().strip())
 
 
+def seal(text: str) -> str:
+    """Encrypt one string with the vault key, for other stores that must keep a secret at rest (the
+    provider store keeps a deleted provider's API key this way). Not the vault's own entries."""
+    return _fernet().encrypt(text.encode("utf-8")).decode("ascii")
+
+
+def unseal(token: str) -> str:
+    try:
+        return _fernet().decrypt(token.encode("ascii")).decode("utf-8")
+    except (InvalidToken, ValueError) as exc:
+        raise VaultError("that value cannot be decrypted (wrong or missing key?)") from exc
+
+
 def origin_of(url: str) -> str:
     """scheme://host[:port] in lower case - what a credential is bound to."""
     parts = urlparse(url)

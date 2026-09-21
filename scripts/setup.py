@@ -76,19 +76,14 @@ def run_wizard(fields_to_ask: list[str]) -> None:
     values = setup_wizard.current_values()
     collected: dict[str, str] = {}
 
+    # The dashboard token is never asked for; make sure one exists and move on.
+    from bot import envfile
+
+    envfile.ensure_dashboard_token()
+
     for key in fields_to_ask:
         spec = setup_wizard.FIELDS[key]
         current = values.get(key, "")
-
-        if key == "DASHBOARD_TOKEN":
-            ok, _ = spec["validate"](current) if current else (False, "")
-            if ok:
-                print(f"\n{spec['label']}: already set, keeping it.")
-                continue
-            token = setup_wizard.generate_dashboard_token()
-            print(f"\n{spec['label']}: generated one for you.")
-            collected[key] = token
-            continue
 
         if key == "CLAUDE_DESKTOP_EXE":
             detected = desktop.find_exe_path()

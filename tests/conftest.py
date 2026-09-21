@@ -57,6 +57,13 @@ def _isolated_cicd_event_store(monkeypatch, tmp_path):
     monkeypatch.setitem(model_pricing._memory_cache, "data", None)
     monkeypatch.setattr(model_catalog, "_disk", {"mtime": None, "data": None})
     context_window._catalog_windows.clear()
+    # The provider store keeps removed providers and their (encrypted) keys; a test must not write to the real
+    # one, nor create a vault key in the real data folder.
+    from bot import provider_store
+
+    monkeypatch.setattr(provider_store, "STORE_PATH", tmp_path / "provider-store.db")
+    monkeypatch.setattr(provider_store, "_history_summaries", lambda: [])
+    monkeypatch.setenv("ABP_VAULT_DIR", str(tmp_path / "vault"))
 
 
 @pytest.fixture
