@@ -241,6 +241,27 @@ export const operations = {
    "instance_id"
   ]
  },
+ "GET /api/agent/config": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/agent/config",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/agent/config/schema": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/agent/config/schema",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/agent/overview": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/agent/overview",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/agent/permissions": {
   "body": false,
   "method": "GET",
@@ -267,6 +288,13 @@ export const operations = {
   "query_params": [
    "session"
   ]
+ },
+ "GET /api/agent/tools": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/agent/tools",
+  "path_params": [],
+  "query_params": []
  },
  "GET /api/android/apk/download/{push_id}": {
   "body": false,
@@ -1371,6 +1399,20 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/agent/ask",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/agent/config": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/agent/config",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/agent/config/reset": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/agent/config/reset",
   "path_params": [],
   "query_params": []
  },
@@ -4602,6 +4644,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "config_schema_api_agent_config_schema_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/agent/config/schema",
+  "path_params": [],
+  "query_params": []
+ },
  "desktop_ui_index_desktop_ui__get": {
   "body": false,
   "method": "GET",
@@ -4655,6 +4704,13 @@ export const operations = {
   "path_params": [
    "approval_id"
   ],
+  "query_params": []
+ },
+ "get_config_api_agent_config_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/agent/config",
+  "path_params": [],
   "query_params": []
  },
  "get_drafts_api_skills_drafts_get": {
@@ -4807,6 +4863,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "overview_api_agent_overview_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/agent/overview",
+  "path_params": [],
+  "query_params": []
+ },
  "put_instance_permissions_api_instances__instance_id__permissions_put": {
   "body": true,
   "method": "PUT",
@@ -4837,6 +4900,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "reset_config_api_agent_config_reset_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/agent/config/reset",
+  "path_params": [],
+  "query_params": []
+ },
  "resolve_approval_api_approvals__approval_id__resolve_post": {
   "body": true,
   "method": "POST",
@@ -4844,6 +4914,13 @@ export const operations = {
   "path_params": [
    "approval_id"
   ],
+  "query_params": []
+ },
+ "set_config_api_agent_config_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/agent/config",
+  "path_params": [],
   "query_params": []
  },
  "set_limits_api_models_limits_put": {
@@ -4857,6 +4934,13 @@ export const operations = {
   "body": false,
   "method": "POST",
   "path": "/webhooks/sms",
+  "path_params": [],
+  "query_params": []
+ },
+ "tool_inventory_api_agent_tools_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/agent/tools",
   "path_params": [],
   "query_params": []
  },

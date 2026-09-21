@@ -57,7 +57,7 @@ data class ChatUiState(
     val sendFileError: String? = null,
     val sendingFile: Boolean = false,
     val uploadProgress: Float = 0f,
-    val mode: ChatMode = ChatMode.SEND_FROM_SERVER,
+    val mode: ChatMode = ChatMode.CHAT_WITH_BOT, // the default seat; Send from Server is one tap away
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)

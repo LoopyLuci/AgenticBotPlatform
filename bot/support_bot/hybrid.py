@@ -62,12 +62,13 @@ CLASSIFIERS: list[tuple[str, Callable[[str], tuple[str, float]]]] = [
 
 
 def _load_persisted_state_if_present() -> None:
-    """Both sub-models already train fresh at their own module import
-    time (today's behavior, unchanged as the fallback). If a previously
-    saved model.json exists, load it in place over that fresh training —
-    picks up whatever the last accepted retrain actually was, instead of
-    silently reverting to the static training_data.py baseline on every
-    process restart."""
+    """The TF-IDF model trains fresh at its own import (a few ms); the
+    neural net is deferred and trains on first use (see nn_model.py), which
+    is the fallback. If a previously saved model.json exists, load it in
+    place — picks up whatever the last accepted retrain actually was,
+    instead of silently reverting to the static training_data.py baseline
+    on every process restart, and the neural net then never trains at all
+    at start-up."""
     # Explicit module-attribute lookup at call time, not a bare
     # load_model() call — model_io.load_model's own path= default is
     # bound at function-definition time, so a test's monkeypatch of
@@ -87,6 +88,12 @@ def _load_persisted_state_if_present() -> None:
 
 
 _load_persisted_state_if_present()
+
+
+def warm_up() -> None:
+    """Make sure both sub-models are ready. Cheap when a saved model was loaded; otherwise this is where the neural
+    net trains. Called from a background thread once the server is up, so the first message is not the one to wait."""
+    neural_model.warm_up()
 
 
 @dataclass

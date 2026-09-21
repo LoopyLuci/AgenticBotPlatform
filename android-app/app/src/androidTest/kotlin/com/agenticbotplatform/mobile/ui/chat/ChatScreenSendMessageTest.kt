@@ -86,6 +86,8 @@ class ChatScreenSendMessageTest {
             viewModel.uiState.value.instances.isNotEmpty()
         }
         composeRule.onNodeWithText("Test Bot").performClick()
+        // This test is about the outbound path; Chat with Bot is the default now, so pick Send from Server.
+        viewModel.setMode(ChatMode.SEND_FROM_SERVER)
 
         composeRule.onNodeWithTag("chat-message-input").performTextInput("Hello there")
         closeSoftKeyboard()

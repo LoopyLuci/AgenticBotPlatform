@@ -76,7 +76,7 @@ def _enabled_by_default() -> bool:
 # each entry (several were found only by grepping every candidate file
 # for module-level mutable containers, not by inspection alone).
 DENYLIST: frozenset[str] = frozenset({
-    "bot.main", "bot.router", "bot.db", "bot.config", "bot.dashboard.server", "bot.dashboard.cicd_api", "bot.dashboard.agent_security_api", "bot.dashboard.models_info_api", "bot.dashboard.approvals_api", "bot.dashboard.channels_api",
+    "bot.main", "bot.router", "bot.db", "bot.config", "bot.dashboard.server", "bot.dashboard.cicd_api", "bot.dashboard.agent_security_api", "bot.dashboard.models_info_api", "bot.dashboard.approvals_api", "bot.dashboard.channels_api", "bot.dashboard.agent_config_api",
     "bot.agent_runtime.engine", "bot.agent_runtime.approval", "bot.agent_runtime.subagent_registry",
     "bot.platform_supervisor",
     "bot.provider_store",  # owns a lock and the path of the on-disk provider store; a reload would orphan both
@@ -103,6 +103,7 @@ DENYLIST: frozenset[str] = frozenset({
     # sandbox.py is only ever imported by the (denied) shell module. A reload would reset them.
     "bot.agent_runtime.permissions", "bot.agent_runtime.taint", "bot.agent_runtime.secrets_guard",
     "bot.agent_runtime.mcp_pins", "bot.agent_runtime.sandbox",
+    "bot.agent_runtime.settings_schema",  # imports permissions/sandbox (both denied above); a reload would split the classes it validates against
     "bot.agent_runtime.project_rules",  # imported by prompt.py; reloaded with it is not needed and is safe to skip
     "bot.agent_runtime.code_intel",  # running language servers are process state
     "bot.model_router", "bot.agent_runtime.trajectory",  # registers a tool / reads the trace store

@@ -304,23 +304,9 @@ async def run() -> None:
 
     plugin_registry.load_enabled()
 
-    from bot.agent_runtime import mcp_client
-
-    await mcp_client.connect_all_enabled()
-
-    migrated_id = bot_instances.migrate_legacy_env_instance()
-    if migrated_id is not None:
-        logger.info("migrated legacy .env Telegram config into bot instance #%s", migrated_id)
-
-    instances = bot_instances.list_instances(enabled_only=True)
-    await platform_supervisor.start_all_enabled(instances)
-
-    if not instances:
-        logger.info(
-            "no bot instances configured yet — dashboard/desktop UI is still "
-            "available to add one from the Bots tab"
-        )
-
+    # The dashboard comes FIRST. The desktop app's window waits on it to finish loading, so nothing that can be
+    # slow or fail (connecting external MCP servers, starting chat platforms, a flaky network) may sit in front of
+    # it: those start right after, while the dashboard is already answering.
     # dashboard app, sharing this process/loop — see _start_dashboard()
     # above for the actual uvicorn.Server construction/retry.
     from bot.dashboard.server import build_app
@@ -341,6 +327,70 @@ async def run() -> None:
             loop.add_signal_handler(sig, _handle_signal)
         except NotImplementedError:
             pass  # Windows doesn't support add_signal_handler for SIGTERM
+
+    # Holds whatever _start_dashboard() last returned, read by the
+    # shutdown path below — a plain dict since dashboard_supervisor()
+    # reassigns it from inside a background task, and shutdown needs to
+    # see whatever the CURRENT values are at that point, not whatever
+    # they were at the moment this task was created.
+    dashboard_state: dict[str, object] = {"server": None, "task": None}
+
+    async def dashboard_supervisor() -> None:
+        """_start_dashboard()'s own max_attempts is a bounded initial
+        burst (fast retries for the common case: something releases the
+        port within a few seconds). If that's genuinely not enough —
+        whatever's holding the port sticks around much longer — keep
+        trying indefinitely in the background at a much slower interval
+        instead of requiring the user to notice and manually restart the
+        whole app once it clears on its own. Exits as soon as either a
+        bind succeeds or the process is shutting down."""
+        server, task = await _start_dashboard(dash_app, host, port)
+        while server is None and not stop_event.is_set():
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=30)
+                break  # stop_event fired while waiting — shutting down, stop trying
+            except asyncio.TimeoutError:
+                pass
+            if stop_event.is_set():
+                break
+            server, task = await _start_dashboard(
+                dash_app, host, port, max_attempts=1, giveup_is_critical=False,
+            )
+        dashboard_state["server"] = server
+        dashboard_state["task"] = task
+        if server is not None:
+            logger.info("Dashboard listening on http://%s:%s", host, port)
+
+    dashboard_supervisor_task = asyncio.create_task(dashboard_supervisor())
+
+    # The Support Bot's neural net trains on first use if there is no saved model (see nn_model.py). Do that now, in a
+    # thread, so it neither delays the dashboard nor makes the first Support Bot message wait for it.
+    async def _warm_support_bot() -> None:
+        try:
+            from bot.support_bot import hybrid as _support_hybrid
+
+            await asyncio.to_thread(_support_hybrid.warm_up)
+        except Exception:
+            logger.warning("Support Bot warm-up failed; it will train on first use instead", exc_info=True)
+
+    support_warmup_task = asyncio.create_task(_warm_support_bot())
+
+    from bot.agent_runtime import mcp_client
+
+    await mcp_client.connect_all_enabled()
+
+    migrated_id = bot_instances.migrate_legacy_env_instance()
+    if migrated_id is not None:
+        logger.info("migrated legacy .env Telegram config into bot instance #%s", migrated_id)
+
+    instances = bot_instances.list_instances(enabled_only=True)
+    await platform_supervisor.start_all_enabled(instances)
+
+    if not instances:
+        logger.info(
+            "no bot instances configured yet — dashboard/desktop UI is still "
+            "available to add one from the Bots tab"
+        )
 
     watch_task = asyncio.create_task(config.watch_forever())
 
@@ -380,41 +430,6 @@ async def run() -> None:
     # swallowed inside start() itself; this is discovery sugar for the
     # Android app's NsdDiscoveryClient, never a startup dependency.
     await asyncio.to_thread(mdns_advertise.start, port)
-
-    # Holds whatever _start_dashboard() last returned, read by the
-    # shutdown path below — a plain dict since dashboard_supervisor()
-    # reassigns it from inside a background task, and shutdown needs to
-    # see whatever the CURRENT values are at that point, not whatever
-    # they were at the moment this task was created.
-    dashboard_state: dict[str, object] = {"server": None, "task": None}
-
-    async def dashboard_supervisor() -> None:
-        """_start_dashboard()'s own max_attempts is a bounded initial
-        burst (fast retries for the common case: something releases the
-        port within a few seconds). If that's genuinely not enough —
-        whatever's holding the port sticks around much longer — keep
-        trying indefinitely in the background at a much slower interval
-        instead of requiring the user to notice and manually restart the
-        whole app once it clears on its own. Exits as soon as either a
-        bind succeeds or the process is shutting down."""
-        server, task = await _start_dashboard(dash_app, host, port)
-        while server is None and not stop_event.is_set():
-            try:
-                await asyncio.wait_for(stop_event.wait(), timeout=30)
-                break  # stop_event fired while waiting — shutting down, stop trying
-            except asyncio.TimeoutError:
-                pass
-            if stop_event.is_set():
-                break
-            server, task = await _start_dashboard(
-                dash_app, host, port, max_attempts=1, giveup_is_critical=False,
-            )
-        dashboard_state["server"] = server
-        dashboard_state["task"] = task
-        if server is not None:
-            logger.info("Dashboard listening on http://%s:%s", host, port)
-
-    dashboard_supervisor_task = asyncio.create_task(dashboard_supervisor())
 
     try:
         await stop_event.wait()

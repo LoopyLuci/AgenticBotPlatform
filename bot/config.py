@@ -189,6 +189,42 @@ class ConfigManager:
 
         self.reload(actor=actor)
 
+    def set_values(self, changes: "dict[tuple[str, ...], Any]", actor: str = "dashboard") -> None:
+        """Apply several key edits in ONE write and ONE reload, keeping the file's comments and layout.
+
+        set_value() above re-dumps the whole file with yaml.safe_dump, which drops every comment; backends.yaml is
+        heavily documented, so a settings page that saved through it would strip that documentation on the first
+        click. This uses ruamel.yaml's round-trip mode instead (the same approach bot/providers.py takes for
+        providers.yaml) and writes atomically. `changes` maps a key path, such as ("native_agent", "limits",
+        "max_iterations"), to the new value."""
+        if not changes:
+            return
+        from ruamel.yaml import YAML
+
+        y = YAML(typ="rt")
+        y.preserve_quotes = True
+        y.width = 4096  # never re-wrap a long line
+        y.indent(mapping=2, sequence=4, offset=2)
+        with open(self.path, encoding="utf-8") as f:
+            data = y.load(f)
+        if data is None:
+            data = {}
+        for path, value in changes.items():
+            node = data
+            for key in path[:-1]:
+                child = node.get(key)
+                if not isinstance(child, dict):
+                    child = {}
+                    node[key] = child
+                node = child
+            node[path[-1]] = value
+
+        tmp_path = self.path.with_suffix(".yaml.tmp")
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            y.dump(data, f)
+        tmp_path.replace(self.path)  # atomic on the same filesystem
+        self.reload(actor=actor)
+
     async def watch_forever(self) -> None:
         """Background task: watch the config file and hot-reload on change.
 

@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import math
 import re
+import threading
 from collections import Counter
 from typing import Optional
 
@@ -170,37 +171,59 @@ def _load_examples() -> list[tuple[str, str]]:
 
 
 class NeuralIntentClassifier:
-    def __init__(self, examples: Optional[list[tuple[str, str]]] = None) -> None:
-        """`examples=None` (the default, used by the module-level singleton
-        below) trains on the full baseline + Training-tab phrases via
-        _load_examples() — unchanged from before this parameter existed.
-        An explicit `examples` list lets bot/support_bot/eval.py train a
-        standalone candidate classifier on just a train-split subset,
-        without touching the live singleton."""
+    def __init__(self, examples: Optional[list[tuple[str, str]]] = None, *, defer: bool = False) -> None:
+        """`examples=None` (the default) trains on the full baseline +
+        Training-tab phrases via _load_examples() — unchanged from before
+        this parameter existed. An explicit `examples` list lets
+        bot/support_bot/eval.py train a standalone candidate classifier on
+        just a train-split subset, without touching the live singleton.
+
+        `defer=True` (what the module-level singleton uses) builds an
+        untrained classifier and trains it the first time it is needed, or
+        when ensure_trained() is called. Training is 800 epochs of gradient
+        descent over the whole corpus, and it used to run at IMPORT time on
+        every start — even when a saved model was about to replace it —
+        which held up the dashboard's start-up for as long as it took."""
         self._vectorizer: Optional[_TfidfVectorizer] = None
         self._mlp: Optional[_MLP] = None
         self._classes: list[str] = []
-        self.train(examples if examples is not None else _load_examples())
+        self._lock = threading.RLock()
+        self._deferred = defer
+        if not defer:
+            self.train(examples if examples is not None else _load_examples())
+
+    def ensure_trained(self) -> None:
+        """Train now if this classifier was deferred and nothing has trained or loaded it yet. Safe to call from
+        a background thread; a predict() that arrives meanwhile waits for it rather than seeing a half-built model."""
+        with self._lock:
+            if self._deferred:
+                self.train(_load_examples())
 
     def train(self, examples: list[tuple[str, str]]) -> int:
-        texts = [t for t, _ in examples]
-        labels = [i for _, i in examples]
-        self._classes = sorted(set(labels))
-        class_index = {c: i for i, c in enumerate(self._classes)}
+        with self._lock:
+            texts = [t for t, _ in examples]
+            labels = [i for _, i in examples]
+            classes = sorted(set(labels))
+            class_index = {c: i for i, c in enumerate(classes)}
 
-        self._vectorizer = _TfidfVectorizer()
-        X = self._vectorizer.fit_transform(texts)
-        y_onehot = np.eye(len(self._classes))[[class_index[label] for label in labels]]
+            vectorizer = _TfidfVectorizer()
+            X = vectorizer.fit_transform(texts)
+            y_onehot = np.eye(len(classes))[[class_index[label] for label in labels]]
 
-        self._mlp = _MLP(n_features=X.shape[1], n_hidden=_HIDDEN_UNITS, n_classes=len(self._classes))
-        self._mlp.fit(X, y_onehot)
-        return len(examples)
+            mlp = _MLP(n_features=X.shape[1], n_hidden=_HIDDEN_UNITS, n_classes=len(classes))
+            mlp.fit(X, y_onehot)
+            # Published together only once everything is built, so a reader never sees a new vectorizer with an old net.
+            self._classes, self._vectorizer, self._mlp = classes, vectorizer, mlp
+            self._deferred = False
+            return len(examples)
 
     def predict(self, text: str) -> tuple[str, float]:
         """Returns (intent, confidence). intent is "unknown" when nothing
         clears CONFIDENCE_THRESHOLD — same contract as model.py's
         TfidfCentroidModel.predict(), which is what lets hybrid.py treat
         both sub-models interchangeably at the call site."""
+        if self._deferred:
+            self.ensure_trained()
         if self._mlp is None or self._vectorizer is None or not self._classes:
             return "unknown", 0.0
         X = self._vectorizer.transform([text])
@@ -217,6 +240,7 @@ class NeuralIntentClassifier:
         — see bot/support_bot/model_io.py. A Kotlin port implements the
         same tokenize -> TF*IDF -> ReLU forward pass -> softmax math over
         this exact data to classify identically on Android."""
+        self.ensure_trained()
         assert self._vectorizer is not None and self._mlp is not None
         return {
             "vocab": dict(self._vectorizer.vocab),
@@ -236,20 +260,28 @@ class NeuralIntentClassifier:
         vectorizer = _TfidfVectorizer()
         vectorizer.vocab = dict(state["vocab"])
         vectorizer.idf = np.array(state["idf"], dtype=float)
-        self._vectorizer = vectorizer
-        self._classes = list(state["classes"])
         mlp = _MLP.__new__(_MLP)
         mlp.w1 = np.array(state["w1"], dtype=float)
         mlp.b1 = np.array(state["b1"], dtype=float)
         mlp.w2 = np.array(state["w2"], dtype=float)
         mlp.b2 = np.array(state["b2"], dtype=float)
-        self._mlp = mlp
+        with self._lock:
+            self._vectorizer = vectorizer
+            self._classes = list(state["classes"])
+            self._mlp = mlp
+            self._deferred = False
 
 
-# Trained once at import time, same lifecycle as model.py's singleton.
-# Call retrain() (or hybrid.retrain_all()) after the Training tab adds or
-# removes a phrase, so recognition improves without a server restart.
-nn_model = NeuralIntentClassifier()
+# The live classifier. It is NOT trained at import: hybrid.py loads the last saved model into it if there is one
+# (instant), and otherwise it trains on first use or when warm_up() runs in the background after start-up.
+# Call retrain() (or hybrid.retrain_all()) after the Training tab adds or removes a phrase, so recognition improves
+# without a server restart.
+nn_model = NeuralIntentClassifier(defer=True)
+
+
+def warm_up() -> None:
+    """Train the live classifier now if it still needs it (run in a thread once the server is up)."""
+    nn_model.ensure_trained()
 
 
 def retrain() -> int:

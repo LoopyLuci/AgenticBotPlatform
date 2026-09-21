@@ -3017,7 +3017,10 @@ document.getElementById('budget-save-btn').onclick = async () => {
 // polled on the 2s interval — an inactive bot's messages just wait for
 // the next time you switch to it (immediate refreshChat() on switch keeps
 // that from feeling stale in practice for this single-user dashboard).
-const chatState = { activeInstanceId: null, instances: null, panels: {}, mode: 'server' };
+const chatState = { activeInstanceId: null, instances: null, panels: {}, mode: 'bot' };  // Chat with Bot is the default seat; Send from Server is one click away
+// Declared here, above setChatMode(), which runs at page load and reads it. A `let` is not usable before its
+// declaration runs, so leaving this further down made the load-time setChatMode('bot') throw and abort the whole script.
+let chatPendingFile = null;
 
 function panelFor(id) {
   if (!chatState.panels[id]) chatState.panels[id] = { lastId: 0, recipient: null, loaded: false, draft: '' };
@@ -3059,7 +3062,7 @@ function setChatMode(mode) {
   }
 }
 document.getElementById('chat-mode-switch').onclick = () => setChatMode(chatState.mode === 'server' ? 'bot' : 'server');
-setChatMode('server');
+setChatMode('bot');
 
 function fmtChatTime(ts) {
   // ts is already a full ISO8601 string with explicit UTC offset
@@ -3375,7 +3378,6 @@ document.getElementById('btn-chat-clear').onclick = async () => {
   refreshChat(instanceId);
 };
 
-let chatPendingFile = null;
 document.getElementById('btn-chat-attach').onclick = () => document.getElementById('chat-file-input').click();
 document.getElementById('chat-file-input').onchange = (e) => {
   chatPendingFile = e.target.files[0] || null;
@@ -4986,27 +4988,24 @@ function bootLine(text, cls) {
   el.scrollTop = el.scrollHeight;
 }
 
-async function waitForServerReady(maxAttempts = 300) {
-  for (let i = 0; i < maxAttempts; i++) {
-    // A per-attempt timeout so one slow/hung request can't silently eat a
-    // big chunk of the overall retry budget — plain fetch() has no
-    // built-in timeout of its own.
+// Polls /healthz until the server answers. Time-budgeted rather than counted, and it starts fast (a check every 100 ms,
+// easing to 500 ms) because the server is usually up within a few seconds and every wasted poll interval is time the
+// person spends watching a spinner. A per-attempt timeout stops one hung request eating the budget (plain fetch() has
+// none). /healthz specifically, not a data endpoint: it is unauthenticated by design (bot/dashboard/server.py), so the
+// check works before the dashboard token is attached and never 401s a server that answered correctly.
+async function waitForServerReady(budgetMs = 120000) {
+  const deadline = Date.now() + budgetMs;
+  let delay = 100;
+  while (Date.now() < deadline) {
     const controller = new AbortController();
-    const abortTimer = setTimeout(() => controller.abort(), 3000);
+    const abortTimer = setTimeout(() => controller.abort(), 2500);
     try {
-      // /healthz specifically, not a data endpoint like /api/overview:
-      // this check only needs to know "is the process up and the DB
-      // readable," and it runs before the dashboard token is guaranteed
-      // to be attached to requests yet, so it must hit a route that's
-      // unauthenticated by design (see bot/dashboard/server.py's comment
-      // on /healthz) — otherwise every attempt 401s and this loop churns
-      // through its whole retry budget looking "stuck" even when the
-      // server answered instantly and correctly the entire time.
       const res = await fetch(API_BASE + '/healthz', { cache: 'no-store', signal: controller.signal });
       if (res.ok) return true;
     } catch (_e) { /* not up yet, or that attempt timed out */ }
     finally { clearTimeout(abortTimer); }
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, delay));
+    delay = Math.min(500, Math.round(delay * 1.5));
   }
   return false;
 }
@@ -5030,8 +5029,17 @@ document.getElementById('boot-pill').onclick = () => {
   document.getElementById('boot').classList.toggle('expanded');
 };
 
-function hideBootOverlay() {
+// The boot panel's finished state. The pill is not enough on its own: the panel underneath keeps whatever it last
+// said, so without this it showed "Starting the bot process…" and a spinning indicator forever after the server was up
+// (any time it was expanded: by its log backlog, or by clicking the pill).
+function markBootReady() {
+  document.getElementById('boot-status').textContent = 'Ready.';
+  document.getElementById('boot-spinner').classList.add('hidden');
   setBootPill('ok', 'Agentic Bot Platform running');
+}
+
+function hideBootOverlay() {
+  markBootReady();
   setTimeout(collapseBoot, 400);
   // One-time navigation off the embedded, baked-into-the-binary copy of
   // this page onto the SAME live AgenticBotPlatform HTTP server the browser
@@ -5089,6 +5097,10 @@ let serverConfirmedExited = false;
 async function initTauriBoot() {
   const { listen } = window.__TAURI__.event;
   const { invoke } = window.__TAURI__.core;
+  // Each listener is optional. A rejected listen() used to abort this whole function before it ever polled the server.
+  const safeListen = async (name, handler) => {
+    try { await listen(name, handler); } catch (e) { console.error('listen(' + name + ') failed:', e); }
+  };
 
   // We only ever reach the live-served copy (see hideBootOverlay()) after
   // the embedded copy already confirmed the server is up — re-running the
@@ -5106,7 +5118,7 @@ async function initTauriBoot() {
     expandBoot(); // first boot: show progress by default, same as before — but as a corner panel, not a full-screen block
   }
 
-  await listen('server-log', (evt) => {
+  await safeListen('server-log', (evt) => {
     const { stream, line } = evt.payload;
     bootLine(line, stream === 'stderr' ? 'stderr' : 'stdout');
   });
@@ -5121,7 +5133,7 @@ async function initTauriBoot() {
     for (const { stream, line } of backlog) {
       bootLine(line, stream === 'stderr' ? 'stderr' : 'stdout');
     }
-    if (backlog.length) expandBoot();
+    if (backlog.length && !alreadyBooted) expandBoot();
   } catch (_e) { /* older build without get_boot_log — live events only */ }
   function applyServerStatus({ running, pid }) {
     document.getElementById('boot-pid').textContent = pid || '—';
@@ -5142,7 +5154,7 @@ async function initTauriBoot() {
       expandBoot();
     }
   }
-  await listen('server-status', (evt) => applyServerStatus(evt.payload));
+  await safeListen('server-status', (evt) => applyServerStatus(evt.payload));
   // spawn_internal() emits its one and only "server-status" event the
   // instant the child spawns — typically well before this listener above
   // even exists (same fast-event/late-listener gap get_boot_log's backlog
@@ -5155,7 +5167,7 @@ async function initTauriBoot() {
   try {
     applyServerStatus(await invoke('server_status'));
   } catch (_e) { /* older build without this permission/command — event-only */ }
-  await listen('server-resources', (evt) => {
+  await safeListen('server-resources', (evt) => {
     const { cpu_percent, mem_mb } = evt.payload;
     document.getElementById('boot-cpu').textContent = cpu_percent.toFixed(1) + '%';
     document.getElementById('boot-mem').textContent = mem_mb.toFixed(0) + ' MB';
@@ -5184,7 +5196,7 @@ async function initTauriBoot() {
   };
 
   if (alreadyBooted) {
-    setBootPill('ok', 'Agentic Bot Platform running');
+    markBootReady();
   } else {
   bootLine('waiting for the dashboard API to answer on 127.0.0.1:8787 …', 'meta');
   const ready = await waitForServerReady();
@@ -5219,7 +5231,7 @@ async function initTauriBoot() {
     (async () => {
       let recovered = false;
       while (!recovered && !serverConfirmedExited) {
-        recovered = await waitForServerReady(10);
+        recovered = await waitForServerReady(5000);
       }
       if (recovered) {
         bootLine('— ready —', 'meta');
