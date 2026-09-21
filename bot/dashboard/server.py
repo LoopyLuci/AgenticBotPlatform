@@ -736,6 +736,11 @@ def build_app() -> FastAPI:
 
     channels_api.register(app, _require_token_or_api_key, _require_token, _caller_device_id)
 
+    # The ABP Agents page: every native-agent setting, an overview with readiness checks, and the tool inventory.
+    from bot.dashboard import agent_config_api
+
+    agent_config_api.register(app, _require_token_or_api_key, _require_token)
+
     # ------------------------------------------------------ ops endpoints --
     # Unauthenticated by design, like a load balancer's/orchestrator's health
     # probe is expected to be — neither returns anything a token would need

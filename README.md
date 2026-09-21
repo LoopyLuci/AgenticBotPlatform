@@ -41,7 +41,7 @@ this is just the map:
 | **Control Center** | The router config editor (backends, action overrides, models, timeouts), agent-control mode, feature toggles, security settings, desktop process controls, the **Environment** card (`.env` editor + backups + setup wizard + MCP self-register), and the **MCP servers** card. |
 | **Resilience** | Health checks, hot-reload status, and the full `config_history` change timeline with diffs. |
 | **Live Logs** | Streaming tail of `logs/bot.log`, filterable by level. |
-| **Chat** | A Telegram-style conversation view across every connected bot instance — send text, send files, see attachments/thumbnails inline. A mode toggle switches between Send from Server (real outbound, as the bot) and Chat with Bot (a real message to the bot, replied to for real) — see "Send from Server vs. Chat with Bot" below. |
+| **Chat** | A Telegram-style conversation view across every connected bot instance — send text, send files, see attachments/thumbnails inline. A mode toggle switches between Chat with Bot (the default: a real message to the bot, replied to for real) and Send from Server (real outbound, as the bot) — see "Send from Server vs. Chat with Bot" below. |
 | **Support Bot** | Plain-English or slash-command server management — see its own section below. |
 | **Support Bot** | Chat with the local hybrid (TF-IDF + neural network) management assistant — plain English or slash commands, same engine the Android app's Support tab uses. See "Support Bot" below. |
 | **Sessions** | Browse *past* conversations (grouped by 30-minute gaps, or the "legacy" pre-sessions bucket) — a history view, not to be confused with **session linking** (below), which is about which live chat a bot writes into. |
@@ -882,13 +882,13 @@ recipient controls all change with it, so which seat you're in is never
 ambiguous. Both modes are **fully real** — nothing in either one is
 simulated:
 
-- **📤 Send from Server** (the default) — the dashboard/app operates *as
+- **📤 Send from Server** — the dashboard/app operates *as
   the bot*, sending real outbound messages straight to the platform user
   picked in the dropdown, via `bot/outbox.py` and the live platform SDK
   connection (`POST /api/chat/send`). This is the original Chat tab
   feature; nothing about it changed except the name, clarifying what it
   actually does (push a message out from the server).
-- **💬 Chat with Bot** — the dashboard/app itself becomes a genuine,
+- **💬 Chat with Bot** (the default) — the dashboard/app itself becomes a genuine,
   first-class way to talk to a bot instance, exactly the way Telegram/
   Discord/Slack already are: what you type is a **real inbound message**
   (`POST /api/chat/send-to-bot`) through the exact same

@@ -932,13 +932,13 @@
 
     <section id="chat">
       <div class="sec-head"><h2>Chat</h2><span class="desc">The real conversation across every connected platform — read it live, and operate either side of it</span></div>
-      <div class="card chat-card mode-server" id="chat-card">
+      <div class="card chat-card mode-bot" id="chat-card">
         <div class="chat-tabs" id="chat-tabs"></div>
         <div class="chat-toolbar">
           <label class="chat-toolbar-label">Mode</label>
-          <button type="button" class="chat-mode-switch" id="chat-mode-switch" role="switch" aria-checked="false" aria-label="Chat mode: Send from Server">
+          <button type="button" class="chat-mode-switch" id="chat-mode-switch" role="switch" aria-checked="true" aria-label="Chat mode: Chat with Bot">
             <span class="chat-mode-switch-track"><span class="chat-mode-switch-thumb"></span></span>
-            <span class="chat-mode-switch-text" id="chat-mode-switch-text">📤 Send from Server</span>
+            <span class="chat-mode-switch-text" id="chat-mode-switch-text">💬 Chat with Bot</span>
           </button>
           <label for="chat-instance" class="chat-toolbar-label">Bot</label>
           <select id="chat-instance"></select>
@@ -5185,7 +5185,10 @@ function connectLiveEventsSocket() {
 // polled on the 2s interval — an inactive bot's messages just wait for
 // the next time you switch to it (immediate refreshChat() on switch keeps
 // that from feeling stale in practice for this single-user dashboard).
-const chatState = { activeInstanceId: null, instances: null, panels: {}, mode: 'server' };
+const chatState = { activeInstanceId: null, instances: null, panels: {}, mode: 'bot' };  // Chat with Bot is the default seat; Send from Server is one click away
+// Declared here, above setChatMode(), which runs at page load and reads it. A `let` is not usable before its
+// declaration runs, so leaving this further down made the load-time setChatMode('bot') throw and abort the whole script.
+let chatPendingFile = null;
 
 // "server" = Send from Server: the dashboard pushes a real message OUT,
 // through outbox.py + a live platform SDK, to a real Telegram/Discord/Slack
@@ -5225,7 +5228,7 @@ function setChatMode(mode) {
   }
 }
 document.getElementById('chat-mode-switch').onclick = () => setChatMode(chatState.mode === 'server' ? 'bot' : 'server');
-setChatMode('server');
+setChatMode('bot');
 
 function panelFor(id) {
   if (!chatState.panels[id]) chatState.panels[id] = { lastId: 0, recipient: null, loaded: false, draft: '' };
@@ -5471,7 +5474,6 @@ document.getElementById('btn-chat-clear').onclick = async () => {
   refreshChat(instanceId);
 };
 
-let chatPendingFile = null;
 document.getElementById('btn-chat-attach').onclick = () => document.getElementById('chat-file-input').click();
 document.getElementById('chat-file-input').onchange = (e) => {
   chatPendingFile = e.target.files[0] || null;
