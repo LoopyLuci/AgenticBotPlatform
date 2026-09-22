@@ -1625,7 +1625,7 @@ function renderGenericFields(platform, values) {
   const box = document.getElementById('bot-new-generic-fields');
   const tokenField = document.getElementById('bot-new-token-field');
   const generic = GENERIC_PLATFORMS.includes(platform);
-  if (tokenField) tokenField.style.display = generic ? 'none' : '';
+  if (tokenField) tokenField.style.display = (generic || platform === 'app') ? 'none' : '';
   box.style.display = generic ? '' : 'none';
   if (!generic) { box.innerHTML = ''; box.dataset.platform = ''; return; }
   if (!values && box.dataset.platform === platform && box.children.length) return;   // keep what the person already typed
@@ -1657,6 +1657,14 @@ function collectGenericCredentials() {
 
 function renderPlatformGuide(platform) {
   renderGenericFields(platform);
+  const allowedField = document.getElementById('bot-new-allowed-field');
+  if (platform === 'app') {
+    document.getElementById('bot-new-allowed-label').textContent = 'Allowed user ID(s) (optional)';
+    document.getElementById('bot-new-allowed-help').textContent = 'Not needed for an app-only bot — access is controlled by the dashboard token or a paired device, not a user-ID allowlist. Leave blank.';
+  } else {
+    document.getElementById('bot-new-allowed-label').textContent = 'Allowed user ID(s)';
+    document.getElementById('bot-new-allowed-help').textContent = 'Comma-separated. Numeric IDs for Telegram/Discord, Slack member IDs (U.../W...) for Slack, full Matrix user IDs (@name:server) for Matrix, phone numbers with country code and no "+" for WhatsApp.';
+  }
   const guide = platformGuidesCache[platform];
   if (!guide) return;
   const tokenField = guide.fields[_tokenFieldKey(platform)];
@@ -1665,6 +1673,8 @@ function renderPlatformGuide(platform) {
   document.getElementById('bot-new-apptoken-help').textContent = apptokenField ? apptokenField.help : '';
   const guideField = document.getElementById('bot-new-setupguide-field');
   const guideList = document.getElementById('bot-new-setupguide-list');
+  const guideSummary = document.getElementById('bot-new-setupguide-summary');
+  if (guideSummary) guideSummary.textContent = platform === 'app' ? 'How this works' : 'How do I get these? (step-by-step)';
   if (guide.setup_guide && guide.setup_guide.length) {
     guideField.style.display = '';
     guideList.innerHTML = guide.setup_guide.map(step => `<li>${esc(step)}</li>`).join('');
@@ -2365,7 +2375,8 @@ async function refreshBots() {
       </div>
       <div class="bc-meta">
         <span class="mono">${esc(b.platform)}</span> · <span class="mono">${esc(b.backend)}</span>
-        <span class="pill"><span class="dot ${b.live_running ? 'good' : (b.last_error ? 'critical' : '')}"></span>${b.live_running ? 'Running' : (b.last_error ? 'Crashed' : 'Stopped')}</span>
+        ${b.platform === 'app' ? `<span class="pill"><span class="dot good"></span>App-only — no connection to start or stop</span>`
+          : `<span class="pill"><span class="dot ${b.live_running ? 'good' : (b.last_error ? 'critical' : '')}"></span>${b.live_running ? 'Running' : (b.last_error ? 'Crashed' : 'Stopped')}</span>`}
         ${['ui', 'hermes_gateway'].includes(b.backend) ? `<span class="pill" title="Linked chat/session in the real desktop app">${b.desktop_session_key ? 'Session: ' + esc(b.desktop_session_key) : 'No session linked yet'}</span>` : ''}
       </div>
       <div class="bc-model">
@@ -2382,7 +2393,7 @@ async function refreshBots() {
         <button class="btn" data-bot-edit="${b.id}" style="padding:3px 8px; font-size:11px;">Edit</button>
         ${['native_agent', 'api', 'custom_model'].includes(b.backend) ? `<button class="btn" data-bot-agent="${b.id}" style="padding:3px 8px; font-size:11px;">Agent settings</button>` : ''}
         <button class="btn" data-bot-toggle="${b.id}" style="padding:3px 8px; font-size:11px;">${b.enabled ? 'Disable' : 'Enable'}</button>
-        ${b.enabled ? `<button class="btn" data-bot-startstop="${b.id}" style="padding:3px 8px; font-size:11px;">${b.live_running ? 'Stop' : 'Start'}</button>
+        ${b.enabled && b.platform !== 'app' ? `<button class="btn" data-bot-startstop="${b.id}" style="padding:3px 8px; font-size:11px;">${b.live_running ? 'Stop' : 'Start'}</button>
         <button class="btn" data-bot-restart="${b.id}" style="padding:3px 8px; font-size:11px;">Restart</button>` : ''}
         ${['ui', 'hermes_gateway'].includes(b.backend) ? `<button class="btn" data-bot-newsession="${b.id}" style="padding:3px 8px; font-size:11px;" title="Opens a real new chat in Claude Desktop/Hermes and links it to this bot">New Session</button>` : ''}
         <button class="btn" data-bot-delete="${b.id}" style="padding:3px 8px; font-size:11px;">Delete</button>
@@ -2505,6 +2516,8 @@ document.getElementById('btn-bot-create').onclick = async () => {
       app_secret: document.getElementById('bot-new-whatsapp-appsecret').value.trim(),
       verify_token: document.getElementById('bot-new-whatsapp-verifytoken').value.trim(),
     };
+  } else if (platform === 'app') {
+    credentials = {};   // no external platform — nothing to store
   } else {
     credentials = { bot_token: document.getElementById('bot-new-token').value.trim() };
     if (platform === 'slack') credentials.app_token = document.getElementById('bot-new-apptoken').value.trim();

@@ -15,6 +15,7 @@ setup steps come from `/api/platform-guides`. Only the listed senders are answer
 | **SMS** (Twilio) | Twilio posts each text to `/webhooks/sms`; replies go through Twilio's REST API | Requests are verified with Twilio's `X-Twilio-Signature` (the algorithm reproduces the example in Twilio's own documentation); behind a proxy set `sms.public_url`. Replies cost money per segment. |
 | **Signal** | A [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) bridge you run; ABP polls it | The bridge holds the Signal keys and sees messages in the clear. Group messages are ignored. `json-rpc` mode of the bridge is not supported. |
 | **iMessage** | A [BlueBubbles](https://bluebubbles.app) server on a Mac you own; it posts to `/webhooks/bluebubbles?token=...` | Needs a Mac signed in to iMessage. The token is compared in constant time. Group chats ignored. |
+| **App only** (`app`) | No external platform at all — reached only through `POST /api/chat/send-to-bot`, the same route the desktop app, the Android app and the CLI/TUI already use | Needs no credentials and no allowed-user-id list: access is whoever can already authenticate to the dashboard API (`DASHBOARD_TOKEN`, or a paired device's own key). Has no live connection to start, stop or crash — `bot/platform_supervisor.py`'s `start_instance` is a no-op for it. |
 
 Not built: Google Chat and Microsoft Teams (both need Google/Microsoft sign-in flows that cannot be tested here).
 

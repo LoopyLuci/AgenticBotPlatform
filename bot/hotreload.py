@@ -121,6 +121,8 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.mcp_server",  # a separate process (python -m bot.mcp_server); not part of this one anyway
     "bot.tui.app", "bot.tui.client", "bot.tui.__main__",  # a separate process (python -m bot.tui); not part of this one anyway
     "bot.tui.screens.connect", "bot.tui.screens.bot_list", "bot.tui.screens.add_bot", "bot.tui.screens.bot_detail",
+    "bot.tui.screens.chat", "bot.tui.screens.providers", "bot.tui.screens.agent_settings",
+    "bot.dashboard_client",  # only ever imported by the tui/cli processes above, or abp_cli (its own separate process)
     "bot.swarm.base", "bot.swarm.strategies", "bot.swarm.engine",
     "bot.support_bot.model", "bot.support_bot.training_data", "bot.support_bot.hybrid",
     "bot.support_bot.actions", "bot.support_bot.nn_model", "bot.support_bot.slots",

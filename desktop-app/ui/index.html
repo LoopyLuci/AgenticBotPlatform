@@ -1508,6 +1508,7 @@
               <option value="sms">SMS (Twilio)</option>
               <option value="signal">Signal</option>
               <option value="imessage">iMessage (BlueBubbles)</option>
+              <option value="app">App only (no external platform)</option>
             </select>
           </div>
         </div>
@@ -1572,7 +1573,7 @@
         </div>
         <div class="wizard-field" id="bot-new-setupguide-field" style="display:none;">
           <details>
-            <summary style="cursor:pointer; font-size:12px; color:var(--muted); font-weight:600;">How do I get these? (step-by-step)</summary>
+            <summary id="bot-new-setupguide-summary" style="cursor:pointer; font-size:12px; color:var(--muted); font-weight:600;">How do I get these? (step-by-step)</summary>
             <ol id="bot-new-setupguide-list" style="margin:8px 0 0 18px; padding:0; font-size:12px; color:var(--muted); line-height:1.7;"></ol>
           </details>
         </div>
@@ -1596,9 +1597,9 @@
           <div class="row"><input type="text" id="bot-new-whatsapp-verifytoken" placeholder="pick any string, 6+ chars" autocomplete="off" spellcheck="false"></div>
           <div class="help">Webhook URL to paste into Meta's App Dashboard → WhatsApp → Configuration: <code>&lt;your public HTTPS domain&gt;/webhooks/whatsapp</code> — same URL and verify token for every WhatsApp instance on this install, since Meta allows only one webhook per App.</div>
         </div>
-        <div class="wizard-field">
-          <label>Allowed user ID(s)</label>
-          <div class="help">Comma-separated. Numeric IDs for Telegram/Discord, Slack member IDs (U.../W...) for Slack, full Matrix user IDs (@name:server) for Matrix, phone numbers with country code and no "+" for WhatsApp.</div>
+        <div class="wizard-field" id="bot-new-allowed-field">
+          <label id="bot-new-allowed-label">Allowed user ID(s)</label>
+          <div class="help" id="bot-new-allowed-help">Comma-separated. Numeric IDs for Telegram/Discord, Slack member IDs (U.../W...) for Slack, full Matrix user IDs (@name:server) for Matrix, phone numbers with country code and no "+" for WhatsApp.</div>
           <div class="row"><input type="text" id="bot-new-allowed" placeholder="123456789, 987654321" autocomplete="off" spellcheck="false"></div>
         </div>
         <div class="wizard-field" id="bot-new-cantarget-field">

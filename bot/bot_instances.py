@@ -21,6 +21,7 @@ Platform-specific `credentials` JSON shapes:
   sms:       {"account_sid": "AC...", "auth_token": "...", "from_number": "+E.164"}   (Twilio)
   signal:    {"api_url": "http://...", "number": "+E.164"}                            (signal-cli REST bridge)
   imessage:  {"server_url": "http://...", "password": "...", "webhook_token": "..."}  (BlueBubbles)
+  app:       {}  (no external platform at all - see PLATFORMS' own comment below)
 """
 
 from __future__ import annotations
@@ -35,7 +36,14 @@ from bot import db, envfile
 from bot.personas import DEFAULT_PERSONA
 from bot.validators import PLATFORM_TOKEN_VALIDATORS, validate_user_ids
 
-PLATFORMS = ("telegram", "discord", "slack", "matrix", "whatsapp", "email", "sms", "signal", "imessage")
+PLATFORMS = ("telegram", "discord", "slack", "matrix", "whatsapp", "email", "sms", "signal", "imessage", "app")
+# "app": no external chat platform at all - reachable only via POST /api/chat/send-to-bot (the
+# same route the Android app and the CLI/TUI already use), which is already logged with
+# platform="app" for exactly this case (see bot/dashboard/server.py's api_chat_send_to_bot).
+# Needs no credentials and no allowed_user_ids: access is controlled by real request auth
+# (DASHBOARD_TOKEN or a paired device's api_keys entry - bot/db.py), a stronger gate than a
+# platform user-id allowlist, not a weaker one. Has no live connection to start/stop
+# (bot/platform_supervisor.py's start_instance is a no-op for it).
 # Platforms whose user ids are strings (Telegram and Discord use numbers). E-mail addresses and phone numbers are strings too.
 STRING_ID_PLATFORMS = ("slack", "matrix", "whatsapp", "email", "sms", "signal", "imessage")
 
@@ -64,6 +72,8 @@ def _validate_credentials(platform: str, credentials: dict[str, Any]) -> None:
 
 
 def _validate_allowed_ids(platform: str, allowed_user_ids: list[Any]) -> None:
+    if platform == "app":
+        return   # access is controlled by real request auth, not a platform user-id allowlist
     if not allowed_user_ids:
         raise ValidationError("at least one allowed user id is required")
     # Reuse the numeric-id validator for telegram/discord; slack ids are

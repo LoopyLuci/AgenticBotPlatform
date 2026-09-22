@@ -18,7 +18,10 @@ class BotListScreen(Screen):
     BINDINGS = [
         ("a", "add_bot", "Add bot"),
         ("e", "edit_bot", "Edit"),
+        ("c", "chat_bot", "Chat"),
         ("r", "refresh", "Refresh"),
+        ("p", "providers", "Providers"),
+        ("g", "agent_settings", "Agent settings"),
         ("q", "app.quit", "Quit"),
     ]
 
@@ -27,11 +30,14 @@ class BotListScreen(Screen):
         with Horizontal(id="bot-list-actions"):
             yield Button("Add bot (a)", id="btn-add")
             yield Button("Edit (e)", id="btn-edit")
+            yield Button("Chat (c)", id="btn-chat")
             yield Button("Start/Stop", id="btn-startstop")
             yield Button("Enable/Disable", id="btn-toggle")
             yield Button("Restart", id="btn-restart")
             yield Button("Delete", id="btn-delete")
             yield Button("Refresh (r)", id="btn-refresh")
+            yield Button("Providers (p)", id="btn-providers")
+            yield Button("Agent settings (g)", id="btn-agent-settings")
         yield DataTable(id="bot-table")
         yield Label("", id="bot-list-status")
         yield Footer()
@@ -58,7 +64,10 @@ class BotListScreen(Screen):
             return
         status.update("")
         for b in bots:
-            state = "running" if b.get("live_running") else ("crashed" if b.get("last_error") else "stopped")
+            if b.get("platform") == "app":
+                state = "app-only"
+            else:
+                state = "running" if b.get("live_running") else ("crashed" if b.get("last_error") else "stopped")
             table.add_row(
                 str(b["id"]), b["name"], b["platform"], b["backend"], state,
                 "yes" if b["enabled"] else "no", key=str(b["id"]),
@@ -80,11 +89,14 @@ class BotListScreen(Screen):
         actions = {
             "btn-add": self.action_add_bot,
             "btn-edit": self.action_edit_bot,
+            "btn-chat": self.action_chat_bot,
             "btn-refresh": self.action_refresh,
             "btn-startstop": self._action_startstop,
             "btn-toggle": self._action_toggle,
             "btn-restart": self._action_restart,
             "btn-delete": self._action_delete,
+            "btn-providers": self.action_providers,
+            "btn-agent-settings": self.action_agent_settings,
         }
         handler = actions.get(event.button.id)
         if handler:
@@ -102,6 +114,25 @@ class BotListScreen(Screen):
         from bot.tui.screens.bot_detail import BotDetailScreen
 
         await self.app.push_screen(BotDetailScreen(bot), self._after_form)
+
+    async def action_chat_bot(self) -> None:
+        bot = self._selected_bot()
+        if bot is None:
+            return
+        from bot.tui.screens.chat import ChatScreen
+
+        await self.app.push_screen(ChatScreen(bot))
+
+    async def action_providers(self) -> None:
+        from bot.tui.screens.providers import ProvidersScreen
+
+        await self.app.push_screen(ProvidersScreen())
+
+    async def action_agent_settings(self) -> None:
+        from bot.tui.screens.agent_settings import AgentSettingsScreen
+
+        bot = self._selected_bot()
+        await self.app.push_screen(AgentSettingsScreen(instance_id=bot["id"] if bot else None))
 
     async def _after_form(self, _result: object = None) -> None:
         await self.refresh_bots()

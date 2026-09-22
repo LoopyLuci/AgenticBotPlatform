@@ -21,10 +21,13 @@ def test_platform_guides_needs_no_auth_and_covers_every_platform(temp_db, monkey
     resp = client.get("/api/platform-guides")
     assert resp.status_code == 200
     body = resp.json()
-    assert set(body.keys()) == {"telegram", "discord", "slack", "matrix", "whatsapp", "email", "sms", "signal", "imessage"}
+    assert set(body.keys()) == {"telegram", "discord", "slack", "matrix", "whatsapp", "email", "sms", "signal",
+                                "imessage", "app"}
     for platform, guide in body.items():
         assert guide["label"]
-        assert guide["fields"]
+        # "app" (no external platform at all) is the one deliberate exception: it has no
+        # credential fields to describe.
+        assert guide["fields"] or platform == "app"
         assert guide["setup_guide"]
 
 
