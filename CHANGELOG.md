@@ -9,6 +9,16 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **Every bot now has a real backend-level fallback, OpenCode then Hermes CLI, never
+  Claude.** Until now, only a bot with its own per-instance `action_overrides` entry got
+  a backup chain if its backend failed — an ordinary bot with just its own `backend` set
+  (the common case) had no fallback at all. `config/backends.yaml`'s new top-level
+  `backend_backup: [opencode, hermes_cli]` is now appended to every resolved routing
+  chain (`Router.resolve_chain`/`_with_global_backup`), so a down/misconfigured/
+  out-of-quota primary backend now falls through to OpenCode, then Hermes CLI, before
+  giving up — matching the standing "never Claude by default" instruction (a fallback
+  the router reaches for on its own follows the same rule a default does). See
+  `README.md`'s "How routing works".
 - **ABP never uses Claude by default now — a bot picks a free model automatically instead.**
   `default_backend` and the `quick_question`/`project_task` routes used to go straight to the
   Claude Code CLI; they now go to ABP's own agent loop (`native_agent`) with model `auto`, which

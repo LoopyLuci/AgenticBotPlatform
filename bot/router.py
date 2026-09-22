@@ -283,6 +283,18 @@ class Router:
             self._backends[key] = self._build_backend(name, cfg, model_override=model_override, hermes_home=hermes_home)
         return self._backends[key]
 
+    def _with_global_backup(self, chain: list[str], cfg: dict) -> list[str]:
+        """Append config.backend_backup (e.g. opencode, hermes_cli) to a resolved
+        chain, skipping anything already in it — one central place so every bot
+        instance gets a real backend-level fallback (not just the model-level
+        fallback inside NativeAgentBackend's own loop) without needing its own
+        per-instance action_overrides.backup entry, which today nothing sets by
+        default. Never includes Claude here on purpose (see backend_backup's own
+        comment in config/backends.yaml) - that's the operator's standing
+        instruction, not just this chain's own default."""
+        extra = [b for b in (cfg.get("backend_backup") or []) if b not in chain]
+        return chain + extra
+
     def resolve_chain(
         self,
         action_type: str,
@@ -302,13 +314,13 @@ class Router:
             if instance:
                 inst_entry = (instance.get("action_overrides") or {}).get(action_type)
                 if inst_entry:
-                    return [inst_entry["backend"]] + list(inst_entry.get("backup", []))
+                    return self._with_global_backup([inst_entry["backend"]] + list(inst_entry.get("backup", [])), cfg)
                 if instance.get("backend"):
                     # An instance's own backend is always an explicit choice
                     # (set when the bot was created/edited), so it's exempt
                     # from the "ui never gets a silent default" guard below —
                     # that guard only protects the global-config fallback.
-                    return [instance["backend"]]
+                    return self._with_global_backup([instance["backend"]], cfg)
 
         overrides = cfg.get("action_overrides", {}) or {}
         entry = overrides.get(action_type)
@@ -326,7 +338,7 @@ class Router:
         # exact guard.
         if not backend_override and chain and chain[0] == "ui" and not entry:
             chain = ["api"]
-        return chain
+        return self._with_global_backup(chain, cfg)
 
     def circuit_status(self, instance_id: int) -> dict:
         """For the dashboard: whether this instance's breaker is

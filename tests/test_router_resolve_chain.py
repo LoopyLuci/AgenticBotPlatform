@@ -104,3 +104,55 @@ def test_nonexistent_instance_falls_back_to_global(router, monkeypatch):
 
     monkeypatch.setattr(bot_instances, "get_instance", lambda iid: None)
     assert router.resolve_chain("quick_question", instance_id=999) == ["api", "cli"]
+
+
+# ---- backend_backup: a real backend-level fallback for every bot, OpenCode/Hermes -----
+
+@pytest.fixture
+def router_with_backup(monkeypatch):
+    monkeypatch.setattr(config, "_data", {
+        "default_backend": "native_agent",
+        "action_overrides": {"quick_question": {"backend": "native_agent", "backup": []}},
+        "backend_backup": ["opencode", "hermes_cli"],
+    })
+    return Router()
+
+
+def test_an_instances_own_backend_gets_the_global_backup_chain(router_with_backup, monkeypatch):
+    from bot import bot_instances
+
+    monkeypatch.setattr(
+        bot_instances, "get_instance",
+        lambda iid: {"id": iid, "action_overrides": {}, "backend": "native_agent"},
+    )
+    # Previously an instance with its own backend got NO fallback at all — this is the
+    # gap the user asked to close ("OpenCode must be able to be used as a fallback as
+    # well Hermes").
+    assert router_with_backup.resolve_chain("quick_question", instance_id=1) == ["native_agent", "opencode", "hermes_cli"]
+
+
+def test_global_action_override_also_gets_the_backup_chain_appended(router_with_backup):
+    assert router_with_backup.resolve_chain("quick_question") == ["native_agent", "opencode", "hermes_cli"]
+
+
+def test_backend_backup_never_duplicates_a_backend_already_in_the_chain(router_with_backup, monkeypatch):
+    from bot import bot_instances
+
+    monkeypatch.setattr(
+        bot_instances, "get_instance",
+        lambda iid: {"id": iid, "action_overrides": {}, "backend": "opencode"},
+    )
+    # opencode is already the primary — it must not appear twice in its own backup chain.
+    assert router_with_backup.resolve_chain("quick_question", instance_id=1) == ["opencode", "hermes_cli"]
+
+
+def test_backend_backup_is_a_no_op_when_not_configured(router):
+    # `router`'s config has no backend_backup key at all - same result as before this
+    # feature existed (see test_global_action_override_with_backup_chain above).
+    assert router.resolve_chain("quick_question") == ["api", "cli"]
+
+
+def test_explicit_backend_override_is_not_given_a_backup_chain(router_with_backup):
+    # An explicit --backend= flag is a deliberate, exact choice — the same "no surprise
+    # safety net" contract as before this feature existed.
+    assert router_with_backup.resolve_chain("quick_question", backend_override="native_agent") == ["native_agent"]
