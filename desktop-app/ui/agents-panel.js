@@ -18,7 +18,7 @@
 
   const S = {
     schema: null, values: {}, configured: new Set(), dirty: {}, errors: {}, tab: 'overview',
-    advanced: {}, overview: null, tools: null, toolFilter: '', packs: null, quarantine: null, drafts: null, loaded: false,
+    advanced: {}, overview: null, tools: null, toolFilter: '', packs: null, quarantine: null, drafts: null, router: null, loaded: false,
   };
   const body = document.getElementById('agents-body');
   const tabsEl = document.getElementById('agents-tabs');
@@ -186,8 +186,21 @@
   }
 
   function modelsExtra() {
-    return `<div class="card ag-card"><h3>What each model can do</h3><p class="cardnote">Context window, free-tier limits and current usage for every model are on the Models page. Limits are only enforced for models whose limits are known.
+    return routerCard() + `<div class="card ag-card"><h3>What each model can do</h3><p class="cardnote">Context window, free-tier limits and current usage for every model are on the Models page. Limits are only enforced for models whose limits are known.
       <button class="btn" data-go="models" style="padding:3px 9px; font-size:11px; margin-left:6px;">Open Models</button></p></div>`;
+  }
+  function routerCard() {
+    if (!S.router) return `<div class="card ag-card"><h3>What ABP would pick right now</h3><p class="cardnote">Loading…</p></div>`;
+    const r = S.router;
+    if (r.error) return `<div class="card ag-card"><h3>What ABP would pick right now</h3><p class="cardnote">Couldn't reach the router: ${esc(r.error)}</p></div>`;
+    return `<div class="card ag-card"><h3>What ABP would pick right now</h3>
+      <p class="cardnote">A bot whose model is <span class="mono">auto</span> gets whichever of these the router ranks highest for its task — never an Anthropic model unless you list one under <b>Models the router may pick from</b> below. Ranked for a general coding/agent task; a real bot's own message may rank differently.</p>
+      ${r.recommendations.length ? `<div class="tablewrap"><table><thead><tr><th>Model</th><th>Score</th><th>Quality</th><th>Economy</th><th>Headroom</th></tr></thead><tbody>
+        ${r.recommendations.map(rec => `<tr><td class="mono">${esc(rec.model)}</td><td>${rec.score.toFixed(2)}</td>
+          <td>${rec.quality.toFixed(2)} <span class="chip ${rec.quality_source === 'measured' ? 'good' : 'neutral'}">${rec.quality_source === 'measured' ? 'measured' : 'a guess'}</span></td>
+          <td>${rec.economy.toFixed(2)}</td><td>${rec.headroom == null ? 'no known limit' : `${Math.round(rec.headroom * 100)}%`}</td></tr>`).join('')}
+        </tbody></table></div>` : `<p class="cardnote">No candidate model fits right now.${r.skipped.length ? ' Left out: ' + esc(r.skipped.join('; ')) : ' Add a provider on the Models page, or list one under Models the router may pick from below.'}</p>`}
+    </div>`;
   }
   function yamlOnly() {
     return S.schema.yaml_only.length ? `<div class="card ag-card"><h3>Edited in the config file</h3><p class="cardnote">These settings hold tables or commands that a form cannot show honestly. Edit them in <span class="mono">config/backends.yaml</span>:</p>
@@ -301,6 +314,10 @@
     else setHtml(tabsEl, tabsHtml());
   }
   async function loadTools() { try { S.tools = (await api('/api/agent/tools')).tools; } catch (_e) { S.tools = []; } if (S.tab === 'tools') render(); }
+  async function loadRouter() {
+    try { S.router = await api('/api/agent/router/recommend'); } catch (e) { S.router = { error: String(e && e.message || e), recommendations: [], skipped: [] }; }
+    if (S.tab === 'models') render();
+  }
   async function loadSkills() {
     const get = async (p, k) => { try { return (await api(p))[k]; } catch (_e) { return []; } };
     [S.packs, S.quarantine, S.drafts] = await Promise.all([get('/api/skills/packs', 'packs'), get('/api/skills/quarantine', 'packs'), get('/api/skills/drafts', 'drafts')]);
@@ -312,6 +329,7 @@
     render();
     if (id === 'tools' && !S.tools) loadTools();
     if (id === 'skills') loadSkills();
+    if (id === 'models' && !S.router) loadRouter();
     if (id === 'overview' || id === 'safety') refreshOverview();
   }
   function goTo(target) {

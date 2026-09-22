@@ -98,6 +98,22 @@ class NativeAgentBackend(Backend):
         # an already-running ask() finishes rather than being killed.
         estop.check()
 
+        if self.transport is None:
+            # model == "auto" (native_agent backend, bot/router.py) - nothing has been
+            # resolved yet. Do it now, once, using this first real prompt as the
+            # classification text; resolves to an ordinary, fully-resolved backend for
+            # every turn after this one (self.transport/self.model are set below and
+            # never revisited unless a later turn's own BackendError failover kicks in).
+            from bot.config import config as _config
+
+            router_cfg = ((_config.current.get("native_agent") or {}).get("router")) or {}
+            if not bool(router_cfg.get("enabled", True)):
+                raise BackendError(
+                    "this bot's model is \"auto\" but automatic model routing is turned off "
+                    "(native_agent.router.enabled) — set a specific model for this bot instead"
+                )
+            self.transport, self.model, _auto_ref = _resolve_auto_transport(prompt, exclude=set())
+
         from bot.agent_runtime import hooks
 
         context = context or {}
@@ -338,30 +354,48 @@ class NativeAgentBackend(Backend):
             try:
                 response = await _send(active_transport, active_model)
             except BackendError as exc:
-                # One bounded retry against a configured fallback
+                # A bounded chain of retries: first the one configured fallback
                 # provider/model (bot/agent_settings.py's fallback_provider/
-                # fallback_model) — mirrors Hermes's own real
-                # try_activate_fallback concept at a deliberately bounded
-                # (one hop, not a multi-provider chain) scope, matching
-                # this codebase's existing "one bounded retry" convention
-                # (output_schema validation already works this way). Never
-                # retries an EstopEngagedError — that's not a transport
-                # failure a different provider would fix.
+                # fallback_model — mirrors Hermes's own real
+                # try_activate_fallback concept), then, only if
+                # native_agent.router.auto_failover is on, up to
+                # native_agent.router.max_failover_hops more picks from the
+                # model router (bot/model_router.py), each a provider/model
+                # not already tried this turn. Still bounded, matching this
+                # codebase's existing "one (or a few) bounded retries, never
+                # an open-ended chain" convention. Never retries an
+                # EstopEngagedError — that's not a transport failure a
+                # different provider would fix. If every hop fails, the LAST
+                # hop's own error is what's raised (matching this loop's
+                # established single-hop behaviour, generalized: a fallback
+                # attempt was never wrapped in its own try/except before this
+                # multi-hop chain existed, so its failure simply propagated
+                # and replaced the primary's — same outcome here, whichever
+                # hop is last).
                 from bot.agent_runtime import estop as estop_module
 
                 if isinstance(exc, estop_module.EstopEngagedError) or active_transport is not self.transport:
                     raise
-                fallback = _resolve_fallback_transport(instance_id)
-                if fallback is None:
-                    raise
-                logger.warning("native backend: primary transport failed (%s) — retrying once against configured fallback", exc)
-                active_transport, active_model = fallback
-                if stream_notify is not None:
-                    # Whatever the failed attempt already showed is about to be repeated.
-                    from bot.agent_runtime.transports.base import StreamEvent
+                response = None
+                last_exc = exc
+                for hop_transport, hop_model in _failover_hops(instance_id, prompt):
+                    logger.warning("native backend: primary transport failed (%s) — retrying against %s", last_exc, hop_model)
+                    active_transport, active_model = hop_transport, hop_model
+                    if stream_notify is not None:
+                        # Whatever the failed attempt already showed is about to be repeated.
+                        from bot.agent_runtime.transports.base import StreamEvent
 
-                    await _emit(StreamEvent("reset"))
-                response = await _send(active_transport, active_model)
+                        await _emit(StreamEvent("reset"))
+                    try:
+                        response = await _send(active_transport, active_model)
+                        break
+                    except BackendError as hop_exc:
+                        if isinstance(hop_exc, estop_module.EstopEngagedError):
+                            raise
+                        last_exc = hop_exc
+                        continue
+                if response is None:
+                    raise last_exc
             context_window.observe(active_model, view["chars"], response.input_tokens)
             trace.active().llm_call(
                 model=active_model, duration_ms=int((time.monotonic() - _sent_at) * 1000), tokens=response.tokens,
@@ -576,6 +610,82 @@ def _resolve_fallback_transport(instance_id) -> Optional[tuple]:
     except Exception:
         logger.exception("native backend: failed to resolve fallback transport for instance %s", instance_id)
         return None
+
+
+def _resolve_auto_transport(task_text: str, *, exclude: set) -> tuple:
+    """The model router's top pick that isn't in `exclude` (a set of "provider/model"
+    strings already tried), as (transport, model, ref) - `ref` is the exact
+    "provider/model" string this pick was chosen under, for a caller to add to its own
+    `exclude` set without having to reconstruct it from the transport afterward (a
+    transport's own `provider_key` can differ from the config/providers.yaml name it was
+    built from - its catalog_id, if the provider has one, or its base URL's host
+    otherwise - so re-deriving it would risk silently failing to recognize a repeat).
+
+    Used both to resolve model="auto" the first time (bot/router.py's native_agent
+    branch) and, when native_agent.router.auto_failover is on, as extra failover hops
+    beyond the one static fallback_provider/fallback_model.
+
+    Raises BackendError - never returns a silent nothing - if the router has no viable
+    candidate: a bot on "auto" with no free provider configured must fail loudly and
+    actionably, never fall back to Claude or hang."""
+    from bot import model_router
+    from bot import providers as provider_registry
+    from bot.agent_runtime.transports import build_openai_transport
+
+    _cls, ranked, _skipped = model_router.recommend(task_text or "", candidates=model_router.candidate_models())
+    for rec in ranked:
+        if rec.model in exclude:
+            continue
+        provider_name, _, model_id = rec.model.partition("/")
+        provider_cfg = provider_registry.get_provider(provider_name)
+        if provider_cfg is None:            # listed as a candidate but not actually configured — skip, don't fail the whole lookup
+            continue
+        transport = build_openai_transport(
+            protocol=provider_cfg.get("protocol", "openai"), base_url=provider_cfg["base_url"],
+            api_key=provider_registry.get_api_key(provider_name), catalog_id=provider_cfg.get("catalog_id"),
+        )
+        return transport, model_id, rec.model
+    raise BackendError(
+        "no free model available for automatic routing — add a provider (the Models page) "
+        "or set native_agent.router.candidates"
+    )
+
+
+def _failover_hops(instance_id, task_text: str) -> list[tuple]:
+    """The ordered list of (transport, model) alternatives to try after the primary
+    transport fails: the one explicit, per-bot fallback_provider/fallback_model first (if
+    configured - unchanged from before this existed), then, only if
+    native_agent.router.auto_failover is on, up to native_agent.router.max_failover_hops
+    more picks from the model router, each one excluding every ref already in this list.
+    Never raises - a broken hop-building step must not hide the primary's own error."""
+    hops: list[tuple] = []
+    tried: set = set()
+    static = _resolve_fallback_transport(instance_id)
+    if static is not None:
+        hops.append(static)
+        try:
+            from bot import agent_settings
+
+            settings = agent_settings.get(instance_id) if instance_id is not None else {}
+            tried.add(f"{settings.get('fallback_provider')}/{settings.get('fallback_model')}")
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        from bot.config import config
+
+        router_cfg = ((config.current.get("native_agent") or {}).get("router")) or {}
+        if bool(router_cfg.get("auto_failover")):
+            max_hops = max(0, int(router_cfg.get("max_failover_hops") or 2))
+            for _ in range(max_hops):
+                try:
+                    transport, model, ref = _resolve_auto_transport(task_text, exclude=tried)
+                except BackendError:
+                    break
+                tried.add(ref)
+                hops.append((transport, model))
+    except Exception:  # noqa: BLE001
+        logger.exception("native backend: failed to build router failover hops")
+    return hops
 
 
 def _progress_line(tool_name: str, tool_input: dict) -> str:

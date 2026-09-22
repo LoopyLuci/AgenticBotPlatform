@@ -1536,7 +1536,8 @@
         <div class="wizard-field" id="bot-new-model-field">
           <label>Model override (optional)</label>
           <div class="help" id="bot-new-model-help">Leave blank to use this backend's configured default. Options are live models actually available to this backend.</div>
-          <div class="row"><input type="text" id="bot-new-model" list="bot-new-model-options" placeholder="e.g. claude-opus-5" autocomplete="off" spellcheck="false"></div>
+          <div class="row"><input type="text" id="bot-new-model" list="bot-new-model-options" placeholder="e.g. claude-opus-5" autocomplete="off" spellcheck="false">
+            <button type="button" class="btn" id="bot-new-model-auto" style="display:none; padding:5px 10px; font-size:12px;" title="Let ABP's model router pick a free model automatically, every time this bot's backend needs one">Auto</button></div>
           <datalist id="bot-new-model-options"></datalist>
         </div>
         <div class="wizard-field hidden" id="bot-agent-panel">

@@ -9,6 +9,18 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **ABP never uses Claude by default now — a bot picks a free model automatically instead.**
+  `default_backend` and the `quick_question`/`project_task` routes used to go straight to the
+  Claude Code CLI; they now go to ABP's own agent loop (`native_agent`) with model `auto`, which
+  asks the model router (`bot/model_router.py`, previously advisory-only) to actually pick and run
+  a real model — the top-ranked free candidate, never Anthropic unless you explicitly list one
+  under `native_agent.router.candidates`/`.also`. A bot's Add-bot form has a new **Auto** button
+  next to the model field for the same thing. If a turn's model fails, the existing one-hop
+  fallback-model retry can now optionally (`native_agent.router.auto_failover`, off by default)
+  keep trying more router-ranked models instead of giving up after one. The ABP Agents page's
+  Models tab gained a **What ABP would pick right now** panel and real settings for all of this
+  (`router.enabled`, `.candidates`, `.also`, `.auto_failover`, `.max_failover_hops`) — previously
+  YAML-only. See `docs/agents/models.md`'s new "Automatic model routing" section.
 - **Three more sandbox backends for `run_shell`, and the docker/WSL ones verified against the real
   thing.** `native_agent.sandbox.backend` now also accepts `ssh` (a configured, already-trusted
   remote host), `wsl` (a WSL2 distro on the same machine, workspace path translated automatically),

@@ -131,6 +131,12 @@ FIELDS: list[dict] = [
     _f("models.enforce", "bool", "Enforce model limits", "Hold back a call that would cross a known per-minute or daily limit, and switch to a fallback when one is exhausted. Off keeps counting but never holds a call back.", M, "Limits", True),
     _f("models.max_wait_s", "int", "Longest wait for a limit to clear", "A call that would cross a per-minute limit waits up to this long instead of failing.", M, "Limits", 15, min=0, max=600, unit="seconds"),
     _f("models.timezone", "text", "Time zone for daily limits", "An IANA name such as America/New_York. Blank uses this computer's time zone.", M, "Limits", "", nullable=True),
+    # ------------------------------------------------------------------ automatic routing
+    _f("router.enabled", "bool", "Allow automatic model routing", "Let a bot whose model is set to \"auto\" actually use the model router to pick one. Off makes an \"auto\" bot fail with a clear error instead of picking anything.", M, "Automatic routing", True),
+    _f("router.candidates", "list", "Models the router may pick from", "One \"provider/model\" per line. Blank uses every free model this app knows of (never an Anthropic model unless you list one here yourself).", M, "Automatic routing", []),
+    _f("router.also", "list", "Also consider these models", "Extra \"provider/model\" candidates added to the automatic free-model list above. Only used when the list above is blank.", M, "Automatic routing", [], advanced=True),
+    _f("router.auto_failover", "bool", "Automatic failover", "When a bot's model fails mid-turn, try more models from the router (beyond its own configured fallback model) before giving up.", M, "Automatic routing", False),
+    _f("router.max_failover_hops", "int", "Failover attempts", "How many extra models to try, at most, when automatic failover is on.", M, "Automatic routing", 2, min=0, max=5, advanced=True),
 ]
 
 BY_ID: dict[str, dict] = {f["id"]: f for f in FIELDS}

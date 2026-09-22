@@ -148,13 +148,23 @@ def _economy(info) -> float:
 
 
 def candidate_models() -> list[str]:
+    """The models `recommend()` picks from when a caller doesn't name its own list.
+
+    `native_agent.router.candidates`, if set, is used exactly as given — including an
+    Anthropic model, if someone explicitly put one there; that's their own choice. The
+    *implicit* path (nothing configured, so this falls back to searching the catalog for
+    free models) never includes Anthropic: the operator's standing instruction is that
+    Claude is never used by default, only when a person explicitly opts into it, and this
+    is the one place that guarantee has to hold structurally rather than as an accident of
+    which models happen to be marked free in the catalog today."""
     cfg = _cfg()
     listed = [str(m) for m in (cfg.get("candidates") or [])]
     if listed:
         return listed
     from bot import model_catalog
 
-    free = [f"{r['provider']}/{r['model']}" for r in model_catalog.search(free_only=True, needs=("tools",), limit=12)]
+    free = [f"{r['provider']}/{r['model']}" for r in model_catalog.search(free_only=True, needs=("tools",), limit=12)
+            if r["provider"] != "anthropic"]
     return free + [str(m) for m in (cfg.get("also") or [])]
 
 

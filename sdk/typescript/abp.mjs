@@ -270,6 +270,15 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/agent/router/recommend": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/agent/router/recommend",
+  "path_params": [],
+  "query_params": [
+   "task"
+  ]
+ },
  "GET /api/agent/sessions/{session_key}/export": {
   "body": false,
   "method": "GET",
@@ -4917,6 +4926,15 @@ export const operations = {
    "approval_id"
   ],
   "query_params": []
+ },
+ "router_recommend_api_agent_router_recommend_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/agent/router/recommend",
+  "path_params": [],
+  "query_params": [
+   "task"
+  ]
  },
  "set_config_api_agent_config_post": {
   "body": true,
