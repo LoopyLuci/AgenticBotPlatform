@@ -9,6 +9,15 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **CLI/TUI parity, second phase.** `abp_cli` and `bot/tui` now also cover: swarms (create any
+  strategy, run, watch runs, enable/disable/delete — TUI's new `SwarmsScreen`, press `w`), sessions
+  (list/search/view/delete — TUI's new `SessionsScreen`, press `s`), the terminal panel (as the
+  same slash-command dispatcher every platform handler uses, never a raw shell), hooks, plugins,
+  skills (including the pack/quarantine/draft review workflow), MCP (internal and external
+  servers), security (allowed users, permission rules, devices and mobile keys), snapshots,
+  env/config/diagnostics, peers/federation, and kanban — all real, all exercised against the live
+  dashboard app in tests. The last nine are CLI-only for now (no TUI screen yet); see
+  `docs/agents/cli-tui.md` for exactly what has one and what doesn't.
 - **App-only bots**: a new `app` platform for a bot instance with no external chat platform at
   all — reachable only from the desktop app, the Android app, or the CLI/TUI, never a public
   Telegram/Discord/Slack/etc. account. Needs no credentials and no allowed-user-id list (access is

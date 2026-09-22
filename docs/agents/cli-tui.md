@@ -12,6 +12,8 @@ what's still dashboard/desktop-app-only.
 
 ## What's covered
 
+**Both CLI and TUI:**
+
 - **Bots**: full CRUD (list, show, create, edit, delete), lifecycle (start, stop, restart, enable,
   disable), and schedules (the TUI's `BotDetailScreen`; the CLI doesn't have a `schedules`
   subcommand yet — `DashboardClient` already has the methods, `abp_cli`'s argument parser doesn't
@@ -34,16 +36,36 @@ what's still dashboard/desktop-app-only.
 - **Providers** (`config/providers.yaml`): list, add, remove, the deleted-providers store with
   restore, and browsing one provider's models (with which are marked free). TUI: `ProvidersScreen`
   (press `p` from the bot list). CLI: `abp_cli providers list|add|remove|catalog|models|toggle|restore`.
+- **Swarms**: create (any strategy — `fanout_synthesize`, `leader_vote`, `sequential_relay`,
+  `decompose_delegate`, `custom`), list, enable/disable, run, watch recent runs, delete. TUI:
+  `SwarmsScreen` (press `w`). CLI: `abp_cli swarms list|show|create|delete|enable|disable|run|runs|run-show|run-cancel`.
+- **Sessions**: list (with search), view a conversation's messages, delete. TUI: `SessionsScreen`
+  (press `s`). CLI: `abp_cli sessions list|show|delete|new`.
+
+**CLI only, no TUI screen yet** (all real, all tested against the live dashboard app — just not
+given a Textual screen in this phase):
+
+- **Terminal**: `abp_cli terminal <text>` — runs one ABP slash command (`bot/commands.py`'s
+  dispatcher, the same one every platform handler uses), **not a raw shell**.
+- **Hooks**: `abp_cli hooks list|add|enable|disable|remove`.
+- **Plugins**: `abp_cli plugins list|install|create|enable|disable|remove`.
+- **Skills**: `abp_cli skills list|create|remove|packs|fetch|quarantine|approve-quarantine|reject-quarantine|drafts|approve-draft|reject-draft`.
+- **MCP** (internal, i.e. Claude Desktop's own config, and external/remote servers):
+  `abp_cli mcp list|logs|enable|disable|pins|approve-pin|external-list|external-add|external-enable|external-disable|external-remove`.
+- **Security & devices**: `abp_cli security allowed-users|allow-user|disallow-user|permissions|instance-permissions|set-instance-permissions|devices|mobile-keys|create-mobile-key|revoke-mobile-key`.
+- **Snapshots**: `abp_cli snapshots list|create|restore|remove`.
+- **Env / config / diagnostics**: `abp_cli env`, `abp_cli config get|reload|set`, `abp_cli
+  diagnostics summary|crash-reports`.
+- **Peers/federation**: `abp_cli peers list|self-address|pairing-token|link|remove|overview|bots`
+  (linking a real second server was not exercised here — needs two live instances).
+- **Kanban**: `abp_cli kanban boards|cards|add|move|remove`.
 
 ## What's still dashboard/desktop-app-only
 
-Everything else `bot/dashboard/server.py`'s ~245 routes cover: **swarms** (define, run, spending
-limits), **sessions** (list/export), the **terminal panel**, **hooks**, **plugins**, **skills**
-(review/install/quarantine), **MCP** (internal and external server management), **security &
-allowed-users**, **snapshots/env/config/diagnostics**, **peers/federation**, **kanban**, Android
-push/mobile-key pairing, and the Models page's own usage/limit screens beyond plain provider/model
-browsing. None of this has TUI screens or CLI subcommands yet — a later pass, not attempted half-way
-here.
+The terminal panel, hooks, plugins, skills, MCP, security/devices, snapshots/env/config/diagnostics,
+peers and kanban have no TUI screen yet (CLI-only, see above) — a later pass, not attempted
+half-way here. Also still GUI-only: Android push/mobile-key QR pairing UI, and the Models page's
+own usage/limit screens beyond plain provider/model browsing.
 
 ## Extending either one
 

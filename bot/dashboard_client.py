@@ -194,3 +194,307 @@ class DashboardClient:
 
     async def toggle_provider_models_paid(self, name: str, enabled: bool) -> dict:
         return await self._request("POST", f"/api/providers/{name}/models/toggle-paid", json={"enabled": enabled})
+
+    # ------------------------------------------------------------------ swarms
+    async def list_swarms(self) -> list[dict]:
+        return await self._request("GET", "/api/swarms")
+
+    async def get_swarm(self, swarm_id: int) -> dict:
+        return await self._request("GET", f"/api/swarms/{swarm_id}")
+
+    async def create_swarm(self, name: str, strategy: str, config: dict, enabled: bool = True) -> dict:
+        return await self._request("POST", "/api/swarms", json={"name": name, "strategy": strategy,
+                                                                 "config": config, "enabled": enabled})
+
+    async def update_swarm(self, swarm_id: int, **fields) -> dict:
+        return await self._request("PUT", f"/api/swarms/{swarm_id}", json=fields)
+
+    async def delete_swarm(self, swarm_id: int) -> dict:
+        return await self._request("DELETE", f"/api/swarms/{swarm_id}")
+
+    async def enable_swarm(self, swarm_id: int) -> dict:
+        return await self._request("POST", f"/api/swarms/{swarm_id}/enable")
+
+    async def disable_swarm(self, swarm_id: int) -> dict:
+        return await self._request("POST", f"/api/swarms/{swarm_id}/disable")
+
+    async def run_swarm(self, swarm_id: int, prompt: str, source_instance: Optional[int] = None) -> dict:
+        body: dict[str, Any] = {"prompt": prompt}
+        if source_instance is not None:
+            body["source_instance"] = source_instance
+        return await self._request("POST", f"/api/swarms/{swarm_id}/run", json=body)
+
+    async def list_swarm_runs(self, swarm_id: Optional[int] = None, limit: int = 50) -> list[dict]:
+        params: dict[str, Any] = {"limit": limit}
+        if swarm_id is not None:
+            params["swarm_id"] = swarm_id
+        return await self._request("GET", "/api/swarms/runs", params=params)
+
+    async def get_swarm_run(self, swarm_run_id: str) -> dict:
+        return await self._request("GET", f"/api/swarms/runs/{swarm_run_id}")
+
+    async def cancel_swarm_run(self, swarm_run_id: str) -> dict:
+        return await self._request("POST", f"/api/swarms/runs/{swarm_run_id}/cancel")
+
+    # ---------------------------------------------------------------- sessions
+    async def list_sessions(self, instance_id: Optional[int] = None, q: Optional[str] = None,
+                            since: Optional[str] = None, until: Optional[str] = None, limit: int = 50) -> list[dict]:
+        params = {k: v for k, v in dict(instance_id=instance_id, q=q, since=since, until=until, limit=limit).items()
+                 if v is not None}
+        return await self._request("GET", "/api/sessions", params=params)
+
+    async def get_session(self, session_id: str) -> dict:
+        return await self._request("GET", f"/api/sessions/{session_id}")
+
+    async def delete_session(self, session_id: str) -> dict:
+        return await self._request("DELETE", f"/api/sessions/{session_id}")
+
+    async def new_bot_session(self, instance_id: int) -> dict:
+        return await self._request("POST", f"/api/bots/{instance_id}/session/new")
+
+    # ---------------------------------------------------------- terminal panel
+    async def terminal_exec(self, text: str, instance_id: Optional[int] = None) -> str:
+        """Runs exactly one ABP slash command (bot/commands.py's dispatcher, same one
+        every platform handler uses) - not a raw shell. See docs/agents/cli-tui.md."""
+        body: dict[str, Any] = {"text": text}
+        if instance_id is not None:
+            body["instance_id"] = instance_id
+        return (await self._request("POST", "/api/terminal/exec", json=body))["output"]
+
+    # -------------------------------------------------------------------- hooks
+    async def list_hooks(self, event: Optional[str] = None) -> list[dict]:
+        params = {"event": event} if event else {}
+        return (await self._request("GET", "/api/hooks", params=params))["hooks"]
+
+    async def add_hook(self, event: str, command: str, matcher: Optional[str] = None,
+                       instance_id: Optional[int] = None) -> dict:
+        return await self._request("POST", "/api/hooks", json={"event": event, "command": command,
+                                                               "matcher": matcher, "instance_id": instance_id})
+
+    async def enable_hook(self, hook_id: int) -> dict:
+        return await self._request("POST", f"/api/hooks/{hook_id}/enable")
+
+    async def disable_hook(self, hook_id: int) -> dict:
+        return await self._request("POST", f"/api/hooks/{hook_id}/disable")
+
+    async def delete_hook(self, hook_id: int) -> dict:
+        return await self._request("DELETE", f"/api/hooks/{hook_id}")
+
+    # ----------------------------------------------------------------- plugins
+    async def list_plugins(self) -> list[dict]:
+        return (await self._request("GET", "/api/plugins"))["plugins"]
+
+    async def install_plugin(self, path: str) -> dict:
+        return await self._request("POST", "/api/plugins", json={"path": path})
+
+    async def create_plugin(self, name: str, code: str) -> dict:
+        return await self._request("POST", "/api/plugins/create", json={"name": name, "code": code})
+
+    async def enable_plugin(self, name: str) -> dict:
+        return await self._request("POST", f"/api/plugins/{name}/enable")
+
+    async def disable_plugin(self, name: str) -> dict:
+        return await self._request("POST", f"/api/plugins/{name}/disable")
+
+    async def delete_plugin(self, name: str) -> dict:
+        return await self._request("DELETE", f"/api/plugins/{name}")
+
+    # ------------------------------------------------------------------ skills
+    async def list_skills(self, instance_id: Optional[int] = None) -> list[dict]:
+        params = {"instance_id": instance_id} if instance_id is not None else {}
+        return (await self._request("GET", "/api/skills", params=params))["skills"]
+
+    async def create_skill(self, instance_id: Optional[int], name: str, description: str, content: str,
+                           is_global: bool = False) -> dict:
+        return await self._request("POST", "/api/skills", json={"instance_id": instance_id, "name": name,
+                                                                "description": description, "content": content,
+                                                                "global": is_global})
+
+    async def delete_skill(self, name: str, instance_id: Optional[int] = None) -> dict:
+        params = {"instance_id": instance_id} if instance_id is not None else {}
+        return await self._request("DELETE", f"/api/skills/{name}", params=params)
+
+    async def skill_packs(self) -> list[dict]:
+        return (await self._request("GET", "/api/skills/packs"))["packs"]
+
+    async def fetch_skill_pack(self, url: str, ref: Optional[str] = None, subdir: Optional[str] = None) -> dict:
+        return await self._request("POST", "/api/skills/fetch", json={"url": url, "ref": ref, "subdir": subdir})
+
+    async def skill_quarantine(self) -> list[dict]:
+        return (await self._request("GET", "/api/skills/quarantine"))["packs"]
+
+    async def review_skill_quarantine(self, name: str, decision: str) -> dict:
+        route = "approve" if decision == "approve" else "reject"
+        return await self._request("POST", f"/api/skills/quarantine/{route}", json={"name": name})
+
+    async def skill_drafts(self) -> list[dict]:
+        return (await self._request("GET", "/api/skills/drafts"))["drafts"]
+
+    async def review_skill_draft(self, name: str, decision: str) -> dict:
+        route = "approve" if decision == "approve" else "reject"
+        return await self._request("POST", f"/api/skills/drafts/{route}", json={"name": name})
+
+    # ---------------------------------------------------------------------- mcp
+    async def list_mcp_servers(self) -> list[dict]:
+        return await self._request("GET", "/api/mcp")
+
+    async def mcp_server_logs(self, name: str, lines: int = 50) -> list[str]:
+        return (await self._request("GET", f"/api/mcp/{name}/logs", params={"lines": lines}))["lines"]
+
+    async def enable_mcp_server(self, name: str) -> dict:
+        return await self._request("POST", f"/api/mcp/{name}/enable")
+
+    async def disable_mcp_server(self, name: str) -> dict:
+        return await self._request("POST", f"/api/mcp/{name}/disable")
+
+    async def mcp_pins(self) -> list[dict]:
+        return (await self._request("GET", "/api/mcp/pins"))["tools"]
+
+    async def approve_mcp_pin(self, server: str, tool: str) -> dict:
+        return await self._request("POST", "/api/mcp/pins/approve", json={"server": server, "tool": tool})
+
+    async def list_external_mcp_servers(self, instance_id: Optional[int] = None) -> list[dict]:
+        params = {"instance_id": instance_id} if instance_id is not None else {}
+        return (await self._request("GET", "/api/mcp-external", params=params))["servers"]
+
+    async def add_external_mcp_server(self, name: str, transport: str, *, command: Optional[str] = None,
+                                      args: Optional[list] = None, env: Optional[dict] = None,
+                                      url: Optional[str] = None, auth_token: Optional[str] = None,
+                                      oauth_enabled: bool = False, instance_id: Optional[int] = None) -> dict:
+        return await self._request("POST", "/api/mcp-external", json={
+            "name": name, "transport": transport, "command": command, "args": args, "env": env,
+            "url": url, "auth_token": auth_token, "oauth_enabled": oauth_enabled, "instance_id": instance_id,
+        })
+
+    async def enable_external_mcp_server(self, name: str) -> dict:
+        return await self._request("POST", f"/api/mcp-external/{name}/enable")
+
+    async def disable_external_mcp_server(self, name: str) -> dict:
+        return await self._request("POST", f"/api/mcp-external/{name}/disable")
+
+    async def remove_external_mcp_server(self, name: str) -> dict:
+        return await self._request("DELETE", f"/api/mcp-external/{name}")
+
+    # --------------------------------------------------------- security & devices
+    async def list_allowed_users(self) -> list[dict]:
+        return await self._request("GET", "/api/security/allowed-users")
+
+    async def add_allowed_user(self, telegram_id: str, name: Optional[str] = None) -> dict:
+        params = {"name": name} if name else {}
+        return await self._request("POST", f"/api/security/allowed-users/{telegram_id}", params=params)
+
+    async def remove_allowed_user(self, telegram_id: str) -> dict:
+        return await self._request("DELETE", f"/api/security/allowed-users/{telegram_id}")
+
+    async def get_permissions(self) -> dict:
+        return await self._request("GET", "/api/agent/permissions")
+
+    async def validate_permission_rules(self, rules: list) -> dict:
+        return await self._request("POST", "/api/agent/permissions/validate", json={"rules": rules})
+
+    async def get_instance_permissions(self, instance_id: int) -> dict:
+        return await self._request("GET", f"/api/instances/{instance_id}/permissions")
+
+    async def set_instance_permissions(self, instance_id: int, mode: Optional[str] = None,
+                                       rules: Optional[list] = None) -> dict:
+        body: dict[str, Any] = {}
+        if mode is not None:
+            body["mode"] = mode
+        if rules is not None:
+            body["rules"] = rules
+        return await self._request("PUT", f"/api/instances/{instance_id}/permissions", json=body)
+
+    async def create_mobile_key(self, label: str, tier: str, host: Optional[str] = None) -> dict:
+        body: dict[str, Any] = {"label": label, "tier": tier}
+        if host:
+            body["host"] = host
+        return await self._request("POST", "/api/mobile-keys", json=body)
+
+    async def list_mobile_keys(self) -> list[dict]:
+        return await self._request("GET", "/api/mobile-keys")
+
+    async def delete_mobile_key(self, key_id: int) -> dict:
+        return await self._request("DELETE", f"/api/mobile-keys/{key_id}")
+
+    async def set_mobile_key_tier(self, key_id: int, tier: str) -> dict:
+        return await self._request("POST", f"/api/mobile-keys/{key_id}/tier", json={"tier": tier})
+
+    async def list_devices(self) -> list[dict]:
+        return await self._request("GET", "/api/devices")
+
+    # --------------------------------------------------- snapshots/env/config/diagnostics
+    async def list_snapshots(self) -> list[dict]:
+        return (await self._request("GET", "/api/snapshots"))["snapshots"]
+
+    async def create_snapshot(self, label: Optional[str] = None) -> dict:
+        return await self._request("POST", "/api/snapshots", json={"label": label} if label else {})
+
+    async def restore_snapshot(self, name: str) -> dict:
+        return await self._request("POST", f"/api/snapshots/{name}/restore")
+
+    async def delete_snapshot(self, name: str) -> dict:
+        return await self._request("DELETE", f"/api/snapshots/{name}")
+
+    async def env_status(self) -> dict:
+        return await self._request("GET", "/api/env")
+
+    async def get_config(self) -> dict:
+        return await self._request("GET", "/api/config")
+
+    async def reload_config(self) -> dict:
+        return await self._request("POST", "/api/config/reload")
+
+    async def set_config_path(self, path: list, value: Any) -> dict:
+        return await self._request("POST", "/api/config/set", json={"path": path, "value": value})
+
+    async def diagnostics_summary(self) -> dict:
+        return await self._request("GET", "/api/diagnostics/summary")
+
+    async def crash_reports(self, limit: int = 50) -> list[dict]:
+        return (await self._request("GET", "/api/diagnostics/crash-reports", params={"limit": limit}))["reports"]
+
+    # ------------------------------------------------------------------- peers
+    async def list_peers(self) -> list[dict]:
+        return await self._request("GET", "/api/peers")
+
+    async def peer_self_address(self) -> dict:
+        return await self._request("GET", "/api/peers/self-address")
+
+    async def create_peer_pairing_token(self, base_url: Optional[str] = None) -> dict:
+        return await self._request("POST", "/api/peers/pairing-token", json={"base_url": base_url} if base_url else {})
+
+    async def link_peer(self, name: str, pairing_token: str, my_base_url: Optional[str] = None) -> dict:
+        body: dict[str, Any] = {"name": name, "pairing_token": pairing_token}
+        if my_base_url:
+            body["my_base_url"] = my_base_url
+        return await self._request("POST", "/api/peers/link", json=body)
+
+    async def remove_peer(self, peer_id: int) -> dict:
+        return await self._request("DELETE", f"/api/peers/{peer_id}")
+
+    async def peer_overview(self, peer_id: int) -> dict:
+        return await self._request("GET", f"/api/peers/{peer_id}/overview")
+
+    async def peer_bots(self, peer_id: int) -> list[dict]:
+        return await self._request("GET", f"/api/peers/{peer_id}/bots")
+
+    # ------------------------------------------------------------------ kanban
+    async def kanban_boards(self, instance_id: int) -> list[dict]:
+        return (await self._request("GET", "/api/kanban/boards", params={"instance_id": instance_id}))["boards"]
+
+    async def kanban_cards(self, instance_id: int, board: str = "default") -> list[dict]:
+        return (await self._request("GET", "/api/kanban/cards",
+                                    params={"board": board, "instance_id": instance_id}))["cards"]
+
+    async def add_kanban_card(self, instance_id: int, text: str, board: str = "default", column: Optional[str] = None) -> dict:
+        body: dict[str, Any] = {"instance_id": instance_id, "text": text, "board": board}
+        if column:
+            body["column"] = column
+        return await self._request("POST", "/api/kanban/cards", json=body)
+
+    async def move_kanban_card(self, card_id: int, instance_id: int, column: str) -> dict:
+        return await self._request("POST", f"/api/kanban/cards/{card_id}/move",
+                                   json={"instance_id": instance_id, "column": column})
+
+    async def delete_kanban_card(self, card_id: int, instance_id: int) -> dict:
+        return await self._request("DELETE", f"/api/kanban/cards/{card_id}", params={"instance_id": instance_id})
