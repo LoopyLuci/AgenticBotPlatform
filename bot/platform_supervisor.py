@@ -186,6 +186,8 @@ async def start_instance(row: dict[str, Any]) -> None:
     instance_id = row["id"]
     if instance_id in _handles:
         return  # already running
+    if row["platform"] == "app":
+        return  # no external platform, so no live connection to start - see bot_instances.PLATFORMS
     runner = _RUNNERS.get(row["platform"])
     if runner is None:
         raise ValueError(f"unknown platform {row['platform']!r}")

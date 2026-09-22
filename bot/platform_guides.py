@@ -175,4 +175,13 @@ PLATFORM_GUIDES: dict[str, dict] = {
             "Put the phone numbers or Apple IDs allowed to message the bot in Allowed user ID(s). Group chats are ignored.",
         ],
     },
+    "app": {
+        "label": "App only (no external platform)",
+        "fields": {},
+        "setup_guide": [
+            "No credentials needed and no external account to set up.",
+            "This bot is reachable only from the ABP desktop app, the Android app, or the CLI/TUI — never a public Telegram/Discord/Slack/etc. account.",
+            "Access is controlled by the dashboard token (desktop) or a paired device's own key (mobile), not an allowed-user-ID list — you can leave Allowed user ID(s) blank.",
+        ],
+    },
 }

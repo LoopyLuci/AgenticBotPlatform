@@ -196,6 +196,7 @@ PLATFORM_TOKEN_VALIDATORS = {
     "sms": {"account_sid": validate_twilio_sid, "auth_token": validate_secret_16, "from_number": validate_e164},
     "signal": {"api_url": validate_http_url, "number": validate_e164},
     "imessage": {"server_url": validate_http_url, "password": validate_nonempty, "webhook_token": validate_secret_16},
+    "app": {},   # no external platform at all — reachable only from the desktop app, mobile app or CLI/TUI
 }
 
 

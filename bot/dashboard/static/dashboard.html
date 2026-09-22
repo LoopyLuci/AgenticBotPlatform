@@ -1113,6 +1113,7 @@
               <option value="sms">SMS (Twilio)</option>
               <option value="signal">Signal</option>
               <option value="imessage">iMessage (BlueBubbles)</option>
+              <option value="app">App only (no external platform)</option>
             </select>
           </div>
         </div>
@@ -1177,7 +1178,7 @@
         </div>
         <div class="wizard-field" id="bot-new-setupguide-field" style="display:none;">
           <details>
-            <summary style="cursor:pointer; font-size:12px; color:var(--muted); font-weight:600;">How do I get these? (step-by-step)</summary>
+            <summary id="bot-new-setupguide-summary" style="cursor:pointer; font-size:12px; color:var(--muted); font-weight:600;">How do I get these? (step-by-step)</summary>
             <ol id="bot-new-setupguide-list" style="margin:8px 0 0 18px; padding:0; font-size:12px; color:var(--muted); line-height:1.7;"></ol>
           </details>
         </div>
@@ -1201,9 +1202,9 @@
           <div class="row"><input type="text" id="bot-new-whatsapp-verifytoken" placeholder="pick any string, 6+ chars" autocomplete="off" spellcheck="false"></div>
           <div class="help">Webhook URL to paste into Meta's App Dashboard → WhatsApp → Configuration: <code>&lt;your public HTTPS domain&gt;/webhooks/whatsapp</code> — same URL and verify token for every WhatsApp instance on this install, since Meta allows only one webhook per App.</div>
         </div>
-        <div class="wizard-field">
-          <label>Allowed user ID(s)</label>
-          <div class="help">Comma-separated. Numeric IDs for Telegram/Discord, Slack member IDs (U.../W...) for Slack, full Matrix user IDs (@name:server) for Matrix, phone numbers with country code and no "+" for WhatsApp.</div>
+        <div class="wizard-field" id="bot-new-allowed-field">
+          <label id="bot-new-allowed-label">Allowed user ID(s)</label>
+          <div class="help" id="bot-new-allowed-help">Comma-separated. Numeric IDs for Telegram/Discord, Slack member IDs (U.../W...) for Slack, full Matrix user IDs (@name:server) for Matrix, phone numbers with country code and no "+" for WhatsApp.</div>
           <div class="row"><input type="text" id="bot-new-allowed" placeholder="123456789, 987654321" autocomplete="off" spellcheck="false"></div>
         </div>
         <div class="wizard-field" id="bot-new-cantarget-field">
@@ -3839,7 +3840,7 @@ function renderGenericFields(platform, values) {
   const box = document.getElementById('bot-new-generic-fields');
   const tokenField = document.getElementById('bot-new-token-field');
   const generic = GENERIC_PLATFORMS.includes(platform);
-  if (tokenField) tokenField.style.display = generic ? 'none' : '';
+  if (tokenField) tokenField.style.display = (generic || platform === 'app') ? 'none' : '';
   box.style.display = generic ? '' : 'none';
   if (!generic) { box.innerHTML = ''; box.dataset.platform = ''; return; }
   if (!values && box.dataset.platform === platform && box.children.length) return;   // keep what the person already typed
@@ -3871,6 +3872,14 @@ function collectGenericCredentials() {
 
 function renderPlatformGuide(platform) {
   renderGenericFields(platform);
+  const allowedField = document.getElementById('bot-new-allowed-field');
+  if (platform === 'app') {
+    document.getElementById('bot-new-allowed-label').textContent = 'Allowed user ID(s) (optional)';
+    document.getElementById('bot-new-allowed-help').textContent = 'Not needed for an app-only bot — access is controlled by the dashboard token or a paired device, not a user-ID allowlist. Leave blank.';
+  } else {
+    document.getElementById('bot-new-allowed-label').textContent = 'Allowed user ID(s)';
+    document.getElementById('bot-new-allowed-help').textContent = 'Comma-separated. Numeric IDs for Telegram/Discord, Slack member IDs (U.../W...) for Slack, full Matrix user IDs (@name:server) for Matrix, phone numbers with country code and no "+" for WhatsApp.';
+  }
   const guide = platformGuidesCache[platform];
   if (!guide) return;
   const tokenField = guide.fields[_tokenFieldKey(platform)];
@@ -3879,6 +3888,8 @@ function renderPlatformGuide(platform) {
   document.getElementById('bot-new-apptoken-help').textContent = apptokenField ? apptokenField.help : '';
   const guideField = document.getElementById('bot-new-setupguide-field');
   const guideList = document.getElementById('bot-new-setupguide-list');
+  const guideSummary = document.getElementById('bot-new-setupguide-summary');
+  if (guideSummary) guideSummary.textContent = platform === 'app' ? 'How this works' : 'How do I get these? (step-by-step)';
   if (guide.setup_guide && guide.setup_guide.length) {
     guideField.style.display = '';
     guideList.innerHTML = guide.setup_guide.map(step => `<li>${esc(step)}</li>`).join('');
@@ -4581,7 +4592,8 @@ async function refreshBots() {
       </div>
       <div class="bc-meta">
         <span class="mono">${esc(b.platform)}</span> · <span class="mono">${esc(b.backend)}</span>
-        <span class="pill"><span class="dot ${b.live_running ? 'good' : (b.last_error ? 'critical' : '')}"></span>${b.live_running ? 'Running' : (b.last_error ? 'Crashed' : 'Stopped')}</span>
+        ${b.platform === 'app' ? `<span class="pill"><span class="dot good"></span>App-only — no connection to start or stop</span>`
+          : `<span class="pill"><span class="dot ${b.live_running ? 'good' : (b.last_error ? 'critical' : '')}"></span>${b.live_running ? 'Running' : (b.last_error ? 'Crashed' : 'Stopped')}</span>`}
       </div>
       <div class="bc-model">
         <label style="font-weight:600; color:var(--muted);">Model</label>
@@ -4597,7 +4609,7 @@ async function refreshBots() {
         <button class="btn" data-bot-edit="${b.id}" style="padding:3px 8px; font-size:11px;">Edit</button>
         ${['native_agent', 'api', 'custom_model'].includes(b.backend) ? `<button class="btn" data-bot-agent="${b.id}" style="padding:3px 8px; font-size:11px;">Agent settings</button>` : ''}
         <button class="btn" data-bot-toggle="${b.id}" style="padding:3px 8px; font-size:11px;">${b.enabled ? 'Disable' : 'Enable'}</button>
-        ${b.enabled ? `<button class="btn" data-bot-startstop="${b.id}" style="padding:3px 8px; font-size:11px;">${b.live_running ? 'Stop' : 'Start'}</button>
+        ${b.enabled && b.platform !== 'app' ? `<button class="btn" data-bot-startstop="${b.id}" style="padding:3px 8px; font-size:11px;">${b.live_running ? 'Stop' : 'Start'}</button>
         <button class="btn" data-bot-restart="${b.id}" style="padding:3px 8px; font-size:11px;">Restart</button>` : ''}
         <button class="btn" data-bot-delete="${b.id}" style="padding:3px 8px; font-size:11px;">Delete</button>
       </div>
@@ -4704,6 +4716,8 @@ document.getElementById('btn-bot-create').onclick = async () => {
       app_secret: document.getElementById('bot-new-whatsapp-appsecret').value.trim(),
       verify_token: document.getElementById('bot-new-whatsapp-verifytoken').value.trim(),
     };
+  } else if (platform === 'app') {
+    credentials = {};   // no external platform — nothing to store
   } else {
     credentials = { bot_token: document.getElementById('bot-new-token').value.trim() };
     if (platform === 'slack') credentials.app_token = document.getElementById('bot-new-apptoken').value.trim();

@@ -204,6 +204,7 @@ would want to know about a model.
 | Conversation export (`/export`, `/api/agent/sessions/<key>/export`; Markdown or JSON; secrets removed) | Built. **No hosted "share link"**: ABP has no public server to host one |
 | `opencode` and `openclaw` delegating backends | Built, tested against a stand-in program only (neither is installed). ABP's own permissions and traces do not apply inside them; output parsing is a best reading of their docs |
 | VS Code extension | **Not built** |
+| Terminal TUI (`python -m bot.tui`, Textual) and a scriptable CLI (`python -m abp_cli`) | **Partly built — first parity phase.** Both cover bots (full CRUD + lifecycle + schedules), real chat (`send-to-bot`), the full `native_agent.*` agent-config schema, per-bot agent settings, and provider management, sharing one client (`bot/dashboard_client.py`). Everything else the dashboard/desktop-app GUI offers — swarms, sessions, the terminal panel, hooks/plugins/skills/MCP, security & allowed-users, snapshots/env/config/diagnostics, peers/federation, kanban — is still GUI-only. See [cli-tui.md](cli-tui.md) |
 | Eval: `fix_what_the_language_server_reports` | Built |
 
 ### P6 — Browser, computer use, routines (XL) — partly built; see [browser-and-routines.md](browser-and-routines.md)

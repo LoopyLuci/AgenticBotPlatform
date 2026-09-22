@@ -9,6 +9,25 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **App-only bots**: a new `app` platform for a bot instance with no external chat platform at
+  all — reachable only from the desktop app, the Android app, or the CLI/TUI, never a public
+  Telegram/Discord/Slack/etc. account. Needs no credentials and no allowed-user-id list (access is
+  controlled by the dashboard token / a paired device's own key, a stronger gate than a platform
+  allowlist); has no live connection to start, stop, or crash. Reachable via the same
+  `POST /api/chat/send-to-bot` route the Android app already uses. Add-bot form (dashboard and
+  desktop app) gets an "App only" platform option; see `docs/agents/channels-and-devices.md`.
+- **A real CLI (`python -m abp_cli`) and a much wider TUI (`python -m bot.tui`) — first parity
+  phase.** Until now the TUI covered only bots and their schedules (20 of the dashboard's ~245
+  routes), and there was no day-to-day management CLI at all. Both now also cover: real chat with
+  any bot (`abp_cli chat`, the TUI's new `c` key); a bot's own agent settings; the full
+  `native_agent.*` agent-config schema (**schema-driven**, built from `GET /api/agent/config/schema`
+  like the GUI itself, not hand-ported field by field — the TUI's new `AgentSettingsScreen`, one
+  scrollable form grouped by tab); and provider management including the deleted-providers store
+  and model browsing (the TUI's new `ProvidersScreen`). Both share one client,
+  `bot/dashboard_client.py`'s `DashboardClient` (promoted out of `bot/tui/client.py`, which now just
+  re-exports it). See `docs/agents/cli-tui.md` for exactly what's covered and what's still
+  dashboard/desktop-app-only (swarms, sessions, the terminal panel, hooks/plugins/skills/MCP,
+  security, snapshots, peers, kanban, ...).
 - **Every bot now has a real backend-level fallback, OpenCode then Hermes CLI then the
   Hermes gateway, never Claude.** Until now, only a bot with its own per-instance
   `action_overrides` entry got a backup chain if its backend failed — an ordinary bot

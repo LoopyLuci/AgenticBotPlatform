@@ -10,11 +10,13 @@ not pytest-asyncio markers.
 from __future__ import annotations
 
 import asyncio
+import shutil
 
 import httpx
 import pytest
 
 from bot import bot_instances
+from bot.config import config
 from bot.dashboard.server import build_app
 from bot.tui.app import AgenticBotPlatformTUI
 from bot.tui.client import DashboardClient
@@ -24,8 +26,19 @@ from bot.tui.screens.bot_list import BotListScreen
 
 
 @pytest.fixture
-def dashboard_client(temp_db, monkeypatch):
+def dashboard_client(temp_db, monkeypatch, tmp_path):
     monkeypatch.setenv("DASHBOARD_TOKEN", "test-token")
+    # config (config/backends.yaml) is a module-level singleton read by the real
+    # /api/agent/config* routes the agent-settings screen hits — without redirecting it
+    # to a throwaway copy, a test that saves a setting writes the REAL project config
+    # file (same isolation tests/test_agent_settings_schema.py's own temp_config fixture
+    # gives POST /api/agent/config directly).
+    shipped = config.path
+    temp_path = tmp_path / "backends.yaml"
+    shutil.copy(shipped, temp_path)
+    monkeypatch.setattr(config, "path", temp_path)
+    monkeypatch.setattr(config, "_data", dict(config._data))
+    config.reload(actor="test")
     app = build_app()
     transport = httpx.ASGITransport(app=app)
     return DashboardClient("http://testserver", "test-token", transport=transport)
@@ -123,5 +136,121 @@ def test_bot_detail_screen_edits_and_schedules(dashboard_client):
             schedules = await dashboard_client.list_schedules(instance_id)
             assert len(schedules) == 1
             assert schedules[0]["prompt"] == "ping"
+
+    asyncio.run(_run())
+
+
+def test_chat_screen_sends_a_real_message_and_shows_the_reply(dashboard_client, monkeypatch):
+    from types import SimpleNamespace
+
+    from bot.router import router
+    from bot.tui.screens.chat import ChatScreen
+
+    async def fake_ask(text, **kw):
+        return SimpleNamespace(text=f"echo: {text}")
+    monkeypatch.setattr(router, "ask", fake_ask)
+
+    instance_id = _create_instance(name="chat-bot", platform="app", backend="native_agent",
+                                   credentials={}, allowed_user_ids=[])
+
+    async def _run():
+        from textual.widgets import Input, RichLog
+
+        bot = await dashboard_client.get_bot(instance_id)
+        app = AgenticBotPlatformTUI()
+        async with app.run_test() as pilot:
+            app.client = dashboard_client
+            await app.push_screen(ChatScreen(bot))
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ChatScreen)
+            screen.query_one("#chat-input", Input).value = "hello"
+            await pilot.press("enter")
+            await pilot.pause()
+            log = screen.query_one("#chat-log", RichLog)
+            text = "\n".join(str(line) for line in log.lines)
+            assert "hello" in text and "echo: hello" in text
+
+    asyncio.run(_run())
+
+
+def test_providers_screen_adds_lists_and_removes(dashboard_client):
+    async def _run():
+        from textual.widgets import Button, DataTable, Input
+
+        from bot.tui.screens.providers import ProvidersScreen
+
+        app = AgenticBotPlatformTUI()
+        async with app.run_test(size=(120, 80)) as pilot:
+            app.client = dashboard_client
+            await app.push_screen(ProvidersScreen())
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ProvidersScreen)
+
+            screen.query_one("#prov-name", Input).value = "tui-test-provider"
+            screen.query_one("#prov-baseurl", Input).value = "http://127.0.0.1:11434/v1"
+            screen.query_one("#prov-add", Button).press()
+            await pilot.pause()
+
+            providers = await dashboard_client.list_providers()
+            assert any(p["name"] == "tui-test-provider" for p in providers)
+
+            table = screen.query_one("#providers-table", DataTable)
+            assert table.row_count == len(providers)
+
+    asyncio.run(_run())
+
+
+def test_agent_settings_screen_loads_global_schema_and_saves(dashboard_client):
+    async def _run():
+        from textual.widgets import Button, Checkbox
+
+        from bot.tui.screens.agent_settings import AgentSettingsScreen, _widget_id
+
+        app = AgenticBotPlatformTUI()
+        async with app.run_test(size=(140, 100)) as pilot:
+            app.client = dashboard_client
+            await app.push_screen(AgentSettingsScreen())
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, AgentSettingsScreen)
+            assert screen._schema.get("fields")
+
+            box = screen.query_one(f"#{_widget_id('native_agent.web.enabled')}", Checkbox)
+            box.value = True
+            screen.query_one("#as-save", Button).press()
+            await pilot.pause()
+
+            config = await dashboard_client.get_agent_config()
+            assert config["values"]["native_agent.web.enabled"] is True
+
+    asyncio.run(_run())
+
+
+def test_agent_settings_screen_for_one_bot_shows_its_own_section(dashboard_client):
+    instance_id = _create_instance(name="settings-target", platform="app", backend="native_agent",
+                                   credentials={}, allowed_user_ids=[])
+
+    async def _run():
+        from textual.widgets import Input
+
+        from bot.tui.screens.agent_settings import AgentSettingsScreen
+
+        app = AgenticBotPlatformTUI()
+        async with app.run_test(size=(140, 100)) as pilot:
+            app.client = dashboard_client
+            await app.push_screen(AgentSettingsScreen(instance_id=instance_id))
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, AgentSettingsScreen)
+
+            screen.query_one("#f-own-worker_effort", Input).value = "high"
+            from textual.widgets import Button
+            screen.query_one("#as-save", Button).press()
+            await pilot.pause()
+
+            own = await dashboard_client.get_agent_settings(instance_id, own=True)
+            assert own["worker_effort"] == "high"
 
     asyncio.run(_run())
