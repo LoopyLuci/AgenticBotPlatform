@@ -1374,7 +1374,7 @@ is per-instance, so two bot instances both on `cli` share one `CliBackend`.
 `backend_backup` list appended** (`Router._with_global_backup`) — so even a
 bot instance with its own explicit `backend` and no `action_overrides` of
 its own (the common case, which otherwise gets no backend-level fallback
-at all) still has one. Set to `[opencode, hermes_cli]` by default, never
+at all) still has one. Set to `[opencode, hermes_cli, hermes_gateway]` by default, never
 Claude — matching the standing "never Claude by default" instruction: a
 fallback the router reaches for on its own must follow the same rule a
 default does. Anything already earlier in the chain is skipped, never
