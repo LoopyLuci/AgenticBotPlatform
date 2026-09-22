@@ -22,6 +22,8 @@ class BotListScreen(Screen):
         ("r", "refresh", "Refresh"),
         ("p", "providers", "Providers"),
         ("g", "agent_settings", "Agent settings"),
+        ("w", "swarms", "Swarms"),
+        ("s", "sessions", "Sessions"),
         ("q", "app.quit", "Quit"),
     ]
 
@@ -38,6 +40,8 @@ class BotListScreen(Screen):
             yield Button("Refresh (r)", id="btn-refresh")
             yield Button("Providers (p)", id="btn-providers")
             yield Button("Agent settings (g)", id="btn-agent-settings")
+            yield Button("Swarms (w)", id="btn-swarms")
+            yield Button("Sessions (s)", id="btn-sessions")
         yield DataTable(id="bot-table")
         yield Label("", id="bot-list-status")
         yield Footer()
@@ -97,6 +101,8 @@ class BotListScreen(Screen):
             "btn-delete": self._action_delete,
             "btn-providers": self.action_providers,
             "btn-agent-settings": self.action_agent_settings,
+            "btn-swarms": self.action_swarms,
+            "btn-sessions": self.action_sessions,
         }
         handler = actions.get(event.button.id)
         if handler:
@@ -133,6 +139,17 @@ class BotListScreen(Screen):
 
         bot = self._selected_bot()
         await self.app.push_screen(AgentSettingsScreen(instance_id=bot["id"] if bot else None))
+
+    async def action_swarms(self) -> None:
+        from bot.tui.screens.swarms import SwarmsScreen
+
+        await self.app.push_screen(SwarmsScreen())
+
+    async def action_sessions(self) -> None:
+        from bot.tui.screens.sessions import SessionsScreen
+
+        bot = self._selected_bot()
+        await self.app.push_screen(SessionsScreen(instance_id=bot["id"] if bot else None))
 
     async def _after_form(self, _result: object = None) -> None:
         await self.refresh_bots()

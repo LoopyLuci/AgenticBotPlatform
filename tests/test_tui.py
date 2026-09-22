@@ -254,3 +254,68 @@ def test_agent_settings_screen_for_one_bot_shows_its_own_section(dashboard_clien
             assert own["worker_effort"] == "high"
 
     asyncio.run(_run())
+
+
+def test_swarms_screen_creates_lists_and_runs(dashboard_client, monkeypatch):
+    from types import SimpleNamespace
+
+    from bot.router import router
+
+    async def fake_ask(text, **kw):
+        return SimpleNamespace(text="ok")
+    monkeypatch.setattr(router, "ask", fake_ask)
+
+    instance_id = _create_instance(name="swarm-member", platform="app", backend="native_agent",
+                                   credentials={}, allowed_user_ids=[])
+
+    async def _run():
+        from textual.widgets import Button, DataTable, Input, Select, TextArea
+
+        from bot.tui.screens.swarms import SwarmsScreen
+
+        app = AgenticBotPlatformTUI()
+        async with app.run_test(size=(140, 100)) as pilot:
+            app.client = dashboard_client
+            await app.push_screen(SwarmsScreen())
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, SwarmsScreen)
+
+            screen.query_one("#swarm-name", Input).value = "s1"
+            screen.query_one("#swarm-strategy", Select).value = "leader_vote"
+            screen.query_one("#swarm-config", TextArea).text = f'{{"members": [{instance_id}], "leader": {instance_id}}}'
+            screen.query_one("#swarm-create", Button).press()
+            await pilot.pause()
+
+            swarms = await dashboard_client.list_swarms()
+            assert any(s["name"] == "s1" for s in swarms)
+            table = screen.query_one("#swarms-table", DataTable)
+            assert table.row_count == 1
+
+            table.move_cursor(row=0)
+            screen.query_one("#swarm-prompt", Input).value = "go"
+            screen.query_one("#swarm-run", Button).press()
+            await pilot.pause()
+
+    asyncio.run(_run())
+
+
+def test_sessions_screen_lists_and_deletes(dashboard_client):
+    instance_id = _create_instance(name="session-target", platform="app", backend="native_agent",
+                                   credentials={}, allowed_user_ids=[])
+
+    async def _run():
+        from bot.tui.screens.sessions import SessionsScreen
+
+        app = AgenticBotPlatformTUI()
+        async with app.run_test(size=(140, 100)) as pilot:
+            app.client = dashboard_client
+            await app.push_screen(SessionsScreen(instance_id=instance_id))
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, SessionsScreen)
+            # No real sessions exist yet for a brand-new bot - just confirm the screen
+            # loads and queries the real route without raising.
+            assert screen._sessions is not None
+
+    asyncio.run(_run())

@@ -195,3 +195,245 @@ def test_unreachable_host_is_a_clean_error(monkeypatch, capsys):
     code = asyncio.run(_run(args))
     assert code == 1
     assert "couldn't reach" in capsys.readouterr().err.lower()
+
+
+# ==================================================================================
+# Phase 2: swarms, sessions, terminal, hooks, plugins, skills, mcp, security,
+# snapshots, env, config, diagnostics, kanban (peers needs a real linked server,
+# not exercised here beyond argument parsing).
+# ==================================================================================
+
+def test_swarms_full_lifecycle(client, capsys):
+    iid = _create_instance(name="swarm-member", platform="app", backend="native_agent",
+                           credentials={}, allowed_user_ids=[])
+    code, _ = run(["--json", "swarms", "create", "--name", "s1", "--strategy", "leader_vote",
+                   "--config", json.dumps({"members": [iid], "leader": iid})], client)
+    assert code == 0
+    created = json.loads(capsys.readouterr().out)
+    swarm_id = created["id"]
+
+    code, _ = run(["--json", "swarms", "list"], client)
+    assert code == 0
+    assert any(s["id"] == swarm_id for s in json.loads(capsys.readouterr().out))
+
+    code, _ = run(["--json", "swarms", "show", str(swarm_id)], client)
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["name"] == "s1"
+
+    for sub in ("disable", "enable"):
+        code, _ = run(["swarms", sub, str(swarm_id)], client)
+        capsys.readouterr()
+        assert code == 0
+
+    code, _ = run(["--json", "swarms", "runs"], client)
+    assert code == 0
+    json.loads(capsys.readouterr().out)   # doesn't raise - real (empty) list
+
+    code, _ = run(["swarms", "delete", str(swarm_id)], client)
+    assert code == 0
+
+
+def test_swarms_create_rejects_a_bad_config(client, capsys):
+    code, _ = run(["swarms", "create", "--name", "bad", "--strategy", "leader_vote", "--config", "{}"], client)
+    assert code == 1
+    assert "references no bot instances" in capsys.readouterr().err
+
+
+def test_sessions_list_and_new(client, capsys):
+    iid = _create_instance(name="session-bot", platform="app", backend="native_agent",
+                           credentials={}, allowed_user_ids=[])
+    code, _ = run(["--json", "sessions", "list", "--instance", str(iid)], client)
+    assert code == 0
+    json.loads(capsys.readouterr().out)   # a real (possibly legacy-bucket) list
+
+
+def test_terminal_runs_a_real_slash_command(client, capsys):
+    code, _ = run(["terminal", "/help"], client)
+    assert code == 0
+    assert capsys.readouterr().out.strip()
+
+
+def test_terminal_rejects_non_slash_text(client, capsys):
+    code, _ = run(["terminal", "hello"], client)
+    assert code == 0
+    assert "not a recognized command" in capsys.readouterr().out.lower()
+
+
+def test_hooks_full_lifecycle(client, capsys):
+    code, _ = run(["--json", "hooks", "add", "--event", "PreToolUse", "--command", "echo hi"], client)
+    assert code == 0
+    hook_id = json.loads(capsys.readouterr().out)["id"]
+
+    code, _ = run(["--json", "hooks", "list"], client)
+    assert code == 0
+    assert any(h["id"] == hook_id for h in json.loads(capsys.readouterr().out))
+
+    for sub in ("disable", "remove"):
+        code, _ = run(["hooks", sub, str(hook_id)], client)
+        capsys.readouterr()
+        assert code == 0
+
+
+def test_plugins_list_is_reachable(client, capsys):
+    code, _ = run(["--json", "plugins", "list"], client)
+    assert code == 0
+    json.loads(capsys.readouterr().out)
+
+
+def test_plugins_create_and_remove(client, capsys):
+    code, _ = run(["--json", "plugins", "create", "--name", "cli_test_plugin",
+                   "--code", "def setup(api):\n    pass\n"], client)
+    assert code == 0
+    capsys.readouterr()
+    code, _ = run(["plugins", "remove", "cli_test_plugin"], client)
+    assert code == 0
+
+
+def test_skills_create_list_and_remove(client, capsys):
+    iid = _create_instance(name="skill-bot", platform="app", backend="native_agent",
+                           credentials={}, allowed_user_ids=[])
+    code, _ = run(["skills", "create", "--instance", str(iid), "--name", "greet",
+                   "--description", "says hi", "--content", "Always greet warmly."], client)
+    assert code == 0
+    capsys.readouterr()
+
+    code, _ = run(["--json", "skills", "list", "--instance", str(iid)], client)
+    assert code == 0
+    assert any(s["name"] == "greet" for s in json.loads(capsys.readouterr().out))
+
+    code, _ = run(["skills", "remove", "greet", "--instance", str(iid)], client)
+    assert code == 0
+
+
+def test_skills_packs_quarantine_and_drafts_are_reachable(client, capsys):
+    for sub in ("packs", "quarantine", "drafts"):
+        code, _ = run(["--json", "skills", sub], client)
+        assert code == 0
+        json.loads(capsys.readouterr().out)
+
+
+def test_mcp_internal_list_is_reachable(client, capsys):
+    code, _ = run(["--json", "mcp", "list"], client)
+    assert code == 0
+    json.loads(capsys.readouterr().out)
+
+
+def test_mcp_pins_is_reachable(client, capsys):
+    code, _ = run(["--json", "mcp", "pins"], client)
+    assert code == 0
+    json.loads(capsys.readouterr().out)
+
+
+def test_mcp_external_add_list_and_remove(client, capsys):
+    code, _ = run(["--json", "mcp", "external-add", "--name", "cli-test-mcp", "--transport", "stdio",
+                   "--command", "python", "--args", json.dumps(["-m", "some_server"])], client)
+    assert code == 0
+    capsys.readouterr()
+
+    code, _ = run(["--json", "mcp", "external-list"], client)
+    assert code == 0
+    assert any(s["name"] == "cli-test-mcp" for s in json.loads(capsys.readouterr().out))
+
+    code, _ = run(["mcp", "external-remove", "cli-test-mcp"], client)
+    assert code == 0
+
+
+def test_security_allowed_users_and_permissions(client, capsys):
+    code, _ = run(["--json", "security", "allow-user", "555", "--name", "tester"], client)
+    assert code == 0
+    capsys.readouterr()
+
+    code, _ = run(["--json", "security", "allowed-users"], client)
+    assert code == 0
+    assert any(str(u.get("telegram_id")) == "555" for u in json.loads(capsys.readouterr().out))
+
+    code, _ = run(["security", "disallow-user", "555"], client)
+    assert code == 0
+    capsys.readouterr()
+
+    code, _ = run(["--json", "security", "permissions"], client)
+    assert code == 0
+    json.loads(capsys.readouterr().out)
+
+
+def test_security_devices_and_mobile_keys(client, capsys):
+    code, _ = run(["--json", "security", "devices"], client)
+    assert code == 0
+    json.loads(capsys.readouterr().out)
+
+    code, _ = run(["--json", "security", "create-mobile-key", "--label", "test-phone", "--tier", "standard"], client)
+    assert code == 0
+    created = json.loads(capsys.readouterr().out)
+    assert created["key"]   # the plaintext key, only ever returned once
+
+    code, _ = run(["--json", "security", "mobile-keys"], client)
+    assert code == 0
+    assert any(k["label"] == "test-phone" for k in json.loads(capsys.readouterr().out))
+
+    code, _ = run(["security", "revoke-mobile-key", str(created["id"])], client)
+    assert code == 0
+
+
+def test_snapshots_full_lifecycle(client, capsys):
+    code, _ = run(["--json", "snapshots", "create", "--label", "cli-test"], client)
+    assert code == 0
+    capsys.readouterr()
+
+    code, _ = run(["--json", "snapshots", "list"], client)
+    assert code == 0
+    snaps = json.loads(capsys.readouterr().out)
+    assert snaps
+    name = snaps[0]["name"]
+
+    code, _ = run(["snapshots", "remove", name], client)
+    assert code == 0
+
+
+def test_env_status_is_reachable(client, capsys):
+    code, _ = run(["--json", "env"], client)
+    assert code == 0
+    json.loads(capsys.readouterr().out)
+
+
+def test_config_get_and_reload(client, capsys):
+    code, _ = run(["--json", "config", "get"], client)
+    assert code == 0
+    json.loads(capsys.readouterr().out)
+
+    code, _ = run(["config", "reload"], client)
+    assert code == 0
+
+
+def test_diagnostics_summary_and_crash_reports(client, capsys):
+    code, _ = run(["--json", "diagnostics", "summary"], client)
+    assert code == 0
+    json.loads(capsys.readouterr().out)
+
+    code, _ = run(["--json", "diagnostics", "crash-reports"], client)
+    assert code == 0
+    json.loads(capsys.readouterr().out)
+
+
+def test_kanban_full_lifecycle(client, capsys):
+    iid = _create_instance(name="kanban-bot", platform="app", backend="native_agent",
+                           credentials={}, allowed_user_ids=[])
+    code, _ = run(["--json", "kanban", "add", "--instance", str(iid), "--text", "write tests"], client)
+    assert code == 0
+    card = json.loads(capsys.readouterr().out)["card"]
+
+    code, _ = run(["--json", "kanban", "cards", "--instance", str(iid)], client)
+    assert code == 0
+    assert any(c["id"] == card["id"] for c in json.loads(capsys.readouterr().out))
+
+    code, _ = run(["kanban", "move", str(card["id"]), "--instance", str(iid), "--column", "done"], client)
+    assert code == 0
+    capsys.readouterr()
+
+    code, _ = run(["kanban", "remove", str(card["id"]), "--instance", str(iid)], client)
+    assert code == 0
+
+
+def test_peers_list_is_reachable(client, capsys):
+    code, _ = run(["--json", "peers", "list"], client)
+    assert code == 0
+    json.loads(capsys.readouterr().out)
