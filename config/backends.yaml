@@ -1,12 +1,12 @@
 # Never Claude by default (standing operator instruction): a bot with no explicit
 # backend/model gets ABP's own agent loop (native_agent) with model: auto, which asks
 # bot/model_router.py to pick a real provider/model — never Anthropic unless someone
-# explicitly lists one under native_agent.router.candidates. backup is deliberately left
-# empty rather than falling back to `cli` (the Claude Code CLI) — a misconfigured/keyless
-# install should fail with a clear, actionable error (see native_backend.py's
-# _resolve_auto_transport) instead of silently landing on Claude. desktop_specific stays
-# on `ui` on purpose: that route is inherently about automating the real Claude Desktop
-# app, not a general default.
+# explicitly lists one under native_agent.router.candidates. Each per-entry `backup` below
+# is deliberately empty rather than listing `cli` (the Claude Code CLI) — but every
+# resolved chain (this entry's own backup included) also gets backend_backup appended
+# (see below), so a real backend-level fallback still exists; it's just never Claude.
+# desktop_specific stays on `ui` on purpose: that route is inherently about automating
+# the real Claude Desktop app, not a general default.
 default_backend: native_agent
 action_overrides:
   quick_question:
@@ -18,6 +18,16 @@ action_overrides:
   desktop_specific:
     backend: ui
     backup: []
+# Appended to EVERY resolved backend chain (bot/router.py's Router.resolve_chain /
+# _with_global_backup) — including an ordinary bot instance's own explicitly-chosen
+# backend, which otherwise gets no backend-level fallback at all. If the active backend
+# raises (down, misconfigured, out of quota) the chain moves on to the next name here in
+# order. OpenCode and Hermes CLI, never Claude, matching the standing "never Claude by
+# default" instruction — this is a fallback, not itself a default, but the same rule
+# applies: don't land on Claude without a person having chosen it. A backend already
+# ahead of it in a chain is skipped (never retried twice), and a backend that isn't set
+# up (binary missing, etc.) is skipped with a clear message, not a crash.
+backend_backup: [opencode, hermes_cli]
 backends:
   # api is the built-in Claude API by definition — its own default model is Claude on
   # purpose. Nothing defaults TO this backend any more (see default_backend above); it

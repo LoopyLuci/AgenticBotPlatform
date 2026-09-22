@@ -1363,12 +1363,22 @@ came through a bot instance) that instance's own `action_overrides` for
 the message's action type; then that instance's own default `backend`;
 then falling back to `config/backends.yaml`'s global `action_overrides`
 and `default_backend` for anything an instance didn't specify. If the
-chosen backend raises, the router retries once against that entry's
-`backup` list before giving up — every attempt is logged as a job row,
+chosen backend raises, the router tries the rest of that entry's resolved
+chain in order before giving up — every attempt is logged as a job row,
 tagged with the bot instance that sent it, visible in the dashboard's Jobs
 tab. Backend *definitions* (model, binary path, timeouts) stay global in
 `config/backends.yaml` regardless of instance — only the routing *choice*
 is per-instance, so two bot instances both on `cli` share one `CliBackend`.
+
+**Every resolved chain also gets `config/backends.yaml`'s top-level
+`backend_backup` list appended** (`Router._with_global_backup`) — so even a
+bot instance with its own explicit `backend` and no `action_overrides` of
+its own (the common case, which otherwise gets no backend-level fallback
+at all) still has one. Set to `[opencode, hermes_cli]` by default, never
+Claude — matching the standing "never Claude by default" instruction: a
+fallback the router reaches for on its own must follow the same rule a
+default does. Anything already earlier in the chain is skipped, never
+retried twice.
 
 The file is watched and hot-reloaded (`watchfiles`) — edit and save, and
 the change is live within about a second, recorded in `config_history`
