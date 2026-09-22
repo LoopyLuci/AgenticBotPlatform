@@ -102,7 +102,7 @@ DENYLIST: frozenset[str] = frozenset({
     # sessions, secrets_guard.py the injected-secret table, mcp_pins.py its warn-once set, and
     # sandbox.py is only ever imported by the (denied) shell module. A reload would reset them.
     "bot.agent_runtime.permissions", "bot.agent_runtime.taint", "bot.agent_runtime.secrets_guard",
-    "bot.agent_runtime.mcp_pins", "bot.agent_runtime.sandbox",
+    "bot.agent_runtime.mcp_pins", "bot.agent_runtime.sandbox", "bot.agent_runtime.win_job",
     "bot.agent_runtime.settings_schema",  # imports permissions/sandbox (both denied above); a reload would split the classes it validates against
     "bot.agent_runtime.project_rules",  # imported by prompt.py; reloaded with it is not needed and is safe to skip
     "bot.agent_runtime.code_intel",  # running language servers are process state

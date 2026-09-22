@@ -9,6 +9,19 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **Three more sandbox backends for `run_shell`, and the docker/WSL ones verified against the real
+  thing.** `native_agent.sandbox.backend` now also accepts `ssh` (a configured, already-trusted
+  remote host), `wsl` (a WSL2 distro on the same machine, workspace path translated automatically),
+  and `windows_job` (a real Win32 Job Object confining the whole process tree, no container needed,
+  Windows-only). All fail closed the same way the existing `docker` backend does: if the required
+  tool or config is missing, the command is refused, never quietly run on the host instead. The
+  `docker` backend was, until now, only ever tested against a stand-in `docker` program - it's now
+  also verified against a real, running daemon (a real container runs the command, `network: none`
+  genuinely blocks an outbound connection, a timeout stops and removes the real container). See
+  `docs/agents/security.md`'s Sandbox section for each backend's honest limits, including the two
+  gaps investigated but not built this round (network confinement for `local`/`windows_job` - it
+  would need either running this process elevated, which the app deliberately never does, or an
+  AppContainer rewrite of process spawning, both out of scope for this pass).
 - **ABP Agent is now the first backend when you add a bot, and the form has its settings.** The Add / Edit a bot form used to
   bury ABP Agent at the bottom of a "Custom / local" group, default to the Claude CLI, and offer no agent settings. ABP Agent
   is now first (and the default for a new bot), the choices are labelled by what they do, and choosing ABP Agent, `api` or

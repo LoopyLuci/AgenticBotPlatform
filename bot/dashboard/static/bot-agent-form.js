@@ -78,8 +78,9 @@
     } catch (_e) { target.textContent = ''; return; }
     const v = globalDefaults;
     const on = (id) => v[id] ? 'on' : 'off';
+    const SANDBOX_NAME = { local: 'locally', docker: 'in Docker', ssh: 'over SSH', wsl: 'in WSL', windows_job: 'locally (job-confined)' };
     target.innerHTML = `<b>Global defaults this bot starts from:</b> approvals ${esc(MODE_NAME[v['native_agent.permissions.mode']] || v['native_agent.permissions.mode'])}
-      · commands run ${v['native_agent.sandbox.backend'] === 'docker' ? 'in Docker' : 'locally'} · web ${on('native_agent.web.enabled')} · browser ${on('native_agent.browser.enabled')}
+      · commands run ${SANDBOX_NAME[v['native_agent.sandbox.backend']] || 'locally'} · web ${on('native_agent.web.enabled')} · browser ${on('native_agent.browser.enabled')}
       · up to ${esc(v['native_agent.limits.max_iterations'])} steps per turn.`;
     const perm = $('bot-agent-permission');
     if (perm && perm.options.length) perm.options[0].textContent = `Follow the global default (${MODE_NAME[v['native_agent.permissions.mode']] || v['native_agent.permissions.mode']})`;
