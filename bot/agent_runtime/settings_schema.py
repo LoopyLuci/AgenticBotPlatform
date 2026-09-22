@@ -34,7 +34,7 @@ YAML_ONLY = [
     {"key": "native_agent.sandbox.ssh", "why": "the ssh host, user, identity file and remote workspace root"},
     {"key": "native_agent.sandbox.wsl", "why": "the WSL distro name and extra wsl.exe arguments"},
     {"key": "native_agent.sandbox.windows_job", "why": "the job object's memory and process-count limits"},
-    {"key": "backend_backup", "why": "backends (e.g. opencode, hermes_cli) tried, in order, when a bot's own backend fails — never Claude, per the standing 'never by default' instruction; a top-level key, not under native_agent, so it applies to every bot regardless of its own backend choice"},
+    {"key": "backend_backup", "why": "backends (e.g. opencode, hermes_cli, hermes_gateway) tried, in order, when a bot's own backend fails — never Claude, per the standing 'never by default' instruction; a top-level key, not under native_agent, so it applies to every bot regardless of its own backend choice"},
 ]
 
 _PERMISSION_MODE_HELP = {

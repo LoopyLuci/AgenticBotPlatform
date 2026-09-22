@@ -113,7 +113,7 @@ def router_with_backup(monkeypatch):
     monkeypatch.setattr(config, "_data", {
         "default_backend": "native_agent",
         "action_overrides": {"quick_question": {"backend": "native_agent", "backup": []}},
-        "backend_backup": ["opencode", "hermes_cli"],
+        "backend_backup": ["opencode", "hermes_cli", "hermes_gateway"],
     })
     return Router()
 
@@ -127,12 +127,12 @@ def test_an_instances_own_backend_gets_the_global_backup_chain(router_with_backu
     )
     # Previously an instance with its own backend got NO fallback at all — this is the
     # gap the user asked to close ("OpenCode must be able to be used as a fallback as
-    # well Hermes").
-    assert router_with_backup.resolve_chain("quick_question", instance_id=1) == ["native_agent", "opencode", "hermes_cli"]
+    # well Hermes" — later extended to include the Hermes gateway too).
+    assert router_with_backup.resolve_chain("quick_question", instance_id=1) == ["native_agent", "opencode", "hermes_cli", "hermes_gateway"]
 
 
 def test_global_action_override_also_gets_the_backup_chain_appended(router_with_backup):
-    assert router_with_backup.resolve_chain("quick_question") == ["native_agent", "opencode", "hermes_cli"]
+    assert router_with_backup.resolve_chain("quick_question") == ["native_agent", "opencode", "hermes_cli", "hermes_gateway"]
 
 
 def test_backend_backup_never_duplicates_a_backend_already_in_the_chain(router_with_backup, monkeypatch):
@@ -143,7 +143,7 @@ def test_backend_backup_never_duplicates_a_backend_already_in_the_chain(router_w
         lambda iid: {"id": iid, "action_overrides": {}, "backend": "opencode"},
     )
     # opencode is already the primary — it must not appear twice in its own backup chain.
-    assert router_with_backup.resolve_chain("quick_question", instance_id=1) == ["opencode", "hermes_cli"]
+    assert router_with_backup.resolve_chain("quick_question", instance_id=1) == ["opencode", "hermes_cli", "hermes_gateway"]
 
 
 def test_backend_backup_is_a_no_op_when_not_configured(router):

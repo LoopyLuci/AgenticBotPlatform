@@ -22,12 +22,14 @@ action_overrides:
 # _with_global_backup) — including an ordinary bot instance's own explicitly-chosen
 # backend, which otherwise gets no backend-level fallback at all. If the active backend
 # raises (down, misconfigured, out of quota) the chain moves on to the next name here in
-# order. OpenCode and Hermes CLI, never Claude, matching the standing "never Claude by
-# default" instruction — this is a fallback, not itself a default, but the same rule
-# applies: don't land on Claude without a person having chosen it. A backend already
-# ahead of it in a chain is skipped (never retried twice), and a backend that isn't set
-# up (binary missing, etc.) is skipped with a clear message, not a crash.
-backend_backup: [opencode, hermes_cli]
+# order. OpenCode, then Hermes CLI, then the Hermes gateway (needs its own running
+# process — tried last, after the lighter-weight options) — never Claude, matching the
+# standing "never Claude by default" instruction — this is a fallback, not itself a
+# default, but the same rule applies: don't land on Claude without a person having
+# chosen it. A backend already ahead of it in a chain is skipped (never retried twice),
+# and a backend that isn't set up (binary missing, gateway not running, etc.) is skipped
+# with a clear message, not a crash.
+backend_backup: [opencode, hermes_cli, hermes_gateway]
 backends:
   # api is the built-in Claude API by definition — its own default model is Claude on
   # purpose. Nothing defaults TO this backend any more (see default_backend above); it
