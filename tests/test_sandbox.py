@@ -90,8 +90,15 @@ def test_a_command_cannot_read_the_servers_credentials(ws, cfg, monkeypatch):
 
 
 def test_unknown_backend_is_refused(cfg):
-    cfg["backend"] = "ssh"
+    cfg["backend"] = "vm"
     with pytest.raises(ToolError, match="must be one of"):
+        sandbox.backend()
+
+
+def test_windows_job_backend_is_refused_on_non_windows(cfg, monkeypatch):
+    cfg["backend"] = "windows_job"
+    monkeypatch.setattr(sandbox.win_job, "is_supported", lambda: False)
+    with pytest.raises(ToolError, match="only works on Windows"):
         sandbox.backend()
 
 

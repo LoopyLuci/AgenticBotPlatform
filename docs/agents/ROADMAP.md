@@ -17,7 +17,7 @@
 |---|---|---|
 | P0 | Foundations: eval harness, traces, `ToolSpec`, prompt builder, streaming | **Built** (see below for what remains) |
 | P1 | Core coding toolset and a better loop | **Built** (interactive PTY and a stateful shell are not) |
-| P2 | Permissions, sandboxing, prompt-injection defence, hooks v2 | **Built** (docker backend untested against a real daemon) |
+| P2 | Permissions, sandboxing, prompt-injection defence, hooks v2 | **Built** (network egress control for local/windows_job is investigated, not built - see security.md) |
 | P3 | Context and memory | **Built** (no embeddings, no tree-sitter, no user model) |
 | P4 | Agents, skills and commands | **Built** (no registry; git fetch untested against a real remote) |
 | PM | Model knowledge, limits and usage (added later) | **Built** (API and chat only; no dashboard screen) |
@@ -132,8 +132,8 @@ against the same tasks is still open (needs a provider key and your go-ahead to 
 | Untrusted-content escalation: a session that read web or untrusted-MCP content cannot auto-run changes, ignores standing approvals, and cannot delegate without a person's approval | Built, enforced in the tool loop |
 | Credential protection: redaction of secrets in tool output, refusal of outbound calls carrying a secret (also %-encoded), and a scrubbed environment for commands | Built |
 | MCP: untrusted-by-default servers, per-server trust setting, tool-description pinning with an approval flow | Built |
-| Sandbox interface with `local` (scrubbed environment) and `docker` (no network, limits, capabilities dropped, fails closed) backends | Built. **Docker tested against a stand-in `docker` program only**; no daemon was available |
-| SSH, WSL, Windows job-object backends; network egress control for the local backend | **Not built.** Remote execution needs the file tools to run remotely too (P6's cloud computer); the local backend cannot restrict the network |
+| Sandbox backends: `local` (scrubbed environment), `docker` (no network, limits, capabilities dropped, fails closed), `ssh` (a configured remote host), `wsl` (a WSL2 distro on the same machine), `windows_job` (a real Win32 Job Object, guaranteed tree-kill, no container) | Built. **Docker and WSL verified against the real daemon / a real registered distro** (`tests/test_sandbox_live_docker.py`, `tests/test_sandbox_wsl.py::TestLiveWsl`); `windows_job` verified against the real Win32 API (needs no external service); `ssh` verified against a fake stand-in plus an opt-in live class for a real host (`ABP_TEST_SSH_HOST`) |
+| Network egress control for the `local`/`windows_job` backends | **Not built - investigated, not half-built.** A per-command Windows Firewall rule needs this process to run elevated (rejected on purpose, see `firewall.py`); a real non-elevated block needs an AppContainer, which needs bypassing Python's subprocess/asyncio process-creation plumbing - a separate, larger piece of work. `ssh`'s remaining honest limit: only the command runs remotely, not the file tools (that's the "cloud computer" of P6) |
 | Hooks v2: ten events, `updatedInput`, blocking `Stop`, `PreCompact` context, HTTP hooks | Built. Not built: async hooks, MCP-tool / prompt / agent hook types |
 | API: `/api/agent/permissions`, `/api/instances/{id}/permissions`, `/api/mcp/pins`, `/api/agent/taint` | Built. No dashboard screen for them yet |
 | `web_fetch` / `web_search` on by default | **Not done, on purpose:** they stay off until an operator enables them, even though the defences now exist |

@@ -31,6 +31,9 @@ YAML_ONLY = [
     {"key": "native_agent.code_intel.lsp.servers / .formatters", "why": "language-server commands per language"},
     {"key": "native_agent.mcp_trust", "why": "a map of MCP server to trusted (also settable from the MCP tab)"},
     {"key": "native_agent.sandbox.docker", "why": "the docker image, network and resource limits"},
+    {"key": "native_agent.sandbox.ssh", "why": "the ssh host, user, identity file and remote workspace root"},
+    {"key": "native_agent.sandbox.wsl", "why": "the WSL distro name and extra wsl.exe arguments"},
+    {"key": "native_agent.sandbox.windows_job", "why": "the job object's memory and process-count limits"},
 ]
 
 _PERMISSION_MODE_HELP = {
@@ -77,8 +80,9 @@ FIELDS: list[dict] = [
        danger="Per-bot permission settings stop working while this is on."),
     _f("permissions.rules", "rules", "Permission rules", "One rule per line: decision, tool, then an optional pattern. Decisions are allow, ask and deny. Example: deny run_shell rm -rf*   (add ' # note' to explain it).", S, "Approval", []),
     _f("require_read_before_write", "bool", "Read a file before changing it", "An agent must read an existing file before it may overwrite or edit it, so it cannot clobber what it has not seen.", S, "Approval", True),
-    _f("sandbox.backend", "enum", "Where commands run", "Local runs shell commands directly on this computer. Docker runs them in a container (needs Docker).", S, "Sandbox", "local",
-       choices=[[b, {"local": "Local - on this computer", "docker": "Docker - in a container"}[b]] for b in sandbox.BACKENDS], applies="new sessions",
+    _f("sandbox.backend", "enum", "Where commands run", "Local runs shell commands directly on this computer. Docker runs them in a container (needs Docker). SSH runs them on a remote host. WSL runs them in a Linux distro on this computer. Windows job confines the process tree without a container.", S, "Sandbox", "local",
+       choices=[[b, {"local": "Local - on this computer", "docker": "Docker - in a container", "ssh": "SSH - on a remote host",
+                     "wsl": "WSL - a Linux distro on this computer", "windows_job": "Windows job - confined, no container"}[b]] for b in sandbox.BACKENDS], applies="new sessions",
        danger="Local commands run with this computer's own access.", danger_value="local"),
     _f("sandbox.env.mode", "enum", "Environment passed to commands", "Which environment variables a command can see.", S, "Sandbox", "secrets",
        choices=[["secrets", "Secrets removed - everything except keys and tokens"], ["minimal", "Minimal - only what is needed to run"], ["inherit", "Inherit - everything, including keys"]], applies="new sessions",

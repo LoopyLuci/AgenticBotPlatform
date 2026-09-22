@@ -106,7 +106,7 @@ description to smuggle in instructions. Turn off with `mcp_pinning: false`.
 ```yaml
 native_agent:
   sandbox:
-    backend: local            # local | docker
+    backend: local            # local | docker | ssh | wsl | windows_job
     env:
       mode: secrets           # secrets | minimal | inherit
       allow: []
@@ -117,6 +117,18 @@ native_agent:
       memory: 1g
       cpus: "2"
       pids: 256
+    ssh:
+      host: ""                 # required
+      port: 22
+      user: ""
+      identity_file: ""
+      remote_workspace_root: ""  # required
+      connect_timeout: 10
+    wsl:
+      distro: ""                # "" = the default distro
+    windows_job:
+      memory_mb: 0               # 0 = unlimited
+      active_process_limit: 0    # 0 = unlimited
 ```
 
 `run_shell` used to inherit the server's whole environment, API keys included. The default
@@ -127,14 +139,45 @@ them for redaction).
 `backend: docker` runs each command in a fresh container: the workspace mounted at `/workspace`,
 no network by default, memory / cpu / process limits, all Linux capabilities dropped, no
 privilege escalation. **It fails closed:** if Docker is missing or not running the command is
-refused, never quietly run on the host.
+refused, never quietly run on the host. **Verified against a real, running Docker Desktop daemon**
+(not only the stand-in `docker` program `tests/test_sandbox.py` uses): a real container runs the
+command and its writes land back on the host workspace, `network: none` genuinely refuses an
+outbound connection instead of only asking for one, the host's own environment secrets are not
+visible inside the container, a timeout stops and removes the real container promptly, and a
+missing image fails the command instead of quietly running it on the host
+(`tests/test_sandbox_live_docker.py`, skipped automatically where no real daemon is reachable).
 
-**Honest limits.** The docker backend was tested against a stand-in `docker` program, not a real
-daemon (none was running on the development machine). The local backend cannot restrict the
-network or the file system beyond the workspace guard on the file tools: a command run locally can
-still read anything the server's user can. SSH, WSL and Windows job-object backends are not built
-(remote execution needs the file tools to work remotely too - that is the "cloud computer" of
-roadmap P6).
+`backend: ssh` runs the command on a configured, already-trusted remote host (a host key already in
+`known_hosts`, key-based auth only - this backend never handles a password) via the local `ssh`
+client. Fails closed if `ssh` is missing, `sandbox.ssh.host` or `sandbox.ssh.remote_workspace_root`
+isn't set, or the connection fails. **Honest limit:** only the *command* runs remotely -
+`read_file`/`write_file` and the other file tools still operate on the local workspace, so local and
+remote file state only stay in sync if something outside this backend keeps
+`remote_workspace_root` in sync with the local workspace. Full remote file tools are roadmap P6's
+"cloud computer," not this backend.
+
+`backend: wsl` runs the command inside a WSL2 distro on the same machine via `wsl.exe`, translating
+the workspace path onto the distro's default drive-automount path (`/mnt/<drive>/...`). Fails
+closed if `wsl.exe` is missing. Verified against a real, registered WSL distro on the development
+machine (`tests/test_sandbox_wsl.py::TestLiveWsl`, skipped where none is registered).
+
+`backend: windows_job` runs locally, like `local`, but assigns the process to a real Win32 Job
+Object (`bot/agent_runtime/win_job.py`, stdlib `ctypes` only) with kill-on-close set, so the whole
+process tree is guaranteed to die when the command is stopped - stronger than the `taskkill /T /F`
+tree-walk `local`/`docker` fall back to, which can lose a race against a process that forks quickly
+or deliberately detaches. Windows-only; refused elsewhere. Verified for real (`CreateJobObject`,
+`AssignProcessToJobObject`, `TerminateJobObject`) in `tests/test_sandbox_windows_job.py`, which
+needs no external service and so is never skipped on Windows.
+
+**Honest limits, still open.** The `local` and `windows_job` backends cannot restrict the network or
+the file system beyond the workspace guard on the file tools: a command run either way can still
+read anything the server's user can, and reach any address the host can. This was investigated for
+real in this round rather than left as a bare "not built": a per-command Windows Firewall rule would
+need this process to run elevated, which the rest of the app deliberately never does (see
+`firewall.py`); a real non-elevated per-process network block needs an AppContainer, which needs
+bypassing Python's subprocess/asyncio plumbing for process creation entirely - a larger, separate
+piece of work, tracked in `docs/agents/ROADMAP.md` rather than shipped half-working here (a security
+control that looks like it blocks the network but doesn't is worse than no control at all).
 
 ## Hooks
 
