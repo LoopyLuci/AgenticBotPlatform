@@ -58,6 +58,38 @@ Before a call:
 `native_agent.models.enforce: false` keeps the counting and reporting but never holds a call back.
 Reset times are shown in `native_agent.models.timezone` (blank = this computer's zone).
 
+## Automatic model routing — never Claude by default
+
+`bot/model_router.py` (roadmap P8) classifies a task (trivial, coding, hard reasoning, long
+context, vision, bulk) and ranks candidate models by quality, economy (free counts highest) and
+headroom (how much of a model's allowance is left right now). It's the mechanism behind a bot whose
+model is left blank or set to `auto`:
+
+* **Set it up**: a bot on the **ABP Agent** backend with model **left blank, or set to `auto`**
+  (the Add-bot form has an **Auto** button next to the model field for exactly this) gets a real
+  model picked for it — the router's top-ranked pick, the first time that bot is actually used.
+  That pick then stays in place for the rest of that bot's life, the same as if you had typed a
+  specific model yourself; it isn't reclassified on every later message.
+* **Never Claude by default.** `default_backend` and the `quick_question`/`project_task` action
+  overrides in `config/backends.yaml` all point at `native_agent` with `model: null` (auto) — the
+  operator's standing instruction is that Claude is never used unless a person explicitly chooses
+  it. The router's automatic candidate list (when `native_agent.router.candidates` is empty) is
+  every free model ABP's catalog knows of, **except Anthropic's** — an Anthropic model only ever
+  becomes a candidate if you list it yourself under `native_agent.router.candidates` or `.also`.
+  If nothing is configured and no free provider exists yet, a bot on `auto` fails with a clear,
+  actionable error rather than silently falling back to Claude or hanging.
+* **Auto-failover** (`native_agent.router.auto_failover`, off by default): when a bot's active
+  model fails mid-turn, the existing one-hop retry against its own configured `fallback_model` (see
+  the ABP Agent settings panel) is tried first, then — only if this is on — up to
+  `native_agent.router.max_failover_hops` more router-ranked picks, each a provider/model not
+  already tried this turn. Still bounded: if every hop fails, the *last* hop's own error is what
+  you see, not a swallowed retry loop.
+* **See it**: the ABP Agents page's Models tab has a **What ABP would pick right now** panel
+  (`GET /api/agent/router/recommend`) showing the live ranking with quality/economy/headroom, and
+  the `router.*` settings (`enabled`, `candidates`, `also`, `auto_failover`, `max_failover_hops`)
+  right there as real form fields, not YAML-only. `/route <task>` and the `suggest_model` tool still
+  work exactly as before for a plain recommendation without applying it.
+
 Free models that are used up right now are also passed over when ABP picks a free model to run a
 swarm on.
 

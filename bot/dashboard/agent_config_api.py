@@ -72,6 +72,22 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         db.log_audit(actor="dashboard", action="agent_config_reset", detail=", ".join(str(i) for i in ids)[:500])
         return {"values": values, "configured": settings_schema.configured_ids(config.current), "version": config.version}
 
+    @app.get("/api/agent/router/recommend", dependencies=read)
+    async def router_recommend(task: str = ""):
+        from bot import model_router
+
+        cls, ranked, skipped = model_router.recommend(task or "a general coding and agent task")
+        return {
+            "task_class": cls.task_class, "reasons": cls.reasons,
+            "recommendations": [
+                {"model": r.model, "score": r.score, "quality": r.quality, "quality_source": r.quality_source,
+                 "economy": r.economy, "headroom": r.headroom, "price_per_mtok": r.price_per_mtok,
+                 "context": r.context, "reasons": r.reasons}
+                for r in ranked
+            ],
+            "skipped": skipped,
+        }
+
     @app.get("/api/agent/tools", dependencies=read)
     async def tool_inventory():
         from bot.agent_runtime import toolspec, tools

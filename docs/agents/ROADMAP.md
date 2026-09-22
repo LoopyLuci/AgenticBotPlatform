@@ -24,7 +24,7 @@
 | P5 | Code intelligence and developer surfaces | **Built** (none of it run against Zed, pyright, a GitHub runner or the real OpenCode / OpenClaw; no VS Code extension) |
 | P6 | Browser, computer use, routines (the Grok Bot pillar) | **Partly built** (browser, vault, routines, approvals; not the cloud computer or computer use) |
 | P7 | Channels, devices and voice | **Partly built** (four new channels, node protocol, voice, canvas - all against fakes; no Google Chat / Teams; Android does not implement nodes) |
-| P8 | Learning and efficiency | **Built** (the router and the tuning harness have never had a live model to measure) |
+| P8 | Learning and efficiency | **Built** (the model router now auto-selects and auto-fails-over, not advisory-only; it and the tuning harness have never had a live model to measure) |
 | P9 | Compatibility and docs | **Partly built** (no Hermes / OpenClaw importers; no public benchmark) |
 
 ## 1. What "ABP Agents" are today
@@ -236,7 +236,7 @@ would want to know about a model.
 | Deliverable | State |
 |---|---|
 | Trajectory export (`python -m abp_trajectory`): finished runs as JSONL chat transcripts with tool calls, secrets removed, tool output shortened, optional PII masking, duplicates dropped; opt-in with `--confirm` | Built and tested. Not "compression" in the model sense; it shortens and de-duplicates. Nothing scores whether an answer was right |
-| Advisory model router (`/route`, `suggest_model`): classifies the task, filters by ability and remaining allowance, ranks on quality / economy / headroom | Built. **Advisory only.** Quality is a measured eval pass rate when one was recorded (`abp_agenteval run --live --record`), otherwise a coarse guess from the catalog that is labelled as a guess. No live model has been evaluated, so today every recommendation rests on the guess |
+| Model router (`/route`, `suggest_model`): classifies the task, filters by ability and remaining allowance, ranks on quality / economy / headroom | Built, **and no longer advisory-only.** A `native_agent` bot with no model (or `model: auto`) has it actually pick and run — the top-ranked candidate the first time that bot is used, never an Anthropic model unless `native_agent.router.candidates`/`.also` explicitly lists one (see `docs/agents/models.md`). `native_agent.router.auto_failover` turns a transport failure into a bounded, router-driven retry chain instead of stopping after the one static per-bot fallback model. Surfaced on the ABP Agents page's Models tab (settings + a live "what it would pick right now" panel), not YAML-only. Quality is still a measured eval pass rate when one was recorded (`abp_agenteval run --live --record`), otherwise a labelled guess from the catalog — no live model has been evaluated yet, so every recommendation still rests on the guess until that changes. **Honest limit:** auto-select classifies once, on a bot's first turn, and stays on that pick after that turn (not re-classified fresh on every single message) |
 | Prompt and tool-description tuning driven by eval scores: `abp_agenteval compare` runs the suite per variant of `prompt.extra` / `tool_descriptions` | Built and tested for its mechanics. **Never run with a live model**, which is the only way it produces evidence (scripted runs cannot tell variants apart, and it says so); a difference of two tasks or fewer is reported as noise |
 
 ### P9 — Compatibility and docs (S, continuous) — partly built; see [learning-and-compatibility.md](learning-and-compatibility.md)

@@ -1141,7 +1141,8 @@
         <div class="wizard-field" id="bot-new-model-field">
           <label>Model override (optional)</label>
           <div class="help" id="bot-new-model-help">Leave blank to use this backend's configured default. Options are live models actually available to this backend.</div>
-          <div class="row"><input type="text" id="bot-new-model" list="bot-new-model-options" placeholder="e.g. claude-opus-5" autocomplete="off" spellcheck="false"></div>
+          <div class="row"><input type="text" id="bot-new-model" list="bot-new-model-options" placeholder="e.g. claude-opus-5" autocomplete="off" spellcheck="false">
+            <button type="button" class="btn" id="bot-new-model-auto" style="display:none; padding:5px 10px; font-size:12px;" title="Let ABP's model router pick a free model automatically, every time this bot's backend needs one">Auto</button></div>
           <datalist id="bot-new-model-options"></datalist>
         </div>
         <div class="wizard-field hidden" id="bot-agent-panel">
@@ -2634,15 +2635,24 @@ function refreshBotModelOptions() {
   document.getElementById('bot-new-model-options').innerHTML = options.map(name => `<option value="${esc(name)}"></option>`).join('');
   const help = document.getElementById('bot-new-model-help');
   const input = document.getElementById('bot-new-model');
+  const autoBtn = document.getElementById('bot-new-model-auto');
   if (window.abpBotAgentForm) window.abpBotAgentForm.sync();
-  if (backend === 'custom_model' || backend === 'native_agent') {
-    help.textContent = 'Required for this backend: "<provider>/<model_id>", where <provider> is one configured on the Models tab.';
-    input.placeholder = 'e.g. local_ollama/llama3.1';
+  if (backend === 'native_agent') {
+    help.innerHTML = 'A "&lt;provider&gt;/&lt;model_id&gt;" from a provider configured on the Models tab, or leave blank / type "auto" to let ABP\'s model router pick a free model automatically every time (never an Anthropic model unless you\'ve listed one yourself under Automatic routing on the ABP Agents page).';
+    input.placeholder = 'e.g. openrouter/qwen/qwen3-8b:free, or leave blank for auto';
+    autoBtn.style.display = '';
   } else {
-    help.textContent = "Leave blank to use this backend's configured default. Options are live models actually available to this backend.";
-    input.placeholder = 'e.g. claude-opus-5';
+    autoBtn.style.display = 'none';
+    if (backend === 'custom_model') {
+      help.textContent = 'Required for this backend: "<provider>/<model_id>", where <provider> is one configured on the Models tab.';
+      input.placeholder = 'e.g. local_ollama/llama3.1';
+    } else {
+      help.textContent = "Leave blank to use this backend's configured default. Options are live models actually available to this backend.";
+      input.placeholder = 'e.g. claude-opus-5';
+    }
   }
 }
+document.getElementById('bot-new-model-auto').onclick = () => { document.getElementById('bot-new-model').value = 'auto'; };
 
 document.getElementById('model-api').onchange = async (e) => {
   const value = e.target.value.trim() || null;

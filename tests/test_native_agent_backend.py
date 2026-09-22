@@ -54,9 +54,12 @@ def test_build_backend_reads_model_from_backends_config_when_no_override():
     assert backend.model_id == "llama3.1"
 
 
-def test_build_backend_requires_a_model():
-    with pytest.raises(ValueError, match="needs a model"):
-        Router()._build_backend("native_agent", cfg={})
+def test_build_backend_with_no_model_builds_auto_instead_of_raising():
+    # A model is no longer required: no model (and literal "auto") means the model
+    # router picks one lazily on this backend's first real turn (never Claude by
+    # default) - see tests/test_native_backend_auto_router.py for that behaviour.
+    backend = Router()._build_backend("native_agent", cfg={})
+    assert backend.model_id == "auto"
 
 
 def test_build_backend_rejects_unknown_provider():

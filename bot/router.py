@@ -240,11 +240,13 @@ class Router:
             # inferred. Shares config/providers.yaml with custom_model —
             # not a second model registry.
             model_ref = model_override or (cfg.get("backends") or {}).get("native_agent", {}).get("model")
-            if not model_ref:
-                raise ValueError(
-                    "native_agent backend needs a model of the form '<provider>/<model_id>' "
-                    "(set it on the bot instance, or as backends.native_agent.model)"
-                )
+            if not model_ref or str(model_ref).strip().lower() == "auto":
+                # No model chosen (or "auto" explicitly): NativeAgentBackend resolves a
+                # real provider/model itself, lazily, on its first turn - via the model
+                # router, which never picks Claude unless a person explicitly listed it
+                # under native_agent.router.candidates (see bot/model_router.py).
+                return CustomModelBackend(provider_name=None, model_id="auto", base_url="",
+                                          max_tokens=b_cfg.get("max_tokens", 4096))
             provider_name, model_id = providers.parse_model_ref(model_ref)
             provider = providers.get_provider(provider_name)
             if provider is None:

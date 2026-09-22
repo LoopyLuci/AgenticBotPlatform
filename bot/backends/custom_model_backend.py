@@ -34,26 +34,32 @@ class CustomModelBackend(Backend):
 
     def __init__(
         self,
-        provider_name: str,
+        provider_name: Optional[str],
         model_id: str,
         base_url: str,
         api_key: Optional[str] = None,
         max_tokens: int = 4096,
     ):
-        from bot import providers as provider_registry
-
         self.provider_name = provider_name
         self.model_id = model_id
-        self.base_url = base_url.rstrip("/")
+        self.base_url = (base_url or "").rstrip("/")
         self.api_key = api_key
         self.max_tokens = max_tokens
-        provider_cfg = provider_registry.get_provider(provider_name) or {}
-        self._inner = NativeAgentBackend(
-            build_openai_transport(
+        if model_id == "auto":
+            # "auto" (native_agent backend only, see bot/router.py) - no provider is
+            # chosen yet. NativeAgentBackend resolves one lazily on its first real turn,
+            # via the model router, and never touches transport=None before then.
+            transport = None
+        else:
+            from bot import providers as provider_registry
+
+            provider_cfg = provider_registry.get_provider(provider_name) or {}
+            transport = build_openai_transport(
                 protocol=provider_cfg.get("protocol", "openai"), base_url=self.base_url,
                 api_key=api_key, catalog_id=provider_cfg.get("catalog_id"),
-            ),
-            model=model_id, max_tokens=max_tokens,
+            )
+        self._inner = NativeAgentBackend(
+            transport, model=model_id, max_tokens=max_tokens,
             session_prefix="custom", name="custom_model",
         )
 

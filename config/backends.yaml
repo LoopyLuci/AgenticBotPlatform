@@ -1,15 +1,27 @@
-default_backend: cli
+# Never Claude by default (standing operator instruction): a bot with no explicit
+# backend/model gets ABP's own agent loop (native_agent) with model: auto, which asks
+# bot/model_router.py to pick a real provider/model — never Anthropic unless someone
+# explicitly lists one under native_agent.router.candidates. backup is deliberately left
+# empty rather than falling back to `cli` (the Claude Code CLI) — a misconfigured/keyless
+# install should fail with a clear, actionable error (see native_backend.py's
+# _resolve_auto_transport) instead of silently landing on Claude. desktop_specific stays
+# on `ui` on purpose: that route is inherently about automating the real Claude Desktop
+# app, not a general default.
+default_backend: native_agent
 action_overrides:
   quick_question:
-    backend: cli
+    backend: native_agent
     backup: []
   project_task:
-    backend: cli
+    backend: native_agent
     backup: []
   desktop_specific:
     backend: ui
     backup: []
 backends:
+  # api is the built-in Claude API by definition — its own default model is Claude on
+  # purpose. Nothing defaults TO this backend any more (see default_backend above); it
+  # only matters to someone who explicitly chose it.
   api:
     model: claude-sonnet-5
     max_tokens: 4096
@@ -25,6 +37,9 @@ backends:
     # send_button_automation_id: null
     # new_chat_button_automation_id: null   # set if the heuristic ("New chat" / "+" button text) doesn't find it
     # sidebar_item_control_type: ListItem   # set to TreeItem etc if your Claude Desktop version exposes chats that way
+  native_agent:
+    model: null            # null (or "auto") = ask bot/model_router.py to pick — see native_agent.router below
+    max_tokens: 4096
   hermes_cli:
     binary: hermes
     model: null
@@ -177,6 +192,18 @@ native_agent:
     timezone: ""             # for reset times, e.g. America/New_York; blank = this computer's
     limits: {}               # e.g. {"openrouter/*:free": {rpm: 20, rpd: 1000}, "google/gemini-2.5-flash": {rpm: 10, rpd: 250, reset: pacific_midnight}}
     overrides: {}            # e.g. {"myprovider/my-model": {context: 32768, tool_call: true, vision: false}}
+  # The model router (bot/model_router.py, roadmap P8): what a bot on model: auto (or
+  # "auto") actually gets, and what a bot's own configured fallback_model escalates to
+  # when auto_failover is on. candidates, if set, is used exactly as given (an Anthropic
+  # model included, if you put one there yourself); blank means "every free model this
+  # app knows of" and NEVER includes Anthropic — Claude is never picked by default, only
+  # when a person explicitly lists it here.
+  router:
+    enabled: true             # false makes an "auto" bot fail with a clear error instead of picking anything
+    candidates: []            # e.g. ["openrouter/qwen/qwen3-8b:free", "my_ollama/llama3.1"]
+    also: []                  # extra candidates added to the automatic free-model list; only used when candidates is blank
+    auto_failover: false      # try more router picks (beyond a bot's own fallback_model) when the active model fails mid-turn
+    max_failover_hops: 2      # at most this many extra attempts
   # A browser for the agent (bot/agent_runtime/browser.py). Off. Needs `pip install playwright` and a browser (Edge and
   # Chrome are found automatically). Pages are untrusted; passwords are only ever filled from the vault (bot/vault.py).
   browser:
