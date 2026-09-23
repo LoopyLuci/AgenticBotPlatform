@@ -381,6 +381,15 @@ def _identify_caller(
         local_ip=client_host,
         mesh_port=mesh_port,
     ) is not None:
+        # A linked peer server (bot/peers.py) authenticates with a key of
+        # kind "peer_server", minted by the same api_keys table a paired
+        # phone's key lives in — verify_api_key() itself doesn't (and
+        # shouldn't) care which, but callers of _identify_caller do: a peer
+        # gets a deliberately narrower surface (see
+        # _require_token_or_api_key below) than a full mobile device, which
+        # has desktop-equivalent access by design.
+        if db.api_key_kind(x_dashboard_token or "") == "peer_server":
+            return "peer"
         return "mobile"
     if not expected:
         raise HTTPException(status_code=503, detail="DASHBOARD_TOKEN is not set in .env")
@@ -388,6 +397,22 @@ def _identify_caller(
 
 
 def _require_token_or_api_key(caller: str = Depends(_identify_caller)) -> None:
+    """The default tier for most routes: desktop dashboard or a paired
+    mobile device, but NOT a linked peer server — a peer's own key is meant
+    for the narrow monitoring/lifecycle surface bot/peers.py actually calls
+    (see _require_token_or_api_key_or_peer), never full remote
+    administration of this instance (config, providers, credentials, hooks,
+    security settings, ...). Routes a peer legitimately needs use that
+    other dependency explicitly instead of this one."""
+    if caller == "peer":
+        raise HTTPException(status_code=403, detail="a linked peer server cannot call this endpoint")
+    return None
+
+
+def _require_token_or_api_key_or_peer(caller: str = Depends(_identify_caller)) -> None:
+    """Like _require_token_or_api_key, but also allows a linked peer
+    server's own key — for the small set of routes bot/peers.py's proxy
+    actually calls (overview, bot list/show, bot lifecycle actions)."""
     return None
 
 
@@ -420,6 +445,12 @@ def _caller_device_id(
         local_ip=client_host,
         mesh_port=mesh_port,
     )
+    # A linked peer server's key also lives in api_keys and would otherwise
+    # pass verify_api_key() same as a real paired phone — but these routes
+    # are all Android/mesh device-management, which a peer server has no
+    # business calling (see _identify_caller's own "peer" carve-out).
+    if key_id is not None and db.api_key_kind(x_dashboard_token or "") == "peer_server":
+        key_id = None
     if key_id is None:
         raise HTTPException(status_code=401, detail="invalid dashboard token or api key")
     return key_id
@@ -496,6 +527,8 @@ def _require_device_id(x_dashboard_token: Optional[str] = Header(default=None)) 
     if expected and _tokens_match(x_dashboard_token, expected):
         return db.SERVER_CHAT_DESKTOP_DEVICE_ID
     key_id = db.verify_api_key(x_dashboard_token or "")
+    if key_id is not None and db.api_key_kind(x_dashboard_token or "") == "peer_server":
+        key_id = None
     if key_id is not None:
         return key_id
     if not expected:
@@ -509,6 +542,8 @@ def _require_mobile_key_id(x_dashboard_token: Optional[str] = Header(default=Non
     so (unlike every other mobile-reachable route) this one requires an
     actual mobile key specifically, not the desktop DASHBOARD_TOKEN too."""
     key_id = db.verify_api_key(x_dashboard_token or "")
+    if key_id is not None and db.api_key_kind(x_dashboard_token or "") == "peer_server":
+        key_id = None
     if key_id is None:
         raise HTTPException(status_code=401, detail="a valid mobile api key is required")
     return key_id
@@ -971,7 +1006,7 @@ def build_app() -> FastAPI:
 
     # ------------------------------------------------------------- reads --
 
-    @app.get("/api/overview", dependencies=[Depends(_require_token_or_api_key)])
+    @app.get("/api/overview", dependencies=[Depends(_require_token_or_api_key_or_peer)])
     async def api_overview():
         overview = db.get_overview()
         # desktop.status() does a synchronous full-process-list scan
@@ -2005,8 +2040,8 @@ def build_app() -> FastAPI:
         ok, message = validate_field(payload.get("platform", ""), payload.get("field", ""), payload.get("value", ""))
         return {"ok": ok, "message": message}
 
-    @app.get("/api/bots", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_bots_list():
+    @app.get("/api/bots", dependencies=[Depends(_require_token_or_api_key_or_peer)])
+    async def api_bots_list(caller: str = Depends(_identify_caller)):
         from bot.router import router as _router
 
         live = platform_supervisor.status()
@@ -2014,6 +2049,8 @@ def build_app() -> FastAPI:
         for row in rows:
             row["live_running"] = live.get(row["id"], {}).get("running", False)
             row["circuit"] = _router.circuit_status(row["id"])
+        if caller == "peer":
+            rows = [bot_instances.redact_credentials(row) for row in rows]
         return rows
 
     @app.post("/api/bots/{instance_id}/circuit/reset", dependencies=[Depends(_require_token_or_api_key)])
@@ -2151,7 +2188,7 @@ def build_app() -> FastAPI:
             )
         return {"ok": True}
 
-    @app.post("/api/bots/{instance_id}/enable", dependencies=[Depends(_require_token_or_api_key)])
+    @app.post("/api/bots/{instance_id}/enable", dependencies=[Depends(_require_token_or_api_key_or_peer)])
     async def api_bots_enable(instance_id: int):
         try:
             bot_instances.enable_instance(instance_id, actor="dashboard")
@@ -2162,7 +2199,7 @@ def build_app() -> FastAPI:
             await platform_supervisor.start_instance(row)
         return {"ok": True}
 
-    @app.post("/api/bots/{instance_id}/disable", dependencies=[Depends(_require_token_or_api_key)])
+    @app.post("/api/bots/{instance_id}/disable", dependencies=[Depends(_require_token_or_api_key_or_peer)])
     async def api_bots_disable(instance_id: int):
         try:
             bot_instances.disable_instance(instance_id, actor="dashboard")
@@ -2171,7 +2208,7 @@ def build_app() -> FastAPI:
         await platform_supervisor.stop_instance(instance_id)
         return {"ok": True}
 
-    @app.post("/api/bots/{instance_id}/start", dependencies=[Depends(_require_token_or_api_key)])
+    @app.post("/api/bots/{instance_id}/start", dependencies=[Depends(_require_token_or_api_key_or_peer)])
     async def api_bots_start(instance_id: int):
         row = bot_instances.get_instance(instance_id)
         if row is None:
@@ -2182,12 +2219,12 @@ def build_app() -> FastAPI:
             raise HTTPException(status_code=502, detail=f"failed to start: {exc}")
         return {"ok": True}
 
-    @app.post("/api/bots/{instance_id}/stop", dependencies=[Depends(_require_token_or_api_key)])
+    @app.post("/api/bots/{instance_id}/stop", dependencies=[Depends(_require_token_or_api_key_or_peer)])
     async def api_bots_stop(instance_id: int):
         await platform_supervisor.stop_instance(instance_id)
         return {"ok": True}
 
-    @app.post("/api/bots/{instance_id}/restart", dependencies=[Depends(_require_token_or_api_key)])
+    @app.post("/api/bots/{instance_id}/restart", dependencies=[Depends(_require_token_or_api_key_or_peer)])
     async def api_bots_restart(instance_id: int):
         await platform_supervisor.restart_instance(instance_id)
         return {"ok": True}
@@ -4572,6 +4609,14 @@ def build_app() -> FastAPI:
         expected = os.environ.get("DASHBOARD_TOKEN")
         authed = bool(expected and _tokens_match(supplied, expected))
         device_id = None if authed else db.verify_api_key(supplied or "")
+        # A linked peer server's key must never reach this socket: it would
+        # otherwise receive every live broadcast this dashboard emits (SSH
+        # session output, job events, activity — see bot/ssh_session_monitor.py
+        # and every other _broadcast_soon caller), not just the narrow
+        # overview/bots/lifecycle surface bot/peers.py's own REST proxy uses.
+        if device_id is not None and db.api_key_kind(supplied or "") == "peer_server":
+            device_id = None
+            authed = False
         if not authed and device_id is None:
             await websocket.close(code=4401)
             return

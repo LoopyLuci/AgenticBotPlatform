@@ -3527,6 +3527,22 @@ def verify_api_key(
         return row["id"]
 
 
+def api_key_kind(plaintext: str) -> Optional[str]:
+    """Read-only lookup of an already-verified key's `kind` (e.g. "device"
+    vs "peer_server") — separate from verify_api_key() so callers that
+    don't want its device_presence side effects (like re-checking what kind
+    of caller this is, after auth already succeeded once) can ask without
+    re-touching presence data."""
+    if not plaintext:
+        return None
+    key_hash = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT kind FROM api_keys WHERE key_hash=? AND revoked_at IS NULL", (key_hash,)
+    ).fetchone()
+    return row["kind"] if row else None
+
+
 # -------------------------------------------------------------- chat ------
 
 def log_message(

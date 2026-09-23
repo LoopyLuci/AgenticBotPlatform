@@ -100,6 +100,19 @@ def _row_to_dict(row) -> dict[str, Any]:
     return d
 
 
+def redact_credentials(row: dict[str, Any]) -> dict[str, Any]:
+    """Returns a copy of an instance row with credential VALUES masked but
+    keys preserved (so a caller can still see e.g. "this bot has a
+    bot_token field" without learning what it is). For any consumer that
+    isn't the local dashboard/desktop app itself, in particular a linked
+    peer server (bot/peers.py) — a peer only needs bot identity/status to
+    monitor and start/stop/enable/disable it, never the platform tokens
+    themselves."""
+    out = dict(row)
+    out["credentials"] = {k: "***" for k in row.get("credentials") or {}}
+    return out
+
+
 def get_instance(instance_id: int) -> Optional[dict[str, Any]]:
     conn = db.get_conn()
     row = conn.execute("SELECT * FROM bot_instances WHERE id=?", (instance_id,)).fetchone()
