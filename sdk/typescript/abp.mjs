@@ -1795,6 +1795,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "POST /api/env/set": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/env/set",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/estop": {
   "body": true,
   "method": "POST",
@@ -3241,6 +3248,13 @@ export const operations = {
   "path_params": [
    "name"
   ],
+  "query_params": []
+ },
+ "api_env_set_api_env_set_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/env/set",
+  "path_params": [],
   "query_params": []
  },
  "api_estop_get_api_estop_get": {

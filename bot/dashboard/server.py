@@ -1909,6 +1909,22 @@ def build_app() -> FastAPI:
         backup = envfile.write_content(content, actor="dashboard")
         return {"ok": True, "backup": backup.name if backup else None}
 
+    # Agent-safe write path: sets one key without ever returning file
+    # content, unlike /api/env/content above — an agent (or any caller)
+    # can add/update a setting but can never read DASHBOARD_TOKEN or any
+    # other existing value through this route.
+    @app.post("/api/env/set", dependencies=[Depends(_require_token_or_bootstrap)])
+    async def api_env_set(payload: dict = Body(...)):
+        key = payload.get("key")
+        value = payload.get("value")
+        if not key or value is None:
+            raise HTTPException(status_code=400, detail="payload must be {key: str, value: str}")
+        try:
+            envfile.set_var(key, str(value), actor="dashboard")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True}
+
     @app.get("/api/env/backups", dependencies=[Depends(_require_token_or_bootstrap)])
     async def api_env_backups():
         return envfile.list_backups()

@@ -273,6 +273,29 @@ def get_var(key: str) -> Optional[str]:
     return None
 
 
+def set_var(key: str, value: str, actor: str = "dashboard") -> None:
+    """Sets a single KEY=value in the .env, replacing an existing line for
+    that key or appending a new one — without ever reading the rest of the
+    file back to the caller, unlike write_content(). This is the write path
+    an agent should use: it can add/update a setting but never sees any
+    other line, including secrets like DASHBOARD_TOKEN."""
+    if "\n" in key or "=" in key or not key:
+        raise ValueError(f"invalid env key: {key!r}")
+    if "\n" in value or "\r" in value:
+        raise ValueError("env value cannot contain newlines")
+
+    pattern = re.compile(rf"^{re.escape(key)}=.*$")
+    lines = read_content().splitlines()
+    new_line = f"{key}={value}"
+    for i, line in enumerate(lines):
+        if pattern.match(line.strip()):
+            lines[i] = new_line
+            break
+    else:
+        lines.append(new_line)
+    write_content("\n".join(lines) + "\n", actor=actor)
+
+
 def ensure_dashboard_token() -> str:
     """Guarantees DASHBOARD_TOKEN exists in .env, generating and persisting
     a fresh one the first time this ever runs on a given install — the

@@ -395,6 +395,17 @@ def test_env_status_is_reachable(client, capsys):
     json.loads(capsys.readouterr().out)
 
 
+def test_env_set_writes_key_without_returning_content(client, capsys):
+    from bot import envfile
+
+    code, _ = run(["--json", "env", "set", "SOME_TEST_VAR", "hello"], client)
+    assert code == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result == {"ok": True}
+    assert "content" not in result
+    assert envfile.get_var("SOME_TEST_VAR") == "hello"
+
+
 def test_config_get_and_reload(client, capsys):
     code, _ = run(["--json", "config", "get"], client)
     assert code == 0
