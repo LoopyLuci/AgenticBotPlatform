@@ -437,3 +437,104 @@ def test_peers_list_is_reachable(client, capsys):
     code, _ = run(["--json", "peers", "list"], client)
     assert code == 0
     json.loads(capsys.readouterr().out)
+
+
+# ==================================================================================
+# SSH Toolkit (github.com/LoopyLuci/SSH_Toolkit, vendored as a git submodule at
+# vendor/ssh_toolkit) - real end-to-end calls into the real PowerShell tool, isolated
+# from the real ~/.ssh/config via ABP_SSH_TOOLKIT_HOME (bot/ssh_toolkit.py's own
+# test-isolation env var, same convention abp_agenteval uses for its own state).
+# ==================================================================================
+
+@pytest.fixture
+def ssh_toolkit_home(tmp_path, monkeypatch):
+    monkeypatch.setenv("ABP_SSH_TOOLKIT_HOME", str(tmp_path))
+    return tmp_path
+
+
+def test_ssh_status_reports_available(client, ssh_toolkit_home, capsys):
+    code, _ = run(["--json", "ssh", "status"], client)
+    assert code == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["available"] is True, status.get("reason")
+
+
+def test_ssh_full_lifecycle(client, ssh_toolkit_home, capsys):
+    code, _ = run(["--json", "ssh", "list"], client)
+    assert code == 0
+    assert json.loads(capsys.readouterr().out) == []
+
+    code, _ = run(["ssh", "add", "--name", "cli-test-ssh", "--host-name", "10.5.5.5",
+                   "--user", "tester", "--identity-file", "C:/fake/key", "--tags", "test"], client)
+    assert code == 0
+    capsys.readouterr()
+
+    code, _ = run(["--json", "ssh", "list"], client)
+    assert code == 0
+    conns = json.loads(capsys.readouterr().out)
+    assert any(c["Name"] == "cli-test-ssh" for c in conns)
+
+    code, _ = run(["--json", "ssh", "show", "cli-test-ssh"], client)
+    assert code == 0
+    shown = json.loads(capsys.readouterr().out)
+    assert shown["HostName"] == "10.5.5.5"
+
+    # An unreachable fake host - a normal, non-error result.
+    code, _ = run(["--json", "ssh", "test", "cli-test-ssh"], client)
+    assert code == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["reachable"] is False
+
+    code, _ = run(["--json", "ssh", "status-all"], client)
+    assert code == 0
+    json.loads(capsys.readouterr().out)
+
+    code, _ = run(["--json", "ssh", "visualize"], client)
+    assert code == 0
+    graph = json.loads(capsys.readouterr().out)
+    assert any(n["Connection"]["Name"] == "cli-test-ssh" for n in graph)
+
+    code, _ = run(["ssh", "remove", "cli-test-ssh"], client)
+    assert code == 0
+    capsys.readouterr()
+
+    code, _ = run(["--json", "ssh", "list"], client)
+    assert code == 0
+    assert json.loads(capsys.readouterr().out) == []
+
+
+def test_ssh_run_command_over_a_real_local_loopback(client, ssh_toolkit_home, capsys):
+    # Not a live SSH server - just confirms the run path (add -> run -> remove) works
+    # and a failure to actually connect surfaces as a real, non-crashing error.
+    code, _ = run(["ssh", "add", "--name", "cli-test-run", "--host-name", "127.0.0.1",
+                   "--port", "1", "--identity-file", "C:/fake/key"], client)
+    assert code == 0
+    capsys.readouterr()
+
+    code, _ = run(["ssh", "run", "cli-test-run", "echo", "hi"], client)
+    assert code == 1
+    assert capsys.readouterr().err
+
+    run(["ssh", "remove", "cli-test-run"], client)
+
+
+def test_ssh_check_update_reaches_the_real_repo(client, ssh_toolkit_home, capsys):
+    code, _ = run(["--json", "ssh", "check-update"], client)
+    assert code == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result.get("Error") in (None, "")
+    assert result["InstalledVersion"]
+
+
+def test_ssh_auto_update_setting_get_and_set(client, ssh_toolkit_home, capsys):
+    code, _ = run(["--json", "ssh", "auto-update"], client)
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["mode"] == "never"
+
+    code, _ = run(["--json", "ssh", "auto-update", "notify"], client)
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["mode"] == "notify"
+
+    code, _ = run(["--json", "ssh", "auto-update"], client)
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["mode"] == "notify"

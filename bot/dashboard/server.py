@@ -593,10 +593,12 @@ def build_app() -> FastAPI:
     @asynccontextmanager
     async def _lifespan(app: FastAPI):
         task = asyncio.create_task(_presence_broadcaster())
+        ssh_update_task = asyncio.create_task(_ssh_toolkit_auto_update_loop())
         try:
             yield
         finally:
             task.cancel()
+            ssh_update_task.cancel()
 
     app = FastAPI(title="Bot Control Dashboard API", lifespan=_lifespan)
 
@@ -680,6 +682,20 @@ def build_app() -> FastAPI:
                 # broadcast, it degrades the Devices view's "live" feel
                 # indefinitely with nothing in the logs to explain why.
                 logger.exception("presence broadcaster iteration failed")
+
+    async def _ssh_toolkit_auto_update_loop():
+        """Background check for bot.ssh_toolkit.run_auto_update_check() -
+        never runs at all when the "auto_update" setting is "never" (the
+        default), so an install that hasn't opted in pays no cost beyond
+        this one cheap config read every cycle."""
+        from bot import ssh_toolkit
+
+        while True:
+            await asyncio.sleep(6 * 3600)
+            try:
+                await ssh_toolkit.run_auto_update_check()
+            except Exception:
+                logger.exception("ssh_toolkit auto-update loop iteration failed")
 
     @app.get("/")
     async def index(request: Request):
@@ -1278,6 +1294,146 @@ def build_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="no such file")
         db.log_audit(actor="dashboard", action="file_share_download", detail=f"{root}/{path}")
         return FileResponse(target, filename=target.name)
+
+    # SSH Toolkit (https://github.com/LoopyLuci/SSH_Toolkit) - a separately maintained
+    # PowerShell tool, vendored as a git submodule at vendor/ssh_toolkit and reached
+    # only through bot/ssh_toolkit.py, which shells out to its own CLI - see that
+    # module's docstring. _require_token (not _require_token_or_api_key): this manages
+    # real SSH connection setup, not something a lower-trust paired device should touch.
+    @app.get("/api/ssh-toolkit/status", dependencies=[Depends(_require_token)])
+    async def api_ssh_toolkit_status():
+        from bot import ssh_toolkit
+
+        available, reason = ssh_toolkit.is_available()
+        return {"available": available, "reason": reason}
+
+    @app.get("/api/ssh-toolkit/connections", dependencies=[Depends(_require_token)])
+    async def api_ssh_toolkit_connections():
+        from bot import ssh_toolkit
+
+        try:
+            return {"connections": await ssh_toolkit.list_connections()}
+        except ssh_toolkit.SshToolkitError as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
+
+    @app.get("/api/ssh-toolkit/connections/{name}", dependencies=[Depends(_require_token)])
+    async def api_ssh_toolkit_connection_get(name: str):
+        from bot import ssh_toolkit
+
+        try:
+            return await ssh_toolkit.get_connection(name)
+        except ssh_toolkit.SshToolkitError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+
+    @app.post("/api/ssh-toolkit/connections", dependencies=[Depends(_require_token)])
+    async def api_ssh_toolkit_connection_add(payload: dict = Body(...)):
+        from bot import ssh_toolkit
+
+        name = (payload.get("name") or "").strip()
+        host_name = (payload.get("host_name") or "").strip()
+        if not name or not host_name:
+            raise HTTPException(status_code=400, detail="name and host_name are both required")
+        try:
+            await ssh_toolkit.add_connection(
+                name, host_name, port=int(payload.get("port") or 22), user=payload.get("user"),
+                identity_file=payload.get("identity_file"), generate_key=bool(payload.get("generate_key")),
+                proxy_jump=payload.get("proxy_jump"), tags=payload.get("tags"),
+                multiplex=bool(payload.get("multiplex")), force=bool(payload.get("force")),
+            )
+        except ssh_toolkit.SshToolkitError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        db.log_audit(actor="dashboard", action="ssh_toolkit_add", detail=name)
+        return {"ok": True}
+
+    @app.delete("/api/ssh-toolkit/connections/{name}", dependencies=[Depends(_require_token)])
+    async def api_ssh_toolkit_connection_remove(name: str):
+        from bot import ssh_toolkit
+
+        try:
+            await ssh_toolkit.remove_connection(name)
+        except ssh_toolkit.SshToolkitError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        db.log_audit(actor="dashboard", action="ssh_toolkit_remove", detail=name)
+        return {"ok": True}
+
+    @app.post("/api/ssh-toolkit/connections/{name}/test", dependencies=[Depends(_require_token)])
+    async def api_ssh_toolkit_connection_test(name: str):
+        from bot import ssh_toolkit
+
+        try:
+            reachable = await ssh_toolkit.test_connection(name)
+        except ssh_toolkit.SshToolkitError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"name": name, "reachable": reachable}
+
+    @app.post("/api/ssh-toolkit/connections/{name}/run", dependencies=[Depends(_require_token)])
+    async def api_ssh_toolkit_connection_run(name: str, payload: dict = Body(...)):
+        from bot import ssh_toolkit
+
+        command = (payload.get("command") or "").strip()
+        if not command:
+            raise HTTPException(status_code=400, detail="command is required")
+        try:
+            output = await ssh_toolkit.run_command(name, command)
+        except ssh_toolkit.SshToolkitError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        db.log_audit(actor="dashboard", action="ssh_toolkit_run", detail=f"{name}: {command[:200]}")
+        return {"output": output}
+
+    @app.get("/api/ssh-toolkit/status-all", dependencies=[Depends(_require_token)])
+    async def api_ssh_toolkit_status_all():
+        from bot import ssh_toolkit
+
+        try:
+            return {"connections": await ssh_toolkit.status_all()}
+        except ssh_toolkit.SshToolkitError as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
+
+    @app.get("/api/ssh-toolkit/graph", dependencies=[Depends(_require_token)])
+    async def api_ssh_toolkit_graph():
+        from bot import ssh_toolkit
+
+        try:
+            return {"nodes": await ssh_toolkit.graph()}
+        except ssh_toolkit.SshToolkitError as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
+
+    @app.get("/api/ssh-toolkit/update/check", dependencies=[Depends(_require_token)])
+    async def api_ssh_toolkit_update_check():
+        from bot import ssh_toolkit
+
+        try:
+            return await ssh_toolkit.check_update()
+        except ssh_toolkit.SshToolkitError as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
+
+    @app.post("/api/ssh-toolkit/update/apply", dependencies=[Depends(_require_token)])
+    async def api_ssh_toolkit_update_apply():
+        from bot import ssh_toolkit
+
+        try:
+            result = await ssh_toolkit.apply_update()
+        except ssh_toolkit.SshToolkitError as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
+        db.log_audit(actor="dashboard", action="ssh_toolkit_update", detail=json.dumps(result))
+        return result
+
+    @app.get("/api/ssh-toolkit/auto-update", dependencies=[Depends(_require_token)])
+    async def api_ssh_toolkit_auto_update_get():
+        from bot import ssh_toolkit
+
+        return {"mode": ssh_toolkit.get_auto_update_mode(), "options": list(ssh_toolkit.AUTO_UPDATE_MODES)}
+
+    @app.post("/api/ssh-toolkit/auto-update", dependencies=[Depends(_require_token)])
+    async def api_ssh_toolkit_auto_update_set(payload: dict = Body(...)):
+        from bot import ssh_toolkit
+
+        mode = payload.get("mode")
+        try:
+            ssh_toolkit.set_auto_update_mode(mode, actor="dashboard")
+        except ssh_toolkit.SshToolkitError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"mode": ssh_toolkit.get_auto_update_mode(), "options": list(ssh_toolkit.AUTO_UPDATE_MODES)}
 
     @app.get("/api/plugins", dependencies=[Depends(_require_token)])
     async def api_plugins_list():

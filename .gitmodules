@@ -1,0 +1,3 @@
+[submodule "vendor/ssh_toolkit"]
+	path = vendor/ssh_toolkit
+	url = https://github.com/LoopyLuci/SSH_Toolkit.git

@@ -584,6 +584,7 @@
       <a href="#kanban" title="Kanban"><span class="ic">🗒</span><span class="nav-txt">Kanban</span></a>
       <a href="#agents" title="ABP Agents"><span class="ic">🤖</span><span class="nav-txt">ABP Agents</span></a>
       <a href="#swarms" title="Swarms"><span class="ic">🐝</span><span class="nav-txt">Swarms</span></a>
+      <a href="#ssh-toolkit" title="SSH Toolkit"><span class="ic">🔑</span><span class="nav-txt">SSH Toolkit</span></a>
       <a href="#automation" title="Automation"><span class="ic">🪝</span><span class="nav-txt">Automation</span></a>
       <a href="#customize" title="Customize UI"><span class="ic">🪄</span><span class="nav-txt">Customize UI</span></a>
       <a href="#training" title="Training"><span class="ic">🎓</span><span class="nav-txt">Training</span></a>
@@ -1553,6 +1554,60 @@
             <thead><tr><th>Time</th><th>Kind</th><th>Detail</th><th></th></tr></thead>
             <tbody id="delegation-activity-tbody"><tr class="emptyrow"><td colspan="4">Connecting to the ABP server…</td></tr></tbody>
           </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="ssh-toolkit">
+      <div class="sec-head"><h2>SSH Toolkit</h2><span class="desc">Manage SSH connections to other machines — a separately maintained tool (<a href="https://github.com/LoopyLuci/SSH_Toolkit" target="_blank" rel="noopener">SSH_Toolkit</a>), vendored here as a submodule, reached from the GUI, TUI, and CLI alike.</span></div>
+
+      <div class="card">
+        <p class="cardnote" id="ssh-toolkit-availability">Checking availability…</p>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Add a connection</h3>
+        <div class="wizard-field">
+          <div class="row">
+            <input type="text" id="ssh-new-name" placeholder="name (e.g. build-box)" autocomplete="off" spellcheck="false" style="max-width:200px;">
+            <input type="text" id="ssh-new-host" placeholder="host or IP" autocomplete="off" spellcheck="false" style="max-width:200px;">
+            <input type="text" id="ssh-new-user" placeholder="user (optional)" autocomplete="off" spellcheck="false" style="max-width:160px;">
+          </div>
+        </div>
+        <div class="wizard-foot">
+          <span class="cardnote" id="ssh-new-status"></span>
+          <button class="btn primary" id="btn-ssh-add">Add connection</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Configured connections</h3>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Name</th><th>Host</th><th>Port</th><th>User</th><th>Tags</th><th></th></tr></thead>
+            <tbody id="ssh-toolkit-tbody"><tr class="emptyrow"><td colspan="6">Connecting to the ABP server…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Toolkit updates</h3>
+        <p class="cardnote" id="ssh-toolkit-version">—</p>
+        <div class="wizard-foot">
+          <span class="cardnote" id="ssh-update-status"></span>
+          <button class="btn" id="btn-ssh-check-update">Check for update</button>
+          <button class="btn primary" id="btn-ssh-apply-update">Apply update</button>
+        </div>
+        <div class="wizard-field" style="margin-top:10px;">
+          <label>Auto-update, on this machine</label>
+          <div class="help">A background check every few hours — "never" (manual only), "notify" (logs when an update is available), or "auto" (applies it automatically). Machine-wide, not per-bot.</div>
+          <div class="row">
+            <select id="ssh-auto-update-mode">
+              <option value="never">Never — manual only</option>
+              <option value="notify">Notify — log availability only</option>
+              <option value="auto">Auto — apply automatically</option>
+            </select>
+          </div>
         </div>
       </div>
     </section>
@@ -3178,6 +3233,8 @@ function startDashboard() {
   pollWhenVisible(refreshDelegationActivity, 15000);
   refreshSwarmBudget();
   pollWhenVisible(refreshSwarmBudget, 15000);
+  refreshSshToolkit();
+  pollWhenVisible(refreshSshToolkit, 20000);
   refreshDiagnostics();
   pollWhenVisible(refreshDiagnostics, 15000);
   connectLiveEventsSocket();
@@ -5240,6 +5297,125 @@ document.getElementById('budget-save-btn').onclick = async () => {
     status.textContent = 'Failed: ' + e.message;
   }
   setTimeout(() => { status.textContent = ''; }, 3000);
+};
+
+// ------------------------------------------------------------ SSH Toolkit -
+async function refreshSshToolkit() {
+  const availability = document.getElementById('ssh-toolkit-availability');
+  const tbody = document.getElementById('ssh-toolkit-tbody');
+  if (!getToken()) return;
+  try {
+    const auto = await api('/api/ssh-toolkit/auto-update');
+    document.getElementById('ssh-auto-update-mode').value = auto.mode;
+  } catch (_e) { /* leave the select at its default */ }
+  let avail;
+  try { avail = await api('/api/ssh-toolkit/status'); } catch (_e) { return; }
+  if (!avail.available) {
+    availability.textContent = `SSH Toolkit is not available: ${avail.reason || ''}`;
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="6">SSH Toolkit is not available.</td></tr>';
+    return;
+  }
+  availability.textContent = 'SSH Toolkit is available.';
+  let conns;
+  try { conns = (await api('/api/ssh-toolkit/connections')).connections; } catch (e) {
+    tbody.innerHTML = `<tr class="emptyrow"><td colspan="6">Failed to load connections: ${esc(e.message)}</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = conns.length ? conns.map(c => `
+    <tr>
+      <td>${esc(c.Name)}</td>
+      <td class="mono">${esc(c.HostName)}</td>
+      <td>${esc(String(c.Port ?? ''))}</td>
+      <td>${esc(c.User || '')}</td>
+      <td>${esc(c.Tags || '')}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn" data-ssh-test="${esc(c.Name)}" style="padding:3px 8px; font-size:11px;">Test</button>
+        <button class="btn" data-ssh-remove="${esc(c.Name)}" style="padding:3px 8px; font-size:11px;">Remove</button>
+      </td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="6">No connections yet — add one above.</td></tr>';
+
+  document.querySelectorAll('[data-ssh-test]').forEach(btn => btn.onclick = async () => {
+    const name = btn.dataset.sshTest;
+    const status = document.getElementById('ssh-new-status');
+    status.textContent = `Testing ${name}…`;
+    try {
+      const res = await api(`/api/ssh-toolkit/connections/${encodeURIComponent(name)}/test`, { method: 'POST' });
+      status.textContent = `${name}: ${res.reachable ? 'reachable' : 'not reachable'}`;
+    } catch (e) {
+      status.textContent = `Failed: ${e.message}`;
+    }
+  });
+  document.querySelectorAll('[data-ssh-remove]').forEach(btn => btn.onclick = async () => {
+    const name = btn.dataset.sshRemove;
+    if (!confirm(`Remove connection "${name}"?`)) return;
+    try {
+      await api(`/api/ssh-toolkit/connections/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    } catch (e) {
+      document.getElementById('ssh-new-status').textContent = `Failed: ${e.message}`;
+      return;
+    }
+    refreshSshToolkit();
+  });
+}
+
+document.getElementById('btn-ssh-add').onclick = async () => {
+  const status = document.getElementById('ssh-new-status');
+  const name = document.getElementById('ssh-new-name').value.trim();
+  const host = document.getElementById('ssh-new-host').value.trim();
+  const user = document.getElementById('ssh-new-user').value.trim();
+  if (!name || !host) { status.textContent = 'Name and host are both required.'; return; }
+  status.textContent = 'Adding…';
+  try {
+    await api('/api/ssh-toolkit/connections', {
+      method: 'POST',
+      body: JSON.stringify({ name, host_name: host, user: user || undefined }),
+    });
+    status.textContent = `Added "${name}".`;
+    document.getElementById('ssh-new-name').value = '';
+    document.getElementById('ssh-new-host').value = '';
+    document.getElementById('ssh-new-user').value = '';
+  } catch (e) {
+    status.textContent = `Failed: ${e.message}`;
+    return;
+  }
+  refreshSshToolkit();
+};
+
+document.getElementById('btn-ssh-check-update').onclick = async () => {
+  const status = document.getElementById('ssh-update-status');
+  status.textContent = 'Checking…';
+  try {
+    const check = await api('/api/ssh-toolkit/update/check');
+    document.getElementById('ssh-toolkit-version').textContent =
+      `Installed: ${check.InstalledVersion} · Latest: ${check.LatestVersion}`;
+    status.textContent = check.UpdateAvailable ? 'An update is available.' : 'Already up to date.';
+  } catch (e) {
+    status.textContent = `Failed: ${e.message}`;
+  }
+};
+
+document.getElementById('btn-ssh-apply-update').onclick = async () => {
+  const status = document.getElementById('ssh-update-status');
+  if (!confirm('Apply the SSH Toolkit update now?')) return;
+  status.textContent = 'Applying…';
+  try {
+    await api('/api/ssh-toolkit/update/apply', { method: 'POST' });
+    status.textContent = 'Updated.';
+  } catch (e) {
+    status.textContent = `Failed: ${e.message}`;
+    return;
+  }
+  refreshSshToolkit();
+};
+
+document.getElementById('ssh-auto-update-mode').onchange = async (ev) => {
+  const status = document.getElementById('ssh-update-status');
+  try {
+    await api('/api/ssh-toolkit/auto-update', { method: 'POST', body: JSON.stringify({ mode: ev.target.value }) });
+    status.textContent = `Auto-update set to "${ev.target.value}".`;
+  } catch (e) {
+    status.textContent = `Failed: ${e.message}`;
+  }
 };
 
 // ------------------------------------------------------- live job events -

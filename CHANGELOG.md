@@ -9,6 +9,19 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **SSH Toolkit integration.** A new [SSH_Toolkit](https://github.com/LoopyLuci/SSH_Toolkit) —
+  a separately maintained PowerShell tool for creating/managing/visualizing named SSH connections
+  between machines, with its own interactive UI and CLI — is now vendored here as a git submodule
+  (`vendor/ssh_toolkit`) and wired in as a module across every surface: the dashboard GUI and
+  desktop app (new "SSH Toolkit" page), the TUI (`SshToolkitScreen`, press `h`), and the CLI
+  (`abp_cli ssh status|list|show|add|remove|test|run|status-all|visualize|check-update|update`).
+  Reached only through `bot/ssh_toolkit.py`, which shells out to the toolkit's own CLI rather than
+  reimplementing any of its logic, so a fix released upstream is fixed here the moment the
+  submodule is bumped — no ABP code change needed. A machine-wide `auto_update` setting
+  (`abp_cli ssh auto-update never|notify|auto`, or the GUI's own select; default `never`) drives an
+  every-6-hours background check that can just log an available update ("notify") or apply it
+  itself ("auto") — this only ever touches the vendored submodule's own files, never this machine's
+  real `~/.ssh/config` or connection registry.
 - **CLI/TUI parity, second phase.** `abp_cli` and `bot/tui` now also cover: swarms (create any
   strategy, run, watch runs, enable/disable/delete — TUI's new `SwarmsScreen`, press `w`), sessions
   (list/search/view/delete — TUI's new `SessionsScreen`, press `s`), the terminal panel (as the

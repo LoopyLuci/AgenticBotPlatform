@@ -498,3 +498,51 @@ class DashboardClient:
 
     async def delete_kanban_card(self, card_id: int, instance_id: int) -> dict:
         return await self._request("DELETE", f"/api/kanban/cards/{card_id}", params={"instance_id": instance_id})
+
+    # ------------------------------------------------------------ ssh toolkit
+    async def ssh_toolkit_status(self) -> dict:
+        return await self._request("GET", "/api/ssh-toolkit/status")
+
+    async def ssh_toolkit_connections(self) -> list[dict]:
+        return (await self._request("GET", "/api/ssh-toolkit/connections"))["connections"]
+
+    async def ssh_toolkit_get_connection(self, name: str) -> dict:
+        return await self._request("GET", f"/api/ssh-toolkit/connections/{name}")
+
+    async def ssh_toolkit_add_connection(self, name: str, host_name: str, *, port: int = 22,
+                                         user: Optional[str] = None, identity_file: Optional[str] = None,
+                                         generate_key: bool = False, proxy_jump: Optional[str] = None,
+                                         tags: Optional[str] = None, multiplex: bool = False,
+                                         force: bool = False) -> dict:
+        return await self._request("POST", "/api/ssh-toolkit/connections", json={
+            "name": name, "host_name": host_name, "port": port, "user": user,
+            "identity_file": identity_file, "generate_key": generate_key, "proxy_jump": proxy_jump,
+            "tags": tags, "multiplex": multiplex, "force": force,
+        })
+
+    async def ssh_toolkit_remove_connection(self, name: str) -> dict:
+        return await self._request("DELETE", f"/api/ssh-toolkit/connections/{name}")
+
+    async def ssh_toolkit_test_connection(self, name: str) -> dict:
+        return await self._request("POST", f"/api/ssh-toolkit/connections/{name}/test")
+
+    async def ssh_toolkit_run(self, name: str, command: str) -> str:
+        return (await self._request("POST", f"/api/ssh-toolkit/connections/{name}/run", json={"command": command}))["output"]
+
+    async def ssh_toolkit_status_all(self) -> list[dict]:
+        return (await self._request("GET", "/api/ssh-toolkit/status-all"))["connections"]
+
+    async def ssh_toolkit_graph(self) -> list[dict]:
+        return (await self._request("GET", "/api/ssh-toolkit/graph"))["nodes"]
+
+    async def ssh_toolkit_check_update(self) -> dict:
+        return await self._request("GET", "/api/ssh-toolkit/update/check")
+
+    async def ssh_toolkit_apply_update(self) -> dict:
+        return await self._request("POST", "/api/ssh-toolkit/update/apply")
+
+    async def ssh_toolkit_get_auto_update(self) -> dict:
+        return await self._request("GET", "/api/ssh-toolkit/auto-update")
+
+    async def ssh_toolkit_set_auto_update(self, mode: str) -> dict:
+        return await self._request("POST", "/api/ssh-toolkit/auto-update", json={"mode": mode})

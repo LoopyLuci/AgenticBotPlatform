@@ -24,6 +24,7 @@ class BotListScreen(Screen):
         ("g", "agent_settings", "Agent settings"),
         ("w", "swarms", "Swarms"),
         ("s", "sessions", "Sessions"),
+        ("h", "ssh_toolkit", "SSH Toolkit"),
         ("q", "app.quit", "Quit"),
     ]
 
@@ -42,6 +43,7 @@ class BotListScreen(Screen):
             yield Button("Agent settings (g)", id="btn-agent-settings")
             yield Button("Swarms (w)", id="btn-swarms")
             yield Button("Sessions (s)", id="btn-sessions")
+            yield Button("SSH Toolkit (h)", id="btn-ssh-toolkit")
         yield DataTable(id="bot-table")
         yield Label("", id="bot-list-status")
         yield Footer()
@@ -103,6 +105,7 @@ class BotListScreen(Screen):
             "btn-agent-settings": self.action_agent_settings,
             "btn-swarms": self.action_swarms,
             "btn-sessions": self.action_sessions,
+            "btn-ssh-toolkit": self.action_ssh_toolkit,
         }
         handler = actions.get(event.button.id)
         if handler:
@@ -150,6 +153,11 @@ class BotListScreen(Screen):
 
         bot = self._selected_bot()
         await self.app.push_screen(SessionsScreen(instance_id=bot["id"] if bot else None))
+
+    async def action_ssh_toolkit(self) -> None:
+        from bot.tui.screens.ssh_toolkit import SshToolkitScreen
+
+        await self.app.push_screen(SshToolkitScreen())
 
     async def _after_form(self, _result: object = None) -> None:
         await self.refresh_bots()

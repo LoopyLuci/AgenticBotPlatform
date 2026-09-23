@@ -47,6 +47,7 @@ this is just the map:
 | **Sessions** | Browse *past* conversations (grouped by 30-minute gaps, or the "legacy" pre-sessions bucket) — a history view, not to be confused with **session linking** (below), which is about which live chat a bot writes into. |
 | **Bots** | Add/edit/enable/disable/start/stop/restart bot instances; per-instance backups; the **New Session** button for `ui`/`hermes_gateway` bots. |
 | **Swarms** | Create/edit/enable/disable swarms; trigger runs; browse run history with per-step results. |
+| **SSH Toolkit** | Manage named SSH connections to other machines — add/test/remove, a proxy-jump graph, and update check/apply — backed by [SSH_Toolkit](https://github.com/LoopyLuci/SSH_Toolkit), a separately maintained tool vendored as a git submodule. Also in the TUI (`abp_cli ssh ...`, or `SshToolkitScreen` in `python -m bot.tui`) and the desktop app. |
 | **Training** | Add phrasings to teach the Support Bot's hybrid classifier (retrains both sub-models live), view its self-monitoring "Model health" panel, and give any bot instance persistent custom instructions/persona. |
 | **Platforms** | Legacy single-bot-per-platform `.env` fields — superseded by the Bots tab, kept for transparency. |
 | **Mobile** | Mobile pairing keys + QR codes, paired-device list with live online/offline status, and the Android one-click build/install/pair panel. |

@@ -319,3 +319,52 @@ def test_sessions_screen_lists_and_deletes(dashboard_client):
             assert screen._sessions is not None
 
     asyncio.run(_run())
+
+
+def test_ssh_toolkit_screen_adds_tests_and_removes(dashboard_client, monkeypatch, tmp_path):
+    # Isolated from the real ~/.ssh/config - see bot/ssh_toolkit.py's own comment on
+    # this env var, and tests/test_abp_cli.py's identical fixture.
+    monkeypatch.setenv("ABP_SSH_TOOLKIT_HOME", str(tmp_path))
+
+    async def _run():
+        from textual.widgets import Button, DataTable, Input, Label
+
+        from bot.tui.screens.ssh_toolkit import SshToolkitScreen
+
+        async def _wait_until(predicate, *, timeout=15.0, interval=0.2):
+            # Each screen action here round-trips through a REAL PowerShell subprocess
+            # (not just an in-memory DB write like every other screen's own tests), so
+            # a fixed pilot.pause() can't be sized reliably - poll instead.
+            elapsed = 0.0
+            while elapsed < timeout:
+                if predicate():
+                    return
+                await pilot.pause(interval)
+                elapsed += interval
+            assert predicate()
+
+        app = AgenticBotPlatformTUI()
+        async with app.run_test(size=(140, 100)) as pilot:
+            app.client = dashboard_client
+            await app.push_screen(SshToolkitScreen())
+            screen = app.screen
+            assert isinstance(screen, SshToolkitScreen)
+            await _wait_until(lambda: screen.query_one("#ssh-availability", Label).content == "")
+
+            screen.query_one("#ssh-name", Input).value = "tui-test-ssh"
+            screen.query_one("#ssh-hostname", Input).value = "10.9.9.9"
+            screen.query_one("#ssh-add", Button).press()
+
+            table = screen.query_one("#ssh-table", DataTable)
+            await _wait_until(lambda: table.row_count == 1)
+
+            table.move_cursor(row=0)
+            await pilot.pause()
+            screen.query_one("#ssh-test", Button).press()
+            status = screen.query_one("#ssh-status", Label)
+            await _wait_until(lambda: "not reachable" in str(status.content))
+
+            screen.query_one("#ssh-remove", Button).press()
+            await _wait_until(lambda: screen.query_one("#ssh-table", DataTable).row_count == 0)
+
+    asyncio.run(_run())
