@@ -41,6 +41,19 @@ what's still dashboard/desktop-app-only.
   `SwarmsScreen` (press `w`). CLI: `abp_cli swarms list|show|create|delete|enable|disable|run|runs|run-show|run-cancel`.
 - **Sessions**: list (with search), view a conversation's messages, delete. TUI: `SessionsScreen`
   (press `s`). CLI: `abp_cli sessions list|show|delete|new`.
+- **SSH Toolkit** ([github.com/LoopyLuci/SSH_Toolkit](https://github.com/LoopyLuci/SSH_Toolkit)) — a
+  separately maintained PowerShell tool for managing/visualizing SSH connections between machines,
+  vendored here as a git submodule (`vendor/ssh_toolkit`) and reached only through
+  `bot/ssh_toolkit.py`, which shells out to its own CLI: nothing here reimplements its logic, so ABP
+  and the standalone toolkit never drift apart — a bug fixed upstream is fixed here the moment the
+  submodule is bumped. Covers add/list/show/remove/test/run a remote command, reachability for every
+  connection, the proxy-jump graph, and update check/apply. Also in the dashboard GUI and desktop
+  app (their own "SSH Toolkit" page). TUI: `SshToolkitScreen` (press `h`). CLI: `abp_cli ssh
+  status|list|show|add|remove|test|run|status-all|visualize|check-update|update|auto-update`. Updates
+  are otherwise manual-only by default; `abp_cli ssh auto-update never|notify|auto` (or the GUI's own
+  select) sets a machine-wide background check (every 6h) that either just logs an available update
+  ("notify") or applies it automatically ("auto") — never touches this machine's own `~/.ssh/config`
+  or connection registry, only the vendored submodule's own files.
 
 **CLI only, no TUI screen yet** (all real, all tested against the live dashboard app — just not
 given a Textual screen in this phase):

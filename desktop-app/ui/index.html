@@ -814,6 +814,7 @@
       <a href="#kanban" data-kw="kanban board cards tasks"><span class="ic">🗒</span><span class="nav-txt"><b>Kanban</b><small>Per-bot task board</small></span></a>
       <a href="#agents" data-kw="agents abp agent native settings permissions safety tools skills sub-agents"><span class="ic">🤖</span><span class="nav-txt"><b>ABP Agents</b><small>Settings, safety, tools, skills</small></span></a>
       <a href="#swarms" data-kw="swarms orchestration multi-bot"><span class="ic">🐝</span><span class="nav-txt"><b>Swarms</b><small>Multi-bot orchestration</small></span></a>
+      <a href="#ssh-toolkit" data-kw="ssh toolkit connections remote machines"><span class="ic">🔑</span><span class="nav-txt"><b>SSH Toolkit</b><small>Manage SSH connections</small></span></a>
       <a href="#automation" data-kw="automation hooks agent settings auto-manage lifecycle"><span class="ic">🪝</span><span class="nav-txt"><b>Automation</b><small>Hooks, agent settings &amp; auto-manage</small></span></a>
       <a href="#customize" data-kw="customize generative ui ai preview diff"><span class="ic">🪄</span><span class="nav-txt"><b>Customize UI</b><small>Describe a change, preview, apply</small></span></a>
       <a href="#platforms" data-kw="platforms legacy single-bot"><span class="ic">🔌</span><span class="nav-txt"><b>Platforms</b><small>Legacy single-bot config</small></span></a>
@@ -1948,6 +1949,60 @@
             <thead><tr><th>Time</th><th>Kind</th><th>Detail</th><th></th></tr></thead>
             <tbody id="delegation-activity-tbody"><tr class="emptyrow"><td colspan="4">Unlock with the dashboard token to view.</td></tr></tbody>
           </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="ssh-toolkit">
+      <div class="sec-head"><h2>SSH Toolkit</h2><span class="desc">Manage SSH connections to other machines — a separately maintained tool (<a href="https://github.com/LoopyLuci/SSH_Toolkit" target="_blank" rel="noopener">SSH_Toolkit</a>), vendored here as a submodule, reached from the GUI, TUI, and CLI alike.</span></div>
+
+      <div class="card">
+        <p class="cardnote" id="ssh-toolkit-availability">Checking availability…</p>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Add a connection</h3>
+        <div class="wizard-field">
+          <div class="row">
+            <input type="text" id="ssh-new-name" placeholder="name (e.g. build-box)" autocomplete="off" spellcheck="false" style="max-width:200px;">
+            <input type="text" id="ssh-new-host" placeholder="host or IP" autocomplete="off" spellcheck="false" style="max-width:200px;">
+            <input type="text" id="ssh-new-user" placeholder="user (optional)" autocomplete="off" spellcheck="false" style="max-width:160px;">
+          </div>
+        </div>
+        <div class="wizard-foot">
+          <span class="cardnote" id="ssh-new-status"></span>
+          <button class="btn primary" id="btn-ssh-add">Add connection</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Configured connections</h3>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Name</th><th>Host</th><th>Port</th><th>User</th><th>Tags</th><th></th></tr></thead>
+            <tbody id="ssh-toolkit-tbody"><tr class="emptyrow"><td colspan="6">Unlock with the dashboard token to view.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Toolkit updates</h3>
+        <p class="cardnote" id="ssh-toolkit-version">—</p>
+        <div class="wizard-foot">
+          <span class="cardnote" id="ssh-update-status"></span>
+          <button class="btn" id="btn-ssh-check-update">Check for update</button>
+          <button class="btn primary" id="btn-ssh-apply-update">Apply update</button>
+        </div>
+        <div class="wizard-field" style="margin-top:10px;">
+          <label>Auto-update, on this machine</label>
+          <div class="help">A background check every few hours — "never" (manual only), "notify" (logs when an update is available), or "auto" (applies it automatically). Machine-wide, not per-bot.</div>
+          <div class="row">
+            <select id="ssh-auto-update-mode">
+              <option value="never">Never — manual only</option>
+              <option value="notify">Notify — log availability only</option>
+              <option value="auto">Auto — apply automatically</option>
+            </select>
+          </div>
         </div>
       </div>
     </section>

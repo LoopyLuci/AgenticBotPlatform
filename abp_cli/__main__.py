@@ -155,7 +155,58 @@ async def _dispatch(args, client: DashboardClient) -> int:
         return await _peers(args, client)
     if cmd == "kanban":
         return await _kanban(args, client)
+    if cmd == "ssh":
+        return await _ssh(args, client)
     print(f"unknown command {cmd!r}", file=sys.stderr)
+    return 2
+
+
+async def _ssh(args, client: DashboardClient) -> int:
+    sub = args.ssh_cmd
+    if sub == "status":
+        _print(args, await client.ssh_toolkit_status())
+        return 0
+    if sub == "list":
+        _print(args, await client.ssh_toolkit_connections(), table=["Name", "HostName", "Port", "User", "Tags"])
+        return 0
+    if sub == "show":
+        _print(args, await client.ssh_toolkit_get_connection(args.name))
+        return 0
+    if sub == "add":
+        _print(args, await client.ssh_toolkit_add_connection(
+            args.name, args.host_name, port=args.port, user=args.user, identity_file=args.identity_file,
+            generate_key=args.generate_key, proxy_jump=args.proxy_jump, tags=args.tags,
+            multiplex=args.multiplex, force=args.force,
+        ))
+        return 0
+    if sub == "remove":
+        _print(args, await client.ssh_toolkit_remove_connection(args.name))
+        return 0
+    if sub == "test":
+        _print(args, await client.ssh_toolkit_test_connection(args.name))
+        return 0
+    if sub == "run":
+        _print(args, await client.ssh_toolkit_run(args.name, " ".join(args.command)))
+        return 0
+    if sub == "status-all":
+        _print(args, await client.ssh_toolkit_status_all(), table=["Name", "Target", "Reachable"])
+        return 0
+    if sub == "visualize":
+        _print(args, await client.ssh_toolkit_graph())
+        return 0
+    if sub == "check-update":
+        _print(args, await client.ssh_toolkit_check_update())
+        return 0
+    if sub == "update":
+        _print(args, await client.ssh_toolkit_apply_update())
+        return 0
+    if sub == "auto-update":
+        if args.mode:
+            _print(args, await client.ssh_toolkit_set_auto_update(args.mode))
+        else:
+            _print(args, await client.ssh_toolkit_get_auto_update())
+        return 0
+    print(f"unknown ssh subcommand {sub!r}", file=sys.stderr)
     return 2
 
 
@@ -821,6 +872,37 @@ def _parser() -> argparse.ArgumentParser:
     p = kbsub.add_parser("remove")
     p.add_argument("card_id", type=int)
     p.add_argument("--instance", type=int, required=True)
+
+    ssh = sub.add_parser("ssh", help="SSH Toolkit (github.com/LoopyLuci/SSH_Toolkit) - a separately maintained "
+                                     "connection manager, vendored as a submodule (vendor/ssh_toolkit)")
+    sshsub = ssh.add_subparsers(dest="ssh_cmd", required=True)
+    sshsub.add_parser("status", help="whether the toolkit is available on this machine")
+    sshsub.add_parser("list")
+    p = sshsub.add_parser("show"); p.add_argument("name")
+    p = sshsub.add_parser("add")
+    p.add_argument("--name", required=True)
+    p.add_argument("--host-name", required=True, dest="host_name")
+    p.add_argument("--port", type=int, default=22)
+    p.add_argument("--user", default=None)
+    p.add_argument("--identity-file", default=None, dest="identity_file")
+    p.add_argument("--generate-key", action="store_true", dest="generate_key")
+    p.add_argument("--proxy-jump", default=None, dest="proxy_jump")
+    p.add_argument("--tags", default=None)
+    p.add_argument("--multiplex", action="store_true")
+    p.add_argument("--force", action="store_true")
+    for name in ("remove", "test"):
+        p = sshsub.add_parser(name); p.add_argument("name")
+    p = sshsub.add_parser("run")
+    p.add_argument("name")
+    p.add_argument("command", nargs="+", help="the remote command; joined with spaces")
+    sshsub.add_parser("status-all", help="reachability for every registered connection")
+    sshsub.add_parser("visualize", help="the proxy-jump graph, as structured data")
+    sshsub.add_parser("check-update")
+    sshsub.add_parser("update")
+    p = sshsub.add_parser("auto-update", help="get, or set, how a submodule/sidecar install of this toolkit "
+                                              "picks up new releases")
+    p.add_argument("mode", nargs="?", choices=["never", "notify", "auto"], default=None,
+                   help="omit to just show the current setting")
 
     return ap
 

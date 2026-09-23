@@ -197,6 +197,15 @@ export const operations = {
   ],
   "query_params": []
  },
+ "DELETE /api/ssh-toolkit/connections/{name}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/ssh-toolkit/connections/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
  "DELETE /api/support-bot/training/{phrase_id}": {
   "body": false,
   "method": "DELETE",
@@ -1219,6 +1228,57 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/ssh-toolkit/auto-update": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ssh-toolkit/auto-update",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/ssh-toolkit/connections": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ssh-toolkit/connections",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/ssh-toolkit/connections/{name}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ssh-toolkit/connections/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "GET /api/ssh-toolkit/graph": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ssh-toolkit/graph",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/ssh-toolkit/status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ssh-toolkit/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/ssh-toolkit/status-all": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ssh-toolkit/status-all",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/ssh-toolkit/update/check": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ssh-toolkit/update/check",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/support-bot/health": {
   "body": false,
   "method": "GET",
@@ -2193,6 +2253,45 @@ export const operations = {
   "path_params": [
    "name"
   ],
+  "query_params": []
+ },
+ "POST /api/ssh-toolkit/auto-update": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ssh-toolkit/auto-update",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/ssh-toolkit/connections": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ssh-toolkit/connections",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/ssh-toolkit/connections/{name}/run": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ssh-toolkit/connections/{name}/run",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "POST /api/ssh-toolkit/connections/{name}/test": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/ssh-toolkit/connections/{name}/test",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "POST /api/ssh-toolkit/update/apply": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/ssh-toolkit/update/apply",
+  "path_params": [],
   "query_params": []
  },
  "POST /api/support-bot/ask": {
@@ -4126,6 +4225,105 @@ export const operations = {
   "path_params": [
    "name"
   ],
+  "query_params": []
+ },
+ "api_ssh_toolkit_auto_update_get_api_ssh_toolkit_auto_update_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ssh-toolkit/auto-update",
+  "path_params": [],
+  "query_params": []
+ },
+ "api_ssh_toolkit_auto_update_set_api_ssh_toolkit_auto_update_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ssh-toolkit/auto-update",
+  "path_params": [],
+  "query_params": []
+ },
+ "api_ssh_toolkit_connection_add_api_ssh_toolkit_connections_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ssh-toolkit/connections",
+  "path_params": [],
+  "query_params": []
+ },
+ "api_ssh_toolkit_connection_get_api_ssh_toolkit_connections__name__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ssh-toolkit/connections/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "api_ssh_toolkit_connection_remove_api_ssh_toolkit_connections__name__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/ssh-toolkit/connections/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "api_ssh_toolkit_connection_run_api_ssh_toolkit_connections__name__run_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ssh-toolkit/connections/{name}/run",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "api_ssh_toolkit_connection_test_api_ssh_toolkit_connections__name__test_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/ssh-toolkit/connections/{name}/test",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "api_ssh_toolkit_connections_api_ssh_toolkit_connections_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ssh-toolkit/connections",
+  "path_params": [],
+  "query_params": []
+ },
+ "api_ssh_toolkit_graph_api_ssh_toolkit_graph_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ssh-toolkit/graph",
+  "path_params": [],
+  "query_params": []
+ },
+ "api_ssh_toolkit_status_all_api_ssh_toolkit_status_all_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ssh-toolkit/status-all",
+  "path_params": [],
+  "query_params": []
+ },
+ "api_ssh_toolkit_status_api_ssh_toolkit_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ssh-toolkit/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "api_ssh_toolkit_update_apply_api_ssh_toolkit_update_apply_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/ssh-toolkit/update/apply",
+  "path_params": [],
+  "query_params": []
+ },
+ "api_ssh_toolkit_update_check_api_ssh_toolkit_update_check_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ssh-toolkit/update/check",
+  "path_params": [],
   "query_params": []
  },
  "api_support_bot_ask_api_support_bot_ask_post": {

@@ -1,0 +1,256 @@
+"""Python wrapper around the SSH Toolkit (https://github.com/LoopyLuci/SSH_Toolkit) -
+a separately maintained PowerShell tool, vendored here as a git submodule at
+`vendor/ssh_toolkit`, for creating/managing/visualizing named SSH connections between
+machines. This module never reimplements any of that logic: every function here shells
+out to the submodule's own `bin/ssh-toolkit.ps1 -Action ... -Json` and parses the
+result, so ABP and the standalone toolkit can never drift out of behavioral sync with
+each other - a bug fixed upstream is fixed here the moment the submodule is updated
+(see `check_update`/`apply_update` below), with no ABP code change needed.
+
+Exposed to bots as a set of MCP tools would be a natural next step; today it backs
+`GET/POST /api/ssh-toolkit/*` (bot/dashboard/server.py), `abp_cli ssh ...`, and
+`bot/tui/screens/ssh_toolkit.py`.
+
+**Fails closed, cleanly.** `is_available()` is false (and every other function raises
+`SshToolkitError`) when either the submodule isn't checked out (a fresh clone without
+`git submodule update --init`) or no PowerShell (`pwsh` or, on Windows, `powershell`)
+can be found - never a confusing traceback three layers down.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import json
+import logging
+import os
+import shutil
+from pathlib import Path
+from typing import Any, Optional
+
+logger = logging.getLogger("bot.ssh_toolkit")
+
+_NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW - see bot/desktop.py's/bot/firewall.py's same convention
+
+
+class SshToolkitError(Exception):
+    """A toolkit call that failed in a way the caller should be told about - never a
+    crash three layers down. Includes "not installed"/"no PowerShell found"."""
+
+
+def _code_root() -> Path:
+    from bot.envfile import CODE_ROOT
+
+    return CODE_ROOT
+
+
+def _toolkit_dir() -> Path:
+    return _code_root() / "vendor" / "ssh_toolkit"
+
+
+def _script_path() -> Path:
+    return _toolkit_dir() / "bin" / "ssh-toolkit.ps1"
+
+
+def _powershell_binary() -> Optional[str]:
+    # pwsh (PowerShell 7+, cross-platform) first, then Windows' own powershell.exe -
+    # same preference order the rest of ABP has no existing convention for (this is the
+    # first PowerShell-shelling-out code in the codebase), chosen because pwsh is what
+    # the toolkit's own README documents as the primary supported runtime.
+    return shutil.which("pwsh") or shutil.which("powershell")
+
+
+def is_available() -> tuple[bool, str]:
+    """(available, reason). reason explains why not, when it isn't - shown as-is in the
+    GUI/TUI/CLI rather than a generic "unavailable"."""
+    if not _script_path().exists():
+        return False, ("the ssh_toolkit submodule isn't checked out - run "
+                       "'git submodule update --init vendor/ssh_toolkit'")
+    if _powershell_binary() is None:
+        return False, "no PowerShell found (pwsh, or powershell.exe on Windows)"
+    return True, ""
+
+
+async def _run(args: list[str], *, json_output: bool = True, timeout: float = 30.0,
+               allow_nonzero_exit: bool = False) -> Any:
+    """allow_nonzero_exit=True is for actions where a non-zero exit is a normal,
+    meaningful result (e.g. -Action Test exits 1 for "unreachable", not "this call
+    failed") - the JSON on stdout is still parsed and returned instead of raising."""
+    ok, reason = is_available()
+    if not ok:
+        raise SshToolkitError(f"SSH Toolkit is not available: {reason}")
+    ps = _powershell_binary()
+    argv = [ps, "-NoProfile", "-NonInteractive", "-File", str(_script_path()), *args]
+    if json_output:
+        argv.append("-Json")
+    child_env = dict(os.environ)
+    # Test isolation, same convention as abp_agenteval's ABP_AGENT_TRACE_DB/
+    # ABP_AGENT_STATE_DIR: with this set, the child PowerShell process's own $HOME
+    # (and therefore ~/.ssh-toolkit and ~/.ssh/config) points at a throwaway
+    # directory instead of the real one - a test must never write to a real machine's
+    # SSH config. $HOME covers pwsh (Linux/macOS and Windows); USERPROFILE covers
+    # Windows PowerShell 5.1, which derives $HOME from it.
+    test_home = os.environ.get("ABP_SSH_TOOLKIT_HOME")
+    if test_home:
+        child_env["HOME"] = test_home
+        child_env["USERPROFILE"] = test_home
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            env=child_env, creationflags=_NO_WINDOW if os.name == "nt" else 0,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError as exc:
+        with contextlib.suppress(ProcessLookupError, OSError):
+            proc.kill()
+        raise SshToolkitError(f"timed out after {timeout:.0f}s running: {' '.join(args)}") from exc
+    except OSError as exc:
+        raise SshToolkitError(f"could not start PowerShell: {exc}") from exc
+    out_text = stdout.decode(errors="replace").strip()
+    err_text = stderr.decode(errors="replace").strip()
+    if proc.returncode != 0 and not allow_nonzero_exit:
+        raise SshToolkitError(err_text or out_text or f"exited with code {proc.returncode}")
+    if not json_output:
+        return out_text
+    if not out_text:
+        return None
+    try:
+        return json.loads(out_text)
+    except json.JSONDecodeError as exc:
+        raise SshToolkitError(f"unexpected (non-JSON) output: {out_text[:500]!r}") from exc
+
+
+# ---------------------------------------------------------------- connections
+async def list_connections() -> list[dict]:
+    result = await _run(["-Action", "List"])
+    return result if isinstance(result, list) else ([] if result is None else [result])
+
+
+async def get_connection(name: str) -> dict:
+    return await _run(["-Action", "Show", "-Name", name])
+
+
+async def add_connection(name: str, host_name: str, *, port: int = 22, user: Optional[str] = None,
+                         identity_file: Optional[str] = None, generate_key: bool = False,
+                         proxy_jump: Optional[str] = None, tags: Optional[str] = None,
+                         multiplex: bool = False, force: bool = False) -> None:
+    args = ["-Action", "Add", "-Name", name, "-HostName", host_name, "-Port", str(port)]
+    if user:
+        args += ["-User", user]
+    if identity_file:
+        args += ["-IdentityFile", identity_file]
+    if generate_key:
+        args.append("-GenerateKey")
+    if proxy_jump:
+        args += ["-ProxyJump", proxy_jump]
+    if tags:
+        args += ["-Tags", tags]
+    if multiplex:
+        args.append("-Multiplex")
+    if force:
+        args.append("-Force")
+    await _run(args, json_output=False)
+
+
+async def remove_connection(name: str) -> None:
+    await _run(["-Action", "Remove", "-Name", name, "-Force"], json_output=False)
+
+
+async def test_connection(name: str, *, timeout: float = 15.0) -> bool:
+    try:
+        result = await _run(["-Action", "Test", "-Name", name], timeout=timeout, allow_nonzero_exit=True)
+    except SshToolkitError:
+        raise
+    if isinstance(result, dict):
+        return bool(result.get("Reachable"))
+    return False
+
+
+async def run_command(name: str, command: str, *, timeout: float = 30.0) -> str:
+    """Runs one remote command over a registered connection and returns its output -
+    not an interactive session (there's no terminal to be interactive with here)."""
+    return await _run(["-Action", "Connect", "-Name", name, "-Command", command],
+                      json_output=False, timeout=timeout)
+
+
+async def status_all() -> list[dict]:
+    result = await _run(["-Action", "TestAll"])
+    return result if isinstance(result, list) else ([] if result is None else [result])
+
+
+async def graph() -> list[dict]:
+    """The proxy-jump tree with live status - {Connection, Depth, Reachable} per node,
+    same shape the toolkit's own Get-SshLinkGraph returns, for building a visualization."""
+    result = await _run(["-Action", "Visualize"])
+    return result if isinstance(result, list) else ([] if result is None else [result])
+
+
+# --------------------------------------------------------------------- update
+async def check_update() -> dict:
+    return await _run(["-Action", "CheckUpdate"])
+
+
+async def apply_update() -> dict:
+    """Updates the vendored submodule's OWN files in place (git pull inside
+    vendor/ssh_toolkit, since that's a git submodule checkout) - never touches this
+    machine's ~/.ssh-toolkit registry or ~/.ssh/config."""
+    return await _run(["-Action", "Update"])
+
+
+AUTO_UPDATE_MODES = ("never", "notify", "auto")
+DEFAULT_AUTO_UPDATE_MODE = "never"
+
+
+def get_auto_update_mode() -> str:
+    """The global (machine-wide, not per-instance) setting controlling how a
+    submodule/sidecar install of this toolkit picks up new releases -
+    "never" (manual only, the default), "notify" (a background check logs
+    availability but never applies it), or "auto" (the background check
+    applies it immediately). Stored the same way as swarm_budget - a plain
+    dict under config.current, hot-reloaded, no schema enforcement."""
+    from bot.config import config
+
+    cfg = config.current.get("ssh_toolkit") or {}
+    mode = cfg.get("auto_update", DEFAULT_AUTO_UPDATE_MODE)
+    return mode if mode in AUTO_UPDATE_MODES else DEFAULT_AUTO_UPDATE_MODE
+
+
+def set_auto_update_mode(mode: str, *, actor: str = "dashboard") -> None:
+    if mode not in AUTO_UPDATE_MODES:
+        raise SshToolkitError(f"invalid auto_update mode {mode!r} - must be one of {AUTO_UPDATE_MODES}")
+    from bot.config import config
+
+    config.set_value(["ssh_toolkit", "auto_update"], mode, actor=actor)
+
+
+async def run_auto_update_check() -> Optional[dict]:
+    """One cycle of the background auto-update check - called periodically from
+    bot/dashboard/server.py's lifespan task. Returns None when mode is "never" or the
+    toolkit itself isn't available (nothing to do), otherwise the check_update()/
+    apply_update() result actually acted on."""
+    mode = get_auto_update_mode()
+    if mode == "never":
+        return None
+    available, _reason = is_available()
+    if not available:
+        return None
+    try:
+        check = await check_update()
+    except SshToolkitError as exc:
+        logger.warning("ssh_toolkit auto-update check failed: %s", exc)
+        return None
+    if not check.get("UpdateAvailable"):
+        return None
+    if mode == "notify":
+        logger.info(
+            "SSH Toolkit update available: %s -> %s (auto_update=notify, not applying)",
+            check.get("InstalledVersion"), check.get("LatestVersion"),
+        )
+        return check
+    try:
+        result = await apply_update()
+    except SshToolkitError as exc:
+        logger.warning("ssh_toolkit auto-update apply failed: %s", exc)
+        return None
+    logger.info("SSH Toolkit auto-updated to %s", result.get("Version"))
+    return result

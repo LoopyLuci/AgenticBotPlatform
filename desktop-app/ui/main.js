@@ -1316,6 +1316,8 @@ function startDashboardPolling() {
   pollWhenVisible(refreshDelegationActivity, 15000);
   refreshSwarmBudget();
   pollWhenVisible(refreshSwarmBudget, 15000);
+  refreshSshToolkit();
+  pollWhenVisible(refreshSshToolkit, 20000);
   refreshDiagnostics();
   pollWhenVisible(refreshDiagnostics, 15000);
   refreshMobileKeys();
@@ -3040,6 +3042,125 @@ document.getElementById('budget-save-btn').onclick = async () => {
     status.textContent = 'Failed: ' + e.message;
   }
   setTimeout(() => { status.textContent = ''; }, 3000);
+};
+
+// ------------------------------------------------------------ SSH Toolkit -
+async function refreshSshToolkit() {
+  const availability = document.getElementById('ssh-toolkit-availability');
+  const tbody = document.getElementById('ssh-toolkit-tbody');
+  if (!getToken()) return;
+  try {
+    const auto = await api('/api/ssh-toolkit/auto-update');
+    document.getElementById('ssh-auto-update-mode').value = auto.mode;
+  } catch (_e) { /* leave the select at its default */ }
+  let avail;
+  try { avail = await api('/api/ssh-toolkit/status'); } catch (_e) { return; }
+  if (!avail.available) {
+    availability.textContent = `SSH Toolkit is not available: ${avail.reason || ''}`;
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="6">SSH Toolkit is not available.</td></tr>';
+    return;
+  }
+  availability.textContent = 'SSH Toolkit is available.';
+  let conns;
+  try { conns = (await api('/api/ssh-toolkit/connections')).connections; } catch (e) {
+    tbody.innerHTML = `<tr class="emptyrow"><td colspan="6">Failed to load connections: ${esc(e.message)}</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = conns.length ? conns.map(c => `
+    <tr>
+      <td>${esc(c.Name)}</td>
+      <td class="mono">${esc(c.HostName)}</td>
+      <td>${esc(String(c.Port ?? ''))}</td>
+      <td>${esc(c.User || '')}</td>
+      <td>${esc(c.Tags || '')}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn" data-ssh-test="${esc(c.Name)}" style="padding:3px 8px; font-size:11px;">Test</button>
+        <button class="btn" data-ssh-remove="${esc(c.Name)}" style="padding:3px 8px; font-size:11px;">Remove</button>
+      </td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="6">No connections yet — add one above.</td></tr>';
+
+  document.querySelectorAll('[data-ssh-test]').forEach(btn => btn.onclick = async () => {
+    const name = btn.dataset.sshTest;
+    const status = document.getElementById('ssh-new-status');
+    status.textContent = `Testing ${name}…`;
+    try {
+      const res = await api(`/api/ssh-toolkit/connections/${encodeURIComponent(name)}/test`, { method: 'POST' });
+      status.textContent = `${name}: ${res.reachable ? 'reachable' : 'not reachable'}`;
+    } catch (e) {
+      status.textContent = `Failed: ${e.message}`;
+    }
+  });
+  document.querySelectorAll('[data-ssh-remove]').forEach(btn => btn.onclick = async () => {
+    const name = btn.dataset.sshRemove;
+    if (!confirm(`Remove connection "${name}"?`)) return;
+    try {
+      await api(`/api/ssh-toolkit/connections/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    } catch (e) {
+      document.getElementById('ssh-new-status').textContent = `Failed: ${e.message}`;
+      return;
+    }
+    refreshSshToolkit();
+  });
+}
+
+document.getElementById('btn-ssh-add').onclick = async () => {
+  const status = document.getElementById('ssh-new-status');
+  const name = document.getElementById('ssh-new-name').value.trim();
+  const host = document.getElementById('ssh-new-host').value.trim();
+  const user = document.getElementById('ssh-new-user').value.trim();
+  if (!name || !host) { status.textContent = 'Name and host are both required.'; return; }
+  status.textContent = 'Adding…';
+  try {
+    await api('/api/ssh-toolkit/connections', {
+      method: 'POST',
+      body: JSON.stringify({ name, host_name: host, user: user || undefined }),
+    });
+    status.textContent = `Added "${name}".`;
+    document.getElementById('ssh-new-name').value = '';
+    document.getElementById('ssh-new-host').value = '';
+    document.getElementById('ssh-new-user').value = '';
+  } catch (e) {
+    status.textContent = `Failed: ${e.message}`;
+    return;
+  }
+  refreshSshToolkit();
+};
+
+document.getElementById('btn-ssh-check-update').onclick = async () => {
+  const status = document.getElementById('ssh-update-status');
+  status.textContent = 'Checking…';
+  try {
+    const check = await api('/api/ssh-toolkit/update/check');
+    document.getElementById('ssh-toolkit-version').textContent =
+      `Installed: ${check.InstalledVersion} · Latest: ${check.LatestVersion}`;
+    status.textContent = check.UpdateAvailable ? 'An update is available.' : 'Already up to date.';
+  } catch (e) {
+    status.textContent = `Failed: ${e.message}`;
+  }
+};
+
+document.getElementById('btn-ssh-apply-update').onclick = async () => {
+  const status = document.getElementById('ssh-update-status');
+  if (!confirm('Apply the SSH Toolkit update now?')) return;
+  status.textContent = 'Applying…';
+  try {
+    await api('/api/ssh-toolkit/update/apply', { method: 'POST' });
+    status.textContent = 'Updated.';
+  } catch (e) {
+    status.textContent = `Failed: ${e.message}`;
+    return;
+  }
+  refreshSshToolkit();
+};
+
+document.getElementById('ssh-auto-update-mode').onchange = async (ev) => {
+  const status = document.getElementById('ssh-update-status');
+  try {
+    await api('/api/ssh-toolkit/auto-update', { method: 'POST', body: JSON.stringify({ mode: ev.target.value }) });
+    status.textContent = `Auto-update set to "${ev.target.value}".`;
+  } catch (e) {
+    status.textContent = `Failed: ${e.message}`;
+  }
 };
 
 // ------------------------------------------------------------------ chat -
