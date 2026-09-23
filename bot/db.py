@@ -881,6 +881,30 @@ CREATE TABLE IF NOT EXISTS ephemeral_sessions (
     created_at          TEXT NOT NULL,
     finished_at         TEXT
 );
+
+-- SSH Toolkit session monitor/recording (see bot/ssh_session_monitor.py):
+-- structured events (not video/screen-share) from a watched SSH command -
+-- start/stdout/stderr/metric/exit - so a GUI can show every action an agent
+-- or user takes over an SSH connection live, and a recording can replay it
+-- exactly later. One row per recording; its events live in
+-- ssh_session_events, same shape as job_tool_events above.
+CREATE TABLE IF NOT EXISTS ssh_session_recordings (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    connection_name TEXT NOT NULL,
+    command         TEXT NOT NULL DEFAULT '',
+    status          TEXT NOT NULL DEFAULT 'recording',  -- recording|paused|stopped
+    started_at      TEXT NOT NULL,
+    stopped_at      TEXT
+);
+
+CREATE TABLE IF NOT EXISTS ssh_session_events (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    recording_id  INTEGER NOT NULL,
+    seq           INTEGER NOT NULL,
+    event_type    TEXT NOT NULL,  -- start|stdout|stderr|metric|exit|note
+    payload_json  TEXT NOT NULL DEFAULT '{}',
+    ts            TEXT NOT NULL
+);
 """
 # idx_jobs_instance / idx_jobs_swarm_run / idx_messages_instance are created
 # in _migrate(), not here — on a pre-existing DB, jobs/messages get their
@@ -2322,6 +2346,78 @@ def list_job_tool_events(job_id: int) -> list[sqlite3.Row]:
     conn = get_conn()
     return conn.execute(
         "SELECT * FROM job_tool_events WHERE job_id=? ORDER BY seq ASC", (job_id,)
+    ).fetchall()
+
+
+# ------------------------------------------------- SSH session recordings
+
+def create_ssh_recording(connection_name: str, command: str) -> int:
+    conn = get_conn()
+    with _lock:
+        cur = conn.execute(
+            "INSERT INTO ssh_session_recordings (connection_name, command, status, started_at) "
+            "VALUES (?, ?, 'recording', ?)",
+            (connection_name, command, _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def set_ssh_recording_status(recording_id: int, status: str) -> None:
+    conn = get_conn()
+    with _lock:
+        if status == "stopped":
+            conn.execute(
+                "UPDATE ssh_session_recordings SET status=?, stopped_at=? WHERE id=?",
+                (status, _now(), recording_id),
+            )
+        else:
+            conn.execute("UPDATE ssh_session_recordings SET status=? WHERE id=?", (status, recording_id))
+        conn.commit()
+
+
+def get_ssh_recording(recording_id: int) -> Optional[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute("SELECT * FROM ssh_session_recordings WHERE id=?", (recording_id,)).fetchone()
+
+
+def list_ssh_recordings() -> list[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute(
+        "SELECT r.*, (SELECT COUNT(*) FROM ssh_session_events e WHERE e.recording_id = r.id) AS event_count "
+        "FROM ssh_session_recordings r ORDER BY r.started_at DESC"
+    ).fetchall()
+
+
+def delete_ssh_recording(recording_id: int) -> None:
+    conn = get_conn()
+    with _lock:
+        conn.execute("DELETE FROM ssh_session_events WHERE recording_id=?", (recording_id,))
+        conn.execute("DELETE FROM ssh_session_recordings WHERE id=?", (recording_id,))
+        conn.commit()
+
+
+def log_ssh_session_event(recording_id: int, event_type: str, payload: dict) -> int:
+    conn = get_conn()
+    with _lock:
+        seq_row = conn.execute(
+            "SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM ssh_session_events WHERE recording_id=?",
+            (recording_id,),
+        ).fetchone()
+        seq = seq_row["next_seq"]
+        cur = conn.execute(
+            "INSERT INTO ssh_session_events (recording_id, seq, event_type, payload_json, ts) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (recording_id, seq, event_type, json.dumps(payload), _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def list_ssh_session_events(recording_id: int) -> list[sqlite3.Row]:
+    conn = get_conn()
+    return conn.execute(
+        "SELECT * FROM ssh_session_events WHERE recording_id=? ORDER BY seq ASC", (recording_id,)
     ).fetchall()
 
 
