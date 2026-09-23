@@ -1610,6 +1610,74 @@
           </div>
         </div>
       </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Session monitor <span style="font-weight:400; color:var(--muted); font-size:12px;">— every action, live, as structured events — never video or screen-share</span></h3>
+        <p class="cardnote">Run a command over a registered connection and watch it happen: each output line, a live CPU/memory read from the remote machine, and its exit code, streamed here the instant they occur. Hit Record any time to persist the exact sequence for playback later.</p>
+        <div class="wizard-field">
+          <div class="row">
+            <select id="ssh-monitor-connection" style="max-width:220px;"></select>
+            <input type="text" id="ssh-monitor-command" placeholder="command to run and watch" autocomplete="off" spellcheck="false" style="flex:1; min-width:220px;">
+            <button class="btn primary" id="btn-ssh-monitor-run">Run &amp; watch</button>
+            <button class="btn" id="btn-ssh-monitor-stop" disabled>Stop</button>
+          </div>
+        </div>
+
+        <div class="row" style="align-items:center; gap:16px; margin-top:8px; flex-wrap:wrap;">
+          <span class="cardnote" id="ssh-monitor-status">No session running.</span>
+          <div style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted);">
+            CPU
+            <div style="width:70px; height:8px; border-radius:4px; background:var(--surface-2); overflow:hidden;">
+              <div id="ssh-monitor-cpu-bar" style="width:0%; height:100%; background:var(--accent, #6c8cff); transition:width .3s;"></div>
+            </div>
+            <span id="ssh-monitor-cpu-text">—</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted);">
+            MEM
+            <div style="width:70px; height:8px; border-radius:4px; background:var(--surface-2); overflow:hidden;">
+              <div id="ssh-monitor-mem-bar" style="width:0%; height:100%; background:var(--accent, #6c8cff); transition:width .3s;"></div>
+            </div>
+            <span id="ssh-monitor-mem-text">—</span>
+          </div>
+        </div>
+
+        <div class="row" style="align-items:center; gap:8px; margin-top:10px;">
+          <span id="ssh-record-indicator" style="display:none; width:10px; height:10px; border-radius:50%; background:#e5484d; animation:ssh-pulse 1.2s infinite;"></span>
+          <button class="btn" id="btn-ssh-record-start" disabled>● Record</button>
+          <button class="btn" id="btn-ssh-record-pause" disabled>Pause</button>
+          <button class="btn" id="btn-ssh-record-resume" disabled style="display:none;">Resume</button>
+          <button class="btn" id="btn-ssh-record-stop" disabled>Stop recording</button>
+          <span class="cardnote" id="ssh-record-status"></span>
+        </div>
+        <style>@keyframes ssh-pulse { 0%,100% { opacity:1; } 50% { opacity:.25; } }</style>
+
+        <div id="ssh-monitor-feed-header" class="cardnote" style="margin-top:10px; display:flex; justify-content:space-between; align-items:center;">
+          <span id="ssh-monitor-feed-title">Live feed</span>
+          <button class="btn" id="btn-ssh-playback-exit" style="display:none; padding:3px 8px; font-size:11px;">Back to live</button>
+        </div>
+        <div id="ssh-monitor-feed" style="margin-top:4px; height:280px; overflow-y:auto; background:var(--surface-2); border:1px solid var(--line); border-radius:7px; padding:8px 10px; font-family:var(--font-mono); font-size:12px; line-height:1.5; white-space:pre-wrap;"></div>
+
+        <div id="ssh-playback-controls" style="display:none; margin-top:8px; align-items:center; gap:8px;" class="row">
+          <button class="btn" id="btn-ssh-playback-toggle">Play</button>
+          <input type="range" id="ssh-playback-scrubber" min="0" max="100" value="0" style="flex:1;">
+          <select id="ssh-playback-speed" style="width:80px;">
+            <option value="0.5">0.5x</option>
+            <option value="1" selected>1x</option>
+            <option value="2">2x</option>
+            <option value="4">4x</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Recordings</h3>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Connection</th><th>Command</th><th>Status</th><th>Started</th><th>Events</th><th></th></tr></thead>
+            <tbody id="ssh-recordings-tbody"><tr class="emptyrow"><td colspan="6">No recordings yet.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
     <section id="automation">
@@ -3235,6 +3303,7 @@ function startDashboard() {
   pollWhenVisible(refreshSwarmBudget, 15000);
   refreshSshToolkit();
   pollWhenVisible(refreshSshToolkit, 20000);
+  refreshSshRecordings();
   refreshDiagnostics();
   pollWhenVisible(refreshDiagnostics, 15000);
   connectLiveEventsSocket();
@@ -5321,6 +5390,7 @@ async function refreshSshToolkit() {
     tbody.innerHTML = `<tr class="emptyrow"><td colspan="6">Failed to load connections: ${esc(e.message)}</td></tr>`;
     return;
   }
+  sshMonitorPopulateConnections(conns);
   tbody.innerHTML = conns.length ? conns.map(c => `
     <tr>
       <td>${esc(c.Name)}</td>
@@ -5418,6 +5488,351 @@ document.getElementById('ssh-auto-update-mode').onchange = async (ev) => {
   }
 };
 
+// -------------------------------------------------- SSH session monitor --
+// Structured live events over the existing /api/ws socket (see
+// connectLiveEventsSocket's dispatch below) - never video/screen-share.
+// One "session" = one watched remote command; a recording persists its
+// exact event sequence (bot/ssh_session_monitor.py) for playback later.
+const sshMonitor = {
+  sessionId: null,
+  recordingId: null,
+  recordingPaused: false,
+  mode: 'live', // 'live' | 'playback'
+  reconcileTimer: null,
+  playback: { events: [], playing: false, speed: 1, startWall: 0, elapsedAtPause: 0, shown: 0, duration: 0, timer: null },
+};
+
+function sshMonitorPopulateConnections(conns) {
+  const sel = document.getElementById('ssh-monitor-connection');
+  const prev = sel.value;
+  sel.innerHTML = conns.map(c => `<option value="${esc(c.Name)}">${esc(c.Name)} (${esc(c.HostName)})</option>`).join('')
+    || '<option value="">no connections configured</option>';
+  if (conns.some(c => c.Name === prev)) sel.value = prev;
+}
+
+function sshFeedClear() {
+  document.getElementById('ssh-monitor-feed').innerHTML = '';
+}
+
+function sshFeedAppend(type, text) {
+  const feed = document.getElementById('ssh-monitor-feed');
+  const line = document.createElement('div');
+  const colors = { start: 'var(--muted)', stderr: '#e5484d', exit: 'var(--ink)', note: 'var(--muted)' };
+  line.style.color = colors[type] || 'inherit';
+  if (type === 'exit' || type === 'start') line.style.fontWeight = '600';
+  if (type === 'note') line.style.fontStyle = 'italic';
+  line.textContent = text;
+  feed.appendChild(line);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function sshFeedLineForEvent(ev) {
+  switch (ev.type) {
+    case 'start': return `▶ start: ${ev.command}`;
+    case 'stdout': return ev.text;
+    case 'stderr': return ev.text;
+    case 'exit': return `■ exit code: ${ev.code === null || ev.code === undefined ? '(timed out)' : ev.code}`;
+    case 'note': return ev.text;
+    default: return null;
+  }
+}
+
+function sshApplyMetric(ev) {
+  if (typeof ev.cpu_percent === 'number') {
+    document.getElementById('ssh-monitor-cpu-bar').style.width = `${Math.min(100, ev.cpu_percent)}%`;
+    document.getElementById('ssh-monitor-cpu-text').textContent = `${ev.cpu_percent.toFixed(0)}%`;
+  }
+  if (typeof ev.mem_used_percent === 'number') {
+    document.getElementById('ssh-monitor-mem-bar').style.width = `${Math.min(100, ev.mem_used_percent)}%`;
+    document.getElementById('ssh-monitor-mem-text').textContent = `${ev.mem_used_percent.toFixed(0)}%`;
+  }
+}
+
+function sshMonitorSetRunningUi(running) {
+  document.getElementById('btn-ssh-monitor-run').disabled = running;
+  document.getElementById('btn-ssh-monitor-stop').disabled = !running;
+  document.getElementById('btn-ssh-record-start').disabled = !running || !!sshMonitor.recordingId;
+}
+
+function sshMonitorSetRecordingUi(state) {
+  const indicator = document.getElementById('ssh-record-indicator');
+  const startBtn = document.getElementById('btn-ssh-record-start');
+  const pauseBtn = document.getElementById('btn-ssh-record-pause');
+  const resumeBtn = document.getElementById('btn-ssh-record-resume');
+  const stopBtn = document.getElementById('btn-ssh-record-stop');
+  if (state === 'recording') {
+    indicator.style.display = 'inline-block';
+    startBtn.disabled = true;
+    pauseBtn.disabled = false; pauseBtn.style.display = '';
+    resumeBtn.style.display = 'none';
+    stopBtn.disabled = false;
+  } else if (state === 'paused') {
+    indicator.style.display = 'inline-block';
+    indicator.style.background = '#f5a623';
+    pauseBtn.style.display = 'none';
+    resumeBtn.style.display = ''; resumeBtn.disabled = false;
+    stopBtn.disabled = false;
+  } else { // stopped / idle
+    indicator.style.display = 'none';
+    indicator.style.background = '#e5484d';
+    startBtn.disabled = !sshMonitor.sessionId;
+    pauseBtn.disabled = true; pauseBtn.style.display = '';
+    resumeBtn.style.display = 'none'; resumeBtn.disabled = true;
+    stopBtn.disabled = true;
+  }
+}
+
+document.getElementById('btn-ssh-monitor-run').onclick = async () => {
+  const name = document.getElementById('ssh-monitor-connection').value;
+  const command = document.getElementById('ssh-monitor-command').value.trim();
+  const status = document.getElementById('ssh-monitor-status');
+  if (!name || !command) { status.textContent = 'Pick a connection and enter a command.'; return; }
+  sshPlaybackExit();
+  sshFeedClear();
+  document.getElementById('ssh-monitor-feed-title').textContent = 'Live feed';
+  try {
+    sshMonitor.sessionId = await api('/api/ssh-toolkit/session/start', {
+      method: 'POST', body: JSON.stringify({ name, command }),
+    }).then(r => r.session_id);
+  } catch (e) {
+    status.textContent = `Failed: ${e.message}`;
+    return;
+  }
+  status.textContent = `Session ${sshMonitor.sessionId} running on ${name}...`;
+  sshMonitorSetRunningUi(true);
+  sshMonitorStartReconcilePoll();
+};
+
+// Reconciliation poll: a fallback safety net alongside the live WebSocket
+// push, not a replacement for it - a live/mesh WS can miss a message (not
+// yet connected, a brief drop, a reconnect gap), and this feature's whole
+// point is showing an agent's actions accurately, so "the button silently
+// stays stuck because one push happened to be missed" is not acceptable.
+// Polls only while a session is being watched client-side; stops itself
+// once that session is confirmed finished/stopped either way.
+function sshMonitorStartReconcilePoll() {
+  if (sshMonitor.reconcileTimer) clearInterval(sshMonitor.reconcileTimer);
+  sshMonitor.reconcileTimer = setInterval(async () => {
+    if (sshMonitor.mode !== 'live' || !sshMonitor.sessionId) {
+      clearInterval(sshMonitor.reconcileTimer);
+      sshMonitor.reconcileTimer = null;
+      return;
+    }
+    let sessions;
+    try { sessions = (await api('/api/ssh-toolkit/session')).sessions; } catch (_e) { return; }
+    const mine = sessions.find(s => s.session_id === sshMonitor.sessionId);
+    const uiStillThinksRunning = document.getElementById('btn-ssh-monitor-stop').disabled === false;
+    if (mine && (mine.status === 'finished' || mine.status === 'stopped') && uiStillThinksRunning) {
+      document.getElementById('ssh-monitor-status').textContent =
+        `Session ${sshMonitor.sessionId} ${mine.status}${mine.exit_code !== null && mine.exit_code !== undefined ? ` (exit ${mine.exit_code})` : ''}.`;
+      sshMonitorSetRunningUi(false);
+      clearInterval(sshMonitor.reconcileTimer);
+      sshMonitor.reconcileTimer = null;
+    }
+  }, 2000);
+}
+
+document.getElementById('btn-ssh-monitor-stop').onclick = async () => {
+  if (!sshMonitor.sessionId) return;
+  await api(`/api/ssh-toolkit/session/${sshMonitor.sessionId}/stop`, { method: 'POST' });
+};
+
+document.getElementById('btn-ssh-record-start').onclick = async () => {
+  if (!sshMonitor.sessionId) return;
+  try {
+    sshMonitor.recordingId = await api(`/api/ssh-toolkit/session/${sshMonitor.sessionId}/record/start`, { method: 'POST' })
+      .then(r => r.recording_id);
+    document.getElementById('ssh-record-status').textContent = `Recording #${sshMonitor.recordingId}`;
+  } catch (e) {
+    document.getElementById('ssh-record-status').textContent = `Failed: ${e.message}`;
+  }
+};
+document.getElementById('btn-ssh-record-pause').onclick = () =>
+  api(`/api/ssh-toolkit/session/${sshMonitor.sessionId}/record/pause`, { method: 'POST' });
+document.getElementById('btn-ssh-record-resume').onclick = () =>
+  api(`/api/ssh-toolkit/session/${sshMonitor.sessionId}/record/resume`, { method: 'POST' });
+document.getElementById('btn-ssh-record-stop').onclick = async () => {
+  await api(`/api/ssh-toolkit/session/${sshMonitor.sessionId}/record/stop`, { method: 'POST' });
+  refreshSshRecordings();
+};
+
+function onSshSessionEvent(msg) {
+  // msg.event (not msg itself) carries the actual start/stdout/stderr/exit/
+  // metric payload - kept nested rather than flattened onto msg, since
+  // msg.type is always the envelope type "ssh_session_event" (msg.event.type
+  // is the real one) - see _emit()'s own comment for why that distinction
+  // matters here specifically.
+  if (sshMonitor.mode !== 'live' || msg.session_id !== sshMonitor.sessionId) return;
+  const ev = msg.event;
+  if (ev.type === 'metric') { sshApplyMetric(ev); return; }
+  const line = sshFeedLineForEvent(ev);
+  if (line !== null) sshFeedAppend(ev.type, line);
+  if (ev.type === 'exit') {
+    document.getElementById('ssh-monitor-status').textContent =
+      `Session ${sshMonitor.sessionId} finished (exit ${ev.code === null || ev.code === undefined ? '?' : ev.code}).`;
+    sshMonitorSetRunningUi(false);
+    if (sshMonitor.reconcileTimer) { clearInterval(sshMonitor.reconcileTimer); sshMonitor.reconcileTimer = null; }
+  }
+}
+
+function onSshSessionStopped(msg) {
+  if (msg.session_id !== sshMonitor.sessionId) return;
+  document.getElementById('ssh-monitor-status').textContent = `Session ${sshMonitor.sessionId} stopped.`;
+  sshMonitorSetRunningUi(false);
+  if (sshMonitor.reconcileTimer) { clearInterval(sshMonitor.reconcileTimer); sshMonitor.reconcileTimer = null; }
+}
+
+function onSshRecordingState(msg) {
+  if (msg.session_id !== sshMonitor.sessionId) return;
+  if (msg.state === 'stopped') sshMonitor.recordingId = null;
+  sshMonitor.recordingPaused = msg.state === 'paused';
+  sshMonitorSetRecordingUi(msg.state === 'stopped' ? 'idle' : msg.state);
+  if (msg.state !== 'idle') document.getElementById('ssh-record-status').textContent =
+    msg.state === 'stopped' ? `Recording #${msg.recording_id} saved.` : `Recording #${msg.recording_id} — ${msg.state}`;
+  if (msg.state === 'stopped') refreshSshRecordings();
+}
+
+// ---- recordings list + playback (replays a saved event sequence at its
+// original relative timing - a scrubbable, speed-adjustable "action replay",
+// not a video) ----
+async function refreshSshRecordings() {
+  const tbody = document.getElementById('ssh-recordings-tbody');
+  if (!getToken()) return;
+  let recordings;
+  try { recordings = await api('/api/ssh-toolkit/recordings'); } catch (_e) { return; }
+  recordings = recordings.recordings || recordings;
+  tbody.innerHTML = recordings.length ? recordings.map(r => `
+    <tr>
+      <td>${esc(r.connection_name)}</td>
+      <td class="mono">${esc(r.command)}</td>
+      <td>${esc(r.status)}</td>
+      <td>${esc((r.started_at || '').replace('T', ' ').slice(0, 19))}</td>
+      <td>${r.event_count ?? 0}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn" data-ssh-play="${r.id}" style="padding:3px 8px; font-size:11px;">Play</button>
+        <button class="btn" data-ssh-delete-recording="${r.id}" style="padding:3px 8px; font-size:11px;">Delete</button>
+      </td>
+    </tr>`).join('') : '<tr class="emptyrow"><td colspan="6">No recordings yet.</td></tr>';
+
+  document.querySelectorAll('[data-ssh-play]').forEach(btn => btn.onclick = () => sshPlaybackStart(Number(btn.dataset.sshPlay)));
+  document.querySelectorAll('[data-ssh-delete-recording]').forEach(btn => btn.onclick = async () => {
+    if (!confirm('Delete this recording?')) return;
+    await api(`/api/ssh-toolkit/recordings/${btn.dataset.sshDeleteRecording}`, { method: 'DELETE' });
+    refreshSshRecordings();
+  });
+}
+
+async function sshPlaybackStart(recordingId) {
+  const rec = await api(`/api/ssh-toolkit/recordings/${recordingId}`);
+  sshPlaybackStop_();
+  sshMonitor.mode = 'playback';
+  sshFeedClear();
+  document.getElementById('ssh-monitor-feed-title').textContent =
+    `Playback: recording #${recordingId} — ${rec.connection_name} › ${rec.command}`;
+  document.getElementById('btn-ssh-playback-exit').style.display = '';
+  document.getElementById('ssh-playback-controls').style.display = 'flex';
+  const events = rec.events.map(e => ({ ...e.payload, _seq: e.seq }));
+  const t0 = events.length ? events[0].ts : 0;
+  const withRel = events.map(e => ({ ...e, _rel: e.ts - t0 }));
+  sshMonitor.playback = {
+    events: withRel, playing: false, speed: Number(document.getElementById('ssh-playback-speed').value),
+    startWall: 0, elapsedAtPause: 0, shown: 0,
+    duration: withRel.length ? withRel[withRel.length - 1]._rel : 0, timer: null,
+  };
+  document.getElementById('ssh-playback-scrubber').value = 0;
+  document.getElementById('btn-ssh-playback-toggle').textContent = 'Play';
+  document.getElementById('ssh-monitor-cpu-text').textContent = '—';
+  document.getElementById('ssh-monitor-mem-text').textContent = '—';
+  document.getElementById('ssh-monitor-cpu-bar').style.width = '0%';
+  document.getElementById('ssh-monitor-mem-bar').style.width = '0%';
+}
+
+function sshPlaybackRenderUpTo(relSeconds) {
+  const pb = sshMonitor.playback;
+  sshFeedClear();
+  document.getElementById('ssh-monitor-cpu-text').textContent = '—';
+  document.getElementById('ssh-monitor-mem-text').textContent = '—';
+  let shown = 0;
+  for (const ev of pb.events) {
+    if (ev._rel > relSeconds) break;
+    if (ev.type === 'metric') { sshApplyMetric(ev); } else {
+      const line = sshFeedLineForEvent(ev);
+      if (line !== null) sshFeedAppend(ev.type, line);
+    }
+    shown++;
+  }
+  pb.shown = shown;
+  const scrubber = document.getElementById('ssh-playback-scrubber');
+  scrubber.value = pb.duration > 0 ? Math.min(100, (relSeconds / pb.duration) * 100) : 100;
+}
+
+function sshPlaybackTick() {
+  const pb = sshMonitor.playback;
+  const elapsed = pb.elapsedAtPause + (Date.now() - pb.startWall) / 1000 * pb.speed;
+  sshPlaybackRenderUpTo(elapsed);
+  if (elapsed >= pb.duration) {
+    sshPlaybackPause_();
+    document.getElementById('btn-ssh-playback-toggle').textContent = 'Replay';
+    pb.elapsedAtPause = pb.duration;
+  }
+}
+
+function sshPlaybackPause_() {
+  const pb = sshMonitor.playback;
+  if (pb.timer) { clearInterval(pb.timer); pb.timer = null; }
+  pb.playing = false;
+}
+
+function sshPlaybackStop_() {
+  sshPlaybackPause_();
+  sshMonitor.playback = { events: [], playing: false, speed: 1, startWall: 0, elapsedAtPause: 0, shown: 0, duration: 0, timer: null };
+}
+
+document.getElementById('btn-ssh-playback-toggle').onclick = () => {
+  const pb = sshMonitor.playback;
+  const btn = document.getElementById('btn-ssh-playback-toggle');
+  if (pb.playing) {
+    pb.elapsedAtPause = pb.elapsedAtPause + (Date.now() - pb.startWall) / 1000 * pb.speed;
+    sshPlaybackPause_();
+    btn.textContent = 'Play';
+  } else {
+    if (btn.textContent === 'Replay') pb.elapsedAtPause = 0;
+    pb.startWall = Date.now();
+    pb.playing = true;
+    pb.timer = setInterval(sshPlaybackTick, 100);
+    btn.textContent = 'Pause';
+  }
+};
+
+document.getElementById('ssh-playback-scrubber').oninput = (ev) => {
+  const pb = sshMonitor.playback;
+  sshPlaybackPause_();
+  document.getElementById('btn-ssh-playback-toggle').textContent = 'Play';
+  const relSeconds = (Number(ev.target.value) / 100) * pb.duration;
+  pb.elapsedAtPause = relSeconds;
+  sshPlaybackRenderUpTo(relSeconds);
+};
+
+document.getElementById('ssh-playback-speed').onchange = (ev) => {
+  const pb = sshMonitor.playback;
+  if (pb.playing) { pb.elapsedAtPause += (Date.now() - pb.startWall) / 1000 * pb.speed; pb.startWall = Date.now(); }
+  pb.speed = Number(ev.target.value);
+};
+
+function sshPlaybackExit() {
+  sshPlaybackStop_();
+  sshMonitor.mode = 'live';
+  document.getElementById('btn-ssh-playback-exit').style.display = 'none';
+  document.getElementById('ssh-playback-controls').style.display = 'none';
+  document.getElementById('ssh-monitor-feed-title').textContent = 'Live feed';
+  sshFeedClear();
+  document.getElementById('ssh-monitor-cpu-text').textContent = '—';
+  document.getElementById('ssh-monitor-mem-text').textContent = '—';
+  document.getElementById('ssh-monitor-cpu-bar').style.width = '0%';
+  document.getElementById('ssh-monitor-mem-bar').style.width = '0%';
+}
+document.getElementById('btn-ssh-playback-exit').onclick = sshPlaybackExit;
+
 // ------------------------------------------------------- live job events -
 // A small, dashboard.html-local WebSocket to /api/ws, mirroring the same
 // device-presence socket desktop-app/ui/main.js already keeps — this file
@@ -5458,6 +5873,9 @@ function connectLiveEventsSocket() {
         // static-file-serving route already assumes.
         setTimeout(() => location.reload(), 800);
       }
+      if (msg.type === 'ssh_session_event') onSshSessionEvent(msg);
+      if (msg.type === 'ssh_session_stopped') onSshSessionStopped(msg);
+      if (msg.type === 'ssh_recording_state') onSshRecordingState(msg);
     } catch (_e) { /* malformed frame, ignore */ }
   };
   liveEventsSocket.onclose = liveEventsSocket.onerror = () => {

@@ -1435,6 +1435,102 @@ def build_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc))
         return {"mode": ssh_toolkit.get_auto_update_mode(), "options": list(ssh_toolkit.AUTO_UPDATE_MODES)}
 
+    # SSH Toolkit session monitor + recorder - structured live events (never
+    # video/screen-share) over the existing /api/ws live-events socket
+    # ("ssh_session_event", "ssh_session_started", "ssh_session_stopped",
+    # "ssh_recording_state" message types), so a GUI can show every action an
+    # agent or user takes over an SSH connection as it happens, plus an
+    # optional durable recording. See bot/ssh_session_monitor.py.
+    @app.post("/api/ssh-toolkit/session/start", dependencies=[Depends(_require_token)])
+    async def api_ssh_session_start(payload: dict = Body(...)):
+        from bot import ssh_session_monitor
+
+        name = (payload.get("name") or "").strip()
+        command = (payload.get("command") or "").strip()
+        if not name or not command:
+            raise HTTPException(status_code=400, detail="name and command are both required")
+        session_id = await ssh_session_monitor.start_session(name, command)
+        return {"session_id": session_id}
+
+    @app.get("/api/ssh-toolkit/session", dependencies=[Depends(_require_token)])
+    async def api_ssh_session_list():
+        from bot import ssh_session_monitor
+
+        return {"sessions": ssh_session_monitor.list_sessions()}
+
+    @app.post("/api/ssh-toolkit/session/{session_id}/stop", dependencies=[Depends(_require_token)])
+    async def api_ssh_session_stop(session_id: str):
+        from bot import ssh_session_monitor, ssh_toolkit
+
+        try:
+            await ssh_session_monitor.stop_session(session_id)
+        except ssh_toolkit.SshToolkitError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return {"ok": True}
+
+    @app.post("/api/ssh-toolkit/session/{session_id}/record/start", dependencies=[Depends(_require_token)])
+    async def api_ssh_session_record_start(session_id: str):
+        from bot import ssh_session_monitor, ssh_toolkit
+
+        try:
+            recording_id = ssh_session_monitor.start_recording(session_id)
+        except ssh_toolkit.SshToolkitError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return {"recording_id": recording_id}
+
+    @app.post("/api/ssh-toolkit/session/{session_id}/record/pause", dependencies=[Depends(_require_token)])
+    async def api_ssh_session_record_pause(session_id: str):
+        from bot import ssh_session_monitor, ssh_toolkit
+
+        try:
+            ssh_session_monitor.pause_recording(session_id)
+        except ssh_toolkit.SshToolkitError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return {"ok": True}
+
+    @app.post("/api/ssh-toolkit/session/{session_id}/record/resume", dependencies=[Depends(_require_token)])
+    async def api_ssh_session_record_resume(session_id: str):
+        from bot import ssh_session_monitor, ssh_toolkit
+
+        try:
+            ssh_session_monitor.resume_recording(session_id)
+        except ssh_toolkit.SshToolkitError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return {"ok": True}
+
+    @app.post("/api/ssh-toolkit/session/{session_id}/record/stop", dependencies=[Depends(_require_token)])
+    async def api_ssh_session_record_stop(session_id: str):
+        from bot import ssh_session_monitor, ssh_toolkit
+
+        try:
+            recording_id = ssh_session_monitor.stop_recording(session_id)
+        except ssh_toolkit.SshToolkitError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return {"recording_id": recording_id}
+
+    @app.get("/api/ssh-toolkit/recordings", dependencies=[Depends(_require_token)])
+    async def api_ssh_recordings_list():
+        from bot import ssh_session_monitor
+
+        return {"recordings": ssh_session_monitor.list_recordings()}
+
+    @app.get("/api/ssh-toolkit/recordings/{recording_id}", dependencies=[Depends(_require_token)])
+    async def api_ssh_recording_get(recording_id: int):
+        from bot import ssh_session_monitor, ssh_toolkit
+
+        try:
+            return ssh_session_monitor.get_recording(recording_id)
+        except ssh_toolkit.SshToolkitError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+
+    @app.delete("/api/ssh-toolkit/recordings/{recording_id}", dependencies=[Depends(_require_token)])
+    async def api_ssh_recording_delete(recording_id: int):
+        from bot import ssh_session_monitor
+
+        ssh_session_monitor.delete_recording(recording_id)
+        db.log_audit(actor="dashboard", action="ssh_recording_delete", detail=str(recording_id))
+        return {"ok": True}
+
     @app.get("/api/plugins", dependencies=[Depends(_require_token)])
     async def api_plugins_list():
         from bot import plugins as plugin_registry

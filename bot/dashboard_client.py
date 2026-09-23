@@ -546,3 +546,34 @@ class DashboardClient:
 
     async def ssh_toolkit_set_auto_update(self, mode: str) -> dict:
         return await self._request("POST", "/api/ssh-toolkit/auto-update", json={"mode": mode})
+
+    # ------------------------------------------- ssh toolkit session monitor
+    async def ssh_session_start(self, name: str, command: str) -> str:
+        return (await self._request("POST", "/api/ssh-toolkit/session/start", json={"name": name, "command": command}))["session_id"]
+
+    async def ssh_session_list(self) -> list[dict]:
+        return (await self._request("GET", "/api/ssh-toolkit/session"))["sessions"]
+
+    async def ssh_session_stop(self, session_id: str) -> dict:
+        return await self._request("POST", f"/api/ssh-toolkit/session/{session_id}/stop")
+
+    async def ssh_session_record_start(self, session_id: str) -> int:
+        return (await self._request("POST", f"/api/ssh-toolkit/session/{session_id}/record/start"))["recording_id"]
+
+    async def ssh_session_record_pause(self, session_id: str) -> dict:
+        return await self._request("POST", f"/api/ssh-toolkit/session/{session_id}/record/pause")
+
+    async def ssh_session_record_resume(self, session_id: str) -> dict:
+        return await self._request("POST", f"/api/ssh-toolkit/session/{session_id}/record/resume")
+
+    async def ssh_session_record_stop(self, session_id: str) -> Optional[int]:
+        return (await self._request("POST", f"/api/ssh-toolkit/session/{session_id}/record/stop"))["recording_id"]
+
+    async def ssh_recordings_list(self) -> list[dict]:
+        return (await self._request("GET", "/api/ssh-toolkit/recordings"))["recordings"]
+
+    async def ssh_recording_get(self, recording_id: int) -> dict:
+        return await self._request("GET", f"/api/ssh-toolkit/recordings/{recording_id}")
+
+    async def ssh_recording_delete(self, recording_id: int) -> dict:
+        return await self._request("DELETE", f"/api/ssh-toolkit/recordings/{recording_id}")

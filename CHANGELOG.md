@@ -9,6 +9,15 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **SSH session monitor + recorder.** The SSH Toolkit dashboard page gained a "Session monitor" —
+  run a command over a registered connection and watch every action happen live: each output line,
+  a CPU/memory read from the remote machine, and its exit code, streamed the instant they occur over
+  the dashboard's existing live-events socket — structured events, never video or screen-share, so
+  it works over any connection without touching remote-desktop/VNC-style bandwidth or setup. A
+  Record/Pause/Resume/Stop control persists the exact event sequence for playback later, with a
+  scrubber and speed control (0.5x-4x). New `bot/ssh_session_monitor.py`; new
+  `ssh_session_recordings`/`ssh_session_events` tables. Verified live against a real remote machine
+  over a real SSH connection.
 - **SSH Toolkit integration.** A new [SSH_Toolkit](https://github.com/LoopyLuci/SSH_Toolkit) —
   a separately maintained PowerShell tool for creating/managing/visualizing named SSH connections
   between machines, with its own interactive UI and CLI — is now vendored here as a git submodule

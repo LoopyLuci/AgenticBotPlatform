@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import shutil
+import time
 from pathlib import Path
 from typing import Any, Optional
 
@@ -171,6 +172,131 @@ async def run_command(name: str, command: str, *, timeout: float = 30.0) -> str:
     not an interactive session (there's no terminal to be interactive with here)."""
     return await _run(["-Action", "Connect", "-Name", name, "-Command", command],
                       json_output=False, timeout=timeout)
+
+
+def _ssh_binary() -> Optional[str]:
+    return shutil.which("ssh")
+
+
+async def stream_command(name: str, command: str, *, timeout: Optional[float] = None):
+    """Runs one remote command over a registered connection (the same `~/.ssh/config`
+    Host alias Add-SshLinkConnection wrote - real ssh, no PowerShell wrapper in this
+    path, since streaming needs to see each line the moment it arrives, not a JSON blob
+    after the whole thing finishes) and yields structured events as they happen:
+    {"type": "start", ...} once, then any number of {"type": "stdout"/"stderr", "text":
+    line}, then exactly one {"type": "exit", "code": returncode} - never raw video/
+    terminal bytes, so a caller (the session monitor, a recorder, a live GUI feed) gets
+    something it can render and log meaningfully rather than a screen to look at.
+
+    This is an async generator: iterate it with `async for event in stream_command(...)`.
+    """
+    ssh_bin = _ssh_binary()
+    if not ssh_bin:
+        raise SshToolkitError("no ssh client found on PATH")
+    argv = [ssh_bin, name, command]
+    start_ts = time.time()
+    yield {"type": "start", "ts": start_ts, "connection": name, "command": command}
+
+    proc = await asyncio.create_subprocess_exec(
+        *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        creationflags=_NO_WINDOW if os.name == "nt" else 0,
+    )
+
+    queue: asyncio.Queue = asyncio.Queue()
+    _DONE = object()
+
+    async def _pump(stream: asyncio.StreamReader, event_type: str) -> None:
+        while True:
+            line = await stream.readline()
+            if not line:
+                break
+            await queue.put({"type": event_type, "ts": time.time(),
+                             "text": line.decode(errors="replace").rstrip("\r\n")})
+        await queue.put(_DONE)
+
+    pumps = [
+        asyncio.create_task(_pump(proc.stdout, "stdout")),
+        asyncio.create_task(_pump(proc.stderr, "stderr")),
+    ]
+
+    async def _drain():
+        done_count = 0
+        while done_count < len(pumps):
+            item = await queue.get()
+            if item is _DONE:
+                done_count += 1
+                continue
+            yield item
+
+    try:
+        if timeout:
+            deadline = start_ts + timeout
+            async for event in _drain():
+                yield event
+                if time.time() > deadline:
+                    with contextlib.suppress(ProcessLookupError, OSError):
+                        proc.kill()
+                    yield {"type": "exit", "ts": time.time(), "code": None, "error": "timed out"}
+                    return
+        else:
+            async for event in _drain():
+                yield event
+        code = await proc.wait()
+        yield {"type": "exit", "ts": time.time(), "code": code}
+    finally:
+        for p in pumps:
+            p.cancel()
+
+
+_METRICS_PROBE_WINDOWS = (
+    "wmic cpu get loadpercentage /value & "
+    "wmic OS get FreePhysicalMemory,TotalVisibleMemorySize /value"
+)
+
+
+def _parse_metrics_probe(output: str) -> dict:
+    values: dict[str, str] = {}
+    for line in output.splitlines():
+        if "=" in line:
+            k, _, v = line.partition("=")
+            k, v = k.strip(), v.strip()
+            if k and v:
+                values[k] = v
+    metrics: dict[str, Any] = {}
+    if "LoadPercentage" in values:
+        with contextlib.suppress(ValueError):
+            metrics["cpu_percent"] = float(values["LoadPercentage"])
+    if "FreePhysicalMemory" in values and "TotalVisibleMemorySize" in values:
+        with contextlib.suppress(ValueError, ZeroDivisionError):
+            free_kb, total_kb = float(values["FreePhysicalMemory"]), float(values["TotalVisibleMemorySize"])
+            metrics["mem_used_percent"] = round((1 - free_kb / total_kb) * 100, 1)
+            metrics["mem_total_mb"] = round(total_kb / 1024, 1)
+    return metrics
+
+
+async def probe_metrics(name: str, *, timeout: float = 10.0) -> dict:
+    """One lightweight CPU/memory snapshot of the connection's remote machine - a
+    quick, separate command (fast to run repeatedly over the toolkit's own SSH
+    multiplexing/ControlMaster support), not a persistent remote agent. Windows-only
+    probe today, matching the machines this feature was built and demoed against;
+    returns {} rather than raising when the probe command itself fails or the target
+    isn't Windows, since a monitor session's live command output matters far more than
+    one missed metrics tick."""
+    ssh_bin = _ssh_binary()
+    if not ssh_bin:
+        return {}
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            ssh_bin, name, _METRICS_PROBE_WINDOWS,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            creationflags=_NO_WINDOW if os.name == "nt" else 0,
+        )
+        stdout, _stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except (asyncio.TimeoutError, OSError):
+        return {}
+    if proc.returncode != 0:
+        return {}
+    return _parse_metrics_probe(stdout.decode(errors="replace"))
 
 
 async def status_all() -> list[dict]:

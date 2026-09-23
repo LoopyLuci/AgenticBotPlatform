@@ -80,6 +80,17 @@ peers and kanban have no TUI screen yet (CLI-only, see above) — a later pass, 
 half-way here. Also still GUI-only: Android push/mobile-key QR pairing UI, and the Models page's
 own usage/limit screens beyond plain provider/model browsing.
 
+**SSH session monitor + recorder** (dashboard GUI only, no TUI/CLI surface yet) — the SSH Toolkit
+page's "Session monitor" card: run a command over a registered connection and watch every action
+happen live — each output line, a CPU/memory read from the remote machine every few seconds, and
+its exit code, streamed the instant they occur over the dashboard's existing `/api/ws` socket
+(`bot/ssh_session_monitor.py`, message type `ssh_session_event`) — structured events, never video or
+screen-share. A Record/Pause/Resume/Stop control persists the exact event sequence to
+`ssh_session_recordings`/`ssh_session_events` (`bot/db.py`) for exact playback later, with a
+scrubber and speed control. `POST/GET /api/ssh-toolkit/session*` and `/api/ssh-toolkit/recordings*`;
+`DashboardClient.ssh_session_*`/`ssh_recording*`. Verified live against a real remote machine over a
+real SSH connection, not simulated.
+
 ## Extending either one
 
 Add a method to `bot/dashboard_client.py`'s `DashboardClient` (a thin one-to-one wrapper on a

@@ -124,6 +124,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.tui.screens.chat", "bot.tui.screens.providers", "bot.tui.screens.agent_settings",
     "bot.tui.screens.swarms", "bot.tui.screens.sessions", "bot.tui.screens.ssh_toolkit",
     "bot.ssh_toolkit",  # shells out to a separately maintained tool; nothing to reload mid-run either way
+    "bot.ssh_session_monitor",  # holds live in-flight session/subprocess state; a reload would orphan it
     "bot.dashboard_client",  # only ever imported by the tui/cli processes above, or abp_cli (its own separate process)
     "bot.swarm.base", "bot.swarm.strategies", "bot.swarm.engine",
     "bot.support_bot.model", "bot.support_bot.training_data", "bot.support_bot.hybrid",

@@ -206,6 +206,15 @@ export const operations = {
   ],
   "query_params": []
  },
+ "DELETE /api/ssh-toolkit/recordings/{recording_id}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/ssh-toolkit/recordings/{recording_id}",
+  "path_params": [
+   "recording_id"
+  ],
+  "query_params": []
+ },
  "DELETE /api/support-bot/training/{phrase_id}": {
   "body": false,
   "method": "DELETE",
@@ -1258,6 +1267,29 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/ssh-toolkit/recordings": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ssh-toolkit/recordings",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/ssh-toolkit/recordings/{recording_id}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ssh-toolkit/recordings/{recording_id}",
+  "path_params": [
+   "recording_id"
+  ],
+  "query_params": []
+ },
+ "GET /api/ssh-toolkit/session": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ssh-toolkit/session",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/ssh-toolkit/status": {
   "body": false,
   "method": "GET",
@@ -2284,6 +2316,58 @@ export const operations = {
   "path": "/api/ssh-toolkit/connections/{name}/test",
   "path_params": [
    "name"
+  ],
+  "query_params": []
+ },
+ "POST /api/ssh-toolkit/session/start": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ssh-toolkit/session/start",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/ssh-toolkit/session/{session_id}/record/pause": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/ssh-toolkit/session/{session_id}/record/pause",
+  "path_params": [
+   "session_id"
+  ],
+  "query_params": []
+ },
+ "POST /api/ssh-toolkit/session/{session_id}/record/resume": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/ssh-toolkit/session/{session_id}/record/resume",
+  "path_params": [
+   "session_id"
+  ],
+  "query_params": []
+ },
+ "POST /api/ssh-toolkit/session/{session_id}/record/start": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/ssh-toolkit/session/{session_id}/record/start",
+  "path_params": [
+   "session_id"
+  ],
+  "query_params": []
+ },
+ "POST /api/ssh-toolkit/session/{session_id}/record/stop": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/ssh-toolkit/session/{session_id}/record/stop",
+  "path_params": [
+   "session_id"
+  ],
+  "query_params": []
+ },
+ "POST /api/ssh-toolkit/session/{session_id}/stop": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/ssh-toolkit/session/{session_id}/stop",
+  "path_params": [
+   "session_id"
   ],
   "query_params": []
  },
@@ -4224,6 +4308,90 @@ export const operations = {
   "path": "/api/snapshots/{name}/restore",
   "path_params": [
    "name"
+  ],
+  "query_params": []
+ },
+ "api_ssh_recording_delete_api_ssh_toolkit_recordings__recording_id__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/ssh-toolkit/recordings/{recording_id}",
+  "path_params": [
+   "recording_id"
+  ],
+  "query_params": []
+ },
+ "api_ssh_recording_get_api_ssh_toolkit_recordings__recording_id__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ssh-toolkit/recordings/{recording_id}",
+  "path_params": [
+   "recording_id"
+  ],
+  "query_params": []
+ },
+ "api_ssh_recordings_list_api_ssh_toolkit_recordings_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ssh-toolkit/recordings",
+  "path_params": [],
+  "query_params": []
+ },
+ "api_ssh_session_list_api_ssh_toolkit_session_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ssh-toolkit/session",
+  "path_params": [],
+  "query_params": []
+ },
+ "api_ssh_session_record_pause_api_ssh_toolkit_session__session_id__record_pause_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/ssh-toolkit/session/{session_id}/record/pause",
+  "path_params": [
+   "session_id"
+  ],
+  "query_params": []
+ },
+ "api_ssh_session_record_resume_api_ssh_toolkit_session__session_id__record_resume_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/ssh-toolkit/session/{session_id}/record/resume",
+  "path_params": [
+   "session_id"
+  ],
+  "query_params": []
+ },
+ "api_ssh_session_record_start_api_ssh_toolkit_session__session_id__record_start_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/ssh-toolkit/session/{session_id}/record/start",
+  "path_params": [
+   "session_id"
+  ],
+  "query_params": []
+ },
+ "api_ssh_session_record_stop_api_ssh_toolkit_session__session_id__record_stop_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/ssh-toolkit/session/{session_id}/record/stop",
+  "path_params": [
+   "session_id"
+  ],
+  "query_params": []
+ },
+ "api_ssh_session_start_api_ssh_toolkit_session_start_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ssh-toolkit/session/start",
+  "path_params": [],
+  "query_params": []
+ },
+ "api_ssh_session_stop_api_ssh_toolkit_session__session_id__stop_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/ssh-toolkit/session/{session_id}/stop",
+  "path_params": [
+   "session_id"
   ],
   "query_params": []
  },
