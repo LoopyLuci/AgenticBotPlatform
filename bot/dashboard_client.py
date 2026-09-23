@@ -438,6 +438,9 @@ class DashboardClient:
     async def env_status(self) -> dict:
         return await self._request("GET", "/api/env")
 
+    async def env_set(self, key: str, value: str) -> dict:
+        return await self._request("POST", "/api/env/set", json={"key": key, "value": value})
+
     async def get_config(self) -> dict:
         return await self._request("GET", "/api/config")
 

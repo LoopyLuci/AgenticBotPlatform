@@ -10,6 +10,50 @@ from __future__ import annotations
 from bot import envfile
 
 
+def test_set_var_appends_a_new_key(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text("SOME_OTHER_VAR=x\n", encoding="utf-8")
+    monkeypatch.setattr(envfile, "resolve", lambda: env_path)
+
+    envfile.set_var("DASHBOARD_HOST", "0.0.0.0")
+
+    content = env_path.read_text(encoding="utf-8")
+    assert "SOME_OTHER_VAR=x" in content
+    assert "DASHBOARD_HOST=0.0.0.0" in content
+    assert envfile.get_var("DASHBOARD_HOST") == "0.0.0.0"
+
+
+def test_set_var_replaces_an_existing_key_in_place(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text("DASHBOARD_HOST=127.0.0.1\nDASHBOARD_TOKEN=secret\n", encoding="utf-8")
+    monkeypatch.setattr(envfile, "resolve", lambda: env_path)
+
+    envfile.set_var("DASHBOARD_HOST", "0.0.0.0")
+
+    lines = env_path.read_text(encoding="utf-8").splitlines()
+    assert lines.count("DASHBOARD_HOST=0.0.0.0") == 1
+    assert "DASHBOARD_TOKEN=secret" in lines
+
+
+def test_set_var_rejects_bad_keys_and_values(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(envfile, "resolve", lambda: env_path)
+
+    for bad_key in ("", "HAS=EQUALS", "HAS\nNEWLINE"):
+        try:
+            envfile.set_var(bad_key, "x")
+            assert False, f"expected ValueError for key {bad_key!r}"
+        except ValueError:
+            pass
+
+    try:
+        envfile.set_var("OK_KEY", "line1\nline2")
+        assert False, "expected ValueError for a multi-line value"
+    except ValueError:
+        pass
+
+
 def test_ensure_dashboard_token_generates_when_missing(tmp_path, monkeypatch):
     env_path = tmp_path / ".env"
     env_path.write_text("SOME_OTHER_VAR=x\n", encoding="utf-8")

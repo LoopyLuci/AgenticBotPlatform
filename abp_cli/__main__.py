@@ -145,7 +145,10 @@ async def _dispatch(args, client: DashboardClient) -> int:
     if cmd == "snapshots":
         return await _snapshots(args, client)
     if cmd == "env":
-        _print(args, await client.env_status())
+        if getattr(args, "env_cmd", "status") == "set":
+            _print(args, await client.env_set(args.key, args.value))
+        else:
+            _print(args, await client.env_status())
         return 0
     if cmd == "config":
         return await _config(args, client)
@@ -826,7 +829,12 @@ def _parser() -> argparse.ArgumentParser:
     for name in ("restore", "remove"):
         p = snsub.add_parser(name); p.add_argument("name")
 
-    sub.add_parser("env", help="env-file status (redacted) - see .env directly for raw content")
+    envp = sub.add_parser("env", help="env-file status (redacted), or write a single key")
+    envsub = envp.add_subparsers(dest="env_cmd")
+    envsub.add_parser("status")
+    p = envsub.add_parser("set", help="add/update one KEY=value without reading the file back")
+    p.add_argument("key")
+    p.add_argument("value")
 
     cfg = sub.add_parser("config", help="config/backends.yaml - version, history, and the generic path setter")
     cfsub = cfg.add_subparsers(dest="config_cmd", required=True)
