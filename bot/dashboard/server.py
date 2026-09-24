@@ -287,6 +287,9 @@ def _require_infra_access(x_dashboard_token: Optional[str] = Header(default=None
 
 
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1"})
+# api_keys kinds that are not paired phones: a linked server, or the browser extension (bot/browser_bridge.py).
+# Neither has desktop-equivalent access; each reaches only its own narrow routes.
+_NON_DEVICE_KINDS = ("peer_server", "browser_ext")
 
 
 def _require_token_or_bootstrap(request: Request, x_dashboard_token: Optional[str] = Header(default=None)) -> None:
@@ -412,8 +415,11 @@ def _identify_caller(
         # gets a deliberately narrower surface (see
         # _require_token_or_api_key below) than a full mobile device, which
         # has desktop-equivalent access by design.
-        if db.api_key_kind(x_dashboard_token or "") == "peer_server":
+        kind = db.api_key_kind(x_dashboard_token or "")
+        if kind == "peer_server":
             return "peer"
+        if kind == "browser_ext":
+            return "bridge"
         return "mobile"
     if not expected:
         raise HTTPException(status_code=503, detail="DASHBOARD_TOKEN is not set in .env")
@@ -430,6 +436,8 @@ def _require_token_or_api_key(caller: str = Depends(_identify_caller)) -> None:
     other dependency explicitly instead of this one."""
     if caller == "peer":
         raise HTTPException(status_code=403, detail="a linked peer server cannot call this endpoint")
+    if caller == "bridge":
+        raise HTTPException(status_code=403, detail="a browser-extension key cannot call this endpoint")
     return None
 
 
@@ -437,6 +445,8 @@ def _require_token_or_api_key_or_peer(caller: str = Depends(_identify_caller)) -
     """Like _require_token_or_api_key, but also allows a linked peer
     server's own key — for the small set of routes bot/peers.py's proxy
     actually calls (overview, bot list/show, bot lifecycle actions)."""
+    if caller == "bridge":
+        raise HTTPException(status_code=403, detail="a browser-extension key cannot call this endpoint")
     return None
 
 
@@ -473,7 +483,7 @@ def _caller_device_id(
     # pass verify_api_key() same as a real paired phone — but these routes
     # are all Android/mesh device-management, which a peer server has no
     # business calling (see _identify_caller's own "peer" carve-out).
-    if key_id is not None and db.api_key_kind(x_dashboard_token or "") == "peer_server":
+    if key_id is not None and db.api_key_kind(x_dashboard_token or "") in _NON_DEVICE_KINDS:
         key_id = None
     if key_id is None:
         raise HTTPException(status_code=401, detail="invalid dashboard token or api key")
@@ -551,7 +561,7 @@ def _require_device_id(x_dashboard_token: Optional[str] = Header(default=None)) 
     if expected and _tokens_match(x_dashboard_token, expected):
         return db.SERVER_CHAT_DESKTOP_DEVICE_ID
     key_id = db.verify_api_key(x_dashboard_token or "")
-    if key_id is not None and db.api_key_kind(x_dashboard_token or "") == "peer_server":
+    if key_id is not None and db.api_key_kind(x_dashboard_token or "") in _NON_DEVICE_KINDS:
         key_id = None
     if key_id is not None:
         return key_id
@@ -566,7 +576,7 @@ def _require_mobile_key_id(x_dashboard_token: Optional[str] = Header(default=Non
     so (unlike every other mobile-reachable route) this one requires an
     actual mobile key specifically, not the desktop DASHBOARD_TOKEN too."""
     key_id = db.verify_api_key(x_dashboard_token or "")
-    if key_id is not None and db.api_key_kind(x_dashboard_token or "") == "peer_server":
+    if key_id is not None and db.api_key_kind(x_dashboard_token or "") in _NON_DEVICE_KINDS:
         key_id = None
     if key_id is None:
         raise HTTPException(status_code=401, detail="a valid mobile api key is required")
@@ -803,6 +813,11 @@ def build_app() -> FastAPI:
         set_peer_access=lambda on: envfile.set_var("PEER_INFRA_ACCESS", "1" if on else "0", actor="dashboard"),
         peer_access_enabled=peer_infra_enabled,
     )
+
+    # Browser-extension bridge (/api/browser/*): pairing, the extension WebSocket, policy, RPC.
+    from bot.dashboard import browser_api
+
+    browser_api.register(app, _require_token)
 
     # Agent security (/api/agent/permissions, /api/mcp/pins, ...): rules, pins, untrusted-content marks.
     from bot.dashboard import agent_security_api
@@ -4658,7 +4673,7 @@ def build_app() -> FastAPI:
         # session output, job events, activity — see bot/ssh_session_monitor.py
         # and every other _broadcast_soon caller), not just the narrow
         # overview/bots/lifecycle surface bot/peers.py's own REST proxy uses.
-        if device_id is not None and db.api_key_kind(supplied or "") == "peer_server":
+        if device_id is not None and db.api_key_kind(supplied or "") in _NON_DEVICE_KINDS:
             device_id = None
             authed = False
         if not authed and device_id is None:

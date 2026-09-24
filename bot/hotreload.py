@@ -76,7 +76,7 @@ def _enabled_by_default() -> bool:
 # each entry (several were found only by grepping every candidate file
 # for module-level mutable containers, not by inspection alone).
 DENYLIST: frozenset[str] = frozenset({
-    "bot.main", "bot.router", "bot.db", "bot.config", "bot.dashboard.server", "bot.dashboard.cicd_api", "bot.dashboard.agent_security_api", "bot.dashboard.models_info_api", "bot.dashboard.approvals_api", "bot.dashboard.channels_api", "bot.dashboard.agent_config_api", "bot.dashboard.tailscale_api", "bot.dashboard.infra_api",
+    "bot.main", "bot.router", "bot.db", "bot.config", "bot.dashboard.server", "bot.dashboard.cicd_api", "bot.dashboard.agent_security_api", "bot.dashboard.models_info_api", "bot.dashboard.approvals_api", "bot.dashboard.channels_api", "bot.dashboard.agent_config_api", "bot.dashboard.tailscale_api", "bot.dashboard.infra_api", "bot.dashboard.browser_api",
     "bot.agent_runtime.engine", "bot.agent_runtime.approval", "bot.agent_runtime.subagent_registry",
     "bot.platform_supervisor",
     "bot.provider_store",  # owns a lock and the path of the on-disk provider store; a reload would orphan both
@@ -124,6 +124,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.tui.screens.chat", "bot.tui.screens.providers", "bot.tui.screens.agent_settings",
     "bot.tui.screens.swarms", "bot.tui.screens.sessions", "bot.tui.screens.ssh_toolkit", "bot.tui.screens.infra",
     "bot.ssh_toolkit",  # shells out to a separately maintained tool; nothing to reload mid-run either way
+    "bot.browser_bridge",  # holds live extension connections and pending pairings; a reload would drop them
     "bot.terminal_broker",  # holds live PTY/socket sessions; a reload would orphan them
     "bot.infra_automation",  # its run_forever() loop is a live background task holding the in-flight tick
     "bot.ssh_session_monitor",  # holds live in-flight session/subprocess state; a reload would orphan it
@@ -217,6 +218,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.retention",
     "bot.peers",
     "bot.tailscale_mgr",
+    "bot.browser_policy",
     "bot.docker_mgr",
     "bot.vm_mgr",
     "bot.turn",
