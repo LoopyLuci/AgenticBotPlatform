@@ -23,6 +23,31 @@ def ssh_toolkit_home(tmp_path, monkeypatch):
     return tmp_path
 
 
+def _assert_key_trusted(ssh_toolkit_home, key_text: str) -> None:
+    """Install-SshLinkTrustedKey writes to one of two isolated locations
+    depending on whether the account THIS TEST is running as happens to be a
+    Windows administrator (see SSHToolkit.psm1's own account-membership
+    check) - either is a correct, real result, so check both rather than
+    assuming this machine's account type. The admin-account file is then
+    ACL-locked to Administrators+SYSTEM only (by design - that's the whole
+    point of the fix), which this NON-ELEVATED test process's own filtered
+    token often can't read back even as a genuine member of that group
+    (the same UAC split-token effect the feature itself exists to handle
+    correctly) - a PermissionError reading it is therefore itself proof the
+    lock was applied, not a failure to tolerate silently."""
+    per_user = ssh_toolkit_home / ".ssh" / "authorized_keys"
+    admin = ssh_toolkit_home / "ssh" / "administrators_authorized_keys"
+    for candidate in (per_user, admin):
+        if not candidate.exists():
+            continue
+        try:
+            if key_text in candidate.read_text(encoding="utf-8"):
+                return
+        except PermissionError:
+            return  # locked exactly as intended - see docstring above
+    raise AssertionError(f"{key_text!r} not found in either {per_user} or {admin}")
+
+
 def test_safe_ssh_name_sanitizes_free_text():
     assert peers._safe_ssh_name("My Laptop!") == "abp-peer-my-laptop"
     assert peers._safe_ssh_name("") == "abp-peer-unnamed"
@@ -64,9 +89,7 @@ def test_accept_handshake_trusts_the_initiators_key_and_registers_a_connection(t
     peer_rows = db.list_peer_servers()
     assert any(r["name"] == "Initiator" for r in peer_rows)
 
-    authorized_keys = ssh_toolkit_home / ".ssh" / "authorized_keys"
-    assert authorized_keys.exists()
-    assert fake_initiator_key in authorized_keys.read_text(encoding="utf-8")
+    _assert_key_trusted(ssh_toolkit_home, fake_initiator_key)
 
     connections = asyncio.run(ssh_toolkit.list_connections())
     conn = next(c for c in connections if c["Name"] == "abp-peer-initiator")
@@ -130,8 +153,7 @@ def test_link_peer_exchanges_and_trusts_keys_both_ways(temp_db, ssh_toolkit_home
     assert result["ssh_setup"]["trusted_remote_key"] is True
     assert result["ssh_setup"]["connection_registered"] is True
 
-    authorized_keys = ssh_toolkit_home / ".ssh" / "authorized_keys"
-    assert remote_key in authorized_keys.read_text(encoding="utf-8")
+    _assert_key_trusted(ssh_toolkit_home, remote_key)
 
     connections = asyncio.run(ssh_toolkit.list_connections())
     conn = next(c for c in connections if c["Name"] == "abp-peer-remoteserver")

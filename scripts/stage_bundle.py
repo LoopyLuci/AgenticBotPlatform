@@ -103,6 +103,20 @@ def stage(stage_dir: Path = STAGE, markers: list[str] | None = None) -> None:
     # import it without the bot package), so it ships beside it.
     if (ROOT / "abp_cicd").is_dir():
         shutil.copytree(ROOT / "abp_cicd", stage_dir / "abp_cicd", ignore=_bot_ignore)
+    # bot/ssh_toolkit.py shells out to this submodule's own bin/ssh-toolkit.ps1 for
+    # every CRUD operation (add/list/remove/visualize a connection, the peer-pairing
+    # SSH auto-setup, ...) - only its "stream a command directly" path bypasses it
+    # entirely. Without this, an installed app silently has none of that: is_available()
+    # returns False and every dependent feature fails closed with no obvious cause
+    # (a real gap this bundle never caught until a live two-machine peer-link test
+    # surfaced it - see CHANGELOG's "Automatic SSH pairing" entry). Never ships the
+    # submodule's own .git metadata - it's vendored content here, not a nested repo.
+    vendor_dir = ROOT / "vendor" / "ssh_toolkit"
+    if (vendor_dir / "bin" / "ssh-toolkit.ps1").is_file():
+        shutil.copytree(
+            vendor_dir, stage_dir / "vendor" / "ssh_toolkit",
+            ignore=shutil.ignore_patterns(".git", "__pycache__"),
+        )
     shutil.copytree(ROOT / ".venv", stage_dir / ".venv", ignore=_venv_ignore, symlinks=True)
     cfg = stage_dir / ".venv" / "pyvenv.cfg"
     if cfg.is_file():

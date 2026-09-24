@@ -41,6 +41,7 @@
       "stage/abp_cicd": "abp_cicd",
       "stage/config/backends.yaml": "config/backends.yaml",
       "stage/.venv": ".venv",
+      "stage/vendor/ssh_toolkit": "vendor/ssh_toolkit",
       "../../requirements.txt": "requirements.txt",
       "../ui": "desktop-app/ui",
       "icons/icon.ico": "icon.ico"
