@@ -9,6 +9,13 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **System tray and single instance (desktop app).** ABP now lives in the tray: closing or minimizing hides the
+  window and the bot server keeps running; the tray menu offers Show, Minimize to tray, the two toggles, and Quit
+  (the only thing that really exits and stops the server). Left-click or double-click the icon shows the window.
+  Settings persist in `tray.json` and are editable in Control Center > System tray; if the tray can't be created,
+  hiding is disabled for that session so the window can't be lost. Only one copy can ever run: a second launch
+  (including `--minimized`) just shows the existing window. Verified live with five simultaneous extra launches.
+  Note: the copy already running before this build has no such guard until it is replaced by the new build.
 - **Tailscale, container (Portainer-style), VM and infra-automation management.** Four new pages (Tailscale,
   Containers, Virtual Machines, Infra Automation) in both the dashboard and the desktop app, backed by
   `/api/tailscale/*`, `/api/docker/*`, `/api/vms/*` and `/api/infra/rules`, reachable from agents (new MCP tools) and

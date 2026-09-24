@@ -16,7 +16,7 @@ use std::os::windows::process::CommandExt;
 
 use serde::Serialize;
 use sysinfo::{Pid, ProcessesToUpdate, System};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 
 pub(crate) mod android;
 use android::{
@@ -25,6 +25,7 @@ use android::{
 };
 mod network;
 mod terminal;
+mod tray;
 mod updater;
 use network::{detect_lan_host, detect_tailscale_host};
 use terminal::{
@@ -1225,6 +1226,12 @@ fn fix_shortcut_icons(_app: &AppHandle) {}
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Must be the first plugin: a second launch shows the running (possibly
+        // tray-hidden) window instead of starting a competing app.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            tray::show_main(app);
+        }))
+        .manage(tray::TrayState::new())
         .manage(ServerState {
             child: Mutex::new(None),
             log_backlog: Mutex::new(Vec::new()),
@@ -1252,10 +1259,24 @@ pub fn run() {
             terminal_start,
             terminal_write,
             terminal_resize,
-            terminal_stop
+            terminal_stop,
+            tray::get_tray_settings,
+            tray::set_tray_settings,
+            tray::hide_main_window,
+            tray::show_main_window,
+            tray::quit_app_command
         ])
         .setup(|app| {
             let handle = app.handle().clone();
+            tray::init_settings(&handle);
+            if let Err(e) = tray::build(&handle) {
+                tray::disable_hiding(&handle);
+                eprintln!(
+                    "[agentic-bot-platform] tray unavailable, window will close normally: {e}"
+                );
+            } else if tray::should_start_hidden(&handle) {
+                tray::hide_to_tray(&handle);
+            }
             let icon_fix_handle = handle.clone();
             thread::spawn(move || fix_shortcut_icons(&icon_fix_handle));
             let state = handle.state::<ServerState>();
@@ -1272,15 +1293,18 @@ pub fn run() {
             }
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
-                stop_bot_server(window.state::<ServerState>().inner());
-                android::stop_android_build(window.state::<android::AndroidBuildState>().inner());
-                stop_terminal(window.state::<TerminalState>().inner());
+        .on_window_event(tray::handle_window_event)
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let RunEvent::Exit = event {
+                // Every real exit path (tray Quit, closing with close-to-tray off,
+                // an OS shutdown) lands here; each call is idempotent.
+                stop_bot_server(app.state::<ServerState>().inner());
+                android::stop_android_build(app.state::<android::AndroidBuildState>().inner());
+                stop_terminal(app.state::<TerminalState>().inner());
             }
-        })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        });
 }
 
 #[cfg(test)]
