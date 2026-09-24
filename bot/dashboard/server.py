@@ -769,6 +769,11 @@ def build_app() -> FastAPI:
 
     tailscale_api.register(app, _require_token)
 
+    # Containers (Docker, Portainer-style) and VMs (QEMU / Hyper-V / libvirt).
+    from bot.dashboard import infra_api
+
+    infra_api.register(app, _require_token)
+
     # Agent security (/api/agent/permissions, /api/mcp/pins, ...): rules, pins, untrusted-content marks.
     from bot.dashboard import agent_security_api
 

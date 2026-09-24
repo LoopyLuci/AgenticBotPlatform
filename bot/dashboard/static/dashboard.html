@@ -584,6 +584,10 @@
       <a href="#kanban" title="Kanban"><span class="ic">🗒</span><span class="nav-txt">Kanban</span></a>
       <a href="#agents" title="ABP Agents"><span class="ic">🤖</span><span class="nav-txt">ABP Agents</span></a>
       <a href="#swarms" title="Swarms"><span class="ic">🐝</span><span class="nav-txt">Swarms</span></a>
+      <a href="#tailscale" title="Tailscale"><span class="ic">🛰</span><span class="nav-txt">Tailscale</span></a>
+      <a href="#containers" title="Containers"><span class="ic">📦</span><span class="nav-txt">Containers</span></a>
+      <a href="#vms" title="Virtual Machines"><span class="ic">🖥</span><span class="nav-txt">Virtual Machines</span></a>
+      <a href="#infra-rules" title="Infra Automation"><span class="ic">⚙</span><span class="nav-txt">Infra Automation</span></a>
       <a href="#ssh-toolkit" title="SSH Toolkit"><span class="ic">🔑</span><span class="nav-txt">SSH Toolkit</span></a>
       <a href="#automation" title="Automation"><span class="ic">🪝</span><span class="nav-txt">Automation</span></a>
       <a href="#customize" title="Customize UI"><span class="ic">🪄</span><span class="nav-txt">Customize UI</span></a>
@@ -1556,6 +1560,26 @@
           </table>
         </div>
       </div>
+    </section>
+
+    <section id="tailscale">
+      <div class="sec-head"><h2>Tailscale</h2><span class="desc">Every Tailscale setting for this machine and your tailnet: connection, preferences, Serve &amp; Funnel, exit nodes, files, certificates, devices, keys and access controls.</span></div>
+      <div id="ts-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
+
+    <section id="containers">
+      <div class="sec-head"><h2>Containers</h2><span class="desc">Docker containers, images, volumes, networks, Compose stacks, app templates and registries - everything Portainer does, from ABP.</span></div>
+      <div id="ct-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
+
+    <section id="vms">
+      <div class="sec-head"><h2>Virtual Machines</h2><span class="desc">Create and run QEMU machines, and manage Hyper-V and libvirt machines: start, stop, pause, snapshots, disk images.</span></div>
+      <div id="vm-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
+
+    <section id="infra-rules">
+      <div class="sec-head"><h2>Infra Automation</h2><span class="desc">Rules for containers, VMs and Tailscale: "when a container stops, restart it", "every night, prune unused images".</span></div>
+      <div id="ir-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
     <section id="ssh-toolkit">
@@ -7469,6 +7493,7 @@ checkSetupAndProceed(startDashboard);
 
 <script src="/static/terminal-panel.js"></script>
 <script src="/static/agents-panel.js"></script>
+<script src="/static/infra-panel.js"></script>
 <script src="/static/bot-agent-form.js"></script>
 </body>
 </html>

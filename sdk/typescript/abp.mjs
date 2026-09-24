@@ -47,6 +47,26 @@ export const operations = {
   ],
   "query_params": []
  },
+ "DELETE /api/docker/networks/{name}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/docker/networks/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "DELETE /api/docker/volumes/{name}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/docker/volumes/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": [
+   "force"
+  ]
+ },
  "DELETE /api/files/{root}": {
   "body": false,
   "method": "DELETE",
@@ -62,6 +82,15 @@ export const operations = {
   "path": "/api/hooks/{hook_id}",
   "path_params": [
    "hook_id"
+  ],
+  "query_params": []
+ },
+ "DELETE /api/infra/rules/{rule_id}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/infra/rules/{rule_id}",
+  "path_params": [
+   "rule_id"
   ],
   "query_params": []
  },
@@ -232,6 +261,35 @@ export const operations = {
    "swarm_id"
   ],
   "query_params": []
+ },
+ "DELETE /api/tailscale/api/devices/{device_id}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/tailscale/api/devices/{device_id}",
+  "path_params": [
+   "device_id"
+  ],
+  "query_params": []
+ },
+ "DELETE /api/tailscale/api/keys/{key_id}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/tailscale/api/keys/{key_id}",
+  "path_params": [
+   "key_id"
+  ],
+  "query_params": []
+ },
+ "DELETE /api/vms/qemu/{name}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/vms/qemu/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": [
+   "delete_disks"
+  ]
  },
  "GET /": {
   "body": false,
@@ -657,6 +715,209 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/docker/containers": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/containers",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/docker/containers/{ident}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/containers/{ident}",
+  "path_params": [
+   "ident"
+  ],
+  "query_params": []
+ },
+ "GET /api/docker/containers/{ident}/files": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/containers/{ident}/files",
+  "path_params": [
+   "ident"
+  ],
+  "query_params": [
+   "path"
+  ]
+ },
+ "GET /api/docker/containers/{ident}/logs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/containers/{ident}/logs",
+  "path_params": [
+   "ident"
+  ],
+  "query_params": [
+   "tail",
+   "since",
+   "timestamps"
+  ]
+ },
+ "GET /api/docker/containers/{ident}/stats": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/containers/{ident}/stats",
+  "path_params": [
+   "ident"
+  ],
+  "query_params": []
+ },
+ "GET /api/docker/containers/{ident}/top": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/containers/{ident}/top",
+  "path_params": [
+   "ident"
+  ],
+  "query_params": []
+ },
+ "GET /api/docker/df": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/df",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/docker/events": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/events",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/docker/images": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/images",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/docker/images/history": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/images/history",
+  "path_params": [],
+  "query_params": [
+   "ref"
+  ]
+ },
+ "GET /api/docker/images/inspect": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/images/inspect",
+  "path_params": [],
+  "query_params": [
+   "ref"
+  ]
+ },
+ "GET /api/docker/images/search": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/images/search",
+  "path_params": [],
+  "query_params": [
+   "term",
+   "limit"
+  ]
+ },
+ "GET /api/docker/info": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/info",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/docker/networks": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/networks",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/docker/networks/{name}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/networks/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "GET /api/docker/registries": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/registries",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/docker/stacks": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/stacks",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/docker/stacks/{name}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/stacks/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "GET /api/docker/stacks/{name}/logs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/stacks/{name}/logs",
+  "path_params": [
+   "name"
+  ],
+  "query_params": [
+   "tail"
+  ]
+ },
+ "GET /api/docker/stacks/{name}/services": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/stacks/{name}/services",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "GET /api/docker/stats": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/stats",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/docker/templates": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/templates",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/docker/volumes": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/volumes",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/docker/volumes/{name}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/volumes/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
  "GET /api/env": {
   "body": false,
   "method": "GET",
@@ -771,6 +1032,22 @@ export const operations = {
   "method": "GET",
   "path": "/api/hotreload/status",
   "path_params": [],
+  "query_params": []
+ },
+ "GET /api/infra/rules": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/infra/rules",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/infra/rules/{rule_id}/history": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/infra/rules/{rule_id}/history",
+  "path_params": [
+   "rule_id"
+  ],
   "query_params": []
  },
  "GET /api/instances/{instance_id}/permissions": {
@@ -1399,6 +1676,213 @@ export const operations = {
   ],
   "query_params": []
  },
+ "GET /api/tailscale/accounts": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/accounts",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/tailscale/api/acl": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/api/acl",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/tailscale/api/devices": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/api/devices",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/tailscale/api/devices/{device_id}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/api/devices/{device_id}",
+  "path_params": [
+   "device_id"
+  ],
+  "query_params": []
+ },
+ "GET /api/tailscale/api/devices/{device_id}/routes": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/api/devices/{device_id}/routes",
+  "path_params": [
+   "device_id"
+  ],
+  "query_params": []
+ },
+ "GET /api/tailscale/api/dns": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/api/dns",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/tailscale/api/keys": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/api/keys",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/tailscale/api/settings": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/api/settings",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/tailscale/api/users": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/api/users",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/tailscale/api/webhooks": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/api/webhooks",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/tailscale/app-connector-routes": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/app-connector-routes",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/tailscale/dns-status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/dns-status",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/tailscale/drive": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/drive",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/tailscale/exit-nodes": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/exit-nodes",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/tailscale/file-targets": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/file-targets",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/tailscale/ips": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/ips",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/tailscale/lock": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/lock",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/tailscale/metrics": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/metrics",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/tailscale/netcheck": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/netcheck",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/tailscale/overview": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/overview",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/tailscale/ping": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/ping",
+  "path_params": [],
+  "query_params": [
+   "target",
+   "count"
+  ]
+ },
+ "GET /api/tailscale/prefs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/prefs",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/tailscale/serve": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/serve",
+  "path_params": [],
+  "query_params": [
+   "funnel"
+  ]
+ },
+ "GET /api/tailscale/serve/config": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/serve/config",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/tailscale/status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/tailscale/update-check": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/update-check",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/tailscale/version": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/version",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/tailscale/whois": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/whois",
+  "path_params": [],
+  "query_params": [
+   "address"
+  ]
+ },
  "GET /api/telemetry": {
   "body": false,
   "method": "GET",
@@ -1421,6 +1905,61 @@ export const operations = {
   "query_params": [
    "target"
   ]
+ },
+ "GET /api/vms": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vms",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/vms/backends": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vms/backends",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/vms/hyperv-switches": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vms/hyperv-switches",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/vms/hyperv/{name}/checkpoints": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vms/hyperv/{name}/checkpoints",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "GET /api/vms/libvirt/{name}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vms/libvirt/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "GET /api/vms/paths": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vms/paths",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/vms/qemu/{name}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vms/qemu/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
  },
  "GET /canvas/{name}": {
   "body": false,
@@ -1487,6 +2026,13 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/webhooks/whatsapp",
+  "path_params": [],
+  "query_params": []
+ },
+ "PATCH /api/tailscale/api/settings": {
+  "body": true,
+  "method": "PATCH",
+  "path": "/api/tailscale/api/settings",
   "path_params": [],
   "query_params": []
  },
@@ -1779,6 +2325,145 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "POST /api/docker/containers": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/containers",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/docker/containers/{ident}/action": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/containers/{ident}/action",
+  "path_params": [
+   "ident"
+  ],
+  "query_params": []
+ },
+ "POST /api/docker/containers/{ident}/commit": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/containers/{ident}/commit",
+  "path_params": [
+   "ident"
+  ],
+  "query_params": []
+ },
+ "POST /api/docker/containers/{ident}/copy": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/containers/{ident}/copy",
+  "path_params": [
+   "ident"
+  ],
+  "query_params": []
+ },
+ "POST /api/docker/containers/{ident}/exec": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/containers/{ident}/exec",
+  "path_params": [
+   "ident"
+  ],
+  "query_params": []
+ },
+ "POST /api/docker/containers/{ident}/rename": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/containers/{ident}/rename",
+  "path_params": [
+   "ident"
+  ],
+  "query_params": []
+ },
+ "POST /api/docker/containers/{ident}/update": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/containers/{ident}/update",
+  "path_params": [
+   "ident"
+  ],
+  "query_params": []
+ },
+ "POST /api/docker/images/{op}": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/images/{op}",
+  "path_params": [
+   "op"
+  ],
+  "query_params": []
+ },
+ "POST /api/docker/networks": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/networks",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/docker/networks/{name}/connect": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/networks/{name}/connect",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "POST /api/docker/prune": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/prune",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/docker/registries/login": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/registries/login",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/docker/registries/logout": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/registries/logout",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/docker/stacks": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/stacks",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/docker/stacks/{name}/action": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/stacks/{name}/action",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "POST /api/docker/templates/{template_id}/deploy": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/templates/{template_id}/deploy",
+  "path_params": [
+   "template_id"
+  ],
+  "query_params": []
+ },
+ "POST /api/docker/volumes": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/volumes",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/env/backups/{name}/restore": {
   "body": false,
   "method": "POST",
@@ -1891,6 +2576,31 @@ export const operations = {
   "method": "POST",
   "path": "/api/hotreload/run",
   "path_params": [],
+  "query_params": []
+ },
+ "POST /api/infra/rules": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/infra/rules",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/infra/rules/{rule_id}/enable": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/infra/rules/{rule_id}/enable",
+  "path_params": [
+   "rule_id"
+  ],
+  "query_params": []
+ },
+ "POST /api/infra/rules/{rule_id}/run": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/infra/rules/{rule_id}/run",
+  "path_params": [
+   "rule_id"
+  ],
   "query_params": []
  },
  "POST /api/kanban/cards": {
@@ -2538,6 +3248,156 @@ export const operations = {
   ],
   "query_params": []
  },
+ "POST /api/tailscale/api/acl": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/api/acl",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/tailscale/api/acl/validate": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/api/acl/validate",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/tailscale/api/devices/{device_id}/{action}": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/api/devices/{device_id}/{action}",
+  "path_params": [
+   "device_id",
+   "action"
+  ],
+  "query_params": []
+ },
+ "POST /api/tailscale/api/dns": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/api/dns",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/tailscale/api/keys": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/api/keys",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/tailscale/cert": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/cert",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/tailscale/down": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/tailscale/down",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/tailscale/drive/share": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/drive/share",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/tailscale/drive/unshare": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/drive/unshare",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/tailscale/file/receive": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/file/receive",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/tailscale/file/send": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/file/send",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/tailscale/login": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/login",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/tailscale/logout": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/tailscale/logout",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/tailscale/prefs": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/prefs",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/tailscale/serve": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/serve",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/tailscale/serve/config": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/serve/config",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/tailscale/serve/off": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/serve/off",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/tailscale/serve/reset": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/serve/reset",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/tailscale/switch": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/switch",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/tailscale/up": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/up",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/tailscale/update": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/update",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/terminal/exec": {
   "body": true,
   "method": "POST",
@@ -2587,6 +3447,59 @@ export const operations = {
   "method": "POST",
   "path": "/api/validate-field",
   "path_params": [],
+  "query_params": []
+ },
+ "POST /api/vms/disks/{op}": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vms/disks/{op}",
+  "path_params": [
+   "op"
+  ],
+  "query_params": []
+ },
+ "POST /api/vms/hyperv": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vms/hyperv",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/vms/hyperv/{name}/{action}": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/vms/hyperv/{name}/{action}",
+  "path_params": [
+   "name",
+   "action"
+  ],
+  "query_params": []
+ },
+ "POST /api/vms/libvirt/{name}/{action}": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vms/libvirt/{name}/{action}",
+  "path_params": [
+   "name",
+   "action"
+  ],
+  "query_params": []
+ },
+ "POST /api/vms/qemu": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vms/qemu",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/vms/qemu/{name}/{action}": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vms/qemu/{name}/{action}",
+  "path_params": [
+   "name",
+   "action"
+  ],
   "query_params": []
  },
  "POST /webhooks/bluebubbles": {
@@ -5056,6 +5969,291 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "dk_action_api_docker_containers__ident__action_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/containers/{ident}/action",
+  "path_params": [
+   "ident"
+  ],
+  "query_params": []
+ },
+ "dk_commit_api_docker_containers__ident__commit_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/containers/{ident}/commit",
+  "path_params": [
+   "ident"
+  ],
+  "query_params": []
+ },
+ "dk_container_api_docker_containers__ident__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/containers/{ident}",
+  "path_params": [
+   "ident"
+  ],
+  "query_params": []
+ },
+ "dk_copy_api_docker_containers__ident__copy_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/containers/{ident}/copy",
+  "path_params": [
+   "ident"
+  ],
+  "query_params": []
+ },
+ "dk_create_api_docker_containers_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/containers",
+  "path_params": [],
+  "query_params": []
+ },
+ "dk_cstats_api_docker_containers__ident__stats_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/containers/{ident}/stats",
+  "path_params": [
+   "ident"
+  ],
+  "query_params": []
+ },
+ "dk_exec_api_docker_containers__ident__exec_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/containers/{ident}/exec",
+  "path_params": [
+   "ident"
+  ],
+  "query_params": []
+ },
+ "dk_files_api_docker_containers__ident__files_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/containers/{ident}/files",
+  "path_params": [
+   "ident"
+  ],
+  "query_params": [
+   "path"
+  ]
+ },
+ "dk_image_api_docker_images_inspect_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/images/inspect",
+  "path_params": [],
+  "query_params": [
+   "ref"
+  ]
+ },
+ "dk_image_history_api_docker_images_history_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/images/history",
+  "path_params": [],
+  "query_params": [
+   "ref"
+  ]
+ },
+ "dk_image_op_api_docker_images__op__post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/images/{op}",
+  "path_params": [
+   "op"
+  ],
+  "query_params": []
+ },
+ "dk_login_api_docker_registries_login_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/registries/login",
+  "path_params": [],
+  "query_params": []
+ },
+ "dk_logout_api_docker_registries_logout_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/registries/logout",
+  "path_params": [],
+  "query_params": []
+ },
+ "dk_logs_api_docker_containers__ident__logs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/containers/{ident}/logs",
+  "path_params": [
+   "ident"
+  ],
+  "query_params": [
+   "tail",
+   "since",
+   "timestamps"
+  ]
+ },
+ "dk_net_api_docker_networks__name__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/networks/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "dk_net_connect_api_docker_networks__name__connect_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/networks/{name}/connect",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "dk_net_create_api_docker_networks_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/networks",
+  "path_params": [],
+  "query_params": []
+ },
+ "dk_net_rm_api_docker_networks__name__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/docker/networks/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "dk_prune_api_docker_prune_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/prune",
+  "path_params": [],
+  "query_params": []
+ },
+ "dk_rename_api_docker_containers__ident__rename_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/containers/{ident}/rename",
+  "path_params": [
+   "ident"
+  ],
+  "query_params": []
+ },
+ "dk_search_api_docker_images_search_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/images/search",
+  "path_params": [],
+  "query_params": [
+   "term",
+   "limit"
+  ]
+ },
+ "dk_stack_action_api_docker_stacks__name__action_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/stacks/{name}/action",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "dk_stack_deploy_api_docker_stacks_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/stacks",
+  "path_params": [],
+  "query_params": []
+ },
+ "dk_stack_get_api_docker_stacks__name__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/stacks/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "dk_stack_logs_api_docker_stacks__name__logs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/stacks/{name}/logs",
+  "path_params": [
+   "name"
+  ],
+  "query_params": [
+   "tail"
+  ]
+ },
+ "dk_stack_services_api_docker_stacks__name__services_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/stacks/{name}/services",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "dk_template_api_docker_templates__template_id__deploy_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/templates/{template_id}/deploy",
+  "path_params": [
+   "template_id"
+  ],
+  "query_params": []
+ },
+ "dk_top_api_docker_containers__ident__top_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/containers/{ident}/top",
+  "path_params": [
+   "ident"
+  ],
+  "query_params": []
+ },
+ "dk_update_api_docker_containers__ident__update_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/containers/{ident}/update",
+  "path_params": [
+   "ident"
+  ],
+  "query_params": []
+ },
+ "dk_vol_api_docker_volumes__name__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/volumes/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "dk_vol_create_api_docker_volumes_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/volumes",
+  "path_params": [],
+  "query_params": []
+ },
+ "dk_vol_rm_api_docker_volumes__name__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/docker/volumes/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": [
+   "force"
+  ]
+ },
  "export_session_api_agent_sessions__session_key__export_get": {
   "body": false,
   "method": "GET",
@@ -5157,10 +6355,218 @@ export const operations = {
    "session"
   ]
  },
+ "handler_api_docker_containers_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/containers",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_docker_df_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/df",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_docker_events_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/events",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_docker_images_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/images",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_docker_info_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/info",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_docker_networks_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/networks",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_docker_registries_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/registries",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_docker_stacks_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/stacks",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_docker_stats_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/stats",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_docker_templates_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/templates",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_docker_volumes_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/volumes",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_tailscale_accounts_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/accounts",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_tailscale_app_connector_routes_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/app-connector-routes",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_tailscale_dns_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/dns-status",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_tailscale_drive_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/drive",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_tailscale_exit_nodes_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/exit-nodes",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_tailscale_file_targets_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/file-targets",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_tailscale_ips_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/ips",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_tailscale_lock_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/lock",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_tailscale_metrics_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/metrics",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_tailscale_netcheck_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/netcheck",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_tailscale_prefs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/prefs",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_tailscale_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_tailscale_update_check_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/update-check",
+  "path_params": [],
+  "query_params": []
+ },
+ "handler_api_tailscale_version_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/version",
+  "path_params": [],
+  "query_params": []
+ },
  "healthz_healthz_get": {
   "body": false,
   "method": "GET",
   "path": "/healthz",
+  "path_params": [],
+  "query_params": []
+ },
+ "hv_action_api_vms_hyperv__name___action__post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/vms/hyperv/{name}/{action}",
+  "path_params": [
+   "name",
+   "action"
+  ],
+  "query_params": []
+ },
+ "hv_checkpoints_api_vms_hyperv__name__checkpoints_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vms/hyperv/{name}/checkpoints",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "hv_create_api_vms_hyperv_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vms/hyperv",
+  "path_params": [],
+  "query_params": []
+ },
+ "hv_switches_api_vms_hyperv_switches_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vms/hyperv-switches",
   "path_params": [],
   "query_params": []
  },
@@ -5187,6 +6593,25 @@ export const operations = {
   "method": "GET",
   "path": "/api/canvas",
   "path_params": [],
+  "query_params": []
+ },
+ "lv_action_api_vms_libvirt__name___action__post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vms/libvirt/{name}/{action}",
+  "path_params": [
+   "name",
+   "action"
+  ],
+  "query_params": []
+ },
+ "lv_info_api_vms_libvirt__name__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vms/libvirt/{name}",
+  "path_params": [
+   "name"
+  ],
   "query_params": []
  },
  "metrics_metrics_get": {
@@ -5316,6 +6741,56 @@ export const operations = {
    "task"
   ]
  },
+ "rules_create_api_infra_rules_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/infra/rules",
+  "path_params": [],
+  "query_params": []
+ },
+ "rules_delete_api_infra_rules__rule_id__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/infra/rules/{rule_id}",
+  "path_params": [
+   "rule_id"
+  ],
+  "query_params": []
+ },
+ "rules_enable_api_infra_rules__rule_id__enable_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/infra/rules/{rule_id}/enable",
+  "path_params": [
+   "rule_id"
+  ],
+  "query_params": []
+ },
+ "rules_history_api_infra_rules__rule_id__history_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/infra/rules/{rule_id}/history",
+  "path_params": [
+   "rule_id"
+  ],
+  "query_params": []
+ },
+ "rules_list_api_infra_rules_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/infra/rules",
+  "path_params": [],
+  "query_params": []
+ },
+ "rules_run_api_infra_rules__rule_id__run_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/infra/rules/{rule_id}/run",
+  "path_params": [
+   "rule_id"
+  ],
+  "query_params": []
+ },
  "set_config_api_agent_config_post": {
   "body": true,
   "method": "POST",
@@ -5344,10 +6819,361 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "ts_acl_get_api_tailscale_api_acl_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/api/acl",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_acl_set_api_tailscale_api_acl_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/api/acl",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_acl_validate_api_tailscale_api_acl_validate_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/api/acl/validate",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_cert_api_tailscale_cert_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/cert",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_device_action_api_tailscale_api_devices__device_id___action__post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/api/devices/{device_id}/{action}",
+  "path_params": [
+   "device_id",
+   "action"
+  ],
+  "query_params": []
+ },
+ "ts_device_api_tailscale_api_devices__device_id__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/api/devices/{device_id}",
+  "path_params": [
+   "device_id"
+  ],
+  "query_params": []
+ },
+ "ts_device_delete_api_tailscale_api_devices__device_id__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/tailscale/api/devices/{device_id}",
+  "path_params": [
+   "device_id"
+  ],
+  "query_params": []
+ },
+ "ts_device_routes_api_tailscale_api_devices__device_id__routes_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/api/devices/{device_id}/routes",
+  "path_params": [
+   "device_id"
+  ],
+  "query_params": []
+ },
+ "ts_devices_api_tailscale_api_devices_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/api/devices",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_dns_get_api_tailscale_api_dns_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/api/dns",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_dns_set_api_tailscale_api_dns_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/api/dns",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_down_api_tailscale_down_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/tailscale/down",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_drive_share_api_tailscale_drive_share_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/drive/share",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_drive_unshare_api_tailscale_drive_unshare_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/drive/unshare",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_file_receive_api_tailscale_file_receive_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/file/receive",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_file_send_api_tailscale_file_send_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/file/send",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_key_create_api_tailscale_api_keys_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/api/keys",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_key_delete_api_tailscale_api_keys__key_id__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/tailscale/api/keys/{key_id}",
+  "path_params": [
+   "key_id"
+  ],
+  "query_params": []
+ },
+ "ts_keys_api_tailscale_api_keys_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/api/keys",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_login_api_tailscale_login_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/login",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_logout_api_tailscale_logout_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/tailscale/logout",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_overview_api_tailscale_overview_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/overview",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_ping_api_tailscale_ping_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/ping",
+  "path_params": [],
+  "query_params": [
+   "target",
+   "count"
+  ]
+ },
+ "ts_serve_get_config_api_tailscale_serve_config_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/serve/config",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_serve_off_api_tailscale_serve_off_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/serve/off",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_serve_reset_api_tailscale_serve_reset_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/serve/reset",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_serve_set_api_tailscale_serve_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/serve",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_serve_set_config_api_tailscale_serve_config_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/serve/config",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_serve_status_api_tailscale_serve_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/serve",
+  "path_params": [],
+  "query_params": [
+   "funnel"
+  ]
+ },
+ "ts_set_prefs_api_tailscale_prefs_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/prefs",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_settings_get_api_tailscale_api_settings_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/api/settings",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_settings_set_api_tailscale_api_settings_patch": {
+  "body": true,
+  "method": "PATCH",
+  "path": "/api/tailscale/api/settings",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_switch_api_tailscale_switch_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/switch",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_up_api_tailscale_up_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/up",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_update_api_tailscale_update_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/tailscale/update",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_users_api_tailscale_api_users_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/api/users",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_webhooks_api_tailscale_api_webhooks_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/api/webhooks",
+  "path_params": [],
+  "query_params": []
+ },
+ "ts_whois_api_tailscale_whois_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/tailscale/whois",
+  "path_params": [],
+  "query_params": [
+   "address"
+  ]
+ },
  "validate_permissions_api_agent_permissions_validate_post": {
   "body": true,
   "method": "POST",
   "path": "/api/agent/permissions/validate",
+  "path_params": [],
+  "query_params": []
+ },
+ "vm_action_api_vms_qemu__name___action__post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vms/qemu/{name}/{action}",
+  "path_params": [
+   "name",
+   "action"
+  ],
+  "query_params": []
+ },
+ "vm_backends_api_vms_backends_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vms/backends",
+  "path_params": [],
+  "query_params": []
+ },
+ "vm_define_api_vms_qemu_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vms/qemu",
+  "path_params": [],
+  "query_params": []
+ },
+ "vm_delete_api_vms_qemu__name__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/vms/qemu/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": [
+   "delete_disks"
+  ]
+ },
+ "vm_disk_api_vms_disks__op__post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vms/disks/{op}",
+  "path_params": [
+   "op"
+  ],
+  "query_params": []
+ },
+ "vm_get_api_vms_qemu__name__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vms/qemu/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "vm_list_api_vms_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vms",
+  "path_params": [],
+  "query_params": []
+ },
+ "vm_paths_api_vms_paths_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vms/paths",
   "path_params": [],
   "query_params": []
  },

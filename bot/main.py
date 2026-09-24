@@ -402,6 +402,10 @@ async def run() -> None:
 
     scheduler_task = asyncio.create_task(scheduler.run_forever(stop_event))
 
+    from bot import infra_automation
+
+    infra_task = asyncio.create_task(infra_automation.run_forever(stop_event))
+
     # Reactive half of auto-management (bot/auto_manage.py) — a new
     # kanban card fires a real check-in for that board's owning instance,
     # if it's configured to react to this trigger. The scheduled half
@@ -437,6 +441,7 @@ async def run() -> None:
         logger.info("shutting down")
         watch_task.cancel()
         hotreload_task.cancel()
+        await infra_task
         await scheduler_task  # stop_event is already set; run_forever exits its own loop cleanly
         await peers_health_task  # same shutdown contract as scheduler_task
         await retention_task  # same shutdown contract as scheduler_task

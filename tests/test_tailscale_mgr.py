@@ -101,3 +101,5 @@ def test_routes_are_desktop_token_only(temp_db, monkeypatch, calls):
                            headers={"X-Dashboard-Token": key}).status_code in (401, 403)
     assert client.post("/api/tailscale/serve", json={"target": "3000"}, headers=good).status_code == 200
     assert client.post("/api/tailscale/prefs", json={"hostname": "bad host!"}, headers=good).status_code == 400
+    monkeypatch.setattr(ts, "_run", lambda args, timeout=30.0, stdin=None: (True, "100.1.2.3"))
+    assert client.get("/api/tailscale/ips", headers=good).json() == {"addresses": ["100.1.2.3"]}
