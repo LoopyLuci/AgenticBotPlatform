@@ -1890,6 +1890,7 @@ from bot import skill_packs as _skill_packs  # noqa: E402,F401
 from bot.agent_runtime import model_tools as _model_tools  # noqa: E402,F401
 from bot.agent_runtime import code_intel as _code_intel  # noqa: E402,F401
 from bot.agent_runtime import browser as _browser  # noqa: E402,F401
+from bot.agent_runtime import ext_browser as _ext_browser  # noqa: E402,F401
 from bot import routines as _routines  # noqa: E402,F401
 from bot import canvas as _canvas  # noqa: E402,F401
 from bot import nodes as _nodes  # noqa: E402,F401

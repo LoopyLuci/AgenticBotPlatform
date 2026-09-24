@@ -115,7 +115,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.custom_commands", "bot.agent_runtime.skill_learning",  # small, stateless, but imported by denied modules only
     "bot.skill_packs", "bot.skill_install",  # skill_packs registers read_skill_file at import time
     "bot.agent_runtime.agent_defs", "bot.agent_runtime.worktrees",  # agent_defs registers a tool at import time
-    "bot.agent_runtime.repo_map", "bot.agent_runtime.search_index",  # register their tools at import time; repo_map caches
+    "bot.agent_runtime.repo_map", "bot.agent_runtime.ext_browser", "bot.agent_runtime.search_index",  # register their tools at import time; repo_map caches
     "bot.agent_runtime.context_window",  # holds the learned chars-per-token ratio per model
     "bot.hotreload",  # never reload the reloader mid-cycle
     "bot.mcp_server",  # a separate process (python -m bot.mcp_server); not part of this one anyway

@@ -11,7 +11,7 @@ PAGES = {
     "dashboard": (ROOT / "bot/dashboard/static/dashboard.html").read_text(encoding="utf-8"),
     "desktop": (ROOT / "desktop-app/ui/index.html").read_text(encoding="utf-8"),
 }
-SECTIONS = {"tailscale": "ts-root", "containers": "ct-root", "vms": "vm-root", "infra-rules": "ir-root"}
+SECTIONS = {"tailscale": "ts-root", "containers": "ct-root", "vms": "vm-root", "infra-rules": "ir-root", "browser": "br-root"}
 
 
 def test_the_panel_script_is_identical_in_both_apps():
