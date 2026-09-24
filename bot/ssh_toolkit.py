@@ -174,6 +174,33 @@ async def run_command(name: str, command: str, *, timeout: float = 30.0) -> str:
                       json_output=False, timeout=timeout)
 
 
+async def generate_keypair(name: str) -> dict:
+    """Generates (or reuses) an ed25519 keypair for `name` without registering
+    a connection for it yet - see SSH Toolkit's own New-SshLinkKeypair for why
+    this is separate from add_connection(..., generate_key=True): a caller
+    (bot/peers.py's peer-pairing handshake) needs its own public key to hand
+    to the other side before it knows enough to register a full connection
+    (the username to log in as, which the other side hasn't said yet).
+    Returns {"identity_file": str, "public_key": str, "created": bool}."""
+    result = await _run(["-Action", "GenerateKeypair", "-Name", name])
+    return {
+        "identity_file": result["IdentityFile"],
+        "public_key": result["PublicKey"],
+        "created": bool(result["Created"]),
+    }
+
+
+async def install_trusted_key(public_key: str) -> dict:
+    """Trusts an already-received public key locally - no SSH session, no
+    password prompt, safe to call unattended - for a key that arrived through
+    some other already-authenticated channel (the peer-pairing handshake's
+    own HTTPS call, gated by a one-time pairing token) rather than a real SSH
+    session the way install_public_key-style tooling normally works.
+    Returns {"key_file": str, "already_present": bool}."""
+    result = await _run(["-Action", "InstallTrustedKey", "-PublicKey", public_key])
+    return {"key_file": result["KeyFile"], "already_present": bool(result["AlreadyPresent"])}
+
+
 def _ssh_binary() -> Optional[str]:
     return shutil.which("ssh")
 

@@ -2008,6 +2008,10 @@
           <div class="row" style="gap:8px; align-items:center; margin-top:8px;">
             <input type="text" id="peer-my-url" placeholder="This server's own reachable address (optional)" style="flex:1;">
           </div>
+          <label class="row" style="gap:6px; align-items:center; margin-top:8px; font-size:13px;">
+            <input type="checkbox" id="peer-setup-ssh" checked>
+            Also set up an SSH connection to it automatically (generates a key, exchanges and trusts public keys with it — no passwords, no manual copying)
+          </label>
         </details>
         <p class="cardnote" id="peer-link-status"></p>
       </div>
@@ -7165,6 +7169,7 @@ document.getElementById('btn-peer-link').onclick = async () => {
   const name = document.getElementById('peer-new-name').value.trim();
   const pairing_token = document.getElementById('peer-new-token').value.trim();
   const my_base_url = document.getElementById('peer-my-url').value.trim() || undefined;
+  const setup_ssh = document.getElementById('peer-setup-ssh').checked;
   const statusEl = document.getElementById('peer-link-status');
   if (!name || !pairing_token) {
     statusEl.textContent = 'Name and its pairing token are both required.';
@@ -7174,8 +7179,15 @@ document.getElementById('btn-peer-link').onclick = async () => {
   btn.disabled = true;
   statusEl.textContent = 'Linking…';
   try {
-    const res = await api('/api/peers/link', { method: 'POST', body: JSON.stringify({ name, pairing_token, my_base_url }) });
-    statusEl.textContent = `Linked to ${res.peer.name}.`;
+    const res = await api('/api/peers/link', { method: 'POST', body: JSON.stringify({ name, pairing_token, my_base_url, setup_ssh }) });
+    let msg = `Linked to ${res.peer.name}.`;
+    const ssh = res.peer.ssh_setup;
+    if (ssh) {
+      if (ssh.trusted_remote_key && ssh.connection_registered) msg += ' SSH connection set up automatically.';
+      else if (ssh.trusted_remote_key || ssh.connection_registered) msg += ' SSH partially set up (see Linked Servers for details).';
+      else if (setup_ssh) msg += ' SSH auto-setup did not complete (SSH Toolkit may be unavailable) — the link itself is fine.';
+    }
+    statusEl.textContent = msg;
     document.getElementById('peer-new-name').value = '';
     document.getElementById('peer-new-token').value = '';
     document.getElementById('peer-my-url').value = '';

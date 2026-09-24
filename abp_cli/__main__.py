@@ -485,7 +485,9 @@ async def _peers(args, client: DashboardClient) -> int:
         _print(args, await client.create_peer_pairing_token(base_url=args.base_url))
         return 0
     if sub == "link":
-        _print(args, await client.link_peer(args.name, args.pairing_token, my_base_url=args.my_base_url))
+        _print(args, await client.link_peer(
+            args.name, args.pairing_token, my_base_url=args.my_base_url, setup_ssh=not args.no_ssh_setup,
+        ))
         return 0
     if sub == "remove":
         _print(args, await client.remove_peer(args.peer_id))
@@ -858,6 +860,8 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--name", required=True)
     p.add_argument("--pairing-token", required=True, dest="pairing_token")
     p.add_argument("--my-base-url", default=None, dest="my_base_url")
+    p.add_argument("--no-ssh-setup", action="store_true", dest="no_ssh_setup",
+                    help="skip automatic SSH key exchange/connection setup with this peer")
     p = pesub.add_parser("remove"); p.add_argument("peer_id", type=int)
     for name in ("overview", "bots"):
         p = pesub.add_parser(name); p.add_argument("peer_id", type=int)

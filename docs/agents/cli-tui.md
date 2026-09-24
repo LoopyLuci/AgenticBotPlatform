@@ -69,8 +69,16 @@ given a Textual screen in this phase):
 - **Snapshots**: `abp_cli snapshots list|create|restore|remove`.
 - **Env / config / diagnostics**: `abp_cli env`, `abp_cli config get|reload|set`, `abp_cli
   diagnostics summary|crash-reports`.
-- **Peers/federation**: `abp_cli peers list|self-address|pairing-token|link|remove|overview|bots`
-  (linking a real second server was not exercised here — needs two live instances).
+- **Peers/federation**: `abp_cli peers list|self-address|pairing-token|link|remove|overview|bots`.
+  Verified live against two real, separate machines over Tailscale. `peers link` also sets up
+  SSH between the two machines automatically by default (`--no-ssh-setup` to skip): each side
+  generates its own ed25519 keypair (SSH Toolkit's `New-SshLinkKeypair`), exchanges public keys
+  and OS usernames as part of the same handshake, trusts the other's key
+  (`Install-SshLinkTrustedKey` — no SSH session, no password prompt, since the handshake itself
+  is already the authenticated channel), and registers a working SSH Toolkit connection back to
+  it (`Add-SshLinkConnection`) — no manual key generation, copying, or `authorized_keys` editing
+  on either side. Best-effort: SSH Toolkit being unavailable (no PowerShell, submodule not
+  checked out) never fails the underlying peer link itself, only skips the SSH half of it.
 - **Kanban**: `abp_cli kanban boards|cards|add|move|remove`.
 
 ## What's still dashboard/desktop-app-only
