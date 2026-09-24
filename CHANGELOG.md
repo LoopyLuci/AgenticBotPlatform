@@ -135,6 +135,22 @@ app's own version (the Android app versions independently — see its own
   history (without their keys). New routes: `GET /api/providers/store`, `POST /api/providers/store/{name}/restore`,
   `DELETE /api/providers/store/{name}`.
 
+### Fixed
+- **The local CI/CD pipeline (`scripts/local_pipeline.py`) no longer hangs for up to 30 minutes on a flaky
+  Docker daemon, and self-heals from a previously interrupted run.** Two real failures a live session hit
+  repeatedly: `docker info` (a liveness ping) shared the same 30-minute timeout meant for a real build, so a
+  Docker Desktop backend hiccup on Windows could wedge an entire push for that long; and killing a stuck
+  pipeline process didn't kill the `docker.exe` call it had already started (killing a parent never kills its
+  already-spawned children), leaving an orphan that then blocked every later pipeline's own `docker info`
+  from ever getting a clean answer — a failure that compounds across runs instead of clearing itself.
+  `docker info` now has its own short, dedicated timeout (`DOCKER_INFO_TIMEOUT`, 12s) and is treated the same
+  as "daemon not running" (skipped, not failed) if it doesn't answer in time; every pipeline step now kills
+  its whole process tree on timeout, not just the one process it started; and `check_docker` reaps any
+  leftover `docker`/`docker.exe` process older than 45 seconds before making its own fresh call, so a stuck
+  process from an aborted earlier run can never again pile up and block subsequent ones. `.pipeline.lock`
+  itself was already correctly self-healing (a dead owner's stale lock is detected and replaced
+  automatically via `psutil.pid_exists` + create-time comparison) — that part needed no fix.
+
 ### Changed
 - **Chat opens in "Chat with Bot"** (it was "Send from Server") in the dashboard, the desktop app and the Android app. Send from
   Server is one click away.
