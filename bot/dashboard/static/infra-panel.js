@@ -1,12 +1,19 @@
 // Tailscale, Containers, Virtual Machines and Infra Automation pages. This file is identical in the dashboard
 // (bot/dashboard/static/) and the desktop app (desktop-app/ui/); tests/test_infra_pages.py fails if the two differ.
 // It uses each page's own api(), esc() and showToast(), and draws into #ts-root, #ct-root, #vm-root and #ir-root.
-(function () {
+(function (pageApi) {
   'use strict';
+  // Every infra request goes to the selected machine: "local" or a linked server's id (?host=<id>).
+  let HOST = 'local';
+  try { HOST = sessionStorage.getItem('infra-host') || 'local'; } catch (_) {}
+  const HOSTED = /^\/api\/(docker|vms|tailscale|infra\/rules|terminals)/;
+  const api = (path, opts) => pageApi(HOST !== 'local' && HOSTED.test(path)
+    ? path + (path.includes('?') ? '&' : '?') + 'host=' + encodeURIComponent(HOST) : path, opts);
   const $ = (id) => document.getElementById(id);
   const toast = (m, t) => (typeof showToast === 'function' ? showToast(m, t) : console.log(m));
   const J = (method, body) => ({ method, body: JSON.stringify(body || {}) });
   const fail = (e) => { let m = e && e.message ? e.message : String(e); try { m = JSON.parse(m).detail || m; } catch (_) {} toast(m, 'error'); return null; };
+  const errText = (e) => { let m = e && e.message ? e.message : String(e); try { m = JSON.parse(m).detail || m; } catch (_) {} return m; };
   const sure = (msg) => window.confirm(msg);
   const pre = (t) => `<pre class="infra-pre">${esc(typeof t === 'string' ? t : JSON.stringify(t, null, 2))}</pre>`;
   const btn = (act, label, attrs, cls) => `<button class="btn${cls === 'primary' ? ' primary' : ''}" style="padding:4px 10px;margin:1px" data-act="${act}" ${attrs || ''}>${esc(label)}</button>`;
@@ -46,7 +53,7 @@
 
   async function tsLoad() {
     const root = $('ts-root'); if (!root) return;
-    try { TS.data = await api('/api/tailscale/overview'); } catch (e) { root.innerHTML = `<p class="cardnote">Could not reach the ABP server: ${esc(e.message)}</p>`; return; }
+    try { TS.data = await api('/api/tailscale/overview'); } catch (e) { root.innerHTML = `<p class="cardnote">${esc(errText(e))}</p>`; return; }
     tsRender();
   }
   function tsRender() {
@@ -202,7 +209,7 @@
   const CT_TABS = { containers: 'Containers', images: 'Images', volumes: 'Volumes', networks: 'Networks', stacks: 'Stacks', templates: 'App templates', registries: 'Registries', system: 'System' };
   async function ctLoad() {
     const root = $('ct-root'); if (!root) return;
-    try { CT.info = await api('/api/docker/info'); } catch (e) { root.innerHTML = `<p class="cardnote">Could not reach the ABP server: ${esc(e.message)}</p>`; return; }
+    try { CT.info = await api('/api/docker/info'); } catch (e) { root.innerHTML = `<p class="cardnote">${esc(errText(e))}</p>`; return; }
     ctRender();
   }
   function ctRender() {
@@ -302,7 +309,7 @@
   const VM = { backends: null, vms: null };
   async function vmLoad() {
     const root = $('vm-root'); if (!root) return;
-    try { [VM.backends, VM.vms] = await Promise.all([api('/api/vms/backends'), api('/api/vms')]); } catch (e) { root.innerHTML = `<p class="cardnote">Could not reach the ABP server: ${esc(e.message)}</p>`; return; }
+    try { [VM.backends, VM.vms] = await Promise.all([api('/api/vms/backends'), api('/api/vms')]); } catch (e) { root.innerHTML = `<p class="cardnote">${esc(errText(e))}</p>`; return; }
     const B = VM.backends, q = B.qemu;
     const qrows = Array.isArray(VM.vms.qemu) ? VM.vms.qemu : [];
     root.innerHTML = `<p class="cardnote">${pill('QEMU ' + (q.available ? 'ready' : 'not installed'), q.available)} ${q.accelerators && q.accelerators.length ? pill('accelerators: ' + q.accelerators.join(', ')) : ''} ${pill('Hyper-V ' + (B.hyperv.available ? 'ready' : 'unavailable'), B.hyperv.available)} ${pill('libvirt ' + (B.libvirt.available ? 'ready' : 'not installed'), B.libvirt.available)}</p>
@@ -416,7 +423,7 @@
     term.open(wrap.querySelector('#tm-body'));
     try { fit.fit(); } catch (_) {}
     const base = (typeof API_BASE === 'string' && API_BASE ? API_BASE : location.origin).replace(/^http/, 'ws');
-    const q = new URLSearchParams(Object.assign({ kind, target, token: (typeof getToken === 'function' ? getToken() : '') || '', cols: term.cols, rows: term.rows }, extra || {}));
+    const q = new URLSearchParams(Object.assign(HOST !== 'local' ? { host: HOST } : {}, { kind, target, token: (typeof getToken === 'function' ? getToken() : '') || '', cols: term.cols, rows: term.rows }, extra || {}));
     const ws = new WebSocket(`${base}/api/terminals/ws?${q}`);
     const state = wrap.querySelector('#tm-state');
     const send = (o) => { if (ws.readyState === 1) ws.send(JSON.stringify(o)); };
@@ -434,6 +441,33 @@
     wrap.querySelector('#tm-close').onclick = () => { ro.disconnect(); try { ws.close(); } catch (_) {} term.dispose(); wrap.remove(); };
   }
 
+
+  // ================================================================= Host picker + remote-access switch
+  const LOADED = () => ({ tailscale: tsLoad, containers: ctLoad, vms: vmLoad, 'infra-rules': irLoad });
+  async function buildHostBars() {
+    let hosts = [{ id: 'local', name: 'This machine', local: true }], access = false;
+    try { hosts = (await pageApi('/api/infra/hosts')).hosts; access = (await pageApi('/api/infra/peer-access')).enabled; } catch (_) {}
+    if (!hosts.some(h => h.id === HOST)) { HOST = 'local'; }
+    ['ts-root', 'ct-root', 'vm-root', 'ir-root'].forEach((id) => {
+      const root = $(id); if (!root) return;
+      let bar = $(id + '-hosts');
+      if (!bar) { bar = document.createElement('div'); bar.id = id + '-hosts'; bar.className = 'infra-row'; root.insertAdjacentElement('beforebegin', bar); }
+      bar.innerHTML = `<label class="infra-f"><span>Manage</span><select data-hostpick>${hosts.map(h => `<option value="${esc(h.id)}" ${h.id === HOST ? 'selected' : ''}>${esc(h.name)}${h.local ? '' : ' (linked server)'}</option>`).join('')}</select></label>`
+        + (HOST === 'local' ? `<label style="display:flex;gap:6px;align-items:center;font-size:12px"><input type="checkbox" data-peeraccess ${access ? 'checked' : ''}> Allow linked servers to manage this machine</label>` : `<span class="infra-pill">acting on a linked server</span>`);
+      bar.querySelector('[data-hostpick]').onchange = (ev) => {
+        HOST = ev.target.value;
+        try { sessionStorage.setItem('infra-host', HOST); } catch (_) {}
+        buildHostBars();
+        Object.values(LOADED()).forEach((fn) => { if (fn) fn(); });
+      };
+      const pa = bar.querySelector('[data-peeraccess]');
+      if (pa) pa.onchange = async () => {
+        if (pa.checked && !sure('Let servers linked to this one start, stop and change containers, VMs and Tailscale settings here, and open terminals in them? Only enable this for servers you control.')) { pa.checked = false; return; }
+        try { await pageApi('/api/infra/peer-access', J('POST', { enabled: pa.checked })); toast(pa.checked ? 'Linked servers can now manage this machine' : 'Remote management turned off', 'success'); } catch (e) { fail(e); pa.checked = !pa.checked; }
+      };
+    });
+  }
+
   // ================================================================= wiring
   const LOADERS = { tailscale: tsLoad, containers: ctLoad, vms: vmLoad, 'infra-rules': irLoad };
   const HANDLERS = { ts: tsAct, ct: ctAct, vm: vmAct, ir: irAct };
@@ -446,6 +480,7 @@
       root.addEventListener('click', (ev) => { const el = ev.target.closest('[data-act]'); if (el && el.type !== 'checkbox') fn(el); });
       root.addEventListener('change', (ev) => { if (ev.target.type === 'checkbox' && ev.target.dataset.act) fn(ev.target); });
     });
+    buildHostBars();
     window.addEventListener('hashchange', onHash);
     onHash();
     const seen = new Set();
@@ -454,4 +489,4 @@
     watch('ts-root', 'tailscale'); watch('ct-root', 'containers'); watch('vm-root', 'vms'); watch('ir-root', 'infra-rules');
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
-})();
+})(typeof api === 'function' ? api : null);

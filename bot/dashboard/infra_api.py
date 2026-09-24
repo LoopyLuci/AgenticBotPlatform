@@ -6,9 +6,15 @@ from __future__ import annotations
 import asyncio
 from typing import Callable, Optional
 
-from fastapi import Body, Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+import httpx
+from fastapi import Body, Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse, Response
 
 from bot import db, docker_mgr as dk, terminal_broker as tb, vm_mgr as vm
+
+# Routes that can be pointed at a linked server with ?host=<peer id>.
+HOSTED_PREFIXES = ("/api/docker", "/api/vms", "/api/tailscale", "/api/infra/rules", "/api/terminals")
+FORWARD_TIMEOUT_S = 900.0
 
 
 async def _call(fn, *args, audit: str = "", detail: str = "", **kw):
@@ -33,9 +39,79 @@ def _reader(fn):
     return handler
 
 
-def register(app: FastAPI, auth: Callable, ws_token_ok: Callable[[Optional[str]], bool]) -> None:
+def _peer_or_404(host: str):
+    try:
+        row = db.get_peer_server(int(host))
+    except (TypeError, ValueError):
+        row = None
+    if row is None or not row["base_url"] or not row["outbound_api_key"]:
+        raise HTTPException(status_code=404, detail=f"no linked server with id '{host}'")
+    return row
+
+
+def register(app: FastAPI, auth: Callable, ws_token_ok: Callable[[Optional[str]], bool], *,
+             desktop_token_ok: Callable[[Optional[str]], bool], set_peer_access: Callable[[bool], None],
+             peer_access_enabled: Callable[[], bool]) -> None:
     dep = [Depends(auth)]
     D, V = "/api/docker", "/api/vms"
+
+
+    # ---- multi-host: ?host=<linked server id> sends any infra request to that server instead of this one.
+    @app.middleware("http")
+    async def route_to_host(request: Request, call_next):
+        host = request.query_params.get("host")
+        path = request.url.path
+        if not host or host == "local" or not path.startswith(HOSTED_PREFIXES):
+            return await call_next(request)
+        # Only the desktop token may fan out to other machines; a linked peer can never be used as a relay.
+        if not desktop_token_ok(request.headers.get("x-dashboard-token")):
+            return JSONResponse({"detail": "invalid dashboard token"}, status_code=401)
+        try:
+            peer = _peer_or_404(host)
+        except HTTPException as exc:
+            return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+        params = [(k, v) for k, v in request.query_params.multi_items() if k != "host"]
+        headers = {"X-Dashboard-Token": peer["outbound_api_key"]}
+        if request.headers.get("content-type"):
+            headers["Content-Type"] = request.headers["content-type"]
+        try:
+            async with httpx.AsyncClient(timeout=FORWARD_TIMEOUT_S) as client:
+                up = await client.request(request.method, peer["base_url"].rstrip("/") + path, params=params,
+                                          content=await request.body(), headers=headers)
+        except httpx.HTTPError as exc:
+            db.mark_peer_server_error(peer["id"], str(exc))
+            return JSONResponse({"detail": f"could not reach the linked server: {exc}"}, status_code=502)
+        db.mark_peer_server_ok(peer["id"])
+        if up.status_code == 401:
+            return JSONResponse({"detail": "that server has not allowed remote management - on it, turn on "
+                                           "'Allow linked servers to manage this machine' (Containers page)"},
+                                status_code=403)
+        if request.method != "GET":
+            db.log_audit(actor="dashboard", action="infra_remote_call",
+                         detail=f"{peer['name']}: {request.method} {path}"[:300])
+        return Response(up.content, status_code=up.status_code, media_type=up.headers.get("content-type"))
+
+    @app.get("/api/infra/hosts", dependencies=[Depends(auth)])
+    async def infra_hosts():
+        rows = await asyncio.to_thread(db.list_peer_servers)
+        return {"hosts": [{"id": "local", "name": "This machine", "local": True}] + [
+            {"id": str(r["id"]), "name": r["name"], "base_url": r["base_url"], "last_seen_at": r["last_seen_at"],
+             "last_error": r["last_error"], "local": False}
+            for r in rows if r["outbound_api_key"] and r["base_url"]]}
+
+    @app.get("/api/infra/peer-access", dependencies=[Depends(auth)])
+    async def infra_peer_access_get():
+        return {"enabled": peer_access_enabled()}
+
+    @app.post("/api/infra/peer-access")
+    async def infra_peer_access_set(request: Request, body: dict = Body(...)):
+        # Strict desktop token: a linked server must not be able to grant itself access.
+        if not desktop_token_ok(request.headers.get("x-dashboard-token")):
+            raise HTTPException(status_code=401, detail="invalid dashboard token")
+        on = bool(body.get("enabled"))
+        await asyncio.to_thread(set_peer_access, on)
+        db.log_audit(actor="dashboard", action="infra_peer_access", detail="enabled" if on else "disabled")
+        return {"enabled": on}
 
     for name, fn in (("info", dk.info), ("df", dk.disk_usage), ("containers", dk.containers), ("images", dk.images),
                      ("volumes", dk.volumes), ("networks", dk.networks), ("stacks", dk.stacks),
@@ -333,12 +409,19 @@ def register(app: FastAPI, auth: Callable, ws_token_ok: Callable[[Optional[str]]
 
     @app.websocket("/api/terminals/ws")
     async def term_ws(websocket: WebSocket, kind: str, target: str, token: Optional[str] = None, cols: int = 80,
-                      rows: int = 24, shell: str = "auto", user: Optional[str] = None):
+                      rows: int = 24, shell: str = "auto", user: Optional[str] = None, host: Optional[str] = None):
         # Strict desktop token only (a query param, since browsers can't set WebSocket headers): paired
         # phones and linked peers must never get a shell inside a container or VM.
         supplied = websocket.headers.get("x-dashboard-token") or token
         if not ws_token_ok(supplied):
             await websocket.close(code=4401)
+            return
+        if host and host != "local":
+            if not desktop_token_ok(supplied):
+                await websocket.close(code=4401)
+                return
+            await websocket.accept()
+            await _relay_terminal(websocket, host, kind, target, cols, rows, shell, user)
             return
         await websocket.accept()
         try:
@@ -374,3 +457,46 @@ def register(app: FastAPI, auth: Callable, ws_token_ok: Callable[[Optional[str]]
         finally:
             await asyncio.to_thread(tb.close_session, session)
             pump_task.cancel()
+
+
+async def _relay_terminal(websocket: WebSocket, host: str, kind: str, target: str, cols: int, rows: int,
+                          shell: str, user: Optional[str]) -> None:
+    """Pipe a browser terminal to the same terminal WebSocket on a linked server."""
+    import json
+    from urllib.parse import urlencode
+
+    import websockets
+
+    try:
+        peer = _peer_or_404(host)
+    except HTTPException as exc:
+        await websocket.send_json({"type": "error", "message": str(exc.detail)})
+        await websocket.close()
+        return
+    q = {"kind": kind, "target": target, "cols": cols, "rows": rows, "shell": shell, "token": peer["outbound_api_key"]}
+    if user:
+        q["user"] = user
+    url = peer["base_url"].rstrip("/").replace("http", "ws", 1) + "/api/terminals/ws?" + urlencode(q)
+    try:
+        async with websockets.connect(url, max_size=None) as upstream:
+            async def down():
+                async for raw in upstream:
+                    await websocket.send_text(raw if isinstance(raw, str) else raw.decode())
+
+            down_task = asyncio.create_task(down())
+            try:
+                while True:
+                    await upstream.send(json.dumps(await websocket.receive_json()))
+            except (WebSocketDisconnect, RuntimeError):
+                pass
+            finally:
+                down_task.cancel()
+    except Exception as exc:  # refused (401/403 => access not enabled), unreachable, ...
+        refused = any(code in str(exc) for code in ("401", "403", "4401"))
+        text = ("that server refused the connection - has it enabled 'Allow linked servers to manage this machine'?"
+                if refused else f"could not reach the linked server: {exc}")
+        try:
+            await websocket.send_json({"type": "error", "message": text})
+            await websocket.close()
+        except Exception:
+            pass

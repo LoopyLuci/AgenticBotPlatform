@@ -262,6 +262,30 @@ def _require_token(x_dashboard_token: Optional[str] = Header(default=None)) -> N
         raise HTTPException(status_code=401, detail="invalid dashboard token")
 
 
+def peer_infra_enabled() -> bool:
+    """Whether linked servers may manage this machine's containers/VMs/Tailscale. Off unless the
+    owner turned it on (Containers page, or `abp env set PEER_INFRA_ACCESS 1`)."""
+    return (envfile.get_var("PEER_INFRA_ACCESS") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def infra_token_ok(supplied: Optional[str]) -> bool:
+    """The desktop token always; a linked peer server's key only while peer infra access is switched on."""
+    expected = os.environ.get("DASHBOARD_TOKEN")
+    if expected and _tokens_match(supplied, expected):
+        return True
+    return bool(
+        supplied and peer_infra_enabled() and db.api_key_kind(supplied) == "peer_server"
+        and db.verify_api_key(supplied) is not None
+    )
+
+
+def _require_infra_access(x_dashboard_token: Optional[str] = Header(default=None)) -> None:
+    if not os.environ.get("DASHBOARD_TOKEN"):
+        raise HTTPException(status_code=503, detail="DASHBOARD_TOKEN is not set in .env")
+    if not infra_token_ok(x_dashboard_token):
+        raise HTTPException(status_code=401, detail="invalid dashboard token, or this server does not allow linked servers to manage it")
+
+
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1"})
 
 
@@ -767,14 +791,17 @@ def build_app() -> FastAPI:
     # Tailscale management (/api/tailscale/*) — strict desktop-token auth.
     from bot.dashboard import tailscale_api
 
-    tailscale_api.register(app, _require_token)
+    tailscale_api.register(app, _require_infra_access)
 
     # Containers (Docker, Portainer-style) and VMs (QEMU / Hyper-V / libvirt).
     from bot.dashboard import infra_api
 
     infra_api.register(
-        app, _require_token,
-        lambda supplied: bool(os.environ.get("DASHBOARD_TOKEN")) and _tokens_match(supplied, os.environ["DASHBOARD_TOKEN"]),
+        app, _require_infra_access, infra_token_ok,
+        desktop_token_ok=lambda supplied: bool(os.environ.get("DASHBOARD_TOKEN"))
+        and _tokens_match(supplied, os.environ["DASHBOARD_TOKEN"]),
+        set_peer_access=lambda on: envfile.set_var("PEER_INFRA_ACCESS", "1" if on else "0", actor="dashboard"),
+        peer_access_enabled=peer_infra_enabled,
     )
 
     # Agent security (/api/agent/permissions, /api/mcp/pins, ...): rules, pins, untrusted-content marks.
