@@ -26,9 +26,9 @@ async def _call(fn, *args, audit: Optional[str] = None, detail: str = "", **kwar
     return result
 
 
-def _reader(fn):
+def _reader(module, attr):
     async def handler():
-        return await _call(fn)
+        return await _call(getattr(module, attr))   # looked up per request, so a hot-reloaded module is picked up
     return handler
 
 
@@ -40,19 +40,19 @@ def register(app: FastAPI, auth: Callable) -> None:
     async def ts_overview():
         out: dict[str, Any] = {"installed": ts.is_installed(), "prefs_schema": {k: v[1] for k, v in ts.PREFS.items()}}
         if out["installed"]:
-            for key, fn in (("status", ts.status), ("prefs", ts.prefs), ("version", ts.version)):
+            for key, fn in (("status", ts, "status"), ("prefs", ts, "prefs"), ("version", ts, "version")):
                 try:
                     out[key] = await asyncio.to_thread(fn)
                 except ts.TailscaleError as exc:
                     out[key] = {"error": str(exc)}
         return out
 
-    for name, fn in (("status", ts.status), ("prefs", ts.prefs), ("ips", ts.ips), ("netcheck", ts.netcheck),
-                     ("exit-nodes", ts.exit_nodes), ("version", ts.version), ("metrics", ts.metrics),
-                     ("dns-status", ts.dns_status), ("accounts", ts.list_accounts), ("lock", ts.lock_status),
-                     ("drive", ts.drive_list), ("app-connector-routes", ts.app_connector_routes),
-                     ("file-targets", ts.file_targets), ("update-check", ts.update)):
-        app.add_api_route(f"{P}/{name}", _reader(fn), methods=["GET"], dependencies=dep)
+    for name, mod, attr in (("status", ts, "status"), ("prefs", ts, "prefs"), ("ips", ts, "ips"), ("netcheck", ts, "netcheck"),
+                     ("exit-nodes", ts, "exit_nodes"), ("version", ts, "version"), ("metrics", ts, "metrics"),
+                     ("dns-status", ts, "dns_status"), ("accounts", ts, "list_accounts"), ("lock", ts, "lock_status"),
+                     ("drive", ts, "drive_list"), ("app-connector-routes", ts, "app_connector_routes"),
+                     ("file-targets", ts, "file_targets"), ("update-check", ts, "update")):
+        app.add_api_route(f"{P}/{name}", _reader(mod, attr), methods=["GET"], dependencies=dep)
 
     @app.get(f"{P}/whois", dependencies=dep)
     async def ts_whois(address: str):

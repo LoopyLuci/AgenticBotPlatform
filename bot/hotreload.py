@@ -122,7 +122,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.tui.app", "bot.tui.client", "bot.tui.__main__",  # a separate process (python -m bot.tui); not part of this one anyway
     "bot.tui.screens.connect", "bot.tui.screens.bot_list", "bot.tui.screens.add_bot", "bot.tui.screens.bot_detail",
     "bot.tui.screens.chat", "bot.tui.screens.providers", "bot.tui.screens.agent_settings",
-    "bot.tui.screens.swarms", "bot.tui.screens.sessions", "bot.tui.screens.ssh_toolkit",
+    "bot.tui.screens.swarms", "bot.tui.screens.sessions", "bot.tui.screens.ssh_toolkit", "bot.tui.screens.infra",
     "bot.ssh_toolkit",  # shells out to a separately maintained tool; nothing to reload mid-run either way
     "bot.terminal_broker",  # holds live PTY/socket sessions; a reload would orphan them
     "bot.infra_automation",  # its run_forever() loop is a live background task holding the in-flight tick

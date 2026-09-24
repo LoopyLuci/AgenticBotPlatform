@@ -83,10 +83,15 @@ given a Textual screen in this phase):
 - **Tailscale / containers / VMs / infra rules**: `abp_cli tailscale|docker|vm|rules get|post|put|patch|delete
   <path> [--data JSON]` maps one-to-one onto `/api/tailscale/*`, `/api/docker/*`, `/api/vms/*` and
   `/api/infra/rules` (for example `abp_cli docker get containers`, `abp_cli docker post
-  containers/web/action --data '{"action":"restart"}'`). It is a thin route passthrough, not a set of
-  hand-written subcommands, and there is no TUI screen for these yet; the GUI pages and the MCP tools are the
-  primary surfaces. Verified live on the dev machine for Tailscale settings, QEMU and Hyper-V; the Docker
-  daemon was not responding there, so container operations are covered by tests with a faked `docker` only.
+  containers/web/action --data '{"action":"restart"}'`); it is a thin route passthrough, not hand-written
+  subcommands. The TUI has a screen for each, opened from the bot list with `t` (Tailscale), `d` (Containers),
+  `v` (VMs) and `o` (Infra automation): a table, a view picker (containers/images/volumes/networks/stacks/templates/
+  system; peers/Serve & Funnel/preferences/devices), action buttons, an output pane and the same host picker for
+  linked servers. Interactive terminals: on this machine the Containers screen's **Shell** suspends the TUI and runs
+  `docker exec -it` in your own terminal; VM serial consoles and shells on linked servers are desktop-app/dashboard
+  only, and the VMs screen instead has a QEMU monitor prompt. Verified live: Tailscale settings, QEMU and Hyper-V,
+  and the TUI screens against the real API. The Docker daemon was not responding on the dev machine, so container
+  operations are covered by tests with a faked `docker` only.
 
 ## What's still dashboard/desktop-app-only
 
