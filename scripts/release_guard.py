@@ -425,6 +425,34 @@ def stop_processes(procs: list[psutil.Process], grace: float = 6.0) -> list[str]
     return names
 
 
+def reap_stale_processes(names: tuple[str, ...], *, max_age_s: float = 45.0, grace: float = 3.0) -> list[str]:
+    """Stops any process by executable name in `names` that's older than
+    max_age_s — a PREVIOUS run's own subprocess call, orphaned because its
+    parent (local_pipeline.py itself) was killed externally rather than
+    exiting normally. Killing a parent process does not kill its
+    already-spawned children on Windows or POSIX: a `docker info`/`docker
+    build` call left running like this survives indefinitely and blocks
+    every later attempt at the same command from ever getting a clean
+    answer (a Windows Docker Desktop backend hiccup, once it produces one
+    stuck `docker info`, otherwise compounds into more of them on every
+    subsequent pipeline run - a real failure mode, not a hypothetical one).
+    Never touches our own process tree, and never a process younger than
+    max_age_s (a legitimate call THIS run just made, still in flight)."""
+    protected = _ancestor_pids()
+    now = time.time()
+    victims = []
+    for p in psutil.process_iter(["pid", "name", "create_time"]):
+        try:
+            if p.info["pid"] in protected or p.info["name"] not in names:
+                continue
+            if now - p.info["create_time"] < max_age_s:
+                continue
+            victims.append(p)
+        except psutil.Error:
+            continue
+    return stop_processes(victims, grace=grace) if victims else []
+
+
 def locked_files(root: Path = ROOT, limit: int = 4000) -> list[str]:
     """Files a build must overwrite that something still holds open. Loaded
     .pyd/.dll/.exe files refuse a write-open on Windows; that's the probe."""

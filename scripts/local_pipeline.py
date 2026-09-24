@@ -59,6 +59,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
+import psutil
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import release_guard  # noqa: E402  (shared pre-flight / lock-healing helpers)
 
@@ -106,6 +108,12 @@ def _venv_python() -> str:
 
 PYTEST_TIMEOUT = 45 * 60
 BUILD_TIMEOUT = 30 * 60
+# A liveness ping, not a build — must never share BUILD_TIMEOUT's 30 minutes.
+# A Windows Docker Desktop backend hiccup that leaves `docker info` hanging
+# is exactly what this bounds: fail fast and treat it the same as "daemon
+# not running" (see check_docker) rather than wedging the whole push on an
+# optional, best-effort check.
+DOCKER_INFO_TIMEOUT = 12
 # More failures than this is a real regression, not flakiness — don't re-run.
 FLAKY_RERUN_LIMIT = 10
 
@@ -115,26 +123,49 @@ def _run(cmd: list[str], cwd: Optional[Path] = None, retries: int = 0,
     """Runs `cmd`, returning (ok, combined output). Retries on failure — a
     transient file lock (e.g. an antivirus scan mid-build) shouldn't fail
     the whole pipeline the way a real compile error should. A step that hangs
-    is killed after `timeout` and reported as a failure instead of wedging the
-    push forever."""
+    is killed (its whole process tree, not just the one process this started
+    — a hung `docker info`/gradlew/cargo call can itself spawn helpers) after
+    `timeout` and reported as a failure instead of wedging the push forever.
+
+    Deliberately Popen + manual wait rather than subprocess.run(timeout=...):
+    that only kills the ONE process it started, so if THIS pipeline run is
+    itself later force-killed (a person doing it by hand, or a previous
+    pipeline getting reaped — see release_guard.reap_stale_processes), any
+    child already past its own subprocess.run(timeout=) call is orphaned
+    with nothing left to enforce ITS timeout — exactly how a stuck
+    `docker info` from an aborted run survived to block every later one in
+    a real session. Killing the full tree here means a killed pipeline
+    process takes its own children down with it too."""
     attempt = 0
-    result = None
+    proc: Optional[subprocess.Popen] = None
+    out = ""
+    returncode = 1
     while True:
         try:
-            result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
-        except subprocess.TimeoutExpired as exc:
-            partial = exc.stdout or ""
-            if isinstance(partial, bytes):
-                partial = partial.decode("utf-8", "replace")
-            return False, f"{' '.join(cmd)}: timed out after {timeout:.0f}s\n{partial[-2000:]}"
+            proc = subprocess.Popen(
+                cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if IS_WINDOWS else 0,
+            )
         except FileNotFoundError:
             return False, f"{cmd[0]}: not found"
-        if result.returncode == 0 or attempt >= retries:
+        try:
+            out = proc.communicate(timeout=timeout)[0] or ""
+            returncode = proc.returncode
+        except subprocess.TimeoutExpired:
+            try:
+                release_guard.stop_processes([psutil.Process(proc.pid)])
+            except psutil.Error:
+                proc.kill()  # already gone, or psutil couldn't attach — plain kill as a fallback
+            try:
+                out = proc.communicate(timeout=5)[0] or ""
+            except Exception:
+                out = ""
+            return False, f"{' '.join(cmd)}: timed out after {timeout:.0f}s\n{out[-2000:]}"
+        if returncode == 0 or attempt >= retries:
             break
         attempt += 1
         time.sleep(3)
-    output = (result.stdout or "") + (result.stderr or "")
-    return result.returncode == 0, output
+    return returncode == 0, out
 
 
 # Paths whose change actually requires each expensive step. Anything not
@@ -416,9 +447,17 @@ def check_docker() -> Optional[bool]:
     if not shutil.which("docker"):
         Step.skip("docker not on PATH — skipping (Docker is optional, see README)")
         return None
-    info_ok, _ = _run(["docker", "info"])
+    # A `docker info`/`docker build` orphaned by a previous pipeline run
+    # being force-killed (rather than exiting on its own) survives
+    # indefinitely and blocks THIS run's own docker.exe from ever getting a
+    # clean answer from the backend — reap anything old enough to be a
+    # leftover, never something this run itself might have just started.
+    reaped = release_guard.reap_stale_processes(("docker", "docker.exe"))
+    if reaped:
+        Step.doing("reaped stale docker process(es) left over from an earlier interrupted run: " + ", ".join(reaped))
+    info_ok, _ = _run(["docker", "info"], timeout=DOCKER_INFO_TIMEOUT)
     if not info_ok:
-        Step.skip("Docker daemon not running — skipping (Docker is optional, see README)")
+        Step.skip("Docker daemon not running or not responding — skipping (Docker is optional, see README)")
         return None
     ok, out = _run(["docker", "build", "-t", "agenticbotplatform:local-ci", str(ROOT)])
     if not ok:

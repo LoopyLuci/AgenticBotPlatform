@@ -67,6 +67,71 @@ def test_a_hung_step_is_killed_and_reported(monkeypatch):
     assert ok is False and "not found" in out
 
 
+def test_a_timed_out_steps_whole_process_tree_is_killed(monkeypatch, tmp_path):
+    """A hung `docker info`/gradlew/cargo call can itself spawn helper
+    processes - killing only the ONE process _run() started (what a plain
+    subprocess.run(timeout=...) does) leaves those running. This is the
+    real failure mode a live session hit: an orphaned docker.exe from an
+    earlier interrupted run kept blocking every later `docker info` call.
+    _run() must kill the whole tree, proven here with a real child process,
+    not a mock."""
+    marker = tmp_path / "child_still_running.txt"
+    # The child writes its own PID, then sleeps well past the parent's timeout -
+    # if it's still alive after _run() returns, the tree-kill didn't work.
+    child_script = tmp_path / "child.py"
+    child_script.write_text(
+        "import os, time, sys\n"
+        f"open(r'{marker}', 'w').write(str(os.getpid()))\n"
+        "time.sleep(30)\n",
+        encoding="utf-8",
+    )
+    parent_script = tmp_path / "parent.py"
+    parent_script.write_text(
+        f"import subprocess, sys, time\n"
+        f"subprocess.Popen([sys.executable, r'{child_script}'])\n"
+        "time.sleep(30)\n",
+        encoding="utf-8",
+    )
+    ok, out = lp._run([sys.executable, str(parent_script)], timeout=2)
+    assert ok is False and "timed out" in out
+
+    import psutil
+    child_pid = int(marker.read_text().strip())
+    import time as _time
+    _time.sleep(1)  # give the kill a moment to land
+    assert not psutil.pid_exists(child_pid) or psutil.Process(child_pid).status() == psutil.STATUS_ZOMBIE
+
+
+def test_docker_info_uses_its_own_short_timeout_not_the_build_timeout(monkeypatch):
+    """A Windows Docker Desktop backend hiccup made `docker info` hang for
+    the full 30-minute BUILD_TIMEOUT in a real session, repeatedly wedging
+    a push. The liveness check must never be able to do that again."""
+    calls = []
+
+    def fake_run(cmd, cwd=None, retries=0, timeout=None):
+        calls.append((cmd, timeout))
+        if cmd[:2] == ["docker", "info"]:
+            return False, "timed out"
+        return True, ""
+    monkeypatch.setattr(lp, "_run", fake_run)
+    monkeypatch.setattr(lp.shutil, "which", lambda name: "/usr/bin/docker")
+    monkeypatch.setattr(lp.release_guard, "reap_stale_processes", lambda *a, **k: [])
+    assert lp.check_docker() is None  # daemon unreachable -> skipped, not failed
+    info_call = next(c for c in calls if c[0][:2] == ["docker", "info"])
+    assert info_call[1] == lp.DOCKER_INFO_TIMEOUT
+    assert lp.DOCKER_INFO_TIMEOUT < lp.BUILD_TIMEOUT
+
+
+def test_check_docker_reaps_stale_docker_processes_before_pinging(monkeypatch):
+    order = []
+    monkeypatch.setattr(lp.shutil, "which", lambda name: "/usr/bin/docker")
+    monkeypatch.setattr(lp.release_guard, "reap_stale_processes",
+                         lambda names, **k: order.append("reap") or ["docker.exe(999)"])
+    monkeypatch.setattr(lp, "_run", lambda *a, **k: order.append("run") or (False, ""))
+    lp.check_docker()
+    assert order == ["reap", "run"]  # reaped BEFORE the fresh docker info call, not after
+
+
 def test_the_release_gate_handshake_skips_the_whole_pipeline(monkeypatch, capsys):
     monkeypatch.setattr(release_guard, "pipeline_already_passed", lambda root: "0123456789abcdef")
     monkeypatch.setattr(lp, "_run_pipeline", lambda args: pytest.fail("must not re-run the pipeline"))

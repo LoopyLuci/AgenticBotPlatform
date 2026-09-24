@@ -202,6 +202,34 @@ def test_only_processes_running_out_of_our_build_outputs_are_holders(tmp_path, m
     assert sorted(p.pid for p in g.find_lock_holders(root)) == [101, 102, 103]
 
 
+def _fake_proc_aged(pid, name, age_s):
+    return SimpleNamespace(pid=pid, info={"pid": pid, "name": name, "create_time": time.time() - age_s})
+
+
+def test_reap_stale_processes_only_touches_old_matching_ones(monkeypatch):
+    procs = [
+        _fake_proc_aged(201, "docker.exe", age_s=200),   # old + matching name -> reaped
+        _fake_proc_aged(202, "docker.exe", age_s=5),     # matching name but too young -> left alone
+        _fake_proc_aged(203, "python.exe", age_s=200),   # old but wrong name -> left alone
+        _fake_proc_aged(204, "docker.exe", age_s=200),   # old + matching, but our own process -> left alone
+    ]
+    monkeypatch.setattr(g.psutil, "process_iter", lambda attrs=None: iter(procs))
+    monkeypatch.setattr(g, "_ancestor_pids", lambda: {204})
+    stopped = []
+    monkeypatch.setattr(g, "stop_processes", lambda ps, grace=6.0: stopped.extend(p.pid for p in ps) or [])
+    g.reap_stale_processes(("docker", "docker.exe"), max_age_s=45.0)
+    assert stopped == [201]
+
+
+def test_reap_stale_processes_is_a_noop_when_nothing_qualifies(monkeypatch):
+    monkeypatch.setattr(g.psutil, "process_iter", lambda attrs=None: iter([_fake_proc_aged(1, "python.exe", 200)]))
+    monkeypatch.setattr(g, "_ancestor_pids", lambda: set())
+    called = []
+    monkeypatch.setattr(g, "stop_processes", lambda ps, grace=6.0: called.append(ps) or [])
+    assert g.reap_stale_processes(("docker", "docker.exe")) == []
+    assert not called  # never even calls stop_processes when there's nothing to stop
+
+
 def test_locked_files_reports_files_that_refuse_a_write_open(tmp_path, monkeypatch):
     venv = tmp_path / "desktop-app" / "src-tauri" / "stage" / ".venv" / "Lib"
     venv.mkdir(parents=True)
