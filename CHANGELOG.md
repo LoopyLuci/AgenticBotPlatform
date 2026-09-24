@@ -9,6 +9,26 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **Tailscale, container (Portainer-style), VM and infra-automation management.** Four new pages (Tailscale,
+  Containers, Virtual Machines, Infra Automation) in both the dashboard and the desktop app, backed by
+  `/api/tailscale/*`, `/api/docker/*`, `/api/vms/*` and `/api/infra/rules`, reachable from agents (new MCP tools) and
+  from the CLI (`abp tailscale|docker|vm|rules get|post|delete <path>`). All of it is desktop-token-only (paired phones
+  and linked peers are refused), audit-logged, argv-only (never a shell) and input-validated.
+  - *Tailscale*: every `tailscale set` preference, connect/disconnect/login/logout/account switch, Serve and Funnel
+    (publish, stop, reset, config import/export), exit nodes, ping/whois/netcheck, certificates, Taildrop, Drive,
+    Tailnet Lock status, updates; and, with a `TAILSCALE_API_KEY`, devices (authorize/expire/tags/routes/rename/delete),
+    ACL edit+validate, DNS, auth keys, tailnet settings, users, webhooks.
+  - *Containers*: containers (deploy, lifecycle, logs, stats, exec, files, commit, copy, update), images (pull, build,
+    tag, push, search, history), volumes, networks, Compose stacks stored under `data/stacks/`, registries (passwords
+    go over stdin, never argv), one-click app templates, system df/prune/events. A stuck Docker daemon is reported as a
+    status, never a hang.
+  - *VMs*: QEMU machines defined and run by ABP (start, shut down, pause, reset, live snapshots, media change,
+    screenshots, ballooning, `qemu-img` disk create/resize/convert/check) plus Hyper-V and libvirt (`virsh`) machines.
+    Verified live against the QEMU and Hyper-V on the dev machine; libvirt has not been run (not installed here).
+  - *Automation*: "when X do Y" / "every N do Y" rules over containers, VMs and Tailscale (restart an unhealthy
+    container, start a stopped VM, reconnect Tailscale, prune nightly) with cooldowns and a run history.
+  - Not done: interactive terminals/consoles inside containers and VMs (exec is one non-interactive command), VNC/SPICE
+    viewing in the page, bridged/TAP VM networking, Docker Swarm/Kubernetes, and multi-host "environments/agents".
 - **Automatic SSH pairing between linked peers.** Linking two AgenticBotPlatform servers
   (`abp_cli peers link` / the dashboard's "Link a server" card) now also sets up a working SSH
   connection between them by default, with no manual key generation or copying: each side

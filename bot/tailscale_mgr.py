@@ -87,7 +87,7 @@ def _safe(value: Any, kind: str, name: str) -> str:
             return s
         raise TailscaleError(f"{name} is not a valid host, IP, or 'auto:any'")
     if kind == "hostname":
-        if _HOSTNAME_RE.match(s):
+        if name == "hostname" and s == "" or _HOSTNAME_RE.match(s):
             return s
         raise TailscaleError(f"{name} must be a DNS label (letters, digits, hyphen)")
     if kind == "port_or_empty":

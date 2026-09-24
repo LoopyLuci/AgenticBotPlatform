@@ -144,6 +144,14 @@ async def _dispatch(args, client: DashboardClient) -> int:
         return await _security(args, client)
     if cmd == "snapshots":
         return await _snapshots(args, client)
+    if cmd in ("tailscale", "docker", "vm", "rules"):
+        try:
+            body = json.loads(args.data) if args.data else None
+        except ValueError as exc:
+            print(f"--data is not valid JSON: {exc}", file=sys.stderr)
+            return 2
+        _print(args, await client.infra(cmd, args.verb, args.path, body))
+        return 0
     if cmd == "env":
         if getattr(args, "env_cmd", "status") == "set":
             _print(args, await client.env_set(args.key, args.value))
@@ -830,6 +838,17 @@ def _parser() -> argparse.ArgumentParser:
     p = snsub.add_parser("create"); p.add_argument("--label", default=None)
     for name in ("restore", "remove"):
         p = snsub.add_parser(name); p.add_argument("name")
+
+    for area, blurb, example in (
+        ("tailscale", "every Tailscale setting, Serve/Funnel, devices, ACLs", "tailscale get overview | tailscale post serve --data '{\"target\":\"3000\"}'"),
+        ("docker", "containers, images, volumes, networks, stacks, registries", "docker get containers | docker post containers/web/action --data '{\"action\":\"restart\"}'"),
+        ("vm", "QEMU / Hyper-V / libvirt machines and disk images", "vm get '' | vm post qemu/dev/start"),
+        ("rules", "automation rules for containers, VMs and Tailscale", "rules get '' | rules post '' --data '{...}'"),
+    ):
+        p = sub.add_parser(area, help=blurb, description=f"{blurb}. Examples: {example}")
+        p.add_argument("verb", choices=["get", "post", "put", "patch", "delete"])
+        p.add_argument("path", help="route under the area (use '' for the area's root)")
+        p.add_argument("--data", default=None, help="JSON request body")
 
     envp = sub.add_parser("env", help="env-file status (redacted), or write a single key")
     envsub = envp.add_subparsers(dest="env_cmd")

@@ -814,6 +814,10 @@
       <a href="#kanban" data-kw="kanban board cards tasks"><span class="ic">🗒</span><span class="nav-txt"><b>Kanban</b><small>Per-bot task board</small></span></a>
       <a href="#agents" data-kw="agents abp agent native settings permissions safety tools skills sub-agents"><span class="ic">🤖</span><span class="nav-txt"><b>ABP Agents</b><small>Settings, safety, tools, skills</small></span></a>
       <a href="#swarms" data-kw="swarms orchestration multi-bot"><span class="ic">🐝</span><span class="nav-txt"><b>Swarms</b><small>Multi-bot orchestration</small></span></a>
+      <a href="#tailscale" data-kw="tailscale vpn funnel serve exit node tailnet"><span class="ic">🛰</span><span class="nav-txt"><b>Tailscale</b><small>Tailnet, Serve &amp; Funnel, devices, ACLs</small></span></a>
+      <a href="#containers" data-kw="docker containers portainer images volumes networks stacks compose"><span class="ic">📦</span><span class="nav-txt"><b>Containers</b><small>Docker, images, stacks, templates</small></span></a>
+      <a href="#vms" data-kw="vm virtual machines qemu hyper-v libvirt kvm"><span class="ic">🖥</span><span class="nav-txt"><b>Virtual Machines</b><small>QEMU, Hyper-V, libvirt</small></span></a>
+      <a href="#infra-rules" data-kw="automation rules containers vm tailscale restart schedule"><span class="ic">⚙</span><span class="nav-txt"><b>Infra Automation</b><small>Rules for containers, VMs, Tailscale</small></span></a>
       <a href="#ssh-toolkit" data-kw="ssh toolkit connections remote machines"><span class="ic">🔑</span><span class="nav-txt"><b>SSH Toolkit</b><small>Manage SSH connections</small></span></a>
       <a href="#automation" data-kw="automation hooks agent settings auto-manage lifecycle"><span class="ic">🪝</span><span class="nav-txt"><b>Automation</b><small>Hooks, agent settings &amp; auto-manage</small></span></a>
       <a href="#customize" data-kw="customize generative ui ai preview diff"><span class="ic">🪄</span><span class="nav-txt"><b>Customize UI</b><small>Describe a change, preview, apply</small></span></a>
@@ -1953,6 +1957,26 @@
       </div>
     </section>
 
+    <section id="tailscale">
+      <div class="sec-head"><h2>Tailscale</h2><span class="desc">Every Tailscale setting for this machine and your tailnet: connection, preferences, Serve &amp; Funnel, exit nodes, files, certificates, devices, keys and access controls.</span></div>
+      <div id="ts-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
+
+    <section id="containers">
+      <div class="sec-head"><h2>Containers</h2><span class="desc">Docker containers, images, volumes, networks, Compose stacks, app templates and registries - everything Portainer does, from ABP.</span></div>
+      <div id="ct-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
+
+    <section id="vms">
+      <div class="sec-head"><h2>Virtual Machines</h2><span class="desc">Create and run QEMU machines, and manage Hyper-V and libvirt machines: start, stop, pause, snapshots, disk images.</span></div>
+      <div id="vm-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
+
+    <section id="infra-rules">
+      <div class="sec-head"><h2>Infra Automation</h2><span class="desc">Rules for containers, VMs and Tailscale: "when a container stops, restart it", "every night, prune unused images".</span></div>
+      <div id="ir-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
+
     <section id="ssh-toolkit">
       <div class="sec-head"><h2>SSH Toolkit</h2><span class="desc">Manage SSH connections to other machines — a separately maintained tool (<a href="https://github.com/LoopyLuci/SSH_Toolkit" target="_blank" rel="noopener">SSH_Toolkit</a>), vendored here as a submodule, reached from the GUI, TUI, and CLI alike.</span></div>
 
@@ -2318,6 +2342,7 @@
 <script src="main.js"></script>
 <script src="terminal-panel.js"></script>
 <script src="agents-panel.js"></script>
+<script src="infra-panel.js"></script>
 <script src="bot-agent-form.js"></script>
 </body>
 </html>

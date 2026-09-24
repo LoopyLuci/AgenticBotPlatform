@@ -26,6 +26,12 @@ async def _call(fn, *args, audit: Optional[str] = None, detail: str = "", **kwar
     return result
 
 
+def _reader(fn):
+    async def handler():
+        return await _call(fn)
+    return handler
+
+
 def register(app: FastAPI, auth: Callable) -> None:
     dep = [Depends(auth)]
     P = "/api/tailscale"
@@ -46,7 +52,7 @@ def register(app: FastAPI, auth: Callable) -> None:
                      ("dns-status", ts.dns_status), ("accounts", ts.list_accounts), ("lock", ts.lock_status),
                      ("drive", ts.drive_list), ("app-connector-routes", ts.app_connector_routes),
                      ("file-targets", ts.file_targets), ("update-check", ts.update)):
-        app.add_api_route(f"{P}/{name}", (lambda f: (lambda: _call(f)))(fn), methods=["GET"], dependencies=dep)
+        app.add_api_route(f"{P}/{name}", _reader(fn), methods=["GET"], dependencies=dep)
 
     @app.get(f"{P}/whois", dependencies=dep)
     async def ts_whois(address: str):
@@ -234,7 +240,8 @@ def register(app: FastAPI, auth: Callable) -> None:
     async def ts_webhooks():
         return await _call(ts.webhooks)
 
-    @app.api_route(f"{P}/api/raw/{{path:path}}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], dependencies=dep)
+    @app.api_route(f"{P}/api/raw/{{path:path}}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], dependencies=dep,
+                   include_in_schema=False)
     async def ts_raw(path: str, method: str = Query("GET"), body: Any = Body(default=None)):
         """Any other allow-listed control-plane endpoint (webhooks, posture, invites, services, log streaming...)."""
         m = method.upper()

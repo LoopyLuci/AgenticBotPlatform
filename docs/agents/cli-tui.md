@@ -80,6 +80,13 @@ given a Textual screen in this phase):
   on either side. Best-effort: SSH Toolkit being unavailable (no PowerShell, submodule not
   checked out) never fails the underlying peer link itself, only skips the SSH half of it.
 - **Kanban**: `abp_cli kanban boards|cards|add|move|remove`.
+- **Tailscale / containers / VMs / infra rules**: `abp_cli tailscale|docker|vm|rules get|post|put|patch|delete
+  <path> [--data JSON]` maps one-to-one onto `/api/tailscale/*`, `/api/docker/*`, `/api/vms/*` and
+  `/api/infra/rules` (for example `abp_cli docker get containers`, `abp_cli docker post
+  containers/web/action --data '{"action":"restart"}'`). It is a thin route passthrough, not a set of
+  hand-written subcommands, and there is no TUI screen for these yet; the GUI pages and the MCP tools are the
+  primary surfaces. Verified live on the dev machine for Tailscale settings, QEMU and Hyper-V; the Docker
+  daemon was not responding there, so container operations are covered by tests with a faked `docker` only.
 
 ## What's still dashboard/desktop-app-only
 

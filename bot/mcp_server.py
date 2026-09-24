@@ -1115,3 +1115,99 @@ async def tailscale_admin(method: str, path: str, body: Optional[dict] = None) -
     """Tailscale control-plane (needs TAILSCALE_API_KEY): path under /api/tailscale/api/, e.g.
     devices, devices/<id>/tags, acl, dns, keys, settings, users, webhooks. Use raw/<endpoint> for others."""
     return await _request(method.upper(), f"/api/tailscale/api/{path.strip('/')}", json=body)
+
+
+# ---- Containers (Docker/Portainer-style), VMs (QEMU/Hyper-V/libvirt) and automation ----
+@mcp.tool()
+async def docker_overview() -> dict:
+    """Docker daemon state, and containers, images, volumes, networks and stacks when it is running."""
+    out: dict = {"info": await _request("GET", "/api/docker/info")}
+    if isinstance(out["info"], dict) and out["info"].get("running"):
+        for k in ("containers", "images", "volumes", "networks", "stacks"):
+            out[k] = await _request("GET", f"/api/docker/{k}")
+    return out
+
+
+@mcp.tool()
+async def docker_list(what: str) -> Any:
+    """List: containers, images, volumes, networks, stacks, registries, templates, stats, events, df."""
+    return await _request("GET", f"/api/docker/{what.strip('/')}")
+
+
+@mcp.tool()
+async def docker_container(container: str, action: str = "inspect", body: Optional[dict] = None) -> Any:
+    """One container. action: inspect, logs, stats, top, files (read); start, stop, restart, pause, unpause,
+    kill, remove (lifecycle); exec (body {command:[...]}); rename, update, commit, copy."""
+    if action == "inspect":
+        return await _request("GET", f"/api/docker/containers/{container}")
+    if action in ("logs", "stats", "top", "files"):
+        return await _request("GET", f"/api/docker/containers/{container}/{action}", params=body or {})
+    if action in ("start", "stop", "restart", "pause", "unpause", "kill", "remove"):
+        return await _request("POST", f"/api/docker/containers/{container}/action", json={"action": action})
+    return await _request("POST", f"/api/docker/containers/{container}/{action}", json=body or {})
+
+
+@mcp.tool()
+async def docker_deploy(image: str, name: Optional[str] = None, ports: Optional[list] = None,
+                        env: Optional[list] = None, volumes: Optional[list] = None,
+                        restart: str = "unless-stopped") -> dict:
+    """Create and start a container (ports like '8080:80', env like 'KEY=value', volumes like 'data:/data')."""
+    return await _request("POST", "/api/docker/containers", json={
+        "image": image, "name": name, "ports": ports, "env": env, "volumes": volumes, "restart": restart})
+
+
+@mcp.tool()
+async def docker_manage(path: str, body: Optional[dict] = None) -> Any:
+    """POST under /api/docker/: images/pull {ref}, images/build {context,tag}, volumes {name}, networks {name,subnet},
+    stacks {name,compose}, stacks/<name>/action {action}, registries/login {server,username,password},
+    templates/<id>/deploy, prune {kind}."""
+    return await _request("POST", f"/api/docker/{path.strip('/')}", json=body or {})
+
+
+@mcp.tool()
+async def vm_overview() -> dict:
+    """Available VM backends (QEMU, Hyper-V, libvirt) and every VM on each."""
+    return {"backends": await _request("GET", "/api/vms/backends"), "vms": await _request("GET", "/api/vms")}
+
+
+@mcp.tool()
+async def vm_define(name: str, cpus: int = 2, memory: str = "2048M", disk_path: Optional[str] = None,
+                    iso: Optional[str] = None, display: str = "vnc", options: Optional[dict] = None) -> dict:
+    """Define a QEMU VM (extra: arch, accel, nics with hostfwd, uefi_firmware, shared_folders via options)."""
+    body = {"name": name, "cpus": cpus, "memory": memory, "display": display, **(options or {})}
+    if disk_path:
+        body["disks"] = [{"path": disk_path}]
+    if iso:
+        body["cdrom"] = iso
+        body["boot"] = "cdrom"
+    return await _request("POST", "/api/vms/qemu", json=body)
+
+
+@mcp.tool()
+async def vm_action(backend: str, name: str, action: str, body: Optional[dict] = None) -> Any:
+    """Act on a VM. qemu: start stop pause resume reset screenshot keys media balloon monitor snapshot;
+    hyperv: start stop force-stop restart pause resume save checkpoint delete;
+    libvirt: start stop force-stop restart pause resume delete autostart snapshot."""
+    return await _request("POST", f"/api/vms/{backend}/{name}/{action}", json=body or {})
+
+
+@mcp.tool()
+async def vm_disk(operation: str, body: dict) -> Any:
+    """QEMU disk images: create {path,size,format}, info {path}, resize {path,size}, convert {source,dest,format}, check {path}."""
+    return await _request("POST", f"/api/vms/disks/{operation}", json=body)
+
+
+@mcp.tool()
+async def infra_rules(action: str, body: Optional[dict] = None) -> Any:
+    """Automation rules ('when X do Y' / 'every N do Y'). action: list; create {name,trigger,action,cooldown_s};
+    run {id}; enable {id,enabled}; history {id}; delete {id}."""
+    b = body or {}
+    if action == "list":
+        return await _request("GET", "/api/infra/rules")
+    if action == "create":
+        return await _request("POST", "/api/infra/rules", json=b)
+    if action == "delete":
+        return await _request("DELETE", f"/api/infra/rules/{b.get('id')}")
+    if action == "history":
+        return await _request("GET", f"/api/infra/rules/{b.get('id')}/history")
+    return await _request("POST", f"/api/infra/rules/{b.get('id')}/{action}", json=b)
