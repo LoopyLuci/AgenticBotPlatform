@@ -1056,3 +1056,62 @@ if __name__ == "__main__":
             except Exception:
                 pass
         logger.info("agentic-bot-platform MCP server exiting")
+
+
+# ---- Tailscale management (routes: bot/dashboard/tailscale_api.py) ----
+@mcp.tool()
+async def tailscale_overview() -> dict:
+    """Tailscale status, this node's preferences, version, and which settings can be changed."""
+    return await _request("GET", "/api/tailscale/overview")
+
+
+@mcp.tool()
+async def tailscale_set_prefs(settings: dict) -> dict:
+    """Change this node's Tailscale settings. Keys: accept_dns, accept_routes, advertise_exit_node,
+    advertise_routes (comma CIDRs), exit_node, hostname, shields_up, ssh, auto_update, webclient,
+    report_posture, unattended, advertise_connector, exit_node_allow_lan_access, nickname."""
+    return await _request("POST", "/api/tailscale/prefs", json=settings)
+
+
+@mcp.tool()
+async def tailscale_serve(target: str, funnel: bool = False, mode: str = "https", port: int = 443,
+                          path: Optional[str] = None) -> dict:
+    """Publish a local port/URL on the tailnet (Serve) or the public internet (funnel=True).
+    Funnel exposes it to everyone - only do that when the user asked for it."""
+    return await _request("POST", "/api/tailscale/serve",
+                          json={"target": target, "funnel": funnel, "mode": mode, "port": port, "path": path})
+
+
+@mcp.tool()
+async def tailscale_serve_off(funnel: bool = False, mode: str = "https", port: int = 443,
+                              path: Optional[str] = None) -> dict:
+    """Stop publishing one Serve/Funnel entry."""
+    return await _request("POST", "/api/tailscale/serve/off",
+                          json={"funnel": funnel, "mode": mode, "port": port, "path": path})
+
+
+@mcp.tool()
+async def tailscale_serve_status(funnel: bool = False) -> dict:
+    """Current Serve (or Funnel) configuration."""
+    return await _request("GET", "/api/tailscale/serve", params={"funnel": funnel})
+
+
+@mcp.tool()
+async def tailscale_action(action: str, body: Optional[dict] = None) -> dict:
+    """Connection and one-shot actions: up, down, login, logout, switch, update, cert, file/send,
+    file/receive, drive/share, drive/unshare, serve/reset, serve/config."""
+    return await _request("POST", f"/api/tailscale/{action.strip('/')}", json=body or {})
+
+
+@mcp.tool()
+async def tailscale_query(what: str) -> dict:
+    """Read-only info: status, prefs, ips, netcheck, exit-nodes, version, metrics, dns-status,
+    accounts, lock, drive, app-connector-routes, file-targets, update-check."""
+    return await _request("GET", f"/api/tailscale/{what.strip('/')}")
+
+
+@mcp.tool()
+async def tailscale_admin(method: str, path: str, body: Optional[dict] = None) -> dict:
+    """Tailscale control-plane (needs TAILSCALE_API_KEY): path under /api/tailscale/api/, e.g.
+    devices, devices/<id>/tags, acl, dns, keys, settings, users, webhooks. Use raw/<endpoint> for others."""
+    return await _request(method.upper(), f"/api/tailscale/api/{path.strip('/')}", json=body)

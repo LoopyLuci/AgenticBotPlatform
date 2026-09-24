@@ -764,6 +764,11 @@ def build_app() -> FastAPI:
 
     cicd_api.register(app, _require_token_or_api_key)
 
+    # Tailscale management (/api/tailscale/*) — strict desktop-token auth.
+    from bot.dashboard import tailscale_api
+
+    tailscale_api.register(app, _require_token)
+
     # Agent security (/api/agent/permissions, /api/mcp/pins, ...): rules, pins, untrusted-content marks.
     from bot.dashboard import agent_security_api
 
