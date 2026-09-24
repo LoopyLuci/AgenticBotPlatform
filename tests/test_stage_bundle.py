@@ -85,6 +85,33 @@ def test_only_backends_yaml_is_staged_from_config(project):
     assert staged == ["backends.yaml"]
 
 
+def test_vendored_ssh_toolkit_ships_without_its_git_metadata(project):
+    """bot/ssh_toolkit.py shells out to this submodule's own bin/ssh-toolkit.ps1
+    for every CRUD operation and the peer-pairing SSH auto-setup - without it
+    in the bundle, is_available() is silently False in every installed app
+    (a real gap a live two-machine peer-link test surfaced)."""
+    vendor_dir = project / "vendor" / "ssh_toolkit"
+    (vendor_dir / "bin" / ".git").mkdir(parents=True)
+    (vendor_dir / "bin" / "ssh-toolkit.ps1").write_text("# real script\n", encoding="utf-8")
+    (vendor_dir / ".git").mkdir()
+    (vendor_dir / "SSHToolkit.psm1").write_text("# module\n", encoding="utf-8")
+
+    staged_vendor = _stage(project) / "vendor" / "ssh_toolkit"
+    assert (staged_vendor / "bin" / "ssh-toolkit.ps1").is_file()
+    assert (staged_vendor / "SSHToolkit.psm1").is_file()
+    assert not (staged_vendor / ".git").exists()
+
+
+def test_missing_vendor_ssh_toolkit_does_not_fail_the_build(project):
+    """A checkout that never ran `git submodule update --init` must still
+    stage successfully - bot/ssh_toolkit.py already fails closed, cleanly
+    when the submodule isn't there; the bundle build shouldn't be stricter
+    than the runtime it's building."""
+    assert not (project / "vendor").exists()
+    staged = _stage(project)
+    assert not (staged / "vendor").exists()
+
+
 def test_the_build_fails_if_a_personal_path_is_still_in_the_bundle(tmp_path, monkeypatch):
     _fake_project(tmp_path)
     (tmp_path / "bot" / "settings.py").write_text(f"PATH = r'{PERSONAL}\\secret'\n", encoding="utf-8")

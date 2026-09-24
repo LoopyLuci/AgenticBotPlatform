@@ -15,10 +15,15 @@ app's own version (the Android app versions independently — see its own
   generates its own ed25519 keypair, exchanges public keys and OS usernames as part of the
   existing pairing-token handshake, trusts the other's key locally, and registers a real SSH
   Toolkit connection back to it. Built on two new primitives added to SSH Toolkit itself
-  (`New-SshLinkKeypair`, `Install-SshLinkTrustedKey` — vendored submodule bumped to v1.1.0) so
+  (`New-SshLinkKeypair`, `Install-SshLinkTrustedKey` — vendored submodule bumped to v1.1.1) so
   the underlying key-management logic lives in one place, not duplicated here. Best-effort and
   opt-out (`--no-ssh-setup` / an unchecked GUI box): SSH Toolkit being unavailable never fails
-  the peer link itself.
+  the peer link itself. One real constraint a live two-machine test surfaced: trusting a key for a
+  Windows **administrator** account needs an elevated process (Windows sshd only reads that
+  account's `administrators_authorized_keys`, and only an elevated process can write there) — on
+  an admin-account machine where AgenticBotPlatform itself isn't running elevated, that half of
+  the pairing reports a clear `trust_error` instead of silently doing nothing; the connection is
+  still registered either way, and a non-administrator account is unaffected.
 - **SSH session monitor + recorder.** The SSH Toolkit dashboard page gained a "Session monitor" —
   run a command over a registered connection and watch every action happen live: each output line,
   a CPU/memory read from the remote machine, and its exit code, streamed the instant they occur over

@@ -95,6 +95,15 @@ async def _run(args: list[str], *, json_output: bool = True, timeout: float = 30
     if test_home:
         child_env["HOME"] = test_home
         child_env["USERPROFILE"] = test_home
+        # Install-SshLinkTrustedKey's administrator-account path writes under
+        # %ProgramData% (a real, machine-wide location Windows sshd itself
+        # reads from - it can't live under $HOME), which $HOME/$USERPROFILE
+        # above don't touch at all. Without this, a test running on an
+        # administrator account either fails needing real elevation or, if it
+        # had elevation, would actually mutate the real machine's
+        # C:\ProgramData\ssh\administrators_authorized_keys - neither of
+        # which a test may ever do.
+        child_env["ProgramData"] = test_home
     try:
         proc = await asyncio.create_subprocess_exec(
             *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
