@@ -1,0 +1,7 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Frames</title></head>
+<body><h1>Frames</h1><p id="top-out">top: idle</p>
+<iframe id="same" src="/inner.html" title="same-origin" width="400" height="120"></iframe>
+<iframe id="cross" title="cross-origin" width="400" height="120"></iframe>
+<script>
+document.getElementById('cross').src = 'http://localhost:' + location.port + '/inner.html?x=cross';
+</script></body></html>

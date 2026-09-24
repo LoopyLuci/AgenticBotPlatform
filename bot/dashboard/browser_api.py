@@ -134,7 +134,8 @@ def register(app: FastAPI, strict_auth: Callable) -> None:
                 if not v.allowed:
                     raise _to_http(bb.BridgeError("E_SENSITIVE_SITE", v.reason))
         try:
-            result = await bb.bridge.call(method, params, deadline_ms=int(body.get("deadline_ms") or bb.DEFAULT_DEADLINE_MS))
+            result = await bb.bridge.call(method, params, deadline_ms=int(body.get("deadline_ms") or bb.DEFAULT_DEADLINE_MS),
+                                          approval=body.get("approval") if isinstance(body.get("approval"), dict) else None)
         except bb.BridgeError as exc:
             raise _to_http(exc)
         await asyncio.to_thread(db.log_audit, "dashboard", "browser_rpc", method)

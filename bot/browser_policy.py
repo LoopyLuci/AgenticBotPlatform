@@ -41,7 +41,7 @@ SENSITIVE_HOSTS: dict[str, tuple[str, ...]] = {
 # Paths that make an otherwise ordinary site sensitive (login, checkout, payment, account security).
 SENSITIVE_PATH_RE = re.compile(
     r"(^|/)(login|log-in|signin|sign-in|sso|oauth2?|authorize|2fa|mfa|verify|checkout|payment|payments|billing|wallet|"
-    r"account/security|security/settings|password|reset-password|change-password)(/|$|\?)", re.I)
+    r"account/security|security/settings|password|reset-password|change-password)(/|$|\?|\.)", re.I)
 
 DEFAULT_MAX_TABS = 5
 DEFAULT_ACTIONS_PER_MINUTE = 60

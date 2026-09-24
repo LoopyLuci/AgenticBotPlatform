@@ -1,0 +1,6 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Sign in</title></head>
+<body><h1>Sign in</h1>
+<form onsubmit="document.getElementById('s').textContent='submitted:'+document.getElementById('pw').value.length; return false;">
+<label for="user">Username</label><input id="user" name="user">
+<label for="pw">Password</label><input id="pw" type="password" name="password">
+<button type="submit">Log in</button></form><p id="s"></p></body></html>
