@@ -155,7 +155,7 @@ def qemu_define(name: str, *, arch: str = "x86_64", cpus: int = 2, memory: str =
                 disks: Optional[list[dict]] = None, cdrom: Optional[str] = None, boot: str = "disk",
                 nics: Optional[list[dict]] = None, display: str = "vnc", accel: str = "auto",
                 uefi_firmware: Optional[str] = None, machine: Optional[str] = None, cpu: str = "max",
-                usb: bool = True, tpm: bool = False, shared_folders: Optional[list[dict]] = None,
+                usb: bool = True, tpm: bool = False, serial: bool = True, shared_folders: Optional[list[dict]] = None,
                 notes: str = "", update: bool = False) -> dict:
     """Create (or, with update=True, replace) a VM definition. disks: [{path, format, interface}]
     nics: [{model, mode:'user'|'none', hostfwd:['tcp::2222-:22']}]."""
@@ -213,7 +213,7 @@ def qemu_define(name: str, *, arch: str = "x86_64", cpus: int = 2, memory: str =
             "disks": clean_disks, "cdrom": cdrom, "boot": boot, "nics": clean_nics, "display": display,
             "accel": accel, "uefi_firmware": uefi_firmware, "machine": machine or _ARCH_MACHINE[arch],
             "cpu": cpu if re.match(r"^[A-Za-z0-9_,.\-=+]{1,80}$", cpu) else "max", "usb": bool(usb),
-            "tpm": bool(tpm), "shared_folders": shares, "notes": notes[:500],
+            "tpm": bool(tpm), "serial": bool(serial), "shared_folders": shares, "notes": notes[:500],
             "qmp_port": None, "vnc_display": None, "created": time.time()}
     if update:
         old = _load(n)
@@ -222,13 +222,15 @@ def qemu_define(name: str, *, arch: str = "x86_64", cpus: int = 2, memory: str =
     return spec
 
 
-def _build_argv(spec: dict, qmp_port: int, vnc_port: Optional[int]) -> list[str]:
+def _build_argv(spec: dict, qmp_port: int, vnc_port: Optional[int], serial_port: Optional[int] = None) -> list[str]:
     binary = _exe(f"qemu-system-{spec['arch']}")
     if not binary:
         raise VMError(f"qemu-system-{spec['arch']} is not installed")
     argv = [binary, "-name", spec["name"], "-machine", spec["machine"], "-smp", str(spec["cpus"]),
             "-m", spec["memory"], "-cpu", spec["cpu"],
             "-qmp", f"tcp:127.0.0.1:{qmp_port},server=on,wait=off"]
+    if serial_port:
+        argv += ["-serial", f"tcp:127.0.0.1:{serial_port},server=on,wait=off"]
     accel = spec["accel"]
     if accel == "auto":
         accel = {"nt": "whpx", "posix": "kvm"}.get(os.name, "tcg")
@@ -278,7 +280,8 @@ def qemu_start(name: str) -> dict:
                 if probe.connect_ex(("127.0.0.1", 5900 + n)) != 0:
                     vnc = 5900 + n
                     break
-    argv = _build_argv(spec, qmp, vnc)
+    serial = _free_port() if spec.get("serial", True) else None
+    argv = _build_argv(spec, qmp, vnc, serial)
     log = (_vm_dir(name) / "qemu.log").open("wb")
     proc = subprocess.Popen(argv, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                             creationflags=(_NO_WINDOW | 0x00000200) if os.name == "nt" else 0,
@@ -287,7 +290,7 @@ def qemu_start(name: str) -> dict:
     if proc.poll() is not None:
         tail = (_vm_dir(name) / "qemu.log").read_text(errors="replace")[-600:]
         raise VMError(f"QEMU exited immediately: {tail}")
-    spec.update(qmp_port=qmp, vnc_port=vnc, pid=proc.pid, started=time.time())
+    spec.update(qmp_port=qmp, vnc_port=vnc, serial_port=serial, pid=proc.pid, started=time.time())
     _save(spec)
     return {"ok": True, "pid": proc.pid, "vnc": f"127.0.0.1:{vnc}" if vnc else None}
 

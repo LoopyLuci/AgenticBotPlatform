@@ -772,7 +772,10 @@ def build_app() -> FastAPI:
     # Containers (Docker, Portainer-style) and VMs (QEMU / Hyper-V / libvirt).
     from bot.dashboard import infra_api
 
-    infra_api.register(app, _require_token)
+    infra_api.register(
+        app, _require_token,
+        lambda supplied: bool(os.environ.get("DASHBOARD_TOKEN")) and _tokens_match(supplied, os.environ["DASHBOARD_TOKEN"]),
+    )
 
     # Agent security (/api/agent/permissions, /api/mcp/pins, ...): rules, pins, untrusted-content marks.
     from bot.dashboard import agent_security_api

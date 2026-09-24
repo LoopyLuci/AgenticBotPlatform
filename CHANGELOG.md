@@ -9,6 +9,14 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **Interactive terminals for containers and VMs.** A real, resizable terminal (xterm.js over a WebSocket at
+  `/api/terminals/ws`) opens from the Containers page (**Shell** into a running container, in a real PTY via
+  `docker exec -it`) and the Virtual Machines page (**Console** = the QEMU VM's serial console, **Monitor** = an
+  interactive QEMU monitor prompt, and a libvirt `virsh console`). It is deliberately not a general shell: the
+  server builds every command itself from validated names, only the desktop token may connect (never a paired
+  phone or linked peer), sessions are audited, capped at 8, and reaped when idle or disconnected. Verified live in the
+  dashboard against a running QEMU VM; the container shell is covered against a stand-in `docker` (Docker was down).
+  New dependency: `pywinpty` on Windows (ConPTY).
 - **System tray and single instance (desktop app).** ABP now lives in the tray: closing or minimizing hides the
   window and the bot server keeps running; the tray menu offers Show, Minimize to tray, the two toggles, and Quit
   (the only thing that really exits and stops the server). Left-click or double-click the icon shows the window.
@@ -34,8 +42,7 @@ app's own version (the Android app versions independently — see its own
     Verified live against the QEMU and Hyper-V on the dev machine; libvirt has not been run (not installed here).
   - *Automation*: "when X do Y" / "every N do Y" rules over containers, VMs and Tailscale (restart an unhealthy
     container, start a stopped VM, reconnect Tailscale, prune nightly) with cooldowns and a run history.
-  - Not done: interactive terminals/consoles inside containers and VMs (exec is one non-interactive command), VNC/SPICE
-    viewing in the page, bridged/TAP VM networking, Docker Swarm/Kubernetes, and multi-host "environments/agents".
+  - Not done: VNC/SPICE screen viewing in the page, bridged/TAP VM networking, Docker Swarm/Kubernetes, and multi-host "environments/agents".
 - **Automatic SSH pairing between linked peers.** Linking two AgenticBotPlatform servers
   (`abp_cli peers link` / the dashboard's "Link a server" card) now also sets up a working SSH
   connection between them by default, with no manual key generation or copying: each side
