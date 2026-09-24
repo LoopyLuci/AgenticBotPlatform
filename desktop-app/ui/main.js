@@ -4998,6 +4998,24 @@ async function installUpdateFlow() {
   }
 }
 
+async function initTrayPanel() {
+  if (!IS_TAURI) { const c = document.getElementById('tray-card'); if (c) c.classList.add('hidden'); return; }
+  const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+  if (!invoke) return;
+  const ids = { close_to_tray: 'tray-close', minimize_to_tray: 'tray-minimize', start_minimized: 'tray-start-hidden' };
+  const paint = (s) => Object.entries(ids).forEach(([k, id]) => { const el = document.getElementById(id); if (el) el.checked = !!s[k]; });
+  try { paint(await invoke('get_tray_settings')); } catch (_) { return; }
+  Object.entries(ids).forEach(([key, id]) => {
+    document.getElementById(id).onchange = async () => {
+      const next = {};
+      Object.entries(ids).forEach(([k, i]) => { next[k] = document.getElementById(i).checked; });
+      try { paint(await invoke('set_tray_settings', { settings: next })); } catch (e) { showToast('Could not save tray settings: ' + e, 'error'); }
+    };
+  });
+  document.getElementById('btn-tray-hide').onclick = () => invoke('hide_main_window');
+  document.getElementById('btn-tray-quit').onclick = () => { if (confirm('Quit ABP completely? This stops the bot server.')) invoke('quit_app_command'); };
+}
+
 function initUpdatesPanel() {
   if (!IS_TAURI) return;
   document.getElementById('btn-update-check').onclick = () => checkForUpdate(true);
@@ -5405,6 +5423,7 @@ if (IS_TAURI) {
   initTauriBoot();
   initAndroidPanel();
   initUpdatesPanel();
+  initTrayPanel();
 } else {
   document.getElementById('boot').classList.add('hidden');
   checkSetupAndProceed(startDashboardPolling);

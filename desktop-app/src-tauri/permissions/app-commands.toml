@@ -112,3 +112,28 @@ commands.allow = ["terminal_resize"]
 identifier = "allow-terminal-stop"
 description = "Allows stopping the embedded terminal session."
 commands.allow = ["terminal_stop"]
+
+[[permission]]
+identifier = "allow-get-tray-settings"
+description = "Reads the tray (close/minimize-to-tray) settings."
+commands.allow = ["get_tray_settings"]
+
+[[permission]]
+identifier = "allow-set-tray-settings"
+description = "Changes and saves the tray settings."
+commands.allow = ["set_tray_settings"]
+
+[[permission]]
+identifier = "allow-hide-main-window"
+description = "Hides the main window to the tray."
+commands.allow = ["hide_main_window"]
+
+[[permission]]
+identifier = "allow-show-main-window"
+description = "Shows the main window from the tray."
+commands.allow = ["show_main_window"]
+
+[[permission]]
+identifier = "allow-quit-app-command"
+description = "Quits the app completely, stopping the bot server."
+commands.allow = ["quit_app_command"]

@@ -957,6 +957,14 @@
       <div class="sec-head"><h2>Control Center</h2><span class="desc">Every setting the bot exposes — changes apply via hot reload, no restart</span></div>
 
       <div class="grid g2">
+        <div class="card" id="tray-card">
+          <h3>System tray</h3>
+          <p class="cardnote">ABP keeps running in the tray (with the bot server) when its window is hidden. Right-click the tray icon for Show, Minimize to tray and Quit; only one copy of ABP can ever run.</p>
+          <label class="settingrow"><div><div class="st">Close button minimizes to tray</div><div class="sd">Off: closing the window quits ABP</div></div><input type="checkbox" id="tray-close"></label>
+          <label class="settingrow"><div><div class="st">Minimize button goes to tray</div><div class="sd">Off: minimize to the taskbar as usual</div></div><input type="checkbox" id="tray-minimize"></label>
+          <label class="settingrow"><div><div class="st">Start hidden in the tray</div><div class="sd">Useful when ABP launches at login</div></div><input type="checkbox" id="tray-start-hidden"></label>
+          <div class="row" style="gap:8px; margin-top:8px;"><button class="btn" id="btn-tray-hide">Minimize to tray now</button><button class="btn danger" id="btn-tray-quit">Quit ABP</button></div>
+        </div>
         <div class="card">
           <h3>Backend router</h3>
           <div class="settingrow">
