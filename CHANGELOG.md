@@ -9,6 +9,13 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **Multi-host management.** The Tailscale, Containers, Virtual Machines and Infra Automation pages (and their
+  terminals) each have a "Manage" picker: choose a linked server and every request goes to that machine instead
+  (`?host=<linked server id>` on the API, `abp_cli docker get containers?host=2`). Off by default and opt-in on the
+  managed machine: **"Allow linked servers to manage this machine"** (or `abp env set PEER_INFRA_ACCESS 1`). Only the
+  desktop token can start a proxied request, so a phone or a linked server can never be used as a relay or grant
+  itself access, and a linked server's key still reaches nothing outside these infra routes. Verified over real HTTP
+  and a real relayed terminal (PTY on the far side); the second machine in the tests is a live server pointed at itself.
 - **Interactive terminals for containers and VMs.** A real, resizable terminal (xterm.js over a WebSocket at
   `/api/terminals/ws`) opens from the Containers page (**Shell** into a running container, in a real PTY via
   `docker exec -it`) and the Virtual Machines page (**Console** = the QEMU VM's serial console, **Monitor** = an
