@@ -433,6 +433,41 @@ def test_the_tab_limit_and_agent_tab_group(fresh):
     open_tab(fresh, "/spa.html")
 
 
+def tool(env, fn, inp):
+    """Run an agent tool exactly as the agent loop would, on the bridge's own event loop, in a fixed session."""
+    import asyncio
+    from bot.agent_runtime import toolspec
+
+    loop = next(iter(bb.bridge.connections.values())).loop
+
+    async def go():
+        toolspec.session_var.set("e2e-agent")
+        return await fn(inp, workspace=str(EXT / "tests"))
+
+    return asyncio.run_coroutine_threadsafe(go(), loop).result(60)
+
+
+def test_the_agent_tools_drive_the_real_browser_end_to_end(fresh):
+    from bot.agent_runtime import ext_browser as eb, taint
+
+    taint.clear("e2e-agent")
+    eb._started.discard("e2e-agent")
+    eb._synced_taint.discard("e2e-agent")
+    assert eb.enabled() is True                                       # a paired browser is connected
+    out = tool(fresh, eb._ext_browser, {"action": "open", "url": fresh.site + "/index.html"})
+    assert "ABP Fixture Home" in out and '@e' in out and "<untrusted_page_content" in out
+    assert taint.is_tainted("e2e-agent")                              # an untrusted page was read
+    ref = lambda name: next(line.split()[0][1:] for line in out.splitlines() if f'"{name}"' in line and line.startswith("@"))
+    out = tool(fresh, eb._ext_browser_act, {"action": "type", "ref": ref("Your name"), "text": "Grace Hopper"})
+    assert 'value="Grace Hopper"' in out
+    out = tool(fresh, eb._ext_browser_act, {"action": "click", "ref": ref("Clicked 0 times")})
+    assert "Clicked 1 times" in out
+    with pytest.raises(Exception, match="E_SENSITIVE_SITE"):
+        tool(fresh, eb._ext_browser, {"action": "open", "url": "https://www.chase.com/"})
+    assert "ABP Fixture Home" in tool(fresh, eb._ext_browser, {"action": "tabs"})
+    taint.clear("e2e-agent")
+
+
 def test_the_extension_reconnects_by_itself_and_stops_when_unpaired(fresh):
     key_id = fresh_status(fresh)["connections"][0]["key_id"]
     bb.bridge.drop(key_id, "test drop")                                              # the server side hangs up

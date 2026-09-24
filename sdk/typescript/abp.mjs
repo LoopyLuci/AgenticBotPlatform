@@ -22,6 +22,22 @@ export const operations = {
   ],
   "query_params": []
  },
+ "DELETE /api/browser/browsers/{key_id}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/browser/browsers/{key_id}",
+  "path_params": [
+   "key_id"
+  ],
+  "query_params": []
+ },
+ "DELETE /api/browser/pair/code": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/browser/pair/code",
+  "path_params": [],
+  "query_params": []
+ },
  "DELETE /api/chat/messages": {
   "body": true,
   "method": "DELETE",
@@ -485,6 +501,43 @@ export const operations = {
   "path_params": [
    "instance_id"
   ],
+  "query_params": []
+ },
+ "GET /api/browser/classify": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/browser/classify",
+  "path_params": [],
+  "query_params": [
+   "url"
+  ]
+ },
+ "GET /api/browser/hello": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/browser/hello",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/browser/pair/pending": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/browser/pair/pending",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/browser/policy": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/browser/policy",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/browser/status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/browser/status",
+  "path_params": [],
   "query_params": []
  },
  "GET /api/canvas": {
@@ -2263,6 +2316,51 @@ export const operations = {
   "path_params": [
    "instance_id"
   ],
+  "query_params": []
+ },
+ "POST /api/browser/pair/code": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/browser/pair/code",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/browser/pair/collect": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/browser/pair/collect",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/browser/pair/complete": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/browser/pair/complete",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/browser/pair/request": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/browser/pair/request",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/browser/pair/{request_id}/{decision}": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/browser/pair/{request_id}/{decision}",
+  "path_params": [
+   "request_id",
+   "decision"
+  ],
+  "query_params": []
+ },
+ "POST /api/browser/rpc": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/browser/rpc",
+  "path_params": [],
   "query_params": []
  },
  "POST /api/canvas/{name}/link": {
@@ -5823,6 +5921,104 @@ export const operations = {
   "query_params": [
    "token"
   ]
+ },
+ "browser_classify_api_browser_classify_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/browser/classify",
+  "path_params": [],
+  "query_params": [
+   "url"
+  ]
+ },
+ "browser_hello_api_browser_hello_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/browser/hello",
+  "path_params": [],
+  "query_params": []
+ },
+ "browser_pair_code_api_browser_pair_code_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/browser/pair/code",
+  "path_params": [],
+  "query_params": []
+ },
+ "browser_pair_code_cancel_api_browser_pair_code_delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/browser/pair/code",
+  "path_params": [],
+  "query_params": []
+ },
+ "browser_pair_collect_api_browser_pair_collect_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/browser/pair/collect",
+  "path_params": [],
+  "query_params": []
+ },
+ "browser_pair_complete_api_browser_pair_complete_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/browser/pair/complete",
+  "path_params": [],
+  "query_params": []
+ },
+ "browser_pair_decide_api_browser_pair__request_id___decision__post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/browser/pair/{request_id}/{decision}",
+  "path_params": [
+   "request_id",
+   "decision"
+  ],
+  "query_params": []
+ },
+ "browser_pair_pending_api_browser_pair_pending_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/browser/pair/pending",
+  "path_params": [],
+  "query_params": []
+ },
+ "browser_pair_request_api_browser_pair_request_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/browser/pair/request",
+  "path_params": [],
+  "query_params": []
+ },
+ "browser_policy_get_api_browser_policy_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/browser/policy",
+  "path_params": [],
+  "query_params": []
+ },
+ "browser_rpc_api_browser_rpc_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/browser/rpc",
+  "path_params": [],
+  "query_params": []
+ },
+ "browser_status_api_browser_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/browser/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "browser_unpair_api_browser_browsers__key_id__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/browser/browsers/{key_id}",
+  "path_params": [
+   "key_id"
+  ],
+  "query_params": []
  },
  "canvas_link_api_canvas__name__link_post": {
   "body": false,

@@ -441,7 +441,7 @@ class DashboardClient:
     async def infra(self, area: str, method: str, path: str, body: Any = None, host: str = "local") -> Any:
         """Any /api/{tailscale,docker,vms,infra/rules}/... route - the CLI's and TUI's one entry point for them.
         `host` is a linked server's id (or "local"): the same ?host= routing the GUI uses."""
-        prefix = {"tailscale": "/api/tailscale", "docker": "/api/docker", "vm": "/api/vms", "rules": "/api/infra/rules"}[area]
+        prefix = {"tailscale": "/api/tailscale", "docker": "/api/docker", "vm": "/api/vms", "rules": "/api/infra/rules", "browser": "/api/browser"}[area]
         url = prefix + ("/" + path.strip("/") if path.strip("/") else "")
         if host and host != "local":
             url += ("&" if "?" in url else "?") + f"host={host}"

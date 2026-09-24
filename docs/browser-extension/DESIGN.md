@@ -1,6 +1,6 @@
 # ABP Browser Extension - design and build plan
 
-Status: design approved for build; Phase 0-1 in progress (see [Roadmap](#17-roadmap-phases-and-exit-criteria)).
+Status: Phases 0-1 built and verified (see [Roadmap](#17-roadmap-phases-and-exit-criteria) and `browser-extension/README.md`); phases 2-5 designed, not yet built.
 Everything below is a requirement unless it says *deferred*. Where this plan and the code disagree, fix whichever is wrong and update this file.
 
 ## 0. What it is, in one paragraph

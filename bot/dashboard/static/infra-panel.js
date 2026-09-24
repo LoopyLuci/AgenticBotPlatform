@@ -442,6 +442,34 @@
   }
 
 
+
+  // ================================================================= Browser extension
+  const BR = { code: null, codeUntil: 0, timer: null };
+  async function brLoad() {
+    const root = $('br-root'); if (!root) return;
+    let st, pend;
+    try { [st, pend] = await Promise.all([pageApi('/api/browser/status'), pageApi('/api/browser/pair/pending')]); } catch (e) { root.innerHTML = `<p class="cardnote">${esc(errText(e))}</p>`; return; }
+    const paired = st.paired || [];
+    const codeLeft = Math.max(0, Math.round((BR.codeUntil - Date.now()) / 1000));
+    root.innerHTML = `
+      <div class="card"><h3>Connect a browser</h3>
+        <p class="cardnote">Install the <b>ABP Bridge</b> extension in Chrome, Edge, Brave or another Chromium browser (for a development build: open <code>chrome://extensions</code>, turn on Developer mode, choose <b>Load unpacked</b> and pick the <code>browser-extension/dist</code> folder). Then either press <b>Ask ABP to approve this browser</b> in the extension and Allow it below, or type a code from here.</p>
+        <div class="infra-row">${btn('br-code', 'Show a pairing code', '', 'primary')}${BR.code && codeLeft > 0 ? `<span class="infra-pill" style="font-size:22px;letter-spacing:.3em">${esc(BR.code)}</span><span class="cardnote">valid for ${codeLeft}s</span>` : ''}</div>
+        ${(pend.pending || []).map(r => `<div class="infra-warn"><b>A browser is asking to connect</b> (${esc(r.browser || 'browser')}, extension ${esc(r.extension_id.slice(0, 8))}…) ${btn('br-decide', 'Allow', `data-id="${esc(r.id)}" data-op="approve"`, 'primary')}${btn('br-decide', 'Deny', `data-id="${esc(r.id)}" data-op="deny"`)}</div>`).join('')}
+      </div>
+      <div class="card"><h3>Paired browsers</h3>${table(['Browser', 'Extension', 'Status', 'Paired', ''], paired.map(b => [esc(b.browser || 'browser') + ' ' + esc(b.version || ''), esc(b.extension_id.slice(0, 12)) + '…', pill(b.connected ? 'connected' : 'not connected', b.connected), esc(new Date(b.paired_at * 1000).toLocaleDateString()), btn('br-unpair', 'Unpair', `data-id="${b.key_id}"`)]))}
+        <p class="cardnote">While a browser is connected, agents get the <code>ext_browser</code> tools and work in a purple "ABP agent" tab group. Banks, payment pages, password managers, admin consoles and login pages are never automated; you can press Stop in the extension at any time.</p></div>`;
+    if (!BR.timer) BR.timer = setInterval(() => { if ($('br-root') && $('br-root').offsetParent !== null) brLoad(); }, 3000);
+  }
+  async function brAct(el) {
+    try {
+      if (el.dataset.act === 'br-code') { const r = await pageApi('/api/browser/pair/code', J('POST', {})); BR.code = r.code; BR.codeUntil = Date.now() + r.expires_in * 1000; }
+      else if (el.dataset.act === 'br-decide') { await pageApi(`/api/browser/pair/${el.dataset.id}/${el.dataset.op}`, J('POST', {})); toast(el.dataset.op === 'approve' ? 'Browser connected' : 'Denied', 'success'); }
+      else if (el.dataset.act === 'br-unpair') { if (!sure('Unpair this browser? It will stop working with ABP until it is paired again.')) return; await pageApi('/api/browser/browsers/' + el.dataset.id, { method: 'DELETE' }); }
+    } catch (e) { fail(e); }
+    brLoad();
+  }
+
   // ================================================================= Host picker + remote-access switch
   const LOADED = () => ({ tailscale: tsLoad, containers: ctLoad, vms: vmLoad, 'infra-rules': irLoad });
   async function buildHostBars() {
@@ -469,12 +497,12 @@
   }
 
   // ================================================================= wiring
-  const LOADERS = { tailscale: tsLoad, containers: ctLoad, vms: vmLoad, 'infra-rules': irLoad };
-  const HANDLERS = { ts: tsAct, ct: ctAct, vm: vmAct, ir: irAct };
+  const LOADERS = { tailscale: tsLoad, containers: ctLoad, vms: vmLoad, 'infra-rules': irLoad, browser: brLoad };
+  const HANDLERS = { ts: tsAct, ct: ctAct, vm: vmAct, ir: irAct, br: brAct };
   function onHash() { const h = (location.hash || '').replace('#', ''); if (LOADERS[h]) LOADERS[h](); }
   function init() {
     css();
-    ['ts-root', 'ct-root', 'vm-root', 'ir-root'].forEach((id) => {
+    ['ts-root', 'ct-root', 'vm-root', 'ir-root', 'br-root'].forEach((id) => {
       const root = $(id); if (!root) return;
       const fn = HANDLERS[id.slice(0, 2)];
       root.addEventListener('click', (ev) => { const el = ev.target.closest('[data-act]'); if (el && el.type !== 'checkbox') fn(el); });
@@ -486,7 +514,7 @@
     const seen = new Set();
     const watch = (id, key) => { const el = $(id); if (!el || !('IntersectionObserver' in window)) return;
       new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting && !seen.has(key)) { seen.add(key); LOADERS[key](); } })).observe(el); };
-    watch('ts-root', 'tailscale'); watch('ct-root', 'containers'); watch('vm-root', 'vms'); watch('ir-root', 'infra-rules');
+    watch('ts-root', 'tailscale'); watch('ct-root', 'containers'); watch('vm-root', 'vms'); watch('ir-root', 'infra-rules'); watch('br-root', 'browser');
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })(typeof api === 'function' ? api : null);

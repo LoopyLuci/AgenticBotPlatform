@@ -9,6 +9,23 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **ABP Browser Extension (phases 0-1 of 5).** A Manifest V3 extension ("ABP Bridge", `browser-extension/`) that pairs with the
+  desktop app and lets agents operate your real, logged-in browser. Full design and roadmap in `docs/browser-extension/DESIGN.md`.
+  Built now: the bridge (`bot/browser_bridge.py`, `/api/browser/*`: pairing by a desktop-approved request or a 6-digit code,
+  JSON-RPC over a loopback-only WebSocket with deadlines, cancellation, idempotent replay and session resume); a new `browser_ext`
+  key kind that reaches nothing but the bridge (every other route refuses it); the extension itself (page snapshot with stable refs
+  that pierce shadow DOM and iframes, realistic actions with actionability checks, tab scoping in a purple "ABP agent" group or one
+  tab you hand over, rate limits, e-stop, take-over detection, on-page control pill); the safety model (sensitive-site blocklist for
+  banks/payments/password managers/admin consoles/login pages enforced by both the server and the extension, untrusted-page
+  taint and approvals reusing ABP's existing layers, the agent never types passwords, vault logins filled by code only on their own
+  origin); agent tools `ext_browser`, `ext_browser_act`, `ext_browser_handoff` (offered only while a browser is connected); a
+  **Browser** page in the dashboard and desktop app (pairing code, approve/deny, paired browsers); and `abp_cli browser ...`.
+  Verified live: 44 extension unit tests, 31 bridge tests, and 21 end-to-end tests that load the real extension in real Microsoft
+  Edge, pair through its own options page, and drive a fixture website (forms with framework-style inputs, shadow DOM, same- and
+  cross-origin iframes, SPA route changes, re-rendering pages, covered elements, login pages, a hostile prompt-injection page,
+  rate limits, Stop, reconnect and unpair) - including the agent tools themselves. Not built yet: the model gateway and
+  Grok/Gemini web sessions, in-browser models, Firefox, the debugger-based driver, the native-messaging installer, store packages.
+  Fixed on the way: unpairing from the API did not close the extension's socket.
 - **TUI screens for Tailscale, Containers, VMs and Infra automation** (bot list keys `t`, `d`, `v`, `o`), each with
   the multi-host picker; Containers' Shell hands your terminal to `docker exec -it`. Also fixed: the read-only
   Docker/Tailscale routes looked their functions up when the app was built instead of per request.

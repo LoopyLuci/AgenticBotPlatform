@@ -144,7 +144,7 @@ async def _dispatch(args, client: DashboardClient) -> int:
         return await _security(args, client)
     if cmd == "snapshots":
         return await _snapshots(args, client)
-    if cmd in ("tailscale", "docker", "vm", "rules"):
+    if cmd in ("tailscale", "docker", "vm", "rules", "browser"):
         try:
             body = json.loads(args.data) if args.data else None
         except ValueError as exc:
@@ -844,6 +844,7 @@ def _parser() -> argparse.ArgumentParser:
         ("docker", "containers, images, volumes, networks, stacks, registries", "docker get containers | docker post containers/web/action --data '{\"action\":\"restart\"}'"),
         ("vm", "QEMU / Hyper-V / libvirt machines and disk images", "vm get '' | vm post qemu/dev/start"),
         ("rules", "automation rules for containers, VMs and Tailscale", "rules get '' | rules post '' --data '{...}'"),
+        ("browser", "the ABP browser extension: pairing, status, and calling the connected browser", "browser get status | browser post pair/code | browser post rpc --data '{\"method\":\"tabs.list\"}'"),
     ):
         p = sub.add_parser(area, help=blurb, description=f"{blurb}. Examples: {example}")
         p.add_argument("verb", choices=["get", "post", "put", "patch", "delete"])
