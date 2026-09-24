@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import socket
+from pathlib import Path
 import threading
 import time
 
@@ -294,16 +295,10 @@ def test_an_unanswered_request_is_resent_after_a_reconnect(server):
 
 
 # ------------------------------------------------------------------------------------------ policy
-@pytest.mark.parametrize("url,allowed,sensitive", [
-    ("https://example.com/", True, False), ("https://en.wikipedia.org/wiki/Cat", True, False),
-    ("http://127.0.0.1:8000/app", True, False),
-    ("https://www.chase.com/", True, True), ("https://paypal.com/myaccount", True, True), ("https://vault.bitwarden.com/", True, True),
-    ("https://console.aws.amazon.com/ec2", True, True), ("https://accounts.google.com/", True, True),
-    ("https://shop.example.com/checkout", True, True), ("https://example.com/login?next=/", True, True),
-    ("chrome://settings", False, True), ("edge://flags", False, True), ("chrome-extension://abc/page.html", False, True),
-    ("file:///C:/secrets.txt", False, True), ("javascript:alert(1)", False, True), ("data:text/html,hi", False, True),
-    ("not a url", False, True),
-])
+_VECTORS = json.loads((Path(__file__).resolve().parent.parent / "browser-extension" / "tests" / "fixtures" / "url_vectors.json").read_text(encoding="utf-8"))["cases"]
+
+
+@pytest.mark.parametrize("url,allowed,sensitive", _VECTORS)  # the extension's TypeScript is tested against the same file
 def test_url_classification(url, allowed, sensitive):
     v = browser_policy.classify(url)
     assert (v.allowed, v.sensitive) == (allowed, sensitive), v
@@ -313,3 +308,11 @@ def test_user_lists_extend_and_trusted_sites_relax_the_path_rule():
     assert browser_policy.classify("https://intranet.corp/", extra_sensitive=["intranet.corp"]).sensitive
     assert not browser_policy.classify("https://my.app/login", trusted_sites=["my.app"]).sensitive
     assert browser_policy.classify("https://my.chase.com/x", trusted_sites=["chase.com"]).sensitive      # trust never unblocks a bank
+
+
+def test_the_extension_ships_the_same_sensitive_host_table_as_the_server():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("gen_extension_policy", Path(__file__).resolve().parent.parent / "scripts" / "gen_extension_policy.py")
+    gen = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gen)
+    assert gen.TARGET.read_text(encoding="utf-8") == gen.render(), "run: python scripts/gen_extension_policy.py"

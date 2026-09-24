@@ -55,3 +55,7 @@ PLAN.md
 # Release/pipeline coordination state (see scripts/release_guard.py)
 /.pipeline.lock
 /.release_journal.json
+
+# browser extension build output and dependencies
+browser-extension/dist/
+browser-extension/node_modules/

@@ -246,7 +246,7 @@ def unpair(key_id: int) -> bool:
         return False
     db.revoke_api_key(key_id)
     db.log_audit(actor="browser_bridge", action="unpair", detail=str(key_id))
-    bridge.drop(key_id, "unpaired")
+    bridge.drop(key_id, "unpaired", code=4401)
     return True
 
 
@@ -269,6 +269,7 @@ class Connection:
     pending: dict[str, "_Pending"] = field(default_factory=dict)
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     closed: bool = False
+    loop: Any = None                  # the event loop that owns this socket: drop() may be called from a worker thread
 
     async def send(self, obj: dict) -> None:
         if self.closed:
@@ -331,7 +332,9 @@ class Bridge:
                               retryable=True, hint="Install/enable the extension and pair it from Settings > Browser.")
         return c
 
-    def drop(self, key_id: int, reason: str = "") -> None:
+    def drop(self, key_id: int, reason: str = "", code: int = 4000) -> None:
+        """Close a connection. Safe from any thread (unpair() runs in a worker thread): the close is scheduled on the socket's own loop.
+        code 4401 tells the extension it was unpaired, so it stops retrying instead of reconnecting."""
         c = self.connections.pop(key_id, None)
         if c is None:
             return
@@ -340,14 +343,23 @@ class Bridge:
         if c.pending:
             self._orphans[c.session] = (time.time(), dict(c.pending))
         try:
-            asyncio.ensure_future(c.ws.close(code=4000, reason=reason[:100]))
+            coro = c.ws.close(code=code, reason=reason[:100])
+            try:
+                here = asyncio.get_running_loop()
+            except RuntimeError:
+                here = None
+            if c.loop is not None and here is not c.loop:
+                asyncio.run_coroutine_threadsafe(coro, c.loop)
+            else:
+                asyncio.ensure_future(coro)
         except Exception:  # noqa: BLE001
-            pass
+            logger.exception("could not close the extension connection")
         self._emit("disconnected", {"key_id": key_id, "reason": reason})
 
     # ---- RPC: server -> extension
     async def call(self, method: str, params: Optional[dict] = None, *, key_id: Optional[int] = None,
-                   deadline_ms: int = DEFAULT_DEADLINE_MS, session: str = "", idem: Optional[str] = None) -> Any:
+                   deadline_ms: int = DEFAULT_DEADLINE_MS, session: str = "", idem: Optional[str] = None,
+                   approval: Optional[dict] = None) -> Any:
         conn = self.pick(key_id)
         if len(conn.pending) >= MAX_IN_FLIGHT:
             raise BridgeError("E_BUSY", "too many requests in flight to the browser", retryable=True)
@@ -355,7 +367,7 @@ class Bridge:
         rid = uuid.uuid4().hex
         idem = idem or uuid.uuid4().hex
         frame = {"v": PROTOCOL, "id": rid, "method": method, "params": params or {},
-                 "ctx": {"session": session, "deadline_ms": deadline_ms, "idem": idem}}
+                 "ctx": {"session": session, "deadline_ms": deadline_ms, "idem": idem, **({"approval": approval} if approval else {})}}
         fut: asyncio.Future = asyncio.get_running_loop().create_future()
         conn.pending[rid] = _Pending(frame, fut, idem)
         try:
@@ -386,6 +398,7 @@ class Bridge:
             await ws.close(code=4401 if exc.code == "E_AUTH" else 4400)
             return
         conn.ws = _WsAdapter(ws)
+        conn.loop = asyncio.get_running_loop()
         old = self.connections.get(conn.key_id)
         if old is not None:                              # one live connection per profile: the newer one wins
             self.drop(conn.key_id, "superseded")

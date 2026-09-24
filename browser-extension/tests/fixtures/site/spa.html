@@ -1,0 +1,9 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>SPA</title></head>
+<body><h1 id="view">Home view</h1><button id="go-settings">Go to settings</button>
+<script>
+document.getElementById('go-settings').addEventListener('click', () => {
+  history.pushState({}, '', '/spa/settings');            // no page load, no navigation event a naive wait would see
+  document.getElementById('view').textContent = 'Settings view';
+  document.title = 'SPA - Settings';
+});
+</script></body></html>

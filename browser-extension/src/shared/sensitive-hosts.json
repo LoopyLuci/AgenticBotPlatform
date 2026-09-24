@@ -1,0 +1,107 @@
+{
+  "sensitive_hosts": {
+    "banking": [
+      "chase.com",
+      "bankofamerica.com",
+      "wellsfargo.com",
+      "citi.com",
+      "capitalone.com",
+      "usbank.com",
+      "schwab.com",
+      "fidelity.com",
+      "vanguard.com",
+      "hsbc.com",
+      "barclays.co.uk",
+      "lloydsbank.com",
+      "natwest.com",
+      "santander.com",
+      "ing.com",
+      "revolut.com",
+      "monzo.com",
+      "n26.com",
+      "wise.com",
+      "americanexpress.com",
+      "discover.com",
+      "tdbank.com",
+      "pnc.com",
+      "ally.com",
+      "robinhood.com",
+      "coinbase.com",
+      "binance.com",
+      "kraken.com"
+    ],
+    "payments": [
+      "paypal.com",
+      "stripe.com",
+      "checkout.stripe.com",
+      "pay.google.com",
+      "payments.google.com",
+      "venmo.com",
+      "cash.app",
+      "squareup.com",
+      "klarna.com",
+      "affirm.com",
+      "wallet.apple.com"
+    ],
+    "tax_gov": [
+      "irs.gov",
+      "ssa.gov",
+      "id.me",
+      "login.gov",
+      "hmrc.gov.uk",
+      "gov.uk/personal-tax",
+      "cra-arc.gc.ca",
+      "ato.gov.au"
+    ],
+    "password_manager": [
+      "1password.com",
+      "1password.eu",
+      "bitwarden.com",
+      "lastpass.com",
+      "dashlane.com",
+      "keepersecurity.com",
+      "proton.me/pass",
+      "nordpass.com",
+      "roboform.com"
+    ],
+    "cloud_console": [
+      "console.aws.amazon.com",
+      "signin.aws.amazon.com",
+      "portal.azure.com",
+      "console.cloud.google.com",
+      "console.cloud.oracle.com",
+      "cloud.digitalocean.com",
+      "dash.cloudflare.com",
+      "admin.google.com",
+      "admin.microsoft.com",
+      "entra.microsoft.com",
+      "app.datadoghq.com",
+      "manage.auth0.com"
+    ],
+    "identity": [
+      "accounts.google.com",
+      "login.microsoftonline.com",
+      "login.live.com",
+      "appleid.apple.com",
+      "id.apple.com",
+      "auth0.com",
+      "okta.com",
+      "login.okta.com",
+      "account.microsoft.com",
+      "myaccount.google.com"
+    ],
+    "webmail": [
+      "mail.google.com",
+      "outlook.live.com",
+      "outlook.office.com",
+      "outlook.office365.com",
+      "mail.yahoo.com",
+      "mail.proton.me"
+    ],
+    "health": [
+      "mychart.com",
+      "patient.info",
+      "myhealth.va.gov"
+    ]
+  }
+}

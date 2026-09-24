@@ -1,0 +1,24 @@
+:root { color-scheme: light dark; --bg: #ffffff; --fg: #1d1f24; --muted: #6b7280; --line: #d9dce3; --accent: #6d5efc; --good: #2fa44f; --warn: #b7791f; --bad: #d1453b; --card: #f6f7f9; }
+@media (prefers-color-scheme: dark) { :root { --bg: #16171b; --fg: #eceef2; --muted: #9aa1ad; --line: #2f3238; --card: #1e2025; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif; }
+main { padding: 14px; max-width: 720px; }
+h1 { font-size: 15px; margin: 0 0 10px; } h2 { font-size: 13px; margin: 16px 0 6px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.muted { color: var(--muted); } .small { font-size: 12px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line); font-weight: 600; }
+.chip::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.chip.connected::before { background: var(--good); } .chip.connecting::before { background: var(--warn); }
+.chip.unpaired::before, .chip.server-mismatch::before, .chip.protocol-mismatch::before { background: var(--bad); }
+button { font: inherit; padding: 6px 12px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; }
+button:hover { border-color: var(--accent); } button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; } button.danger { color: var(--bad); border-color: var(--bad); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+input { font: inherit; padding: 6px 9px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+input.code { width: 9ch; letter-spacing: .25em; font-size: 16px; text-align: center; }
+table { width: 100%; border-collapse: collapse; } th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.err { color: var(--bad); } .ok { color: var(--good); }
+.timeline { list-style: none; margin: 0; padding: 0; } .timeline li { padding: 5px 0; border-bottom: 1px solid var(--line); display: flex; gap: 8px; }
+.timeline time { color: var(--muted); font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

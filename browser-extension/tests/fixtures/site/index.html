@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>ABP Fixture Home</title>
+<style>body{font:16px system-ui;margin:20px} nav a{margin-right:12px} .hidden{display:none} #more-list li{padding:2px}</style></head>
+<body>
+<nav aria-label="Main"><a href="/page2.html">Second page</a> <a href="https://example.org/outside">Outside link</a> <a href="/spa.html">SPA</a></nav>
+<h1>ABP fixture</h1>
+<h2>Contact form</h2>
+<form id="contact" onsubmit="return false">
+  <label for="name">Your name</label> <input id="name" name="name" autocomplete="off">
+  <label for="email">Email</label> <input id="email" type="email" name="email">
+  <label for="topic">Topic</label>
+  <select id="topic" name="topic"><option>General</option><option>Support</option><option>Sales</option></select>
+  <label><input type="checkbox" id="agree"> I agree</label>
+  <button id="send" type="submit">Send message</button>
+</form>
+<p>Live mirror: <output id="mirror"></output></p>
+<p id="result" role="status"></p>
+<h2>Dynamic list</h2>
+<button id="more">Load more</button>
+<ul id="more-list"></ul>
+<h2>Counter</h2>
+<button id="count">Clicked 0 times</button>
+<script>
+// A "controlled" input like React's: state only updates on real input events, and a value assigned directly is overwritten on the next render.
+let state = { name: '' };
+const nameEl = document.getElementById('name');
+nameEl.addEventListener('input', () => { state.name = nameEl.value; document.getElementById('mirror').textContent = state.name; });
+document.getElementById('contact').addEventListener('submit', () => {
+  const topic = document.getElementById('topic').value;
+  document.getElementById('result').textContent = `Thanks ${state.name} (${document.getElementById('email').value}) - ${topic} - agree=${document.getElementById('agree').checked}`;
+});
+let n = 0;
+document.getElementById('count').addEventListener('click', (e) => { n += 1; e.target.textContent = `Clicked ${n} times`; });
+document.getElementById('more').addEventListener('click', () => {
+  setTimeout(() => {   // content arrives after the click, as in a real app
+    for (let i = 1; i <= 3; i++) { const li = document.createElement('li'); li.innerHTML = `<a href="#item${i}">Item ${i}</a>`; document.getElementById('more-list').append(li); }
+  }, 250);
+});
+</script>
+</body></html>

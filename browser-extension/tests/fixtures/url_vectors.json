@@ -1,0 +1,23 @@
+{
+  "cases": [
+    ["https://example.com/", true, false],
+    ["https://en.wikipedia.org/wiki/Cat", true, false],
+    ["http://127.0.0.1:8000/app", true, false],
+    ["https://www.chase.com/", true, true],
+    ["https://paypal.com/myaccount", true, true],
+    ["https://vault.bitwarden.com/", true, true],
+    ["https://console.aws.amazon.com/ec2", true, true],
+    ["https://accounts.google.com/", true, true],
+    ["https://shop.example.com/checkout", true, true],
+    ["https://example.com/login?next=/", true, true],
+    ["http://127.0.0.1:9000/login.html", true, true],
+    ["https://example.com/loginfo", true, false],
+    ["chrome://settings", false, true],
+    ["edge://flags", false, true],
+    ["chrome-extension://abc/page.html", false, true],
+    ["file:///C:/secrets.txt", false, true],
+    ["javascript:alert(1)", false, true],
+    ["data:text/html,hi", false, true],
+    ["not a url", false, true]
+  ]
+}

@@ -1,0 +1,12 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Shadow DOM</title></head>
+<body><h1>Shadow</h1><p id="out">nothing yet</p><my-widget></my-widget>
+<script>
+customElements.define('my-widget', class extends HTMLElement {
+  constructor() {
+    super();
+    const r = this.attachShadow({ mode: 'open' });
+    r.innerHTML = '<label>Nickname <input id="nick"></label><button id="go">Save nickname</button>';
+    r.getElementById('go').addEventListener('click', () => { document.getElementById('out').textContent = 'saved:' + r.getElementById('nick').value; });
+  }
+});
+</script></body></html>

@@ -1,0 +1,18 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Rerender</title></head>
+<body><h1>Rerender</h1><p id="clicks">0</p><p id="other">0</p>
+<div id="app"></div><div id="cover" style="display:none;position:fixed;inset:0;background:#0006;z-index:10"></div>
+<button id="rerender">Re-render the page</button><button id="rename">Rename the button</button><button id="cover-on">Show overlay</button>
+<script>
+function draw(label) {
+  const app = document.getElementById('app');
+  app.replaceChildren();                                     // frameworks throw the old node away and build a new one
+  const b = document.createElement('button');
+  b.textContent = label;
+  b.addEventListener('click', () => { document.getElementById(label === 'Buy now' ? 'clicks' : 'other').textContent = String(+document.getElementById(label === 'Buy now' ? 'clicks' : 'other').textContent + 1); });
+  app.append(b);
+}
+draw('Buy now');
+document.getElementById('rerender').addEventListener('click', () => draw('Buy now'));
+document.getElementById('rename').addEventListener('click', () => draw('Delete account'));
+document.getElementById('cover-on').addEventListener('click', () => { document.getElementById('cover').style.display = 'block'; });
+</script></body></html>
