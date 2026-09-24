@@ -25,3 +25,4 @@ ruamel.yaml>=0.18
 jsonschema>=4.20
 zeroconf>=0.132
 tzdata>=2024.1
+pywinpty>=2.0; sys_platform == "win32"  # ConPTY for interactive container/VM terminals (bot/terminal_broker.py)

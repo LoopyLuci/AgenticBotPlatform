@@ -224,7 +224,7 @@
         b.innerHTML = `<div class="infra-row">${btn('ct-new', 'Deploy a container', '', 'primary')}${btn('ct-tab-reload', 'Refresh')}</div>` + table(['Name', 'Image', 'State', 'Ports', ''], rows.map(c => {
           const n = esc(c.Names), run = c.State === 'running';
           return [n, esc(c.Image), pill(c.Status, run), esc(c.Ports || ''), (run ? btn('ct-c', 'Stop', `data-id="${n}" data-op="stop"`) + btn('ct-c', 'Restart', `data-id="${n}" data-op="restart"`) : btn('ct-c', 'Start', `data-id="${n}" data-op="start"`))
-            + btn('ct-logs', 'Logs', `data-id="${n}"`) + btn('ct-inspect', 'Inspect', `data-id="${n}"`) + btn('ct-stats', 'Stats', `data-id="${n}"`) + btn('ct-exec', 'Run command', `data-id="${n}"`) + btn('ct-c', 'Remove', `data-id="${n}" data-op="remove"`)];
+            + (run ? btn('ct-shell', 'Shell', `data-id="${n}"`, 'primary') : '') + btn('ct-logs', 'Logs', `data-id="${n}"`) + btn('ct-inspect', 'Inspect', `data-id="${n}"`) + btn('ct-stats', 'Stats', `data-id="${n}"`) + btn('ct-exec', 'Run command', `data-id="${n}"`) + btn('ct-c', 'Remove', `data-id="${n}" data-op="remove"`)];
         }));
       } else if (t === 'images') {
         const rows = await api('/api/docker/images');
@@ -265,7 +265,8 @@
     else if (act === 'ct-c') {
       if (el.dataset.op === 'remove' && !sure(`Remove container ${el.dataset.id}? Its writable layer is deleted.`)) return;
       await call(`containers/${el.dataset.id}/action`, 'POST', { action: el.dataset.op }, 'Done'); ctTab();
-    } else if (act === 'ct-logs') { const r = await call(`containers/${el.dataset.id}/logs?tail=300`, 'GET'); if (r) out(r); }
+    } else if (act === 'ct-shell') openTerm('container', el.dataset.id, 'Shell in ' + el.dataset.id);
+    else if (act === 'ct-logs') { const r = await call(`containers/${el.dataset.id}/logs?tail=300`, 'GET'); if (r) out(r); }
     else if (act === 'ct-inspect') { const r = await call(`containers/${el.dataset.id}`, 'GET'); if (r) out(r); }
     else if (act === 'ct-stats') { const r = await call(`containers/${el.dataset.id}/stats`, 'GET'); if (r) out(r); }
     else if (act === 'ct-exec') {
@@ -308,12 +309,12 @@
       <div class="card"><h3>QEMU machines</h3>${q.available ? table(['Name', 'CPUs', 'Memory', 'State', ''], qrows.map(v => {
         const n = esc(v.name), on = v.running;
         return [n, esc(v.cpus), esc(v.memory), pill(v.state, on), (on ? btn('vm-q', 'Shut down', `data-name="${n}" data-op="stop"`) + btn('vm-q', 'Pause', `data-name="${n}" data-op="pause"`) + btn('vm-q', 'Resume', `data-name="${n}" data-op="resume"`) + btn('vm-q', 'Reset', `data-name="${n}" data-op="reset"`) + btn('vm-q', 'Force off', `data-name="${n}" data-op="force"`) : btn('vm-q', 'Start', `data-name="${n}" data-op="start"`, 'primary') + btn('vm-del', 'Delete', `data-name="${n}"`))
-            + btn('vm-snap', 'Snapshots', `data-name="${n}"`) + btn('vm-detail', 'Details', `data-name="${n}"`)];
+            + (on ? btn('vm-console', 'Console', `data-name="${n}"`, 'primary') + btn('vm-monitor', 'Monitor', `data-name="${n}"`) : '') + btn('vm-snap', 'Snapshots', `data-name="${n}"`) + btn('vm-detail', 'Details', `data-name="${n}"`)];
       })) : '<p class="cardnote">Install QEMU (for example <code>scoop install qemu</code> on Windows) to run virtual machines.</p>'}
       ${q.available ? `<div class="infra-row">${btn('vm-new', 'Create a machine', '', 'primary')}${btn('vm-disk', 'Disk images…')}${btn('vm-refresh', 'Refresh')}</div>` : ''}<div id="vm-form"></div></div>
       ${Array.isArray(VM.vms.hyperv) ? `<div class="card"><h3>Hyper-V machines</h3>${table(['Name', 'State', 'CPUs', 'Generation', ''], VM.vms.hyperv.map(v => [esc(v.Name), pill(HV_STATE[v.State] || v.State, v.State === 2), esc(v.ProcessorCount), esc(v.Generation),
         ['start', 'stop', 'force-stop', 'pause', 'resume', 'checkpoint'].map(a => btn('vm-hv', a, `data-name="${esc(v.Name)}" data-op="${a}"`)).join('')]))}</div>` : (B.hyperv.available && VM.vms.hyperv ? `<div class="infra-warn">Hyper-V: ${esc(VM.vms.hyperv.error || '')}</div>` : '')}
-      ${Array.isArray(VM.vms.libvirt) ? `<div class="card"><h3>libvirt machines</h3>${table(['Name', 'State', ''], VM.vms.libvirt.map(v => [esc(v.name), pill(v.state, v.running), ['start', 'stop', 'force-stop', 'pause', 'resume', 'autostart'].map(a => btn('vm-lv', a, `data-name="${esc(v.name)}" data-op="${a}"`)).join('')]))}</div>` : ''}
+      ${Array.isArray(VM.vms.libvirt) ? `<div class="card"><h3>libvirt machines</h3>${table(['Name', 'State', ''], VM.vms.libvirt.map(v => [esc(v.name), pill(v.state, v.running), ['start', 'stop', 'force-stop', 'pause', 'resume', 'autostart'].map(a => btn('vm-lv', a, `data-name="${esc(v.name)}" data-op="${a}"`)).join('') + (v.running ? btn('vm-lv-console', 'Console', `data-name="${esc(v.name)}"`, 'primary') : '')]))}</div>` : ''}
       <div id="vm-out"></div>`;
   }
   const HV_STATE = { 2: 'Running', 3: 'Off', 6: 'Saved', 9: 'Paused' };
@@ -328,6 +329,8 @@
       else await call(`qemu/${name}/${op}`, 'POST', {}, 'Done');
       vmLoad();
     } else if (act === 'vm-del') { if (sure(`Delete the definition of ${name}? Disk images are kept.`)) { await call('qemu/' + name, 'DELETE', null, 'Deleted'); vmLoad(); } }
+    else if (act === 'vm-console') openTerm('vm-serial', name, 'Serial console: ' + name);
+    else if (act === 'vm-monitor') openTerm('vm-monitor', name, 'QEMU monitor: ' + name);
     else if (act === 'vm-detail') { const r = await call('qemu/' + name, 'GET'); if (r) out(r); }
     else if (act === 'vm-snap') {
       const r = await call(`qemu/${name}/snapshot`, 'POST', { action: 'list' }); if (r) out(r);
@@ -354,7 +357,8 @@
     } else if (act === 'vm-hv') {
       if (['force-stop', 'delete'].includes(el.dataset.op) && !sure('Are you sure?')) return;
       await call(`hyperv/${name}/${el.dataset.op}`, 'POST', {}, 'Done'); vmLoad();
-    } else if (act === 'vm-lv') { await call(`libvirt/${name}/${el.dataset.op}`, 'POST', {}, 'Done'); vmLoad(); }
+    } else if (act === 'vm-lv-console') openTerm('libvirt', name, 'libvirt console: ' + name);
+    else if (act === 'vm-lv') { await call(`libvirt/${name}/${el.dataset.op}`, 'POST', {}, 'Done'); vmLoad(); }
   }
 
   // ================================================================= Automation rules
@@ -386,6 +390,48 @@
       else if (act === 'ir-hist') { $('ir-out').innerHTML = pre((await api(`/api/infra/rules/${id}/history`)).map(h => `${new Date(h.at * 1000).toLocaleString()}  ${h.ok ? 'ok' : 'FAILED'}  ${h.detail}`).join('\n') || 'No runs yet'); }
       else if (act === 'ir-del') { if (sure('Delete this rule?')) { await api('/api/infra/rules/' + id, { method: 'DELETE' }); irLoad(); } }
     } catch (e) { fail(e); }
+  }
+
+
+  // ================================================================= Interactive terminals
+  let xtermReady = null;
+  function loadXterm() {
+    if (xtermReady) return xtermReady;
+    const base = (typeof API_BASE === 'string' ? API_BASE : '') + '/desktop-ui/vendor/xterm/';
+    const add = (tag, attrs) => new Promise((res, rej) => { const el = document.createElement(tag); Object.assign(el, attrs); el.onload = res; el.onerror = () => rej(new Error('could not load ' + (attrs.src || attrs.href))); document.head.appendChild(el); });
+    xtermReady = add('link', { rel: 'stylesheet', href: base + 'xterm.min.css' })
+      .then(() => add('script', { src: base + 'xterm.min.js' }))
+      .then(() => add('script', { src: base + 'addon-fit.min.js' }));
+    return xtermReady;
+  }
+  async function openTerm(kind, target, title, extra) {
+    try { await loadXterm(); } catch (e) { return fail(e); }
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;inset:5% 4%;z-index:400;background:#0b0d12;border:1px solid var(--line,#444);border-radius:8px;display:flex;flex-direction:column;box-shadow:0 12px 40px #000a';
+    wrap.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--line,#333)"><b style="flex:1">${esc(title)}</b><span id="tm-state" class="infra-pill">connecting…</span><button class="btn" id="tm-close" style="padding:3px 10px">Close</button></div><div id="tm-body" style="flex:1;min-height:0;padding:6px"></div>`;
+    document.body.appendChild(wrap);
+    const term = new Terminal({ cursorBlink: true, fontSize: 13, convertEol: false, scrollback: 5000, theme: { background: '#0b0d12' } });
+    const fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(wrap.querySelector('#tm-body'));
+    try { fit.fit(); } catch (_) {}
+    const base = (typeof API_BASE === 'string' && API_BASE ? API_BASE : location.origin).replace(/^http/, 'ws');
+    const q = new URLSearchParams(Object.assign({ kind, target, token: (typeof getToken === 'function' ? getToken() : '') || '', cols: term.cols, rows: term.rows }, extra || {}));
+    const ws = new WebSocket(`${base}/api/terminals/ws?${q}`);
+    const state = wrap.querySelector('#tm-state');
+    const send = (o) => { if (ws.readyState === 1) ws.send(JSON.stringify(o)); };
+    ws.onmessage = (ev) => {
+      const m = JSON.parse(ev.data);
+      if (m.type === 'ready') { state.textContent = 'connected'; term.focus(); }
+      else if (m.type === 'output') term.write(m.data);
+      else if (m.type === 'exit') { state.textContent = 'ended'; term.write('\r\n\x1b[90m[session ended]\x1b[0m\r\n'); }
+      else if (m.type === 'error') { state.textContent = 'error'; term.write('\r\n\x1b[31m' + m.message + '\x1b[0m\r\n'); }
+    };
+    ws.onclose = () => { if (state.textContent === 'connecting…' || state.textContent === 'connected') state.textContent = 'closed'; };
+    term.onData((d) => send({ type: 'input', data: d }));
+    const onResize = () => { try { fit.fit(); send({ type: 'resize', cols: term.cols, rows: term.rows }); } catch (_) {} };
+    const ro = new ResizeObserver(onResize); ro.observe(wrap);
+    wrap.querySelector('#tm-close').onclick = () => { ro.disconnect(); try { ws.close(); } catch (_) {} term.dispose(); wrap.remove(); };
   }
 
   // ================================================================= wiring

@@ -4,11 +4,11 @@ call is audit-logged. Thin wrappers over bot/docker_mgr.py and bot/vm_mgr.py."""
 from __future__ import annotations
 
 import asyncio
-from typing import Callable
+from typing import Callable, Optional
 
-from fastapi import Body, Depends, FastAPI, HTTPException
+from fastapi import Body, Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 
-from bot import db, docker_mgr as dk, vm_mgr as vm
+from bot import db, docker_mgr as dk, terminal_broker as tb, vm_mgr as vm
 
 
 async def _call(fn, *args, audit: str = "", detail: str = "", **kw):
@@ -33,7 +33,7 @@ def _reader(fn):
     return handler
 
 
-def register(app: FastAPI, auth: Callable) -> None:
+def register(app: FastAPI, auth: Callable, ws_token_ok: Callable[[Optional[str]], bool]) -> None:
     dep = [Depends(auth)]
     D, V = "/api/docker", "/api/vms"
 
@@ -325,3 +325,52 @@ def register(app: FastAPI, auth: Callable) -> None:
     @app.delete(f"{A}/{{rule_id}}", dependencies=dep)
     async def rules_delete(rule_id: int):
         return await _call(auto.delete, rule_id, audit="infra_rule_delete", detail=str(rule_id))
+
+    # ---- interactive terminals (container shell, VM serial console / monitor, libvirt console)
+    @app.get("/api/terminals", dependencies=dep)
+    async def term_list():
+        return await _call(tb.list_sessions)
+
+    @app.websocket("/api/terminals/ws")
+    async def term_ws(websocket: WebSocket, kind: str, target: str, token: Optional[str] = None, cols: int = 80,
+                      rows: int = 24, shell: str = "auto", user: Optional[str] = None):
+        # Strict desktop token only (a query param, since browsers can't set WebSocket headers): paired
+        # phones and linked peers must never get a shell inside a container or VM.
+        supplied = websocket.headers.get("x-dashboard-token") or token
+        if not ws_token_ok(supplied):
+            await websocket.close(code=4401)
+            return
+        await websocket.accept()
+        try:
+            session = await asyncio.to_thread(tb.open_session, kind, target, cols=cols, rows=rows, shell=shell, user=user)
+        except (tb.TerminalError, dk.DockerError, vm.VMError, OSError, ImportError) as exc:
+            await websocket.send_json({"type": "error", "message": str(exc)})
+            await websocket.close()
+            return
+        await websocket.send_json({"type": "ready", "id": session.id, "kind": kind, "target": target})
+
+        async def pump():
+            try:
+                while True:
+                    data = await asyncio.to_thread(session.read)
+                    if data is None:
+                        break
+                    if data:
+                        await websocket.send_json({"type": "output", "data": data})
+                await websocket.send_json({"type": "exit"})
+            except Exception:
+                pass
+
+        pump_task = asyncio.create_task(pump())
+        try:
+            while True:
+                msg = await websocket.receive_json()
+                if msg.get("type") == "input" and isinstance(msg.get("data"), str):
+                    await asyncio.to_thread(session.write, msg["data"])
+                elif msg.get("type") == "resize":
+                    await asyncio.to_thread(session.resize, int(msg.get("cols", 80)), int(msg.get("rows", 24)))
+        except (WebSocketDisconnect, RuntimeError):
+            pass
+        finally:
+            await asyncio.to_thread(tb.close_session, session)
+            pump_task.cancel()
