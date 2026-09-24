@@ -438,13 +438,19 @@ class DashboardClient:
     async def env_status(self) -> dict:
         return await self._request("GET", "/api/env")
 
-    async def infra(self, area: str, method: str, path: str, body: Any = None) -> Any:
-        """Any /api/{tailscale,docker,vms,infra/rules}/... route - the CLI's one entry point for them."""
+    async def infra(self, area: str, method: str, path: str, body: Any = None, host: str = "local") -> Any:
+        """Any /api/{tailscale,docker,vms,infra/rules}/... route - the CLI's and TUI's one entry point for them.
+        `host` is a linked server's id (or "local"): the same ?host= routing the GUI uses."""
         prefix = {"tailscale": "/api/tailscale", "docker": "/api/docker", "vm": "/api/vms", "rules": "/api/infra/rules"}[area]
         url = prefix + ("/" + path.strip("/") if path.strip("/") else "")
+        if host and host != "local":
+            url += ("&" if "?" in url else "?") + f"host={host}"
         if method.upper() in ("GET", "DELETE") or body is None:
             return await self._request(method.upper(), url)
         return await self._request(method.upper(), url, json=body)
+
+    async def infra_hosts(self) -> list:
+        return (await self._request("GET", "/api/infra/hosts"))["hosts"]
 
     async def env_set(self, key: str, value: str) -> dict:
         return await self._request("POST", "/api/env/set", json={"key": key, "value": value})

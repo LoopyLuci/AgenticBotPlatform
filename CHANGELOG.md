@@ -9,6 +9,9 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **TUI screens for Tailscale, Containers, VMs and Infra automation** (bot list keys `t`, `d`, `v`, `o`), each with
+  the multi-host picker; Containers' Shell hands your terminal to `docker exec -it`. Also fixed: the read-only
+  Docker/Tailscale routes looked their functions up when the app was built instead of per request.
 - **Multi-host management.** The Tailscale, Containers, Virtual Machines and Infra Automation pages (and their
   terminals) each have a "Manage" picker: choose a linked server and every request goes to that machine instead
   (`?host=<linked server id>` on the API, `abp_cli docker get containers?host=2`). Off by default and opt-in on the

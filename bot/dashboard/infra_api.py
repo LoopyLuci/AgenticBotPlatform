@@ -33,9 +33,9 @@ def _unknown(kind: str, name: str):
     raise HTTPException(status_code=404, detail=f"unknown {kind} '{name}'")
 
 
-def _reader(fn):
+def _reader(module, attr):
     async def handler():
-        return await _call(fn)
+        return await _call(getattr(module, attr))   # looked up per request, so a hot-reloaded module is picked up
     return handler
 
 
@@ -113,11 +113,11 @@ def register(app: FastAPI, auth: Callable, ws_token_ok: Callable[[Optional[str]]
         db.log_audit(actor="dashboard", action="infra_peer_access", detail="enabled" if on else "disabled")
         return {"enabled": on}
 
-    for name, fn in (("info", dk.info), ("df", dk.disk_usage), ("containers", dk.containers), ("images", dk.images),
-                     ("volumes", dk.volumes), ("networks", dk.networks), ("stacks", dk.stacks),
-                     ("registries", dk.registries), ("templates", dk.templates), ("stats", dk.container_stats),
-                     ("events", dk.events)):
-        app.add_api_route(f"{D}/{name}", _reader(fn), methods=["GET"], dependencies=dep)
+    for name, mod, attr in (("info", dk, "info"), ("df", dk, "disk_usage"), ("containers", dk, "containers"), ("images", dk, "images"),
+                     ("volumes", dk, "volumes"), ("networks", dk, "networks"), ("stacks", dk, "stacks"),
+                     ("registries", dk, "registries"), ("templates", dk, "templates"), ("stats", dk, "container_stats"),
+                     ("events", dk, "events")):
+        app.add_api_route(f"{D}/{name}", _reader(mod, attr), methods=["GET"], dependencies=dep)
 
     # ---- containers
     @app.get(f"{D}/containers/{{ident}}", dependencies=dep)

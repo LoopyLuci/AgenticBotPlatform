@@ -1034,6 +1034,20 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/infra/hosts": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/infra/hosts",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/infra/peer-access": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/infra/peer-access",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/infra/rules": {
   "body": false,
   "method": "GET",
@@ -1890,6 +1904,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/terminals": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/terminals",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/turn/credentials": {
   "body": false,
   "method": "GET",
@@ -2575,6 +2596,13 @@ export const operations = {
   "body": false,
   "method": "POST",
   "path": "/api/hotreload/run",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/infra/peer-access": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/infra/peer-access",
   "path_params": [],
   "query_params": []
  },
@@ -6577,6 +6605,27 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "infra_hosts_api_infra_hosts_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/infra/hosts",
+  "path_params": [],
+  "query_params": []
+ },
+ "infra_peer_access_get_api_infra_peer_access_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/infra/peer-access",
+  "path_params": [],
+  "query_params": []
+ },
+ "infra_peer_access_set_api_infra_peer_access_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/infra/peer-access",
+  "path_params": [],
+  "query_params": []
+ },
  "list_approvals_api_approvals_get": {
   "body": false,
   "method": "GET",
@@ -6809,6 +6858,13 @@ export const operations = {
   "body": false,
   "method": "POST",
   "path": "/webhooks/sms",
+  "path_params": [],
+  "query_params": []
+ },
+ "term_list_api_terminals_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/terminals",
   "path_params": [],
   "query_params": []
  },

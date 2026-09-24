@@ -25,6 +25,10 @@ class BotListScreen(Screen):
         ("w", "swarms", "Swarms"),
         ("s", "sessions", "Sessions"),
         ("h", "ssh_toolkit", "SSH Toolkit"),
+        ("t", "tailscale", "Tailscale"),
+        ("d", "containers", "Containers"),
+        ("v", "vms", "VMs"),
+        ("o", "automation", "Infra automation"),
         ("q", "app.quit", "Quit"),
     ]
 
@@ -44,6 +48,10 @@ class BotListScreen(Screen):
             yield Button("Swarms (w)", id="btn-swarms")
             yield Button("Sessions (s)", id="btn-sessions")
             yield Button("SSH Toolkit (h)", id="btn-ssh-toolkit")
+            yield Button("Tailscale (t)", id="btn-tailscale")
+            yield Button("Containers (d)", id="btn-containers")
+            yield Button("VMs (v)", id="btn-vms")
+            yield Button("Infra automation (o)", id="btn-automation")
         yield DataTable(id="bot-table")
         yield Label("", id="bot-list-status")
         yield Footer()
@@ -106,6 +114,10 @@ class BotListScreen(Screen):
             "btn-swarms": self.action_swarms,
             "btn-sessions": self.action_sessions,
             "btn-ssh-toolkit": self.action_ssh_toolkit,
+            "btn-tailscale": self.action_tailscale,
+            "btn-containers": self.action_containers,
+            "btn-vms": self.action_vms,
+            "btn-automation": self.action_automation,
         }
         handler = actions.get(event.button.id)
         if handler:
@@ -158,6 +170,26 @@ class BotListScreen(Screen):
         from bot.tui.screens.ssh_toolkit import SshToolkitScreen
 
         await self.app.push_screen(SshToolkitScreen())
+
+    async def action_tailscale(self) -> None:
+        from bot.tui.screens.infra import TailscaleScreen
+
+        await self.app.push_screen(TailscaleScreen())
+
+    async def action_containers(self) -> None:
+        from bot.tui.screens.infra import ContainersScreen
+
+        await self.app.push_screen(ContainersScreen())
+
+    async def action_vms(self) -> None:
+        from bot.tui.screens.infra import VmsScreen
+
+        await self.app.push_screen(VmsScreen())
+
+    async def action_automation(self) -> None:
+        from bot.tui.screens.infra import RulesScreen
+
+        await self.app.push_screen(RulesScreen())
 
     async def _after_form(self, _result: object = None) -> None:
         await self.refresh_bots()
