@@ -4337,11 +4337,12 @@ def build_app() -> FastAPI:
         name = (payload.get("name") or "").strip()
         pairing_token = payload.get("pairing_token") or ""
         my_base_url = (payload.get("my_base_url") or "").strip() or None
+        setup_ssh = payload.get("setup_ssh", True)
         if not name or not pairing_token:
-            raise HTTPException(status_code=400, detail="payload must be {name, pairing_token, my_base_url?}")
+            raise HTTPException(status_code=400, detail="payload must be {name, pairing_token, my_base_url?, setup_ssh?}")
         my_name = os.environ.get("AGENTICBOTPLATFORM_NAME") or socket.gethostname()
         try:
-            peer = await peers.link_peer(name, pairing_token, my_name, my_base_url)
+            peer = await peers.link_peer(name, pairing_token, my_name, my_base_url, setup_ssh=bool(setup_ssh))
         except peers.PeerError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         db.log_audit(actor="dashboard", action="peer_link", detail=f"linked peer {peer['id']} ({peer['name']!r})")
@@ -4357,7 +4358,10 @@ def build_app() -> FastAPI:
         pairing_token = payload.get("pairing_token") or ""
         my_name = os.environ.get("AGENTICBOTPLATFORM_NAME") or socket.gethostname()
         try:
-            result = peers.accept_handshake(name, api_key, base_url, my_name, pairing_token)
+            result = await peers.accept_handshake(
+                name, api_key, base_url, my_name, pairing_token,
+                ssh_public_key=payload.get("ssh_public_key"), ssh_username=payload.get("ssh_username"),
+            )
         except peers.PeerError as exc:
             raise HTTPException(status_code=401, detail=str(exc))
         db.log_audit(actor="dashboard", action="peer_handshake", detail=f"accepted handshake from {name!r}")

@@ -466,8 +466,10 @@ class DashboardClient:
     async def create_peer_pairing_token(self, base_url: Optional[str] = None) -> dict:
         return await self._request("POST", "/api/peers/pairing-token", json={"base_url": base_url} if base_url else {})
 
-    async def link_peer(self, name: str, pairing_token: str, my_base_url: Optional[str] = None) -> dict:
-        body: dict[str, Any] = {"name": name, "pairing_token": pairing_token}
+    async def link_peer(
+        self, name: str, pairing_token: str, my_base_url: Optional[str] = None, *, setup_ssh: bool = True,
+    ) -> dict:
+        body: dict[str, Any] = {"name": name, "pairing_token": pairing_token, "setup_ssh": setup_ssh}
         if my_base_url:
             body["my_base_url"] = my_base_url
         return await self._request("POST", "/api/peers/link", json=body)

@@ -67,14 +67,36 @@ Linking is a two-step, single-admin-action-per-side handshake:
 Both sides end up with a working, independently-revocable credential for
 the other, from one action per side — no manual two-way credential
 copy-paste, and no long-lived secret ever crosses the network.
+
+**SSH auto-pairing** (see _setup_own_ssh/_finish_ssh_setup below) rides
+along on the exact same handshake, for the same reason the credential
+exchange does: it's the one channel both sides have already authenticated
+each other over, so no separate manual key-copying step (generate a key,
+scp the .pub file, paste it into authorized_keys, fix Windows' ACL
+requirement by hand — the exact multi-step dance this replaces) is needed.
+Each side generates its own ed25519 keypair (SSH Toolkit's own
+New-SshLinkKeypair — never a private key crossing the network, only each
+side's public key), includes its public key and OS username in its half of
+the handshake, and on receiving the other's: trusts their public key
+locally (Install-SshLinkTrustedKey) and registers a connection back to
+them (Add-SshLinkConnection, using the OS username they reported and the
+address already exchanged for the API link itself). This is deliberately
+best-effort and never fails the underlying API pairing: SSH Toolkit is an
+optional subsystem (see bot/ssh_toolkit.py's own "fails closed, cleanly"
+philosophy) — a peer link with no SSH connectivity set up is still a
+completely valid, working peer link, just without a ready-made SSH
+connection alongside it. Callers that want the API pairing without SSH
+side effects (a same-host test, a bare pairing) pass setup_ssh=False.
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
+import getpass
 import logging
 import os
+import re
 import socket
 from typing import Optional
 from urllib.parse import urlparse
@@ -197,15 +219,78 @@ def generate_pairing_token(base_url: Optional[str] = None) -> dict:
     return {"pairing_token": _encode_pairing_token(base_url, secret), "expires_at": expires_at, "base_url": base_url}
 
 
-async def link_peer(name: str, pairing_token: str, my_name: str, my_base_url: Optional[str] = None) -> dict:
+def _safe_ssh_name(name: str) -> str:
+    """A free-text peer name -> a filesystem/`Host` block-safe SSH Toolkit
+    connection/keypair name."""
+    slug = re.sub(r"[^A-Za-z0-9_-]+", "-", (name or "").strip()).strip("-").lower()
+    return f"abp-peer-{slug}" if slug else "abp-peer-unnamed"
+
+
+async def _setup_own_ssh(peer_name: str) -> dict:
+    """Generates (or reuses) our own keypair for this peer relationship and
+    returns what we send in our half of the handshake — never a failure
+    the caller has to handle specially: SSH Toolkit being unavailable
+    (no PowerShell, submodule not checked out) just means an empty result,
+    same as it does everywhere else in bot/ssh_toolkit.py."""
+    from bot import ssh_toolkit
+
+    connection_name = _safe_ssh_name(peer_name)
+    try:
+        keypair = await ssh_toolkit.generate_keypair(connection_name)
+    except ssh_toolkit.SshToolkitError as exc:
+        logger.info("peer SSH auto-setup skipped (no SSH Toolkit): %s", exc)
+        return {"connection_name": connection_name, "public_key": None, "identity_file": None}
+    return {
+        "connection_name": connection_name,
+        "public_key": keypair["public_key"],
+        "identity_file": keypair["identity_file"],
+    }
+
+
+async def _finish_ssh_setup(
+    connection_name: str, identity_file: Optional[str], host: Optional[str],
+    remote_public_key: Optional[str], remote_username: Optional[str],
+) -> dict:
+    """Trusts the other side's public key (so they can reach us) and
+    registers a connection back to them (so we can reach them) — the two
+    halves that only make sense once both sides of the handshake are known.
+    Every step is independently best-effort: a partial result (e.g. we
+    trust their key but don't know their username yet) is still reported,
+    never silently discarded."""
+    from bot import ssh_toolkit
+
+    status: dict = {"trusted_remote_key": False, "connection_registered": False, "connection_name": connection_name}
+    if remote_public_key:
+        try:
+            await ssh_toolkit.install_trusted_key(remote_public_key)
+            status["trusted_remote_key"] = True
+        except ssh_toolkit.SshToolkitError as exc:
+            status["trust_error"] = str(exc)
+    if identity_file and host and remote_username:
+        try:
+            await ssh_toolkit.add_connection(
+                connection_name, host, user=remote_username, identity_file=identity_file, force=True,
+            )
+            status["connection_registered"] = True
+        except ssh_toolkit.SshToolkitError as exc:
+            status["connection_error"] = str(exc)
+    return status
+
+
+async def link_peer(
+    name: str, pairing_token: str, my_name: str, my_base_url: Optional[str] = None, *, setup_ssh: bool = True,
+) -> dict:
     """Runs on the initiating side. See module docstring for the full
-    handshake. Raises PeerError on any failure — the fresh credential
-    minted for the (possibly unreachable) other side is revoked again so a
-    failed link attempt never leaves a dangling, never-used api_keys row."""
+    handshake, including the SSH auto-pairing riding along on it. Raises
+    PeerError on any failure — the fresh credential minted for the
+    (possibly unreachable) other side is revoked again so a failed link
+    attempt never leaves a dangling, never-used api_keys row."""
     base_url, remote_pairing_token = _decode_pairing_token(pairing_token)
     base_url = normalize_base_url(base_url)
     if my_base_url:
         my_base_url = normalize_base_url(my_base_url)
+
+    own_ssh = await _setup_own_ssh(name) if setup_ssh else {"connection_name": None, "public_key": None, "identity_file": None}
 
     inbound_key_id, inbound_plaintext = db.create_api_key(f"peer: {name}", kind="peer_server")
     try:
@@ -216,6 +301,7 @@ async def link_peer(name: str, pairing_token: str, my_name: str, my_base_url: Op
                 json={
                     "name": my_name, "base_url": my_base_url, "api_key": inbound_plaintext,
                     "pairing_token": remote_pairing_token,
+                    "ssh_public_key": own_ssh["public_key"], "ssh_username": getpass.getuser() if setup_ssh else None,
                 },
             )
         if resp.status_code == 401:
@@ -243,17 +329,29 @@ async def link_peer(name: str, pairing_token: str, my_name: str, my_base_url: Op
 
     peer_id = db.create_peer_server(remote_name, base_url, outbound_key, inbound_key_id)
     db.mark_peer_server_ok(peer_id)
-    return dict(db.get_peer_server(peer_id))
+    result = dict(db.get_peer_server(peer_id))
+
+    if setup_ssh:
+        result["ssh_setup"] = await _finish_ssh_setup(
+            own_ssh["connection_name"], own_ssh["identity_file"], urlparse(base_url).hostname,
+            data.get("ssh_public_key"), data.get("ssh_username"),
+        )
+    return result
 
 
-def accept_handshake(name: str, api_key: str, base_url: Optional[str], my_name: str, pairing_token: str) -> dict:
+async def accept_handshake(
+    name: str, api_key: str, base_url: Optional[str], my_name: str, pairing_token: str,
+    *, ssh_public_key: Optional[str] = None, ssh_username: Optional[str] = None,
+) -> dict:
     """Runs on the receiving side, inside the /api/peers/handshake route —
     which deliberately does NOT require DASHBOARD_TOKEN. Auth here is the
     pairing_token instead: it's checked and atomically consumed first,
     before anything else in the payload is trusted, so a wrong/expired/
     reused token rejects the whole request regardless of what else was
     sent. Mints our own credential for the caller to store and records
-    them as a peer using the credential they sent us."""
+    them as a peer using the credential they sent us — and, the same
+    best-effort way link_peer's own side does it, trusts the initiator's
+    SSH public key and registers a connection back to them."""
     if not db.consume_server_pairing_token(pairing_token):
         raise PeerError("invalid, expired, or already-used pairing token")
     name = (name or "unnamed server").strip() or "unnamed server"
@@ -263,7 +361,18 @@ def accept_handshake(name: str, api_key: str, base_url: Optional[str], my_name: 
     inbound_key_id, inbound_plaintext = db.create_api_key(f"peer: {name}", kind="peer_server")
     peer_id = db.create_peer_server(name, normalized_base_url, api_key, inbound_key_id)
     db.mark_peer_server_ok(peer_id)
-    return {"api_key": inbound_plaintext, "name": my_name}
+
+    own_ssh = await _setup_own_ssh(name)
+    if own_ssh["public_key"]:
+        await _finish_ssh_setup(
+            own_ssh["connection_name"], own_ssh["identity_file"],
+            urlparse(normalized_base_url).hostname if normalized_base_url else None,
+            ssh_public_key, ssh_username,
+        )
+    return {
+        "api_key": inbound_plaintext, "name": my_name,
+        "ssh_public_key": own_ssh["public_key"], "ssh_username": getpass.getuser(),
+    }
 
 
 def unlink_peer(peer_id: int) -> Optional[dict]:

@@ -9,6 +9,16 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **Automatic SSH pairing between linked peers.** Linking two AgenticBotPlatform servers
+  (`abp_cli peers link` / the dashboard's "Link a server" card) now also sets up a working SSH
+  connection between them by default, with no manual key generation or copying: each side
+  generates its own ed25519 keypair, exchanges public keys and OS usernames as part of the
+  existing pairing-token handshake, trusts the other's key locally, and registers a real SSH
+  Toolkit connection back to it. Built on two new primitives added to SSH Toolkit itself
+  (`New-SshLinkKeypair`, `Install-SshLinkTrustedKey` — vendored submodule bumped to v1.1.0) so
+  the underlying key-management logic lives in one place, not duplicated here. Best-effort and
+  opt-out (`--no-ssh-setup` / an unchecked GUI box): SSH Toolkit being unavailable never fails
+  the peer link itself.
 - **SSH session monitor + recorder.** The SSH Toolkit dashboard page gained a "Session monitor" —
   run a command over a registered connection and watch every action happen live: each output line,
   a CPU/memory read from the remote machine, and its exit code, streamed the instant they occur over
