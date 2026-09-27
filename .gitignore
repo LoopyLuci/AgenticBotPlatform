@@ -60,6 +60,7 @@ PLAN.md
 browser-extension/dist/
 browser-extension/dist-firefox/
 browser-extension/node_modules/
+browser-extension/release/
 ProjectData.md
 
 # native-messaging host registration (machine-specific; scripts/install_native_host.py writes these)

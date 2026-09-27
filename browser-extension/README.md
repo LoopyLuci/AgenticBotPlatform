@@ -11,19 +11,30 @@ Links your browser to the ABP desktop app. Design and roadmap: [`docs/browser-ex
 | P2 model gateway + Grok/Gemini/ChatGPT/Claude/Perplexity web sessions | done, tested against a fake extension and jsdom; **not yet tried against the real chat sites** |
 | P3 in-browser models (WebGPU/WASM, WebLLM + transformers.js) | done, tested with unit + gateway tests; **not yet tried on real WebGPU hardware or a real model download** |
 | P4 uploads, downloads, Firefox build, native-host installer | done (narrower than first planned - no debugger-based driver, no recording/replay yet); native-host install script not run for real (it changes browser/registry config) |
-| P5 store release | designed, not built |
+| P5 store packaging, privacy, SBOM, security review | done, short of what only a real store account can do (submission, code signing, review) |
 
 ## Build, test, install (development)
 
 ```bash
 cd browser-extension
 npm ci
-npm run check         # typecheck + unit tests + build   (dist/ is the unpacked extension)
+npm run check         # typecheck + unit tests + build for Chrome and Firefox (dist/, dist-firefox/)
 python -m pytest ../tests/test_browser_extension_e2e.py   # real Edge/Chrome + the real ABP bridge (needs: pip install playwright)
 ```
 
 Load it: `chrome://extensions` (or `edge://extensions`) -> Developer mode -> **Load unpacked** -> pick `dist/`. The development build
-has a fixed extension id (`manifest/dev-key.json`) so pairing and any allow-lists never change between builds.
+has a fixed extension id (`manifest/dev-key.json`) so pairing and any allow-lists never change between builds. For Firefox:
+`about:debugging#/runtime/this-firefox` -> **Load Temporary Add-on** -> pick `dist-firefox/manifest.json`.
+
+## Releasing
+
+```bash
+npm run package        # writes browser-extension/release/abp-bridge-<version>-{chromium,firefox}.zip (no dev key)
+npm run sbom            # regenerates sbom.json
+```
+
+Then see `PRIVACY.md`, `store/listing.md` and `docs/browser-extension/SECURITY_REVIEW.md` before submitting to a
+store - none of that submission is (or should be) automated.
 
 Then in ABP open **Browser**: press *Ask ABP to approve this browser* in the extension's options page and **Allow** it in ABP, or
 enter the 6-digit code ABP shows. Once connected, agents get the `ext_browser` tools.
