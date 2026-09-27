@@ -13,6 +13,7 @@ __pycache__
 *.pyc
 # Per-user files that hold secrets — never part of an image, whatever COPY says
 config/providers.yaml
+config/providers.yaml.*
 config/file_share.yaml
 .env.*
 *.pem

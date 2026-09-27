@@ -456,12 +456,14 @@ def test_guardian_gives_up_on_a_hopeless_crash_loop(tmp_path, monkeypatch):
 
 def test_watchdog_names_the_code_that_blocks_the_loop(caplog):
     async def main():
+        # Generous margins: under a loaded parallel run the watchdog thread itself gets scheduled late, and the stack
+        # it captures must still be inside the blocking call.
         w = Watchdog(lag_warn_s=0.3, hang_after_s=60)
         w.start(asyncio.get_running_loop())
         await asyncio.sleep(1.2)
 
         def this_blocks_the_loop():
-            time.sleep(1.5)
+            time.sleep(4.0)
 
         this_blocks_the_loop()
         await asyncio.sleep(1.0)

@@ -657,6 +657,7 @@ CREATE TABLE IF NOT EXISTS apk_pushes (
 
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_telemetry_component ON telemetry_events(component, ts);
 CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(platform, chat_id, id);
 CREATE INDEX IF NOT EXISTS idx_bot_instances_platform ON bot_instances(platform);
@@ -1189,7 +1190,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
 # than this build knows is refused rather than written to, since an older
 # build can't know what the newer columns and tables mean.
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class SchemaTooNewError(RuntimeError):
@@ -1199,8 +1200,16 @@ class SchemaTooNewError(RuntimeError):
 # Version 1 is the baseline: _migrate() brings any pre-versioning database
 # (user_version 0) up to the shape every build since has expected. It is
 # idempotent and runs on every start, as it always did.
+def _migration_2(conn: sqlite3.Connection) -> None:
+    """Status + time filters (the dashboard overview's "completed today",
+    "success rate over 7 days", average duration) could only use the status
+    index and walked every job with that status."""
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at)")
+
+
 MIGRATIONS: list[tuple[int, Callable[[sqlite3.Connection], None]]] = [
     (1, _migrate),
+    (2, _migration_2),
 ]
 
 

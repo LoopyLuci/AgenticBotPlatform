@@ -11,6 +11,19 @@ from typing import Any, Optional
 from bot import db as _db
 
 
+# Time filters are ranges on the raw ISO column, never date(created_at)=... (a
+# function on the column defeats every index and scanned the whole jobs table on
+# each 5-second dashboard poll). Bounds use the stored format exactly
+# (UTC, 'T' separator), which SQLite's datetime('now', ...) did not.
+def _since(**delta: float) -> str:
+    return (datetime.now(timezone.utc) - timedelta(**delta)).isoformat(timespec="seconds")
+
+
+def _today() -> tuple[str, str]:
+    d = datetime.now(timezone.utc).date()
+    return d.isoformat(), (d + timedelta(days=1)).isoformat()
+
+
 def prune_old_data(days: int) -> dict[str, int]:
     """Deletes rows older than `days` from the highest-volume,
     lowest-long-term-value tables — see config/backends.yaml's `retention`
@@ -49,25 +62,25 @@ def get_overview() -> dict[str, Any]:
     conn = _db.get_conn()
     running = conn.execute("SELECT COUNT(*) c FROM jobs WHERE status='running'").fetchone()["c"]
     queued = conn.execute("SELECT COUNT(*) c FROM jobs WHERE status='queued'").fetchone()["c"]
+    today = _today()
     completed_today = conn.execute(
-        "SELECT COUNT(*) c FROM jobs WHERE status='success' AND date(created_at)=date('now')"
+        "SELECT COUNT(*) c FROM jobs WHERE status='success' AND created_at >= ? AND created_at < ?", today
     ).fetchone()["c"]
     failed_today = conn.execute(
-        "SELECT COUNT(*) c FROM jobs WHERE status='failed' AND date(created_at)=date('now')"
+        "SELECT COUNT(*) c FROM jobs WHERE status='failed' AND created_at >= ? AND created_at < ?", today
     ).fetchone()["c"]
     week = conn.execute(
-        "SELECT status, COUNT(*) c FROM jobs WHERE created_at >= datetime('now','-7 days') "
-        "AND status IN ('success','failed') GROUP BY status"
+        "SELECT status, COUNT(*) c FROM jobs WHERE status IN ('success','failed') AND created_at >= ? GROUP BY status",
+        (_since(days=7),),
     ).fetchall()
     succ = sum(r["c"] for r in week if r["status"] == "success")
     fail = sum(r["c"] for r in week if r["status"] == "failed")
     success_rate = round(100 * succ / (succ + fail), 1) if (succ + fail) else 100.0
     avg_dur = conn.execute(
-        "SELECT AVG(duration_ms) a FROM jobs WHERE status='success' "
-        "AND created_at >= datetime('now','-1 day')"
+        "SELECT AVG(duration_ms) a FROM jobs WHERE status='success' AND created_at >= ?", (_since(days=1),)
     ).fetchone()["a"]
     tokens_today = conn.execute(
-        "SELECT COALESCE(SUM(tokens),0) t FROM jobs WHERE date(created_at)=date('now')"
+        "SELECT COALESCE(SUM(tokens),0) t FROM jobs WHERE created_at >= ? AND created_at < ?", today
     ).fetchone()["t"]
     # Which bots have an agent working right now: one entry per bot instance with at least one running job.
     # Jobs with no instance (the pre-multi-instance / global path) count together as one "default" bot.
@@ -99,8 +112,8 @@ def get_usage_summary(instance_id: int) -> dict[str, Any]:
     global, this is the one bot's own numbers."""
     conn = _db.get_conn()
     row_today = conn.execute(
-        "SELECT COALESCE(SUM(tokens),0) tok, COUNT(*) n FROM jobs WHERE instance_id=? AND date(created_at)=date('now')",
-        (instance_id,),
+        "SELECT COALESCE(SUM(tokens),0) tok, COUNT(*) n FROM jobs WHERE instance_id=? AND created_at >= ? AND created_at < ?",
+        (instance_id, *_today()),
     ).fetchone()
     row_total = conn.execute(
         "SELECT COALESCE(SUM(tokens),0) tok, COUNT(*) n FROM jobs WHERE instance_id=?", (instance_id,)
@@ -118,8 +131,8 @@ def get_insights(instance_id: int, days: int = 7) -> dict[str, Any]:
     conn = _db.get_conn()
     rows = conn.execute(
         "SELECT date(created_at) d, status, COUNT(*) n, COALESCE(SUM(tokens),0) tok "
-        "FROM jobs WHERE instance_id=? AND created_at >= datetime('now', ?) GROUP BY d, status ORDER BY d",
-        (instance_id, f"-{days} days"),
+        "FROM jobs WHERE instance_id=? AND created_at >= ? GROUP BY d, status ORDER BY d",
+        (instance_id, _since(days=days)),
     ).fetchall()
     by_day: dict[str, dict[str, Any]] = {}
     for r in rows:
@@ -132,8 +145,8 @@ def get_insights(instance_id: int, days: int = 7) -> dict[str, Any]:
         else:
             entry["other"] += r["n"]
     messages_row = conn.execute(
-        "SELECT COUNT(*) n FROM messages WHERE instance_id=? AND direction='in' AND ts >= datetime('now', ?)",
-        (instance_id, f"-{days} days"),
+        "SELECT COUNT(*) n FROM messages WHERE instance_id=? AND direction='in' AND ts >= ?",
+        (instance_id, _since(days=days)),
     ).fetchone()
     return {"days": days, "by_day": by_day, "messages_in": messages_row["n"]}
 
@@ -142,8 +155,7 @@ def get_jobs_timeseries_24h() -> list[dict[str, Any]]:
     conn = _db.get_conn()
     rows = conn.execute(
         "SELECT strftime('%Y-%m-%dT%H:00', created_at) hour, status, COUNT(*) c "
-        "FROM jobs WHERE created_at >= datetime('now','-24 hours') "
-        "GROUP BY hour, status ORDER BY hour"
+        "FROM jobs WHERE created_at >= ? GROUP BY hour, status ORDER BY hour", (_since(hours=24),)
     ).fetchall()
     buckets: dict[str, dict[str, int]] = {}
     for r in rows:
@@ -158,8 +170,7 @@ def get_jobs_timeseries_24h() -> list[dict[str, Any]]:
 def get_jobs_by_backend_today() -> dict[str, int]:
     conn = _db.get_conn()
     rows = conn.execute(
-        "SELECT backend, COUNT(*) c FROM jobs WHERE date(created_at)=date('now') "
-        "GROUP BY backend"
+        "SELECT backend, COUNT(*) c FROM jobs WHERE created_at >= ? AND created_at < ? GROUP BY backend", _today()
     ).fetchall()
     return {r["backend"]: r["c"] for r in rows}
 
@@ -172,8 +183,8 @@ def get_latency_by_backend() -> dict[str, dict[str, float]]:
             r["value"]
             for r in conn.execute(
                 "SELECT value FROM telemetry_events WHERE component=? AND metric='latency_ms' "
-                "AND ts >= datetime('now','-6 hours') ORDER BY value",
-                (backend,),
+                "AND ts >= ? ORDER BY value",
+                (backend, _since(hours=6)),
             ).fetchall()
         ]
         if rows:

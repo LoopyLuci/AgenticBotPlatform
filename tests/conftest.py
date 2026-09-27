@@ -64,6 +64,22 @@ def _isolated_cicd_event_store(monkeypatch, tmp_path):
     monkeypatch.setattr(provider_store, "STORE_PATH", tmp_path / "provider-store.db")
     monkeypatch.setattr(provider_store, "_history_summaries", lambda: [])
     monkeypatch.setenv("ABP_VAULT_DIR", str(tmp_path / "vault"))
+    # Config files: a test may never write the checkout's real config/providers.yaml (it holds the developer's
+    # provider API keys; fake test providers were found leaked into it) or config/backends.yaml. Each test gets
+    # private copies; what it reads is unchanged.
+    import shutil as _shutil
+
+    from bot import providers as _providers
+    from bot.config import config as _config
+
+    prov = tmp_path / "isolated-providers.yaml"
+    monkeypatch.setattr(_providers, "PROVIDERS_PATH", prov)
+    monkeypatch.setattr(_providers._manager, "path", prov)
+    monkeypatch.setattr(_providers._manager, "_data", {})
+    backends = tmp_path / "isolated-backends.yaml"
+    if Path(_config.path).is_file():
+        _shutil.copy2(_config.path, backends)
+    monkeypatch.setattr(_config, "path", backends)
     # The Sentinel's journal, backups, scan results and boot records: never the real data folder.
     from bot.sentinel import backup as s_backup, bootguard as s_boot, bug_hunter as s_bugs, cve as s_cve
     from bot.sentinel import journal as s_journal, security as s_security
