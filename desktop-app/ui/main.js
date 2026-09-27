@@ -1287,17 +1287,48 @@ document.querySelectorAll('#log-filter button').forEach(btn => btn.onclick = () 
   refreshLogs();
 });
 
+
+// ---- section-aware polling -------------------------------------------------
+// The page is one long scroll of sections, and most pollers only feed one of
+// them. A poller registered with section ids runs only while one of those
+// sections is on (or near) screen, and refreshes the moment it scrolls into
+// view, so the data is never stale when looked at. Pollers without sections
+// (the top-bar status pills) always run. Without IntersectionObserver
+// everything polls, as before.
+const _onScreen = new Set();
+const _sectionPollers = new Map();
+const _sectionObserver = ('IntersectionObserver' in window) ? new IntersectionObserver((entries) => {
+  entries.forEach((e) => {
+    const id = e.target.id;
+    if (e.isIntersecting) {
+      if (!_onScreen.has(id)) {
+        _onScreen.add(id);
+        (_sectionPollers.get(id) || []).forEach((f) => { Promise.resolve().then(f).catch(() => {}); });
+      }
+    } else {
+      _onScreen.delete(id);
+    }
+  });
+}, { rootMargin: '300px 0px' }) : null;
+function _observeSections() {
+  if (_sectionObserver) document.querySelectorAll('section[id]').forEach((s) => _sectionObserver.observe(s));
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _observeSections); else _observeSections();
+
 // ------------------------------------------------------------------- boot
 // Skips a poll tick while the window isn't visible (backgrounded or
 // minimized) instead of hitting the server every few seconds for no one
 // to see — the interval itself keeps running (so it fires immediately on
 // return, no separate "resume" wiring needed), it just no-ops while hidden.
-function pollWhenVisible(fn, ms) {
+function pollWhenVisible(fn, ms, ...sections) {
   // Single-flight: a tick still running (slow server) is not stacked on; and
   // while the server is unreachable, ticks wait out the backoff (see _net).
+  // With `sections`, it only ticks while one of them is on screen (see above).
+  sections.forEach((s) => { if (!_sectionPollers.has(s)) _sectionPollers.set(s, []); _sectionPollers.get(s).push(fn); });
   let running = false;
   return setInterval(async () => {
     if (document.hidden || running || Date.now() < _net.until) return;
+    if (sections.length && _sectionObserver && !sections.some((s) => _onScreen.has(s))) return;
     running = true;
     try { await fn(); } catch (_e) { /* each refresh reports its own errors */ } finally { running = false; }
   }, ms);
@@ -1310,56 +1341,65 @@ async function refreshAll() {
 
 function startDashboardPolling() {
   refreshAll();
-  pollWhenVisible(refreshAll, 5000);
+  pollWhenVisible(refreshOverview, 5000);
+  pollWhenVisible(refreshJobsTable, 5000, 'jobs');
+  pollWhenVisible(refreshJobsCharts, 5000, 'jobs', 'overview');
+  pollWhenVisible(refreshTelemetry, 5000);
+  pollWhenVisible(refreshDatabase, 5000, 'database');
+  pollWhenVisible(refreshConfig, 5000);
+  pollWhenVisible(refreshMcp, 5000, 'control');
+  pollWhenVisible(refreshAllowedUsers, 5000, 'control');
+  pollWhenVisible(refreshLogs, 5000, 'logs');
+  pollWhenVisible(refreshEnv, 5000, 'control');
   refreshEnvEditor();
   refreshEnvBackups();
   startChatPolling();
   startSessionsPolling();
   refreshPlatforms();
-  pollWhenVisible(refreshPlatforms, 15000);
+  pollWhenVisible(refreshPlatforms, 15000, 'chat', 'platforms');
   refreshPersonas();
   refreshPlatformGuides();
   refreshBots();
   refreshBotsBackups();
-  pollWhenVisible(refreshBots, 15000);
+  pollWhenVisible(refreshBots, 15000, 'bots');
   refreshPairing();
-  pollWhenVisible(refreshPairing, 15000);
+  pollWhenVisible(refreshPairing, 15000, 'bots');
   refreshProviders();
   pollWhenVisible(refreshProviders, 15000);
   refreshProviderCatalog();
   refreshModelsPage();
   pollWhenVisible(refreshModelsPage, 30000);
   refreshPlugins();
-  pollWhenVisible(refreshPlugins, 15000);
+  pollWhenVisible(refreshPlugins, 15000, 'bots');
   refreshSnapshots();
   pollWhenVisible(refreshSnapshots, 15000);
   refreshCustomizeHistory();
   refreshHotReload();
-  pollWhenVisible(refreshHotReload, 15000);
+  pollWhenVisible(refreshHotReload, 15000, 'control');
   refreshKanban();
-  pollWhenVisible(refreshKanban, 15000);
+  pollWhenVisible(refreshKanban, 15000, 'kanban');
   refreshSchedules();
-  pollWhenVisible(refreshSchedules, 15000);
+  pollWhenVisible(refreshSchedules, 15000, 'bots');
   refreshSwarmInstanceLegend();
   refreshSwarms();
   refreshSwarmRuns();
-  pollWhenVisible(refreshSwarms, 15000);
+  pollWhenVisible(refreshSwarms, 15000, 'swarms');
   refreshSwarmToolsPanel();
-  pollWhenVisible(refreshSwarmToolsPanel, 15000);
+  pollWhenVisible(refreshSwarmToolsPanel, 15000, 'swarms');
   refreshContextDocs();
-  pollWhenVisible(refreshContextDocs, 15000);
+  pollWhenVisible(refreshContextDocs, 15000, 'swarms');
   refreshDelegationActivity();
-  pollWhenVisible(refreshDelegationActivity, 15000);
+  pollWhenVisible(refreshDelegationActivity, 15000, 'swarms');
   refreshSwarmBudget();
-  pollWhenVisible(refreshSwarmBudget, 15000);
+  pollWhenVisible(refreshSwarmBudget, 15000, 'swarms');
   refreshSshToolkit();
-  pollWhenVisible(refreshSshToolkit, 20000);
+  pollWhenVisible(refreshSshToolkit, 20000, 'ssh-toolkit');
   refreshDiagnostics();
-  pollWhenVisible(refreshDiagnostics, 15000);
+  pollWhenVisible(refreshDiagnostics, 15000, 'diagnostics');
   refreshMobileKeys();
-  pollWhenVisible(refreshMobileKeys, 15000);
+  pollWhenVisible(refreshMobileKeys, 15000, 'mobile');
   refreshPeers();
-  pollWhenVisible(refreshPeers, 15000);
+  pollWhenVisible(refreshPeers, 15000, 'servers');
   connectDevicesSocket();
   refreshTrainingPhrases();
   refreshTrainingHealth();
@@ -1367,12 +1407,12 @@ function startDashboardPolling() {
   refreshTrainingPending();
   refreshTrainingApproved();
   refreshKnowledgeModules();
-  pollWhenVisible(refreshTrainingPhrases, 20000);
-  pollWhenVisible(refreshTrainingHealth, 10000);
+  pollWhenVisible(refreshTrainingPhrases, 20000, 'training');
+  pollWhenVisible(refreshTrainingHealth, 10000, 'training');
   startServerChatPolling();
   refreshAutomationInstances();
   refreshHooks();
-  pollWhenVisible(refreshHooks, 20000);
+  pollWhenVisible(refreshHooks, 20000, 'automation');
   refreshAgentSettings();
   refreshAutoManagePanel();
 }
@@ -3519,8 +3559,8 @@ async function refreshChat(instanceId) {
 
 function startChatPolling() {
   refreshChatRecipients();
-  pollWhenVisible(() => refreshChat(chatState.activeInstanceId), 2000);
-  pollWhenVisible(refreshChatRecipients, 15000);
+  pollWhenVisible(() => refreshChat(chatState.activeInstanceId), 2000, 'chat');
+  pollWhenVisible(refreshChatRecipients, 15000, 'chat');
 }
 
 function switchToInstance(instanceId) {
@@ -4019,8 +4059,8 @@ document.getElementById('btn-serverchat-attach-clear').onclick = () => {
 
 function startServerChatPolling() {
   refreshServerChatList();
-  pollWhenVisible(refreshServerChatMessages, 2000);
-  pollWhenVisible(refreshServerChatList, 15000);
+  pollWhenVisible(refreshServerChatMessages, 2000, 'server-chat');
+  pollWhenVisible(refreshServerChatList, 15000, 'server-chat');
 }
 
 // --------------------------------------------------------------- sessions
@@ -4206,7 +4246,7 @@ document.getElementById('sessions-search').oninput = () => {
 async function startSessionsPolling() {
   await refreshSessionsInstanceFilter();
   refreshSessions();
-  pollWhenVisible(refreshSessions, 15000);
+  pollWhenVisible(refreshSessions, 15000, 'sessions');
 }
 
 // -------------------------------------------------------------- platforms

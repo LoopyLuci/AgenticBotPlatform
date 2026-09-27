@@ -689,7 +689,7 @@
         <div class="card">
           <h3>Export data</h3>
           <p class="cardnote">Download a table's full contents as JSON or CSV.</p>
-          <select id="export-table" style="margin-top:10px; width:100%;"></select>
+          <select id="export-table" aria-label="Table to export" style="margin-top:10px; width:100%;"></select>
           <div style="display:flex; gap:8px; margin-top:8px;">
             <button class="btn" id="btn-export-json" style="flex:1;">Export JSON</button>
             <button class="btn" id="btn-export-csv" style="flex:1;">Export CSV</button>
@@ -746,8 +746,8 @@
           <h3>Data retention</h3>
           <p class="cardnote">Automatically prunes old rows from the jobs, telemetry, connection-log, and Support Bot classification tables once a day — the tables that otherwise just grow forever. Never touches audit log, chat/session history, or config history, and never deletes a job that isn't finished yet regardless of age.</p>
           <div class="settingrow"><div><div class="st">Enabled</div><div class="sd">Turn off to keep every row forever (not recommended for a long-running server)</div></div><div class="toggle" id="tg-retention" data-path="retention,enabled"></div></div>
-          <div class="settingrow"><div><div class="st">Keep for (days)</div><div class="sd">Rows older than this are removed on the next daily pass</div></div><input type="number" id="retention-days" min="1" style="width:100px;"></div>
-          <div class="settingrow"><div><div class="st">Auto-VACUUM every (days)</div><div class="sd">Reclaims the disk space pruning frees up; briefly locks writes. 0 = never (manual Vacuum button only)</div></div><input type="number" id="retention-vacuum-days" min="0" style="width:100px;"></div>
+          <div class="settingrow"><div><div class="st">Keep for (days)</div><div class="sd">Rows older than this are removed on the next daily pass</div></div><input type="number" id="retention-days" aria-label="Keep for (days)" min="1" style="width:100px;"></div>
+          <div class="settingrow"><div><div class="st">Auto-VACUUM every (days)</div><div class="sd">Reclaims the disk space pruning frees up; briefly locks writes. 0 = never (manual Vacuum button only)</div></div><input type="number" id="retention-vacuum-days" aria-label="Auto-VACUUM every (days)" min="0" style="width:100px;"></div>
         </div>
 
         <div class="card">
@@ -779,7 +779,7 @@
         </div>
         <div class="wizard-field" style="margin-top:10px;">
           <div class="row">
-            <input type="text" id="snapshot-new-label" placeholder="label (optional), e.g. before-db-migration" autocomplete="off" spellcheck="false">
+            <input type="text" id="snapshot-new-label" aria-label="Snapshot label (optional)" placeholder="label (optional), e.g. before-db-migration" autocomplete="off" spellcheck="false">
             <button class="btn" id="btn-snapshot-create">Take snapshot</button>
           </div>
           <span class="cardnote" id="snapshot-new-status"></span>
@@ -806,7 +806,7 @@
           <h3>Models — Claude</h3>
           <div class="settingrow">
             <div><div class="st">api (Anthropic API)</div><div class="sd">Model used for every request routed to the api backend</div></div>
-            <input type="text" id="model-api" list="model-api-options" placeholder="claude-sonnet-5" style="min-width:220px;">
+            <input type="text" id="model-api" aria-label="api (Anthropic API)" list="model-api-options" placeholder="claude-sonnet-5" style="min-width:220px;">
           </div>
           <datalist id="model-api-options"></datalist>
           <p class="cardnote" id="model-api-note"></p>
@@ -815,11 +815,11 @@
           <h3>Models — Hermes Agent</h3>
           <div class="settingrow">
             <div><div class="st">hermes_cli</div><div class="sd">Passed to `hermes -z` — blank uses Hermes's own default</div></div>
-            <input type="text" id="model-hermes_cli" list="model-hermes-options" placeholder="(default)" style="min-width:220px;">
+            <input type="text" id="model-hermes_cli" aria-label="hermes_cli" list="model-hermes-options" placeholder="(default)" style="min-width:220px;">
           </div>
           <div class="settingrow">
             <div><div class="st">hermes_gateway</div><div class="sd">Passed to the Hermes gateway session — blank uses Hermes's own default</div></div>
-            <input type="text" id="model-hermes_gateway" list="model-hermes-options" placeholder="(default)" style="min-width:220px;">
+            <input type="text" id="model-hermes_gateway" aria-label="hermes_gateway" list="model-hermes-options" placeholder="(default)" style="min-width:220px;">
           </div>
           <datalist id="model-hermes-options"></datalist>
           <p class="cardnote" id="model-hermes-note"></p>
@@ -828,11 +828,11 @@
           <h3>Models — other agent CLIs</h3>
           <div class="settingrow">
             <div><div class="st">opencode</div><div class="sd">Passed to `opencode run --model` — blank uses OpenCode's own default. Format: provider/model (e.g. openrouter/~anthropic/claude-sonnet-latest, run `opencode models` for the full list).</div></div>
-            <input type="text" id="model-opencode" placeholder="(default)" style="min-width:220px;">
+            <input type="text" id="model-opencode" aria-label="opencode" placeholder="(default)" style="min-width:220px;">
           </div>
           <div class="settingrow">
             <div><div class="st">openclaw</div><div class="sd">Passed to `openclaw agent --model` — blank uses OpenClaw's own default.</div></div>
-            <input type="text" id="model-openclaw" placeholder="(default)" style="min-width:220px;">
+            <input type="text" id="model-openclaw" aria-label="openclaw" placeholder="(default)" style="min-width:220px;">
           </div>
         </div>
       </div>
@@ -859,9 +859,9 @@
         <h3>TURN Server (WebRTC mesh relay)</h3>
         <p class="cardnote">Used by the Android app's WebRTC fallback for mesh APK transfers, when two devices can't reach each other directly (symmetric NAT, restrictive firewalls). AgenticBotPlatform never runs the relay itself — this only mints short-lived credentials for a real TURN server (coturn) you run separately with the same shared secret. See docs/turn-server-setup.md.</p>
         <div class="settingrow"><div><div class="st">Enabled</div><div class="sd">Turn on once a coturn server is actually running and reachable</div></div><div class="toggle" id="tg-turn-enabled" data-path="turn,enabled"></div></div>
-        <div class="settingrow"><div><div class="st">Shared secret</div><div class="sd">Must exactly match coturn's static-auth-secret</div></div><input type="password" id="turn-secret" placeholder="(not set) — leave blank to keep unchanged" style="min-width:260px;"></div>
-        <div class="settingrow"><div><div class="st">TURN URLs</div><div class="sd">Comma-separated, e.g. turn:host:3478?transport=udp, turn:host:3478?transport=tcp</div></div><input type="text" id="turn-urls" placeholder="turn:host:3478?transport=udp" style="min-width:320px;"></div>
-        <div class="settingrow"><div><div class="st">Credential lifetime (seconds)</div><div class="sd">How long a minted credential stays valid</div></div><input type="number" id="turn-ttl" min="60" style="width:100px;"></div>
+        <div class="settingrow"><div><div class="st">Shared secret</div><div class="sd">Must exactly match coturn's static-auth-secret</div></div><input type="password" id="turn-secret" aria-label="Shared secret" placeholder="(not set) — leave blank to keep unchanged" style="min-width:260px;"></div>
+        <div class="settingrow"><div><div class="st">TURN URLs</div><div class="sd">Comma-separated, e.g. turn:host:3478?transport=udp, turn:host:3478?transport=tcp</div></div><input type="text" id="turn-urls" aria-label="TURN URLs" placeholder="turn:host:3478?transport=udp" style="min-width:320px;"></div>
+        <div class="settingrow"><div><div class="st">Credential lifetime (seconds)</div><div class="sd">How long a minted credential stays valid</div></div><input type="number" id="turn-ttl" aria-label="Credential lifetime (seconds)" min="60" style="width:100px;"></div>
       </div>
 
       <div class="card" style="margin-top:14px;">
@@ -875,14 +875,14 @@
         <div class="settingrow"><div class="st">Currently loaded from</div><span class="mono" id="env-resolved">—</span></div>
         <div id="env-candidates" style="margin-top:6px;"></div>
         <div style="display:flex; gap:8px; margin-top:10px;">
-          <input type="text" id="env-custom-path" placeholder="custom path, e.g. D:\ABP\.env" style="flex:1; padding:8px 10px; border-radius:7px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font-family:var(--font-mono); font-size:12px;">
+          <input type="text" id="env-custom-path" aria-label="Currently loaded from" placeholder="custom path, e.g. D:\ABP\.env" style="flex:1; padding:8px 10px; border-radius:7px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font-family:var(--font-mono); font-size:12px;">
           <button class="btn" id="btn-env-set">Use this path</button>
           <button class="btn" id="btn-env-auto">Auto-detect</button>
         </div>
 
         <h3 style="margin-top:22px;">Edit .env contents</h3>
         <p class="cardnote">Editing writes straight to the file above — this is the actual bot token, API key, etc. in plain text. A timestamped backup is made automatically before every save and every restore, so nothing is ever overwritten without one. Takes effect after the server process restarts.</p>
-        <textarea id="env-editor" spellcheck="false" placeholder="Loading…" style="width:100%; min-height:220px; margin-top:10px; padding:12px; border-radius:8px; border:1px solid var(--line); background:var(--chart-surface); color:#e4e1d8; font-family:var(--font-mono); font-size:12.5px; line-height:1.6; resize:vertical;"></textarea>
+        <textarea id="env-editor" aria-label=".env file contents" spellcheck="false" placeholder="Loading…" style="width:100%; min-height:220px; margin-top:10px; padding:12px; border-radius:8px; border:1px solid var(--line); background:var(--chart-surface); color:#e4e1d8; font-family:var(--font-mono); font-size:12.5px; line-height:1.6; resize:vertical;"></textarea>
         <div style="display:flex; gap:8px; margin-top:10px; align-items:center; flex-wrap:wrap;">
           <button class="btn primary" id="btn-env-save">Save (backs up first)</button>
           <button class="btn" id="btn-env-editor-reload">Reload from disk</button>
@@ -1010,9 +1010,9 @@
           <button class="btn" id="btn-chat-attach-clear">✕</button>
         </div>
         <div class="chat-composer">
-          <textarea id="chat-input" placeholder="Message…" rows="1"></textarea>
+          <textarea id="chat-input" aria-label="Message" placeholder="Message…" rows="1"></textarea>
           <button class="btn" id="btn-chat-attach" title="Attach file">📎</button>
-          <input type="file" id="chat-file-input" hidden>
+          <input type="file" id="chat-file-input" aria-label="Attach a file" hidden>
           <button class="btn" id="btn-chat-mic" title="Voice to text">🎤</button>
           <button class="btn primary" id="btn-chat-send">Send</button>
         </div>
@@ -1036,9 +1036,9 @@
           <button class="btn" id="btn-serverchat-attach-clear">✕</button>
         </div>
         <div class="chat-composer">
-          <textarea id="serverchat-input" placeholder="Message…" rows="1"></textarea>
+          <textarea id="serverchat-input" aria-label="Message" placeholder="Message…" rows="1"></textarea>
           <button class="btn" id="btn-serverchat-attach" title="Attach file">📎</button>
-          <input type="file" id="serverchat-file-input" hidden>
+          <input type="file" id="serverchat-file-input" aria-label="Attach a file" hidden>
           <button class="btn primary" id="btn-serverchat-send">Send</button>
         </div>
         <div class="cardnote" id="serverchat-status"></div>
@@ -1056,7 +1056,7 @@
           <div class="chat-window active" id="support-window"></div>
         </div>
         <div class="chat-composer">
-          <textarea id="support-input" placeholder="Ask me anything — try &quot;help&quot;…" rows="1"></textarea>
+          <textarea id="support-input" aria-label="Message the Support Bot" placeholder="Ask me anything — try &quot;help&quot;…" rows="1"></textarea>
           <button class="btn primary" id="btn-support-send">Send</button>
         </div>
         <div class="cardnote" id="support-status"></div>
@@ -1069,7 +1069,7 @@
         <div class="sessions-toolbar">
           <label for="sessions-instance" class="chat-toolbar-label">Bot</label>
           <select id="sessions-instance"><option value="">All bots</option></select>
-          <input type="text" id="sessions-search" placeholder="Search title…">
+          <input type="text" id="sessions-search" aria-label="Search sessions" placeholder="Search title…">
           <label for="sessions-since" class="chat-toolbar-label">Since</label>
           <input type="date" id="sessions-since">
           <label for="sessions-until" class="chat-toolbar-label">Until</label>
@@ -1101,12 +1101,12 @@
         <h3>Add a bot</h3>
         <div class="wizard-field">
           <label>Name</label>
-          <div class="row"><input type="text" id="bot-new-name" placeholder="e.g. claude-support-telegram" autocomplete="off" spellcheck="false"></div>
+          <div class="row"><input type="text" id="bot-new-name" aria-label="Name" placeholder="e.g. claude-support-telegram" autocomplete="off" spellcheck="false"></div>
         </div>
         <div class="wizard-field">
           <label>Platform</label>
           <div class="row">
-            <select id="bot-new-platform">
+            <select id="bot-new-platform" aria-label="Platform">
               <option value="telegram">Telegram</option>
               <option value="discord">Discord</option>
               <option value="slack">Slack</option>
@@ -1123,7 +1123,7 @@
         <div class="wizard-field">
           <label>Backend</label>
           <div class="row">
-            <select id="bot-new-backend">
+            <select id="bot-new-backend" aria-label="Backend">
               <optgroup label="ABP Agent (recommended)">
                 <option value="native_agent">ABP Agent — ABP's own agent: tools, memory, sub-agents, swarms</option>
               </optgroup>
@@ -1149,7 +1149,7 @@
         <div class="wizard-field" id="bot-new-model-field">
           <label>Model override (optional)</label>
           <div class="help" id="bot-new-model-help">Leave blank to use this backend's configured default. Options are live models actually available to this backend.</div>
-          <div class="row"><input type="text" id="bot-new-model" list="bot-new-model-options" placeholder="e.g. claude-opus-5" autocomplete="off" spellcheck="false">
+          <div class="row"><input type="text" id="bot-new-model" aria-label="Model override (optional)" list="bot-new-model-options" placeholder="e.g. claude-opus-5" autocomplete="off" spellcheck="false">
             <button type="button" class="btn" id="bot-new-model-auto" style="display:none; padding:5px 10px; font-size:12px;" title="Let ABP's model router pick a free model automatically, every time this bot's backend needs one">Auto</button></div>
           <datalist id="bot-new-model-options"></datalist>
         </div>
@@ -1176,12 +1176,12 @@
         <div class="wizard-field" id="bot-new-token-field">
           <label id="bot-new-token-label">Bot token</label>
           <div class="help" id="bot-new-token-help"></div>
-          <div class="row"><input type="text" id="bot-new-token" placeholder="platform bot token" autocomplete="off" spellcheck="false"></div>
+          <div class="row"><input type="text" id="bot-new-token" aria-label="Bot token" placeholder="platform bot token" autocomplete="off" spellcheck="false"></div>
         </div>
         <div class="wizard-field" id="bot-new-apptoken-field" style="display:none;">
           <label>App token (Slack only, xapp-...)</label>
           <div class="help" id="bot-new-apptoken-help"></div>
-          <div class="row"><input type="text" id="bot-new-apptoken" placeholder="xapp-..." autocomplete="off" spellcheck="false"></div>
+          <div class="row"><input type="text" id="bot-new-apptoken" aria-label="App token (Slack)" placeholder="xapp-..." autocomplete="off" spellcheck="false"></div>
         </div>
         <div class="wizard-field" id="bot-new-setupguide-field" style="display:none;">
           <details>
@@ -1191,28 +1191,28 @@
         </div>
         <div class="wizard-field" id="bot-new-matrix-fields" style="display:none;">
           <label>Homeserver URL</label>
-          <div class="row"><input type="text" id="bot-new-matrix-homeserver" placeholder="https://matrix.org" autocomplete="off" spellcheck="false"></div>
+          <div class="row"><input type="text" id="bot-new-matrix-homeserver" aria-label="Homeserver URL" placeholder="https://matrix.org" autocomplete="off" spellcheck="false"></div>
           <label style="margin-top:8px; display:block;">Matrix user ID</label>
-          <div class="row"><input type="text" id="bot-new-matrix-userid" placeholder="@mybot:matrix.org" autocomplete="off" spellcheck="false"></div>
+          <div class="row"><input type="text" id="bot-new-matrix-userid" aria-label="Matrix user ID" placeholder="@mybot:matrix.org" autocomplete="off" spellcheck="false"></div>
           <div class="help">The access token goes in the "Access token" field above — get one via Element → Settings → Help &amp; About → Advanced → Access Token, or <code>POST /_matrix/client/v3/login</code>. Encrypted rooms aren't supported; invite this bot into an unencrypted room.</div>
           <label style="margin-top:8px; display:block;">Device ID (optional)</label>
-          <div class="row"><input type="text" id="bot-new-matrix-device" placeholder="leave blank to auto-assign" autocomplete="off" spellcheck="false"></div>
+          <div class="row"><input type="text" id="bot-new-matrix-device" aria-label="Device ID (optional)" placeholder="leave blank to auto-assign" autocomplete="off" spellcheck="false"></div>
         </div>
         <div class="wizard-field" id="bot-new-generic-fields" style="display:none;"></div>
         <div class="wizard-field" id="bot-new-whatsapp-fields" style="display:none;">
           <label>Phone Number ID</label>
-          <div class="row"><input type="text" id="bot-new-whatsapp-phoneid" placeholder="1234567890" autocomplete="off" spellcheck="false"></div>
+          <div class="row"><input type="text" id="bot-new-whatsapp-phoneid" aria-label="Phone Number ID" placeholder="1234567890" autocomplete="off" spellcheck="false"></div>
           <div class="help">The access token goes in the "Access token" field above — a permanent System User token with the whatsapp_business_messaging permission.</div>
           <label style="margin-top:8px; display:block;">App secret</label>
-          <div class="row"><input type="text" id="bot-new-whatsapp-appsecret" placeholder="from Settings → Basic" autocomplete="off" spellcheck="false"></div>
+          <div class="row"><input type="text" id="bot-new-whatsapp-appsecret" aria-label="App secret" placeholder="from Settings → Basic" autocomplete="off" spellcheck="false"></div>
           <label style="margin-top:8px; display:block;">Verify token</label>
-          <div class="row"><input type="text" id="bot-new-whatsapp-verifytoken" placeholder="pick any string, 6+ chars" autocomplete="off" spellcheck="false"></div>
+          <div class="row"><input type="text" id="bot-new-whatsapp-verifytoken" aria-label="Verify token" placeholder="pick any string, 6+ chars" autocomplete="off" spellcheck="false"></div>
           <div class="help">Webhook URL to paste into Meta's App Dashboard → WhatsApp → Configuration: <code>&lt;your public HTTPS domain&gt;/webhooks/whatsapp</code> — same URL and verify token for every WhatsApp instance on this install, since Meta allows only one webhook per App.</div>
         </div>
         <div class="wizard-field" id="bot-new-allowed-field">
           <label id="bot-new-allowed-label">Allowed user ID(s)</label>
           <div class="help" id="bot-new-allowed-help">Comma-separated. Numeric IDs for Telegram/Discord, Slack member IDs (U.../W...) for Slack, full Matrix user IDs (@name:server) for Matrix, phone numbers with country code and no "+" for WhatsApp.</div>
-          <div class="row"><input type="text" id="bot-new-allowed" placeholder="123456789, 987654321" autocomplete="off" spellcheck="false"></div>
+          <div class="row"><input type="text" id="bot-new-allowed" aria-label="Allowed user IDs" placeholder="123456789, 987654321" autocomplete="off" spellcheck="false"></div>
         </div>
         <div class="wizard-field" id="bot-new-cantarget-field">
           <label id="bot-new-cantarget-label">Manages / can target</label>
@@ -1222,12 +1222,12 @@
         <div class="wizard-field">
           <label>Admin user ID(s)</label>
           <div class="help">Optional, subset of the allowed IDs above. Leave empty to leave slash-command permission tiers off (everyone allowed can run every command). Set at least one to turn tiers on — non-admins then only get /help and /whoami plus whatever's configured in action_overrides.slash_access.</div>
-          <div class="row"><input type="text" id="bot-new-admins" placeholder="123456789" autocomplete="off" spellcheck="false"></div>
+          <div class="row"><input type="text" id="bot-new-admins" aria-label="Admin user IDs" placeholder="123456789" autocomplete="off" spellcheck="false"></div>
         </div>
         <div class="wizard-field">
           <label>Custom instructions <span class="optional-tag">optional</span></label>
           <div class="help">A system-prompt-style customization prepended to every prompt this bot routes, independent of backend. Leave blank for default behavior — edit any time by re-opening this bot with Edit.</div>
-          <div class="row"><textarea id="bot-new-instructions" rows="2" style="width:100%; font-family:var(--font-body); padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink);" placeholder="e.g. Always answer in a formal tone and cite sources when possible."></textarea></div>
+          <div class="row"><textarea id="bot-new-instructions" aria-label="Custom instructions" rows="2" style="width:100%; font-family:var(--font-body); padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink);" placeholder="e.g. Always answer in a formal tone and cite sources when possible."></textarea></div>
           <div class="row" id="bot-new-instructions-preset-row" style="margin-top:6px; display:none;">
             <button class="btn" id="btn-instructions-preset" type="button" style="padding:5px 12px; font-size:12px;"></button>
           </div>
@@ -1240,7 +1240,7 @@
           <summary style="cursor:pointer; font-size:13px; font-weight:700;">Advanced: per-bot backend overrides</summary>
           <div class="wizard-field" style="margin-top:10px;">
             <div class="help">Route specific actions from this one bot to a different backend (with optional fallback chain) than its default — the same shape as the global overrides in Control Center, scoped to just this instance. Raw JSON, e.g. <code>{"web_search": {"backend": "custom_model", "backup": ["api"]}}</code>. Leave as <code>{}</code> for none.</div>
-            <div class="row"><textarea id="bot-new-overrides" rows="3" style="width:100%; font-family:var(--font-mono); font-size:11.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink);" placeholder="{}">{}</textarea></div>
+            <div class="row"><textarea id="bot-new-overrides" aria-label="Action overrides (JSON)" rows="3" style="width:100%; font-family:var(--font-mono); font-size:11.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink);" placeholder="{}">{}</textarea></div>
             <div class="msg" id="bot-new-overrides-msg"></div>
           </div>
         </details>
@@ -1261,7 +1261,7 @@
         </div>
         <div class="wizard-field" style="margin-top:10px;">
           <div class="row">
-            <input type="text" id="plugin-new-path" placeholder="path to plugin.py" autocomplete="off" spellcheck="false" style="flex:1;">
+            <input type="text" id="plugin-new-path" aria-label="Path to plugin.py" placeholder="path to plugin.py" autocomplete="off" spellcheck="false" style="flex:1;">
             <button class="btn" id="btn-plugin-add">Install</button>
           </div>
           <span class="cardnote" id="plugin-new-status"></span>
@@ -1288,7 +1288,7 @@
         <h3>Schedules</h3>
         <p class="cardnote">Recurring prompts a bot runs on its own — the same store <code>/cron</code>, <code>/loop</code>, and <code>/heartbeat</code> already write to in chat, now visible and manageable here too.</p>
         <div class="row" style="gap:10px; align-items:center; margin-top:8px;">
-          <select id="schedules-bot-select" style="flex:1;"></select>
+          <select id="schedules-bot-select" aria-label="Bot" style="flex:1;"></select>
         </div>
         <div class="tablewrap" style="margin-top:10px;">
           <table>
@@ -1300,14 +1300,14 @@
           <label>New schedule</label>
           <div class="help">Interval accepts "30s", "10m", "2h", "1d", or a bare number of seconds. Chat/thread ID must match a real chat this bot is in — the same ID shown in the Chat tab or a platform's own UI.</div>
           <div class="row" style="gap:8px; flex-wrap:wrap;">
-            <input type="text" id="schedule-new-chatid" placeholder="chat ID" style="flex:1; min-width:120px;">
-            <select id="schedule-new-kind" style="min-width:100px;">
+            <input type="text" id="schedule-new-chatid" aria-label="Chat ID" placeholder="chat ID" style="flex:1; min-width:120px;">
+            <select id="schedule-new-kind" aria-label="Schedule kind" style="min-width:100px;">
               <option value="cron">cron</option>
               <option value="loop">loop</option>
               <option value="heartbeat">heartbeat</option>
             </select>
-            <input type="text" id="schedule-new-interval" placeholder="10m" style="width:90px;">
-            <input type="text" id="schedule-new-prompt" placeholder="prompt to send" style="flex:2; min-width:200px;">
+            <input type="text" id="schedule-new-interval" aria-label="Interval" placeholder="10m" style="width:90px;">
+            <input type="text" id="schedule-new-prompt" aria-label="Prompt to send" placeholder="prompt to send" style="flex:2; min-width:200px;">
             <button class="btn primary" id="btn-schedule-create">Add</button>
           </div>
           <span class="cardnote" id="schedule-new-status"></span>
@@ -1340,14 +1340,14 @@
         </div>
         <div class="wizard-field" style="margin-top:10px;">
           <div class="row">
-            <input type="text" id="provider-catalog-input" list="provider-catalog-options" placeholder="Pick a known provider (optional)…" autocomplete="off" spellcheck="false" style="flex:1;">
+            <input type="text" id="provider-catalog-input" aria-label="Known provider (optional)" list="provider-catalog-options" placeholder="Pick a known provider (optional)…" autocomplete="off" spellcheck="false" style="flex:1;">
             <datalist id="provider-catalog-options"></datalist>
           </div>
           <div class="cardnote" style="margin:4px 0 8px;">Picking one fills in its real endpoint below — or just fill in the fields yourself for a custom/local server. Some well-known providers (Anthropic, OpenAI, Google, Bedrock) use their own SDK protocol rather than a generic endpoint and aren't listed here; AgenticBotPlatform only speaks the OpenAI-compatible wire format for this backend family today.</div>
           <div class="row">
-            <input type="text" id="provider-new-name" placeholder="name, e.g. local_ollama" autocomplete="off" spellcheck="false" style="max-width:180px;">
-            <input type="text" id="provider-new-url" placeholder="base URL, e.g. http://127.0.0.1:11434/v1" autocomplete="off" spellcheck="false">
-            <input type="text" id="provider-new-key" placeholder="API key (optional)" autocomplete="off" spellcheck="false">
+            <input type="text" id="provider-new-name" aria-label="Provider name" placeholder="name, e.g. local_ollama" autocomplete="off" spellcheck="false" style="max-width:180px;">
+            <input type="text" id="provider-new-url" aria-label="Base URL" placeholder="base URL, e.g. http://127.0.0.1:11434/v1" autocomplete="off" spellcheck="false">
+            <input type="text" id="provider-new-key" aria-label="API key (optional)" placeholder="API key (optional)" autocomplete="off" spellcheck="false">
             <button class="btn" id="btn-provider-add">Add</button>
           </div>
           <span class="cardnote" id="provider-new-status"></span>
@@ -1375,14 +1375,14 @@
       <div class="card">
         <div class="row" style="gap:10px; align-items:center;">
           <label style="font-size:12.5px; font-weight:600;">Bot</label>
-          <select id="kanban-bot-select" style="min-width:220px;"></select>
+          <select id="kanban-bot-select" aria-label="Bot" style="min-width:220px;"></select>
           <label style="font-size:12.5px; font-weight:600;">Board</label>
-          <input type="text" id="kanban-board-name" value="default" style="width:140px;">
+          <input type="text" id="kanban-board-name" aria-label="Board" value="default" style="width:140px;">
           <button class="btn" id="btn-kanban-refresh">Refresh</button>
         </div>
         <div class="row" style="gap:8px; margin-top:10px;">
-          <input type="text" id="kanban-new-text" placeholder="New card text..." style="flex:1;">
-          <select id="kanban-new-column" style="width:120px;">
+          <input type="text" id="kanban-new-text" aria-label="New card text" placeholder="New card text..." style="flex:1;">
+          <select id="kanban-new-column" aria-label="Column" style="width:120px;">
             <option value="todo">todo</option>
             <option value="doing">doing</option>
             <option value="done">done</option>
@@ -1435,12 +1435,12 @@
         <h3>Add a swarm</h3>
         <div class="wizard-field">
           <label>Name</label>
-          <div class="row"><input type="text" id="swarm-new-name" placeholder="e.g. research-team" autocomplete="off" spellcheck="false"></div>
+          <div class="row"><input type="text" id="swarm-new-name" aria-label="Swarm name" placeholder="e.g. research-team" autocomplete="off" spellcheck="false"></div>
         </div>
         <div class="wizard-field">
           <label>Strategy</label>
           <div class="row">
-            <select id="swarm-new-strategy">
+            <select id="swarm-new-strategy" aria-label="Strategy">
               <option value="fanout_synthesize">fanout_synthesize — parallel answers, optional synthesizer</option>
               <option value="leader_vote">leader_vote — parallel answers, leader picks the best</option>
               <option value="sequential_relay">sequential_relay — pipeline, each member refines the last</option>
@@ -1452,7 +1452,7 @@
         <div class="wizard-field">
           <label>Config (JSON)</label>
           <div class="help" id="swarm-config-help">Bot instance IDs, from the Bots tab: <span id="swarm-instance-legend">—</span></div>
-          <div class="row"><textarea id="swarm-new-config" rows="6" spellcheck="false" style="width:100%; padding:9px 11px; border-radius:7px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font-family:var(--font-mono); font-size:12px;"></textarea></div>
+          <div class="row"><textarea id="swarm-new-config" aria-label="Config (JSON)" rows="6" spellcheck="false" style="width:100%; padding:9px 11px; border-radius:7px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font-family:var(--font-mono); font-size:12px;"></textarea></div>
         </div>
         <div class="wizard-foot">
           <span class="cardnote" id="swarm-new-status"></span>
@@ -1486,11 +1486,11 @@
         <p class="cardnote">Small, named documents any registered instance (any backend) can read via <code>read_project_context</code> or write via <code>write_project_context</code> — the one place a swarm of workers and their manager keep something like a project-status update in sync, independent of any one instance's own conversation history. Capped at 8KB per doc, 50 docs total.</p>
         <div class="wizard-field">
           <label>Name</label>
-          <div class="row"><input type="text" id="context-doc-name" placeholder="e.g. status" autocomplete="off" spellcheck="false"></div>
+          <div class="row"><input type="text" id="context-doc-name" aria-label="Document name" placeholder="e.g. status" autocomplete="off" spellcheck="false"></div>
         </div>
         <div class="wizard-field">
           <label>Content (markdown)</label>
-          <div class="row"><textarea id="context-doc-content" rows="8" spellcheck="false" style="width:100%; padding:9px 11px; border-radius:7px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font-family:var(--font-mono); font-size:12.5px;"></textarea></div>
+          <div class="row"><textarea id="context-doc-content" aria-label="Content (markdown)" rows="8" spellcheck="false" style="width:100%; padding:9px 11px; border-radius:7px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font-family:var(--font-mono); font-size:12.5px;"></textarea></div>
         </div>
         <div class="wizard-foot">
           <span class="cardnote" id="context-doc-status"></span>
@@ -1509,11 +1509,11 @@
         <h3>Run a swarm</h3>
         <div class="wizard-field">
           <label>Swarm</label>
-          <div class="row"><select id="swarm-run-select"></select></div>
+          <div class="row"><select id="swarm-run-select" aria-label="Swarm"></select></div>
         </div>
         <div class="wizard-field">
           <label>Prompt</label>
-          <div class="row"><textarea id="swarm-run-prompt" rows="3" style="width:100%; padding:9px 11px; border-radius:7px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font-family:var(--font-mono); font-size:12.5px;"></textarea></div>
+          <div class="row"><textarea id="swarm-run-prompt" aria-label="Prompt" rows="3" style="width:100%; padding:9px 11px; border-radius:7px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font-family:var(--font-mono); font-size:12.5px;"></textarea></div>
         </div>
         <div class="wizard-foot">
           <span class="cardnote" id="swarm-run-status"></span>
@@ -1600,9 +1600,9 @@
         <h3>Add a connection</h3>
         <div class="wizard-field">
           <div class="row">
-            <input type="text" id="ssh-new-name" placeholder="name (e.g. build-box)" autocomplete="off" spellcheck="false" style="max-width:200px;">
-            <input type="text" id="ssh-new-host" placeholder="host or IP" autocomplete="off" spellcheck="false" style="max-width:200px;">
-            <input type="text" id="ssh-new-user" placeholder="user (optional)" autocomplete="off" spellcheck="false" style="max-width:160px;">
+            <input type="text" id="ssh-new-name" aria-label="Connection name" placeholder="name (e.g. build-box)" autocomplete="off" spellcheck="false" style="max-width:200px;">
+            <input type="text" id="ssh-new-host" aria-label="Host or IP" placeholder="host or IP" autocomplete="off" spellcheck="false" style="max-width:200px;">
+            <input type="text" id="ssh-new-user" aria-label="User (optional)" placeholder="user (optional)" autocomplete="off" spellcheck="false" style="max-width:160px;">
           </div>
         </div>
         <div class="wizard-foot">
@@ -1633,7 +1633,7 @@
           <label>Auto-update, on this machine</label>
           <div class="help">A background check every few hours — "never" (manual only), "notify" (logs when an update is available), or "auto" (applies it automatically). Machine-wide, not per-bot.</div>
           <div class="row">
-            <select id="ssh-auto-update-mode">
+            <select id="ssh-auto-update-mode" aria-label="Toolkit auto-update mode">
               <option value="never">Never — manual only</option>
               <option value="notify">Notify — log availability only</option>
               <option value="auto">Auto — apply automatically</option>
@@ -1647,8 +1647,8 @@
         <p class="cardnote">Run a command over a registered connection and watch it happen: each output line, a live CPU/memory read from the remote machine, and its exit code, streamed here the instant they occur. Hit Record any time to persist the exact sequence for playback later.</p>
         <div class="wizard-field">
           <div class="row">
-            <select id="ssh-monitor-connection" style="max-width:220px;"></select>
-            <input type="text" id="ssh-monitor-command" placeholder="command to run and watch" autocomplete="off" spellcheck="false" style="flex:1; min-width:220px;">
+            <select id="ssh-monitor-connection" aria-label="Connection to monitor" style="max-width:220px;"></select>
+            <input type="text" id="ssh-monitor-command" aria-label="Command to run and watch" placeholder="command to run and watch" autocomplete="off" spellcheck="false" style="flex:1; min-width:220px;">
             <button class="btn primary" id="btn-ssh-monitor-run">Run &amp; watch</button>
             <button class="btn" id="btn-ssh-monitor-stop" disabled>Stop</button>
           </div>
@@ -1690,8 +1690,8 @@
 
         <div id="ssh-playback-controls" style="display:none; margin-top:8px; align-items:center; gap:8px;" class="row">
           <button class="btn" id="btn-ssh-playback-toggle">Play</button>
-          <input type="range" id="ssh-playback-scrubber" min="0" max="100" value="0" style="flex:1;">
-          <select id="ssh-playback-speed" style="width:80px;">
+          <input type="range" id="ssh-playback-scrubber" aria-label="Playback position" min="0" max="100" value="0" style="flex:1;">
+          <select id="ssh-playback-speed" aria-label="Playback speed" style="width:80px;">
             <option value="0.5">0.5x</option>
             <option value="1" selected>1x</option>
             <option value="2">2x</option>
@@ -1718,15 +1718,15 @@
         <h3>Hooks <span style="font-weight:400; color:var(--muted); font-size:12px;">— run a local command on PreToolUse/PostToolUse/SessionStart/UserPromptSubmit</span></h3>
         <p class="cardnote">A <code>PreToolUse</code> hook can allow/deny/ask before a dangerous tool call runs; the rest only ever contribute <code>additionalContext</code>. Global (no instance) hooks apply everywhere; scoping one to an instance limits it to that bot's own turns.</p>
         <div class="row" style="gap:8px; margin-top:10px; flex-wrap:wrap;">
-          <select id="hook-new-event" style="min-width:150px;">
+          <select id="hook-new-event" aria-label="Hook event" style="min-width:150px;">
             <option value="PreToolUse">PreToolUse</option>
             <option value="PostToolUse">PostToolUse</option>
             <option value="SessionStart">SessionStart</option>
             <option value="UserPromptSubmit">UserPromptSubmit</option>
           </select>
-          <input type="text" id="hook-new-matcher" placeholder="Matcher (optional), e.g. a tool name" style="min-width:160px;">
-          <select id="hook-new-instance" style="min-width:160px;"><option value="">Global (every instance)</option></select>
-          <input type="text" id="hook-new-command" placeholder="Local shell command to run" style="flex:1; min-width:220px;">
+          <input type="text" id="hook-new-matcher" aria-label="Matcher (optional)" placeholder="Matcher (optional), e.g. a tool name" style="min-width:160px;">
+          <select id="hook-new-instance" aria-label="Bot instance for this hook" style="min-width:160px;"><option value="">Global (every instance)</option></select>
+          <input type="text" id="hook-new-command" aria-label="Local shell command to run" placeholder="Local shell command to run" style="flex:1; min-width:220px;">
           <button class="btn primary" id="btn-hook-add">+ Add hook</button>
         </div>
         <div class="cardnote" id="hook-status"></div>
@@ -1776,7 +1776,7 @@
           <textarea id="customize-instruction" rows="3" style="width:100%; margin-top:4px;" placeholder="e.g. Add a button next to Reload Config labeled 'Ping' that shows an alert"></textarea>
         </label>
         <div class="row" style="margin-top:10px;">
-          <select id="customize-target">
+          <select id="customize-target" aria-label="Change to make">
             <option value="dashboard">Dashboard (browser) — updates live the moment you approve</option>
             <option value="desktop_html">Desktop app HTML — live in any open desktop window the moment you approve</option>
             <option value="desktop_js">Desktop app JS — live in any open desktop window the moment you approve</option>
@@ -1829,8 +1829,8 @@
         <h3>Support Bot phrases</h3>
         <p class="cardnote">Add example phrasings for an intent the Support Bot misrecognized or missed entirely — retrains <b>both</b> the TF-IDF model and the neural network immediately, no restart. These are layered on top of the built-in baseline (<code>training_data.py</code>), never replacing it.</p>
         <div class="row" style="gap:8px; margin-top:10px; flex-wrap:wrap;">
-          <input type="text" id="training-phrase-input" placeholder="e.g. &quot;show me what's broken right now&quot;" style="flex:2; min-width:220px;">
-          <select id="training-intent-select" style="flex:1; min-width:160px;"></select>
+          <input type="text" id="training-phrase-input" aria-label="New training phrase" placeholder="e.g. &quot;show me what's broken right now&quot;" style="flex:2; min-width:220px;">
+          <select id="training-intent-select" aria-label="Intent for the phrase" style="flex:1; min-width:160px;"></select>
           <button class="btn primary" id="btn-training-add">+ Add phrase</button>
         </div>
         <div class="cardnote" id="training-status"></div>
@@ -1845,7 +1845,7 @@
       <div class="card" style="margin-top:14px;">
         <h3>Bulk import</h3>
         <p class="cardnote">One "phrase | intent" pair per line — imports and retrains once at the end, not once per line.</p>
-        <textarea id="training-bulk-input" rows="4" style="width:100%; font-family:monospace; font-size:12px;" placeholder="restart the bot | bot_restart&#10;kick the bot back on | bot_restart"></textarea>
+        <textarea id="training-bulk-input" aria-label="Phrases to import, one per line" rows="4" style="width:100%; font-family:monospace; font-size:12px;" placeholder="restart the bot | bot_restart&#10;kick the bot back on | bot_restart"></textarea>
         <div class="row" style="gap:8px; margin-top:8px;">
           <button class="btn" id="btn-training-bulk-import">Import lines</button>
         </div>
@@ -1931,10 +1931,10 @@
       <div class="card">
         <h3>Generate a key</h3>
         <div class="row" style="gap:8px; align-items:center;">
-          <input type="text" id="mobile-new-label" placeholder="Device label, e.g. \"My Phone\"" style="flex:1;">
-          <input type="text" id="mobile-new-host" placeholder="Host:port the phone should reach, e.g. your-tailnet-host:8787">
-          <input type="text" id="mobile-new-host2" placeholder="Fallback host:port (optional), e.g. LAN IP if the above is Tailscale">
-          <input type="text" id="mobile-new-host3" placeholder="Public URL (optional), e.g. https://you.ts.net via Tailscale Funnel">
+          <input type="text" id="mobile-new-label" aria-label="Device label" placeholder="Device label, e.g. \"My Phone\"" style="flex:1;">
+          <input type="text" id="mobile-new-host" aria-label="Host:port the phone should reach" placeholder="Host:port the phone should reach, e.g. your-tailnet-host:8787">
+          <input type="text" id="mobile-new-host2" aria-label="Fallback host:port (optional)" placeholder="Fallback host:port (optional), e.g. LAN IP if the above is Tailscale">
+          <input type="text" id="mobile-new-host3" aria-label="Public URL (optional)" placeholder="Public URL (optional), e.g. https://you.ts.net via Tailscale Funnel">
           <select id="mobile-new-tier" title="Permission tier — controls what this device can ask Server Chat / Support Bot to do">
             <option value="none" selected>No admin access</option>
             <option value="standard">Standard</option>
@@ -1949,7 +1949,7 @@
           <p class="cardnote" style="color:var(--warning);">Shown once — this can't be recovered after you leave this page. Scan the QR, or copy the code below and paste it into the app's pairing screen — it already carries every host, no typing required.</p>
           <p class="cardnote" id="mobile-new-hosts-used"></p>
           <div class="row" style="gap:14px; align-items:flex-start;">
-            <img id="mobile-new-qr" style="width:180px; height:180px; border-radius:8px; border:1px solid var(--line);">
+            <img id="mobile-new-qr" alt="Pairing QR code" style="width:180px; height:180px; border-radius:8px; border:1px solid var(--line);">
             <div style="flex:1;">
               <div class="cardnote">Pairing code — paste this whole thing into the app</div>
               <div class="mono" id="mobile-new-key" style="word-break:break-all; font-size:12px; background:var(--surface-2); border:1px solid var(--line); border-radius:7px; padding:8px;"></div>
@@ -1978,8 +1978,8 @@
       <div class="card">
         <h3>Add a shared folder</h3>
         <div class="row" style="gap:8px; align-items:center;">
-          <input type="text" id="files-new-name" placeholder="Name, e.g. \"Android builds\"" style="flex:1;">
-          <input type="text" id="files-new-path" placeholder="Absolute path on this machine, e.g. D:\Shared\builds" style="flex:2;">
+          <input type="text" id="files-new-name" aria-label="Folder name" placeholder="Name, e.g. \"Android builds\"" style="flex:1;">
+          <input type="text" id="files-new-path" aria-label="Absolute path on this machine" placeholder="Absolute path on this machine, e.g. D:\Shared\builds" style="flex:2;">
           <button class="btn primary" id="btn-files-add-root">Add folder</button>
         </div>
         <p class="cardnote">Requires the desktop dashboard token (not a paired phone's key) — mounting a new folder as browsable is a bigger grant than browsing one that's already configured.</p>
@@ -1988,7 +1988,7 @@
         <div class="row" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
           <h3 style="margin:0;">Browse</h3>
           <div class="row" style="gap:8px; align-items:center;">
-            <select id="files-root-select" style="min-width:160px;"></select>
+            <select id="files-root-select" aria-label="Shared folder" style="min-width:160px;"></select>
             <button class="btn" id="btn-files-remove-root" title="Remove this folder from the browsable list">Remove folder</button>
           </div>
         </div>
@@ -2010,13 +2010,13 @@
         <p class="cardnote">One click — this server auto-detects its own reachable address and bakes it into the token, so whoever links in never needs to know or type it. Share the token — never your dashboard token — with them; it works once and expires in 10 minutes, so it's safe to send over chat.</p>
         <div class="row" style="gap:8px; align-items:center; margin-top:8px;">
           <button class="btn" id="btn-peer-gen-token">Generate pairing token</button>
-          <input type="text" id="peer-gen-token-value" readonly placeholder="(not generated yet)" style="flex:1; min-width:220px; font-family:monospace;">
+          <input type="text" id="peer-gen-token-value" aria-label="Generated pairing token" readonly placeholder="(not generated yet)" style="flex:1; min-width:220px; font-family:monospace;">
           <span class="cardnote" id="peer-gen-token-expiry" style="margin:0;"></span>
         </div>
         <details style="margin-top:8px;">
           <summary class="cardnote" style="cursor:pointer;">Advanced: override the auto-detected address</summary>
           <div class="row" style="gap:8px; align-items:center; margin-top:8px;">
-            <input type="text" id="peer-gen-token-address" placeholder="Only if auto-detection is wrong, e.g. behind a reverse proxy" style="flex:1; min-width:260px;">
+            <input type="text" id="peer-gen-token-address" aria-label="Address to embed (optional)" placeholder="Only if auto-detection is wrong, e.g. behind a reverse proxy" style="flex:1; min-width:260px;">
           </div>
         </details>
         <div class="row" id="peer-firewall-row" style="gap:8px; align-items:center; margin-top:10px; display:none;">
@@ -2030,14 +2030,14 @@
         <h3>2. Link a server (using ITS pairing token)</h3>
         <p class="cardnote">Just a name and a token — no address to look up. On the other server's own Linked Servers tab, have its admin generate a pairing token (step 1 above, done on their side) and paste it below. Your own dashboard token never leaves this machine — the pairing token is the only thing sent over the network, and it stops working the instant it's used.</p>
         <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px;">
-          <input type="text" id="peer-new-name" placeholder="Name, e.g. \"Laptop\"" style="flex:1; min-width:140px;">
-          <input type="text" id="peer-new-token" placeholder="Its pairing token (from step 1 on ITS dashboard)" style="flex:2; min-width:260px; font-family:monospace;">
+          <input type="text" id="peer-new-name" aria-label="Name for the linked server" placeholder="Name, e.g. \"Laptop\"" style="flex:1; min-width:140px;">
+          <input type="text" id="peer-new-token" aria-label="Its pairing token" placeholder="Its pairing token (from step 1 on ITS dashboard)" style="flex:2; min-width:260px; font-family:monospace;">
           <button class="btn primary" id="btn-peer-link">Link server</button>
         </div>
         <details style="margin-top:8px;">
           <summary class="cardnote" style="cursor:pointer;">Advanced: let it call you back too (auto-detected)</summary>
           <div class="row" style="gap:8px; align-items:center; margin-top:8px;">
-            <input type="text" id="peer-my-url" placeholder="This server's own reachable address (optional)" style="flex:1;">
+            <input type="text" id="peer-my-url" aria-label="This server&#x27;s own reachable address (optional)" placeholder="This server's own reachable address (optional)" style="flex:1;">
           </div>
           <label class="row" style="gap:6px; align-items:center; margin-top:8px; font-size:13px;">
             <input type="checkbox" id="peer-setup-ssh" checked>
@@ -2099,13 +2099,13 @@
     </div>
     <div class="term-view" id="term-view-activity">
       <div class="activity-toolbar">
-        <select id="activity-level-filter">
+        <select id="activity-level-filter" aria-label="Minimum log level">
           <option value="">All levels</option>
           <option value="ERROR">Error</option>
           <option value="WARNING">Warning</option>
           <option value="INFO">Info</option>
         </select>
-        <input id="activity-search" type="text" placeholder="Filter by text…">
+        <input id="activity-search" aria-label="Filter activity by text" type="text" placeholder="Filter by text…">
         <label class="activity-autoscroll"><input type="checkbox" id="activity-autoscroll" checked> Auto-scroll</label>
         <button class="term-icon-btn" id="activity-clear" title="Clear (visual only — the log itself is untouched)">Clear</button>
       </div>
