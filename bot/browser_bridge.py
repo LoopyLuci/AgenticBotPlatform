@@ -379,6 +379,12 @@ class Bridge:
             except BridgeError:
                 pass
             raise BridgeError("E_TIMEOUT", f"the browser did not answer {method} within {deadline_ms} ms", retryable=True)
+        except asyncio.CancelledError:                    # the caller went away (a streaming client hung up): stop the work in the browser too
+            try:
+                await asyncio.shield(conn.send({"v": PROTOCOL, "method": "cancel", "params": {"id": rid}}))
+            except (BridgeError, Exception):  # noqa: BLE001
+                pass
+            raise
         finally:
             conn.pending.pop(rid, None)
 
@@ -408,7 +414,7 @@ class Bridge:
         _conn().commit()
         await conn.ws.send_text(json.dumps({"v": PROTOCOL, "id": hello.get("id"), "result": {
             "server_id": server_id(), "protocol": PROTOCOL, "session": conn.session, "abp_version": _abp_version(),
-            "policy": _effective_policy(), "features": {"gateway": False, "web_sessions": False}}}))
+            "policy": _effective_policy(), "features": {"gateway": True, "web_sessions": True}}}))
         self._emit("connected", {"key_id": conn.key_id, "ext": conn.ext})
         params = hello.get("params", hello)
         await self._resume(conn, params.get("resume") if isinstance(params, dict) else None)

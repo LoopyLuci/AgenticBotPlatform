@@ -9,6 +9,25 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **ABP Browser Extension: model gateway and web-session models (phase 2 of 5).** An OpenAI-compatible surface at
+  `/api/browser/v1/*` (`bot/browser_gateway.py`, `bot/dashboard/browser_gateway_api.py`) so agents, sub-agents, swarms and
+  routines can use a browser-session model exactly like any other provider. `web/<site>` (grok, claude.ai, gemini, chatgpt,
+  perplexity) drives that site's own chat page with your logged-in session in a background tab, in its own teal "ABP web-agents"
+  tab group; site adapters are plain JSON (`browser-extension/src/adapters/*.json`) interpreted by a small DOM engine
+  (`src/content/webengine.ts`) - ranked selector fallbacks so drift is visible before it breaks, a per-adapter self-test, and a
+  "may need an update" status rather than a silent wrong answer. Tool calling is emulated with a compact `<abp_tool>` protocol
+  injected into the prompt and parsed back out of the reply, with one automatic repair turn on a malformed response; streaming
+  relays the page's own incremental text; token usage is estimated and marked as such. `browser-local/<model>` is reserved for
+  the in-browser model engine (phase 3) and answers a clear "not built yet" until then. Off by default and opt-in **per site**
+  from the extension's own options page (never pushed from ABP), with that site's terms-of-service note shown before you turn
+  it on; nothing marked sensitive is ever sent to a web model, and the model router's "auto" pick never chooses one. `auto`
+  falls through cloud/local/browser-session/in-browser candidates in that order. The Browser page can register `web`/
+  `browser-local` as ordinary `config/providers.yaml` providers with one click, and list/self-test the connected sites.
+  Verified: gateway conformance tests against a fake extension over the real bridge (auth via dashboard token or an OpenAI-style
+  `Authorization: Bearer`, non-streaming and streaming replies, the tool-call round trip and its repair path, the sensitive-egress
+  refusal, provider-not-configured and not-connected errors) and the adapter engine's selector/compose/read logic under jsdom.
+  Not yet done: a live check against the real chat sites (only a fake extension and jsdom so far) and Playwright end-to-end
+  coverage of a mock chat page analogous to the phase 0/1 extension suite.
 - **ABP Browser Extension (phases 0-1 of 5).** A Manifest V3 extension ("ABP Bridge", `browser-extension/`) that pairs with the
   desktop app and lets agents operate your real, logged-in browser. Full design and roadmap in `docs/browser-extension/DESIGN.md`.
   Built now: the bridge (`bot/browser_bridge.py`, `/api/browser/*`: pairing by a desktop-approved request or a 6-digit code,

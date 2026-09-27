@@ -1,0 +1,32 @@
+{
+  "id": "chatgpt",
+  "name": "ChatGPT",
+  "version": 1,
+  "hosts": ["chatgpt.com", "chat.openai.com"],
+  "home": "https://chatgpt.com/",
+  "tos_note": "Uses your own logged-in ChatGPT session in a browser tab. ChatGPT's terms of service apply to how you use it, and rate limits are enforced. ABP never types your password and stops at any login or CAPTCHA.",
+  "login": {
+    "logged_out": ["[data-testid=login-button]", "a[href*='/auth/login']", "text:button:Log in"],
+    "ready": ["#prompt-textarea", "div.ProseMirror[contenteditable=true]", "textarea[name=prompt-textarea]", "div[contenteditable=true][role=textbox]"]
+  },
+  "new_chat": { "navigate": "https://chatgpt.com/" },
+  "compose": {
+    "input": ["#prompt-textarea", "div.ProseMirror[contenteditable=true]", "textarea[name=prompt-textarea]", "div[contenteditable=true][role=textbox]"],
+    "submit": ["button[data-testid=send-button]", "aria:Send prompt", "aria:Send message"],
+    "key": "Enter",
+    "mode": "paste"
+  },
+  "stream": {
+    "assistant": ["[data-message-author-role=assistant]", "article [data-message-author-role=assistant]"],
+    "generating": ["button[data-testid=stop-button]", "aria:Stop streaming", "aria:Stop"],
+    "quiet_ms": 1500,
+    "strip": ["button", "[aria-hidden=true]", ".sr-only"]
+  },
+  "errors": [
+    { "within": ["[role=alert]", "[role=status]", "[data-testid*=error]", "[class*=toast]"],
+      "match": "(rate limit|too many requests|reached (your|the) (message )?limit|usage limit|try again (later|in))",
+      "code": "E_RATE_LIMITED", "message": "the site says you have reached its usage limit" }
+  ],
+  "limits": { "min_interval_ms": 4000, "max_prompt_chars": 30000 },
+  "selftest": { "prompt": "Reply with exactly: ABP-OK", "expect": "ABP-OK" }
+}

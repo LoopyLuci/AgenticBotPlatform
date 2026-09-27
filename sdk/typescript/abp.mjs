@@ -540,6 +540,29 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/browser/v1/models": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/browser/v1/models",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/browser/v1/{ns}/models": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/browser/v1/{ns}/models",
+  "path_params": [
+   "ns"
+  ],
+  "query_params": []
+ },
+ "GET /api/browser/web/adapters": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/browser/web/adapters",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/canvas": {
   "body": false,
   "method": "GET",
@@ -2318,6 +2341,13 @@ export const operations = {
   ],
   "query_params": []
  },
+ "POST /api/browser/gateway/register": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/browser/gateway/register",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/browser/pair/code": {
   "body": false,
   "method": "POST",
@@ -2361,6 +2391,52 @@ export const operations = {
   "method": "POST",
   "path": "/api/browser/rpc",
   "path_params": [],
+  "query_params": []
+ },
+ "POST /api/browser/v1/audio/speech": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/browser/v1/audio/speech",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/browser/v1/audio/transcriptions": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/browser/v1/audio/transcriptions",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/browser/v1/chat/completions": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/browser/v1/chat/completions",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/browser/v1/embeddings": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/browser/v1/embeddings",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/browser/v1/{ns}/chat/completions": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/browser/v1/{ns}/chat/completions",
+  "path_params": [
+   "ns"
+  ],
+  "query_params": []
+ },
+ "POST /api/browser/web/{adapter}/selftest": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/browser/web/{adapter}/selftest",
+  "path_params": [
+   "adapter"
+  ],
   "query_params": []
  },
  "POST /api/canvas/{name}/link": {
@@ -6510,6 +6586,13 @@ export const operations = {
    "limit"
   ]
  },
+ "gateway_register_api_browser_gateway_register_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/browser/gateway/register",
+  "path_params": [],
+  "query_params": []
+ },
  "get_approval_api_approvals__approval_id__get": {
   "body": false,
   "method": "GET",
@@ -7355,6 +7438,59 @@ export const operations = {
    "address"
   ]
  },
+ "v1_chat_api_browser_v1_chat_completions_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/browser/v1/chat/completions",
+  "path_params": [],
+  "query_params": []
+ },
+ "v1_chat_ns_api_browser_v1__ns__chat_completions_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/browser/v1/{ns}/chat/completions",
+  "path_params": [
+   "ns"
+  ],
+  "query_params": []
+ },
+ "v1_embeddings_api_browser_v1_embeddings_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/browser/v1/embeddings",
+  "path_params": [],
+  "query_params": []
+ },
+ "v1_models_api_browser_v1_models_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/browser/v1/models",
+  "path_params": [],
+  "query_params": []
+ },
+ "v1_models_ns_api_browser_v1__ns__models_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/browser/v1/{ns}/models",
+  "path_params": [
+   "ns"
+  ],
+  "query_params": []
+ },
+ "v1_speech_api_browser_v1_audio_speech_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/browser/v1/audio/speech",
+  "path_params": [],
+  "query_params": []
+ },
+ "v1_transcriptions_api_browser_v1_audio_transcriptions_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/browser/v1/audio/transcriptions",
+  "path_params": [],
+  "query_params": []
+ },
  "validate_permissions_api_agent_permissions_validate_post": {
   "body": true,
   "method": "POST",
@@ -7427,6 +7563,22 @@ export const operations = {
   "method": "GET",
   "path": "/api/vms/paths",
   "path_params": [],
+  "query_params": []
+ },
+ "web_adapters_api_browser_web_adapters_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/browser/web/adapters",
+  "path_params": [],
+  "query_params": []
+ },
+ "web_selftest_api_browser_web__adapter__selftest_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/browser/web/{adapter}/selftest",
+  "path_params": [
+   "adapter"
+  ],
   "query_params": []
  },
  "whatsapp_verify_webhooks_whatsapp_get": {

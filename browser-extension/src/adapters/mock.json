@@ -1,0 +1,18 @@
+{
+  "id": "mock",
+  "name": "Mock chat",
+  "version": 1,
+  "hosts": ["127.0.0.1", "localhost"],
+  "home": "http://127.0.0.1/chat.html",
+  "dev": true,
+  "tos_note": "A test page served by the test suite.",
+  "login": { "logged_out": ["#login-wall"], "ready": ["#composer"] },
+  "new_chat": { "click": ["#new-chat"] },
+  "compose": { "input": ["#composer"], "submit": ["#send"], "key": "Enter", "mode": "paste" },
+  "stream": { "assistant": ["div.msg.assistant"], "generating": ["#stop"], "quiet_ms": 250, "strip": ["button", ".hidden-meta"] },
+  "errors": [
+    { "within": ["#banner"], "match": "(rate limit|too many)", "code": "E_RATE_LIMITED", "message": "the mock site is rate limiting" }
+  ],
+  "limits": { "min_interval_ms": 300, "max_prompt_chars": 6000 },
+  "selftest": { "prompt": "Reply with exactly: ABP-OK", "expect": "ABP-OK" }
+}

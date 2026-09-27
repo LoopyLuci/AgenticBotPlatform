@@ -32,7 +32,7 @@ const manifest = {
   icons: { 16: 'icons/16.png', 32: 'icons/32.png', 48: 'icons/48.png', 128: 'icons/128.png' },
 };
 
-const common = { bundle: true, target: 'es2022', sourcemap: 'linked', logLevel: 'info', legalComments: 'none' };
+const common = { bundle: true, target: 'es2022', sourcemap: 'linked', logLevel: 'info', legalComments: 'none', define: { __ABP_DEV__: store ? 'false' : 'true' } };
 const entries = [
   { entryPoints: { background: 'src/background/index.ts' }, format: 'esm' },
   { entryPoints: { content: 'src/content/index.ts' }, format: 'iife' },
