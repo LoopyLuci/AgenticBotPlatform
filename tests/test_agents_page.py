@@ -52,7 +52,7 @@ def test_the_bot_form_script_is_identical_in_both_apps():
 @pytest.mark.parametrize("name", ["dashboard", "desktop"])
 def test_the_bot_form_offers_abp_agent_first_and_has_its_settings_panel(name):
     text = PAGES[name]
-    select = text[text.index('<select id="bot-new-backend">'):]
+    select = text[text.index('<select id="bot-new-backend"'):]
     select = select[:select.index("</select>")]
     assert select.index("ABP Agent (recommended)") < select.index("Claude apps") < select.index("Hermes Agent")
     assert select.index('value="native_agent"') < select.index('value="cli"')
