@@ -447,10 +447,11 @@
   const BR = { code: null, codeUntil: 0, timer: null };
   async function brLoad() {
     const root = $('br-root'); if (!root) return;
-    let st, pend;
-    try { [st, pend] = await Promise.all([pageApi('/api/browser/status'), pageApi('/api/browser/pair/pending')]); } catch (e) { root.innerHTML = `<p class="cardnote">${esc(errText(e))}</p>`; return; }
+    let st, pend, web;
+    try { [st, pend, web] = await Promise.all([pageApi('/api/browser/status'), pageApi('/api/browser/pair/pending'), pageApi('/api/browser/web/adapters').catch(() => ({ adapters: [], connected: false }))]); } catch (e) { root.innerHTML = `<p class="cardnote">${esc(errText(e))}</p>`; return; }
     const paired = st.paired || [];
     const codeLeft = Math.max(0, Math.round((BR.codeUntil - Date.now()) / 1000));
+    const adapters = web.adapters || [];
     root.innerHTML = `
       <div class="card"><h3>Connect a browser</h3>
         <p class="cardnote">Install the <b>ABP Bridge</b> extension in Chrome, Edge, Brave or another Chromium browser (for a development build: open <code>chrome://extensions</code>, turn on Developer mode, choose <b>Load unpacked</b> and pick the <code>browser-extension/dist</code> folder). Then either press <b>Ask ABP to approve this browser</b> in the extension and Allow it below, or type a code from here.</p>
@@ -458,7 +459,12 @@
         ${(pend.pending || []).map(r => `<div class="infra-warn"><b>A browser is asking to connect</b> (${esc(r.browser || 'browser')}, extension ${esc(r.extension_id.slice(0, 8))}…) ${btn('br-decide', 'Allow', `data-id="${esc(r.id)}" data-op="approve"`, 'primary')}${btn('br-decide', 'Deny', `data-id="${esc(r.id)}" data-op="deny"`)}</div>`).join('')}
       </div>
       <div class="card"><h3>Paired browsers</h3>${table(['Browser', 'Extension', 'Status', 'Paired', ''], paired.map(b => [esc(b.browser || 'browser') + ' ' + esc(b.version || ''), esc(b.extension_id.slice(0, 12)) + '…', pill(b.connected ? 'connected' : 'not connected', b.connected), esc(new Date(b.paired_at * 1000).toLocaleDateString()), btn('br-unpair', 'Unpair', `data-id="${b.key_id}"`)]))}
-        <p class="cardnote">While a browser is connected, agents get the <code>ext_browser</code> tools and work in a purple "ABP agent" tab group. Banks, payment pages, password managers, admin consoles and login pages are never automated; you can press Stop in the extension at any time.</p></div>`;
+        <p class="cardnote">While a browser is connected, agents get the <code>ext_browser</code> tools and work in a purple "ABP agent" tab group. Banks, payment pages, password managers, admin consoles and login pages are never automated; you can press Stop in the extension at any time.</p></div>
+      <div class="card"><h3>Models through your browser</h3>
+        <p class="cardnote">ABP's model gateway (<code>web/*</code> for a chat site you're logged into, <code>browser-local/*</code> for a model running in the browser) can be used by agents, sub-agents and routines like any other provider. ${btn('br-register', 'Register web / browser-local as providers', '', 'primary')}</p>
+        ${web.connected ? table(['Site', 'Status', 'Hosts', ''], adapters.map(a => [esc(a.name), a.enabled ? (a.degraded ? pill('may need an update', false) : a.logged_in === false ? pill('not logged in', false) : a.logged_in ? pill('ready', true) : pill('unknown', false)) : pill('off (enable in the extension)', false), esc((a.hosts || []).join(', ')), a.enabled ? btn('br-selftest', 'Self-test', `data-id="${esc(a.id)}"`) : '']))
+          : '<p class="cardnote">Connect a browser above to see and use chat-site models. Turning a site on is done from the extension\'s own options page, one site at a time, since it uses your logged-in session there.</p>'}
+      </div>`;
     if (!BR.timer) BR.timer = setInterval(() => { if ($('br-root') && $('br-root').offsetParent !== null) brLoad(); }, 3000);
   }
   async function brAct(el) {
@@ -466,6 +472,8 @@
       if (el.dataset.act === 'br-code') { const r = await pageApi('/api/browser/pair/code', J('POST', {})); BR.code = r.code; BR.codeUntil = Date.now() + r.expires_in * 1000; }
       else if (el.dataset.act === 'br-decide') { await pageApi(`/api/browser/pair/${el.dataset.id}/${el.dataset.op}`, J('POST', {})); toast(el.dataset.op === 'approve' ? 'Browser connected' : 'Denied', 'success'); }
       else if (el.dataset.act === 'br-unpair') { if (!sure('Unpair this browser? It will stop working with ABP until it is paired again.')) return; await pageApi('/api/browser/browsers/' + el.dataset.id, { method: 'DELETE' }); }
+      else if (el.dataset.act === 'br-register') { const r = await pageApi('/api/browser/gateway/register', J('POST', {})); toast(r.added && r.added.length ? `Added: ${r.added.join(', ')}` : 'Already registered', 'success'); }
+      else if (el.dataset.act === 'br-selftest') { toast('Testing ' + el.dataset.id + '…'); const r = await pageApi(`/api/browser/web/${el.dataset.id}/selftest`, J('POST', {})); toast(r.ok ? 'Self-test passed' : `Self-test failed: ${(r.got || '').slice(0, 120)}`, r.ok ? 'success' : 'error'); }
     } catch (e) { fail(e); }
     brLoad();
   }

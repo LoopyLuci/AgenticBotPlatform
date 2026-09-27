@@ -1,0 +1,32 @@
+{
+  "id": "perplexity",
+  "name": "Perplexity",
+  "version": 1,
+  "hosts": ["perplexity.ai"],
+  "home": "https://www.perplexity.ai/",
+  "tos_note": "Uses your own logged-in Perplexity session in a browser tab. Perplexity's terms of service apply to how you use it, and rate limits are enforced. ABP never types your password and stops at any login or CAPTCHA.",
+  "login": {
+    "logged_out": ["text:button:Sign in", "a[href*='/sign-in']"],
+    "ready": ["textarea[placeholder*='Ask' i]", "#ask-input", "div[contenteditable=true][role=textbox]", "textarea"]
+  },
+  "new_chat": { "navigate": "https://www.perplexity.ai/" },
+  "compose": {
+    "input": ["textarea[placeholder*='Ask' i]", "#ask-input", "div[contenteditable=true][role=textbox]", "textarea"],
+    "submit": ["button[data-testid=submit-button]", "aria:Submit", "aria:Send"],
+    "key": "Enter",
+    "mode": "paste"
+  },
+  "stream": {
+    "assistant": ["div[id^=markdown-content]", "div.prose"],
+    "generating": ["aria:Stop", "button[aria-label*='Stop' i]"],
+    "quiet_ms": 1500,
+    "strip": ["button", "[aria-hidden=true]", ".sr-only"]
+  },
+  "errors": [
+    { "within": ["[role=alert]", "[role=status]", "[data-testid*=error]", "[class*=toast]"],
+      "match": "(rate limit|too many requests|reached (your|the) (message )?limit|usage limit|try again (later|in))",
+      "code": "E_RATE_LIMITED", "message": "the site says you have reached its usage limit" }
+  ],
+  "limits": { "min_interval_ms": 4000, "max_prompt_chars": 30000 },
+  "selftest": { "prompt": "Reply with exactly: ABP-OK", "expect": "ABP-OK" }
+}

@@ -6,6 +6,8 @@ import { accessibleName, isSecretField, isVisible, roleOf } from './dom';
 import { setOverlay, toast, watchUserInput } from './overlay';
 import { RefTable } from './refs';
 import { candidates, locatorFor, takeSnapshot, type SnapshotOptions } from './snapshot';
+import { adapterById } from '../adapters';
+import * as web from './webengine';
 
 declare global { interface Window { __abpContent?: boolean } }
 
@@ -54,6 +56,31 @@ if (!window.__abpContent) {
         return { ok: true };
       }
       case 'state': return act.pageState();
+      case 'web.probe': {
+        const a = adapterById(String(m.adapter ?? ''));
+        if (!a) throw new BridgeError('E_PARAMS', `unknown adapter ${String(m.adapter)}`);
+        return web.probe(a);
+      }
+      case 'web.prompt': {
+        const a = adapterById(String(m.adapter ?? ''));
+        if (!a) throw new BridgeError('E_PARAMS', `unknown adapter ${String(m.adapter)}`);
+        const p = web.probe(a);
+        if (p.logged_out) throw new BridgeError('E_NOT_LOGGED_IN', `you are not logged in to ${a.name}`, { hint: 'log in to it in this tab, then try again' });
+        if (!p.ready) throw new BridgeError('E_ADAPTER_BROKEN', `could not find the compose box on ${a.name} (the site may have changed)`, { data: p.matched });
+        const req = String(m.req ?? '');
+        await web.compose(a, String(m.text ?? ''));
+        try {
+          const result = await web.waitDone(a, Number(m.timeout_ms) || 180_000, (text) => {
+            if (req) void chrome.runtime.sendMessage({ t: 'abp-web-delta', req, text }).catch(() => undefined);
+          });
+          if (result.error) throw Object.assign(new Error(result.error.message), { code: result.error.code });
+          return { text: result.text, url: location.href, title: document.title };
+        } catch (e) {
+          const code = (e as { code?: string }).code;
+          if (code) throw new BridgeError(code as never, e instanceof Error ? e.message : String(e), { retryable: code === 'E_RATE_LIMITED' });
+          throw e;
+        }
+      }
       default: throw new BridgeError('E_METHOD', `unknown content op ${m.op}`);
     }
   };

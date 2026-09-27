@@ -6,6 +6,7 @@ import { classify } from '../shared/urlpolicy';
 import { audit } from './audit';
 import { frames as listFrames, send } from './content-rpc';
 import type { Capability, Enforcer } from './policy';
+import { onDelta, sessions } from './sessions';
 import type { TabManager } from './tabs';
 
 type Params = Record<string, unknown>;
@@ -87,6 +88,20 @@ export class Router {
         return { ok: true };
       }
       case 'session.mark': audit('mark', String(p.label ?? '')); return { ok: true };
+      case 'web.adapters.list': return { adapters: await sessions.list() };
+      case 'web.prompt': {
+        this.enforcer.assertRunning();
+        const adapter = String(p.adapter ?? '');
+        const text = String(p.prompt ?? p.text ?? '');
+        if (!adapter || !text) throw new BridgeError('E_PARAMS', 'adapter and prompt are required');
+        return sessions.prompt(adapter, p.model ? String(p.model) : undefined, text,
+          { req: typeof p.req === 'string' ? p.req : ctx.idem, timeoutMs: Number(p.timeout_ms) || undefined, newChat: p.new_chat !== false });
+      }
+      case 'web.selftest': {
+        const adapter = String(p.adapter ?? '');
+        if (!adapter) throw new BridgeError('E_PARAMS', 'adapter is required');
+        return sessions.selftest(adapter);
+      }
       default: throw new BridgeError('E_METHOD', `unknown method ${method}`);
     }
   }

@@ -47,6 +47,12 @@ async function render(): Promise<void> {
         el('td', {}, el('button', { onclick: async () => { await ask({ ui: 'detach', tab: t.id }); void render(); } }, 'Release')))))
         : el('p', { class: 'muted' }, 'None. ABP opens its own tabs (in a purple "ABP agent" group), or you can give it the tab you are on from the toolbar popup.')));
 
+    const webRoot = el('div', {});
+    kids.push(el('div', { class: 'card' }, el('h2', {}, 'Browser-session models'),
+      el('p', { class: 'muted small' }, 'Off by default. Turning one on lets ABP send it a prompt and read back the reply, using your own logged-in session in a background tab - the site’s terms of service apply, and it is never used for anything marked sensitive.'),
+      webRoot));
+    void renderWeb(webRoot);
+
     const log = el('ul', { class: 'timeline' });
     kids.push(el('div', { class: 'card' }, el('h2', {}, 'Recent activity'), log));
     void ask<{ entries: Array<{ at: number; action: string; detail: string }> }>({ ui: 'audit' }).then((r) => {
@@ -56,6 +62,40 @@ async function render(): Promise<void> {
     });
   }
   root.replaceChildren(...kids);
+}
+
+interface WebAdapter {
+  id: string; name: string; hosts: string[]; models: string[]; vision: boolean; enabled: boolean; tos_note: string;
+  logged_in: boolean | null; degraded: boolean; connected_tab: boolean;
+}
+
+async function renderWeb(root: HTMLElement): Promise<void> {
+  root.replaceChildren(el('p', { class: 'muted small' }, 'Loading...'));
+  const { adapters } = await ask<{ adapters: WebAdapter[] }>({ ui: 'web.list' });
+  let testMsg: Record<string, string> = {};
+  const draw = (): void => {
+    root.replaceChildren(el('table', {}, ...adapters.map((a) => {
+      const statusText = !a.enabled ? 'off' : a.degraded ? 'the page changed - may need an update' : a.logged_in === false ? 'not logged in' : a.logged_in ? 'ready' : 'unknown';
+      const toggle = el('button', { onclick: async () => {
+        if (a.enabled) { await ask({ ui: 'web.disable', adapter: a.id }); }
+        else {
+          if (!confirm(`Let ABP use your ${a.name} session?\n\n${a.tos_note}`)) return;
+          const r = await ask<{ ok: boolean; error?: string }>({ ui: 'web.enable', adapter: a.id, origin: `https://${a.hosts[0]}/*` });
+          if (!r.ok) { testMsg = { ...testMsg, [a.id]: r.error ?? 'not enabled' }; draw(); return; }
+        }
+        void renderWeb(root);
+      } }, a.enabled ? 'Turn off' : 'Turn on');
+      const test = el('button', { disabled: !a.enabled, onclick: async () => {
+        testMsg = { ...testMsg, [a.id]: 'Testing...' }; draw();
+        try { const r = await ask<{ ok: boolean; got: string }>({ ui: 'web.selftest', adapter: a.id }); testMsg = { ...testMsg, [a.id]: r.ok ? 'Self-test passed.' : `Self-test failed: ${r.got}` }; }
+        catch (e) { testMsg = { ...testMsg, [a.id]: e instanceof Error ? e.message : String(e) }; }
+        draw();
+      } }, 'Self-test');
+      return el('tr', {}, el('td', {}, a.name), el('td', { class: 'muted small' }, statusText), el('td', {}, toggle, ' ', test),
+        el('td', { class: 'muted small' }, testMsg[a.id] ?? ''));
+    })));
+  };
+  draw();
 }
 
 chrome.runtime.onMessage.addListener((m) => {

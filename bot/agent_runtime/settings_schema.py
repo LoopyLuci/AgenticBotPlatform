@@ -138,6 +138,7 @@ FIELDS: list[dict] = [
     _f("router.also", "list", "Also consider these models", "Extra \"provider/model\" candidates added to the automatic free-model list above. Only used when the list above is blank.", M, "Automatic routing", [], advanced=True),
     _f("router.auto_failover", "bool", "Automatic failover", "When a bot's model fails mid-turn, try more models from the router (beyond its own configured fallback model) before giving up.", M, "Automatic routing", False),
     _f("router.max_failover_hops", "int", "Failover attempts", "How many extra models to try, at most, when automatic failover is on.", M, "Automatic routing", 2, min=0, max=5, advanced=True),
+    _f("router.allow_web_in_auto", "bool", "Let \"auto\" pick a browser-session model", "Off (default): \"auto\" never spends a logged-in chat session (Grok, Gemini, ...) - only you choosing \"web/...\" by name does. On lets the router pick one like any other model.", M, "Automatic routing", False, advanced=True),
 ]
 
 BY_ID: dict[str, dict] = {f["id"]: f for f in FIELDS}

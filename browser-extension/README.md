@@ -8,7 +8,7 @@ Links your browser to the ABP desktop app. Design and roadmap: [`docs/browser-ex
 |---|---|
 | P0 bridge, pairing, auth tiers | done, tested |
 | P1 agentic browser control (snapshot, actions, tab scope, safety layers, agent tools) | done, tested in real Edge |
-| P2 model gateway + Grok/Gemini/ChatGPT web sessions | designed, not built |
+| P2 model gateway + Grok/Gemini/ChatGPT/Claude/Perplexity web sessions | done, tested against a fake extension and jsdom; **not yet tried against the real chat sites** |
 | P3 in-browser models (WebGPU/WASM from Hugging Face) | designed, not built |
 | P4 CDP driver, uploads/downloads, recording, Firefox, native-host installer | designed, not built |
 | P5 store release | designed, not built |
@@ -27,6 +27,19 @@ has a fixed extension id (`manifest/dev-key.json`) so pairing and any allow-list
 
 Then in ABP open **Browser**: press *Ask ABP to approve this browser* in the extension's options page and **Allow** it in ABP, or
 enter the 6-digit code ABP shows. Once connected, agents get the `ext_browser` tools.
+
+## Models through your browser (P2)
+
+Once paired, ABP exposes an OpenAI-compatible gateway at `/api/browser/v1/*` (see [`docs/browser-extension/DESIGN.md`](../docs/browser-extension/DESIGN.md)
+section 9). `web/<site>` (grok, claude, gemini, chatgpt, perplexity) drives that site's chat page using your own logged-in session in a
+background tab in a teal **"ABP web-agents"** tab group; tool calling is emulated with a small in-prompt protocol the gateway parses out
+of the reply, with one automatic repair turn if the model gets the format wrong. `browser-local/<model>` is reserved for the in-browser
+model engine (P3) and answers "unavailable" until that lands. Both are registered as ordinary `config/providers.yaml` providers from
+ABP's Browser page ("Register web / browser-local as providers"), so agents, sub-agents, swarms and routines can use `web/grok` exactly
+like any other model — except the model router's "auto" pick never chooses one, and neither is ever sent anything marked sensitive.
+
+Each site is **off until you turn it on**, one at a time, from the extension's own options page — that toggle only ever lives in this
+browser's local storage, is never set remotely, and shows the site's terms-of-service note before you confirm it.
 
 ## Safety, in one paragraph
 

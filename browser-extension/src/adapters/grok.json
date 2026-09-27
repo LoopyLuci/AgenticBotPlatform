@@ -1,0 +1,32 @@
+{
+  "id": "grok",
+  "name": "Grok",
+  "version": 1,
+  "hosts": ["grok.com"],
+  "home": "https://grok.com/",
+  "tos_note": "Uses your own logged-in Grok session in a browser tab. Grok's terms of service apply to how you use it, and rate limits are enforced. ABP never types your password and stops at any login or CAPTCHA.",
+  "login": {
+    "logged_out": ["a[href*='sign-in']", "text:a:Sign in", "text:button:Sign in"],
+    "ready": ["textarea[aria-label*='Ask' i]", "textarea", "div[contenteditable=true][role=textbox]"]
+  },
+  "new_chat": { "navigate": "https://grok.com/" },
+  "compose": {
+    "input": ["textarea[aria-label*='Ask' i]", "textarea", "div[contenteditable=true][role=textbox]"],
+    "submit": ["button[type=submit]", "aria:Submit", "aria:Send"],
+    "key": "Enter",
+    "mode": "paste"
+  },
+  "stream": {
+    "assistant": [".response-content-markdown", "[id^=response-] .message-bubble", "div.message-bubble"],
+    "generating": ["aria:Stop model response", "aria:Stop"],
+    "quiet_ms": 1500,
+    "strip": ["button", "[aria-hidden=true]", ".sr-only"]
+  },
+  "errors": [
+    { "within": ["[role=alert]", "[role=status]", "[data-testid*=error]", "[class*=toast]"],
+      "match": "(rate limit|too many requests|reached (your|the) (message )?limit|usage limit|try again (later|in))",
+      "code": "E_RATE_LIMITED", "message": "the site says you have reached its usage limit" }
+  ],
+  "limits": { "min_interval_ms": 4000, "max_prompt_chars": 30000 },
+  "selftest": { "prompt": "Reply with exactly: ABP-OK", "expect": "ABP-OK" }
+}

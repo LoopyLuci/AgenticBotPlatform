@@ -4,6 +4,7 @@ import { audit, auditNow, loadAudit, setAuditSink } from './audit';
 import { Enforcer } from './policy';
 import { pairByApproval, pairWithCode, unpair as clearPairing, discover, DEFAULT_PORT } from './pairing';
 import { Router } from './router';
+import { onDelta as webDelta, sessions } from './sessions';
 import { getConfig } from './storage';
 import { TabManager } from './tabs';
 import { DEFAULT_POLICY } from '../shared/urlpolicy';
@@ -35,6 +36,7 @@ const router = new Router(enforcer, tabs, () => ({
 setAuditSink(async (entries) => { bridge.notify('audit.push', { entries: entries.map((e) => ({ action: e.action, detail: e.detail, at: e.at })) }); });
 tabs.onEvent = (name, params) => bridge.notify(name, params);
 tabs.onChange = () => { void chrome.runtime.sendMessage({ ui: 'state' }).catch(() => undefined); };
+webDelta.fn = (req, text) => bridge.notify('event.web.delta', { req, text });
 
 async function render(state: BridgeState = bridge.state): Promise<void> {
   const map: Record<BridgeState, [string, string]> = {
@@ -97,6 +99,24 @@ async function handleUi(m: { ui: string; [k: string]: unknown }): Promise<unknow
     case 'stop': await stopAll('stopped from the extension'); return { ok: true };
     case 'resume': enforcer.paused = false; enforcer.stopped = false; await router.overlayAll('active'); await render(); return { ok: true };
     case 'audit': return { entries: await loadAudit() };
+    case 'web.list': return { adapters: await sessions.list() };
+    case 'web.enable': {
+      const id = String(m.adapter ?? '');
+      const origin = String(m.origin ?? '');
+      const got = origin ? await chrome.permissions.request({ origins: [origin] }).catch(() => false) : true;
+      if (!got) return { ok: false, error: 'permission was not granted' };
+      const { setEnabled } = await import('./sessions');
+      await setEnabled(id, true);
+      audit('web.enable', id);
+      return { ok: true };
+    }
+    case 'web.disable': {
+      const { setEnabled } = await import('./sessions');
+      await setEnabled(String(m.adapter ?? ''), false);
+      audit('web.disable', String(m.adapter ?? ''));
+      return { ok: true };
+    }
+    case 'web.selftest': return sessions.selftest(String(m.adapter ?? ''));
     case 'sidepanel': { const w = await chrome.windows.getCurrent(); await chrome.sidePanel.open({ windowId: w.id! }); return { ok: true }; }
     default: return { error: 'unknown ui request' };
   }
@@ -119,7 +139,7 @@ chrome.runtime.onMessage.addListener((raw, sender, sendResponse) => {
 });
 
 chrome.commands.onCommand.addListener((c) => { if (c === 'stop-all') void stopAll('keyboard shortcut'); });
-chrome.tabs.onRemoved.addListener((id) => { void tabs.forget(id); });
+chrome.tabs.onRemoved.addListener((id) => { void tabs.forget(id); void sessions.forgetTab(id); });
 chrome.tabs.onUpdated.addListener((id, info, tab) => {
   if (info.url) void tabs.onNavigated(id, info.url);
   if ((info.status === 'complete' || info.url) && tabs.kindOf(id) !== null) bridge.notify('event.tab.updated', { tab: id, url: tab.url ?? '', title: tab.title ?? '', status: tab.status });
