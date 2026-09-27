@@ -12,8 +12,19 @@ from bot.agent_runtime import code_intel, tools
 FAKE_SERVER = str(Path(__file__).with_name("fake_lsp_server.py"))
 
 
+# One loop for the whole module: language-server clients are cached across calls, and their
+# subprocess pipes belong to the loop that started them (a fresh asyncio.run per call left
+# every server's transport bound to a closed loop).
+_LOOP = asyncio.new_event_loop()
+
+
 def run(coro):
-    return asyncio.run(coro)
+    return _LOOP.run_until_complete(coro)
+
+
+def teardown_module(_module):
+    _LOOP.run_until_complete(code_intel.shutdown_all())
+    _LOOP.close()
 
 
 @pytest.fixture

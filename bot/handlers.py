@@ -177,6 +177,8 @@ def _ctx_from(update: Update, context: ContextTypes.DEFAULT_TYPE) -> CmdContext:
         session=context.user_data,
         notify_approval=_notify_approval(context, chat_id),
         thread_id=thread_id,
+        enforce_access=True,
+        scope=_scope_of(update),
     )
 
 

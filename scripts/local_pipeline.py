@@ -361,7 +361,17 @@ def check_python() -> bool:
     else:
         Step.ok("ruff: clean")
 
-    ok, out = _run([py, "-m", "pytest", "-q", "-rf"], cwd=ROOT, timeout=PYTEST_TIMEOUT)
+    # Parallel (pytest-xdist) with a coverage floor (pyproject.toml's
+    # [tool.coverage.report] fail_under) when the dev requirements are
+    # installed; otherwise the plain serial run, exactly as before.
+    extra: list[str] = []
+    has_dev, _ = _run([py, "-c", "import xdist, pytest_cov"])
+    if has_dev:
+        extra = ["-n", "auto", "--cov=bot", "--cov=abp_cicd", "--cov-report=term:skip-covered"]
+    else:
+        Step.warn("pytest-xdist/pytest-cov not installed — serial run without the coverage floor "
+                  "(pip install -r requirements-dev.txt)")
+    ok, out = _run([py, "-m", "pytest", "-q", "-rf", *extra], cwd=ROOT, timeout=PYTEST_TIMEOUT)
     if not ok:
         # A test that fails once and passes alone is a flake (a busy port, a
         # timing race), not a regression: re-run ONLY the failures once. A

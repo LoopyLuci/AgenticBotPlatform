@@ -120,6 +120,7 @@ class DiscordPlatformInstance:
                 instance_id=self.instance_id, instance_name=self.name,
                 user_id=message.author.id, chat_id=message.channel.id,
                 actor=str(message.author.id), session=session,
+                enforce_access=True, scope="dm" if getattr(message, "guild", None) is None else "group",
             )
             cmd_reply = await dispatch_command(text, cmd_ctx)
             if cmd_reply is not None:
@@ -136,6 +137,9 @@ class DiscordPlatformInstance:
                     await self._reply(message.channel, result.text)
                 except BackendError as exc:
                     await self._reply(message.channel, f"Backend failed: {exc}")
+                except Exception:  # noqa: BLE001 — never leave the user without a reply
+                    logger.exception("unexpected error answering a message")
+                    await self._reply(message.channel, "Something went wrong on my side — it has been logged. Please try again.")
 
         return client
 

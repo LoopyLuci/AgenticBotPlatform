@@ -79,6 +79,10 @@ def open_inbound_port(port: int) -> tuple[bool, str]:
     success from a declined prompt."""
     if not is_supported():
         return False, "firewall automation is only implemented for Windows"
+    # The port is interpolated into an elevated PowerShell command line; only
+    # ever let a genuine port number through, whatever the caller passed.
+    if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+        return False, f"not a valid TCP port: {port!r}"
 
     rule_name = _rule_name(port)
     netsh_args = f'advfirewall firewall add rule name="{rule_name}" dir=in action=allow protocol=TCP localport={port}'
