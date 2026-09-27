@@ -14,6 +14,10 @@ export interface BridgeDeps {
   handler: (method: string, params: unknown, ctx: Ctx, signal: AbortSignal) => Promise<unknown>;
   onState: (state: BridgeState, detail?: string) => void;
   onHello: (result: Record<string, unknown>) => void;
+  /** Called with the reconnect attempt number each time a connection attempt fails - lets the caller try the
+   * secondary transport (native messaging, DESIGN.md 3.2) after a few failures, without the bridge itself
+   * knowing anything about chrome.runtime.connectNative (kept out so this class stays testable with a fake WebSocket). */
+  onReconnectFailing?: (attempt: number) => void;
   WebSocketImpl?: typeof WebSocket;
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => unknown;
@@ -216,6 +220,7 @@ export class BridgeClient {
     const delay = Math.round(base * (0.75 + Math.random() * 0.5));           // jitter
     this.attempt += 1;
     if (detail) this.d.onState(this.state, detail);
+    this.d.onReconnectFailing?.(this.attempt);
     this.reconnectTimer = this.setTimer(() => { this.reconnectTimer = null; void this.open(); }, delay);
   }
 

@@ -9,6 +9,28 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **ABP Browser Extension: uploads, downloads, Firefox, native host (phase 4 of 5, narrower than first planned).**
+  `ext_browser_act` gained an `upload {ref, path}` action that attaches a workspace file to a real `<input type=file>`
+  via a spec-defined `DataTransfer` technique - no `chrome.debugger` attachment, so none of its "this extension is
+  debugging your browser" warning banner. `ext_browser` gained a `downloads` action listing recent downloads. Both are
+  off by default and gated by a real setting now: a new **Browser extension** settings section
+  (`native_agent.browser.extension.*` - max tabs, rate limits, session length, the `uploads`/`downloads`/`eval`/
+  `history` capabilities, extra sensitive sites and read grants) that existed only as an unexposed config key before
+  this. `downloads` additionally needs the browser's own `downloads` permission, requested from the extension's own
+  options page. `npm run build:firefox` builds a Firefox-flavoured manifest from the same source
+  (`background.scripts` instead of a service worker, `sidebar_action` instead of `side_panel`, no `offscreen`
+  permission, a stable `gecko.id`); every Chrome-only API it would otherwise hit already degrades to a clear error or
+  a silent no-op, confirmed with `web-ext lint` (0 errors besides a size notice on the 7.5 MB in-browser-model
+  bundle, a real store-packaging question carried into phase 5). `bot/native_host.py` is a native-messaging host
+  (status/launch over the standard stdio protocol) the extension tries automatically, as the documented secondary
+  transport, after a few failed WebSocket reconnects and only with the optional `nativeMessaging` permission granted;
+  `scripts/install_native_host.py` registers it (writing its manifest and, on Windows, the registry keys Chrome/Edge/
+  Firefox each read) for a person to run themselves - installing it changes browser/registry configuration, so this
+  session verified only its manifest-building and per-platform-path logic, never ran it against a real registry.
+  Deliberately dropped from this row's original scope: a `chrome.debugger`-based driver (the upload technique above
+  covers what it was for), drag-and-drop, recording/replay into routines, the omnibox/context-menu entry points, and
+  i18n scaffolding - still designed, not built. Verified: 20 native-host tests (frame protocol, manifest building,
+  per-platform paths, install/uninstall against a temp directory), extension unit tests, `tsc`, and both builds green.
 - **ABP Browser Extension: in-browser models (phase 3 of 5).** `browser-local/<model>` in the model gateway now runs a real
   model inside the browser tab - WebLLM (WebGPU chat models: Qwen2.5 1.5B, Llama 3.2 1B, Phi-3.5 Mini) and transformers.js
   (CPU/WASM: bge-small embeddings, Whisper tiny/base, a sentiment classifier) - via a small offscreen-document engine

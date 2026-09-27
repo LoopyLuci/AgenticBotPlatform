@@ -12,7 +12,7 @@ import type { TabManager } from './tabs';
 
 type Params = Record<string, unknown>;
 
-const INTERACT_ACTIONS = new Set(['click', 'dblclick', 'rightclick', 'hover', 'focus', 'type', 'clear', 'select', 'check', 'press', 'scroll']);
+const INTERACT_ACTIONS = new Set(['click', 'dblclick', 'rightclick', 'hover', 'focus', 'type', 'clear', 'select', 'check', 'press', 'scroll', 'upload']);
 
 export const parseRef = (ref: unknown): { frameId: number; ref: string } => {
   const s = String(ref ?? '');
@@ -89,6 +89,7 @@ export class Router {
         return { ok: true };
       }
       case 'session.mark': audit('mark', String(p.label ?? '')); return { ok: true };
+      case 'downloads.list': return this.downloadsList(p, ctx);
       case 'web.adapters.list': return { adapters: await sessions.list() };
       case 'web.prompt': {
         this.enforcer.assertRunning();
@@ -260,6 +261,7 @@ export class Router {
     if (!isInteract && !secretFill) throw new BridgeError('E_PARAMS', `unknown action ${action}`);
     const args = (p.args ?? {}) as Record<string, unknown>;
     this.guard('interact', ctx);
+    if (action === 'upload') { this.enforcer.assertCapability('uploads'); this.enforcer.assertApproved('uploads', ctx); }
     if (secretFill || args.submit || (action === 'press' && String(args.key) === 'Enter')) { this.enforcer.assertCapability('forms'); this.enforcer.assertApproved('forms', ctx); }
     this.enforcer.rate('action');
     const tab = this.tabs.resolve(p.tab);
@@ -307,6 +309,18 @@ export class Router {
     }
     if (p.submit_ref) done.push(await this.act({ tab: p.tab, ref: p.submit_ref, action: 'click', args: { submit: true } }, ctx));
     return { ok: true, filled: fields.length };
+  }
+
+  // -------------------------------------------------------------------------------- downloads
+  private async downloadsList(p: Params, ctx: Ctx): Promise<unknown> {
+    this.guard('downloads', ctx);
+    if (!('downloads' in chrome) || !(await chrome.permissions.contains({ permissions: ['downloads'] }))) {
+      throw new BridgeError('E_NOT_ALLOWED', 'ABP does not have the "downloads" browser permission yet',
+        { hint: 'the person can grant it from the extension options page (Downloads)' });
+    }
+    const items = await chrome.downloads.search({ limit: Math.max(1, Math.min(Number(p.limit) || 20, 100)), orderBy: ['-startTime'] });
+    audit('downloads.list', String(items.length));
+    return { downloads: items.map((d) => ({ id: d.id, filename: (d.filename ?? '').split(/[\\/]/).pop() ?? '', url: safeOrigin(d.url ?? ''), state: d.state, bytes_received: d.bytesReceived, total_bytes: d.totalBytes, danger: d.danger, mime: d.mime, start_time: d.startTime })) };
   }
 
   // -------------------------------------------------------------------------------- overlay / stop

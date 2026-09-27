@@ -9,10 +9,12 @@
   },
   "scripts": {
     "build": "node esbuild.config.mjs",
+    "build:firefox": "node esbuild.config.mjs --firefox",
     "watch": "node esbuild.config.mjs --watch",
+    "lint:firefox": "npm run build:firefox && web-ext lint --source-dir dist-firefox",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check": "npm run typecheck && npm run test && npm run build"
+    "check": "npm run typecheck && npm run test && npm run build && npm run build:firefox"
   },
   "devDependencies": {
     "@types/chrome": "^0.3.0",
@@ -20,7 +22,8 @@
     "esbuild": "^0.28.2",
     "jsdom": "^29.1.1",
     "typescript": "^5.9.3",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.1",
+    "web-ext": "^10.7.0"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.3.0",

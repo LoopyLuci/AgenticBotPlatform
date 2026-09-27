@@ -138,4 +138,20 @@ describe('BridgeClient', () => {
     ws.reply({ v: 1, id, error: { code: 'E_RATE_LIMITED', message: 'slow down', retryable: true } });
     await expect(p).rejects.toMatchObject({ code: 'E_RATE_LIMITED', retryable: true });
   });
+
+  it('reports each failed reconnect attempt (the secondary-transport trigger), counting up', async () => {
+    const attempts: number[] = [];
+    const ctx = make({ onReconnectFailing: (n) => attempts.push(n) });
+    ctx.c.start();
+    await flush();
+    const ws1 = FakeWS.instances.at(-1)!;
+    ws1.drop();
+    await flush();
+    ctx.timers.at(-1)!.fn();                                                    // fire the scheduled reconnect
+    await flush();
+    const ws2 = FakeWS.instances.at(-1)!;
+    ws2.drop();
+    await flush();
+    expect(attempts).toEqual([1, 2]);
+  });
 });

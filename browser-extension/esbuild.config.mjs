@@ -1,18 +1,22 @@
-// Bundles every entry point into dist/ and writes dist/manifest.json. No runtime dependencies are bundled into extension
-// pages other than our own code; nothing is fetched from a CDN (extension pages run under a strict CSP).
+// Bundles every entry point into dist/ (or dist-firefox/ with --firefox) and writes its manifest.json. No runtime
+// dependencies are bundled into extension pages other than our own code; nothing is fetched from a CDN (extension
+// pages run under a strict CSP).
 import { build, context } from 'esbuild';
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const dist = path.join(root, 'dist');
 const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
 const devKey = JSON.parse(readFileSync(path.join(root, 'manifest/dev-key.json'), 'utf8'));
 const watch = process.argv.includes('--watch');
 const store = process.argv.includes('--store');          // store builds carry no dev key
+const firefox = process.argv.includes('--firefox');
+const dist = path.join(root, firefox ? 'dist-firefox' : 'dist');
 
-const manifest = {
+// Chromium (chrome/edge/brave/opera - anything that supports chrome.offscreen for the in-browser model engine, MV3
+// service workers, and chrome.sidePanel).
+const chromiumManifest = {
   manifest_version: 3,
   name: 'ABP Bridge',
   version: pkg.version,
@@ -32,6 +36,23 @@ const manifest = {
   icons: { 16: 'icons/16.png', 32: 'icons/32.png', 48: 'icons/48.png', 128: 'icons/128.png' },
 };
 
+// Firefox: no chrome.offscreen (in-browser models report E_MODEL_UNAVAILABLE there instead of crashing - see
+// modelengine.ts), no chrome.sidePanel (sidebar_action instead; index.ts's 'sidepanel' UI request answers with a
+// plain error there), MV3 background is a persistent-ish event page (background.scripts), not a service worker, and
+// self-hosted/unlisted installs need a stable browser_specific_settings.gecko.id.
+const firefoxManifest = {
+  ...chromiumManifest,
+  minimum_chrome_version: undefined,
+  key: undefined,
+  background: { scripts: ['background.js'], type: 'module' },
+  side_panel: undefined,
+  sidebar_action: { default_panel: 'sidepanel.html', default_title: 'ABP Bridge' },
+  permissions: chromiumManifest.permissions.filter((p) => p !== 'offscreen' && p !== 'sidePanel'),
+  browser_specific_settings: { gecko: { id: 'abp-bridge@agenticbotplatform.local', strict_min_version: '115.0' } },
+};
+
+const manifest = Object.fromEntries(Object.entries(firefox ? firefoxManifest : chromiumManifest).filter(([, v]) => v !== undefined));
+
 const common = { bundle: true, target: 'es2022', sourcemap: 'linked', logLevel: 'info', legalComments: 'none', define: { __ABP_DEV__: store ? 'false' : 'true' } };
 const entries = [
   { entryPoints: { background: 'src/background/index.ts' }, format: 'esm' },
@@ -44,6 +65,7 @@ const entries = [
 // copied here rather than bundled by esbuild, and offscreen.ts points env.backends.onnx.wasm.wasmPaths at this folder.
 // Only the plain (non-threaded, non-SIMD-only) and SIMD-threaded builds are shipped; that pair covers every Chromium ABP
 // actually runs in, and skipping the JSEP/JSPI/training variants keeps the extension a fraction of the library's own size.
+// (Firefox still gets a copy for a shared codebase's sake, even though its build never reaches chrome.offscreen to use it.)
 const ORT_WASM_DIR = path.join(root, 'node_modules/onnxruntime-web/dist');
 const ORT_FILES = ['ort-wasm-simd-threaded.wasm', 'ort-wasm-simd-threaded.mjs', 'ort-wasm-simd-threaded.jsep.wasm', 'ort-wasm-simd-threaded.jsep.mjs'];
 

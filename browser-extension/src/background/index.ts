@@ -22,12 +22,39 @@ const bridge: BridgeClient = new BridgeClient({
   key: async () => { const c = await getConfig(); return c ? { key: c.key, server_id: c.server_id } : null; },
   hello: () => ({
     ext: { name: 'ABP Bridge', version: chrome.runtime.getManifest().version, browser: browserName() },
-    capabilities: { debugger: false, offscreen: false, sidepanel: true, native: false, webgpu: 'gpu' in navigator },
+    capabilities: { debugger: false, offscreen: 'offscreen' in chrome, sidepanel: true, native: 'connectNative' in chrome.runtime, webgpu: 'gpu' in navigator },
   }),
   handler: (method, params, ctx, signal) => router.handle(method, params, ctx, signal),
   onState: (state, detail) => { if (detail) lastError = detail; void render(state); void chrome.runtime.sendMessage({ ui: 'state' }).catch(() => undefined); if (state === 'connected') void reportModels(); },
   onHello: (result) => { enforcer.setPolicy((result.policy ?? DEFAULT_POLICY) as never); lastError = ''; },
+  onReconnectFailing: (attempt) => { if (attempt === 3 || attempt % 15 === 0) void tryNativeFallback(); },
 });
+
+/** The secondary transport (DESIGN.md 3.2): after a few failed reconnects, ask the native-messaging host - if one is
+ * installed (scripts/install_native_host.py) - to check on or start ABP, then let the ordinary reconnect try again.
+ * Silently does nothing without the optional "nativeMessaging" permission or without a host actually registered;
+ * this is a fallback for the case the primary WebSocket cannot reach ABP at all, never the normal connection path. */
+const NATIVE_HOST = 'com.abp.bridge';
+let nativeAttemptInFlight = false;
+async function tryNativeFallback(): Promise<void> {
+  if (nativeAttemptInFlight || !('connectNative' in chrome.runtime)) return;
+  const has = await chrome.permissions.contains({ permissions: ['nativeMessaging'] }).catch(() => false);
+  if (!has) return;
+  nativeAttemptInFlight = true;
+  try {
+    await new Promise<void>((resolve) => {
+      let port: chrome.runtime.Port;
+      try { port = chrome.runtime.connectNative(NATIVE_HOST); } catch { resolve(); return; }
+      const done = (): void => { clearTimeout(timer); resolve(); };
+      const timer = setTimeout(done, 5000);
+      port.onMessage.addListener((msg: { running?: boolean; started?: boolean }) => { if (msg?.running || msg?.started) done(); });
+      port.onDisconnect.addListener(done);
+      try { port.postMessage({ op: 'launch' }); } catch { done(); }
+    });
+  } finally {
+    nativeAttemptInFlight = false;
+  }
+}
 
 const router = new Router(enforcer, tabs, () => ({
   version: chrome.runtime.getManifest().version, bridge: bridge.state, session: bridge.session, policy: enforcer.policy, tainted: enforcer.tainted,
@@ -131,7 +158,12 @@ async function handleUi(m: { ui: string; [k: string]: unknown }): Promise<unknow
     }
     case 'models.unload': await modelEngine.unload(String(m.id ?? '')); await modelEngine.forgetInstalled(String(m.id ?? '')); return { ok: true };
     case 'models.installed': return { models: await installedReport() };
-    case 'sidepanel': { const w = await chrome.windows.getCurrent(); await chrome.sidePanel.open({ windowId: w.id! }); return { ok: true }; }
+    case 'sidepanel': {
+      if (!chrome.sidePanel) return { error: 'this browser has no side-panel API; use the sidebar instead' };
+      const w = await chrome.windows.getCurrent();
+      await chrome.sidePanel.open({ windowId: w.id! });
+      return { ok: true };
+    }
     default: return { error: 'unknown ui request' };
   }
 }
@@ -165,7 +197,7 @@ chrome.runtime.onStartup.addListener(() => bridge.start());
 void (async () => {
   await tabs.load();
   await chrome.alarms.create('abp.keepalive', { periodInMinutes: 0.5 });
-  await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => undefined);
+  await chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => undefined);
   await render('disconnected');
   bridge.start();
 })();

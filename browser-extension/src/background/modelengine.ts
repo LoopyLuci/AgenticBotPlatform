@@ -20,6 +20,9 @@ class ModelEngine {
 
   private async ensureOffscreen(): Promise<void> {
     if (this.ready) return this.ready;
+    if (!('offscreen' in chrome)) {
+      throw new BridgeError('E_MODEL_UNAVAILABLE', 'in-browser models need a Chromium browser (this browser has no offscreen-document support)');
+    }
     this.ready = (async () => {
       const has = await chrome.offscreen.hasDocument?.();
       if (!has) {
@@ -42,7 +45,7 @@ class ModelEngine {
 
   async close(): Promise<void> {
     if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null; }
-    if (await chrome.offscreen.hasDocument?.()) await chrome.offscreen.closeDocument().catch(() => undefined);
+    if ('offscreen' in chrome && (await chrome.offscreen.hasDocument?.())) await chrome.offscreen.closeDocument().catch(() => undefined);
     this.ready = null;
   }
 

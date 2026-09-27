@@ -219,6 +219,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.peers",
     "bot.tailscale_mgr",
     "bot.browser_policy",
+    "bot.native_host",
     "bot.docker_mgr",
     "bot.vm_mgr",
     "bot.turn",
