@@ -4,28 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bot Control — Agentic Bot Platform Dashboard</title>
-<script>
-  // Applied synchronously, before the stylesheet below paints anything, so
-  // a saved theme/scale preference never flashes the wrong look for one
-  // frame on load. Per-browser (localStorage), not server-side — this is a
-  // viewer preference, not bot configuration, so it doesn't belong in
-  // config/backends.yaml or need a dashboard-token round trip.
-  (function () {
-    try {
-      var theme = localStorage.getItem('bs-ui-theme');
-      if (theme === 'light' || theme === 'dark') document.documentElement.setAttribute('data-theme', theme);
-      var scale = localStorage.getItem('bs-ui-scale');
-      if (scale) document.documentElement.style.zoom = scale;
-      var accent = localStorage.getItem('bs-ui-accent');
-      if (accent && accent !== 'blue') document.documentElement.setAttribute('data-accent', accent);
-      var density = localStorage.getItem('bs-ui-density');
-      if (density === 'compact') document.documentElement.setAttribute('data-density', density);
-      if (localStorage.getItem('bs-sidebar-collapsed') === '1') {
-        document.documentElement.classList.add('bs-sidebar-collapsed');
-      }
-    } catch (_e) { /* localStorage unavailable (private mode, etc.) — fall back to defaults */ }
-  })();
-</script>
+<script src="ui-prelude.js"></script>
 <style>
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -2249,7 +2228,7 @@
         <p class="cardnote">One click — this server auto-detects its own reachable address and bakes it into the token, so whoever links in never needs to know or type it. Share the token — never your dashboard token — with them; it works once and expires in 10 minutes, so it's safe to send over chat.</p>
         <div class="row" style="gap:8px; align-items:center; margin-top:8px;">
           <button class="btn" id="btn-peer-gen-token">Generate pairing token</button>
-          <input type="text" id="peer-gen-token-value" readonly placeholder="(not generated yet)" style="flex:1; min-width:220px; font-family:monospace;" onclick="this.select();">
+          <input type="text" id="peer-gen-token-value" readonly placeholder="(not generated yet)" style="flex:1; min-width:220px; font-family:monospace;">
           <span class="cardnote" id="peer-gen-token-expiry" style="margin:0;"></span>
         </div>
         <details style="margin-top:8px;">

@@ -7,7 +7,8 @@ import re
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-DASH = (ROOT / "bot/dashboard/static/dashboard.html").read_text(encoding="utf-8")
+DASH = ((ROOT / "bot/dashboard/static/dashboard.html").read_text(encoding="utf-8")
+        + (ROOT / "bot/dashboard/static/dashboard.js").read_text(encoding="utf-8"))  # markup + its script
 DESK = (ROOT / "desktop-app/ui/index.html").read_text(encoding="utf-8")
 PAGES = {"dashboard": DASH, "desktop": DESK}
 
@@ -62,7 +63,7 @@ def test_the_bot_form_offers_abp_agent_first_and_has_its_settings_panel(name):
     assert re.search(r'<script src="(/static/)?bot-agent-form\.js"></script>', text)
 
 
-@pytest.mark.parametrize("rel", ["bot/dashboard/static/dashboard.html", "desktop-app/ui/main.js"])
+@pytest.mark.parametrize("rel", ["bot/dashboard/static/dashboard.js", "desktop-app/ui/main.js"])
 def test_the_form_hooks_the_agent_panel_into_reset_load_and_save(rel):
     text = (ROOT / rel).read_text(encoding="utf-8")
     assert "document.getElementById('bot-new-backend').value = 'native_agent'" in text  # ABP Agent is the default
@@ -70,7 +71,7 @@ def test_the_form_hooks_the_agent_panel_into_reset_load_and_save(rel):
     assert "abpBotAgentForm.save(savedId)" in text and "savedId = created.id" in text
 
 
-@pytest.mark.parametrize("rel", ["bot/dashboard/static/dashboard.html", "desktop-app/ui/main.js"])
+@pytest.mark.parametrize("rel", ["bot/dashboard/static/dashboard.js", "desktop-app/ui/main.js"])
 def test_agent_bots_get_an_agent_settings_button(rel):
     text = (ROOT / rel).read_text(encoding="utf-8")
     assert "data-bot-agent" in text and "abpAgents.openBot" in text

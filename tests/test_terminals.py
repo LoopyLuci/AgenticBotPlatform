@@ -70,7 +70,12 @@ def test_a_container_shell_works_end_to_end_over_the_websocket(client, tmp_path,
         assert "got:hello world" in _collect(ws, "got:hello world")
         ws.send_json({"type": "resize", "cols": 120, "rows": 40})
         ws.send_json({"type": "input", "data": "exit\r"})
-    assert tb.list_sessions() == []          # the session is torn down when the socket closes
+    # The session is torn down when the socket closes; that happens server-side just after, so allow it a moment
+    # (under a loaded parallel test run it was occasionally still in the list at the instant the context exited).
+    deadline = time.monotonic() + 5
+    while tb.list_sessions() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert tb.list_sessions() == []
 
 
 def test_the_terminal_socket_is_desktop_token_only(client, tmp_path, monkeypatch):

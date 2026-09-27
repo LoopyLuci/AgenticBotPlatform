@@ -347,12 +347,32 @@ def _page_with_token(path: Path, request: Request) -> HTMLResponse:
     html = path.read_text(encoding="utf-8")
     token = os.environ.get("DASHBOARD_TOKEN")
     cache = "no-cache"
+    # The pages hold no inline script of their own (it all lives in /static/*.js), so the policy can forbid it:
+    # an injected <script> or on*= attribute never runs, and with the token reachable from script that is the
+    # difference between an escaping bug and a full takeover. The one inline script that must exist, the token
+    # below, carries this response's nonce.
+    nonce = secrets.token_urlsafe(18)
     if token and _is_local_page_request(request):
         literal = json.dumps(token).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
-        snippet = f"<script>window.__ABP_TOKEN__={literal};</script>"
+        snippet = f'<script nonce="{nonce}">window.__ABP_TOKEN__={literal};</script>'
         html = html.replace("</head>", snippet + "</head>", 1)
         cache = "no-store"
-    return HTMLResponse(html, headers={"Cache-Control": cache})
+    return HTMLResponse(html, headers={"Cache-Control": cache, "Content-Security-Policy": page_csp(nonce)})
+
+
+def page_csp(nonce: str) -> str:
+    """The dashboard pages' policy. Styles keep 'unsafe-inline' (hundreds of style attributes; CSS injection
+    can't run code); script, objects, framing and form targets are locked down."""
+    return ("default-src 'self'; "
+            f"script-src 'self' 'nonce-{nonce}'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: blob:; "
+            "font-src 'self' data:; "
+            "connect-src 'self' ws: wss:; "
+            "media-src 'self' blob: data:; "
+            "worker-src 'self' blob:; "
+            "frame-src 'self'; "
+            "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'")
 
 
 def _mesh_port_header(x_mesh_port: Optional[str] = Header(default=None)) -> Optional[int]:

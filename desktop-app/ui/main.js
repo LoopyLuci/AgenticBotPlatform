@@ -33,6 +33,35 @@ function setToken(t) { localStorage.setItem('dashboard_token', t); }
   }
 })();
 
+// ---- network guard ---------------------------------------------------------
+// Every api() request times out (a wedged server must not pile up hanging
+// requests), and while the server is unreachable the pollers back off
+// exponentially (5 s doubling to 30 s) instead of firing ~120 failing requests
+// a minute — which, left open for a while, exhausted the browser's connection
+// pool (ERR_INSUFFICIENT_RESOURCES). Explicit user actions are never delayed.
+const _net = { failures: 0, until: 0 };
+const API_TIMEOUT_MS = 20000;
+function _netFailed() {
+  _net.failures += 1;
+  _net.until = Date.now() + Math.min(30000, 5000 * Math.pow(2, _net.failures - 1));
+}
+function _netOk() { _net.failures = 0; _net.until = 0; }
+async function _timedFetch(url, opts) {
+  if (opts && opts.signal) return fetch(url, opts);  // the caller manages its own cancellation
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), API_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, Object.assign({}, opts, { signal: ctl.signal }));
+    _netOk();
+    return res;
+  } catch (e) {
+    _netFailed();
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function api(path, opts = {}) {
   const headers = Object.assign({}, opts.headers || {});
   const token = getToken();
@@ -40,7 +69,7 @@ async function api(path, opts = {}) {
   if (opts.method && opts.method !== 'GET') {
     headers['Content-Type'] = 'application/json';
   }
-  let res = await fetch(API_BASE + path, Object.assign({}, opts, { headers }));
+  let res = await _timedFetch(API_BASE + path, Object.assign({}, opts, { headers }));
   if ((res.status === 401 || res.status === 503) && IS_TAURI) {
     // Desktop app: the token is always auto-generated on disk and
     // auto-filled at boot — a 401 here means what's in localStorage is
@@ -52,7 +81,7 @@ async function api(path, opts = {}) {
     const retried = getToken();
     if (retried && retried !== token) {
       const retryHeaders = Object.assign({}, headers, { 'X-Dashboard-Token': retried });
-      res = await fetch(API_BASE + path, Object.assign({}, opts, { headers: retryHeaders }));
+      res = await _timedFetch(API_BASE + path, Object.assign({}, opts, { headers: retryHeaders }));
     }
   }
   if (res.status === 401 || res.status === 503) {
@@ -1264,9 +1293,13 @@ document.querySelectorAll('#log-filter button').forEach(btn => btn.onclick = () 
 // to see — the interval itself keeps running (so it fires immediately on
 // return, no separate "resume" wiring needed), it just no-ops while hidden.
 function pollWhenVisible(fn, ms) {
-  return setInterval(() => {
-    if (document.hidden) return;
-    fn();
+  // Single-flight: a tick still running (slow server) is not stacked on; and
+  // while the server is unreachable, ticks wait out the backoff (see _net).
+  let running = false;
+  return setInterval(async () => {
+    if (document.hidden || running || Date.now() < _net.until) return;
+    running = true;
+    try { await fn(); } catch (_e) { /* each refresh reports its own errors */ } finally { running = false; }
   }, ms);
 }
 
@@ -5994,4 +6027,10 @@ function attachSlashMenu(input) {
     a.remove();
     URL.revokeObjectURL(url);
   };
+})();
+
+// Was an inline onclick attribute (not allowed under the page's CSP).
+(function () {
+  var el = document.getElementById('peer-gen-token-value');
+  if (el) el.addEventListener('click', function () { el.select(); });
 })();

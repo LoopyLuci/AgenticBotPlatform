@@ -74,7 +74,7 @@ def test_main_can_take_keyboard_focus_so_page_keys_scroll_it(ui):
     assert '<main tabindex="-1">' in _css(ui)
 
 
-@pytest.mark.parametrize("path", ["bot/dashboard/static/dashboard.html", "desktop-app/ui/main.js"])
+@pytest.mark.parametrize("path", ["bot/dashboard/static/dashboard.js", "desktop-app/ui/main.js"])
 def test_jump_to_section_scrolls_main_not_the_window(path):
     source = (CODE_ROOT / path).read_text(encoding="utf-8")
     assert "window.scrollTo" not in source and "window.scrollY" not in source
@@ -82,7 +82,7 @@ def test_jump_to_section_scrolls_main_not_the_window(path):
     assert "querySelector('main').addEventListener('scrollend'" in source
 
 
-@pytest.mark.parametrize("path", ["bot/dashboard/static/dashboard.html", "desktop-app/ui/main.js"])
+@pytest.mark.parametrize("path", ["bot/dashboard/static/dashboard.js", "desktop-app/ui/main.js"])
 def test_toasts_stack_above_the_bar_not_on_it(path):
     source = (CODE_ROOT / path).read_text(encoding="utf-8")
     assert "bottom:calc(var(--term-panel-h, 40px) + 20px)" in source
