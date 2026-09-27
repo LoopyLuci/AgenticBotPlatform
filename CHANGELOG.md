@@ -9,6 +9,20 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **ABP Browser Extension: store release packaging (phase 5 of 5, complete for what a repo can do).**
+  `npm run package` builds both store variants with no dev key and zips each with its manifest at the archive root
+  (`browser-extension/release/*.zip`, ~12 MB each - gitignored, regenerate rather than commit). `PRIVACY.md` and
+  `store/listing.md` (title, description, category, a permission-by-permission justification table) are written for
+  a real Chrome Web Store/Edge Add-ons/AMO submission. `THIRD_PARTY_NOTICES.md` and `sbom.json` (`npm run sbom`, 67
+  transitive runtime packages from the three bundled libraries) cover the supply chain. New
+  `docs/browser-extension/SECURITY_REVIEW.md` re-scores every row of DESIGN.md's own threat-model table against what
+  is actually built and tested - including honestly flagging the two places this diverges from the original design:
+  there is no separate signed adapter-update channel (adapters ship only through an ordinary extension release), and
+  in-browser model download integrity is inherited from WebLLM/transformers.js rather than independently
+  re-verified. Upgrade/downgrade compatibility relies on every stored shape being additive-only under its own
+  namespaced key rather than a version-tag migration system, since none has ever needed one; a new
+  `tests/unit/storage.test.ts` checks the defensive-read behavior that relies on. Not done, and not something a repo
+  can do: creating store developer accounts, uploading a release, code-signing it, or its actual review.
 - **ABP Browser Extension: uploads, downloads, Firefox, native host (phase 4 of 5, narrower than first planned).**
   `ext_browser_act` gained an `upload {ref, path}` action that attaches a workspace file to a real `<input type=file>`
   via a spec-defined `DataTransfer` technique - no `chrome.debugger` attachment, so none of its "this extension is
