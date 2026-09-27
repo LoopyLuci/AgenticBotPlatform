@@ -80,6 +80,12 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.agent_runtime.engine", "bot.agent_runtime.approval", "bot.agent_runtime.subagent_registry",
     "bot.platform_supervisor",
     "bot.tasks",  # holds the strong references that keep in-flight background tasks alive
+    # bot.db's per-area functions (bot/storage/): part of bot.db, which is denylisted above for the connection it
+    # owns; reloading a piece would leave bot.db re-exporting the stale functions.
+    "bot.storage.agent_settings", "bot.storage.approvals", "bot.storage.chat", "bot.storage.devices",
+    "bot.storage.extensions", "bot.storage.jobs", "bot.storage.kanban", "bot.storage.memory",
+    "bot.storage.peers", "bot.storage.schedules", "bot.storage.server_chat", "bot.storage.sessions",
+    "bot.storage.stats", "bot.storage.support_bot", "bot.storage.swarms", "bot.storage.telemetry",
     # Route modules split out of server.py: their routes are registered on the live app once, at build time;
     # reloading a module can't re-register them, same reason bot.dashboard.server itself is here.
     "bot.dashboard.routes.agent_control", "bot.dashboard.routes.android_apk", "bot.dashboard.routes.bots",
