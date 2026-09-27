@@ -9,7 +9,7 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MAIN_JS = (ROOT / "desktop-app/ui/main.js").read_text(encoding="utf-8")
 WEB = {
-    "dashboard": (ROOT / "bot/dashboard/static/dashboard.html").read_text(encoding="utf-8"),
+    "dashboard": (ROOT / "bot/dashboard/static/dashboard.js").read_text(encoding="utf-8"),
     "desktop": (ROOT / "desktop-app/ui/main.js").read_text(encoding="utf-8"),
 }
 

@@ -19,6 +19,9 @@ from pathlib import Path
 import httpx
 import pytest
 
+# Drives a real browser: keep on one pytest-xdist worker with the other browser suites (--dist loadgroup).
+pytestmark = pytest.mark.xdist_group("real-browser")
+
 playwright_sync = pytest.importorskip("playwright.sync_api")
 import uvicorn  # noqa: E402
 

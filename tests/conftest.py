@@ -8,7 +8,9 @@ reusable and permanent instead of hand-written and discarded each time.
 """
 from __future__ import annotations
 
+import atexit
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -20,34 +22,18 @@ from pathlib import Path
 # silently win over what every Support Bot test expects to be trained
 # fresh from the current bot/support_bot/training_data.py. See
 # model_io.py's own comment on CURRENT_PATH for the full explanation.
-# Each pytest-xdist worker gets its own copies, so parallel runs never race on
-# one shared model/manifest file ("" when running without xdist).
-_WORKER = os.environ.get("PYTEST_XDIST_WORKER", "")
-
-
-def _temp_env(key: str, value: str) -> None:
-    # Workers inherit the controller's environment, so a worker must overwrite
-    # (not setdefault) to get its own path.
-    if _WORKER:
-        os.environ[key] = value
-    else:
-        os.environ.setdefault(key, value)
-
-
-_temp_env(
-    "AGENTICBOTPLATFORM_SUPPORT_BOT_MODEL_PATH",
-    str(Path(tempfile.gettempdir()) / f"agenticbotplatform_pytest_support_bot_model{_WORKER}.json"),
-)
+# A fresh directory per test process (each pytest-xdist worker is its own
+# process): nothing persists between runs, so one run's retrained model can
+# never leak into the next, and parallel workers never share a file. Set
+# unconditionally (not setdefault): a worker inherits the controller's
+# environment and must still get its own directory.
+_STATE = Path(tempfile.mkdtemp(prefix="abp-pytest-"))
+atexit.register(shutil.rmtree, _STATE, ignore_errors=True)
+os.environ["AGENTICBOTPLATFORM_SUPPORT_BOT_MODEL_PATH"] = str(_STATE / "support_bot_model.json")
 # Same rationale, for bot/support_bot/module_manifest.py's per-Knowledge-
 # Module persisted models and manifest — see that module's own comment.
-_temp_env(
-    "AGENTICBOTPLATFORM_SUPPORT_BOT_MODULES_DIR",
-    str(Path(tempfile.gettempdir()) / f"agenticbotplatform_pytest_support_bot_modules{_WORKER}"),
-)
-_temp_env(
-    "AGENTICBOTPLATFORM_SUPPORT_BOT_MANIFEST_PATH",
-    str(Path(tempfile.gettempdir()) / f"agenticbotplatform_pytest_support_bot_manifest{_WORKER}.json"),
-)
+os.environ["AGENTICBOTPLATFORM_SUPPORT_BOT_MODULES_DIR"] = str(_STATE / "support_bot_modules")
+os.environ["AGENTICBOTPLATFORM_SUPPORT_BOT_MANIFEST_PATH"] = str(_STATE / "support_bot_manifest.json")
 
 import pytest
 

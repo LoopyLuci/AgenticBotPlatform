@@ -11,7 +11,7 @@ from bot import db
 from bot.dashboard.server import build_app
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-PAGES = ("bot/dashboard/static/dashboard.html", "desktop-app/ui/index.html", "desktop-app/ui/main.js")
+PAGES = ("bot/dashboard/static/dashboard.html", "bot/dashboard/static/dashboard.js", "desktop-app/ui/index.html", "desktop-app/ui/main.js")
 
 
 def _bot(name, enabled=1):
@@ -80,7 +80,7 @@ def test_the_fixed_labels_and_the_hot_reload_pill_are_gone(rel):
         assert needle not in text, f"{rel} still has {needle!r}"
 
 
-@pytest.mark.parametrize("rel", ["bot/dashboard/static/dashboard.html", "desktop-app/ui/main.js"])
+@pytest.mark.parametrize("rel", ["bot/dashboard/static/dashboard.js", "desktop-app/ui/main.js"])
 def test_both_uis_render_the_pill_from_the_overview(rel):
     text = (ROOT / rel).read_text(encoding="utf-8")
     assert "function renderBotPill(ov)" in text and "renderBotPill(ov);" in text

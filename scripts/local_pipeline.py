@@ -367,7 +367,7 @@ def check_python() -> bool:
     extra: list[str] = []
     has_dev, _ = _run([py, "-c", "import xdist, pytest_cov"])
     if has_dev:
-        extra = ["-n", "auto", "--cov=bot", "--cov=abp_cicd", "--cov-report=term:skip-covered"]
+        extra = ["-n", "auto", "--dist", "loadgroup", "--cov=bot", "--cov=abp_cicd", "--cov-report=term:skip-covered"]
     else:
         Step.warn("pytest-xdist/pytest-cov not installed — serial run without the coverage floor "
                   "(pip install -r requirements-dev.txt)")

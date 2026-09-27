@@ -15,6 +15,9 @@ import time
 
 import pytest
 
+# Drives a real browser: keep on one pytest-xdist worker with the other browser suites (--dist loadgroup).
+pytestmark = pytest.mark.xdist_group("real-browser")
+
 pytest.importorskip("playwright")
 
 import uvicorn  # noqa: E402
@@ -69,7 +72,8 @@ def browser():
 
 
 def _open(browser, url):
-    page = browser.new_page()
+    # Playwright evaluates string predicates with eval, which the pages' CSP rightly forbids.
+    page = browser.new_page(bypass_csp=True)
     errors: list[str] = []
     page.on("pageerror", lambda exc: errors.append(str(exc)))
     page.goto(url, wait_until="load")
