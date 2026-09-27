@@ -18,7 +18,6 @@ what actually happened, not just what was configured to happen.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from dataclasses import dataclass
@@ -33,6 +32,7 @@ from bot.backends.hermes_cli_backend import HermesCliBackend
 from bot.backends.hermes_gateway_backend import HermesGatewayBackend
 from bot.backends.ui_backend import UiBackend
 from bot.config import config
+from bot import tasks as bg
 
 logger = logging.getLogger("bot.router")
 
@@ -141,15 +141,11 @@ class Router:
         self._backends = {}
         if not old_backends:
             return
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
+        if not bg.spawn_soon(lambda: self._shutdown_backend_set(old_backends), name="backend-shutdown"):
             logger.warning(
                 "config reload discarded %d backend(s) with no running event loop to shut them down cleanly",
                 len(old_backends),
             )
-            return
-        loop.create_task(self._shutdown_backend_set(old_backends))
 
     def _build_backend(
         self, name: str, cfg: dict, model_override: Optional[str] = None, hermes_home: Optional[str] = None

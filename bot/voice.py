@@ -99,9 +99,9 @@ async def _run(argv: list[str], *, stdin: Optional[bytes] = None) -> tuple[bytes
                                                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=sandbox.build_env())
     try:
         out, err = await asyncio.wait_for(proc.communicate(stdin), timeout=COMMAND_TIMEOUT_S)
-    except asyncio.TimeoutError:
+    except asyncio.TimeoutError as exc:
         sandbox.kill(proc)
-        raise VoiceError(f"{Path(exe).name} timed out after {int(COMMAND_TIMEOUT_S)}s")
+        raise VoiceError(f"{Path(exe).name} timed out after {int(COMMAND_TIMEOUT_S)}s") from exc
     return out, err, proc.returncode or 0
 
 
@@ -135,7 +135,7 @@ async def _stt_http(cfg: dict, audio: bytes, mime: str, filename: str, client: O
     try:
         await usage_limits.before_call(provider, model, 0)
     except usage_limits.RateLimited as exc:
-        raise VoiceError(str(exc))
+        raise VoiceError(str(exc)) from exc
     headers = {"Authorization": f"Bearer {_key(cfg)}"} if _key(cfg) else {}
     data = {"model": model, "response_format": "json"}
     if cfg.get("language"):
@@ -155,7 +155,7 @@ async def _stt_http(cfg: dict, audio: bytes, mime: str, filename: str, client: O
         text = str((r.json() or {}).get("text", "")).strip()
     except httpx.HTTPError as exc:
         status = status or 599
-        raise VoiceError(f"could not reach the speech-to-text service: {exc}")
+        raise VoiceError(f"could not reach the speech-to-text service: {exc}") from exc
     finally:
         usage_limits.record(provider, model, tokens=0, status=status or 599)
         if own:
@@ -206,7 +206,7 @@ async def synthesize(text: str, *, client: Optional[httpx.AsyncClient] = None) -
                 raise VoiceError(f"the text-to-speech service answered {r.status_code}: {r.text[:200]}")
             return r.content, {"opus": "audio/ogg", "mp3": "audio/mpeg", "wav": "audio/wav"}.get(fmt, "application/octet-stream"), {"opus": "ogg"}.get(fmt, fmt)
         except httpx.HTTPError as exc:
-            raise VoiceError(f"could not reach the text-to-speech service: {exc}")
+            raise VoiceError(f"could not reach the text-to-speech service: {exc}") from exc
         finally:
             if own:
                 await client.aclose()
@@ -249,9 +249,9 @@ async def _tts_sapi(text: str, voice: str) -> bytes:
                                                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env)
         try:
             _, err = await asyncio.wait_for(proc.communicate(text.encode("utf-8")), timeout=COMMAND_TIMEOUT_S)
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as exc:
             proc.kill()
-            raise VoiceError("Windows speech timed out")
+            raise VoiceError("Windows speech timed out") from exc
         if proc.returncode != 0 or not target.exists():
             raise VoiceError("Windows speech failed: " + err.decode("utf-8", "replace").strip()[:200])
         return target.read_bytes()

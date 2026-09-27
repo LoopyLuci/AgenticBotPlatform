@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
 
 from bot import bot_instances, commands
 from bot.backends.ui_backend import EFFORT_LEVELS

@@ -30,7 +30,6 @@ the real Slack user is still on the message row itself.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any, Optional
 
@@ -38,6 +37,7 @@ from bot import attachments, db, push
 from bot.backends.base import BackendError
 from bot.commands import CmdContext, dispatch_command
 from bot.router import router
+from bot import tasks as bg
 
 logger = logging.getLogger("bot.platforms.slack")
 
@@ -98,14 +98,14 @@ class SlackPlatformInstance:
                                 text="", instance_id=self.instance_id,
                                 attachment_path=rel_path, attachment_name=orig_name, attachment_mime=f.get("mimetype"),
                             )
-                            asyncio.create_task(push.notify_new_message(self.name, f"📎 {orig_name}"))
+                            bg.spawn(push.notify_new_message(self.name, f"📎 {orig_name}"))
             if not text.strip():
                 return
             db.log_message(
                 platform="slack", chat_id=channel, user_id=user, direction="in", source="slack",
                 text=text, instance_id=self.instance_id,
             )
-            asyncio.create_task(push.notify_new_message(self.name, text))
+            bg.spawn(push.notify_new_message(self.name, text))
 
             session = self._sessions.setdefault(channel, {})
             cmd_ctx = CmdContext(

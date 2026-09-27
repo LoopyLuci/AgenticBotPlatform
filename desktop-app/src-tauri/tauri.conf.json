@@ -43,6 +43,7 @@
       "stage/.venv": ".venv",
       "stage/vendor/ssh_toolkit": "vendor/ssh_toolkit",
       "../../requirements.txt": "requirements.txt",
+      "../../requirements.lock": "requirements.lock",
       "../ui": "desktop-app/ui",
       "icons/icon.ico": "icon.ico"
     },

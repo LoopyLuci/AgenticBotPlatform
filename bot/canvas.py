@@ -22,7 +22,6 @@ import hashlib
 import hmac
 import html
 import json
-import os
 import re
 import secrets
 import time
@@ -182,14 +181,14 @@ def register_tools() -> None:
         try:
             result = update(str(inp.get("name") or ""), str(inp.get("html") or ""), title=str(inp.get("title") or ""))
         except CanvasError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
         return f"Canvas {result['name']!r} is now version {result['version']}. A person watches it at /canvas/{result['name']}/view."
 
     async def _remove(inp, *, workspace=None, instance_id=None, device_tier=None) -> str:
         try:
             return "Removed." if remove(str(inp.get("name") or "")) else "There was no such canvas."
         except CanvasError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
 
     toolspec.register(
         {"name": "canvas_update",

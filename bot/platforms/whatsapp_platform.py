@@ -52,6 +52,7 @@ from bot import attachments, bot_instances, db, platform_supervisor, push
 from bot.backends.base import BackendError
 from bot.commands import CmdContext, dispatch_command
 from bot.router import router
+from bot import tasks as bg
 
 logger = logging.getLogger("bot.platforms.whatsapp")
 
@@ -207,7 +208,7 @@ async def _process_message(instance: dict[str, Any], msg: dict[str, Any], contac
                 direction="in", source="whatsapp", text="", instance_id=instance["id"],
                 attachment_path=rel_path, attachment_name=orig_name, attachment_mime=mime,
             )
-            asyncio.create_task(push.notify_new_message(instance["name"], f"📎 {orig_name}"))
+            bg.spawn(push.notify_new_message(instance["name"], f"📎 {orig_name}"))
         text = media_obj.get("caption", "") or ""
     else:
         return  # location/contacts/reactions/status updates — not a chat message to act on
@@ -219,7 +220,7 @@ async def _process_message(instance: dict[str, Any], msg: dict[str, Any], contac
         platform="whatsapp", chat_id=sender, user_id=sender, username=contact_name,
         direction="in", source="whatsapp", text=text, instance_id=instance["id"],
     )
-    asyncio.create_task(push.notify_new_message(instance["name"], text))
+    bg.spawn(push.notify_new_message(instance["name"], text))
 
     session = _sessions.setdefault((instance["id"], sender), {})
     cmd_ctx = CmdContext(

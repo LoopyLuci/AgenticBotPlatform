@@ -28,7 +28,6 @@ table don't need to know Discord exists.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any, Optional
 
@@ -36,6 +35,7 @@ from bot import attachments, db, push
 from bot.backends.base import BackendError
 from bot.commands import CmdContext, dispatch_command
 from bot.router import router
+from bot import tasks as bg
 
 logger = logging.getLogger("bot.platforms.discord")
 
@@ -100,7 +100,7 @@ class DiscordPlatformInstance:
                     text="", instance_id=self.instance_id,
                     attachment_path=rel_path, attachment_name=orig_name, attachment_mime=att.content_type,
                 )
-                asyncio.create_task(push.notify_new_message(self.name, f"📎 {orig_name}"))
+                bg.spawn(push.notify_new_message(self.name, f"📎 {orig_name}"))
             if not text.strip():
                 return
             db.log_message(
@@ -113,7 +113,7 @@ class DiscordPlatformInstance:
                 text=text,
                 instance_id=self.instance_id,
             )
-            asyncio.create_task(push.notify_new_message(self.name, text))
+            bg.spawn(push.notify_new_message(self.name, text))
 
             session = self._sessions.setdefault(message.channel.id, {})
             cmd_ctx = CmdContext(

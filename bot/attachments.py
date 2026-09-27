@@ -70,7 +70,7 @@ async def safe_store_stream(original_name: str, upload_file: Any, max_bytes: int
     dest = ATTACHMENTS_DIR / fname
     total = 0
     try:
-        with open(dest, "wb") as f:
+        with open(dest, "wb") as f:  # noqa: ASYNC230 — local-disk chunk writes; the await is the network read
             while chunk := await upload_file.read(_CHUNK_SIZE):
                 total += len(chunk)
                 if total > max_bytes:
@@ -141,7 +141,7 @@ async def write_chunk(session_id: str, index: int, request: Any) -> None:
         raise KeyError(f"unknown or expired upload session {session_id!r}")
     dest = session["chunk_dir"] / f"{index:08d}"
     tmp = dest.with_suffix(".part")
-    with open(tmp, "wb") as f:
+    with open(tmp, "wb") as f:  # noqa: ASYNC230 — local-disk chunk writes; the await is the network read
         async for part in request.stream():
             f.write(part)
     tmp.replace(dest)

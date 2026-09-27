@@ -18,9 +18,9 @@ async def _call(fn, *args, audit: Optional[str] = None, detail: str = "", **kwar
     try:
         result = await asyncio.to_thread(fn, *args, **kwargs)
     except ts.TailscaleError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (ValueError, TypeError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if audit:
         db.log_audit(actor="dashboard", action=f"tailscale_{audit}", detail=detail[:300])
     return result

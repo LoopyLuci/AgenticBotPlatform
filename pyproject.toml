@@ -1,0 +1,47 @@
+# Project metadata and tool configuration. Dependencies stay in
+# requirements.txt (intent: floors) and requirements.lock (exact, hashed —
+# what every installer actually installs); see tests/test_requirements_lock.py.
+[project]
+name = "agentic-bot-platform"
+dynamic = ["version"]
+requires-python = ">=3.11"
+description = "Run many independent chat bots and agents across platforms and backends from one app."
+license = { file = "LICENSE" }
+
+[tool.setuptools.dynamic]
+version = { attr = "bot.__version__" }
+
+# ---------------------------------------------------------------- ruff --
+# The gate the local pipeline runs (scripts/local_pipeline.py). Every rule
+# here is one the codebase is clean against, so any new hit is a regression.
+[tool.ruff]
+target-version = "py311"
+line-length = 140
+extend-exclude = [
+    "vendor", "android-app", "desktop-app", "browser-extension", ".venv",
+    "data", "logs", "graphify-out",
+]
+
+[tool.ruff.lint]
+select = [
+    "F",        # pyflakes: undefined names, unused imports/variables
+    "E9",       # syntax errors
+    "PLE",      # pylint errors
+    "B",        # bugbear: likely bugs
+    "ASYNC",    # blocking calls inside async code
+    "RUF006",   # fire-and-forget asyncio tasks (use bot.tasks.spawn)
+    "S102",     # exec
+    "S307",     # eval
+    "S506",     # yaml.load without a safe loader
+    "S602",     # subprocess with shell=True
+]
+ignore = [
+    "B008",     # FastAPI's Depends()/Body() defaults are the framework's idiom
+    "B905",     # zip() strictness — too noisy to be worth a blanket rule
+    "ASYNC240", # pathlib stat/exists on a local disk: microseconds, not worth a thread hop
+    "ASYNC109", # a `timeout` parameter passed through to a subprocess/HTTP call is the house style
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011", "B017", "ASYNC", "F841", "B007", "B023", "RUF006"]
+"abp_agenteval/**" = ["B011"]

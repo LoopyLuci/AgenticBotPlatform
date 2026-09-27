@@ -11,7 +11,7 @@ import asyncio
 
 from bot import bot_instances
 from bot.agent_runtime import approval
-from bot.agent_runtime.transports.base import NormalizedResponse, ToolCall
+from bot.agent_runtime.transports.base import NormalizedResponse
 from bot.backends.native_backend import NativeAgentBackend
 
 
@@ -113,7 +113,6 @@ def test_no_plan_first_behaves_exactly_as_before(temp_db, tmp_path):
 
 
 def test_approved_plan_persists_into_history(temp_db, tmp_path):
-    from bot import db as botdb
 
     plan_response = NormalizedResponse(text="1. step one", assistant_message={"role": "assistant", "content": "the plan text"})
     final_response = NormalizedResponse(text="all done", assistant_message={"role": "assistant", "content": "all done"})

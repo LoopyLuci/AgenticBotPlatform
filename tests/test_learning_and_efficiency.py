@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import sys
-from types import SimpleNamespace
 
 import pytest
 
@@ -12,7 +10,7 @@ from abp_agenteval import compare as cmp
 from abp_agenteval.scripted import ScriptedTransport
 from abp_agenteval.task import Call, Say, Task
 from abp_agenteval import graders as g
-from bot import db, model_catalog, model_pricing, model_router
+from bot import model_pricing, model_router
 from bot.agent_runtime import tools, trajectory, usage_limits
 from bot.backends.native_backend import NativeAgentBackend
 

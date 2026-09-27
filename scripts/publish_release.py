@@ -58,7 +58,6 @@ import hashlib
 import json
 import os
 import re
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -77,6 +76,7 @@ DESKTOP_DIR = ROOT / "desktop-app" / "src-tauri"
 CARGO_TOML = DESKTOP_DIR / "Cargo.toml"
 TAURI_CONF = DESKTOP_DIR / "tauri.conf.json"
 ANDROID_GRADLE = ROOT / "android-app" / "app" / "build.gradle.kts"
+BOT_INIT = ROOT / "bot" / "__init__.py"
 ANDROID_DIR = ROOT / "android-app"
 JOURNAL_PATH = ROOT / ".release_journal.json"
 LOCK_PATH = ROOT / ".pipeline.lock"
@@ -175,6 +175,15 @@ def bump_tauri_conf(version: str) -> None:
     data["version"] = version
     _write_text(TAURI_CONF, json.dumps(data, indent=2) + "\n", eol)
     print(f"bumped {TAURI_CONF.relative_to(ROOT)} -> {version}")
+
+
+def bump_bot_version(version: str) -> None:
+    text, eol = _read_text(BOT_INIT)
+    new_text, n = re.subn(r'(?m)^__version__ = "[^"]*"', f'__version__ = "{version}"', text, count=1)
+    if n != 1:
+        raise ReleaseError(f"couldn't find a `__version__ = \"...\"` line in {BOT_INIT}")
+    _write_text(BOT_INIT, new_text, eol)
+    print(f"bumped {BOT_INIT.relative_to(ROOT)} -> {version}")
 
 
 def bump_android_gradle(version: str) -> None:
@@ -316,6 +325,7 @@ def _run_release(args: argparse.Namespace, journal: guard.Journal) -> None:
         bump_cargo_toml(version)
         bump_tauri_conf(version)
         bump_android_gradle(version)
+        bump_bot_version(version)
         c = guard.sync_cargo_lock(version, ROOT)
         print(f"Cargo.lock: {c.detail or 'already in sync'}")
         journal.done("bumped")
@@ -541,7 +551,7 @@ def _main_body(args: argparse.Namespace) -> None:
         # rolled_back = the release was undone cleanly; failed = it is left partly done (pushed)
         _RUN.finish("failed" if pushed or any("NOT rolled back" in a or "COULD NOT" in a for a in actions)
                     else "rolled_back", f"{type(exc).__name__}: {msg}"[:300])
-        raise SystemExit(1)
+        raise SystemExit(1) from exc
 
     journal.clear()
     installer = Path(journal.data["installer"])

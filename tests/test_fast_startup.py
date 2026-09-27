@@ -85,4 +85,4 @@ def test_the_dashboard_starts_before_mcp_servers_and_chat_platforms():
     assert order["build_app()"] < order["dashboard_supervisor_task = asyncio.create_task"]
     assert order["dashboard_supervisor_task = asyncio.create_task"] < order["mcp_client.connect_all_enabled()"]
     assert order["mcp_client.connect_all_enabled()"] < order["platform_supervisor.start_all_enabled"]
-    assert re.search(r"support_warmup_task = asyncio\.create_task", src)
+    assert re.search(r"bg\.spawn\(_warm_support_bot\(\)\)", src)

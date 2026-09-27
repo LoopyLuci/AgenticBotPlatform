@@ -115,7 +115,7 @@ async def check_url(url: str) -> str:
         infos = await asyncio.get_running_loop().getaddrinfo(host, parts.port or (443 if parts.scheme == "https" else 80),
                                                               type=socket.SOCK_STREAM)
     except OSError as exc:
-        raise ToolError(f"could not resolve {host}: {exc}")
+        raise ToolError(f"could not resolve {host}: {exc}") from exc
     ips = {info[4][0] for info in infos}
     if not ips or not all(is_public_ip(ip) for ip in ips):
         raise ToolError(f"{host} does not resolve to a public address, so it will not be fetched")
@@ -245,10 +245,10 @@ async def fetch(url: str) -> tuple[str, int, str, bytes]:
                             del body[MAX_BODY_BYTES:]
                             break
                     return current, resp.status_code, resp.headers.get("content-type", ""), bytes(body)
-            except httpx.TimeoutException:
-                raise ToolError(f"timed out fetching {current}")
+            except httpx.TimeoutException as exc:
+                raise ToolError(f"timed out fetching {current}") from exc
             except httpx.HTTPError as exc:
-                raise ToolError(f"could not fetch {current}: {exc}")
+                raise ToolError(f"could not fetch {current}: {exc}") from exc
     raise ToolError(f"too many redirects (more than {MAX_REDIRECTS})")
 
 
@@ -332,9 +332,9 @@ async def _web_search(inp: dict, *, workspace=None, instance_id=None, device_tie
         async with httpx.AsyncClient(timeout=SEARCH_TIMEOUT_S, headers={"User-Agent": USER_AGENT}) as client:
             results = await _search_request(client, _search_cfg(), query.strip(), num)
     except httpx.HTTPStatusError as exc:
-        raise ToolError(f"the search provider returned HTTP {exc.response.status_code}")
+        raise ToolError(f"the search provider returned HTTP {exc.response.status_code}") from exc
     except httpx.HTTPError as exc:
-        raise ToolError(f"could not reach the search provider: {exc}")
+        raise ToolError(f"could not reach the search provider: {exc}") from exc
     if not results:
         return "No results."
     lines = [f"{i}. {r['title'] or r['url']}\n   {r['url']}\n   {r['snippet'][:300]}" for i, r in enumerate(results, 1)]

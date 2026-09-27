@@ -20,10 +20,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from bot import bot_instances
+from bot import tasks as bg
 
 logger = logging.getLogger("bot.platform_supervisor")
 
@@ -147,7 +148,7 @@ def _done_callback(instance_id: int, name: str) -> Any:
         if handle is not None and handle.task is task:
             _handles.pop(instance_id, None)
         if exc is not None:
-            asyncio.create_task(_restart_after_crash(instance_id, name))
+            bg.spawn(_restart_after_crash(instance_id, name))
 
     return _cb
 

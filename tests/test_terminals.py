@@ -2,7 +2,6 @@
 argv, strict token auth. The container shell is exercised through a stand-in `docker` (Docker itself may be down)."""
 from __future__ import annotations
 
-import json
 import os
 import sys
 import time

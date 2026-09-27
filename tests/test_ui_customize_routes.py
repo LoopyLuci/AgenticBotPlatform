@@ -7,7 +7,6 @@ covered by tests/test_ui_customize.py.
 """
 from __future__ import annotations
 
-import json
 
 from fastapi.testclient import TestClient
 

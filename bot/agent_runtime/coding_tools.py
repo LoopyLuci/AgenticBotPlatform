@@ -78,8 +78,8 @@ def require_fresh(path: Path, rel: str) -> None:
         raise ToolError(f"read {rel} with read_file before changing it, so the change is based on what is really there")
     try:
         now = _sig(path)
-    except OSError:
-        raise ToolError(f"{rel} is no longer readable")
+    except OSError as exc:
+        raise ToolError(f"{rel} is no longer readable") from exc
     if now != seen:
         raise ToolError(f"{rel} changed on disk after you read it; read it again before changing it")
 
@@ -98,8 +98,8 @@ def _load(path: Path, rel: str) -> tuple[str, str]:
         raise ToolError(f"{rel} is a binary file")
     try:
         text = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        raise ToolError(f"{rel} is not valid UTF-8 text")
+    except UnicodeDecodeError as exc:
+        raise ToolError(f"{rel} is not valid UTF-8 text") from exc
     eol = "\r\n" if "\r\n" in text else "\n"
     return text.replace("\r\n", "\n"), eol
 
@@ -229,7 +229,7 @@ async def _multi_edit(inp: dict, *, workspace: Path, instance_id=None, device_ti
         try:
             text, n, _ = apply_edit(text, edit["old_string"], edit["new_string"], bool(edit.get("replace_all")))
         except ToolError as exc:
-            raise ToolError(f"edit {i} of {len(edits)}: {exc} (nothing was changed)")
+            raise ToolError(f"edit {i} of {len(edits)}: {exc} (nothing was changed)") from exc
         total += n
     _save(path, text, eol)
     record_read(path)
@@ -417,7 +417,7 @@ def _grep_sync(workspace: Path, inp: dict) -> str:
     try:
         rx = re.compile(re.escape(pattern) if inp.get("fixed_strings") else pattern, flags)
     except re.error as exc:
-        raise ToolError(f"invalid regular expression: {exc}")
+        raise ToolError(f"invalid regular expression: {exc}") from exc
     mode = inp.get("output_mode") or "content"
     if mode not in ("content", "files", "count"):
         raise ToolError("output_mode must be content, files or count")
@@ -523,8 +523,8 @@ def _notebook_text(path: Path) -> str:
     try:
         nb = json.loads(path.read_text(encoding="utf-8"))
         cells = nb["cells"]
-    except (OSError, ValueError, KeyError):
-        raise ToolError("could not read this notebook as JSON")
+    except (OSError, ValueError, KeyError) as exc:
+        raise ToolError("could not read this notebook as JSON") from exc
     out = []
     for i, cell in enumerate(cells):
         source = cell.get("source", "")

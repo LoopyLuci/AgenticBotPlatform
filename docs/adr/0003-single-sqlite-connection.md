@@ -1,6 +1,6 @@
 # ADR-0003: One global SQLite connection with an app-level lock, not a pool
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0009](0009-per-thread-sqlite-connections.md)
 **Date:** 2026-08-21 (present since the first public release)
 
 ## Context

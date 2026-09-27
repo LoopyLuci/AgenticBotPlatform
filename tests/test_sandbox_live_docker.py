@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from bot.agent_runtime import sandbox, secrets_guard, toolspec, tools
+from bot.agent_runtime import sandbox, toolspec, tools
 from bot.agent_runtime.errors import ToolError
 
 

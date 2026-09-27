@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import json
 
-import pytest
 
 from bot import db
 from bot.support_bot import synthetic_gen

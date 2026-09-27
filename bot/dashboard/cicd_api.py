@@ -94,7 +94,7 @@ def register(app: FastAPI, read_auth: Callable) -> bool:
         async def gen():
             cursor, idle = since, 0.0
             while True:
-                batch = await asyncio.to_thread(lambda: _service().events(since=cursor, limit=200, kind=kind, run_id=run_id))
+                batch = await asyncio.to_thread(lambda cursor=cursor: _service().events(since=cursor, limit=200, kind=kind, run_id=run_id))
                 for ev in batch["events"]:
                     yield f"id: {ev['seq']}\nevent: {ev['kind']}\ndata: {json.dumps(ev, ensure_ascii=False)}\n\n"
                 cursor = batch["last_seq"]

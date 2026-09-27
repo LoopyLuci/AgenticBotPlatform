@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from abp_cicd import charts, cli, recorder, service, transport, views
+from abp_cicd import charts, cli, recorder, transport, views
 from abp_cicd.store import EventStore
 
 

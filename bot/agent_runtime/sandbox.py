@@ -161,8 +161,8 @@ def _docker_argv(command: str, cwd: Path, workspace: Path, name: str, cfg: dict,
     workspace = Path(workspace).resolve()
     try:
         rel = Path(cwd).resolve().relative_to(workspace).as_posix()
-    except ValueError:
-        raise ToolError("the working folder is outside the workspace")
+    except ValueError as exc:
+        raise ToolError("the working folder is outside the workspace") from exc
     argv = ["docker", "run", "--rm", "-i", "--name", name,
             "--network", network, "--memory", str(d.get("memory") or "1g"), "--cpus", str(d.get("cpus") or "2"),
             "--pids-limit", str(int(d.get("pids") or 256)), "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
@@ -185,8 +185,8 @@ def _remote_dir(cwd: Path, workspace: Path, root: str) -> str:
     workspace = Path(workspace).resolve()
     try:
         rel = Path(cwd).resolve().relative_to(workspace).as_posix()
-    except ValueError:
-        raise ToolError("the working folder is outside the workspace")
+    except ValueError as exc:
+        raise ToolError("the working folder is outside the workspace") from exc
     root = root.rstrip("/") or "."
     return root if rel in ("", ".") else f"{root}/{rel}"
 

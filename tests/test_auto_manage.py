@@ -9,8 +9,7 @@ import asyncio
 
 import pytest
 
-from bot import auto_manage, bot_instances, db, kanban, scheduler
-from bot.backends.base import BackendResult
+from bot import auto_manage, bot_instances, kanban, scheduler
 
 
 def _run(coro):

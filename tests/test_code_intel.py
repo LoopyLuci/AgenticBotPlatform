@@ -2,13 +2,12 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import sys
 from pathlib import Path
 
 import pytest
 
-from bot.agent_runtime import code_intel, coding_tools, tools
+from bot.agent_runtime import code_intel, tools
 
 FAKE_SERVER = str(Path(__file__).with_name("fake_lsp_server.py"))
 

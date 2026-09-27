@@ -12,7 +12,7 @@ cd "$root"
 if [ ! -d .venv ]; then
     python3 -m venv .venv
 fi
-.venv/bin/pip install -q -r requirements.txt
+.venv/bin/pip install -q --require-hashes -r requirements.lock
 
 if ! .venv/bin/python scripts/setup.py --check; then
     echo

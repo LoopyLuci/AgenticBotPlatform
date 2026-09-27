@@ -6,7 +6,7 @@ import asyncio
 import pytest
 
 from bot import bot_instances, commands, db, memory
-from bot.agent_runtime import prompt, toolspec, tools
+from bot.agent_runtime import prompt, tools
 
 
 @pytest.fixture

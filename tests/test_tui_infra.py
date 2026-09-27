@@ -47,7 +47,7 @@ def _run(client, screen_factory, body):
 
 
 def test_containers_screen_lists_and_acts_on_a_container(client, monkeypatch):
-    from textual.widgets import Button, DataTable, Label
+    from textual.widgets import Button, DataTable
 
     from bot.tui.screens.infra import ContainersScreen
     acted = []

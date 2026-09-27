@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
 from nio import InviteMemberEvent, MatrixRoom, RoomMessageText
 
 from bot import attachments, db

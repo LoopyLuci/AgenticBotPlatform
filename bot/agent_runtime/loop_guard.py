@@ -138,7 +138,7 @@ async def run_calls(calls: list, run_one: Callable[[object], Awaitable[str]], is
             if len(group) > 1:
                 gate = asyncio.Semaphore(max_parallel)
 
-                async def one(tc):
+                async def one(tc, gate=gate):
                     async with gate:
                         return await run_one(tc)
 

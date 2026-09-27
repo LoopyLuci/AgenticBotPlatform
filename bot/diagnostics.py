@@ -58,7 +58,9 @@ def _read_app_version() -> str:
         conf_path = CODE_ROOT / "desktop-app" / "src-tauri" / "tauri.conf.json"
         return json.loads(conf_path.read_text(encoding="utf-8"))["version"]
     except Exception:
-        return "unknown"
+        from bot import __version__
+
+        return __version__
 
 
 APP_VERSION = _read_app_version()

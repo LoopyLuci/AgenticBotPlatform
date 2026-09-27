@@ -2,13 +2,12 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import time
 
 import pytest
 
 from bot import db
-from bot.agent_runtime import repo_map, search_index, toolspec, tools
+from bot.agent_runtime import repo_map, toolspec, tools
 from bot.agent_runtime.errors import ToolError
 
 

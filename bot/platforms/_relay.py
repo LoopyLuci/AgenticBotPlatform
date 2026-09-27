@@ -8,15 +8,15 @@ case-insensitively, a phone number by its digits) but goes through `is_allowed`,
 same way on every channel."""
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
-from typing import Any, Awaitable, Callable, Optional
+from typing import Awaitable, Callable
 
 from bot import db, push
 from bot.backends.base import BackendError
 from bot.commands import CmdContext, dispatch_command
 from bot.router import router
+from bot import tasks as bg
 
 logger = logging.getLogger("bot.platforms.relay")
 
@@ -51,7 +51,7 @@ async def relay(instance: dict, platform: str, chat_id: str, sender: str, text: 
         return
     db.log_message(platform=platform, chat_id=chat_id, user_id=sender, username=username, direction="in", source=platform,
                    text=text, instance_id=instance["id"])
-    asyncio.create_task(push.notify_new_message(instance["name"], text))
+    bg.spawn(push.notify_new_message(instance["name"], text))
     session = _sessions.setdefault((instance["id"], chat_id), {})
     ctx = CmdContext(instance_id=instance["id"], instance_name=instance["name"], user_id=sender, chat_id=chat_id, actor=sender, session=session)
     reply = await dispatch_command(text, ctx)

@@ -173,14 +173,14 @@ def _run(cmd: list[str], cwd: Optional[Path] = None, retries: int = 0,
 # doesn't need that step re-run — see changed_files() below.
 RUST_PREFIXES = ("desktop-app/src-tauri/",)
 ANDROID_PREFIXES = ("android-app/",)
-DOCKER_PREFIXES = ("bot/", "requirements.txt", "Dockerfile", "docker-compose.yml",
+DOCKER_PREFIXES = ("bot/", "requirements.txt", "requirements.lock", "Dockerfile", "docker-compose.yml",
                    ".dockerignore", "scripts/docker-entrypoint.sh")
 # The running instance's bot code, config, and app binary all come from a
 # copy baked into desktop-app/src-tauri/target/release/ at build time (see
 # find_running_instance()'s docstring) — a push that doesn't touch any of
 # these has nothing new for a stop/rebuild/restart cycle to actually pick
 # up, so it's pure overhead to run one.
-DEPLOY_PREFIXES = ("bot/", "config/", "desktop-app/", "requirements.txt")
+DEPLOY_PREFIXES = ("bot/", "config/", "desktop-app/", "requirements.txt", "requirements.lock")
 
 
 def _matches(changed: set[str], prefixes: tuple[str, ...]) -> bool:
@@ -348,6 +348,19 @@ def check_python() -> bool:
         return False
     Step.ok("every .py file compiles")
 
+    # The lint gate (rules in pyproject.toml): undefined names, fire-and-forget
+    # tasks, blocking calls in async code, lost exception causes. The codebase
+    # is clean against it, so any hit is a regression.
+    ok, out = _run([py, "-m", "ruff", "check", "--output-format", "concise", "."], cwd=ROOT)
+    if not ok:
+        if "No module named ruff" in out:
+            Step.warn("ruff isn't installed in the venv — pip install -r requirements-dev.txt")
+        else:
+            Step.err("ruff found problems:\n" + out[-4000:])
+            return False
+    else:
+        Step.ok("ruff: clean")
+
     ok, out = _run([py, "-m", "pytest", "-q", "-rf"], cwd=ROOT, timeout=PYTEST_TIMEOUT)
     if not ok:
         # A test that fails once and passes alone is a flake (a busy port, a
@@ -372,7 +385,9 @@ def check_python() -> bool:
             return False
     Step.ok(out.strip().splitlines()[-1] if out.strip() else "tests passed")
 
-    ok, out = _run([py, "-m", "pip_audit", "-r", str(ROOT / "requirements.txt"), "--strict"])
+    lock = ROOT / "requirements.lock"
+    target = lock if lock.is_file() else ROOT / "requirements.txt"
+    ok, out = _run([py, "-m", "pip_audit", "-r", str(target), "--strict", "--disable-pip", "--no-deps"])
     if not ok:
         Step.err("pip-audit found a vulnerability:\n" + out)
         return False

@@ -411,9 +411,11 @@ def ensure_venv_and_requirements(args) -> bool:
     # itself while it's the running process can fail (it can't replace its
     # own locked executable), whereas `python -m pip` doesn't have that
     # problem since python.exe isn't the thing being replaced.
-    Step.doing("pip install -r requirements.txt")
+    lock = ROOT / "requirements.lock"
+    reqs = ["--require-hashes", "-r", str(lock)] if lock.is_file() else ["-r", str(ROOT / "requirements.txt")]
+    Step.doing("pip install " + " ".join(reqs[-2:]))
     subprocess.run([str(py), "-m", "pip", "install", "-q", "--upgrade", "pip"], check=False)
-    subprocess.run([str(py), "-m", "pip", "install", "-q", "-r", str(ROOT / "requirements.txt")], check=True)
+    subprocess.run([str(py), "-m", "pip", "install", "-q", *reqs], check=True)
     Step.ok("Python dependencies installed")
     return True
 

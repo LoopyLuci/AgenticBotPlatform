@@ -38,7 +38,23 @@ android {
             // not a placeholder; using it here makes `assembleRelease`
             // reproducibly produce a signed, installable APK on its own
             // instead of needing a manual signing step after every build.
-            storeFile = file(System.getProperty("user.home") + "/.android/debug.keystore")
+            //
+            // ADR-0010: that debug keystore is random PER MACHINE and the SDK
+            // silently regenerates it if deleted — so relying on it directly
+            // meant a reinstall or a build on another PC produced a different
+            // signature, and every paired phone refused the next in-app update.
+            // The key is therefore pinned into ABP's own keystore on first
+            // build (a byte-for-byte copy, so existing installs keep updating),
+            // which ABP's backup system keeps copies of. ABP_ANDROID_KEYSTORE
+            // overrides the location (e.g. restoring onto a new machine).
+            val home = System.getProperty("user.home")
+            val pinned = file(System.getenv("ABP_ANDROID_KEYSTORE") ?: "$home/.abp/android-release.keystore")
+            val sdkDebug = file("$home/.android/debug.keystore")
+            if (!pinned.exists() && sdkDebug.exists()) {
+                pinned.parentFile.mkdirs()
+                sdkDebug.copyTo(pinned)
+            }
+            storeFile = if (pinned.exists()) pinned else sdkDebug
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"

@@ -2,9 +2,12 @@
 
 WAL mode gives concurrent readers (the dashboard) a consistent view while
 the bot keeps writing job/telemetry rows, without needing a separate
-database server. One connection is shared process-wide behind a lock;
-at this traffic scale (a single-user bot) that is simpler and just as
-fast as a connection pool, and avoids a second moving part.
+database server. The event-loop thread owns the primary connection; any
+other thread (FastAPI's threadpool, asyncio.to_thread) transparently gets
+its own connection to the same file, so a slow query or a lock wait off
+the loop never stalls it and threads never share one connection's
+transaction state. In-process writes still serialize behind one lock —
+see docs/adr/0003-single-sqlite-connection.md.
 """
 
 from __future__ import annotations
@@ -15,7 +18,6 @@ import logging
 import secrets
 import sqlite3
 import threading
-import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -33,6 +35,11 @@ DB_PATH = PROJECT_ROOT / "data" / "bot.db"
 
 _lock = threading.Lock()
 _conn: Optional[sqlite3.Connection] = None
+_owner: Optional[int] = None
+_generation = 0
+_thread_local = threading.local()
+_thread_conns: "set[sqlite3.Connection]" = set()
+_thread_conns_lock = threading.Lock()
 
 # Lets a caller (the dashboard's WebSocket broadcaster — see
 # bot/dashboard/server.py) learn that a new chat message or job status
@@ -917,28 +924,69 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _open(path: Path) -> sqlite3.Connection:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(path), check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA foreign_keys=ON;")
+    # Multiple paired devices can poll/write concurrently — wait out a
+    # brief lock instead of raising "database is locked" immediately.
+    conn.execute("PRAGMA busy_timeout=5000;")
+    return conn
+
+
 def get_conn() -> sqlite3.Connection:
-    global _conn
+    """The primary connection for the thread that opened it (the event loop),
+    or this thread's own connection to the same file for any other thread.
+    Thread connections are dropped and reopened whenever the primary is
+    replaced (a test pointing DB_PATH elsewhere, a snapshot restore)."""
+    global _conn, _owner, _generation
     if _conn is None:
-        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
-        _conn.row_factory = sqlite3.Row
-        _conn.execute("PRAGMA journal_mode=WAL;")
-        _conn.execute("PRAGMA synchronous=NORMAL;")
-        _conn.execute("PRAGMA foreign_keys=ON;")
-        # Multiple paired devices can poll/write concurrently — wait out a
-        # brief lock instead of raising "database is locked" immediately.
-        _conn.execute("PRAGMA busy_timeout=5000;")
-    return _conn
+        _conn = _open(DB_PATH)
+        _owner = threading.get_ident()
+        _generation += 1
+    if threading.get_ident() == _owner:
+        return _conn
+    local = _thread_local
+    conn = getattr(local, "conn", None)
+    if conn is None or local.generation != _generation:
+        if conn is not None:
+            _forget(conn)
+        conn = _open(DB_PATH)
+        local.conn, local.generation = conn, _generation
+        with _thread_conns_lock:
+            _thread_conns.add(conn)
+    return conn
+
+
+def _forget(conn: sqlite3.Connection) -> None:
+    with _thread_conns_lock:
+        _thread_conns.discard(conn)
+    try:
+        conn.close()
+    except sqlite3.Error:
+        pass
 
 
 def close_conn() -> None:
-    """Closes and drops the shared connection so the next get_conn() call
-    reopens fresh — used by bot/snapshots.py's restore_snapshot() to swap
-    the underlying file safely (a plain file copy while the old
+    """Closes and drops every connection (the primary and all per-thread
+    ones) so the next get_conn() call reopens fresh — used by
+    bot/snapshots.py's restore_snapshot() and bot/sentinel's database repair
+    to swap the underlying file safely (a plain file copy while an old
     connection is still open could either fail on Windows or leave a
     stale WAL/SHM pointing at the replaced file)."""
-    global _conn
+    global _conn, _generation
+    _generation += 1
+    with _thread_conns_lock:
+        stale = list(_thread_conns)
+        _thread_conns.clear()
+    for c in stale:
+        try:
+            c.close()
+        except sqlite3.Error:
+            pass
     if _conn is not None:
         _conn.close()
         _conn = None

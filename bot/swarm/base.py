@@ -8,8 +8,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from bot import db
-from bot.backends.base import BackendError
 from bot.router import router
 
 

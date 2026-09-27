@@ -397,7 +397,7 @@ class TestAgentSettingsIntegration:
         assert backend.calls[0]["context"]["effort"] == "low"
 
     def test_worker_provider_model_fall_back_to_agent_settings(self, temp_db, monkeypatch):
-        from bot import agent_settings, providers as provider_registry
+        from bot import agent_settings
 
         monkeypatch.setattr(config, "_data", {"agent_runtime": {}, "native_agent": {}})
         instance_id = _create_instance()
@@ -431,7 +431,6 @@ class TestAgentSettingsIntegration:
         assert backend.calls[1]["context"]["effort"] == "low"
 
     def test_per_task_provider_model_overrides_the_batch_default(self, temp_db, monkeypatch):
-        from bot import providers as provider_registry
 
         monkeypatch.setattr(config, "_data", {"agent_runtime": {}, "native_agent": {}})
         instance_id = _create_instance()

@@ -42,7 +42,10 @@ def _push_to_phones(instance_id: int, tool_name: str, tool_input: dict, approval
 
         instance = bot_instances.get_instance(instance_id) or {}
         summary = approvals_view.preview(tool_name, tool_input)["summary"]
-        asyncio.get_running_loop().create_task(push.notify_approval(instance.get("name") or f"bot {instance_id}", summary, approval_id))
+        from bot import tasks as bg
+
+        name = instance.get("name") or f"bot {instance_id}"
+        bg.spawn_soon(lambda: push.notify_approval(name, summary, approval_id), name="approval-push")
     except Exception:  # noqa: BLE001
         logger.debug("approval push skipped", exc_info=True)
 

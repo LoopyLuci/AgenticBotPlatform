@@ -432,17 +432,22 @@ fn reinstall_dependencies(
     root: &std::path::Path,
     venv_python: &std::path::Path,
 ) -> Result<(), String> {
-    let requirements = root.join("requirements.txt");
+    // Prefer the hashed lockfile: exact, tamper-evident versions. Fall back to
+    // the loose requirements.txt only for an older bundle that lacks it.
+    let lock = root.join("requirements.lock");
+    let requirements = if lock.is_file() { lock } else { root.join("requirements.txt") };
     if !requirements.is_file() {
         return Err(format!(
-            "requirements.txt not found at {}",
+            "requirements not found at {}",
             requirements.display()
         ));
     }
     let mut cmd = Command::new(venv_python);
-    cmd.args(["-m", "pip", "install", "--upgrade", "--no-input", "-r"])
-        .arg(&requirements)
-        .current_dir(root);
+    cmd.args(["-m", "pip", "install", "--upgrade", "--no-input"]);
+    if requirements.extension().map_or(false, |e| e == "lock") {
+        cmd.arg("--require-hashes");
+    }
+    cmd.arg("-r").arg(&requirements).current_dir(root);
     let status = no_window(&mut cmd)
         .status()
         .map_err(|e| format!("failed to run pip via {}: {e}", venv_python.display()))?;

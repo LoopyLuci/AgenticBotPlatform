@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import difflib
 import json
-from typing import Any, Optional
+from typing import Optional
 
 from bot import db
 from bot.agent_runtime import secrets_guard

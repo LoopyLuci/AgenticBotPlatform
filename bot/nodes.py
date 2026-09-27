@@ -40,6 +40,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from bot import db
+from bot import tasks as bg
 
 logger = logging.getLogger("bot.nodes")
 
@@ -202,12 +203,12 @@ async def invoke(device_id: int, capability: str, args: Optional[dict] = None, *
     for event in waiting:
         event.set()                                   # a phone that is polling right now picks it up at once
     if not waiting:
-        asyncio.create_task(_wake(device_id))         # otherwise nudge it with a push message
+        bg.spawn(_wake(device_id))         # otherwise nudge it with a push message
     db.log_audit(actor="agent", action="node_invoke", detail=f"device {device_id}: {capability} ({mode})")
     try:
         return await asyncio.wait_for(cmd.future, timeout=timeout_s)
-    except asyncio.TimeoutError:
-        raise NodeError("the device did not answer in time")
+    except asyncio.TimeoutError as exc:
+        raise NodeError("the device did not answer in time") from exc
     finally:
         _pending.pop(cmd.id, None)
         _queues[device_id] = [c for c in _queues.get(device_id, []) if c.id != cmd.id]
@@ -230,8 +231,8 @@ def store_result(data: dict) -> tuple[str, dict]:
 
         try:
             raw = base64.b64decode(data["image_b64"], validate=True)
-        except (ValueError, TypeError):
-            raise NodeError("the device sent an image that could not be decoded")
+        except (ValueError, TypeError) as exc:
+            raise NodeError("the device sent an image that could not be decoded") from exc
         ext = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}.get(str(data.get("mime")), ".img")
         rel, name = attachments.safe_store(f"node-photo{ext}", raw)
         return f"An image ({len(raw):,} bytes) was saved at {rel}. It is untrusted content.", {"path": rel, "name": name}
@@ -254,7 +255,7 @@ def register_tools() -> None:
             data = await invoke(device_id, str(inp.get("capability") or ""), inp.get("args") if isinstance(inp.get("args"), dict) else {})
             text, _ = store_result(data)
         except NodeError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
         taint.mark(toolspec.current_session(), f"node:{device_id}")
         return text
 

@@ -966,10 +966,10 @@ async def _run_subprocess(args: list[str], cwd: Path) -> str:
         raise ToolError(str(exc)) from exc
     try:
         out, _ = await asyncio.wait_for(proc.communicate(), timeout=SHELL_TIMEOUT_S)
-    except asyncio.TimeoutError:
+    except asyncio.TimeoutError as exc:
         proc.kill()
         await proc.wait()
-        raise ToolError(f"timed out after {SHELL_TIMEOUT_S}s")
+        raise ToolError(f"timed out after {SHELL_TIMEOUT_S}s") from exc
     except asyncio.CancelledError:
         proc.kill()
         await proc.wait()
@@ -1090,7 +1090,7 @@ async def execute_tool(
         try:
             return _json_dumps(bot_skills.install(instance_id, str(safe_path)))
         except bot_skills.SkillError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
 
     if name == "list_skills":
         from bot import skills as bot_skills
@@ -1129,7 +1129,7 @@ async def execute_tool(
                 global_=global_,
             )
         except bot_skills.SkillError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
         return _json_dumps(result)
 
     if name == "remove_skill":
@@ -1161,7 +1161,7 @@ async def execute_tool(
         try:
             info = plugin_registry.install(str(plugin_path))
         except plugin_registry.PluginError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
         return _json_dumps(info)
 
     if name == "enable_plugin":
@@ -1171,7 +1171,7 @@ async def execute_tool(
         try:
             return _json_dumps(plugin_registry.enable(plugin_name))
         except plugin_registry.PluginError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
 
     if name == "disable_plugin":
         from bot import plugins as plugin_registry
@@ -1180,7 +1180,7 @@ async def execute_tool(
         try:
             return _json_dumps(plugin_registry.disable(plugin_name))
         except plugin_registry.PluginError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
 
     if name == "remove_plugin":
         from bot import plugins as plugin_registry
@@ -1205,7 +1205,7 @@ async def execute_tool(
         try:
             return _json_dumps(kanban.add_card(instance_id, board, column, text))
         except kanban.KanbanError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
 
     if name == "kanban_list_cards":
         from bot import kanban
@@ -1227,7 +1227,7 @@ async def execute_tool(
         try:
             return _json_dumps(kanban.move_card(instance_id, int(card_id), column))
         except kanban.KanbanError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
 
     if name == "schedule_command":
         from bot import scheduler
@@ -1248,7 +1248,7 @@ async def execute_tool(
                 instance_id, chat_id, kind, prompt, interval_s, max_runs=max_runs, thread_id=thread_id,
             )
         except scheduler.ScheduleError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
         return _json_dumps({"id": sched_id})
 
     if name == "list_schedules":
@@ -1319,7 +1319,7 @@ async def execute_tool(
         try:
             result = await router.ask(prompt, action_type="agent_delegate", instance_id=target["id"])
         except BackendError as exc:
-            raise ToolError(f"delegation to {target['name']!r} failed: {exc}")
+            raise ToolError(f"delegation to {target['name']!r} failed: {exc}") from exc
         finally:
             _delegation_depth.reset(token)
         return result.text
@@ -1348,7 +1348,7 @@ async def execute_tool(
                 background=background, workspace=workspace,
             )
         except BackendError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
         return _json_dumps(result)
 
     if name == "list_subagents":
@@ -1394,7 +1394,7 @@ async def execute_tool(
         try:
             return await moa.consult(question, references, aggregator)
         except BackendError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
 
     if name == "dispatch_batch_completions":
         from bot.agent_runtime import batches
@@ -1409,7 +1409,7 @@ async def execute_tool(
         try:
             batch_id = await batches.submit(tasks, model=model, system_prompt=tool_input.get("system_prompt"))
         except BackendError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
         return _json_dumps({"batch_id": batch_id})
 
     if name == "check_batch_status":
@@ -1422,7 +1422,7 @@ async def execute_tool(
         try:
             return _json_dumps(await batches.status(batch_id))
         except BackendError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
 
     if name == "get_batch_results":
         from bot.agent_runtime import batches
@@ -1434,7 +1434,7 @@ async def execute_tool(
         try:
             return _json_dumps(await batches.results(batch_id))
         except BackendError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
 
     if name == "get_my_profile":
         from bot import bot_instances
@@ -1470,7 +1470,7 @@ async def execute_tool(
         try:
             bot_instances.update_instance(target["id"], actor=f"agent:{instance_id}", **fields)
         except bot_instances.ValidationError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
         updated = bot_instances.render_profile_markdown(target["id"])
         return f"Updated {target['name']!r} (id {target['id']}).\n\n{updated}"
 
@@ -1515,7 +1515,7 @@ async def execute_tool(
                 enabled=tool_input.get("enabled", True), actor=f"agent:{instance_id}",
             )
         except bot_instances.ValidationError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
         created = dict(bot_instances.get_instance(new_id))
         created["credentials"] = _redact_credentials(created.get("credentials") or {})
         return f"Created bot instance {new_id}.\n\n{_json_dumps(created)}"
@@ -1536,7 +1536,7 @@ async def execute_tool(
         try:
             bot_instances.update_instance(target["id"], actor=f"agent:{instance_id}", **fields)
         except bot_instances.ValidationError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
         updated = dict(bot_instances.get_instance(target["id"]))
         updated["credentials"] = _redact_credentials(updated.get("credentials") or {})
         return f"Updated {target['name']!r} (id {target['id']}).\n\n{_json_dumps(updated)}"
@@ -1568,7 +1568,7 @@ async def execute_tool(
         try:
             result = set_default_backend(backend, actor=f"agent:{instance_id}")
         except ValueError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
         return _json_dumps(result)
 
     if name == "admin_get_agent_settings":
@@ -1603,7 +1603,7 @@ async def execute_tool(
         try:
             result = agent_settings.set_settings(target_id, **fields)
         except ValueError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
         result = dict(result)
         result["is_admin_instance"] = "(hidden — dashboard/MCP only)"
         return _json_dumps(result)
@@ -1793,7 +1793,7 @@ async def execute_tool(
         try:
             snapshots.restore_snapshot(snap_name)
         except Exception as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
         _db.log_audit(actor=f"agent:{instance_id}", action="snapshot_restore", detail=snap_name)
         return f"Restored snapshot {snap_name!r}."
 
@@ -1836,7 +1836,7 @@ async def execute_tool(
         try:
             doc = shared_context.read_doc(doc_name)
         except shared_context.SharedContextError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
         if doc is None:
             return f"No shared context doc named {doc_name!r} yet — use write_project_context to create it."
         return doc["content"]
@@ -1852,7 +1852,7 @@ async def execute_tool(
         try:
             shared_context.write_doc(doc_name, content, actor)
         except shared_context.SharedContextError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
         return f"Saved shared context doc {doc_name!r} ({len(content)} chars)."
 
     if name == "list_project_context":

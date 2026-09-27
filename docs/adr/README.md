@@ -14,11 +14,15 @@ editing history.
 |---|---|---|
 | [0001](0001-pairing-tokens-not-shared-secrets.md) | Server-linking uses short-lived pairing tokens, not shared secrets | Accepted |
 | [0002](0002-numpy-over-scikit-learn.md) | Support Bot's neural classifier: NumPy from scratch, not scikit-learn | Accepted |
-| [0003](0003-single-sqlite-connection.md) | One global SQLite connection with an app-level lock, not a pool | Accepted |
-| [0004](0004-debug-signed-android-release.md) | Android release builds are signed with the debug key, not a Play identity | Accepted |
+| [0003](0003-single-sqlite-connection.md) | One global SQLite connection with an app-level lock, not a pool | Superseded by ADR-0009 |
+| [0004](0004-debug-signed-android-release.md) | Android release builds are signed with the debug key, not a Play identity | Accepted; key handling superseded by ADR-0010 |
 | [0005](0005-circuit-breaker-in-memory.md) | The per-instance circuit breaker's state is in-memory, not persisted | Accepted |
 | [0006](0006-local-cicd-not-cloud.md) | CI/CD runs 100% locally, not on a cloud runner | Accepted |
 | [0007](0007-plugins-are-trusted-local-code.md) | Plugins are trusted local code, not sandboxed, not a marketplace | Accepted |
+| [0008](0008-single-instance-admin-tool-gate.md) | A single-instance/single-device admin-tool gate, not a general RBAC system | Accepted |
+| [0009](0009-per-thread-sqlite-connections.md) | Per-thread SQLite connections; blocking handlers run off the event loop | Accepted |
+| [0010](0010-pinned-android-signing-key.md) | The Android signing key is pinned into ABP's own keystore | Accepted |
+| [0011](0011-sentinel-self-preservation.md) | Sentinel: one self-preservation loop that detects, backs up and repairs | Accepted |
 
 ## Template for a new ADR
 

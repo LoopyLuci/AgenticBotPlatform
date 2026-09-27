@@ -47,7 +47,7 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
                 "version": config.version}
 
     @app.post("/api/agent/config", dependencies=write)
-    async def set_config(payload: dict = Body(...)):
+    def set_config(payload: dict = Body(...)):
         changes = payload.get("changes")
         if not isinstance(changes, dict) or not changes:
             raise HTTPException(status_code=400, detail="send {changes: {<setting id>: <value>, ...}}")
@@ -61,7 +61,7 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         return {"values": values, "configured": settings_schema.configured_ids(config.current), "version": config.version}
 
     @app.post("/api/agent/config/reset", dependencies=write)
-    async def reset_config(payload: dict = Body(...)):
+    def reset_config(payload: dict = Body(...)):
         ids = payload.get("ids")
         if not isinstance(ids, list) or not ids:
             raise HTTPException(status_code=400, detail="send {ids: [<setting id>, ...]}")
@@ -104,7 +104,7 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         return {"tools": out}
 
     @app.get("/api/agent/overview", dependencies=read)
-    async def overview():
+    def overview():
         from bot import agent_settings, bot_instances, db, providers, skill_install, skill_packs
         from bot.agent_runtime import permissions, skill_learning, tools
         from bot.config import config
