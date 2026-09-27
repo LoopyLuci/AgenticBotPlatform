@@ -215,3 +215,23 @@ export async function scrollAct(args: ActArgs, el?: Element): Promise<{ y: numbe
 export async function clearField(el: Element): Promise<void> {
   await type(el, { text: '', clear: true });
 }
+
+/** Attaches a file to a real `<input type=file>` the way a person's file-picker would, using a `DataTransfer` (a standard,
+ * spec-defined technique - `input.files` is a settable property when assigned this way, needing no `chrome.debugger`
+ * attachment and none of the "this extension is debugging this browser" warning that comes with it). The bytes are
+ * decoded from base64 here in the page, never handled as a data: URL string (which has a practical size ceiling well
+ * below what a real attachment needs). */
+export async function upload(el: Element, filename: string, mime: string, base64: string): Promise<{ name: string; size: number }> {
+  if (!(el instanceof HTMLInputElement) || el.type !== 'file') throw new BridgeError('E_PARAMS', 'that element is not a file input');
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const file = new File([bytes], filename || 'file', { type: mime || 'application/octet-stream' });
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  await makeActionable(el, { needEnabled: false });
+  el.files = dt.files;
+  el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+  return { name: file.name, size: file.size };
+}

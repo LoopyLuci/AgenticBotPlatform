@@ -19,6 +19,7 @@ async function render(): Promise<void> {
       pairing = false;
       void render();
     };
+    const nativeRoot = el('span', {});
     kids.push(el('div', { class: 'card' },
       el('h2', {}, 'Connect to the ABP desktop app'),
       el('p', { class: 'muted' }, 'Make sure ABP is running. Then choose one:'),
@@ -29,7 +30,11 @@ async function render(): Promise<void> {
       el('h2', {}, 'Or use a code'),
       el('div', { class: 'row' }, code, el('button', { onclick: () => void run(() => ask({ ui: 'pair.code', code: code.value, port: port.value }).then((r) => { const e = (r as { error?: string }).error; if (e) throw new Error(e); }), 'Connected.') }, 'Connect')),
       el('p', { class: 'muted small' }, 'In ABP: Settings > Browser > "Show pairing code".'),
-      el('details', {}, el('summary', { class: 'small muted' }, 'Advanced'), el('label', { class: 'small' }, 'ABP port ', port))));
+      el('details', {}, el('summary', { class: 'small muted' }, 'Advanced'), el('label', { class: 'small' }, 'ABP port ', port),
+        el('p', { class: 'muted small' }, 'If ABP is installed but this cannot reach it at all (not even to pair), a small native-messaging helper '
+          + '(scripts/install_native_host.py) can check on or start it. Requires a browser permission:'),
+        nativeRoot)));
+    void renderNativePermission(nativeRoot);
   } else {
     kids.push(el('div', { class: 'card' }, el('h2', {}, 'Connection'),
       el('p', {}, `Paired with ABP on this computer (port ${s.port}).`),
@@ -38,9 +43,12 @@ async function render(): Promise<void> {
         el('button', { class: 'danger', onclick: async () => { if (confirm('Disconnect this browser from ABP?')) { await ask({ ui: 'unpair' }); message = { text: 'Disconnected.', bad: false }; void render(); } } }, 'Disconnect'))));
 
     const caps = Object.entries(s.policy.capabilities);
+    const downloadsRoot = el('span', {});
     kids.push(el('div', { class: 'card' }, el('h2', {}, 'What ABP may do (set in the ABP desktop app)'),
-      el('table', {}, ...caps.map(([k, v]) => el('tr', {}, el('td', {}, k), el('td', { class: v ? 'ok' : 'muted' }, v ? 'allowed' : 'off')))),
+      el('table', {}, ...caps.map(([k, v]) => el('tr', {}, el('td', {}, k), el('td', { class: v ? 'ok' : 'muted' }, v ? 'allowed' : 'off'),
+        el('td', {}, k === 'downloads' && v ? downloadsRoot : '')))),
       el('p', { class: 'muted small' }, `Up to ${s.policy.max_tabs} tabs, ${s.policy.actions_per_minute} actions per minute. Banks, payment pages, password managers, admin consoles and login pages are never automated.`)));
+    if (s.policy.capabilities.downloads) void renderDownloadsPermission(downloadsRoot);
 
     kids.push(el('div', { class: 'card' }, el('h2', {}, 'Tabs ABP can use'),
       s.tabs.length ? el('table', {}, ...s.tabs.map((t) => el('tr', {}, el('td', {}, hostOf(t.url)), el('td', { class: 'muted' }, t.kind),
@@ -68,6 +76,26 @@ async function render(): Promise<void> {
     });
   }
   root.replaceChildren(...kids);
+}
+
+async function renderNativePermission(root: HTMLElement): Promise<void> {
+  const has = await chrome.permissions.contains({ permissions: ['nativeMessaging'] });
+  if (has) { root.replaceChildren(el('span', { class: 'ok small' }, 'browser permission granted')); return; }
+  root.replaceChildren(el('button', { onclick: async () => {
+    const got = await chrome.permissions.request({ permissions: ['nativeMessaging'] }).catch(() => false);
+    void renderNativePermission(root);
+    if (!got) alert('The browser did not grant the "nativeMessaging" permission.');
+  } }, 'Grant the browser’s "nativeMessaging" permission'));
+}
+
+async function renderDownloadsPermission(root: HTMLElement): Promise<void> {
+  const has = await chrome.permissions.contains({ permissions: ['downloads'] });
+  if (has) { root.replaceChildren(el('span', { class: 'ok small' }, 'browser permission granted')); return; }
+  root.replaceChildren(el('button', { onclick: async () => {
+    const got = await chrome.permissions.request({ permissions: ['downloads'] }).catch(() => false);
+    void renderDownloadsPermission(root);
+    if (!got) alert('The browser did not grant the "downloads" permission.');
+  } }, 'Grant the browser’s "downloads" permission'));
 }
 
 interface WebAdapter {

@@ -125,6 +125,18 @@ def test_acting_needs_a_ref_and_a_tab_and_remembers_the_last_tab(bridge):
     assert call[1] == {"tab": 7, "ref": "e1", "action": "type", "args": {"text": "hello", "submit": True}}
 
 
+def test_downloads_lists_recent_files(bridge):
+    bridge.answers["downloads.list"] = {"downloads": [{"id": 1, "filename": "report.pdf", "state": "complete", "bytes_received": 1024, "total_bytes": 1024, "url": "https://example.com"}]}
+    out = run(eb._ext_browser({"action": "downloads"}))
+    assert "report.pdf" in out and "complete" in out
+
+
+def test_downloads_with_none_says_so(bridge):
+    bridge.answers["downloads.list"] = {"downloads": []}
+    out = run(eb._ext_browser({"action": "downloads"}))
+    assert "No downloads" in out
+
+
 def test_a_stored_login_is_filled_by_code_only_and_never_shown_to_the_model(bridge, monkeypatch):
     from bot import vault
 
@@ -139,6 +151,37 @@ def test_a_stored_login_is_filled_by_code_only_and_never_shown_to_the_model(brid
     assert call[1]["args"] == {"value": "hunter2-secret", "credential_origin": "https://shop.example.com"}
     with pytest.raises(ToolError, match="no stored credential"):
         run(eb._ext_browser_act({"action": "fill_credential", "ref": "e2", "credential": "nope"}))
+
+
+def test_upload_reads_a_workspace_file_and_sends_it_as_base64(bridge, tmp_path):
+    (tmp_path / "photo.png").write_bytes(b"\x89PNG-fake-bytes")
+    bridge.answers["tab.act"] = {"ok": True, "navigated": False, "file": {"name": "photo.png", "size": 16}}
+    run(eb._ext_browser({"action": "open", "url": "https://shop.example.com/"}))
+    out = run(eb._ext_browser_act({"action": "upload", "ref": "e1", "path": "photo.png"}, workspace=str(tmp_path)))
+    assert "Attached photo.png (16 bytes)" in out
+    call = next(c for c in bridge.calls if c[0] == "tab.act")
+    assert call[1]["args"]["filename"] == "photo.png"
+    assert call[1]["args"]["mime"] == "image/png"
+    import base64 as b64
+    assert b64.b64decode(call[1]["args"]["data_b64"]) == b"\x89PNG-fake-bytes"
+
+
+def test_upload_requires_a_path_and_refuses_a_missing_or_oversized_file(bridge, tmp_path):
+    run(eb._ext_browser({"action": "open", "url": "https://shop.example.com/"}))
+    with pytest.raises(ToolError, match="path is required"):
+        run(eb._ext_browser_act({"action": "upload", "ref": "e1"}, workspace=str(tmp_path)))
+    with pytest.raises(ToolError, match="is not a file"):
+        run(eb._ext_browser_act({"action": "upload", "ref": "e1", "path": "nope.bin"}, workspace=str(tmp_path)))
+    big = tmp_path / "big.bin"
+    big.write_bytes(b"0" * (eb.UPLOAD_MAX_BYTES + 1))
+    with pytest.raises(ToolError, match="limited to"):
+        run(eb._ext_browser_act({"action": "upload", "ref": "e1", "path": "big.bin"}, workspace=str(tmp_path)))
+
+
+def test_upload_cannot_escape_the_workspace(bridge, tmp_path):
+    run(eb._ext_browser({"action": "open", "url": "https://shop.example.com/"}))
+    with pytest.raises(ToolError):
+        run(eb._ext_browser_act({"action": "upload", "ref": "e1", "path": "../outside.txt"}, workspace=str(tmp_path)))
 
 
 def test_bridge_errors_become_actionable_tool_errors(bridge):

@@ -106,6 +106,11 @@ if (!window.__abpContent) {
         case 'select': await act.select(el, args); break;
         case 'check': await act.check(el, args); break;
         case 'press': await act.press(String(args.key ?? ''), el); break;
+        case 'upload': {
+          const u = m.args as { filename?: string; mime?: string; data_b64?: string } | undefined;
+          const info = await act.upload(el, String(u?.filename ?? ''), String(u?.mime ?? ''), String(u?.data_b64 ?? ''));
+          return { ok: true, file: info, before, after: act.pageState() };
+        }
         case 'fill_secret': {
           // The value comes from ABP's vault, never from a model. It is only ever entered on the origin the login belongs to.
           if (!args.expect_origin || args.expect_origin !== location.origin) {

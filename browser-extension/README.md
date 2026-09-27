@@ -10,7 +10,7 @@ Links your browser to the ABP desktop app. Design and roadmap: [`docs/browser-ex
 | P1 agentic browser control (snapshot, actions, tab scope, safety layers, agent tools) | done, tested in real Edge |
 | P2 model gateway + Grok/Gemini/ChatGPT/Claude/Perplexity web sessions | done, tested against a fake extension and jsdom; **not yet tried against the real chat sites** |
 | P3 in-browser models (WebGPU/WASM, WebLLM + transformers.js) | done, tested with unit + gateway tests; **not yet tried on real WebGPU hardware or a real model download** |
-| P4 CDP driver, uploads/downloads, recording, Firefox, native-host installer | designed, not built |
+| P4 uploads, downloads, Firefox build, native-host installer | done (narrower than first planned - no debugger-based driver, no recording/replay yet); native-host install script not run for real (it changes browser/registry config) |
 | P5 store release | designed, not built |
 
 ## Build, test, install (development)
@@ -52,6 +52,18 @@ embeddings, Whisper tiny/base speech-to-text, a sentiment classifier), each show
 does not re-implement that); after that it loads from the local cache. `/api/browser/v1/embeddings` and
 `browser-local/...` chat completions (streaming and not) work like any other model in the gateway once a model has been
 loaded at least once from the options page, or by an agent tool that triggers a load through `/api/browser/models/<id>/load`.
+
+## Uploads, downloads and Firefox (P4)
+
+`ext_browser_act`'s `upload {ref, path}` action attaches a file already in the agent's workspace to a file-picker
+element, and `ext_browser`'s `downloads` action lists recent downloads - both off until you turn on the matching
+capability under **Settings > Agents > Tools > Browser extension**, and `downloads` additionally needs the browser's
+own permission (granted from the extension's own options page). `npm run build:firefox` builds a Firefox-flavoured
+copy into `dist-firefox/` from the same source (`npm run lint:firefox` runs `web-ext lint` against it); in-browser
+models and the side panel degrade to a clear error there instead of the Chrome-only APIs they need.
+`scripts/install_native_host.py` (run from a terminal, not by ABP) registers a small helper the extension can ask to
+check on or start ABP when its usual connection cannot reach it at all - see the script's own `--help` for what it
+changes and how to undo it.
 
 ## Safety, in one paragraph
 
