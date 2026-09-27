@@ -80,6 +80,15 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.agent_runtime.engine", "bot.agent_runtime.approval", "bot.agent_runtime.subagent_registry",
     "bot.platform_supervisor",
     "bot.tasks",  # holds the strong references that keep in-flight background tasks alive
+    # Route modules split out of server.py: their routes are registered on the live app once, at build time;
+    # reloading a module can't re-register them, same reason bot.dashboard.server itself is here.
+    "bot.dashboard.routes.agent_control", "bot.dashboard.routes.android_apk", "bot.dashboard.routes.bots",
+    "bot.dashboard.routes.chat", "bot.dashboard.routes.delegation", "bot.dashboard.routes.devices",
+    "bot.dashboard.routes.files", "bot.dashboard.routes.hermes_delegation", "bot.dashboard.routes.kanban",
+    "bot.dashboard.routes.mobile_keys", "bot.dashboard.routes.mutations", "bot.dashboard.routes.ops_endpoints",
+    "bot.dashboard.routes.pairing", "bot.dashboard.routes.peers", "bot.dashboard.routes.platforms",
+    "bot.dashboard.routes.reads", "bot.dashboard.routes.schedules", "bot.dashboard.routes.server_chat",
+    "bot.dashboard.routes.setup_wizard", "bot.dashboard.routes.shared_context", "bot.dashboard.routes.swarms",
     # The Sentinel holds live state (the running watchdog thread, the installed
     # log handler, alert de-duplication, the boot record). A reload would orphan
     # the old watchdog and double-count every error.
