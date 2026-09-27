@@ -212,7 +212,7 @@ class Gateway:
 
     # extension -> ABP progress events (called on the bridge's loop)
     def _on_event(self, name: str, data: dict) -> None:
-        if name != "event.web.delta":
+        if name not in ("event.web.delta", "event.llm.delta"):
             return
         q = self._streams.get(str(data.get("req") or ""))
         if q is not None:
@@ -252,6 +252,18 @@ class Gateway:
             if ms:
                 return list(ms)
         return []
+
+    async def local_catalog(self, task: Optional[str] = None) -> list[dict]:
+        """Every model in the extension's curated in-browser catalog (src/models/catalog.ts), with a fit score for the
+        connected browser's actual hardware and whether it has been loaded (cached) there before. Empty, not an error,
+        when no browser is connected - there is nothing to score against."""
+        if not self.bridge.connected():
+            return []
+        try:
+            r = await self.bridge.call("llm.catalog", {"task": task} if task else {}, deadline_ms=8000)
+        except bb.BridgeError:
+            return []
+        return list(r.get("models") or []) if isinstance(r, dict) else []
 
     # ---- chat completions
     async def chat(self, body: dict, *, sensitive: bool = False) -> tuple[str, Any]:
@@ -337,10 +349,17 @@ class Gateway:
         return str((r or {}).get("text") or "")
 
     async def _web_stream(self, req: str, model: str, params: dict) -> AsyncIterator[str]:
+        task = asyncio.ensure_future(self._web_call(req, params))
+        async for piece in self._stream_text(req, model, task):
+            yield piece
+
+    async def _stream_text(self, req: str, model: str, task: "asyncio.Task[str]") -> AsyncIterator[str]:
+        """SSE chunks for a call whose only progress signal is `event.web.delta`/`event.llm.delta` notifications keyed by
+        `req` (the idempotency key), landing in `self._streams[req]` via `_on_event`, plus a final plain-text result from
+        `task`. Shared by web/<adapter> and browser-local/<model>: the two engines differ, the streaming shape does not."""
         cid = "chatcmpl-" + uuid.uuid4().hex[:24]
         q: "asyncio.Queue[dict]" = asyncio.Queue()
         self._streams[req] = q
-        task = asyncio.ensure_future(self._web_call(req, params))
         sent = ""
         try:
             yield chunk(cid, model, {"role": "assistant", "content": ""})
@@ -379,19 +398,48 @@ class Gateway:
             if not task.done():                                          # the client went away: stop the page too
                 task.cancel()
 
+    # ---- embeddings (browser-local only - a web chat page has no such API)
+    async def embeddings(self, body: dict) -> dict:
+        model = str(body.get("model") or "")
+        prefix, rest = split_model(model)
+        if prefix != LOCAL_PREFIX or not rest:
+            raise GatewayError(400, "embeddings are served by a browser-local/<embedding-model>", code="invalid_model",
+                               hint="see /api/browser/v1/browser-local/models for what is loaded")
+        raw = body.get("input")
+        texts = [raw] if isinstance(raw, str) else [str(x) for x in (raw or []) if isinstance(x, str)]
+        if not texts:
+            raise GatewayError(400, "input is required", code="invalid_request")
+        try:
+            r = await self.bridge.call("llm.embed", {"model": rest, "texts": texts}, deadline_ms=DEFAULT_WEB_DEADLINE_MS)
+        except bb.BridgeError as exc:
+            raise from_bridge(exc) from exc
+        vectors = list((r or {}).get("embeddings") or [])
+        tokens = sum(estimate_tokens(t) for t in texts)
+        return {"object": "list", "model": model, "usage": {"prompt_tokens": tokens, "total_tokens": tokens},
+                "data": [{"object": "embedding", "index": i, "embedding": v} for i, v in enumerate(vectors)]}
+
     # ---- browser-local/<model>
     async def _browser_local(self, body: dict, rest: str) -> tuple[str, Any]:
-        params = {"model": rest, "messages": body["messages"], "max_tokens": body.get("max_tokens"), "temperature": body.get("temperature")}
+        if not rest:
+            raise GatewayError(400, "browser-local models look like browser-local/qwen2.5-1.5b (see /api/browser/v1/browser-local/models)", code="invalid_model")
+        model = f"{LOCAL_PREFIX}/{rest}"
+        req = uuid.uuid4().hex
+        params = {"model": rest, "messages": body["messages"], "max_tokens": body.get("max_tokens"), "temperature": body.get("temperature"), "stream": bool(body.get("stream"))}
+        if not body.get("stream"):
+            text = await self._llm_call(req, params)
+            return "json", completion_body(model, text, [], json.dumps(body["messages"]))
+        task = asyncio.ensure_future(self._llm_call(req, params))
+        return "stream", self._stream_text(req, model, task)
+
+    async def _llm_call(self, req: str, params: dict) -> str:
         try:
-            r = await self.bridge.call("llm.generate", params, deadline_ms=DEFAULT_WEB_DEADLINE_MS)
+            r = await self.bridge.call("llm.generate", params, deadline_ms=DEFAULT_WEB_DEADLINE_MS, idem=req, session=f"gw-{req[:8]}")
         except bb.BridgeError as exc:
             if exc.code == "E_METHOD":
                 raise GatewayError(503, "this browser has no in-browser model engine yet", code="model_unavailable",
-                                   hint="in-browser models arrive with extension phase 3") from exc
+                                   hint="update the ABP Bridge extension - in-browser models need phase 3 or later") from exc
             raise from_bridge(exc) from exc
-        text = str((r or {}).get("text") or "")
-        payload = completion_body(f"{LOCAL_PREFIX}/{rest}", text, [], json.dumps(body["messages"]))
-        return ("stream", _replay(payload)) if body.get("stream") else ("json", payload)
+        return str((r or {}).get("text") or "")
 
     # ---- <provider>/<model>
     async def _provider(self, body: dict, provider: str, model_id: str) -> tuple[str, Any]:

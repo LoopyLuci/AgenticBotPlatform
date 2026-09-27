@@ -6530,6 +6530,120 @@
     "summary": "Browser Hello"
    }
   },
+  "/api/browser/models/catalog": {
+   "get": {
+    "operationId": "models_catalog_api_browser_models_catalog_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "task",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Task"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Models Catalog"
+   }
+  },
+  "/api/browser/models/{model_id}/load": {
+   "post": {
+    "description": "Loading downloads and compiles real model weights in the browser - can take minutes on a first run, hence the\nlong deadline. Progress itself is only shown in the extension's own options page (Models); this just waits.",
+    "operationId": "models_load_api_browser_models__model_id__load_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "model_id",
+      "required": true,
+      "schema": {
+       "title": "Model Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Models Load"
+   }
+  },
   "/api/browser/pair/code": {
    "delete": {
     "operationId": "browser_pair_code_cancel_api_browser_pair_code_delete",
@@ -7210,6 +7324,18 @@
       }
      }
     ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
     "responses": {
      "200": {
       "content": {

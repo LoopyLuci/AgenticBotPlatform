@@ -9,7 +9,7 @@ Links your browser to the ABP desktop app. Design and roadmap: [`docs/browser-ex
 | P0 bridge, pairing, auth tiers | done, tested |
 | P1 agentic browser control (snapshot, actions, tab scope, safety layers, agent tools) | done, tested in real Edge |
 | P2 model gateway + Grok/Gemini/ChatGPT/Claude/Perplexity web sessions | done, tested against a fake extension and jsdom; **not yet tried against the real chat sites** |
-| P3 in-browser models (WebGPU/WASM from Hugging Face) | designed, not built |
+| P3 in-browser models (WebGPU/WASM, WebLLM + transformers.js) | done, tested with unit + gateway tests; **not yet tried on real WebGPU hardware or a real model download** |
 | P4 CDP driver, uploads/downloads, recording, Firefox, native-host installer | designed, not built |
 | P5 store release | designed, not built |
 
@@ -40,6 +40,18 @@ like any other model — except the model router's "auto" pick never chooses one
 
 Each site is **off until you turn it on**, one at a time, from the extension's own options page — that toggle only ever lives in this
 browser's local storage, is never set remotely, and shows the site's terms-of-service note before you confirm it.
+
+## In-browser models (P3)
+
+`browser-local/<model>` in the same gateway runs a model **inside this browser tab** - your prompts never leave the device.
+The extension's options page lists a curated catalog (`src/models/catalog.ts`): small WebLLM chat models (Qwen2.5 1.5B,
+Llama 3.2 1B, Phi-3.5 Mini, all needing WebGPU) and transformers.js models that run on CPU/WASM alone (bge-small
+embeddings, Whisper tiny/base speech-to-text, a sentiment classifier), each shown with a fit score for *this* device
+(good / tight / unsupported) before you download anything. The first use of a model downloads and caches its own weights
+(WebLLM and transformers.js each do this themselves, verified and cached via the browser's own Cache Storage API - ABP
+does not re-implement that); after that it loads from the local cache. `/api/browser/v1/embeddings` and
+`browser-local/...` chat completions (streaming and not) work like any other model in the gateway once a model has been
+loaded at least once from the options page, or by an agent tool that triggers a load through `/api/browser/models/<id>/load`.
 
 ## Safety, in one paragraph
 

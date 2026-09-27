@@ -71,16 +71,37 @@ def register(app: FastAPI, strict_auth) -> None:
         pre = f"{ns}/"
         return {"object": "list", "data": [{**m, "id": m["id"][len(pre):]} for m in allm["data"] if m["id"].startswith(pre)]}
 
-    def _unavailable(path: str, name: str) -> None:
+    @app.post("/api/browser/v1/embeddings", dependencies=gdep)
+    async def v1_embeddings(body: dict = Body(...)):
+        try:
+            return JSONResponse(await gw.gateway.embeddings(body))
+        except gw.GatewayError as exc:
+            return _error(exc)
+
+    def _unavailable(path: str, name: str, note: str) -> None:
         async def handler():
-            return JSONResponse(gw.GatewayError(501, "this needs the in-browser model engine (extension phase 3), which is not built yet",
-                                                code="not_implemented").body(), status_code=501)
+            return JSONResponse(gw.GatewayError(501, note, code="not_implemented").body(), status_code=501)
         handler.__name__ = name
         app.post(path, dependencies=gdep)(handler)
 
-    _unavailable("/api/browser/v1/embeddings", "v1_embeddings")
-    _unavailable("/api/browser/v1/audio/transcriptions", "v1_transcriptions")
-    _unavailable("/api/browser/v1/audio/speech", "v1_speech")
+    _unavailable("/api/browser/v1/audio/transcriptions", "v1_transcriptions",
+                 "speech-to-text has no HTTP endpoint yet - a whisper catalog model can be driven from the extension side, but this route is not wired")
+    _unavailable("/api/browser/v1/audio/speech", "v1_speech", "text-to-speech is not in the in-browser model catalog yet")
+
+    @app.get("/api/browser/models/catalog", dependencies=dep)
+    async def models_catalog(task: Optional[str] = None):
+        return {"models": await gw.gateway.local_catalog(task)}
+
+    @app.post("/api/browser/models/{model_id}/load", dependencies=dep)
+    async def models_load(model_id: str):
+        """Loading downloads and compiles real model weights in the browser - can take minutes on a first run, hence the
+        long deadline. Progress itself is only shown in the extension's own options page (Models); this just waits."""
+        try:
+            result = await bb.bridge.call("llm.load", {"id": model_id}, deadline_ms=15 * 60_000)
+        except bb.BridgeError as exc:
+            return _error(gw.from_bridge(exc))
+        await __import__("asyncio").to_thread(db.log_audit, "dashboard", "model_load", model_id)
+        return result
 
     @app.get("/api/browser/web/adapters", dependencies=dep)
     async def web_adapters():

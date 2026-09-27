@@ -53,6 +53,12 @@ async function render(): Promise<void> {
       webRoot));
     void renderWeb(webRoot);
 
+    const modelsRoot = el('div', {});
+    kids.push(el('div', { class: 'card' }, el('h2', {}, 'In-browser models'),
+      el('p', { class: 'muted small' }, 'Runs a model locally in this browser (WebGPU when available, otherwise CPU/WASM) - your prompts never leave the device. The first use of a model downloads its weights (can be hundreds of MB to a few GB) and caches them here; nothing is deleted by ABP without you asking.'),
+      modelsRoot));
+    void renderModels(modelsRoot);
+
     const log = el('ul', { class: 'timeline' });
     kids.push(el('div', { class: 'card' }, el('h2', {}, 'Recent activity'), log));
     void ask<{ entries: Array<{ at: number; action: string; detail: string }> }>({ ui: 'audit' }).then((r) => {
@@ -96,6 +102,46 @@ async function renderWeb(root: HTMLElement): Promise<void> {
     })));
   };
   draw();
+}
+
+interface CatalogModel {
+  id: string; name: string; task: string; runtime: string; approx_size_mb: number; license: string; notes: string;
+  fit: 'good' | 'tight' | 'unsupported'; reason: string; installed: boolean;
+}
+
+async function renderModels(root: HTMLElement): Promise<void> {
+  root.replaceChildren(el('p', { class: 'muted small' }, 'Checking this device...'));
+  let models: CatalogModel[];
+  try { ({ models } = await ask<{ models: CatalogModel[] }>({ ui: 'models.catalog' })); }
+  catch (e) { root.replaceChildren(el('p', { class: 'err small' }, e instanceof Error ? e.message : String(e))); return; }
+  const progress: Record<string, string> = {};
+  const draw = (): void => {
+    root.replaceChildren(el('table', {}, ...models.map((m) => {
+      const fitText = m.fit === 'good' ? '' : m.fit === 'tight' ? ' - tight fit' : ' - unsupported here';
+      const action = m.installed
+        ? el('button', { onclick: async () => { if (!confirm(`Remove ${m.name} from this browser?`)) return; await ask({ ui: 'models.unload', id: m.id }); void renderModels(root); } }, 'Remove')
+        : el('button', { disabled: m.fit === 'unsupported', onclick: async () => {
+            progress[m.id] = 'Starting...'; draw();
+            const r = await ask<{ ok: boolean; error?: string }>({ ui: 'models.load', id: m.id });
+            delete progress[m.id];
+            if (!r.ok) { alert(`Could not load ${m.name}: ${r.error ?? 'unknown error'}`); draw(); return; }
+            void renderModels(root);
+          } }, 'Download and use');
+      const prog = progress[m.id];
+      return el('tr', {}, el('td', {}, m.name, el('div', { class: 'muted small' }, m.notes)),
+        el('td', { class: 'muted small' }, `${m.task} - ~${m.approx_size_mb} MB - ${m.license}`),
+        el('td', { class: m.fit === 'unsupported' ? 'err small' : 'muted small' }, (m.installed ? 'installed' : m.reason) + fitText),
+        el('td', {}, prog ? el('span', { class: 'muted small' }, prog) : action));
+    })));
+  };
+  draw();
+  chrome.runtime.onMessage.addListener((raw) => {
+    const m = raw as { ui?: string; id?: string; progress?: { text: string; fraction: number | null } };
+    if (m.ui === 'model-progress' && m.id) {
+      progress[m.id] = m.progress ? `${m.progress.text}${typeof m.progress.fraction === 'number' ? ` (${Math.round(m.progress.fraction * 100)}%)` : ''}` : 'Working...';
+      draw();
+    }
+  });
 }
 
 chrome.runtime.onMessage.addListener((m) => {

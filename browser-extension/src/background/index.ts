@@ -4,6 +4,7 @@ import { audit, auditNow, loadAudit, setAuditSink } from './audit';
 import { Enforcer } from './policy';
 import { pairByApproval, pairWithCode, unpair as clearPairing, discover, DEFAULT_PORT } from './pairing';
 import { Router } from './router';
+import { engine as modelEngine, installedReport, onLlmDelta, onModelsChanged } from './modelengine';
 import { onDelta as webDelta, sessions } from './sessions';
 import { getConfig } from './storage';
 import { TabManager } from './tabs';
@@ -24,7 +25,7 @@ const bridge: BridgeClient = new BridgeClient({
     capabilities: { debugger: false, offscreen: false, sidepanel: true, native: false, webgpu: 'gpu' in navigator },
   }),
   handler: (method, params, ctx, signal) => router.handle(method, params, ctx, signal),
-  onState: (state, detail) => { if (detail) lastError = detail; void render(state); void chrome.runtime.sendMessage({ ui: 'state' }).catch(() => undefined); },
+  onState: (state, detail) => { if (detail) lastError = detail; void render(state); void chrome.runtime.sendMessage({ ui: 'state' }).catch(() => undefined); if (state === 'connected') void reportModels(); },
   onHello: (result) => { enforcer.setPolicy((result.policy ?? DEFAULT_POLICY) as never); lastError = ''; },
 });
 
@@ -37,6 +38,9 @@ setAuditSink(async (entries) => { bridge.notify('audit.push', { entries: entries
 tabs.onEvent = (name, params) => bridge.notify(name, params);
 tabs.onChange = () => { void chrome.runtime.sendMessage({ ui: 'state' }).catch(() => undefined); };
 webDelta.fn = (req, text) => bridge.notify('event.web.delta', { req, text });
+onLlmDelta.fn = (req, text) => bridge.notify('event.llm.delta', { req, text });
+async function reportModels(): Promise<void> { bridge.notify('models.report', { installed: await installedReport() }); }
+onModelsChanged.fn = () => { void reportModels(); };
 
 async function render(state: BridgeState = bridge.state): Promise<void> {
   const map: Record<BridgeState, [string, string]> = {
@@ -117,6 +121,16 @@ async function handleUi(m: { ui: string; [k: string]: unknown }): Promise<unknow
       return { ok: true };
     }
     case 'web.selftest': return sessions.selftest(String(m.adapter ?? ''));
+    case 'models.catalog': return { models: await modelEngine.catalog(typeof m.task === 'string' ? m.task : undefined) };
+    case 'models.load': {
+      const id = String(m.id ?? '');
+      try {
+        await modelEngine.load(id, (p) => { void chrome.runtime.sendMessage({ ui: 'model-progress', id, progress: p }).catch(() => undefined); });
+        return { ok: true };
+      } catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
+    }
+    case 'models.unload': await modelEngine.unload(String(m.id ?? '')); await modelEngine.forgetInstalled(String(m.id ?? '')); return { ok: true };
+    case 'models.installed': return { models: await installedReport() };
     case 'sidepanel': { const w = await chrome.windows.getCurrent(); await chrome.sidePanel.open({ windowId: w.id! }); return { ok: true }; }
     default: return { error: 'unknown ui request' };
   }

@@ -5,6 +5,7 @@ import type { Policy } from '../shared/urlpolicy';
 import { classify } from '../shared/urlpolicy';
 import { audit } from './audit';
 import { frames as listFrames, send } from './content-rpc';
+import { engine, onLlmDelta } from './modelengine';
 import type { Capability, Enforcer } from './policy';
 import { onDelta, sessions } from './sessions';
 import type { TabManager } from './tabs';
@@ -101,6 +102,35 @@ export class Router {
         const adapter = String(p.adapter ?? '');
         if (!adapter) throw new BridgeError('E_PARAMS', 'adapter is required');
         return sessions.selftest(adapter);
+      }
+      case 'llm.catalog': return { models: await engine.catalog(typeof p.task === 'string' ? p.task : undefined) };
+      case 'llm.load': {
+        const id = String(p.id ?? p.model ?? '');
+        if (!id) throw new BridgeError('E_PARAMS', 'id is required');
+        try { await engine.load(id); return { ok: true }; }
+        catch (e) { throw e instanceof BridgeError ? e : new BridgeError('E_MODEL_UNAVAILABLE', e instanceof Error ? e.message : String(e)); }
+      }
+      case 'llm.unload': await engine.unload(String(p.id ?? p.model ?? '')); return { ok: true };
+      case 'llm.generate': {
+        this.enforcer.assertRunning();
+        const id = String(p.model ?? p.id ?? '');
+        const messages = Array.isArray(p.messages) ? (p.messages as Array<{ role: string; content: string }>) : [];
+        if (!id || !messages.length) throw new BridgeError('E_PARAMS', 'model and a non-empty messages list are required');
+        const reqId = ctx.idem;
+        try {
+          return await engine.generate(id, messages, {
+            max_tokens: Number(p.max_tokens) || undefined, temperature: typeof p.temperature === 'number' ? p.temperature : undefined,
+            stream: !!p.stream, onDelta: reqId ? (text) => onLlmDelta.fn(reqId, text) : undefined,
+          });
+        } catch (e) { throw e instanceof BridgeError ? e : new BridgeError('E_MODEL_UNAVAILABLE', e instanceof Error ? e.message : String(e)); }
+      }
+      case 'llm.embed': {
+        this.enforcer.assertRunning();
+        const id = String(p.model ?? p.id ?? '');
+        const texts = Array.isArray(p.texts) ? (p.texts as string[]) : [];
+        if (!id || !texts.length) throw new BridgeError('E_PARAMS', 'model and a non-empty texts list are required');
+        try { return await engine.embed(id, texts); }
+        catch (e) { throw e instanceof BridgeError ? e : new BridgeError('E_MODEL_UNAVAILABLE', e instanceof Error ? e.message : String(e)); }
       }
       default: throw new BridgeError('E_METHOD', `unknown method ${method}`);
     }
