@@ -297,17 +297,51 @@ async def _start_dashboard(
     return None, None
 
 
+def _open_database() -> None:
+    """db.init_db(), with the Sentinel's repairs in the way of the two
+    failures that would otherwise stop ABP from ever starting again: a
+    corrupted database file, and a database written by a newer ABP (someone
+    rolled the app back)."""
+    import sqlite3
+
+    from bot import db
+    from bot.sentinel import backup, journal, repair
+
+    try:
+        db.init_db()
+        return
+    except db.SchemaTooNewError as exc:
+        good = backup.latest_verified_for_schema(db.SCHEMA_VERSION)
+        if good is None:
+            raise
+        journal.alert("db.schema-too-new", f"{exc} Restoring backup {good['name']}, which this version can read "
+                      "(the newer database is kept in data/backups/_replaced/).", level="critical")
+        backup.restore_backup(good["name"], parts=("db",))
+    except sqlite3.DatabaseError as exc:
+        journal.alert("db.integrity", f"database failed to open ({exc}); repairing", level="critical")
+        outcome = repair.repair_database()
+        if not outcome["ok"]:
+            raise
+    db.init_db()
+
+
 async def run() -> None:
     from bot import bot_instances, db, platform_supervisor
     from bot.config import config
+    from bot.sentinel import bootguard
+    from bot.sentinel import sentinel as self_preservation
 
-    db.init_db()
+    bg.bind_loop(asyncio.get_running_loop())
+    _open_database()
     logger.info("secrets loaded from %s (exists=%s)", _env_path, _env_path.exists())
     db.log_audit(actor="system", action="startup", detail=f"env: {_env_path}")
 
     from bot import plugins as plugin_registry
 
-    plugin_registry.load_enabled()
+    if bootguard.is_safe_mode():
+        logger.warning("safe mode: plugins are not loaded this boot (see the Sentinel journal)")
+    else:
+        plugin_registry.load_enabled()
 
     # The dashboard comes FIRST. The desktop app's window waits on it to finish loading, so nothing that can be
     # slow or fail (connecting external MCP servers, starting chat platforms, a flaky network) may sit in front of
@@ -431,6 +465,9 @@ async def run() -> None:
 
     retention_task = asyncio.create_task(retention.run_forever(stop_event))
 
+    self_preservation.start(loop, stop_event)
+    sentinel_task = asyncio.create_task(self_preservation.run_forever(stop_event))
+
     from bot import mdns_advertise
 
     # Blocking (real socket I/O to send the mDNS announcement) but brief and
@@ -450,6 +487,7 @@ async def run() -> None:
         await scheduler_task  # stop_event is already set; run_forever exits its own loop cleanly
         await peers_health_task  # same shutdown contract as scheduler_task
         await retention_task  # same shutdown contract as scheduler_task
+        await sentinel_task  # same shutdown contract as scheduler_task
         await asyncio.to_thread(mdns_advertise.stop)
         await dashboard_supervisor_task  # let its own retry loop notice stop_event and exit
         server = dashboard_state["server"]
@@ -461,11 +499,21 @@ async def run() -> None:
         from bot.router import router as _router
 
         await _router.shutdown_backends()
+        cancelled = await bg.drain(5.0)
+        if cancelled:
+            logger.info("cancelled %d background task(s) still running at shutdown", cancelled)
         db.log_audit(actor="system", action="shutdown")
 
 
 def main() -> None:
     setup_logging()
+    # Before anything reads config: a crash loop rolls config back to
+    # last-known-good and starts in safe mode (bot/sentinel/bootguard.py).
+    from bot.sentinel import bootguard
+
+    boot = bootguard.begin_boot()
+    if ".env" in (boot.get("restored") or []):
+        load_dotenv(_env_path, override=True)
     try:
         asyncio.run(run())
     except KeyboardInterrupt:

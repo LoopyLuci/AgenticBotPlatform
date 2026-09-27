@@ -1470,6 +1470,48 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/sentinel/backups": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/sentinel/backups",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/sentinel/cve": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/sentinel/cve",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/sentinel/issues": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/sentinel/issues",
+  "path_params": [],
+  "query_params": [
+   "status",
+   "limit"
+  ]
+ },
+ "GET /api/sentinel/journal": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/sentinel/journal",
+  "path_params": [],
+  "query_params": [
+   "limit",
+   "level",
+   "kind"
+  ]
+ },
+ "GET /api/sentinel/status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/sentinel/status",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/server-chat/attachments/{message_id}": {
   "body": false,
   "method": "GET",
@@ -3105,6 +3147,47 @@ export const operations = {
   "query_params": [
    "name"
   ]
+ },
+ "POST /api/sentinel/backups/{name}/restore": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/sentinel/backups/{name}/restore",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "POST /api/sentinel/backups/{name}/verify": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/sentinel/backups/{name}/verify",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "POST /api/sentinel/cve/fix": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/sentinel/cve/fix",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/sentinel/issues/status": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/sentinel/issues/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/sentinel/run/{duty}": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/sentinel/run/{duty}",
+  "path_params": [
+   "duty"
+  ],
+  "query_params": []
  },
  "POST /api/server-chat/approvals/{approval_id}/resolve": {
   "body": true,
@@ -7152,6 +7235,89 @@ export const operations = {
   "path": "/api/infra/rules/{rule_id}/run",
   "path_params": [
    "rule_id"
+  ],
+  "query_params": []
+ },
+ "sentinel_backups_api_sentinel_backups_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/sentinel/backups",
+  "path_params": [],
+  "query_params": []
+ },
+ "sentinel_cve_api_sentinel_cve_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/sentinel/cve",
+  "path_params": [],
+  "query_params": []
+ },
+ "sentinel_cve_fix_api_sentinel_cve_fix_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/sentinel/cve/fix",
+  "path_params": [],
+  "query_params": []
+ },
+ "sentinel_issue_status_api_sentinel_issues_status_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/sentinel/issues/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "sentinel_issues_api_sentinel_issues_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/sentinel/issues",
+  "path_params": [],
+  "query_params": [
+   "status",
+   "limit"
+  ]
+ },
+ "sentinel_journal_api_sentinel_journal_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/sentinel/journal",
+  "path_params": [],
+  "query_params": [
+   "limit",
+   "level",
+   "kind"
+  ]
+ },
+ "sentinel_restore_api_sentinel_backups__name__restore_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/sentinel/backups/{name}/restore",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "sentinel_run_api_sentinel_run__duty__post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/sentinel/run/{duty}",
+  "path_params": [
+   "duty"
+  ],
+  "query_params": []
+ },
+ "sentinel_status_api_sentinel_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/sentinel/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "sentinel_verify_api_sentinel_backups__name__verify_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/sentinel/backups/{name}/verify",
+  "path_params": [
+   "name"
   ],
   "query_params": []
  },

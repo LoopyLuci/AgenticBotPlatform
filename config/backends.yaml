@@ -368,6 +368,45 @@ retention:
   # files before this cap existed — kept here as a real, load-bearing
   # ceiling, not a cosmetic default.
   bot_instances_backups_max_count: 50
+sentinel:
+  # ABP's self-preservation loop (bot/sentinel/, ADR-0011): detects,
+  # backs up, and repairs. Every key below has the same default in code,
+  # so deleting a line never turns a protection off; set it explicitly.
+  enabled: true
+  integrity:
+    every_minutes: 60      # PRAGMA quick_check on the live database, disk space, WAL size
+    auto_repair: true      # on corruption: REINDEX -> salvage rows -> restore newest verified backup
+  backup:
+    every_hours: 24        # verified backup of the database, secrets and config into data/backups/
+    keep_recent: 7
+    keep_daily: 14
+    keep_weekly: 8
+    # A second place every backup set is copied to and verified in: another
+    # drive, a synced folder, a NAS mount. This is what survives losing the
+    # disk. Empty = off.
+    mirror_dir: ""
+  cve:
+    enabled: true
+    every_hours: 24        # OSV.dev scan of installed packages and shipped lockfiles
+    # Upgrade vulnerable Python packages in place, smoke-test ABP, roll back
+    # if the import fails. Off by default: an unattended upgrade is a change
+    # someone should choose. Findings are always alerted either way.
+    auto_fix: false
+    include_checkout: true # also scan requirements.lock / Cargo.lock / package-lock / gradle catalog when present
+  security:
+    every_hours: 6         # exposure, token strength, secret-file permissions, leaked secrets in logs, code tampering
+    auto_fix: true         # tighten permissions, redact leaked secrets from the log
+  bug_hunter:
+    enabled: true          # fingerprint every error; alert on new, regressed and spiking ones
+    # A bot instance id: each new error also becomes a card on that
+    # instance's "sentinel" kanban board, for an auto-manage agent to
+    # investigate. Empty = off.
+    kanban_instance_id:
+  watchdog:
+    enabled: true
+    lag_warn_s: 2.0        # an event-loop stall longer than this is reported with the blocking stack
+    hang_after_s: 180      # unresponsive this long: dump stacks; under a supervisor, restart
+    memory_limit_mb: 4096
 scheduler:
   # bot/scheduler.py's failure-streak guard — a scheduled command
   # (/cron, /loop, /heartbeat) that fails this many times in a row gets

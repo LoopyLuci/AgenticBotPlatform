@@ -28,3 +28,6 @@ jsonschema>=4.20
 zeroconf>=0.132
 tzdata>=2024.1
 pywinpty>=2.0; sys_platform == "win32"  # ConPTY for interactive container/VM terminals (bot/terminal_broker.py)
+# Not imported by ABP, but present in every venv it ships. Floor past
+# CVE-2022-40897, CVE-2024-6345, CVE-2025-47273, CVE-2026-59890.
+setuptools>=83.0.0

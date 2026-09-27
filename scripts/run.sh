@@ -21,4 +21,5 @@ if ! .venv/bin/python scripts/setup.py --check; then
     echo
 fi
 
-exec .venv/bin/python -m bot.main
+# The guardian restarts bot.main if it crashes or hangs (bot/sentinel/guardian.py).
+exec .venv/bin/python -m bot.sentinel.guardian
