@@ -1170,7 +1170,7 @@ def build_app() -> FastAPI:
             "family": BACKEND_FAMILY,
             "current": {
                 name: (config.current.get("backends", {}).get(name) or {}).get("model")
-                for name in ("api", "hermes_cli", "hermes_gateway")
+                for name in ("api", "hermes_cli", "hermes_gateway", "opencode", "openclaw")
             },
             "live": {
                 "api": live_api,

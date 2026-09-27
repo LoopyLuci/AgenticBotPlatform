@@ -14,10 +14,17 @@ Both run as a subprocess without a shell, in the turn's working folder, with a t
 their process tree when the turn is cancelled.
 
 The command lines follow each product's own documentation for scripted use (opencode.ai/docs/cli,
-docs.openclaw.ai/cli/agent), read when this was written. They are **not tested against the real programs**
-(neither is installed here) - only against a stand-in executable that records its arguments. If a flag differs
-in your version, put the correct one in `extra_args`. What they print is not specified precisely, so OpenCode's
-output is taken as plain text (ANSI codes removed) and OpenClaw's JSON envelope is searched for its text field
+docs.openclaw.ai/cli/agent). OpenCode's own `run --help` and `--session`/`--format json` flags were confirmed live
+against a real, installed `opencode` 1.18.32 - including that a failing call (a provider/credits/privacy-setting
+error) still exits 0 and reports the failure as a `{"type":"error",...}` JSON event rather than a non-zero status,
+and that every event (success or error) carries a real `sessionID` this backend now captures and hands back as
+`raw["desktop_session_key"]` for bot/router.py to persist, the same way hermes_gateway_backend.py's session
+protocol does, so a bot instance using `opencode` keeps one continuous conversation across calls. What was **not**
+observed live: a successful reply's exact JSON shape (every live call this was tested with hit a credits/privacy
+error before producing one) - `_find_text()`'s generic best-effort search is used for that, not a hard-coded field
+name. OpenClaw is **not tested against a real install** (not installed where this was written) - only against a
+stand-in executable that records its arguments; its own JSON envelope is searched for its text field the same way,
+and if a flag differs in your version, put the correct one in `extra_args`.
 (falling back to the raw output).
 """
 from __future__ import annotations
@@ -121,7 +128,12 @@ class ExternalAgentBackend(Backend):
         reply = self.parse_output(text_out)
         if not reply:
             raise BackendError(f"{self.name} returned no text")
-        return BackendResult(text=reply, raw={"backend": self.name, "exit": proc.returncode})
+        return BackendResult(text=reply, raw={"backend": self.name, "exit": proc.returncode, **self.extra_raw(text_out)})
+
+    def extra_raw(self, stdout: str) -> dict:
+        """Extra BackendResult.raw fields a product's own output reveals — currently only
+        OpenCodeBackend's session id (see its own override); the base default is nothing."""
+        return {}
 
 
 async def _kill_tree(proc) -> None:
@@ -140,11 +152,32 @@ async def _kill_tree(proc) -> None:
         pass
 
 
+def _opencode_events(stdout: str) -> list[dict]:
+    """Every line of `opencode run --format json`'s output that parses as a JSON object (its event stream is
+    newline-delimited JSON, one event per line - confirmed live: a failing call still exits 0 and prints an
+    {"type":"error",...} event rather than going non-zero, so text output alone cannot tell success from failure)."""
+    out = []
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(ev, dict):
+            out.append(ev)
+    return out
+
+
 class OpenCodeBackend(ExternalAgentBackend):
     name = "opencode"
 
     def build_args(self, prompt, *, cwd, session, timeout_s):
-        args = ["run"]
+        # --format json: confirmed live to include a "sessionID" on every event (including error events), which
+        # --session below needs a real value for on a later call. Without --format json, plain-text mode gives no
+        # way at all to learn the session id opencode picked, so a bot instance could never resume its conversation.
+        args = ["run", "--format", "json"]
         if self.model:
             args += ["--model", self.model]
         if self.agent:
@@ -153,7 +186,29 @@ class OpenCodeBackend(ExternalAgentBackend):
             args += ["--auto"]
         if cwd:
             args += ["--dir", str(cwd)]
+        if session:
+            args += ["--session", str(session)]        # confirmed live: `opencode run --help` documents -s/--session as "session id to continue"
         return [*args, "--", prompt]
+
+    def parse_output(self, stdout: str) -> str:
+        events = _opencode_events(stdout)
+        if not events:
+            return super().parse_output(stdout)         # an older opencode without --format json support, or a version that ignored it
+        for ev in events:
+            if ev.get("type") == "error":
+                err = ev.get("error") or {}
+                msg = (err.get("data") or {}).get("message") or err.get("name") or "opencode reported an error"
+                raise BackendError(f"opencode reported an error: {msg}"[:500])
+        # The success event's exact shape was not observed live this session (every real call made hit a
+        # provider/credits error before a reply was produced - see the two live-confirmed error cases above), so
+        # this reuses the same generic best-effort search OpenClawBackend's known-shape envelope also falls back to,
+        # rather than hard-coding an unverified field name.
+        return _find_text(events) or super().parse_output(stdout)
+
+    def extra_raw(self, stdout: str) -> dict:
+        events = _opencode_events(stdout)
+        session_id = next((ev["sessionID"] for ev in reversed(events) if isinstance(ev.get("sessionID"), str) and ev["sessionID"]), None)
+        return {"desktop_session_key": session_id} if session_id else {}
 
 
 class OpenClawBackend(ExternalAgentBackend):

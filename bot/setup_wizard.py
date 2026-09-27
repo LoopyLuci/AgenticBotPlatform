@@ -229,6 +229,24 @@ def _custom_model_ready() -> tuple[bool, str]:
     return ok, "" if ok else "no providers configured in config/providers.yaml"
 
 
+def _binary_ready(binary: str, product: str) -> tuple[bool, str]:
+    import shutil
+
+    from bot.config import config
+
+    configured = ((config.current.get("backends") or {}).get(product) or {}).get("binary", binary)
+    ok = shutil.which(configured) is not None
+    return ok, "" if ok else f"{configured!r} not found on PATH — install {product.title()}"
+
+
+def _opencode_ready() -> tuple[bool, str]:
+    return _binary_ready("opencode", "opencode")
+
+
+def _openclaw_ready() -> tuple[bool, str]:
+    return _binary_ready("openclaw", "openclaw")
+
+
 _READINESS_CHECKS: dict[str, Callable[[], tuple[bool, str]]] = {
     "api": _api_ready,
     "cli": _cli_ready,
@@ -237,6 +255,8 @@ _READINESS_CHECKS: dict[str, Callable[[], tuple[bool, str]]] = {
     "hermes_gateway": _hermes_gateway_ready,
     "custom_model": _custom_model_ready,
     "native_agent": _custom_model_ready,  # same providers.yaml registry
+    "opencode": _opencode_ready,
+    "openclaw": _openclaw_ready,
 }
 
 

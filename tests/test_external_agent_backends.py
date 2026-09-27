@@ -31,6 +31,12 @@ if mode == "json":
     print(json.dumps({"status": "completed", "result": {"payload": {"text": "the answer"}}, "usage": {"tokens": 5}}))
 elif mode == "json-error":
     print(json.dumps({"status": "error", "error": {"message": "model unavailable"}, "text": "model unavailable"}))
+elif mode == "oc-ndjson":
+    print(json.dumps({"type": "session.created", "sessionID": "ses_abc123"}))
+    print(json.dumps({"type": "message.updated", "sessionID": "ses_abc123", "text": "the opencode answer"}))
+elif mode == "oc-error":
+    print(json.dumps({"type": "error", "timestamp": 1, "sessionID": "ses_err1",
+                       "error": {"name": "APIError", "data": {"message": "insufficient credits"}}}))
 else:
     print("\x1b[32mhello from the stand-in\x1b[0m")
 '''
@@ -75,6 +81,40 @@ def test_opencode_is_run_non_interactively_in_the_working_folder(exe, tmp_path):
     assert argv[0] == "run" and argv[argv.index("--model") + 1] == "anthropic/claude-sonnet-5" and argv[argv.index("--agent") + 1] == "build"
     assert argv[argv.index("--dir") + 1] == str(work) and argv[-2:] == ["--", "fix the bug"] and "--auto" not in argv
     assert Path(called()["cwd"]).resolve() == work.resolve()
+
+
+def test_opencode_always_requests_json_output_and_only_resumes_a_session_when_it_has_one(exe):
+    binary, called = exe
+    ask(OpenCodeBackend(binary), "hi")
+    argv = called()["argv"]
+    assert argv[argv.index("--format") + 1] == "json"
+    assert "--session" not in argv                            # no prior session for this call: opencode creates its own
+
+    ask(OpenCodeBackend(binary), "hi again", desktop_session_key="ses_prior")
+    argv = called()["argv"]
+    assert argv[argv.index("--session") + 1] == "ses_prior"
+
+
+def test_opencode_captures_the_session_id_from_its_json_event_stream(exe, monkeypatch):
+    binary, _ = exe
+    monkeypatch.setenv("STAND_IN_MODE", "oc-ndjson")
+    result = ask(OpenCodeBackend(binary), "hi")
+    assert result.text == "the opencode answer"
+    assert result.raw["desktop_session_key"] == "ses_abc123"   # bot/router.py persists this against the bot instance/chat
+
+
+def test_opencode_reports_an_error_event_even_though_the_process_exits_zero(exe, monkeypatch):
+    binary, _ = exe
+    monkeypatch.setenv("STAND_IN_MODE", "oc-error")
+    with pytest.raises(BackendError, match="opencode reported an error: insufficient credits"):
+        ask(OpenCodeBackend(binary), "hi")
+
+
+def test_opencode_falls_back_to_plain_text_when_the_output_is_not_json(exe):
+    binary, _ = exe                                            # default STAND_IN_MODE ("ok") prints ANSI-coloured plain text
+    result = ask(OpenCodeBackend(binary), "hi")
+    assert result.text == "hello from the stand-in"
+    assert "desktop_session_key" not in result.raw
 
 
 def test_auto_approval_is_only_passed_when_asked_for(exe):

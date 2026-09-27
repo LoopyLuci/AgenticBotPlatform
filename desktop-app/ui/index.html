@@ -1009,6 +1009,18 @@
         </div>
 
         <div class="card">
+          <h3>Models — other agent CLIs</h3>
+          <div class="settingrow">
+            <div><div class="st">opencode</div><div class="sd">Passed to `opencode run --model` — blank uses OpenCode's own default. Format: provider/model (e.g. openrouter/~anthropic/claude-sonnet-latest, run `opencode models` for the full list).</div></div>
+            <input type="text" id="model-opencode" placeholder="(default)" autocomplete="off" spellcheck="false" style="min-width:220px;">
+          </div>
+          <div class="settingrow">
+            <div><div class="st">openclaw</div><div class="sd">Passed to `openclaw agent --model` — blank uses OpenClaw's own default.</div></div>
+            <input type="text" id="model-openclaw" placeholder="(default)" autocomplete="off" spellcheck="false" style="min-width:220px;">
+          </div>
+        </div>
+
+        <div class="card">
           <h3>Agent control</h3>
           <div class="settingrow">
             <div><div class="st">Cross-agent targeting</div><div class="sd">Whether one bot instance may ask/command another via ask_instance/run_swarm</div></div>
@@ -1544,6 +1556,10 @@
               <optgroup label="Hermes Agent">
                 <option value="hermes_cli">hermes_cli — Hermes Agent CLI</option>
                 <option value="hermes_gateway">hermes_gateway — Hermes Agent gateway</option>
+              </optgroup>
+              <optgroup label="Other agent CLIs (their own tools and permissions, not ABP's)">
+                <option value="opencode">opencode — OpenCode CLI</option>
+                <option value="openclaw">openclaw — OpenClaw CLI</option>
               </optgroup>
             </select>
           </div>

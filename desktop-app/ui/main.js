@@ -537,7 +537,7 @@ let modelsCache = null;
 
 function _defaultModelInputFocused() {
   const active = document.activeElement;
-  return active && ['model-api', 'model-hermes_cli', 'model-hermes_gateway'].includes(active.id);
+  return active && ['model-api', 'model-hermes_cli', 'model-hermes_gateway', 'model-opencode', 'model-openclaw'].includes(active.id);
 }
 
 function _turnInputsFocused() {
@@ -571,6 +571,9 @@ async function refreshModels() {
   document.getElementById('model-hermes-note').textContent = hermesGrouped
     ? `Live from Hermes's own provider cache — ${hermesOptions.length} models across ${Object.keys(hermesGrouped).length} providers.`
     : 'Hermes not detected on this machine — type a model name manually.';
+
+  document.getElementById('model-opencode').value = m.current.opencode || '';
+  document.getElementById('model-openclaw').value = m.current.openclaw || '';
 
   refreshBotModelOptions();
   refreshBots();
@@ -698,7 +701,7 @@ document.getElementById('model-api').onchange = async (e) => {
   await api('/api/config/set', { method: 'POST', body: JSON.stringify({ path: ['backends', 'api', 'model'], value }) });
   refreshConfig();
 };
-['hermes_cli', 'hermes_gateway'].forEach(name => {
+['hermes_cli', 'hermes_gateway', 'opencode', 'openclaw'].forEach(name => {
   document.getElementById(`model-${name}`).onchange = async (e) => {
     const value = e.target.value.trim() || null;
     await api('/api/config/set', { method: 'POST', body: JSON.stringify({ path: ['backends', name, 'model'], value } ) });
