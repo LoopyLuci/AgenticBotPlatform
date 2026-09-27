@@ -3,18 +3,43 @@
 Mirrors bot/backends/cli_backend.py's shape closely (same subprocess/
 timeout/kill pattern) since Hermes's one-shot mode is the same kind of
 integration as Claude Code CLI's headless print mode: no persistent
-process, no session state, one prompt in, one answer out.
+process, one prompt in, one answer out per call.
 
 Confirmed live against the real `hermes` CLI (not guessed from docs):
-`hermes -z "<prompt>" --usage-file <path>` writes the plain final answer
-text to stdout (exit 0 on success, non-zero on failure) and, after
-completion, a JSON usage report to --usage-file with a `total_tokens`
-field — unlike Claude Code CLI's `--output-format json`, stdout here is
-*not* JSON, it's just the answer.
+- `hermes -z "<prompt>" --usage-file <path>` writes the plain final answer
+  text to stdout (exit 0 on success, non-zero on failure) and, after
+  completion, a JSON usage report to --usage-file — unlike Claude Code
+  CLI's `--output-format json`, stdout here is *not* JSON, it's just the
+  answer. That usage report includes a `session_id` field even though
+  nothing is printed to stdout about it (`--pass-session-id` only puts the
+  id in the *model's own* system prompt, so it isn't a way for this code to
+  learn it — the usage file already is).
+- `hermes --resume <session_id> -z "<prompt>"` genuinely continues that
+  exact session (confirmed by asking a follow-up question that only makes
+  sense with the first turn's context, and getting the right answer back).
+- `-m/--model MODEL` and `--reasoning LEVEL` (accepting exactly ABP's own
+  effort ladder: none/minimal/low/medium/high/xhigh/max/ultra — see
+  bot/effort.py's comment on why that ladder mirrors Hermes's own) both
+  apply to `-z`/`--oneshot` per `hermes --help`.
+- Session/workspace scoping in Hermes is tied to the invoking process's
+  cwd ("-c 'name' … the most recent **in lineage**" per its own --help);
+  this backend does not set a per-call cwd, so every call runs from ABP's
+  own server directory and stays in one consistent scope — there is no
+  per-instance workspace isolation the way hermes_gateway_backend's
+  `hermes_home` gives the gateway backend.
 
-This is the "no server needed" Hermes integration — bot/backends/
-hermes_gateway_backend.py is the richer, session-based alternative for
-when async/streaming matters more than simplicity.
+So despite having no long-lived process, this is NOT stateless: passing
+back the `session_id` from --usage-file as `raw["desktop_session_key"]`
+lets bot/router.py persist it exactly the way hermes_gateway_backend.py's
+richer session protocol does (Router.ask()'s shared "any backend that
+returns raw['desktop_session_key'] gets it linked to the chat" path — see
+router.py around its `result.raw.get("desktop_session_key")` check), so a
+bot instance using hermes_cli keeps one real, continuous Hermes
+conversation across calls instead of a fresh one each time.
+
+bot/backends/hermes_gateway_backend.py is the richer alternative when
+async/streaming or per-instance workspace isolation matter more than this
+backend's own simplicity (no server process to keep running).
 """
 
 from __future__ import annotations
@@ -41,16 +66,19 @@ class HermesCliBackend(Backend):
         self.model = model
 
     async def ask(self, prompt: str, *, context=None, timeout_s: float = 60) -> BackendResult:
+        from bot import effort as effort_mod
+
+        context = context or {}
         fd, usage_path = tempfile.mkstemp(prefix="hermes_usage_", suffix=".json")
         os.close(fd)
         usage_file = Path(usage_path)
 
-        # --model's exact flag name is unverified against a real `hermes`
-        # install (this codebase has no live Hermes CLI to confirm it
-        # against) — if `hermes` rejects it, correct this to whatever
-        # `hermes --help` actually documents.
         model_args = ["--model", self.model] if self.model else []
-        args = [self.binary, "-z", prompt, "--usage-file", str(usage_file), *model_args, *self.extra_args]
+        session = context.get("desktop_session_key")
+        resume_args = ["--resume", str(session)] if session else []
+        reasoning = effort_mod.to_hermes(context.get("effort"))
+        reasoning_args = ["--reasoning", reasoning] if reasoning else []
+        args = [self.binary, "-z", prompt, "--usage-file", str(usage_file), *model_args, *resume_args, *reasoning_args, *self.extra_args]
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -100,6 +128,10 @@ class HermesCliBackend(Backend):
                     tokens = usage_raw.get("total_tokens")
                 except (json.JSONDecodeError, OSError):
                     pass
+            if isinstance(usage_raw, dict) and usage_raw.get("session_id"):
+                # Router.ask() persists this against the bot instance/chat so the NEXT call resumes the same
+                # real Hermes session instead of starting over — see this module's docstring.
+                usage_raw = {**usage_raw, "desktop_session_key": usage_raw["session_id"]}
             return BackendResult(text=text, tokens=tokens, raw=usage_raw)
         finally:
             usage_file.unlink(missing_ok=True)

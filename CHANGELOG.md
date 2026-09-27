@@ -8,6 +8,32 @@ app's own version (the Android app versions independently — see its own
 
 ## [Unreleased]
 
+### Fixed
+- **Hermes CLI and OpenCode CLI now keep one real, continuous conversation per bot instance, tracked by ABP.**
+  Confirmed live against a real, installed `hermes` and a real, installed `opencode`:
+  - `hermes_cli` (`bot/backends/hermes_cli_backend.py`): every call was previously a fresh, memory-less `hermes -z`
+    invocation even though ABP already tracks a `desktop_session_key` per bot instance/chat for exactly this
+    purpose (the same mechanism `hermes_gateway` and now `opencode` use). `hermes`'s own `--usage-file` output
+    already includes a `session_id` — confirmed live that `--resume <that id>` genuinely continues the same
+    conversation (asked a follow-up question that only makes sense with the first turn's context, and got the
+    right answer back) — so this backend now passes it and reports the id back for `bot/router.py` to persist.
+    Also now passes ABP's own effort setting through as `--reasoning` (both real, documented top-level `hermes`
+    flags; `--model`'s existing flag name is now confirmed correct too, removing a stale "unverified" comment).
+  - `opencode` (`bot/backends/external_agent_backend.py`): `OpenCodeBackend` accepted a session parameter but never
+    used it — every call ran fresh with no memory. It now always requests `--format json` (confirmed live: every
+    event, including a failed one, carries a real `sessionID`) and passes `--session <id>` once one exists,
+    capturing it the same way for `bot/router.py` to persist. Also fixed a real bug found live in the process: a
+    failed OpenCode call (a provider/credits/privacy-setting error) still exits 0 and prints an
+    `{"type":"error",...}` JSON event instead of the reply — previously that error text would have been silently
+    returned as if it were a successful answer; it now raises a proper error.
+  - `opencode`/`openclaw` were completely unreachable from either dashboard UI (no entry in the bot-creation
+    Backend dropdown or the Models settings page — only reachable by editing the database or config file directly)
+    and always reported "ready" in `bot/setup_wizard.py`'s pre-flight check even with no `opencode`/`openclaw`
+    binary installed. Both are now selectable in the New Bot wizard (dashboard and desktop app) and the TUI's Add
+    Bot screen, have a Models settings row for their default model, and get a real PATH-based readiness check.
+  - Verified: 26 backend tests (hermes_cli: 12 new; opencode/openclaw: 14, extended), a new setup-wizard readiness
+    test, and the existing dashboard/desktop-app UI-parity tests, all green.
+
 ### Added
 - **ABP Browser Extension: store release packaging (phase 5 of 5, complete for what a repo can do).**
   `npm run package` builds both store variants with no dev key and zips each with its manifest at the archive root
