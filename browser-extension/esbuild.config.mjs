@@ -23,7 +23,7 @@ const manifest = {
   action: { default_title: 'ABP Bridge', default_popup: 'popup.html' },
   side_panel: { default_path: 'sidepanel.html' },
   options_page: 'options.html',
-  permissions: ['storage', 'tabs', 'tabGroups', 'scripting', 'activeTab', 'alarms', 'sidePanel', 'notifications', 'webNavigation'],
+  permissions: ['storage', 'tabs', 'tabGroups', 'scripting', 'activeTab', 'alarms', 'sidePanel', 'notifications', 'webNavigation', 'offscreen'],
   optional_permissions: ['debugger', 'downloads', 'nativeMessaging'],
   host_permissions: ['http://127.0.0.1/*', 'http://localhost/*'],
   optional_host_permissions: ['https://*/*', 'http://*/*'],
@@ -36,15 +36,28 @@ const common = { bundle: true, target: 'es2022', sourcemap: 'linked', logLevel: 
 const entries = [
   { entryPoints: { background: 'src/background/index.ts' }, format: 'esm' },
   { entryPoints: { content: 'src/content/index.ts' }, format: 'iife' },
+  { entryPoints: { offscreen: 'src/offscreen/offscreen.ts' }, format: 'esm' },
   { entryPoints: { popup: 'src/popup/popup.ts', options: 'src/options/options.ts', sidepanel: 'src/sidepanel/sidepanel.ts' }, format: 'esm' },
 ];
+
+// onnxruntime-web (under @huggingface/transformers) loads its WASM binaries by URL at runtime, not via import - they are
+// copied here rather than bundled by esbuild, and offscreen.ts points env.backends.onnx.wasm.wasmPaths at this folder.
+// Only the plain (non-threaded, non-SIMD-only) and SIMD-threaded builds are shipped; that pair covers every Chromium ABP
+// actually runs in, and skipping the JSEP/JSPI/training variants keeps the extension a fraction of the library's own size.
+const ORT_WASM_DIR = path.join(root, 'node_modules/onnxruntime-web/dist');
+const ORT_FILES = ['ort-wasm-simd-threaded.wasm', 'ort-wasm-simd-threaded.mjs', 'ort-wasm-simd-threaded.jsep.wasm', 'ort-wasm-simd-threaded.jsep.mjs'];
 
 function copyStatic() {
   mkdirSync(dist, { recursive: true });
   writeFileSync(path.join(dist, 'manifest.json'), JSON.stringify(manifest, null, 2));
-  for (const page of ['popup', 'options', 'sidepanel']) cpSync(path.join(root, `src/${page}/${page}.html`), path.join(dist, `${page}.html`));
+  for (const page of ['popup', 'options', 'sidepanel', 'offscreen']) cpSync(path.join(root, `src/${page}/${page}.html`), path.join(dist, `${page}.html`));
   cpSync(path.join(root, 'src/shared/ui.css'), path.join(dist, 'ui.css'));
   cpSync(path.join(root, 'icons'), path.join(dist, 'icons'), { recursive: true });
+  mkdirSync(path.join(dist, 'onnx'), { recursive: true });
+  for (const f of ORT_FILES) {
+    const src = path.join(ORT_WASM_DIR, f);
+    try { cpSync(src, path.join(dist, 'onnx', f)); } catch { /* a dev environment without npm-installed model deps: options page just shows "unavailable" */ }
+  }
 }
 
 rmSync(dist, { recursive: true, force: true });

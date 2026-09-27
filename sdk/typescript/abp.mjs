@@ -519,6 +519,15 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/browser/models/catalog": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/browser/models/catalog",
+  "path_params": [],
+  "query_params": [
+   "task"
+  ]
+ },
  "GET /api/browser/pair/pending": {
   "body": false,
   "method": "GET",
@@ -2348,6 +2357,15 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "POST /api/browser/models/{model_id}/load": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/browser/models/{model_id}/load",
+  "path_params": [
+   "model_id"
+  ],
+  "query_params": []
+ },
  "POST /api/browser/pair/code": {
   "body": false,
   "method": "POST",
@@ -2415,7 +2433,7 @@ export const operations = {
   "query_params": []
  },
  "POST /api/browser/v1/embeddings": {
-  "body": false,
+  "body": true,
   "method": "POST",
   "path": "/api/browser/v1/embeddings",
   "path_params": [],
@@ -6968,6 +6986,24 @@ export const operations = {
    "days"
   ]
  },
+ "models_catalog_api_browser_models_catalog_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/browser/models/catalog",
+  "path_params": [],
+  "query_params": [
+   "task"
+  ]
+ },
+ "models_load_api_browser_models__model_id__load_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/browser/models/{model_id}/load",
+  "path_params": [
+   "model_id"
+  ],
+  "query_params": []
+ },
  "node_consent_api_nodes__device_id__consent_put": {
   "body": true,
   "method": "PUT",
@@ -7455,7 +7491,7 @@ export const operations = {
   "query_params": []
  },
  "v1_embeddings_api_browser_v1_embeddings_post": {
-  "body": false,
+  "body": true,
   "method": "POST",
   "path": "/api/browser/v1/embeddings",
   "path_params": [],

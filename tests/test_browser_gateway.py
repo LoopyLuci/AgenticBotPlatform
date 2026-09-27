@@ -301,3 +301,96 @@ def test_models_lists_connected_web_adapters(server):
             ids = {m["id"] for m in r.json()["data"]}
             assert {"web/grok", "web/grok:fast"} <= ids
     run(go())
+
+
+# ------------------------------------------------------------------------------------------ browser-local (in-browser models, P3)
+def test_browser_local_chat_completion(server):
+    key = _pair(server)
+
+    async def go():
+        async with FakeExtension(server, key, {"llm.generate": lambda p: {"text": "hello from the local model"}}), httpx.AsyncClient(timeout=10) as c:
+            r = await c.post(f"{server}/api/browser/v1/chat/completions", headers=H,
+                             json={"model": "browser-local/qwen2.5-1.5b", "messages": [{"role": "user", "content": "hi"}]})
+            assert r.status_code == 200, r.text
+            assert r.json()["choices"][0]["message"]["content"] == "hello from the local model"
+    run(go())
+
+
+def test_browser_local_streams_deltas(server):
+    key = _pair(server)
+
+    async def go():
+        async def handler(p):
+            return {"text": "streamed answer"}
+
+        async with FakeExtension(server, key, {"llm.generate": handler}), httpx.AsyncClient(timeout=10) as c:
+            async with c.stream("POST", f"{server}/api/browser/v1/chat/completions", headers=H,
+                                json={"model": "browser-local/qwen2.5-1.5b", "stream": True, "messages": [{"role": "user", "content": "hi"}]}) as r:
+                assert r.status_code == 200
+                lines = [ln async for ln in r.aiter_lines() if ln.startswith("data: ")]
+                assert lines[-1] == "data: [DONE]"
+                data_lines = [json.loads(ln[len("data: "):]) for ln in lines[:-1]]
+                text = "".join(d["choices"][0]["delta"].get("content", "") for d in data_lines)
+                assert text == "streamed answer"
+    run(go())
+
+
+def test_browser_local_no_engine_yet_maps_to_503(server):
+    key = _pair(server)
+
+    async def go():
+        async with FakeExtension(server, key, {}), httpx.AsyncClient(timeout=10) as c:      # no llm.generate handler at all: the fake answers E_METHOD
+            r = await c.post(f"{server}/api/browser/v1/chat/completions", headers=H,
+                             json={"model": "browser-local/qwen2.5-1.5b", "messages": [{"role": "user", "content": "hi"}]})
+            assert r.status_code == 503
+            assert r.json()["error"]["code"] == "model_unavailable"
+    run(go())
+
+
+def test_embeddings_end_to_end(server):
+    key = _pair(server)
+
+    async def go():
+        async with FakeExtension(server, key, {"llm.embed": lambda p: {"embeddings": [[0.1, 0.2], [0.3, 0.4]]}}), httpx.AsyncClient(timeout=10) as c:
+            r = await c.post(f"{server}/api/browser/v1/embeddings", headers=H,
+                             json={"model": "browser-local/bge-small", "input": ["hello", "world"]})
+            assert r.status_code == 200, r.text
+            body = r.json()
+            assert [d["embedding"] for d in body["data"]] == [[0.1, 0.2], [0.3, 0.4]]
+            assert body["data"][0]["index"] == 0 and body["data"][1]["index"] == 1
+    run(go())
+
+
+def test_embeddings_reject_non_browser_local_model(server):
+    r = httpx.post(f"{server}/api/browser/v1/embeddings", headers=H, json={"model": "openai/text-embedding-3-small", "input": "hi"})
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "invalid_model"
+
+
+def test_models_catalog_route_empty_when_not_connected(server):
+    r = httpx.get(f"{server}/api/browser/models/catalog", headers=H)
+    assert r.status_code == 200
+    assert r.json()["models"] == []
+
+
+def test_models_catalog_route_reaches_the_extension(server):
+    key = _pair(server)
+
+    async def go():
+        catalog = {"models": [{"id": "bge-small", "task": "embed", "fit": "good", "installed": False}]}
+        async with FakeExtension(server, key, {"llm.catalog": lambda p: catalog}), httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(f"{server}/api/browser/models/catalog", headers=H)
+            assert r.status_code == 200
+            assert r.json()["models"] == catalog["models"]
+    run(go())
+
+
+def test_models_load_route(server):
+    key = _pair(server)
+
+    async def go():
+        async with FakeExtension(server, key, {"llm.load": lambda p: {"ok": True}}), httpx.AsyncClient(timeout=10) as c:
+            r = await c.post(f"{server}/api/browser/models/bge-small/load", headers=H)
+            assert r.status_code == 200
+            assert r.json() == {"ok": True}
+    run(go())

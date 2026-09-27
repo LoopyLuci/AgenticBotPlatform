@@ -9,6 +9,22 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **ABP Browser Extension: in-browser models (phase 3 of 5).** `browser-local/<model>` in the model gateway now runs a real
+  model inside the browser tab - WebLLM (WebGPU chat models: Qwen2.5 1.5B, Llama 3.2 1B, Phi-3.5 Mini) and transformers.js
+  (CPU/WASM: bge-small embeddings, Whisper tiny/base, a sentiment classifier) - via a small offscreen-document engine
+  (`browser-extension/src/offscreen/`). A curated catalog (`src/models/catalog.ts`) scores every model against the actual
+  connected browser's hardware (WebGPU presence, buffer-binding limits, device memory) as good/tight/unsupported before
+  anyone downloads anything, shown in a new Models section of the extension's options page alongside per-model download/
+  remove controls and live progress. `/api/browser/v1/embeddings` is now real (was a placeholder); `browser-local/...`
+  chat completions support both streaming and non-streaming. New dashboard routes list the catalog and can trigger a load
+  remotely (`GET /api/browser/models/catalog`, `POST /api/browser/models/<id>/load`). Deliberately does **not**
+  reimplement a from-scratch resumable-download/verify/OPFS manager as the original design sketched: WebLLM and
+  transformers.js already download, verify and cache their own weights via the Cache Storage API, so ABP owns only the
+  catalog, the fit score, and a local "loaded before" registry it reports to ABP as ordinary provider metadata. Verified:
+  fit-scoring unit tests and gateway conformance tests (chat, streaming, embeddings, the "no engine yet" error) against a
+  fake extension. Not yet done: an actual load/generate/embed against real WebGPU or WASM hardware or a real Hugging
+  Face/MLC download (both need a live browser this session could not fully exercise), wllama (GGUF), and HTTP endpoints
+  for the catalog's speech-to-text models.
 - **ABP Browser Extension: model gateway and web-session models (phase 2 of 5).** An OpenAI-compatible surface at
   `/api/browser/v1/*` (`bot/browser_gateway.py`, `bot/dashboard/browser_gateway_api.py`) so agents, sub-agents, swarms and
   routines can use a browser-session model exactly like any other provider. `web/<site>` (grok, claude.ai, gemini, chatgpt,
