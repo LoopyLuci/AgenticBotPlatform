@@ -45,3 +45,13 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["B011", "B017", "ASYNC", "F841", "B007", "B023", "RUF006"]
 "abp_agenteval/**" = ["B011"]
+
+# ------------------------------------------------------------ coverage --
+# The floor only ever moves up: raise it when coverage rises, never lower it
+# to make a change pass.
+[tool.coverage.run]
+omit = ["*/tests/*", "bot/tui/*"]
+
+[tool.coverage.report]
+fail_under = 77
+skip_empty = true

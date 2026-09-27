@@ -10,7 +10,6 @@ import json
 import logging
 from typing import Any
 
-from bot.backends.base import BackendError
 from bot.swarm.base import SwarmRunResult, SwarmStrategy, SwarmStrategyError, instance_label, run_member
 
 logger = logging.getLogger("bot.swarm.strategies")
@@ -42,7 +41,7 @@ class FanoutSynthesizeStrategy(SwarmStrategy):
                 text = await run_member(instance_id, prompt, swarm_run_id=swarm_run_id, user_id=user_id)
                 step["status"] = "success"
                 step["result"] = text
-            except BackendError as exc:
+            except Exception as exc:  # noqa: BLE001 — one member's failure (any kind) is that step's, never the whole swarm's
                 step["status"] = "failed"
                 step["error"] = str(exc)
             return step
@@ -65,7 +64,7 @@ class FanoutSynthesizeStrategy(SwarmStrategy):
                 steps.append(syn_step)
                 status = "success" if len(succeeded) == len(members) else "partial"
                 return SwarmRunResult(status=status, result=final, steps=steps)
-            except BackendError as exc:
+            except Exception as exc:  # noqa: BLE001 — one member's failure (any kind) is that step's, never the whole swarm's
                 syn_step["status"] = "failed"
                 syn_step["error"] = str(exc)
                 steps.append(syn_step)
@@ -94,7 +93,7 @@ class LeaderVoteStrategy(SwarmStrategy):
                 text = await run_member(instance_id, prompt, swarm_run_id=swarm_run_id, user_id=user_id)
                 step["status"] = "success"
                 step["result"] = text
-            except BackendError as exc:
+            except Exception as exc:  # noqa: BLE001 — one member's failure (any kind) is that step's, never the whole swarm's
                 step["status"] = "failed"
                 step["error"] = str(exc)
             return step
@@ -119,7 +118,7 @@ class LeaderVoteStrategy(SwarmStrategy):
             steps.append(leader_step)
             status = "success" if len(succeeded) == len(members) else "partial"
             return SwarmRunResult(status=status, result=final, steps=steps)
-        except BackendError as exc:
+        except Exception as exc:  # noqa: BLE001 — one member's failure (any kind) is that step's, never the whole swarm's
             leader_step["status"] = "failed"
             leader_step["error"] = str(exc)
             steps.append(leader_step)
@@ -153,7 +152,7 @@ class SequentialRelayStrategy(SwarmStrategy):
                 step["status"] = "success"
                 step["result"] = text
                 last_text = text
-            except BackendError as exc:
+            except Exception as exc:  # noqa: BLE001 — one member's failure (any kind) is that step's, never the whole swarm's
                 step["status"] = "failed"
                 step["error"] = str(exc)
                 steps.append(step)
@@ -183,7 +182,7 @@ class DecomposeDelegateStrategy(SwarmStrategy):
         planner_step = {"step": instance_label(planner), "instance_id": planner, "role": "planner"}
         try:
             plan_text = await run_member(planner, plan_prompt, swarm_run_id=swarm_run_id, user_id=user_id)
-        except BackendError as exc:
+        except Exception as exc:  # noqa: BLE001 — one member's failure (any kind) is that step's, never the whole swarm's
             planner_step["status"] = "failed"
             planner_step["error"] = str(exc)
             steps.append(planner_step)
@@ -193,10 +192,12 @@ class DecomposeDelegateStrategy(SwarmStrategy):
             start = plan_text.index("[")
             end = plan_text.rindex("]") + 1
             subtasks = json.loads(plan_text[start:end])
-            subtask_texts = [s["subtask"] for s in subtasks if s.get("subtask")]
+            # Models also answer with a bare list of strings; accept both shapes.
+            subtask_texts = [s if isinstance(s, str) else s.get("subtask") for s in subtasks]
+            subtask_texts = [s.strip() for s in subtask_texts if isinstance(s, str) and s.strip()]
             if not subtask_texts:
                 raise ValueError("empty subtask list")
-        except (ValueError, KeyError, json.JSONDecodeError) as exc:
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
             planner_step["status"] = "failed"
             planner_step["error"] = f"planner didn't return valid JSON: {exc}"
             steps.append(planner_step)
@@ -212,11 +213,16 @@ class DecomposeDelegateStrategy(SwarmStrategy):
                 text = await run_member(instance_id, subtask, swarm_run_id=swarm_run_id, user_id=user_id)
                 step["status"] = "success"
                 step["result"] = text
-            except BackendError as exc:
+            except Exception as exc:  # noqa: BLE001 — one member's failure (any kind) is that step's, never the whole swarm's
                 step["status"] = "failed"
                 step["error"] = str(exc)
             return step
 
+        # A planner that ignores "up to N" must not fan out without bound.
+        max_subtasks = int(cfg.get("max_subtasks") or len(members) * 2)
+        if len(subtask_texts) > max_subtasks:
+            logger.warning("planner returned %d subtasks; running the first %d", len(subtask_texts), max_subtasks)
+            subtask_texts = subtask_texts[:max_subtasks]
         # round-robin assignment over the available members
         pairs = [(members[i % len(members)], subtask) for i, subtask in enumerate(subtask_texts)]
         worker_steps = list(await asyncio.gather(*[_one(m, s) for m, s in pairs]))
@@ -235,7 +241,7 @@ class DecomposeDelegateStrategy(SwarmStrategy):
             steps.append(agg_step)
             status = "success" if len(succeeded) == len(worker_steps) else "partial"
             return SwarmRunResult(status=status, result=final, steps=steps)
-        except BackendError as exc:
+        except Exception as exc:  # noqa: BLE001 — one member's failure (any kind) is that step's, never the whole swarm's
             agg_step["status"] = "failed"
             agg_step["error"] = str(exc)
             steps.append(agg_step)
@@ -293,7 +299,7 @@ class CustomStrategy(SwarmStrategy):
                     text = await run_member(instance_id, step_prompt, swarm_run_id=swarm_run_id, user_id=user_id)
                     out["status"] = "success"
                     out["result"] = text
-                except BackendError as exc:
+                except Exception as exc:  # noqa: BLE001 — one member's failure (any kind) is that step's, never the whole swarm's
                     out["status"] = "failed"
                     out["error"] = str(exc)
                 return out

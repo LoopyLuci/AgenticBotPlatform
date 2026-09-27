@@ -53,7 +53,8 @@ async def relay(instance: dict, platform: str, chat_id: str, sender: str, text: 
                    text=text, instance_id=instance["id"])
     bg.spawn(push.notify_new_message(instance["name"], text))
     session = _sessions.setdefault((instance["id"], chat_id), {})
-    ctx = CmdContext(instance_id=instance["id"], instance_name=instance["name"], user_id=sender, chat_id=chat_id, actor=sender, session=session)
+    ctx = CmdContext(instance_id=instance["id"], instance_name=instance["name"], user_id=sender, chat_id=chat_id, actor=sender,
+                     session=session, enforce_access=True, scope="dm")
     reply = await dispatch_command(text, ctx)
     if reply is None:
         try:
@@ -63,6 +64,9 @@ async def relay(instance: dict, platform: str, chat_id: str, sender: str, text: 
             reply = result.text
         except BackendError as exc:
             reply = f"Backend failed: {exc}"
+        except Exception:  # noqa: BLE001 — never leave the user without a reply
+            logger.exception("unexpected error answering a message")
+            reply = "Something went wrong on my side — it has been logged. Please try again."
     reply = reply or "(empty response)"
     db.log_message(platform=platform, chat_id=chat_id, direction="out", source="bot", text=reply, instance_id=instance["id"])
     await send(chat_id, reply)

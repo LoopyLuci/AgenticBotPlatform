@@ -42,6 +42,31 @@ from bot import tasks as bg
 logger = logging.getLogger("bot.platforms.slack")
 
 
+MAX_FILE_BYTES = 25 * 1024 * 1024  # same ceiling as the dashboard's platform relay
+
+
+async def _download_capped(client: Any, url: str, token: str) -> Optional[bytes]:
+    """A shared file's bytes, streamed with a size ceiling (a huge upload must
+    not be read whole into memory); None if unavailable or too large."""
+    if not url:
+        return None
+    try:
+        async with client.stream("GET", url, headers={"Authorization": f"Bearer {token}"}) as resp:
+            if resp.status_code != 200:
+                return None
+            chunks, total = [], 0
+            async for chunk in resp.aiter_bytes():
+                total += len(chunk)
+                if total > MAX_FILE_BYTES:
+                    logger.warning("slack file %s is over %d bytes; skipped", url, MAX_FILE_BYTES)
+                    return None
+                chunks.append(chunk)
+            return b"".join(chunks)
+    except Exception:  # noqa: BLE001 — one unreadable file must not drop the message
+        logger.warning("could not download slack file %s", url, exc_info=True)
+        return None
+
+
 class SlackPlatformInstance:
     def __init__(self, instance_id: int, name: str, bot_token: str, app_token: str, allowed_ids: set[str]):
         self.instance_id = instance_id
@@ -88,11 +113,11 @@ class SlackPlatformInstance:
             channel = event.get("channel")
             if files:
                 import httpx
-                async with httpx.AsyncClient() as client:
+                async with httpx.AsyncClient(timeout=60) as client:
                     for f in files:
-                        resp = await client.get(f["url_private_download"], headers={"Authorization": f"Bearer {self.bot_token}"})
-                        if resp.status_code == 200:
-                            rel_path, orig_name = attachments.safe_store(f.get("name", "file"), resp.content)
+                        data = await _download_capped(client, f.get("url_private_download", ""), self.bot_token)
+                        if data is not None:
+                            rel_path, orig_name = attachments.safe_store(f.get("name", "file"), data)
                             db.log_message(
                                 platform="slack", chat_id=channel, user_id=user, direction="in", source="slack",
                                 text="", instance_id=self.instance_id,
@@ -115,6 +140,7 @@ class SlackPlatformInstance:
                 # keeps the same 0 placeholder the plain relay path already used.
                 instance_id=self.instance_id, instance_name=self.name,
                 user_id=0, chat_id=channel, actor=user, session=session,
+                enforce_access=True, scope="dm" if event.get("channel_type") == "im" else "group",
             )
             cmd_reply = await dispatch_command(text, cmd_ctx)
             if cmd_reply is not None:
@@ -130,6 +156,9 @@ class SlackPlatformInstance:
                 await self._reply(say, channel, result.text)
             except BackendError as exc:
                 await self._reply(say, channel, f"Backend failed: {exc}")
+            except Exception:  # noqa: BLE001 — never leave the user without a reply
+                logger.exception("unexpected error answering a message")
+                await self._reply(say, channel, "Something went wrong on my side — it has been logged. Please try again.")
 
         return app
 

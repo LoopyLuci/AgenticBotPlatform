@@ -226,6 +226,7 @@ async def _process_message(instance: dict[str, Any], msg: dict[str, Any], contac
     cmd_ctx = CmdContext(
         instance_id=instance["id"], instance_name=instance["name"],
         user_id=sender, chat_id=sender, actor=sender, session=session,
+        enforce_access=True, scope="dm",
     )
     cmd_reply = await dispatch_command(text, cmd_ctx)
     if cmd_reply is not None:
@@ -241,6 +242,9 @@ async def _process_message(instance: dict[str, Any], msg: dict[str, Any], contac
         await _send_text(instance, sender, result.text)
     except BackendError as exc:
         await _send_text(instance, sender, f"Backend failed: {exc}")
+    except Exception:  # noqa: BLE001 — never leave the user without a reply
+        logger.exception("unexpected error answering a message")
+        await _send_text(instance, sender, "Something went wrong on my side — it has been logged. Please try again.")
 
 
 async def handle_webhook_payload(payload: dict[str, Any]) -> None:

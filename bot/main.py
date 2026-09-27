@@ -499,6 +499,15 @@ async def run() -> None:
         from bot.router import router as _router
 
         await _router.shutdown_backends()
+        # Language servers and the headless browser are child processes that would
+        # otherwise outlive ABP. Only touch the modules if something loaded them.
+        for mod_name in ("bot.agent_runtime.code_intel", "bot.agent_runtime.browser"):
+            mod = sys.modules.get(mod_name)
+            if mod is not None:
+                try:
+                    await asyncio.wait_for(mod.shutdown_all(), timeout=10)
+                except Exception:  # noqa: BLE001 — shutdown continues regardless
+                    logger.warning("could not stop %s cleanly", mod_name, exc_info=True)
         cancelled = await bg.drain(5.0)
         if cancelled:
             logger.info("cancelled %d background task(s) still running at shutdown", cancelled)

@@ -7,3 +7,4 @@ pytest>=8.0
 pip-audit>=2.7
 ruff>=0.16
 pytest-xdist>=3.6
+pytest-cov>=6.0

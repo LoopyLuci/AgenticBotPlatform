@@ -189,11 +189,13 @@ class LspClient:
         self.alive = False
         self.started_at = time.monotonic()
         self.ready = False          # has the server shown it has loaded the project (by reporting something)?
+        self.loop: Optional[asyncio.AbstractEventLoop] = None  # the loop that owns the subprocess pipes
 
     async def start(self, timeout_s: float = 20.0) -> None:
         exe = shutil.which(self.command[0]) or (self.command[0] if Path(self.command[0]).is_file() else None)
         if exe is None:
             raise LspError(f"{self.command[0]!r} is not installed")
+        self.loop = asyncio.get_running_loop()
         self.proc = await asyncio.create_subprocess_exec(exe, *self.command[1:], cwd=str(self.root), env=self.env,
                                                          stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                                                          stderr=asyncio.subprocess.DEVNULL)
@@ -221,6 +223,11 @@ class LspClient:
         except Exception:  # noqa: BLE001
             pass
         self.alive = False
+        try:
+            if self.proc.stdin is not None:
+                self.proc.stdin.close()
+        except Exception:  # noqa: BLE001
+            pass
         try:
             self.proc.kill()
         except ProcessLookupError:
@@ -391,8 +398,11 @@ async def client_for(path: Path, workspace: Path) -> Optional[LspClient]:
     name, command = spec
     key = (str(Path(workspace).resolve()), name)
     client = _clients.get(key)
-    if client is not None and client.alive:
+    if client is not None and client.alive and client.loop is asyncio.get_running_loop():
         return client
+    if client is not None and client.loop is not asyncio.get_running_loop():
+        _kill_foreign(client)  # started on a loop that is gone; its pipes can't be used from here
+        _clients.pop(key, None)
     if time.monotonic() - _failed.get(key, -COOL_OFF_S) < COOL_OFF_S:
         return None
     from bot.agent_runtime import sandbox
@@ -412,9 +422,29 @@ async def client_for(path: Path, workspace: Path) -> Optional[LspClient]:
     return client
 
 
+def _kill_foreign(client: "LspClient") -> None:
+    """Ends a server process whose event loop is no longer the current one."""
+    client.alive = False
+    pid = getattr(client.proc, "pid", None)
+    if pid is None:
+        return
+    try:
+        import psutil
+
+        psutil.Process(pid).kill()
+    except Exception:  # noqa: BLE001 — already gone
+        pass
+
+
 async def shutdown_all() -> None:
+    """Stops every language server. bot.main calls this at shutdown: the
+    servers are separate processes and would otherwise outlive ABP."""
+    here = asyncio.get_running_loop()
     for client in list(_clients.values()):
-        await client.stop()
+        if client.loop is here:
+            await client.stop()
+        else:
+            _kill_foreign(client)
     _clients.clear()
 
 

@@ -35,12 +35,14 @@ def test_a_flaky_test_is_rerun_once_and_the_pipeline_continues(monkeypatch, caps
     calls = _script_runs(monkeypatch, [
         (True, ""),                                                  # compileall
         (True, ""),                                                  # ruff
+        (True, ""),                                                  # dev tools (xdist, pytest-cov) present
         (False, "FAILED tests/test_x.py::test_flaky - assert 1"),    # first pytest run
         (True, "1 passed in 0.1s"),                                  # the re-run of just that test
         (True, ""),                                                  # pip-audit
     ])
     assert lp.check_python() is True
-    rerun = calls[3]
+    assert "-n" in calls[3] and "--cov=bot" in calls[3]     # parallel, with the coverage floor
+    rerun = calls[4]
     assert rerun[-1] == "tests/test_x.py::test_flaky"                # only the failure, not the whole suite
     assert "FLAKY" in capsys.readouterr().out
 

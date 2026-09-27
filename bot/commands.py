@@ -53,6 +53,51 @@ class CmdContext:
     # means no live progress (every other platform, and paths with no
     # message to edit).
     progress_notify: Optional[Callable[[str], Any]] = None
+    # Slash-command permission tiers (bot/slash_access.py). Chat-platform
+    # adapters set enforce_access=True, so dispatch_command() applies the same
+    # admin/user gate on every platform. Operator surfaces (the dashboard
+    # terminal, the Support Bot) leave it off: they are already behind the
+    # dashboard token. `scope` is "dm" or "group" (group is the stricter
+    # default when a platform can't tell).
+    enforce_access: bool = False
+    scope: str = "group"
+
+
+def _access_subject(ctx: CmdContext) -> Any:
+    # Slack keeps its real (string) user id in `actor`; user_id is a 0 placeholder there.
+    return ctx.user_id if ctx.user_id not in (None, 0, "") else ctx.actor
+
+
+def access_denied(ctx: CmdContext, command: str) -> Optional[str]:
+    """The refusal to send when this user may not run `command` here, else None."""
+    if not getattr(ctx, "enforce_access", False) or ctx.instance_id is None:
+        return None
+    from bot import bot_instances, slash_access
+
+    instance = bot_instances.get_instance(ctx.instance_id)
+    if instance is None or slash_access.can_run(instance, _access_subject(ctx), getattr(ctx, "scope", "group"), command):
+        return None
+    return f"⛔ You are not authorized to run /{command}. Use /whoami to see what you can run."
+
+
+async def cmd_whoami(ctx: CmdContext, args: list[str]) -> str:
+    """Your slash-command tier on this bot — the command every tier may run."""
+    from bot import bot_instances, slash_access
+
+    instance = bot_instances.get_instance(ctx.instance_id) if ctx.instance_id is not None else None
+    if instance is None:
+        return "This chat isn't linked to a bot instance."
+    who = _access_subject(ctx)
+    t = slash_access.tier(instance, who)
+    lines = [f"You — {instance.get('platform', '?')} ({ctx.scope})", f"User ID: {who}", f"Tier: {t}"]
+    if t == "unrestricted":
+        lines.append("Slash commands: all available (no admin list configured for this bot)")
+    elif t == "admin":
+        lines.append("Slash commands: all available")
+    else:
+        allowed = sorted(slash_access.allowed_commands(instance, who, ctx.scope) or [])
+        lines.append("Slash commands you can run: " + ", ".join(f"/{c}" for c in allowed))
+    return "\n".join(lines)
 
 
 def _build_help_text() -> str:
@@ -1791,6 +1836,7 @@ def _parse_backend_flag(text: str) -> tuple[str, Optional[str]]:
 
 
 COMMANDS: dict[str, Callable[[CmdContext, list[str]], Any]] = {
+    "whoami": cmd_whoami,
     "start": cmd_help,
     "help": cmd_help,
     "status": cmd_status,
@@ -1865,11 +1911,16 @@ async def dispatch_command(text: str, ctx: CmdContext) -> Optional[str]:
     already documents."""
     text = (text or "").strip()
     if not text.startswith("/"):
+        # Plain chat is not tier-gated on any platform (Telegram's on_text never
+        # was); the tiers govern slash commands.
         return None
     cmd, *rest = text[1:].split(None, 1)
     cmd = slash_commands.resolve_command(cmd) or cmd
     args_text = rest[0] if rest else ""
     args = args_text.split() if args_text else []
+    denied = access_denied(ctx, cmd)
+    if denied is not None:
+        return denied
 
     if cmd in _RAW_ARG_COMMANDS:
         return await _RAW_ARG_COMMANDS[cmd](ctx, args_text)

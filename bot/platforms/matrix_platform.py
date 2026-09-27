@@ -152,6 +152,7 @@ class MatrixPlatformInstance:
         cmd_ctx = CmdContext(
             instance_id=self.instance_id, instance_name=self.name,
             user_id=sender, chat_id=room.room_id, actor=sender, session=session,
+            enforce_access=True, scope="dm" if getattr(room, "member_count", 3) <= 2 else "group",
         )
         cmd_reply = await dispatch_command(text, cmd_ctx)
         if cmd_reply is not None:
@@ -167,6 +168,9 @@ class MatrixPlatformInstance:
             await self._reply(room.room_id, result.text)
         except BackendError as exc:
             await self._reply(room.room_id, f"Backend failed: {exc}")
+        except Exception:  # noqa: BLE001 — never leave the user without a reply
+            logger.exception("unexpected error answering a message")
+            await self._reply(room.room_id, "Something went wrong on my side — it has been logged. Please try again.")
 
     async def _on_media(self, room, event) -> None:
         if event.sender == self.user_id:
