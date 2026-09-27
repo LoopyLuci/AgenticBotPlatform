@@ -47,21 +47,26 @@ HOST = os.environ.get("DASHBOARD_HOST", "127.0.0.1")
 PORT = os.environ.get("DASHBOARD_PORT", "8787")
 BASE_URL = f"http://{HOST}:{PORT}"
 
-# stdio *is* the MCP transport here — anything written to stdout would
-# corrupt the JSON-RPC stream, so logging can only ever go to a file, never
-# a console handler. Shares the same logs/ directory bot/main.py's own
-# rotating log lives in, just a different file, since this runs as a
-# separate process (spawned by Claude Desktop/Code, not by bot/main.py).
-_LOG_DIR = envfile.PROJECT_ROOT / "logs"
-_LOG_DIR.mkdir(exist_ok=True)
-_file_handler = logging.handlers.RotatingFileHandler(
-    _LOG_DIR / "mcp_server.log", maxBytes=2_000_000, backupCount=3, encoding="utf-8"
-)
-_file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s", "%H:%M:%S"))
-logging.getLogger().addHandler(_file_handler)
-logging.getLogger().setLevel(logging.INFO)
-logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger("bot.mcp_server")
+
+
+def _setup_logging() -> None:
+    """stdio *is* the MCP transport here — anything written to stdout would
+    corrupt the JSON-RPC stream, so logging can only ever go to a file, never
+    a console handler. Shares the same logs/ directory bot/main.py's own
+    rotating log lives in, just a different file, since this runs as a
+    separate process (spawned by Claude Desktop/Code, not by bot/main.py).
+    Called only when this module runs as the server: importing it (tests,
+    tools) must not take over the importing process's root logger."""
+    log_dir = envfile.PROJECT_ROOT / "logs"
+    log_dir.mkdir(exist_ok=True)
+    handler = logging.handlers.RotatingFileHandler(
+        log_dir / "mcp_server.log", maxBytes=2_000_000, backupCount=3, encoding="utf-8"
+    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s", "%H:%M:%S"))
+    logging.getLogger().addHandler(handler)
+    logging.getLogger().setLevel(logging.INFO)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
 mcp = MCPServer("agentic-bot-platform")
 
@@ -1036,6 +1041,7 @@ async def run_swarm(source_instance: str, swarm: str, prompt: str) -> dict:
 
 
 if __name__ == "__main__":
+    _setup_logging()
     logger.info("agentic-bot-platform MCP server starting (dashboard at %s)", BASE_URL)
     try:
         mcp.run(transport="stdio")
