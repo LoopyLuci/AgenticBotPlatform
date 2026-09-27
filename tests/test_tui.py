@@ -197,6 +197,10 @@ def test_providers_screen_adds_lists_and_removes(dashboard_client):
             assert any(p["name"] == "tui-test-provider" for p in providers)
 
             table = screen.query_one("#providers-table", DataTable)
+            for _ in range(50):  # the table redraws after the add round-trip; give a loaded machine time
+                if table.row_count == len(providers):
+                    break
+                await pilot.pause(0.1)
             assert table.row_count == len(providers)
 
     asyncio.run(_run())
