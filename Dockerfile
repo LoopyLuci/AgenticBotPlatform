@@ -56,4 +56,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8787/healthz', timeout=4).status == 200 else 1)"
 
 ENTRYPOINT ["docker-entrypoint.sh"]
-CMD ["python", "-m", "bot.main"]
+# The guardian restarts bot.main in place on a crash or hang, faster than a
+# container restart and with the Sentinel's crash-loop safe mode intact.
+CMD ["python", "-m", "bot.sentinel.guardian"]

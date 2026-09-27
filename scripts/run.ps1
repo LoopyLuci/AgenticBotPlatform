@@ -17,4 +17,4 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host ""
 }
 
-& ".\.venv\Scripts\python.exe" -m bot.main
+& ".\.venv\Scripts\python.exe" -m bot.sentinel.guardian  # restarts bot.main if it crashes or hangs (bot/sentinel/guardian.py)

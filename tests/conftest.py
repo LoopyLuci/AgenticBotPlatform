@@ -78,6 +78,22 @@ def _isolated_cicd_event_store(monkeypatch, tmp_path):
     monkeypatch.setattr(provider_store, "STORE_PATH", tmp_path / "provider-store.db")
     monkeypatch.setattr(provider_store, "_history_summaries", lambda: [])
     monkeypatch.setenv("ABP_VAULT_DIR", str(tmp_path / "vault"))
+    # The Sentinel's journal, backups, scan results and boot records: never the real data folder.
+    from bot.sentinel import backup as s_backup, bootguard as s_boot, bug_hunter as s_bugs, cve as s_cve
+    from bot.sentinel import journal as s_journal, security as s_security
+
+    sdir = tmp_path / "sentinel"
+    monkeypatch.setattr(s_journal, "SENTINEL_DIR", sdir)
+    monkeypatch.setattr(s_backup, "BACKUPS_ROOT", tmp_path / "backups")
+    monkeypatch.setattr(s_cve, "RESULTS_PATH", sdir / "cve.json")
+    monkeypatch.setattr(s_cve, "CACHE_PATH", sdir / "osv-cache.json")
+    monkeypatch.setattr(s_security, "MANIFEST_PATH", sdir / "code-manifest.json")
+    monkeypatch.setattr(s_boot, "BOOTS_PATH", sdir / "boots.json")
+    monkeypatch.setattr(s_boot, "LKG_DIR", sdir / "last-known-good")
+    monkeypatch.setenv("ABP_ANDROID_KEYSTORE", str(tmp_path / "no-keystore"))
+    s_bugs._reset_for_tests(sdir / "issues.json")
+    s_journal._reset_for_tests()
+    s_boot._reset_for_tests()
 
 
 @pytest.fixture

@@ -435,7 +435,11 @@ fn reinstall_dependencies(
     // Prefer the hashed lockfile: exact, tamper-evident versions. Fall back to
     // the loose requirements.txt only for an older bundle that lacks it.
     let lock = root.join("requirements.lock");
-    let requirements = if lock.is_file() { lock } else { root.join("requirements.txt") };
+    let requirements = if lock.is_file() {
+        lock
+    } else {
+        root.join("requirements.txt")
+    };
     if !requirements.is_file() {
         return Err(format!(
             "requirements not found at {}",
@@ -444,7 +448,7 @@ fn reinstall_dependencies(
     }
     let mut cmd = Command::new(venv_python);
     cmd.args(["-m", "pip", "install", "--upgrade", "--no-input"]);
-    if requirements.extension().map_or(false, |e| e == "lock") {
+    if requirements.extension().is_some_and(|e| e == "lock") {
         cmd.arg("--require-hashes");
     }
     cmd.arg("-r").arg(&requirements).current_dir(root);
@@ -798,6 +802,13 @@ fn spawn_internal(app: &AppHandle, state: &State<ServerState>) -> Result<(), Str
         // second machine's bot.main died with exit code 120 and zero
         // output, even from a direct `python -c "import bot.main"` probe).
         .env("AGENTICBOTPLATFORM_VERSION", env!("CARGO_PKG_VERSION"))
+        // This app restarts bot.main when it crashes (see crash_restart_delay),
+        // which is what lets the Python watchdog exit a wedged process
+        // (EXIT_RESTART) instead of only reporting it.
+        .env("ABP_SUPERVISED", "1")
+        // If this app dies without stopping the server (killed, crashed), the
+        // server notices and exits instead of living on holding the port.
+        .env("ABP_SUPERVISOR_PID", std::process::id().to_string())
         .env("PYTHONUNBUFFERED", "1")
         .env("PYTHONFAULTHANDLER", "1")
         // See diagnose_startup_crash()'s identical env vars for why —
@@ -859,6 +870,7 @@ fn spawn_internal(app: &AppHandle, state: &State<ServerState>) -> Result<(), Str
     );
 
     let handle = app.clone();
+    let started_at = std::time::Instant::now();
     let diag_python = python.clone();
     let diag_root = project_root.clone();
     thread::spawn(move || {
@@ -955,6 +967,41 @@ fn spawn_internal(app: &AppHandle, state: &State<ServerState>) -> Result<(), Str
                             pid: None,
                         },
                     );
+                    // An unexpected exit (stop/restart from the UI clear the child
+                    // first and never reach here): bring the server back, with the
+                    // same backoff policy as bot/sentinel/guardian.py.
+                    if !status.success() {
+                        match crash_restart_delay(started_at.elapsed()) {
+                            Some(delay) => {
+                                let note = LogLine {
+                                    stream: "stderr".into(),
+                                    line: format!("restarting bot.main in {}s", delay.as_secs()),
+                                };
+                                push_backlog(&state, note.clone());
+                                let _ = handle.emit("server-log", note);
+                                thread::sleep(delay);
+                                let state = handle.state::<ServerState>();
+                                if let Err(e) = spawn_internal(&handle, &state) {
+                                    let _ = handle.emit(
+                                        "server-log",
+                                        LogLine {
+                                            stream: "stderr".into(),
+                                            line: format!("automatic restart failed: {e}"),
+                                        },
+                                    );
+                                }
+                            }
+                            None => {
+                                let note = LogLine {
+                                    stream: "stderr".into(),
+                                    line: "bot.main keeps crashing; automatic restarts paused. See data/sentinel/journal.jsonl and logs/bot.log, then start it again from the app."
+                                        .into(),
+                                };
+                                push_backlog(&state, note.clone());
+                                let _ = handle.emit("server-log", note);
+                            }
+                        }
+                    }
                     break;
                 }
                 Err(e) => {
@@ -981,6 +1028,39 @@ fn spawn_internal(app: &AppHandle, state: &State<ServerState>) -> Result<(), Str
     });
 
     Ok(())
+}
+
+/// Crash-restart policy shared in spirit with bot/sentinel/guardian.py:
+/// backoff 1, 2, 5, 10, 30, 60 s; the backoff resets after a run of 10+
+/// minutes; more than 10 crashes in 30 minutes pauses restarts (something
+/// a restart can't fix). Returns None when restarts are paused.
+fn crash_restart_delay(uptime: Duration) -> Option<Duration> {
+    use std::collections::VecDeque;
+    use std::sync::OnceLock;
+    use std::time::Instant;
+
+    const BACKOFF: [u64; 6] = [1, 2, 5, 10, 30, 60];
+    static CRASHES: OnceLock<Mutex<(VecDeque<Instant>, usize)>> = OnceLock::new();
+    let cell = CRASHES.get_or_init(|| Mutex::new((VecDeque::new(), 0)));
+    let mut guard = cell.lock().ok()?;
+    let (crashes, attempt) = &mut *guard;
+    let now = Instant::now();
+    crashes.push_back(now);
+    while crashes
+        .front()
+        .is_some_and(|t| now.duration_since(*t) > Duration::from_secs(1800))
+    {
+        crashes.pop_front();
+    }
+    if crashes.len() > 10 {
+        return None;
+    }
+    if uptime >= Duration::from_secs(600) {
+        *attempt = 0;
+    }
+    let delay = BACKOFF[(*attempt).min(BACKOFF.len() - 1)];
+    *attempt += 1;
+    Some(Duration::from_secs(delay))
 }
 
 #[tauri::command]

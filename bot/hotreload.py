@@ -80,6 +80,12 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.agent_runtime.engine", "bot.agent_runtime.approval", "bot.agent_runtime.subagent_registry",
     "bot.platform_supervisor",
     "bot.tasks",  # holds the strong references that keep in-flight background tasks alive
+    # The Sentinel holds live state (the running watchdog thread, the installed
+    # log handler, alert de-duplication, the boot record). A reload would orphan
+    # the old watchdog and double-count every error.
+    "bot.sentinel.journal", "bot.sentinel.backup", "bot.sentinel.repair", "bot.sentinel.cve",
+    "bot.sentinel.security", "bot.sentinel.bug_hunter", "bot.sentinel.watchdog", "bot.sentinel.bootguard",
+    "bot.sentinel.guardian", "bot.dashboard.sentinel_api",
     "bot.provider_store",  # owns a lock and the path of the on-disk provider store; a reload would orphan both
     "bot.envfile", "bot.handlers", "bot.outbox", "bot.plugins", "bot.attachments",
     # Same hazard class as outbox.py/plugins.py above: _connections/

@@ -848,6 +848,11 @@ def build_app() -> FastAPI:
 
     agent_config_api.register(app, _require_token_or_api_key, _require_token)
 
+    # Sentinel (ADR-0011): self-preservation status, backups, CVE scan, fingerprinted errors.
+    from bot.dashboard import sentinel_api
+
+    sentinel_api.register(app, _require_token_or_api_key, _require_token)
+
     # ------------------------------------------------------ ops endpoints --
     # Unauthenticated by design, like a load balancer's/orchestrator's health
     # probe is expected to be — neither returns anything a token would need

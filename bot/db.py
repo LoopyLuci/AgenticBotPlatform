@@ -927,13 +927,20 @@ def _now() -> str:
 def _open(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path), check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
-    conn.execute("PRAGMA foreign_keys=ON;")
-    # Multiple paired devices can poll/write concurrently — wait out a
-    # brief lock instead of raising "database is locked" immediately.
-    conn.execute("PRAGMA busy_timeout=5000;")
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+        conn.execute("PRAGMA foreign_keys=ON;")
+        # Multiple paired devices can poll/write concurrently — wait out a
+        # brief lock instead of raising "database is locked" immediately.
+        conn.execute("PRAGMA busy_timeout=5000;")
+    except sqlite3.Error:
+        # A corrupt file fails here, after connect() already opened it. Close it,
+        # or the handle stays open and (on Windows) blocks the repair that has to
+        # replace the file.
+        conn.close()
+        raise
     return conn
 
 
@@ -1175,11 +1182,76 @@ def _migrate(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_ephemeral_sessions_parent ON ephemeral_sessions(parent_instance_id)")
 
 
+# ---------------------------------------------------------- schema versions --
+# The schema version is stamped into the file itself (PRAGMA user_version), so
+# any build can tell what wrote a database. To change the schema:
+#   1. write `def _migration_N(conn)` doing the change (ALTER/CREATE/backfill),
+#   2. append (N, _migration_N) to MIGRATIONS and set SCHEMA_VERSION = N,
+#   3. also update SCHEMA so fresh installs get the same shape.
+# Migrations only ever move forward. A database stamped with a NEWER version
+# than this build knows is refused rather than written to, since an older
+# build can't know what the newer columns and tables mean.
+
+SCHEMA_VERSION = 1
+
+
+class SchemaTooNewError(RuntimeError):
+    pass
+
+
+# Version 1 is the baseline: _migrate() brings any pre-versioning database
+# (user_version 0) up to the shape every build since has expected. It is
+# idempotent and runs on every start, as it always did.
+MIGRATIONS: list[tuple[int, Callable[[sqlite3.Connection], None]]] = [
+    (1, _migrate),
+]
+
+
+def schema_version(conn: Optional[sqlite3.Connection] = None) -> int:
+    return int((conn or get_conn()).execute("PRAGMA user_version").fetchone()[0])
+
+
+def _has_user_tables(conn: sqlite3.Connection) -> bool:
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' LIMIT 1").fetchone() is not None
+
+
+def _pre_migration_backup(from_version: int) -> None:
+    """A verified backup before any schema change touches real data, so a
+    migration that goes wrong can always be rolled back."""
+    try:
+        from bot.sentinel import backup
+
+        m = backup.create_backup(reason=f"pre-migration v{from_version}->v{SCHEMA_VERSION}")
+        logger.info("pre-migration backup %s (verified=%s)", m["name"], m["verified"])
+    except Exception:  # noqa: BLE001 — never block startup on the safety net itself; say so loudly
+        logger.exception("pre-migration backup failed — migrating without one")
+
+
+def _apply_migrations(conn: sqlite3.Connection, *, existing: bool) -> None:
+    current = schema_version(conn)
+    if current > SCHEMA_VERSION:
+        raise SchemaTooNewError(
+            f"{DB_PATH} was written by a newer AgenticBotPlatform (schema v{current}; this build knows up to "
+            f"v{SCHEMA_VERSION}). Upgrade AgenticBotPlatform, or restore a backup made by this version from "
+            f"data/backups/."
+        )
+    if existing and 0 < current < SCHEMA_VERSION:
+        _pre_migration_backup(current)
+    _migrate(conn)  # the idempotent baseline, every start
+    for version, fn in MIGRATIONS:
+        if version > max(current, 1):
+            logger.info("migrating database schema to v%d", version)
+            fn(conn)
+    if current != SCHEMA_VERSION:
+        conn.execute(f"PRAGMA user_version = {int(SCHEMA_VERSION)}")
+
+
 def init_db() -> None:
     conn = get_conn()
+    existing = _has_user_tables(conn)
     with _lock:
         conn.executescript(SCHEMA)
-        _migrate(conn)
+        _apply_migrations(conn, existing=existing)
         conn.commit()
     ensure_server_chat_group()
     backfill_server_chat_conversations()

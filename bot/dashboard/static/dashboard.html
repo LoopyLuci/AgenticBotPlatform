@@ -952,6 +952,11 @@
         <h3>Config change history</h3>
         <div class="timeline" id="config-history"></div>
       </div>
+      <div class="card" style="margin-top:14px;" aria-labelledby="sn-title">
+        <h3 id="sn-title">Sentinel · self-preservation</h3>
+        <p class="cardnote">Verified backups, database integrity and repair, vulnerability scanning, security posture, error fingerprinting and hang detection, all running on their own. See docs/adr/0011-sentinel-self-preservation.md.</p>
+        <div id="sn-root"><p class="cardnote">Loading…</p></div>
+      </div>
     </section>
 
     <section id="diagnostics">
@@ -7518,6 +7523,7 @@ checkSetupAndProceed(startDashboard);
 <script src="/static/terminal-panel.js"></script>
 <script src="/static/agents-panel.js"></script>
 <script src="/static/infra-panel.js"></script>
+<script src="/static/sentinel-panel.js"></script>
 <script src="/static/bot-agent-form.js"></script>
 </body>
 </html>
