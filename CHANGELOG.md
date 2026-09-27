@@ -8,7 +8,41 @@ app's own version (the Android app versions independently — see its own
 
 ## [Unreleased]
 
+### Added
+- **Sentinel, ABP's self-preservation system** (`bot/sentinel/`, ADR-0011; Resilience → Sentinel in the dashboard; `/api/sentinel/*`).
+  - Automatic, verified, rotated backups of the database, provider store, vault key, `.env`, config and the Android signing key. An optional `backup.mirror_dir` keeps a second copy off this disk.
+  - Database integrity checks with self-repair: REINDEX, then row salvage, then restore of the newest verified backup. Damaged files are always quarantined, never deleted.
+  - Automatic vulnerability (CVE) scanning through OSV.dev, covering installed Python packages plus the shipped Cargo, npm, Gradle and Python lockfiles. Opt-in automatic upgrades are smoke-tested and rolled back if ABP stops importing.
+  - Continuous security posture checks: dashboard exposure, token strength, secret-file permissions, secrets leaked into logs (auto-redacted), and code tampering in installed copies.
+  - Automatic bug hunting: every error is fingerprinted, and new, regressed and spiking issues are alerted. Optionally each new issue is filed as a kanban card for an agent to investigate.
+  - A watchdog that names the exact code blocking the event loop, restarts a hung process under a supervisor, flags memory leaks, and shuts down an orphaned server.
+  - Crash-loop protection: after three unhealthy boots ABP starts in safe mode, rolls config back to last-known-good, and skips plugins for one boot.
+  - `python -m bot.sentinel.guardian` supervises the server for `scripts/run.*` and Docker. The desktop app now restarts a crashed server itself.
+- **Versioned database schema** (`PRAGMA user_version`) with a verified backup before each migration. A database written by a newer ABP is never written to: startup restores a backup this version can read.
+- `requirements.lock`: every dependency pinned with hashes. Docker, the installer, the run scripts and the desktop app install from it.
+
+### Security
+- **Slash-command permission tiers are now enforced on every platform.** Before this fix, with an admin list configured, a non-admin on Discord, Slack, Matrix, WhatsApp, SMS or iMessage could run any command. Telegram was the only platform that enforced tiers.
+- The dashboard pages run under a strict, nonce-based Content-Security-Policy with no inline script, so an escaping bug can no longer reach the dashboard token.
+- Vulnerable dependencies fixed: httpx2 (PYSEC-2026-3846/3848/3849), setuptools (CVE-2022-40897, CVE-2024-6345, CVE-2025-47273, CVE-2026-59890), and rustls in the desktop app (RUSTSEC-2026-0285).
+- The Docker image no longer runs as root, its base image is pinned by digest, and it has a health check.
+- The firewall helper only passes a genuine port number to its elevated command.
+- The Android signing key is pinned into ABP's own backed-up keystore (ADR-0010), so a rebuild on another machine no longer breaks in-app updates.
+
+### Changed
+- The dashboard's slowest always-on queries are about 11× faster on a year-old database (for example, `/api/overview` went from 1.35 s to 0.12 s), and polling is section-aware (58 → 13 requests per 10 s).
+- Dashboard route handlers and database work no longer block the event loop (per-thread SQLite connections, ADR-0009).
+- `bot/dashboard/server.py` and `bot/db.py` are split into `bot/dashboard/routes/` and `bot/storage/`. The route table and the public `bot.db` API are unchanged.
+- The test suite runs in parallel (20 min → 3.5 min) under a ruff lint gate and a coverage floor, and passes on Python 3.13.
+
 ### Fixed
+- Fire-and-forget background tasks could be garbage-collected mid-run with their errors never logged. They now go through `bot.tasks`.
+- Language-server processes, and the headless browser, outlived ABP on every shutdown.
+- With the server unreachable, an open dashboard fired ~120 failing requests a minute until the browser ran out of connections.
+- Chat adapters went silent on unexpected errors. They now always reply. Slack file downloads are size-capped.
+- Swarm strategies aborted the whole run when one member raised an unexpected exception.
+- The test suite wrote into the developer's real `config/providers.yaml`.
+- Accessibility: about 85 form fields per UI had no programmatic label, so screen readers announced them only as "edit text".
 - **Hermes CLI and OpenCode CLI now keep one real, continuous conversation per bot instance, tracked by ABP.**
   Confirmed live against a real, installed `hermes` and a real, installed `opencode`:
   - `hermes_cli` (`bot/backends/hermes_cli_backend.py`): every call was previously a fresh, memory-less `hermes -z`
