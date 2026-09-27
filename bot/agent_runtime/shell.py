@@ -65,8 +65,8 @@ def kill_tree(proc) -> None:
 def _clean_timeout(value) -> int:
     try:
         seconds = int(value) if value is not None else DEFAULT_TIMEOUT_S
-    except (TypeError, ValueError):
-        raise ToolError("timeout must be a number of seconds")
+    except (TypeError, ValueError) as exc:
+        raise ToolError("timeout must be a number of seconds") from exc
     if seconds < 1:
         raise ToolError("timeout must be at least 1 second")
     return min(seconds, MAX_TIMEOUT_S)
@@ -115,12 +115,12 @@ async def run_command(command: str, *, workspace: Path, cwd: Optional[str] = Non
     reader = asyncio.ensure_future(_drain())
     try:
         await asyncio.wait_for(asyncio.shield(reader), timeout=limit)
-    except asyncio.TimeoutError:
+    except asyncio.TimeoutError as exc:
         kill_tree(proc)
         await _finish(reader)
         so_far = _decode(b"".join(chunks))[-3000:]
         raise ToolError(f"timed out after {limit}s and was stopped. Use background=true for long-running commands."
-                        + (f" Output so far:\n{so_far}" if so_far.strip() else ""))
+                        + (f" Output so far:\n{so_far}" if so_far.strip() else "")) from exc
     except asyncio.CancelledError:
         kill_tree(proc)
         await _finish(reader)

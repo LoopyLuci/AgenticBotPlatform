@@ -32,6 +32,8 @@ def env(tmp_path, monkeypatch):
     (r / "desktop-app/src-tauri/tauri.conf.json").write_text('{"version": "0.7.27"}\n', encoding="utf-8")
     (r / "android-app/app/build.gradle.kts").write_text(
         'android {\n    defaultConfig {\n        versionCode = 30\n        versionName = "0.7.27"\n    }\n}\n', encoding="utf-8")
+    (r / "bot").mkdir()
+    (r / "bot/__init__.py").write_text('__version__ = "0.7.27"\n', encoding="utf-8")
     (r / "README.md").write_text("hi\n", encoding="utf-8")
     _git(r, "init", "-q", "-b", "main")
     for k, v in (("user.email", "t@example.invalid"), ("user.name", "t"), ("core.autocrlf", "false")):
@@ -47,6 +49,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(pr, "CARGO_TOML", d / "Cargo.toml")
     monkeypatch.setattr(pr, "TAURI_CONF", d / "tauri.conf.json")
     monkeypatch.setattr(pr, "ANDROID_GRADLE", r / "android-app/app/build.gradle.kts")
+    monkeypatch.setattr(pr, "BOT_INIT", r / "bot/__init__.py")
     monkeypatch.setattr(pr, "JOURNAL_PATH", r / ".release_journal.json")
     monkeypatch.setattr(pr, "LOCK_PATH", r / ".pipeline.lock")
 

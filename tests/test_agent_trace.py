@@ -1,7 +1,6 @@
 """Agent traces record what happened without recording what was said."""
 from __future__ import annotations
 
-import asyncio
 
 from abp_agenteval import graders as g
 from abp_agenteval.runner import run_task

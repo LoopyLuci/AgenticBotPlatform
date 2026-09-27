@@ -186,7 +186,7 @@ def _decode_pairing_token(token: str) -> tuple[str, str]:
 
 async def _post_with_retry(client: httpx.AsyncClient, url: str, **kwargs) -> httpx.Response:
     last_exc: Optional[Exception] = None
-    for attempt, delay in enumerate((0.0, *_RETRY_DELAYS_S)):
+    for _attempt, delay in enumerate((0.0, *_RETRY_DELAYS_S)):
         if delay:
             logger.info("retrying %s in %.0fs after a connection error: %s", url, delay, last_exc)
             await asyncio.sleep(delay)
@@ -389,7 +389,7 @@ async def _proxy_get(peer_row, path: str) -> dict:
     try:
         async with httpx.AsyncClient(timeout=PROXY_TIMEOUT_S) as client:
             last_exc: Optional[Exception] = None
-            for attempt, delay in enumerate((0.0, *_RETRY_DELAYS_S)):
+            for _attempt, delay in enumerate((0.0, *_RETRY_DELAYS_S)):
                 if delay:
                     await asyncio.sleep(delay)
                 try:

@@ -7,7 +7,7 @@ Set-Location $root
 if (-not (Test-Path ".venv")) {
     python -m venv .venv
 }
-& ".\.venv\Scripts\pip.exe" install -q -r requirements.txt
+& ".\.venv\Scripts\pip.exe" install -q --require-hashes -r requirements.lock
 
 & ".\.venv\Scripts\python.exe" scripts\setup.py --check
 if ($LASTEXITCODE -ne 0) {

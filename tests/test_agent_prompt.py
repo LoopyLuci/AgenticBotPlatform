@@ -55,7 +55,7 @@ def test_the_date_is_in_the_last_static_section_so_the_cached_prefix_survives(mo
 
 
 def test_memory_and_skills_come_between_guidance_and_environment(monkeypatch, tmp_path, temp_db):
-    from bot import bot_instances, memory, skills
+    from bot import bot_instances, memory
 
     _cfg(monkeypatch)
     iid = bot_instances.create_instance(

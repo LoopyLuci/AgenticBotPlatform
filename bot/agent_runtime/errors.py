@@ -17,6 +17,6 @@ def safe_path(workspace: Path, rel_path: str) -> Path:
     candidate = (workspace / rel_path).resolve() if not Path(rel_path).is_absolute() else Path(rel_path).resolve()
     try:
         candidate.relative_to(Path(workspace).resolve())
-    except ValueError:
-        raise ToolError(f"path {rel_path!r} is outside the working directory ({workspace})")
+    except ValueError as exc:
+        raise ToolError(f"path {rel_path!r} is outside the working directory ({workspace})") from exc
     return candidate

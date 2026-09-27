@@ -146,7 +146,7 @@ def fetch_git(url: str, ref: Optional[str] = None, subdir: str = "") -> tuple[Pa
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=GIT_TIMEOUT_S, env=env)
     except (OSError, subprocess.TimeoutExpired) as exc:
         shutil.rmtree(dest, ignore_errors=True)
-        raise ToolError(f"could not fetch the repository: {exc}")
+        raise ToolError(f"could not fetch the repository: {exc}") from exc
     if proc.returncode != 0:
         shutil.rmtree(dest, ignore_errors=True)
         raise ToolError(f"git clone failed: {(proc.stderr or proc.stdout).strip()[:300]}")

@@ -206,8 +206,8 @@ async def _code_search(inp: dict, *, workspace: Path, instance_id=None, device_t
         prefix = "" if rel == "." else (rel + "/" if target.is_dir() else rel)
     try:
         limit = max(1, min(int(inp.get("max_results") or DEFAULT_RESULTS), MAX_RESULTS))
-    except (TypeError, ValueError):
-        raise ToolError("max_results must be a number")
+    except (TypeError, ValueError) as exc:
+        raise ToolError("max_results must be a number") from exc
     results = await asyncio.to_thread(search_code, workspace, query, limit, prefix)
     if not results:
         return "No matches. (code_search is a keyword index: try other words, or use grep for an exact pattern.)"
@@ -351,8 +351,8 @@ async def _session_search(inp: dict, *, workspace=None, instance_id=None, device
         raise ToolError("scope must be 'this' or 'instance'")
     try:
         limit = max(1, min(int(inp.get("max_results") or DEFAULT_RESULTS), MAX_RESULTS))
-    except (TypeError, ValueError):
-        raise ToolError("max_results must be a number")
+    except (TypeError, ValueError) as exc:
+        raise ToolError("max_results must be a number") from exc
     session = toolspec.current_session()
     results = await asyncio.to_thread(search_sessions, instance_id, session, query, limit, scope)
     if not results:

@@ -10,7 +10,7 @@ import httpx
 import pytest
 
 from abp_agenteval.scripted import ScriptedTransport
-from abp_agenteval.task import Call, Say
+from abp_agenteval.task import Say
 from bot import db
 from bot.agent_runtime import hooks, permissions, tool_loop, tools
 from bot.agent_runtime.transports.base import NormalizedResponse

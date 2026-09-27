@@ -185,7 +185,7 @@ def schedule(routine: dict, chat_id: Any, interval_s: int, values: Optional[dict
     try:
         sched_id = scheduler.create(routine["instance_id"], chat_id, "routine", prompt, interval_s, max_runs=max_runs, thread_id=thread_id)
     except scheduler.ScheduleError as exc:
-        raise RoutineError(str(exc))
+        raise RoutineError(str(exc)) from exc
     with db._lock:
         conn = _conn()
         conn.execute("INSERT OR REPLACE INTO routine_schedules (schedule_id, routine_id) VALUES (?,?)", (sched_id, routine["id"]))
@@ -260,7 +260,7 @@ async def _routine_save(inp: dict, *, workspace=None, instance_id=None, device_t
         rid = save(instance_id, str(inp.get("name") or ""), str(inp.get("template") or ""), description=str(inp.get("description") or ""),
                    params=inp.get("params") if isinstance(inp.get("params"), dict) else {}, steps=steps, replace=bool(inp.get("replace")))
     except RoutineError as exc:
-        raise ToolError(str(exc))
+        raise ToolError(str(exc)) from exc
     r = get_by_id(rid)
     return (f"Saved routine {r['name']!r} with {len(r['params'])} parameter(s). Run it with /routine run {r['name']}"
             + "".join(f" {k}=..." for k in r["params"]) + f", or schedule it with /routine schedule {r['name']} every <interval>.")

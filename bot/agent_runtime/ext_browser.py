@@ -83,7 +83,7 @@ async def _call(method: str, params: dict, *, deadline_ms: int = 30_000) -> Any:
     except bb.BridgeError as exc:
         if exc.code == "E_NOT_CONNECTED":
             _started.discard(session)
-        raise _fail(exc)
+        raise _fail(exc) from exc
 
 
 def _taint_for(url: str) -> None:
@@ -98,8 +98,8 @@ def _tab(inp: dict) -> Optional[int]:
     if inp.get("tab") is not None:
         try:
             return int(inp["tab"])
-        except (TypeError, ValueError):
-            raise ToolError("tab must be the number from the tab list")
+        except (TypeError, ValueError) as exc:
+            raise ToolError("tab must be the number from the tab list") from exc
     return _last_tab.get(toolspec.current_session())
 
 
@@ -268,7 +268,7 @@ async def _ext_browser_act(inp: dict, *, workspace=None, instance_id=None, devic
         try:
             secret = vault.value(name, field, page_url=entry["origin"])
         except vault.VaultError as exc:
-            raise ToolError(str(exc))
+            raise ToolError(str(exc)) from exc
         args = {"value": secret, "credential_origin": entry["origin"]}
     if action not in ("scroll", "press") and ref is None:
         raise ToolError("ref is required: use a number like e12 from the latest snapshot")

@@ -4,7 +4,7 @@ dashboard's Sessions view."""
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal
 from textual.screen import Screen
 from textual.widgets import Button, DataTable, Footer, Input, Label, Static, TextArea
 

@@ -74,7 +74,7 @@ class TfidfCentroidModel:
 
         sums: dict[str, Vector] = {}
         counts: Counter[str] = Counter()
-        for (text, intent), tokens in zip(examples, docs):
+        for (_text, intent), tokens in zip(examples, docs):
             vec = self._vectorize(tokens)
             counts[intent] += 1
             bucket = sums.setdefault(intent, {})

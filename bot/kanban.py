@@ -7,7 +7,6 @@ collaboration layer here — one board set per bot instance).
 
 from __future__ import annotations
 
-from typing import Optional
 
 from bot import db
 

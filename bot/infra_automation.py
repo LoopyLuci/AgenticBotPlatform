@@ -34,7 +34,7 @@ import json
 import logging
 import re
 import time
-from typing import Any, Optional
+from typing import Optional
 
 from bot import db, docker_mgr as dk, tailscale_mgr as ts, vm_mgr as vm
 

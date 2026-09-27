@@ -1,6 +1,6 @@
 # ADR-0004: Android release builds are signed with the debug key, not a Play identity
 
-**Status:** Accepted
+**Status:** Accepted; its key-handling consequence is superseded by [ADR-0010](0010-pinned-android-signing-key.md)
 **Date:** 2026-08-23 (present since the Android companion's first release)
 
 ## Context

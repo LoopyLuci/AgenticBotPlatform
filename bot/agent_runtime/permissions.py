@@ -41,7 +41,7 @@ from __future__ import annotations
 import contextvars
 import fnmatch
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Optional
 from urllib.parse import urlparse

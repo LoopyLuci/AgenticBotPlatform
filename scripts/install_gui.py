@@ -44,7 +44,7 @@ def main() -> None:
 
     try:
         import tkinter as tk
-        from tkinter import ttk, scrolledtext, messagebox
+        from tkinter import ttk, scrolledtext, messagebox  # noqa: F401 — availability probe
     except ImportError:
         print("tkinter isn't available in this Python build — falling back to the text installer.\n")
         _run_cli_fallback(args)

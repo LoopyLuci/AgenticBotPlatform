@@ -32,11 +32,11 @@ from bot import desktop, setup_wizard  # noqa: E402
 
 def _print_status(status: dict) -> None:
     print(f"\n.env location: {status['env_path']}\n")
-    for key, field in status["fields"].items():
+    for _key, field in status["fields"].items():
         mark = "OK  " if field["valid"] else ("--  " if not field["required"] else "MISS")
         print(f"  [{mark}] {field['label']:<32} {field['message']}")
     print("\n  Messaging platforms:")
-    for name, p in status["platforms"].items():
+    for _name, p in status["platforms"].items():
         mark = "OK  " if p["configured"] else "--  "
         print(f"  [{mark}] {p['label']}")
     print()

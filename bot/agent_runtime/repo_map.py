@@ -29,7 +29,6 @@ import re
 import time
 from collections import OrderedDict
 from pathlib import Path
-from typing import Optional
 
 from bot.agent_runtime import toolspec
 from bot.agent_runtime.coding_tools import SKIP_DIRS
@@ -174,7 +173,7 @@ def build(root: Path, max_tokens: int = DEFAULT_TOKENS) -> str:
 
     budget = int(max_tokens * CHARS_PER_TOKEN)
     lines, used, shown = [], 0, 0
-    for score, rel, syms in scored:
+    for _score, rel, syms in scored:
         block = [rel] + [("  " * (1 + depth)) + text for depth, text in syms[:40]]
         if len(syms) > 40:
             block.append(f"  ... ({len(syms) - 40} more)")
@@ -227,8 +226,8 @@ async def _repo_map(inp: dict, *, workspace: Path, instance_id=None, device_tier
         raise ToolError(f"{inp.get('path') or '.'!r} is not a folder")
     try:
         tokens = max(300, min(int(inp.get("max_tokens") or DEFAULT_TOKENS), MAX_TOKENS))
-    except (TypeError, ValueError):
-        raise ToolError("max_tokens must be a number")
+    except (TypeError, ValueError) as exc:
+        raise ToolError("max_tokens must be a number") from exc
     return await asyncio.to_thread(cached_build, root, tokens)
 
 

@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
 
 from bot import db, swarm_budget
 from bot.agent_runtime import moa as moa_module

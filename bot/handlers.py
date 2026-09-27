@@ -17,7 +17,6 @@ running Telegram bots.
 
 from __future__ import annotations
 
-import asyncio
 import functools
 import itertools
 import logging
@@ -32,6 +31,7 @@ from bot.agent_runtime import approval as agent_approval
 from bot.agent_runtime import engine as agent_engine
 from bot.commands import CmdContext
 from bot.config import config
+from bot import tasks as bg
 
 logger = logging.getLogger("bot.handlers")
 
@@ -97,7 +97,7 @@ def require_auth(handler):
                 text=text,
                 instance_id=instance_id,
             )
-            asyncio.create_task(push.notify_new_message(context.bot_data.get("instance_name", "Bot"), text))
+            bg.spawn(push.notify_new_message(context.bot_data.get("instance_name", "Bot"), text))
         return await handler(update, context)
 
     return wrapped
@@ -772,7 +772,7 @@ async def on_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     if doc.mime_type in vision.SUPPORTED_DOCUMENT_MIME_TYPES:
         if not caption:
-            asyncio.create_task(push.notify_new_message(context.bot_data.get("instance_name", "Bot"), f"📄 {orig_name}"))
+            bg.spawn(push.notify_new_message(context.bot_data.get("instance_name", "Bot"), f"📄 {orig_name}"))
         prompt = caption or f"Summarize this document ({orig_name})."
         await _handle_ask(update, context, prompt, documents=[{"data": data, "mime_type": doc.mime_type}])
         return
@@ -780,7 +780,7 @@ async def on_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # require_auth's wrapper already pushed for a captioned document
         # (it logs+notifies on any non-empty text/caption) — this covers
         # the attachment-only case that leaves that path a no-op.
-        asyncio.create_task(push.notify_new_message(context.bot_data.get("instance_name", "Bot"), f"📎 {orig_name}"))
+        bg.spawn(push.notify_new_message(context.bot_data.get("instance_name", "Bot"), f"📎 {orig_name}"))
     await _reply_chunked(update, f"Saved: {orig_name}. Reference it in your next /ask.", context)
 
 
@@ -845,6 +845,6 @@ async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Mirrors on_document's own no-caption push notification above —
         # require_auth's wrapper only pushes when msg.text/msg.caption is
         # non-empty.
-        asyncio.create_task(push.notify_new_message(context.bot_data.get("instance_name", "Bot"), "🖼️ (photo)"))
+        bg.spawn(push.notify_new_message(context.bot_data.get("instance_name", "Bot"), "🖼️ (photo)"))
     prompt = caption or "Describe what you see in this image."
     await _handle_ask(update, context, prompt, images=[{"data": data, "mime_type": mime_type}])

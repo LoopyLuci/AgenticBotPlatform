@@ -10,7 +10,6 @@ import asyncio
 import hashlib
 import hmac
 
-import pytest
 
 from bot import bot_instances, db, platform_supervisor
 from bot.platforms import whatsapp_platform

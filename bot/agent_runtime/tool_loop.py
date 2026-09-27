@@ -11,6 +11,7 @@ import logging
 import time
 
 from bot.agent_runtime import toolspec, trace
+from bot import tasks as bg
 
 logger = logging.getLogger("bot.agent_runtime.tool_loop")
 
@@ -111,7 +112,7 @@ async def _run_one_tool(
                 notify_fn = notify
             kwargs = {"force": True} if fresh else {}
             # Tell any Notification hook a person is needed; never make the approval wait on it.
-            asyncio.ensure_future(hooks.run_notification(
+            bg.spawn(hooks.run_notification(
                 "permission_request", f"{name} is waiting for approval", instance_id=instance_id))
             approval = await agent_approval.request_approval(
                 instance_id, chat_id, session_key, name, tool_input, notify=notify_fn, **kwargs

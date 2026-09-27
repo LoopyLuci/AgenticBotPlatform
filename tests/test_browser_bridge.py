@@ -15,7 +15,7 @@ import pytest
 import uvicorn
 import websockets
 
-from bot import browser_bridge as bb, browser_policy, db
+from bot import browser_bridge as bb, browser_policy
 from bot.dashboard.server import build_app
 
 TOKEN = "bridge-test-token"

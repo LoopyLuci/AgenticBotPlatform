@@ -41,7 +41,7 @@ def stratified_split(
     rng = random.Random(seed)
     train: list[tuple[str, str]] = []
     holdout: list[tuple[str, str]] = []
-    for intent, items in by_intent.items():
+    for _intent, items in by_intent.items():
         if len(items) < min_examples_for_holdout:
             train.extend(items)
             continue

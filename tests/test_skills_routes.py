@@ -6,7 +6,6 @@ agent's own in-loop tools.
 """
 from __future__ import annotations
 
-import pytest
 from fastapi.testclient import TestClient
 
 from bot.dashboard.server import build_app

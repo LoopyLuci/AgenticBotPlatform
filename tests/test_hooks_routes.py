@@ -4,7 +4,6 @@ test_mcp_external_routes.py's own shape for the equivalent
 """
 from __future__ import annotations
 
-import pytest
 from fastapi.testclient import TestClient
 
 from bot.dashboard.server import build_app

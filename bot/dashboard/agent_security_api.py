@@ -82,7 +82,7 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         return {"ok": not problems, "problems": problems}
 
     @app.get("/api/instances/{instance_id}/permissions", dependencies=read)
-    async def get_instance_permissions(instance_id: int):
+    def get_instance_permissions(instance_id: int):
         from bot import bot_instances
 
         if bot_instances.get_instance(instance_id) is None:
@@ -96,12 +96,12 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
     async def put_instance_permissions(instance_id: int, body: _SettingsBody):
         try:
             saved = permissions.set_instance_settings(instance_id, mode=body.mode, rules=body.rules, actor="dashboard")
-        except PermissionError:
-            raise HTTPException(status_code=409, detail="permissions_locked")
-        except KeyError:
-            raise HTTPException(status_code=404, detail="no such bot instance")
+        except PermissionError as exc:
+            raise HTTPException(status_code=409, detail="permissions_locked") from exc
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="no such bot instance") from exc
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"instance": saved}
 
     @app.get("/api/mcp/pins", dependencies=read)
@@ -135,7 +135,7 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         try:
             return fn(*a)
         except ToolError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/skills/packs", dependencies=read)
     async def get_packs():
@@ -147,7 +147,7 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         try:
             return await asyncio.to_thread(skill_install.install_from_git, body.url, body.ref, body.subdir)
         except ToolError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/skills/quarantine", dependencies=read)
     async def get_quarantine():

@@ -68,7 +68,7 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         try:
             text = session_export.export_session(session_key, format)
         except LookupError as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         media = "application/json" if format == "json" else "text/markdown; charset=utf-8"
         return PlainTextResponse(text, media_type=media)
 

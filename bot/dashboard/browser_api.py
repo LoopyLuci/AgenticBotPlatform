@@ -10,7 +10,7 @@ Auth tiers, on purpose:
 from __future__ import annotations
 
 import asyncio
-from typing import Callable, Optional
+from typing import Callable
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Request, WebSocket
 
@@ -51,7 +51,7 @@ def register(app: FastAPI, strict_auth: Callable) -> None:
             return await asyncio.to_thread(bb.pairing.complete_code, str(body.get("code", "")), extension_id=ext_id, origin=origin,
                                            browser=str(body.get("browser", ""))[:40], version=str(body.get("version", ""))[:20])
         except bb.BridgeError as exc:
-            raise _to_http(exc)
+            raise _to_http(exc) from exc
 
     @app.post("/api/browser/pair/request")
     async def browser_pair_request(request: Request, body: dict = Body(default={})):
@@ -60,7 +60,7 @@ def register(app: FastAPI, strict_auth: Callable) -> None:
             return bb.pairing.request(extension_id=ext_id, origin=origin, browser=str(body.get("browser", ""))[:40],
                                       version=str(body.get("version", ""))[:20])
         except bb.BridgeError as exc:
-            raise _to_http(exc)
+            raise _to_http(exc) from exc
 
     @app.post("/api/browser/pair/collect")
     async def browser_pair_collect(request: Request, body: dict = Body(...)):
@@ -68,7 +68,7 @@ def register(app: FastAPI, strict_auth: Callable) -> None:
         try:
             return await asyncio.to_thread(bb.pairing.collect, str(body.get("request_id", "")), str(body.get("nonce", "")))
         except bb.BridgeError as exc:
-            raise _to_http(exc)
+            raise _to_http(exc) from exc
 
     @app.websocket("/api/browser/ws")
     async def browser_ws(websocket: WebSocket):
@@ -100,7 +100,7 @@ def register(app: FastAPI, strict_auth: Callable) -> None:
         try:
             return await asyncio.to_thread(bb.pairing.decide, request_id, decision == "approve")
         except bb.BridgeError as exc:
-            raise _to_http(exc)
+            raise _to_http(exc) from exc
 
     @app.get("/api/browser/status", dependencies=dep)
     async def browser_status():
@@ -137,6 +137,6 @@ def register(app: FastAPI, strict_auth: Callable) -> None:
             result = await bb.bridge.call(method, params, deadline_ms=int(body.get("deadline_ms") or bb.DEFAULT_DEADLINE_MS),
                                           approval=body.get("approval") if isinstance(body.get("approval"), dict) else None)
         except bb.BridgeError as exc:
-            raise _to_http(exc)
+            raise _to_http(exc) from exc
         await asyncio.to_thread(db.log_audit, "dashboard", "browser_rpc", method)
         return {"result": result}

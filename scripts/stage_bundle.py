@@ -18,9 +18,7 @@ beforeBuildCommand; you can also run it by hand.
 from __future__ import annotations
 
 import os
-import re
 import shutil
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent

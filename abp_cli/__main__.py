@@ -546,7 +546,7 @@ async def _bots(args, client: DashboardClient) -> int:
             credentials = json.loads(args.credentials) if args.credentials else {}
         except json.JSONDecodeError as exc:
             print(f"--credentials must be valid JSON: {exc}", file=sys.stderr)
-            raise SystemExit(2)
+            raise SystemExit(2) from exc
         payload = {
             "name": args.name, "platform": args.platform, "backend": args.backend,
             "credentials": credentials, "allowed_user_ids": _ids(args.allowed), "admin_user_ids": _ids(args.admins),

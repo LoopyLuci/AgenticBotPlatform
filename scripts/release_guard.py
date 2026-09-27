@@ -569,7 +569,8 @@ class PipelineLock:
 STEPS = ("bumped", "committed", "gated", "built_desktop", "smoke", "built_android",
          "tagged", "pushed", "tag_pushed", "released", "verified")
 RELEASE_FILES = ("desktop-app/src-tauri/Cargo.toml", "desktop-app/src-tauri/Cargo.lock",
-                 "desktop-app/src-tauri/tauri.conf.json", "android-app/app/build.gradle.kts")
+                 "desktop-app/src-tauri/tauri.conf.json", "android-app/app/build.gradle.kts",
+                 "bot/__init__.py")
 
 
 class Journal:

@@ -10,7 +10,6 @@ sys.executable when that venv genuinely doesn't exist.
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 from bot import envfile
 

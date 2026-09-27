@@ -14,11 +14,16 @@ import os
 import signal
 import sys
 import threading
+from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
 
 from bot.envfile import PROJECT_ROOT as ROOT
 from bot.envfile import ensure_dashboard_token, resolve as resolve_env_path
+from bot import tasks as bg
+
+if TYPE_CHECKING:
+    import telegram.ext
 
 _env_path = resolve_env_path()
 load_dotenv(_env_path)
@@ -159,7 +164,7 @@ async def build_telegram_instance(row: dict) -> "telegram.ext.Application":
     )
 
     async def _send_file(chat_id, file_path, filename, caption):
-        with open(file_path, "rb") as f:
+        with open(file_path, "rb") as f:  # noqa: ASYNC230 — opening a handle is instant; the upload streams it
             await application.bot.send_document(chat_id=chat_id, document=f, filename=filename, caption=caption)
 
     outbox.register_file_sender(row["id"], _send_file)
@@ -373,7 +378,7 @@ async def run() -> None:
         except Exception:
             logger.warning("Support Bot warm-up failed; it will train on first use instead", exc_info=True)
 
-    support_warmup_task = asyncio.create_task(_warm_support_bot())
+    bg.spawn(_warm_support_bot())
 
     from bot.agent_runtime import mcp_client
 
@@ -414,7 +419,7 @@ async def run() -> None:
     from bot import auto_manage, db as _db
 
     def _on_kanban_card_created(card_id: int) -> None:
-        asyncio.create_task(auto_manage.maybe_trigger_from_kanban_card(card_id))
+        bg.spawn(auto_manage.maybe_trigger_from_kanban_card(card_id))
 
     _db.on_kanban_card_created(_on_kanban_card_created)
 

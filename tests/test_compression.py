@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
 
 from bot import db
 from bot.agent_runtime import compression

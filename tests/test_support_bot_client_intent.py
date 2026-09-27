@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
 
 from bot.support_bot.engine import SupportBot
 

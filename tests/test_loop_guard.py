@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import time
-from types import SimpleNamespace
 
 import pytest
 
 from abp_agenteval.scripted import ScriptedTransport
 from abp_agenteval.task import Call, Say
 from bot import db
-from bot.agent_runtime import loop_guard, toolspec, tools
+from bot.agent_runtime import loop_guard, toolspec
 from bot.agent_runtime.loop_guard import Limits, Watchdog
 from bot.agent_runtime.transports.anthropic import AnthropicTransport
 from bot.agent_runtime.transports.base import NormalizedResponse, ToolCall

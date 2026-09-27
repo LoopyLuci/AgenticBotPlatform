@@ -107,7 +107,7 @@ def enable(
         try:
             interval_s = scheduler.parse_duration(interval)
         except scheduler.ScheduleError as exc:
-            raise AutoManageError(str(exc))
+            raise AutoManageError(str(exc)) from exc
         schedule_id = scheduler.create(instance_id, chat_id, "auto_manage", "", interval_s, thread_id=thread_id)
 
     return set_config(

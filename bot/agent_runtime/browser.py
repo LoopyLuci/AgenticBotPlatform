@@ -300,7 +300,7 @@ async def _navigate(session: Session, url: str) -> None:
     try:
         await session.page.goto(url, wait_until="domcontentloaded", timeout=30000)
     except Exception as exc:  # noqa: BLE001
-        raise ToolError(f"could not open {url}: {str(exc).splitlines()[0][:200]}")
+        raise ToolError(f"could not open {url}: {str(exc).splitlines()[0][:200]}") from exc
 
 
 async def _browser(inp: dict, *, workspace=None, instance_id=None, device_tier=None) -> str:
@@ -337,8 +337,8 @@ async def _browser(inp: dict, *, workspace=None, instance_id=None, device_tier=N
 async def _element(session: Session, ref: Any) -> tuple[Any, dict]:
     try:
         ref = int(ref)
-    except (TypeError, ValueError):
-        raise ToolError("ref must be the number shown in the snapshot")
+    except (TypeError, ValueError) as exc:
+        raise ToolError("ref must be the number shown in the snapshot") from exc
     if ref not in session.elements:
         raise ToolError(f"there is no element [{ref}] in the latest snapshot - take a new snapshot first")
     return session.page.locator(f'[data-abp-ref="{ref}"]'), session.elements[ref]
@@ -377,7 +377,7 @@ async def _browser_act(inp: dict, *, workspace=None, instance_id=None, device_ti
                 try:
                     secret = vault.value(str(inp.get("credential") or ""), field, page_url=page.url)
                 except vault.VaultError as exc:
-                    raise ToolError(str(exc))
+                    raise ToolError(str(exc)) from exc
                 await locator.fill(secret, timeout=5000)
                 await asyncio.sleep(0.2)
                 return (f"Filled the {field} of stored login {inp.get('credential')!r} into element [{inp.get('ref')}] "
@@ -385,7 +385,7 @@ async def _browser_act(inp: dict, *, workspace=None, instance_id=None, device_ti
         except ToolError:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise ToolError(f"{action} failed: {str(exc).splitlines()[0][:200]} - take a new snapshot and try again")
+            raise ToolError(f"{action} failed: {str(exc).splitlines()[0][:200]} - take a new snapshot and try again") from exc
         await asyncio.sleep(0.3)
         return await snapshot(session)
 
@@ -408,7 +408,7 @@ async def _vault_list(inp: dict, *, workspace=None, instance_id=None, device_tie
     try:
         items = vault.listing()
     except vault.VaultError as exc:
-        raise ToolError(str(exc))
+        raise ToolError(str(exc)) from exc
     return json.dumps(items) if items else "The vault is empty. A person adds logins (python -m bot.vault add ...)."
 
 

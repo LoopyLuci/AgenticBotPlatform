@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from bot.support_bot import hybrid, model_io
 from bot.support_bot import model as tfidf_model
-from bot.support_bot import nn_model as neural_model
 from bot.support_bot.model import TfidfCentroidModel
 from bot.support_bot.nn_model import NeuralIntentClassifier
 from bot.support_bot.training_data import EXAMPLES

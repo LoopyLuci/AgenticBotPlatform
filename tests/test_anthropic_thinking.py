@@ -13,10 +13,8 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
-import pytest
 
 from bot.agent_runtime.transports.anthropic import AnthropicTransport, _serialize_blocks
-from bot.config import config
 
 
 def _run(coro):

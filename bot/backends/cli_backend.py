@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import shlex
 from typing import Optional
 
 from bot.backends.base import Backend, BackendError, BackendResult

@@ -21,9 +21,9 @@ async def _call(fn, *args, audit: str = "", detail: str = "", **kw):
     try:
         result = await asyncio.to_thread(fn, *args, **kw)
     except (dk.DockerError, vm.VMError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (ValueError, TypeError, KeyError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if audit:
         db.log_audit(actor="dashboard", action=audit, detail=detail[:300])
     return result
@@ -370,7 +370,7 @@ def register(app: FastAPI, auth: Callable, ws_token_ok: Callable[[Optional[str]]
             try:
                 return fn(*a, **k)
             except auto.RuleError as exc:
-                raise ValueError(str(exc))
+                raise ValueError(str(exc)) from exc
         return run
 
     A = "/api/infra/rules"

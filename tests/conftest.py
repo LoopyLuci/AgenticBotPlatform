@@ -20,19 +20,33 @@ from pathlib import Path
 # silently win over what every Support Bot test expects to be trained
 # fresh from the current bot/support_bot/training_data.py. See
 # model_io.py's own comment on CURRENT_PATH for the full explanation.
-os.environ.setdefault(
+# Each pytest-xdist worker gets its own copies, so parallel runs never race on
+# one shared model/manifest file ("" when running without xdist).
+_WORKER = os.environ.get("PYTEST_XDIST_WORKER", "")
+
+
+def _temp_env(key: str, value: str) -> None:
+    # Workers inherit the controller's environment, so a worker must overwrite
+    # (not setdefault) to get its own path.
+    if _WORKER:
+        os.environ[key] = value
+    else:
+        os.environ.setdefault(key, value)
+
+
+_temp_env(
     "AGENTICBOTPLATFORM_SUPPORT_BOT_MODEL_PATH",
-    str(Path(tempfile.gettempdir()) / "agenticbotplatform_pytest_support_bot_model.json"),
+    str(Path(tempfile.gettempdir()) / f"agenticbotplatform_pytest_support_bot_model{_WORKER}.json"),
 )
 # Same rationale, for bot/support_bot/module_manifest.py's per-Knowledge-
 # Module persisted models and manifest — see that module's own comment.
-os.environ.setdefault(
+_temp_env(
     "AGENTICBOTPLATFORM_SUPPORT_BOT_MODULES_DIR",
-    str(Path(tempfile.gettempdir()) / "agenticbotplatform_pytest_support_bot_modules"),
+    str(Path(tempfile.gettempdir()) / f"agenticbotplatform_pytest_support_bot_modules{_WORKER}"),
 )
-os.environ.setdefault(
+_temp_env(
     "AGENTICBOTPLATFORM_SUPPORT_BOT_MANIFEST_PATH",
-    str(Path(tempfile.gettempdir()) / "agenticbotplatform_pytest_support_bot_manifest.json"),
+    str(Path(tempfile.gettempdir()) / f"agenticbotplatform_pytest_support_bot_manifest{_WORKER}.json"),
 )
 
 import pytest

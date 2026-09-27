@@ -22,7 +22,7 @@ already be wire-ready by the loop itself.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Optional
 
 
 @dataclass

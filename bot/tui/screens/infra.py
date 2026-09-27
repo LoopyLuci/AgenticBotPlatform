@@ -249,7 +249,7 @@ class ContainersScreen(InfraScreen):
             return
         try:
             with self.app.suspend():
-                subprocess.run(argv)
+                subprocess.run(argv)  # noqa: ASYNC221 — the TUI is suspended and hands the terminal to this shell on purpose
         except SuspendNotSupported:
             self.say("This terminal can't hand over the screen; run the shell from the desktop app or the dashboard.", error=True)
 

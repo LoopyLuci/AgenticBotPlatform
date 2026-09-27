@@ -146,8 +146,8 @@ def value(name: str, field: str, *, page_url: str) -> str:
         raise VaultError(f"there is no stored credential named {name!r} (vault_list shows the names)")
     try:
         here = origin_of(page_url)
-    except VaultError:
-        raise VaultError("this page is not an http(s) site")
+    except VaultError as exc:
+        raise VaultError("this page is not an http(s) site") from exc
     if here != entry["origin"]:
         raise VaultError(f"credential {name!r} belongs to {entry['origin']}, not {here}; it is not filled into other sites")
     if field == "totp":

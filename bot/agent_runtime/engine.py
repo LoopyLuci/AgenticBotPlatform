@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from bot import tasks as bg
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -179,7 +180,7 @@ async def run_turn(
         finally:
             st.task = None
             st.background = False
-            asyncio.ensure_future(_drain(key))
+            bg.spawn(_drain(key))
 
     task = asyncio.ensure_future(_run())
     st.task = task

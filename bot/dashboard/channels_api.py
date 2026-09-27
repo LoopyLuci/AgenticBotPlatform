@@ -24,30 +24,16 @@ last two for the dashboard token:
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any, Callable, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel
 
+from bot import tasks as bg
+
 logger = logging.getLogger("bot.dashboard.channels")
-_tasks: set[asyncio.Task] = set()
-
-
-def _background(coro) -> None:
-    task = asyncio.create_task(coro)
-    _tasks.add(task)
-    task.add_done_callback(_tasks.discard)
-
-    def _log(t: asyncio.Task) -> None:
-        if not t.cancelled() and t.exception() is not None:
-            logger.error("background channel task failed: %s", t.exception())
-
-    task.add_done_callback(_log)
-
-
 class _Register(BaseModel):
     name: str = ""
     capabilities: list[str] = []
@@ -81,29 +67,29 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable, caller_dev
             if why in ("bad signature",):
                 raise HTTPException(status_code=403, detail="bad signature")
             return Response(content="<Response/>", media_type="application/xml")     # stray or disallowed: acknowledge, do nothing
-        _background(sms_platform.deliver(instance, sender, form.get("Body", "")))
+        bg.spawn(sms_platform.deliver(instance, sender, form.get("Body", "")))
         return Response(content="<Response/>", media_type="application/xml")
 
     @app.post("/webhooks/bluebubbles")
     async def bluebubbles_webhook(request: Request, token: str = Query("")):
         try:
             payload = await request.json()
-        except ValueError:
-            raise HTTPException(status_code=400, detail="not JSON")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="not JSON") from exc
         instance, got, why = imessage_platform.check(payload if isinstance(payload, dict) else {}, token)
         if instance is None:
             if why == "bad token":
                 raise HTTPException(status_code=403, detail="bad token")
             return JSONResponse({"status": 200})
-        _background(imessage_platform.deliver(instance, got))
+        bg.spawn(imessage_platform.deliver(instance, got))
         return JSONResponse({"status": 200})
 
     # ---- canvas ---------------------------------------------------------------------------------------------------------
     def _name_and_sig(name: str, sig: str) -> str:
         try:
             name = canvas._check_name(name)
-        except canvas.CanvasError:
-            raise HTTPException(status_code=404, detail="no such canvas")
+        except canvas.CanvasError as exc:
+            raise HTTPException(status_code=404, detail="no such canvas") from exc
         if not canvas.verify(name, sig):
             raise HTTPException(status_code=403, detail="the link has expired or is not valid; ask the dashboard for a new one")
         return name
@@ -116,8 +102,8 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable, caller_dev
     async def canvas_link(name: str):
         try:
             name = canvas._check_name(name)
-        except canvas.CanvasError:
-            raise HTTPException(status_code=404, detail="no such canvas")
+        except canvas.CanvasError as exc:
+            raise HTTPException(status_code=404, detail="no such canvas") from exc
         if canvas.info(name) is None:
             raise HTTPException(status_code=404, detail="no such canvas")
         return {"url": f"/canvas/{name}/view?sig={canvas.sign(name)}", "expires_in_s": canvas.SIG_TTL_S}
@@ -127,8 +113,8 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable, caller_dev
         name = _name_and_sig(name, sig)
         try:
             page = canvas.viewer_page(name)
-        except canvas.CanvasError:
-            raise HTTPException(status_code=404, detail="no such canvas")
+        except canvas.CanvasError as exc:
+            raise HTTPException(status_code=404, detail="no such canvas") from exc
         return HTMLResponse(page, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
 
     @app.get("/canvas/{name}/version")
@@ -145,8 +131,8 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable, caller_dev
         name = _name_and_sig(name, sig)
         try:
             body = canvas.read(name)
-        except canvas.CanvasError:
-            raise HTTPException(status_code=404, detail="no such canvas")
+        except canvas.CanvasError as exc:
+            raise HTTPException(status_code=404, detail="no such canvas") from exc
         return HTMLResponse(body, headers={"Content-Security-Policy": canvas.CSP, "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
                                            "X-Content-Type-Options": "nosniff"})
 
@@ -183,5 +169,5 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable, caller_dev
         try:
             nodes.set_consent(device_id, body.capability, body.mode)
         except nodes.NodeError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"device_id": device_id, "capability": body.capability, "mode": body.mode}

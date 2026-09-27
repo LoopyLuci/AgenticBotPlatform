@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Optional
 
 from bot import db
+from bot import tasks as bg
 
 logger = logging.getLogger(__name__)
 
@@ -351,7 +352,7 @@ class Bridge:
             if c.loop is not None and here is not c.loop:
                 asyncio.run_coroutine_threadsafe(coro, c.loop)
             else:
-                asyncio.ensure_future(coro)
+                bg.spawn(coro)
         except Exception:  # noqa: BLE001
             logger.exception("could not close the extension connection")
         self._emit("disconnected", {"key_id": key_id, "reason": reason})
@@ -373,12 +374,12 @@ class Bridge:
         try:
             await conn.send(frame)
             return await asyncio.wait_for(fut, timeout=deadline_ms / 1000.0 + 1.0)
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as exc:
             try:
                 await conn.send({"v": PROTOCOL, "method": "cancel", "params": {"id": rid}})
             except BridgeError:
                 pass
-            raise BridgeError("E_TIMEOUT", f"the browser did not answer {method} within {deadline_ms} ms", retryable=True)
+            raise BridgeError("E_TIMEOUT", f"the browser did not answer {method} within {deadline_ms} ms", retryable=True) from exc
         except asyncio.CancelledError:                    # the caller went away (a streaming client hung up): stop the work in the browser too
             try:
                 await asyncio.shield(conn.send({"v": PROTOCOL, "method": "cancel", "params": {"id": rid}}))

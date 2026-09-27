@@ -44,6 +44,7 @@ from bot.support_bot import training_data
 from bot.support_bot.engine import support_bot
 from bot.swarm import engine as swarm_engine
 from bot.swarm import strategies as swarm_strategies
+from bot import tasks as bg
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 # Serves the desktop app's own UI source fresh from disk (see
@@ -173,21 +174,14 @@ _manager = _ConnectionManager()
 def _broadcast_soon(payload: dict) -> None:
     """Schedules a broadcast from a plain synchronous call site (db.py's
     on_message_logged/on_job_changed callbacks fire from inside a normal
-    function call, not a coroutine) — every real caller of db.log_message/
-    create_job/mark_job_* in this codebase runs on the event loop thread
-    itself (a direct sqlite call inside an async handler, same as this
-    file's own db.log_message call sites), so get_running_loop() succeeds
-    in practice. Falls back to a logged warning rather than raising if
-    that's ever not true, matching Router._invalidate()'s identical
-    degraded-callback precedent — a missed live update is a real but minor
-    gap (the client's own poll/reconnect logic still catches it up), not
-    worth crashing the write that triggered it over."""
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
+    function call, not a coroutine). Those writes may run on the event loop
+    or on a worker thread (sync route handlers run in FastAPI's threadpool),
+    so this goes through bg.spawn_soon, which reaches the main loop from
+    either. Without any live loop it logs and skips — a missed live update
+    is a minor gap (clients catch up on their next poll), not worth failing
+    the write that triggered it over."""
+    if not bg.spawn_soon(lambda: _manager.broadcast(payload), name="ws-broadcast"):
         logger.warning("no running event loop to broadcast %s — clients will catch up on their next poll", payload.get("type"))
-        return
-    loop.create_task(_manager.broadcast(payload))
 
 
 def _on_message_logged(message_id: int) -> None:
@@ -661,6 +655,9 @@ def build_app() -> FastAPI:
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI):
+        # Sync route handlers run in FastAPI's threadpool; bg.spawn_soon needs
+        # this loop to hand their background work (broadcasts, pushes) back to.
+        bg.bind_loop(asyncio.get_running_loop())
         task = asyncio.create_task(_presence_broadcaster())
         ssh_update_task = asyncio.create_task(_ssh_toolkit_auto_update_loop())
         try:
@@ -774,7 +771,7 @@ def build_app() -> FastAPI:
     # these two paths get the token; every other file under /desktop-ui/ is served as it always was.
     @app.get("/desktop-ui/")
     @app.get("/desktop-ui/index.html")
-    async def desktop_ui_index(request: Request):
+    def desktop_ui_index(request: Request):
         page = DESKTOP_UI_DIR / "index.html"
         if not page.is_file():
             raise HTTPException(status_code=404, detail="desktop UI is not installed")
@@ -857,7 +854,7 @@ def build_app() -> FastAPI:
     # to protect (no secrets, no message content).
 
     @app.get("/healthz")
-    async def healthz():
+    def healthz():
         try:
             db.get_conn().execute("SELECT 1")
             db_ok = True
@@ -888,7 +885,7 @@ def build_app() -> FastAPI:
         return {"entries": activity_log.recent(limit=min(limit, 2000), since_id=since_id)}
 
     @app.get("/api/diagnostics/summary", dependencies=[Depends(_require_token)])
-    async def api_diagnostics_summary():
+    def api_diagnostics_summary():
         """Backs the GUI's Diagnostics tab: system info, local-only
         telemetry counters (error rates, self-heal/auto-restart counts),
         and how many crash reports are on disk. Nothing here is ever sent
@@ -903,13 +900,13 @@ def build_app() -> FastAPI:
         }
 
     @app.get("/api/diagnostics/crash-reports", dependencies=[Depends(_require_token)])
-    async def api_diagnostics_crash_reports(limit: int = 50):
+    def api_diagnostics_crash_reports(limit: int = 50):
         from bot import diagnostics
 
         return {"reports": diagnostics.list_crash_reports(limit=min(limit, diagnostics.MAX_CRASH_REPORTS))}
 
     @app.get("/api/diagnostics/crash-reports/{report_id}", dependencies=[Depends(_require_token)])
-    async def api_diagnostics_crash_report_detail(report_id: str):
+    def api_diagnostics_crash_report_detail(report_id: str):
         from bot import diagnostics
 
         report = diagnostics.get_crash_report(report_id)
@@ -918,7 +915,7 @@ def build_app() -> FastAPI:
         return report
 
     @app.get("/api/diagnostics/bundle", dependencies=[Depends(_require_token)])
-    async def api_diagnostics_bundle():
+    def api_diagnostics_bundle():
         """Builds (fresh, on demand — never pre-generated/cached) a zip of
         system info, telemetry, recent crash reports, and the bot.log
         tail for the user to download and attach to a bug report."""
@@ -966,7 +963,7 @@ def build_app() -> FastAPI:
         return {"output": reply if reply is not None else f"Unknown command: {text!r}. Try /help."}
 
     @app.get("/metrics", dependencies=[Depends(_require_token_or_api_key)])
-    async def metrics():
+    def metrics():
         # Hand-rolled Prometheus text exposition format rather than the
         # prometheus_client dependency — this project's bundled venv is
         # deliberately kept minimal (see the NumPy-over-scikit-learn
@@ -1048,7 +1045,7 @@ def build_app() -> FastAPI:
         # timeout. The reply goes out separately via the Graph API once
         # router.ask()/dispatch_command() finish, same as every other
         # platform's outbound path.
-        asyncio.create_task(whatsapp_platform.handle_webhook_payload(payload))
+        bg.spawn(whatsapp_platform.handle_webhook_payload(payload))
         return {"ok": True}
 
     @app.get("/api/hotreload/status", dependencies=[Depends(_require_token)])
@@ -1082,16 +1079,16 @@ def build_app() -> FastAPI:
         return overview
 
     @app.get("/api/jobs", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_jobs(status: Optional[str] = None, limit: int = 50):
+    def api_jobs(status: Optional[str] = None, limit: int = 50):
         rows = db.list_jobs(limit=limit, status=status)
         return [dict(r) for r in rows]
 
     @app.get("/api/jobs/timeseries", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_jobs_timeseries():
+    def api_jobs_timeseries():
         return db.get_jobs_timeseries_24h()
 
     @app.get("/api/jobs/by-backend", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_jobs_by_backend():
+    def api_jobs_by_backend():
         return db.get_jobs_by_backend_today()
 
     @app.get("/api/telemetry", dependencies=[Depends(_require_token_or_api_key)])
@@ -1112,7 +1109,7 @@ def build_app() -> FastAPI:
         }
 
     @app.get("/api/database", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_database():
+    def api_database():
         return {
             "size_bytes": db.get_db_size_bytes(),
             "table_counts": db.get_table_counts(),
@@ -1120,15 +1117,15 @@ def build_app() -> FastAPI:
         }
 
     @app.get("/api/export/tables", dependencies=[Depends(_require_token)])
-    async def api_export_tables():
+    def api_export_tables():
         return {"tables": db.EXPORTABLE_TABLES}
 
     @app.get("/api/export/{table}", dependencies=[Depends(_require_token)])
-    async def api_export_table(table: str, format: str = "json"):
+    def api_export_table(table: str, format: str = "json"):
         try:
             rows = db.export_table(table)
         except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e))
+            raise HTTPException(status_code=404, detail=str(e)) from e
         stamp = _ts_stamp()
         if format == "csv":
             buf = io.StringIO()
@@ -1143,7 +1140,7 @@ def build_app() -> FastAPI:
         return _json_download(rows, f"{table}-{stamp}.json")
 
     @app.get("/api/config", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_config():
+    def api_config():
         # Token/api-key gated (see the route decorator) now that the server
         # can be reached from the public internet via Tailscale Funnel —
         # the TURN shared secret still never appears in it verbatim as a
@@ -1223,7 +1220,7 @@ def build_app() -> FastAPI:
                 actor="dashboard",
             )
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"ok": True}
 
     @app.delete("/api/providers/{name}", dependencies=[Depends(_require_token_or_api_key)])
@@ -1245,19 +1242,19 @@ def build_app() -> FastAPI:
         return {"providers": providers.store_listing(status)}
 
     @app.post("/api/providers/store/{name}/restore", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_providers_restore(name: str, payload: dict = Body(default={})):
+    def api_providers_restore(name: str, payload: dict = Body(default={})):
         from bot import providers
 
         try:
             providers.restore_provider(name, api_key=(payload or {}).get("api_key") or None, actor="dashboard")
         except ValueError as exc:
             conflict = "already configured" in str(exc)
-            raise HTTPException(status_code=409 if conflict else 404, detail=str(exc))
+            raise HTTPException(status_code=409 if conflict else 404, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="provider_restore", detail=name)
         return {"ok": True}
 
     @app.delete("/api/providers/store/{name}", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_providers_purge(name: str):
+    def api_providers_purge(name: str):
         from bot import provider_store
 
         if not provider_store.purge(name):
@@ -1281,7 +1278,7 @@ def build_app() -> FastAPI:
         return {"models": await models_module.browse_provider_models(name, refresh=refresh)}
 
     @app.post("/api/providers/{name}/models/toggle", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_provider_model_toggle(name: str, payload: dict = Body(...)):
+    def api_provider_model_toggle(name: str, payload: dict = Body(...)):
         from bot import providers
 
         if providers.get_provider(name) is None:
@@ -1346,7 +1343,7 @@ def build_app() -> FastAPI:
         try:
             await asyncio.get_running_loop().run_in_executor(None, file_share.add_root, name, path)
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="file_share_add_root", detail=f"added root {name!r} -> {path!r}")
         return {"ok": True}
 
@@ -1366,12 +1363,12 @@ def build_app() -> FastAPI:
 
         try:
             entries = await asyncio.get_running_loop().run_in_executor(None, file_share.list_dir, root, path)
-        except KeyError:
-            raise HTTPException(status_code=404, detail=f"no root named {root!r}")
-        except file_share.PathEscapeError:
-            raise HTTPException(status_code=400, detail="that path escapes the root")
-        except (NotADirectoryError, FileNotFoundError):
-            raise HTTPException(status_code=404, detail="no such directory")
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=f"no root named {root!r}") from exc
+        except file_share.PathEscapeError as exc:
+            raise HTTPException(status_code=400, detail="that path escapes the root") from exc
+        except (NotADirectoryError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=404, detail="no such directory") from exc
         return {"entries": entries}
 
     @app.get("/api/files/{root}/download", dependencies=[Depends(_require_token_or_api_key)])
@@ -1380,10 +1377,10 @@ def build_app() -> FastAPI:
 
         try:
             target = await asyncio.get_running_loop().run_in_executor(None, file_share.resolve_safe_path, root, path)
-        except KeyError:
-            raise HTTPException(status_code=404, detail=f"no root named {root!r}")
-        except file_share.PathEscapeError:
-            raise HTTPException(status_code=400, detail="that path escapes the root")
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=f"no root named {root!r}") from exc
+        except file_share.PathEscapeError as exc:
+            raise HTTPException(status_code=400, detail="that path escapes the root") from exc
         if not target.is_file():
             raise HTTPException(status_code=404, detail="no such file")
         db.log_audit(actor="dashboard", action="file_share_download", detail=f"{root}/{path}")
@@ -1408,7 +1405,7 @@ def build_app() -> FastAPI:
         try:
             return {"connections": await ssh_toolkit.list_connections()}
         except ssh_toolkit.SshToolkitError as exc:
-            raise HTTPException(status_code=503, detail=str(exc))
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @app.get("/api/ssh-toolkit/connections/{name}", dependencies=[Depends(_require_token)])
     async def api_ssh_toolkit_connection_get(name: str):
@@ -1417,7 +1414,7 @@ def build_app() -> FastAPI:
         try:
             return await ssh_toolkit.get_connection(name)
         except ssh_toolkit.SshToolkitError as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.post("/api/ssh-toolkit/connections", dependencies=[Depends(_require_token)])
     async def api_ssh_toolkit_connection_add(payload: dict = Body(...)):
@@ -1435,7 +1432,7 @@ def build_app() -> FastAPI:
                 multiplex=bool(payload.get("multiplex")), force=bool(payload.get("force")),
             )
         except ssh_toolkit.SshToolkitError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="ssh_toolkit_add", detail=name)
         return {"ok": True}
 
@@ -1446,7 +1443,7 @@ def build_app() -> FastAPI:
         try:
             await ssh_toolkit.remove_connection(name)
         except ssh_toolkit.SshToolkitError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="ssh_toolkit_remove", detail=name)
         return {"ok": True}
 
@@ -1457,7 +1454,7 @@ def build_app() -> FastAPI:
         try:
             reachable = await ssh_toolkit.test_connection(name)
         except ssh_toolkit.SshToolkitError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"name": name, "reachable": reachable}
 
     @app.post("/api/ssh-toolkit/connections/{name}/run", dependencies=[Depends(_require_token)])
@@ -1470,7 +1467,7 @@ def build_app() -> FastAPI:
         try:
             output = await ssh_toolkit.run_command(name, command)
         except ssh_toolkit.SshToolkitError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="ssh_toolkit_run", detail=f"{name}: {command[:200]}")
         return {"output": output}
 
@@ -1481,7 +1478,7 @@ def build_app() -> FastAPI:
         try:
             return {"connections": await ssh_toolkit.status_all()}
         except ssh_toolkit.SshToolkitError as exc:
-            raise HTTPException(status_code=503, detail=str(exc))
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @app.get("/api/ssh-toolkit/graph", dependencies=[Depends(_require_token)])
     async def api_ssh_toolkit_graph():
@@ -1490,7 +1487,7 @@ def build_app() -> FastAPI:
         try:
             return {"nodes": await ssh_toolkit.graph()}
         except ssh_toolkit.SshToolkitError as exc:
-            raise HTTPException(status_code=503, detail=str(exc))
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @app.get("/api/ssh-toolkit/update/check", dependencies=[Depends(_require_token)])
     async def api_ssh_toolkit_update_check():
@@ -1499,7 +1496,7 @@ def build_app() -> FastAPI:
         try:
             return await ssh_toolkit.check_update()
         except ssh_toolkit.SshToolkitError as exc:
-            raise HTTPException(status_code=503, detail=str(exc))
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @app.post("/api/ssh-toolkit/update/apply", dependencies=[Depends(_require_token)])
     async def api_ssh_toolkit_update_apply():
@@ -1508,7 +1505,7 @@ def build_app() -> FastAPI:
         try:
             result = await ssh_toolkit.apply_update()
         except ssh_toolkit.SshToolkitError as exc:
-            raise HTTPException(status_code=503, detail=str(exc))
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="ssh_toolkit_update", detail=json.dumps(result))
         return result
 
@@ -1526,7 +1523,7 @@ def build_app() -> FastAPI:
         try:
             ssh_toolkit.set_auto_update_mode(mode, actor="dashboard")
         except ssh_toolkit.SshToolkitError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"mode": ssh_toolkit.get_auto_update_mode(), "options": list(ssh_toolkit.AUTO_UPDATE_MODES)}
 
     # SSH Toolkit session monitor + recorder - structured live events (never
@@ -1559,7 +1556,7 @@ def build_app() -> FastAPI:
         try:
             await ssh_session_monitor.stop_session(session_id)
         except ssh_toolkit.SshToolkitError as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"ok": True}
 
     @app.post("/api/ssh-toolkit/session/{session_id}/record/start", dependencies=[Depends(_require_token)])
@@ -1569,7 +1566,7 @@ def build_app() -> FastAPI:
         try:
             recording_id = ssh_session_monitor.start_recording(session_id)
         except ssh_toolkit.SshToolkitError as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"recording_id": recording_id}
 
     @app.post("/api/ssh-toolkit/session/{session_id}/record/pause", dependencies=[Depends(_require_token)])
@@ -1579,7 +1576,7 @@ def build_app() -> FastAPI:
         try:
             ssh_session_monitor.pause_recording(session_id)
         except ssh_toolkit.SshToolkitError as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"ok": True}
 
     @app.post("/api/ssh-toolkit/session/{session_id}/record/resume", dependencies=[Depends(_require_token)])
@@ -1589,7 +1586,7 @@ def build_app() -> FastAPI:
         try:
             ssh_session_monitor.resume_recording(session_id)
         except ssh_toolkit.SshToolkitError as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"ok": True}
 
     @app.post("/api/ssh-toolkit/session/{session_id}/record/stop", dependencies=[Depends(_require_token)])
@@ -1599,7 +1596,7 @@ def build_app() -> FastAPI:
         try:
             recording_id = ssh_session_monitor.stop_recording(session_id)
         except ssh_toolkit.SshToolkitError as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"recording_id": recording_id}
 
     @app.get("/api/ssh-toolkit/recordings", dependencies=[Depends(_require_token)])
@@ -1615,10 +1612,10 @@ def build_app() -> FastAPI:
         try:
             return ssh_session_monitor.get_recording(recording_id)
         except ssh_toolkit.SshToolkitError as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.delete("/api/ssh-toolkit/recordings/{recording_id}", dependencies=[Depends(_require_token)])
-    async def api_ssh_recording_delete(recording_id: int):
+    def api_ssh_recording_delete(recording_id: int):
         from bot import ssh_session_monitor
 
         ssh_session_monitor.delete_recording(recording_id)
@@ -1632,18 +1629,18 @@ def build_app() -> FastAPI:
         return {"plugins": plugin_registry.list_plugins()}
 
     @app.post("/api/plugins", dependencies=[Depends(_require_token)])
-    async def api_plugins_install(payload: dict = Body(...)):
+    def api_plugins_install(payload: dict = Body(...)):
         from bot import plugins as plugin_registry
 
         try:
             info = plugin_registry.install(payload.get("path", ""))
         except plugin_registry.PluginError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="plugin_install", detail=info["name"])
         return info
 
     @app.post("/api/plugins/create", dependencies=[Depends(_require_token)])
-    async def api_plugins_create(payload: dict = Body(...)):
+    def api_plugins_create(payload: dict = Body(...)):
         from bot.envfile import PROJECT_ROOT
         from bot import plugins as plugin_registry
 
@@ -1661,34 +1658,34 @@ def build_app() -> FastAPI:
         try:
             info = plugin_registry.install(str(plugin_path))
         except plugin_registry.PluginError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="plugin_create", detail=info["name"])
         return info
 
     @app.post("/api/plugins/{name}/enable", dependencies=[Depends(_require_token)])
-    async def api_plugins_enable(name: str):
+    def api_plugins_enable(name: str):
         from bot import plugins as plugin_registry
 
         try:
             info = plugin_registry.enable(name)
         except plugin_registry.PluginError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="plugin_enable", detail=name)
         return info
 
     @app.post("/api/plugins/{name}/disable", dependencies=[Depends(_require_token)])
-    async def api_plugins_disable(name: str):
+    def api_plugins_disable(name: str):
         from bot import plugins as plugin_registry
 
         try:
             info = plugin_registry.disable(name)
         except plugin_registry.PluginError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="plugin_disable", detail=name)
         return info
 
     @app.delete("/api/plugins/{name}", dependencies=[Depends(_require_token)])
-    async def api_plugins_delete(name: str):
+    def api_plugins_delete(name: str):
         from bot import plugins as plugin_registry
 
         if not plugin_registry.remove(name):
@@ -1697,7 +1694,7 @@ def build_app() -> FastAPI:
         return {"ok": True}
 
     @app.get("/api/mcp-external", dependencies=[Depends(_require_token)])
-    async def api_mcp_external_list(instance_id: Optional[int] = None):
+    def api_mcp_external_list(instance_id: Optional[int] = None):
         from bot.agent_runtime import mcp_client
 
         rows = db.list_external_mcp_servers(instance_id)
@@ -1808,7 +1805,7 @@ def build_app() -> FastAPI:
     # tradeoff api_config_set already makes (actor="dashboard" regardless
     # of which caller kind actually authenticated).
     @app.get("/api/hooks", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_hooks_list(event: Optional[str] = None):
+    def api_hooks_list(event: Optional[str] = None):
         rows = db.list_agent_hooks(event=event)
         return {
             "hooks": [
@@ -1821,7 +1818,7 @@ def build_app() -> FastAPI:
         }
 
     @app.post("/api/hooks", dependencies=[Depends(_require_tier("unrestricted"))])
-    async def api_hooks_add(payload: dict = Body(...)):
+    def api_hooks_add(payload: dict = Body(...)):
         from bot.agent_runtime import hooks as agent_hooks
 
         event = (payload.get("event") or "").strip()
@@ -1837,7 +1834,7 @@ def build_app() -> FastAPI:
         return {"ok": True, "id": hook_id}
 
     @app.post("/api/hooks/{hook_id}/enable", dependencies=[Depends(_require_tier("unrestricted"))])
-    async def api_hooks_enable(hook_id: int):
+    def api_hooks_enable(hook_id: int):
         if db.get_agent_hook(hook_id) is None:
             raise HTTPException(status_code=404, detail=f"no hook #{hook_id}")
         db.set_agent_hook_enabled(hook_id, True)
@@ -1845,7 +1842,7 @@ def build_app() -> FastAPI:
         return {"ok": True}
 
     @app.post("/api/hooks/{hook_id}/disable", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_hooks_disable(hook_id: int):
+    def api_hooks_disable(hook_id: int):
         if db.get_agent_hook(hook_id) is None:
             raise HTTPException(status_code=404, detail=f"no hook #{hook_id}")
         db.set_agent_hook_enabled(hook_id, False)
@@ -1853,20 +1850,20 @@ def build_app() -> FastAPI:
         return {"ok": True}
 
     @app.delete("/api/hooks/{hook_id}", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_hooks_delete(hook_id: int):
+    def api_hooks_delete(hook_id: int):
         if not db.delete_agent_hook(hook_id):
             raise HTTPException(status_code=404, detail=f"no hook #{hook_id}")
         db.log_audit(actor="dashboard", action="agent_hook_remove", detail=str(hook_id))
         return {"ok": True}
 
     @app.get("/api/skills", dependencies=[Depends(_require_token)])
-    async def api_skills_list(instance_id: Optional[int] = None):
+    def api_skills_list(instance_id: Optional[int] = None):
         from bot import skills as bot_skills
 
         return {"skills": bot_skills.list_for_instance(instance_id)}
 
     @app.post("/api/skills", dependencies=[Depends(_require_token)])
-    async def api_skills_create(payload: dict = Body(...)):
+    def api_skills_create(payload: dict = Body(...)):
         from bot import skills as bot_skills
 
         try:
@@ -1878,12 +1875,12 @@ def build_app() -> FastAPI:
                 global_=bool(payload.get("global_")),
             )
         except bot_skills.SkillError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="skill_create", detail=info["name"])
         return info
 
     @app.delete("/api/skills/{name}", dependencies=[Depends(_require_token)])
-    async def api_skills_delete(name: str, instance_id: Optional[int] = None):
+    def api_skills_delete(name: str, instance_id: Optional[int] = None):
         from bot import skills as bot_skills
 
         if not bot_skills.remove(instance_id, name):
@@ -1899,7 +1896,7 @@ def build_app() -> FastAPI:
         return agent_settings.get_own(instance_id) if own else agent_settings.get(instance_id)
 
     @app.post("/api/agent-settings", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_agent_settings_set(payload: dict = Body(...)):
+    def api_agent_settings_set(payload: dict = Body(...)):
         from bot import agent_settings
 
         instance_id = payload.get("instance_id")
@@ -1907,7 +1904,7 @@ def build_app() -> FastAPI:
         try:
             result = agent_settings.set_settings(instance_id, **fields)
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="agent_settings_update", detail=f"instance {instance_id}: {fields}")
         return result
 
@@ -1918,10 +1915,10 @@ def build_app() -> FastAPI:
         try:
             return auto_manage.get_config(instance_id)
         except auto_manage.AutoManageError as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.post("/api/auto-manage/{instance_id}", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_auto_manage_set(instance_id: int, payload: dict = Body(...)):
+    def api_auto_manage_set(instance_id: int, payload: dict = Body(...)):
         from bot import auto_manage
 
         try:
@@ -1941,7 +1938,7 @@ def build_app() -> FastAPI:
                 fields = {k: v for k, v in payload.items() if k in ("trigger", "interval", "goal_template", "chat_id", "thread_id")}
                 result = auto_manage.set_config(instance_id, actor="dashboard", **fields)
         except auto_manage.AutoManageError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="auto_manage_update", detail=f"instance {instance_id}: {payload}")
         return result
 
@@ -1974,7 +1971,7 @@ def build_app() -> FastAPI:
         return {"lines": desktop.tail_mcp_log(name, lines=lines)}
 
     @app.get("/api/logs", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_logs(lines: int = 100, level: Optional[str] = None):
+    def api_logs(lines: int = 100, level: Optional[str] = None):
         if not LOG_FILE.exists():
             return {"lines": []}
         with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
@@ -1984,7 +1981,7 @@ def build_app() -> FastAPI:
         return {"lines": [ln.rstrip("\n") for ln in all_lines[-lines:]]}
 
     @app.get("/api/env", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_env():
+    def api_env():
         return envfile.status()
 
     # Contents/backups expose secret values, unlike every other GET in this
@@ -1992,11 +1989,11 @@ def build_app() -> FastAPI:
     # rather than _require_token: this is also the only path that can set
     # the first DASHBOARD_TOKEN, so it can't itself demand one already exist.
     @app.get("/api/env/content", dependencies=[Depends(_require_token_or_bootstrap)])
-    async def api_env_content():
+    def api_env_content():
         return {"content": envfile.read_content(), "path": str(envfile.resolve())}
 
     @app.post("/api/env/content", dependencies=[Depends(_require_token_or_bootstrap)])
-    async def api_env_content_save(payload: dict = Body(...)):
+    def api_env_content_save(payload: dict = Body(...)):
         content = payload.get("content")
         if content is None:
             raise HTTPException(status_code=400, detail="payload must be {content: str}")
@@ -2008,7 +2005,7 @@ def build_app() -> FastAPI:
     # can add/update a setting but can never read DASHBOARD_TOKEN or any
     # other existing value through this route.
     @app.post("/api/env/set", dependencies=[Depends(_require_token_or_bootstrap)])
-    async def api_env_set(payload: dict = Body(...)):
+    def api_env_set(payload: dict = Body(...)):
         key = payload.get("key")
         value = payload.get("value")
         if not key or value is None:
@@ -2016,21 +2013,21 @@ def build_app() -> FastAPI:
         try:
             envfile.set_var(key, str(value), actor="dashboard")
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"ok": True}
 
     @app.get("/api/env/backups", dependencies=[Depends(_require_token_or_bootstrap)])
-    async def api_env_backups():
+    def api_env_backups():
         return envfile.list_backups()
 
     @app.post("/api/env/backups/{name}/restore", dependencies=[Depends(_require_token_or_bootstrap)])
-    async def api_env_restore(name: str):
+    def api_env_restore(name: str):
         try:
             envfile.restore_backup(name, actor="dashboard")
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except FileNotFoundError as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"ok": True}
 
     # ------------------------------------------------------- setup wizard --
@@ -2042,7 +2039,7 @@ def build_app() -> FastAPI:
         return setup_wizard.check_status()
 
     @app.get("/api/setup/detect-desktop", dependencies=[Depends(_require_token_or_bootstrap)])
-    async def api_setup_detect_desktop():
+    def api_setup_detect_desktop():
         path = desktop.find_exe_path()
         return {"path": path, "exists": bool(path and Path(path).exists())}
 
@@ -2074,7 +2071,7 @@ def build_app() -> FastAPI:
         return {"ok": True, "backup": backup.name if backup else None, "status": status}
 
     @app.get("/api/security/allowed-users", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_allowed_users():
+    def api_allowed_users():
         return [dict(r) for r in db.list_allowed_users()]
 
     # -------------------------------------------------------------- bots --
@@ -2121,28 +2118,28 @@ def build_app() -> FastAPI:
         return {"ok": True}
 
     @app.get("/api/bots/backups", dependencies=[Depends(_require_token)])
-    async def api_bots_backups():
+    def api_bots_backups():
         return bot_instances.list_backups()
 
     @app.post("/api/bots/backups/{name}/restore", dependencies=[Depends(_require_token)])
-    async def api_bots_restore(name: str):
+    def api_bots_restore(name: str):
         try:
             bot_instances.restore_backup(name, actor="dashboard")
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except FileNotFoundError as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"ok": True}
 
     @app.get("/api/bots/{instance_id}", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_bots_get(instance_id: int):
+    def api_bots_get(instance_id: int):
         row = bot_instances.get_instance(instance_id)
         if row is None:
             raise HTTPException(status_code=404, detail=f"bot instance {instance_id} not found")
         return row
 
     @app.get("/api/bots/{instance_id}/profile", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_bots_profile(instance_id: int):
+    def api_bots_profile(instance_id: int):
         """This instance's own identity/instructions as markdown — see
         bot.bot_instances.render_profile_markdown and the get_my_profile/
         get_agent_profile tools that read the exact same thing."""
@@ -2194,7 +2191,7 @@ def build_app() -> FastAPI:
                 actor="dashboard",
             )
         except bot_instances.ValidationError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         row = bot_instances.get_instance(instance_id)
         if row and row["enabled"]:
             # The row is saved either way — a bad token/connection issue
@@ -2217,7 +2214,7 @@ def build_app() -> FastAPI:
         try:
             bot_instances.update_instance(instance_id, actor="dashboard", **fields)
         except bot_instances.ValidationError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         # A hermes_gateway backend that changed model/hermes_home gets a
         # brand-new cache slot (see Router._get_backend) — the OLD backend
         # object, still holding its spawned `hermes serve` subprocess, is
@@ -2240,7 +2237,7 @@ def build_app() -> FastAPI:
         try:
             bot_instances.delete_instance(instance_id, actor="dashboard")
         except bot_instances.ValidationError as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         if instance and instance.get("backend") == "hermes_gateway":
             await router.evict_backend(
                 "hermes_gateway", model_override=instance.get("model"), hermes_home=instance.get("hermes_home")
@@ -2252,7 +2249,7 @@ def build_app() -> FastAPI:
         try:
             bot_instances.enable_instance(instance_id, actor="dashboard")
         except bot_instances.ValidationError as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         row = bot_instances.get_instance(instance_id)
         if row:
             await platform_supervisor.start_instance(row)
@@ -2263,7 +2260,7 @@ def build_app() -> FastAPI:
         try:
             bot_instances.disable_instance(instance_id, actor="dashboard")
         except bot_instances.ValidationError as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         await platform_supervisor.stop_instance(instance_id)
         return {"ok": True}
 
@@ -2275,7 +2272,7 @@ def build_app() -> FastAPI:
         try:
             await platform_supervisor.start_instance(row)
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"failed to start: {exc}")
+            raise HTTPException(status_code=502, detail=f"failed to start: {exc}") from exc
         return {"ok": True}
 
     @app.post("/api/bots/{instance_id}/stop", dependencies=[Depends(_require_token_or_api_key_or_peer)])
@@ -2301,7 +2298,7 @@ def build_app() -> FastAPI:
         try:
             key = await router.create_session(instance_id)
         except BackendError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"ok": True, "desktop_session_key": key}
 
     # ---------------------------------------------------------- schedules --
@@ -2311,13 +2308,13 @@ def build_app() -> FastAPI:
     # desktop UI and any future TUI.
 
     @app.get("/api/bots/{instance_id}/schedules", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_bots_schedules_list(instance_id: int):
+    def api_bots_schedules_list(instance_id: int):
         from bot import scheduler
 
         return scheduler.list_for_chat(instance_id, chat_id=None)
 
     @app.post("/api/bots/{instance_id}/schedules", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_bots_schedules_create(instance_id: int, payload: dict = Body(...)):
+    def api_bots_schedules_create(instance_id: int, payload: dict = Body(...)):
         from bot import scheduler
 
         try:
@@ -2332,26 +2329,26 @@ def build_app() -> FastAPI:
                 thread_id=payload.get("thread_id"),
             )
         except scheduler.ScheduleError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="schedule_create", detail=f"instance {instance_id}, schedule {sched_id}")
         return {"ok": True, "id": sched_id}
 
     @app.post("/api/bots/{instance_id}/schedules/{sched_id}/pause", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_bots_schedules_pause(instance_id: int, sched_id: int):
+    def api_bots_schedules_pause(instance_id: int, sched_id: int):
         from bot import scheduler
 
         scheduler.pause(sched_id)
         return {"ok": True}
 
     @app.post("/api/bots/{instance_id}/schedules/{sched_id}/resume", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_bots_schedules_resume(instance_id: int, sched_id: int):
+    def api_bots_schedules_resume(instance_id: int, sched_id: int):
         from bot import scheduler
 
         scheduler.resume(sched_id)
         return {"ok": True}
 
     @app.delete("/api/bots/{instance_id}/schedules/{sched_id}", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_bots_schedules_delete(instance_id: int, sched_id: int):
+    def api_bots_schedules_delete(instance_id: int, sched_id: int):
         from bot import scheduler
 
         scheduler.remove(sched_id)
@@ -2373,7 +2370,7 @@ def build_app() -> FastAPI:
         try:
             row = pairing.approve(pairing_id, actor="dashboard")
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"ok": True, "pairing": row}
 
     @app.post("/api/pairing/{pairing_id}/deny", dependencies=[Depends(_require_token_or_api_key)])
@@ -2381,41 +2378,41 @@ def build_app() -> FastAPI:
         try:
             row = pairing.deny(pairing_id, actor="dashboard")
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"ok": True, "pairing": row}
 
     # ------------------------------------------------------------ kanban --
     # A per-bot-instance kanban board — see bot/kanban.py, /kanban.
 
     @app.get("/api/kanban/boards", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_kanban_boards(instance_id: int):
+    def api_kanban_boards(instance_id: int):
         return {"boards": kanban.list_boards(instance_id)}
 
     @app.get("/api/kanban/cards", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_kanban_cards(instance_id: int, board: str = "default"):
+    def api_kanban_cards(instance_id: int, board: str = "default"):
         return {"cards": kanban.list_cards(instance_id, board)}
 
     @app.post("/api/kanban/cards", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_kanban_add_card(payload: dict = Body(...)):
+    def api_kanban_add_card(payload: dict = Body(...)):
         try:
             card = kanban.add_card(
                 int(payload["instance_id"]), payload.get("board", "default"),
                 payload.get("column", "todo"), payload.get("text", ""),
             )
         except kanban.KanbanError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"ok": True, "card": card}
 
     @app.post("/api/kanban/cards/{card_id}/move", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_kanban_move_card(card_id: int, payload: dict = Body(...)):
+    def api_kanban_move_card(card_id: int, payload: dict = Body(...)):
         try:
             card = kanban.move_card(int(payload["instance_id"]), card_id, payload.get("column", "todo"))
         except kanban.KanbanError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"ok": True, "card": card}
 
     @app.delete("/api/kanban/cards/{card_id}", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_kanban_delete_card(card_id: int, instance_id: int):
+    def api_kanban_delete_card(card_id: int, instance_id: int):
         ok = kanban.delete_card(instance_id, card_id)
         if not ok:
             raise HTTPException(status_code=404, detail="card not found")
@@ -2446,7 +2443,7 @@ def build_app() -> FastAPI:
                 raise HTTPException(status_code=400, detail=f"bot instance {iid} referenced in config doesn't exist")
 
     @app.get("/api/swarms", dependencies=[Depends(_require_token)])
-    async def api_swarms_list():
+    def api_swarms_list():
         return [dict(r) | {"config": json.loads(r["config"]), "enabled": bool(r["enabled"])} for r in db.list_swarms()]
 
     # /api/swarms/runs* declared before /api/swarms/{swarm_id} — FastAPI
@@ -2470,14 +2467,14 @@ def build_app() -> FastAPI:
         return {"ok": True, "cancelled": cancelled}
 
     @app.get("/api/swarms/{swarm_id}", dependencies=[Depends(_require_token)])
-    async def api_swarms_get(swarm_id: int):
+    def api_swarms_get(swarm_id: int):
         row = db.get_swarm(swarm_id)
         if row is None:
             raise HTTPException(status_code=404, detail=f"swarm {swarm_id} not found")
         return dict(row) | {"config": json.loads(row["config"]), "enabled": bool(row["enabled"])}
 
     @app.post("/api/swarms", dependencies=[Depends(_require_token)])
-    async def api_swarms_create(payload: dict = Body(...)):
+    def api_swarms_create(payload: dict = Body(...)):
         name = (payload.get("name") or "").strip()
         strategy = payload.get("strategy", "")
         cfg = payload.get("config") or {}
@@ -2488,13 +2485,13 @@ def build_app() -> FastAPI:
             swarm_id = db.create_swarm(name, strategy, json.dumps(cfg), enabled=bool(payload.get("enabled", True)))
         except Exception as exc:
             if "UNIQUE" in str(exc):
-                raise HTTPException(status_code=400, detail=f"a swarm named {name!r} already exists")
+                raise HTTPException(status_code=400, detail=f"a swarm named {name!r} already exists") from exc
             raise
         db.log_audit(actor="dashboard", action="swarm_create", detail=f"created {name!r} ({strategy})")
         return {"ok": True, "id": swarm_id}
 
     @app.put("/api/swarms/{swarm_id}", dependencies=[Depends(_require_token)])
-    async def api_swarms_update(swarm_id: int, payload: dict = Body(...)):
+    def api_swarms_update(swarm_id: int, payload: dict = Body(...)):
         if db.get_swarm(swarm_id) is None:
             raise HTTPException(status_code=404, detail=f"swarm {swarm_id} not found")
         fields: dict = {}
@@ -2514,7 +2511,7 @@ def build_app() -> FastAPI:
         return {"ok": True}
 
     @app.delete("/api/swarms/{swarm_id}", dependencies=[Depends(_require_token)])
-    async def api_swarms_delete(swarm_id: int):
+    def api_swarms_delete(swarm_id: int):
         if db.get_swarm(swarm_id) is None:
             raise HTTPException(status_code=404, detail=f"swarm {swarm_id} not found")
         db.delete_swarm(swarm_id)
@@ -2522,14 +2519,14 @@ def build_app() -> FastAPI:
         return {"ok": True}
 
     @app.post("/api/swarms/{swarm_id}/enable", dependencies=[Depends(_require_token)])
-    async def api_swarms_enable(swarm_id: int):
+    def api_swarms_enable(swarm_id: int):
         if db.get_swarm(swarm_id) is None:
             raise HTTPException(status_code=404, detail=f"swarm {swarm_id} not found")
         db.update_swarm(swarm_id, enabled=True)
         return {"ok": True}
 
     @app.post("/api/swarms/{swarm_id}/disable", dependencies=[Depends(_require_token)])
-    async def api_swarms_disable(swarm_id: int):
+    def api_swarms_disable(swarm_id: int):
         if db.get_swarm(swarm_id) is None:
             raise HTTPException(status_code=404, detail=f"swarm {swarm_id} not found")
         db.update_swarm(swarm_id, enabled=False)
@@ -2560,7 +2557,7 @@ def build_app() -> FastAPI:
         try:
             swarm_run_id = swarm_engine.start_swarm_run(swarm_id, prompt, requested_by=requested_by)
         except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"ok": True, "swarm_run_id": swarm_run_id}
 
     # ------------------------------------------------------ agent control --
@@ -2593,7 +2590,7 @@ def build_app() -> FastAPI:
         try:
             result = await router.ask(prompt, action_type="agent_relay", instance_id=target["id"])
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"ask failed: {exc}")
+            raise HTTPException(status_code=502, detail=f"ask failed: {exc}") from exc
         return {"ok": True, "result": result.text}
 
     # ------------------------------------------------- Hermes delegation --
@@ -2762,7 +2759,7 @@ def build_app() -> FastAPI:
         try:
             result = await router.ask(prompt, action_type="swarm_dispatch", instance_id=instance_id)
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"dispatch failed: {exc}")
+            raise HTTPException(status_code=502, detail=f"dispatch failed: {exc}") from exc
 
         job_row = db.get_latest_job(instance_id, "swarm_dispatch")
         if job_row is not None:
@@ -2798,7 +2795,7 @@ def build_app() -> FastAPI:
         from bot.backends.base import BackendError
         from bot.models import custom_models_with_pricing
 
-        instance = _require_native_agent_instance(instance_id)
+        _require_native_agent_instance(instance_id)
         tasks = payload.get("tasks")
         if not isinstance(tasks, list) or not tasks:
             raise HTTPException(status_code=400, detail="payload must include a non-empty 'tasks' array")
@@ -2851,7 +2848,7 @@ def build_app() -> FastAPI:
             )
         except BackendError as exc:
             db.mark_job_done(job_id, status="failed", error=str(exc))
-            raise HTTPException(status_code=502, detail=f"dispatch failed: {exc}")
+            raise HTTPException(status_code=502, detail=f"dispatch failed: {exc}") from exc
 
         results = dispatch_result["children"]
         db.set_job_children(job_id, results)
@@ -2910,7 +2907,7 @@ def build_app() -> FastAPI:
         return {"ok": True, "removed": removed}
 
     @app.get("/api/hermes/swarm-tools-status", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_hermes_swarm_tools_status():
+    def api_hermes_swarm_tools_status():
         """For the dashboard's swarm-tools panel: every Hermes-backed
         instance (hermes_cli or hermes_gateway) with whether it currently
         has agentic-bot-platform's MCP server registered in its own config (see
@@ -2951,7 +2948,7 @@ def build_app() -> FastAPI:
         try:
             doc = shared_context.read_doc(name)
         except shared_context.SharedContextError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         if doc is None:
             raise HTTPException(status_code=404, detail=f"no shared context doc named {name!r}")
         return doc
@@ -2967,7 +2964,7 @@ def build_app() -> FastAPI:
         try:
             doc = shared_context.write_doc(name, content, actor)
         except shared_context.SharedContextError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"ok": True, "doc": doc}
 
     @app.delete("/api/context/{name}", dependencies=[Depends(_require_token_or_api_key)])
@@ -2977,7 +2974,7 @@ def build_app() -> FastAPI:
         try:
             removed = shared_context.delete_doc(name)
         except shared_context.SharedContextError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"ok": True, "removed": removed}
 
     # --------------------------------------------------------- delegation --
@@ -2990,7 +2987,7 @@ def build_app() -> FastAPI:
     _DELEGATION_ACTIONS = ["agent_ask", "swarm_dispatch", "agent_delegate", "swarm_dispatch_blocked"]
 
     @app.get("/api/delegation-activity", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_delegation_activity(limit: int = 20):
+    def api_delegation_activity(limit: int = 20):
         rows = db.list_audit_log(actions=_DELEGATION_ACTIONS, limit=max(1, min(limit, 200)))
         return {
             "events": [
@@ -3003,7 +3000,7 @@ def build_app() -> FastAPI:
         }
 
     @app.get("/api/jobs/{job_id}/tool-events", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_job_tool_events(job_id: int):
+    def api_job_tool_events(job_id: int):
         """Live top-level delegate_task tool_started/tool_completed events
         recorded for this job by bot/swarm/observability.py — see that
         module's docstring for why this is top-level only, never
@@ -3012,7 +3009,7 @@ def build_app() -> FastAPI:
         return {"events": [dict(e) for e in events]}
 
     @app.get("/api/jobs/{job_id}/children", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_job_children(job_id: int):
+    def api_job_children(job_id: int):
         """Post-hoc per-child breakdown parsed from this job's own final
         reply — see bot/swarm/child_parser.py. Empty until the dispatch
         completes and its reply actually included the structured block."""
@@ -3052,7 +3049,7 @@ def build_app() -> FastAPI:
         try:
             desktop.start()
         except FileNotFoundError as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"ok": True}
 
     @app.post("/api/desktop/stop", dependencies=[Depends(_require_token)])
@@ -3080,13 +3077,13 @@ def build_app() -> FastAPI:
         return {"ok": True, "version": config.version}
 
     @app.get("/api/snapshots", dependencies=[Depends(_require_token)])
-    async def api_snapshots_list():
+    def api_snapshots_list():
         from bot import snapshots
 
         return {"snapshots": snapshots.list_snapshots()}
 
     @app.post("/api/snapshots", dependencies=[Depends(_require_token)])
-    async def api_snapshots_create(payload: dict = Body(default={})):
+    def api_snapshots_create(payload: dict = Body(default={})):
         from bot import snapshots
 
         manifest = snapshots.create_snapshot(label=(payload or {}).get("label") or None)
@@ -3094,18 +3091,18 @@ def build_app() -> FastAPI:
         return manifest
 
     @app.post("/api/snapshots/{name}/restore", dependencies=[Depends(_require_token)])
-    async def api_snapshots_restore(name: str):
+    def api_snapshots_restore(name: str):
         from bot import snapshots
 
         try:
             snapshots.restore_snapshot(name)
         except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="snapshot_restore", detail=name)
         return {"ok": True}
 
     @app.delete("/api/snapshots/{name}", dependencies=[Depends(_require_token)])
-    async def api_snapshots_delete(name: str):
+    def api_snapshots_delete(name: str):
         from bot import snapshots
 
         if not snapshots.delete_snapshot(name):
@@ -3123,10 +3120,10 @@ def build_app() -> FastAPI:
         try:
             return await ui_customize.generate_change(target, instruction)
         except ui_customize.UiCustomizeError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/api/ui-customize/apply", dependencies=[Depends(_require_token)])
-    async def api_ui_customize_apply(payload: dict = Body(...)):
+    def api_ui_customize_apply(payload: dict = Body(...)):
         from bot import ui_customize
 
         change_id = payload.get("change_id")
@@ -3135,7 +3132,7 @@ def build_app() -> FastAPI:
         try:
             entry = ui_customize.apply_change(change_id, actor="dashboard")
         except ui_customize.UiCustomizeError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="ui_customize_apply", detail=f"{entry['target']}: {entry['instruction']}")
         return entry
 
@@ -3146,7 +3143,7 @@ def build_app() -> FastAPI:
         return {"history": ui_customize.list_history(target)}
 
     @app.post("/api/ui-customize/revert", dependencies=[Depends(_require_token)])
-    async def api_ui_customize_revert(payload: dict = Body(...)):
+    def api_ui_customize_revert(payload: dict = Body(...)):
         from bot import ui_customize
 
         entry_id = payload.get("entry_id")
@@ -3155,7 +3152,7 @@ def build_app() -> FastAPI:
         try:
             entry = ui_customize.revert_change(entry_id, actor="dashboard")
         except ui_customize.UiCustomizeError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="ui_customize_revert", detail=f"{entry['target']}")
         return entry
 
@@ -3226,14 +3223,14 @@ def build_app() -> FastAPI:
     # hand-authored baseline. Every mutation retrains both sub-models in
     # place so it takes effect immediately, no restart.
     @app.get("/api/support-bot/training", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_support_bot_training_list():
+    def api_support_bot_training_list():
         return {
             "phrases": [dict(r) for r in db.list_support_bot_phrases()],
             "intents": sorted({intent for _, intent in training_data.EXAMPLES}),
         }
 
     @app.post("/api/support-bot/training", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_support_bot_training_add(payload: dict = Body(...)):
+    def api_support_bot_training_add(payload: dict = Body(...)):
         # Accepts either a single {phrase, intent} (unchanged, existing
         # behavior) or a bulk {phrases: [{phrase, intent}, ...]} import —
         # Phase 3 of the Support Bot NLU upgrade plan. Either way,
@@ -3258,7 +3255,7 @@ def build_app() -> FastAPI:
         return {"ok": True, "id": added_ids[0], "trained_on": counts}
 
     @app.delete("/api/support-bot/training/{phrase_id}", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_support_bot_training_delete(phrase_id: int):
+    def api_support_bot_training_delete(phrase_id: int):
         db.delete_support_bot_phrase(phrase_id)
         counts = support_bot_hybrid.retrain_all()
         db.log_audit(actor="dashboard", action="support_bot_phrase_delete", detail=f"id {phrase_id}")
@@ -3271,7 +3268,7 @@ def build_app() -> FastAPI:
     # held-out-accuracy regression gate, defaulting to a 2-point-accuracy
     # tolerance an operator can override.
     @app.post("/api/support-bot/retrain", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_support_bot_retrain(payload: dict = Body(default={})):
+    def api_support_bot_retrain(payload: dict = Body(default={})):
         tolerance = payload.get("accept_if_regression_under", 0.02)
         result = support_bot_hybrid.retrain_all(accept_if_regression_under=tolerance)
         db.log_audit(
@@ -3322,11 +3319,11 @@ def build_app() -> FastAPI:
         return result
 
     @app.get("/api/support-bot/pending", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_support_bot_pending_list(status: str = "pending"):
+    def api_support_bot_pending_list(status: str = "pending"):
         return [dict(r) for r in db.list_support_bot_pending_examples(status=status)]
 
     @app.post("/api/support-bot/pending/{pending_id}/approve", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_support_bot_pending_approve(pending_id: int):
+    def api_support_bot_pending_approve(pending_id: int):
         row = db.get_support_bot_pending_example(pending_id)
         if row is None or row["status"] != "pending":
             raise HTTPException(status_code=404, detail="no such pending example")
@@ -3337,7 +3334,7 @@ def build_app() -> FastAPI:
         return {"ok": True, "trained_on": counts}
 
     @app.post("/api/support-bot/pending/{pending_id}/reject", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_support_bot_pending_reject(pending_id: int):
+    def api_support_bot_pending_reject(pending_id: int):
         row = db.get_support_bot_pending_example(pending_id)
         if row is None or row["status"] != "pending":
             raise HTTPException(status_code=404, detail="no such pending example")
@@ -3351,7 +3348,7 @@ def build_app() -> FastAPI:
     # phrase it created and retrains, so an operator can always walk back
     # an approval that turned out wrong, auto-approved or not.
     @app.post("/api/support-bot/pending/{pending_id}/revert", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_support_bot_pending_revert(pending_id: int):
+    def api_support_bot_pending_revert(pending_id: int):
         row = db.get_support_bot_pending_example(pending_id)
         if row is None or row["status"] != "approved":
             raise HTTPException(status_code=404, detail="no such approved pending example")
@@ -3367,11 +3364,11 @@ def build_app() -> FastAPI:
     # starts from real, already-seen user text). Shares db.get_recent_misses()
     # with synthetic_gen.py's own targeting signal — one query, two consumers.
     @app.get("/api/support-bot/misses", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_support_bot_misses():
+    def api_support_bot_misses():
         return [dict(r) for r in db.get_recent_misses(unreviewed_only=True)]
 
     @app.post("/api/support-bot/misses/{classification_id}/label", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_support_bot_misses_label(classification_id: int, payload: dict = Body(...)):
+    def api_support_bot_misses_label(classification_id: int, payload: dict = Body(...)):
         intent = (payload.get("intent") or "").strip()
         if not intent:
             raise HTTPException(status_code=400, detail="payload must be {intent: str}")
@@ -3434,7 +3431,7 @@ def build_app() -> FastAPI:
     # hybrid plan, Phase 9's reusable-surfaces) — the MCP tools proxy
     # these same three routes.
     @app.post("/api/support-bot/modules/{module_id}/enabled", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_support_bot_module_set_enabled(module_id: str, payload: dict = Body(...)):
+    def api_support_bot_module_set_enabled(module_id: str, payload: dict = Body(...)):
         from bot.support_bot import module_manifest
 
         enabled = payload.get("enabled")
@@ -3443,19 +3440,19 @@ def build_app() -> FastAPI:
         try:
             module_manifest.set_enabled(module_id, enabled)
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="support_bot_module_set_enabled", detail=f"{module_id}: {enabled}")
         return {"ok": True}
 
     @app.post("/api/support-bot/modules/{module_id}/retrain", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_support_bot_module_retrain(module_id: str, payload: dict = Body(default={})):
+    def api_support_bot_module_retrain(module_id: str, payload: dict = Body(default={})):
         from bot.support_bot import cascade
 
         tolerance = payload.get("accept_if_regression_under")
         try:
             result = cascade.retrain_module(module_id, tolerance)
         except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         db.log_audit(
             actor="dashboard", action="support_bot_module_retrain",
             detail=f"{module_id}: accepted={result['accepted']}" + (f" reason={result.get('reason')}" if not result["accepted"] else ""),
@@ -3525,7 +3522,7 @@ def build_app() -> FastAPI:
         try:
             desktop.enable_mcp(name)
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"ok": True}
 
     @app.post("/api/mcp/{name}/disable", dependencies=[Depends(_require_token)])
@@ -3533,7 +3530,7 @@ def build_app() -> FastAPI:
         try:
             desktop.disable_mcp(name)
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"ok": True}
 
     @app.post("/api/mcp/self-register", dependencies=[Depends(_require_token)])
@@ -3541,19 +3538,19 @@ def build_app() -> FastAPI:
         return {"ok": True, **desktop.register_self_mcp(actor="dashboard")}
 
     @app.post("/api/security/allowed-users/{telegram_id}", dependencies=[Depends(_require_token)])
-    async def api_add_allowed_user(telegram_id: int, name: str = ""):
+    def api_add_allowed_user(telegram_id: int, name: str = ""):
         db.add_allowed_user(telegram_id, name)
         db.log_audit(actor="dashboard", action="add_allowed_user", detail=str(telegram_id))
         return {"ok": True}
 
     @app.delete("/api/security/allowed-users/{telegram_id}", dependencies=[Depends(_require_token)])
-    async def api_remove_allowed_user(telegram_id: int):
+    def api_remove_allowed_user(telegram_id: int):
         db.remove_allowed_user(telegram_id)
         db.log_audit(actor="dashboard", action="remove_allowed_user", detail=str(telegram_id))
         return {"ok": True}
 
     @app.post("/api/database/vacuum", dependencies=[Depends(_require_token)])
-    async def api_vacuum():
+    def api_vacuum():
         db.vacuum()
         return {"ok": True}
 
@@ -3562,7 +3559,7 @@ def build_app() -> FastAPI:
     # too, same reasoning as the .env editor above.
 
     @app.get("/api/chat/recipients", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_chat_recipients():
+    def api_chat_recipients():
         connected = set(outbox.available_instances())
         return {
             "instances": [
@@ -3578,7 +3575,7 @@ def build_app() -> FastAPI:
         }
 
     @app.get("/api/chat/messages", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_chat_messages(
+    def api_chat_messages(
         limit: int = 100,
         platform: Optional[str] = None,
         chat_id: Optional[str] = None,
@@ -3591,7 +3588,7 @@ def build_app() -> FastAPI:
         return [dict(r) for r in rows]
 
     @app.get("/api/chat/messages/export", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_chat_messages_export(instance_id: int, chat_id: Optional[str] = None, platform: Optional[str] = None):
+    def api_chat_messages_export(instance_id: int, chat_id: Optional[str] = None, platform: Optional[str] = None):
         # No chat_id: the whole bot's merged history, matching what the
         # Chat tab itself displays (one timeline per instance, every
         # chat_id combined) — see refreshChat() in dashboard.html.
@@ -3606,7 +3603,7 @@ def build_app() -> FastAPI:
         )
 
     @app.delete("/api/chat/messages", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_chat_messages_delete(instance_id: int = Body(...), chat_id: Optional[str] = Body(None), platform: Optional[str] = Body(None)):
+    def api_chat_messages_delete(instance_id: int = Body(...), chat_id: Optional[str] = Body(None), platform: Optional[str] = Body(None)):
         if chat_id is None:
             count = db.delete_instance_messages(instance_id)
         else:
@@ -3614,7 +3611,7 @@ def build_app() -> FastAPI:
         return {"ok": True, "deleted": count}
 
     @app.delete("/api/chat/messages/{message_id}", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_chat_message_delete_one(message_id: int):
+    def api_chat_message_delete_one(message_id: int):
         if db.get_message(message_id) is None:
             raise HTTPException(status_code=404, detail="no such message")
         db.delete_message(message_id)
@@ -3633,9 +3630,9 @@ def build_app() -> FastAPI:
         try:
             await outbox.send_message(int(instance_id), chat_id, text)
         except RuntimeError as exc:
-            raise HTTPException(status_code=503, detail=str(exc))
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"send failed: {exc}")
+            raise HTTPException(status_code=502, detail=f"send failed: {exc}") from exc
         db.log_message(
             platform=instance["platform"], chat_id=chat_id, direction="out", source="dashboard",
             text=text, instance_id=int(instance_id),
@@ -3715,16 +3712,16 @@ def build_app() -> FastAPI:
         try:
             rel_path, orig_name = await attachments.safe_store_stream(file.filename, file, PLATFORM_RELAY_LIMIT_BYTES)
         except ValueError as exc:
-            raise HTTPException(status_code=413, detail=str(exc))
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
         caption = (text or "").strip()
         try:
             await outbox.send_file(
                 instance_id, chat_id, str(attachments.ATTACHMENTS_DIR / rel_path), orig_name, caption or None
             )
         except RuntimeError as exc:
-            raise HTTPException(status_code=503, detail=str(exc))
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"send failed: {exc}")
+            raise HTTPException(status_code=502, detail=f"send failed: {exc}") from exc
         mime = file.content_type or mimetypes.guess_type(orig_name)[0]
         size = (attachments.ATTACHMENTS_DIR / rel_path).stat().st_size
         thumb_path = await asyncio.get_running_loop().run_in_executor(
@@ -3739,7 +3736,7 @@ def build_app() -> FastAPI:
         return {"ok": True, "id": msg_id}
 
     @app.post("/api/uploads/init", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_uploads_init(payload: dict = Body(...)):
+    def api_uploads_init(payload: dict = Body(...)):
         """Step 1 of the chunked-upload protocol — declares intent (which
         chat, how big, what filename) and gets back a session id plus the
         chunk size to use. See bot/attachments.py's create_upload_session
@@ -3760,7 +3757,7 @@ def build_app() -> FastAPI:
                 instance_id=int(instance_id), chat_id=str(chat_id), text=text,
             )
         except ValueError as exc:
-            raise HTTPException(status_code=413, detail=str(exc))
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
         return session
 
     @app.put("/api/uploads/{session_id}/chunk/{index}", dependencies=[Depends(_require_token_or_api_key)])
@@ -3769,8 +3766,8 @@ def build_app() -> FastAPI:
         request body is streamed straight to disk, see attachments.write_chunk."""
         try:
             await attachments.write_chunk(session_id, index, request)
-        except KeyError:
-            raise HTTPException(status_code=404, detail="unknown or expired upload session")
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="unknown or expired upload session") from exc
         return {"ok": True}
 
     @app.post("/api/uploads/{session_id}/complete", dependencies=[Depends(_require_token_or_api_key)])
@@ -3783,10 +3780,10 @@ def build_app() -> FastAPI:
             assembled = await asyncio.get_running_loop().run_in_executor(
                 None, attachments.assemble_upload, session_id
             )
-        except KeyError:
-            raise HTTPException(status_code=404, detail="unknown or expired upload session")
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="unknown or expired upload session") from exc
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         instance_id = assembled["instance_id"]
         chat_id = assembled["chat_id"]
         rel_path = assembled["rel_path"]
@@ -3808,9 +3805,9 @@ def build_app() -> FastAPI:
                     instance_id, chat_id, str(attachments.ATTACHMENTS_DIR / rel_path), display_name, text or None
                 )
             except RuntimeError as exc:
-                raise HTTPException(status_code=503, detail=str(exc))
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
             except Exception as exc:
-                raise HTTPException(status_code=502, detail=f"send failed: {exc}")
+                raise HTTPException(status_code=502, detail=f"send failed: {exc}") from exc
         msg_id = db.log_message(
             platform=instance["platform"], chat_id=chat_id, direction="out", source="dashboard",
             text=text, instance_id=instance_id,
@@ -3820,7 +3817,7 @@ def build_app() -> FastAPI:
         return {"ok": True, "id": msg_id, "relayed": relayed}
 
     @app.get("/api/chat/attachments/{message_id}", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_chat_attachment(message_id: int):
+    def api_chat_attachment(message_id: int):
         row = db.get_message(message_id)
         if row is None or not row["attachment_path"]:
             raise HTTPException(status_code=404, detail="no attachment on this message")
@@ -3834,7 +3831,7 @@ def build_app() -> FastAPI:
         )
 
     @app.get("/api/chat/attachments/{message_id}/thumbnail", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_chat_attachment_thumbnail(message_id: int):
+    def api_chat_attachment_thumbnail(message_id: int):
         row = db.get_message(message_id)
         if row is None or not row["thumbnail_path"]:
             raise HTTPException(status_code=404, detail="no thumbnail for this attachment")
@@ -3858,11 +3855,11 @@ def build_app() -> FastAPI:
         return {"device_id": device_id}
 
     @app.get("/api/server-chat/conversations")
-    async def api_server_chat_conversations(device_id: int = Depends(_require_device_id)):
+    def api_server_chat_conversations(device_id: int = Depends(_require_device_id)):
         return db.list_server_chat_conversations(device_id)
 
     @app.get("/api/server-chat/messages")
-    async def api_server_chat_messages(
+    def api_server_chat_messages(
         conversation_id: int,
         after_id: int = 0,
         limit: int = 100,
@@ -3873,7 +3870,7 @@ def build_app() -> FastAPI:
         return [dict(r) for r in db.list_server_chat_messages(conversation_id, after_id=after_id, limit=limit)]
 
     @app.get("/api/server-chat/conversations/{conversation_id}/export")
-    async def api_server_chat_export(conversation_id: int, device_id: int = Depends(_require_device_id)):
+    def api_server_chat_export(conversation_id: int, device_id: int = Depends(_require_device_id)):
         if not db.is_conversation_participant(conversation_id, device_id):
             raise HTTPException(status_code=404, detail="no such conversation")
         data = db.export_server_chat_data(conversation_id)
@@ -3883,7 +3880,7 @@ def build_app() -> FastAPI:
         )
 
     @app.delete("/api/server-chat/conversations/{conversation_id}")
-    async def api_server_chat_clear(conversation_id: int, full: bool = False, device_id: int = Depends(_require_device_id)):
+    def api_server_chat_clear(conversation_id: int, full: bool = False, device_id: int = Depends(_require_device_id)):
         """`full=false` (default): clear every message, keep the
         conversation itself — the group room and every direct
         conversation are structural (see module comment above), so this
@@ -3912,7 +3909,7 @@ def build_app() -> FastAPI:
         return {"ok": True, "deleted": count}
 
     @app.post("/api/server-chat/conversations")
-    async def api_server_chat_open(payload: dict = Body(...), device_id: int = Depends(_require_device_id)):
+    def api_server_chat_open(payload: dict = Body(...), device_id: int = Depends(_require_device_id)):
         """Opens (or re-opens, if it was previously fully deleted) a
         direct conversation with another paired device — the entry point
         for "message this device" after a full delete, since a deleted
@@ -3926,7 +3923,7 @@ def build_app() -> FastAPI:
         return {"ok": True, "conversation_id": conversation_id}
 
     @app.delete("/api/server-chat/messages/{message_id}")
-    async def api_server_chat_delete_message(message_id: int, device_id: int = Depends(_require_device_id)):
+    def api_server_chat_delete_message(message_id: int, device_id: int = Depends(_require_device_id)):
         """Deletes one message — restricted to the device that actually
         sent it (like every ordinary chat app's "delete message," not a
         moderation action any participant can take on anyone else's
@@ -3990,7 +3987,7 @@ def build_app() -> FastAPI:
         try:
             rel_path, orig_name = await attachments.safe_store_stream(file.filename, file, MAX_ATTACHMENT_BYTES)
         except ValueError as exc:
-            raise HTTPException(status_code=413, detail=str(exc))
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
         mime = file.content_type or mimetypes.guess_type(orig_name)[0]
         size = (attachments.ATTACHMENTS_DIR / rel_path).stat().st_size
         thumb_path = await asyncio.get_running_loop().run_in_executor(
@@ -4004,7 +4001,7 @@ def build_app() -> FastAPI:
         return {"ok": True, "id": msg_id}
 
     @app.post("/api/server-chat/uploads/init")
-    async def api_server_chat_uploads_init(payload: dict = Body(...), device_id: int = Depends(_require_device_id)):
+    def api_server_chat_uploads_init(payload: dict = Body(...), device_id: int = Depends(_require_device_id)):
         conversation_id = payload.get("conversation_id")
         filename = payload.get("filename") or "file"
         total_size = int(payload.get("total_size") or 0)
@@ -4020,15 +4017,15 @@ def build_app() -> FastAPI:
                 conversation_id=conversation_id, sender_device_id=device_id, text=text,
             )
         except ValueError as exc:
-            raise HTTPException(status_code=413, detail=str(exc))
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
         return session
 
     @app.put("/api/server-chat/uploads/{session_id}/chunk/{index}")
     async def api_server_chat_uploads_chunk(session_id: str, index: int, request: Request, device_id: int = Depends(_require_device_id)):
         try:
             await attachments.write_chunk(session_id, index, request)
-        except KeyError:
-            raise HTTPException(status_code=404, detail="unknown or expired upload session")
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="unknown or expired upload session") from exc
         return {"ok": True}
 
     @app.post("/api/server-chat/uploads/{session_id}/complete")
@@ -4037,10 +4034,10 @@ def build_app() -> FastAPI:
             assembled = await asyncio.get_running_loop().run_in_executor(
                 None, attachments.assemble_upload, session_id
             )
-        except KeyError:
-            raise HTTPException(status_code=404, detail="unknown or expired upload session")
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="unknown or expired upload session") from exc
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         conversation_id = assembled["conversation_id"]
         rel_path = assembled["rel_path"]
         display_name = assembled["display_name"]
@@ -4058,7 +4055,7 @@ def build_app() -> FastAPI:
         return {"ok": True, "id": msg_id}
 
     @app.get("/api/server-chat/attachments/{message_id}")
-    async def api_server_chat_attachment(message_id: int, device_id: int = Depends(_require_device_id)):
+    def api_server_chat_attachment(message_id: int, device_id: int = Depends(_require_device_id)):
         row = db.get_server_chat_message(message_id)
         if row is None or not row["attachment_path"] or not db.is_conversation_participant(row["conversation_id"], device_id):
             raise HTTPException(status_code=404, detail="no such attachment")
@@ -4068,7 +4065,7 @@ def build_app() -> FastAPI:
         return FileResponse(full_path, media_type=row["attachment_mime"] or "application/octet-stream", filename=row["attachment_name"] or full_path.name)
 
     @app.get("/api/server-chat/attachments/{message_id}/thumbnail")
-    async def api_server_chat_attachment_thumbnail(message_id: int, device_id: int = Depends(_require_device_id)):
+    def api_server_chat_attachment_thumbnail(message_id: int, device_id: int = Depends(_require_device_id)):
         row = db.get_server_chat_message(message_id)
         if row is None or not row["thumbnail_path"] or not db.is_conversation_participant(row["conversation_id"], device_id):
             raise HTTPException(status_code=404, detail="no such thumbnail")
@@ -4078,7 +4075,7 @@ def build_app() -> FastAPI:
         return FileResponse(full_path, media_type="image/jpeg")
 
     @app.get("/api/sessions", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_sessions(
+    def api_sessions(
         instance_id: Optional[int] = None,
         q: Optional[str] = None,
         since: Optional[str] = None,
@@ -4112,7 +4109,7 @@ def build_app() -> FastAPI:
         return rows + legacy
 
     @app.get("/api/sessions/{session_id}", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_session_detail(session_id: str):
+    def api_session_detail(session_id: str):
         if session_id.startswith("legacy-"):
             iid = int(session_id.removeprefix("legacy-"))
             items = db.get_legacy_items(iid)
@@ -4134,7 +4131,7 @@ def build_app() -> FastAPI:
         }
 
     @app.get("/api/sessions/{session_id}/export", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_session_export(session_id: str):
+    def api_session_export(session_id: str):
         if session_id.startswith("legacy-"):
             data = db.export_legacy_data(int(session_id.removeprefix("legacy-")))
         else:
@@ -4144,7 +4141,7 @@ def build_app() -> FastAPI:
         return _json_download(data, f"session-{session_id}-{_ts_stamp()}.json")
 
     @app.get("/api/sessions/export", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_sessions_export_all(instance_id: Optional[int] = None):
+    def api_sessions_export_all(instance_id: Optional[int] = None):
         # One combined file rather than one download per session — every
         # real session plus each affected bot's legacy ("Before sessions")
         # bucket, matching exactly what GET /api/sessions itself lists.
@@ -4158,7 +4155,7 @@ def build_app() -> FastAPI:
         return _json_download({"sessions": bundle}, f"sessions-backup{suffix}-{_ts_stamp()}.json")
 
     @app.delete("/api/sessions/{session_id}", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_session_delete(session_id: str):
+    def api_session_delete(session_id: str):
         if session_id.startswith("legacy-"):
             count = db.clear_legacy_items(int(session_id.removeprefix("legacy-")))
             return {"ok": True, "deleted_messages": count}
@@ -4250,7 +4247,7 @@ def build_app() -> FastAPI:
         }
 
     @app.get("/api/mobile-keys", dependencies=[Depends(_require_token)])
-    async def api_mobile_keys_list():
+    def api_mobile_keys_list():
         return [dict(r) for r in db.list_api_keys(kind="device")]
 
     @app.put("/api/mobile-keys/{key_id}", dependencies=[Depends(_require_token)])
@@ -4258,7 +4255,7 @@ def build_app() -> FastAPI:
         try:
             db.update_api_key_label(key_id, payload.get("label", ""))
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="mobile_key_rename", detail=f"renamed key {key_id}")
         devices = await asyncio.get_running_loop().run_in_executor(None, db.list_devices)
         await _manager.broadcast({"type": "device_list", "devices": _annotate_online([dict(d) for d in devices])})
@@ -4332,7 +4329,7 @@ def build_app() -> FastAPI:
         return {"ok": True}
 
     @app.post("/api/mobile-keys/purge-revoked", dependencies=[Depends(_require_token)])
-    async def api_mobile_keys_purge_revoked():
+    def api_mobile_keys_purge_revoked():
         n = db.purge_revoked_keys()
         db.log_audit(actor="dashboard", action="mobile_keys_purge_revoked", detail=f"removed {n} revoked key(s)")
         return {"ok": True, "purged": n}
@@ -4368,7 +4365,7 @@ def build_app() -> FastAPI:
         return firewall.status(port)
 
     @app.post("/api/peers/firewall-open", dependencies=[Depends(_require_token)])
-    async def api_peers_firewall_open():
+    def api_peers_firewall_open():
         from bot import firewall
 
         port = int(os.environ.get("DASHBOARD_PORT", "8787"))
@@ -4378,14 +4375,14 @@ def build_app() -> FastAPI:
         return {"ok": ok, "message": message}
 
     @app.post("/api/peers/pairing-token", dependencies=[Depends(_require_token)])
-    async def api_peers_pairing_token(payload: dict = Body(default={})):
+    def api_peers_pairing_token(payload: dict = Body(default={})):
         from bot import peers
 
         base_url = (payload.get("base_url") or "").strip() or None
         try:
             result = peers.generate_pairing_token(base_url)
         except peers.PeerError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="peer_pairing_token_generated", detail="generated a server pairing token")
         return result
 
@@ -4403,7 +4400,7 @@ def build_app() -> FastAPI:
         try:
             peer = await peers.link_peer(name, pairing_token, my_name, my_base_url, setup_ssh=bool(setup_ssh))
         except peers.PeerError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="peer_link", detail=f"linked peer {peer['id']} ({peer['name']!r})")
         return {"ok": True, "peer": _peer_public(peer)}
 
@@ -4422,16 +4419,16 @@ def build_app() -> FastAPI:
                 ssh_public_key=payload.get("ssh_public_key"), ssh_username=payload.get("ssh_username"),
             )
         except peers.PeerError as exc:
-            raise HTTPException(status_code=401, detail=str(exc))
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="peer_handshake", detail=f"accepted handshake from {name!r}")
         return result
 
     @app.get("/api/peers", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_peers_list():
+    def api_peers_list():
         return [_peer_public(dict(r)) for r in db.list_peer_servers()]
 
     @app.delete("/api/peers/{peer_id}", dependencies=[Depends(_require_token)])
-    async def api_peers_unlink(peer_id: int):
+    def api_peers_unlink(peer_id: int):
         from bot import peers
 
         row = peers.unlink_peer(peer_id)
@@ -4450,7 +4447,7 @@ def build_app() -> FastAPI:
         try:
             return await peers.fetch_overview(row)
         except peers.PeerError as exc:
-            raise HTTPException(status_code=502, detail=str(exc))
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     @app.get("/api/peers/{peer_id}/bots", dependencies=[Depends(_require_token_or_api_key)])
     async def api_peers_bots(peer_id: int):
@@ -4462,7 +4459,7 @@ def build_app() -> FastAPI:
         try:
             return await peers.fetch_bots(row)
         except peers.PeerError as exc:
-            raise HTTPException(status_code=502, detail=str(exc))
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     @app.post("/api/peers/{peer_id}/bots/{instance_id}/{action}", dependencies=[Depends(_require_token_or_api_key)])
     async def api_peers_bot_action(peer_id: int, instance_id: int, action: str):
@@ -4474,7 +4471,7 @@ def build_app() -> FastAPI:
         try:
             result = await peers.run_bot_action(row, instance_id, action)
         except peers.PeerError as exc:
-            raise HTTPException(status_code=502, detail=str(exc))
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="peer_bot_action", detail=f"{action} on peer {peer_id}'s bot {instance_id}")
         return result
 
@@ -4490,7 +4487,7 @@ def build_app() -> FastAPI:
     # table comment.
 
     @app.get("/api/android/apk/status", dependencies=[Depends(_require_token)])
-    async def api_android_apk_status():
+    def api_android_apk_status():
         from bot.android_apk import latest_apk_path
 
         path = latest_apk_path()
@@ -4521,7 +4518,7 @@ def build_app() -> FastAPI:
                 api_key_id, "", version_label="mesh", origin_api_key_id=caller_device_id, mesh_token=token,
             )
             db.log_audit(actor="dashboard", action="apk_send_mesh", detail=f"queued mesh apk push {push_id} from device {caller_device_id} to {api_key_id}")
-            asyncio.create_task(push.notify_apk_push(api_key_id, push_id, "mesh"))
+            bg.spawn(push.notify_apk_push(api_key_id, push_id, "mesh"))
             return {"ok": True, "push_id": push_id}
         from bot.android_apk import apk_version_label, latest_apk_path
 
@@ -4531,7 +4528,7 @@ def build_app() -> FastAPI:
         version_label = apk_version_label(path)
         push_id = db.create_apk_push(api_key_id, str(path), version_label=version_label)
         db.log_audit(actor="dashboard", action="apk_send", detail=f"queued apk push {push_id} for device {api_key_id}")
-        asyncio.create_task(push.notify_apk_push(api_key_id, push_id, version_label))
+        bg.spawn(push.notify_apk_push(api_key_id, push_id, version_label))
         return {"ok": True, "push_id": push_id}
 
     @app.post("/api/android/apk/send-all")
@@ -4550,7 +4547,7 @@ def build_app() -> FastAPI:
                     r["id"], "", version_label="mesh", origin_api_key_id=caller_device_id, mesh_token=token,
                 )
                 push_ids.append(pid)
-                asyncio.create_task(push.notify_apk_push(r["id"], pid, "mesh"))
+                bg.spawn(push.notify_apk_push(r["id"], pid, "mesh"))
             db.log_audit(actor="dashboard", action="apk_send_all_mesh", detail=f"queued mesh apk push from device {caller_device_id} for {len(push_ids)} device(s)")
             return {"ok": True, "sent_to": len(push_ids)}
         from bot.android_apk import apk_version_label, latest_apk_path
@@ -4563,12 +4560,12 @@ def build_app() -> FastAPI:
         for r in keys:
             pid = db.create_apk_push(r["id"], str(path), version_label=version_label)
             push_ids.append(pid)
-            asyncio.create_task(push.notify_apk_push(r["id"], pid, version_label))
+            bg.spawn(push.notify_apk_push(r["id"], pid, version_label))
         db.log_audit(actor="dashboard", action="apk_send_all", detail=f"queued apk push for {len(push_ids)} device(s)")
         return {"ok": True, "sent_to": len(push_ids)}
 
     @app.post("/api/android/apk/mesh/redeem", dependencies=[Depends(_require_token_or_api_key)])
-    async def api_android_apk_mesh_redeem(payload: dict = Body(...), caller_device_id: Optional[int] = Depends(_caller_device_id)):
+    def api_android_apk_mesh_redeem(payload: dict = Body(...), caller_device_id: Optional[int] = Depends(_caller_device_id)):
         """Called by the *origin* device's own mesh listener (not the
         target) right after it accepts an incoming socket connection and
         reads the token the target presented — this confirms with the
@@ -4601,7 +4598,7 @@ def build_app() -> FastAPI:
         return {"enabled": True, **creds}
 
     @app.get("/api/android/apk/pending")
-    async def api_android_apk_pending(api_key_id: int = Depends(_require_mobile_key_id)):
+    def api_android_apk_pending(api_key_id: int = Depends(_require_mobile_key_id)):
         row = db.get_pending_apk_push(api_key_id)
         if row is None:
             return {"available": False}
@@ -4630,7 +4627,7 @@ def build_app() -> FastAPI:
         return result
 
     @app.get("/api/android/apk/download/{push_id}")
-    async def api_android_apk_download(push_id: int, api_key_id: int = Depends(_require_mobile_key_id)):
+    def api_android_apk_download(push_id: int, api_key_id: int = Depends(_require_mobile_key_id)):
         row = db.get_apk_push(push_id)
         if row is None or row["api_key_id"] != api_key_id:
             raise HTTPException(status_code=404, detail="no such pending push for this device")
@@ -4713,7 +4710,7 @@ def build_app() -> FastAPI:
             await _manager.disconnect(websocket)
 
     @app.post("/api/push/register")
-    async def api_push_register(payload: dict = Body(...), api_key_id: int = Depends(_require_mobile_key_id)):
+    def api_push_register(payload: dict = Body(...), api_key_id: int = Depends(_require_mobile_key_id)):
         fcm_token = (payload.get("fcm_token") or "").strip()
         if not fcm_token:
             raise HTTPException(status_code=400, detail="payload must be {fcm_token: str}")

@@ -4,7 +4,6 @@ by tests/test_hotreload_route.py.
 """
 from __future__ import annotations
 
-import pytest
 from fastapi.testclient import TestClient
 
 from bot import bot_instances

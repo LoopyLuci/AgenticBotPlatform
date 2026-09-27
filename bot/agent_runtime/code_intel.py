@@ -251,8 +251,8 @@ class LspClient:
         try:
             await self._send({"id": rid, "method": method, "params": params})
             return await asyncio.wait_for(fut, timeout=timeout_s)
-        except asyncio.TimeoutError:
-            raise LspError(f"{self.name}: {method} timed out after {timeout_s:g}s")
+        except asyncio.TimeoutError as exc:
+            raise LspError(f"{self.name}: {method} timed out after {timeout_s:g}s") from exc
         finally:
             self._pending.pop(rid, None)
 
@@ -537,7 +537,7 @@ async def lsp_tool(inp: dict, *, workspace: Path, instance_id=None, device_tier=
             contents = "\n".join(c if isinstance(c, str) else c.get("value", "") for c in contents)
         return str(contents or "(nothing to show)")
     except LspError as exc:
-        raise ToolError(str(exc))
+        raise ToolError(str(exc)) from exc
 
 
 def register_all() -> None:

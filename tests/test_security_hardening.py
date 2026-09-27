@@ -10,7 +10,6 @@ Each one is a hole that was found by reading the code and confirmed:
 """
 from __future__ import annotations
 
-import os
 
 import pytest
 from fastapi.testclient import TestClient

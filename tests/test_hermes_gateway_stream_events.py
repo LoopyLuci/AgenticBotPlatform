@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
 
 from bot.backends.hermes_gateway_backend import HermesGatewayBackend
 

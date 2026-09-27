@@ -395,7 +395,7 @@ class NativeAgentBackend(Backend):
                         last_exc = hop_exc
                         continue
                 if response is None:
-                    raise last_exc
+                    raise last_exc from exc
             context_window.observe(active_model, view["chars"], response.input_tokens)
             trace.active().llm_call(
                 model=active_model, duration_ms=int((time.monotonic() - _sent_at) * 1000), tokens=response.tokens,

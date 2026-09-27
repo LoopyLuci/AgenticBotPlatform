@@ -39,7 +39,7 @@ def _git(args: list[str], cwd: Path, check: bool = True) -> str:
     try:
         proc = subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, timeout=GIT_TIMEOUT_S)
     except (OSError, subprocess.TimeoutExpired) as exc:
-        raise ToolError(f"git failed: {exc}")
+        raise ToolError(f"git failed: {exc}") from exc
     if check and proc.returncode != 0:
         raise ToolError(f"git {' '.join(args[:2])} failed: {(proc.stderr or proc.stdout).strip()[:300]}")
     return proc.stdout.strip()
