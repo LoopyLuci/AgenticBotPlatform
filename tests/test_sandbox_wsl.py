@@ -75,9 +75,9 @@ with open(os.environ["FAKE_WSL_LOG"], "a") as f:
     f.write(json.dumps(args) + "\\n")
 remote_cmd = args[-1]
 # same posix-vs-cmd.exe problem as fake_ssh - pull the real command back out of
-# "cd '<dir>' && echo $$ > '<pidfile>' && <command>" and run just that locally.
-parts = remote_cmd.split(" && ", 2)
-real_cmd = parts[2] if len(parts) == 3 else remote_cmd
+# "cd '<dir>' && echo $$ > '<pidfile>' && trap ... EXIT && <command>" and run just that locally.
+parts = remote_cmd.split(" && ", 3)
+real_cmd = parts[3] if len(parts) == 4 else remote_cmd
 cwd = os.environ.get("FAKE_WSL_CWD") or None
 sys.exit(subprocess.call(real_cmd, shell=True, cwd=cwd))
 '''

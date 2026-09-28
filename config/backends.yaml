@@ -176,7 +176,8 @@ native_agent:
   # `secrets` mode removes credential-shaped variables (API keys, tokens, passwords) from the
   # environment a command sees; `backend: docker` runs each command in a locked-down container.
   sandbox:
-    backend: local           # local | docker
+    backend: local           # local | docker | ssh | wsl | windows_job
+    network: allow           # allow | none - none runs commands with no network at all (fails closed)
     env:
       mode: secrets          # secrets | minimal | inherit
   # External MCP servers are untrusted by default: reading their output marks the session as having

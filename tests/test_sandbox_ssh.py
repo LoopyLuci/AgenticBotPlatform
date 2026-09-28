@@ -91,12 +91,12 @@ args = sys.argv[1:]
 with open(os.environ["FAKE_SSH_LOG"], "a") as f:
     f.write(json.dumps(args) + "\\n")
 remote_cmd = args[-1]
-# remote_cmd is "cd '<dir>' && echo $$ > '<pidfile>' && <command>" (posix syntax, not
-# runnable by cmd.exe) - the actual command is only ever the third " && "-separated
+# remote_cmd is "cd '<dir>' && echo $$ > '<pidfile>' && trap ... EXIT && <command>" (posix syntax, not
+# runnable by cmd.exe) - the actual command is only ever the fourth " && "-separated
 # part in every command this test suite builds, so pull that back out and run just it
 # locally, with the remote dir's Windows-side twin already prepared via FAKE_SSH_CWD.
-parts = remote_cmd.split(" && ", 2)
-real_cmd = parts[2] if len(parts) == 3 else remote_cmd
+parts = remote_cmd.split(" && ", 3)
+real_cmd = parts[3] if len(parts) == 4 else remote_cmd
 cwd = os.environ.get("FAKE_SSH_CWD") or None
 sys.exit(subprocess.call(real_cmd, shell=True, cwd=cwd))
 '''

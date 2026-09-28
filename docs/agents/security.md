@@ -107,6 +107,9 @@ description to smuggle in instructions. Turn off with `mcp_pinning: false`.
 native_agent:
   sandbox:
     backend: local            # local | docker | ssh | wsl | windows_job
+    network: allow            # allow | none - none takes every backend offline (below)
+    network_none:
+      extra_paths: []         # Windows: folders an offline command may read and run programs from
     env:
       mode: secrets           # secrets | minimal | inherit
       allow: []
@@ -150,7 +153,15 @@ missing image fails the command instead of quietly running it on the host
 `backend: ssh` runs the command on a configured, already-trusted remote host (a host key already in
 `known_hosts`, key-based auth only - this backend never handles a password) via the local `ssh`
 client. Fails closed if `ssh` is missing, `sandbox.ssh.host` or `sandbox.ssh.remote_workspace_root`
-isn't set, or the connection fails. **Honest limit:** only the *command* runs remotely -
+isn't set, or the connection fails. **Verified against a real OpenSSH server**
+(`tests/test_sandbox_live_ssh.py`, which builds a throwaway Alpine sshd container, pins its host
+key in a private `known_hosts` and connects with a generated key; it runs wherever Docker is
+available): the command runs as the configured user in the translated folder, exit codes come back,
+a timeout kills the remote process as well as the local client, and an unknown host key refuses the
+command. That run found that every command which finished normally left a `.abp-*.pid` file in the
+remote workspace (and, for `wsl`, in the local one); the remote shell now removes it on exit.
+`ABP_TEST_SSH_HOST` still points the older opt-in test at a host of your own.
+**Honest limit:** only the *command* runs remotely -
 `read_file`/`write_file` and the other file tools still operate on the local workspace, so local and
 remote file state only stay in sync if something outside this backend keeps
 `remote_workspace_root` in sync with the local workspace. Full remote file tools are roadmap P6's
@@ -169,15 +180,53 @@ or deliberately detaches. Windows-only; refused elsewhere. Verified for real (`C
 `AssignProcessToJobObject`, `TerminateJobObject`) in `tests/test_sandbox_windows_job.py`, which
 needs no external service and so is never skipped on Windows.
 
-**Honest limits, still open.** The `local` and `windows_job` backends cannot restrict the network or
-the file system beyond the workspace guard on the file tools: a command run either way can still
-read anything the server's user can, and reach any address the host can. This was investigated for
-real in this round rather than left as a bare "not built": a per-command Windows Firewall rule would
-need this process to run elevated, which the rest of the app deliberately never does (see
-`firewall.py`); a real non-elevated per-process network block needs an AppContainer, which needs
-bypassing Python's subprocess/asyncio plumbing for process creation entirely - a larger, separate
-piece of work, tracked in `docs/agents/ROADMAP.md` rather than shipped half-working here (a security
-control that looks like it blocks the network but doesn't is worse than no control at all).
+### Offline commands: `network: none`
+
+`network: none` cuts commands off from the network on every backend. Each backend uses the
+strongest mechanism that needs no elevation, and all of them **fail closed**: if the host cannot
+enforce it, the command is refused, never run online.
+
+| Backend | How the network is removed |
+|---|---|
+| `local`, `windows_job` on Windows | An **AppContainer** with no capabilities (`bot/agent_runtime/appcontainer.py`). The kernel denies all network access, including loopback and DNS. |
+| `local` on Linux | A new, empty network namespace (`unshare --user --net`). Some distros turn off unprivileged user namespaces; commands are then refused with the reason. |
+| `local` on macOS | `sandbox-exec` with a profile that denies every network operation. |
+| `docker` | `--network none`, whatever `docker.network` says. |
+| `ssh`, `wsl` | The remote side runs the command under `unshare -rn`. If `unshare` is missing or refused there, the command fails before it starts. |
+
+**How the Windows path works.** Python cannot start a process in an AppContainer, so a small
+launcher (the same file, run as a script) does it:
+1. It creates the `ABP.Sandbox.Offline` profile once per user, and grants it access to the workspace.
+2. It starts `cmd.exe /c <command>` inside the container, suspended.
+3. It places the process in a kill-on-close Job Object, then lets it run.
+
+Nothing the command starts can escape the job, so this closes the small race `windows_job`
+documents. With `backend: windows_job`, its memory and process limits apply inside the container.
+
+**On Windows the file system is confined too.** A container process can only open:
+- the workspace;
+- system folders;
+- folders listed in `network_none.extra_paths`, which it can read and run programs from but not write.
+
+Your user folder is out of reach, including `.ssh`, browser profiles and saved credentials. So is a
+per-user Python or Node install, until you list it. This is deliberate: a network block that a
+command could bypass by reading your saved tokens would not be worth much. Write an absolute
+program path in quotes (`"C:\tools\x.exe"`): cmd.exe's lookup of an unquoted absolute path can be
+refused inside a container, while a quoted path or a `PATH` lookup works.
+
+**Verified for real** (`tests/test_sandbox_offline.py`):
+- On Windows, the same `curl` that reaches a loopback server online cannot reach it offline, and
+  DNS fails.
+- Files outside the workspace cannot be read, and extra paths are read-only.
+- A timeout kills the contained tree.
+- `windows_job` limits hold inside the container.
+- A launcher failure refuses the command.
+- Inside a real WSL distro, an offline command cannot open a socket.
+
+**Still open.** With `network: allow` (the default), the `local` and `windows_job` backends
+confine neither the network nor the file system beyond the file tools' workspace guard. There is no
+per-host allow list either: a command is fully online or fully offline. Allowing a chosen host would
+need a filtering proxy.
 
 ## Hooks
 
