@@ -205,6 +205,8 @@ class ConfigManager:
         y.preserve_quotes = True
         y.width = 4096  # never re-wrap a long line
         y.indent(mapping=2, sequence=4, offset=2)
+        # ruamel writes None as an empty value; keep the file's own `null`s so a save does not rewrite unrelated lines.
+        y.representer.add_representer(type(None), lambda r, _v: r.represent_scalar("tag:yaml.org,2002:null", "null"))
         with open(self.path, encoding="utf-8") as f:
             data = y.load(f)
         if data is None:

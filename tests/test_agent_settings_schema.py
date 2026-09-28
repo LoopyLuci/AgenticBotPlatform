@@ -14,13 +14,28 @@ from bot.dashboard.server import build_app
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SHIPPED = ROOT / "config" / "backends.yaml"
+
+
+def shipped_text() -> str:
+    """The committed config/backends.yaml. A checkout that also runs ABP keeps its live settings in the same file, so the
+    working copy says what this machine uses, not what ships; outside git (an unpacked source tree) the file is all there is."""
+    import subprocess
+
+    try:
+        r = subprocess.run(["git", "show", "HEAD:config/backends.yaml"], cwd=ROOT, capture_output=True, text=True,
+                           encoding="utf-8", timeout=20)
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return SHIPPED.read_text(encoding="utf-8")
 TOKEN = {"X-Dashboard-Token": "unused-dashboard-token"}
 ROOTS = ("native_agent", "swarm_budget", "swarm_observability", "agent_control")
 # Settings that are edited in the YAML on purpose (see schema.YAML_ONLY); matched as path prefixes.
 YAML_ONLY_PREFIXES = (
     "native_agent.models.limits", "native_agent.models.overrides", "native_agent.context_windows",
     "native_agent.code_intel.lsp.servers", "native_agent.code_intel.formatters", "native_agent.mcp_trust",
-    "native_agent.sandbox.docker",
+    "native_agent.sandbox.docker", "native_agent.skills.external_dirs",
 )
 
 
@@ -34,7 +49,7 @@ def _leaves(node, prefix=""):
 
 
 def test_every_setting_in_the_shipped_config_has_an_entry_on_the_page():
-    cfg = yaml.safe_load(SHIPPED.read_text(encoding="utf-8"))
+    cfg = yaml.safe_load(shipped_text())
     missing = []
     for root in ROOTS:
         for leaf in _leaves(cfg.get(root) or {}, root):
@@ -45,7 +60,7 @@ def test_every_setting_in_the_shipped_config_has_an_entry_on_the_page():
 
 
 def test_the_defaults_shown_match_the_shipped_config():
-    cfg = yaml.safe_load(SHIPPED.read_text(encoding="utf-8"))
+    cfg = yaml.safe_load(shipped_text())
     for f in schema.FIELDS:
         node = cfg
         for part in schema._path(f):

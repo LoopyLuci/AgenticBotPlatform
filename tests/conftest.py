@@ -40,6 +40,26 @@ import pytest
 from bot import db as db_module
 
 
+_COMMITTED: dict = {}
+
+
+def _committed_backends():
+    """The committed config/backends.yaml, read once. A checkout that also runs ABP keeps its live settings in that same
+    file (a linked skill library, router models, ...), and tests must see the shipped defaults, not this machine's."""
+    if "text" not in _COMMITTED:
+        import subprocess
+
+        text = None
+        try:
+            r = subprocess.run(["git", "show", "HEAD:config/backends.yaml"], cwd=Path(__file__).resolve().parent.parent,
+                               capture_output=True, text=True, encoding="utf-8", timeout=20)
+            text = r.stdout if r.returncode == 0 and r.stdout.strip() else None
+        except (OSError, subprocess.SubprocessError):
+            pass
+        _COMMITTED["text"] = text
+    return _COMMITTED["text"]
+
+
 @pytest.fixture(autouse=True)
 def _isolated_cicd_event_store(monkeypatch, tmp_path):
     """Instrumented scripts (release, pipeline) record into the CI/CD event
@@ -77,7 +97,10 @@ def _isolated_cicd_event_store(monkeypatch, tmp_path):
     monkeypatch.setattr(_providers._manager, "path", prov)
     monkeypatch.setattr(_providers._manager, "_data", {})
     backends = tmp_path / "isolated-backends.yaml"
-    if Path(_config.path).is_file():
+    committed = _committed_backends()
+    if committed is not None:
+        backends.write_text(committed, encoding="utf-8")
+    elif Path(_config.path).is_file():
         _shutil.copy2(_config.path, backends)
     monkeypatch.setattr(_config, "path", backends)
     # ...and the in-memory copy must match that file: otherwise config.current still holds whatever the previous test
