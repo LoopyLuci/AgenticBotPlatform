@@ -1913,3 +1913,4 @@ from bot import routines as _routines  # noqa: E402,F401
 from bot import canvas as _canvas  # noqa: E402,F401
 from bot import nodes as _nodes  # noqa: E402,F401
 from bot import model_router as _model_router  # noqa: E402,F401
+from bot.unsloth import tools as _unsloth_tools  # noqa: E402,F401  (offered only while Unsloth Studio runs)

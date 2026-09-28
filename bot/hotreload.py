@@ -132,6 +132,9 @@ DENYLIST: frozenset[str] = frozenset({
     # The router's store serialises writes with a module lock, and policy/learn cache the policy and the trained
     # classifier; a reload mid-turn would split the lock and serve a stale policy until the cache expired.
     "bot.router_brain.store", "bot.router_brain.policy", "bot.router_brain.learn", "bot.dashboard.router_api",
+    # Unsloth: harness.py holds the lock and in-flight table that make concurrent on-demand loads share one load, and
+    # tools.py registers tools at import time; client.py caches where Studio is and its API description.
+    "bot.unsloth.client", "bot.unsloth.harness", "bot.unsloth.tools", "bot.dashboard.unsloth_api",
     "bot.nodes", "bot.canvas", "bot.voice", "bot.platforms._relay",
     "bot.platforms.email_platform", "bot.platforms.sms_platform", "bot.platforms.signal_platform", "bot.platforms.imessage_platform",
     "bot.platforms.googlechat_platform", "bot.platforms.teams_platform", "bot.platforms._jwt",  # long-running adapters

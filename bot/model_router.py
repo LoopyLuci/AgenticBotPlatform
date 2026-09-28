@@ -237,13 +237,56 @@ def candidate_models() -> list[str]:
     # install names the provider. (Searching the whole catalog filled the list with models of providers nobody had
     # set up; the router ranked them first and `auto` then failed with every real provider configured.)
     free: list[str] = []
-    for name in sorted(registry.list_providers()):
+    for name, pcfg in sorted(registry.list_providers().items()):
         if model_catalog.catalog_provider_for(name) == "anthropic":
+            continue
+        live = _local_models(name, pcfg or {})
+        if live is not None:
+            # A server on this machine (Ollama, Unsloth Studio, LM Studio...): its own list, not the catalog's guesses
+            # (the catalog named models nobody had pulled, and every one of them failed).
+            free.extend(f"{name}/{m}" for m in live)
             continue
         for r in model_catalog.search(provider=name, free_only=True, needs=("tools",), limit=12):
             if r["provider"] != "anthropic":
                 free.append(f"{name}/{r['model']}")
     return list(dict.fromkeys(free + [str(m) for m in (cfg.get("also") or [])]))
+
+
+_local_cache: dict[str, tuple[float, Optional[list[str]]]] = {}
+
+
+def _local_models(name: str, pcfg: dict) -> Optional[list[str]]:
+    """For a provider on this machine, the models it actually serves (cached for a minute); [] when it is down.
+    None for a remote provider. Unsloth Studio counts only its loaded models: loading another takes minutes, too long to
+    spend inside someone's turn (name one explicitly and it is loaded on demand)."""
+    from urllib.parse import urlparse
+
+    base = str(pcfg.get("base_url") or "").rstrip("/")
+    if (urlparse(base).hostname or "") not in ("127.0.0.1", "localhost", "::1"):
+        return None
+    hit = _local_cache.get(base)
+    if hit and time.monotonic() - hit[0] < 60:
+        return hit[1]
+    models: list[str] = []
+    try:
+        import httpx
+
+        from bot import providers as registry
+
+        key = registry.get_api_key(name)
+        r = httpx.get(base + "/models", headers={"Authorization": f"Bearer {key}"} if key else {}, timeout=2.0)
+        data = (r.json() or {}).get("data") if r.status_code == 200 else None
+        for m in data or []:
+            if not isinstance(m, dict) or not m.get("id"):
+                continue
+            if m.get("owned_by") == "unsloth-studio" or "loaded" in m:
+                if not m.get("loaded"):
+                    continue
+            models.append(str(m["id"]))
+    except Exception:  # noqa: BLE001 — a local server that is not running offers nothing
+        models = []
+    _local_cache[base] = (time.monotonic(), models)
+    return models
 
 
 def _when(ts: float) -> str:

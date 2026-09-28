@@ -214,9 +214,22 @@ def live_probe(factory: Callable, api_model: str) -> str:
     import asyncio
 
     transport = factory(None)
-    try:
+
+    def ask() -> None:
         asyncio.run(transport.send(model=api_model, history=[transport.user_message("Reply with OK.")], tool_schemas=[],
                                    max_tokens=16, timeout_s=90, system_prompt="Reply with OK.", effort=None))
+
+    try:
+        try:
+            ask()
+        except Exception as first:  # noqa: BLE001
+            # An Unsloth Studio model that exists but is not loaded is loaded now, the way a bot would get it.
+            from bot.unsloth import harness as studio
+
+            if not studio.not_loaded_error(str(first)):
+                raise
+            studio.ensure_loaded(api_model)
+            ask()
         return ""
     except Exception as exc:  # noqa: BLE001
         text = re.sub(r"\s+", " ", str(exc))[:240] or type(exc).__name__
