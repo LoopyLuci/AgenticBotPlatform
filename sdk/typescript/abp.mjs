@@ -1094,6 +1094,29 @@ export const operations = {
    "path"
   ]
  },
+ "GET /api/hermes-manager/jobs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hermes-manager/jobs",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/hermes-manager/operations": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hermes-manager/operations",
+  "path_params": [],
+  "query_params": [
+   "refresh"
+  ]
+ },
+ "GET /api/hermes-manager/status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hermes-manager/status",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/hermes/swarm-tools-status": {
   "body": false,
   "method": "GET",
@@ -3046,6 +3069,55 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/files",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/hermes-manager/bridge/start": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hermes-manager/bridge/start",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/hermes-manager/bridge/stop": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hermes-manager/bridge/stop",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/hermes-manager/call": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hermes-manager/call",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/hermes-manager/mcp": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hermes-manager/mcp",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/hermes-manager/setup": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hermes-manager/setup",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/hermes-manager/update": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hermes-manager/update",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/hermes-manager/window": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hermes-manager/window",
   "path_params": [],
   "query_params": []
  },
@@ -7524,6 +7596,78 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/healthz",
+  "path_params": [],
+  "query_params": []
+ },
+ "hm_call_api_hermes_manager_call_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hermes-manager/call",
+  "path_params": [],
+  "query_params": []
+ },
+ "hm_jobs_api_hermes_manager_jobs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hermes-manager/jobs",
+  "path_params": [],
+  "query_params": []
+ },
+ "hm_mcp_api_hermes_manager_mcp_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hermes-manager/mcp",
+  "path_params": [],
+  "query_params": []
+ },
+ "hm_operations_api_hermes_manager_operations_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hermes-manager/operations",
+  "path_params": [],
+  "query_params": [
+   "refresh"
+  ]
+ },
+ "hm_setup_api_hermes_manager_setup_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hermes-manager/setup",
+  "path_params": [],
+  "query_params": []
+ },
+ "hm_start_api_hermes_manager_bridge_start_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hermes-manager/bridge/start",
+  "path_params": [],
+  "query_params": []
+ },
+ "hm_status_api_hermes_manager_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hermes-manager/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "hm_stop_api_hermes_manager_bridge_stop_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hermes-manager/bridge/stop",
+  "path_params": [],
+  "query_params": []
+ },
+ "hm_update_api_hermes_manager_update_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hermes-manager/update",
+  "path_params": [],
+  "query_params": []
+ },
+ "hm_window_api_hermes_manager_window_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hermes-manager/window",
   "path_params": [],
   "query_params": []
  },
