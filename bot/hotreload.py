@@ -135,6 +135,8 @@ DENYLIST: frozenset[str] = frozenset({
     # Unsloth: harness.py holds the lock and in-flight table that make concurrent on-demand loads share one load, and
     # tools.py registers tools at import time; client.py caches where Studio is and its API description.
     "bot.unsloth.client", "bot.unsloth.harness", "bot.unsloth.tools", "bot.dashboard.unsloth_api",
+    # Ollama: harness.py holds the background pull/push/create jobs, tools.py registers tools at import time.
+    "bot.ollama.client", "bot.ollama.harness", "bot.ollama.tools", "bot.dashboard.ollama_api",
     "bot.nodes", "bot.canvas", "bot.voice", "bot.platforms._relay",
     "bot.platforms.email_platform", "bot.platforms.sms_platform", "bot.platforms.signal_platform", "bot.platforms.imessage_platform",
     "bot.platforms.googlechat_platform", "bot.platforms.teams_platform", "bot.platforms._jwt",  # long-running adapters

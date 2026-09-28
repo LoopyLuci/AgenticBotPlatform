@@ -19,6 +19,7 @@ tables say the same feature by feature. This index only points.
 | Know what a model can do and how much free allowance is left | [models.md](models.md) |
 | See, teach and change how bots on `auto` pick a model | [router.md](router.md) |
 | Run, fine-tune and export local models with Unsloth Studio | [unsloth.md](unsloth.md) |
+| Pull, load, build and serve models with Ollama | [ollama.md](ollama.md) |
 | Run it from a script, an editor, CI or another program; language servers; SDKs | [developer-surfaces.md](developer-surfaces.md) |
 | Let it use a browser, stored logins, routines, approve from a phone | [browser-and-routines.md](browser-and-routines.md) |
 | Reach it by e-mail, SMS, Signal, iMessage or voice; use paired phones | [channels-and-devices.md](channels-and-devices.md) |

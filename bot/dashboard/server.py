@@ -866,6 +866,11 @@ def build_app() -> FastAPI:
 
     unsloth_api.register(app, _require_token_or_api_key, _require_token)
 
+    # Ollama: pull, load and serve its models, build models from Modelfiles or GGUF files, and every route it serves.
+    from bot.dashboard import ollama_api
+
+    ollama_api.register(app, _require_token_or_api_key, _require_token)
+
     # Editor integrations: install the VS Code extension, show the ACP command.
     from bot.dashboard import editors_api
 
