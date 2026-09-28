@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -33,6 +34,20 @@ DEV_ONLY_DIST_PREFIXES = tuple(p.replace("_", "-") + "-" for p in DEV_ONLY_PACKA
 KEEP_SCRIPTS = {"python.exe", "pythonw.exe"}
 
 TEXT_SUFFIXES = {".py", ".cfg", ".json", ".txt", ".yaml", ".yml", ".html", ".js", ".css", ".md", ".toml", ".pth", ".bat", ".ps1", ".ini", ""}
+
+
+def shipped_config(root: Path) -> bytes:
+    """The routing config an installer ships: the committed config/backends.yaml, not the builder's working copy.
+
+    In a developer's checkout that file also holds their own live settings (a linked skill folder, a chosen model),
+    which must never reach anyone else's install. Outside a git checkout (a source tarball) the file as it is."""
+    try:
+        out = subprocess.run(["git", "show", "HEAD:config/backends.yaml"], cwd=root, capture_output=True, timeout=30)
+        if out.returncode == 0 and out.stdout:
+            return out.stdout
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return (root / "config" / "backends.yaml").read_bytes()
 
 
 def _is_dev_dist_info(name: str) -> bool:
@@ -149,7 +164,7 @@ def stage(stage_dir: Path = STAGE, markers: list[str] | None = None) -> None:
     if cfg.is_file():
         sanitize_pyvenv_cfg(cfg)
     (stage_dir / "config").mkdir()
-    shutil.copy2(ROOT / "config" / "backends.yaml", stage_dir / "config" / "backends.yaml")
+    (stage_dir / "config" / "backends.yaml").write_bytes(shipped_config(ROOT))
 
     hits = scan_for_personal_paths(stage_dir, markers if markers is not None else personal_markers())
     if hits:

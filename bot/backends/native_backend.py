@@ -100,6 +100,9 @@ class NativeAgentBackend(Backend):
         # an already-running ask() finishes rather than being killed.
         estop.check()
 
+        # What the model router classifies: the person's own message when the caller passed it (bot/router.py puts a
+        # bot's standing instructions in front of the prompt), else the prompt.
+        route_text = str((context or {}).get("route_text") or prompt)
         if self.transport is None:
             # model == "auto" (native_agent backend, bot/router.py) - nothing has been
             # resolved yet. Do it now, once, using this first real prompt as the
@@ -115,7 +118,7 @@ class NativeAgentBackend(Backend):
                     "(native_agent.router.enabled) — set a specific model for this bot instead"
                 )
             self.transport, self.model, _auto_ref = _resolve_auto_transport(
-                prompt, exclude=set(), instance_id=(context or {}).get("instance_id"))
+                route_text, exclude=set(), instance_id=(context or {}).get("instance_id"))
         elif self._auto:
             # Keep the earlier pick (so a conversation stays on one model) unless the router says otherwise: that model
             # is resting after failures, is blocked by a rule, or the policy re-routes every turn. Every turn is recorded.
@@ -127,15 +130,15 @@ class NativeAgentBackend(Backend):
             if why:
                 try:
                     self.transport, self.model, _auto_ref = _resolve_auto_transport(
-                        prompt, exclude=set(), instance_id=(context or {}).get("instance_id"), mode="reroute", parent_id=previous)
+                        route_text, exclude=set(), instance_id=(context or {}).get("instance_id"), mode="reroute", parent_id=previous)
                     logger.info("native backend: re-routed from %s (%s) to %s", ref, why, _auto_ref)
                 except BackendError:
                     logger.warning("native backend: %s, but no other model is available; keeping it", why)
                     self.transport.router_decision = model_router.record_sticky(
-                        ref, prompt, instance_id=(context or {}).get("instance_id"), parent_id=previous)
+                        ref, route_text, instance_id=(context or {}).get("instance_id"), parent_id=previous)
             else:
                 self.transport.router_decision = model_router.record_sticky(
-                    ref, prompt, instance_id=(context or {}).get("instance_id"), parent_id=previous)
+                    ref, route_text, instance_id=(context or {}).get("instance_id"), parent_id=previous)
 
         from bot.agent_runtime import hooks
 
@@ -412,7 +415,7 @@ class NativeAgentBackend(Backend):
                     raise
                 response = None
                 last_exc = exc
-                hops = _failover_hops(instance_id, prompt, auto=self._auto, tried={_ref(active_transport, active_model)},
+                hops = _failover_hops(instance_id, route_text, auto=self._auto, tried={_ref(active_transport, active_model)},
                                       parent_id=getattr(active_transport, "router_decision", None))
                 for hop_transport, hop_model in hops:
                     logger.warning("native backend: primary transport failed (%s) — retrying against %s", last_exc, hop_model)

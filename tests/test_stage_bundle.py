@@ -138,3 +138,22 @@ def test_the_cicd_telemetry_package_ships_beside_bot(project):
     out = _stage(project)
     assert (out / "abp_cicd" / "store.py").is_file()
     assert not list((out / "abp_cicd").rglob("__pycache__"))
+
+
+def test_the_committed_config_ships_not_the_builders_live_settings(project):
+    """A developer's config/backends.yaml also holds their own settings (a linked skill folder under their home);
+    the installer must carry the committed file instead."""
+    import subprocess
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=project, check=True, capture_output=True)
+
+    git("init", "-q")
+    git("add", "config/backends.yaml")
+    git("-c", "user.email=t@example.invalid", "-c", "user.name=t", "commit", "-q", "-m", "c")
+    (project / "config" / "backends.yaml").write_text(f"skills: {PERSONAL}/skills\n", encoding="utf-8")
+    assert (_stage(project) / "config" / "backends.yaml").read_text(encoding="utf-8") == "default_backend: cli\n"
+
+
+def test_outside_git_the_config_file_is_staged_as_it_is(project):
+    assert (_stage(project) / "config" / "backends.yaml").read_text(encoding="utf-8") == "default_backend: cli\n"
