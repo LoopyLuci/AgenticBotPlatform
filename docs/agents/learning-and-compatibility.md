@@ -38,7 +38,55 @@ before). It never widens what the agent may do on its own: a blanket allow such 
 permissions" is never imported, and a host with locked permissions refuses to be rewritten. Model settings, API keys, themes,
 keybindings, agents, skills and commands are not imported (ABP reads the `.claude/` and `.opencode/` folders directly). Checked
 against sample files written from those products' documented formats, **not against real configuration files from real
-installs**. The Hermes and OpenClaw importers are **not built**: their formats were not checked.
+installs**.
+
+### Hermes Agent and OpenClaw
+
+`python -m abp_import hermes` and `python -m abp_import openclaw` move a whole setup across, not just its permissions. Each
+finds its data by itself: Hermes the way Hermes does (`HERMES_HOME`, then `%LOCALAPPDATA%\hermes`, then `~/.hermes`), OpenClaw
+at `~/.openclaw` (or the older `clawdbot` / `moltbot` names). `--source DIR` picks another folder. Like the other importers,
+this is **a dry run unless `--apply`**.
+
+| From | Becomes in ABP |
+|---|---|
+| Providers, and API keys in `.env` or `openclaw.json` | Providers. A key is matched to its provider through the models.dev catalog, e.g. `OPENROUTER_API_KEY`. |
+| The default and fallback models | Models the router may pick. Never an Anthropic model. |
+| MCP servers | External MCP servers, untrusted by default. |
+| The skill library | Linked in place, not copied; the skills that ship with Hermes are left out. |
+| `SOUL.md` (and OpenClaw's `IDENTITY.md`) | A bot's custom instructions. |
+| `MEMORY.md`, `USER.md` and OpenClaw's daily `memory/*.md` | That bot's memories. |
+| Scheduled jobs that run a prompt | That bot's scheduled commands, **created paused**. |
+| Telegram, Discord and Slack channels | Bots on those platforms, **created switched off**, since one token must not be polled by two programs. |
+| A website blocklist, denied tools | Deny rules. |
+
+The instructions, memories and jobs go on a new app-only bot, or on the first chat bot, or on `--instance N`, whose own
+instructions are never overwritten. Importing again reuses what the first import made.
+
+**Never imported, and said so:**
+- approval mode "off" or "auto";
+- the commands you approved in the other product;
+- Hermes's gateway hooks (Python handlers for Hermes's own events);
+- script-only jobs;
+- OAuth logins;
+- OpenClaw's jobs, because their format was not checked against a real install;
+- a cron schedule that does not repeat at a fixed interval, because ABP's schedules are intervals and an approximation
+  would fire at the wrong times.
+
+`--no-secrets` imports no API key, chat token or MCP server secret, and secret values are never printed.
+
+**How it was checked.** The formats come from real installs on the development machine: a Hermes install with its
+config, `.env`, memories, jobs and a 10,000-skill library, and an OpenClaw config. They were read with every value masked,
+together with Hermes's source and its own OpenClaw migration script. A dry run against that real Hermes install finds its
+4 MCP servers, 4 providers (keys included), its models, `SOUL.md`, 13 memories and the library, and explains everything
+it skips.
+
+That check found details a docs-based importer would have missed:
+- MCP arguments given as one string, and as a JSON list inside a string;
+- a model setting written as a mapping;
+- a script-only job;
+- a character a Windows console cannot print, which crashed the first version.
+
+The tests use fixtures in those real shapes. **Not done:** an `--apply` against the real installs, which is yours to run.
 
 ## Plugin SDK versioning
 

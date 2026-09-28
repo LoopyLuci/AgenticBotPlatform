@@ -2,6 +2,8 @@
 
     python -m abp_import claude-code [--project DIR] [--user-home DIR] [--apply]
     python -m abp_import opencode    [--project DIR] [--user-home DIR] [--apply]
+    python -m abp_import hermes      [--source DIR] [--apply] ...      (see agents.py)
+    python -m abp_import openclaw    [--source DIR] [--apply] ...
 
 **A dry run by default**: it prints what it would set up, what it could not translate and why, and changes nothing until
 `--apply`. Importing never widens what the agent may do on its own:
@@ -15,7 +17,8 @@
 
 Not imported, and said so in the report: model and provider settings and API keys (set them in config/providers.yaml), themes and
 keybindings, agents / skills / commands (ABP already reads `.claude/` and `.opencode/` folders directly), and anything whose meaning
-could not be established. The Hermes and OpenClaw importers are **not built**: their configuration formats were not checked.
+could not be established. Hermes and OpenClaw carry much more (providers and keys, a persona, memories, skill libraries, scheduled
+jobs, chat channels): their importers are in agents.py and use the extra plan fields below.
 
 Server environment values (which may hold tokens) are copied into ABP's database only on --apply and are never printed.
 """
@@ -48,9 +51,18 @@ class Plan:
     mode: Optional[str] = None
     warnings: list[str] = field(default_factory=list)
     files: list[str] = field(default_factory=list)
+    # Hermes / OpenClaw (agents.py). Secret values (api_key, credentials) are never printed.
+    providers: list[dict] = field(default_factory=list)      # {name, base_url, protocol, api_key, catalog_id, origin}
+    router_also: list[str] = field(default_factory=list)     # "provider/model" refs the model router may pick
+    skill_dirs: list[dict] = field(default_factory=list)     # {path, count}: linked in place
+    agent: Optional[dict] = None                             # {name, instructions}: becomes a bot's custom instructions
+    memories: list[dict] = field(default_factory=list)       # {kind, content}
+    schedules: list[dict] = field(default_factory=list)      # {name, prompt, interval_s, first_run_at, platform, chat_id}
+    channels: list[dict] = field(default_factory=list)       # {platform, credentials, allowed_user_ids}
 
     def empty(self) -> bool:
-        return not (self.rules or self.hooks or self.mcp_servers or self.mode)
+        return not (self.rules or self.hooks or self.mcp_servers or self.mode or self.providers or self.router_also
+                    or self.skill_dirs or self.agent or self.memories or self.schedules or self.channels)
 
 
 def _load(path: Path) -> Optional[dict]:
@@ -248,6 +260,23 @@ def render(plan: Plan) -> str:
         lines.append(f"  hook   {h['event']}" + (f" [{h['matcher']}]" if h["matcher"] else "") + f": {h['command'][:70]}")
     for s in plan.mcp_servers:
         lines.append(f"  MCP    {s['name']} ({s['transport']}): " + (s.get("command", "") + " " + " ".join(s.get("args", [])) if s["transport"] == "stdio" else s["url"]).strip()[:80])
+    for p in plan.providers:
+        key = "with its API key" if p.get("api_key") else "no API key"
+        lines.append(f"  model  provider {p['name']} -> {p['base_url']} ({key}; from {p.get('origin', plan.source)})")
+    for ref in plan.router_also:
+        lines.append(f"  model  the router may also pick {ref}")
+    for d in plan.skill_dirs:
+        lines.append(f"  skills link {d['path']} ({d['count']} skills, used in place)")
+    if plan.agent:
+        lines.append(f"  agent  a bot named {plan.agent['name']!r} with {len(plan.agent['instructions'])} characters of instructions")
+    for kind in ("user", "fact"):
+        n = sum(1 for m in plan.memories if m["kind"] == kind)
+        if n:
+            lines.append(f"  memory {n} {'things about you' if kind == 'user' else 'remembered facts'}")
+    for s in plan.schedules:
+        lines.append(f"  job    {s['name']!r} every {_every(s['interval_s'])} (created paused)")
+    for c in plan.channels:
+        lines.append(f"  chat   a {c['platform']} bot for {len(c['allowed_user_ids'])} allowed user(s) (created switched off)")
     for w in plan.warnings:
         lines.append(f"  note   {w}")
     if plan.empty():
@@ -255,7 +284,15 @@ def render(plan: Plan) -> str:
     return "\n".join(lines)
 
 
-def apply(plan: Plan) -> dict:
+def _every(seconds: int) -> str:
+    for unit, size in (("day", 86400), ("hour", 3600), ("minute", 60)):
+        if seconds % size == 0:
+            n = seconds // size
+            return f"{n} {unit}" + ("s" if n != 1 else "")
+    return f"{seconds} seconds"
+
+
+def apply(plan: Plan, *, instance_id: Optional[int] = None, with_secrets: bool = True) -> dict:
     """Write the plan into ABP. Returns counts. Rules go to native_agent.permissions.rules (appended, without duplicates, after
     any existing deny rules are kept in front); hooks and MCP servers skip anything already present."""
     from bot import db
@@ -271,10 +308,10 @@ def apply(plan: Plan) -> dict:
         keys = {(r.get("decision"), r.get("tool"), r.get("match", "")) for r in current}
         added = [r for r in plan.rules if (r["decision"], r["tool"], r["match"]) not in keys]
         if added:
-            config.set_value(["native_agent", "permissions", "rules"], current + added, actor=f"import:{plan.source}")
+            config.set_values({("native_agent", "permissions", "rules"): current + added}, actor=f"import:{plan.source}")
         done["rules"] = len(added)
     if plan.mode:
-        config.set_value(["native_agent", "permissions", "mode"], plan.mode, actor=f"import:{plan.source}")
+        config.set_values({("native_agent", "permissions", "mode"): plan.mode}, actor=f"import:{plan.source}")
         done["mode"] = 1
     existing_hooks = {(h["event"], h["matcher"], h["command"]) for h in db.list_agent_hooks()}
     for h in plan.hooks:
@@ -285,7 +322,12 @@ def apply(plan: Plan) -> dict:
     for s in plan.mcp_servers:
         if s["name"] in existing_servers:
             continue
+        env = s.get("env", {}) if with_secrets else {k: "" for k in s.get("env", {})}     # --no-secrets: names only
         db.add_external_mcp_server(s["name"], s["transport"], command=s.get("command"), args_json=json.dumps(s.get("args", [])),
-                                   env_json=json.dumps(s.get("env", {})), url=s.get("url"), auth_token=s.get("auth_token") or None)
+                                   env_json=json.dumps(env), url=s.get("url"),
+                                   auth_token=(s.get("auth_token") or None) if with_secrets else None)
         done["mcp_servers"] += 1
+    from abp_import import agents
+
+    done.update(agents.apply_extra(plan, instance_id=instance_id, with_secrets=with_secrets))
     return done

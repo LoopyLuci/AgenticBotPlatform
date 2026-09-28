@@ -80,6 +80,9 @@ def _isolated_cicd_event_store(monkeypatch, tmp_path):
     if Path(_config.path).is_file():
         _shutil.copy2(_config.path, backends)
     monkeypatch.setattr(_config, "path", backends)
+    # ...and the in-memory copy must match that file: otherwise config.current still holds whatever the previous test
+    # wrote, and a test reading it sees another test's settings (an importer test did, and wrote nothing because of it).
+    monkeypatch.setattr(_config, "_data", _config._read_yaml() if backends.is_file() else {})
     # The Sentinel's journal, backups, scan results and boot records: never the real data folder.
     from bot.sentinel import backup as s_backup, bootguard as s_boot, bug_hunter as s_bugs, cve as s_cve
     from bot.sentinel import journal as s_journal, security as s_security

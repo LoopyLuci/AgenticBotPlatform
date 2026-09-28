@@ -19,6 +19,10 @@ app's own version (the Android app versions independently — see its own
   - Crash-loop protection: after three unhealthy boots ABP starts in safe mode, rolls config back to last-known-good, and skips plugins for one boot.
   - `python -m bot.sentinel.guardian` supervises the server for `scripts/run.*` and Docker. The desktop app now restarts a crashed server itself.
 - **Versioned database schema** (`PRAGMA user_version`) with a verified backup before each migration. A database written by a newer ABP is never written to: startup restores a backup this version can read.
+- **Import a Hermes Agent or OpenClaw setup**: `python -m abp_import hermes|openclaw`, a dry run unless `--apply`.
+  - Carries over providers and API keys, the default and fallback models (never Claude), MCP servers, the skill library (linked in place), SOUL.md, memories, prompt jobs (created paused), Telegram/Discord/Slack channels (created switched off) and deny rules.
+  - Anything that would widen what the agent may do is reported and skipped.
+- **Linked skill libraries** (`native_agent.skills.external_dirs`): another agent's skills, used in place and searched with `list_skills` and a `query`. A 10,000-skill library costs 1 ms a turn once loaded; loading and refreshing happen in the background.
 - **A VS Code extension** (`integrations/vscode`), tested inside a real VS Code. It adds a chat view with the ABP agent working in your workspace. Permission questions come up in the chat or as a notification. Commands ask about the selection or fix the problems VS Code reports. It finds ABP by itself, needs no token, and defaults to `model: auto`. To install or update it in one click, use ABP Agents → **Editors** or run `abp_cli editors install-vscode`; the installer bundles the extension.
 - `python -m abp_acp --model auto` routes each editor session through the model router, never Claude by default. `--model scripted:FILE` replays fixed steps, to test an editor integration without a key. Each prompt result reports the model it used.
 - The desktop installer now includes `abp_acp`, `abp_run` and `abp_agenteval`. Before this, an installed ABP could not run the editor (ACP) server.
@@ -44,6 +48,9 @@ app's own version (the Android app versions independently — see its own
 - The test suite runs in parallel (20 min → 3.5 min) under a ruff lint gate and a coverage floor, and passes on Python 3.13.
 
 ### Fixed
+- Skills whose description contains a colon (`description: Affiliate: commissions`) were invisible to the model: strict YAML rejects the line, which dropped the description. About 1% of the skills in a real library are written this way.
+- Tests could see the previous test's settings: each test got a fresh copy of `backends.yaml`, but the in-memory config still held the previous test's values.
+- Importers now keep `backends.yaml`'s comments. They used a write that re-dumped the whole file and dropped them.
 - The ssh and wsl sandbox backends left a `.abp-*.pid` file behind for every command that finished normally: in the remote workspace for ssh, and in your own workspace folder for wsl. The remote shell now removes it however the command ends.
 - The Docker manager (Infrastructure page) now starts the `docker` program by its full path, as the sandbox already did. On Windows a bare name only finds `.exe` files, so a `docker.cmd` shim was skipped and the wrong program could run.
 - Fire-and-forget background tasks could be garbage-collected mid-run with their errors never logged. They now go through `bot.tasks`.
