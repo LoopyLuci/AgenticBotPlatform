@@ -51,6 +51,8 @@ class NativeAgentBackend(Backend):
         self.max_tokens = max_tokens
         self.session_prefix = session_prefix
         self.name = name
+        # model == "auto": the model router picks (and may re-pick) the model; see _ask().
+        self._auto = transport is None
 
     async def create_session(self) -> str:
         return f"{self.session_prefix}-{uuid.uuid4().hex[:16]}"
@@ -112,7 +114,28 @@ class NativeAgentBackend(Backend):
                     "this bot's model is \"auto\" but automatic model routing is turned off "
                     "(native_agent.router.enabled) — set a specific model for this bot instead"
                 )
-            self.transport, self.model, _auto_ref = _resolve_auto_transport(prompt, exclude=set())
+            self.transport, self.model, _auto_ref = _resolve_auto_transport(
+                prompt, exclude=set(), instance_id=(context or {}).get("instance_id"))
+        elif self._auto:
+            # Keep the earlier pick (so a conversation stays on one model) unless the router says otherwise: that model
+            # is resting after failures, is blocked by a rule, or the policy re-routes every turn. Every turn is recorded.
+            from bot import model_router
+
+            ref = _ref(self.transport, self.model)
+            previous = getattr(self.transport, "router_decision", None)
+            why = model_router.reroute_reason(ref)
+            if why:
+                try:
+                    self.transport, self.model, _auto_ref = _resolve_auto_transport(
+                        prompt, exclude=set(), instance_id=(context or {}).get("instance_id"), mode="reroute", parent_id=previous)
+                    logger.info("native backend: re-routed from %s (%s) to %s", ref, why, _auto_ref)
+                except BackendError:
+                    logger.warning("native backend: %s, but no other model is available; keeping it", why)
+                    self.transport.router_decision = model_router.record_sticky(
+                        ref, prompt, instance_id=(context or {}).get("instance_id"), parent_id=previous)
+            else:
+                self.transport.router_decision = model_router.record_sticky(
+                    ref, prompt, instance_id=(context or {}).get("instance_id"), parent_id=previous)
 
         from bot.agent_runtime import hooks
 
@@ -300,10 +323,21 @@ class NativeAgentBackend(Backend):
                 model=model, history=view["history"], tool_schemas=tool_schemas, max_tokens=self.max_tokens,
                 timeout_s=timeout_s, system_prompt=system_prompt, effort=effort,
             )
-            if stream_notify is not None and getattr(transport, "supports_streaming", False):
-                streamed = True
-                return await transport.send_stream(on_event=_emit, **kwargs)
-            return await transport.send(**kwargs)
+            started = time.monotonic()
+            try:
+                if stream_notify is not None and getattr(transport, "supports_streaming", False):
+                    streamed = True
+                    response = await transport.send_stream(on_event=_emit, **kwargs)
+                else:
+                    response = await transport.send(**kwargs)
+            except BackendError as exc:
+                from bot.agent_runtime import estop as _estop
+
+                if not isinstance(exc, _estop.EstopEngagedError):
+                    _observe(transport, model, ok=False, error=str(exc), started=started)
+                raise
+            _observe(transport, model, ok=True, tokens=response.tokens, started=started)
+            return response
 
         total_tokens = 0
         # Prompt-caching telemetry (AnthropicTransport only — see its
@@ -378,7 +412,9 @@ class NativeAgentBackend(Backend):
                     raise
                 response = None
                 last_exc = exc
-                for hop_transport, hop_model in _failover_hops(instance_id, prompt):
+                hops = _failover_hops(instance_id, prompt, auto=self._auto, tried={_ref(active_transport, active_model)},
+                                      parent_id=getattr(active_transport, "router_decision", None))
+                for hop_transport, hop_model in hops:
                     logger.warning("native backend: primary transport failed (%s) — retrying against %s", last_exc, hop_model)
                     active_transport, active_model = hop_transport, hop_model
                     if stream_notify is not None:
@@ -388,6 +424,9 @@ class NativeAgentBackend(Backend):
                         await _emit(StreamEvent("reset"))
                     try:
                         response = await _send(active_transport, active_model)
+                        if self._auto and getattr(hop_transport, "router_decision", None):
+                            # A bot on auto keeps the model that worked, for the next turns too.
+                            self.transport, self.model = hop_transport, hop_model
                         break
                     except BackendError as hop_exc:
                         if isinstance(hop_exc, estop_module.EstopEngagedError):
@@ -604,7 +643,7 @@ def _resolve_fallback_transport(instance_id) -> Optional[tuple]:
             return None
         transport = build_openai_transport(
             protocol=provider_cfg.get("protocol", "openai"), base_url=provider_cfg["base_url"],
-            api_key=provider_registry.get_api_key(provider_name), catalog_id=provider_cfg.get("catalog_id"),
+            api_key=provider_registry.get_api_key(provider_name), catalog_id=provider_cfg.get("catalog_id"), name=provider_name,
         )
         return transport, model
     except Exception:
@@ -612,8 +651,26 @@ def _resolve_fallback_transport(instance_id) -> Optional[tuple]:
         return None
 
 
-def _resolve_auto_transport(task_text: str, *, exclude: set) -> tuple:
-    """The model router's top pick that isn't in `exclude` (a set of "provider/model"
+def _ref(transport, model) -> str:
+    """The "provider/model" name the router knows a transport's model by: the providers.yaml name it was built from
+    when known, else the transport's own provider key."""
+    provider = getattr(transport, "router_provider", None) or getattr(transport, "provider_key", "") or type(transport).__name__
+    return f"{provider}/{model}"
+
+
+def _observe(transport, model, *, ok: bool, started: float, tokens=None, error: str = "") -> None:
+    """Tell the router how a call went (every call, automatic or not): it learns reliability, speed and when to rest a model."""
+    try:
+        from bot.router_brain import learn
+
+        learn.observe(_ref(transport, model), ok=ok, latency_ms=(time.monotonic() - started) * 1000, tokens=tokens, error=error,
+                      decision_id=getattr(transport, "router_decision", None), task_class=getattr(transport, "router_class", None))
+    except Exception:  # noqa: BLE001 — learning must never cost a reply
+        logger.exception("native backend: could not record the call's outcome")
+
+
+def _resolve_auto_transport(task_text: str, *, exclude: set, instance_id=None, mode: str = "auto", parent_id=None) -> tuple:
+    """The model router's pick that isn't in `exclude` (a set of "provider/model"
     strings already tried), as (transport, model, ref) - `ref` is the exact
     "provider/model" string this pick was chosen under, for a caller to add to its own
     `exclude` set without having to reconstruct it from the transport afterward (a
@@ -621,9 +678,13 @@ def _resolve_auto_transport(task_text: str, *, exclude: set) -> tuple:
     built from - its catalog_id, if the provider has one, or its base URL's host
     otherwise - so re-deriving it would risk silently failing to recognize a repeat).
 
-    Used both to resolve model="auto" the first time (bot/router.py's native_agent
-    branch) and, when native_agent.router.auto_failover is on, as extra failover hops
-    beyond the one static fallback_provider/fallback_model.
+    The choice is made by model_router.route(), which records it with its reasoning (the
+    dashboard's Router page); the transport carries that decision's id, so each call's
+    outcome is filed against it and the router learns from it.
+
+    Used to resolve model="auto" the first time (bot/router.py's native_agent branch), to
+    re-route a bot on auto whose model is resting, and as failover hops beyond the one
+    static fallback_provider/fallback_model.
 
     Raises BackendError - never returns a silent nothing - if the router has no viable
     candidate: a bot on "auto" with no free provider configured must fail loudly and
@@ -632,37 +693,40 @@ def _resolve_auto_transport(task_text: str, *, exclude: set) -> tuple:
     from bot import providers as provider_registry
     from bot.agent_runtime.transports import build_openai_transport
 
-    _cls, ranked, _skipped = model_router.recommend(task_text or "", candidates=model_router.candidate_models())
-    for rec in ranked:
-        if rec.model in exclude:
-            continue
-        provider_name, _, model_id = rec.model.partition("/")
+    def usable(ref: str) -> bool:
+        return provider_registry.get_provider(ref.partition("/")[0]) is not None
+
+    decision = model_router.route(task_text or "", mode=mode, instance_id=instance_id, exclude=exclude,
+                                  candidates=model_router.candidate_models(), usable=usable, parent_id=parent_id)
+    if decision.chosen:
+        provider_name, _, model_id = decision.chosen.partition("/")
         provider_cfg = provider_registry.get_provider(provider_name)
-        if provider_cfg is None:            # listed as a candidate but not actually configured — skip, don't fail the whole lookup
-            continue
         transport = build_openai_transport(
             protocol=provider_cfg.get("protocol", "openai"), base_url=provider_cfg["base_url"],
-            api_key=provider_registry.get_api_key(provider_name), catalog_id=provider_cfg.get("catalog_id"),
+            api_key=provider_registry.get_api_key(provider_name), catalog_id=provider_cfg.get("catalog_id"), name=provider_name,
         )
-        return transport, model_id, rec.model
+        transport.router_decision = decision.id
+        transport.router_class = decision.classification.task_class
+        return transport, model_id, decision.chosen
+    resting = [s for s in decision.skipped if "resting" in s]
     raise BackendError(
         "no free model available for automatic routing — add a provider (the Models page) "
         "or set native_agent.router.candidates"
+        + (f" ({len(resting)} model(s) are resting after failures; see the Router page)" if resting else "")
     )
 
 
-def _failover_hops(instance_id, task_text: str) -> list[tuple]:
-    """The ordered list of (transport, model) alternatives to try after the primary
-    transport fails: the one explicit, per-bot fallback_provider/fallback_model first (if
-    configured - unchanged from before this existed), then, only if
-    native_agent.router.auto_failover is on, up to native_agent.router.max_failover_hops
-    more picks from the model router, each one excluding every ref already in this list.
+def _failover_hops(instance_id, task_text: str, *, auto: bool = False, tried: Optional[set] = None, parent_id=None):
+    """The alternatives to try, one at a time, after the primary transport fails: the
+    one explicit, per-bot fallback_provider/fallback_model first (if configured), then
+    up to native_agent.router.max_failover_hops picks from the model router, each one
+    excluding every ref already tried - when native_agent.router.auto_failover is on, or,
+    for a bot on auto, when the router policy's failover_for_auto is (the default).
+    A generator, so a router pick is only made (and recorded) when it is actually tried.
     Never raises - a broken hop-building step must not hide the primary's own error."""
-    hops: list[tuple] = []
-    tried: set = set()
+    tried = set(tried or ())
     static = _resolve_fallback_transport(instance_id)
     if static is not None:
-        hops.append(static)
         try:
             from bot import agent_settings
 
@@ -670,22 +734,33 @@ def _failover_hops(instance_id, task_text: str) -> list[tuple]:
             tried.add(f"{settings.get('fallback_provider')}/{settings.get('fallback_model')}")
         except Exception:  # noqa: BLE001
             pass
+        yield static
     try:
         from bot.config import config
 
         router_cfg = ((config.current.get("native_agent") or {}).get("router")) or {}
-        if bool(router_cfg.get("auto_failover")):
-            max_hops = max(0, int(router_cfg.get("max_failover_hops") or 2))
-            for _ in range(max_hops):
-                try:
-                    transport, model, ref = _resolve_auto_transport(task_text, exclude=tried)
-                except BackendError:
-                    break
-                tried.add(ref)
-                hops.append((transport, model))
+        use_router = bool(router_cfg.get("auto_failover"))
+        if auto and not use_router:
+            from bot.router_brain import policy as router_policy
+
+            use_router = bool(router_policy.current()["learning"]["failover_for_auto"])
+        if not use_router:
+            return
+        max_hops = max(0, int(router_cfg.get("max_failover_hops") or 2))
     except Exception:  # noqa: BLE001
         logger.exception("native backend: failed to build router failover hops")
-    return hops
+        return
+    for _ in range(max_hops):
+        try:
+            transport, model, ref = _resolve_auto_transport(task_text, exclude=tried, instance_id=instance_id, mode="failover",
+                                                            parent_id=parent_id)
+        except BackendError:
+            return
+        except Exception:  # noqa: BLE001
+            logger.exception("native backend: failed to build router failover hops")
+            return
+        tried.add(ref)
+        yield transport, model
 
 
 def _progress_line(tool_name: str, tool_input: dict) -> str:

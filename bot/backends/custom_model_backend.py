@@ -56,7 +56,7 @@ class CustomModelBackend(Backend):
             provider_cfg = provider_registry.get_provider(provider_name) or {}
             transport = build_openai_transport(
                 protocol=provider_cfg.get("protocol", "openai"), base_url=self.base_url,
-                api_key=api_key, catalog_id=provider_cfg.get("catalog_id"),
+                api_key=api_key, catalog_id=provider_cfg.get("catalog_id"), name=provider_name,
             )
         self._inner = NativeAgentBackend(
             transport, model=model_id, max_tokens=max_tokens,

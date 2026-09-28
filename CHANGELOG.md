@@ -9,6 +9,13 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **A model router that learns, can be taught, and shows its reasoning** (the **Model Router** page; `/api/router/*`; [docs/agents/router.md](docs/agents/router.md)).
+  - Every automatic choice is recorded with its full reasoning: the task class and why, each model left out and why, and every candidate's score split into quality, economy, headroom, reliability and speed. The outcome is recorded too.
+  - It learns reliability and speed from every model call. A model that fails rests for a time that depends on the failure: minutes after a 429 (doubling on repeats), a week once 403s or 404s repeat, and its whole provider after a bad key.
+  - A bot on `auto` whose model fails tries the next pick and keeps the one that works; it chooses again when its model is resting.
+  - Feedback on any decision (good or poor choice, the right task class, the model it should have used) moves its quality estimates and becomes training examples. Training examples feed a small classifier and model preferences.
+  - Its policy (weights per task class, keywords, pin/prefer/avoid/block rules, learning settings, rest lengths) is edited on the page. Every save is a version with its diff and can be restored.
+  - The page has an overview with charts, a decision log, a model scoreboard with uncertainty bands, a learning log, training, the policy editor, and a "Try it" simulator.
 - **Sentinel, ABP's self-preservation system** (`bot/sentinel/`, ADR-0011; Resilience → Sentinel in the dashboard; `/api/sentinel/*`).
   - Automatic, verified, rotated backups of the database, provider store, vault key, `.env`, config and the Android signing key. An optional `backup.mirror_dir` keeps a second copy off this disk.
   - Database integrity checks with self-repair: REINDEX, then row salvage, then restore of the newest verified backup. Damaged files are always quarantined, never deleted.

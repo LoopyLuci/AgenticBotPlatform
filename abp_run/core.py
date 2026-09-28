@@ -55,7 +55,7 @@ def transport_for(provider: str, model: str):
     if cfg is None:
         raise RunError(f"no provider named {provider!r} in config/providers.yaml (and it is not 'anthropic')")
     return build_openai_transport(protocol=cfg.get("protocol", "openai"), base_url=cfg["base_url"],
-                                  api_key=registry.get_api_key(provider), catalog_id=cfg.get("catalog_id"))
+                                  api_key=registry.get_api_key(provider), catalog_id=cfg.get("catalog_id"), name=provider)
 
 
 def split_model(ref: str, default_provider: str = "anthropic") -> tuple[str, str]:

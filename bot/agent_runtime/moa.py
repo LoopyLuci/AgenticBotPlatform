@@ -54,7 +54,7 @@ def _transport_for(provider: Optional[str], model: str) -> ProviderTransport:
         raise BackendError(f"no provider named {provider!r} configured in config/providers.yaml")
     return build_openai_transport(
         protocol=provider_cfg.get("protocol", "openai"), base_url=provider_cfg["base_url"],
-        api_key=provider_registry.get_api_key(provider), catalog_id=provider_cfg.get("catalog_id"),
+        api_key=provider_registry.get_api_key(provider), catalog_id=provider_cfg.get("catalog_id"), name=provider,
     )
 
 
