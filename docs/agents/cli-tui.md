@@ -80,6 +80,7 @@ given a Textual screen in this phase):
   on either side. Best-effort: SSH Toolkit being unavailable (no PowerShell, submodule not
   checked out) never fails the underlying peer link itself, only skips the SSH half of it.
 - **Kanban**: `abp_cli kanban boards|cards|add|move|remove`.
+- **Editors**: `abp_cli editors status|install-vscode` (the VS Code extension and the ACP command for other editors).
 - **Tailscale / containers / VMs / infra rules**: `abp_cli tailscale|docker|vm|rules get|post|put|patch|delete
   <path> [--data JSON]` maps one-to-one onto `/api/tailscale/*`, `/api/docker/*`, `/api/vms/*` and
   `/api/infra/rules` (for example `abp_cli docker get containers`, `abp_cli docker post

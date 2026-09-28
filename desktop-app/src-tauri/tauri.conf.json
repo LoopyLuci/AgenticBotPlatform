@@ -39,6 +39,10 @@
     "resources": {
       "stage/bot": "bot",
       "stage/abp_cicd": "abp_cicd",
+      "stage/abp_run": "abp_run",
+      "stage/abp_acp": "abp_acp",
+      "stage/abp_agenteval": "abp_agenteval",
+      "stage/integrations": "integrations",
       "stage/config/backends.yaml": "config/backends.yaml",
       "stage/.venv": ".venv",
       "stage/vendor/ssh_toolkit": "vendor/ssh_toolkit",

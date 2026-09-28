@@ -856,6 +856,11 @@ def build_app() -> FastAPI:
 
     sentinel_api.register(app, _require_token_or_api_key, _require_token)
 
+    # Editor integrations: install the VS Code extension, show the ACP command.
+    from bot.dashboard import editors_api
+
+    editors_api.register(app, _require_token_or_api_key, _require_token)
+
     # Every other route area lives in bot/dashboard/routes/, registered in this exact order.
     from bot.dashboard import routes as _routes  # noqa: F401 — the package
     import importlib

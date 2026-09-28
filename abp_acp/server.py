@@ -43,6 +43,7 @@ class Session:
     task: Optional[asyncio.Task] = None
     cancelled: bool = False
     tool_ids: list = field(default_factory=list)
+    model: str = ""                   # "provider/model" once known; reported in each prompt result's _meta
 
 
 def prompt_text(blocks: list) -> str:
@@ -250,11 +251,12 @@ class AcpServer:
                     "sessionUpdate": "tool_call_update", "toolCallId": tid, "status": "completed"}})
         if not result.ok:
             raise RpcError(E_INTERNAL, result.error or "the run failed")
+        meta = {"_meta": {"abp": {"model": session.model, "tokens": getattr(result, "tokens", 0)}}}
         if getattr(result, "stopped", ""):
-            return {"stopReason": "max_turn_requests"}
+            return {"stopReason": "max_turn_requests", **meta}
         if not sent and result.reply:                 # a transport that does not stream delivers the reply whole
             await on_text(result.reply)
-        return {"stopReason": "end_turn"}
+        return {"stopReason": "end_turn", **meta}
 
 
 def _describe(tool: str, tool_input: dict) -> str:

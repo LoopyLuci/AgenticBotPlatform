@@ -1003,6 +1003,13 @@ export const operations = {
   ],
   "query_params": []
  },
+ "GET /api/editors/status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/editors/status",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/env": {
   "body": false,
   "method": "GET",
@@ -2716,6 +2723,13 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/docker/volumes",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/editors/vscode/install": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/editors/vscode/install",
   "path_params": [],
   "query_params": []
  },
@@ -6654,6 +6668,20 @@ export const operations = {
   "query_params": [
    "force"
   ]
+ },
+ "editors_install_vscode_api_editors_vscode_install_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/editors/vscode/install",
+  "path_params": [],
+  "query_params": []
+ },
+ "editors_status_api_editors_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/editors/status",
+  "path_params": [],
+  "query_params": []
  },
  "export_session_api_agent_sessions__session_key__export_get": {
   "body": false,

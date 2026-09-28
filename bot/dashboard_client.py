@@ -497,6 +497,13 @@ class DashboardClient:
     async def peer_bots(self, peer_id: int) -> list[dict]:
         return await self._request("GET", f"/api/peers/{peer_id}/bots")
 
+    # ------------------------------------------------------------------ editors
+    async def editors_status(self) -> dict:
+        return await self._request("GET", "/api/editors/status", timeout=120)
+
+    async def install_vscode_extension(self) -> dict:
+        return await self._request("POST", "/api/editors/vscode/install", timeout=360)
+
     # ------------------------------------------------------------------ kanban
     async def kanban_boards(self, instance_id: int) -> list[dict]:
         return (await self._request("GET", "/api/kanban/boards", params={"instance_id": instance_id}))["boards"]

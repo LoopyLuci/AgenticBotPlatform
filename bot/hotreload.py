@@ -100,7 +100,7 @@ DENYLIST: frozenset[str] = frozenset({
     # the old watchdog and double-count every error.
     "bot.sentinel.journal", "bot.sentinel.backup", "bot.sentinel.repair", "bot.sentinel.cve",
     "bot.sentinel.security", "bot.sentinel.bug_hunter", "bot.sentinel.watchdog", "bot.sentinel.bootguard",
-    "bot.sentinel.guardian", "bot.dashboard.sentinel_api",
+    "bot.sentinel.guardian", "bot.dashboard.sentinel_api", "bot.dashboard.editors_api",
     "bot.provider_store",  # owns a lock and the path of the on-disk provider store; a reload would orphan both
     "bot.envfile", "bot.handlers", "bot.outbox", "bot.plugins", "bot.attachments",
     # Same hazard class as outbox.py/plugins.py above: _connections/
@@ -145,7 +145,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.tui.screens.connect", "bot.tui.screens.bot_list", "bot.tui.screens.add_bot", "bot.tui.screens.bot_detail",
     "bot.tui.screens.chat", "bot.tui.screens.providers", "bot.tui.screens.agent_settings",
     "bot.tui.screens.swarms", "bot.tui.screens.sessions", "bot.tui.screens.ssh_toolkit", "bot.tui.screens.infra",
-    "bot.ssh_toolkit",  # shells out to a separately maintained tool; nothing to reload mid-run either way
+    "bot.editor_integrations", "bot.ssh_toolkit",  # shell out to a separately maintained tool; nothing to reload mid-run either way
     "bot.browser_bridge",  # holds live extension connections and pending pairings; a reload would drop them
     "bot.terminal_broker",  # holds live PTY/socket sessions; a reload would orphan them
     "bot.infra_automation",  # its run_forever() loop is a live background task holding the in-flight tick

@@ -523,6 +523,10 @@ def main() -> None:
     boot = bootguard.begin_boot()
     if ".env" in (boot.get("restored") or []):
         load_dotenv(_env_path, override=True)
+    # Tell editors (the VS Code extension) where this ABP is: ~/.abp/install.json.
+    from bot import editor_integrations
+
+    editor_integrations.register_install()
     try:
         asyncio.run(run())
     except KeyboardInterrupt:
