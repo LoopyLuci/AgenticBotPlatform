@@ -62,6 +62,43 @@ usage error. A **regression** is a task that passed in the baseline and fails no
 task that disappeared, or a score drop beyond `--tolerance`. New tasks and fixes are
 reported, never failed.
 
+## The benchmark
+
+```bash
+python -m abp_agenteval bench run --models auto --repeats 3 --dir docs/benchmarks/runs
+python -m abp_agenteval bench summary --dir docs/benchmarks/runs
+python -m abp_agenteval page --bench docs/benchmarks/runs --out docs/benchmarks/index.html
+```
+
+`bench run` runs the suite live with every model you name, or `auto`. `auto` means the model router's candidates:
+free models from your configured providers, never Claude unless you listed it. Each model runs `--repeats` times,
+because one run of a small suite is noise.
+
+Every run is saved as its own file, stamped with:
+- the ABP version and git commit;
+- the date;
+- a fingerprint of the suite (its tasks, prompts, fixtures and grader code).
+
+A restarted benchmark skips runs it already has. A run where a model's rate limit or free allowance ran out is kept but
+never counted, and the benchmark moves on to the next model.
+
+The leaderboard (text, `--json`, or the page) shows each model's:
+- mean score, lowest and highest, and spread;
+- tasks passed in **every** run ("reliable") and in at least one;
+- tokens and minutes per run;
+- score per category;
+- the tasks it passed only sometimes.
+
+Only runs of the newest suite count; older ones are left out and counted. Like the rest of this page, it measures ABP's
+agent with each model on ABP's own tasks; no other product is run.
+
+**Not run yet.** A live benchmark needs a provider key in ABP, and there is none on the development machine.
+`abp_import hermes` can bring your OpenRouter key across from Hermes. Free models cost nothing but rate-limit time;
+a 3-repeat run of the suite takes minutes per model.
+
+A live run is labelled `provider/model`, but the provider receives only its own model id. Before this, a live run sent
+the label itself (`openrouter/...`), which the provider rejects. That never showed because live mode had never run.
+
 ## The report
 
 Plain JSON: `score`, `passed`, `total`, `tokens`, `duration_ms`, and one entry per

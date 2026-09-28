@@ -48,7 +48,8 @@ def apply_variant(tasks: list, variant: dict) -> list:
 
 
 def compare(tasks: list, variants: list[dict], make, *, mode: str, model: str) -> dict:
-    reports = [(v, run_suite(apply_variant(tasks, v), make, mode=mode, model=model)) for v in variants]
+    api_model = model.split("/", 1)[1] if mode == "live" and "/" in model else None
+    reports = [(v, run_suite(apply_variant(tasks, v), make, mode=mode, model=model, api_model=api_model)) for v in variants]
     base_v, base = reports[0]
     base_pass = {r["id"]: r["passed"] for r in base["results"]}
     rows = []

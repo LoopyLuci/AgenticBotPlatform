@@ -216,7 +216,7 @@ def test_a_scripted_comparison_says_it_cannot_tell_variants_apart():
 def test_live_differences_of_a_task_or_two_are_reported_as_noise_not_wins(monkeypatch):
     calls = {"n": 0}
 
-    def fake_run_suite(tasks, make, *, mode, model, keep=False):
+    def fake_run_suite(tasks, make, *, mode, model, keep=False, api_model=None):
         calls["n"] += 1
         passed = 3 if calls["n"] == 1 else 4          # the second variant "passes one more"
         return {"mode": mode, "model": model, "passed": passed, "total": 10, "score": passed * 10.0, "tokens": 100 * calls["n"],

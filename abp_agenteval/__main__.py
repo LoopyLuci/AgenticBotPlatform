@@ -40,9 +40,20 @@ def main(argv=None) -> int:
     run.add_argument("--keep", action="store_true", help="keep each task's workspace for inspection")
     run.add_argument("--json", action="store_true", help="print the report as JSON")
     run.add_argument("--record", action="store_true", help="live only: store the pass rate per task category for this model, for the model router")
-    page = sub.add_parser("page", help="write a static results page from one or more reports")
-    page.add_argument("reports", nargs="+")
+    page = sub.add_parser("page", help="write a static results page from one or more reports, or from a benchmark folder")
+    page.add_argument("reports", nargs="*")
+    page.add_argument("--bench", help="a `bench run` folder: the page shows its leaderboard")
     page.add_argument("--out", required=True)
+    bench = sub.add_parser("bench", help="the suite, live, across several models and repeated (see abp_agenteval/bench.py)")
+    bsub = bench.add_subparsers(dest="bench_cmd", required=True)
+    brun = bsub.add_parser("run")
+    brun.add_argument("--models", required=True, help="'auto' (the router's free candidates) or provider/model,provider/model")
+    brun.add_argument("--repeats", type=int, default=3)
+    brun.add_argument("--dir", required=True, help="where run files go (existing runs of this suite are skipped)")
+    brun.add_argument("--task", action="append", help="only this task id (repeatable)")
+    bsum = bsub.add_parser("summary")
+    bsum.add_argument("--dir", required=True)
+    bsum.add_argument("--json", action="store_true")
     cmp_ = sub.add_parser("compare", help="run the suite once per variant of prompt / tool wording and compare (see abp_agenteval/compare.py)")
     cmp_.add_argument("--variants", required=True, help="JSON file: a list of {name, config: {native_agent overrides}}")
     cmp_.add_argument("--live", action="store_true")
@@ -55,8 +66,28 @@ def main(argv=None) -> int:
     if args.cmd == "page":
         from . import page as page_mod
 
-        return page_mod.main(args.reports, args.out)
+        return page_mod.main(args.reports, args.out, bench_dir=args.bench)
     tasks = seed_suite()
+    if args.cmd == "bench":
+        from . import bench as bench_mod
+
+        if args.bench_cmd == "summary":
+            summary = bench_mod.summarize(bench_mod.load(Path(args.dir)))
+            print(json.dumps(summary, indent=1) if args.json else bench_mod.render(summary))
+            return 0
+        if args.task:
+            tasks = [t for t in tasks if t.id in set(args.task)]
+        models = bench_mod.resolve_models(args.models)
+        if not models:
+            print("no models: add a provider on the Models page, or list provider/model names", file=sys.stderr)
+            return 2
+        if args.repeats < 1:
+            print("--repeats must be at least 1", file=sys.stderr)
+            return 2
+        done = bench_mod.run(models, args.repeats, Path(args.dir), tasks, bench_mod.live_factory)
+        print(f"ran {done['ran']}, skipped {done['skipped']} already done, {done['incomplete']} cut short by a limit\n")
+        print(bench_mod.render(bench_mod.summarize(bench_mod.load(Path(args.dir)))))
+        return 0
     if args.cmd == "compare":
         from . import compare
 
@@ -82,7 +113,7 @@ def main(argv=None) -> int:
         make = lambda t: ScriptedTransport(t.script)  # noqa: E731
         mode, model = "scripted", "scripted"
 
-    report = run_suite(tasks, make, mode=mode, model=model, keep=args.keep)
+    report = run_suite(tasks, make, mode=mode, model=model, keep=args.keep, api_model=args.model if args.live else None)
     if args.out:
         Path(args.out).write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps(report, indent=2) if args.json else rep.render(report))
