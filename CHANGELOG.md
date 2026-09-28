@@ -19,6 +19,11 @@ app's own version (the Android app versions independently — see its own
   - Crash-loop protection: after three unhealthy boots ABP starts in safe mode, rolls config back to last-known-good, and skips plugins for one boot.
   - `python -m bot.sentinel.guardian` supervises the server for `scripts/run.*` and Docker. The desktop app now restarts a crashed server itself.
 - **Versioned database schema** (`PRAGMA user_version`) with a verified backup before each migration. A database written by a newer ABP is never written to: startup restores a backup this version can read.
+- **Offline commands: `native_agent.sandbox.network: none`** (Settings → Safety → Sandbox). This cuts agent shell commands off from the network on every sandbox backend, and fails closed where the host cannot enforce it.
+  - Windows: an AppContainer with no capabilities, without elevation. Loopback and DNS are blocked too, and the file system is confined to the workspace, system folders and `network_none.extra_paths`.
+  - Linux: a fresh network namespace. macOS: `sandbox-exec`.
+  - Docker: `--network none` is forced. ssh and wsl: the remote side runs the command under `unshare -rn`.
+- The ssh sandbox backend is now tested against a real OpenSSH server (a throwaway container) wherever Docker is available.
 - `requirements.lock`: every dependency pinned with hashes. Docker, the installer, the run scripts and the desktop app install from it.
 
 ### Security
@@ -36,6 +41,8 @@ app's own version (the Android app versions independently — see its own
 - The test suite runs in parallel (20 min → 3.5 min) under a ruff lint gate and a coverage floor, and passes on Python 3.13.
 
 ### Fixed
+- The ssh and wsl sandbox backends left a `.abp-*.pid` file behind for every command that finished normally: in the remote workspace for ssh, and in your own workspace folder for wsl. The remote shell now removes it however the command ends.
+- The Docker manager (Infrastructure page) now starts the `docker` program by its full path, as the sandbox already did. On Windows a bare name only finds `.exe` files, so a `docker.cmd` shim was skipped and the wrong program could run.
 - Fire-and-forget background tasks could be garbage-collected mid-run with their errors never logged. They now go through `bot.tasks`.
 - Language-server processes, and the headless browser, outlived ABP on every shutdown.
 - With the server unreachable, an open dashboard fired ~120 failing requests a minute until the browser ran out of connections.

@@ -57,7 +57,7 @@ def _run(args: list[str], timeout: float = DEFAULT_TIMEOUT, stdin: Optional[str]
         return False, "Docker is not installed on this machine"
     try:
         proc = subprocess.Popen(
-            ["docker", *args], stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
+            [shutil.which("docker") or "docker", *args], stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=cwd,
             creationflags=_NO_WINDOW,
         )

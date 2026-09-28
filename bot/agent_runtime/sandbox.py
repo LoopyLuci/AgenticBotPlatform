@@ -3,6 +3,9 @@
     native_agent:
       sandbox:
         backend: local          # local | docker | ssh | wsl | windows_job
+        network: allow          # allow | none - none cuts every backend off from the network
+        network_none:
+          extra_paths: []       # Windows: folders an offline command may read and run programs from
         env:
           mode: secrets         # secrets | minimal | inherit
           allow: []             # names to keep even if they look secret (secrets/minimal) or to add (minimal)
@@ -64,13 +67,20 @@ registered with secrets_guard so it is also redacted from any output.
   against a process that forks quickly or deliberately detaches. Windows-only; refused
   on any other OS. Like `local`, it does not confine the filesystem or the network.
 
-Not built: network egress control for the local/windows_job backends (only the docker
-backend can cut the network) - investigated for this round; a Windows Firewall rule
-would need this process to run elevated (rejected: the rest of the app deliberately
-never does, see firewall.py), and a real non-elevated per-process block needs an
-AppContainer, which needs bypassing Python's subprocess/asyncio plumbing for process
-creation - a larger, separate piece of work than this pass, tracked in
-docs/agents/ROADMAP.md rather than attempted half-built here.
+**Network.** `network: none` takes every backend offline, each in the strongest way
+that needs no elevation, and fails closed: if the host cannot enforce it, the command is
+refused rather than run with the network.
+* `local` / `windows_job` on Windows: the command runs in an AppContainer with no
+  capabilities (appcontainer.py). The kernel denies it all network access, loopback and
+  DNS included. It also confines the filesystem to the workspace, system folders and
+  `network_none.extra_paths`; see that module for why.
+* `local` on Linux: a new, empty network namespace (`unshare --user --net`, which needs
+  unprivileged user namespaces; some distros turn them off, and then commands are refused).
+* `local` on macOS: `sandbox-exec` with a profile that denies all network operations.
+* `docker`: forces `--network none`, whatever `docker.network` says.
+* `wsl` / `ssh`: the remote side runs the command under `unshare -rn` (Linux remotes;
+  inside it, the command's user is shown as root, mapped to the real unprivileged user).
+  If the remote has no `unshare`, the command fails there and never runs.
 """
 
 from __future__ import annotations
@@ -81,15 +91,18 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 import uuid
 from pathlib import Path
 from typing import Optional
 
-from bot.agent_runtime import secrets_guard, win_job
+from bot.agent_runtime import appcontainer, secrets_guard, win_job
 from bot.agent_runtime.errors import ToolError
 
 BACKENDS = ("local", "docker", "ssh", "wsl", "windows_job")
 ENV_MODES = ("secrets", "minimal", "inherit")
+NETWORKS = ("allow", "none")
+_MAC_OFFLINE_PROFILE = "(version 1)(allow default)(deny network*)"
 _MINIMAL = {"PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC", "TEMP", "TMP", "TMPDIR", "HOME", "USERPROFILE",
             "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA", "PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMDATA",
             "USER", "USERNAME", "LOGNAME", "SHELL", "LANG", "LC_ALL", "TERM", "TZ", "PWD", "NUMBER_OF_PROCESSORS",
@@ -114,6 +127,65 @@ def backend() -> str:
     if name == "windows_job" and not win_job.is_supported():
         raise ToolError("sandbox.backend is windows_job, which only works on Windows")
     return name
+
+
+def network(cfg: Optional[dict] = None) -> str:
+    cfg = _config() if cfg is None else cfg
+    name = str(cfg.get("network") or "allow").lower()
+    if name not in NETWORKS:
+        raise ToolError(f"sandbox.network must be one of {', '.join(NETWORKS)}, not {name!r}")
+    return name
+
+
+_unshare_flags: Optional[list[str]] = None
+
+
+def _linux_offline_prefix() -> list[str]:
+    """`unshare` with the first user-mapping flag this kernel accepts, probed once."""
+    global _unshare_flags
+    unshare = shutil.which("unshare")
+    if not unshare:
+        raise ToolError("sandbox.network is none but the unshare command was not found; the command was not run")
+    if _unshare_flags is None:
+        last = ""
+        # --map-current-user keeps the command's own uid; older util-linux only has --map-root-user.
+        for flags in (["--user", "--map-current-user", "--net"], ["--user", "--map-root-user", "--net"]):
+            try:
+                r = subprocess.run([unshare, *flags, "true"], capture_output=True, text=True, timeout=15)
+            except (OSError, subprocess.SubprocessError) as exc:
+                last = str(exc)
+                continue
+            if r.returncode == 0:
+                _unshare_flags = flags
+                break
+            last = (r.stderr or r.stdout).strip()
+        else:
+            raise ToolError("sandbox.network is none but this system does not allow unprivileged network "
+                            f"namespaces ({last or 'unshare failed'}); the command was not run")
+    return [unshare, *_unshare_flags]
+
+
+def _offline_posix_prefix() -> list[str]:
+    if sys.platform == "darwin":
+        tool = shutil.which("sandbox-exec")
+        if not tool:
+            raise ToolError("sandbox.network is none but sandbox-exec was not found; the command was not run")
+        return [tool, "-p", _MAC_OFFLINE_PROFILE]
+    return _linux_offline_prefix()
+
+
+def _remote_offline(command: str) -> str:
+    """A Linux remote (ssh/wsl) runs the command in a fresh network namespace. If unshare
+    is missing or refused there, it fails and the command never starts."""
+    return f"unshare -rn sh -c {shlex.quote(command)}"
+
+
+def _offline_launcher(command: str, cwd: Path, workspace: Path, cfg: dict, limits: Optional[dict] = None) -> list[str]:
+    extra = [str(p) for p in ((cfg.get("network_none") or {}).get("extra_paths") or []) if str(p).strip()]
+    limits = limits or {}
+    return appcontainer.launcher_argv(sys.executable, command, cwd, workspace, extra_paths=extra,
+                                      memory_mb=int(limits.get("memory_mb") or 0),
+                                      active_process_limit=int(limits.get("active_process_limit") or 0))
 
 
 def _injected(cfg: dict, environ: dict) -> dict[str, str]:
@@ -155,16 +227,18 @@ def build_env(environ: Optional[dict] = None, cfg: Optional[dict] = None) -> dic
 
 def _docker_argv(command: str, cwd: Path, workspace: Path, name: str, cfg: dict, env_names: list[str]) -> list[str]:
     d = cfg.get("docker") or {}
-    network = str(d.get("network") or "none").lower()
-    if network not in _DOCKER_NETWORKS:
+    net = str(d.get("network") or "none").lower()
+    if net not in _DOCKER_NETWORKS:
         raise ToolError(f"sandbox.docker.network must be one of {', '.join(_DOCKER_NETWORKS)} (host is not allowed)")
+    if network(cfg) == "none":
+        net = "none"
     workspace = Path(workspace).resolve()
     try:
         rel = Path(cwd).resolve().relative_to(workspace).as_posix()
     except ValueError as exc:
         raise ToolError("the working folder is outside the workspace") from exc
     argv = ["docker", "run", "--rm", "-i", "--name", name,
-            "--network", network, "--memory", str(d.get("memory") or "1g"), "--cpus", str(d.get("cpus") or "2"),
+            "--network", net, "--memory", str(d.get("memory") or "1g"), "--cpus", str(d.get("cpus") or "2"),
             "--pids-limit", str(int(d.get("pids") or 256)), "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
             "-v", f"{workspace}:/workspace", "-w", "/workspace" if rel in ("", ".") else f"/workspace/{rel}"]
     user = str(d.get("user") or "")
@@ -191,6 +265,13 @@ def _remote_dir(cwd: Path, workspace: Path, root: str) -> str:
     return root if rel in ("", ".") else f"{root}/{rel}"
 
 
+def _remote_wrapper(remote_dir: str, pidfile: str, command: str) -> str:
+    """cd into the folder, record the shell's pid for a remote kill, and remove that
+    pidfile however the command ends (the EXIT trap also runs on an `exit` inside it)."""
+    pf = shlex.quote(pidfile)
+    return f"cd {shlex.quote(remote_dir)} && echo $$ > {pf} && trap 'rm -f {pf}' EXIT && {command}"
+
+
 def _ssh_argv(command: str, cwd: Path, workspace: Path, cfg: dict, pidfile: str) -> list[str]:
     s = cfg.get("ssh") or {}
     host = str(s.get("host") or "")
@@ -200,7 +281,9 @@ def _ssh_argv(command: str, cwd: Path, workspace: Path, cfg: dict, pidfile: str)
     if not root:
         raise ToolError("sandbox.backend is ssh but sandbox.ssh.remote_workspace_root is not set; the command was not run")
     remote_dir = _remote_dir(cwd, workspace, root)
-    remote_cmd = f"cd {shlex.quote(remote_dir)} && echo $$ > {shlex.quote(pidfile)} && {command}"
+    if network(cfg) == "none":
+        command = _remote_offline(command)
+    remote_cmd = _remote_wrapper(remote_dir, pidfile, command)
     user = str(s.get("user") or "")
     target = f"{user}@{host}" if user else host
     argv = ["ssh", "-o", "BatchMode=yes", "-o", f"ConnectTimeout={int(s.get('connect_timeout') or 10)}",
@@ -223,7 +306,9 @@ def _win_to_wsl_path(p: Path) -> str:
 def _wsl_argv(command: str, cwd: Path, workspace: Path, cfg: dict, pidfile: str) -> list[str]:
     w = cfg.get("wsl") or {}
     remote_dir = _win_to_wsl_path(cwd)
-    remote_cmd = f"cd {shlex.quote(remote_dir)} && echo $$ > {shlex.quote(pidfile)} && {command}"
+    if network(cfg) == "none":
+        command = _remote_offline(command)
+    remote_cmd = _remote_wrapper(remote_dir, pidfile, command)
     argv = ["wsl.exe"]
     distro = str(w.get("distro") or "")
     if distro:
@@ -236,9 +321,20 @@ async def start(command: str, cwd: Path, workspace: Path) -> asyncio.subprocess.
     """Start a command in the configured sandbox; stdout and stderr arrive on one pipe."""
     cfg = _config()
     which = backend()
+    offline = network(cfg) == "none"
     pipes = dict(stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
     spawn = {} if os.name == "nt" else {"start_new_session": True}
     try:
+        if offline and which in ("local", "windows_job"):
+            if os.name == "nt":
+                # The launcher creates the command inside the AppContainer and its own
+                # kill-on-close job (with windows_job's limits), so no outer job is needed.
+                limits = cfg.get("windows_job") if which == "windows_job" else None
+                argv = _offline_launcher(command, cwd, workspace, cfg, limits)
+                return await asyncio.create_subprocess_exec(*argv, cwd=str(cwd), env=build_env(cfg=cfg), **pipes)
+            argv = _offline_posix_prefix() + ["/bin/sh", "-c", command]
+            return await asyncio.create_subprocess_exec(*argv, cwd=str(cwd), env=build_env(cfg=cfg), **pipes, **spawn)
+
         if which == "local":
             return await asyncio.create_subprocess_shell(command, cwd=str(cwd), env=build_env(cfg=cfg), **pipes, **spawn)
 
