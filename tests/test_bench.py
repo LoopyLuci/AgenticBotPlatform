@@ -67,7 +67,7 @@ def test_runs_are_written_with_provenance_and_resumed(tmp_path, tasks):
     assert report["bench"]["fingerprint"] == fp and report["bench"]["repeat"] == 1
     assert report["bench"]["abp_version"] and "commit" in report["bench"] and report["mode"] == "live"
     again = bench.run(["good"], 2, tmp_path, tasks, fake_models({}), log=lambda _m: None)
-    assert again == {"ran": 0, "skipped": 2, "incomplete": 0}, "a restarted benchmark does not redo finished runs"
+    assert again == {"ran": 0, "skipped": 2, "incomplete": 0, "unavailable": 0, "limited": 0},         "a restarted benchmark does not redo finished runs"
 
 
 def test_the_leaderboard_shows_spread_reliability_and_categories(tmp_path, tasks):
@@ -154,3 +154,27 @@ def test_auto_means_the_routers_candidates_and_a_bare_name_is_refused(monkeypatc
     assert bench.resolve_models(" x/y , z/w ,") == ["x/y", "z/w"]
     with pytest.raises(ValueError, match="names no configured provider"):
         bench.live_factory("just-a-model")
+
+
+def test_a_run_cut_short_by_a_limit_is_redone_next_time(tmp_path, tasks):
+    """It used to be written and then skipped for good, so a long benchmark never really resumed."""
+    first = bench.run(["limited"], 1, tmp_path, tasks, fake_models({}), log=lambda _m: None)
+    assert first["incomplete"] == 1
+    fp = bench.fingerprint(tasks)
+    path = tmp_path / f"limited__{fp}__r1.json"
+    assert path.exists() and not bench.finished(path)
+    # The allowance is back: the same file is redone and now counts.
+    path.rename(tmp_path / f"good__{fp}__r1.json.tmp")
+    (tmp_path / f"good__{fp}__r1.json.tmp").rename(tmp_path / f"good__{fp}__r1.json")
+    again = bench.run(["good"], 1, tmp_path, tasks, fake_models({}), log=lambda _m: None)
+    assert again["ran"] == 1 and again["skipped"] == 0 and bench.finished(tmp_path / f"good__{fp}__r1.json")
+
+
+def test_the_probe_leaves_out_missing_models_and_retries_limited_ones(tmp_path, tasks):
+    answers = {"good": "", "missing": "returned 404: model 'missing' not found", "limited": "limited: returned 429"}
+    logs = []
+    done = bench.run(["missing", "limited", "good"], 1, tmp_path, tasks, fake_models({}), log=logs.append,
+                     probe=lambda factory, api_model: answers[api_model.removeprefix("api-")])
+    assert done["unavailable"] == 1 and done["limited"] == 1 and done["ran"] == 1
+    assert [r["model"] for r in bench.load(tmp_path)] == ["good"], "a model that is not there is never scored 0"
+    assert any("missing: not available" in m for m in logs) and any("tried again next time" in m for m in logs)

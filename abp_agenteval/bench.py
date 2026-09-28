@@ -81,21 +81,32 @@ def limited(report: dict) -> bool:
     return bool(report["results"]) and hits / len(report["results"]) >= INCOMPLETE_SHARE
 
 
+def finished(path: Path) -> bool:
+    """A run on disk that counts. A run cut short by a limit is redone on the next `bench run`, so a long benchmark
+    really does resume (it used to be skipped for good once written)."""
+    try:
+        return path.is_file() and not json.loads(path.read_text(encoding="utf-8")).get("incomplete")
+    except (OSError, ValueError):
+        return False
+
+
 def run(models: list[str], repeats: int, directory: Path, tasks: list, make_transport: Callable[[str], tuple],
-        *, log: Callable[[str], None] = print) -> dict:
-    """Run every model `repeats` times, skipping runs already on disk for this suite. `make_transport(model)` returns
-    (the per-task transport factory, the model id to send to the provider)."""
+        *, log: Callable[[str], None] = print, probe: Callable[[Callable, str], str] | None = None) -> dict:
+    """Run every model `repeats` times, skipping runs already finished for this suite. `make_transport(model)` returns
+    (the per-task transport factory, the model id to send to the provider). `probe(factory, api_model)`, if given, is
+    asked once per model before its first run: "" when it answers, "limited: ..." when its allowance is out right now
+    (tried again next time), or why it cannot be used (a model that does not exist is left out, not scored 0)."""
     from .runner import run_suite
 
     directory.mkdir(parents=True, exist_ok=True)
     fp = fingerprint(tasks)
     meta = provenance()
-    done = {"ran": 0, "skipped": 0, "incomplete": 0}
+    done = {"ran": 0, "skipped": 0, "incomplete": 0, "unavailable": 0, "limited": 0}
     for model in models:
         factory, api_model = None, None
         for k in range(1, repeats + 1):
             path = directory / f"{slug(model)}__{fp}__r{k}.json"
-            if path.exists():
+            if finished(path):
                 done["skipped"] += 1
                 continue
             if factory is None:
@@ -103,6 +114,16 @@ def run(models: list[str], repeats: int, directory: Path, tasks: list, make_tran
                     factory, api_model = make_transport(model)
                 except Exception as exc:  # noqa: BLE001 — one model that cannot start must not stop the others
                     log(f"{model}: could not start ({exc}); skipped")
+                    done["unavailable"] += 1
+                    break
+                why = probe(factory, api_model) if probe else ""
+                if why.startswith("limited"):
+                    log(f"{model}: {why}; nothing run, it will be tried again next time")
+                    done["limited"] += 1
+                    break
+                if why:
+                    log(f"{model}: not available ({why}); left out")
+                    done["unavailable"] += 1
                     break
             log(f"{model}: run {k} of {repeats} ...")
             started = time.time()
@@ -186,6 +207,20 @@ def resolve_models(spec: str) -> list[str]:
 
         return model_router.candidate_models()
     return [m.strip() for m in spec.split(",") if m.strip()]
+
+
+def live_probe(factory: Callable, api_model: str) -> str:
+    """One tiny request: "" if the model answers, "limited: ..." if its allowance is out, else the reason it failed."""
+    import asyncio
+
+    transport = factory(None)
+    try:
+        asyncio.run(transport.send(model=api_model, history=[transport.user_message("Reply with OK.")], tool_schemas=[],
+                                   max_tokens=16, timeout_s=90, system_prompt="Reply with OK.", effort=None))
+        return ""
+    except Exception as exc:  # noqa: BLE001
+        text = re.sub(r"\s+", " ", str(exc))[:240] or type(exc).__name__
+        return f"limited: {text}" if LIMIT_PATTERNS.search(text) else text
 
 
 def live_factory(model_ref: str) -> tuple[Callable, str]:
