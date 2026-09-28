@@ -9,6 +9,12 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **Unsloth Studio from ABP** (the **Unsloth** page; `unsloth_*` agent tools; `/api/unsloth/*`; [docs/agents/unsloth.md](docs/agents/unsloth.md)).
+  - ABP finds Studio from a configured provider, then loads, unloads and serves its models to bots as `unsloth/<model>`. A bot whose model is not loaded gets it loaded on demand, and concurrent requests share one load.
+  - Download from the Hugging Face hub (GGUF variants with sizes and a memory-fit check, live progress), choose where models are stored, fine-tune with every training setting Studio has (with a live loss chart), and export as GGUF, LoRA, merged or base.
+  - Every operation Studio describes in its own API is callable from the agent and from the page, with forms built from Studio's schema, including file uploads.
+  - Models are loaded with a 32K context by default (Studio's own default can be 2,048, which breaks an agent's prompt).
+  - The model router used to list models that local servers (Ollama, Unsloth Studio) did not have, taken from the catalog, and every one of them failed. It now asks the server what it really serves; for Studio, only the models already loaded.
 - **A model router that learns, can be taught, and shows its reasoning** (the **Model Router** page; `/api/router/*`; [docs/agents/router.md](docs/agents/router.md)).
   - Every automatic choice is recorded with its full reasoning: the task class and why, each model left out and why, and every candidate's score split into quality, economy, headroom, reliability and speed. The outcome is recorded too.
   - It learns reliability and speed from every model call. A model that fails rests for a time that depends on the failure: minutes after a 429 (doubling on repeats), a week once 403s or 404s repeat, and its whole provider after a bad key.

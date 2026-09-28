@@ -2146,6 +2146,104 @@ export const operations = {
    "target"
   ]
  },
+ "GET /api/unsloth/download-status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/download-status",
+  "path_params": [],
+  "query_params": [
+   "repo_id",
+   "variant"
+  ]
+ },
+ "GET /api/unsloth/downloads": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/downloads",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/unsloth/export/status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/export/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/unsloth/models": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/models",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/unsloth/operations": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/operations",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/unsloth/recommended": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/recommended",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "GET /api/unsloth/status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/unsloth/storage": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/storage",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/unsloth/train/metrics": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/train/metrics",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/unsloth/train/runs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/train/runs",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/unsloth/train/schema": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/train/schema",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/unsloth/train/status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/train/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/unsloth/variants": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/variants",
+  "path_params": [],
+  "query_params": [
+   "repo_id"
+  ]
+ },
  "GET /api/vms": {
   "body": false,
   "method": "GET",
@@ -3886,6 +3984,69 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "POST /api/unsloth/call": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/unsloth/call",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/unsloth/download": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/unsloth/download",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/unsloth/estimate": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/unsloth/estimate",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/unsloth/export": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/unsloth/export",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/unsloth/load": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/unsloth/load",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/unsloth/train/start": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/unsloth/train/start",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/unsloth/train/stop": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/unsloth/train/stop",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/unsloth/unload": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/unsloth/unload",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/unsloth/upload": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/unsloth/upload",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/uploads/init": {
   "body": true,
   "method": "POST",
@@ -4066,6 +4227,13 @@ export const operations = {
   "path_params": [
    "swarm_id"
   ],
+  "query_params": []
+ },
+ "PUT /api/unsloth/storage": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/unsloth/storage",
+  "path_params": [],
   "query_params": []
  },
  "PUT /api/uploads/{session_id}/chunk/{index}": {
@@ -7994,6 +8162,174 @@ export const operations = {
   "path_params": [],
   "query_params": [
    "address"
+  ]
+ },
+ "unsloth_call_api_unsloth_call_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/unsloth/call",
+  "path_params": [],
+  "query_params": []
+ },
+ "unsloth_download_api_unsloth_download_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/unsloth/download",
+  "path_params": [],
+  "query_params": []
+ },
+ "unsloth_download_status_api_unsloth_download_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/download-status",
+  "path_params": [],
+  "query_params": [
+   "repo_id",
+   "variant"
+  ]
+ },
+ "unsloth_downloads_api_unsloth_downloads_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/downloads",
+  "path_params": [],
+  "query_params": []
+ },
+ "unsloth_estimate_api_unsloth_estimate_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/unsloth/estimate",
+  "path_params": [],
+  "query_params": []
+ },
+ "unsloth_export_api_unsloth_export_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/unsloth/export",
+  "path_params": [],
+  "query_params": []
+ },
+ "unsloth_export_status_api_unsloth_export_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/export/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "unsloth_load_api_unsloth_load_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/unsloth/load",
+  "path_params": [],
+  "query_params": []
+ },
+ "unsloth_models_api_unsloth_models_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/models",
+  "path_params": [],
+  "query_params": []
+ },
+ "unsloth_operations_api_unsloth_operations_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/operations",
+  "path_params": [],
+  "query_params": []
+ },
+ "unsloth_recommended_api_unsloth_recommended_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/recommended",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "unsloth_set_storage_api_unsloth_storage_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/unsloth/storage",
+  "path_params": [],
+  "query_params": []
+ },
+ "unsloth_status_api_unsloth_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "unsloth_storage_api_unsloth_storage_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/storage",
+  "path_params": [],
+  "query_params": []
+ },
+ "unsloth_train_metrics_api_unsloth_train_metrics_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/train/metrics",
+  "path_params": [],
+  "query_params": []
+ },
+ "unsloth_train_runs_api_unsloth_train_runs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/train/runs",
+  "path_params": [],
+  "query_params": []
+ },
+ "unsloth_train_schema_api_unsloth_train_schema_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/train/schema",
+  "path_params": [],
+  "query_params": []
+ },
+ "unsloth_train_start_api_unsloth_train_start_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/unsloth/train/start",
+  "path_params": [],
+  "query_params": []
+ },
+ "unsloth_train_status_api_unsloth_train_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/train/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "unsloth_train_stop_api_unsloth_train_stop_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/unsloth/train/stop",
+  "path_params": [],
+  "query_params": []
+ },
+ "unsloth_unload_api_unsloth_unload_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/unsloth/unload",
+  "path_params": [],
+  "query_params": []
+ },
+ "unsloth_upload_api_unsloth_upload_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/unsloth/upload",
+  "path_params": [],
+  "query_params": []
+ },
+ "unsloth_variants_api_unsloth_variants_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/unsloth/variants",
+  "path_params": [],
+  "query_params": [
+   "repo_id"
   ]
  },
  "v1_chat_api_browser_v1_chat_completions_post": {

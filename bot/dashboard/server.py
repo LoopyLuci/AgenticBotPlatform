@@ -861,6 +861,11 @@ def build_app() -> FastAPI:
 
     router_api.register(app, _require_token_or_api_key, _require_token)
 
+    # Unsloth Studio: load and serve its models, download, train, export, and every other operation it offers.
+    from bot.dashboard import unsloth_api
+
+    unsloth_api.register(app, _require_token_or_api_key, _require_token)
+
     # Editor integrations: install the VS Code extension, show the ACP command.
     from bot.dashboard import editors_api
 

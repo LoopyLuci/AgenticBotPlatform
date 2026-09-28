@@ -318,6 +318,13 @@ class NativeAgentBackend(Backend):
             except Exception:  # noqa: BLE001
                 logger.exception("stream_notify callback failed")
 
+        async def _send_once(transport, kwargs):
+            nonlocal streamed
+            if stream_notify is not None and getattr(transport, "supports_streaming", False):
+                streamed = True
+                return await transport.send_stream(on_event=_emit, **kwargs)
+            return await transport.send(**kwargs)
+
         async def _send(transport, model):
             nonlocal streamed
             streamed = False
@@ -328,11 +335,14 @@ class NativeAgentBackend(Backend):
             )
             started = time.monotonic()
             try:
-                if stream_notify is not None and getattr(transport, "supports_streaming", False):
-                    streamed = True
-                    response = await transport.send_stream(on_event=_emit, **kwargs)
-                else:
-                    response = await transport.send(**kwargs)
+                try:
+                    response = await _send_once(transport, kwargs)
+                except BackendError as first:
+                    # Unsloth Studio serves only a model it has loaded: load it (once, shared) and ask again.
+                    if not await _load_if_studio(transport, model, str(first)):
+                        raise
+                    started = time.monotonic()
+                    response = await _send_once(transport, kwargs)
             except BackendError as exc:
                 from bot.agent_runtime import estop as _estop
 
@@ -659,6 +669,26 @@ def _ref(transport, model) -> str:
     when known, else the transport's own provider key."""
     provider = getattr(transport, "router_provider", None) or getattr(transport, "provider_key", "") or type(transport).__name__
     return f"{provider}/{model}"
+
+
+async def _load_if_studio(transport, model: str, error: str) -> bool:
+    """When Unsloth Studio says it has no model loaded, load `model` there. True if it did (the caller asks again)."""
+    try:
+        from bot.unsloth import client as studio_client
+        from bot.unsloth import harness as studio
+
+        if not studio.not_loaded_error(error):
+            return False
+        found = studio_client.find()
+        base = str(getattr(transport, "base_url", "") or "")
+        if found is None or not base.startswith(found.root):
+            return False
+        logger.info("native backend: Unsloth Studio has %s unloaded; loading it", model)
+        await asyncio.to_thread(studio.ensure_loaded, model)
+        return True
+    except Exception:  # noqa: BLE001 — a failed load leaves the original error to be reported
+        logger.exception("native backend: loading %s in Unsloth Studio failed", model)
+        return False
 
 
 def _observe(transport, model, *, ok: bool, started: float, tokens=None, error: str = "") -> None:
