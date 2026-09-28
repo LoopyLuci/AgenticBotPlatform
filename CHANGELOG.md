@@ -19,6 +19,9 @@ app's own version (the Android app versions independently — see its own
   - Crash-loop protection: after three unhealthy boots ABP starts in safe mode, rolls config back to last-known-good, and skips plugins for one boot.
   - `python -m bot.sentinel.guardian` supervises the server for `scripts/run.*` and Docker. The desktop app now restarts a crashed server itself.
 - **Versioned database schema** (`PRAGMA user_version`) with a verified backup before each migration. A database written by a newer ABP is never written to: startup restores a backup this version can read.
+- **A benchmark**: `python -m abp_agenteval bench run --models auto --repeats 3`, then `bench summary` or `page --bench`.
+  - Runs each model several times, stamps every run with the ABP version, commit and a suite fingerprint, and resumes after an interruption.
+  - Runs cut short by a rate limit don't count. The leaderboard shows spread and which tasks pass reliably.
 - **Google Chat and Microsoft Teams channels.** Add them like any other bot (credential fields and setup steps are on the Add-a-bot form).
   - Every webhook request's signed token is verified as Google and Microsoft document; replies go out through the Chat API and the Bot Connector.
   - Tested against local stand-ins for both providers' servers, with real RS256 tokens; not yet run with real accounts.
@@ -51,6 +54,7 @@ app's own version (the Android app versions independently — see its own
 - The test suite runs in parallel (20 min → 3.5 min) under a ruff lint gate and a coverage floor, and passes on Python 3.13.
 
 ### Fixed
+- Live evaluation runs sent the report label (`provider/model`) to the provider as the model id, which the provider rejects. Live mode had never been run, so this had not shown.
 - Skills whose description contains a colon (`description: Affiliate: commissions`) were invisible to the model: strict YAML rejects the line, which dropped the description. About 1% of the skills in a real library are written this way.
 - Tests could see the previous test's settings: each test got a fresh copy of `backends.yaml`, but the in-memory config still held the previous test's values.
 - Importers now keep `backends.yaml`'s comments. They used a write that re-dumped the whole file and dropped them.

@@ -110,8 +110,10 @@ def _materialise(base: Path, files: dict[str, str]) -> None:
 
 
 def run_task(task: Task, make_transport: Callable[[Task], Any], *, model: str = "scripted",
-             keep: bool = False, timeout_s: float = 300) -> dict:
-    """Run one task. `make_transport(task)` returns the transport to use."""
+             keep: bool = False, timeout_s: float = 300, api_model: Optional[str] = None) -> dict:
+    """Run one task. `make_transport(task)` returns the transport to use. `model` labels the report ("provider/model");
+    `api_model` is the id sent to the provider, when different (a live run's label carries the provider name, which the
+    provider itself would reject)."""
     from bot.agent_runtime import trace
     from bot.backends.native_backend import NativeAgentBackend
 
@@ -127,7 +129,7 @@ def run_task(task: Task, make_transport: Callable[[Task], Any], *, model: str = 
     try:
         with isolated_environment(root, task.approvals, task):
             transport = make_transport(task)
-            backend = NativeAgentBackend(transport, model=model, name="eval")
+            backend = NativeAgentBackend(transport, model=api_model or model, name="eval")
             try:
                 ctx = {"cwd": str(workspace), "source": "eval"}
                 if task.permission_mode:
@@ -174,8 +176,8 @@ def run_task(task: Task, make_transport: Callable[[Task], Any], *, model: str = 
 
 
 def run_suite(tasks: list[Task], make_transport: Callable[[Task], Any], *, mode: str, model: str,
-              keep: bool = False) -> dict:
-    results = [run_task(t, make_transport, model=model, keep=keep) for t in tasks]
+              keep: bool = False, api_model: Optional[str] = None) -> dict:
+    results = [run_task(t, make_transport, model=model, keep=keep, api_model=api_model) for t in tasks]
     passed = sum(1 for r in results if r["passed"])
     return {
         "schema": SCHEMA_VERSION, "mode": mode, "model": model, "when": time.time(),
