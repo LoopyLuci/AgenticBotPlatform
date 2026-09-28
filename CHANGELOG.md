@@ -19,6 +19,9 @@ app's own version (the Android app versions independently — see its own
   - Crash-loop protection: after three unhealthy boots ABP starts in safe mode, rolls config back to last-known-good, and skips plugins for one boot.
   - `python -m bot.sentinel.guardian` supervises the server for `scripts/run.*` and Docker. The desktop app now restarts a crashed server itself.
 - **Versioned database schema** (`PRAGMA user_version`) with a verified backup before each migration. A database written by a newer ABP is never written to: startup restores a backup this version can read.
+- **Google Chat and Microsoft Teams channels.** Add them like any other bot (credential fields and setup steps are on the Add-a-bot form).
+  - Every webhook request's signed token is verified as Google and Microsoft document; replies go out through the Chat API and the Bot Connector.
+  - Tested against local stand-ins for both providers' servers, with real RS256 tokens; not yet run with real accounts.
 - **Import a Hermes Agent or OpenClaw setup**: `python -m abp_import hermes|openclaw`, a dry run unless `--apply`.
   - Carries over providers and API keys, the default and fallback models (never Claude), MCP servers, the skill library (linked in place), SOUL.md, memories, prompt jobs (created paused), Telegram/Discord/Slack channels (created switched off) and deny rules.
   - Anything that would widen what the agent may do is reported and skipped.

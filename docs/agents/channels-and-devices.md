@@ -15,9 +15,18 @@ setup steps come from `/api/platform-guides`. Only the listed senders are answer
 | **SMS** (Twilio) | Twilio posts each text to `/webhooks/sms`; replies go through Twilio's REST API | Requests are verified with Twilio's `X-Twilio-Signature` (the algorithm reproduces the example in Twilio's own documentation); behind a proxy set `sms.public_url`. Replies cost money per segment. |
 | **Signal** | A [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) bridge you run; ABP polls it | The bridge holds the Signal keys and sees messages in the clear. Group messages are ignored. `json-rpc` mode of the bridge is not supported. |
 | **iMessage** | A [BlueBubbles](https://bluebubbles.app) server on a Mac you own; it posts to `/webhooks/bluebubbles?token=...` | Needs a Mac signed in to iMessage. The token is compared in constant time. Group chats ignored. |
+| **Google Chat** | A Chat app with an HTTP endpoint posts each event to `/webhooks/googlechat`. Replies are posted through the Chat API as your service account, in the message's thread | Every request's bearer token is verified as Google documents: for the "Project number" audience, a JWT from `chat@system.gserviceaccount.com` checked against its published certificates; for "HTTP endpoint URL", a Google ID token whose email is that account. Anything else gets 401. People @mention the bot in spaces. The Workspace add-on variant of a Chat app is refused with a message saying so. |
+| **Microsoft Teams** | An Azure Bot's messaging endpoint is `/webhooks/teams`. Replies are posted to the Bot Connector with an Entra ID token (client credentials) | Verified as Microsoft documents: signature against login.botframework.com's keys, issuer `https://api.botframework.com`, audience the App ID, the token's `serviceUrl` equal to the activity's, and channel endorsements (403 without one). A typing indicator shows while the agent works. Single-tenant (tenant ID) and multi-tenant bots are both handled. |
 | **App only** (`app`) | No external platform at all — reached only through `POST /api/chat/send-to-bot`, the same route the desktop app, the Android app and the CLI/TUI already use | Needs no credentials and no allowed-user-id list: access is whoever can already authenticate to the dashboard API (`DASHBOARD_TOKEN`, or a paired device's own key). Has no live connection to start, stop or crash — `bot/platform_supervisor.py`'s `start_instance` is a no-op for it. |
 
-Not built: Google Chat and Microsoft Teams (both need Google/Microsoft sign-in flows that cannot be tested here).
+**Google Chat and Teams were not run against real accounts:** there is no Google Workspace or Azure tenant here. They were
+tested end to end against local stand-ins for Google's and Microsoft's servers (`tests/test_googlechat_teams.py`), with real
+RS256 tokens, a token endpoint that checks the service account's signed assertion, and captured replies. The stand-ins
+follow the documented formats, which were re-read from the official pages when this was written.
+
+Those tests reject every forged request: no token, the wrong audience, issuer, signature, key or algorithm, an expired
+token (5 minutes of clock skew is allowed), a mismatched `serviceUrl`, and a missing endorsement. They also cover a key
+rotated in since the last fetch.
 
 ## Paired phones as nodes
 

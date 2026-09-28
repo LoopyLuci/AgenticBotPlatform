@@ -4,6 +4,8 @@ Webhooks (no dashboard token possible - the sender is a third party; each is aut
 
     POST /webhooks/sms                Twilio: form-encoded, signed with X-Twilio-Signature
     POST /webhooks/bluebubbles?token= BlueBubbles: JSON, authenticated by the instance's webhook_token
+    POST /webhooks/googlechat         Google Chat: JSON, a JWT from Google in Authorization (401 if it does not verify)
+    POST /webhooks/teams              Microsoft Teams (Azure Bot): an Activity, a JWT from the Bot Connector (401/403)
 
 Both check first and answer at once (an empty 200), and produce the agent's answer in the background, because the sender
 gives up after a few seconds and an agent turn can take minutes.
@@ -53,7 +55,7 @@ class _Consent(BaseModel):
 
 def register(app: FastAPI, read_auth: Callable, write_auth: Callable, caller_device_id: Callable) -> None:
     from bot import canvas, nodes
-    from bot.platforms import imessage_platform, sms_platform
+    from bot.platforms import googlechat_platform, imessage_platform, sms_platform, teams_platform
 
     read = [Depends(read_auth)]
     write = [Depends(write_auth)]
@@ -83,6 +85,39 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable, caller_dev
             return JSONResponse({"status": 200})
         bg.spawn(imessage_platform.deliver(instance, got))
         return JSONResponse({"status": 200})
+
+    @app.post("/webhooks/googlechat")
+    async def googlechat_webhook(request: Request):
+        try:
+            body = await request.json()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="not JSON") from exc
+        instance, event, why = await googlechat_platform.check(body, request.headers.get("authorization", ""))
+        if instance is None:
+            if why.startswith("unauthorized"):
+                logger.warning("google chat webhook refused: %s", why)
+                raise HTTPException(status_code=401, detail=why.removeprefix("unauthorized: "))
+            return JSONResponse({})
+        if event["type"] == "ADDED_TO_SPACE":
+            return JSONResponse(googlechat_platform.welcome(event))
+        if event["type"] == "MESSAGE" and event["text"]:
+            bg.spawn(googlechat_platform.deliver(instance, event))
+        return JSONResponse({})
+
+    @app.post("/webhooks/teams")
+    async def teams_webhook(request: Request):
+        try:
+            activity = await request.json()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="not JSON") from exc
+        instance, why, status = await teams_platform.check(activity, request.headers.get("authorization", ""))
+        if instance is None:
+            if status >= 400:
+                logger.warning("teams webhook refused: %s", why)
+                raise HTTPException(status_code=status, detail=why)
+            return Response(status_code=200)
+        bg.spawn(teams_platform.deliver(instance, activity))
+        return Response(status_code=200)
 
     # ---- canvas ---------------------------------------------------------------------------------------------------------
     def _name_and_sig(name: str, sig: str) -> str:

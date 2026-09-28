@@ -9,9 +9,9 @@
 > daemon; a real git remote (skill fetch); Zed or any ACP editor; pyright and typescript-language-server (rust-analyzer *was* used); a GitHub
 > runner; the real OpenCode and OpenClaw programs; Gmail / a real mailbox, Twilio, a Signal bridge, BlueBubbles; a real Whisper service or Piper;
 > real websites in the browser tool (a real Edge against local pages *was* used); Firebase push; and the Android app, which implements none of
-> the new node, approval or canvas surfaces. **Not built at all:** the shared cloud computer, native computer use, Google Chat, Teams, Hermes /
-> OpenClaw importers, a VS Code extension, dashboard screens for traces / permissions / usage / vault / routines, and consumption of streaming
-> by the UIs.
+> the new node, approval or canvas surfaces; Google Chat and Teams (built and tested against stand-ins of Google's and Microsoft's servers).
+> **Not built at all:** the shared cloud computer, native computer use, dashboard screens for traces / permissions / usage / vault / routines,
+> and consumption of streaming by the UIs.
 
 | Phase | What | Status |
 |---|---|---|
@@ -23,7 +23,7 @@
 | PM | Model knowledge, limits and usage (added later) | **Built** (API and chat only; no dashboard screen) |
 | P5 | Code intelligence and developer surfaces | **Built**, including the VS Code extension (none of it run against Zed, pyright, a GitHub runner or the real OpenCode / OpenClaw) |
 | P6 | Browser, computer use, routines (the Grok Bot pillar) | **Partly built** (browser, vault, routines, approvals; not the cloud computer or computer use) |
-| P7 | Channels, devices and voice | **Partly built** (four new channels, node protocol, voice, canvas - all against fakes; no Google Chat / Teams; Android does not implement nodes) |
+| P7 | Channels, devices and voice | **Partly built** (six new channels including Google Chat and Teams, node protocol, voice, canvas - all against fakes; Android does not implement nodes) |
 | P8 | Learning and efficiency | **Built** (the model router now auto-selects and auto-fails-over, not advisory-only; it and the tuning harness have never had a live model to measure) |
 | P9 | Compatibility and docs | **Partly built** (Hermes / OpenClaw importers built; no public benchmark) |
 
@@ -226,7 +226,7 @@ would want to know about a model.
 | Deliverable | State |
 |---|---|
 | E-mail, SMS (Twilio), Signal (signal-cli bridge) and iMessage (BlueBubbles) channels, with per-channel allow-lists, forged-sender protection for e-mail, Twilio signature checking, and forms in the dashboard, desktop app and terminal UI | Built. **Tested against fakes only** (in-process IMAP/SMTP servers, a fake Twilio, bridge and BlueBubbles); never run against a real mailbox, Twilio account, Signal bridge or Mac. Twilio's signature algorithm reproduces the example in Twilio's own documentation |
-| Google Chat, Microsoft Teams | **Not built** - they need Google / Microsoft sign-in flows that cannot be tested here |
+| Google Chat, Microsoft Teams | **Built.** Webhooks at `/webhooks/googlechat` and `/webhooks/teams`, every request's JWT verified as each provider documents; replies through the Chat API (service account) and the Bot Connector (Entra client credentials). Tested end to end against local stand-ins with real RS256 tokens (`tests/test_googlechat_teams.py`); **not run against a real Google Workspace or Azure tenant** |
 | Paired phones as nodes (camera, screen, location, clipboard, notification) with per-capability consent that starts at deny, `node_invoke` / `node_list` tools, long-poll protocol, push wake-up | Server half built and tested over real HTTP with a reference node. **The Android app does not implement it**: no real phone has answered a command |
 | Speech to text (OpenAI-compatible endpoint such as Groq's free Whisper, or your own command) and text to speech (endpoint, Windows speech, or command); Telegram voice messages transcribed and optionally answered by voice | Built. Windows speech verified producing a real WAV; **not tested against a real Whisper service, Piper or whisper.cpp**. Voice on the other channels and in the apps is not done; no wake word, no push-to-talk |
 | Canvas: a live page the agent draws, in a no-network sandbox behind signed links | Built and tested. A web page only; not embedded in the desktop or Android apps |

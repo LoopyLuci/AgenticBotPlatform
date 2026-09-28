@@ -40222,6 +40222,22 @@
     "summary": "Bluebubbles Webhook"
    }
   },
+  "/webhooks/googlechat": {
+   "post": {
+    "operationId": "googlechat_webhook_webhooks_googlechat_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Googlechat Webhook"
+   }
+  },
   "/webhooks/sms": {
    "post": {
     "operationId": "sms_webhook_webhooks_sms_post",
@@ -40236,6 +40252,22 @@
      }
     },
     "summary": "Sms Webhook"
+   }
+  },
+  "/webhooks/teams": {
+   "post": {
+    "operationId": "teams_webhook_webhooks_teams_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Teams Webhook"
    }
   },
   "/webhooks/whatsapp": {

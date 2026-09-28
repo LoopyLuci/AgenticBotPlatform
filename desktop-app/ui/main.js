@@ -1696,7 +1696,7 @@ function _tokenFieldKey(platform) {
 
 // Channels added later (e-mail, SMS, Signal, iMessage) draw their credential fields from /api/platform-guides, so a new
 // channel needs no new form markup. Fields marked optional in the guide are skipped when left empty.
-const GENERIC_PLATFORMS = ['email', 'sms', 'signal', 'imessage'];
+const GENERIC_PLATFORMS = ['email', 'sms', 'signal', 'imessage', 'googlechat', 'teams'];
 const STRING_ID_PLATFORMS = ['slack', 'matrix', 'whatsapp', ...GENERIC_PLATFORMS];
 
 function renderGenericFields(platform, values) {
@@ -1712,7 +1712,7 @@ function renderGenericFields(platform, values) {
   box.innerHTML = '';
   box.dataset.platform = platform;
   for (const [name, meta] of Object.entries(guide.fields)) {
-    const secret = /token|secret|password/i.test(name);
+    const secret = /token|secret|password|json/i.test(name);
     const wrap = document.createElement('div');
     wrap.innerHTML = `<label style="margin-top:8px; display:block;">${esc(meta.label || name)}${meta.optional ? ' (optional)' : ''}</label>` +
       `<div class="row"><input type="${secret ? 'password' : 'text'}" data-gen-field="${esc(name)}" autocomplete="off" spellcheck="false"></div>` +

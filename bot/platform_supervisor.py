@@ -129,6 +129,7 @@ _RUNNERS = {
     "matrix": _run_matrix, "whatsapp": _run_whatsapp,
     "email": _runner_for("email_platform"), "sms": _runner_for("sms_platform"),
     "signal": _runner_for("signal_platform"), "imessage": _runner_for("imessage_platform"),
+    "googlechat": _runner_for("googlechat_platform"), "teams": _runner_for("teams_platform"),
 }
 
 
