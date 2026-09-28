@@ -422,3 +422,22 @@ def test_the_api(temp_db, monkeypatch):
     assert {"cooldown", "feedback", "policy", "example", "cooldown_cleared", "reset"} <= kinds
     assert c.post("/api/router/reset", headers=h, json={}).json() == {"ok": True}
     assert c.get("/api/router/overview", headers=h).json()["decisions"] == 0
+
+
+def test_routing_classifies_the_persons_message_not_the_bots_instructions(temp_db, monkeypatch, tmp_path):
+    """bot/router.py puts a bot's standing instructions in front of the prompt; routing on that made every task of a bot
+    with long instructions look like a long coding request (seen live with an imported Hermes SOUL.md)."""
+    backend, _sent = _auto_backend(monkeypatch, {})
+    instructions = "You are a careful assistant. Refactor code, write tests and review every commit. " * 12
+    ctx = {"cwd": str(tmp_path / "ws"), "instance_id": _instance(), "route_text": TRIVIAL}
+    asyncio.run(backend.ask(f"{instructions}\n\n{TRIVIAL}", context=ctx))
+    row = store.rows("SELECT task_class, task_excerpt FROM decisions")[0]
+    assert row == {"task_class": "trivial", "task_excerpt": TRIVIAL}
+
+
+def test_the_router_hands_the_backend_the_persons_own_message():
+    import inspect
+
+    from bot import router as bot_router
+
+    assert 'context.setdefault("route_text", prompt)' in inspect.getsource(bot_router)

@@ -464,6 +464,9 @@ class Router:
         # never send into an unlinked/wrong conversation. Other backends
         # ignore these keys.
         context = dict(context or {})
+        # The model router classifies the person's own message, not the bot's standing instructions glued in front
+        # of it (those made every task of a bot with long instructions look like a long coding request).
+        context.setdefault("route_text", prompt)
         if instance_id is not None:
             context.setdefault("instance_id", instance_id)
             context.setdefault("desktop_session_key", desktop_session_key)
