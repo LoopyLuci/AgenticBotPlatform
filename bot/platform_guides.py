@@ -175,6 +175,32 @@ PLATFORM_GUIDES: dict[str, dict] = {
             "Put the phone numbers or Apple IDs allowed to message the bot in Allowed user ID(s). Group chats are ignored.",
         ],
     },
+    "googlechat": {
+        "label": "Google Chat",
+        "fields": {
+            "service_account_json": {"label": "Service account key (JSON)", "help": "Google Cloud console -> IAM -> Service accounts -> Keys -> Add key (JSON). Paste the whole file. The bot replies as this account."},
+            "audience": {"label": "Authentication audience", "help": "Your Google Cloud project NUMBER if the Chat app's Authentication audience is 'Project Number', or the exact endpoint URL if it is 'HTTP endpoint URL'."},
+        },
+        "setup_guide": [
+            "In a Google Cloud project, enable the Google Chat API and create a service account with a JSON key.",
+            "Google Chat API -> Configuration: set the app's name and avatar, choose 'HTTP endpoint URL' as the connection and enter <your public HTTPS domain>/webhooks/googlechat. Leave 'Build this Chat app as a Workspace add-on' off.",
+            "Pick the Authentication audience (Project Number or HTTP endpoint URL) and enter the same choice here.",
+            "Under Visibility, add the people who may use it, and put their e-mail addresses in Allowed user ID(s). In a space, people @mention the bot.",
+        ],
+    },
+    "teams": {
+        "label": "Microsoft Teams",
+        "fields": {
+            "app_id": {"label": "Microsoft App ID", "help": "Azure Bot -> Configuration -> Microsoft App ID (a GUID)."},
+            "app_password": {"label": "Client secret", "help": "Azure Bot -> Configuration -> Manage Password -> New client secret. Copy the secret's value."},
+            "tenant_id": {"label": "Tenant ID", "optional": True, "help": "For a single-tenant bot (the default for new bots): App Tenant ID on the same page. Leave empty for a multi-tenant bot."},
+        },
+        "setup_guide": [
+            "In the Azure portal create an Azure Bot. Under Configuration set the messaging endpoint to <your public HTTPS domain>/webhooks/teams.",
+            "Under Channels add Microsoft Teams. Create a Teams app package (Developer Portal for Teams) with this App ID and upload it for the people who will use it.",
+            "Put the Entra object IDs (GUIDs) of those people in Allowed user ID(s): Entra admin centre -> Users -> the person -> Object ID.",
+        ],
+    },
     "app": {
         "label": "App only (no external platform)",
         "fields": {},

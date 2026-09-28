@@ -21,6 +21,8 @@ Platform-specific `credentials` JSON shapes:
   sms:       {"account_sid": "AC...", "auth_token": "...", "from_number": "+E.164"}   (Twilio)
   signal:    {"api_url": "http://...", "number": "+E.164"}                            (signal-cli REST bridge)
   imessage:  {"server_url": "http://...", "password": "...", "webhook_token": "..."}  (BlueBubbles)
+  googlechat: {"service_account_json": "{...}", "audience": "<project number> or <endpoint URL>"}
+  teams:     {"app_id": "<GUID>", "app_password": "...", "tenant_id": "<GUID>" (optional, single-tenant bots)}
   app:       {}  (no external platform at all - see PLATFORMS' own comment below)
 """
 
@@ -35,7 +37,7 @@ from bot import db, envfile
 from bot.personas import DEFAULT_PERSONA
 from bot.validators import PLATFORM_TOKEN_VALIDATORS, validate_user_ids
 
-PLATFORMS = ("telegram", "discord", "slack", "matrix", "whatsapp", "email", "sms", "signal", "imessage", "app")
+PLATFORMS = ("telegram", "discord", "slack", "matrix", "whatsapp", "email", "sms", "signal", "imessage", "googlechat", "teams", "app")
 # "app": no external chat platform at all - reachable only via POST /api/chat/send-to-bot (the
 # same route the Android app and the CLI/TUI already use), which is already logged with
 # platform="app" for exactly this case (see bot/dashboard/server.py's api_chat_send_to_bot).
@@ -44,7 +46,7 @@ PLATFORMS = ("telegram", "discord", "slack", "matrix", "whatsapp", "email", "sms
 # platform user-id allowlist, not a weaker one. Has no live connection to start/stop
 # (bot/platform_supervisor.py's start_instance is a no-op for it).
 # Platforms whose user ids are strings (Telegram and Discord use numbers). E-mail addresses and phone numbers are strings too.
-STRING_ID_PLATFORMS = ("slack", "matrix", "whatsapp", "email", "sms", "signal", "imessage")
+STRING_ID_PLATFORMS = ("slack", "matrix", "whatsapp", "email", "sms", "signal", "imessage", "googlechat", "teams")
 
 BACKUP_DIR = envfile.PROJECT_ROOT / "data" / "bot_instances_backups"
 

@@ -3828,10 +3828,24 @@ export const operations = {
    "token"
   ]
  },
+ "POST /webhooks/googlechat": {
+  "body": false,
+  "method": "POST",
+  "path": "/webhooks/googlechat",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /webhooks/sms": {
   "body": false,
   "method": "POST",
   "path": "/webhooks/sms",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /webhooks/teams": {
+  "body": false,
+  "method": "POST",
+  "path": "/webhooks/teams",
   "path_params": [],
   "query_params": []
  },
@@ -6791,6 +6805,13 @@ export const operations = {
    "session"
   ]
  },
+ "googlechat_webhook_webhooks_googlechat_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/webhooks/googlechat",
+  "path_params": [],
+  "query_params": []
+ },
  "handler_api_docker_containers_get": {
   "body": false,
   "method": "GET",
@@ -7367,6 +7388,13 @@ export const operations = {
   "body": false,
   "method": "POST",
   "path": "/webhooks/sms",
+  "path_params": [],
+  "query_params": []
+ },
+ "teams_webhook_webhooks_teams_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/webhooks/teams",
   "path_params": [],
   "query_params": []
  },

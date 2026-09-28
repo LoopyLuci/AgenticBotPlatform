@@ -150,6 +150,34 @@ def validate_secret_16(v: str) -> tuple[bool, str]:
     return False, "should be at least 16 characters"
 
 
+_GUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
+def validate_guid(v: str) -> tuple[bool, str]:
+    if _GUID.match(v.strip()):
+        return True, "looks right"
+    return False, "should be a GUID like 00000000-0000-0000-0000-000000000000"
+
+
+def validate_google_service_account(v: str) -> tuple[bool, str]:
+    import json
+
+    try:
+        data = json.loads(v)
+    except ValueError:
+        return False, "should be the service account's JSON key file, pasted whole"
+    if not isinstance(data, dict) or data.get("type") != "service_account" or not data.get("client_email") or not data.get("private_key"):
+        return False, "should be a service account key (type service_account, with client_email and private_key)"
+    return True, f"service account {data['client_email']}"
+
+
+def validate_chat_audience(v: str) -> tuple[bool, str]:
+    v = v.strip()
+    if v.isdigit() or v.startswith("https://"):
+        return True, "looks right"
+    return False, "should be your Google Cloud project number, or the https:// endpoint URL, whichever the app uses"
+
+
 def validate_allowed_for(platform: str, ids: list[str]) -> tuple[bool, str]:
     """The allow-list entries of the string-id channels: e-mail addresses, or phone numbers in international form."""
     if platform == "email":
@@ -164,6 +192,14 @@ def validate_allowed_for(platform: str, ids: list[str]) -> tuple[bool, str]:
         if all(_E164.match(re.sub(r"[\s().-]", "", i.strip())) or re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", i.strip()) for i in ids):
             return True, ""
         return False, "allowed users for iMessage must be phone numbers (+15551234567) or Apple ID e-mail addresses"
+    if platform == "googlechat":
+        if all(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", i.strip()) or re.match(r"^users/\d+$", i.strip()) for i in ids):
+            return True, ""
+        return False, "allowed users for Google Chat must be e-mail addresses (or users/<id>)"
+    if platform == "teams":
+        if all(_GUID.match(i.strip()) or i.strip().startswith("29:") for i in ids):
+            return True, ""
+        return False, "allowed users for Teams must be Entra object IDs (GUIDs, from each person's profile in the Entra admin centre)"
     return True, ""
 
 
@@ -196,6 +232,8 @@ PLATFORM_TOKEN_VALIDATORS = {
     "sms": {"account_sid": validate_twilio_sid, "auth_token": validate_secret_16, "from_number": validate_e164},
     "signal": {"api_url": validate_http_url, "number": validate_e164},
     "imessage": {"server_url": validate_http_url, "password": validate_nonempty, "webhook_token": validate_secret_16},
+    "googlechat": {"service_account_json": validate_google_service_account, "audience": validate_chat_audience},
+    "teams": {"app_id": validate_guid, "app_password": validate_nonempty},   # tenant_id is optional
     "app": {},   # no external platform at all — reachable only from the desktop app, mobile app or CLI/TUI
 }
 

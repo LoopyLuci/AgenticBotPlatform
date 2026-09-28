@@ -22,7 +22,7 @@ def test_platform_guides_needs_no_auth_and_covers_every_platform(temp_db, monkey
     assert resp.status_code == 200
     body = resp.json()
     assert set(body.keys()) == {"telegram", "discord", "slack", "matrix", "whatsapp", "email", "sms", "signal",
-                                "imessage", "app"}
+                                "imessage", "googlechat", "teams", "app"}
     for platform, guide in body.items():
         assert guide["label"]
         # "app" (no external platform at all) is the one deliberate exception: it has no
