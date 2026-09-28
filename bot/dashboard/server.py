@@ -876,6 +876,12 @@ def build_app() -> FastAPI:
 
     vm_harness_api.register(app, _require_token_or_api_key, _require_token)
 
+    # Hermes Manager: a separate program ABP installs, updates and drives (Hermes's gateway, logs, config, backups...
+    # and its own window).
+    from bot.dashboard import hermes_manager_api
+
+    hermes_manager_api.register(app, _require_token_or_api_key, _require_token)
+
     # Editor integrations: install the VS Code extension, show the ACP command.
     from bot.dashboard import editors_api
 

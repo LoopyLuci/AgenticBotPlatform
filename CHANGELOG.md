@@ -9,6 +9,10 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **Hermes Manager as an ABP module** (the **Hermes Manager** page; `hm_*` agent tools; `/api/hermes-manager/*`; [docs/agents/hermes-manager.md](docs/agents/hermes-manager.md)).
+  - Hermes Manager stays its own program in its own repo; ABP finds a working copy (or clones and builds one), updates it from the repo (never over uncommitted work), and starts a headless bridge that the window reuses when it opens.
+  - Every operation of its bridge (gateway, logs, sessions, chat, config, updates, backups, MCP servers, skills, cron, plugins, models) from the agent and from forms on the page, and its window driven remotely with a live screenshot.
+  - Its own MCP server can be added to ABP's external MCP servers in one click.
 - **A toolkit for programming, computer science and assets** (`abp_toolkit`; the agent's `toolkit_*` tools; `python -m abp_toolkit` and its MCP server; [docs/agents/toolkit.md](docs/agents/toolkit.md)).
   - A linter for every language: the installed linters (ruff, eslint, tsc, shellcheck, PSScriptAnalyzer...) plus built-in syntax checks (Python, JSON, YAML, TOML, XML, INI, HTML, CSS, PowerShell, JS, shell) and structure checks for batch files, VBScript, SQL, CSV and Dockerfiles, and secrets, conflict markers and mixed line endings in any file.
   - Formatting, running code in 20+ languages, codebase analysis (complexity, import cycles, duplicates, dead code, risky patterns), full Python tooling, computer-science utilities, 15 project templates that pass their own tests, asset generation (icons, favicons, images, charts, diagrams, QR codes, badges, sprites, sounds), and a library of 35 PowerShell, CMD, VBScript, Python and Bash scripts.
