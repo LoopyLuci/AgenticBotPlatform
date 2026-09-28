@@ -241,6 +241,11 @@ class ConfigManager:
         from watchfiles import awatch
 
         while True:
+            if self.missing_ok and not self.path.exists():
+                await asyncio.sleep(5)            # an optional file (providers.yaml) that does not exist yet
+                if self.path.exists():
+                    self.reload(actor="file-watch")
+                continue
             try:
                 async for _changes in awatch(str(self.path)):
                     self.reload(actor="file-watch")

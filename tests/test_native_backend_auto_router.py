@@ -191,16 +191,25 @@ def test_auto_failover_never_retries_the_same_candidate_twice(temp_db, monkeypat
 # ---- never Claude by default ----------------------------------------------------------
 
 def test_candidate_models_excludes_anthropic_from_the_implicit_free_search(monkeypatch):
-    from bot import model_catalog
+    from bot import model_catalog, providers
 
-    fake_results = [
-        {"provider": "anthropic", "model": "claude-haiku-4-5"},
-        {"provider": "openrouter", "model": "qwen/qwen3-8b:free"},
-    ]
-    monkeypatch.setattr(model_catalog, "search", lambda **kw: fake_results)
+    catalog = {"anthropic": [{"provider": "anthropic", "model": "claude-haiku-4-5"}],
+               "openrouter": [{"provider": "openrouter", "model": "qwen/qwen3-8b:free"}]}
+    monkeypatch.setattr(providers, "list_providers", lambda: {"my-router": {}, "anthropic": {}})
+    monkeypatch.setattr(model_catalog, "catalog_provider_for", lambda name, base_url="": "openrouter" if name == "my-router" else name)
+    monkeypatch.setattr(model_catalog, "search", lambda **kw: catalog.get(model_catalog.catalog_provider_for(kw.get("provider", "")), []))
     monkeypatch.setattr(model_router, "_cfg", lambda: {})
-    out = model_router.candidate_models()
-    assert out == ["openrouter/qwen/qwen3-8b:free"]
+    assert model_router.candidate_models() == ["my-router/qwen/qwen3-8b:free"], "named as configured here, and never Claude"
+
+
+def test_only_configured_providers_are_candidates(monkeypatch):
+    """Searching the whole catalog ranked models of providers nobody had set up first, and `auto` then failed."""
+    from bot import model_catalog, providers
+
+    monkeypatch.setattr(providers, "list_providers", lambda: {})
+    monkeypatch.setattr(model_catalog, "search", lambda **kw: [{"provider": "kilo", "model": "x:free"}])
+    monkeypatch.setattr(model_router, "_cfg", lambda: {"also": ["ollama/local"]})
+    assert model_router.candidate_models() == ["ollama/local"]
 
 
 def test_candidate_models_does_not_filter_an_explicit_list(monkeypatch):

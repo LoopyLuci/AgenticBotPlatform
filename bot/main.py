@@ -432,6 +432,10 @@ async def run() -> None:
         )
 
     watch_task = asyncio.create_task(config.watch_forever())
+    # config/providers.yaml too: a provider added outside the app (abp_import, an edit by hand) is picked up at once.
+    from bot import providers as provider_registry
+
+    providers_watch_task = asyncio.create_task(provider_registry._manager.watch_forever())
 
     from bot import hotreload
 
@@ -482,6 +486,7 @@ async def run() -> None:
     finally:
         logger.info("shutting down")
         watch_task.cancel()
+        providers_watch_task.cancel()
         hotreload_task.cancel()
         await infra_task
         await scheduler_task  # stop_event is already set; run_forever exits its own loop cleanly
