@@ -140,6 +140,7 @@ def ollama(monkeypatch, temp_db):
     client._reset_for_tests()
     with harness._jobs_lock:
         harness._jobs.clear()
+    client.find()                 # the tools' per-turn check reads this cache
     yield fake
     client._reset_for_tests()
 
@@ -350,6 +351,7 @@ def test_the_api_says_when_ollama_is_not_running(temp_db, monkeypatch):
     from bot.dashboard.server import build_app
 
     monkeypatch.setattr(client, "find", lambda **_k: None)
+    monkeypatch.setattr(client, "find_cached", lambda: None)
     monkeypatch.setenv("DASHBOARD_TOKEN", "t" * 48)
     c = TestClient(build_app())
     h = {"X-Dashboard-Token": "t" * 48}

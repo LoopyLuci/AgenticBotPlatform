@@ -792,6 +792,7 @@
       <a href="#models" data-kw="models providers api keys free toggle"><span class="ic">🧩</span><span class="nav-txt"><b>Models</b><small>Providers, API keys, per-model toggles</small></span></a>
       <a href="#router" data-kw="router model routing auto learning decisions policy training feedback"><span class="ic">🧭</span><span class="nav-txt"><b>Model Router</b><small>Decisions, learning, training &amp; policy</small></span></a>
       <a href="#unsloth" data-kw="unsloth studio local models gguf load gpu fine-tune train export hugging face"><span class="ic">🦥</span><span class="nav-txt"><b>Unsloth</b><small>Local models, fine-tuning &amp; export</small></span></a>
+      <a href="#vm-harness" data-kw="vm harness virtual machines qemu virtualbox vmware hyper-v wsl kvm docker podman kubernetes containers"><span class="ic">🖧</span><span class="nav-txt"><b>VM-Harness</b><small>Virtual machines &amp; containers</small></span></a>
       <a href="#ollama" data-kw="ollama local models pull modelfile gguf cloud llama load gpu"><span class="ic">🦙</span><span class="nav-txt"><b>Ollama</b><small>Pull, load, create &amp; cloud models</small></span></a>
       <a href="#kanban" data-kw="kanban board cards tasks"><span class="ic">🗒</span><span class="nav-txt"><b>Kanban</b><small>Per-bot task board</small></span></a>
       <a href="#agents" data-kw="agents abp agent native settings permissions safety tools skills sub-agents"><span class="ic">🤖</span><span class="nav-txt"><b>ABP Agents</b><small>Settings, safety, tools, skills</small></span></a>
@@ -811,7 +812,7 @@
     </nav>
     <div class="side-status">
       <div class="row"><span>Desktop</span><b id="s-desktop">—</b></div>
-      <div class="row"><span>Config version</span><b id="s-version">—</b></div>
+      <div class="row"><span>ABP</span><b id="s-version">—</b></div>
       <div class="row"><span>Default backend</span><b id="s-default-backend">—</b></div>
       <div class="row"><span>Refreshed</span><b id="s-refreshed">—</b></div>
     </div>
@@ -1787,6 +1788,11 @@
       <div id="us-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
+    <section id="vm-harness">
+      <div class="sec-head"><h2>VM-Harness</h2><span class="desc">VM-Harness from ABP: every virtual machine (QEMU, VirtualBox, VMware, Hyper-V, WSL, KVM) and container (Docker, Podman, Kubernetes) it reaches, its window driven remotely, and all of its operations. It stays its own program, updated from its own repo.</span></div>
+      <div id="vh-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
+
     <section id="ollama">
       <div class="sec-head"><h2>Ollama</h2><span class="desc">Ollama from ABP: pull and load models and serve them to your bots, cloud models, build models from a Modelfile or a GGUF file, and every route Ollama serves.</span></div>
       <div id="ol-root"><p class="cardnote">Connecting to the ABP server…</p></div>
@@ -2380,6 +2386,7 @@
 <script src="sentinel-panel.js"></script>
 <script src="router-panel.js"></script>
 <script src="unsloth-panel.js"></script>
+<script src="vmharness-panel.js"></script>
 <script src="ollama-panel.js"></script>
 <script src="bot-agent-form.js"></script>
 </body>

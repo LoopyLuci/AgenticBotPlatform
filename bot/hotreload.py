@@ -137,6 +137,10 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.unsloth.client", "bot.unsloth.harness", "bot.unsloth.tools", "bot.dashboard.unsloth_api",
     # Ollama: harness.py holds the background pull/push/create jobs, tools.py registers tools at import time.
     "bot.ollama.client", "bot.ollama.harness", "bot.ollama.tools", "bot.dashboard.ollama_api",
+    # VM-Harness: harness.py holds the background setup/update jobs, tools.py registers tools at import time.
+    "bot.vm_harness.client", "bot.vm_harness.harness", "bot.vm_harness.tools", "bot.dashboard.vm_harness_api",
+    # The toolkit registers its actions and agent tools at import time.
+    "bot.agent_runtime.toolkit_tools",
     "bot.nodes", "bot.canvas", "bot.voice", "bot.platforms._relay",
     "bot.platforms.email_platform", "bot.platforms.sms_platform", "bot.platforms.signal_platform", "bot.platforms.imessage_platform",
     "bot.platforms.googlechat_platform", "bot.platforms.teams_platform", "bot.platforms._jwt",  # long-running adapters

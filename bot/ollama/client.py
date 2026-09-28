@@ -71,6 +71,31 @@ def find(*, refresh: bool = False) -> Optional[Ollama]:
     return value
 
 
+
+_refreshing = threading.Event()
+
+
+def find_cached() -> Optional[Any]:
+    """What find() last saw, without waiting: when that is over a minute old (or was never looked up) a refresh
+    starts in the background. For checks that run on every agent turn (whether to offer the tools), which must
+    never wait on the network."""
+    with _lock:
+        fresh = time.monotonic() - _found["at"] < 60
+        value = _found["value"]
+    if not fresh and not _refreshing.is_set():
+        _refreshing.set()
+
+        def refresh() -> None:
+            try:
+                find(refresh=True)
+            except Exception:  # noqa: BLE001
+                pass
+            finally:
+                _refreshing.clear()
+        threading.Thread(target=refresh, name="ollama-find", daemon=True).start()
+    return value
+
+
 def _discover() -> Optional[Ollama]:
     candidates: list[tuple[str, Optional[str]]] = []
     explicit = os.environ.get("ABP_OLLAMA_URL", "").strip()

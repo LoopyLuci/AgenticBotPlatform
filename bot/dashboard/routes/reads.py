@@ -5,6 +5,9 @@ Moved verbatim out of bot/dashboard/server.py's build_app(); the route order ins
 from __future__ import annotations
 
 import asyncio
+import functools
+import os
+import time
 import csv
 import io
 from typing import Callable, Optional
@@ -20,6 +23,23 @@ def register(app: FastAPI, *, json_download: Callable) -> None:
     _json_download = json_download
 
 
+    @functools.lru_cache(maxsize=1)
+    def _build_info() -> dict:
+        """What is running: ABP's version, and the git commit it was built from (when run from a checkout, or a build
+        whose state root is one). Read once; a rebuild restarts the server."""
+        import subprocess
+        from bot import __version__
+        from bot.envfile import PROJECT_ROOT
+        info = {"app_version": __version__, "app_commit": "", "app_commit_date": "", "started_at": time.time()}
+        try:
+            out = subprocess.run(["git", "-C", str(PROJECT_ROOT), "log", "-1", "--format=%h|%cs"], capture_output=True,
+                                 text=True, timeout=5, creationflags=0x08000000 if os.name == "nt" else 0)
+            if out.returncode == 0 and "|" in out.stdout:
+                info["app_commit"], info["app_commit_date"] = out.stdout.strip().split("|", 1)
+        except (OSError, subprocess.SubprocessError):
+            pass
+        return info
+
     @app.get("/api/overview", dependencies=[Depends(_require_token_or_api_key_or_peer)])
     async def api_overview():
         overview = db.get_overview()
@@ -32,6 +52,7 @@ def register(app: FastAPI, *, json_download: Callable) -> None:
         overview["desktop_pid"] = d.get("pid")
         overview["db_size_mb"] = round(db.get_db_size_bytes() / (1024 * 1024), 2)
         overview["config_version"] = config.version
+        overview.update(_build_info())
         overview["default_backend"] = config.current.get("default_backend")
         overview["default_hermes_backend"] = config.current.get("default_hermes_backend")
         return overview

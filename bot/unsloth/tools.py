@@ -49,7 +49,7 @@ def _workspace_files(spec: dict, workspace) -> dict:
 
 def _enabled() -> bool:
     try:
-        return client.find() is not None
+        return client.find_cached() is not None
     except Exception:  # noqa: BLE001
         return False
 
@@ -181,3 +181,6 @@ def register_tools() -> None:
 
 
 register_tools()
+
+# Look for it in the background now, so the first agent turn already knows whether to offer these tools.
+client.find_cached()

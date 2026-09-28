@@ -1915,3 +1915,5 @@ from bot import nodes as _nodes  # noqa: E402,F401
 from bot import model_router as _model_router  # noqa: E402,F401
 from bot.unsloth import tools as _unsloth_tools  # noqa: E402,F401  (offered only while Unsloth Studio runs)
 from bot.ollama import tools as _ollama_tools  # noqa: E402,F401  (offered only while Ollama runs)
+from bot.vm_harness import tools as _vm_harness_tools  # noqa: E402,F401  (offered while VM-Harness is installed)
+from bot.agent_runtime import toolkit_tools as _toolkit_tools  # noqa: E402,F401  (abp_toolkit: lint, run, analyze, assets...)

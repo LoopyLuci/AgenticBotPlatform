@@ -9,6 +9,17 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **A toolkit for programming, computer science and assets** (`abp_toolkit`; the agent's `toolkit_*` tools; `python -m abp_toolkit` and its MCP server; [docs/agents/toolkit.md](docs/agents/toolkit.md)).
+  - A linter for every language: the installed linters (ruff, eslint, tsc, shellcheck, PSScriptAnalyzer...) plus built-in syntax checks (Python, JSON, YAML, TOML, XML, INI, HTML, CSS, PowerShell, JS, shell) and structure checks for batch files, VBScript, SQL, CSV and Dockerfiles, and secrets, conflict markers and mixed line endings in any file.
+  - Formatting, running code in 20+ languages, codebase analysis (complexity, import cycles, duplicates, dead code, risky patterns), full Python tooling, computer-science utilities, 15 project templates that pass their own tests, asset generation (icons, favicons, images, charts, diagrams, QR codes, badges, sprites, sounds), and a library of 35 PowerShell, CMD, VBScript, Python and Bash scripts.
+  - Reading actions run freely; anything that writes files or runs programs goes through a separate `_act` tool that asks for approval.
+- The tools offered for Unsloth Studio and Ollama no longer wait on the network every turn: whether they are running is looked up in the background (a turn used to spend up to half a second on it, which also broke a sub-agent timing test).
+- The sidebar shows ABP's version and the commit it runs (hover for when it was built, server uptime and config reloads) instead of the config version.
+- **VM-Harness as an ABP module** (the **VM-Harness** page; `vmh_*` agent tools; `/api/vm-harness/*`; [docs/agents/vm-harness.md](docs/agents/vm-harness.md)).
+  - VM-Harness stays its own program in its own repo. ABP finds a working copy (or clones one), installs it in its own virtualenv, updates it from the repo (never over uncommitted work), and starts its hub and window.
+  - Every VM on every hypervisor it reaches (QEMU, VirtualBox, VMware, Hyper-V, WSL, KVM) and every container (Docker, Podman, Kubernetes, Compose), and all 160 of its operations, from the agent and from forms on the page.
+  - Its window can be driven remotely: panels, every widget's contents, clicks, fields, dialogs, and a live screenshot on the page.
+  - Its own MCP server can be added to ABP's external MCP servers in one click.
 - **Ollama from ABP** (the **Ollama** page; `ollama_*` agent tools; `/api/ollama/*`; [docs/agents/ollama.md](docs/agents/ollama.md)).
   - Pull models (background jobs with live progress), load and unload them at a context that fits, and see capabilities, parameters and Modelfiles. Also copy, delete and push, create models from a Modelfile's parts, and import a `.gguf` file (including ones Unsloth Studio downloaded) without downloading it again.
   - Old models left in a previous models folder are moved into the one Ollama uses. Each file is verified before the old copy is removed.

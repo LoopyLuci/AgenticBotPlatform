@@ -2297,6 +2297,49 @@ export const operations = {
    "repo_id"
   ]
  },
+ "GET /api/vm-harness/audit": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vm-harness/audit",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "GET /api/vm-harness/jobs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vm-harness/jobs",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/vm-harness/operations": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vm-harness/operations",
+  "path_params": [],
+  "query_params": [
+   "refresh"
+  ]
+ },
+ "GET /api/vm-harness/status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vm-harness/status",
+  "path_params": [],
+  "query_params": [
+   "backends"
+  ]
+ },
+ "GET /api/vm-harness/vms": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vm-harness/vms",
+  "path_params": [],
+  "query_params": [
+   "backend"
+  ]
+ },
  "GET /api/vms": {
   "body": false,
   "method": "GET",
@@ -4190,6 +4233,55 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/validate-field",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/vm-harness/call": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vm-harness/call",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/vm-harness/hub/start": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/vm-harness/hub/start",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/vm-harness/hub/stop": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/vm-harness/hub/stop",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/vm-harness/mcp": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vm-harness/mcp",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/vm-harness/setup": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/vm-harness/setup",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/vm-harness/update": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/vm-harness/update",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/vm-harness/window": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/vm-harness/window",
   "path_params": [],
   "query_params": []
  },
@@ -8702,6 +8794,98 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/api/vms/paths",
+  "path_params": [],
+  "query_params": []
+ },
+ "vmh_audit_api_vm_harness_audit_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vm-harness/audit",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "vmh_call_api_vm_harness_call_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vm-harness/call",
+  "path_params": [],
+  "query_params": []
+ },
+ "vmh_jobs_api_vm_harness_jobs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vm-harness/jobs",
+  "path_params": [],
+  "query_params": []
+ },
+ "vmh_mcp_api_vm_harness_mcp_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vm-harness/mcp",
+  "path_params": [],
+  "query_params": []
+ },
+ "vmh_operations_api_vm_harness_operations_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vm-harness/operations",
+  "path_params": [],
+  "query_params": [
+   "refresh"
+  ]
+ },
+ "vmh_setup_api_vm_harness_setup_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/vm-harness/setup",
+  "path_params": [],
+  "query_params": []
+ },
+ "vmh_start_api_vm_harness_hub_start_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/vm-harness/hub/start",
+  "path_params": [],
+  "query_params": []
+ },
+ "vmh_status_api_vm_harness_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vm-harness/status",
+  "path_params": [],
+  "query_params": [
+   "backends"
+  ]
+ },
+ "vmh_stop_api_vm_harness_hub_stop_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/vm-harness/hub/stop",
+  "path_params": [],
+  "query_params": []
+ },
+ "vmh_update_api_vm_harness_update_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/vm-harness/update",
+  "path_params": [],
+  "query_params": []
+ },
+ "vmh_vms_api_vm_harness_vms_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vm-harness/vms",
+  "path_params": [],
+  "query_params": [
+   "backend"
+  ]
+ },
+ "vmh_window_api_vm_harness_window_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/vm-harness/window",
   "path_params": [],
   "query_params": []
  },

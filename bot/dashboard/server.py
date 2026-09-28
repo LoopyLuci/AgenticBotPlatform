@@ -871,6 +871,11 @@ def build_app() -> FastAPI:
 
     ollama_api.register(app, _require_token_or_api_key, _require_token)
 
+    # VM-Harness: a separate program ABP installs, updates and drives (VMs, containers, and its own window).
+    from bot.dashboard import vm_harness_api
+
+    vm_harness_api.register(app, _require_token_or_api_key, _require_token)
+
     # Editor integrations: install the VS Code extension, show the ACP command.
     from bot.dashboard import editors_api
 
