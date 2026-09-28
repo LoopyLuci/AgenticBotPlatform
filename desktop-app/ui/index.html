@@ -790,6 +790,7 @@
       <a href="#sessions" data-kw="sessions past conversations"><span class="ic">🗂</span><span class="nav-txt"><b>Sessions</b><small>Past conversations</small></span></a>
       <a href="#bots" data-kw="bots agents instances"><span class="ic">🤖</span><span class="nav-txt"><b>Bots</b><small>Manage bot instances</small></span></a>
       <a href="#models" data-kw="models providers api keys free toggle"><span class="ic">🧩</span><span class="nav-txt"><b>Models</b><small>Providers, API keys, per-model toggles</small></span></a>
+      <a href="#router" data-kw="router model routing auto learning decisions policy training feedback"><span class="ic">🧭</span><span class="nav-txt"><b>Model Router</b><small>Decisions, learning, training &amp; policy</small></span></a>
       <a href="#kanban" data-kw="kanban board cards tasks"><span class="ic">🗒</span><span class="nav-txt"><b>Kanban</b><small>Per-bot task board</small></span></a>
       <a href="#agents" data-kw="agents abp agent native settings permissions safety tools skills sub-agents"><span class="ic">🤖</span><span class="nav-txt"><b>ABP Agents</b><small>Settings, safety, tools, skills</small></span></a>
       <a href="#swarms" data-kw="swarms orchestration multi-bot"><span class="ic">🐝</span><span class="nav-txt"><b>Swarms</b><small>Multi-bot orchestration</small></span></a>
@@ -1774,6 +1775,11 @@
       </div>
     </section>
 
+    <section id="router">
+      <div class="sec-head"><h2>Model Router</h2><span class="desc">How bots on model: auto choose a model: every decision and its reasoning, what the router learned from outcomes and your feedback, training, and the policy that shapes how it thinks.</span></div>
+      <div id="rt-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
+
     <section id="kanban">
       <div class="sec-head"><h2>Kanban</h2><span class="desc">One board per bot — cards a bot adds via /kanban show up here too, and vice versa.</span></div>
       <div class="card">
@@ -2360,6 +2366,7 @@
 <script src="agents-panel.js"></script>
 <script src="infra-panel.js"></script>
 <script src="sentinel-panel.js"></script>
+<script src="router-panel.js"></script>
 <script src="bot-agent-form.js"></script>
 </body>
 </html>

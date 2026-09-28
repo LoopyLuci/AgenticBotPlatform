@@ -9,7 +9,8 @@ from bot.agent_runtime.transports.base import ProviderTransport
 
 
 def build_openai_transport(
-    *, protocol: str, base_url: str, api_key: Optional[str] = None, catalog_id: Optional[str] = None
+    *, protocol: str, base_url: str, api_key: Optional[str] = None, catalog_id: Optional[str] = None,
+    name: Optional[str] = None,
 ) -> ProviderTransport:
     """The one place that picks between OpenAICompatibleTransport
     (chat-completions, the default) and ResponsesApiTransport
@@ -22,7 +23,13 @@ def build_openai_transport(
     if protocol == "responses":
         from bot.agent_runtime.transports.responses_api import ResponsesApiTransport
 
-        return ResponsesApiTransport(base_url=base_url, api_key=api_key, catalog_id=catalog_id)
-    from bot.agent_runtime.transports.openai_compatible import OpenAICompatibleTransport
+        transport = ResponsesApiTransport(base_url=base_url, api_key=api_key, catalog_id=catalog_id)
+    else:
+        from bot.agent_runtime.transports.openai_compatible import OpenAICompatibleTransport
 
-    return OpenAICompatibleTransport(base_url=base_url, api_key=api_key, catalog_id=catalog_id)
+        transport = OpenAICompatibleTransport(base_url=base_url, api_key=api_key, catalog_id=catalog_id)
+    if name:
+        # The providers.yaml name: the model router files each call's outcome under "<name>/<model>",
+        # the same name it lists candidates by (bot/backends/native_backend.py's _ref).
+        transport.router_provider = name
+    return transport

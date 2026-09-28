@@ -61,15 +61,18 @@ Reset times are shown in `native_agent.models.timezone` (blank = this computer's
 ## Automatic model routing — never Claude by default
 
 `bot/model_router.py` (roadmap P8) classifies a task (trivial, coding, hard reasoning, long
-context, vision, bulk) and ranks candidate models by quality, economy (free counts highest) and
-headroom (how much of a model's allowance is left right now). It's the mechanism behind a bot whose
-model is left blank or set to `auto`:
+context, vision, bulk) and ranks candidate models by quality, economy (free counts highest),
+headroom (how much of a model's allowance is left right now), and the reliability and speed it has
+learned. It's the mechanism behind a bot whose model is left blank or set to `auto`. It learns from
+every call and from your feedback, records every decision with its reasoning, and follows an
+editable, versioned policy. See [router.md](router.md) and the dashboard's **Model Router** page.
 
 * **Set it up**: a bot on the **ABP Agent** backend with model **left blank, or set to `auto`**
   (the Add-bot form has an **Auto** button next to the model field for exactly this) gets a real
-  model picked for it — the router's top-ranked pick, the first time that bot is actually used.
-  That pick then stays in place for the rest of that bot's life, the same as if you had typed a
-  specific model yourself; it isn't reclassified on every later message.
+  model picked for it — the router's pick, the first time that bot is actually used. It keeps that
+  model on later turns, and chooses again when the model starts failing (it is resting after a 429,
+  403 or 404) or is blocked by a rule. When its model fails mid-turn it tries the next pick and keeps
+  the one that works.
 * **Never Claude by default.** `default_backend` and the `quick_question`/`project_task` action
   overrides in `config/backends.yaml` all point at `native_agent` with `model: null` (auto) — the
   operator's standing instruction is that Claude is never used unless a person explicitly chooses

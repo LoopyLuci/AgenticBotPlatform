@@ -1751,6 +1751,7 @@ async def cmd_route(ctx: CmdContext, raw: str) -> str:
     if not task:
         return "Usage: /route <describe the task in a sentence or two>"
     cls, ranked, skipped = model_router.recommend(task)
+    model_router.record_advice(task, cls, ranked, skipped, instance_id=getattr(ctx, "instance_id", None))
     return model_router.describe(cls, ranked, skipped)
 
 

@@ -184,6 +184,15 @@ export const operations = {
   ],
   "query_params": []
  },
+ "DELETE /api/router/examples/{example_id}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/router/examples/{example_id}",
+  "path_params": [
+   "example_id"
+  ],
+  "query_params": []
+ },
  "DELETE /api/security/allowed-users/{telegram_id}": {
   "body": false,
   "method": "DELETE",
@@ -1468,6 +1477,82 @@ export const operations = {
   ],
   "query_params": [
    "refresh"
+  ]
+ },
+ "GET /api/router/decisions": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/router/decisions",
+  "path_params": [],
+  "query_params": [
+   "limit",
+   "mode",
+   "status",
+   "model",
+   "task_class",
+   "before",
+   "instance_id"
+  ]
+ },
+ "GET /api/router/decisions/{decision_id}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/router/decisions/{decision_id}",
+  "path_params": [
+   "decision_id"
+  ],
+  "query_params": []
+ },
+ "GET /api/router/events": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/router/events",
+  "path_params": [],
+  "query_params": [
+   "limit",
+   "kind",
+   "model"
+  ]
+ },
+ "GET /api/router/examples": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/router/examples",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "GET /api/router/models": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/router/models",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/router/overview": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/router/overview",
+  "path_params": [],
+  "query_params": [
+   "hours"
+  ]
+ },
+ "GET /api/router/policy": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/router/policy",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/router/policy/history": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/router/policy/history",
+  "path_params": [],
+  "query_params": [
+   "limit"
   ]
  },
  "GET /api/security/allowed-users": {
@@ -3151,6 +3236,64 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "POST /api/router/decisions/{decision_id}/feedback": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/router/decisions/{decision_id}/feedback",
+  "path_params": [
+   "decision_id"
+  ],
+  "query_params": []
+ },
+ "POST /api/router/examples": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/router/examples",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/router/models/forget": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/router/models/forget",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/router/models/release": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/router/models/release",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/router/models/rest": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/router/models/rest",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/router/policy/rollback": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/router/policy/rollback",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/router/reset": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/router/reset",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/router/simulate": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/router/simulate",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/security/allowed-users/{telegram_id}": {
   "body": false,
   "method": "POST",
@@ -3897,6 +4040,13 @@ export const operations = {
   "path_params": [
    "device_id"
   ],
+  "query_params": []
+ },
+ "PUT /api/router/policy": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/router/policy",
+  "path_params": [],
   "query_params": []
  },
  "PUT /api/server-chat/uploads/{session_id}/chunk/{index}": {
@@ -7228,6 +7378,142 @@ export const operations = {
   ],
   "query_params": []
  },
+ "router_decision_api_router_decisions__decision_id__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/router/decisions/{decision_id}",
+  "path_params": [
+   "decision_id"
+  ],
+  "query_params": []
+ },
+ "router_decisions_api_router_decisions_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/router/decisions",
+  "path_params": [],
+  "query_params": [
+   "limit",
+   "mode",
+   "status",
+   "model",
+   "task_class",
+   "before",
+   "instance_id"
+  ]
+ },
+ "router_events_api_router_events_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/router/events",
+  "path_params": [],
+  "query_params": [
+   "limit",
+   "kind",
+   "model"
+  ]
+ },
+ "router_example_add_api_router_examples_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/router/examples",
+  "path_params": [],
+  "query_params": []
+ },
+ "router_example_delete_api_router_examples__example_id__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/router/examples/{example_id}",
+  "path_params": [
+   "example_id"
+  ],
+  "query_params": []
+ },
+ "router_examples_api_router_examples_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/router/examples",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "router_feedback_api_router_decisions__decision_id__feedback_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/router/decisions/{decision_id}/feedback",
+  "path_params": [
+   "decision_id"
+  ],
+  "query_params": []
+ },
+ "router_model_forget_api_router_models_forget_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/router/models/forget",
+  "path_params": [],
+  "query_params": []
+ },
+ "router_model_release_api_router_models_release_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/router/models/release",
+  "path_params": [],
+  "query_params": []
+ },
+ "router_model_rest_api_router_models_rest_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/router/models/rest",
+  "path_params": [],
+  "query_params": []
+ },
+ "router_models_api_router_models_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/router/models",
+  "path_params": [],
+  "query_params": []
+ },
+ "router_overview_api_router_overview_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/router/overview",
+  "path_params": [],
+  "query_params": [
+   "hours"
+  ]
+ },
+ "router_policy_api_router_policy_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/router/policy",
+  "path_params": [],
+  "query_params": []
+ },
+ "router_policy_history_api_router_policy_history_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/router/policy/history",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "router_policy_rollback_api_router_policy_rollback_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/router/policy/rollback",
+  "path_params": [],
+  "query_params": []
+ },
+ "router_policy_save_api_router_policy_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/router/policy",
+  "path_params": [],
+  "query_params": []
+ },
  "router_recommend_api_agent_router_recommend_get": {
   "body": false,
   "method": "GET",
@@ -7236,6 +7522,20 @@ export const operations = {
   "query_params": [
    "task"
   ]
+ },
+ "router_reset_api_router_reset_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/router/reset",
+  "path_params": [],
+  "query_params": []
+ },
+ "router_simulate_api_router_simulate_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/router/simulate",
+  "path_params": [],
+  "query_params": []
  },
  "rules_create_api_infra_rules_post": {
   "body": true,
