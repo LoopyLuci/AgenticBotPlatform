@@ -93,6 +93,7 @@ def _isolated_cicd_event_store(monkeypatch, tmp_path):
     monkeypatch.setattr(s_boot, "BOOTS_PATH", sdir / "boots.json")
     monkeypatch.setattr(s_boot, "LKG_DIR", sdir / "last-known-good")
     monkeypatch.setenv("ABP_ANDROID_KEYSTORE", str(tmp_path / "no-keystore"))
+    monkeypatch.setenv("ABP_INSTALL_POINTER", str(tmp_path / "abp-install.json"))
     s_bugs._reset_for_tests(sdir / "issues.json")
     s_journal._reset_for_tests()
     s_boot._reset_for_tests()

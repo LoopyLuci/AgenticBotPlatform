@@ -91,6 +91,28 @@ def scan_for_personal_paths(root: Path, markers: list[str]) -> list[tuple[Path, 
     return hits
 
 
+def stage_vscode_extension(target: Path) -> None:
+    """Put the VS Code extension package in the bundle, so ABP can install it with one click (the ABP
+    Agents page's Editors tab). The folder always exists, since the installer bundles it as a resource; it
+    only lacks the package when npm is not installed, and ABP then says how to build it."""
+    import subprocess
+
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "README.txt").write_text("abp-vscode.vsix: ABP's VS Code extension. Install it from the ABP Agents page "
+                                       "(Editors tab) or with: code --install-extension abp-vscode.vsix\n", encoding="utf-8")
+    ext = ROOT / "integrations" / "vscode"
+    npm = shutil.which("npm")
+    if not npm or not (ext / "package.json").is_file():
+        print("[warn] npm not found: the installer will not include the VS Code extension")
+        return
+    steps = ([] if (ext / "node_modules").is_dir() else [[npm, "ci", "--no-audit", "--no-fund"]]) + [[npm, "run", "package"]]
+    for cmd in steps:
+        r = subprocess.run(cmd, cwd=ext, capture_output=True, text=True, timeout=900)
+        if r.returncode != 0:
+            raise SystemExit(f"[FAILED] building the VS Code extension ({' '.join(cmd[1:])}):\n{(r.stdout + r.stderr)[-3000:]}")
+    shutil.copy2(ext / "dist" / "abp-vscode.vsix", target / "abp-vscode.vsix")
+
+
 def stage(stage_dir: Path = STAGE, markers: list[str] | None = None) -> None:
     if stage_dir.exists():
         shutil.rmtree(stage_dir)
@@ -101,6 +123,12 @@ def stage(stage_dir: Path = STAGE, markers: list[str] | None = None) -> None:
     # import it without the bot package), so it ships beside it.
     if (ROOT / "abp_cicd").is_dir():
         shutil.copytree(ROOT / "abp_cicd", stage_dir / "abp_cicd", ignore=_bot_ignore)
+    # Editors (the VS Code extension, Zed and other ACP clients) start `python -m abp_acp` in
+    # the installed folder; it runs turns through abp_run, and its scripted test mode uses
+    # abp_agenteval's replay transport.
+    for pkg in ("abp_run", "abp_acp", "abp_agenteval"):
+        if (ROOT / pkg).is_dir():
+            shutil.copytree(ROOT / pkg, stage_dir / pkg, ignore=_bot_ignore)
     # bot/ssh_toolkit.py shells out to this submodule's own bin/ssh-toolkit.ps1 for
     # every CRUD operation (add/list/remove/visualize a connection, the peer-pairing
     # SSH auto-setup, ...) - only its "stream a command directly" path bypasses it
@@ -115,6 +143,7 @@ def stage(stage_dir: Path = STAGE, markers: list[str] | None = None) -> None:
             vendor_dir, stage_dir / "vendor" / "ssh_toolkit",
             ignore=shutil.ignore_patterns(".git", "__pycache__"),
         )
+    stage_vscode_extension(stage_dir / "integrations")
     shutil.copytree(ROOT / ".venv", stage_dir / ".venv", ignore=_venv_ignore, symlinks=True)
     cfg = stage_dir / ".venv" / "pyvenv.cfg"
     if cfg.is_file():

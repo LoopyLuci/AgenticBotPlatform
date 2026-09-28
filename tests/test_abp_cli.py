@@ -549,3 +549,29 @@ def test_ssh_auto_update_setting_get_and_set(client, ssh_toolkit_home, capsys):
     code, _ = run(["--json", "ssh", "auto-update"], client)
     assert code == 0
     assert json.loads(capsys.readouterr().out)["mode"] == "notify"
+
+
+def test_editors_status_and_install(client, capsys, monkeypatch, tmp_path):
+    from bot import editor_integrations as ed
+
+    installed = {"v": None}
+    monkeypatch.setattr(ed, "code_cli", lambda: "code")
+    monkeypatch.setattr(ed, "bundled_vsix", lambda: tmp_path / "abp-vscode.vsix")
+    monkeypatch.setattr(ed, "vsix_version", lambda p: "0.2.0")
+    monkeypatch.setattr(ed, "installed_version", lambda cli: installed["v"])
+
+    def fake_run(cli, *args, timeout):
+        installed["v"] = "0.2.0"
+        return __import__("subprocess").CompletedProcess([cli, *args], 0, "", "")
+    monkeypatch.setattr(ed, "_run_code", fake_run)
+
+    code, _ = run(["editors", "status"], client)
+    out = capsys.readouterr().out
+    assert code == 0 and "extension not installed" in out and "-m abp_acp --model auto" in out
+    code, _ = run(["editors", "install-vscode"], client)
+    assert code == 0 and "version 0.2.0" in capsys.readouterr().out
+    code, _ = run(["--json", "editors", "status"], client)
+    assert json.loads(capsys.readouterr().out)["vscode"]["installed"] == "0.2.0"
+    monkeypatch.setattr(ed, "code_cli", lambda: None)
+    code, _ = run(["editors", "install-vscode"], client)
+    assert code == 1 and "was not found" in capsys.readouterr().err

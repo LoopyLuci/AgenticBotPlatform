@@ -24,12 +24,55 @@ rate limit or allowance is used up ([models.md](models.md)).
 
 An [Agent Client Protocol](https://agentclientprotocol.com) server on standard input/output, so an editor that
 speaks ACP (Zed and others) can use the agent. Point the editor's custom-agent setting at
-`python -m abp_acp --model anthropic/claude-sonnet-5`. Streamed replies, tool activity, and permission requests
+`python -m abp_acp --model auto`. Streamed replies, tool activity, and permission requests
 (the editor's user is asked, and the answer is obeyed) are supported; cancelling ends the turn.
 
-**Not run against Zed or any real editor**: it was written from the protocol description and tested against a
-stand-in client, including a real pipe test of the program. Field names are believed right. Not implemented:
-loading old sessions, terminals, the client's file methods, images and audio.
+`--model` takes three forms:
+- `auto`: ABP's model router picks the best configured model for each session, from its first prompt. It never
+  picks Claude unless you listed Claude in `native_agent.router.candidates`.
+- `provider/model`: a model you name.
+- `scripted:FILE`: replays a JSON list of steps instead of calling a model. It is meant for testing an editor
+  integration without a key: `[{"call": "write_file", "args": {...}}, {"say": "done"}]`.
+
+The model each turn used is reported in the prompt result's `_meta.abp.model`.
+
+**Tested with a real ACP client, but not yet with Zed.** The VS Code extension (below) speaks ACP to the real
+program, inside a real VS Code, in its test suite. Not implemented: loading old sessions, terminals, the
+client's file methods, images and audio.
+
+## VS Code: `integrations/vscode`
+
+A VS Code extension that uses the agent through `abp_acp`:
+- a chat view with streamed replies and each tool listed as it runs;
+- permission questions answered in the chat or in a notification;
+- commands to ask about the selection and to fix the problems VS Code reports in a file;
+- stop, new conversation, and open the dashboard.
+
+**Install:** open ABP Agents → **Editors** and click **Install in VS Code**, or run `abp_cli editors install-vscode`.
+Either one runs `code --install-extension` with the package bundled in ABP. The same tab shows when an update is
+available, and gives the ACP command to paste into Zed or another editor.
+
+It finds ABP by itself and needs no token. Every ABP server records where its code, state folder and Python are in
+`~/.abp/install.json` when it starts, and the extension starts the agent from there. The dashboard injects its
+own token for local page loads. It defaults to `--model auto`. See its
+[README](../../integrations/vscode/README.md) for settings.
+
+The desktop installer now includes `abp_acp`, `abp_run` and `abp_agenteval`. Before this, an installed ABP could
+not run the ACP server at all; the extension recognises such an install and says to update it.
+
+**Verified:**
+- the ACP client and conversation logic against the real `abp_acp` with a scripted model (vitest);
+- the extension inside a real VS Code (`npm run test:vscode`, using the installed VS Code), where commands make
+  real edits after a permission answer, a refusal writes nothing, and "fix problems" carries VS Code's
+  diagnostics;
+- the chat view's rendering in a browser.
+
+The one-click install was tested in a real browser, and a real `code --install-extension` was run into a throwaway
+extensions folder (`tests/test_editors_tab.py`, `tests/test_editor_integrations.py`).
+
+The local pipeline runs these whenever the extension, `abp_acp` or `abp_run` changes. The installer build
+(`scripts/stage_bundle.py`) packages the extension when npm is available. **Not done:** publishing to the Visual
+Studio Marketplace or Open VSX.
 
 ## After an edit: formatters and language servers
 

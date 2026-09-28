@@ -142,7 +142,7 @@ def test_the_agents_page_lists_tabs_bots_and_readiness(served_dashboard, browser
     page, errors, _ = _agents_page(browser, served_dashboard, tmp_path, monkeypatch)
     assert errors == [], errors
     tabs = page.evaluate("[...document.querySelectorAll('.agents-tab')].map(t => t.textContent.trim())")
-    assert tabs == ["Overview", "Runtime", "Safety", "Tools", "Sub-agents & swarms", "Skills", "Models"]
+    assert tabs == ["Overview", "Runtime", "Safety", "Tools", "Sub-agents & swarms", "Skills", "Models", "Editors"]
     page.wait_for_function("document.querySelector('#agents-body .ag-check')", timeout=15000)
     assert "Research bot" in page.evaluate("document.getElementById('agents-body').textContent")
     assert page.evaluate("document.querySelectorAll('#agents-body .ag-check').length") >= 5

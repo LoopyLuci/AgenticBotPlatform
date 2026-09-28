@@ -173,6 +173,9 @@ def _run(cmd: list[str], cwd: Optional[Path] = None, retries: int = 0,
 # doesn't need that step re-run — see changed_files() below.
 RUST_PREFIXES = ("desktop-app/src-tauri/",)
 ANDROID_PREFIXES = ("android-app/",)
+# The VS Code extension drives abp_acp (which runs turns through abp_run), so a change to
+# either side re-runs its tests.
+VSCODE_PREFIXES = ("integrations/vscode/", "abp_acp/", "abp_run/")
 DOCKER_PREFIXES = ("bot/", "requirements.txt", "requirements.lock", "Dockerfile", "docker-compose.yml",
                    ".dockerignore", "scripts/docker-entrypoint.sh")
 # The running instance's bot code, config, and app binary all come from a
@@ -180,7 +183,8 @@ DOCKER_PREFIXES = ("bot/", "requirements.txt", "requirements.lock", "Dockerfile"
 # find_running_instance()'s docstring) — a push that doesn't touch any of
 # these has nothing new for a stop/rebuild/restart cycle to actually pick
 # up, so it's pure overhead to run one.
-DEPLOY_PREFIXES = ("bot/", "config/", "desktop-app/", "requirements.txt", "requirements.lock")
+DEPLOY_PREFIXES = ("bot/", "config/", "desktop-app/", "requirements.txt", "requirements.lock",
+                   "abp_acp/", "abp_run/", "abp_agenteval/")
 
 
 def _matches(changed: set[str], prefixes: tuple[str, ...]) -> bool:
@@ -467,6 +471,34 @@ def check_android() -> Optional[bool]:
     return True
 
 
+def check_vscode() -> Optional[bool]:
+    Step.head("VS Code extension - typecheck, unit tests, tests in a real VS Code")
+    ext = ROOT / "integrations" / "vscode"
+    npm = shutil.which("npm")
+    if not npm or not (ext / "package.json").is_file():
+        Step.skip("npm not on PATH - skipping (install Node.js 20+ to enable this check)")
+        return None
+    if not (ext / "node_modules").is_dir():
+        Step.doing("installing the extension's development dependencies (npm ci)")
+        ok, out = _run([npm, "ci", "--no-audit", "--no-fund"], cwd=ext, retries=1)
+        if not ok:
+            Step.err("npm ci failed:\n" + out[-3000:])
+            return False
+    for label, script in (("typecheck", "typecheck"), ("unit tests (against the real abp_acp)", "test")):
+        ok, out = _run([npm, "run", script], cwd=ext)
+        if not ok:
+            Step.err(f"{label} failed:\n" + out[-4000:])
+            return False
+        Step.ok(f"{label} passed")
+    # runTest.ts uses an installed VS Code, and downloads one only if none is found.
+    ok, out = _run([npm, "run", "test:vscode"], cwd=ext, retries=1)
+    if not ok:
+        Step.err("the tests inside VS Code failed:\n" + out[-4000:])
+        return False
+    Step.ok("tests inside a real VS Code passed")
+    return True
+
+
 def check_docker() -> Optional[bool]:
     Step.head("Docker — image builds")
     if not shutil.which("docker"):
@@ -633,16 +665,18 @@ def _run_pipeline_body(args: argparse.Namespace) -> int:
         changed = changed_files()
         if changed is None:
             Step.warn("couldn't determine which files changed — running the full pipeline")
-            rust_needed = docker_needed = android_needed = deploy_needed = True
+            rust_needed = docker_needed = android_needed = vscode_needed = deploy_needed = True
         else:
             rust_needed = _matches(changed, RUST_PREFIXES)
             docker_needed = _matches(changed, DOCKER_PREFIXES)
             android_needed = _matches(changed, ANDROID_PREFIXES)
+            vscode_needed = _matches(changed, VSCODE_PREFIXES)
             deploy_needed = _matches(changed, DEPLOY_PREFIXES)
             Step.ok(f"{len(changed)} file(s) changed since the last push")
             for name, needed, why in (("rust", rust_needed, "no desktop-app/src-tauri changes"),
                                       ("docker", docker_needed, "no Docker-relevant changes"),
-                                      ("android", android_needed, "no android-app changes")):
+                                      ("android", android_needed, "no android-app changes"),
+                                      ("vscode", vscode_needed, "no VS Code extension or ACP changes")):
                 if not needed:
                     _RUN.decision(actor="rules", decision=f"skip {name}", reason=why, rule="change_detection",
                                   inputs={"files_changed": len(changed)})
@@ -652,6 +686,8 @@ def _run_pipeline_body(args: argparse.Namespace) -> int:
                 Step.skip("no Docker-relevant changes — skipping the Docker image build")
             if not android_needed:
                 Step.skip("no android-app changes — skipping Android unit tests")
+            if not vscode_needed:
+                Step.skip("no VS Code extension or ACP changes - skipping the extension's tests")
             if not deploy_needed:
                 Step.skip("no bot/config/desktop-app changes — nothing new for a "
                           "stop/rebuild/restart cycle to pick up, skipping it entirely")
@@ -686,6 +722,7 @@ def _run_pipeline_body(args: argparse.Namespace) -> int:
 
         results: dict[str, Optional[bool]] = {"python": _timed("python", check_python)}
         for name, needed, fn in (("rust", rust_needed, check_rust), ("android", android_needed, check_android),
+                                 ("vscode", vscode_needed, check_vscode),
                                  ("docker", docker_needed, check_docker)):
             if needed:
                 results[name] = _timed(name, fn)

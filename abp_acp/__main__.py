@@ -1,7 +1,13 @@
-"""python -m abp_acp --model provider/model [--cwd-default DIR]
+"""python -m abp_acp --model auto | provider/model | scripted:FILE
 
 Speaks the Agent Client Protocol on standard input/output so an editor can use the ABP agent.
-Point the editor's "custom agent" setting at:  python -m abp_acp --model anthropic/claude-sonnet-5
+Point the editor's "custom agent" setting at:  python -m abp_acp --model auto
+
+`--model auto` lets ABP's model router pick, once per session from its first prompt, the best
+configured model for the task. Like a bot on `model: auto`, it never picks Claude unless you
+listed it in `native_agent.router.candidates`. `scripted:FILE` replays a JSON list of steps
+instead of calling a model, for testing an editor integration without a key or any cost:
+`[{"call": "write_file", "args": {"path": "a.txt", "content": "hi"}}, {"say": "done"}]`.
 
 Standard output carries only protocol messages; logs go to standard error. The agent asks the editor
 before any tool call that needs approval (permission rules in config/backends.yaml still apply)."""
@@ -9,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 import sys
 import tempfile
@@ -51,10 +58,53 @@ class StdioLines:
         self._out.flush()
 
 
-def make_runner(provider: str, model: str, permission_mode: Optional[str]):
-    transport = core.transport_for(provider, model)
+def scripted_transport(path: str):
+    """A transport that replays the steps in a JSON file (see the module docstring)."""
+    from abp_agenteval.scripted import ScriptedTransport
+    from abp_agenteval.task import Call, Say
+
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise core.RunError(f"could not read the script {path}: {exc}") from exc
+    steps = []
+    for step in raw if isinstance(raw, list) else []:
+        if isinstance(step, dict) and "say" in step:
+            steps.append(Say(str(step["say"])))
+        elif isinstance(step, dict) and "call" in step:
+            steps.append(Call(str(step["call"]), dict(step.get("args") or {})))
+        else:
+            raise core.RunError(f"script step {step!r} is neither {{\"say\": ...}} nor {{\"call\": ..., \"args\": ...}}")
+    return ScriptedTransport(steps)
+
+
+def resolve_auto(task: str):
+    """(transport, model, "provider/model") the router picks for `task`; never Claude unless configured."""
+    from bot.backends.base import BackendError
+    from bot.backends.native_backend import _resolve_auto_transport
+
+    try:
+        return _resolve_auto_transport(task, exclude=set())
+    except BackendError as exc:
+        raise core.RunError(str(exc)) from exc
+
+
+def make_runner(model_ref: str, permission_mode: Optional[str]):
+    """The per-turn runner. A fixed model is resolved now, so a bad name fails at startup;
+    `auto` is resolved per session, from that session's first prompt."""
+    fixed = None
+    if model_ref.startswith("scripted:"):
+        fixed = (scripted_transport(model_ref[len("scripted:"):]), "scripted", "scripted")
+    elif model_ref != "auto":
+        provider, model = core.split_model(model_ref)
+        fixed = (core.transport_for(provider, model), model, f"{provider}/{model}")
+    chosen: dict[str, tuple] = {}
 
     async def runner(prompt: str, session: Session, on_text, progress, approval_notify):
+        if session.id not in chosen:
+            chosen[session.id] = fixed or await asyncio.to_thread(resolve_auto, prompt)
+        transport, model, ref = chosen[session.id]
+        session.model = ref
         return await core.run_turn(
             prompt, transport=transport, model=model, cwd=session.cwd, permission_mode=permission_mode, on_text=on_text,
             timeout_s=3600, extra_context={"desktop_session_key": f"acp:{session.id}", "progress_notify": progress,
@@ -64,12 +114,11 @@ def make_runner(provider: str, model: str, permission_mode: Optional[str]):
 
 
 async def amain(args) -> int:
-    provider, model = core.split_model(args.model)
     root = Path(tempfile.mkdtemp(prefix="abp-acp-"))
     lines = StdioLines()
     lines.start(asyncio.get_running_loop())
     with core.ephemeral_environment(root, "ask"):
-        server = AcpServer(lines.read_line, lines.write_line, make_runner(provider, model, args.permission_mode))
+        server = AcpServer(lines.read_line, lines.write_line, make_runner(args.model.strip(), args.permission_mode))
         try:
             await server.serve()
         finally:
@@ -85,7 +134,7 @@ def main(argv=None) -> int:
     ap.add_argument("--permission-mode", choices=["plan", "default", "accept_edits", "bypass"], default=None)
     args = ap.parse_args(argv)
     if not args.model:
-        print("--model provider/model is required (or set ABP_RUN_MODEL)", file=sys.stderr)
+        print("--model is required: auto, provider/model or scripted:FILE (or set ABP_RUN_MODEL)", file=sys.stderr)
         return 2
     try:
         return asyncio.run(amain(args))

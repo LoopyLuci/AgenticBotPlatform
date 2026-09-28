@@ -166,6 +166,8 @@ async def _dispatch(args, client: DashboardClient) -> int:
         return await _peers(args, client)
     if cmd == "kanban":
         return await _kanban(args, client)
+    if cmd == "editors":
+        return await _editors(args, client)
     if cmd == "ssh":
         return await _ssh(args, client)
     print(f"unknown command {cmd!r}", file=sys.stderr)
@@ -507,6 +509,33 @@ async def _peers(args, client: DashboardClient) -> int:
         _print(args, await client.peer_bots(args.peer_id))
         return 0
     print(f"unknown peers subcommand {sub!r}", file=sys.stderr)
+    return 2
+
+
+async def _editors(args, client: DashboardClient) -> int:
+    sub = args.editors_cmd
+    if sub == "status":
+        data = await client.editors_status()
+        if args.json:
+            _print(args, data)
+            return 0
+        v = data["vscode"]
+        if not v["cli"]:
+            print("VS Code: not found (install it, or put its `code` command on PATH)")
+        else:
+            state = f"version {v['installed']} installed" if v["installed"] else "extension not installed"
+            extra = f"; {v['bundled']} available (abp_cli editors install-vscode)" if v["update_available"] else ""
+            print(f"VS Code: {state}{extra}")
+        print("ACP editors (Zed and others) run: " + " ".join(data["acp_command"]))
+        return 0
+    if sub == "install-vscode":
+        data = await client.install_vscode_extension()
+        if args.json:
+            _print(args, data)
+        else:
+            print(f"Installed the VS Code extension, version {data['vscode']['installed']}.")
+        return 0
+    print(f"unknown editors subcommand {sub!r}", file=sys.stderr)
     return 2
 
 
@@ -885,6 +914,11 @@ def _parser() -> argparse.ArgumentParser:
     p = pesub.add_parser("remove"); p.add_argument("peer_id", type=int)
     for name in ("overview", "bots"):
         p = pesub.add_parser(name); p.add_argument("peer_id", type=int)
+
+    editors = sub.add_parser("editors", help="the VS Code extension and the ACP command for other editors")
+    esub = editors.add_subparsers(dest="editors_cmd", required=True)
+    esub.add_parser("status")
+    esub.add_parser("install-vscode", help="install or update ABP's VS Code extension")
 
     kanban = sub.add_parser("kanban", help="per-bot kanban boards")
     kbsub = kanban.add_subparsers(dest="kanban_cmd", required=True)

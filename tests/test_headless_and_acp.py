@@ -190,7 +190,7 @@ def test_initialize_and_a_prompt_stream_back_a_reply(tmp_path):
         assert init["result"]["agentCapabilities"]["promptCapabilities"]["embeddedContext"] is True
         client.send(id=3, method="session/prompt", params={"sessionId": sid, "prompt": [{"type": "text", "text": "what port?"}]})
         done = await client.wait_for(lambda m: m.get("id") == 3)
-        assert done["result"] == {"stopReason": "end_turn"}
+        assert done["result"]["stopReason"] == "end_turn" and done["result"]["_meta"]["abp"]["tokens"] > 0
         updates = [m["params"]["update"] for m in client.out if m.get("method") == "session/update"]
         text = "".join(u["content"]["text"] for u in updates if u["sessionUpdate"] == "agent_message_chunk")
         assert text == "8123"
@@ -319,3 +319,105 @@ def test_the_server_works_over_real_pipes(tmp_path):
     reply = json.loads(lines[0])
     assert reply["id"] == 1 and reply["result"]["agentInfo"]["name"] == "abp", (out, err[-2000:])
     assert proc.returncode == 0, err[-2000:]
+
+
+def _pipe_session(tmp_path, model: str, answer_permission: str):
+    """Run the real program: initialize, open a session in tmp_path, send one prompt, answer any
+    permission request with `answer_permission`; returns (prompt result, every message received)."""
+    env = {k: v for k, v in __import__("os").environ.items() if not k.startswith(("ABP_AGENT", "ABP_CICD"))}
+    proc = subprocess.Popen([sys.executable, "-m", "abp_acp", "--model", model], cwd=ROOT, env=env,
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
+    seen: list = []
+
+    def send(**msg):
+        proc.stdin.write(json.dumps({"jsonrpc": "2.0", **msg}) + "\n")
+        proc.stdin.flush()
+
+    def until(pred):
+        for line in proc.stdout:
+            if not line.strip():
+                continue
+            msg = json.loads(line)
+            seen.append(msg)
+            if msg.get("method") == "session/request_permission":
+                send(id=msg["id"], result={"outcome": {"outcome": "selected", "optionId": answer_permission}})
+                continue
+            if pred(msg):
+                return msg
+        pytest.fail(f"the server ended early: {proc.stderr.read()[-2000:]}")
+
+    try:
+        send(id=1, method="initialize", params={"protocolVersion": 1})
+        until(lambda m: m.get("id") == 1)
+        send(id=2, method="session/new", params={"cwd": str(tmp_path), "mcpServers": []})
+        sid = until(lambda m: m.get("id") == 2)["result"]["sessionId"]
+        send(id=3, method="session/prompt", params={"sessionId": sid, "prompt": [{"type": "text", "text": "make a.txt"}]})
+        return until(lambda m: m.get("id") == 3), seen
+    finally:
+        proc.stdin.close()
+        proc.wait(timeout=60)
+
+
+def test_a_scripted_model_drives_a_whole_session_over_real_pipes(tmp_path):
+    steps = tmp_path / "script.json"
+    steps.write_text(json.dumps([{"call": "write_file", "args": {"path": "a.txt", "content": "from the script"}},
+                                 {"say": "wrote it"}]))
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    done, seen = _pipe_session(ws, f"scripted:{steps}", "allow_once")
+    assert done["result"]["stopReason"] == "end_turn" and done["result"]["_meta"]["abp"]["model"] == "scripted"
+    assert (ws / "a.txt").read_text() == "from the script"
+    assert any(m.get("method") == "session/request_permission" for m in seen)
+    text = "".join(m["params"]["update"]["content"]["text"] for m in seen
+                   if m.get("method") == "session/update" and m["params"]["update"]["sessionUpdate"] == "agent_message_chunk")
+    assert "wrote it" in text
+
+
+def test_a_rejected_permission_over_real_pipes_writes_nothing(tmp_path):
+    steps = tmp_path / "script.json"
+    steps.write_text(json.dumps([{"call": "write_file", "args": {"path": "a.txt", "content": "x"}}, {"say": "ok"}]))
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    done, _seen = _pipe_session(ws, f"scripted:{steps}", "reject_once")
+    assert "result" in done and not (ws / "a.txt").exists()
+
+
+def test_a_bad_script_is_refused_at_startup(tmp_path):
+    from abp_acp import __main__ as acp_main
+
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps([{"shout": "x"}]))
+    with pytest.raises(core.RunError, match="neither"):
+        acp_main.make_runner(f"scripted:{bad}", None)
+    with pytest.raises(core.RunError, match="could not read"):
+        acp_main.make_runner(f"scripted:{tmp_path / 'missing.json'}", None)
+
+
+def test_auto_is_resolved_once_per_session_from_its_first_prompt(tmp_path, monkeypatch):
+    from abp_acp import __main__ as acp_main
+    from abp_acp.server import Session
+
+    picks = []
+
+    def fake_resolve(task):
+        picks.append(task)
+        return script(Say("a"), Say("b")), "free-model", "openrouter/free-model"
+    monkeypatch.setattr(acp_main, "resolve_auto", fake_resolve)
+    runner = acp_main.make_runner("auto", None)
+    session = Session(id="s1", cwd=tmp_path)
+
+    async def turn(text):
+        return await runner(text, session, None, None, None)
+    with core.ephemeral_environment(tmp_path / "state", "deny"):
+        assert asyncio.run(turn("first")).reply == "a"
+        assert asyncio.run(turn("second")).reply == "b"
+    assert picks == ["first"] and session.model == "openrouter/free-model"
+
+
+def test_auto_with_nothing_configured_fails_with_the_routers_reason(monkeypatch):
+    from abp_acp import __main__ as acp_main
+    from bot import model_router
+
+    monkeypatch.setattr(model_router, "candidate_models", lambda: [])
+    with pytest.raises(core.RunError, match="no free model available"):
+        acp_main.resolve_auto("anything")

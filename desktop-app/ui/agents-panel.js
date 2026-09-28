@@ -10,15 +10,16 @@
   const root = document.getElementById('agents-root');
   if (!root) return;
 
-  const FIXED_TABS = { overview: 'Overview', skills: 'Skills' };
-  const ORDER = ['overview', 'runtime', 'safety', 'tools', 'subagents', 'skills', 'models'];
+  const FIXED_TABS = { overview: 'Overview', skills: 'Skills', editors: 'Editors' };
+  const ORDER = ['overview', 'runtime', 'safety', 'tools', 'subagents', 'skills', 'models', 'editors'];
   const AGENT_BACKENDS = ['native_agent', 'api', 'custom_model'];
   const MODES = ['default', 'plan', 'accept_edits', 'bypass'];
   const MODE_LABEL = { default: 'Default', plan: 'Plan (read-only)', accept_edits: 'Accept edits', bypass: 'Bypass (no approval)' };
 
   const S = {
     schema: null, values: {}, configured: new Set(), dirty: {}, errors: {}, tab: 'overview',
-    advanced: {}, overview: null, tools: null, toolFilter: '', packs: null, quarantine: null, drafts: null, router: null, loaded: false,
+    advanced: {}, overview: null, tools: null, toolFilter: '', packs: null, quarantine: null, drafts: null, router: null, editors: null,
+    installing: false, loaded: false,
   };
   const body = document.getElementById('agents-body');
   const tabsEl = document.getElementById('agents-tabs');
@@ -207,6 +208,31 @@
       <ul class="ag-yaml">${S.schema.yaml_only.map(y => `<li><span class="mono">${esc(y.key)}</span> — ${esc(y.why)}</li>`).join('')}</ul></div>` : '';
   }
 
+  function editorsHtml() {
+    const e = S.editors;
+    if (!e) return '<div class="card ag-card"><h3>VS Code</h3><p class="cardnote">Checking for VS Code…</p></div>';
+    if (e.error) return `<div class="card ag-card"><h3>VS Code</h3><p class="cardnote">Couldn't check: ${esc(e.error)}</p></div>`;
+    const v = e.vscode;
+    let state, button = '';
+    const busy = S.installing ? ' disabled' : '';
+    if (!v.cli) state = 'VS Code was not found on this computer. Install it, or if it is installed, run <b>Shell Command: Install \'code\' command in PATH</b> from its command palette, then check again.';
+    else if (!v.bundled) state = 'This copy of ABP has no extension package to install. In a checkout, run <span class="mono">npm run package</span> in <span class="mono">integrations/vscode</span>.';
+    else if (!v.installed) { state = `Not installed. Version ${esc(v.bundled)} is ready to install.`; button = `<button class="btn primary" id="ag-vscode-install"${busy}>${S.installing ? 'Installing…' : 'Install in VS Code'}</button>`; }
+    else if (v.update_available) { state = `Version ${esc(v.installed)} is installed; ${esc(v.bundled)} is available.`; button = `<button class="btn primary" id="ag-vscode-install"${busy}>${S.installing ? 'Updating…' : 'Update'}</button>`; }
+    else { state = `<span class="chip good">Installed</span> version ${esc(v.installed)}. Open the ABP view in VS Code's activity bar to start.`; button = `<button class="btn" id="ag-vscode-install"${busy}>${S.installing ? 'Reinstalling…' : 'Reinstall'}</button>`; }
+    const cmd = (e.acp_command || []).map(a => /\s/.test(a) ? `"${a}"` : a).join(' ');
+    return `<div class="card ag-card"><h3>VS Code</h3>
+        <p class="cardnote">Chat with the agent in VS Code while it works in your open folder. It asks before it edits a file or runs a command, and uses this ABP's models, permission rules and sandbox. Nothing to configure: it finds this ABP by itself.</p>
+        <p>${state}</p>
+        <div class="row" style="gap:8px;">${button}<button class="btn" id="ag-editors-refresh"${busy}>Check again</button></div>
+        ${v.error ? `<p class="cardnote">${esc(v.error)}</p>` : ''}</div>
+      <div class="card ag-card"><h3>Zed and other ACP editors</h3>
+        <p class="cardnote">Editors that speak the Agent Client Protocol can use this ABP's agent. Set the editor's custom agent command to:</p>
+        <div class="row" style="gap:8px; align-items:center;"><code class="mono" id="ag-acp-command" style="flex:1; overflow-wrap:anywhere;">${esc(cmd)}</code>
+          <button class="btn" id="ag-acp-copy">Copy</button></div>
+        <p class="cardnote"><span class="mono">--model auto</span> lets ABP pick the model; name one as <span class="mono">provider/model</span> instead if you prefer.</p></div>`;
+  }
+
   // ------------------------------------------------------------------ render
   function tabsHtml() {
     const dirtyTabs = new Set(Object.keys(S.dirty).map(id => (field(id) || {}).tab));
@@ -225,6 +251,7 @@
     let html = '';
     if (S.tab === 'overview') html = overviewHtml();
     else if (S.tab === 'skills') html = skillsHtml();
+    else if (S.tab === 'editors') html = editorsHtml();
     else {
       html = settingsCards(S.tab);
       if (S.tab === 'safety') html += botPermissionsCard();
@@ -323,6 +350,19 @@
     [S.packs, S.quarantine, S.drafts] = await Promise.all([get('/api/skills/packs', 'packs'), get('/api/skills/quarantine', 'packs'), get('/api/skills/drafts', 'drafts')]);
     if (S.tab === 'skills') render();
   }
+  async function loadEditors() {
+    try { S.editors = await api('/api/editors/status'); } catch (e) { S.editors = { error: String(e && e.message || e) }; }
+    if (S.tab === 'editors') render();
+  }
+  async function installVsCode() {
+    S.installing = true; render();
+    try {
+      S.editors = await api('/api/editors/vscode/install', { method: 'POST' });
+      showToast('Installed in VS Code. Open the ABP view in its activity bar.', 'success');
+    } catch (e) { showToast('Could not install: ' + (e.message || e), 'error'); }
+    S.installing = false;
+    if (S.tab === 'editors') render();
+  }
   function setTab(id) {
     if (!ORDER.includes(id)) return;
     S.tab = id;
@@ -330,6 +370,7 @@
     if (id === 'tools' && !S.tools) loadTools();
     if (id === 'skills') loadSkills();
     if (id === 'models' && !S.router) loadRouter();
+    if (id === 'editors') loadEditors();
     if (id === 'overview' || id === 'safety') refreshOverview();
   }
   function goTo(target) {
@@ -357,13 +398,20 @@
 
   // ------------------------------------------------------------------ events
   root.addEventListener('click', async (ev) => {
-    const t = ev.target.closest('[data-tab],[data-go],[data-open-bot],[data-reset],[data-review],#ag-save,#ag-discard,#ag-skill-fetch');
+    const t = ev.target.closest('[data-tab],[data-go],[data-open-bot],[data-reset],[data-review],#ag-save,#ag-discard,#ag-skill-fetch,#ag-vscode-install,#ag-editors-refresh,#ag-acp-copy');
     if (!t) return;
     if (t.dataset.tab) return setTab(t.dataset.tab);
     if (t.dataset.go) return goTo(t.dataset.go);
     if (t.dataset.openBot) return openBot(t.dataset.openBot);
     if (t.dataset.reset) { ev.preventDefault(); const f = field(t.dataset.reset); stage(f, f.default); render(); return; }
     if (t.id === 'ag-save') return save();
+    if (t.id === 'ag-vscode-install') return installVsCode();
+    if (t.id === 'ag-editors-refresh') { S.editors = null; render(); return loadEditors(); }
+    if (t.id === 'ag-acp-copy') {
+      const text = document.getElementById('ag-acp-command').textContent;
+      try { await navigator.clipboard.writeText(text); showToast('Copied', 'success'); } catch (_e) { showToast('Could not copy; select the command instead', 'error'); }
+      return;
+    }
     if (t.id === 'ag-discard') { S.dirty = {}; S.errors = {}; render(); return; }
     if (t.dataset.review) {
       const [kind, action, name] = t.dataset.review.split(':');

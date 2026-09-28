@@ -19,6 +19,9 @@ app's own version (the Android app versions independently — see its own
   - Crash-loop protection: after three unhealthy boots ABP starts in safe mode, rolls config back to last-known-good, and skips plugins for one boot.
   - `python -m bot.sentinel.guardian` supervises the server for `scripts/run.*` and Docker. The desktop app now restarts a crashed server itself.
 - **Versioned database schema** (`PRAGMA user_version`) with a verified backup before each migration. A database written by a newer ABP is never written to: startup restores a backup this version can read.
+- **A VS Code extension** (`integrations/vscode`), tested inside a real VS Code. It adds a chat view with the ABP agent working in your workspace. Permission questions come up in the chat or as a notification. Commands ask about the selection or fix the problems VS Code reports. It finds ABP by itself, needs no token, and defaults to `model: auto`. To install or update it in one click, use ABP Agents → **Editors** or run `abp_cli editors install-vscode`; the installer bundles the extension.
+- `python -m abp_acp --model auto` routes each editor session through the model router, never Claude by default. `--model scripted:FILE` replays fixed steps, to test an editor integration without a key. Each prompt result reports the model it used.
+- The desktop installer now includes `abp_acp`, `abp_run` and `abp_agenteval`. Before this, an installed ABP could not run the editor (ACP) server.
 - **Offline commands: `native_agent.sandbox.network: none`** (Settings → Safety → Sandbox). This cuts agent shell commands off from the network on every sandbox backend, and fails closed where the host cannot enforce it.
   - Windows: an AppContainer with no capabilities, without elevation. Loopback and DNS are blocked too, and the file system is confined to the workspace, system folders and `network_none.extra_paths`.
   - Linux: a fresh network namespace. macOS: `sandbox-exec`.

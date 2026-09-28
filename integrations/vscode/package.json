@@ -1,0 +1,194 @@
+{
+  "name": "abp-vscode",
+  "displayName": "AgenticBotPlatform",
+  "description": "Use the ABP coding agent in VS Code: chat, edits and commands in your workspace, with your approval.",
+  "version": "0.1.0",
+  "publisher": "agenticbotplatform",
+  "license": "MIT",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LoopyLuci/AgenticBotPlatform"
+  },
+  "engines": {
+    "vscode": "^1.90.0",
+    "node": ">=20"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "agent",
+    "ai",
+    "acp",
+    "abp"
+  ],
+  "icon": "media/icon.png",
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "The agent reads, edits and runs commands in the workspace, so it only runs in a trusted one."
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "abp",
+          "title": "ABP",
+          "icon": "media/abp.svg"
+        }
+      ]
+    },
+    "views": {
+      "abp": [
+        {
+          "type": "webview",
+          "id": "abp.chat",
+          "name": "Agent"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "abp.ask",
+        "title": "Ask the agent",
+        "category": "ABP"
+      },
+      {
+        "command": "abp.askAboutSelection",
+        "title": "Ask about the selection",
+        "category": "ABP"
+      },
+      {
+        "command": "abp.fixProblems",
+        "title": "Fix the problems in this file",
+        "category": "ABP"
+      },
+      {
+        "command": "abp.stop",
+        "title": "Stop the agent",
+        "category": "ABP",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "abp.newSession",
+        "title": "New conversation",
+        "category": "ABP",
+        "icon": "$(add)"
+      },
+      {
+        "command": "abp.restartAgent",
+        "title": "Restart the agent",
+        "category": "ABP"
+      },
+      {
+        "command": "abp.openDashboard",
+        "title": "Open the dashboard",
+        "category": "ABP",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "abp.showLog",
+        "title": "Show the agent log",
+        "category": "ABP"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "abp.newSession",
+          "when": "view == abp.chat",
+          "group": "navigation@1"
+        },
+        {
+          "command": "abp.openDashboard",
+          "when": "view == abp.chat",
+          "group": "navigation@2"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "abp.askAboutSelection",
+          "when": "editorHasSelection",
+          "group": "abp@1"
+        },
+        {
+          "command": "abp.fixProblems",
+          "group": "abp@2"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "abp.ask",
+        "key": "ctrl+alt+a",
+        "mac": "cmd+alt+a"
+      }
+    ],
+    "configuration": {
+      "title": "AgenticBotPlatform",
+      "properties": {
+        "abp.model": {
+          "type": "string",
+          "default": "auto",
+          "markdownDescription": "The model the agent uses. `auto` lets ABP pick the best configured model for each conversation (it never picks Claude unless you listed it in ABP's router candidates). Or name one as `provider/model`, using a provider from ABP's Models page."
+        },
+        "abp.permissionMode": {
+          "type": "string",
+          "default": "",
+          "enum": [
+            "",
+            "default",
+            "plan",
+            "accept_edits",
+            "bypass"
+          ],
+          "enumDescriptions": [
+            "Use ABP's own setting",
+            "Ask before anything that changes something",
+            "Read-only: the agent may look but not change anything",
+            "Edit files without asking; still ask before commands",
+            "Run everything without asking (only if ABP allows bypass mode)"
+          ],
+          "description": "When the agent must ask you before acting."
+        },
+        "abp.abpPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "The folder ABP is installed in, or a checkout of it. Leave empty to find it automatically."
+        },
+        "abp.pythonPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "The Python that runs ABP. Leave empty to use ABP's own."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "watch": "node esbuild.config.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:vscode": "npm run build && node esbuild.config.mjs --tests && node out/test/runTest.js",
+    "check": "npm run typecheck && npm run test && npm run test:vscode",
+    "package": "npm run build && vsce package --no-dependencies --out dist/abp-vscode.vsix"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "@types/vscode": "^1.90.0",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.2"
+  }
+}
