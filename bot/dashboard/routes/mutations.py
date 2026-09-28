@@ -40,8 +40,12 @@ def register(app: FastAPI) -> None:
 
     @app.post("/api/config/reload", dependencies=[Depends(_require_token)])
     async def api_config_reload():
+        from bot import providers
+
         changed, summary = config.reload(actor="dashboard")
-        return {"changed": changed, "summary": summary, "version": config.version}
+        providers_changed, providers_summary = providers.reload(actor="dashboard")
+        return {"changed": changed, "summary": summary, "version": config.version,
+                "providers_changed": providers_changed, "providers_summary": providers_summary}
 
     @app.post("/api/config/set", dependencies=[Depends(_require_token_or_api_key)])
     async def api_config_set(payload: dict = Body(...)):

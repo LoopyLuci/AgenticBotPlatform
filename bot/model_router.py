@@ -162,10 +162,19 @@ def candidate_models() -> list[str]:
     if listed:
         return listed
     from bot import model_catalog
+    from bot import providers as registry
 
-    free = [f"{r['provider']}/{r['model']}" for r in model_catalog.search(free_only=True, needs=("tools",), limit=12)
-            if r["provider"] != "anthropic"]
-    return free + [str(m) for m in (cfg.get("also") or [])]
+    # Only providers configured here can be called, so only their free models are candidates, named the way this
+    # install names the provider. (Searching the whole catalog filled the list with models of providers nobody had
+    # set up; the router ranked them first and `auto` then failed with every real provider configured.)
+    free: list[str] = []
+    for name in sorted(registry.list_providers()):
+        if model_catalog.catalog_provider_for(name) == "anthropic":
+            continue
+        for r in model_catalog.search(provider=name, free_only=True, needs=("tools",), limit=12):
+            if r["provider"] != "anthropic":
+                free.append(f"{name}/{r['model']}")
+    return list(dict.fromkeys(free + [str(m) for m in (cfg.get("also") or [])]))
 
 
 def recommend(task: str, *, candidates: Optional[list[str]] = None, images: bool = False, context_tokens: int = 0,
