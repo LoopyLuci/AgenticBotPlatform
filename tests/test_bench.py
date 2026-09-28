@@ -178,3 +178,35 @@ def test_the_probe_leaves_out_missing_models_and_retries_limited_ones(tmp_path, 
     assert done["unavailable"] == 1 and done["limited"] == 1 and done["ran"] == 1
     assert [r["model"] for r in bench.load(tmp_path)] == ["good"], "a model that is not there is never scored 0"
     assert any("missing: not available" in m for m in logs) and any("tried again next time" in m for m in logs)
+
+
+def test_a_local_model_gets_the_gpu_to_itself(monkeypatch):
+    """Benchmarking local models one at a time: whatever else Ollama or Unsloth Studio has loaded is unloaded first,
+    and an Ollama model is sent as the serving name bots use."""
+    from types import SimpleNamespace
+
+    from bot.ollama import client as ollama_client
+    from bot.ollama import harness as ollama
+    from bot.unsloth import client as studio_client
+    from bot.unsloth import harness as studio
+
+    did = []
+    monkeypatch.setattr(ollama_client, "find", lambda **_k: SimpleNamespace(root="http://127.0.0.1:11434"))
+    monkeypatch.setattr(studio_client, "find", lambda **_k: SimpleNamespace(root="http://127.0.0.1:8888"))
+    monkeypatch.setattr(ollama_client, "request", lambda *_a, **_k: {"models": [{"name": "other:7b"}, {"name": "qwen-abp:9b"}]})
+    monkeypatch.setattr(ollama, "serving_model", lambda m: "qwen-abp:9b")
+    monkeypatch.setattr(ollama, "unload", lambda m: did.append(("ollama-unload", m)))
+    monkeypatch.setattr(ollama, "load", lambda m: did.append(("ollama-load", m)))
+    monkeypatch.setattr(studio, "loaded", lambda: ["studio/model"])
+    monkeypatch.setattr(studio, "unload", lambda m: did.append(("studio-unload", m)))
+    monkeypatch.setattr(studio, "ensure_loaded", lambda m: did.append(("studio-load", m)))
+
+    assert bench.local_exclusive("http://127.0.0.1:11434/v1", "qwen:9b", log=lambda _m: None) == "qwen-abp:9b"
+    assert did == [("ollama-unload", "other:7b"), ("studio-unload", "studio/model"), ("ollama-load", "qwen-abp:9b")]
+
+    did.clear()
+    assert bench.local_exclusive("http://127.0.0.1:8888/v1", "studio/model", log=lambda _m: None) == "studio/model"
+    assert ("studio-unload", "studio/model") not in did and did[-1] == ("studio-load", "studio/model")
+
+    did.clear()
+    assert bench.local_exclusive("https://openrouter.ai/api/v1", "a:free", log=lambda _m: None) == "a:free" and did == []

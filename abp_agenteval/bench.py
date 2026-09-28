@@ -244,4 +244,39 @@ def live_factory(model_ref: str) -> tuple[Callable, str]:
     if not provider:
         raise ValueError(f"{model_ref!r} names no configured provider; use provider/model")
     transport = core.transport_for(provider, model)
-    return (lambda _task: transport), model
+    return (lambda _task: transport), local_exclusive(str(getattr(transport, "base_url", "") or ""), model)
+
+
+def local_exclusive(base_url: str, model: str, *, log: Callable[[str], None] = print) -> str:
+    """A model served on this machine (Ollama or Unsloth Studio) gets the GPU to itself: every other model loaded on
+    either server is unloaded first, so two models never compete for VRAM and each is timed on its own. An Ollama model
+    is sent as the name bots use (its `-abp` serving model, at a context that fits). Returns the model id to send."""
+    from bot.ollama import client as ollama_client
+    from bot.ollama import harness as ollama
+    from bot.unsloth import client as studio_client
+    from bot.unsloth import harness as studio
+
+    o = ollama_client.find()
+    s = studio_client.find()
+    on_ollama = bool(o and base_url.startswith(o.root))
+    on_studio = bool(s and base_url.startswith(s.root))
+    if not (on_ollama or on_studio):
+        return model
+    api_model = ollama.serving_model(model) if on_ollama else model
+    if o:
+        for m in ollama_client.request("GET", "/api/ps").get("models") or []:
+            name = m.get("name") or m.get("model")
+            if name and not (on_ollama and name == api_model):
+                log(f"unloading {name} from Ollama so {model} has the GPU to itself")
+                ollama.unload(name)
+    if s:
+        for name in studio.loaded():
+            if not (on_studio and name == model):
+                log(f"unloading {name} from Unsloth Studio so {model} has the GPU to itself")
+                studio.unload(name)
+    if on_ollama:
+        if "cloud" not in api_model:        # a cloud model runs on ollama.com, nothing to load here
+            ollama.load(api_model)
+    else:
+        studio.ensure_loaded(model)
+    return api_model

@@ -20,6 +20,8 @@ tables say the same feature by feature. This index only points.
 | See, teach and change how bots on `auto` pick a model | [router.md](router.md) |
 | Run, fine-tune and export local models with Unsloth Studio | [unsloth.md](unsloth.md) |
 | Pull, load, build and serve models with Ollama | [ollama.md](ollama.md) |
+| Control virtual machines, containers and the VM-Harness window | [vm-harness.md](vm-harness.md) |
+| Lint any language, run code, analyze codebases, scaffold projects, make icons/charts/sounds, use the script library | [toolkit.md](toolkit.md) |
 | Run it from a script, an editor, CI or another program; language servers; SDKs | [developer-surfaces.md](developer-surfaces.md) |
 | Let it use a browser, stored logins, routines, approve from a phone | [browser-and-routines.md](browser-and-routines.md) |
 | Reach it by e-mail, SMS, Signal, iMessage or voice; use paired phones | [channels-and-devices.md](channels-and-devices.md) |

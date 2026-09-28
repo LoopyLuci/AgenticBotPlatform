@@ -42,6 +42,7 @@
       "stage/abp_run": "abp_run",
       "stage/abp_acp": "abp_acp",
       "stage/abp_agenteval": "abp_agenteval",
+      "stage/abp_toolkit": "abp_toolkit",
       "stage/integrations": "integrations",
       "stage/config/backends.yaml": "config/backends.yaml",
       "stage/.venv": ".venv",

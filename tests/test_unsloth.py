@@ -129,6 +129,7 @@ def studio(monkeypatch, temp_db):
     monkeypatch.setattr(httpx, "get", Shim.get)   # the router's own check of local servers
     providers.set_provider("unsloth", base_url=BASE + "/v1", api_key="unused")
     client._reset_for_tests()
+    client.find()                 # the tools' per-turn check reads this cache
     yield fake
     client._reset_for_tests()
 
@@ -302,6 +303,7 @@ def test_the_tools_are_hidden_when_studio_is_not_running(monkeypatch):
     from bot.unsloth import tools as us_tools
 
     monkeypatch.setattr(client, "find", lambda **_k: None)
+    monkeypatch.setattr(client, "find_cached", lambda: None)
     assert us_tools._enabled() is False
 
 
@@ -337,6 +339,7 @@ def test_the_api_says_when_studio_is_not_running(temp_db, monkeypatch):
     from bot.dashboard.server import build_app
 
     monkeypatch.setattr(client, "find", lambda **_k: None)
+    monkeypatch.setattr(client, "find_cached", lambda: None)
     monkeypatch.setenv("DASHBOARD_TOKEN", "t" * 48)
     c = TestClient(build_app())
     h = {"X-Dashboard-Token": "t" * 48}

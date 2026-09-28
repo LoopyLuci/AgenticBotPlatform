@@ -374,7 +374,12 @@ async function refreshOverview() {
   document.getElementById('k-dbsize').textContent = ov.db_size_mb + ' MB';
   document.getElementById('k-tokens').textContent = (ov.tokens_today || 0).toLocaleString();
   document.getElementById('s-desktop').textContent = ov.desktop_running ? `running (pid ${ov.desktop_pid})` : 'stopped';
-  document.getElementById('s-version').textContent = 'v' + ov.config_version;
+  const sv = document.getElementById('s-version');
+  sv.textContent = 'v' + ov.app_version + (ov.app_commit ? ' · ' + ov.app_commit : '');
+  const up = ov.started_at ? Math.round((Date.now() / 1000 - ov.started_at) / 60) : null;
+  sv.title = (ov.app_commit ? `Built from commit ${ov.app_commit} (${ov.app_commit_date}). ` : '') +
+    (up != null ? `Server up ${up >= 120 ? Math.round(up / 60) + ' h' : up + ' min'}. ` : '') +
+    `Config reloaded ${Math.max(0, (ov.config_version || 1) - 1)} time(s) since start.`;
   document.getElementById('s-default-backend').textContent = ov.default_backend;
   document.getElementById('reload-version').textContent = 'v' + ov.config_version;
   document.getElementById('s-refreshed').textContent = new Date().toLocaleTimeString();
