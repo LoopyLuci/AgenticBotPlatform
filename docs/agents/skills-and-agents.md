@@ -33,6 +33,31 @@ Only the name and description are in the prompt; `read_skill` loads the instruct
 `read_skill_file` a bundled file, so a large pack costs nothing until it is used. A pack's
 `allowed-tools` is information only; it grants nothing.
 
+### Linked libraries
+
+`native_agent.skills.external_dirs` adds folders of skills that are read in place, such as another agent's library
+(`abp_import hermes` and `abp_import openclaw` link theirs). An entry is a path, or `{path, exclude: [names]}`. Skills
+may sit up to three folders deep, as Hermes groups them by category; hidden folders such as `.archive` are skipped. Your
+own skills win over a library's, and a library's over a repository's.
+
+Libraries can be large: a real Hermes install holds about 10,000 skills.
+- Each `SKILL.md` is parsed once and reused until it changes. Bundled files are listed only when a skill is opened.
+- A library loads and refreshes (every minute) on a background thread, so no turn waits for it.
+- The prompt names at most 40 skills and then says how many more there are. The agent searches them with `list_skills`
+  and a `query`; without a query, `list_skills` returns 100 and says how many it left out.
+
+Measured on that 10,000-skill library:
+
+| Step | Time |
+|---|---|
+| First load (in the background) | 4.8 s |
+| A later turn | 1 ms |
+| A search | 13 ms |
+
+Front matter made of plain `key: value` lines is read without YAML. That is faster, and it also reads descriptions such as
+`description: Affiliate: commissions`, which strict YAML rejects. About one skill in a hundred in that library is written
+this way, and those skills were invisible to the model before.
+
 ### Installing from git: quarantine
 
 `/skills fetch <https git url> [ref]` (admins) or `POST /api/skills/fetch` clones shallowly from an

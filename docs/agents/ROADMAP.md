@@ -25,7 +25,7 @@
 | P6 | Browser, computer use, routines (the Grok Bot pillar) | **Partly built** (browser, vault, routines, approvals; not the cloud computer or computer use) |
 | P7 | Channels, devices and voice | **Partly built** (four new channels, node protocol, voice, canvas - all against fakes; no Google Chat / Teams; Android does not implement nodes) |
 | P8 | Learning and efficiency | **Built** (the model router now auto-selects and auto-fails-over, not advisory-only; it and the tuning harness have never had a live model to measure) |
-| P9 | Compatibility and docs | **Partly built** (no Hermes / OpenClaw importers; no public benchmark) |
+| P9 | Compatibility and docs | **Partly built** (Hermes / OpenClaw importers built; no public benchmark) |
 
 ## 1. What "ABP Agents" are today
 
@@ -245,7 +245,8 @@ would want to know about a model.
 
 | Deliverable | State |
 |---|---|
-| Importers: Claude Code (`settings.json`, `settings.local.json`, `.mcp.json`) and OpenCode (`opencode.json(c)`) into permission rules, hooks and MCP servers; dry run by default; never widens permissions | Built and tested against sample files written from the documented formats, **not against real installs**. **Hermes and OpenClaw importers not built** (formats not checked) |
+| Importers: Claude Code (`settings.json`, `settings.local.json`, `.mcp.json`) and OpenCode (`opencode.json(c)`) into permission rules, hooks and MCP servers; dry run by default; never widens permissions | Built and tested against sample files written from the documented formats, **not against real installs** |
+| Importers: Hermes Agent and OpenClaw (`abp_import hermes` / `openclaw`): providers and keys, router models (never Claude), MCP servers, the skill library linked in place, SOUL.md as instructions, memories, prompt jobs (paused), chat channels (switched off), deny rules | **Built; formats taken from real installs** (masked) and each product's own code. A dry run against the real Hermes install on the development machine reads everything and explains every skip. Linked libraries made scalable for it: `list_skills` search, cached parsing, background loading (10,000 skills: 1 ms a turn). `--apply` against the real installs not run: that is the user's call |
 | Plugin SDK versioning: `SDK_VERSION`, `REQUIRES_SDK` / `PLUGIN_VERSION`, a refusal that names both versions | Built. See [plugin-sdk.md](plugin-sdk.md) |
 | Results page (`abp_agenteval page`) and a committed one | Built. The committed page shows a **scripted** run and says it is not a model comparison; no live run and no peer product has been evaluated, so there is no public benchmark yet |
 | Docs: this index ([README.md](README.md)), developer surfaces, models, browser and routines, channels, learning and compatibility, plugin SDK, security, evals | Written. Install and embedding docs for the agent specifically are in [developer-surfaces.md](developer-surfaces.md); the platform-level ones already existed |

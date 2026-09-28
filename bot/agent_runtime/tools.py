@@ -239,8 +239,11 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     },
     {
         "name": "list_skills",
-        "description": "List every skill currently available to you (name + one-line description).",
-        "input_schema": {"type": "object", "properties": {}},
+        "description": "List the skills available to you (name + one-line description). With a query, only those matching "
+                       "its words, best first: use one whenever there are many skills.",
+        "input_schema": {"type": "object", "properties": {
+            "query": {"type": "string", "description": "words describing the task, e.g. 'android gradle build'"},
+            "limit": {"type": "integer", "description": "how many to return (default 20 with a query, 100 without)"}}},
     },
     {
         "name": "create_skill",
@@ -1099,9 +1102,24 @@ async def execute_tool(
             raise ToolError("list_skills needs an instance context")
         from bot import skill_packs
 
-        packs = [{"name": s.name, "description": s.description[:200], "kind": "pack", "source": s.source, "files": len(s.files)}
-                 for s in skill_packs.discover(workspace).values()]
-        return _json_dumps(bot_skills.list_for_instance(instance_id) + packs)
+        query = str(tool_input.get("query") or "").strip()
+        try:
+            limit = max(1, min(int(tool_input.get("limit") or (20 if query else 100)), 500))
+        except (TypeError, ValueError) as exc:
+            raise ToolError("limit must be a number") from exc
+
+        def row(s):
+            return {"name": s.name, "description": s.description[:200], "kind": "pack", "source": s.source, "files": len(s.files)}
+        own = bot_skills.list_for_instance(instance_id)
+        if query:
+            words = query.lower().split()
+            own = [k for k in own if any(w in f"{k.get('name', '')} {k.get('description', '')}".lower() for w in words)]
+            return _json_dumps(own + [row(s) for s in skill_packs.search(workspace, query, limit)])
+        packs = list(skill_packs.discover(workspace).values())
+        out = own + [row(s) for s in packs[:limit]]
+        if len(packs) > limit:
+            out.append({"note": f"{len(packs) - limit} more skill packs are not listed; call list_skills with a query to search them"})
+        return _json_dumps(out)
 
     if name == "create_skill":
         from bot import bot_instances, skills as bot_skills

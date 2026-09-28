@@ -139,6 +139,7 @@ def cfg(monkeypatch):
     written = {}
     original = dict(config._data)
     monkeypatch.setattr(config, "set_value", lambda path, value, actor="x": written.__setitem__(tuple(path), value))
+    monkeypatch.setattr(config, "set_values", lambda changes, actor="x": written.update({tuple(k): v for k, v in changes.items()}))
     monkeypatch.setattr(config, "_data", {**original, "native_agent": {**(original.get("native_agent") or {}), "permissions": {"rules": [
         {"decision": "deny", "tool": "read_file", "match": ".env", "note": "mine"}]}}})
     return written
