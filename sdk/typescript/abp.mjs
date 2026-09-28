@@ -1362,6 +1362,59 @@ export const operations = {
    "wait"
   ]
  },
+ "GET /api/ollama/gguf-files": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ollama/gguf-files",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "GET /api/ollama/jobs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ollama/jobs",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/ollama/models": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ollama/models",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/ollama/operations": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ollama/operations",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/ollama/recommendations": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ollama/recommendations",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/ollama/show": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ollama/show",
+  "path_params": [],
+  "query_params": [
+   "model"
+  ]
+ },
+ "GET /api/ollama/status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ollama/status",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/overview": {
   "body": false,
   "method": "GET",
@@ -3194,6 +3247,76 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/nodes/result",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/ollama/call": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ollama/call",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/ollama/copy": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ollama/copy",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/ollama/create": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ollama/create",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/ollama/delete": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ollama/delete",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/ollama/import-gguf": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ollama/import-gguf",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/ollama/load": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ollama/load",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/ollama/move-models": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ollama/move-models",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/ollama/pull": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ollama/pull",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/ollama/push": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ollama/push",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/ollama/unload": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ollama/unload",
   "path_params": [],
   "query_params": []
  },
@@ -7490,6 +7613,129 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/nodes/result",
+  "path_params": [],
+  "query_params": []
+ },
+ "ollama_call_api_ollama_call_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ollama/call",
+  "path_params": [],
+  "query_params": []
+ },
+ "ollama_copy_api_ollama_copy_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ollama/copy",
+  "path_params": [],
+  "query_params": []
+ },
+ "ollama_create_api_ollama_create_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ollama/create",
+  "path_params": [],
+  "query_params": []
+ },
+ "ollama_delete_api_ollama_delete_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ollama/delete",
+  "path_params": [],
+  "query_params": []
+ },
+ "ollama_gguf_files_api_ollama_gguf_files_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ollama/gguf-files",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "ollama_import_api_ollama_import_gguf_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ollama/import-gguf",
+  "path_params": [],
+  "query_params": []
+ },
+ "ollama_jobs_api_ollama_jobs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ollama/jobs",
+  "path_params": [],
+  "query_params": []
+ },
+ "ollama_load_api_ollama_load_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ollama/load",
+  "path_params": [],
+  "query_params": []
+ },
+ "ollama_models_api_ollama_models_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ollama/models",
+  "path_params": [],
+  "query_params": []
+ },
+ "ollama_move_api_ollama_move_models_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ollama/move-models",
+  "path_params": [],
+  "query_params": []
+ },
+ "ollama_operations_api_ollama_operations_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ollama/operations",
+  "path_params": [],
+  "query_params": []
+ },
+ "ollama_pull_api_ollama_pull_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ollama/pull",
+  "path_params": [],
+  "query_params": []
+ },
+ "ollama_push_api_ollama_push_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ollama/push",
+  "path_params": [],
+  "query_params": []
+ },
+ "ollama_recommendations_api_ollama_recommendations_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ollama/recommendations",
+  "path_params": [],
+  "query_params": []
+ },
+ "ollama_show_api_ollama_show_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ollama/show",
+  "path_params": [],
+  "query_params": [
+   "model"
+  ]
+ },
+ "ollama_status_api_ollama_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ollama/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "ollama_unload_api_ollama_unload_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/ollama/unload",
   "path_params": [],
   "query_params": []
  },

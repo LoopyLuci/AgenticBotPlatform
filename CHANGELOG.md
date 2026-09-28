@@ -9,6 +9,11 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **Ollama from ABP** (the **Ollama** page; `ollama_*` agent tools; `/api/ollama/*`; [docs/agents/ollama.md](docs/agents/ollama.md)).
+  - Pull models (background jobs with live progress), load and unload them at a context that fits, and see capabilities, parameters and Modelfiles. Also copy, delete and push, create models from a Modelfile's parts, and import a `.gguf` file (including ones Unsloth Studio downloaded) without downloading it again.
+  - Old models left in a previous models folder are moved into the one Ollama uses. Each file is verified before the old copy is removed.
+  - Bots are protected from a huge default context: when a model has none of its own, ABP serves it through a `<model>-abp` copy that shares its files and sets 32,768. On this machine that took `qwen3.5:9b` from 15.3 GB of VRAM to 6.6 GB.
+  - Every route Ollama 0.34 serves is callable from the agent and the page: models, blobs, generate / chat / embed, the OpenAI and Anthropic APIs, tokenize, account and web search.
 - **Unsloth Studio from ABP** (the **Unsloth** page; `unsloth_*` agent tools; `/api/unsloth/*`; [docs/agents/unsloth.md](docs/agents/unsloth.md)).
   - ABP finds Studio from a configured provider, then loads, unloads and serves its models to bots as `unsloth/<model>`. A bot whose model is not loaded gets it loaded on demand, and concurrent requests share one load.
   - Download from the Hugging Face hub (GGUF variants with sizes and a memory-fit check, live progress), choose where models are stored, fine-tune with every training setting Studio has (with a live loss chart), and export as GGUF, LoRA, merged or base.

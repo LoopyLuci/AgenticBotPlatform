@@ -330,7 +330,7 @@ class NativeAgentBackend(Backend):
             streamed = False
             usage_limits.current_model.set((getattr(transport, "provider_key", ""), model))
             kwargs = dict(
-                model=model, history=view["history"], tool_schemas=tool_schemas, max_tokens=self.max_tokens,
+                model=await _ollama_serving(transport, model), history=view["history"], tool_schemas=tool_schemas, max_tokens=self.max_tokens,
                 timeout_s=timeout_s, system_prompt=system_prompt, effort=effort,
             )
             started = time.monotonic()
@@ -669,6 +669,33 @@ def _ref(transport, model) -> str:
     when known, else the transport's own provider key."""
     provider = getattr(transport, "router_provider", None) or getattr(transport, "provider_key", "") or type(transport).__name__
     return f"{provider}/{model}"
+
+
+_ollama_names: dict[str, str] = {}
+
+
+async def _ollama_serving(transport, model: str) -> str:
+    """For an Ollama model, the name that runs it at a context that fits (see bot/ollama/harness.py serving_model):
+    requests through the OpenAI-compatible endpoint carry no context, and Ollama's default may be far too big to load.
+    Anything else is sent as it is. Worked out once per model."""
+    base = str(getattr(transport, "base_url", "") or "")
+    if ":11434" not in base and "ollama" not in str(getattr(transport, "router_provider", "") or "").lower():
+        return model
+    if model in _ollama_names:
+        return _ollama_names[model]
+    try:
+        from bot.ollama import client as ollama_client
+        from bot.ollama import harness as ollama
+
+        found = ollama_client.find()
+        if found is None or not base.startswith(found.root):
+            return model
+        name = await asyncio.to_thread(ollama.serving_model, model)
+    except Exception:  # noqa: BLE001 — at worst the model runs at Ollama's own default
+        logger.exception("native backend: could not work out Ollama's serving name for %s", model)
+        name = model
+    _ollama_names[model] = name
+    return name
 
 
 async def _load_if_studio(transport, model: str, error: str) -> bool:

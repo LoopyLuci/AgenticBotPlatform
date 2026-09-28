@@ -30,6 +30,9 @@ def catalog(monkeypatch):
     usage_limits._blocked_until.clear()
     policy.invalidate()
     learn._model_cache.clear()
+    # Exploration (a random share of picks) would make tests that expect the usual pick flaky; the one test about
+    # exploring turns it back on.
+    monkeypatch.setitem(policy.DEFAULT["learning"], "explore", 0.0)
     yield
     usage_limits._blocked_until.clear()
     policy.invalidate()
@@ -259,7 +262,7 @@ def test_every_change_is_a_version_with_its_diff_and_can_be_restored():
     pol = policy.current()
     pol["learning"]["explore"] = 0.25
     r1 = policy.save(pol, note="explore more")
-    assert r1["version"] == 1 and r1["changes"] == ["learning.explore: 0.1 -> 0.25"]
+    assert r1["version"] == 1 and r1["changes"] == ["learning.explore: 0.0 -> 0.25"]  # 0.0: exploring is off in these tests
     assert policy.save(pol)["changes"] == [], "saving the same thing twice is not a new version"
     pol["sticky"] = False
     policy.save(pol, note="re-route each turn")
