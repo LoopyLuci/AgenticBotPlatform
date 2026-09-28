@@ -84,8 +84,9 @@ def main(argv=None) -> int:
         if args.repeats < 1:
             print("--repeats must be at least 1", file=sys.stderr)
             return 2
-        done = bench_mod.run(models, args.repeats, Path(args.dir), tasks, bench_mod.live_factory)
-        print(f"ran {done['ran']}, skipped {done['skipped']} already done, {done['incomplete']} cut short by a limit\n")
+        done = bench_mod.run(models, args.repeats, Path(args.dir), tasks, bench_mod.live_factory, probe=bench_mod.live_probe)
+        print(f"ran {done['ran']}, skipped {done['skipped']} already done, {done['incomplete']} cut short by a limit, "
+              f"{done['limited']} model(s) out of allowance (tried again next time), {done['unavailable']} not available\n")
         print(bench_mod.render(bench_mod.summarize(bench_mod.load(Path(args.dir)))))
         return 0
     if args.cmd == "compare":
