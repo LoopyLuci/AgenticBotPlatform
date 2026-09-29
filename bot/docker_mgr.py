@@ -114,12 +114,29 @@ def info() -> dict:
         return {"installed": False, "running": False}
     ok, out = _run(["info", "--format", "{{json .}}"], timeout=12)
     if not ok:
-        return {"installed": True, "running": False, "error": out}
+        return {"installed": True, "running": False, "error": _daemon_error(out)}
     data = json.loads(out)
     return {"installed": True, "running": True, "server_version": data.get("ServerVersion"),
             "os": data.get("OperatingSystem"), "containers": data.get("Containers"),
             "running_containers": data.get("ContainersRunning"), "images": data.get("Images"),
             "cpus": data.get("NCPU"), "memory": data.get("MemTotal"), "raw": data}
+
+
+def _daemon_error(out: str) -> str:
+    """What `docker info` said about the daemon, in one line. With the daemon down, `--format '{{json .}}'` prints
+    the whole (empty) info document followed by the real message, and that document is not an error anyone can read."""
+    text = (out or "").strip()
+    try:
+        doc, end = json.JSONDecoder().raw_decode(text)
+    except ValueError:
+        doc, end = None, 0
+    reasons = []
+    if isinstance(doc, dict):
+        reasons += [str(e) for e in doc.get("ServerErrors") or []]
+        text = text[end:].strip()
+    reasons += [ln.strip() for ln in text.splitlines() if ln.strip()]
+    msg = " ".join(dict.fromkeys(reasons)) or "the Docker daemon is not running or not reachable"
+    return msg[:500]
 
 
 def disk_usage() -> list[dict]:
