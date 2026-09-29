@@ -152,6 +152,14 @@ def module_providers() -> dict[str, dict]:
                         "module": mid, "description": description}
         except Exception as e:  # noqa: BLE001 - a broken module never breaks provider lookups
             logger.debug("module provider %s: %s", mid, e)
+    try:   # private_project-router's metered /v1, while its owner token is set (bot/private_project/router.py)
+        from bot.private_project import router as private_project_router
+
+        entry = private_project_router.openai_provider()
+        if entry:
+            out["private_project-router"] = entry
+    except Exception as e:  # noqa: BLE001
+        logger.debug("private_project-router provider: %s", e)
     _module_cache = (now, out)
     return dict(out)
 
