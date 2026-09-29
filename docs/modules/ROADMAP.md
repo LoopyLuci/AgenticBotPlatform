@@ -301,6 +301,36 @@ the same remote-build operation. Without one, iOS projects can be edited and cro
 (React Native, Flutter) runs on Android and web, but iOS binaries can't be built. This is written into the
 iOS templates, not hidden.
 
+### 5.6 CacheIt: tiered caching for everything ABP moves (module 6, added 2026-09-29)
+
+`X:\Projects\CacheIt`, now `LoopyLuci/CacheIt`. A Rust workspace: engine, WAL, storage, API, MCP, CLI, TUI, desktop,
+web.
+
+**Baseline (CI-A, 2026-09-29):**
+- It builds, and 43 tests pass.
+- **The daemon is a demo.** It seeds invented tiers (`/dev/nvme0n1` on Windows), invented volumes and 10
+  zero-filled "cached" blocks, and reports stats from them.
+- It hard-codes `127.0.0.1:8080`, which Windows reserves on this PC (7981-8080), so it can't start here.
+- The RAM and SSD tiers' `read`/`write` are stubs, and the block cache is an unbounded map.
+- **Real and tested:** the replacement algorithms (ARC, LRU, LFU, hybrid) and the WAL.
+- The README describes PrimoCache-style volume caching as done. On Windows that needs a signed kernel filter
+  driver.
+
+**Direction:** make the engine a real **tiered object cache** first, because that speeds up ABP's own data flow
+now. Keys and bytes go RAM → disk, eviction uses its ARC/hybrid policies, disk-tier writes are crash-safe, and
+namespaces, TTLs and content addressing are built in. ABP and the cluster use it through an API, MCP and a Python
+client. Volume (block-level) caching is a later, separate phase.
+
+| Phase | Delivers | Gate |
+|---|---|---|
+| CI-A | Baseline (above) | done |
+| CI-B | A local pipeline (fmt, clippy, test, build, smoke against a real hub) plus a hook; an honest README | Green |
+| CI-C | The `cacheit-store` crate. **L1 RAM:** a byte capacity, ARC/hybrid eviction, and evicted entries demote to L2. **L2 disk:** sharded files, with a header per file carrying the key, namespace, TTL and checksum; an LRU byte cap; the index rebuilt by scanning at start, so there is no index to corrupt; L2 hits promote back to L1. Namespaces, TTL, content addressing (`put_cas` gives a sha256 key), pin/unpin, and per-tier stats. **The hub** in `cacheitd`: config (data dir, L1/L2 sizes, port 0 = random), `control.json`, Bearer token, `/v1/health`, `/v1/operations`, `/v1/call/{op}`, `/v1/service/stop`, plus a binary fast path `GET/PUT/DELETE /v1/objects/{ns}/{key}`. The demo seeding is removed. | Unit tests per tier and policy; a crash-safety test (kill during writes, restart, nothing corrupt); the hub passes ABP conformance |
+| CI-D | **MCP:** `cacheit mcp` serves the hub's operations over stdio. The **`abp-module.toml`** in the repo. **ABP's client** `bot/cache.py`: get/put/get_or_compute with namespaces and TTLs, and a no-op fallback when CacheIt isn't running. Module tools and page through the framework. | An agent stores and reads a value through `module_call`; ABP's client measurably speeds up a repeated computation |
+| CI-E | ABP's hot paths use it: web fetches (a short TTL), embeddings, provider model lists, the cluster's job inputs and outputs (CL6, content-addressed), module build caches (sccache-style), and dataset shards for BrainBuilder. Each is opt-in per feature, with its hit rate shown. | Each: a before/after timing |
+| CI-F | Distributed: nodes share one logical cache (consistent hashing, replication 2, read-through from peers) over the cluster's peer links | A value put on this PC is read from Server's cache |
+| CI-G | Volume caching. Linux: manage dm-cache / bcache / dm-writecache. Windows: a volume upper-filter driver (signed; its own project, with a written requirements and risk list first). | Measured read latency on a cached volume |
+
 ---
 
 ## 5a. ABP Cluster: paired machines as one computer (inside ABP, `bot/cluster/`)
@@ -435,4 +465,8 @@ M0 framework ─┬─> R (all repos; done alongside M0, since it touches only t
 | BB-A…F | todo | |
 | WS-A…H | todo | |
 | F0, F1, F4a, F2, F3, F4b | todo | needs the new repo |
-| CL1…CL8 cluster | in progress | Asked for 2026-09-29; CL1-CL5 first, tested with Server as the second node |
+| CL1…CL5 cluster | **done** 2026-09-29 | `64137dd`, `63e3e23`, pushed. Tested with Server as the second node: a capped job on Server, a 2-node gang meeting over Tailscale, an 8-task array spread 4/4. Server's ABP is updated, and both machines share modestly (this PC 25% CPU / 8 GB, Server 50% / 8 GB). |
+| CL6…CL8 | todo | CL6 comes with CacheIt CI-E |
+| CacheIt CI-A | **done** 2026-09-29 | `LoopyLuci/CacheIt` created (public, topics, wiki off, delete-on-merge); the baseline is in §5.6 |
+| CacheIt CI-B…G | todo | CI-C next |
+| MM-A | **done** 2026-09-29 | Builds in 94 s (E:). The server hard-codes 127.0.0.1:8000, which Windows reserves here, so it can't start; its chat proxies to Ollama; its own CPU/GGUF engine isn't checked yet |
