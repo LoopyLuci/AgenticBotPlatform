@@ -103,6 +103,42 @@ def register(app: FastAPI) -> None:
         db.log_audit(actor="dashboard", action="peer_handshake", detail=f"accepted handshake from {name!r}")
         return result
 
+    @app.post("/api/peers/{peer_id}/proxy", dependencies=[Depends(_require_token)])
+    async def api_peers_proxy(peer_id: str, body: dict = Body(...)):
+        """Call a linked server's VM-Harness, Hermes Manager or power API (whatever it allows) from this dashboard.
+        Body: {method, path, body}. peer_id may be the peer's id or name."""
+        from bot import peers
+
+        try:
+            row = peers.find_peer(peer_id)
+            result = await peers.proxy(row, str(body.get("method") or "GET"), str(body.get("path") or ""), body.get("body"))
+        except peers.PeerError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        if str(body.get("method") or "GET").upper() != "GET":
+            db.log_audit(actor="dashboard", action="peer_proxy", detail=f"{row['name']}: {body.get('method')} {body.get('path')}")
+        return {"result": result}
+
+    @app.get("/api/peers/control", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_peers_control():
+        """What this machine lets linked servers control (peers.remote_control), and every area there is."""
+        from bot import peers
+
+        return {"allowed": sorted(peers.allowed_control_areas()), "areas": sorted(peers.CONTROL_AREAS)}
+
+    @app.put("/api/peers/control", dependencies=[Depends(_require_token)])
+    async def api_peers_control_set(body: dict = Body(...)):
+        """Choose what linked servers may control on this machine: {allowed: [vm-harness, hermes-manager, power]}.
+        Only this machine's own dashboard can change it; a linked server never can."""
+        from bot import peers
+        from bot.config import config
+
+        allowed = body.get("allowed")
+        if not isinstance(allowed, list) or any(str(a) not in peers.CONTROL_AREAS for a in allowed):
+            raise HTTPException(status_code=400, detail="allowed is a list of: " + ", ".join(sorted(peers.CONTROL_AREAS)))
+        config.set_values({("peers", "remote_control"): sorted({str(a) for a in allowed})}, actor="dashboard")
+        db.log_audit(actor="dashboard", action="peer_control", detail=f"linked servers may control: {sorted(allowed)}")
+        return {"allowed": sorted(peers.allowed_control_areas()), "areas": sorted(peers.CONTROL_AREAS)}
+
     @app.get("/api/peers", dependencies=[Depends(_require_token_or_api_key)])
     def api_peers_list():
         return [_peer_public(dict(r)) for r in db.list_peer_servers()]

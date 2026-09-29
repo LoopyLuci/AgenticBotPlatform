@@ -4,9 +4,19 @@
 // This file is identical in the dashboard (bot/dashboard/static/) and the desktop app (desktop-app/ui/);
 // tests/test_vm_harness.py fails if the two differ. It uses the page's own api(), esc() and showToast(),
 // and draws into #vh-root.
-(function (api) {
+(function (api0) {
   'use strict';
-  if (typeof api !== 'function') return;
+  if (typeof api0 !== 'function') return;
+  // Which machine this page controls: this one, or a linked server (Peers page) whose ABP lets linked servers control
+  // vm-harness (peers.remote_control). Calls to the module's API go through /api/peers/<name>/proxy then.
+  let machine = '';
+  try { machine = localStorage.getItem('vh-machine') || ''; } catch (_) {}
+  const api = (path, opts) => {
+    if (!machine || !path.startsWith('/api/vm-harness/')) return api0(path, opts);
+    const o = opts || {};
+    return api0('/api/peers/' + encodeURIComponent(machine) + '/proxy', { method: 'POST',
+      body: JSON.stringify({ method: o.method || 'GET', path, body: o.body ? JSON.parse(o.body) : null }) }).then((r) => r.result);
+  };
   const $ = (id) => document.getElementById(id);
   const E = (s) => (typeof esc === 'function' ? esc(s) : String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
   const toast = (m, t) => (typeof showToast === 'function' ? showToast(m, t) : console.log(m));
@@ -78,9 +88,27 @@
     const root = $('vh-root');
     if (!root) return null;
     if (!$('vh-body')) {
-      root.innerHTML = `<div class="vh-tabs" role="tablist">${TABS.map(([k, t]) => `<button role="tab" data-tab="${k}">${t}</button>`).join('')}</div><div id="vh-body"></div>`;
+      root.innerHTML = `<div class="vh-row" style="margin-bottom:6px"><label class="vh-muted">Machine <select id="vh-machine"><option value="">This machine</option></select></label><span id="vh-machine-note" class="vh-muted"></span></div><div class="vh-tabs" role="tablist">${TABS.map(([k, t]) => `<button role="tab" data-tab="${k}">${t}</button>`).join('')}</div><div id="vh-body"></div>`;
       root.querySelectorAll('.vh-tabs button').forEach((b) => b.addEventListener('click', () => { st.tab = b.dataset.tab; try { localStorage.setItem('vh-tab', st.tab); } catch (_) {} stopLive(); render(); }));
     }
+    if (!root.dataset.peers) {
+      root.dataset.peers = '1';
+      api0('/api/peers').then((rows) => {
+        const sel = $('vh-machine');
+        (rows || []).forEach((r) => { const o = document.createElement('option'); o.value = r.name; o.textContent = r.name; sel.appendChild(o); });
+        if (machine && !(rows || []).some((r) => r.name === machine)) machine = '';
+        sel.value = machine;
+        sel.addEventListener('change', () => {
+          machine = sel.value;
+          try { localStorage.setItem('vh-machine', machine); } catch (_) {}
+          stopLive();
+          st.status = null; st.ops = null; st.op = null;
+          render();
+        });
+      }).catch(() => {});
+    }
+    const note = $('vh-machine-note');
+    if (note) note.textContent = machine ? ' controlling ' + machine + ' through its ABP' : '';
     root.querySelectorAll('.vh-tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === st.tab)));
     return $('vh-body');
   }
