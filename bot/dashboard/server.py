@@ -913,6 +913,11 @@ def build_app() -> FastAPI:
 
     transferdaemon_api.register(app, control_auth("transferdaemon", write=False), control_auth("transferdaemon", write=True))
 
+    # Modules: every separate program ABP installs, updates, builds and drives, on one page (bot/modules/).
+    from bot.dashboard import modules_api
+
+    modules_api.register(app, control_auth("modules", write=False), control_auth("modules", write=True))
+
     # Power: keep this machine awake while it is in use, wake other machines (Wake-on-LAN).
     from bot.dashboard import power_api
 

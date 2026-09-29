@@ -20,7 +20,7 @@
       body: JSON.stringify({ method: o.method || 'GET', path, body: o.body ? JSON.parse(o.body) : null }) }).then((r) => r.result);
   };
   const send = (method, path, body) => api(path, { method, body: JSON.stringify(body || {}) });
-  const AREAS = { 'vm-harness': 'VM-Harness (virtual machines, containers, its window)', 'hermes-manager': 'Hermes Manager', transferdaemon: 'TransferDaemon (messages, files, its window, relays)', power: 'Power (keep awake, wake others)' };
+  const AREAS = { 'vm-harness': 'VM-Harness (virtual machines, containers, its window)', 'hermes-manager': 'Hermes Manager', transferdaemon: 'TransferDaemon (messages, files, its window, relays)', power: 'Power (keep awake, wake others)', modules: 'Modules (install, update, build and drive every module)' };
   let peers = [];
   let timer = null;
 

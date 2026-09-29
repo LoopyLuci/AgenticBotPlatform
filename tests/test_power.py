@@ -131,7 +131,7 @@ def test_dashboard_always_and_phone_reads_only(temp_db, monkeypatch):
     _, phone = db.create_api_key("test-phone", kind="device")
     assert client.get("/api/power/status", headers={"X-Dashboard-Token": phone}).status_code == 200
     assert client.post("/api/power/hold", headers={"X-Dashboard-Token": phone}, json={"minutes": 1}).status_code == 403
-    assert client.get("/api/peers/control", headers=dash).json()["areas"] == ["hermes-manager", "power", "transferdaemon", "vm-harness"]
+    assert client.get("/api/peers/control", headers=dash).json()["areas"] == ["hermes-manager", "modules", "power", "transferdaemon", "vm-harness"]
 
 
 # ---- proxy (this machine calling a linked one) -------------------------------------------------------------------------

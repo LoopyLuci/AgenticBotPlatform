@@ -143,6 +143,9 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.hermes_manager.client", "bot.hermes_manager.harness", "bot.hermes_manager.tools", "bot.dashboard.hermes_manager_api",
     # TransferDaemon: harness.py holds the background build/update jobs, tools.py registers tools at import time.
     "bot.transferdaemon.client", "bot.transferdaemon.harness", "bot.transferdaemon.tools", "bot.dashboard.transferdaemon_api",
+    # Modules: harness.py holds the background jobs, registry.py the manifest cache, tools.py registers at import time.
+    "bot.modules.manifest", "bot.modules.registry", "bot.modules.client", "bot.modules.adapters", "bot.modules.harness",
+    "bot.modules.tools", "bot.modules.conformance", "bot.dashboard.modules_api",
     # The toolkit registers its actions and agent tools at import time.
     "bot.agent_runtime.toolkit_tools",
     # Power: power.py holds the keep-awake thread and its holds; power_tools.py registers tools at import time.
