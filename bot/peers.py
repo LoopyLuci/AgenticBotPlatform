@@ -490,7 +490,9 @@ async def health_check_forever(stop_event: asyncio.Event) -> None:
 # control more of it, area by area, with `peers.remote_control` in its config/backends.yaml:
 #
 #     peers:
-#       remote_control: [vm-harness, hermes-manager, transferdaemon, power]
+#       remote_control: [vm-harness, hermes-manager, transferdaemon, power, modules]
+#
+# (modules: every module on the Modules page, /api/modules/: install, update, build, hubs, operations.)
 #
 # Each area is a prefix of this machine's own API that a peer may then call (reads and changes). The machine doing the
 # controlling needs nothing extra: proxy() below sends the request with the key the handshake gave it.
@@ -499,6 +501,7 @@ CONTROL_AREAS: dict[str, str] = {
     "hermes-manager": "/api/hermes-manager/",
     "transferdaemon": "/api/transferdaemon/",
     "power": "/api/power/",
+    "modules": "/api/modules/",
 }
 CONTROL_TIMEOUT_S = 900
 

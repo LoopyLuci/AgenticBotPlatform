@@ -59,7 +59,8 @@ automatically.
    and a random token. It writes `<data_dir>/control.json`: `{url, token, pid, version, api}`.
    - `GET /v1/health`
    - `GET /v1/operations`: the self-describing list of operations, with JSON Schema for each one's input
-   - `POST /v1/call {op, args}`
+   - `POST /v1/call/{op}` with the arguments as the body; it answers `{"result": ...}` (the same shape VM-Harness and
+     TransferDaemon already use)
    - `GET /v1/events`: a stream of events, as SSE
    - `POST /v1/service/stop`
 
@@ -141,7 +142,7 @@ run = ["python", "ci/pipeline.py"]
 | `registry.py` | The known modules: built in (the 8 repo URLs), plus any added by URL in the UI. Resolve where each checkout is, with the same order as today: env `ABP_MODULE_<ID>_DIR`, then `modules.<id>.path`, then a sibling folder, then `data/modules/<Name>`. |
 | `harness.py` | Generic `install_info`, `clone`, `update` (fast-forward only, refusing when there are local changes), `toolchain_check`, `build` (a job with streamed logs), `start_hub`, `stop_hub`, `hub_status`. This is taken from the three existing harnesses. |
 | `client.py` | A generic hub client: read `control.json`, then `health`, `operations`, `call`, and the `events` SSE. |
-| `tools.py` | Turns each module's `/v1/operations` into agent and MCP tools at runtime, named `<id>__<op>`. Each module's tools can be turned on or off. |
+| `tools.py` | Six generic agent tools, each taking `module` and `machine`: `module_list`, `module_status`, `module_operations` (search a hub's operations), `module_read` (read-only operations), `module_call`, `module_setup`. This stays small however many modules and operations there are; one tool per operation (`<id>__<op>`) would add hundreds of tools to every turn. |
 | `bot/dashboard/modules_api.py` | `/api/modules`, `/api/modules/{id}/{info,clone,update,build,start,stop,call,events,pipeline}`, all peer-aware. |
 | dashboard `modules-panel.js` (both UI copies) | One "Modules" page with a card per module: status, commit and ahead/behind, and Update, Build, Start, Open GUI and Run pipeline buttons. A generic operation runner builds a form for each operation from its JSON Schema. A module can supply its own panel. |
 | `conformance.py` + `tests/test_module_conformance.py` | Checks every §2 point against a module: the manifest, the hub, operations, the MCP tool list, stop. |

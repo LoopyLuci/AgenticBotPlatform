@@ -1,0 +1,18 @@
+# The fake module the module framework's tests use (tests/test_modules.py).
+[module]
+id = "fake-mod"
+name = "FakeMod"
+repo = "https://example.invalid/fake-mod.git"
+area = "tools"
+description = "A test module"
+
+[checkout]
+marker = ["hub.py"]
+
+[hub]
+start = ["python", "{repo}/hub.py", "{data}"]
+control_file = "{data}/control.json"
+start_timeout_s = 20
+
+[ui]
+panel = "operations"

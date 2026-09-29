@@ -1362,6 +1362,53 @@ export const operations = {
    "days"
   ]
  },
+ "GET /api/modules": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modules",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/modules/jobs/{job_id}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modules/jobs/{job_id}",
+  "path_params": [
+   "job_id"
+  ],
+  "query_params": []
+ },
+ "GET /api/modules/{mid}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modules/{mid}",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": [
+   "fetch"
+  ]
+ },
+ "GET /api/modules/{mid}/jobs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modules/{mid}/jobs",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "GET /api/modules/{mid}/operations": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modules/{mid}/operations",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": [
+   "refresh"
+  ]
+ },
  "GET /api/network-info": {
   "body": false,
   "method": "GET",
@@ -3393,6 +3440,105 @@ export const operations = {
   "method": "POST",
   "path": "/api/models/refresh",
   "path_params": [],
+  "query_params": []
+ },
+ "POST /api/modules/{mid}/build": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/build",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "POST /api/modules/{mid}/call": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modules/{mid}/call",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "POST /api/modules/{mid}/conformance": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/conformance",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "POST /api/modules/{mid}/gui": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/gui",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "POST /api/modules/{mid}/hub/start": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/hub/start",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "POST /api/modules/{mid}/hub/stop": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/hub/stop",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "POST /api/modules/{mid}/mcp": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/mcp",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "POST /api/modules/{mid}/pipeline": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/pipeline",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "POST /api/modules/{mid}/setup": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/setup",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "POST /api/modules/{mid}/tui": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/tui",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "POST /api/modules/{mid}/update": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/update",
+  "path_params": [
+   "mid"
+  ],
   "query_params": []
  },
  "POST /api/native-agent/{instance_id}/dispatch": {
@@ -8003,6 +8149,152 @@ export const operations = {
   "path_params": [
    "model_id"
   ],
+  "query_params": []
+ },
+ "module_build_api_modules__mid__build_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/build",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "module_call_api_modules__mid__call_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modules/{mid}/call",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "module_conformance_api_modules__mid__conformance_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/conformance",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "module_gui_api_modules__mid__gui_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/gui",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "module_hub_start_api_modules__mid__hub_start_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/hub/start",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "module_hub_stop_api_modules__mid__hub_stop_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/hub/stop",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "module_jobs_api_modules__mid__jobs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modules/{mid}/jobs",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "module_mcp_api_modules__mid__mcp_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/mcp",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "module_operations_api_modules__mid__operations_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modules/{mid}/operations",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": [
+   "refresh"
+  ]
+ },
+ "module_pipeline_api_modules__mid__pipeline_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/pipeline",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "module_setup_api_modules__mid__setup_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/setup",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "module_status_api_modules__mid__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modules/{mid}",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": [
+   "fetch"
+  ]
+ },
+ "module_tui_api_modules__mid__tui_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/tui",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "module_update_api_modules__mid__update_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/update",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "modules_job_api_modules_jobs__job_id__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modules/jobs/{job_id}",
+  "path_params": [
+   "job_id"
+  ],
+  "query_params": []
+ },
+ "modules_list_api_modules_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modules",
+  "path_params": [],
   "query_params": []
  },
  "node_consent_api_nodes__device_id__consent_put": {
