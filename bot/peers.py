@@ -517,7 +517,10 @@ def allowed_control_areas() -> set[str]:
 
 
 def control_area_of(path: str) -> Optional[str]:
-    return next((a for a, prefix in CONTROL_AREAS.items() if path.startswith(prefix)), None)
+    """The area a path belongs to: under its prefix, or the prefix's own root (/api/modules, with a query or not)."""
+    bare = path.split("?", 1)[0]
+    return next((a for a, prefix in CONTROL_AREAS.items() if path.startswith(prefix) or bare == prefix.rstrip("/")),
+                None)
 
 
 def find_peer(ref) -> Any:

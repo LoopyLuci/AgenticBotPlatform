@@ -27,6 +27,7 @@ _VIRTUAL_GPU_WORDS = ("basic display", "basic render", "virtual", "parsec", "rem
 _static: dict[str, Any] = {"at": 0.0, "data": None}
 _live: dict[str, Any] = {"at": 0.0, "data": None}
 _lock = threading.Lock()
+psutil.cpu_percent(interval=None)          # primes the counter: later calls measure since the previous one
 
 
 def _run(args: list[str], timeout: float = 8.0) -> str:
@@ -166,6 +167,24 @@ def _windows_gpu_memory_used_gb() -> Optional[float]:
     return round(sum(values) / 1024 ** 3, 2)
 
 
+_gpu_mem: dict[str, Any] = {"value": None, "at": 0.0, "busy": False}
+
+
+def _gpu_mem_background() -> Optional[float]:
+    """The last GPU-memory reading, refreshed in the background (Windows' counters take ~2 s to read, and a node's
+    report must not wait for them)."""
+    if not _gpu_mem["busy"] and time.monotonic() - _gpu_mem["at"] > 15:
+        _gpu_mem["busy"] = True
+
+        def go() -> None:
+            try:
+                _gpu_mem["value"] = _windows_gpu_memory_used_gb()
+            finally:
+                _gpu_mem.update(at=time.monotonic(), busy=False)
+        threading.Thread(target=go, name="gpu-mem", daemon=True).start()
+    return _gpu_mem["value"]
+
+
 def _hypervisors() -> list[str]:
     found = []
     if sys.platform == "win32":
@@ -257,11 +276,12 @@ def live(refresh: bool = False) -> dict:
     if fresh and not refresh:
         return dict(_live["data"])
     vm = psutil.virtual_memory()
-    data: dict[str, Any] = {"cpu_pct": psutil.cpu_percent(interval=0.3), "ram_used_gb": round(vm.used / 1024 ** 3, 1),
+    # cpu_pct: the average since the previous report (no sampling pause)
+    data: dict[str, Any] = {"cpu_pct": psutil.cpu_percent(interval=None), "ram_used_gb": round(vm.used / 1024 ** 3, 1),
                             "ram_free_gb": round(vm.available / 1024 ** 3, 1), "disks": _disks(),
                             "uptime_s": int(time.time() - psutil.boot_time()), "at": time.time()}
     if sys.platform == "win32" and any(g.get("vram_used_gb") is None for g in static()["gpus"]):
-        data["gpu_mem_used_gb"] = _windows_gpu_memory_used_gb()
+        data["gpu_mem_used_gb"] = _gpu_mem_background()
     nv = _nvidia_gpus()
     if nv:
         data["gpus"] = [{"name": g["name"], "vram_used_gb": g["vram_used_gb"], "util_pct": g["util_pct"]} for g in nv]

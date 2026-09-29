@@ -210,3 +210,10 @@ def test_panel_is_identical_in_both_uis_and_wired():
     for page in ("bot/dashboard/static/dashboard.html", "desktop-app/ui/index.html"):
         html = (ROOT / page).read_text(encoding="utf-8")
         assert 'id="modules"' in html and 'id="mdp-root"' in html and "modules-panel.js" in html
+
+
+def test_a_peer_can_reach_the_modules_list_itself():
+    from bot import peers
+    assert peers.control_area_of("/api/modules") == "modules"
+    assert peers.control_area_of("/api/modules?x=1") == "modules"
+    assert peers.control_area_of("/api/modulesX") is None
