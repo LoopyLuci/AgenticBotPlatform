@@ -186,7 +186,9 @@ def test_the_agent_bot_button_opens_that_bots_settings(served_dashboard, browser
     page.wait_for_function("document.querySelector('[data-bot-agent]')", timeout=20000)
     page.locator("[data-bot-agent]").first.click()
     assert page.evaluate("window.abpAgents.state.tab") == "subagents"
-    assert page.evaluate("document.getElementById('agent-settings-instance').value") != ""
+    # The bot list may still be loading when the button is clicked (a busy machine's first process scan makes the
+    # page's first requests slow): the choice is kept and applied when the list arrives.
+    page.wait_for_function("document.getElementById('agent-settings-instance').value !== ''", timeout=20000)
     assert errors == [], errors
 
 

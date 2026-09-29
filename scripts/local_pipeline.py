@@ -381,7 +381,8 @@ def check_python() -> bool:
         # timing race), not a regression: re-run ONLY the failures once. A
         # real failure fails again and still blocks; a flake is reported, not
         # silently forgiven.
-        failed_ids = re.findall(r"(?m)^FAILED (\S+)", out)
+        # xdist's loadgroup mode reports ids as "path::test@group"; the group is not part of the test's id.
+        failed_ids = [re.sub(r"@[\w.-]+$", "", t) for t in re.findall(r"(?m)^FAILED (\S+)", out)]
         if failed_ids and len(failed_ids) <= FLAKY_RERUN_LIMIT:
             Step.warn(f"{len(failed_ids)} test(s) failed — re-running just those once to tell a flake from a real failure")
             ok2, out2 = _run([py, "-m", "pytest", "-q", "-rf", *failed_ids], cwd=ROOT, timeout=PYTEST_TIMEOUT)

@@ -154,12 +154,27 @@ def find_exe_path() -> Optional[str]:
     return _find_msix_claude_exe()
 
 
+_last_pid: dict[str, Optional[int]] = {"pid": None}
+
+
 def get_process() -> Optional["psutil.Process"]:  # noqa: F821
     import psutil
 
+    # The pid found last time, checked first: a full scan reads every process on the machine (about 3 s the first
+    # time on a busy Windows host) and /api/overview and /api/telemetry ask every 5 s.
+    pid = _last_pid["pid"]
+    if pid is not None:
+        try:
+            proc = psutil.Process(pid)
+            if proc.name().lower() == PROCESS_NAME.lower():
+                return proc
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+        _last_pid["pid"] = None
     for proc in psutil.process_iter(["pid", "name"]):
         try:
             if proc.info["name"] and proc.info["name"].lower() == PROCESS_NAME.lower():
+                _last_pid["pid"] = proc.pid
                 return proc
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue

@@ -40,9 +40,9 @@ def register(app: FastAPI, auth: Callable) -> None:
     async def ts_overview():
         out: dict[str, Any] = {"installed": ts.is_installed(), "prefs_schema": {k: v[1] for k, v in ts.PREFS.items()}}
         if out["installed"]:
-            for key, fn in (("status", ts, "status"), ("prefs", ts, "prefs"), ("version", ts, "version")):
+            for key, attr in (("status", "status"), ("prefs", "prefs"), ("version", "version")):
                 try:
-                    out[key] = await asyncio.to_thread(fn)
+                    out[key] = await asyncio.to_thread(getattr(ts, attr))   # looked up now: hot reload
                 except ts.TailscaleError as exc:
                     out[key] = {"error": str(exc)}
         return out
