@@ -5,6 +5,7 @@ built-in manifest once the repo ships one, and more modules can be added in conf
 
     modules:
       build_cache: E:/abp-build        # optional: cargo target dirs go here (fast storage), one folder per module
+                                       # ($ABP_MODULE_BUILD_CACHE overrides it)
       brainbuilder: {path: D:/src/BrainBuilder, enabled: true}
       extra:
         - {id: my-tool, name: My Tool, repo: https://github.com/me/my-tool.git}
@@ -138,7 +139,7 @@ def data_dir(m: Manifest) -> Path:
 
 def target_dir(m: Manifest) -> Path:
     """The cargo target dir: <build_cache>/<id> when modules.build_cache is set (fast storage), else the workspace's."""
-    cache = _cfg().get("build_cache")
+    cache = os.environ.get("ABP_MODULE_BUILD_CACHE") or _cfg().get("build_cache")
     if cache:
         return Path(str(cache)).expanduser() / m.id
     return install_dir(m) / m.subdir / "target" if m.subdir else install_dir(m) / "target"

@@ -468,5 +468,7 @@ M0 framework ─┬─> R (all repos; done alongside M0, since it touches only t
 | CL1…CL5 cluster | **done** 2026-09-29 | `64137dd`, `63e3e23`, pushed. Tested with Server as the second node: a capped job on Server, a 2-node gang meeting over Tailscale, an 8-task array spread 4/4. Server's ABP is updated, and both machines share modestly (this PC 25% CPU / 8 GB, Server 50% / 8 GB). |
 | CL6…CL8 | todo | CL6 comes with CacheIt CI-E |
 | CacheIt CI-A | **done** 2026-09-29 | `LoopyLuci/CacheIt` created (public, topics, wiki off, delete-on-merge); the baseline is in §5.6 |
-| CacheIt CI-B…G | todo | CI-C next |
+| CacheIt CI-B, CI-C | **done** 2026-09-29 | CacheIt `08f5b1c` (pushed; its pipeline passed through its pre-push hook). `cacheit-store` has 16 tests; the hub has 13 operations and a binary fast path; the CLI works and so does `cacheit mcp`. CacheIt passes ABP conformance, the first module on the generic path. README rewritten honestly; MIT/Apache license files added (the README already declared them); `Cargo.lock` committed. |
+| CacheIt CI-D | **mostly done** | `bot/cache.py`: get/put/get_or_compute, a no-op fallback, a pooled client (0.44 ms per 1 KB get). Left: the TUI and desktop app still use the older `/api/*` routes |
+| CacheIt CI-E…G | todo | Hot paths (each measured), distributed, volume caching |
 | MM-A | **done** 2026-09-29 | Builds in 94 s (E:). The server hard-codes 127.0.0.1:8000, which Windows reserves here, so it can't start; its chat proxies to Ollama; its own CPU/GGUF engine isn't checked yet |

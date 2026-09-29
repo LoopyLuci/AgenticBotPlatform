@@ -87,6 +87,7 @@ def test_a_broken_repo_manifest_falls_back_and_says_why(fake):
 
 def test_env_and_config_choose_the_checkout(tmp_path, monkeypatch):
     m = mf.parse(FAKE)
+    monkeypatch.delenv("ABP_MODULE_BUILD_CACHE", raising=False)
     monkeypatch.setenv("ABP_MODULE_FAKE_MOD_DIR", str(tmp_path / "here"))
     assert registry.install_dir(m) == tmp_path / "here"
     monkeypatch.delenv("ABP_MODULE_FAKE_MOD_DIR")
