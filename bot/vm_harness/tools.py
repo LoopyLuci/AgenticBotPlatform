@@ -1,5 +1,6 @@
-"""The agent's VM-Harness tools. Offered while VM-Harness is installed. Reading is free; anything that changes a VM, a
-container or the window asks first.
+"""The agent's VM-Harness tools. Offered while VM-Harness is installed (or a server is linked). Reading is free;
+anything that changes a VM, a container or the window asks first. Every tool takes `machine`: a linked server's name, to
+do the same on that machine through its ABP.
 
     vmh_status       installed? up to date? hub running? which hypervisors and container engines work here
     vmh_vms          every VM on every hypervisor, with its state
@@ -39,6 +40,47 @@ async def _run(fn, *args, **kwargs) -> str:
         return f"Error ({exc.code}): {exc}"
 
 
+API = "/api/vm-harness"
+MACHINE = {"type": "string", "description": "a linked server's name (Peers page) to do this on that machine instead of "
+                                            "this one; its owner must allow it (peers.remote_control: [vm-harness])"}
+
+
+async def _remote(machine: str, method: str, path: str, body: Any = None, *, shape=None) -> str:
+    """The same thing on a linked server (its ABP must allow vm-harness: peers.remote_control)."""
+    from bot import peers
+    try:
+        data = await peers.on_machine(machine, method, API + path, body)
+        return _out(shape(data) if shape else data)
+    except (peers.PeerError, HarnessError) as exc:
+        return f"Error: {exc}"
+
+
+def _filter_ops(ops: list, inp: dict) -> Any:
+    q = str(inp.get("query") or "").lower().split()
+    group = str(inp.get("group") or "")
+    if not q and not group:
+        counts: dict[str, int] = {}
+        for o in ops:
+            counts[o["group"]] = counts.get(o["group"], 0) + 1
+        return {"groups": counts, "hint": "pass query or group to list operations, operation for one's arguments"}
+    return [{"id": o["id"], "summary": o["summary"], "changes": o["mutating"], "destructive": o["destructive"]}
+            for o in ops if (not group or o["group"] == group)
+            and all(w in f"{o['id']} {o['summary']}".lower() for w in q)]
+
+
+def _find_op(ops: list, op_id: str) -> dict:
+    for o in ops:
+        if o["id"] == op_id:
+            return o
+    raise HarnessError(f"no operation {op_id!r}", code="unknown_operation")
+
+
+def _vm_rows(rows: Any) -> Any:
+    if isinstance(rows, dict) and "result" in rows:
+        rows = rows["result"]
+    return [{k: v.get(k) for k in ("name", "backend", "state", "error") if v.get(k)} for v in rows or []]
+
+
 _enabled_cache: dict[str, float | bool] = {"at": 0.0, "on": False}
 
 
@@ -50,6 +92,9 @@ def _enabled() -> bool:
         return bool(_enabled_cache["on"])
     try:
         on = harness._is_checkout(harness.install_dir()) or bool(client._cfg().get("url"))
+        if not on:
+            from bot import peers
+            on = peers.any_linked()   # a linked server may have it
     except Exception:  # noqa: BLE001
         on = False
     _enabled_cache.update(at=time.monotonic(), on=on)
@@ -60,58 +105,77 @@ def register_tools() -> None:
     from bot.agent_runtime import toolspec
 
     def reg(name, description, props, required, handler, *, permission, read_only):
+        props = {**props, "machine": MACHINE}
         toolspec.register(
             {"name": name, "description": description,
              "input_schema": {"type": "object", "properties": props, "required": required}},
             toolspec.ToolSpec(name, permission, read_only=read_only, concurrency_safe=read_only, origin="registered"),
             handler, enabled=_enabled)
 
+    def result(d):
+        return d.get("result") if isinstance(d, dict) and "result" in d else d
+
     async def status(inp, **_):
+        if inp.get("machine"):
+            return await _remote(inp["machine"], "GET", "/status")
         return await _run(harness.summary)
 
     async def vms(inp, **_):
-        return await _run(lambda: [{k: v.get(k) for k in ("name", "backend", "state", "error") if v.get(k)}
-                                   for v in client.call("vm.list", {"backend": inp.get("backend") or ""})])
+        backend = str(inp.get("backend") or "")
+        if inp.get("machine"):
+            return await _remote(inp["machine"], "GET", f"/vms?backend={backend}", shape=_vm_rows)
+        return await _run(lambda: _vm_rows(client.call("vm.list", {"backend": backend})))
 
     async def operations(inp, **_):
-        def run():
+        if inp.get("machine"):
             if inp.get("operation"):
-                return client.operation(str(inp["operation"]))
-            q = str(inp.get("query") or "").lower().split()
-            group = str(inp.get("group") or "")
-            ops = client.operations()
-            if not q and not group:
-                counts: dict[str, int] = {}
-                for o in ops:
-                    counts[o["group"]] = counts.get(o["group"], 0) + 1
-                return {"groups": counts, "hint": "pass query or group to list operations, operation for one's arguments"}
-            return [{"id": o["id"], "summary": o["summary"], "changes": o["mutating"], "destructive": o["destructive"]}
-                    for o in ops if (not group or o["group"] == group)
-                    and all(w in f"{o['id']} {o['summary']}".lower() for w in q)]
-        return await _run(run)
+                return await _remote(inp["machine"], "GET", "/operations",
+                                     shape=lambda ops: _find_op(ops, str(inp["operation"])))
+            return await _remote(inp["machine"], "GET", "/operations", shape=lambda ops: _filter_ops(ops, inp))
+        return await _run(lambda: client.operation(str(inp["operation"])) if inp.get("operation")
+                          else _filter_ops(client.operations(), inp))
 
     async def read(inp, **_):
         op_id = str(inp.get("operation") or "")
+        args = dict(inp.get("args") or {})
+        if inp.get("machine"):
+            from bot import peers
+            try:
+                op = _find_op(await peers.on_machine(inp["machine"], "GET", API + "/operations"), op_id)
+            except (peers.PeerError, HarnessError) as exc:
+                return f"Error: {exc}"
+            if op["mutating"]:
+                return f"Error (mutating): {op_id} changes something; use vmh_call for it"
+            return await _remote(inp["machine"], "POST", "/call", {"operation": op_id, "args": args}, shape=result)
 
         def run():
             op = client.operation(op_id)
             if op["mutating"]:
                 raise HarnessError(f"{op_id} changes something; use vmh_call for it", code="mutating")
-            return client.call(op_id, dict(inp.get("args") or {}))
+            return client.call(op_id, args)
         return await _run(run)
 
     async def call(inp, **_):
         op_id = str(inp.get("operation") or "")
         if not op_id:
             return "Error: give the operation id (see vmh_operations)"
-        return await _run(client.call, op_id, dict(inp.get("args") or {}), timeout=float(inp.get("timeout_s") or 900))
+        args, timeout = dict(inp.get("args") or {}), float(inp.get("timeout_s") or 900)
+        if inp.get("machine"):
+            return await _remote(inp["machine"], "POST", "/call", {"operation": op_id, "args": args, "timeout_s": timeout},
+                                 shape=result)
+        return await _run(client.call, op_id, args, timeout=timeout)
 
     def gui(allowed: set[str]):
         async def handler(inp, **_):
             action = str(inp.get("action") or "")
             if action not in allowed:
                 return f"Error: action is one of {', '.join(sorted(allowed))}"
-            args = {k: v for k, v in inp.items() if k != "action" and v is not None}
+            args = {k: v for k, v in inp.items() if k not in ("action", "machine") and v is not None}
+            if inp.get("machine"):
+                if action == "launch":
+                    return await _remote(inp["machine"], "POST", "/window")
+                return await _remote(inp["machine"], "POST", "/call", {"operation": f"gui.{action}", "args": args,
+                                                                       "timeout_s": 120}, shape=result)
             if action == "launch":
                 return await _run(harness.open_window, float(args.get("wait_s") or 60))
             return await _run(client.call, f"gui.{action}", args, timeout=120)
@@ -123,6 +187,10 @@ def register_tools() -> None:
                "jobs": harness.jobs, "register_mcp": harness.register_mcp}
         if action not in fns:
             return f"Error: action is one of {', '.join(fns)}"
+        if inp.get("machine"):
+            routes = {"install": ("POST", "/setup"), "update": ("POST", "/update"), "start": ("POST", "/hub/start"),
+                      "stop": ("POST", "/hub/stop"), "jobs": ("GET", "/jobs"), "register_mcp": ("POST", "/mcp")}
+            return await _remote(inp["machine"], *routes[action])
         return await _run(fns[action])
 
     target = {"type": "object", "description": "{panel?, id} or {panel?, text}: a widget, by the id vmh_gui_look "

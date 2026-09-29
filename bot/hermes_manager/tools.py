@@ -38,6 +38,37 @@ async def _run(fn, *args, **kwargs) -> str:
         return f"Error: {exc}"
 
 
+API = "/api/hermes-manager"
+MACHINE = {"type": "string", "description": "a linked server's name (Peers page) to do this on that machine instead of "
+                                            "this one; its owner must allow it (peers.remote_control: [hermes-manager])"}
+
+
+async def _remote(machine: str, method: str, path: str, body: Any = None, *, shape=None) -> str:
+    from bot import peers
+    try:
+        data = await peers.on_machine(machine, method, API + path, body)
+        return _out(shape(data) if shape else data)
+    except (peers.PeerError, ManagerError) as exc:
+        return f"Error: {exc}"
+
+
+def _filter_ops(ops: list, inp: dict) -> list:
+    q = str(inp.get("query") or "").lower().split()
+    return [{"id": o["id"], "summary": o["summary"], "changes": o["mutating"]} for o in ops
+            if (not inp.get("group") or o["group"] == inp["group"]) and all(w in f"{o['id']} {o['summary']}".lower() for w in q)]
+
+
+def _find_op(ops: list, op_id: str) -> dict:
+    for o in ops:
+        if o["id"] == op_id:
+            return o
+    raise ManagerError(f"no operation {op_id!r}")
+
+
+def _result(d: Any) -> Any:
+    return d.get("result") if isinstance(d, dict) and "result" in d else d
+
+
 _on: dict[str, float | bool] = {"at": 0.0, "on": False}
 
 
@@ -47,6 +78,9 @@ def _enabled() -> bool:
         return bool(_on["on"])
     try:
         on = harness._is_checkout(harness.install_dir())
+        if not on:
+            from bot import peers
+            on = peers.any_linked()   # a linked server may have it
     except Exception:  # noqa: BLE001
         on = False
     _on.update(at=time.monotonic(), on=on)
@@ -57,37 +91,51 @@ def register_tools() -> None:
     from bot.agent_runtime import toolspec
 
     def reg(name, description, props, required, handler, *, permission, read_only):
+        props = {**props, "machine": MACHINE}
         toolspec.register({"name": name, "description": description,
                            "input_schema": {"type": "object", "properties": props, "required": required}},
                           toolspec.ToolSpec(name, permission, read_only=read_only, concurrency_safe=read_only,
                                             origin="registered"), handler, enabled=_enabled)
 
     async def status(inp, **_):
+        if inp.get("machine"):
+            return await _remote(inp["machine"], "GET", "/status")
         return await _run(harness.status)
 
     async def operations(inp, **_):
-        def go():
-            if inp.get("operation"):
-                return client.operation(str(inp["operation"]))
-            q = str(inp.get("query") or "").lower().split()
-            ops = client.operations()
-            return [{"id": o["id"], "summary": o["summary"], "changes": o["mutating"]} for o in ops
-                    if (not inp.get("group") or o["group"] == inp["group"]) and all(w in f"{o['id']} {o['summary']}".lower() for w in q)]
-        return await _run(go)
+        if inp.get("machine"):
+            return await _remote(inp["machine"], "GET", "/operations",
+                                 shape=lambda ops: _find_op(ops, str(inp["operation"])) if inp.get("operation")
+                                 else _filter_ops(ops, inp))
+        return await _run(lambda: client.operation(str(inp["operation"])) if inp.get("operation")
+                          else _filter_ops(client.operations(), inp))
 
     async def read(inp, **_):
         op_id = str(inp.get("operation") or "")
+        args = dict(inp.get("args") or {})
+        if inp.get("machine"):
+            from bot import peers
+            try:
+                op = _find_op(await peers.on_machine(inp["machine"], "GET", API + "/operations"), op_id)
+            except (peers.PeerError, ManagerError) as exc:
+                return f"Error: {exc}"
+            if op["mutating"]:
+                return f"Error: {op_id} changes something; use hm_call for it"
+            return await _remote(inp["machine"], "POST", "/call", {"operation": op_id, "args": args}, shape=_result)
 
         def go():
             if client.operation(op_id)["mutating"]:
                 raise ManagerError(f"{op_id} changes something; use hm_call for it")
-            return client.call(op_id, dict(inp.get("args") or {}))
+            return client.call(op_id, args)
         return await _run(go)
 
     async def call(inp, **_):
         op_id = str(inp.get("operation") or "")
         if not op_id:
             return "Error: give the operation id (see hm_operations)"
+        if inp.get("machine"):
+            return await _remote(inp["machine"], "POST", "/call",
+                                 {"operation": op_id, "args": dict(inp.get("args") or {})}, shape=_result)
         return await _run(client.call, op_id, dict(inp.get("args") or {}))
 
     def gui(allowed: set[str]):
@@ -95,7 +143,12 @@ def register_tools() -> None:
             action = str(inp.get("action") or "")
             if action not in allowed:
                 return f"Error: action is one of {', '.join(sorted(allowed))}"
-            args = {k: v for k, v in inp.items() if k != "action" and v is not None}
+            args = {k: v for k, v in inp.items() if k not in ("action", "machine") and v is not None}
+            if inp.get("machine"):
+                if action == "launch":
+                    return await _remote(inp["machine"], "POST", "/window")
+                return await _remote(inp["machine"], "POST", "/call", {"operation": f"gui.{action}", "args": args},
+                                     shape=_result)
             if action == "launch":
                 return await _run(harness.open_window, float(args.get("wait_s") or 60))
             return await _run(client.call, f"gui.{action}", args)
@@ -107,6 +160,10 @@ def register_tools() -> None:
         action = str(inp.get("action") or "")
         if action not in fns:
             return f"Error: action is one of {', '.join(fns)}"
+        if inp.get("machine"):
+            routes = {"install": ("POST", "/setup"), "update": ("POST", "/update"), "start": ("POST", "/bridge/start"),
+                      "stop": ("POST", "/bridge/stop"), "jobs": ("GET", "/jobs"), "register_mcp": ("POST", "/mcp")}
+            return await _remote(inp["machine"], *routes[action])
         return await _run(fns[action])
 
     target = {"type": "object", "description": "{id} (its data-testid or the id hm_gui_look inspect gave it) or {text} "

@@ -22,6 +22,8 @@ tables say the same feature by feature. This index only points.
 | Pull, load, build and serve models with Ollama | [ollama.md](ollama.md) |
 | Control virtual machines, containers and the VM-Harness window | [vm-harness.md](vm-harness.md) |
 | Manage Hermes (gateway, logs, config, backups, skills...) and the Hermes Manager window | [hermes-manager.md](hermes-manager.md) |
+| Send encrypted messages and files between devices; drive TransferDaemon's window, terminal UI and relays | [transferdaemon.md](transferdaemon.md) |
+| Control another machine's ABP (its VMs, Hermes, power), keep machines awake, wake them | [power-and-remote-control.md](power-and-remote-control.md) |
 | Lint any language, run code, analyze codebases, scaffold projects, make icons/charts/sounds, use the script library | [toolkit.md](toolkit.md) |
 | Run it from a script, an editor, CI or another program; language servers; SDKs | [developer-surfaces.md](developer-surfaces.md) |
 | Let it use a browser, stored logins, routines, approve from a phone | [browser-and-routines.md](browser-and-routines.md) |

@@ -98,7 +98,7 @@ import logging
 import os
 import re
 import socket
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import urlparse
 
 import httpx
@@ -483,3 +483,99 @@ async def health_check_forever(stop_event: asyncio.Event) -> None:
             await asyncio.wait_for(stop_event.wait(), timeout=HEALTH_CHECK_INTERVAL_S)
         except asyncio.TimeoutError:
             pass
+
+
+# ---- remote control of a linked server's modules ----------------------------------------------------------------------
+# A linked peer's key reaches only monitoring and bot lifecycle by default. The owner of a machine can let linked peers
+# control more of it, area by area, with `peers.remote_control` in its config/backends.yaml:
+#
+#     peers:
+#       remote_control: [vm-harness, hermes-manager, transferdaemon, power]
+#
+# Each area is a prefix of this machine's own API that a peer may then call (reads and changes). The machine doing the
+# controlling needs nothing extra: proxy() below sends the request with the key the handshake gave it.
+CONTROL_AREAS: dict[str, str] = {
+    "vm-harness": "/api/vm-harness/",
+    "hermes-manager": "/api/hermes-manager/",
+    "transferdaemon": "/api/transferdaemon/",
+    "power": "/api/power/",
+}
+CONTROL_TIMEOUT_S = 900
+
+
+def allowed_control_areas() -> set[str]:
+    """The areas this machine lets linked peers control (its own setting, off by default)."""
+    from bot.config import config
+    raw = ((config.current or {}).get("peers") or {}).get("remote_control") or []
+    return {str(a) for a in raw if str(a) in CONTROL_AREAS}
+
+
+def control_area_of(path: str) -> Optional[str]:
+    return next((a for a, prefix in CONTROL_AREAS.items() if path.startswith(prefix)), None)
+
+
+def find_peer(ref) -> Any:
+    """A linked peer by id or by name (case-insensitive)."""
+    rows = db.list_peer_servers()
+    for r in rows:
+        if str(r["id"]) == str(ref) or str(r["name"]).lower() == str(ref).lower():
+            return r
+    names = ", ".join(r["name"] for r in rows) or "none"
+    raise PeerError(f"no linked server {ref!r} (linked: {names})")
+
+
+async def proxy(peer_row, method: str, path: str, body: Any = None, timeout: float = CONTROL_TIMEOUT_S) -> Any:
+    """Call one of a linked peer's module APIs (only the CONTROL_AREAS prefixes) and return its JSON answer. The peer
+    decides whether it allows it (its own peers.remote_control); a refusal comes back as a PeerError saying so."""
+    method = method.upper()
+    if method not in ("GET", "POST", "PUT", "DELETE"):
+        raise PeerError(f"method {method} is not allowed")
+    if control_area_of(path) is None or ".." in path:
+        raise PeerError("only " + ", ".join(CONTROL_AREAS.values()) + " can be reached on a linked server")
+    if not peer_row["base_url"]:
+        raise PeerError("this peer never shared a reachable base_url — it can call us, but we can't call it back")
+    async def send() -> httpx.Response:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            return await client.request(method, f"{peer_row['base_url'].rstrip('/')}{path}", json=body,
+                                        headers={"X-Dashboard-Token": peer_row["outbound_api_key"]})
+
+    try:
+        resp = await send()
+    except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+        # Asleep? Wake it (if we know its card and auto_wake is on) and try once more.
+        from bot import power
+        if power.settings()["auto_wake"] and await power.wake_and_wait(peer_row):
+            try:
+                resp = await send()
+            except httpx.HTTPError as exc2:
+                db.mark_peer_server_error(peer_row["id"], str(exc2))
+                raise PeerError(f"{peer_row['name']} woke up but did not answer: {exc2}") from exc2
+        else:
+            db.mark_peer_server_error(peer_row["id"], str(exc))
+            raise PeerError(f"{peer_row['name']} is not reachable: {exc}") from exc
+    except httpx.HTTPError as exc:
+        db.mark_peer_server_error(peer_row["id"], str(exc))
+        raise PeerError(f"{peer_row['name']} is not reachable: {exc}") from exc
+    db.mark_peer_server_ok(peer_row["id"])
+    try:
+        data = resp.json()
+    except ValueError:
+        data = {"text": resp.text}
+    if resp.status_code >= 400:
+        detail = data.get("detail") if isinstance(data, dict) else data
+        if isinstance(detail, dict):
+            detail = detail.get("error") or detail
+        raise PeerError(f"{peer_row['name']}: {detail} (HTTP {resp.status_code})")
+    return data
+
+
+async def on_machine(machine: str, method: str, path: str, body: Any = None, timeout: float = CONTROL_TIMEOUT_S) -> Any:
+    """proxy() by the linked server's name or id: what agent tools use for their `machine` argument."""
+    return await proxy(find_peer(machine), method, path, body, timeout)
+
+
+def any_linked() -> bool:
+    try:
+        return bool(db.list_peer_servers())
+    except Exception:  # noqa: BLE001
+        return False

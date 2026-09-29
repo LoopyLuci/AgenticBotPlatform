@@ -467,6 +467,11 @@ class Router:
         # The model router classifies the person's own message, not the bot's standing instructions glued in front
         # of it (those made every task of a bot with long instructions look like a long coding request).
         context.setdefault("route_text", prompt)
+        try:
+            from bot import power
+            power.keeper.note_activity("an agent turn")   # keeps the machine awake in while_busy mode
+        except Exception:  # noqa: BLE001 - never let power bookkeeping break a turn
+            pass
         if instance_id is not None:
             context.setdefault("instance_id", instance_id)
             context.setdefault("desktop_session_key", desktop_session_key)

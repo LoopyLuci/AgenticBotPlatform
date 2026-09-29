@@ -1461,6 +1461,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/peers/control": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/peers/control",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/peers/firewall-status": {
   "body": false,
   "method": "GET",
@@ -1518,6 +1525,20 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/api/plugins",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/power/info": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/power/info",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/power/status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/power/status",
   "path_params": [],
   "query_params": []
  },
@@ -2203,6 +2224,38 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/api/terminals",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/transferdaemon/audit": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/transferdaemon/audit",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "GET /api/transferdaemon/jobs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/transferdaemon/jobs",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/transferdaemon/operations": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/transferdaemon/operations",
+  "path_params": [],
+  "query_params": [
+   "refresh"
+  ]
+ },
+ "GET /api/transferdaemon/status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/transferdaemon/status",
   "path_params": [],
   "query_params": []
  },
@@ -3492,6 +3545,15 @@ export const operations = {
   ],
   "query_params": []
  },
+ "POST /api/peers/{peer_id}/proxy": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/peers/{peer_id}/proxy",
+  "path_params": [
+   "peer_id"
+  ],
+  "query_params": []
+ },
  "POST /api/platforms/apply": {
   "body": true,
   "method": "POST",
@@ -3529,6 +3591,36 @@ export const operations = {
   "path_params": [
    "name"
   ],
+  "query_params": []
+ },
+ "POST /api/power/hold": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/power/hold",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/power/learn/{peer}": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/power/learn/{peer}",
+  "path_params": [
+   "peer"
+  ],
+  "query_params": []
+ },
+ "POST /api/power/release": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/power/release",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/power/wake": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/power/wake",
+  "path_params": [],
   "query_params": []
  },
  "POST /api/providers": {
@@ -4201,6 +4293,69 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "POST /api/transferdaemon/call": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/transferdaemon/call",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/transferdaemon/daemon/start": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/transferdaemon/daemon/start",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/transferdaemon/daemon/stop": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/transferdaemon/daemon/stop",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/transferdaemon/mcp": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/transferdaemon/mcp",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/transferdaemon/send": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/transferdaemon/send",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/transferdaemon/setup": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/transferdaemon/setup",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/transferdaemon/tui": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/transferdaemon/tui",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/transferdaemon/update": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/transferdaemon/update",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/transferdaemon/window": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/transferdaemon/window",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/ui-customize/apply": {
   "body": true,
   "method": "POST",
@@ -4488,6 +4643,20 @@ export const operations = {
   "path_params": [
    "device_id"
   ],
+  "query_params": []
+ },
+ "PUT /api/peers/control": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/peers/control",
+  "path_params": [],
+  "query_params": []
+ },
+ "PUT /api/power/settings": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/power/settings",
+  "path_params": [],
   "query_params": []
  },
  "PUT /api/router/policy": {
@@ -5648,6 +5817,20 @@ export const operations = {
   ],
   "query_params": []
  },
+ "api_peers_control_api_peers_control_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/peers/control",
+  "path_params": [],
+  "query_params": []
+ },
+ "api_peers_control_set_api_peers_control_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/peers/control",
+  "path_params": [],
+  "query_params": []
+ },
  "api_peers_firewall_open_api_peers_firewall_open_post": {
   "body": false,
   "method": "POST",
@@ -5697,6 +5880,15 @@ export const operations = {
   "method": "POST",
   "path": "/api/peers/pairing-token",
   "path_params": [],
+  "query_params": []
+ },
+ "api_peers_proxy_api_peers__peer_id__proxy_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/peers/{peer_id}/proxy",
+  "path_params": [
+   "peer_id"
+  ],
   "query_params": []
  },
  "api_peers_self_address_api_peers_self_address_get": {
@@ -7982,6 +8174,57 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "power_hold_api_power_hold_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/power/hold",
+  "path_params": [],
+  "query_params": []
+ },
+ "power_info_api_power_info_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/power/info",
+  "path_params": [],
+  "query_params": []
+ },
+ "power_learn_api_power_learn__peer__post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/power/learn/{peer}",
+  "path_params": [
+   "peer"
+  ],
+  "query_params": []
+ },
+ "power_release_api_power_release_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/power/release",
+  "path_params": [],
+  "query_params": []
+ },
+ "power_settings_api_power_settings_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/power/settings",
+  "path_params": [],
+  "query_params": []
+ },
+ "power_status_api_power_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/power/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "power_wake_api_power_wake_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/power/wake",
+  "path_params": [],
+  "query_params": []
+ },
  "put_instance_permissions_api_instances__instance_id__permissions_put": {
   "body": true,
   "method": "PUT",
@@ -8338,6 +8581,101 @@ export const operations = {
   "body": false,
   "method": "POST",
   "path": "/webhooks/sms",
+  "path_params": [],
+  "query_params": []
+ },
+ "td_audit_api_transferdaemon_audit_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/transferdaemon/audit",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "td_call_api_transferdaemon_call_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/transferdaemon/call",
+  "path_params": [],
+  "query_params": []
+ },
+ "td_jobs_api_transferdaemon_jobs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/transferdaemon/jobs",
+  "path_params": [],
+  "query_params": []
+ },
+ "td_mcp_api_transferdaemon_mcp_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/transferdaemon/mcp",
+  "path_params": [],
+  "query_params": []
+ },
+ "td_operations_api_transferdaemon_operations_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/transferdaemon/operations",
+  "path_params": [],
+  "query_params": [
+   "refresh"
+  ]
+ },
+ "td_send_api_transferdaemon_send_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/transferdaemon/send",
+  "path_params": [],
+  "query_params": []
+ },
+ "td_setup_api_transferdaemon_setup_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/transferdaemon/setup",
+  "path_params": [],
+  "query_params": []
+ },
+ "td_start_api_transferdaemon_daemon_start_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/transferdaemon/daemon/start",
+  "path_params": [],
+  "query_params": []
+ },
+ "td_status_api_transferdaemon_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/transferdaemon/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "td_stop_api_transferdaemon_daemon_stop_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/transferdaemon/daemon/stop",
+  "path_params": [],
+  "query_params": []
+ },
+ "td_tui_api_transferdaemon_tui_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/transferdaemon/tui",
+  "path_params": [],
+  "query_params": []
+ },
+ "td_update_api_transferdaemon_update_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/transferdaemon/update",
+  "path_params": [],
+  "query_params": []
+ },
+ "td_window_api_transferdaemon_window_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/transferdaemon/window",
   "path_params": [],
   "query_params": []
  },

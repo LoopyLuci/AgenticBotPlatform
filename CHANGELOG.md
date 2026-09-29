@@ -9,6 +9,16 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **TransferDaemon as an ABP module** (the **TransferDaemon** page; `td_*` agent tools; `/api/transferdaemon/*`; [docs/agents/transferdaemon.md](docs/agents/transferdaemon.md)).
+  - TransferDaemon stays its own program in its own repo. ABP finds a working copy (or clones one), builds it with cargo, updates it from the repo (never over uncommitted work), and starts its daemon.
+  - Messages and files to contacts by name, transfers with pause, resume and cancel, contacts and groups, connections, settings, and all of its ~80 operations, from the agent and from forms on the page.
+  - Its window can be driven remotely (every widget, clicks, typing, a live screenshot), and so can its terminal UI (headless or in a console window). Local relays can be started and any relay probed.
+  - Its own MCP server (`transferd-cli mcp`) can be added to ABP's external MCP servers in one click, and a linked server's TransferDaemon can be used through the Machine selector or the tools' `machine` argument.
+- **Controlling a linked server, keeping machines awake, and waking them** (the **Power** page; `power_*` agent tools; `/api/power/*`; [docs/agents/power-and-remote-control.md](docs/agents/power-and-remote-control.md)).
+  - A machine can let the ABPs linked to it control its VM-Harness, Hermes Manager and power, area by area. It is off by default, and only that machine can change it.
+  - The VM-Harness, Hermes Manager and Power pages have a **Machine** selector, and the agent's `vmh_*`, `hm_*` and power tools take `machine`, so a VM on another computer is started, watched and driven from here.
+  - Keep-awake: the machine stays awake while agents work, jobs run or a linked server is using it, then for a few minutes after. Anyone can add a hold with a reason and a duration, and the page shows every reason and who asked. It can also be set to always or never.
+  - Wake-on-LAN: ABP learns a linked server's network card and wakes it with a click. It can send the packet from another linked server on the target's own network. Before calling a linked server that does not answer, ABP wakes it automatically. The page shows whether each card allows waking.
 - **Hermes Manager as an ABP module** (the **Hermes Manager** page; `hm_*` agent tools; `/api/hermes-manager/*`; [docs/agents/hermes-manager.md](docs/agents/hermes-manager.md)).
   - Hermes Manager stays its own program in its own repo; ABP finds a working copy (or clones and builds one), updates it from the repo (never over uncommitted work), and starts a headless bridge that the window reuses when it opens.
   - Every operation of its bridge (gateway, logs, sessions, chat, config, updates, backups, MCP servers, skills, cron, plugins, models) from the agent and from forms on the page, and its window driven remotely with a live screenshot.

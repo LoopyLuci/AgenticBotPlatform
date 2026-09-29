@@ -438,6 +438,27 @@ def _require_token_or_api_key(caller: str = Depends(_identify_caller)) -> None:
     return None
 
 
+def control_auth(area: str, *, write: bool):
+    """Auth for a module's routes (vm-harness, hermes-manager, power): the desktop dashboard token; a paired phone for
+    reads; and a linked peer server only when this machine's owner allowed that area (peers.remote_control in
+    config/backends.yaml, off by default)."""
+    def dependency(caller: str = Depends(_identify_caller)) -> None:
+        if caller == "dashboard":
+            return None
+        if caller == "peer":
+            from bot import peers
+            if area in peers.allowed_control_areas():
+                from bot import power
+                power.keeper.note_activity(f"a linked server using {area}")
+                return None
+            raise HTTPException(status_code=403, detail=f"this server does not let linked servers control {area} "
+                                                        f"(its owner can allow it: peers.remote_control)")
+        if caller == "mobile" and not write:
+            return None
+        raise HTTPException(status_code=403, detail="this endpoint needs the desktop dashboard token")
+    return dependency
+
+
 def _require_token_or_api_key_or_peer(caller: str = Depends(_identify_caller)) -> None:
     """Like _require_token_or_api_key, but also allows a linked peer
     server's own key — for the small set of routes bot/peers.py's proxy
@@ -662,12 +683,16 @@ def build_app() -> FastAPI:
         # this loop to hand their background work (broadcasts, pushes) back to.
         bg.bind_loop(asyncio.get_running_loop())
         task = asyncio.create_task(_presence_broadcaster())
+        # Keep-awake: the thread that holds (or releases) the OS's "don't sleep" request per power.keep_awake.
+        from bot import power
+        power.keeper.start()
         ssh_update_task = asyncio.create_task(_ssh_toolkit_auto_update_loop())
         try:
             yield
         finally:
             task.cancel()
             ssh_update_task.cancel()
+            power.keeper.stop()
 
     app = FastAPI(title="Bot Control Dashboard API", lifespan=_lifespan)
 
@@ -874,13 +899,24 @@ def build_app() -> FastAPI:
     # VM-Harness: a separate program ABP installs, updates and drives (VMs, containers, and its own window).
     from bot.dashboard import vm_harness_api
 
-    vm_harness_api.register(app, _require_token_or_api_key, _require_token)
+    vm_harness_api.register(app, control_auth("vm-harness", write=False), control_auth("vm-harness", write=True))
 
     # Hermes Manager: a separate program ABP installs, updates and drives (Hermes's gateway, logs, config, backups...
     # and its own window).
     from bot.dashboard import hermes_manager_api
 
-    hermes_manager_api.register(app, _require_token_or_api_key, _require_token)
+    hermes_manager_api.register(app, control_auth("hermes-manager", write=False), control_auth("hermes-manager", write=True))
+
+    # TransferDaemon: a separate program ABP builds, updates and drives (encrypted messages and files between devices,
+    # its window, terminal UI and relays).
+    from bot.dashboard import transferdaemon_api
+
+    transferdaemon_api.register(app, control_auth("transferdaemon", write=False), control_auth("transferdaemon", write=True))
+
+    # Power: keep this machine awake while it is in use, wake other machines (Wake-on-LAN).
+    from bot.dashboard import power_api
+
+    power_api.register(app, control_auth("power", write=False), control_auth("power", write=True))
 
     # Editor integrations: install the VS Code extension, show the ACP command.
     from bot.dashboard import editors_api
