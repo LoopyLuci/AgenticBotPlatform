@@ -1919,5 +1919,6 @@ from bot.vm_harness import tools as _vm_harness_tools  # noqa: E402,F401  (offer
 from bot.hermes_manager import tools as _hermes_manager_tools  # noqa: E402,F401  (offered while Hermes Manager is installed)
 from bot.transferdaemon import tools as _transferdaemon_tools  # noqa: E402,F401  (offered while TransferDaemon is installed)
 from bot.modules import tools as _module_tools  # noqa: E402,F401  (offered once any module is installed)
+from bot.cluster import tools as _cluster_tools  # noqa: E402,F401  (the cluster: this machine and linked servers)
 from bot.agent_runtime import toolkit_tools as _toolkit_tools  # noqa: E402,F401  (abp_toolkit: lint, run, analyze, assets...)
 from bot import power_tools as _power_tools  # noqa: E402,F401  (keep this machine awake, wake others)

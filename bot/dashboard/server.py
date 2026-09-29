@@ -918,6 +918,11 @@ def build_app() -> FastAPI:
 
     modules_api.register(app, control_auth("modules", write=False), control_auth("modules", write=True))
 
+    # Cluster: this machine as a node (what it shares, the jobs it runs for peers) and the cluster seen from here.
+    from bot.dashboard import cluster_api
+
+    cluster_api.register(app, _identify_caller)
+
     # Power: keep this machine awake while it is in use, wake other machines (Wake-on-LAN).
     from bot.dashboard import power_api
 

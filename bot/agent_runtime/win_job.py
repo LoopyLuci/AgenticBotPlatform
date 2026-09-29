@@ -29,7 +29,11 @@ _is_windows = hasattr(ctypes, "windll")
 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
 JOB_OBJECT_LIMIT_ACTIVE_PROCESS = 0x00000008
 JOB_OBJECT_LIMIT_PROCESS_MEMORY = 0x00000100
+JOB_OBJECT_LIMIT_JOB_MEMORY = 0x00000200
 _JobObjectExtendedLimitInformation = 9
+_JobObjectCpuRateControlInformation = 15
+_CPU_RATE_CONTROL_ENABLE = 0x1
+_CPU_RATE_CONTROL_HARD_CAP = 0x4
 _PROCESS_SET_QUOTA = 0x0100
 _PROCESS_TERMINATE = 0x0001
 
@@ -59,6 +63,9 @@ if _is_windows:
             ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t),
         ]
 
+    class _JOBOBJECT_CPU_RATE_CONTROL_INFORMATION(ctypes.Structure):
+        _fields_ = [("ControlFlags", wintypes.DWORD), ("CpuRate", wintypes.DWORD)]
+
     # Explicit argtypes/restype throughout: HANDLE is pointer-sized, and ctypes'
     # default restype (c_int, 32 bits) silently truncates it on 64-bit Windows -
     # that bug is easy to write and hard to notice until a handle happens to land
@@ -81,8 +88,11 @@ def is_supported() -> bool:
     return _is_windows
 
 
-def create(*, memory_mb: int = 0, active_process_limit: int = 0) -> int:
+def create(*, memory_mb: int = 0, active_process_limit: int = 0, job_memory_mb: int = 0,
+           cpu_rate_percent: float = 0) -> int:
     """Create a job object with kill-on-close (and optional limits) already set.
+    memory_mb caps each process; job_memory_mb caps all of the job's processes together; cpu_rate_percent is a hard
+    cap on the share of the whole machine's CPU time the job may use (0 = no cap).
     Returns an opaque handle; raises OSError if the Win32 calls fail."""
     if not _is_windows:
         raise OSError("windows job objects are only available on Windows")
@@ -97,9 +107,18 @@ def create(*, memory_mb: int = 0, active_process_limit: int = 0) -> int:
     if memory_mb > 0:
         flags |= JOB_OBJECT_LIMIT_PROCESS_MEMORY
         info.ProcessMemoryLimit = memory_mb * 1024 * 1024
+    if job_memory_mb > 0:
+        flags |= JOB_OBJECT_LIMIT_JOB_MEMORY
+        info.JobMemoryLimit = job_memory_mb * 1024 * 1024
     info.BasicLimitInformation.LimitFlags = flags
     ok = _kernel32.SetInformationJobObject(handle, _JobObjectExtendedLimitInformation, ctypes.byref(info),
                                             ctypes.sizeof(info))
+    if ok and cpu_rate_percent > 0:
+        rate = _JOBOBJECT_CPU_RATE_CONTROL_INFORMATION()
+        rate.ControlFlags = _CPU_RATE_CONTROL_ENABLE | _CPU_RATE_CONTROL_HARD_CAP
+        rate.CpuRate = max(1, min(10000, int(cpu_rate_percent * 100)))     # cycles per 10,000
+        ok = _kernel32.SetInformationJobObject(handle, _JobObjectCpuRateControlInformation, ctypes.byref(rate),
+                                                ctypes.sizeof(rate))
     if not ok:
         err = ctypes.get_last_error()
         _kernel32.CloseHandle(handle)
