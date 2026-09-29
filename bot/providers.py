@@ -133,6 +133,8 @@ _MODULE_TTL_S = 5.0
 
 def module_providers() -> dict[str, dict]:
     global _module_cache
+    if os.environ.get("ABP_NO_MODULE_PROVIDERS"):   # tests: never pick up a hub that happens to run on this machine
+        return {}
     now = time.monotonic()
     if now - _module_cache[0] < _MODULE_TTL_S:
         return dict(_module_cache[1])

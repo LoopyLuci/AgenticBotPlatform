@@ -21,6 +21,7 @@ D = {"X-Dashboard-Token": "test-token"}
 
 @pytest.fixture
 def env(monkeypatch):
+    monkeypatch.delenv("ABP_NO_MODULE_PROVIDERS", raising=False)
     store: dict[str, str] = {}
     monkeypatch.setattr(envfile, "get_var", lambda k: store.get(k))
     monkeypatch.setattr(envfile, "set_var", lambda k, v, actor="": store.__setitem__(k, v))

@@ -12,6 +12,7 @@ from bot.modules import registry
 
 @pytest.fixture
 def home(tmp_path, monkeypatch):
+    monkeypatch.delenv("ABP_NO_MODULE_PROVIDERS", raising=False)
     monkeypatch.setattr(registry, "data_dir", lambda m: tmp_path / m.id)
     monkeypatch.setattr(providers, "_module_cache", (0.0, {}))
     monkeypatch.setattr(providers, "file_providers", lambda: {"mine": {"base_url": "http://127.0.0.1:1/v1"}})
