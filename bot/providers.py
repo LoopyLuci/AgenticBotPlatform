@@ -152,6 +152,14 @@ def module_providers() -> dict[str, dict]:
                         "module": mid, "description": description}
         except Exception as e:  # noqa: BLE001 - a broken module never breaks provider lookups
             logger.debug("module provider %s: %s", mid, e)
+    try:   # octopus-router's metered /v1, while its owner token is set (bot/octopus/router.py)
+        from bot.octopus import router as octopus_router
+
+        entry = octopus_router.openai_provider()
+        if entry:
+            out["octopus-router"] = entry
+    except Exception as e:  # noqa: BLE001
+        logger.debug("octopus-router provider: %s", e)
     _module_cache = (now, out)
     return dict(out)
 

@@ -51,7 +51,7 @@ def register(app: FastAPI) -> None:
         for row in rows:
             row["live_running"] = live.get(row["id"], {}).get("running", False)
             row["circuit"] = _router.circuit_status(row["id"])
-        if caller == "peer":
+        if caller in ("peer", "integration"):
             rows = [bot_instances.redact_credentials(row) for row in rows]
         return rows
 
@@ -78,11 +78,11 @@ def register(app: FastAPI) -> None:
         return {"ok": True}
 
     @app.get("/api/bots/{instance_id}", dependencies=[Depends(_require_token_or_api_key)])
-    def api_bots_get(instance_id: int):
+    def api_bots_get(instance_id: int, caller: str = Depends(_identify_caller)):
         row = bot_instances.get_instance(instance_id)
         if row is None:
             raise HTTPException(status_code=404, detail=f"bot instance {instance_id} not found")
-        return row
+        return bot_instances.redact_credentials(row) if caller in ("peer", "integration") else row
 
     @app.get("/api/bots/{instance_id}/profile", dependencies=[Depends(_require_token_or_api_key)])
     def api_bots_profile(instance_id: int):

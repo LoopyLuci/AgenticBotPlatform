@@ -256,9 +256,13 @@ def infra_token_ok(supplied: Optional[str]) -> bool:
     )
 
 
-def _require_infra_access(x_dashboard_token: Optional[str] = Header(default=None)) -> None:
+def _require_infra_access(request: Request, x_dashboard_token: Optional[str] = Header(default=None)) -> None:
     if not os.environ.get("DASHBOARD_TOKEN"):
         raise HTTPException(status_code=503, detail="DASHBOARD_TOKEN is not set in .env")
+    from bot import integrations
+    scopes = integrations.scopes_for(x_dashboard_token or "")
+    if scopes is not None and integrations.allows(scopes, request.method, request.url.path):
+        return
     if not infra_token_ok(x_dashboard_token):
         raise HTTPException(status_code=401, detail="invalid dashboard token, or this server does not allow linked servers to manage it")
 
@@ -266,7 +270,7 @@ def _require_infra_access(x_dashboard_token: Optional[str] = Header(default=None
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1"})
 # api_keys kinds that are not paired phones: a linked server, or the browser extension (bot/browser_bridge.py).
 # Neither has desktop-equivalent access; each reaches only its own narrow routes.
-_NON_DEVICE_KINDS = ("peer_server", "browser_ext")
+_NON_DEVICE_KINDS = ("peer_server", "browser_ext", "integration")
 
 
 def _require_token_or_bootstrap(request: Request, x_dashboard_token: Optional[str] = Header(default=None)) -> None:
@@ -354,8 +358,17 @@ def page_csp(nonce: str) -> str:
             "connect-src 'self' ws: wss:; "
             "media-src 'self' blob: data:; "
             "worker-src 'self' blob:; "
-            "frame-src 'self'; "
-            "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'")
+            f"frame-src {_with_self(_integrations().frame_src())}; "
+            f"object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors {_with_self(_integrations().frame_ancestors())}")
+
+
+def _integrations():
+    from bot import integrations
+    return integrations
+
+
+def _with_self(origins: list[str]) -> str:
+    return " ".join(["'self'", *origins])
 
 
 def _mesh_port_header(x_mesh_port: Optional[str] = Header(default=None)) -> Optional[int]:
@@ -417,6 +430,10 @@ def _identify_caller(
             return "peer"
         if kind == "browser_ext":
             return "bridge"
+        if kind == "integration":
+            # Scope-checked before any route runs (integration_gate below); reaching here means this route is
+            # inside the key's scopes.
+            return "integration"
         return "mobile"
     if not expected:
         raise HTTPException(status_code=503, detail="DASHBOARD_TOKEN is not set in .env")
@@ -455,6 +472,8 @@ def control_auth(area: str, *, write: bool):
                                                         f"(its owner can allow it: peers.remote_control)")
         if caller == "mobile" and not write:
             return None
+        if caller == "integration":
+            return None   # the integration gate already checked this route against the key's scopes
         raise HTTPException(status_code=403, detail="this endpoint needs the desktop dashboard token")
     return dependency
 
@@ -751,7 +770,8 @@ def build_app() -> FastAPI:
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
         response.headers.setdefault(
-            "Content-Security-Policy", "object-src 'none'; base-uri 'self'; frame-ancestors 'self'",
+            "Content-Security-Policy",
+            f"object-src 'none'; base-uri 'self'; frame-ancestors {_with_self(_integrations().frame_ancestors())}",
         )
         return response
 
@@ -833,11 +853,24 @@ def build_app() -> FastAPI:
 
     infra_api.register(
         app, _require_infra_access, infra_token_ok,
-        desktop_token_ok=lambda supplied: bool(os.environ.get("DASHBOARD_TOKEN"))
-        and _tokens_match(supplied, os.environ["DASHBOARD_TOKEN"]),
+        # An integration key may fan out too: integration_gate has already checked the path against its scopes.
+        desktop_token_ok=lambda supplied: (bool(os.environ.get("DASHBOARD_TOKEN"))
+                                           and _tokens_match(supplied, os.environ["DASHBOARD_TOKEN"]))
+        or _integrations().scopes_for(supplied or "") is not None,
         set_peer_access=lambda on: envfile.set_var("PEER_INFRA_ACCESS", "1" if on else "0", actor="dashboard"),
         peer_access_enabled=peer_infra_enabled,
     )
+
+    # Integration keys (/api/integrations): scoped keys for programs like octopus-router. Registered after the infra
+    # API so its gate middleware is outermost and runs before the infra fan-out.
+    from bot.dashboard import integrations_api
+
+    integrations_api.register(app, _require_token, _identify_caller)
+
+    # The Octopus estate: catalog and status, octopus-router, SSO (/api/octopus).
+    from bot.dashboard import octopus_api
+
+    octopus_api.register(app, _require_token)
 
     # Browser-extension bridge (/api/browser/*): pairing, the extension WebSocket, policy, RPC.
     from bot.dashboard import browser_api
