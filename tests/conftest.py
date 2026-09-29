@@ -67,6 +67,9 @@ def _isolated_cicd_event_store(monkeypatch, tmp_path):
     monkeypatch.setenv("ABP_CICD_DB", str(tmp_path / "cicd-events.db"))
     # Same for agent traces (bot/agent_runtime/trace.py): every native-agent turn records one.
     monkeypatch.setenv("ABP_AGENT_TRACE_DB", str(tmp_path / "agent-traces.db"))
+    # Providers served by running module hubs (ModelMistress, octopus-router) are real processes on the developer's
+    # machine; tests that want them clear this (tests/test_module_providers.py, tests/test_octopus.py).
+    monkeypatch.setenv("ABP_NO_MODULE_PROVIDERS", "1")
     monkeypatch.setenv("ABP_AGENT_STATE_DIR", str(tmp_path / "agent-state"))
     monkeypatch.delenv("ABP_CICD_RUN", raising=False)
     # The model catalog (models.dev) is a downloaded cache; a test must never see the developer's copy.
