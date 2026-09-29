@@ -179,7 +179,7 @@ def register(app: FastAPI, *, json_download: Callable) -> None:
             "providers": [
                 {"name": name, "base_url": entry.get("base_url"), "protocol": entry.get("protocol", "openai"),
                  "api_key_env": entry.get("api_key_env"), "has_inline_key": bool(entry.get("api_key")),
-                 "catalog_id": entry.get("catalog_id")}
+                 "catalog_id": entry.get("catalog_id"), "module": entry.get("module")}
                 for name, entry in sorted(providers.list_providers().items())
             ]
         }

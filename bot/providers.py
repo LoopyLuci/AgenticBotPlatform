@@ -21,8 +21,10 @@ ships with real documentation comments, not just data.
 from __future__ import annotations
 
 import ipaddress
+import json
 import logging
 import os
+import time
 from typing import Any, Optional
 from urllib.parse import urlparse
 
@@ -113,7 +115,54 @@ def list_providers() -> dict[str, dict]:
     inline api_key's value beyond what's already in the file verbatim,
     same "no extra redaction on read" stance the rest of config.py takes
     (GET /api/config already serves backends.yaml back unredacted)."""
+    return {**module_providers(), **file_providers()}
+
+
+def file_providers() -> dict[str, dict]:
+    """Only the providers written in config/providers.yaml (not the ones module hubs serve)."""
     return dict(_manager.current.get("providers") or {})
+
+
+# Module hubs that serve an OpenAI API become providers while they run. Their token changes on every start, so they
+# are read from the hub's control file (never written to providers.yaml or the provider store). Cached briefly
+# because list_providers() is called on every model lookup.
+MODULE_PROVIDERS = {"modelmistress": "ModelMistress: local models served through llama.cpp (and Ollama pass-through)"}
+_module_cache: tuple[float, dict[str, dict]] = (0.0, {})
+_MODULE_TTL_S = 5.0
+
+
+def module_providers() -> dict[str, dict]:
+    global _module_cache
+    now = time.monotonic()
+    if now - _module_cache[0] < _MODULE_TTL_S:
+        return dict(_module_cache[1])
+    out: dict[str, dict] = {}
+    for mid, description in MODULE_PROVIDERS.items():
+        try:
+            from bot.modules import client, registry
+
+            path = client.control_file(registry.get(mid))
+            if path is None or not path.is_file():
+                continue
+            d = json.loads(path.read_text(encoding="utf-8"))
+            pid = int(d.get("pid") or 0)
+            if not pid or not _pid_alive(pid):
+                continue
+            out[mid] = {"base_url": str(d["url"]).rstrip("/") + "/v1", "protocol": "openai", "api_key": str(d["token"]),
+                        "module": mid, "description": description}
+        except Exception as e:  # noqa: BLE001 - a broken module never breaks provider lookups
+            logger.debug("module provider %s: %s", mid, e)
+    _module_cache = (now, out)
+    return dict(out)
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        import psutil
+
+        return psutil.pid_exists(pid)
+    except ImportError:
+        return True
 
 
 def get_provider(name: str) -> Optional[dict]:
@@ -218,7 +267,7 @@ def store_listing(status: Optional[str] = None) -> list[dict]:
     """Every provider the store knows (active and removed), after reconciling it with the file."""
     from bot import provider_store
 
-    provider_store.sync(list_providers())
+    provider_store.sync(file_providers())
     return provider_store.list_all(status)
 
 
