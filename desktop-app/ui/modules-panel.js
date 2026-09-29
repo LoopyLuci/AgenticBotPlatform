@@ -115,7 +115,7 @@
     try {
       const r = await post(`/api/modules/${encodeURIComponent(mid)}/${what}`);
       if (r && r.id && r.state) toast(`${label}: started`); else toast(`${label}: done`);
-      render();
+      render(true);
     } catch (e) { toast(`${label}: ${errText(e)}`, 'error'); }
   }
 
@@ -126,7 +126,7 @@
     else {
       if (r.behind || !r.ready) b.push(btn('update', r.behind ? 'Update' : 'Build'));
       if (r.has_hub) b.push(r.hub && r.hub.running ? btn('hub/stop', 'Stop hub', true) : btn('hub/start', 'Start hub', true));
-      if (r.has_gui) b.push(btn('gui', 'Open window', true));
+      if (r.has_gui && r.ready) b.push(btn('gui', 'Open window', true));
     }
     b.push(`<button class="btn ghost" data-open="${E(r.id)}">Details</button>`);
     return b.join(' ');
@@ -168,7 +168,7 @@ ${s.manifest_error ? `<p class="cardnote">${E(s.manifest_error)}</p>` : ''}
 <div class="mdp-card"><h4>Checkout</h4>${kv([['path', `<span class="mdp-mono">${E(inst.path)}</span>`], ['repo', `<span class="mdp-mono">${E(m.repo)}</span>`], ['branch', E(inst.branch)], ['commit', E(inst.commit ? inst.commit + ' ' + (inst.subject || '') : '')], ['updates', inst.behind != null ? E(`${inst.behind} behind, ${inst.ahead} ahead of ${inst.upstream}`) : ''], ['changes', inst.changed_files ? E(`${inst.changed_files} uncommitted`) : ''], ['manifest', E(m.source)], ['problem', E(inst.git_error)]])}
 <div class="mdp-row">${inst.installed ? act('update', 'Update', false) + (m.can_build ? act('build', 'Build', true) : '') : act('setup', 'Install', false)}<button class="btn ghost" id="mdp-fetch">Check for updates</button>${m.has_pipeline ? act('pipeline', 'Run pipeline', true) : ''}</div></div>
 <div class="mdp-card"><h4>Running</h4>${kv([['hub', m.has_hub ? (hub.running ? chip('running', 'on') + ` <span class="mdp-mono">${E(hub.url || '')}</span> pid ${E(hub.pid || '')}` : chip('stopped')) : '<span class="mdp-muted">no hub yet</span>'], ['version', E(hub.version)], ['this OS', s.host ? (s.host.supported ? chip(s.host.os, 'on') : chip(s.host.os + ': not supported', 'bad')) : ''], ['needs', E((s.host && s.host.needs || []).join(', '))]])}
-<div class="mdp-row">${m.has_hub ? (hub.running ? act('hub/stop', 'Stop hub', true) : act('hub/start', 'Start hub', false)) : ''}${m.has_gui ? act('gui', 'Open window', true) : ''}${m.has_tui ? act('tui', 'Open terminal UI', true) : ''}${m.has_mcp || m.adapter ? act('mcp', 'Add its MCP server', true) : ''}${m.has_hub ? '<button class="btn ghost" id="mdp-conf">Check conformance</button>' : ''}</div><div id="mdp-conf-out"></div></div>
+<div class="mdp-row">${m.has_hub ? (hub.running ? act('hub/stop', 'Stop hub', true) : act('hub/start', 'Start hub', false)) : ''}${m.has_gui && inst.ready ? act('gui', 'Open window', true) : ''}${m.has_tui ? act('tui', 'Open terminal UI', true) : ''}${m.has_mcp || m.adapter ? act('mcp', 'Add its MCP server', true) : ''}${m.has_hub ? '<button class="btn ghost" id="mdp-conf">Check conformance</button>' : ''}</div><div id="mdp-conf-out"></div></div>
 ${tools ? `<div class="mdp-card"><h4>Toolchain</h4>${tools}</div>` : ''}
 <div class="mdp-card" style="grid-column:1/-1"><h4>Jobs</h4>${(jobs || []).slice(0, 6).map((j) => `<details${j.state === 'running' ? ' open' : ''}><summary>${E(j.kind)} ${j.state === 'running' ? chip('running', 'warn') : j.state === 'done' ? chip('done', 'on') : chip(j.state, 'bad')} <span class="mdp-muted">${E(when(j.started))}</span></summary><div class="mdp-pre">${E((j.log || []).join('\n'))}${j.error ? '\n' + E(j.error) : ''}</div></details>`).join('') || '<p class="mdp-muted">None yet.</p>'}</div>
 </div>
