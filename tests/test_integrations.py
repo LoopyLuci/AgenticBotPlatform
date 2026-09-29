@@ -117,3 +117,14 @@ def test_framing_allowlist_reaches_the_page_policy(client, monkeypatch):
 def test_only_plain_origins_are_accepted(origin):
     with pytest.raises(ValueError):
         integrations.normalize_origin(origin)
+
+
+def test_a_down_docker_daemon_is_one_readable_line(monkeypatch):
+    # With the daemon down, `docker info --format '{{json .}}'` prints the whole empty info document and then the
+    # message; the Router's Bot Platform view showed all of it.
+    import json
+    doc = json.dumps({"ID": "", "Containers": 0, "ServerErrors": ["Cannot connect to the Docker daemon"]})
+    monkeypatch.setattr(dk, "is_installed", lambda: True)
+    monkeypatch.setattr(dk, "_run", lambda args, **kw: (False, doc + "\nerror during connect: pipe missing"))
+    info = dk.info()
+    assert info["running"] is False and info["error"] == "Cannot connect to the Docker daemon error during connect: pipe missing"
