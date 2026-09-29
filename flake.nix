@@ -1,5 +1,5 @@
 {
-  description = "Agentic Bot Platform desktop shell — Nix dev shell and package for NixOS/Nix users";
+  description = "Agentic Bot Platform (ABP): the package, a NixOS service module, a VM test, the desktop shell and a dev shell";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -11,7 +11,21 @@
   };
 
   outputs = { self, nixpkgs, flake-utils, rust-overlay }:
-    flake-utils.lib.eachDefaultSystem (system:
+    let
+      version = builtins.head (builtins.match ''.*__version__ = "([^"]+)".*'' (builtins.readFile ./bot/__init__.py));
+    in
+    {
+      # services.agentic-bot-platform (nix/module.nix). Add to a system:
+      #   imports = [ agentic-bot-platform.nixosModules.default ];
+      #   services.agentic-bot-platform.enable = true;
+      nixosModules.default = import ./nix/module.nix self;
+      nixosModules.agentic-bot-platform = self.nixosModules.default;
+
+      overlays.default = final: prev: {
+        agentic-bot-platform = final.callPackage ./nix/package.nix { inherit version; };
+      };
+    }
+    // flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
           inherit system;
@@ -36,56 +50,26 @@
           patchelf
           wrapGAppsHook3
         ];
+
+        abp = pkgs.callPackage ./nix/package.nix { inherit version; };
       in
       {
-        # `nix develop` — a shell with every Linux prerequisite the README's
-        # Debian/Fedora/Arch sections install manually, so `cargo tauri build`
-        # / `cargo tauri dev` work the same way on NixOS without editing
-        # /etc or touching a global profile.
-        #
-        # This does NOT solve the separate "pip-installed compiled wheel
-        # can't find its shared libraries" problem for bot/'s Python venv
-        # (cryptography, etc. ship prebuilt manylinux wheels that assume FHS
-        # paths NixOS doesn't have) — see the NixOS section in README.md for
-        # the two ways to work around that (nix-ld, or a buildFHSEnv shell)
-        # before running `./scripts/run.sh`.
-        devShells.default = pkgs.mkShell {
-          buildInputs = tauriRuntimeDeps;
-          nativeBuildInputs = tauriBuildDeps ++ [
-            rustToolchain
-            pkgs.python311
-            pkgs.cargo-tauri
-          ];
+        # `nix build` / `nix run`: ABP itself (abp-server, abp, abp-tui). State goes to ABP_HOME, never the store.
+        packages.default = abp;
+        packages.agentic-bot-platform = abp;
 
-          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath tauriRuntimeDeps;
-
-          shellHook = ''
-            echo "Agentic Bot Platform Nix dev shell — Rust $(rustc --version), $(python3 --version)"
-            echo "Next: ./scripts/run.sh to set up the venv, then cd desktop-app/src-tauri && cargo tauri dev"
-          '';
-        };
-
-        # `nix build` — packages just the Tauri/Rust desktop shell binary as
-        # a Nix derivation (the idiomatic Nix unit), NOT the Windows-style
-        # self-contained bundle with a Python venv baked in (bundling a
-        # pip-installed venv into an immutable /nix/store path fights Nix's
-        # model — see devShell note above). Run the resulting `agentic-bot-platform`
-        # binary from the repo root, alongside a `.venv` set up via
-        # `./scripts/run.sh`, same as the "Development" build in README.md,
-        # not the standalone Windows-style production bundle.
-        packages.default = pkgs.rustPlatform.buildRustPackage {
-          pname = "agentic-bot-platform";
-          version = "0.1.1";
+        # The Tauri desktop shell (a window around the dashboard). It starts the server from `abp-server` on PATH
+        # when it is installed next to packages.default.
+        packages.desktop = pkgs.rustPlatform.buildRustPackage {
+          pname = "agentic-bot-platform-desktop";
+          inherit version;
           src = ./desktop-app/src-tauri;
           cargoLock.lockFile = ./desktop-app/src-tauri/Cargo.lock;
 
           nativeBuildInputs = tauriBuildDeps ++ [ rustToolchain pkgs.python311 ];
           buildInputs = tauriRuntimeDeps;
 
-          # The Tauri bundler (.deb/.rpm/AppImage) assumes an FHS target and
-          # a venv sitting next to the binary at build time — neither fits a
-          # Nix derivation. Build the plain binary instead; NixOS users run
-          # it via the devShell + repo checkout, not as a bundled installer.
+          # The Tauri bundler (.deb/.rpm/AppImage) assumes an FHS target; build the plain binary instead.
           buildPhase = ''
             runHook preBuild
             cargo build --release --offline
@@ -106,5 +90,35 @@
             platforms = platforms.linux;
           };
         };
+
+        apps.default = { type = "app"; program = "${abp}/bin/abp-server"; };
+        apps.cli = { type = "app"; program = "${abp}/bin/abp"; };
+        apps.tui = { type = "app"; program = "${abp}/bin/abp-tui"; };
+
+        # `nix develop` — a shell with every Linux prerequisite the README's
+        # Debian/Fedora/Arch sections install manually, so `cargo tauri build`
+        # / `cargo tauri dev` work the same way on NixOS without editing
+        # /etc or touching a global profile. `abp`, `abp-server` and `abp-tui`
+        # from the package are on PATH too.
+        devShells.default = pkgs.mkShell {
+          buildInputs = tauriRuntimeDeps;
+          nativeBuildInputs = tauriBuildDeps ++ [
+            rustToolchain
+            abp.pythonEnv
+            pkgs.cargo-tauri
+          ];
+
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath tauriRuntimeDeps;
+
+          shellHook = ''
+            echo "Agentic Bot Platform Nix dev shell — Rust $(rustc --version), $(python3 --version) with ABP's dependencies"
+            echo "Run the server from the checkout: python -m bot.sentinel.guardian (state in ABP_HOME if set)"
+          '';
+        };
+      }
+      // nixpkgs.lib.optionalAttrs (system == "x86_64-linux" || system == "aarch64-linux") {
+        # `nix flake check`: the NixOS module in a VM (needs KVM).
+        checks.nixos = import ./nix/test.nix { inherit self pkgs; };
+        checks.package = abp;
       });
 }
