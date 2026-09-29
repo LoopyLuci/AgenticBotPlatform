@@ -265,6 +265,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.firewall",
     "bot.retention",
     "bot.peers",
+    "bot.cache",  # CacheIt's client: a reload only drops its pooled connection and its cached hub address
     "bot.tailscale_mgr",
     "bot.browser_policy",
     "bot.native_host",
