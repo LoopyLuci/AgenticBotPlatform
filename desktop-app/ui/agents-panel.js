@@ -381,7 +381,11 @@
   function openBot(id) {
     setTab('subagents');
     const sel = document.getElementById('agent-settings-instance');
-    if (sel) { sel.value = String(id); sel.dispatchEvent(new Event('change')); }
+    if (sel) {
+      // The bot list may still be loading: remember the choice, and the list applies it when it fills.
+      if ([...sel.options].some((o) => o.value === String(id))) { sel.value = String(id); sel.dispatchEvent(new Event('change')); }
+      else sel.dataset.want = String(id);
+    }
     document.getElementById('agents').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 

@@ -1393,6 +1393,12 @@ async function refreshAutomationInstances() {
   const asCurrent = asSel.value;
   asSel.innerHTML = '<option value="">Process-wide default</option>' + options;
   asSel.value = asCurrent;
+  if (asSel.dataset.want && [...asSel.options].some(o => o.value === asSel.dataset.want)) {
+    // A bot's "Agent settings" button was clicked before this list had loaded (agents-panel.js openBot).
+    asSel.value = asSel.dataset.want;
+    delete asSel.dataset.want;
+    asSel.dispatchEvent(new Event('change'));
+  }
 
   const amSel = document.getElementById('auto-manage-instance');
   const amCurrent = amSel.value;
