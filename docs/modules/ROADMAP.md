@@ -303,6 +303,43 @@ iOS templates, not hidden.
 
 ---
 
+## 5a. ABP Cluster: paired machines as one computer (inside ABP, `bot/cluster/`)
+
+Asked for on 2026-09-29. Paired devices share resources and act as nodes in a cluster that can run any kind of
+work. It is built into ABP itself, not a module, because it is about ABP installations trusting each other. It
+reuses what ABP already has:
+- **peer links** for trust and transport;
+- **Power** to keep nodes awake and wake them;
+- **Windows job objects** to cap each job's CPU and memory;
+- **the module framework**, so module operations and builds can run on any node.
+
+Fabric's orchestrator (F3) later puts a Kubernetes-compatible API on top of this layer; it does not replace it.
+
+**Principles:**
+- **Consent first.** A machine offers nothing until its owner turns sharing on. The owner decides what is
+  offered: a CPU share, RAM, which GPUs, disk space and a work folder, which kinds of job, which peers may use
+  it, and when (always, or only while the machine is idle).
+- **Every node schedules; there is no single point of failure.** The node where a job is submitted places it.
+  The chosen node checks its own budget and accepts or refuses, which reserves the resources atomically, so two
+  schedulers can never double-book it.
+- **The owner's limits are enforced, not advisory.** CPU rate and memory are hard caps (job objects on Windows,
+  cgroups on Linux), and each job gets its own work folder.
+- **Every job is recorded** (SQLite), with its logs, exit code, result and files. It survives restarts, and
+  every job is audited.
+
+| Phase | Delivers | Gate |
+|---|---|---|
+| CL1 Inventory & membership | Each node describes itself: CPU (model, cores, threads), RAM, GPUs (name, VRAM; live use where measurable), disks, OS, hypervisors, toolchains, installed modules, local models. Live load comes from a heartbeat to every linked peer, and nodes are marked ok, stale or down. | The Cluster page shows this PC and Server with real hardware and live load |
+| CL2 Offers | Each node's owner sets its offer (dashboard only, never by a peer). ABP tracks the budget and reservations against it. | A peer's job is refused with a clear reason when it doesn't fit the offer |
+| CL3 Jobs | Job kinds: `command` (an argument list, no shell), `python`, `module_op`, `module_build`, `inference` (a local model). Each runs in its own work folder with hard caps; logs stream, jobs can be cancelled, and result files can be downloaded. | A job submitted here runs on Server with its CPU and RAM capped, and its logs and files come back |
+| CL4 Scheduler | Requirements (cpu, ram_gb, gpu, vram_gb, os, needs, module, kinds). Nodes are filtered, then scored (free share, data locality, latency), then reserved. On a refusal it tries the next node. Retries and rescheduling cover lost nodes; nodes can be drained. | A job lands on the only node that fits; one killed mid-run is rescheduled |
+| CL5 Groups | **Gang jobs**: N replicas, all-or-nothing, spread across distinct nodes, with rank, world size, peer addresses and MASTER_ADDR/PORT in their environment, for torch.distributed, MPI-style and custom protocols. **Job arrays / map**: split inputs across nodes and gather the results. | A 2-node gang (this PC and Server) finds its peers; a 20-task array spreads and gathers |
+| CL6 Data | Inputs and outputs move between nodes through a content-addressed cache (chunked HTTP now, TransferDaemon later). Jobs prefer nodes that already hold their data. | A 1 GB input goes once, and a second job reuses it |
+| CL7 Pools | The model router sends inference to whichever node has the model loaded (with MM-F). BrainBuilder training goes to GPU nodes (BB-E), TridentDroid devices to hypervisor nodes (TD-F), and agent swarms spread across nodes. | Chat on this PC is answered by a model on Server, picked automatically |
+| CL8 Wake & power | Sleeping nodes are woken (Wake-on-LAN) when a job needs them, and kept awake while they run jobs; the idle offer respects the user's activity | A job wakes Server, runs, and lets it sleep again |
+
+---
+
 ## 6. ABP Fabric: ABP's own proxy, containers, orchestration and virtualization
 
 **Target:** do what nginx, Docker, Kubernetes and QEMU do, under ABP's control, built to outlast any one
@@ -398,3 +435,4 @@ M0 framework ─┬─> R (all repos; done alongside M0, since it touches only t
 | BB-A…F | todo | |
 | WS-A…H | todo | |
 | F0, F1, F4a, F2, F3, F4b | todo | needs the new repo |
+| CL1…CL8 cluster | in progress | Asked for 2026-09-29; CL1-CL5 first, tested with Server as the second node |

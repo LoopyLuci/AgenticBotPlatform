@@ -465,6 +465,11 @@ async def run() -> None:
 
     peers_health_task = asyncio.create_task(peers.health_check_forever(stop_event))
 
+    from bot.cluster import membership as cluster_membership
+
+    # The cluster's heartbeat: every linked peer's node report, rescheduling jobs whose node went down.
+    cluster_task = asyncio.create_task(cluster_membership.heartbeat_forever(stop_event))
+
     from bot import retention
 
     retention_task = asyncio.create_task(retention.run_forever(stop_event))
@@ -491,6 +496,7 @@ async def run() -> None:
         await infra_task
         await scheduler_task  # stop_event is already set; run_forever exits its own loop cleanly
         await peers_health_task  # same shutdown contract as scheduler_task
+        await cluster_task  # same shutdown contract as scheduler_task
         await retention_task  # same shutdown contract as scheduler_task
         await sentinel_task  # same shutdown contract as scheduler_task
         await asyncio.to_thread(mdns_advertise.stop)

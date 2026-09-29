@@ -504,6 +504,9 @@ CONTROL_AREAS: dict[str, str] = {
     "modules": "/api/modules/",
 }
 CONTROL_TIMEOUT_S = 900
+# The cluster's routes (bot/cluster/): any linked peer may call them; what it may *do* is decided by the target
+# machine's own cluster offer (off until its owner turns sharing on), not by remote_control areas.
+CLUSTER_PREFIX = "/api/cluster/"
 
 
 def allowed_control_areas() -> set[str]:
@@ -527,14 +530,17 @@ def find_peer(ref) -> Any:
     raise PeerError(f"no linked server {ref!r} (linked: {names})")
 
 
-async def proxy(peer_row, method: str, path: str, body: Any = None, timeout: float = CONTROL_TIMEOUT_S) -> Any:
-    """Call one of a linked peer's module APIs (only the CONTROL_AREAS prefixes) and return its JSON answer. The peer
-    decides whether it allows it (its own peers.remote_control); a refusal comes back as a PeerError saying so."""
+async def proxy(peer_row, method: str, path: str, body: Any = None, timeout: float = CONTROL_TIMEOUT_S,
+                wake: bool = True) -> Any:
+    """Call one of a linked peer's module APIs (only the CONTROL_AREAS prefixes, and the cluster's own routes) and
+    return its JSON answer. The peer decides whether it allows it (its own peers.remote_control, or for the cluster
+    its offer); a refusal comes back as a PeerError saying so. wake=False never wakes a sleeping peer (the cluster's
+    heartbeat must not keep machines awake)."""
     method = method.upper()
     if method not in ("GET", "POST", "PUT", "DELETE"):
         raise PeerError(f"method {method} is not allowed")
-    if control_area_of(path) is None or ".." in path:
-        raise PeerError("only " + ", ".join(CONTROL_AREAS.values()) + " can be reached on a linked server")
+    if (control_area_of(path) is None and not path.startswith(CLUSTER_PREFIX)) or ".." in path:
+        raise PeerError("only " + ", ".join([*CONTROL_AREAS.values(), CLUSTER_PREFIX]) + " can be reached on a linked server")
     if not peer_row["base_url"]:
         raise PeerError("this peer never shared a reachable base_url — it can call us, but we can't call it back")
     async def send() -> httpx.Response:
@@ -547,7 +553,7 @@ async def proxy(peer_row, method: str, path: str, body: Any = None, timeout: flo
     except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
         # Asleep? Wake it (if we know its card and auto_wake is on) and try once more.
         from bot import power
-        if power.settings()["auto_wake"] and await power.wake_and_wait(peer_row):
+        if wake and power.settings()["auto_wake"] and await power.wake_and_wait(peer_row):
             try:
                 resp = await send()
             except httpx.HTTPError as exc2:

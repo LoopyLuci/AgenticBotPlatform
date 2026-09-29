@@ -146,6 +146,10 @@ DENYLIST: frozenset[str] = frozenset({
     # Modules: harness.py holds the background jobs, registry.py the manifest cache, tools.py registers at import time.
     "bot.modules.manifest", "bot.modules.registry", "bot.modules.client", "bot.modules.adapters", "bot.modules.harness",
     "bot.modules.tools", "bot.modules.conformance", "bot.dashboard.modules_api",
+    # Cluster: offer.py holds the budget's reservations, executor.py the running jobs, store.py its connection,
+    # membership.py the peers' reports; tools.py registers at import time.
+    "bot.cluster.inventory", "bot.cluster.offer", "bot.cluster.store", "bot.cluster.executor", "bot.cluster.membership",
+    "bot.cluster.scheduler", "bot.cluster.tools", "bot.dashboard.cluster_api",
     # The toolkit registers its actions and agent tools at import time.
     "bot.agent_runtime.toolkit_tools",
     # Power: power.py holds the keep-awake thread and its holds; power_tools.py registers tools at import time.

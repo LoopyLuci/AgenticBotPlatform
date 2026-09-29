@@ -731,6 +731,113 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/cluster": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/cluster/groups": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/groups",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "GET /api/cluster/groups/{gid}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/groups/{gid}",
+  "path_params": [
+   "gid"
+  ],
+  "query_params": []
+ },
+ "GET /api/cluster/jobs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/jobs",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "GET /api/cluster/jobs/{pid}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/jobs/{pid}",
+  "path_params": [
+   "pid"
+  ],
+  "query_params": []
+ },
+ "GET /api/cluster/jobs/{pid}/logs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/jobs/{pid}/logs",
+  "path_params": [
+   "pid"
+  ],
+  "query_params": [
+   "offset"
+  ]
+ },
+ "GET /api/cluster/node": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/node",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/cluster/offer": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/offer",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/cluster/runs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/runs",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "GET /api/cluster/runs/{rid}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/runs/{rid}",
+  "path_params": [
+   "rid"
+  ],
+  "query_params": []
+ },
+ "GET /api/cluster/runs/{rid}/files/{name}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/runs/{rid}/files/{name}",
+  "path_params": [
+   "rid",
+   "name"
+  ],
+  "query_params": []
+ },
+ "GET /api/cluster/runs/{rid}/logs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/runs/{rid}/logs",
+  "path_params": [
+   "rid"
+  ],
+  "query_params": [
+   "offset"
+  ]
+ },
  "GET /api/config": {
   "body": false,
   "method": "GET",
@@ -2938,6 +3045,68 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "POST /api/cluster/candidates": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/cluster/candidates",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/cluster/groups": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/cluster/groups",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/cluster/jobs": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/cluster/jobs",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/cluster/jobs/{pid}/cancel": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/cluster/jobs/{pid}/cancel",
+  "path_params": [
+   "pid"
+  ],
+  "query_params": []
+ },
+ "POST /api/cluster/refresh": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/cluster/refresh",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/cluster/runs": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/cluster/runs",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/cluster/runs/{rid}/cancel": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/cluster/runs/{rid}/cancel",
+  "path_params": [
+   "rid"
+  ],
+  "query_params": []
+ },
+ "POST /api/cluster/runs/{rid}/start": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/cluster/runs/{rid}/start",
+  "path_params": [
+   "rid"
+  ],
+  "query_params": []
+ },
  "POST /api/config/reload": {
   "body": false,
   "method": "POST",
@@ -4755,6 +4924,13 @@ export const operations = {
   "path_params": [
    "instance_id"
   ],
+  "query_params": []
+ },
+ "PUT /api/cluster/offer": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/cluster/offer",
+  "path_params": [],
   "query_params": []
  },
  "PUT /api/instances/{instance_id}/permissions": {
@@ -7317,6 +7493,182 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/agent/taint/clear",
+  "path_params": [],
+  "query_params": []
+ },
+ "cluster_candidates_api_cluster_candidates_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/cluster/candidates",
+  "path_params": [],
+  "query_params": []
+ },
+ "cluster_group_api_cluster_groups_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/cluster/groups",
+  "path_params": [],
+  "query_params": []
+ },
+ "cluster_group_get_api_cluster_groups__gid__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/groups/{gid}",
+  "path_params": [
+   "gid"
+  ],
+  "query_params": []
+ },
+ "cluster_groups_api_cluster_groups_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/groups",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "cluster_job_api_cluster_jobs__pid__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/jobs/{pid}",
+  "path_params": [
+   "pid"
+  ],
+  "query_params": []
+ },
+ "cluster_job_cancel_api_cluster_jobs__pid__cancel_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/cluster/jobs/{pid}/cancel",
+  "path_params": [
+   "pid"
+  ],
+  "query_params": []
+ },
+ "cluster_job_logs_api_cluster_jobs__pid__logs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/jobs/{pid}/logs",
+  "path_params": [
+   "pid"
+  ],
+  "query_params": [
+   "offset"
+  ]
+ },
+ "cluster_jobs_api_cluster_jobs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/jobs",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "cluster_node_api_cluster_node_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/node",
+  "path_params": [],
+  "query_params": []
+ },
+ "cluster_offer_api_cluster_offer_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/offer",
+  "path_params": [],
+  "query_params": []
+ },
+ "cluster_offer_set_api_cluster_offer_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/cluster/offer",
+  "path_params": [],
+  "query_params": []
+ },
+ "cluster_overview_api_cluster_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster",
+  "path_params": [],
+  "query_params": []
+ },
+ "cluster_refresh_api_cluster_refresh_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/cluster/refresh",
+  "path_params": [],
+  "query_params": []
+ },
+ "cluster_run_accept_api_cluster_runs_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/cluster/runs",
+  "path_params": [],
+  "query_params": []
+ },
+ "cluster_run_api_cluster_runs__rid__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/runs/{rid}",
+  "path_params": [
+   "rid"
+  ],
+  "query_params": []
+ },
+ "cluster_run_cancel_api_cluster_runs__rid__cancel_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/cluster/runs/{rid}/cancel",
+  "path_params": [
+   "rid"
+  ],
+  "query_params": []
+ },
+ "cluster_run_file_api_cluster_runs__rid__files__name__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/runs/{rid}/files/{name}",
+  "path_params": [
+   "rid",
+   "name"
+  ],
+  "query_params": []
+ },
+ "cluster_run_logs_api_cluster_runs__rid__logs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/runs/{rid}/logs",
+  "path_params": [
+   "rid"
+  ],
+  "query_params": [
+   "offset"
+  ]
+ },
+ "cluster_run_start_api_cluster_runs__rid__start_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/cluster/runs/{rid}/start",
+  "path_params": [
+   "rid"
+  ],
+  "query_params": []
+ },
+ "cluster_runs_api_cluster_runs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/runs",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "cluster_submit_api_cluster_jobs_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/cluster/jobs",
   "path_params": [],
   "query_params": []
  },
