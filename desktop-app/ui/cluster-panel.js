@@ -47,7 +47,7 @@
   const chip = (t, k, title) => `<span class="clp-chip ${k || ''}"${title ? ` title="${E(title)}"` : ''}>${E(t)}</span>`;
   const bar = (label, used, total, unit) => {
     const pct = total ? Math.max(0, Math.min(100, (used / total) * 100)) : 0;
-    return `<div class="clp-bar"><span class="clp-muted">${E(label)}</span><div><i class="${pct > 85 ? 'hot' : ''}" style="width:${pct.toFixed(0)}%"></i></div><span class="clp-muted">${total ? `${(+used).toFixed(1)} / ${(+total).toFixed(1)} ${unit}` : `${pct.toFixed(0)}%`}</span></div>`;
+    return `<div class="clp-bar"><span class="clp-muted">${E(label)}</span><div><i class="${pct > 85 ? 'hot' : ''}" style="width:${pct.toFixed(0)}%"></i></div><span class="clp-muted">${unit === '%' ? `${(+used).toFixed(0)}%` : `${(+used).toFixed(1)} / ${(+total).toFixed(1)} ${unit}`}</span></div>`;
   };
   const when = (ts) => (ts ? new Date(ts * 1000).toLocaleString() : '');
   const stateChip = (s) => chip(s || '?', s === 'done' ? 'on' : ['failed', 'lost', 'refused'].includes(s) ? 'bad' : ['cancelled'].includes(s) ? '' : 'warn');
@@ -63,7 +63,7 @@
     return `<div class="clp-card"><div class="clp-row" style="justify-content:space-between"><h3>${E(n.name)}</h3><span class="clp-row">${health}${sharing}</span></div>
 <div class="clp-muted">${E((s.cpu || {}).model || '')} · ${E((s.cpu || {}).threads || '?')} threads · ${E(s.ram_gb)} GB · ${E(s.os)}${n.latency_ms ? ` · ${n.latency_ms} ms` : ''}</div>
 <div class="clp-muted">${gpus}</div>
-${bar('CPU', l.cpu_pct || 0, 0, '')}${bar('RAM', l.ram_used_gb || 0, s.ram_gb || 0, 'GB')}${vramTotal ? bar('VRAM', vramUsed || 0, vramTotal, 'GB') : ''}
+${bar('CPU', l.cpu_pct || 0, 100, '%')}${bar('RAM', l.ram_used_gb || 0, s.ram_gb || 0, 'GB')}${vramTotal ? bar('VRAM', vramUsed || 0, vramTotal, 'GB') : ''}
 ${i.available ? `<h4>Offered · free</h4><div class="clp-muted">CPU ${E(f.cpu)} / ${E(cap.cpu)} threads · RAM ${E(f.ram_gb)} / ${E(cap.ram_gb)} GB · GPUs ${E((f.gpus || []).length)} / ${E((cap.gpus || []).length)} · slots ${E(f.slots)} / ${E(cap.max_jobs)}</div><div class="clp-muted">${E((o.kinds || []).join(', '))}${o.when === 'idle' ? ` · only when idle ${o.idle_minutes} min` : ''}</div>` : `<div class="clp-muted">${E(i.unavailable_reason || '')}</div>`}
 <div class="clp-muted">jobs: ${E((i.jobs || {}).running || 0)} running, ${E((i.jobs || {}).waiting || 0)} waiting${((i.software || {}).models || []).length ? ` · ${(i.software.models || []).length} local models` : ''}${(s.hypervisors || []).length ? ` · ${E(s.hypervisors.join(', '))}` : ''}</div></div>`;
   }

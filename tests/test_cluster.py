@@ -262,3 +262,14 @@ def test_panel_is_identical_in_both_uis_and_wired():
     for page in ("bot/dashboard/static/dashboard.html", "desktop-app/ui/index.html"):
         html = (root / page).read_text(encoding="utf-8")
         assert 'id="cluster"' in html and 'id="clp-root"' in html and "cluster-panel.js" in html
+
+
+def test_the_inventory_reports_this_machine():
+    from bot.cluster import inventory
+    s, live = inventory.static(), inventory.live(refresh=True)
+    assert s["cpu"]["threads"] >= 1 and s["ram_gb"] > 0 and s["os"] in ("windows", "linux", "macos")
+    assert {"cpu_pct", "ram_used_gb", "ram_free_gb", "disks", "uptime_s", "at"} <= set(live)
+    assert not any(a.startswith("169.254.") for a in s["addresses"]["lan"])
+    node = membership.this_node()
+    assert {"id", "name", "static", "live", "offer", "capacity", "free", "available"} <= set(node)
+    assert "work_dir" not in node["offer"]                              # where jobs run stays private
