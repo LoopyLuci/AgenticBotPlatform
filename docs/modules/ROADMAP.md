@@ -385,12 +385,12 @@ M0 framework ─┬─> R (all repos; done alongside M0, since it touches only t
 
 | Phase | State | Commits / notes |
 |---|---|---|
-| M0 framework | todo | |
-| R BrainBuilder | todo | needs the merge-into-main decision |
-| R WebBuilder → Wrightspace | todo | needs the name and the GitHub rename |
-| R TridentDroid | todo | |
-| R ModelMistress | todo | needs the first push |
-| R Continuum | todo | |
+| M0 framework | todo | Also: a per-machine build cache dir (`CARGO_TARGET_DIR` and the like) on fast storage (E: on this PC), so builds don't fill Z:. |
+| R BrainBuilder | **done** 2026-09-29 | `20787e4` committed the work in progress; PR #1 merged, `main` = `b196a4a`. The 7 `claude/*` branches are deleted (all already merged); the old worktrees and their unfinished patches are in `D:\Backups\Projects\BrainBuilder-worktrees-20260929`. Pipeline green. |
+| R WebBuilder → Wrightspace | **done** 2026-09-29 | Server's work is committed and pushed (`cc92e40`). The GitHub repo is renamed `LoopyLuci/Wrightspace`. Server's folder is `C:\Projects\Wrightspace`, and the Z: copy is `Z:\Projects\Wrightspace`. The unrelated May 2026 codebase (IR round-trip, multi-framework emitters, agent-builder benchmark, marketplace) is kept as branch `legacy/may-2026`, to port from in WS-F/WS-H. Server's `main` still needs `--set-upstream-to=origin/main`. |
+| R TridentDroid | **done** 2026-09-29 | Run logs untracked, pushed (`5d501a9`). The canonical folder is now `Z:\Projects\TridentDroid` (renamed from TridentDroidEmulator; the old stub is in the backups). |
+| R ModelMistress | **done** 2026-09-29 | `git init`, README fixed, first push (`7aae7da`). |
+| R Continuum | **done** 2026-09-29 | `main` did not build (security modules not declared); fixed and pushed (`86287aa`, 435 tests pass). Server and Z: are level. The Z: copy's unrelated older history is kept as local branch `z-local-v1.1`. |
 | MM-A…G | todo | |
 | CO-A…G | todo | |
 | TD-A…F | todo | |
