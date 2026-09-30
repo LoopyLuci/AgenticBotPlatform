@@ -191,7 +191,7 @@ def test_a_gang_gets_rank_world_size_and_a_master(cluster):
 def test_an_array_spreads_its_tasks_and_gathers_the_results(cluster):
     code = "import os; print('task', os.environ['CLUSTER_TASK_INDEX'], 'of', os.environ['CLUSTER_TASK_COUNT'])"
     g = asyncio.run(scheduler.submit_array({"kind": "python", "spec": {"code": code}, "count": 5, "max_parallel": 2}))
-    deadline = time.time() + 60
+    deadline = time.time() + 180   # it ends as soon as the array does; 60 s ran out once on a loaded Linux VM
     while time.time() < deadline:
         asyncio.run(scheduler.supervise_once())
         g = store.get("groups", g["id"])
