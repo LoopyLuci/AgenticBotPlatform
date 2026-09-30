@@ -158,7 +158,9 @@ ${r.installed ? `<div class="mdp-mono mdp-muted">${E(r.path || '')}${r.commit ? 
   // Any project can become a module: abp_modkit reads it and writes abp-module.toml + abp-ops.toml into it.
   function adoptCard() {
     return `<details class="mdp-card" style="margin-bottom:12px"${st.adoptOpen ? ' open' : ''} id="mdp-adopt"><summary><b>Add a project as a module</b> <span class="mdp-muted">ABP reads it (stacks, build, server, commands, routes, MCP) and makes every part of it an operation</span></summary>
-<div class="mdp-row" style="margin-top:8px"><input id="mdp-adopt-path" placeholder="Project folder, e.g. Z:/Projects/VMStream" style="flex:1;min-width:240px" value="${E(st.adoptPath || '')}"><button class="btn ghost" id="mdp-adopt-preview">Preview</button><button class="btn" id="mdp-adopt-go">Adopt</button></div>
+<div class="mdp-row" style="margin-top:8px"><input id="mdp-add-url" placeholder="A repo: https://github.com/owner/name, or owner/name" style="flex:1;min-width:240px" value="${E(st.addUrl || '')}"><label class="mdp-row mdp-muted"><input type="checkbox" id="mdp-add-full"> whole history</label><button class="btn" id="mdp-add-go">Add from URL</button></div>
+<div class="mdp-muted">From a URL, ABP clones it, keeps its module files on its own side (the clone stays exactly as upstream has it), checks it with a real hub and registers it.</div>
+<div class="mdp-row"><input id="mdp-adopt-path" placeholder="Project folder, e.g. Z:/Projects/VMStream" style="flex:1;min-width:240px" value="${E(st.adoptPath || '')}"><button class="btn ghost" id="mdp-adopt-preview">Preview</button><button class="btn" id="mdp-adopt-go">Adopt</button></div>
 <div class="mdp-row"><input id="mdp-adopt-folder" placeholder="…or a folder of projects, e.g. Z:/Projects" style="flex:1;min-width:240px" value="${E(st.adoptFolder || '')}"><button class="btn ghost" id="mdp-adopt-find">Find projects</button></div>
 <div id="mdp-adopt-out"></div></details>`;
   }
@@ -186,6 +188,26 @@ ${r.files ? Object.entries(r.files).map(([f, t]) => `<details><summary class="md
         if (!dry) { toast(`${r.name} is a module now`); st.list = null; setTimeout(() => render(true), 800); }
       } catch (e) { out.innerHTML = `<p class="cardnote">${E(errText(e))}</p>`; }
     };
+    $('mdp-add-go').addEventListener('click', async () => {
+      const url = st.addUrl = $('mdp-add-url').value.trim();
+      if (!url) { toast('Give a repo URL, or owner/name', 'error'); return; }
+      out.innerHTML = `<div class="mdp-card"><b>Adding ${E(url)}</b><div class="mdp-pre" id="mdp-add-log">starting…</div></div>`;
+      try {
+        let job = await post('/api/modules/add', { url, shallow: !$('mdp-add-full').checked });
+        while (job.state === 'running') {
+          await new Promise((r) => setTimeout(r, 1000));
+          job = await api(`/api/modules/jobs/${encodeURIComponent(job.id)}`);
+          const log = $('mdp-add-log');
+          if (log) { log.textContent = (job.log || []).join('\n'); log.scrollTop = log.scrollHeight; }
+        }
+        if (job.state !== 'done') throw new Error(job.error || 'it failed');
+        const r = job.result;
+        out.innerHTML = `<div class="mdp-card"><div class="mdp-row"><b>${E(r.name)}</b> <span class="mdp-mono">${E(r.id)}</span> ${(r.stacks || []).map((s) => chip(s)).join(' ')} ${r.checked ? chip('checked', 'on') : chip('check failed', 'bad')}</div>
+${kv([['operations', E(String(r.operations))], ['clone', `<span class="mdp-mono">${E(r.path)}</span>`], ['module files', `<span class="mdp-mono">${E(r.overlay)}</span>`], ['about', E(r.description || '')]])}
+<details><summary class="mdp-muted">log</summary><div class="mdp-pre">${E((job.log || []).join('\n'))}</div></details></div>`;
+        toast(`${r.name} is a module now`); st.list = null; setTimeout(() => render(true), 800);
+      } catch (e) { out.innerHTML += `<p class="cardnote">${E(errText(e))}</p>`; }
+    });
     $('mdp-adopt-preview').addEventListener('click', () => go($('mdp-adopt-path').value.trim(), true));
     $('mdp-adopt-go').addEventListener('click', () => go($('mdp-adopt-path').value.trim(), false));
     $('mdp-adopt-find').addEventListener('click', async () => {

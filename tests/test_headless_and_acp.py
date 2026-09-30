@@ -325,8 +325,11 @@ def _pipe_session(tmp_path, model: str, answer_permission: str):
     """Run the real program: initialize, open a session in tmp_path, send one prompt, answer any
     permission request with `answer_permission`; returns (prompt result, every message received)."""
     env = {k: v for k, v in __import__("os").environ.items() if not k.startswith(("ABP_AGENT", "ABP_CICD"))}
+    # stderr goes to a file, not a pipe nobody reads until the end: under coverage the server writes enough there to
+    # fill a pipe's buffer, and then it blocks on stderr while this test blocks on its stdout (the pipeline hung on it)
+    errfile = open(tmp_path.parent / f"acp-stderr-{tmp_path.name}.log", "w+", encoding="utf-8")
     proc = subprocess.Popen([sys.executable, "-m", "abp_acp", "--model", model], cwd=ROOT, env=env,
-                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errfile, text=True, bufsize=1)
     seen: list = []
 
     def send(**msg):
@@ -344,7 +347,8 @@ def _pipe_session(tmp_path, model: str, answer_permission: str):
                 continue
             if pred(msg):
                 return msg
-        pytest.fail(f"the server ended early: {proc.stderr.read()[-2000:]}")
+        errfile.seek(0)
+        pytest.fail(f"the server ended early: {errfile.read()[-2000:]}")
 
     try:
         send(id=1, method="initialize", params={"protocolVersion": 1})
@@ -356,6 +360,7 @@ def _pipe_session(tmp_path, model: str, answer_permission: str):
     finally:
         proc.stdin.close()
         proc.wait(timeout=60)
+        errfile.close()
 
 
 def test_a_scripted_model_drives_a_whole_session_over_real_pipes(tmp_path):

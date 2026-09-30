@@ -40,6 +40,15 @@ class StdioLines:
 
     def start(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
+        # Native libraries that touch the process's standard handles while they initialise (numpy, and OpenCV on top
+        # of it) must load BEFORE the reader thread blocks in a synchronous read on stdin: on Windows, a second
+        # operation on a handle waits behind a pending synchronous read, so a tool that first imports them mid-turn
+        # would wait for input the client only sends after the reply. (It hung the pipeline's ACP tests.)
+        for lib in ("numpy", "cv2"):
+            try:
+                __import__(lib)
+            except ImportError:
+                pass
 
         def pump() -> None:
             try:

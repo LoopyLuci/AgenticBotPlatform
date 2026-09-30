@@ -12,7 +12,7 @@ Commands:
   agent-settings get|set                  a bot's own permission mode, sub-agent limits, ...
   agent-config schema|get|set             the ~65 native_agent.* settings (ABP Agents page)
   providers list|add|remove|catalog|models|toggle|restore
-  modules list|show|ops|call|setup|adopt|candidates|new|publish|forget
+  modules list|show|ops|call|setup|adopt|add|candidates|new|publish|forget
                                           every module; `modules adopt <folder>` makes any project one
   vision status|analyze|find|compare|edit|fetch
                                           computer vision here (OpenCV + its model zoo): objects, faces, text,
@@ -722,6 +722,29 @@ async def _modules(args, client: DashboardClient) -> int:
             for n in res.get("notes") or []:
                 print(f"  note: {n}")
         return 0
+    if sub == "add":
+        import asyncio
+        job = await client._request("POST", f"{api}/add", json={"url": args.url, "id": args.id or "",
+                                                                 "name": args.name or "", "shallow": not args.full,
+                                                                 "branch": args.branch or ""})
+        seen = 0
+        while True:
+            job = await client._request("GET", f"{api}/jobs/{job['id']}")
+            if not args.json:
+                for line in (job.get("log") or [])[seen:]:
+                    print(line)
+                seen = len(job.get("log") or [])
+            if job.get("state") != "running":
+                break
+            await asyncio.sleep(1.0)
+        if args.json:
+            _print(args, job)
+        elif job.get("state") == "done":
+            r = job.get("result") or {}
+            print(f"\n{r.get('id')}: a module now ({r.get('operations')} operations); its clone: {r.get('path')}")
+        else:
+            print(f"\nfailed: {job.get('error')}", file=sys.stderr)
+        return 0 if job.get("state") == "done" else 1
     if sub == "candidates":
         _print(args, (await client._request("GET", f"{api}/candidates", params={"folder": args.folder}))["projects"],
                table=["name", "module", "markers"])
@@ -875,6 +898,10 @@ def _parser() -> argparse.ArgumentParser:
     p = msub.add_parser("new", help="a new empty project that is already a module")
     p.add_argument("path"); p.add_argument("--lang", choices=["python", "node", "powershell", "shell"], default="python")
     p.add_argument("--id", default=""); p.add_argument("--name", default="")
+    p = msub.add_parser("add", help="any git repo as a module: clone, adopt as an overlay, check, register")
+    p.add_argument("url", help="https://github.com/owner/name (any https git host) or owner/name")
+    p.add_argument("--id", default=""); p.add_argument("--name", default=""); p.add_argument("--branch", default="")
+    p.add_argument("--full", action="store_true", help="clone the whole history (default: the latest commit)")
     p = msub.add_parser("candidates", help="project folders in a folder, and which are modules")
     p.add_argument("folder")
     p = msub.add_parser("publish", help="commit its module files and create its private GitHub repo")

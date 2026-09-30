@@ -12,6 +12,8 @@ TridentDroid, BrainBuilder, Wrightspace, and any added in config), on one page.
     POST /api/modules/{id}/call                 {"operation", "args", "timeout_s"}
     POST /api/modules/{id}/conformance          check it against the module contract (starts its hub if needed)
     POST /api/modules/adopt                     {"path", "id"?, "name"?, "dry_run"?, "force"?}: make a project a module
+    POST /api/modules/add                       {"url", "id"?, "name"?, "shallow"?, "branch"?}: any git repo as a module
+                                                (cloned, adopted as an overlay, checked, registered; a job)
     GET  /api/modules/candidates?folder=...     project folders there, and which are modules already
     POST /api/modules/{id}/publish              {"push"?}: its own private GitHub repo (a job)
     POST /api/modules/{id}/forget               stop listing an adopted project (its files stay)
@@ -60,6 +62,15 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         audit(str(body.get("id") or path), "adopt", path)
         return await run(adoption.adopt, path, mid=str(body.get("id") or ""), name=str(body.get("name") or ""),
                          dry_run=bool(body.get("dry_run")), force=bool(body.get("force")))
+
+    @app.post("/api/modules/add", dependencies=write)
+    async def modules_add(body: dict = Body(...)):
+        """Any git repo as a module (an overlay; the clone stays exactly upstream): a job."""
+        from bot.modules import adoption
+        url = str(body.get("url") or "").strip()
+        audit(str(body.get("id") or url), "add", url)
+        return await run(adoption.add_from_url, url, mid=str(body.get("id") or ""), name=str(body.get("name") or ""),
+                         shallow=body.get("shallow", True) is not False, branch=str(body.get("branch") or ""))
 
     @app.get("/api/modules/candidates", dependencies=read)
     async def modules_candidates(folder: str = Query(...)):
