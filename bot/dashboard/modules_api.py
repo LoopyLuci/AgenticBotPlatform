@@ -11,6 +11,10 @@ TridentDroid, BrainBuilder, Wrightspace, and any added in config), on one page.
     GET  /api/modules/{id}/operations           what its hub can do (with schemas)
     POST /api/modules/{id}/call                 {"operation", "args", "timeout_s"}
     POST /api/modules/{id}/conformance          check it against the module contract (starts its hub if needed)
+    POST /api/modules/adopt                     {"path", "id"?, "name"?, "dry_run"?, "force"?}: make a project a module
+    GET  /api/modules/candidates?folder=...     project folders there, and which are modules already
+    POST /api/modules/{id}/publish              {"push"?}: its own private GitHub repo (a job)
+    POST /api/modules/{id}/forget               stop listing an adopted project (its files stay)
 
 Reading needs the dashboard's normal auth; changes need the desktop dashboard token, or a linked server this machine
 allows (peers.remote_control: [modules]). Changes are written to ABP's audit log.
@@ -46,6 +50,33 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
     async def modules_list():
         rows = await run(harness.overview)
         return {"modules": rows, "manifest_errors": registry.manifest_errors()}
+
+    @app.post("/api/modules/adopt", dependencies=write)
+    async def modules_adopt(body: dict = Body(...)):
+        from bot.modules import adoption
+        path = str(body.get("path") or "").strip()
+        if not path:
+            raise HTTPException(status_code=400, detail="path is required")
+        audit(str(body.get("id") or path), "adopt", path)
+        return await run(adoption.adopt, path, mid=str(body.get("id") or ""), name=str(body.get("name") or ""),
+                         dry_run=bool(body.get("dry_run")), force=bool(body.get("force")))
+
+    @app.get("/api/modules/candidates", dependencies=read)
+    async def modules_candidates(folder: str = Query(...)):
+        from bot.modules import adoption
+        return {"folder": folder, "projects": await run(adoption.candidates, folder)}
+
+    @app.post("/api/modules/{mid}/publish", dependencies=write)
+    async def module_publish(mid: str, body: dict = Body(default={})):
+        from bot.modules import adoption
+        audit(mid, "publish", "push" if body.get("push") else "")
+        return await run(adoption.publish, mid, push=bool(body.get("push")))
+
+    @app.post("/api/modules/{mid}/forget", dependencies=write)
+    async def module_forget(mid: str):
+        from bot.modules import adoption
+        audit(mid, "forget")
+        return await run(adoption.unregister, mid)
 
     @app.get("/api/modules/jobs/{job_id}", dependencies=read)
     async def modules_job(job_id: str):

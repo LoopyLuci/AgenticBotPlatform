@@ -199,6 +199,25 @@ def register_tools() -> None:
                "open_tui": harness.open_tui, "register_mcp": harness.register_mcp, "jobs": harness.jobs}
         return await _local(fns[action], mid)
 
+    async def adopt(inp, **_):
+        from bot.modules import adoption
+        if inp.get("machine"):
+            return await _remote(inp["machine"], "POST", "/adopt", {k: inp.get(k) for k in ("path", "id", "name", "dry_run")})
+        action = str(inp.get("action") or "adopt")
+        if action in ("publish", "forget"):
+            try:
+                _mid(inp)
+            except ModuleError as exc:
+                return f"Error: {exc}"
+        if action == "candidates":
+            return await _local(adoption.candidates, str(inp.get("path") or ""))
+        if action == "publish":
+            return await _local(adoption.publish, _mid(inp), push=bool(inp.get("push")))
+        if action == "forget":
+            return await _local(adoption.unregister, _mid(inp))
+        return await _local(adoption.adopt, str(inp.get("path") or ""), mid=str(inp.get("id") or ""),
+                            name=str(inp.get("name") or ""), dry_run=bool(inp.get("dry_run")))
+
     reg("module_list", "Every module ABP knows: separate programs it installs, updates, builds and drives (VM-Harness, "
         "Hermes-Manager, TransferDaemon, ModelMistress, Continuum, TridentDroid, BrainBuilder, Wrightspace, and any "
         "added in config). For each: what it is, installed? built? hub running? updates waiting? a job running?",
@@ -224,6 +243,17 @@ def register_tools() -> None:
         "job_id). Installs, updates, builds and pipelines run in the background: follow them with jobs or job.",
         {"module": MODULE, "action": {"type": "string", "enum": [*SETUP_ACTIONS, "job"]}, "job_id": {"type": "string"}},
         ["module", "action"], setup, permission="config", read_only=False)
+    reg("module_adopt", "Make any project folder an ABP module (abp_modkit): action adopt (default) reads the project "
+        "(its stacks, how to build it, its server, CLI subcommands, scripts, HTTP routes, PowerShell functions, MCP "
+        "server), writes abp-module.toml and abp-ops.toml into it (adopting again keeps hand edits) and registers it, "
+        "so module_setup / module_operations / module_call work on it at once; dry_run=true only shows what it would "
+        "write. action candidates lists the project folders in path and which are modules; publish (module) commits "
+        "the module files and creates its private GitHub repo (push=true also pushes to a repo it already has); "
+        "forget (module) stops listing it.",
+        {"action": {"type": "string", "enum": ["adopt", "candidates", "publish", "forget"]},
+         "path": {"type": "string", "description": "the project folder (adopt) or a folder of projects (candidates)"},
+         "id": {"type": "string"}, "name": {"type": "string"}, "module": MODULE, "dry_run": {"type": "boolean"},
+         "push": {"type": "boolean"}}, [], adopt, permission="config", read_only=False)
 
 
 register_tools()

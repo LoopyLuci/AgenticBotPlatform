@@ -145,7 +145,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.transferdaemon.client", "bot.transferdaemon.harness", "bot.transferdaemon.tools", "bot.dashboard.transferdaemon_api",
     # Modules: harness.py holds the background jobs, registry.py the manifest cache, tools.py registers at import time.
     "bot.modules.manifest", "bot.modules.registry", "bot.modules.client", "bot.modules.adapters", "bot.modules.harness",
-    "bot.modules.tools", "bot.modules.conformance", "bot.dashboard.modules_api",
+    "bot.modules.tools", "bot.modules.conformance", "bot.modules.adoption", "bot.dashboard.modules_api",
     # Integration keys: the gate middleware is registered once at startup.
     "bot.integrations", "bot.dashboard.integrations_api",
     # The Router app: its install job and process handle live in module state.

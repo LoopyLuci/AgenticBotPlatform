@@ -27865,6 +27865,275 @@
     "summary": "Modules List"
    }
   },
+  "/api/modules/adopt": {
+   "post": {
+    "operationId": "modules_adopt_api_modules_adopt_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-platform",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Platform"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-app-version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-App-Version"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-model",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Model"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-os-version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Os-Version"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-mesh-port",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Mesh-Port"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Modules Adopt"
+   }
+  },
+  "/api/modules/candidates": {
+   "get": {
+    "operationId": "modules_candidates_api_modules_candidates_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "folder",
+      "required": true,
+      "schema": {
+       "title": "Folder",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-platform",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Platform"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-app-version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-App-Version"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-model",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Model"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-os-version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Os-Version"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-mesh-port",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Mesh-Port"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Modules Candidates"
+   }
+  },
   "/api/modules/jobs/{job_id}": {
    "get": {
     "operationId": "modules_job_api_modules_jobs__job_id__get",
@@ -28550,6 +28819,139 @@
      }
     },
     "summary": "Module Conformance"
+   }
+  },
+  "/api/modules/{mid}/forget": {
+   "post": {
+    "operationId": "module_forget_api_modules__mid__forget_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "mid",
+      "required": true,
+      "schema": {
+       "title": "Mid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-platform",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Platform"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-app-version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-App-Version"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-model",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Model"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-os-version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Os-Version"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-mesh-port",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Mesh-Port"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Module Forget"
    }
   },
   "/api/modules/{mid}/gui": {
@@ -29491,6 +29893,151 @@
      }
     },
     "summary": "Module Pipeline"
+   }
+  },
+  "/api/modules/{mid}/publish": {
+   "post": {
+    "operationId": "module_publish_api_modules__mid__publish_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "mid",
+      "required": true,
+      "schema": {
+       "title": "Mid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-platform",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Platform"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-app-version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-App-Version"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-model",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Model"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-os-version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Os-Version"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-mesh-port",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Mesh-Port"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "default": {},
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Module Publish"
    }
   },
   "/api/modules/{mid}/setup": {

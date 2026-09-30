@@ -12,6 +12,8 @@ Commands:
   agent-settings get|set                  a bot's own permission mode, sub-agent limits, ...
   agent-config schema|get|set             the ~65 native_agent.* settings (ABP Agents page)
   providers list|add|remove|catalog|models|toggle|restore
+  modules list|show|ops|call|setup|adopt|candidates|new|publish|forget
+                                          every module; `modules adopt <folder>` makes any project one
 
 Connection: --host (default 127.0.0.1:8787) and --token (default from .env's
 DASHBOARD_TOKEN, same as bot/tui/'s ConnectScreen). --json prints machine-readable output
@@ -124,6 +126,8 @@ async def _dispatch(args, client: DashboardClient) -> int:
         return await _agent_config(args, client)
     if cmd == "providers":
         return await _providers(args, client)
+    if cmd == "modules":
+        return await _modules(args, client)
     if cmd == "swarms":
         return await _swarms(args, client)
     if cmd == "sessions":
@@ -671,6 +675,62 @@ async def _providers(args, client: DashboardClient) -> int:
     return 2
 
 
+async def _modules(args, client: DashboardClient) -> int:
+    sub = args.modules_cmd
+    api = "/api/modules"
+    if sub == "list":
+        rows = (await client._request("GET", api))["modules"]
+        _print(args, [{**r, "hub": "running" if (r.get("hub") or {}).get("running") else ""} for r in rows],
+               table=["id", "name", "area", "installed", "ready", "hub"])
+        return 0
+    if sub == "show":
+        _print(args, await client._request("GET", f"{api}/{args.module}"))
+        return 0
+    if sub == "ops":
+        _print(args, await client._request("GET", f"{api}/{args.module}/operations"),
+               table=["id", "summary", "mutating"])
+        return 0
+    if sub == "call":
+        body = {"operation": args.operation, "args": json.loads(args.args or "{}")}
+        _print(args, (await client._request("POST", f"{api}/{args.module}/call", json=body))["result"])
+        return 0
+    if sub == "setup":
+        route = {"install": "setup", "start": "hub/start", "stop": "hub/stop", "open_gui": "gui", "open_tui": "tui",
+                 "register_mcp": "mcp"}.get(args.action, args.action)
+        _print(args, await client._request("POST", f"{api}/{args.module}/{route}"))
+        return 0
+    if sub in ("adopt", "new"):
+        import os
+        path = str((pathlib.Path(os.environ.get("ABP_CALLER_CWD") or ".") / args.path).resolve())
+        if sub == "new":
+            from abp_modkit.cli import new as modkit_new
+            modkit_new(pathlib.Path(path), args.lang, args.name or "")
+        res = await client._request("POST", f"{api}/adopt", json={"path": path, "id": args.id or "",
+                                                                   "name": args.name or "",
+                                                                   "dry_run": bool(getattr(args, "dry_run", False))})
+        if args.json or res.get("files"):
+            _print(args, res)
+        else:
+            print(f"{res.get('id')}: {res.get('operations')} operations ({', '.join(res.get('stacks') or [])}); "
+                  f"wrote {', '.join(res.get('wrote') or []) or 'nothing new'}"
+                  + ("; registered" if res.get("registered") else ""))
+            for n in res.get("notes") or []:
+                print(f"  note: {n}")
+        return 0
+    if sub == "candidates":
+        _print(args, (await client._request("GET", f"{api}/candidates", params={"folder": args.folder}))["projects"],
+               table=["name", "module", "markers"])
+        return 0
+    if sub == "publish":
+        _print(args, await client._request("POST", f"{api}/{args.module}/publish", json={"push": args.push}))
+        return 0
+    if sub == "forget":
+        _print(args, await client._request("POST", f"{api}/{args.module}/forget"))
+        return 0
+    print(f"unknown modules subcommand {sub!r}", file=sys.stderr)
+    return 2
+
+
 def _parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="abp_cli", description=__doc__.splitlines()[0])
     ap.add_argument("--host", default=None, help="host:port of the dashboard (default: 127.0.0.1:8787)")
@@ -742,6 +802,26 @@ def _parser() -> argparse.ArgumentParser:
     p = psub.add_parser("restore")
     p.add_argument("name")
     p.add_argument("--api-key", default=None, dest="api_key")
+
+    mods = sub.add_parser("modules", help="modules: separate programs ABP builds and drives; adopt any project")
+    msub = mods.add_subparsers(dest="modules_cmd", required=True)
+    msub.add_parser("list")
+    for name in ("show", "ops", "forget"):
+        p = msub.add_parser(name); p.add_argument("module")
+    p = msub.add_parser("call"); p.add_argument("module"); p.add_argument("operation"); p.add_argument("args", nargs="?")
+    p = msub.add_parser("setup"); p.add_argument("module")
+    p.add_argument("action", choices=["install", "update", "build", "pipeline", "start", "stop", "open_gui", "open_tui",
+                                      "register_mcp", "jobs"])
+    p = msub.add_parser("adopt", help="make a project folder a module (writes abp-module.toml + abp-ops.toml)")
+    p.add_argument("path"); p.add_argument("--id", default=""); p.add_argument("--name", default="")
+    p.add_argument("--dry-run", action="store_true", dest="dry_run")
+    p = msub.add_parser("new", help="a new empty project that is already a module")
+    p.add_argument("path"); p.add_argument("--lang", choices=["python", "node", "powershell", "shell"], default="python")
+    p.add_argument("--id", default=""); p.add_argument("--name", default="")
+    p = msub.add_parser("candidates", help="project folders in a folder, and which are modules")
+    p.add_argument("folder")
+    p = msub.add_parser("publish", help="commit its module files and create its private GitHub repo")
+    p.add_argument("module"); p.add_argument("--push", action="store_true")
 
     swarms = sub.add_parser("swarms", help="fan-out/leader-vote/etc. multi-bot swarms")
     ssub = swarms.add_subparsers(dest="swarms_cmd", required=True)
