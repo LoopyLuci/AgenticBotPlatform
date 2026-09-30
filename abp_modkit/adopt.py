@@ -14,6 +14,7 @@ from abp_modkit import detect as dt
 from abp_modkit import spec as sp
 
 MARKER = "# written by abp_modkit"
+OPS_MARKER = "(abp_modkit)"          # in the generated abp-ops.toml's first line
 OPS_FILE = "abp-ops.toml"
 MANIFEST_FILE = "abp-module.toml"
 
@@ -116,8 +117,19 @@ def adopt(path: str | Path, *, mid: str = "", name: str = "", repo: str = "", br
         if repo.startswith("git@github.com:"):
             repo = "https://github.com/" + repo.split(":", 1)[1]
     man_text = manifest_text(plan, repo, branch or "main")
+    # An abp-ops.toml whose first line is not the generated one was taken over by a person (a curated list of
+    # operations): it is left exactly as it is, like a manifest without its marker.
+    ops_kept = ops_path.is_file() and not force and \
+        OPS_MARKER not in (ops_path.read_text(encoding="utf-8").splitlines() or [""])[0]
+    if ops_kept:
+        hand = sp.load(ops_path)
+        kept.append(OPS_FILE)
+        ops_text = ops_path.read_text(encoding="utf-8")
+        new = hand
+        plan.description = description or hand.service.description or plan.description
+        plan.service = hand.service
     if not dry_run:
-        if ops_path.read_text(encoding="utf-8") != ops_text if ops_path.is_file() else True:
+        if not ops_kept and (ops_path.read_text(encoding="utf-8") != ops_text if ops_path.is_file() else True):
             ops_path.write_text(ops_text, encoding="utf-8", newline="\n")
             wrote.append(OPS_FILE)
         if man_path.is_file() and not force and MARKER not in man_path.read_text(encoding="utf-8").splitlines()[0]:
@@ -125,6 +137,13 @@ def adopt(path: str | Path, *, mid: str = "", name: str = "", repo: str = "", br
         elif not man_path.is_file() or man_path.read_text(encoding="utf-8") != man_text:
             man_path.write_text(man_text, encoding="utf-8", newline="\n")
             wrote.append(MANIFEST_FILE)
-    return {**dt.summary(plan), "path": str(root), "repo": repo, "wrote": wrote, "kept": kept,
+    summary = dt.summary(plan)
+    if ops_kept:
+        by_kind: dict[str, int] = {}
+        for o in new.ops:
+            by_kind[o.kind] = by_kind.get(o.kind, 0) + 1
+        summary.update(operations=len(new.ops), by_kind=by_kind, server=new.service.base_url,
+                       server_start=new.service.start, web=bool(new.service.web), openai=bool(new.service.openai))
+    return {**summary, "path": str(root), "repo": repo, "wrote": wrote, "kept": kept,
             "files": {MANIFEST_FILE: man_text, OPS_FILE: ops_text} if dry_run else None,
             "service": {k: v for k, v in asdict(new.service).items() if v not in ("", [], {})}}

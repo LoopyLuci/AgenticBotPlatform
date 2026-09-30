@@ -328,6 +328,14 @@ def test_adopt_writes_both_files_and_a_refresh_keeps_hand_edits(poly):
     (poly / "abp-module.toml").write_text((poly / "abp-module.toml").read_text(encoding="utf-8").split("\n", 1)[1],
                                           encoding="utf-8")
     assert ad.adopt(poly)["kept"] == ["abp-module.toml"]
+    # and a curated abp-ops.toml (its first line is no longer the generated one) is left exactly as it is
+    curated = "\n".join(["# PolyGlot's operations, kept by hand.", "", "[service]", 'id = "poly-glot"',
+                         'name = "PolyGlot"', "", "[[op]]", 'id = "only.this"', 'kind = "cmd"',
+                         'argv = ["echo", "hi"]', ""])
+    (poly / "abp-ops.toml").write_text(curated, encoding="utf-8")
+    res = ad.adopt(poly)
+    assert set(res["kept"]) == {"abp-module.toml", "abp-ops.toml"} and res["operations"] == 1
+    assert (poly / "abp-ops.toml").read_text(encoding="utf-8") == curated
 
 
 def test_new_makes_a_module_that_passes_its_own_check(tmp_path):
