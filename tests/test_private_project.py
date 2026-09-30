@@ -166,7 +166,7 @@ def test_connectors_are_modules_and_get_the_right_session(env, monkeypatch):
     from bot.private_project import connectors
     registry.modules(refresh=True)
     octo = [m for m in registry.modules().values() if m.area == "private_project"]
-    assert len(octo) == len(connectors.CONNECTORS) >= 29
+    assert len(octo) == len(connectors.CONNECTORS) + len(connectors.RUNNERS) >= 30
     assert all(m.repo.startswith("https://github.com/LoopyLuci/abp-private_project-") for m in octo)
     env[sso.TOKEN_VAR] = "sso-session"
     env[router.TOKEN_VAR] = "router-owner-token-0123"

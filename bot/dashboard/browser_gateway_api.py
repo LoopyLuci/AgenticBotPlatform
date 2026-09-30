@@ -24,8 +24,15 @@ def _gateway_auth(x_dashboard_token: Optional[str] = Header(default=None), autho
     if not expected:
         raise HTTPException(status_code=503, detail="DASHBOARD_TOKEN is not set in .env")
     supplied = x_dashboard_token or (authorization[7:].strip() if authorization and authorization.lower().startswith("bearer ") else "")
-    if not supplied or not hmac.compare_digest(supplied.encode(), expected.encode()):
-        raise HTTPException(status_code=401, detail="invalid dashboard token")
+    if supplied and hmac.compare_digest(supplied.encode(), expected.encode()):
+        return
+    if supplied:
+        # an integration key with models:use (bot/integrations.py); the gate already held it to that scope's routes
+        from bot import integrations
+        scopes = integrations.scopes_for(supplied)
+        if scopes is not None and "models:use" in scopes:
+            return
+    raise HTTPException(status_code=401, detail="invalid dashboard token (or an integration key without models:use)")
 
 
 def _error(exc: gw.GatewayError) -> JSONResponse:

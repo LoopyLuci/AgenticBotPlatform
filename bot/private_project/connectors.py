@@ -27,13 +27,24 @@ CONNECTORS: list[tuple[str, str]] = [
 ]
 IDS = {sid for sid, _ in CONNECTORS}
 
+# Estate programs with no web surface that ABP runs itself (abp_modkit over a checkout its build clones): no session
+# to hand them, their own secrets instead (service.set_secret). id, name, description.
+RUNNERS: list[tuple[str, str, str]] = [
+    ("private_project-alfred-js", "Alfred", "PrivateProject's Discord bot (alfred-js): ABP runs it with its tokens, lists and registers "
+                                    "its slash commands, tests, updates it and reads its chip balances."),
+]
+
 
 def manifests() -> list[dict[str, Any]]:
     """Registry entries (the repos carry their full abp-module.toml; this is enough to find and clone them)."""
     return [{"module": {"id": sid, "name": f"PrivateProject {name}", "repo": f"{GH}abp-{sid}.git", "area": "private_project",
                         "description": f"The PrivateProject {name} service ({sid}) as operations, as the signed-in user."},
              "checkout": {"marker": ["spec.toml", "abp-module.toml"]}}
-            for sid, name in CONNECTORS]
+            for sid, name in CONNECTORS] + [
+        {"module": {"id": sid, "name": f"PrivateProject {name}", "repo": f"{GH}abp-{sid}.git", "area": "private_project",
+                    "description": desc},
+         "checkout": {"marker": ["abp-module.toml", "abp-ops.toml"]}}
+        for sid, name, desc in RUNNERS]
 
 
 def _token_for(mid: str) -> str:

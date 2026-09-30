@@ -59,11 +59,12 @@ def register(app: FastAPI, require_desktop: Callable) -> None:
 
         def rows():
             out = []
-            for sid, name in connectors.CONNECTORS:
+            for sid, name, kind in [*((s, n, "sso") for s, n in connectors.CONNECTORS),
+                                    *((s, n, "runner") for s, n, _ in connectors.RUNNERS)]:
                 m = registry.get(sid)
                 d = registry.install_dir(m)
                 out.append({"id": sid, "name": name, "repo": m.repo, "installed": registry.is_checkout(m, d),
-                            "running": client.find(m, timeout=0.5) is not None})
+                            "running": client.find(m, timeout=0.5) is not None, "kind": kind})
             return out
         return {"connectors": await asyncio.to_thread(rows)}
 

@@ -16,6 +16,9 @@ def register(app: FastAPI, require_desktop: Callable, identify_caller: Callable)
     @app.middleware("http")
     async def integration_gate(request: Request, call_next):
         token = request.headers.get("x-dashboard-token") or ""
+        auth = request.headers.get("authorization") or ""
+        if not token and auth.lower().startswith("bearer "):
+            token = auth[7:].strip()                      # OpenAI-style clients (the model gateway)
         if token:
             scopes = await asyncio.to_thread(integrations.scopes_for, token)
             if scopes is not None and not integrations.allows(scopes, request.method, request.url.path):
