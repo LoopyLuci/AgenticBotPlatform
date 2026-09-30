@@ -326,6 +326,10 @@ def test_sessions_screen_lists_and_deletes(dashboard_client):
 
 
 def test_ssh_toolkit_screen_adds_tests_and_removes(dashboard_client, monkeypatch, tmp_path):
+    from bot import ssh_toolkit
+
+    if ssh_toolkit._powershell_binary() is None:   # SSH Toolkit is a PowerShell module: on Linux, only with pwsh
+        pytest.skip("SSH Toolkit needs PowerShell (pwsh), which this machine does not have")
     # Isolated from the real ~/.ssh/config - see bot/ssh_toolkit.py's own comment on
     # this env var, and tests/test_abp_cli.py's identical fixture.
     monkeypatch.setenv("ABP_SSH_TOOLKIT_HOME", str(tmp_path))
