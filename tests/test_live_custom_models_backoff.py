@@ -74,7 +74,10 @@ def test_only_the_first_failure_in_a_streak_warns(monkeypatch, caplog):
 
 def test_backoff_grows_and_is_capped(monkeypatch):
     _fake_providers(monkeypatch)
-    monkeypatch.setattr(models_module, "_custom_cache", {"flaky": {"at": 0.0, "models": None, "failures": 10}})
+    # cached long before now on the monotonic clock (which is the machine's uptime: "at": 0.0 is NOT old on a machine
+    # that booted less than the cap ago, which made this fail right after a restart)
+    long_ago = __import__("time").monotonic() - 10 * models_module._CUSTOM_CACHE_MAX_TTL_S
+    monkeypatch.setattr(models_module, "_custom_cache", {"flaky": {"at": long_ago, "models": None, "failures": 10}})
     monkeypatch.setattr(models_module, "time", __import__("time"))
 
     async def fake_fetch(name, entry, provider_registry, warn=True):
@@ -196,7 +199,8 @@ def test_an_explicit_refresh_bypasses_the_backoff(temp_db, monkeypatch):
 
 def test_a_provider_that_recovers_resets_its_backoff(temp_db, monkeypatch):
     _configure(monkeypatch)
-    monkeypatch.setattr(models_module, "_custom_cache", {"flaky": {"at": 0.0, "models": None, "failures": 3}})
+    long_ago = __import__("time").monotonic() - 10 * models_module._CUSTOM_CACHE_MAX_TTL_S   # (not 0.0: see above)
+    monkeypatch.setattr(models_module, "_custom_cache", {"flaky": {"at": long_ago, "models": None, "failures": 3}})
 
     async def back_up(name, entry, registry, warn=True):
         return ["m1"]
