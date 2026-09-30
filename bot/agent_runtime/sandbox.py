@@ -297,9 +297,15 @@ def _ssh_argv(command: str, cwd: Path, workspace: Path, cfg: dict, pidfile: str)
 
 
 def _win_to_wsl_path(p: Path) -> str:
-    p = Path(p).resolve()
-    drive = p.drive.rstrip(":").lower()
-    rest = p.as_posix()[len(p.drive):].lstrip("/")
+    """A Windows path as WSL sees it (drive Z, folder x: /mnt/z/x). Pure off Windows: it never resolves against this
+    machine's folders, so it gives the same answer wherever it runs."""
+    from pathlib import PureWindowsPath
+    raw = str(p)
+    if os.name == "nt":
+        raw = str(Path(p).resolve())
+    w = PureWindowsPath(raw)
+    drive = w.drive.rstrip(":").lower()
+    rest = w.as_posix()[len(w.drive):].lstrip("/")
     return f"/mnt/{drive}/{rest}" if rest else f"/mnt/{drive}"
 
 

@@ -41,7 +41,10 @@ def _run(client, screen_factory, body):
         app = AgenticBotPlatformTUI()
         async with app.run_test(size=(150, 60)) as pilot:
             app.client = client
-            await app.push_screen(screen_factory())
+            scr = screen_factory()
+            await app.push_screen(scr)
+            await _until(pilot, lambda: app.screen is scr and scr.is_mounted)   # a slow machine mounts it later
+            await pilot.pause()
             await body(app, app.screen, pilot)
     asyncio.run(go())
 

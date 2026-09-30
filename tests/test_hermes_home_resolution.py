@@ -11,7 +11,10 @@ HERMES_HOME env var, then the platform-native default.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+import pytest
 
 from bot import hermes_config
 
@@ -21,6 +24,7 @@ def test_prefers_hermes_home_env_var_over_any_platform_default(monkeypatch):
     assert hermes_config._default_hermes_home() == Path("/custom/hermes/home")
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows paths: only meaningful on Windows")
 def test_windows_default_is_localappdata_hermes_not_dot_hermes(monkeypatch):
     monkeypatch.delenv("HERMES_HOME", raising=False)
     monkeypatch.setattr(hermes_config.sys, "platform", "win32")
@@ -32,6 +36,7 @@ def test_windows_default_is_localappdata_hermes_not_dot_hermes(monkeypatch):
     assert ".hermes" not in str(home)
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows paths: only meaningful on Windows")
 def test_windows_falls_back_to_home_appdata_local_when_localappdata_unset(monkeypatch):
     monkeypatch.delenv("HERMES_HOME", raising=False)
     monkeypatch.setattr(hermes_config.sys, "platform", "win32")
