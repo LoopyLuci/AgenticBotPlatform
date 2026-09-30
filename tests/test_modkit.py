@@ -571,3 +571,94 @@ mutating = false
     assert harness.abp_env(m)["ABP_KEY"] != key                           # a revoked key is replaced
     # a module without [abp] gets nothing
     assert harness.abp_env(registry.get("vm-harness")) == {}
+
+
+# ---- overlays: a third-party repo as a module, its checkout untouched -------------------------------------------------
+def _git(cwd: Path, *args: str) -> str:
+    return subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True, check=True).stdout
+
+
+@pytest.fixture
+def upstream(tmp_path) -> Path:
+    """A repo nobody prepared for ABP: a CMake project with a module that is only part of it, a standalone sample, and
+    a Python CLI; committed, so any write into it shows in git status."""
+    up = tmp_path / "upstream-lib"
+    _w(up / "CMakeLists.txt", """
+        cmake_minimum_required(VERSION 3.16)
+        project(UpLib CXX)
+        option(UPLIB_WITH_EXTRAS "Build the extras" OFF)
+        add_subdirectory(modules/core)
+        """)
+    _w(up / "modules/core/CMakeLists.txt", "add_library(core STATIC core.cpp)\n")
+    _w(up / "apps/hello/CMakeLists.txt", "cmake_minimum_required(VERSION 3.16)\nproject(Hello CXX)\n")
+    _w(up / "stats.py", '''
+        """Print statistics."""
+        import argparse
+        if __name__ == "__main__":
+            ap = argparse.ArgumentParser()
+            ap.add_argument("--n", default="3")
+            print("stats", ap.parse_args().n)
+        ''')
+    _w(up / "README.md", "# UpLib\n\nA small library that is not ours.\n")
+    _git(up.parent, "init", "-q", str(up))
+    _git(up, "-c", "user.email=t@example.invalid", "-c", "user.name=t", "add", "-A")
+    _git(up, "-c", "user.email=t@example.invalid", "-c", "user.name=t", "commit", "-q", "-m", "upstream")
+    return up
+
+
+def test_cmake_projects_are_detected_and_parts_of_a_build_are_not_projects(upstream):
+    plan = dt.detect(upstream)
+    ids = [o.id for o in plan.ops]
+    assert "cmake" in plan.stacks
+    assert {"cmake.configure", "cmake.build", "cmake.test", "cmake.install", "cmake.options"} <= set(ids)
+    assert not any(i.startswith("cmake_core.") for i in ids)            # no project(): a part of the outer build
+    assert not any(i.startswith("cmake_hello.") for i in ids)           # inside the outer project: its build builds it
+    # samples with no outer project (a folder of standalone samples): each gets configure and build, nothing more
+    samples = upstream.parent / "samples-only"
+    _w(samples / "one/CMakeLists.txt", "cmake_minimum_required(VERSION 3.16)\nproject(One CXX)\n")
+    _w(samples / "two/CMakeLists.txt", "cmake_minimum_required(VERSION 3.16)\nproject(Two CXX)\n")
+    sids = [o.id for o in dt.detect(samples).ops]
+    assert sorted(sids) == ["cmake_one.build", "cmake_one.configure", "cmake_two.build", "cmake_two.configure"]
+    configure = next(o for o in plan.ops if o.id == "cmake.configure")
+    assert "{target}/cmake-build" in configure.argv and "UPLIB_WITH_EXTRAS" in configure.summary
+
+
+def test_an_overlay_leaves_the_checkout_untouched_and_abp_drives_it(upstream, tmp_path, monkeypatch):
+    import shutil
+
+    from abp_modkit import cli
+    from bot.config import config
+    from bot.modules import harness, registry
+    overlays = tmp_path / "overlays"
+    res = ad.adopt(upstream, mid="uplib", overlay=overlays / "uplib", record_checkout=True)
+    assert res["overlay"] == str((overlays / "uplib").resolve())
+    assert _git(upstream, "status", "--porcelain") == ""                 # nothing written into the checkout
+    man = (overlays / "uplib" / "abp-module.toml").read_text(encoding="utf-8")
+    assert '"{overlay}/abp-ops.toml"' in man and '"CMakeLists.txt"' in man
+    assert f'dir = "{str(upstream.resolve()).replace(chr(92), "/")}"' in man
+    assert cli.check(overlays / "uplib", verbose=False, project=upstream)["ok"]
+    # ABP finds it through modules.overlay_dirs and runs its operations against the checkout
+    cfg_file = tmp_path / "backends.yaml"
+    shutil.copy(config.path, cfg_file)
+    monkeypatch.setattr(config, "path", cfg_file)
+    monkeypatch.setattr(config, "_data", dict(config._data))
+    config.reload(actor="test")
+    config.set_value(("modules", "overlay_dirs"), [str(overlays)], actor="test")
+    monkeypatch.setattr(registry, "data_dir", lambda m: tmp_path / "data" / m.id)
+    registry.modules(refresh=True)
+    try:
+        m = registry.get("uplib")
+        assert m.overlay == str((overlays / "uplib").resolve()) and m.public()["overlay"]
+        assert registry.install_dir(m) == upstream.resolve()
+        assert registry.placeholders(m)["overlay"] == m.overlay
+        assert harness.start_hub("uplib")["running"]
+        out = harness.call("uplib", "script.stats", {"args": ["--n", "7"]})
+        assert out["exit_code"] == 0 and "stats 7" in out["output"]
+        assert _git(upstream, "status", "--porcelain") == ""
+    finally:
+        try:
+            harness.stop_hub("uplib")
+        except Exception:  # noqa: BLE001
+            pass
+        monkeypatch.undo()
+        registry.modules(refresh=True)

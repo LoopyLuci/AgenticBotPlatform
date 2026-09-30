@@ -4,7 +4,8 @@ Version 1. Every section but [module] is optional: a module with only [module] a
 updated and shown; each further section turns on more (build, hub, MCP, windows, pipeline).
 
     [module]    id, name, repo, branch, api, area, description, adapter
-    [checkout]  marker (paths that must exist to call a folder this module's checkout), subdir (the workspace)
+    [checkout]  marker (paths that must exist to call a folder this module's checkout), subdir (the workspace),
+                dir (where the checkout is, for an overlay made for one particular clone)
     [toolchain] require = [{tool, min, url}]
     [build]     steps (commands run in the workspace), outputs (paths that exist once built), env
     [hub]       start, control_file, api_base, health, operations, call, stop, start_timeout_s
@@ -21,7 +22,12 @@ Commands and paths may use these placeholders:
     {repo} the checkout, {ws} the workspace (repo/subdir), {exe} ".exe" on Windows, {target} the cargo target dir,
     {data} the module's data folder under ABP, {home} the user's home, {localappdata} LocalAppData (Windows) or the
     XDG data dir, {venv_python} the python of the checkout's own .venv, {abp_python} the python ABP runs on and
-    {abp_root} ABP's folder (so a module can use abp_modkit, which ships with ABP: `python -m abp_modkit adopt`).
+    {abp_root} ABP's folder (so a module can use abp_modkit, which ships with ABP: `python -m abp_modkit adopt`),
+    {overlay} the folder holding this manifest when it is an overlay (see below), else the checkout.
+
+An overlay is a manifest (and its abp-ops.toml) kept on ABP's side instead of in the repo, so a third-party repo
+becomes a module with its checkout left exactly as upstream has it: ABP ships some in catalog/<id>/, and users make
+more in data/module-overlays/<id>/ (`python -m abp_modkit adopt <checkout> --overlay <folder>`, or the Module Hub).
 """
 from __future__ import annotations
 
@@ -37,7 +43,8 @@ API_VERSION = 1
 MANIFEST_FILE = "abp-module.toml"
 _ID_RE = re.compile(r"^[a-z][a-z0-9-]{1,40}$")
 _PLACEHOLDER_RE = re.compile(r"\{([a-z_]+)\}")
-PLACEHOLDERS = {"repo", "ws", "exe", "target", "data", "home", "localappdata", "venv_python", "abp_python", "abp_root"}
+PLACEHOLDERS = {"repo", "ws", "exe", "target", "data", "home", "localappdata", "venv_python", "abp_python", "abp_root",
+                "overlay"}
 OS_NAMES = {"windows", "linux", "macos"}
 
 
@@ -94,6 +101,8 @@ class Manifest:
     host_needs: list[str] = field(default_factory=list)
     pipeline: list[str] = field(default_factory=list)
     source: str = "builtin"                # "builtin", or the path of the repo's abp-module.toml
+    checkout_dir: str = ""                 # [checkout] dir: where its checkout is (an overlay made for one clone)
+    overlay: str = ""                      # the overlay folder holding this manifest (set by the registry), or ""
 
     def public(self) -> dict[str, Any]:
         """What the dashboard and the agent see."""
@@ -104,6 +113,7 @@ class Manifest:
             "has_mcp": bool(self.mcp_stdio), "has_gui": bool(self.gui), "has_tui": bool(self.tui),
             "has_pipeline": bool(self.pipeline), "panel": self.panel, "has_web": bool(self.web),
             "has_provider": bool(self.openai), "uses_abp": self.abp_connect, "host": {"os": self.host_os, "needs": self.host_needs},
+            "overlay": self.overlay or None,
             "requires": [r.__dict__ for r in self.requires],
         }
 
@@ -146,6 +156,7 @@ def parse(data: dict, source: str = "builtin") -> Manifest:
     m.subdir = str(co.get("subdir") or "")
     if ".." in Path(m.subdir).parts or Path(m.subdir).is_absolute():
         raise ManifestError("checkout.subdir must be a relative path inside the repo")
+    m.checkout_dir = str(co.get("dir") or "")
 
     for r in (data.get("toolchain") or {}).get("require") or []:
         if not isinstance(r, dict) or not r.get("tool"):

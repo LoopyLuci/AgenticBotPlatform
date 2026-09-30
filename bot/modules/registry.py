@@ -133,6 +133,38 @@ def _project_manifests(taken: set[str]) -> tuple[list[Manifest], dict[str, str]]
     return out, errors
 
 
+def overlay_roots() -> list[Path]:
+    """Where overlays live: the ones ABP ships (catalog/), the ones users made (data/module-overlays/), and any folders
+    listed in modules.overlay_dirs."""
+    return [abp_root() / "catalog", user_overlay_root(),
+            *(Path(str(p)).expanduser() for p in (_cfg().get("overlay_dirs") or []))]
+
+
+def user_overlay_root() -> Path:
+    return abp_root() / "data" / "module-overlays"
+
+
+def _overlay_manifests(taken: set[str]) -> tuple[list[Manifest], dict[str, str]]:
+    """Overlays: a module's files kept on ABP's side, its checkout left exactly as upstream has it."""
+    out, errors = [], {}
+    for root in overlay_roots():
+        if not root.is_dir():
+            continue
+        for d in sorted(p for p in root.iterdir() if (p / mf.MANIFEST_FILE).is_file()):
+            try:
+                m = mf.load(d / mf.MANIFEST_FILE)
+            except ManifestError as e:
+                errors[f"overlay:{d.name}"] = str(e)
+                continue
+            if m.id in taken:
+                errors[m.id] = f"{d}: id {m.id!r} is already used by another module"
+                continue
+            m.overlay = str(d)
+            taken.add(m.id)
+            out.append(m)
+    return out, errors
+
+
 def _builtin_manifests() -> list[Manifest]:
     out = [mf.parse(d) for d in BUILTIN]
     from bot.octopus import connectors   # the Octopus estate's connectors, one repo each
@@ -168,6 +200,8 @@ def install_dir(m: Manifest) -> Path:
             return Path(str(candidate)).expanduser()
     if m.id in _project_dirs:
         return _project_dirs[m.id]
+    if m.checkout_dir:
+        return Path(m.checkout_dir).expanduser()
     sibling = abp_root().parent / m.name
     if is_checkout(m, sibling):
         return sibling
@@ -199,7 +233,8 @@ def placeholders(m: Manifest) -> dict[str, str]:
     venv = repo / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     return {"repo": str(repo), "ws": str(ws), "exe": ".exe" if os.name == "nt" else "", "target": str(target_dir(m)),
             "data": str(data_dir(m)), "home": str(Path.home()), "localappdata": str(mf.localappdata()),
-            "venv_python": str(venv), "abp_python": sys.executable, "abp_root": str(abp_root())}
+            "venv_python": str(venv), "abp_python": sys.executable, "abp_root": str(abp_root()),
+            "overlay": m.overlay or str(repo)}
 
 
 def expand(m: Manifest, value: str) -> str:
@@ -232,6 +267,11 @@ def _load() -> tuple[dict[str, Manifest], dict[str, str]]:
         if _mod_cfg(m.id).get("enabled", True) is False:
             continue
         mods[m.id] = m
+    overlays, oerrors = _overlay_manifests(set(mods))
+    errors.update(oerrors)
+    for m in overlays:
+        if _mod_cfg(m.id).get("enabled", True) is not False:
+            mods[m.id] = m
     projects, perrors = _project_manifests(set(mods))
     errors.update(perrors)
     for m in projects:

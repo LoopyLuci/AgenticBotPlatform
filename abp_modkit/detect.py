@@ -110,7 +110,8 @@ def _units(root: Path, max_depth: int = 3) -> list[tuple[str, Path]]:
     markers = {"Cargo.toml": "rust", "package.json": "node", "pyproject.toml": "python", "setup.py": "python",
                "requirements.txt": "python", "go.mod": "go", "wrangler.toml": "worker", "wrangler.jsonc": "worker",
                "build.gradle.kts": "gradle", "build.gradle": "gradle", "flake.nix": "nix", "Makefile": "make",
-               "docker-compose.yml": "compose", "compose.yaml": "compose", "mix.exs": "elixir"}
+               "docker-compose.yml": "compose", "compose.yaml": "compose", "mix.exs": "elixir",
+               "CMakeLists.txt": "cmake"}
 
     def walk(d: Path, depth: int) -> None:
         try:
@@ -568,6 +569,39 @@ def detect_gradle(plan: Plan, d: Path) -> None:
     plan.need("java", "https://adoptium.net", "17")
 
 
+def detect_cmake(plan: Plan, d: Path) -> None:
+    """A CMake project (C, C++, CUDA...): configure, build, test (CTest), install, and its options. The build goes to
+    ABP's build folder for the module ({target}), never into the checkout."""
+    rel = _rel(plan.root, d)
+    text = _read(d / "CMakeLists.txt")
+    group = "cmake" if rel == "." else "cmake_" + re.sub(r"[^a-z0-9_]+", "_", d.name.lower())
+    src = "{project}" + ("" if rel == "." else f"/{rel}")
+    bdir = "{target}/cmake-build" + ("" if rel == "." else "-" + re.sub(r"[^a-z0-9_]+", "_", d.name.lower()))
+    declared = re.search(r"^\s*project\s*\(\s*([\w.+-]+)", text, re.I | re.M)
+    if not declared and rel != ".":
+        return          # no project(): a part of a bigger build (an OpenCV contrib module), not a project of its own
+    name = declared[1] if declared else d.name
+    options = re.findall(r'^\s*(?:option|ocv_option)\s*\(\s*([A-Z][A-Z0-9_]+)\s+"([^"]*)"', text, re.M)
+    hint = (" Options (pass as -DNAME=ON/OFF): " + ", ".join(o for o, _ in options[:12])) if options else ""
+    nested = rel != "."                    # a sample or tool inside the repo: configure and build are enough
+    for op in (
+            Op(id=f"{group}.configure", kind="cmd", argv=["cmake", "-S", src, "-B", bdir, "-DCMAKE_BUILD_TYPE=Release"],
+               background=True, timeout_s=3600, extra_args=True, summary=f"Configure {name} with CMake.{hint}"[:400]),
+            Op(id=f"{group}.build", kind="cmd", argv=["cmake", "--build", bdir, "--config", "Release", "--parallel"],
+               background=True, timeout_s=14400, extra_args=True, summary=f"Build {name} (after configure)"),
+            Op(id=f"{group}.test", kind="cmd", argv=["ctest", "--test-dir", bdir, "-C", "Release", "--output-on-failure"],
+               background=True, timeout_s=14400, extra_args=True, mutating_flag=False, summary=f"Run {name}'s CTest tests"),
+            Op(id=f"{group}.install", kind="cmd", argv=["cmake", "--install", bdir, "--config", "Release", "--prefix",
+                                                        "{data}/install"], background=True, timeout_s=3600,
+               summary=f"Install {name} into the module's data folder"),
+            Op(id=f"{group}.options", kind="cmd", argv=["cmake", "-N", "-LH", bdir], timeout_s=120, mutating_flag=False,
+               summary=f"{name}'s build options and their current values (after configure)")):
+        if nested and not op.id.endswith((".configure", ".build")):
+            continue
+        plan.add_op(op)
+    plan.need("cmake", "https://cmake.org/download/", "3.16")
+
+
 def detect_nix(plan: Plan, d: Path) -> None:
     rel = _rel(plan.root, d)
     for t, s in (("build", "Build the flake's default package"), ("check", "Run the flake's checks"),
@@ -746,6 +780,10 @@ def detect(root: str | Path, mid: str = "", name: str = "") -> Plan:
                 detect_powershell(plan, d)
             elif kind == "elixir":
                 detect_elixir(plan, d)
+            elif kind == "cmake":
+                if any(c in d.parents for k2, c in units if k2 == "cmake" and c != d):
+                    continue                                   # part of an outer CMake project (a subdirectory)
+                detect_cmake(plan, d)
         except Exception as e:  # noqa: BLE001 - one odd sub-project must not stop the rest
             plan.notes.append(f"{kind}:{_rel(root, d)}: could not read it ({type(e).__name__}: {e})")
     if kinds.count("worker") > 12:

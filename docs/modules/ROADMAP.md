@@ -365,6 +365,58 @@ model and coding hub, whose Bot Platform view already drives ABP. User guide: `d
 | MK-D | Two-way integrations, each still its own program: Cognitive Companion, Kestrion, KotMoE; Alfred (the Octopus estate) as a runner connector | Live in both directions against the running ABP |
 | MK-E | GAImer on AMD: ROCm/HIP, Vulkan (ncnn), DirectML, CUDA, XPU, MPS, CPU behind one `src/accel.py` | Its tests on the 7900 XTX with ROCm |
 
+### 5.10 The Module Management Hub: any GitHub repo as a module (added 2026-09-30)
+
+Third-party repos (OpenCV's, anyone's) become modules without forking them or committing into them: an **overlay**
+holds their `abp-module.toml` + `abp-ops.toml` on ABP's side, and the checkout stays exactly upstream.
+
+| Phase | Delivers | Gate |
+|---|---|---|
+| MH-A | Overlay modules: `abp_modkit adopt --overlay DIR`; ABP reads overlays shipped in `catalog/<id>/` and made by users in `data/module-overlays/<id>/`; the hub runs the overlay's ops against the checkout | An overlay module passes `abp_modkit check` with a pristine `git status` in its checkout |
+| MH-B | From a URL: `abp modules add <github url>` / `POST /api/modules/add` / the `module_add` tool: clone (shallow by default, to `modules.clone_root`), detect, write the overlay, check, register, as a job with progress; the Module Hub page (URL, what was detected, the operations, build and test, register) | A repo nobody prepared becomes a working module in one step, from the page and from an agent |
+| MH-C | Updates: fetch upstream, re-detect, keep hand edits, show what changed in the operations | A refresh after an upstream change loses nothing hand-made |
+| MH-D | Assisted setup through GEN (§5.12): descriptions and curated summaries from the README and code, typed inputs for the most used operations, a generated panel for the module, previewed before it is kept | The Hub proposes, the user picks between variants, nothing is kept unseen |
+| MH-E | Sharing: overlays published to a catalog repo; installing a catalog entry clones upstream and applies its overlay | Another machine installs an overlay module from the catalog |
+
+### 5.11 Computer vision for every agent (added 2026-09-30)
+
+OpenCV's 14 repos are modules (overlays, MH-A), and vision is built into ABP itself (`bot/vision`), so any agent,
+the dashboard, the CLI and MCP clients have it without a module running.
+
+| Phase | Delivers | Gate |
+|---|---|---|
+| CV-A | The OpenCV family as overlay modules, checkouts in `E:/Projects/OpenCV` (opencv, opencv_contrib, opencv_extra and opencv_3rdparty shallow): build, tests, samples, benchmarks, model-zoo operations | Each passes `abp_modkit check`; upstream checkouts untouched |
+| CV-B | `bot/vision`: images from files, URLs, the screen and cameras; the operations (resize, crop, convert, blur, edges, contours, threshold, histogram, template and feature matching, image diff); the model zoo (downloaded on demand, verified): faces (YuNet + SFace), objects (YOLOX / NanoDet), text (PP-OCR detection + recognition), QR codes, classification, segmentation, pose, tracking | Real models on real images in tests; results match the zoo's own demos |
+| CV-C | Agents: `vision_*` tools for ABP's agents, ABP's MCP server, `abp vision ...`, and the Vision page (upload / screen / camera, run a pipeline, see the overlays) | An agent answers a question about a screenshot with a vision tool call |
+| CV-D | The screen: find text and UI elements on screen (OCR + template/feature matching) for computer use; visual regression for GEN previews (a before/after image diff) | GEN's preview reports what visibly changed |
+| CV-E | Benchmarks: cvbenchmark, opencv_benchmarks and the zoo's benchmark, per device (CPU, OpenCL, Vulkan, CUDA); COOL-Benchmark on cloud machines through a multi-cloud layer (AWS, GCP, Azure, Oracle, Hetzner, DigitalOcean, Vultr, Akamai/Linode, OVHcloud, Scaleway): create, benchmark, collect, destroy, with the owner's own keys and a spending cap | One benchmark result from this PC and one from a cloud machine |
+| CV-F | OpenCV built from source with contrib and the accelerators this machine has (OpenCL / Vulkan on the 7900 XTX; CUDA where present), its Python bindings built with opencv-python's builder | ABP's vision runs on the built OpenCV and is faster than the wheel on a zoo benchmark |
+| CV-G | The rest: onnx-conformance-proxy scores OpenCV DNN's ONNX coverage; bpc (bin picking) and open_vision_capsules as pipelines; the Jetson and iOS samples as reference modules (no runtime on this PC) | Each has operations that run, or says honestly why it can't here |
+
+### 5.12 Generative code and GUI with real-time preview (added 2026-09-30)
+
+Builds on `bot/ui_customize.py` (describe a change, a live preview and diff, apply on approval, one-click revert).
+
+| Phase | Delivers | Gate |
+|---|---|---|
+| GEN-0 | Layer 0, by hand: the Studio page. A live preview of any page or component, served from a sandbox copy of ABP's UI (a git worktree) that reloads as files change; variants (A/B/C...) switched instantly; a component gallery (buttons, chat interfaces, panels, settings) with property and theme editors; backend changes previewed on a second ABP server started from the sandbox; apply = a commit, revert = one click | A change is seen live, compared across variants, applied and reverted without restarting ABP |
+| GEN-2 | Layer 2, models: local and API models (through ABP's router) produce several variants of a code or UI change; each is validated (syntax, tests in the sandbox, a visual diff through CV-D) before it is shown. Everything is logged: request, context, variants, validation, what the user kept and why | Accepted and rejected variants are in the log with their reasons |
+| GEN-D | Data: the log becomes datasets (instruction to diff, preference pairs) and Knowledge Modules automatically, for GEN-1 and the AM models | A dataset and a Knowledge Module built from real sessions |
+| GEN-1 | Layer 1, ABP's own models (built with KotMoE / BrainBuilder, trained on GEN-D): UI intent to component, layout and theme suggestions, ranking variants before they are shown, small code edits | Ranks the variant users keep first more often than chance, measured on held-out sessions |
+| GEN-3 | Every applied change goes through the pipeline in the sandbox first | A change that breaks a test is stopped before it reaches the running ABP |
+
+### 5.13 ABP's own models (added 2026-09-30)
+
+Small, specific models for ABP's own decisions, each with a heuristic fallback, trained on data ABP already logs,
+evaluated offline, run in shadow, promoted only when they beat what they replace.
+
+| Phase | Delivers | Gate |
+|---|---|---|
+| AM-A | An audit of what KotMoE and BrainBuilder can really train and serve today (KotMoE's API answered with templated text in the 2026-09-30 test), and what each model below needs from them | A written finding per engine |
+| AM-B | The designs: request routing (backend/model per request), intent and slash-command classification, tool-call success prediction, log anomaly and crash prediction (Sentinel), cache prefetch (CacheIt), repo-to-stack detection (MH), screen-element detection (CV-D), UI generation ranking (GEN-1): inputs, labels, model family, size, latency budget, evaluation | One page per model |
+| AM-C | The shared pipeline: dataset export from ABP's logs, training on KotMoE / BrainBuilder, evaluation gate, shadow run, promotion, rollback | One model through the whole loop |
+| AM-D | The models, one at a time, ordered by the value of the decision they make | Each beats its heuristic in shadow before it is promoted |
+
 ## 5a. ABP Cluster: paired machines as one computer (inside ABP, `bot/cluster/`)
 
 Asked for on 2026-09-29. Paired devices share resources and act as nodes in a cluster that can run any kind of
