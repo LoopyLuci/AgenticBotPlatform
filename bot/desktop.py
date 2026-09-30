@@ -45,12 +45,20 @@ def _require_appdata() -> str:
     return appdata
 
 
+def _claude_dir() -> Path:
+    """Claude Desktop's own folder: %APPDATA%\\Claude on Windows, ~/Library/Application Support/Claude on macOS.
+    Raises (see _require_appdata) where Claude Desktop does not exist."""
+    if platform.system() == "Darwin":
+        return Path.home() / "Library" / "Application Support" / "Claude"
+    return Path(_require_appdata()) / "Claude"
+
+
 def _mcp_config_path() -> Path:
-    return Path(_require_appdata()) / "Claude" / "claude_desktop_config.json"
+    return _claude_dir() / "claude_desktop_config.json"
 
 
 def _mcp_log_dir() -> Path:
-    return Path(_require_appdata()) / "Claude" / "logs"
+    return _claude_dir() / "logs"
 
 
 def _find_msix_claude_exe() -> Optional[str]:
@@ -247,7 +255,10 @@ def restart() -> bool:
 # --------------------------------------------------------- MCP servers ----
 
 def load_mcp_config() -> dict[str, Any]:
-    path = _mcp_config_path()
+    try:
+        path = _mcp_config_path()
+    except RuntimeError:   # no Claude Desktop on this platform (Linux): it has no MCP servers to list; writes still raise
+        return {"mcpServers": {}, "mcpServers_disabled": {}}
     if not path.exists():
         return {"mcpServers": {}, "mcpServers_disabled": {}}
     with open(path, "r", encoding="utf-8") as f:
