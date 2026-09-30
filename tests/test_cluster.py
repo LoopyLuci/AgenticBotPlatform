@@ -181,7 +181,9 @@ def test_a_gang_gets_rank_world_size_and_a_master(cluster):
     assert g["state"] == "running" and len(g["members"]) == 1
     p = asyncio.run(scheduler.wait(g["members"][0], 30, 0.1))
     assert p["state"] == "done"
-    assert "0 1 29" in executor.logs(p["run_id"])["text"]
+    import re
+    port = re.search(r"^0 1 (\d+)$", executor.logs(p["run_id"])["text"], re.M)
+    assert port and 29500 <= int(port.group(1)) < 30500             # the group's master port, 29500 + crc32 % 1000
     with pytest.raises(ScheduleError, match="2 nodes are needed"):
         asyncio.run(scheduler.submit_group({"kind": "python", "spec": {"code": "1"}, "replicas": 2}))
 
