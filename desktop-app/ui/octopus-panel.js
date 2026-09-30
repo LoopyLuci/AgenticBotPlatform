@@ -67,10 +67,22 @@ ${s.status.build && (s.status.build.commit || s.status.build.sha || s.status.bui
   }
 
   // ---- Router --------------------------------------------------------------------------------------------------
+  async function routerAppCard() {
+    const a = await api('/api/octopus/router-app').catch(() => null);
+    if (!a) return '';
+    const job = a.job || {};
+    const chipState = a.running ? chip(`running on :${a.port}`, 'on') : a.installed ? chip('installed, stopped', 'warn') : chip('not installed');
+    return `<div class="ocp-card" style="margin-bottom:10px"><div class="ocp-row" style="justify-content:space-between"><h3>Run the Router on this machine</h3>${chipState}</div>
+<div class="ocp-muted">ABP clones the latest octopus-router (its private repo; this machine's git sign-in must reach it), builds it, gives it fresh secrets and a scoped ABP key for its Bot Platform view, and points ABP's Router pane and provider at it. It stays its own program; an update never changes its secrets.${a.node ? ` Node ${E(a.node)}.` : ' Needs Node.js 22+.'}${a.commit ? ` <span class="ocp-mono">${E(a.commit)}</span>` : ''}</div>
+<div class="ocp-row">${a.installed ? `<button class="btn ghost" data-rapp="update">Update</button>${a.running ? '<button class="btn ghost" data-rapp="stop">Stop</button>' : '<button class="btn" data-rapp="start">Start</button>'}` : '<button class="btn" data-rapp="install">Install the Router here</button>'}</div>
+${job.state && job.state !== 'idle' ? `<div class="ocp-muted">${E(job.state)}${job.error ? ': ' + E(job.error) : ''}</div><pre class="ocp-mono" style="max-height:24vh;overflow:auto;white-space:pre-wrap">${E((job.log || []).join('\n'))}</pre>` : ''}</div>`;
+  }
+
   async function routerTab() {
+    const appCard = await routerAppCard();
     const r = st.router = await api('/api/octopus/router');
     const conn = !r.reachable ? chip('not reachable', 'bad', r.error) : !r.configured ? chip('no token yet', 'warn') : r.authorized ? chip(`signed in as ${r.owner}`, 'on') : chip('token refused', 'bad', r.error);
-    let body = `<div class="ocp-card"><div class="ocp-row" style="justify-content:space-between"><h3>octopus-router at <span class="ocp-mono">${E(r.url)}</span></h3>${conn}</div>
+    let body = appCard + `<div class="ocp-card"><div class="ocp-row" style="justify-content:space-between"><h3>octopus-router at <span class="ocp-mono">${E(r.url)}</span></h3>${conn}</div>
 <div class="ocp-muted">ABP talks to the Router with its owner token (kept in ABP's .env, never shown again). While it is set, the Router is also the model provider <b>octopus-router</b>: its routing aliases (auto, free, cheap, …) work anywhere ABP takes a model.</div>
 <form class="ocp-form" id="ocp-rt-form"><div class="ocp-row"><label style="flex:1">Router URL<input id="ocp-rt-url" value="${E(r.url)}"></label>
 <label style="flex:1">Owner token (ROUTER_OWNER_TOKEN)<input id="ocp-rt-token" type="password" autocomplete="off" placeholder="${r.configured ? 'set; paste to replace' : 'paste it here'}"></label></div>
@@ -132,6 +144,14 @@ ${s.signed_in ? `<div class="ocp-muted">Session ends ${E(exp)}${s.role ? ` · ro
         toast('Saved'); render();
       } catch (err) { toast(errText(err), 'error'); }
     });
+    document.querySelectorAll('#ocp-root [data-rapp]').forEach((b) => b.addEventListener('click', async () => {
+      b.disabled = true;
+      try {
+        await send('/api/octopus/router-app/' + b.dataset.rapp, {});
+        const poll = async () => { const s = await api('/api/octopus/router-app'); if (s.job && s.job.state === 'running') { setTimeout(poll, 3000); } render(); };
+        poll();
+      } catch (err) { toast(errText(err), 'error'); b.disabled = false; }
+    }));
     on('ocp-rt-clear', 'click', async () => { await send('/api/octopus/router/token', { token: '' }, 'PUT'); render(); });
     on('ocp-chat-new', 'click', () => { st.chat = []; render(); });
     on('ocp-chat-form', 'submit', async (e) => {

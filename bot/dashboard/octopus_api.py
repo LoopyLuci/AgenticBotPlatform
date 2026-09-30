@@ -78,6 +78,26 @@ def register(app: FastAPI, require_desktop: Callable) -> None:
         except sso.SsoError as e:
             raise HTTPException(status_code=e.status, detail=str(e)) from e
 
+    # ---- running the Router itself on this machine (bot/octopus/router_app.py)
+    @app.get("/api/octopus/router-app", dependencies=dep)
+    async def octopus_router_app():
+        from bot.octopus import router_app
+        return await asyncio.to_thread(router_app.status)
+
+    @app.post("/api/octopus/router-app/{action}", dependencies=dep)
+    async def octopus_router_app_action(action: str):
+        from bot.octopus import router_app
+        fns = {"install": lambda: router_app.install(False), "update": lambda: router_app.install(True),
+               "start": router_app.start, "stop": router_app.stop}
+        if action not in fns:
+            raise HTTPException(status_code=404, detail=f"no action {action!r}")
+        try:
+            out = await asyncio.to_thread(fns[action])
+        except RuntimeError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
+        db.log_audit(actor="dashboard", action=f"octopus_router_app_{action}", detail=str(out.get("dir")))
+        return out
+
     # ---- router
     @app.get("/api/octopus/router", dependencies=dep)
     async def octopus_router_status():

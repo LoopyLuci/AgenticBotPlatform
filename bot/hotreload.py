@@ -148,6 +148,8 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.modules.tools", "bot.modules.conformance", "bot.dashboard.modules_api",
     # Integration keys: the gate middleware is registered once at startup.
     "bot.integrations", "bot.dashboard.integrations_api",
+    # The Router app: its install job and process handle live in module state.
+    "bot.octopus.router_app",
     # Octopus: routes are registered once at startup.
     "bot.dashboard.octopus_api",
     # Cluster: offer.py holds the budget's reservations, executor.py the running jobs, store.py its connection,
