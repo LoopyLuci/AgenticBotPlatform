@@ -157,3 +157,23 @@ def test_the_committed_config_ships_not_the_builders_live_settings(project):
 
 def test_outside_git_the_config_file_is_staged_as_it_is(project):
     assert (_stage(project) / "config" / "backends.yaml").read_text(encoding="utf-8") == "default_backend: cli\n"
+
+
+def test_every_package_the_server_imports_is_in_the_bundle():
+    """bot/ imports sibling packages (abp_cicd, abp_toolkit, abp_modkit...). One that is not staged and listed in the
+    bundle's resources works from a checkout and fails in the installed app (abp_modkit did: adopting a project
+    answered "No module named 'abp_modkit'")."""
+    import json
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    used = set()
+    for f in (root / "bot").rglob("*.py"):
+        used |= set(re.findall(r"^\s*(?:from|import)\s+(abp_[a-z_]+)", f.read_text(encoding="utf-8", errors="ignore"), re.M))
+    used = {p for p in used if (root / p / "__init__.py").is_file()}
+    assert "abp_modkit" in used and "abp_cicd" in used
+    stage = (root / "scripts" / "stage_bundle.py").read_text(encoding="utf-8")
+    resources = json.loads((root / "desktop-app" / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))["bundle"]["resources"]
+    for pkg in sorted(used):
+        assert f'"{pkg}"' in stage, f"{pkg} is imported by bot/ but scripts/stage_bundle.py does not stage it"
+        assert resources.get(f"stage/{pkg}") == pkg, f"{pkg} is not in tauri.conf.json's bundle resources"

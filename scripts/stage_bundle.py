@@ -140,8 +140,9 @@ def stage(stage_dir: Path = STAGE, markers: list[str] | None = None) -> None:
         shutil.copytree(ROOT / "abp_cicd", stage_dir / "abp_cicd", ignore=_bot_ignore)
     # Editors (the VS Code extension, Zed and other ACP clients) start `python -m abp_acp` in
     # the installed folder; it runs turns through abp_run, and its scripted test mode uses
-    # abp_agenteval's replay transport. The agent's toolkit_* tools come from abp_toolkit.
-    for pkg in ("abp_run", "abp_acp", "abp_agenteval", "abp_toolkit"):
+    # abp_agenteval's replay transport. The agent's toolkit_* tools come from abp_toolkit. abp_modkit is what makes
+    # a project a module (the adopt routes import it, and adopted modules' hubs run `python -m abp_modkit`).
+    for pkg in ("abp_run", "abp_acp", "abp_agenteval", "abp_toolkit", "abp_modkit"):
         if (ROOT / pkg).is_dir():
             shutil.copytree(ROOT / pkg, stage_dir / pkg, ignore=_bot_ignore)
     # bot/ssh_toolkit.py shells out to this submodule's own bin/ssh-toolkit.ps1 for

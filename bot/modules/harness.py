@@ -366,7 +366,11 @@ def hub_state(m: Manifest) -> dict:
 
 def _modkit_env() -> dict:
     """abp_modkit ships inside ABP: a module whose hub is `{abp_python} -m abp_modkit` finds it on PYTHONPATH."""
-    root = str(registry.abp_root())
+    try:
+        import abp_modkit
+        root = str(Path(abp_modkit.__file__).resolve().parent.parent)      # where it really is (the app's bundle)
+    except ImportError:
+        root = str(registry.abp_root())
     cur = os.environ.get("PYTHONPATH", "")
     return {"PYTHONPATH": os.pathsep.join([root, cur]) if cur else root}
 
