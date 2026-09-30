@@ -28,6 +28,11 @@ in
     };
     user = mkOption { type = types.str; default = "abp"; description = "User the service runs as."; };
     group = mkOption { type = types.str; default = "abp"; description = "Group the service runs as."; };
+    createUser = mkOption {
+      type = types.bool;
+      default = true;
+      description = "Create `user` and `group` as a system account. Turn off to run as an account defined elsewhere.";
+    };
     dataDir = mkOption {
       type = types.path;
       default = "/var/lib/abp";
@@ -50,10 +55,10 @@ in
   };
 
   config = mkIf cfg.enable {
-    users.users = lib.optionalAttrs (cfg.user == "abp") {
-      abp = { isSystemUser = true; group = cfg.group; home = cfg.dataDir; description = "Agentic Bot Platform"; };
+    users.users = lib.optionalAttrs cfg.createUser {
+      ${cfg.user} = { isSystemUser = true; group = cfg.group; home = cfg.dataDir; description = "Agentic Bot Platform"; };
     };
-    users.groups = lib.optionalAttrs (cfg.group == "abp") { abp = { }; };
+    users.groups = lib.optionalAttrs cfg.createUser { ${cfg.group} = { }; };
 
     systemd.tmpfiles.rules = [ "d ${cfg.dataDir} 0750 ${cfg.user} ${cfg.group} - -" ];
 
