@@ -156,6 +156,10 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.dashboard.octopus_api",
     # Kestrion: routes are registered once at startup.
     "bot.dashboard.kestrion_api",
+    # Vision: routes register once, tools.py registers at import time, pipelines.py caches loaded models, zoo.py and
+    # dnn.py hold locks and the device fallbacks.
+    "bot.dashboard.vision_api", "bot.vision.tools", "bot.vision.pipelines", "bot.vision.zoo", "bot.vision.dnn",
+    "bot.vision.service", "bot.vision.images", "bot.vision.ops",
     # Cluster: offer.py holds the budget's reservations, executor.py the running jobs, store.py its connection,
     # membership.py the peers' reports; tools.py registers at import time.
     "bot.cluster.inventory", "bot.cluster.offer", "bot.cluster.store", "bot.cluster.executor", "bot.cluster.membership",

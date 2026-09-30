@@ -1217,3 +1217,33 @@ async def infra_rules(action: str, body: Optional[dict] = None) -> Any:
     if action == "history":
         return await _request("GET", f"/api/infra/rules/{b.get('id')}/history")
     return await _request("POST", f"/api/infra/rules/{b.get('id')}/{action}", json=b)
+
+
+@mcp.tool()
+async def vision_analyze(image: str, tasks: Optional[list] = None, min_score: float = 0.4) -> Any:
+    """Computer vision on ABP's machine (OpenCV + its model zoo): what is in an image. image: a file path, an http(s)
+    URL, a data: URL, or "screen" / "screen:<n>". tasks (any of): objects, faces, text, codes, people, colors, shapes,
+    info (default: info, objects, faces, text, codes). On a screenshot items also have screen_center (where to click)."""
+    return await _request("POST", "/api/vision/analyze", timeout=300.0,
+                          json={"image": image, "tasks": tasks, "min_score": min_score})
+
+
+@mcp.tool()
+async def vision_find(text: str = "", template: str = "", image: str = "screen") -> Any:
+    """Where a piece of text (OCR) or a smaller image (template) is, on the screen (default) or an image: boxes,
+    centers and, on the screen, screen_center to click."""
+    return await _request("POST", "/api/vision/find", timeout=300.0,
+                          json={"image": image, "text": text, "template": template or None})
+
+
+@mcp.tool()
+async def vision_compare(before: str, after: str) -> Any:
+    """What changed between two images (similarity, changed share, changed regions, an outlined picture)."""
+    return await _request("POST", "/api/vision/compare", timeout=300.0, json={"before": before, "after": after})
+
+
+@mcp.tool()
+async def vision_edit(image: str, steps: list) -> Any:
+    """Edit an image and save the result: steps like [{"op": "resize", "width": 800}, {"op": "gray"}]; ops: resize,
+    crop, rotate, flip, gray, blur, sharpen, edges, threshold, invert, brightness, denoise."""
+    return await _request("POST", "/api/vision/edit", timeout=300.0, json={"image": image, "steps": steps})

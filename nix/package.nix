@@ -34,6 +34,7 @@ let
     python-telegram-bot anthropic pyyaml psutil fastapi uvicorn uvloop httptools python-dotenv watchfiles mcp httpx
     httpx2 discordpy slack-bolt websockets python-multipart qrcode pypng pillow pyjwt cryptography numpy matrix-nio
     textual ruamel-yaml jsonschema zeroconf tzdata setuptools tkinter
+    opencv4   # bot/vision: nixpkgs' OpenCV with contrib and its Python bindings (pip: opencv-contrib-python-headless)
   ]);
 
   # Only what ABP runs: no tests, no other platforms' apps, no build output or local state.

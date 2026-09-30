@@ -3,8 +3,8 @@
     GET    /api/kestrion                                  the link and whether Kestrion answers
     POST   /api/kestrion/link   {base_url, device_token?, agent_type?, label?}
            Kestrion calls this itself (with its "kestrion" integration key) when its owner lets ABP use it as a
-           backend, and again on every start, because its session API's port changes. The token is stored in .env and
-           never returned.
+           backend, and again on every start (its session API keeps its port across restarts since Kestrion
+           65cbaa57, but it may move when that port is taken). The token is stored in .env and never returned.
     DELETE /api/kestrion/link                             forget it
     GET    /api/kestrion/sessions | /models | /sessions/{agent_type}/messages | /sessions/{agent_type}/permissions
     POST   /api/kestrion/ask    {prompt, agent_type?}     one turn through the "kestrion" backend

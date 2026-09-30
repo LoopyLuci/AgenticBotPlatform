@@ -1057,7 +1057,9 @@ numpy==2.4.6 ; python_full_version < '3.12' \
     --hash=sha256:f3a3570c4a2a16746ac2c31a7c7c7b0c186b95ce902e33db6f28094ed7387dda \
     --hash=sha256:f407cb6b8e9d6d8c626bc73c945db1706035af8fd632295547bf1c9e46d092d6 \
     --hash=sha256:f74a575920ab21fe304421a3fc28793d82e299cae9eccb37084e9fc7f3617c20
-    # via -r requirements.txt
+    # via
+    #   -r requirements.txt
+    #   opencv-contrib-python-headless
 numpy==2.5.3 ; python_full_version >= '3.12' \
     --hash=sha256:012e66aca395d795496446e52aeeb5866312a5d4d3f27da270e5a0b43f70dc5c \
     --hash=sha256:09d5a423c71ad5feb5625844ad58050e35df43871004b52ac9c0ad44a56775be \
@@ -1125,6 +1127,19 @@ numpy==2.5.3 ; python_full_version >= '3.12' \
     --hash=sha256:f9a2353b37a1a9e78fd82b27ad7e2a32a2d036604d18f02b05e3136c62ca3b09 \
     --hash=sha256:fc36dc566135b5eceec4cf89758fcb719266a019ef07dae1754ae7c9f617ef3e \
     --hash=sha256:ffdc76bfcae6b255dff75202c5e7feaf95b40246bc0a17944facc1fecf9f79ab
+    # via
+    #   -r requirements.txt
+    #   opencv-contrib-python-headless
+opencv-contrib-python-headless==5.0.0.93 \
+    --hash=sha256:01331ae1a65a21d81310b5584900f73c3012ab4bdcf6aa26085c1870eea45da8 \
+    --hash=sha256:2ff190c4ebfa2839bdcaff1810061bc82f9ce5cf37e28953fb57fa5ed519b9d1 \
+    --hash=sha256:63ddadd47e36fbc903d5ac141d5c90bd305a8044188dd4936a73de80007c9e6c \
+    --hash=sha256:68eb7b803f68998552a83b5f3c69bfb1c7d6c114dc30f828657bddc7ca68573a \
+    --hash=sha256:6a8c34de905f59b038f6ab0475e73fb0a0f345c3582ec3aeaeb1c0912e80cddb \
+    --hash=sha256:72605e3ae78f66592705b1abe62e60f57dd9050787fdd99711b85a02760d5259 \
+    --hash=sha256:bf1e2b3c502b4fbe7b06e307bd15c4e7bea7da8895de19c189db01d53062f997 \
+    --hash=sha256:c035e12b6078b3351ad577e90a4ff4ead74155fa5470eb8df8f5b54a8ce7727f \
+    --hash=sha256:ca47e569680df6eb7317b54f463bc766832d3d87854988168673bb0c52d6d9d4
     # via -r requirements.txt
 opentelemetry-api==1.45.0 \
     --hash=sha256:711ede81773c8025c2c03dac0450bc89f3d30aea6eabcc815c570d4e35a963f7 \

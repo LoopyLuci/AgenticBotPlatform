@@ -886,6 +886,14 @@ def build_app() -> FastAPI:
 
     kestrion_api.register(app, _require_token)
 
+    # Computer vision on this machine (/api/vision): OpenCV and its model zoo (bot/vision).
+    try:
+        from bot.dashboard import vision_api
+
+        vision_api.register(app, _require_token)
+    except ImportError as exc:  # pragma: no cover - OpenCV is in requirements.txt
+        logger.warning("vision API is off: %s", exc)
+
     # Browser-extension bridge (/api/browser/*): pairing, the extension WebSocket, policy, RPC.
     from bot.dashboard import browser_api
 
