@@ -442,7 +442,12 @@ def kill(proc) -> None:
         else:
             import signal
 
-            os.killpg(os.getpgid(pid), signal.SIGKILL)
+            pgid = os.getpgid(pid)
+            if pgid == os.getpgid(0):
+                # Not started in a session of its own (external agent CLIs, test doubles): its group is ABP's,
+                # and killpg would take ABP (and whatever shell started it) down with it.
+                raise OSError("shares our process group")
+            os.killpg(pgid, signal.SIGKILL)
     except (OSError, subprocess.SubprocessError):
         try:
             proc.kill()
