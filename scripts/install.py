@@ -527,12 +527,19 @@ def main() -> None:
     results["configured"] = run_setup_wizard(args)
 
     if args.check:
+        # With --no-system-deps the desktop build tools were not asked for, so they cannot make the check fail
+        # (a server/CLI/TUI install on a headless machine is complete without them).
+        skipped = {"rust", "tauri_cli"} if args.no_system_deps else set()
         Step.head("Summary")
         for name, ok in results.items():
-            (Step.ok if ok else Step.missing)(name)
+            if name in skipped and not ok:
+                Step.ok(f"{name} (not needed: --no-system-deps)")
+            else:
+                (Step.ok if ok else Step.missing)(name)
+        all_ok = all(ok for name, ok in results.items() if name not in skipped)
         if JSON_MODE:
-            _emit({"type": "summary", "results": results, "all_ok": all(results.values())})
-        sys.exit(0 if all(results.values()) else 1)
+            _emit({"type": "summary", "results": results, "all_ok": all_ok})
+        sys.exit(0 if all_ok else 1)
 
     if not results["venv"]:
         Step.err("Python environment setup failed — fix the error above and re-run.")

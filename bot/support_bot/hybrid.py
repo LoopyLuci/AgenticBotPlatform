@@ -43,13 +43,51 @@ observable, queryable behavior over real traffic, not a static claim.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 from bot import db
 from bot.support_bot import model as tfidf_model
 from bot.support_bot import model_io
-from bot.support_bot import nn_model as neural_model
+
+logger = logging.getLogger("bot.support_bot.hybrid")
+
+
+class _NoNeuralModel:
+    """Stands in for nn_model when NumPy cannot load: not installed, or built for a newer CPU than this one (NumPy
+    wheels need x86-64-v2, which old CPUs and some virtual CPUs lack). The TF-IDF model then answers alone, and the
+    rest of ABP, which never needed NumPy, keeps running. Found on Linux test VMs, where the import error crashed the
+    whole dashboard on start."""
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        self.nn_model = self
+
+    def predict(self, text: str) -> tuple[str, float]:
+        return "unknown", 0.0
+
+    def export_state(self) -> dict:
+        return {}
+
+    def load_state(self, state: dict) -> None:
+        return None
+
+    def warm_up(self) -> None:
+        return None
+
+    def retrain(self) -> int:
+        return 0
+
+
+try:
+    from bot.support_bot import nn_model as neural_model
+    NEURAL_UNAVAILABLE = ""
+except (ImportError, RuntimeError, OSError) as _exc:
+    NEURAL_UNAVAILABLE = f"{type(_exc).__name__}: {_exc}".strip()
+    logger.warning("support bot: the neural model is off (NumPy could not load: %s); the TF-IDF model answers alone",
+                   NEURAL_UNAVAILABLE.splitlines()[0])
+    neural_model = _NoNeuralModel(NEURAL_UNAVAILABLE)
 
 # The pluggable set of sub-models the hybrid votes across. Each entry's
 # predict_fn must return (intent, confidence) with intent == "unknown"
@@ -57,7 +95,7 @@ from bot.support_bot import nn_model as neural_model
 # docstrings for the exact contract every classifier here must honor.
 CLASSIFIERS: list[tuple[str, Callable[[str], tuple[str, float]]]] = [
     ("tfidf", tfidf_model.model.predict),
-    ("nn", neural_model.nn_model.predict),
+    *([] if NEURAL_UNAVAILABLE else [("nn", neural_model.nn_model.predict)]),
 ]
 
 
