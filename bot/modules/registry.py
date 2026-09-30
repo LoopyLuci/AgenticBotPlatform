@@ -102,6 +102,8 @@ def abp_root() -> Path:
 
 def _builtin_manifests() -> list[Manifest]:
     out = [mf.parse(d) for d in BUILTIN]
+    from bot.octopus import connectors   # the Octopus estate's connectors, one repo each
+    out += [mf.parse(d) for d in connectors.manifests()]
     for extra in _cfg().get("extra") or []:
         if isinstance(extra, dict):
             try:
@@ -134,6 +136,13 @@ def install_dir(m: Manifest) -> Path:
     sibling = abp_root().parent / m.name
     if is_checkout(m, sibling):
         return sibling
+    # A checkout named after its repo (abp-octopus-budget), next to ABP or in a folder listed in modules.search_paths.
+    repo_name = m.repo.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git") if m.repo else ""
+    if repo_name:
+        for folder in [abp_root().parent, *(_cfg().get("search_paths") or [])]:
+            cand = Path(str(folder)).expanduser() / repo_name
+            if is_checkout(m, cand):
+                return cand
     return abp_root() / "data" / "modules" / m.name
 
 

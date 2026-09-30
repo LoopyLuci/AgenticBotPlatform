@@ -333,6 +333,28 @@ client. Volume (block-level) caching is a later, separate phase.
 
 ---
 
+### 5.7 The Octopus estate: a friend's server, integrated both ways (added 2026-09-29)
+
+Octopus-Security: ~40 services on a NixOS server behind octopus-auth (RS256 SSO, TOTP), with octopus-router as its
+model and coding hub, whose Bot Platform view already drives ABP. User guide: `docs/octopus.md`.
+
+| Phase | Delivers | Gate |
+|---|---|---|
+| OT-A | Integration keys (scoped, route-allowlisted; the Router preset), framing allowlists, bot credentials masked for them | A contract test replaying the Router's calls; everything outside the scopes refused |
+| OT-B | `bot/octopus`: estate catalog + live status, Router client + provider, SSO; the Octopus page | Live: both directions against the Router's latest upstream |
+| OT-C | Connectors: one runtime (`abp-octopus-connector`) + one private repo per web service, specs generated from source; ABP registers them and hands them the session | Every connector's pipeline passes; a live call to the real estate |
+| OT-D | Services with no web API: vault (records, handoff), nixos-hetzner/pentest-flake (NixOS deploys through Fabric), Cephaloscan/PentestPlayground (run as modules), alfred-js, simplex, mail, conversation-exporter | Each reachable from ABP |
+| OT-E | Portainer's replacement (the owner's goal for ABP's Docker manager, see octopus-ops/PORTAINER-EXIT.md): stacks from git, redeploy, host status, a fixed verb set, on the estate's server | The Router's Bot Platform view manages the estate's stacks through ABP |
+| OT-F | Hand-written summaries and typed inputs for the most used operations; connectors refreshed when upstream routes change | A refresh with no lost summaries |
+
+### 5.8 Linux platforms (added 2026-09-29)
+
+| Phase | Delivers | Gate |
+|---|---|---|
+| LX-A | A Nix package (server, CLI, TUI from nixpkgs), `services.agentic-bot-platform`, a NixOS VM test (`nix/`, `flake.nix`) | Builds and passes its VM test on NixOS 26.05 |
+| LX-B | The installer on Debian-family distros: `scripts/install.sh` end to end, then server, token auth, CLI, TUI, dashboard in a browser, the test suite | Green on Ubuntu 26.04 and Debian 13 VMs (on Server) |
+| LX-C | System-service installs and an updater on every distro family (apt, dnf, pacman, zypper, apk, NixOS) | Install, update and roll back tested on each |
+
 ## 5a. ABP Cluster: paired machines as one computer (inside ABP, `bot/cluster/`)
 
 Asked for on 2026-09-29. Paired devices share resources and act as nodes in a cluster that can run any kind of
@@ -473,3 +495,9 @@ M0 framework ─┬─> R (all repos; done alongside M0, since it touches only t
 | CacheIt CI-E…G | todo | Hot paths (each measured), distributed, volume caching |
 | MM-A | **done** 2026-09-29 | Builds in 94 s (E:). The server hard-codes 127.0.0.1:8000 (ignoring its own `listen_addr`), which Windows reserves here, so it can't start. Chat is proxied to Ollama. **Its own CPU engine is a stub**: `LoadedModel::generate` returns a placeholder string. So MM-E is the core of it: llama.cpp's `llama-server` as a managed backend process (built from source with the cmake and gcc already here, or its release binary if the user approves the download), with GGUFs from the Ollama store and Unsloth. |
 | MM-B, MM-C, MM-D, most of MM-E | **done** 2026-09-29 | llama.cpp built from source here with Vulkan (MSVC 2019, `E:/abp-build/llama.cpp`): 112 tokens/s generating on the 7900 XTX with Qwen3.5-9B. ModelMistress got a real core (`catalog`, `engine`, `hub`, `client`): a GGUF catalog over Ollama stores, HF caches and folders; one `llama-server` per loaded model (loopback, random port and key, in a job object so it dies with the hub even on a hard kill); load on first use, LRU eviction, `ollama/<name>` pass-through; 13 operations, the OpenAI API behind the hub token, MCP. Its pipeline passes including a live chat; pushed (`1154cec`). In ABP: the hub is a module (conformance ok) and, while it runs, `modelmistress` is a provider (`bot/providers.module_providers`, token read from `control.json`, never stored), so `modelmistress/<model>` works anywhere a provider model does. The first design's stub modules stay, marked legacy (deleting them was not approved). Open: embeddings-only mode, vLLM/ExLlama, `model.pull`, the desktop app. |
+| OT-A, OT-B | **done** 2026-09-29 | Integration keys + the Router preset (`tests/test_integrations.py`); `bot/octopus` and the Octopus page. Live against the Router's latest upstream (`7838cbd`): its Bot Platform view drives ABP through a scoped key (bots with masked credentials, hosts incl. Server, Docker); ABP drives the Router (status, models, usage, chat through its local route) and uses its `/v1` as the provider `octopus-router`; the Router's UI shows in ABP's pane. Found and fixed: a down Docker daemon flooded the Router's view with the raw `docker info` document. |
+| OT-C | **done** 2026-09-29 | `LoopyLuci/abp-octopus-connector` + 29 connector repos, all private, with topics; 1,053 operations; every pipeline passes; a live Budget call (health, `/api/build`, and a private route that correctly asks for sign-in). ABP registers them (area `octopus`, `modules.search_paths`) and pushes the session on sign-in and hub start. |
+| OT-D…F | todo | |
+| LX-A | **in progress** | Flake, package, module and VM test written; being built on the NixOS 26.05 VM on Server. |
+| LX-B | **in progress** | Ubuntu 26.04 and Debian 13 VMs on Server (cloud images + cloud-init, XFCE desktop). First run found `scripts/install.sh` was not executable in git: fixed with a test. |
+| LX-C | todo | |

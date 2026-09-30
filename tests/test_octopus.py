@@ -159,3 +159,26 @@ def test_the_page_is_in_both_uis_and_identical():
     for html in ((ROOT / "bot/dashboard/static/dashboard.html").read_text(encoding="utf-8"),
                  (ROOT / "desktop-app/ui/index.html").read_text(encoding="utf-8")):
         assert 'id="octopus"' in html and 'id="ocp-root"' in html and "octopus-panel.js" in html and 'href="#octopus"' in html
+
+
+def test_connectors_are_modules_and_get_the_right_session(env, monkeypatch):
+    from bot.modules import client, harness, registry
+    from bot.octopus import connectors
+    registry.modules(refresh=True)
+    octo = [m for m in registry.modules().values() if m.area == "octopus"]
+    assert len(octo) == len(connectors.CONNECTORS) >= 29
+    assert all(m.repo.startswith("https://github.com/LoopyLuci/abp-octopus-") for m in octo)
+    env[sso.TOKEN_VAR] = "sso-session"
+    env[router.TOKEN_VAR] = "router-owner-token-0123"
+    running = {"octopus-budget", "octopus-router"}
+    monkeypatch.setattr(client, "find", lambda m, timeout=2.0: object() if m.id in running else None)
+    sent = {}
+    monkeypatch.setattr(client, "call", lambda m, op, args, timeout=0: sent.setdefault(m.id, (op, args)) and {"signed_in": True})
+    assert connectors.push() == {"octopus-budget": "signed in", "octopus-router": "signed in"}
+    assert sent == {"octopus-budget": ("auth.set_token", {"token": "sso-session"}),
+                    "octopus-router": ("auth.set_token", {"token": "router-owner-token-0123"})}
+    sent.clear()
+    import bot.dashboard.octopus_api  # noqa: F401 - registers the hook
+    assert connectors.on_hub_started in harness.HUB_STARTED
+    connectors.on_hub_started("cacheit")                # not a connector: nothing
+    assert sent == {}

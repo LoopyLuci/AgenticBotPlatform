@@ -364,6 +364,10 @@ def hub_state(m: Manifest) -> dict:
     return {"running": hub is not None, **({"url": hub.url, "pid": hub.pid, "version": hub.version} if hub else {})}
 
 
+# Called with the module id after a hub this harness started answers (bot/octopus/connectors.py hands it a session).
+HUB_STARTED: list = []
+
+
 def start_hub(mid: str) -> dict:
     m = _m(mid)
     a = _adapter(m)
@@ -388,6 +392,11 @@ def start_hub(mid: str) -> dict:
     while time.time() < deadline:
         found = client.find(m)
         if found:
+            for hook in HUB_STARTED:
+                try:
+                    hook(m.id)
+                except Exception:  # noqa: BLE001 - a hook never fails a start
+                    pass
             return {"running": True, "url": found.url, "pid": found.pid, "already": False}
         time.sleep(0.4)
     raise ModuleError(f"{m.name}'s hub did not start within {m.hub.start_timeout_s:.0f}s (see {data / 'hub.log'})",

@@ -8,7 +8,11 @@ from typing import Callable
 from fastapi import Body, Depends, FastAPI, HTTPException
 
 from bot import db
-from bot.octopus import estate, router, sso
+from bot.modules import harness
+from bot.octopus import connectors, estate, router, sso
+
+if connectors.on_hub_started not in harness.HUB_STARTED:
+    harness.HUB_STARTED.append(connectors.on_hub_started)
 
 
 async def _router(fn, *args):
@@ -40,11 +44,32 @@ def register(app: FastAPI, require_desktop: Callable) -> None:
         except sso.SsoError as e:
             raise HTTPException(status_code=e.status, detail=str(e)) from e
         db.log_audit(actor="dashboard", action="octopus_sso_login", detail=str(out.get("username") or ""))
+        out["connectors"] = await asyncio.to_thread(connectors.push)
         return out
 
     @app.post("/api/octopus/sso/logout", dependencies=dep)
     async def octopus_sso_logout():
-        return await asyncio.to_thread(sso.logout)
+        out = await asyncio.to_thread(sso.logout)
+        out["connectors"] = await asyncio.to_thread(connectors.push)
+        return out
+
+    @app.get("/api/octopus/connectors", dependencies=dep)
+    async def octopus_connectors():
+        from bot.modules import client, registry
+
+        def rows():
+            out = []
+            for sid, name in connectors.CONNECTORS:
+                m = registry.get(sid)
+                d = registry.install_dir(m)
+                out.append({"id": sid, "name": name, "repo": m.repo, "installed": registry.is_checkout(m, d),
+                            "running": client.find(m, timeout=0.5) is not None})
+            return out
+        return {"connectors": await asyncio.to_thread(rows)}
+
+    @app.post("/api/octopus/connectors/push", dependencies=dep)
+    async def octopus_connectors_push():
+        return await asyncio.to_thread(connectors.push)
 
     @app.get("/api/octopus/sso/verify", dependencies=dep)
     async def octopus_sso_verify():
@@ -67,6 +92,7 @@ def register(app: FastAPI, require_desktop: Callable) -> None:
         db.log_audit(actor="dashboard", action="octopus_router_token", detail="set" if payload.get("token") else "cleared")
         from bot import providers
         providers._module_cache = (0.0, {})
+        await asyncio.to_thread(connectors.push, "octopus-router")
         return await asyncio.to_thread(router.status)
 
     @app.put("/api/octopus/router/url", dependencies=dep)
