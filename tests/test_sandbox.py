@@ -205,3 +205,17 @@ def test_timing_out_a_docker_command_removes_the_container(ws, cfg, fake_docker)
     calls = fake_docker()
     name = [c for c in calls if c[0] == "run"][0][calls[0].index("--name") + 1]
     assert ["rm", "-f", name] in calls
+
+
+@pytest.mark.skipif(os.name == "nt", reason="process groups are POSIX")
+def test_kill_never_takes_down_our_own_process_group():
+    """A child that did not get a session of its own shares ABP's process group; killing its group would kill ABP
+    (seen on Linux: a timed-out command took the server, and the test run, down with it)."""
+    import subprocess
+    child = subprocess.Popen(["sleep", "30"])                   # same process group as this test
+    try:
+        sandbox.kill(child)
+        assert child.wait(10) != 0                              # the child is gone, and we are still here
+    finally:
+        if child.poll() is None:
+            child.kill()
