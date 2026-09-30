@@ -16,6 +16,10 @@ self:
 let
   cfg = config.services.agentic-bot-platform;
   inherit (lib) mkEnableOption mkOption mkIf types optional;
+  # Under /var/lib, systemd creates the state directory itself (StateDirectory), owned by the service user, before
+  # it builds the sandbox; naming a missing directory in ReadWritePaths fails the first start (226/NAMESPACE).
+  stateDir = lib.removePrefix "/var/lib/" cfg.dataDir;
+  underVarLib = lib.hasPrefix "/var/lib/" cfg.dataDir;
 in
 {
   options.services.agentic-bot-platform = {
@@ -60,7 +64,7 @@ in
     };
     users.groups = lib.optionalAttrs cfg.createUser { ${cfg.group} = { }; };
 
-    systemd.tmpfiles.rules = [ "d ${cfg.dataDir} 0750 ${cfg.user} ${cfg.group} - -" ];
+    systemd.tmpfiles.rules = lib.optional (!underVarLib) "d ${cfg.dataDir} 0750 ${cfg.user} ${cfg.group} - -";
 
     systemd.services.agentic-bot-platform = {
       description = "Agentic Bot Platform";
@@ -89,7 +93,9 @@ in
         NoNewPrivileges = true;
         PrivateTmp = true;
         ProtectSystem = "strict";
-        ReadWritePaths = [ cfg.dataDir ];
+        StateDirectory = mkIf underVarLib stateDir;
+        StateDirectoryMode = mkIf underVarLib "0750";
+        ReadWritePaths = mkIf (!underVarLib) [ cfg.dataDir ];
         ProtectKernelTunables = true;
         ProtectKernelModules = true;
         ProtectControlGroups = true;
