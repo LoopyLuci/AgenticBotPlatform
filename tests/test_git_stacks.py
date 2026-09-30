@@ -114,3 +114,27 @@ def test_routes(env, monkeypatch):
     assert c.patch("/api/docker/git-stacks/app", headers=K, json={"env": {}}).status_code == 403
     router = c.post("/api/integrations/keys", headers=D, json={"preset": "octopus-router", "allow_framing": False}).json()["key"]
     assert c.post("/api/docker/git-stacks/app/deploy", headers={"X-Dashboard-Token": router}, json={}).status_code == 403
+
+
+def test_update_remove_and_a_missing_repo_are_handled(env, monkeypatch):
+    gs.add("app", str(env["repo"]), env={"A": "1"})
+    s = gs.update("app", compose_file="docker-compose.yml", auto_deploy=True, pull=True, env={"B": "2"})
+    assert s["auto_deploy"] and s["pull"] and s["env_keys"] == ["B"]
+    assert gs.deploy("app")["ok"] and "--pull" in env["calls"][-1]["args"] and env["calls"][-1]["env"] == "B=2\n"
+    with pytest.raises(gs.StackError):
+        gs.add("app", str(env["repo"]))                                     # the name is taken
+    gs.add("gone", str(env["repo"]) + "-missing", auto_deploy=True)
+    decisions = {d["stack"]: d["decision"] for d in gs.poll_once()}
+    assert decisions["gone"] == "check_failed"
+    assert any(e["kind"] == "check_failed" for e in gs.events(stack="gone"))
+    r = gs.deploy("gone")
+    assert r["ok"] is False and gs.get("gone")["last_error"]
+    assert gs.remove("gone")["removed"] == "gone" and [x["name"] for x in gs.listing()] == ["app"]
+    with pytest.raises(gs.StackError):
+        gs.get("gone")
+    missing = env["repo"] / "docker-compose.yml"
+    missing.unlink()
+    import subprocess as sp
+    sp.run(["git", "commit", "-qam", "no compose"], cwd=env["repo"], capture_output=True,
+           env={**__import__("os").environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
+    assert gs.deploy("app")["ok"] is False and "not in" in gs.get("app")["last_error"]
