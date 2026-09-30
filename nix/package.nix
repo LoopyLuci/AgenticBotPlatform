@@ -42,7 +42,8 @@ let
       let rel = lib.removePrefix (toString ../. + "/") (toString path); in
       !(lib.any (p: rel == p || lib.hasPrefix (p + "/") rel) [
         ".git" ".venv" "venv" "data" "logs" "tests" "android-app" "browser-extension" "vendor" "graphify-out"
-        "desktop-app/src-tauri/target" "node_modules" ".pytest_cache" ".ruff_cache" "config/backends.yaml"
+        "desktop-app/src-tauri/target" "node_modules" ".pytest_cache" ".ruff_cache"
+        # config/backends.yaml is the tracked default that seeds a new ABP_HOME, so it stays; these hold keys:
         "config/providers.yaml" ".env"
       ])
       && !(lib.hasSuffix ".pyc" rel) && baseNameOf rel != "__pycache__";
