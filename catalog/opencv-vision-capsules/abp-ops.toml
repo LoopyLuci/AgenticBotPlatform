@@ -1,0 +1,44 @@
+# Open Vision Capsules's operations for ABP, kept by hand (an overlay: they run against the upstream checkout).
+# Format: the header of ABP's abp_modkit/spec.py. {python} is the module's own environment once
+# project.python_setup made it (in the module's data folder, never in the checkout).
+
+[service]
+id = "opencv-vision-capsules"
+name = "Open Vision Capsules"
+description = "Packaged vision algorithms (capsules): load one, run it on images, benchmark and package capsules."
+
+[[op]]
+id = "install"
+kind = "cmd"
+summary = "Install vcap, vcap_utils and the tools into the module's Python"
+argv = ["{python}", "-m", "pip", "install", "-e", "{project}/vcap", "-e", "{project}/vcap_utils", "-e", "{project}/tools"]
+timeout_s = 1800
+background = true
+
+[[op]]
+id = "capsule.infer"
+kind = "cmd"
+summary = "Run a capsule on images"
+argv = ["{python}", "{project}/tools/openvisioncapsule_tools/capsule_infer/capsule_infer.py", "--capsule", "{capsule}", "--images", "{images}"]
+timeout_s = 3600
+background = true
+extra_args = true
+[op.inputs]
+capsule = { type = "string", required = true, description = "path of a capsule" }
+images = { type = "string", required = true, description = "image paths" }
+
+[[op]]
+id = "tests.run"
+kind = "cmd"
+summary = "Its tests"
+argv = ["{python}", "-m", "pytest", "-q", "-p", "no:cacheprovider", "{project}/tests"]
+timeout_s = 3600
+background = true
+mutating = false
+
+[[op]]
+id = "git.update"
+kind = "cmd"
+summary = "Update the checkout from upstream (fast-forward only; nothing local is ever overwritten)"
+argv = ["git", "-C", "{project}", "pull", "--ff-only"]
+timeout_s = 1800

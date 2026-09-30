@@ -1,0 +1,28 @@
+# Open Vision Capsules as an ABP module: an overlay (ABP keeps this file; the checkout stays exactly upstream).
+# Kept by hand. Operations: abp-ops.toml next to this file.
+
+[module]
+id = "opencv-vision-capsules"
+name = "Open Vision Capsules"
+repo = "https://github.com/opencv/open_vision_capsules.git"
+branch = "master"
+api = 1
+area = "vision"
+description = "Packaged vision algorithms (capsules): load one, run it on images, benchmark and package capsules."
+
+[checkout]
+marker = ["vcap", "vcap_utils", "tools/openvisioncapsule_tools/cli.py"]
+
+[toolchain]
+require = [{ tool = "python", min = "3.10", url = "https://www.python.org/downloads/" }, { tool = "git", url = "https://git-scm.com/downloads" }]
+
+[hub]
+start = ["{abp_python}", "-m", "abp_modkit", "serve", "--spec", "{overlay}/abp-ops.toml", "--project", "{repo}", "--home", "{data}", "--var", "target={target}"]
+control_file = "{data}/control.json"
+start_timeout_s = 30
+
+[mcp]
+stdio = ["{abp_python}", "-m", "abp_modkit", "mcp", "--home", "{data}"]
+
+[ui]
+panel = "operations"

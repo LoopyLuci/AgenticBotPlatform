@@ -131,7 +131,9 @@ class Hub:
 
     # ---- placeholders ---------------------------------------------------------------------------------------
     def _venv(self) -> Path | None:
-        for d in (self.project / ".venv", self.project / "venv"):
+        # the project's own venv, else one in the module's data folder (project.python_setup makes it: an overlay
+        # module's dependencies live there, never in an upstream checkout nor in ABP's own environment)
+        for d in (self.project / ".venv", self.project / "venv", self.home / "venv"):
             if (d / ("Scripts/python.exe" if WIN else "bin/python")).is_file():
                 return d
         return None
@@ -312,8 +314,17 @@ class Hub:
         return "\n".join(data.decode("utf-8", "replace").splitlines()[-max(1, min(lines, 2000)):])
 
     # ---- commands --------------------------------------------------------------------------------------------
-    def _argv(self, op: Op, a: dict) -> list[str]:
+    @staticmethod
+    def _given(op: Op, a: dict) -> dict:
+        """The inputs a call gave, with each missing one's `default` (from abp-ops.toml) filled in."""
         given = {k: v for k, v in a.items() if k != "args" and v is not None and v != ""}
+        for k, spec in op.inputs.items():
+            if k not in given and spec.get("default") not in (None, ""):
+                given[k] = spec["default"]
+        return given
+
+    def _argv(self, op: Op, a: dict) -> list[str]:
+        given = self._given(op, a)
         for k in op.params:
             if k not in given:
                 raise Fail(400, "invalid", f"{k} is required")
@@ -349,11 +360,12 @@ class Hub:
         return out
 
     def _run(self, op: Op, argv: list[str], a: dict, job: dict | None) -> dict:
-        strs = {k: str(v) for k, v in a.items() if k != "args" and isinstance(v, (str, int, float))}
+        strs = {k: str(v) for k, v in self._given(op, a).items() if isinstance(v, (str, int, float))}
         missing = self._missing_secrets(op.env)
         if missing:
             raise Fail(409, "needs_secret", f"{op.id} needs {', '.join(missing)}: store each with service.set_secret")
-        env = {**os.environ, **{k: self._env_value(v) for k, v in op.env.items()},
+        # env values may use the call's inputs too ({name}), like argv does
+        env = {**os.environ, **{k: self._fill(self._env_value(v), strs) for k, v in op.env.items()},
                "ABP_OP_ARGS": json.dumps({k: v for k, v in a.items() if k != "args"}), "PYTHONIOENCODING": "utf-8"}
         tail = Tail()
         t0 = time.time()
@@ -414,6 +426,14 @@ class Hub:
              "operations, jobs and calls", "mutating": False, "destructive": False, "input_schema": empty},
             {"id": "project.info", "group": "project", "summary": "The project: folder, git branch and commit, "
              "uncommitted files, README", "mutating": False, "destructive": False, "input_schema": empty},
+            {"id": "project.python_setup", "group": "project", "summary": "A Python environment for the project in "
+             "the module's data folder (never in the checkout): create it, install requirement files and packages "
+             "(a background job); commands' {python} use it from then on", "mutating": True, "destructive": False,
+             "input_schema": _schema({"requirements": {"type": "array", "items": {"type": "string"},
+                                                       "description": "requirement files, relative to the project "
+                                                                      "(default: requirements.txt if it has one)"},
+                                      "packages": {"type": "array", "items": {"type": "string"},
+                                                   "description": "more packages to install"}}, [])},
             {"id": "jobs.list", "group": "jobs", "summary": "Commands running or finished in the background",
              "mutating": False, "destructive": False, "input_schema": empty},
             {"id": "jobs.get", "group": "jobs", "summary": "One background command: its state and output",
@@ -473,6 +493,8 @@ class Hub:
                     "stats": self.stats, "version": __version__}
         if op_id == "project.info":
             return self._project_info()
+        if op_id == "project.python_setup":
+            return self._python_setup(a)
         if op_id == "jobs.list":
             return {"jobs": [self._job_view(j) for j in sorted(self.jobs.values(), key=lambda j: -j["started"])][:50]}
         if op_id in ("jobs.get", "jobs.cancel"):
@@ -516,6 +538,37 @@ class Hub:
         if not res["ok"]:
             self.stats["errors"] += 1
         return res
+
+    _SETUP = ("import json, os, subprocess, sys, venv\n"
+              "d, reqs, pkgs = sys.argv[1], json.loads(sys.argv[2]), json.loads(sys.argv[3])\n"
+              "py = os.path.join(d, 'Scripts' if os.name == 'nt' else 'bin', 'python' + ('.exe' if os.name == 'nt' else ''))\n"
+              "if not os.path.isfile(py):\n"
+              "    print('creating', d, flush=True); venv.create(d, with_pip=True)\n"
+              "args = [x for r in reqs for x in ('-r', r)] + pkgs\n"
+              "if args:\n"
+              "    sys.exit(subprocess.call([py, '-m', 'pip', 'install', '--disable-pip-version-check', *args]))\n"
+              "print('ready:', py)\n")
+
+    def _python_setup(self, a: dict) -> dict:
+        reqs = a.get("requirements")
+        if reqs is None:
+            reqs = ["requirements.txt"] if (self.project / "requirements.txt").is_file() else []
+        pkgs = a.get("packages") or []
+        if not isinstance(reqs, list) or not isinstance(pkgs, list) or \
+                not all(isinstance(x, str) for x in [*reqs, *pkgs]):
+            raise Fail(400, "invalid", "requirements and packages are lists of strings")
+        root = self.project.resolve()
+        files = []
+        for r in reqs:
+            f = (root / r).resolve()
+            if root not in f.parents or not f.is_file():
+                raise Fail(400, "invalid", f"{r}: not a file inside the project")
+            files.append(str(f))
+        if any(p.startswith("-") for p in pkgs):
+            raise Fail(400, "invalid", "packages are names (with versions), not pip options")
+        op = Op(id="project.python_setup", kind="cmd", background=True, timeout_s=3600)
+        return self._start_job(op, [sys.executable, "-c", self._SETUP, str(self.home / "venv"), json.dumps(files),
+                                    json.dumps(pkgs)], {})
 
     def _project_info(self) -> dict:
         def git(*args):

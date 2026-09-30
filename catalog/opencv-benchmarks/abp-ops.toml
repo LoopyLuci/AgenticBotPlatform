@@ -1,0 +1,35 @@
+# OpenCV algorithm benchmarks's operations for ABP, kept by hand (an overlay: they run against the upstream checkout).
+# Format: the header of ABP's abp_modkit/spec.py. {python} is the module's own environment once
+# project.python_setup made it (in the module's data folder, never in the checkout).
+
+[service]
+id = "opencv-benchmarks"
+name = "OpenCV algorithm benchmarks"
+description = "Quality benchmarks for OpenCV's non-DNN algorithms: QR code detection and decoding, and calibration with generated boards."
+
+[[op]]
+id = "qr.run"
+kind = "cmd"
+summary = "QR code detection/decoding quality on a dataset (--dataset_path ...)"
+argv = ["{python}", "qr.py"]
+cwd = "qr_codes"
+timeout_s = 3600
+background = true
+extra_args = true
+
+[[op]]
+id = "calibration.generate"
+kind = "cmd"
+summary = "Generate synthetic calibration boards and cameras and measure calibration error"
+argv = ["{python}", "calibration_generator.py", "--cfg", "config_cv_test.yaml"]
+cwd = "python-calibration-generator"
+timeout_s = 3600
+background = true
+extra_args = true
+
+[[op]]
+id = "git.update"
+kind = "cmd"
+summary = "Update the checkout from upstream (fast-forward only; nothing local is ever overwritten)"
+argv = ["git", "-C", "{project}", "pull", "--ff-only"]
+timeout_s = 1800

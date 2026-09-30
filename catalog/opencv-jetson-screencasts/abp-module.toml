@@ -1,0 +1,28 @@
+# OpenCV Jetson screencasts as an ABP module: an overlay (ABP keeps this file; the checkout stays exactly upstream).
+# Kept by hand. Operations: abp-ops.toml next to this file.
+
+[module]
+id = "opencv-jetson-screencasts"
+name = "OpenCV Jetson screencasts"
+repo = "https://github.com/opencv/jetson-screencasts-sources.git"
+branch = "master"
+api = 1
+area = "vision"
+description = "The sources of OpenCV's Jetson screencast lessons (C++ samples, 2015): each builds with CMake against an installed OpenCV."
+
+[checkout]
+marker = ["0-cv-hello"]
+
+[toolchain]
+require = [{ tool = "cmake", min = "3.16", url = "https://cmake.org/download/" }]
+
+[hub]
+start = ["{abp_python}", "-m", "abp_modkit", "serve", "--spec", "{overlay}/abp-ops.toml", "--project", "{repo}", "--home", "{data}", "--var", "target={target}"]
+control_file = "{data}/control.json"
+start_timeout_s = 30
+
+[mcp]
+stdio = ["{abp_python}", "-m", "abp_modkit", "mcp", "--home", "{data}"]
+
+[ui]
+panel = "operations"

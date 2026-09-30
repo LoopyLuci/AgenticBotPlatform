@@ -1,0 +1,28 @@
+# OpenCV ONNX conformance proxy as an ABP module: an overlay (ABP keeps this file; the checkout stays exactly upstream).
+# Kept by hand. Operations: abp-ops.toml next to this file.
+
+[module]
+id = "opencv-onnx-conformance"
+name = "OpenCV ONNX conformance proxy"
+repo = "https://github.com/opencv/onnx-conformance-proxy.git"
+branch = "main"
+api = 1
+area = "vision"
+description = "An adapter that runs ONNX's backend test suite against OpenCV DNN: how much of ONNX this OpenCV runs."
+
+[checkout]
+marker = ["setup.py", "opencv_onnx_proxy"]
+
+[toolchain]
+require = [{ tool = "python", min = "3.10", url = "https://www.python.org/downloads/" }, { tool = "git", url = "https://git-scm.com/downloads" }]
+
+[hub]
+start = ["{abp_python}", "-m", "abp_modkit", "serve", "--spec", "{overlay}/abp-ops.toml", "--project", "{repo}", "--home", "{data}", "--var", "target={target}"]
+control_file = "{data}/control.json"
+start_timeout_s = 30
+
+[mcp]
+stdio = ["{abp_python}", "-m", "abp_modkit", "mcp", "--home", "{data}"]
+
+[ui]
+panel = "operations"

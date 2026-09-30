@@ -1,0 +1,28 @@
+# OpenCV 3rdparty as an ABP module: an overlay (ABP keeps this file; the checkout stays exactly upstream).
+# Kept by hand. Operations: abp-ops.toml next to this file.
+
+[module]
+id = "opencv-3rdparty"
+name = "OpenCV 3rdparty"
+repo = "https://github.com/opencv/opencv_3rdparty.git"
+branch = "readme"
+api = 1
+area = "vision"
+description = "Prebuilt third-party binaries OpenCV's build downloads (FFmpeg, IPP, TBB, ...), one branch each; only the branches asked for are fetched."
+
+[checkout]
+marker = ["README.md"]
+
+[toolchain]
+require = [{ tool = "git", url = "https://git-scm.com/downloads" }]
+
+[hub]
+start = ["{abp_python}", "-m", "abp_modkit", "serve", "--spec", "{overlay}/abp-ops.toml", "--project", "{repo}", "--home", "{data}", "--var", "target={target}"]
+control_file = "{data}/control.json"
+start_timeout_s = 30
+
+[mcp]
+stdio = ["{abp_python}", "-m", "abp_modkit", "mcp", "--home", "{data}"]
+
+[ui]
+panel = "operations"

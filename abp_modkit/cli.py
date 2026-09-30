@@ -210,7 +210,7 @@ def _register(path: Path) -> str:
         from bot.config import config
     except ImportError:
         return "not registered: run this with ABP's python to add it to ABP (modules.projects)"
-    config.load()
+    config.reload(actor="abp_modkit")
     projects = list(((config.current or {}).get("modules") or {}).get("projects") or [])
     p = str(path.resolve()).replace("\\", "/")
     if p not in projects:

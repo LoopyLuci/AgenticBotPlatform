@@ -1,0 +1,28 @@
+# OpenCV for iOS book samples as an ABP module: an overlay (ABP keeps this file; the checkout stays exactly upstream).
+# Kept by hand. Operations: abp-ops.toml next to this file.
+
+[module]
+id = "opencv-ios-book-samples"
+name = "OpenCV for iOS book samples"
+repo = "https://github.com/opencv/opencv_for_ios_book_samples.git"
+branch = "master"
+api = 1
+area = "vision"
+description = "The samples of the book \"OpenCV for iOS\" (Objective-C, Xcode projects): reference material; they build on macOS only."
+
+[checkout]
+marker = ["README.md"]
+
+[hub]
+start = ["{abp_python}", "-m", "abp_modkit", "serve", "--spec", "{overlay}/abp-ops.toml", "--project", "{repo}", "--home", "{data}", "--var", "target={target}"]
+control_file = "{data}/control.json"
+start_timeout_s = 30
+
+[mcp]
+stdio = ["{abp_python}", "-m", "abp_modkit", "mcp", "--home", "{data}"]
+
+[ui]
+panel = "operations"
+
+[host]
+os = ["macos", "windows", "linux"]

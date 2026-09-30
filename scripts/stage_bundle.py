@@ -145,6 +145,9 @@ def stage(stage_dir: Path = STAGE, markers: list[str] | None = None) -> None:
     for pkg in ("abp_run", "abp_acp", "abp_agenteval", "abp_toolkit", "abp_modkit"):
         if (ROOT / pkg).is_dir():
             shutil.copytree(ROOT / pkg, stage_dir / pkg, ignore=_bot_ignore)
+    # The module catalog: overlays ABP ships for third-party repos (bot/modules/registry.py reads <root>/catalog).
+    if (ROOT / "catalog").is_dir():
+        shutil.copytree(ROOT / "catalog", stage_dir / "catalog", ignore=_bot_ignore)
     # bot/ssh_toolkit.py shells out to this submodule's own bin/ssh-toolkit.ps1 for
     # every CRUD operation (add/list/remove/visualize a connection, the peer-pairing
     # SSH auto-setup, ...) - only its "stream a command directly" path bypasses it

@@ -1,0 +1,37 @@
+# COOL Benchmark's operations for ABP, kept by hand (an overlay: they run against the upstream checkout).
+# Format: the header of ABP's abp_modkit/spec.py. {python} is the module's own environment once
+# project.python_setup made it (in the module's data folder, never in the checkout).
+
+[service]
+id = "opencv-cool-benchmark"
+name = "COOL Benchmark"
+description = "OpenCV's cloud benchmark: launches cloud machines, runs an OpenCV image pipeline in memory on each and compares throughput, latency and cost; its web UI shows in ABP."
+base_url = "http://127.0.0.1:8080"
+health = "/api/system-status"
+start = ["{python}", "{project}/shared/benchmark-orchestrator.py"]
+cwd = "shared"
+env = { AWS_ACCESS_KEY_ID = "{secret?:AWS_ACCESS_KEY_ID}", AWS_SECRET_ACCESS_KEY = "{secret?:AWS_SECRET_ACCESS_KEY}", AWS_DEFAULT_REGION = "{secret?:AWS_DEFAULT_REGION}", EC2_KEY_PAIR_NAME = "{secret?:EC2_KEY_PAIR_NAME}", MARKETPLACE_AMI_ID = "{secret?:MARKETPLACE_AMI_ID}" }
+ready_timeout_s = 120
+
+[[op]]
+id = "frontend.serve"
+kind = "cmd"
+summary = "Serve the web UI on port 3000 (the orchestrator is the service)"
+argv = ["{python}", "{project}/frontend/serve.py"]
+cwd = "frontend"
+timeout_s = 604800
+background = true
+
+[[op]]
+id = "instances.cleanup"
+kind = "cmd"
+summary = "Terminate every cloud machine the benchmark started (never leave them running)"
+argv = ["{python}", "-c", "import json, os, pathlib, sys; import urllib.request; print(urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8080/api/cleanup-instances', method='POST'), timeout=120).read().decode())"]
+timeout_s = 180
+
+[[op]]
+id = "git.update"
+kind = "cmd"
+summary = "Update the checkout from upstream (fast-forward only; nothing local is ever overwritten)"
+argv = ["git", "-C", "{project}", "pull", "--ff-only"]
+timeout_s = 1800

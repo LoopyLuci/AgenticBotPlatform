@@ -1,0 +1,87 @@
+# OpenCV model zoo's operations for ABP, kept by hand (an overlay: they run against the upstream checkout).
+# Format: the header of ABP's abp_modkit/spec.py. {python} is the module's own environment once
+# project.python_setup made it (in the module's data folder, never in the checkout).
+
+[service]
+id = "opencv-zoo"
+name = "OpenCV model zoo"
+description = "OpenCV's model zoo: face, object, text, pose, segmentation, tracking and more models for OpenCV DNN, their demos and benchmark. ABP's own vision (bot/vision) uses these models."
+
+[[op]]
+id = "models.list"
+kind = "cmd"
+summary = "The zoo's models"
+argv = ["{python}", "-c", "import json, os, pathlib, sys; print(json.dumps(sorted(p.name for p in pathlib.Path(r'{project}/models').iterdir() if p.is_dir() and not p.name.startswith('_'))))"]
+timeout_s = 60
+mutating = false
+
+[[op]]
+id = "models.fetch"
+kind = "cmd"
+summary = "Download one model's files (Git LFS); '*' for all (several GB)"
+argv = ["git", "-C", "{project}", "lfs", "pull", "--include", "models/{model}/*"]
+timeout_s = 3600
+background = true
+[op.inputs]
+model = { type = "string", required = true, description = "a name from models.list, or *" }
+
+[[op]]
+id = "models.readme"
+kind = "cmd"
+summary = "One model's README (what it does, its inputs, its license)"
+argv = ["{python}", "-c", "import json, os, pathlib, sys; print((pathlib.Path(r'{project}/models/{model}')/'README.md').read_text(encoding='utf-8', errors='replace')[:8000])"]
+timeout_s = 60
+mutating = false
+[op.inputs]
+model = { type = "string", required = true }
+
+[[op]]
+id = "demo.run"
+kind = "cmd"
+summary = "Run one model's demo (on an image: --input <path>; most open a window)"
+argv = ["{python}", "demo.py"]
+cwd = "models/{model}"
+timeout_s = 3600
+background = true
+extra_args = true
+[op.inputs]
+model = { type = "string", required = true }
+
+[[op]]
+id = "benchmark.data"
+kind = "cmd"
+summary = "Download the benchmark's data; names can be added"
+argv = ["{python}", "download_data.py"]
+cwd = "benchmark"
+timeout_s = 3600
+background = true
+extra_args = true
+
+[[op]]
+id = "benchmark.run"
+kind = "cmd"
+summary = "Benchmark one model on this machine (config: a model name, e.g. face_detection_yunet)"
+argv = ["{python}", "benchmark.py", "--cfg", "./config/{config}.yaml"]
+cwd = "benchmark"
+timeout_s = 3600
+background = true
+extra_args = true
+[op.inputs]
+config = { type = "string", required = true }
+
+[[op]]
+id = "benchmark.all"
+kind = "cmd"
+summary = "Benchmark every model"
+argv = ["{python}", "benchmark.py", "--all"]
+cwd = "benchmark"
+timeout_s = 21600
+background = true
+extra_args = true
+
+[[op]]
+id = "git.update"
+kind = "cmd"
+summary = "Update the checkout from upstream (fast-forward only; nothing local is ever overwritten)"
+argv = ["git", "-C", "{project}", "pull", "--ff-only"]
+timeout_s = 1800

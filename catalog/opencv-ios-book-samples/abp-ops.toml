@@ -1,0 +1,26 @@
+# OpenCV for iOS book samples's operations for ABP, kept by hand (an overlay: they run against the upstream checkout).
+# Format: the header of ABP's abp_modkit/spec.py. {python} is the module's own environment once
+# project.python_setup made it (in the module's data folder, never in the checkout).
+
+[service]
+id = "opencv-ios-book-samples"
+name = "OpenCV for iOS book samples"
+description = "The samples of the book \"OpenCV for iOS\" (Objective-C, Xcode projects): reference material; they build on macOS only."
+
+[[op]]
+id = "samples.list"
+kind = "cmd"
+summary = "The samples"
+argv = ["{python}", "-c", "import json, os, pathlib, sys; print(json.dumps(sorted(p.name for p in pathlib.Path(r'{project}').iterdir() if p.is_dir() and not p.name.startswith('.'))))"]
+timeout_s = 60
+mutating = false
+
+[[op]]
+id = "sample.build"
+kind = "cmd"
+summary = "Build one sample with Xcode (macOS)"
+argv = ["xcodebuild", "-project", "{project}/{sample}/{sample}.xcodeproj", "-configuration", "Release"]
+timeout_s = 3600
+background = true
+[op.inputs]
+sample = { type = "string", required = true }

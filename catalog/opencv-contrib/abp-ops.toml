@@ -1,0 +1,33 @@
+# OpenCV contrib's operations for ABP, kept by hand (an overlay: they run against the upstream checkout).
+# Format: the header of ABP's abp_modkit/spec.py. {python} is the module's own environment once
+# project.python_setup made it (in the module's data folder, never in the checkout).
+
+[service]
+id = "opencv-contrib"
+name = "OpenCV contrib"
+description = "OpenCV's extra modules (text, face, tracking, xfeatures2d, wechat_qrcode, cudev, ...), built into OpenCV by the OpenCV module's build.configure."
+
+[[op]]
+id = "modules.list"
+kind = "cmd"
+summary = "The contrib modules"
+argv = ["{python}", "-c", "import json, os, pathlib, sys; print(json.dumps(sorted(p.name for p in pathlib.Path(r'{project}/modules').iterdir() if p.is_dir())))"]
+timeout_s = 60
+mutating = false
+
+[[op]]
+id = "modules.describe"
+kind = "cmd"
+summary = "One contrib module's README"
+argv = ["{python}", "-c", "import json, os, pathlib, sys; m=pathlib.Path(r'{project}/modules/{name}'); r=next((m/n for n in ('README.md','README') if (m/n).is_file()), None); print(r.read_text(encoding='utf-8', errors='replace')[:6000] if r else 'no README')"]
+timeout_s = 60
+mutating = false
+[op.inputs]
+name = { type = "string", required = true, description = "a name from modules.list" }
+
+[[op]]
+id = "git.update"
+kind = "cmd"
+summary = "Update the checkout from upstream (fast-forward only; nothing local is ever overwritten)"
+argv = ["git", "-C", "{project}", "pull", "--ff-only"]
+timeout_s = 1800

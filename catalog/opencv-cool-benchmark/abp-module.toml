@@ -1,0 +1,29 @@
+# COOL Benchmark as an ABP module: an overlay (ABP keeps this file; the checkout stays exactly upstream).
+# Kept by hand. Operations: abp-ops.toml next to this file. Cloud credentials are stored with service.set_secret, never in files.
+
+[module]
+id = "opencv-cool-benchmark"
+name = "COOL Benchmark"
+repo = "https://github.com/opencv/COOL-Benchmark.git"
+branch = "main"
+api = 1
+area = "vision"
+description = "OpenCV's cloud benchmark: launches cloud machines, runs an OpenCV image pipeline in memory on each and compares throughput, latency and cost; its web UI shows in ABP."
+
+[checkout]
+marker = ["shared/benchmark-orchestrator.py", "frontend/serve.py"]
+
+[toolchain]
+require = [{ tool = "python", min = "3.10", url = "https://www.python.org/downloads/" }, { tool = "git", url = "https://git-scm.com/downloads" }]
+
+[hub]
+start = ["{abp_python}", "-m", "abp_modkit", "serve", "--spec", "{overlay}/abp-ops.toml", "--project", "{repo}", "--home", "{data}", "--var", "target={target}"]
+control_file = "{data}/control.json"
+start_timeout_s = 30
+
+[mcp]
+stdio = ["{abp_python}", "-m", "abp_modkit", "mcp", "--home", "{data}"]
+
+[ui]
+panel = "operations"
+web = "http://127.0.0.1:3000"

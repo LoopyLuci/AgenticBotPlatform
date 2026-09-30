@@ -1,0 +1,28 @@
+# OpenCV extra data as an ABP module: an overlay (ABP keeps this file; the checkout stays exactly upstream).
+# Kept by hand. Operations: abp-ops.toml next to this file.
+
+[module]
+id = "opencv-extra"
+name = "OpenCV extra data"
+repo = "https://github.com/opencv/opencv_extra.git"
+branch = "5.x"
+api = 1
+area = "vision"
+description = "OpenCV's test data (images, videos, DNN models used by its tests); the OpenCV module's tests read it."
+
+[checkout]
+marker = ["testdata"]
+
+[toolchain]
+require = [{ tool = "git", url = "https://git-scm.com/downloads" }, { tool = "python", min = "3.10", url = "https://www.python.org/downloads/" }]
+
+[hub]
+start = ["{abp_python}", "-m", "abp_modkit", "serve", "--spec", "{overlay}/abp-ops.toml", "--project", "{repo}", "--home", "{data}", "--var", "target={target}"]
+control_file = "{data}/control.json"
+start_timeout_s = 30
+
+[mcp]
+stdio = ["{abp_python}", "-m", "abp_modkit", "mcp", "--home", "{data}"]
+
+[ui]
+panel = "operations"

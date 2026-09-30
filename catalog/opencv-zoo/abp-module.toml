@@ -1,0 +1,28 @@
+# OpenCV model zoo as an ABP module: an overlay (ABP keeps this file; the checkout stays exactly upstream).
+# Kept by hand. Operations: abp-ops.toml next to this file.
+
+[module]
+id = "opencv-zoo"
+name = "OpenCV model zoo"
+repo = "https://github.com/opencv/opencv_zoo.git"
+branch = "main"
+api = 1
+area = "vision"
+description = "OpenCV's model zoo: face, object, text, pose, segmentation, tracking and more models for OpenCV DNN, their demos and benchmark. ABP's own vision (bot/vision) uses these models."
+
+[checkout]
+marker = ["models/face_detection_yunet", "benchmark/benchmark.py"]
+
+[toolchain]
+require = [{ tool = "python", min = "3.10", url = "https://www.python.org/downloads/" }, { tool = "git", url = "https://git-scm.com/downloads" }, { tool = "git-lfs", url = "https://git-lfs.com" }]
+
+[hub]
+start = ["{abp_python}", "-m", "abp_modkit", "serve", "--spec", "{overlay}/abp-ops.toml", "--project", "{repo}", "--home", "{data}", "--var", "target={target}"]
+control_file = "{data}/control.json"
+start_timeout_s = 30
+
+[mcp]
+stdio = ["{abp_python}", "-m", "abp_modkit", "mcp", "--home", "{data}"]
+
+[ui]
+panel = "operations"

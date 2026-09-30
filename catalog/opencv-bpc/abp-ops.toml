@@ -1,0 +1,48 @@
+# Bin-Picking Challenge's operations for ABP, kept by hand (an overlay: they run against the upstream checkout).
+# Format: the header of ABP's abp_modkit/spec.py. {python} is the module's own environment once
+# project.python_setup made it (in the module's data folder, never in the checkout).
+
+[service]
+id = "opencv-bpc"
+name = "Bin-Picking Challenge"
+description = "OpenCV's Perception Challenge for bin picking: a pose estimator and its tester, run in containers."
+
+[[op]]
+id = "tester.build"
+kind = "cmd"
+summary = "Build the tester image"
+argv = ["docker", "buildx", "build", "-t", "bpc_tester:latest", "-f", "Dockerfile.tester", "."]
+timeout_s = 10800
+background = true
+
+[[op]]
+id = "estimator.build"
+kind = "cmd"
+summary = "Build the example pose estimator image"
+argv = ["docker", "buildx", "build", "-t", "bpc_pose_estimator:example", "-f", "Dockerfile.estimator", "."]
+timeout_s = 10800
+background = true
+
+[[op]]
+id = "ibpc.install"
+kind = "cmd"
+summary = "Install the ibpc CLI into the module's Python"
+argv = ["{python}", "-m", "pip", "install", "-e", "{project}/ibpc_py"]
+timeout_s = 1800
+background = true
+
+[[op]]
+id = "ibpc.run"
+kind = "cmd"
+summary = "The ibpc CLI (e.g. test <dataset> <image>)"
+argv = ["{python}", "-m", "ibpc"]
+timeout_s = 14400
+background = true
+extra_args = true
+
+[[op]]
+id = "git.update"
+kind = "cmd"
+summary = "Update the checkout from upstream (fast-forward only; nothing local is ever overwritten)"
+argv = ["git", "-C", "{project}", "pull", "--ff-only"]
+timeout_s = 1800
