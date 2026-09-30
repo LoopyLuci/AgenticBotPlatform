@@ -132,6 +132,18 @@ def test_persists_to_disk():
     assert "persisted" in raw["providers"]
 
 
+def test_a_module_providers_key_is_the_environments_or_what_its_hub_stored(tmp_path, monkeypatch):
+    monkeypatch.delenv("MODKEY_TEST", raising=False)
+    assert providers._module_secret(tmp_path, "MODKEY_TEST") == ""          # neither
+    (tmp_path / "secrets.json").write_text('{"MODKEY_TEST": "stored"}', encoding="utf-8")
+    assert providers._module_secret(tmp_path, "MODKEY_TEST") == "stored"    # what the hub stored (service.set_secret)
+    monkeypatch.setenv("MODKEY_TEST", "from-env")
+    assert providers._module_secret(tmp_path, "MODKEY_TEST") == "from-env"  # the environment wins
+    monkeypatch.delenv("MODKEY_TEST")
+    (tmp_path / "secrets.json").write_text("not json", encoding="utf-8")
+    assert providers._module_secret(tmp_path, "MODKEY_TEST") == ""
+
+
 def test_parse_model_ref():
     assert providers.parse_model_ref("local_ollama/llama3.1") == ("local_ollama", "llama3.1")
 
