@@ -269,7 +269,7 @@ def detect_rust(plan: Plan, ws: Path) -> None:
             cmd += ["--manifest-path", f"{rel}/Cargo.toml"]
         plan.build.append(cmd)
         plan.build_env["CARGO_TARGET_DIR"] = "{target}"
-    for name, d, bins in tauri:
+    for _name, d, bins in tauri:
         conf = _json(d / "tauri.conf.json") or _json(d / "src-tauri" / "tauri.conf.json")
         product = (conf.get("productName") or (conf.get("package") or {}).get("productName") or bins[0])
         ui_dir = d.parent if d.name == "src-tauri" else d
