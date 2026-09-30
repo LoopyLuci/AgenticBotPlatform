@@ -17,8 +17,9 @@
   const errText = (e) => { let m = e && e.message ? e.message : String(e); try { const d = JSON.parse(m).detail; m = d || m; } catch (_) {} return typeof m === 'string' ? m : JSON.stringify(m); };
   const send = (path, body, method) => api(path, { method: method || 'POST', body: JSON.stringify(body || {}) });
   const KIND_LABEL = { platform: 'Control plane', app: 'Apps', bot: 'Bots', infra: 'Data, security and infrastructure', tool: 'Tools', library: 'Libraries', security: 'Security training' };
-  const st = { tab: 'estate', estate: null, router: null, chat: [], timer: null };
-  try { st.tab = localStorage.getItem('ocp.tab') || 'estate'; } catch (_) {}
+  const st = { tab: 'estate', estate: null, router: null, chat: [], timer: null, rv1: 'all', rv2: '' };
+  try { st.tab = localStorage.getItem('ocp.tab') || 'estate'; st.rv1 = localStorage.getItem('ocp.rv1') || 'all'; st.rv2 = localStorage.getItem('ocp.rv2') || ''; } catch (_) {}
+  const keep = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
 
   function css() {
     if ($('ocp-css')) return;
@@ -88,8 +89,19 @@ ${job.state && job.state !== 'idle' ? `<div class="ocp-muted">${E(job.state)}${j
 <label style="flex:1">Owner token (ROUTER_OWNER_TOKEN)<input id="ocp-rt-token" type="password" autocomplete="off" placeholder="${r.configured ? 'set; paste to replace' : 'paste it here'}"></label></div>
 <div class="ocp-row"><button class="btn" type="submit">Save</button>${r.configured ? '<button class="btn ghost" type="button" id="ocp-rt-clear">Forget token</button>' : ''}</div></form></div>`;
     if (r.reachable) {
-      body += `<div class="ocp-h">The Router's own UI</div><iframe class="ocp-frame" src="${E(r.url)}/" title="octopus-router" referrerpolicy="no-referrer"></iframe>
-<div class="ocp-muted">If this stays blank, allow the Router's address on the Integration tab (ABP's frame-src), then reload.</div>`;
+      // The Router's workbench is a tree of panes, one view each. Show the whole of it, or single views as panes of
+      // their own (a Router with `?view=` support opens just that view in a window of its own; an older one shows
+      // its whole UI instead).
+      const views = [['all', 'Whole Router'], ['chat', 'Chat'], ['missions', 'Missions'], ['files', 'Files'], ['terminal', 'Terminal'],
+        ['git', 'Source Control'], ['tasks', 'Run & Packages'], ['services', 'Services'], ['bots', 'Bot Platform'], ['browser', 'Browser'],
+        ['repos', 'Repos'], ['workspaces', 'Workspaces'], ['keys', 'Keys'], ['usage', 'Usage'], ['settings', 'Settings']];
+      const src = (v) => v === 'all' ? `${r.url}/` : `${r.url}/?w=abp${v.replace(/[^a-z]/g, '')}&view=${v}`;
+      const pick = (id, cur) => `<select id="${id}">${views.map(([v, l]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
+      const frame = (v) => `<iframe class="ocp-frame" src="${E(src(v))}" title="octopus-router: ${E(v)}" referrerpolicy="no-referrer"></iframe>`;
+      body += `<div class="ocp-row" style="margin:14px 0 6px"><span class="ocp-h" style="margin:0">The Router's own UI</span>${pick('ocp-rv1', st.rv1)}
+<label class="ocp-muted"><input type="checkbox" id="ocp-rsplit"${st.rv2 ? ' checked' : ''}> side by side with</label>${st.rv2 ? pick('ocp-rv2', st.rv2) : ''}</div>
+<div class="${st.rv2 ? 'ocp-split' : ''}">${frame(st.rv1)}${st.rv2 ? frame(st.rv2) : ''}</div>
+<div class="ocp-muted">If a pane stays blank, allow the Router's address on the Integration tab (ABP's frame-src), then reload.</div>`;
     }
     if (r.authorized) {
       const [models, usage, convs, missions] = await Promise.all(['models', 'usage', 'conversations', 'missions'].map((w) => api('/api/octopus/router/' + w).catch((e) => ({ error: errText(e) }))));
@@ -152,6 +164,9 @@ ${s.signed_in ? `<div class="ocp-muted">Session ends ${E(exp)}${s.role ? ` · ro
         poll();
       } catch (err) { toast(errText(err), 'error'); b.disabled = false; }
     }));
+    on('ocp-rv1', 'change', (e) => { st.rv1 = e.target.value; keep('ocp.rv1', st.rv1); render(); });
+    on('ocp-rv2', 'change', (e) => { st.rv2 = e.target.value; keep('ocp.rv2', st.rv2); render(); });
+    on('ocp-rsplit', 'change', (e) => { st.rv2 = e.target.checked ? (st.rv1 === 'chat' ? 'missions' : 'chat') : ''; keep('ocp.rv2', st.rv2); render(); });
     on('ocp-rt-clear', 'click', async () => { await send('/api/octopus/router/token', { token: '' }, 'PUT'); render(); });
     on('ocp-chat-new', 'click', () => { st.chat = []; render(); });
     on('ocp-chat-form', 'submit', async (e) => {
