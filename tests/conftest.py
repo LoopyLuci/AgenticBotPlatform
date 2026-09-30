@@ -60,8 +60,12 @@ def _committed_backends():
     return _COMMITTED["text"]
 
 
-_REAL_DB = Path(db_module.DB_PATH)
+# The main database: a test that does not ask for temp_db must not use the checkout's real data/bot.db either (a fresh
+# clone has none, so its tables were missing - Linux VM runs failed on it; a developer's holds real data). One file per
+# test process, pointed at once (not per test: reopening a connection for every test ran a Linux worker out of file
+# descriptors); temp_db and wider-scoped fixtures that point it elsewhere restore it to this.
 _WORKER_DB = _STATE / "bot.db"
+db_module.DB_PATH = _WORKER_DB
 _worker_db_ready = False
 
 
@@ -69,18 +73,10 @@ _worker_db_ready = False
 def _isolated_cicd_event_store(monkeypatch, tmp_path):
     """Instrumented scripts (release, pipeline) record into the CI/CD event
     store. No test may ever write into the real one, so every test gets its own."""
-    # The main database: a test that does not ask for temp_db must not use the checkout's real data/bot.db either (a
-    # fresh clone has none, so its tables were missing - Linux VM runs failed on it; a developer's holds real data).
-    # One initialised file per test process; temp_db, when asked for, still gives a test a fresh one of its own, and a
-    # wider-scoped fixture that pointed it elsewhere (a module's own server, tests/test_browser_extension_e2e.py)
-    # keeps its choice.
     global _worker_db_ready
-    if Path(db_module.DB_PATH) == _REAL_DB:
-        monkeypatch.setattr(db_module, "DB_PATH", _WORKER_DB)
-        monkeypatch.setattr(db_module, "_conn", None)
-        if not _worker_db_ready:
-            db_module.init_db()
-            _worker_db_ready = True
+    if not _worker_db_ready and Path(db_module.DB_PATH) == _WORKER_DB:   # its tables, once per test process
+        db_module.init_db()
+        _worker_db_ready = True
     monkeypatch.setenv("ABP_CICD_DB", str(tmp_path / "cicd-events.db"))
     # Same for agent traces (bot/agent_runtime/trace.py): every native-agent turn records one.
     monkeypatch.setenv("ABP_AGENT_TRACE_DB", str(tmp_path / "agent-traces.db"))
@@ -163,5 +159,5 @@ def temp_db(monkeypatch, tmp_path):
 
     monkeypatch.setattr(bot_instances_module, "BACKUP_DIR", tmp_path / "bot_instances_backups")
     yield conn
-    conn.close()
+    db_module.close_conn()   # its connection and every per-thread one opened to its file
     monkeypatch.setattr(db_module, "_conn", None)
