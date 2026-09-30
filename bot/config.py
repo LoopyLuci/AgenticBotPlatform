@@ -173,21 +173,11 @@ class ConfigManager:
         return True, summary
 
     def set_value(self, path: list[str], value: Any, actor: str = "dashboard") -> None:
-        """Edit one key in the live config and persist it atomically to disk
-        (write-to-temp-then-replace), then reload so the change is visible
-        immediately. Used by dashboard "set default backend" / toggle controls."""
-        data = self._read_yaml()
-        node = data
-        for key in path[:-1]:
-            node = node.setdefault(key, {})
-        node[path[-1]] = value
-
-        tmp_path = self.path.with_suffix(".yaml.tmp")
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(data, f, sort_keys=False)
-        tmp_path.replace(self.path)  # atomic on the same filesystem
-
-        self.reload(actor=actor)
+        """Edit one key in the live config and persist it atomically to disk, then reload so the change is visible
+        immediately. Goes through set_values(), which keeps the file's comments: this used to re-dump the whole file
+        with yaml.safe_dump, and every caller silently stripped backends.yaml's documentation (found 2026-09-29,
+        when three Octopus settings saved through it removed all 222 comment lines)."""
+        self.set_values({tuple(path): value}, actor=actor)
 
     def set_values(self, changes: "dict[tuple[str, ...], Any]", actor: str = "dashboard") -> None:
         """Apply several key edits in ONE write and ONE reload, keeping the file's comments and layout.

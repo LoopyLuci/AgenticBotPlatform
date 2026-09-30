@@ -63,6 +63,17 @@ export const operations = {
   ],
   "query_params": []
  },
+ "DELETE /api/docker/git-stacks/{name}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/docker/git-stacks/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": [
+   "down"
+  ]
+ },
  "DELETE /api/docker/networks/{name}": {
   "body": false,
   "method": "DELETE",
@@ -997,6 +1008,32 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/docker/git-stacks": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/git-stacks",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/docker/git-stacks/events": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/git-stacks/events",
+  "path_params": [],
+  "query_params": [
+   "limit",
+   "stack"
+  ]
+ },
+ "GET /api/docker/git-stacks/{name}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/git-stacks/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
  "GET /api/docker/images": {
   "body": false,
   "method": "GET",
@@ -1562,6 +1599,13 @@ export const operations = {
    "wait"
   ]
  },
+ "GET /api/octopus/connectors": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/octopus/connectors",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/octopus/estate": {
   "body": false,
   "method": "GET",
@@ -1575,6 +1619,13 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/api/octopus/router",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/octopus/router-app": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/octopus/router-app",
   "path_params": [],
   "query_params": []
  },
@@ -2773,6 +2824,15 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "PATCH /api/docker/git-stacks/{name}": {
+  "body": true,
+  "method": "PATCH",
+  "path": "/api/docker/git-stacks/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
  "PATCH /api/tailscale/api/settings": {
   "body": true,
   "method": "PATCH",
@@ -3299,6 +3359,38 @@ export const operations = {
   ],
   "query_params": []
  },
+ "POST /api/docker/git-stacks": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/git-stacks",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/docker/git-stacks/poller/run": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/docker/git-stacks/poller/run",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/docker/git-stacks/{name}/check": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/docker/git-stacks/{name}/check",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "POST /api/docker/git-stacks/{name}/deploy": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/git-stacks/{name}/deploy",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
  "POST /api/docker/images/{op}": {
   "body": true,
   "method": "POST",
@@ -3818,6 +3910,22 @@ export const operations = {
   "method": "POST",
   "path": "/api/nodes/result",
   "path_params": [],
+  "query_params": []
+ },
+ "POST /api/octopus/connectors/push": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/octopus/connectors/push",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/octopus/router-app/{action}": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/octopus/router-app/{action}",
+  "path_params": [
+   "action"
+  ],
   "query_params": []
  },
  "POST /api/octopus/router/chat": {
@@ -8268,6 +8376,84 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "gs_add_api_docker_git_stacks_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/git-stacks",
+  "path_params": [],
+  "query_params": []
+ },
+ "gs_check_api_docker_git_stacks__name__check_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/docker/git-stacks/{name}/check",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "gs_deploy_api_docker_git_stacks__name__deploy_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/docker/git-stacks/{name}/deploy",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "gs_events_api_docker_git_stacks_events_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/git-stacks/events",
+  "path_params": [],
+  "query_params": [
+   "limit",
+   "stack"
+  ]
+ },
+ "gs_get_api_docker_git_stacks__name__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/git-stacks/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "gs_list_api_docker_git_stacks_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/docker/git-stacks",
+  "path_params": [],
+  "query_params": []
+ },
+ "gs_poll_api_docker_git_stacks_poller_run_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/docker/git-stacks/poller/run",
+  "path_params": [],
+  "query_params": []
+ },
+ "gs_remove_api_docker_git_stacks__name__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/docker/git-stacks/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": [
+   "down"
+  ]
+ },
+ "gs_update_api_docker_git_stacks__name__patch": {
+  "body": true,
+  "method": "PATCH",
+  "path": "/api/docker/git-stacks/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
  "handler_api_docker_containers_get": {
   "body": false,
   "method": "GET",
@@ -8886,6 +9072,20 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "octopus_connectors_api_octopus_connectors_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/octopus/connectors",
+  "path_params": [],
+  "query_params": []
+ },
+ "octopus_connectors_push_api_octopus_connectors_push_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/octopus/connectors/push",
+  "path_params": [],
+  "query_params": []
+ },
  "octopus_estate_api_octopus_estate_get": {
   "body": false,
   "method": "GET",
@@ -8894,6 +9094,22 @@ export const operations = {
   "query_params": [
    "refresh"
   ]
+ },
+ "octopus_router_app_action_api_octopus_router_app__action__post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/octopus/router-app/{action}",
+  "path_params": [
+   "action"
+  ],
+  "query_params": []
+ },
+ "octopus_router_app_api_octopus_router_app_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/octopus/router-app",
+  "path_params": [],
+  "query_params": []
  },
  "octopus_router_cancel_api_octopus_router_runs__rid__cancel_post": {
   "body": false,

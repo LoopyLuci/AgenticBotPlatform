@@ -289,3 +289,11 @@ def test_a_bots_own_agent_settings_are_separate_from_what_it_inherits(client):
     own = client.get(f"/api/agent-settings?instance_id={bot_id}&own=true", headers=TOKEN).json()
     assert own["max_concurrent_children"] == 3 and own["require_plan_approval"] is True
     assert own["worker_model"] is None
+
+
+def test_set_value_keeps_the_files_comments_too(temp_config):
+    config.set_value(["octopus", "router_url"], "http://127.0.0.1:3030", actor="test")
+    config.set_value(["git_stacks", "paused"], True, actor="test")
+    text = temp_config.read_text(encoding="utf-8")
+    assert [ln for ln in text.splitlines() if ln.strip().startswith("#")], "set_value stripped the comments"
+    assert config.current["octopus"]["router_url"] == "http://127.0.0.1:3030" and config.current["git_stacks"]["paused"] is True
