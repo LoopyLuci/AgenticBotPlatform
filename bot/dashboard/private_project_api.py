@@ -3,8 +3,8 @@
     GET    /api/private_project                                  the link and whether PrivateProject answers
     POST   /api/private_project/link   {base_url, device_token?, agent_type?, label?}
            PrivateProject calls this itself (with its "private_project" integration key) when its owner lets ABP use it as a
-           backend, and again on every start, because its session API's port changes. The token is stored in .env and
-           never returned.
+           backend, and again on every start (its session API keeps its port across restarts since PrivateProject
+           65cbaa57, but it may move when that port is taken). The token is stored in .env and never returned.
     DELETE /api/private_project/link                             forget it
     GET    /api/private_project/sessions | /models | /sessions/{agent_type}/messages | /sessions/{agent_type}/permissions
     POST   /api/private_project/ask    {prompt, agent_type?}     one turn through the "private_project" backend

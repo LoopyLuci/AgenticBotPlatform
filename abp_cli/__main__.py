@@ -14,6 +14,9 @@ Commands:
   providers list|add|remove|catalog|models|toggle|restore
   modules list|show|ops|call|setup|adopt|candidates|new|publish|forget
                                           every module; `modules adopt <folder>` makes any project one
+  vision status|analyze|find|compare|edit|fetch
+                                          computer vision here (OpenCV + its model zoo): objects, faces, text,
+                                          codes; find text or an image on the screen; compare two images
 
 Connection: --host (default 127.0.0.1:8787) and --token (default from .env's
 DASHBOARD_TOKEN, same as bot/tui/'s ConnectScreen). --json prints machine-readable output
@@ -128,6 +131,8 @@ async def _dispatch(args, client: DashboardClient) -> int:
         return await _providers(args, client)
     if cmd == "modules":
         return await _modules(args, client)
+    if cmd == "vision":
+        return await _vision(args, client)
     if cmd == "swarms":
         return await _swarms(args, client)
     if cmd == "sessions":
@@ -731,6 +736,58 @@ async def _modules(args, client: DashboardClient) -> int:
     return 2
 
 
+def _image_arg(v: str) -> str:
+    """A local file is sent as its absolute path (relative to where the command was typed); anything else as is."""
+    import os
+    if not v or v.lower().startswith(("http://", "https://", "data:", "screen", "camera")):
+        return v
+    p = pathlib.Path(os.environ.get("ABP_CALLER_CWD") or ".") / v
+    return str(p.resolve()) if p.exists() else v
+
+
+async def _vision(args, client: DashboardClient) -> int:
+    sub = args.vision_cmd
+    api = "/api/vision"
+    if sub == "status":
+        _print(args, await client._request("GET", api))
+        return 0
+    if sub == "analyze":
+        body = {"image": _image_arg(args.image), "min_score": args.min_score}
+        if args.tasks:
+            body["tasks"] = [t.strip() for t in args.tasks.split(",") if t.strip()]
+        res = await client._request("POST", f"{api}/analyze", json=body)
+        if args.json:
+            _print(args, res)
+            return 0
+        for key in ("objects", "faces", "codes"):
+            for it in res.get(key) or []:
+                print(f"{key[:-1]:7} {it.get('label') or it.get('kind', '')} {it.get('text', '')} "
+                      f"{it.get('score', '')} box={it['box']}".replace("  ", " "))
+        if res.get("text_joined"):
+            print("text:\n  " + res["text_joined"].replace("\n", "\n  "))
+        if res.get("annotated"):
+            print(f"picture: {res['annotated']}")
+        return 0
+    if sub == "find":
+        body = {"image": _image_arg(args.image), "text": args.text or "",
+                "template": _image_arg(args.template) if args.template else None}
+        _print(args, await client._request("POST", f"{api}/find", json=body))
+        return 0
+    if sub == "compare":
+        _print(args, await client._request("POST", f"{api}/compare", json={"before": _image_arg(args.before),
+                                                                          "after": _image_arg(args.after)}))
+        return 0
+    if sub == "edit":
+        _print(args, await client._request("POST", f"{api}/edit", json={"image": _image_arg(args.image),
+                                                                       "steps": json.loads(args.steps)}))
+        return 0
+    if sub == "fetch":
+        _print(args, await client._request("POST", f"{api}/models/{args.model}/fetch"))
+        return 0
+    print(f"unknown vision subcommand {sub!r}", file=sys.stderr)
+    return 2
+
+
 def _parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="abp_cli", description=__doc__.splitlines()[0])
     ap.add_argument("--host", default=None, help="host:port of the dashboard (default: 127.0.0.1:8787)")
@@ -822,6 +879,23 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("folder")
     p = msub.add_parser("publish", help="commit its module files and create its private GitHub repo")
     p.add_argument("module"); p.add_argument("--push", action="store_true")
+
+    vis = sub.add_parser("vision", help="computer vision on this machine (OpenCV and its model zoo)")
+    vsub = vis.add_subparsers(dest="vision_cmd", required=True)
+    vsub.add_parser("status")
+    p = vsub.add_parser("analyze", help="objects, faces, text, codes... in an image (a file, URL, 'screen')")
+    p.add_argument("image")
+    p.add_argument("--tasks", default="", help="comma-separated: info,objects,faces,text,codes,people,colors,shapes")
+    p.add_argument("--min-score", type=float, default=0.4, dest="min_score")
+    p = vsub.add_parser("find", help="where text or a smaller image is (on the screen by default)")
+    p.add_argument("--image", default="screen"); p.add_argument("--text", default="")
+    p.add_argument("--template", default="")
+    p = vsub.add_parser("compare", help="what changed between two images")
+    p.add_argument("before"); p.add_argument("after")
+    p = vsub.add_parser("edit", help='edit an image: steps as JSON, e.g. [{"op": "resize", "width": 800}]')
+    p.add_argument("image"); p.add_argument("steps")
+    p = vsub.add_parser("fetch", help="download and verify one zoo model")
+    p.add_argument("model")
 
     swarms = sub.add_parser("swarms", help="fan-out/leader-vote/etc. multi-bot swarms")
     ssub = swarms.add_subparsers(dest="swarms_cmd", required=True)
