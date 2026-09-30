@@ -141,6 +141,13 @@ export const operations = {
    "instance_id"
   ]
  },
+ "DELETE /api/kestrion/link": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/kestrion/link",
+  "path_params": [],
+  "query_params": []
+ },
  "DELETE /api/mcp-external/{name}": {
   "body": false,
   "method": "DELETE",
@@ -1424,6 +1431,45 @@ export const operations = {
    "instance_id",
    "board"
   ]
+ },
+ "GET /api/kestrion": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/kestrion",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/kestrion/models": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/kestrion/models",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/kestrion/sessions": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/kestrion/sessions",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/kestrion/sessions/{agent_type}/messages": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/kestrion/sessions/{agent_type}/messages",
+  "path_params": [
+   "agent_type"
+  ],
+  "query_params": []
+ },
+ "GET /api/kestrion/sessions/{agent_type}/permissions": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/kestrion/sessions/{agent_type}/permissions",
+  "path_params": [
+   "agent_type"
+  ],
+  "query_params": []
  },
  "GET /api/logs": {
   "body": false,
@@ -3701,6 +3747,20 @@ export const operations = {
   "path_params": [
    "card_id"
   ],
+  "query_params": []
+ },
+ "POST /api/kestrion/ask": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/kestrion/ask",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/kestrion/link": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/kestrion/link",
+  "path_params": [],
   "query_params": []
  },
  "POST /api/mcp-external": {
@@ -8837,6 +8897,66 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/api/integrations/whoami",
+  "path_params": [],
+  "query_params": []
+ },
+ "kestrion_ask_api_kestrion_ask_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/kestrion/ask",
+  "path_params": [],
+  "query_params": []
+ },
+ "kestrion_link_api_kestrion_link_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/kestrion/link",
+  "path_params": [],
+  "query_params": []
+ },
+ "kestrion_messages_api_kestrion_sessions__agent_type__messages_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/kestrion/sessions/{agent_type}/messages",
+  "path_params": [
+   "agent_type"
+  ],
+  "query_params": []
+ },
+ "kestrion_models_api_kestrion_models_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/kestrion/models",
+  "path_params": [],
+  "query_params": []
+ },
+ "kestrion_permissions_api_kestrion_sessions__agent_type__permissions_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/kestrion/sessions/{agent_type}/permissions",
+  "path_params": [
+   "agent_type"
+  ],
+  "query_params": []
+ },
+ "kestrion_sessions_api_kestrion_sessions_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/kestrion/sessions",
+  "path_params": [],
+  "query_params": []
+ },
+ "kestrion_status_api_kestrion_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/kestrion",
+  "path_params": [],
+  "query_params": []
+ },
+ "kestrion_unlink_api_kestrion_link_delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/kestrion/link",
   "path_params": [],
   "query_params": []
  },

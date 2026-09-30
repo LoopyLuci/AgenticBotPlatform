@@ -236,6 +236,10 @@ def _require_token(x_dashboard_token: Optional[str] = Header(default=None)) -> N
         # silently running with no auth at all.
         raise HTTPException(status_code=503, detail="DASHBOARD_TOKEN is not set in .env")
     if not _tokens_match(x_dashboard_token, expected):
+        # An integration key (bot/integrations.py): the gate middleware has already held this request to the routes
+        # its scopes list, so reaching a route at all means the key's owner granted it.
+        if x_dashboard_token and db.api_key_kind(x_dashboard_token) == "integration":
+            return
         raise HTTPException(status_code=401, detail="invalid dashboard token")
 
 
@@ -876,6 +880,11 @@ def build_app() -> FastAPI:
     from bot.dashboard import octopus_api
 
     octopus_api.register(app, _require_token)
+
+    # Kestrion: the link that lets ABP use it as a backend (/api/kestrion).
+    from bot.dashboard import kestrion_api
+
+    kestrion_api.register(app, _require_token)
 
     # Browser-extension bridge (/api/browser/*): pairing, the extension WebSocket, policy, RPC.
     from bot.dashboard import browser_api

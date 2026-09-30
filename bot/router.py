@@ -36,7 +36,8 @@ from bot import tasks as bg
 
 logger = logging.getLogger("bot.router")
 
-VALID_BACKENDS = ("api", "cli", "ui", "hermes_cli", "hermes_gateway", "custom_model", "native_agent", "opencode", "openclaw")
+VALID_BACKENDS = ("api", "cli", "ui", "hermes_cli", "hermes_gateway", "custom_model", "native_agent", "opencode", "openclaw",
+                  "kestrion")
 
 
 def set_default_backend(backend: str, actor: str) -> dict:
@@ -254,6 +255,15 @@ class Router:
                 api_key=providers.get_api_key(provider_name),
                 max_tokens=b_cfg.get("max_tokens", 4096),
             )
+        if name == "kestrion":
+            # Kestrion's agent answers, through its remote session API (bot/backends/kestrion_backend.py). The bot's
+            # model field is Kestrion's agent type; the address and ABP's device token come from the link Kestrion's
+            # owner granted (bot/kestrion.py).
+            from bot import kestrion
+            from bot.backends.kestrion_backend import KestrionBackend
+
+            return KestrionBackend(base_url=kestrion.base_url(), device_token=kestrion.token(),
+                                   agent_type=model_override or kestrion.default_agent_type())
         if name in ("opencode", "openclaw"):
             # Another agent product does the work (bot/backends/external_agent_backend.py). ABP's own permission
             # rules and tool loop do not apply inside it.

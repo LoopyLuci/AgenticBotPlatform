@@ -34,6 +34,7 @@ BACKEND_FAMILY: dict[str, str] = {
     "native_agent": "custom",
     "opencode": "custom",       # provider/model strings, like custom_model; the model itself is resolved by that product
     "openclaw": "custom",
+    "kestrion": "kestrion",     # its "model" is one of Kestrion's agent types
 }
 
 # The one hardcoded model id in this module — not a "list of choices" (the

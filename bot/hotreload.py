@@ -154,6 +154,8 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.git_stacks", "bot.dashboard.git_stacks_api",
     # Octopus: routes are registered once at startup.
     "bot.dashboard.octopus_api",
+    # Kestrion: routes are registered once at startup.
+    "bot.dashboard.kestrion_api",
     # Cluster: offer.py holds the budget's reservations, executor.py the running jobs, store.py its connection,
     # membership.py the peers' reports; tools.py registers at import time.
     "bot.cluster.inventory", "bot.cluster.offer", "bot.cluster.store", "bot.cluster.executor", "bot.cluster.membership",
@@ -274,6 +276,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.retention",
     "bot.peers",
     "bot.cache",  # CacheIt's client: a reload only drops its pooled connection and its cached hub address
+    "bot.kestrion",   # stateless: the link lives in config and .env
     "bot.octopus.estate", "bot.octopus.sso", "bot.octopus.router", "bot.octopus.connectors",  # the estate's status cache is rebuilt on demand
     "bot.tailscale_mgr",
     "bot.browser_policy",
@@ -303,6 +306,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.ui_customize",  # pure functions + disk-backed history, no module-level mutable state; moa/providers/models/dashboard.server are all imported lazily inside function bodies, so no ordering constraint from them
     "bot.agent_control",
     "bot.backends.base",
+    "bot.backends.kestrion_backend",   # Kestrion's agent as a backend: stateless, imports only base
     "bot.agent_runtime.estop",  # depends only on bot.backends.base (EstopEngagedError subclasses BackendError) and db — safe leaf
     "bot.agent_runtime.transports.base",
     "bot.agent_runtime.provider_quirks",  # pure data/functions, no bot-internal deps — must precede the transport that imports it

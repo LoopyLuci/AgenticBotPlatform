@@ -33,6 +33,13 @@ SCOPES: dict[str, list[tuple[str, str]]] = {
     "modules:call": [("POST", r"/api/modules/[A-Za-z0-9_.-]+/call")],
     "cluster:read": [("GET", r"/api/cluster/(status|nodes|jobs)(/[A-Za-z0-9_.-]+)?")],
     "models:read": [("GET", r"/api/models"), ("GET", r"/api/providers")],
+    # asking bots, running swarms, registering an MCP server: what Kestrion's ABP Connector does (its ADR-0096)
+    "agents:ask": [("POST", r"/api/agent/ask")],
+    "swarms:read": [("GET", r"/api/swarms"), ("GET", r"/api/swarms/runs(/[A-Za-z0-9_.-]+)?")],
+    "swarms:run": [("POST", r"/api/swarms/\d+/run")],
+    "mcp:register": [("GET", r"/api/mcp-external"), ("POST", r"/api/mcp-external")],
+    # Kestrion announcing where its session API is, so ABP can use it as a backend (bot/kestrion.py)
+    "kestrion:link": [("GET", r"/api/kestrion"), ("POST", r"/api/kestrion/link")],
     # ABP's OpenAI-compatible model gateway (any provider ABP has, the router's "auto", web and browser models)
     "models:use": [("GET", r"/api/browser/v1(/[a-z-]+)?/models"),
                    ("POST", r"/api/browser/v1(/[a-z-]+)?/(chat/completions|embeddings)")],
@@ -50,6 +57,15 @@ PRESETS: dict[str, dict] = {
         "scopes": ["status:read", "bots:read", "models:read", "models:use", "modules:read", "modules:call"],
         "note": "An app that uses ABP as its model provider (the OpenAI-compatible gateway, with Authorization: Bearer) "
                 "and drives ABP's modules. No bot control, no Docker, no config, no credentials.",
+    },
+    "kestrion": {
+        "label": "Kestrion (ABP Connector)",
+        "scopes": ["status:read", "bots:read", "agents:ask", "swarms:read", "swarms:run", "mcp:register",
+                   "kestrion:link", "models:read", "models:use", "modules:read", "modules:call"],
+        "note": "Everything Kestrion's ABP Connector does, without ABP's dashboard token: status and bots, asking a "
+                "bot, running and polling swarms, registering Kestrion's MCP server, ABP's models and modules, and "
+                "announcing Kestrion's address so ABP can use it as a backend. No bot lifecycle, no Docker, no "
+                "config, no credentials.",
     },
     "read-only": {"label": "read-only monitor", "scopes": ["status:read", "bots:read", "docker:read", "modules:read",
                                                             "cluster:read", "models:read"]},

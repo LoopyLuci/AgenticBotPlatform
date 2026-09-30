@@ -257,6 +257,7 @@ _READINESS_CHECKS: dict[str, Callable[[], tuple[bool, str]]] = {
     "native_agent": _custom_model_ready,  # same providers.yaml registry
     "opencode": _opencode_ready,
     "openclaw": _openclaw_ready,
+    "kestrion": lambda: __import__("bot.kestrion", fromlist=["ready"]).ready(),
 }
 
 
