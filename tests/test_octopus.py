@@ -166,7 +166,7 @@ def test_connectors_are_modules_and_get_the_right_session(env, monkeypatch):
     from bot.octopus import connectors
     registry.modules(refresh=True)
     octo = [m for m in registry.modules().values() if m.area == "octopus"]
-    assert len(octo) == len(connectors.CONNECTORS) >= 29
+    assert len(octo) == len(connectors.CONNECTORS) + len(connectors.RUNNERS) >= 30
     assert all(m.repo.startswith("https://github.com/LoopyLuci/abp-octopus-") for m in octo)
     env[sso.TOKEN_VAR] = "sso-session"
     env[router.TOKEN_VAR] = "router-owner-token-0123"

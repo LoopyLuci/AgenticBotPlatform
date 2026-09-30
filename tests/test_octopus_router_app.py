@@ -146,7 +146,8 @@ def test_sso_and_connector_routes(home, monkeypatch):
     assert c.post("/api/octopus/sso/login", headers=D, json={"username": "luci", "password": "x"}).status_code == 401
     assert c.post("/api/octopus/connectors/push", headers=D).status_code == 200
     rows = c.get("/api/octopus/connectors", headers=D).json()["connectors"]
-    assert len(rows) == len(connectors.CONNECTORS) and {"installed", "running", "repo"} <= set(rows[0])
+    assert len(rows) == len(connectors.CONNECTORS) + len(connectors.RUNNERS) and {"installed", "running", "repo", "kind"} <= set(rows[0])
+    assert {r["id"] for r in rows if r["kind"] == "runner"} == {"octopus-alfred-js"}
 
 
 def test_start_and_stop_manage_the_process(home, monkeypatch):

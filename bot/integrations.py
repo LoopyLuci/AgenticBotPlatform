@@ -33,6 +33,9 @@ SCOPES: dict[str, list[tuple[str, str]]] = {
     "modules:call": [("POST", r"/api/modules/[A-Za-z0-9_.-]+/call")],
     "cluster:read": [("GET", r"/api/cluster/(status|nodes|jobs)(/[A-Za-z0-9_.-]+)?")],
     "models:read": [("GET", r"/api/models"), ("GET", r"/api/providers")],
+    # ABP's OpenAI-compatible model gateway (any provider ABP has, the router's "auto", web and browser models)
+    "models:use": [("GET", r"/api/browser/v1(/[a-z-]+)?/models"),
+                   ("POST", r"/api/browser/v1(/[a-z-]+)?/(chat/completions|embeddings)")],
 }
 
 PRESETS: dict[str, dict] = {
@@ -41,6 +44,12 @@ PRESETS: dict[str, dict] = {
         "scopes": ["status:read", "bots:read", "bots:control", "docker:read", "docker:control", "modules:read"],
         "note": "What octopus-router's server/botplatform.js calls: bots and their lifecycle, Docker read and "
                 "start/stop/restart/pause/unpause/pull/up. No destructive Docker verbs, no config, no credentials.",
+    },
+    "companion-app": {
+        "label": "a companion app (Kestrion, KotMoE, Cognitive Companion)",
+        "scopes": ["status:read", "bots:read", "models:read", "models:use", "modules:read", "modules:call"],
+        "note": "An app that uses ABP as its model provider (the OpenAI-compatible gateway, with Authorization: Bearer) "
+                "and drives ABP's modules. No bot control, no Docker, no config, no credentials.",
     },
     "read-only": {"label": "read-only monitor", "scopes": ["status:read", "bots:read", "docker:read", "modules:read",
                                                             "cluster:read", "models:read"]},
@@ -155,5 +164,48 @@ def frame_ancestors() -> list[str]:
 
 
 def frame_src() -> list[str]:
-    """Sites ABP's panes may show in a frame, besides ABP itself (the Router's origin, estate apps)."""
-    return _origins("frame_src")
+    """Sites ABP's panes may show in a frame, besides ABP itself (the Router's origin, estate apps, and the loopback
+    web UIs of adopted modules)."""
+    out = _origins("frame_src")
+    for o in module_web_origins():
+        if o not in out:
+            out.append(o)
+    return out
+
+
+_mod_origins: tuple[float, list[str]] = (0.0, [])
+
+
+def module_web_origins() -> list[str]:
+    """The origins of modules' web UIs: [ui] web URLs, and for web = "service" the loopback base_url in the module's
+    abp-ops.toml. Read from files (no module is asked), cached 30 s."""
+    global _mod_origins
+    import time
+    if time.monotonic() - _mod_origins[0] < 30:
+        return list(_mod_origins[1])
+    out: list[str] = []
+    try:
+        import tomllib
+
+        from bot.modules import registry
+        for m in registry.modules().values():
+            url = m.web
+            if url == "service":
+                try:
+                    spec = tomllib.loads((registry.install_dir(m) / "abp-ops.toml").read_text(encoding="utf-8"))
+                    url = str((spec.get("service") or {}).get("base_url") or "")
+                except (OSError, ValueError):
+                    url = ""
+            if not url:
+                continue
+            u = urlparse(url)
+            try:
+                n = normalize_origin(f"{u.scheme}://{u.netloc}")
+            except ValueError:
+                continue
+            if n and n not in out:
+                out.append(n)
+    except Exception:  # noqa: BLE001 - never break page serving
+        pass
+    _mod_origins = (time.monotonic(), out)
+    return list(out)

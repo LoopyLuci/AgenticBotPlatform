@@ -128,3 +128,23 @@ def test_a_down_docker_daemon_is_one_readable_line(monkeypatch):
     monkeypatch.setattr(dk, "_run", lambda args, **kw: (False, doc + "\nerror during connect: pipe missing"))
     info = dk.info()
     assert info["running"] is False and info["error"] == "Cannot connect to the Docker daemon error during connect: pipe missing"
+
+
+def test_a_companion_app_key_uses_the_model_gateway_as_an_openai_client_would(client, router_key):
+    """Kestrion, KotMoE and Cognitive Companion reach ABP's models through the OpenAI-compatible gateway with a key of
+    their own (Authorization: Bearer, the way an OpenAI client sends it), never the dashboard token."""
+    r = client.post("/api/integrations/keys", headers={"X-Dashboard-Token": "test-token"},
+                    json={"preset": "companion-app", "allow_framing": False})
+    assert r.status_code == 200 and "models:use" in r.json()["scopes"]
+    bearer = {"Authorization": f"Bearer {r.json()['key']}"}
+    models = client.get("/api/browser/v1/models", headers=bearer)
+    assert models.status_code == 200 and models.json()["object"] == "list"
+    own = {"X-Dashboard-Token": r.json()["key"]}                  # ABP's own routes take it the way the Router sends it
+    assert client.get("/api/modules", headers=own).status_code == 200                     # modules:read
+    for h in (own, bearer):                                                                # nothing outside its scopes
+        assert client.get("/api/config", headers=h).status_code == 403
+        assert client.post("/api/bots/1/stop", headers=h).status_code == 403
+    # the Router's key has no models:use: the gateway stays shut to it
+    assert client.get("/api/browser/v1/models",
+                      headers={"Authorization": f"Bearer {router_key['X-Dashboard-Token']}"}).status_code == 403
+    assert client.get("/api/browser/v1/models", headers={"Authorization": "Bearer test-token"}).status_code == 200
