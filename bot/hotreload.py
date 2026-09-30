@@ -150,6 +150,8 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.integrations", "bot.dashboard.integrations_api",
     # The Router app: its install job and process handle live in module state.
     "bot.octopus.router_app",
+    # Git stacks: the poller thread and the deploy lock; the routes register once.
+    "bot.git_stacks", "bot.dashboard.git_stacks_api",
     # Octopus: routes are registered once at startup.
     "bot.dashboard.octopus_api",
     # Cluster: offer.py holds the budget's reservations, executor.py the running jobs, store.py its connection,

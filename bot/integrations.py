@@ -28,6 +28,7 @@ SCOPES: dict[str, list[tuple[str, str]]] = {
     "bots:control": [("POST", r"/api/bots/[A-Za-z0-9_.-]{1,128}/(start|stop|restart|enable|disable)")],
     "docker:read": [("GET", r"/api/infra/hosts"), ("GET", r"/api/docker(/[A-Za-z0-9_.:/-]*)?")],
     "docker:control": [("POST", r"/api/docker/(containers|stacks)/[A-Za-z0-9_.-]{1,128}/action")],
+    "docker:deploy": [("POST", r"/api/docker/git-stacks/[a-z0-9][a-z0-9_-]{0,62}/(deploy|check)")],
     "modules:read": [("GET", r"/api/modules(/[A-Za-z0-9_.-]+)?(/(operations|status|conformance))?")],
     "modules:call": [("POST", r"/api/modules/[A-Za-z0-9_.-]+/call")],
     "cluster:read": [("GET", r"/api/cluster/(status|nodes|jobs)(/[A-Za-z0-9_.-]+)?")],

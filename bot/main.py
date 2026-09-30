@@ -469,6 +469,12 @@ async def run() -> None:
 
     # The cluster's heartbeat: every linked peer's node report, rescheduling jobs whose node went down.
     cluster_task = asyncio.create_task(cluster_membership.heartbeat_forever(stop_event))
+    # Git stacks' poller (bot/git_stacks.py): idle unless a stack has auto_deploy on.
+    import threading as _threading
+
+    from bot import git_stacks as _git_stacks
+    git_stacks_stop = _threading.Event()
+    _threading.Thread(target=_git_stacks.poller_forever, args=(git_stacks_stop,), daemon=True, name="git-stacks-poller").start()
 
     from bot import retention
 
@@ -497,6 +503,7 @@ async def run() -> None:
         await scheduler_task  # stop_event is already set; run_forever exits its own loop cleanly
         await peers_health_task  # same shutdown contract as scheduler_task
         await cluster_task  # same shutdown contract as scheduler_task
+        git_stacks_stop.set()
         await retention_task  # same shutdown contract as scheduler_task
         await sentinel_task  # same shutdown contract as scheduler_task
         await asyncio.to_thread(mdns_advertise.stop)

@@ -867,6 +867,11 @@ def build_app() -> FastAPI:
 
     integrations_api.register(app, _require_token, _identify_caller)
 
+    # Git-backed compose stacks and their poller (/api/docker/git-stacks): Portainer's git deploys.
+    from bot.dashboard import git_stacks_api
+
+    git_stacks_api.register(app, _require_token, control_auth("docker", write=False), control_auth("docker", write=True))
+
     # The Octopus estate: catalog and status, octopus-router, SSO (/api/octopus).
     from bot.dashboard import octopus_api
 
