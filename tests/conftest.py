@@ -60,6 +60,7 @@ def _committed_backends():
     return _COMMITTED["text"]
 
 
+_REAL_DB = Path(db_module.DB_PATH)
 _WORKER_DB = _STATE / "bot.db"
 _worker_db_ready = False
 
@@ -70,13 +71,16 @@ def _isolated_cicd_event_store(monkeypatch, tmp_path):
     store. No test may ever write into the real one, so every test gets its own."""
     # The main database: a test that does not ask for temp_db must not use the checkout's real data/bot.db either (a
     # fresh clone has none, so its tables were missing - Linux VM runs failed on it; a developer's holds real data).
-    # One initialised file per test process; temp_db, when asked for, still gives a test a fresh one of its own.
+    # One initialised file per test process; temp_db, when asked for, still gives a test a fresh one of its own, and a
+    # wider-scoped fixture that pointed it elsewhere (a module's own server, tests/test_browser_extension_e2e.py)
+    # keeps its choice.
     global _worker_db_ready
-    monkeypatch.setattr(db_module, "DB_PATH", _WORKER_DB)
-    monkeypatch.setattr(db_module, "_conn", None)
-    if not _worker_db_ready:
-        db_module.init_db()
-        _worker_db_ready = True
+    if Path(db_module.DB_PATH) == _REAL_DB:
+        monkeypatch.setattr(db_module, "DB_PATH", _WORKER_DB)
+        monkeypatch.setattr(db_module, "_conn", None)
+        if not _worker_db_ready:
+            db_module.init_db()
+            _worker_db_ready = True
     monkeypatch.setenv("ABP_CICD_DB", str(tmp_path / "cicd-events.db"))
     # Same for agent traces (bot/agent_runtime/trace.py): every native-agent turn records one.
     monkeypatch.setenv("ABP_AGENT_TRACE_DB", str(tmp_path / "agent-traces.db"))

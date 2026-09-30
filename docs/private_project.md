@@ -63,7 +63,8 @@ Services with no web API are covered differently:
 |---|---|
 | nixos-hetzner, pentest-flake | ABP's NixOS flake and module (`nix/`); Fabric's deploy work |
 | private_project-auth-client | `bot/private_project/sso.py` does the same sign-in, verify and refresh |
-| private_project-vault, Cephaloscan, PentestPlayground, alfred-js, private_project-simplex, private_project-mail, private_project-conversation-exporter | Listed on the Estate tab with their repos. Connectors to come (docs/modules/ROADMAP.md §5.7). |
+| alfred-js (Alfred, the Discord bot) | A runner, `LoopyLuci/abp-private_project-alfred-js`: ABP clones and installs the upstream bot, runs it as a managed service with its own tokens (stored with `service.set_secret`, never in the repo), lists and registers its slash commands, runs its tests, updates it and reads its chip balances. `RUNNERS` in `bot/private_project/connectors.py` |
+| private_project-vault, Cephaloscan, PentestPlayground, private_project-simplex, private_project-mail, private_project-conversation-exporter | Listed on the Estate tab with their repos. Connectors to come (docs/modules/ROADMAP.md §5.7). |
 
 ## Configuration (config/backends.yaml)
 
