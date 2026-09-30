@@ -204,6 +204,10 @@ def install(update: bool = False) -> dict:
     return status()
 
 
+def _spawn(cmd: list[str], **kw: Any) -> subprocess.Popen:
+    return subprocess.Popen(cmd, **kw)
+
+
 def start() -> dict:
     d = app_dir()
     if not (d / ".env").is_file():
@@ -214,8 +218,8 @@ def start() -> dict:
     kw: dict[str, Any] = {"creationflags": NO_WINDOW | (0x00000200 if os.name == "nt" else 0)}  # new process group
     if os.name != "nt":
         kw = {"start_new_session": True}
-    p = subprocess.Popen([_node() or "node", "--env-file=.env", "server/index.js"], cwd=str(d), stdout=log,
-                         stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, **kw)
+    p = _spawn([_node() or "node", "--env-file=.env", "server/index.js"], cwd=str(d), stdout=log,
+               stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, **kw)
     _pid_file().write_text(str(p.pid))
     for _ in range(60):
         try:
