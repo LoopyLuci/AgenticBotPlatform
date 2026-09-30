@@ -236,6 +236,10 @@ def _require_token(x_dashboard_token: Optional[str] = Header(default=None)) -> N
         # silently running with no auth at all.
         raise HTTPException(status_code=503, detail="DASHBOARD_TOKEN is not set in .env")
     if not _tokens_match(x_dashboard_token, expected):
+        # An integration key (bot/integrations.py): the gate middleware has already held this request to the routes
+        # its scopes list, so reaching a route at all means the key's owner granted it.
+        if x_dashboard_token and db.api_key_kind(x_dashboard_token) == "integration":
+            return
         raise HTTPException(status_code=401, detail="invalid dashboard token")
 
 
@@ -873,6 +877,11 @@ def build_app() -> FastAPI:
     git_stacks_api.register(app, _require_token, control_auth("docker", write=False), control_auth("docker", write=True))
 
     # The PrivateProject estate: catalog and status, private_project-router, SSO (/api/private_project).
+    from bot.dashboard import private_project_api
+
+    private_project_api.register(app, _require_token)
+
+    # PrivateProject: the link that lets ABP use it as a backend (/api/private_project).
     from bot.dashboard import private_project_api
 
     private_project_api.register(app, _require_token)

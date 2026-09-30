@@ -141,6 +141,13 @@ export const operations = {
    "instance_id"
   ]
  },
+ "DELETE /api/private_project/link": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/private_project/link",
+  "path_params": [],
+  "query_params": []
+ },
  "DELETE /api/mcp-external/{name}": {
   "body": false,
   "method": "DELETE",
@@ -1424,6 +1431,45 @@ export const operations = {
    "instance_id",
    "board"
   ]
+ },
+ "GET /api/private_project": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/private_project",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/private_project/models": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/private_project/models",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/private_project/sessions": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/private_project/sessions",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/private_project/sessions/{agent_type}/messages": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/private_project/sessions/{agent_type}/messages",
+  "path_params": [
+   "agent_type"
+  ],
+  "query_params": []
+ },
+ "GET /api/private_project/sessions/{agent_type}/permissions": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/private_project/sessions/{agent_type}/permissions",
+  "path_params": [
+   "agent_type"
+  ],
+  "query_params": []
  },
  "GET /api/logs": {
   "body": false,
@@ -3701,6 +3747,20 @@ export const operations = {
   "path_params": [
    "card_id"
   ],
+  "query_params": []
+ },
+ "POST /api/private_project/ask": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/private_project/ask",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/private_project/link": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/private_project/link",
+  "path_params": [],
   "query_params": []
  },
  "POST /api/mcp-external": {
@@ -8837,6 +8897,66 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/api/integrations/whoami",
+  "path_params": [],
+  "query_params": []
+ },
+ "private_project_ask_api_private_project_ask_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/private_project/ask",
+  "path_params": [],
+  "query_params": []
+ },
+ "private_project_link_api_private_project_link_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/private_project/link",
+  "path_params": [],
+  "query_params": []
+ },
+ "private_project_messages_api_private_project_sessions__agent_type__messages_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/private_project/sessions/{agent_type}/messages",
+  "path_params": [
+   "agent_type"
+  ],
+  "query_params": []
+ },
+ "private_project_models_api_private_project_models_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/private_project/models",
+  "path_params": [],
+  "query_params": []
+ },
+ "private_project_permissions_api_private_project_sessions__agent_type__permissions_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/private_project/sessions/{agent_type}/permissions",
+  "path_params": [
+   "agent_type"
+  ],
+  "query_params": []
+ },
+ "private_project_sessions_api_private_project_sessions_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/private_project/sessions",
+  "path_params": [],
+  "query_params": []
+ },
+ "private_project_status_api_private_project_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/private_project",
+  "path_params": [],
+  "query_params": []
+ },
+ "private_project_unlink_api_private_project_link_delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/private_project/link",
   "path_params": [],
   "query_params": []
  },

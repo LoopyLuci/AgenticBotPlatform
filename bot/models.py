@@ -34,6 +34,7 @@ BACKEND_FAMILY: dict[str, str] = {
     "native_agent": "custom",
     "opencode": "custom",       # provider/model strings, like custom_model; the model itself is resolved by that product
     "openclaw": "custom",
+    "private_project": "private_project",     # its "model" is one of PrivateProject's agent types
 }
 
 # The one hardcoded model id in this module — not a "list of choices" (the
