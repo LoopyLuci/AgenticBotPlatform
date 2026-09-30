@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import time
+from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
 
@@ -131,6 +132,16 @@ _module_cache: tuple[float, dict[str, dict]] = (0.0, {})
 _MODULE_TTL_S = 5.0
 
 
+def _module_secret(data_dir: Path, name: str) -> str:
+    """$NAME, else what the module's hub stored as NAME (service.set_secret: a user, or the module itself)."""
+    if os.environ.get(name):
+        return os.environ[name]
+    try:
+        return str(json.loads((data_dir / "secrets.json").read_text(encoding="utf-8")).get(name) or "")
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
 def module_providers() -> dict[str, dict]:
     global _module_cache
     if os.environ.get("ABP_NO_MODULE_PROVIDERS"):   # tests: never pick up a hub that happens to run on this machine
@@ -162,7 +173,7 @@ def module_providers() -> dict[str, dict]:
                 continue
             base = harness.service_urls(m).get("openai")
             if base:
-                key = os.environ.get(m.openai_key_env, "") if m.openai_key_env else ""
+                key = _module_secret(registry.data_dir(m), m.openai_key_env) if m.openai_key_env else ""
                 out[m.id] = {"base_url": base.rstrip("/"), "protocol": "openai", "api_key": key or "unused",
                              "module": m.id, "description": f"{m.name} (module): {m.description}"[:200]}
     except Exception as e:  # noqa: BLE001
