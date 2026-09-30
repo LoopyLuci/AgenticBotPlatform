@@ -159,3 +159,26 @@ def test_the_page_is_in_both_uis_and_identical():
     for html in ((ROOT / "bot/dashboard/static/dashboard.html").read_text(encoding="utf-8"),
                  (ROOT / "desktop-app/ui/index.html").read_text(encoding="utf-8")):
         assert 'id="private_project"' in html and 'id="ocp-root"' in html and "private_project-panel.js" in html and 'href="#private_project"' in html
+
+
+def test_connectors_are_modules_and_get_the_right_session(env, monkeypatch):
+    from bot.modules import client, harness, registry
+    from bot.private_project import connectors
+    registry.modules(refresh=True)
+    octo = [m for m in registry.modules().values() if m.area == "private_project"]
+    assert len(octo) == len(connectors.CONNECTORS) >= 29
+    assert all(m.repo.startswith("https://github.com/LoopyLuci/abp-private_project-") for m in octo)
+    env[sso.TOKEN_VAR] = "sso-session"
+    env[router.TOKEN_VAR] = "router-owner-token-0123"
+    running = {"private_project-budget", "private_project-router"}
+    monkeypatch.setattr(client, "find", lambda m, timeout=2.0: object() if m.id in running else None)
+    sent = {}
+    monkeypatch.setattr(client, "call", lambda m, op, args, timeout=0: sent.setdefault(m.id, (op, args)) and {"signed_in": True})
+    assert connectors.push() == {"private_project-budget": "signed in", "private_project-router": "signed in"}
+    assert sent == {"private_project-budget": ("auth.set_token", {"token": "sso-session"}),
+                    "private_project-router": ("auth.set_token", {"token": "router-owner-token-0123"})}
+    sent.clear()
+    import bot.dashboard.private_project_api  # noqa: F401 - registers the hook
+    assert connectors.on_hub_started in harness.HUB_STARTED
+    connectors.on_hub_started("cacheit")                # not a connector: nothing
+    assert sent == {}

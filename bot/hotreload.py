@@ -270,7 +270,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.retention",
     "bot.peers",
     "bot.cache",  # CacheIt's client: a reload only drops its pooled connection and its cached hub address
-    "bot.private_project.estate", "bot.private_project.sso", "bot.private_project.router",  # the estate's status cache is rebuilt on demand
+    "bot.private_project.estate", "bot.private_project.sso", "bot.private_project.router", "bot.private_project.connectors",  # the estate's status cache is rebuilt on demand
     "bot.tailscale_mgr",
     "bot.browser_policy",
     "bot.native_host",
