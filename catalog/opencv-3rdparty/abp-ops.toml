@@ -1,0 +1,35 @@
+# OpenCV 3rdparty's operations for ABP, kept by hand (an overlay: they run against the upstream checkout).
+# Format: the header of ABP's abp_modkit/spec.py. {python} is the module's own environment once
+# project.python_setup made it (in the module's data folder, never in the checkout).
+
+[service]
+id = "opencv-3rdparty"
+name = "OpenCV 3rdparty"
+description = "Prebuilt third-party binaries OpenCV's build downloads (FFmpeg, IPP, TBB, ...), one branch each; only the branches asked for are fetched."
+
+[[op]]
+id = "branches.list"
+kind = "cmd"
+summary = "Every branch (one per dependency and version)"
+argv = ["git", "-C", "{project}", "ls-remote", "--heads", "origin"]
+mutating = false
+
+[[op]]
+id = "branch.fetch"
+kind = "cmd"
+summary = "Fetch one branch's files (e.g. ffmpeg/master_20240527)"
+argv = ["git", "-C", "{project}", "fetch", "--depth", "1", "origin", "{branch}:refs/remotes/origin/{branch}"]
+timeout_s = 3600
+background = true
+[op.inputs]
+branch = { type = "string", required = true, description = "a name from branches.list" }
+
+[[op]]
+id = "branch.files"
+kind = "cmd"
+summary = "The files of a fetched branch"
+argv = ["git", "-C", "{project}", "ls-tree", "-r", "--name-only", "refs/remotes/origin/{branch}"]
+timeout_s = 120
+mutating = false
+[op.inputs]
+branch = { type = "string", required = true }

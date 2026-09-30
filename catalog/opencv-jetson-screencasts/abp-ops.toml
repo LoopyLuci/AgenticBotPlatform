@@ -1,0 +1,37 @@
+# OpenCV Jetson screencasts's operations for ABP, kept by hand (an overlay: they run against the upstream checkout).
+# Format: the header of ABP's abp_modkit/spec.py. {python} is the module's own environment once
+# project.python_setup made it (in the module's data folder, never in the checkout).
+
+[service]
+id = "opencv-jetson-screencasts"
+name = "OpenCV Jetson screencasts"
+description = "The sources of OpenCV's Jetson screencast lessons (C++ samples, 2015): each builds with CMake against an installed OpenCV."
+
+[[op]]
+id = "lessons.list"
+kind = "cmd"
+summary = "The lessons"
+argv = ["{python}", "-c", "import json, os, pathlib, sys; print(json.dumps(sorted(p.name for p in pathlib.Path(r'{project}').iterdir() if (p/'CMakeLists.txt').is_file())))"]
+timeout_s = 60
+mutating = false
+
+[[op]]
+id = "lesson.configure"
+kind = "cmd"
+summary = "Configure one lesson against an OpenCV build (opencv_dir: its folder with OpenCVConfig.cmake)"
+argv = ["cmake", "-S", "{project}/{lesson}", "-B", "{target}/{lesson}", "-DOpenCV_DIR={opencv_dir}"]
+timeout_s = 1800
+background = true
+[op.inputs]
+lesson = { type = "string", required = true }
+opencv_dir = { type = "string", required = true }
+
+[[op]]
+id = "lesson.build"
+kind = "cmd"
+summary = "Build one lesson"
+argv = ["cmake", "--build", "{target}/{lesson}", "--config", "Release"]
+timeout_s = 3600
+background = true
+[op.inputs]
+lesson = { type = "string", required = true }

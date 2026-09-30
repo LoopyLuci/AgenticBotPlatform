@@ -1,0 +1,32 @@
+# Bin-Picking Challenge as an ABP module: an overlay (ABP keeps this file; the checkout stays exactly upstream).
+# Kept by hand. Operations: abp-ops.toml next to this file.
+
+[module]
+id = "opencv-bpc"
+name = "Bin-Picking Challenge"
+repo = "https://github.com/opencv/bpc.git"
+branch = "main"
+api = 1
+area = "vision"
+description = "OpenCV's Perception Challenge for bin picking: a pose estimator and its tester, run in containers."
+
+[checkout]
+marker = ["ibpc_py/setup.py", "Dockerfile.tester"]
+
+[toolchain]
+require = [{ tool = "docker", url = "https://docs.docker.com/get-docker/" }, { tool = "python", min = "3.10", url = "https://www.python.org/downloads/" }, { tool = "git", url = "https://git-scm.com/downloads" }]
+
+[hub]
+start = ["{abp_python}", "-m", "abp_modkit", "serve", "--spec", "{overlay}/abp-ops.toml", "--project", "{repo}", "--home", "{data}", "--var", "target={target}"]
+control_file = "{data}/control.json"
+start_timeout_s = 30
+
+[mcp]
+stdio = ["{abp_python}", "-m", "abp_modkit", "mcp", "--home", "{data}"]
+
+[ui]
+panel = "operations"
+
+[host]
+os = ["windows", "linux", "macos"]
+needs = ["docker"]

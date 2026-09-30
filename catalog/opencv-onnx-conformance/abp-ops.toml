@@ -1,0 +1,33 @@
+# OpenCV ONNX conformance proxy's operations for ABP, kept by hand (an overlay: they run against the upstream checkout).
+# Format: the header of ABP's abp_modkit/spec.py. {python} is the module's own environment once
+# project.python_setup made it (in the module's data folder, never in the checkout).
+
+[service]
+id = "opencv-onnx-conformance"
+name = "OpenCV ONNX conformance proxy"
+description = "An adapter that runs ONNX's backend test suite against OpenCV DNN: how much of ONNX this OpenCV runs."
+
+[[op]]
+id = "install"
+kind = "cmd"
+summary = "Install the adapter into the module's Python (run project.python_setup first)"
+argv = ["{python}", "-m", "pip", "install", "-e", "{project}"]
+timeout_s = 1800
+background = true
+
+[[op]]
+id = "conformance.run"
+kind = "cmd"
+summary = "Run the adapter's ONNX backend tests against the installed OpenCV"
+argv = ["{python}", "-m", "pytest", "-q", "-p", "no:cacheprovider", "--pyargs", "opencv_onnx_proxy"]
+timeout_s = 14400
+background = true
+extra_args = true
+mutating = false
+
+[[op]]
+id = "git.update"
+kind = "cmd"
+summary = "Update the checkout from upstream (fast-forward only; nothing local is ever overwritten)"
+argv = ["git", "-C", "{project}", "pull", "--ff-only"]
+timeout_s = 1800

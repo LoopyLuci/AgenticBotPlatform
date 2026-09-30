@@ -338,6 +338,23 @@ def test_adopt_writes_both_files_and_a_refresh_keeps_hand_edits(poly):
     assert (poly / "abp-ops.toml").read_text(encoding="utf-8") == curated
 
 
+def test_adopt_register_adds_the_project_to_abps_config(tmp_path, monkeypatch):
+    """`abp_modkit adopt <folder> --register` (it called a config method that does not exist, so it always failed)."""
+    import shutil
+
+    from abp_modkit import cli
+    from bot.config import config
+    cfg_file = tmp_path / "backends.yaml"
+    shutil.copy(config.path, cfg_file)
+    monkeypatch.setattr(config, "path", cfg_file)
+    monkeypatch.setattr(config, "_data", dict(config._data))
+    proj = tmp_path / "reg-me"
+    proj.mkdir()
+    assert cli._register(proj).startswith("registered with ABP")
+    assert str(proj.resolve()).replace("\\", "/") in config.current["modules"]["projects"]
+    assert cli._register(proj) == "already registered with ABP"
+
+
 def test_new_makes_a_module_that_passes_its_own_check(tmp_path):
     from abp_modkit import cli
     for lang in ("python", "node"):
@@ -662,3 +679,59 @@ def test_an_overlay_leaves_the_checkout_untouched_and_abp_drives_it(upstream, tm
             pass
         monkeypatch.undo()
         registry.modules(refresh=True)
+
+
+def test_an_overlays_python_lives_in_the_modules_data_folder_and_inputs_reach_env(upstream, tmp_path):
+    """project.python_setup makes a real venv in the hub's data folder (never in the checkout) that {python} uses from
+    then on; an input's default applies when a call leaves it out, and inputs fill an op's env like its argv."""
+    from abp_modkit.cli import _client
+    spec = tmp_path / "ov" / "abp-ops.toml"
+    _w(spec, '''
+        [service]
+        id = "uplib"
+        name = "UpLib"
+
+        [[op]]
+        id = "py.where"
+        kind = "cmd"
+        argv = ["{python}", "-c", "import os, sys; print(sys.prefix + '|' + os.environ['FLAVOR'])"]
+        env = { FLAVOR = "{flavor}" }
+        mutating = false
+        [op.inputs]
+        flavor = { type = "string", default = "plain" }
+        ''')
+    home = tmp_path / "home"
+    p = subprocess.Popen([sys.executable, "-m", "abp_modkit", "serve", "--spec", str(spec), "--project", str(upstream),
+                          "--home", str(home)], cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    try:
+        for _ in range(100):
+            if (home / "control.json").is_file():
+                break
+            time.sleep(0.1)
+        req = _client(home)
+
+        def call(op, args=None):
+            return req("POST", f"/v1/call/{op}", args or {})["result"]
+        prefix, flavor = call("py.where")["output"].strip().split("|")
+        assert flavor == "plain" and Path(prefix).resolve() != (home / "venv").resolve()
+        assert call("py.where", {"flavor": "spicy"})["output"].strip().endswith("|spicy")
+        job = call("project.python_setup", {"requirements": [], "packages": []})
+        for _ in range(600):
+            job = req("POST", "/v1/call/jobs.get", {"id": job["id"]})["result"]
+            if job["state"] != "running":
+                break
+            time.sleep(0.5)
+        assert job["state"] == "done", job
+        prefix = call("py.where")["output"].strip().split("|")[0]
+        assert Path(prefix).resolve() == (home / "venv").resolve()          # {python} is now the module's own
+        assert _git(upstream, "status", "--porcelain") == ""                 # and the checkout is untouched
+        with pytest.raises(RuntimeError, match="not a file inside the project"):
+            call("project.python_setup", {"requirements": ["../outside.txt"]})
+        with pytest.raises(RuntimeError, match="not pip options"):
+            call("project.python_setup", {"packages": ["--index-url=http://x"]})
+    finally:
+        try:
+            req("POST", "/v1/service/stop", {})
+            p.wait(10)
+        except Exception:  # noqa: BLE001
+            p.kill()

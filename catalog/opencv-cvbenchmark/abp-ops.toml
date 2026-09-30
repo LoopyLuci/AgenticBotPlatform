@@ -1,0 +1,56 @@
+# OpenCV cvbenchmark's operations for ABP, kept by hand (an overlay: they run against the upstream checkout).
+# Format: the header of ABP's abp_modkit/spec.py. {python} is the module's own environment once
+# project.python_setup made it (in the module's data folder, never in the checkout).
+
+[service]
+id = "opencv-cvbenchmark"
+name = "OpenCV cvbenchmark"
+description = "OpenCV's CPU benchmark: build OpenCV, run its performance tests and score a CPU against baselines."
+
+[[op]]
+id = "bench.run"
+kind = "cmd"
+summary = "Build, run the performance tests and score this CPU (arch: x86_64, aarch64, riscvv, ...)"
+argv = ["{python}", "{project}/benchmark.py", "bench", "--arch", "{arch}", "--cpu-model", "{cpu_model}"]
+timeout_s = 28800
+background = true
+extra_args = true
+[op.inputs]
+arch = { type = "string", required = true, description = "x86_64, aarch64, riscvv..." }
+cpu_model = { type = "string", required = true, description = "a label" }
+
+[[op]]
+id = "perf.run"
+kind = "cmd"
+summary = "Build OpenCV and run its performance tests only"
+argv = ["{python}", "{project}/benchmark.py", "perf", "--arch", "{arch}", "--cpu-model", "{cpu_model}"]
+timeout_s = 28800
+background = true
+extra_args = true
+[op.inputs]
+arch = { type = "string", required = true }
+cpu_model = { type = "string", required = true }
+
+[[op]]
+id = "score.show"
+kind = "cmd"
+summary = "Score the results collected so far"
+argv = ["{python}", "{project}/benchmark.py", "score"]
+timeout_s = 900
+extra_args = true
+mutating = false
+
+[[op]]
+id = "models.download"
+kind = "cmd"
+summary = "Download the models the benchmark uses"
+argv = ["{python}", "{project}/download_models.py"]
+timeout_s = 3600
+background = true
+
+[[op]]
+id = "git.update"
+kind = "cmd"
+summary = "Update the checkout from upstream (fast-forward only; nothing local is ever overwritten)"
+argv = ["git", "-C", "{project}", "pull", "--ff-only"]
+timeout_s = 1800

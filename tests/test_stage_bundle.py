@@ -177,3 +177,15 @@ def test_every_package_the_server_imports_is_in_the_bundle():
     for pkg in sorted(used):
         assert f'"{pkg}"' in stage, f"{pkg} is imported by bot/ but scripts/stage_bundle.py does not stage it"
         assert resources.get(f"stage/{pkg}") == pkg, f"{pkg} is not in tauri.conf.json's bundle resources"
+
+
+def test_the_module_catalog_ships_in_the_bundle():
+    """catalog/ holds the overlays ABP ships (the OpenCV family): the registry reads it from ABP's root, which in the
+    installed app is the bundle."""
+    import json
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    assert (root / "catalog" / "opencv" / "abp-module.toml").is_file()
+    assert '"catalog"' in (root / "scripts" / "stage_bundle.py").read_text(encoding="utf-8")
+    resources = json.loads((root / "desktop-app" / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))["bundle"]["resources"]
+    assert resources.get("stage/catalog") == "catalog"

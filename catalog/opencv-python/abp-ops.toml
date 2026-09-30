@@ -1,0 +1,43 @@
+# opencv-python's operations for ABP, kept by hand (an overlay: they run against the upstream checkout).
+# Format: the header of ABP's abp_modkit/spec.py. {python} is the module's own environment once
+# project.python_setup made it (in the module's data folder, never in the checkout).
+
+[service]
+id = "opencv-python"
+name = "opencv-python"
+description = "The builder of OpenCV's Python wheels (opencv-python, -contrib, -headless): build a wheel of OpenCV for this machine."
+
+[[op]]
+id = "submodules.init"
+kind = "cmd"
+summary = "Fetch the OpenCV sources the builder builds from (its submodules; large)"
+argv = ["git", "-C", "{project}", "submodule", "update", "--init", "--depth", "1"]
+timeout_s = 3600
+background = true
+
+[[op]]
+id = "wheel.build"
+kind = "cmd"
+summary = "Build a wheel (contrib + headless by default; set with contrib=0/1, headless=0/1) into the module's data folder; takes long"
+argv = ["{python}", "-m", "pip", "wheel", "{project}", "--no-deps", "-w", "{data}/wheels", "--verbose"]
+timeout_s = 21600
+background = true
+env = { ENABLE_CONTRIB = "{contrib}", ENABLE_HEADLESS = "{headless}" }
+[op.inputs]
+contrib = { type = "string", description = "1 or 0", default = "1" }
+headless = { type = "string", description = "1 or 0", default = "1" }
+
+[[op]]
+id = "wheel.list"
+kind = "cmd"
+summary = "The wheels built so far"
+argv = ["{python}", "-c", "import json, os, pathlib, sys; print(json.dumps(sorted(p.name for p in pathlib.Path(r'{data}/wheels').glob('*.whl')) if pathlib.Path(r'{data}/wheels').is_dir() else []))"]
+timeout_s = 60
+mutating = false
+
+[[op]]
+id = "git.update"
+kind = "cmd"
+summary = "Update the checkout from upstream (fast-forward only; nothing local is ever overwritten)"
+argv = ["git", "-C", "{project}", "pull", "--ff-only"]
+timeout_s = 1800

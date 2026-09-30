@@ -1,0 +1,31 @@
+# OpenCV as an ABP module: an overlay (ABP keeps this file; the checkout stays exactly upstream).
+# Kept by hand. Operations: abp-ops.toml next to this file.
+
+[module]
+id = "opencv"
+name = "OpenCV"
+repo = "https://github.com/opencv/opencv.git"
+branch = "5.x"
+api = 1
+area = "vision"
+description = "OpenCV, the computer vision library: built from source here (with contrib, Python bindings and this machine's accelerators), its tests against opencv_extra's data, and its Python samples."
+
+[checkout]
+marker = ["CMakeLists.txt", "modules/core/CMakeLists.txt"]
+
+[toolchain]
+require = [{ tool = "cmake", min = "3.16", url = "https://cmake.org/download/" }, { tool = "python", min = "3.10", url = "https://www.python.org/downloads/" }, { tool = "git", url = "https://git-scm.com/downloads" }]
+
+[build]
+outputs = ["{target}/build/CMakeCache.txt"]
+
+[hub]
+start = ["{abp_python}", "-m", "abp_modkit", "serve", "--spec", "{overlay}/abp-ops.toml", "--project", "{repo}", "--home", "{data}", "--var", "target={target}"]
+control_file = "{data}/control.json"
+start_timeout_s = 30
+
+[mcp]
+stdio = ["{abp_python}", "-m", "abp_modkit", "mcp", "--home", "{data}"]
+
+[ui]
+panel = "operations"

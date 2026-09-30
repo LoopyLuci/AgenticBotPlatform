@@ -1,0 +1,28 @@
+# OpenCV cvbenchmark as an ABP module: an overlay (ABP keeps this file; the checkout stays exactly upstream).
+# Kept by hand. Operations: abp-ops.toml next to this file.
+
+[module]
+id = "opencv-cvbenchmark"
+name = "OpenCV cvbenchmark"
+repo = "https://github.com/opencv/cvbenchmark.git"
+branch = "main"
+api = 1
+area = "vision"
+description = "OpenCV's CPU benchmark: build OpenCV, run its performance tests and score a CPU against baselines."
+
+[checkout]
+marker = ["benchmark.py", "processor.json"]
+
+[toolchain]
+require = [{ tool = "cmake", min = "3.16", url = "https://cmake.org/download/" }, { tool = "python", min = "3.10", url = "https://www.python.org/downloads/" }, { tool = "git", url = "https://git-scm.com/downloads" }]
+
+[hub]
+start = ["{abp_python}", "-m", "abp_modkit", "serve", "--spec", "{overlay}/abp-ops.toml", "--project", "{repo}", "--home", "{data}", "--var", "target={target}"]
+control_file = "{data}/control.json"
+start_timeout_s = 30
+
+[mcp]
+stdio = ["{abp_python}", "-m", "abp_modkit", "mcp", "--home", "{data}"]
+
+[ui]
+panel = "operations"

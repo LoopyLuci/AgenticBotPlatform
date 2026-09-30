@@ -1,0 +1,33 @@
+# OpenCV extra data's operations for ABP, kept by hand (an overlay: they run against the upstream checkout).
+# Format: the header of ABP's abp_modkit/spec.py. {python} is the module's own environment once
+# project.python_setup made it (in the module's data folder, never in the checkout).
+
+[service]
+id = "opencv-extra"
+name = "OpenCV extra data"
+description = "OpenCV's test data (images, videos, DNN models used by its tests); the OpenCV module's tests read it."
+
+[[op]]
+id = "testdata.list"
+kind = "cmd"
+summary = "The test data's top-level folders"
+argv = ["{python}", "-c", "import json, os, pathlib, sys; print(json.dumps(sorted(p.name for p in pathlib.Path(r'{project}/testdata').iterdir())))"]
+timeout_s = 60
+mutating = false
+
+[[op]]
+id = "dnn.download_models"
+kind = "cmd"
+summary = "Download the DNN models OpenCV's DNN tests use (large; into testdata/dnn, next to the data they belong to); model names can be added to fetch only those"
+argv = ["{python}", "{project}/testdata/dnn/download_models.py"]
+cwd = "testdata/dnn"
+timeout_s = 14400
+background = true
+extra_args = true
+
+[[op]]
+id = "git.update"
+kind = "cmd"
+summary = "Update the checkout from upstream (fast-forward only; nothing local is ever overwritten)"
+argv = ["git", "-C", "{project}", "pull", "--ff-only"]
+timeout_s = 1800

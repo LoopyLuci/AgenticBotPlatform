@@ -1,0 +1,97 @@
+# OpenCV's operations for ABP, kept by hand (an overlay: they run against the upstream checkout).
+# Format: the header of ABP's abp_modkit/spec.py. {python} is the module's own environment once
+# project.python_setup made it (in the module's data folder, never in the checkout).
+
+[service]
+id = "opencv"
+name = "OpenCV"
+description = "OpenCV, the computer vision library: built from source here (with contrib, Python bindings and this machine's accelerators), its tests against opencv_extra's data, and its Python samples."
+
+[[op]]
+id = "build.configure"
+kind = "cmd"
+summary = "Configure OpenCV with contrib, Python 3 bindings, OpenCL and Vulkan (DNN on AMD/Intel/NVIDIA GPUs); more -D options can be added"
+argv = ["cmake", "-S", "{project}", "-B", "{target}/build", "-DCMAKE_BUILD_TYPE=Release", "-DOPENCV_EXTRA_MODULES_PATH={project}/../opencv_contrib/modules", "-DBUILD_opencv_python3=ON", "-DPYTHON3_EXECUTABLE={python}", "-DWITH_OPENCL=ON", "-DWITH_VULKAN=ON", "-DBUILD_TESTS=ON", "-DBUILD_PERF_TESTS=ON", "-DBUILD_EXAMPLES=OFF", "-DCMAKE_INSTALL_PREFIX={data}/install"]
+timeout_s = 3600
+background = true
+extra_args = true
+
+[[op]]
+id = "build.compile"
+kind = "cmd"
+summary = "Build OpenCV (after build.configure; a long one)"
+argv = ["cmake", "--build", "{target}/build", "--config", "Release", "--parallel"]
+timeout_s = 14400
+background = true
+extra_args = true
+
+[[op]]
+id = "build.install"
+kind = "cmd"
+summary = "Install the build into the module's data folder (install/)"
+argv = ["cmake", "--install", "{target}/build", "--config", "Release"]
+timeout_s = 1800
+background = true
+
+[[op]]
+id = "build.options"
+kind = "cmd"
+summary = "The build's options and their values (after configure)"
+argv = ["cmake", "-N", "-LH", "{target}/build"]
+timeout_s = 120
+mutating = false
+
+[[op]]
+id = "test.run"
+kind = "cmd"
+summary = "OpenCV's own tests (CTest) with opencv_extra's test data; filter: a regex of test names (e.g. opencv_test_imgproc), or empty for all"
+argv = ["ctest", "--test-dir", "{target}/build", "-C", "Release", "--output-on-failure", "-R", "{filter}"]
+timeout_s = 14400
+background = true
+env = { OPENCV_TEST_DATA_PATH = "{project}/../opencv_extra/testdata" }
+mutating = false
+[op.inputs]
+filter = { type = "string", description = "regex of test names; empty for all" }
+
+[[op]]
+id = "info.build"
+kind = "cmd"
+summary = "How the OpenCV this module's Python uses was built (modules, accelerators, parallel backends)"
+argv = ["{python}", "-c", "import json, os, pathlib, sys; import cv2; print(cv2.getBuildInformation())"]
+timeout_s = 120
+mutating = false
+
+[[op]]
+id = "info.version"
+kind = "cmd"
+summary = "The version of OpenCV its Python loads, and whether OpenCL / CUDA are available"
+argv = ["{python}", "-c", "import json, os, pathlib, sys; import cv2; print(json.dumps({'version': cv2.__version__, 'file': cv2.__file__, 'opencl': cv2.ocl.haveOpenCL(), 'cuda_devices': cv2.cuda.getCudaEnabledDeviceCount() if hasattr(cv2, 'cuda') else 0}))"]
+timeout_s = 120
+mutating = false
+
+[[op]]
+id = "samples.list"
+kind = "cmd"
+summary = "OpenCV's Python samples"
+argv = ["{python}", "-c", "import json, os, pathlib, sys; print(json.dumps(sorted(p.name for p in pathlib.Path(r'{project}/samples/python').glob('*.py'))))"]
+timeout_s = 60
+mutating = false
+
+[[op]]
+id = "samples.run"
+kind = "cmd"
+summary = "Run one of OpenCV's Python samples (most open a window); more arguments can be added"
+argv = ["{python}", "{project}/samples/python/{sample}"]
+cwd = "samples/python"
+timeout_s = 3600
+background = true
+extra_args = true
+[op.inputs]
+sample = { type = "string", required = true, description = "a file name from samples.list" }
+
+[[op]]
+id = "git.update"
+kind = "cmd"
+summary = "Update the checkout from upstream (fast-forward only; nothing local is ever overwritten)"
+argv = ["git", "-C", "{project}", "pull", "--ff-only"]
+timeout_s = 1800
