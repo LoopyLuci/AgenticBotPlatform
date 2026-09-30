@@ -154,6 +154,19 @@ def module_providers() -> dict[str, dict]:
                         "module": mid, "description": description}
         except Exception as e:  # noqa: BLE001 - a broken module never breaks provider lookups
             logger.debug("module provider %s: %s", mid, e)
+    try:   # any module whose manifest has [provider] openai (an adopted project's own OpenAI-compatible server)
+        from bot.modules import harness, registry
+
+        for m in registry.modules().values():
+            if not m.openai or m.id in out:
+                continue
+            base = harness.service_urls(m).get("openai")
+            if base:
+                key = os.environ.get(m.openai_key_env, "") if m.openai_key_env else ""
+                out[m.id] = {"base_url": base.rstrip("/"), "protocol": "openai", "api_key": key or "unused",
+                             "module": m.id, "description": f"{m.name} (module): {m.description}"[:200]}
+    except Exception as e:  # noqa: BLE001
+        logger.debug("module providers from manifests: %s", e)
     try:   # octopus-router's metered /v1, while its owner token is set (bot/octopus/router.py)
         from bot.octopus import router as octopus_router
 

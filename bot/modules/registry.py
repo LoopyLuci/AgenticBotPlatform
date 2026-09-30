@@ -12,10 +12,17 @@ built-in manifest once the repo ships one, and more modules can be added in conf
 
 Where a module's checkout is, first match wins: $ABP_MODULE_<ID>_DIR (dashes as underscores), modules.<id>.path, a
 folder with the module's name next to ABP's (a developer's working copy), data/modules/<Name> (cloned by ABP).
+
+Any project can become a module: `python -m abp_modkit adopt <folder> --register` writes its abp-module.toml and adds
+the folder to modules.projects, where ABP finds it (its id comes from its own manifest):
+
+    modules:
+      projects: [Z:/Projects/VMStream, X:/Projects/CompressionAgent]
 """
 from __future__ import annotations
 
 import os
+import sys
 import threading
 import time
 from pathlib import Path
@@ -100,6 +107,32 @@ def abp_root() -> Path:
     return Path(PROJECT_ROOT)
 
 
+# Adopted projects (modules.projects): id -> folder, filled in as their manifests are read.
+_project_dirs: dict[str, Path] = {}
+
+
+def _project_manifests(taken: set[str]) -> tuple[list[Manifest], dict[str, str]]:
+    out, errors = [], {}
+    for raw in _cfg().get("projects") or []:
+        d = Path(str(raw)).expanduser()
+        f = d / mf.MANIFEST_FILE
+        if not f.is_file():
+            errors[f"project:{d.name}"] = f"{d}: no {mf.MANIFEST_FILE} (adopt it: python -m abp_modkit adopt {d})"
+            continue
+        try:
+            m = mf.load(f)
+        except ManifestError as e:
+            errors[f"project:{d.name}"] = str(e)
+            continue
+        if m.id in taken:
+            errors[m.id] = f"{d}: id {m.id!r} is already used by another module"
+            continue
+        _project_dirs[m.id] = d
+        taken.add(m.id)
+        out.append(m)
+    return out, errors
+
+
 def _builtin_manifests() -> list[Manifest]:
     out = [mf.parse(d) for d in BUILTIN]
     from bot.octopus import connectors   # the Octopus estate's connectors, one repo each
@@ -133,6 +166,8 @@ def install_dir(m: Manifest) -> Path:
     for candidate in (env, _mod_cfg(m.id).get("path")):
         if candidate:
             return Path(str(candidate)).expanduser()
+    if m.id in _project_dirs:
+        return _project_dirs[m.id]
     sibling = abp_root().parent / m.name
     if is_checkout(m, sibling):
         return sibling
@@ -164,7 +199,7 @@ def placeholders(m: Manifest) -> dict[str, str]:
     venv = repo / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     return {"repo": str(repo), "ws": str(ws), "exe": ".exe" if os.name == "nt" else "", "target": str(target_dir(m)),
             "data": str(data_dir(m)), "home": str(Path.home()), "localappdata": str(mf.localappdata()),
-            "venv_python": str(venv)}
+            "venv_python": str(venv), "abp_python": sys.executable, "abp_root": str(abp_root())}
 
 
 def expand(m: Manifest, value: str) -> str:
@@ -197,6 +232,11 @@ def _load() -> tuple[dict[str, Manifest], dict[str, str]]:
         if _mod_cfg(m.id).get("enabled", True) is False:
             continue
         mods[m.id] = m
+    projects, perrors = _project_manifests(set(mods))
+    errors.update(perrors)
+    for m in projects:
+        if _mod_cfg(m.id).get("enabled", True) is not False:
+            mods[m.id] = m
     return mods, errors
 
 

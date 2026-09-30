@@ -9,14 +9,19 @@ updated and shown; each further section turns on more (build, hub, MCP, windows,
     [build]     steps (commands run in the workspace), outputs (paths that exist once built), env
     [hub]       start, control_file, api_base, health, operations, call, stop, start_timeout_s
     [mcp]       stdio (the command that serves MCP over stdio)
-    [ui]        gui, tui (commands), panel ("operations", or "custom:<name>")
+    [ui]        gui, tui (commands), panel ("operations", or "custom:<name>"), web (a URL, or "service": the web UI
+                of the server its abp_modkit hub runs, shown in a pane)
+    [provider]  openai (a base URL, or "service": the OpenAI-compatible API of the server its hub runs), key_env
+    [abp]       connect (true: the module uses ABP back; ABP gives it ABP_URL and ABP_KEY, a key of its own with the
+                scopes of `preset`, default "companion-app"), preset
     [host]      os, needs (e.g. "kvm", "whp", "gpu", "android-sdk", "macos-peer")
     [pipeline]  run (its local CI/CD pipeline)
 
 Commands and paths may use these placeholders:
     {repo} the checkout, {ws} the workspace (repo/subdir), {exe} ".exe" on Windows, {target} the cargo target dir,
     {data} the module's data folder under ABP, {home} the user's home, {localappdata} LocalAppData (Windows) or the
-    XDG data dir, {venv_python} the python of the checkout's own .venv.
+    XDG data dir, {venv_python} the python of the checkout's own .venv, {abp_python} the python ABP runs on and
+    {abp_root} ABP's folder (so a module can use abp_modkit, which ships with ABP: `python -m abp_modkit adopt`).
 """
 from __future__ import annotations
 
@@ -32,7 +37,7 @@ API_VERSION = 1
 MANIFEST_FILE = "abp-module.toml"
 _ID_RE = re.compile(r"^[a-z][a-z0-9-]{1,40}$")
 _PLACEHOLDER_RE = re.compile(r"\{([a-z_]+)\}")
-PLACEHOLDERS = {"repo", "ws", "exe", "target", "data", "home", "localappdata", "venv_python"}
+PLACEHOLDERS = {"repo", "ws", "exe", "target", "data", "home", "localappdata", "venv_python", "abp_python", "abp_root"}
 OS_NAMES = {"windows", "linux", "macos"}
 
 
@@ -80,6 +85,11 @@ class Manifest:
     gui: list[str] = field(default_factory=list)
     tui: list[str] = field(default_factory=list)
     panel: str = "operations"
+    web: str = ""                          # a URL, or "service" (asked of the abp_modkit hub while it runs)
+    openai: str = ""                       # the same, for an OpenAI-compatible API ABP offers as a provider
+    openai_key_env: str = ""
+    abp_connect: bool = False              # the module uses ABP back: it gets ABP_URL and ABP_KEY (its own scoped key)
+    abp_preset: str = "companion-app"
     host_os: list[str] = field(default_factory=lambda: sorted(OS_NAMES))
     host_needs: list[str] = field(default_factory=list)
     pipeline: list[str] = field(default_factory=list)
@@ -92,7 +102,8 @@ class Manifest:
             "description": self.description, "source": self.source, "adapter": self.adapter or None,
             "can_build": bool(self.build_steps) or bool(self.adapter), "has_hub": self.hub is not None or bool(self.adapter),
             "has_mcp": bool(self.mcp_stdio), "has_gui": bool(self.gui), "has_tui": bool(self.tui),
-            "has_pipeline": bool(self.pipeline), "panel": self.panel, "host": {"os": self.host_os, "needs": self.host_needs},
+            "has_pipeline": bool(self.pipeline), "panel": self.panel, "has_web": bool(self.web),
+            "has_provider": bool(self.openai), "uses_abp": self.abp_connect, "host": {"os": self.host_os, "needs": self.host_needs},
             "requires": [r.__dict__ for r in self.requires],
         }
 
@@ -171,6 +182,16 @@ def parse(data: dict, source: str = "builtin") -> Manifest:
     m.gui = _str_list(ui.get("gui"), "ui.gui")
     m.tui = _str_list(ui.get("tui"), "ui.tui")
     m.panel = str(ui.get("panel") or "operations")
+    m.web = str(ui.get("web") or "")
+    prov = data.get("provider") or {}
+    m.openai = str(prov.get("openai") or "")
+    m.openai_key_env = str(prov.get("key_env") or "")
+    back = data.get("abp") or {}
+    m.abp_connect = bool(back.get("connect", False))
+    m.abp_preset = str(back.get("preset") or "companion-app")
+    for key, v in (("ui.web", m.web), ("provider.openai", m.openai)):
+        if v and v != "service" and not v.startswith(("http://", "https://")):
+            raise ManifestError(f"{key} is a URL or \"service\"")
     host = data.get("host") or {}
     if "os" in host:
         m.host_os = _str_list(host["os"], "host.os")

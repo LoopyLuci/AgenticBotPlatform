@@ -143,14 +143,61 @@
     const areas = {};
     st.list.modules.forEach((r) => { (areas[r.area] = areas[r.area] || []).push(r); });
     body.innerHTML = (errs.length ? `<p class="cardnote">${errs.map(([k, v]) => `<b>${E(k)}</b>: ${E(v)}`).join('<br>')}</p>` : '') +
+      adoptCard() +
       `<div class="mdp-grid">${st.list.modules.map((r) => `<div class="mdp-card"><div class="mdp-row" style="justify-content:space-between"><h3>${E(r.name)}</h3><span class="mdp-muted">${E(r.area)}</span></div>
 <div class="mdp-muted">${E(r.description)}</div><div class="mdp-row">${chips(r)}</div>
 ${r.installed ? `<div class="mdp-mono mdp-muted">${E(r.path || '')}${r.commit ? ` · ${E(r.branch || '')} ${E(r.commit)}` : ''}</div>` : ''}
 <div class="mdp-row">${buttons(r)}</div></div>`).join('')}</div>`;
     wire(body);
+    wireAdopt();
     const running = st.list.modules.some((r) => r.job);
     stopPoll();
     if (running) st.poll = setTimeout(() => render(true), 3000);
+  }
+
+  // Any project can become a module: abp_modkit reads it and writes abp-module.toml + abp-ops.toml into it.
+  function adoptCard() {
+    return `<details class="mdp-card" style="margin-bottom:12px"${st.adoptOpen ? ' open' : ''} id="mdp-adopt"><summary><b>Add a project as a module</b> <span class="mdp-muted">ABP reads it (stacks, build, server, commands, routes, MCP) and makes every part of it an operation</span></summary>
+<div class="mdp-row" style="margin-top:8px"><input id="mdp-adopt-path" placeholder="Project folder, e.g. Z:/Projects/VMStream" style="flex:1;min-width:240px" value="${E(st.adoptPath || '')}"><button class="btn ghost" id="mdp-adopt-preview">Preview</button><button class="btn" id="mdp-adopt-go">Adopt</button></div>
+<div class="mdp-row"><input id="mdp-adopt-folder" placeholder="…or a folder of projects, e.g. Z:/Projects" style="flex:1;min-width:240px" value="${E(st.adoptFolder || '')}"><button class="btn ghost" id="mdp-adopt-find">Find projects</button></div>
+<div id="mdp-adopt-out"></div></details>`;
+  }
+
+  function adoptResult(r) {
+    const k = r.by_kind || {};
+    return `<div class="mdp-card"><div class="mdp-row"><b>${E(r.name)}</b> <span class="mdp-mono">${E(r.id)}</span> ${chip(r.area)} ${(r.stacks || []).map((s) => chip(s)).join(' ')}</div>
+${kv([['operations', E(`${r.operations} (${Object.entries(k).map(([a, b]) => `${b} ${a}`).join(', ')})`)], ['server', E(r.server || 'none')], ['web UI', r.web ? chip('yes', 'on') : ''], ['OpenAI API', r.openai ? chip('provider', 'on') : ''], ['MCP', E(r.mcp)], ['window', r.gui ? chip('yes', 'on') : ''], ['needs', E((r.requires || []).join(', '))], ['wrote', E((r.wrote || []).join(', '))], ['kept', E((r.kept || []).join(', '))]])}
+${(r.notes || []).map((n) => `<div class="mdp-muted">• ${E(n)}</div>`).join('')}
+${r.files ? Object.entries(r.files).map(([f, t]) => `<details><summary class="mdp-mono">${E(f)}</summary><div class="mdp-pre">${E(t)}</div></details>`).join('') : ''}</div>`;
+  }
+
+  function wireAdopt() {
+    const box = $('mdp-adopt');
+    if (!box) return;
+    box.addEventListener('toggle', () => { st.adoptOpen = box.open; });
+    const out = $('mdp-adopt-out');
+    const go = async (path, dry) => {
+      st.adoptPath = path;
+      if (!path) { toast('Give the project folder', 'error'); return; }
+      out.innerHTML = `<p class="mdp-muted">${dry ? 'Reading' : 'Adopting'} ${E(path)}…</p>`;
+      try {
+        const r = await post('/api/modules/adopt', { path, dry_run: !!dry });
+        out.innerHTML = adoptResult(r);
+        if (!dry) { toast(`${r.name} is a module now`); st.list = null; setTimeout(() => render(true), 800); }
+      } catch (e) { out.innerHTML = `<p class="cardnote">${E(errText(e))}</p>`; }
+    };
+    $('mdp-adopt-preview').addEventListener('click', () => go($('mdp-adopt-path').value.trim(), true));
+    $('mdp-adopt-go').addEventListener('click', () => go($('mdp-adopt-path').value.trim(), false));
+    $('mdp-adopt-find').addEventListener('click', async () => {
+      const folder = st.adoptFolder = $('mdp-adopt-folder').value.trim();
+      if (!folder) return;
+      out.innerHTML = '<p class="mdp-muted">Looking…</p>';
+      try {
+        const r = await api('/api/modules/candidates?folder=' + encodeURIComponent(folder));
+        out.innerHTML = `<div class="mdp-grid">${r.projects.map((p) => `<div class="mdp-card"><div class="mdp-row" style="justify-content:space-between"><b>${E(p.name)}</b>${p.module ? chip('module: ' + p.module, 'on') : ''}</div><div class="mdp-muted">${E(p.markers.join(', '))}${p.git ? ' · git' : ''}</div><div class="mdp-row">${p.module ? '' : `<button class="btn ghost" data-adopt="${E(p.path)}" data-dry="1">Preview</button><button class="btn" data-adopt="${E(p.path)}">Adopt</button>`}</div></div>`).join('') || '<p class="mdp-muted">No projects there.</p>'}</div>`;
+        out.querySelectorAll('[data-adopt]').forEach((b) => b.addEventListener('click', () => { $('mdp-adopt-path').value = b.dataset.adopt; go(b.dataset.adopt, !!b.dataset.dry); }));
+      } catch (e) { out.innerHTML = `<p class="cardnote">${E(errText(e))}</p>`; }
+    });
   }
 
   function kv(pairs) { return `<dl class="mdp-kv">${pairs.filter(([, v]) => v !== undefined && v !== null && v !== '').map(([k, v]) => `<dt>${E(k)}</dt><dd>${v}</dd>`).join('')}</dl>`; }
@@ -158,7 +205,7 @@ ${r.installed ? `<div class="mdp-mono mdp-muted">${E(r.path || '')}${r.commit ? 
   async function detailView(body) {
     const mid = st.open;
     const s = st.status = await api(`/api/modules/${encodeURIComponent(mid)}`);
-    const m = s.module, inst = s.install || {}, hub = s.hub || {};
+    const m = s.module, inst = s.install || {}, hub = s.hub || {}, svc = s.service || {};
     const jobs = await api(`/api/modules/${encodeURIComponent(mid)}/jobs`).catch(() => []);
     const tools = (s.toolchain || []).map((t) => `${t.ok ? chip(t.tool, 'on') : chip(t.tool + (t.found ? ' too old' : ' missing'), 'bad', t.url)} <span class="mdp-muted">${E(t.version || '')}${t.min ? ' (needs ' + E(t.min) + '+)' : ''}</span>`).join('<br>');
     const act = (what, label, ghost) => `<button class="btn${ghost ? ' ghost' : ''}" data-act="${what}" data-mid="${E(mid)}" data-label="${E(label)}">${E(label)}</button>`;
@@ -170,11 +217,29 @@ ${s.manifest_error ? `<p class="cardnote">${E(s.manifest_error)}</p>` : ''}
 <div class="mdp-card"><h4>Running</h4>${kv([['hub', m.has_hub ? (hub.running ? chip('running', 'on') + ` <span class="mdp-mono">${E(hub.url || '')}</span> pid ${E(hub.pid || '')}` : chip('stopped')) : '<span class="mdp-muted">no hub yet</span>'], ['version', E(hub.version)], ['this OS', s.host ? (s.host.supported ? chip(s.host.os, 'on') : chip(s.host.os + ': not supported', 'bad')) : ''], ['needs', E((s.host && s.host.needs || []).join(', '))]])}
 <div class="mdp-row">${m.has_hub ? (hub.running ? act('hub/stop', 'Stop hub', true) : act('hub/start', 'Start hub', false)) : ''}${m.has_gui && inst.ready ? act('gui', 'Open window', true) : ''}${m.has_tui ? act('tui', 'Open terminal UI', true) : ''}${m.has_mcp || m.adapter ? act('mcp', 'Add its MCP server', true) : ''}${m.has_hub ? '<button class="btn ghost" id="mdp-conf">Check conformance</button>' : ''}</div><div id="mdp-conf-out"></div></div>
 ${tools ? `<div class="mdp-card"><h4>Toolchain</h4>${tools}</div>` : ''}
+${m.has_web || m.has_provider ? `<div class="mdp-card"><h4>Its server</h4>${kv([['web UI', m.has_web ? (svc.web ? `<a href="${E(svc.web)}" target="_blank" rel="noopener">${E(svc.web)}</a>` : '<span class="mdp-muted">shown once its server runs (start the hub, then the service.start operation)</span>') : ''], ['as a provider', m.has_provider ? (svc.openai ? chip(`“${m.id}” in model pickers`, 'on') + ` <span class="mdp-mono">${E(svc.openai)}</span>` : '<span class="mdp-muted">offered as a model provider while its server runs</span>') : '']])}
+<div class="mdp-row">${m.has_hub && hub.running && !svc.web && !svc.openai ? '<button class="btn" id="mdp-svc-start">Start its server</button>' : ''}${svc.web ? '<button class="btn ghost" id="mdp-web-show">Show here</button>' : ''}</div></div>` : ''}
+${m.source && m.source !== 'builtin' ? `<div class="mdp-card"><h4>Project</h4><p class="mdp-muted">Its own abp-module.toml and abp-ops.toml describe it. Publishing commits them and creates its private GitHub repo if it has none.</p><div class="mdp-row"><button class="btn ghost" id="mdp-publish">Publish to GitHub</button><button class="btn ghost" id="mdp-forget">Forget it</button></div></div>` : ''}
+${svc.web ? `<div class="mdp-card" id="mdp-web" style="grid-column:1/-1;display:${st.webOpen === mid ? 'flex' : 'none'}"><div class="mdp-row" style="justify-content:space-between"><h4 style="margin:0">${E(m.name)}</h4><button class="btn ghost" id="mdp-web-hide">Hide</button></div><iframe title="${E(m.name)}" src="${st.webOpen === mid ? E(svc.web) : 'about:blank'}" style="width:100%;height:70vh;border:1px solid var(--line);border-radius:8px;background:#fff"></iframe></div>` : ''}
 <div class="mdp-card" style="grid-column:1/-1"><h4>Jobs</h4>${(jobs || []).slice(0, 6).map((j) => `<details${j.state === 'running' ? ' open' : ''}><summary>${E(j.kind)} ${j.state === 'running' ? chip('running', 'warn') : j.state === 'done' ? chip('done', 'on') : chip(j.state, 'bad')} <span class="mdp-muted">${E(when(j.started))}</span></summary><div class="mdp-pre">${E((j.log || []).join('\n'))}${j.error ? '\n' + E(j.error) : ''}</div></details>`).join('') || '<p class="mdp-muted">None yet.</p>'}</div>
 </div>
 ${m.has_hub ? `<div class="mdp-card" style="margin-top:12px"><h4>Operations</h4><div id="mdp-ops-area">${hub.running ? '<p class="mdp-muted">Loading…</p>' : '<p class="mdp-muted">Start the hub to use its operations.</p>'}</div></div>` : ''}`;
     $('mdp-back').addEventListener('click', () => { st.open = ''; stopPoll(); render(true); });
     $('mdp-fetch').addEventListener('click', async () => { try { await api(`/api/modules/${encodeURIComponent(mid)}?fetch=1`); render(); } catch (e) { toast(errText(e), 'error'); } });
+    const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
+    on('mdp-web-show', () => { st.webOpen = mid; const w = $('mdp-web'); w.style.display = 'flex'; w.style.flexDirection = 'column'; w.querySelector('iframe').src = svc.web; w.scrollIntoView({ behavior: 'smooth' }); });
+    on('mdp-web-hide', () => { st.webOpen = ''; $('mdp-web').style.display = 'none'; });
+    on('mdp-svc-start', async () => {
+      try { await post(`/api/modules/${encodeURIComponent(mid)}/call`, { operation: 'service.start', args: {} }); toast(`${m.name}: server started`); render(); } catch (e) { toast(errText(e), 'error'); }
+    });
+    on('mdp-publish', async () => {
+      if (!confirm(`Commit ${m.name}'s abp-module.toml and abp-ops.toml, and create its private GitHub repo if it has none?`)) return;
+      try { await post(`/api/modules/${encodeURIComponent(mid)}/publish`, {}); toast('Publishing: follow it under Jobs'); render(); } catch (e) { toast(errText(e), 'error'); }
+    });
+    on('mdp-forget', async () => {
+      if (!confirm(`Stop listing ${m.name}? Its folder and files stay as they are.`)) return;
+      try { await post(`/api/modules/${encodeURIComponent(mid)}/forget`); st.open = ''; render(true); } catch (e) { toast(errText(e), 'error'); }
+    });
     const conf = $('mdp-conf');
     if (conf) conf.addEventListener('click', async () => {
       $('mdp-conf-out').innerHTML = '<p class="mdp-muted">Checking…</p>';

@@ -364,6 +364,77 @@ def hub_state(m: Manifest) -> dict:
     return {"running": hub is not None, **({"url": hub.url, "pid": hub.pid, "version": hub.version} if hub else {})}
 
 
+def _modkit_env() -> dict:
+    """abp_modkit ships inside ABP: a module whose hub is `{abp_python} -m abp_modkit` finds it on PYTHONPATH."""
+    root = str(registry.abp_root())
+    cur = os.environ.get("PYTHONPATH", "")
+    return {"PYTHONPATH": os.pathsep.join([root, cur]) if cur else root}
+
+
+def abp_env(m: Manifest) -> dict:
+    """For a module that uses ABP back ([abp] connect = true): where ABP is and a key of the module's own.
+
+    The key is an integration key (bot/integrations.py) with the manifest's preset's scopes, minted once and kept
+    in the module's data folder (mode 600); a revoked key is replaced. {} for modules that do not connect back."""
+    if not m.abp_connect:
+        return {}
+    from bot import integrations
+    preset = integrations.PRESETS.get(m.abp_preset)
+    if preset is None:
+        raise ModuleError(f"{m.name}: [abp] preset {m.abp_preset!r} is not one of {', '.join(integrations.PRESETS)}",
+                          code="invalid", status=400)
+    data = registry.data_dir(m)
+    data.mkdir(parents=True, exist_ok=True)
+    f = data / "abp-key"
+    key = ""
+    try:
+        key = f.read_text(encoding="utf-8").strip()
+    except OSError:
+        pass
+    if not key or integrations.scopes_for(key) is None:
+        _, key = integrations.mint(f"module: {m.name}", preset["scopes"], preset=m.abp_preset)
+        tmp = f.with_suffix(".tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(key)
+        os.replace(tmp, f)
+    return {"ABP_URL": f"http://127.0.0.1:{os.environ.get('DASHBOARD_PORT', '8787')}", "ABP_KEY": key}
+
+
+_svc_cache: dict[str, tuple[float, dict]] = {}
+
+
+def service_urls(m: Manifest, ttl: float = 5.0) -> dict:
+    """Where a module's web UI and OpenAI-compatible API are right now: the URLs in its manifest, or ("service") the
+    ones its abp_modkit hub reports while the project's server answers. {} when there are none (or it is down)."""
+    want_web, want_ai = m.web, m.openai
+    if not want_web and not want_ai:
+        return {}
+    out: dict[str, str] = {}
+    if want_web and want_web != "service":
+        out["web"] = want_web
+    if want_ai and want_ai != "service":
+        out["openai"] = want_ai
+    if "service" not in (want_web, want_ai) or m.hub is None:
+        return out
+    hit = _svc_cache.get(m.id)
+    if hit and time.monotonic() - hit[0] < ttl:
+        return {**hit[1], **out}
+    svc: dict = {}
+    try:
+        if client.find(m, timeout=1.0) is not None:
+            st = (client.call(m, "service.status", {}, timeout=10) or {}).get("service") or {}
+            if st.get("answers"):
+                if want_web == "service" and st.get("web"):
+                    svc["web"] = st["web"]
+                if want_ai == "service" and st.get("openai"):
+                    svc["openai"] = st["openai"]
+    except Exception:  # noqa: BLE001 - a module that does not answer has no URLs
+        svc = {}
+    _svc_cache[m.id] = (time.monotonic(), svc)
+    return {**svc, **out}
+
+
 # Called with the module id after a hub this harness started answers (bot/octopus/connectors.py hands it a session).
 HUB_STARTED: list = []
 
@@ -384,7 +455,7 @@ def start_hub(mid: str) -> dict:
         raise ModuleError(f"{m.name} is not built yet ({exe} is missing; setup builds it)", code="not_installed")
     data = registry.data_dir(m)
     data.mkdir(parents=True, exist_ok=True)
-    env = {**os.environ, "ABP_MODULE_ID": m.id, "ABP_MODULE_DATA": str(data)}
+    env = {**os.environ, "ABP_MODULE_ID": m.id, "ABP_MODULE_DATA": str(data), **_modkit_env(), **abp_env(m)}
     with open(data / "hub.log", "ab") as out:
         subprocess.Popen([_which(cmd[0]) or cmd[0], *cmd[1:]], cwd=str(_workspace(m)), env=env, stdin=subprocess.DEVNULL,
                          stdout=out, stderr=subprocess.STDOUT, creationflags=DETACHED, start_new_session=os.name != "nt")
@@ -432,6 +503,7 @@ def _launch_visible(m: Manifest, cmd: list[str], console: bool) -> dict:
         raise ModuleError(f"{exe} is missing ({m.name} is not built yet)", code="not_installed")
     flags = NEW_CONSOLE if console else 0
     p = subprocess.Popen([_which(cmd[0]) or cmd[0], *cmd[1:]], cwd=str(_workspace(m)), creationflags=flags,
+                         env={**os.environ, **abp_env(m)},
                          stdin=None if console else subprocess.DEVNULL, start_new_session=os.name != "nt")
     return {"opened": True, "pid": p.pid}
 
@@ -480,7 +552,8 @@ def register_mcp(mid: str) -> dict:
     if ext.get_external_mcp_server(name) is not None:
         ext.delete_external_mcp_server(name)
     ext.add_external_mcp_server(name, "stdio", command=cmd[0], args_json=_json.dumps(cmd[1:]),
-                                env_json=_json.dumps({"ABP_MODULE_DATA": str(registry.data_dir(m))}))
+                                env_json=_json.dumps({"ABP_MODULE_DATA": str(registry.data_dir(m)), **_modkit_env(),
+                                                      **abp_env(m)}))
     return {"name": name, "command": cmd[0], "args": cmd[1:]}
 
 
@@ -521,6 +594,8 @@ def status(mid: str, *, fetch: bool = False) -> dict:
     m = _m(mid)
     out: dict[str, Any] = {"module": m.public(), "install": install_info(mid, fetch=fetch), "hub": hub_state(m),
                            "host": host_check(m), "jobs": [j for j in jobs(mid) if j.get("state") == "running"]}
+    if m.web or m.openai:
+        out["service"] = service_urls(m)
     if m.requires and not m.adapter:
         out["toolchain"] = toolchain(m)
     err = registry.manifest_errors().get(m.id)

@@ -1536,6 +1536,15 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/modules/candidates": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modules/candidates",
+  "path_params": [],
+  "query_params": [
+   "folder"
+  ]
+ },
  "GET /api/modules/jobs/{job_id}": {
   "body": false,
   "method": "GET",
@@ -3790,6 +3799,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "POST /api/modules/adopt": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modules/adopt",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/modules/{mid}/build": {
   "body": false,
   "method": "POST",
@@ -3812,6 +3828,15 @@ export const operations = {
   "body": false,
   "method": "POST",
   "path": "/api/modules/{mid}/conformance",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "POST /api/modules/{mid}/forget": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/forget",
   "path_params": [
    "mid"
   ],
@@ -3857,6 +3882,15 @@ export const operations = {
   "body": false,
   "method": "POST",
   "path": "/api/modules/{mid}/pipeline",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "POST /api/modules/{mid}/publish": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modules/{mid}/publish",
   "path_params": [
    "mid"
   ],
@@ -8914,6 +8948,15 @@ export const operations = {
   ],
   "query_params": []
  },
+ "module_forget_api_modules__mid__forget_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/forget",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
  "module_gui_api_modules__mid__gui_post": {
   "body": false,
   "method": "POST",
@@ -8979,6 +9022,15 @@ export const operations = {
   ],
   "query_params": []
  },
+ "module_publish_api_modules__mid__publish_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modules/{mid}/publish",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
  "module_setup_api_modules__mid__setup_post": {
   "body": false,
   "method": "POST",
@@ -9016,6 +9068,22 @@ export const operations = {
    "mid"
   ],
   "query_params": []
+ },
+ "modules_adopt_api_modules_adopt_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modules/adopt",
+  "path_params": [],
+  "query_params": []
+ },
+ "modules_candidates_api_modules_candidates_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modules/candidates",
+  "path_params": [],
+  "query_params": [
+   "folder"
+  ]
  },
  "modules_job_api_modules_jobs__job_id__get": {
   "body": false,

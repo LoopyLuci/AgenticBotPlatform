@@ -26,6 +26,11 @@ The plan for each module is in [ROADMAP.md](ROADMAP.md).
 
 ## Adding a module
 
+**The short way: `abp modules adopt <folder>`** (or Modules -> Add a project, or `python -m abp_modkit adopt`).
+abp_modkit reads the project, writes its `abp-module.toml` and `abp-ops.toml`, gives it a hub and an MCP bridge, and
+registers it; nothing is written by hand. See [modkit.md](modkit.md). The steps below are for a module that brings
+its own hub.
+
 1. **Put an `abp-module.toml` at the repo root.** `tests/fixtures/fake_module/abp-module.toml` is the smallest
    working example. All the fields are described at the top of `bot/modules/manifest.py`.
 2. **Give it a control hub.** A local HTTP service, on `127.0.0.1` with a random port and a random token.
