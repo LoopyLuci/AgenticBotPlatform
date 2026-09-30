@@ -93,12 +93,14 @@ def mcp(home: Path) -> None:
             print(json.dumps({"jsonrpc": "2.0", "id": mid, "error": {"code": code, "message": str(e)}}), flush=True)
 
 
-def check(path: Path, verbose: bool = True) -> dict:
-    """Load both files, start a real hub over the project, list its operations, call service.status, bridge MCP."""
+def check(path: Path, verbose: bool = True, project: Path | None = None) -> dict:
+    """Load both files, start a real hub over the project, list its operations, call service.status, bridge MCP.
+    `path` holds the module files; `project` is the checkout when they are an overlay (default: the same folder)."""
     import tomllib
 
     from abp_modkit import spec as sp
-    res: dict = {"path": str(path), "checks": []}
+    project = project or path
+    res: dict = {"path": str(path), "project": str(project), "checks": []}
 
     def ok(name: str, cond: bool, detail: str = "") -> bool:
         res["checks"].append({"check": name, "ok": bool(cond), **({"detail": detail} if detail and not cond else {})})
@@ -129,7 +131,7 @@ def check(path: Path, verbose: bool = True) -> dict:
     env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(Path(__file__).resolve().parent.parent),
                                                         os.environ.get("PYTHONPATH", "")])}
     p = subprocess.Popen([sys.executable, "-m", "abp_modkit", "serve", "--spec", str(path / "abp-ops.toml"), "--project",
-                          str(path), "--home", str(home)], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=env)
+                          str(project), "--home", str(home)], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=env)
     try:
         for _ in range(100):
             if (home / "control.json").is_file() or p.poll() is not None:
@@ -234,10 +236,14 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--publish", action="store_true", help="commit the module files and create its private GitHub repo")
     a.add_argument("--push", action="store_true", help="with --publish: also push to a repo it already has")
     a.add_argument("--owner", default="LoopyLuci")
+    a.add_argument("--overlay", default="", help="write the module files to this folder, not into the checkout "
+                                                  "(a third-party repo stays exactly as upstream has it)")
+    a.add_argument("--record-checkout", action="store_true", help="with --overlay: record the checkout's path in it")
     d = sub.add_parser("detect")
     d.add_argument("path")
     c = sub.add_parser("check")
     c.add_argument("path")
+    c.add_argument("--project", default="", help="the checkout, when path is an overlay")
     n = sub.add_parser("new")
     n.add_argument("path")
     n.add_argument("--lang", choices=sorted(TEMPLATES), default="python")
@@ -260,6 +266,9 @@ def main(argv: list[str] | None = None) -> int:
     caller = os.environ.get("ABP_CALLER_CWD")    # the launchers cd to ABP_HOME; paths given are the caller's
     if caller and os.path.isdir(caller) and o.cmd in ("adopt", "detect", "check", "new"):
         o.path = os.path.join(caller, o.path)
+        for attr in ("overlay", "project"):
+            if getattr(o, attr, ""):
+                setattr(o, attr, os.path.join(caller, getattr(o, attr)))
 
     if o.cmd == "serve":
         from abp_modkit import hub, spec
@@ -267,8 +276,11 @@ def main(argv: list[str] | None = None) -> int:
         hub.serve(hub.Hub(spec.load(o.spec), Path(o.project), Path(o.home), o.base_url, variables), o.host, o.port)
     elif o.cmd == "adopt":
         from abp_modkit import adopt as ad
+        if o.overlay and (o.register or o.publish):
+            raise SystemExit("--overlay: ABP finds overlays in its catalog/ and data/module-overlays/ folders; "
+                             "--register and --publish are for module files kept in the project itself")
         res = ad.adopt(o.path, mid=o.id, name=o.name, repo=o.repo, dry_run=o.dry_run, force=o.force,
-                       description=o.description)
+                       description=o.description, overlay=o.overlay or None, record_checkout=o.record_checkout)
         if o.dry_run:
             for f, text in (res.pop("files") or {}).items():
                 print(f"----- {f}\n{text}")
@@ -285,7 +297,7 @@ def main(argv: list[str] | None = None) -> int:
         from abp_modkit import detect as dt
         print(json.dumps(dt.summary(dt.detect(o.path)), indent=1))
     elif o.cmd == "check":
-        return 0 if check(Path(o.path).resolve())["ok"] else 1
+        return 0 if check(Path(o.path).resolve(), project=Path(o.project).resolve() if o.project else None)["ok"] else 1
     elif o.cmd == "new":
         print(json.dumps({k: v for k, v in new(Path(o.path), o.lang, o.name).items() if k != "files"}, indent=1))
     elif o.cmd == "mcp":

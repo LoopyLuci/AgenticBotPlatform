@@ -23,8 +23,25 @@ def _q(v: Any) -> str:
     return sp.q(v)
 
 
-def manifest_text(plan: dt.Plan, repo: str, branch: str = "main") -> str:
-    hub = ["{abp_python}", "-m", "abp_modkit", "serve", "--spec", "{repo}/" + OPS_FILE, "--project", "{repo}",
+# Files that say "this folder is that checkout" for an overlay (the checkout has no abp-module.toml of its own).
+_UPSTREAM_MARKERS = ("CMakeLists.txt", "Cargo.toml", "pyproject.toml", "setup.py", "package.json", "go.mod",
+                     "build.gradle.kts", "build.gradle", "Makefile", "requirements.txt", "README.md", "README.rst",
+                     "README", "LICENSE")
+
+
+def upstream_markers(root: Path) -> list[str]:
+    found = [f for f in _UPSTREAM_MARKERS if (root / f).exists()]
+    if not found:
+        found = sorted(p.name for p in root.iterdir() if p.is_file() and not p.name.startswith("."))[:1]
+    return found[:2]
+
+
+def manifest_text(plan: dt.Plan, repo: str, branch: str = "main", *, overlay: bool = False,
+                  markers: list[str] | None = None, checkout_dir: str = "") -> str:
+    """The manifest. An overlay's lives on ABP's side: its operations are {overlay}/abp-ops.toml, its checkout is
+    found by upstream files (or `[checkout] dir`), and nothing is written into the checkout."""
+    spec_path = ("{overlay}/" if overlay else "{repo}/") + OPS_FILE
+    hub = ["{abp_python}", "-m", "abp_modkit", "serve", "--spec", spec_path, "--project", "{repo}",
            "--home", "{data}", "--var", "target={target}"]
     mcp = plan.mcp_native or ["{abp_python}", "-m", "abp_modkit", "mcp", "--home", "{data}"]
     lines = [f"{MARKER} (`python -m abp_modkit adopt` refreshes this file; delete this line to keep it as it is)",
@@ -32,7 +49,9 @@ def manifest_text(plan: dt.Plan, repo: str, branch: str = "main") -> str:
              "", "[module]", f"id = {_q(plan.id)}", f"name = {_q(plan.name)}", f"repo = {_q(repo)}",
              f"branch = {_q(branch)}", "api = 1", f"area = {_q(plan.area)}",
              f"description = {_q(plan.description or plan.name)}", "", "[checkout]",
-             f"marker = {_q([MANIFEST_FILE, OPS_FILE])}"]
+             f"marker = {_q(markers if overlay else [MANIFEST_FILE, OPS_FILE])}"]
+    if checkout_dir:
+        lines.append(f"dir = {_q(checkout_dir)}")
     if plan.requires:
         lines += ["", "[toolchain]", "require = [" + ", ".join(
             "{ " + ", ".join(f"{k} = {_q(v)}" for k, v in r.items()) + " }" for r in plan.requires) + "]"]
@@ -87,10 +106,14 @@ def _merge(old: sp.Spec, new: sp.Spec) -> sp.Spec:
 
 
 def adopt(path: str | Path, *, mid: str = "", name: str = "", repo: str = "", branch: str = "", dry_run: bool = False,
-          force: bool = False, description: str = "") -> dict:
+          force: bool = False, description: str = "", overlay: str | Path | None = None,
+          record_checkout: bool = False) -> dict:
+    """Write (or refresh) the module files. With `overlay`, they go to that folder instead of the checkout, which is
+    left untouched; `record_checkout` also writes the checkout's path into the manifest (`[checkout] dir`)."""
     root = Path(path).resolve()
     plan = dt.detect(root, mid=mid, name=name)
-    ops_path, man_path = root / OPS_FILE, root / MANIFEST_FILE
+    home = Path(overlay).resolve() if overlay else root
+    ops_path, man_path = home / OPS_FILE, home / MANIFEST_FILE
     new = sp.Spec(plan.service or sp.Service(plan.id, plan.name), plan.ops)
     wrote: list[str] = []
     kept: list[str] = []
@@ -106,8 +129,8 @@ def adopt(path: str | Path, *, mid: str = "", name: str = "", repo: str = "", br
     plan.description = new.service.description or plan.description
     ops_text = sp.dump(new)
     sp.parse(__import__("tomllib").loads(ops_text), str(ops_path))          # what we write must load
+    import subprocess
     if not repo:
-        import subprocess
         try:
             repo = subprocess.run(["git", "-C", str(root), "remote", "get-url", "origin"], capture_output=True, text=True,
                                   timeout=15).stdout.strip()
@@ -116,7 +139,16 @@ def adopt(path: str | Path, *, mid: str = "", name: str = "", repo: str = "", br
         repo = repo or f"https://github.com/LoopyLuci/{root.name}.git"
         if repo.startswith("git@github.com:"):
             repo = "https://github.com/" + repo.split(":", 1)[1]
-    man_text = manifest_text(plan, repo, branch or "main")
+    if not branch and overlay:
+        try:   # an overlay follows the branch the checkout is on (upstream's default is not always "main")
+            branch = subprocess.run(["git", "-C", str(root), "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True,
+                                    text=True, timeout=15).stdout.strip()
+        except (OSError, subprocess.TimeoutExpired):
+            branch = ""
+        branch = "" if branch == "HEAD" else branch
+    man_text = manifest_text(plan, repo, branch or "main", overlay=bool(overlay),
+                             markers=upstream_markers(root) if overlay else None,
+                             checkout_dir=str(root).replace("\\", "/") if overlay and record_checkout else "")
     # An abp-ops.toml whose first line is not the generated one was taken over by a person (a curated list of
     # operations): it is left exactly as it is, like a manifest without its marker.
     ops_kept = ops_path.is_file() and not force and \
@@ -129,6 +161,7 @@ def adopt(path: str | Path, *, mid: str = "", name: str = "", repo: str = "", br
         plan.description = description or hand.service.description or plan.description
         plan.service = hand.service
     if not dry_run:
+        home.mkdir(parents=True, exist_ok=True)
         if not ops_kept and (ops_path.read_text(encoding="utf-8") != ops_text if ops_path.is_file() else True):
             ops_path.write_text(ops_text, encoding="utf-8", newline="\n")
             wrote.append(OPS_FILE)
@@ -145,5 +178,6 @@ def adopt(path: str | Path, *, mid: str = "", name: str = "", repo: str = "", br
         summary.update(operations=len(new.ops), by_kind=by_kind, server=new.service.base_url,
                        server_start=new.service.start, web=bool(new.service.web), openai=bool(new.service.openai))
     return {**summary, "path": str(root), "repo": repo, "wrote": wrote, "kept": kept,
+            "overlay": str(home) if overlay else None,
             "files": {MANIFEST_FILE: man_text, OPS_FILE: ops_text} if dry_run else None,
             "service": {k: v for k, v in asdict(new.service).items() if v not in ("", [], {})}}
