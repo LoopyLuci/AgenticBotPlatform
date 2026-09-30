@@ -248,7 +248,12 @@ do_uninstall() {
   rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/$UNIT.service" "/etc/systemd/system/$UNIT.service" 2>/dev/null || true
   rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/applications/$UNIT.desktop"
   rm -rf "$APP" "$STATE"
-  if [ "$KEEP" = 1 ]; then say "removed ABP; kept its state in $HOME_DIR"; else rm -rf "$HOME_DIR"; say "removed ABP and its state"; fi
+  if [ "$KEEP" = 1 ]; then
+    rmdir "$BASE" 2>/dev/null || true   # the install folder, unless the kept state is inside it
+    say "removed ABP; kept its state in $HOME_DIR"
+  else
+    rm -rf "$HOME_DIR" "$BASE"; say "removed ABP and its state"
+  fi
 }
 
 case "$cmd" in

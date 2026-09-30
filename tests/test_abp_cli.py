@@ -459,6 +459,10 @@ def test_peers_list_is_reachable(client, capsys):
 
 @pytest.fixture
 def ssh_toolkit_home(tmp_path, monkeypatch):
+    from bot import ssh_toolkit
+
+    if ssh_toolkit._powershell_binary() is None:   # SSH Toolkit is a PowerShell module: on Linux, only with pwsh
+        pytest.skip("SSH Toolkit needs PowerShell (pwsh), which this machine does not have")
     monkeypatch.setenv("ABP_SSH_TOOLKIT_HOME", str(tmp_path))
     return tmp_path
 
