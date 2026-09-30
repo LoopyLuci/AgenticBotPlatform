@@ -17,9 +17,9 @@ import asyncio
 import json
 from typing import Any
 
-from bot.vision import images, service
-from bot.vision.images import VisionError
-
+# OpenCV (and numpy) load on a tool's first call, in the worker thread that runs it: registering the tools must not
+# pull them into every agent process (abp_acp's turns hung importing numpy behind its stdin reader on Windows).
+TASKS = ("info", "faces", "objects", "text", "codes", "people", "colors", "shapes")     # = service.TASKS (tested)
 MAX_OUT = 14_000
 IMAGE = {"type": "string", "description": "a file path, an http(s) URL, a data: URL, or \"screen\" (every monitor) / "
                                           "\"screen:<n>\" (monitor n)"}
@@ -38,13 +38,24 @@ def _camera_refused(*sources: Any) -> str:
     return ""
 
 
-async def _call(fn, *args, **kwargs) -> str:
+def _in_thread(name: str, *args, **kwargs) -> Any:
+    from bot.vision import service
+    return getattr(service, name)(*args, **kwargs)
+
+
+def _capture(camera: int) -> dict:
+    from bot.vision import images
+    img, origin = images.load(f"camera:{camera}")
+    return {"path": images.save(img, "camera"), "size": [img.shape[1], img.shape[0]], **origin}
+
+
+async def _call(name: str, *args, **kwargs) -> str:
+    fn = _capture if name == "capture" else _in_thread
     try:
-        return _out(await asyncio.to_thread(fn, *args, **kwargs))
-    except VisionError as e:
-        return f"Error: {e}"
-    except Exception as e:  # noqa: BLE001 - an OpenCV error must reach the agent as text, not end its turn
-        return f"Error: {type(e).__name__}: {e}"
+        return _out(await asyncio.to_thread(fn, *args, **kwargs) if name == "capture"
+                    else await asyncio.to_thread(fn, name, *args, **kwargs))
+    except Exception as e:  # noqa: BLE001 - a VisionError or an OpenCV error must reach the agent as text
+        return f"Error: {e}" if type(e).__name__ == "VisionError" else f"Error: {type(e).__name__}: {e}"
 
 
 def register_tools() -> None:
@@ -61,38 +72,35 @@ def register_tools() -> None:
     async def analyze(inp, **_):
         if refused := _camera_refused(inp.get("image")):
             return refused
-        return await _call(service.analyze, inp.get("image"), inp.get("tasks"),
+        return await _call("analyze", inp.get("image"), inp.get("tasks"),
                            min_score=float(inp.get("min_score") or 0.4), classes=inp.get("classes"))
 
     async def find(inp, **_):
         if refused := _camera_refused(inp.get("image"), inp.get("template")):
             return refused
-        return await _call(service.find, inp.get("image") or "screen", text=str(inp.get("text") or ""),
+        return await _call("find", inp.get("image") or "screen", text=str(inp.get("text") or ""),
                            template=inp.get("template"), threshold=float(inp.get("threshold") or 0.8))
 
     async def compare(inp, **_):
         if refused := _camera_refused(inp.get("before"), inp.get("after")):
             return refused
-        return await _call(service.compare, inp.get("before"), inp.get("after"))
+        return await _call("compare", inp.get("before"), inp.get("after"))
 
     async def edit(inp, **_):
         if refused := _camera_refused(inp.get("image")):
             return refused
-        return await _call(service.edit, inp.get("image"), inp.get("steps") or [])
+        return await _call("edit", inp.get("image"), inp.get("steps") or [])
 
     async def faces(inp, **_):
         if refused := _camera_refused(inp.get("a"), inp.get("b")):
             return refused
-        return await _call(service.faces_match, inp.get("a"), inp.get("b"))
+        return await _call("faces_match", inp.get("a"), inp.get("b"))
 
     async def capture(inp, **_):
-        def go():
-            img, origin = images.load(f"camera:{int(inp.get('camera') or 0)}")
-            return {"path": images.save(img, "camera"), "size": [img.shape[1], img.shape[0]], **origin}
-        return await _call(go)
+        return await _call("capture", int(inp.get("camera") or 0))
 
     async def status(inp, **_):
-        return await _call(service.status)
+        return await _call("status")
 
     reg("vision_analyze", "See what is in an image, on this machine with OpenCV and its model zoo. tasks (any of): "
         "objects (80 everyday classes: people, vehicles, animals, furniture, electronics, food...; box, label, "
@@ -101,7 +109,7 @@ def register_tools() -> None:
         "colors (dominant colours), shapes (outlines of regions), info (size, brightness, contrast, sharpness). "
         "Default: info, objects, faces, text, codes. On a screenshot every item also has screen_center (where to "
         "click). 'annotated' is a picture with the results drawn on it.",
-        {"image": IMAGE, "tasks": {"type": "array", "items": {"type": "string", "enum": list(service.TASKS)}},
+        {"image": IMAGE, "tasks": {"type": "array", "items": {"type": "string", "enum": list(TASKS)}},
          "min_score": {"type": "number", "description": "0..1, default 0.4"},
          "classes": {"type": "array", "items": {"type": "string"}, "description": "only these object classes"}},
         ["image"], analyze)

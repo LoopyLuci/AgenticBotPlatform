@@ -735,3 +735,75 @@ def test_an_overlays_python_lives_in_the_modules_data_folder_and_inputs_reach_en
             p.wait(10)
         except Exception:  # noqa: BLE001
             p.kill()
+
+
+# ---- the Module Management Hub: any repo from its URL ------------------------------------------------------------
+def test_repo_urls_are_https_or_owner_name_only():
+    from bot.modules import adoption
+    from bot.modules.client import ModuleError
+    assert adoption.parse_repo("https://github.com/opencv/opencv_zoo") == (
+        "https://github.com/opencv/opencv_zoo.git", "opencv", "opencv_zoo")
+    assert adoption.parse_repo("opencv/opencv_zoo.git")[0] == "https://github.com/opencv/opencv_zoo.git"
+    assert adoption.parse_repo("github.com/a/b/")[0] == "https://github.com/a/b.git"
+    assert adoption.parse_repo("https://gitlab.com/g/p.git")[0] == "https://gitlab.com/g/p.git"
+    for bad in ("file:///etc/passwd", "git@github.com:a/b.git", "C:/x/y", "../x", "http://github.com/a/b", "a",
+                "https://github.com/a/b/tree/main"):
+        with pytest.raises(ModuleError):
+            adoption.parse_repo(bad)
+
+
+def test_a_repo_from_its_url_becomes_a_module_and_forgetting_it_keeps_the_clone(tmp_path, monkeypatch):
+    """The whole path against a real public repo: clone, overlay, check, register, operations, forget."""
+    import shutil
+    import socket as _socket
+
+    from bot.config import config
+    from bot.modules import adoption, harness, registry
+    try:
+        _socket.create_connection(("github.com", 443), timeout=5).close()
+    except OSError:
+        pytest.skip("github.com is not reachable from here")
+    cfg_file = tmp_path / "backends.yaml"
+    shutil.copy(config.path, cfg_file)
+    monkeypatch.setattr(config, "path", cfg_file)
+    monkeypatch.setattr(config, "_data", dict(config._data))
+    config.reload(actor="test")
+    config.set_value(("modules", "clone_root"), str(tmp_path / "clones"), actor="test")
+    monkeypatch.setattr(registry, "user_overlay_root", lambda: tmp_path / "overlays")
+    monkeypatch.setattr(registry, "data_dir", lambda m: tmp_path / "data" / m.id)
+    try:
+        job = adoption.add_from_url("https://github.com/opencv/onnx-conformance-proxy", mid="onnx-proxy-test")
+        for _ in range(600):
+            job = harness.job(job["id"])
+            if job["state"] != "running":
+                break
+            time.sleep(0.5)
+        assert job["state"] == "done", job.get("error") or job.get("log")
+        r = job["result"]
+        clone = Path(r["path"])
+        assert r["checked"] and (clone / ".git").is_dir() and _git(clone, "status", "--porcelain") == ""
+        assert not (clone / "abp-module.toml").exists()                   # the files are the overlay's, not the clone's
+        m = registry.get("onnx-proxy-test")
+        assert m.overlay and registry.install_dir(m) == clone.resolve()
+        assert harness.start_hub("onnx-proxy-test")["running"]
+        info = harness.call("onnx-proxy-test", "project.info", {})
+        assert Path(info["path"]).resolve() == clone.resolve()
+        harness.stop_hub("onnx-proxy-test")
+        # adding it again updates the same clone
+        again = adoption.add_from_url("opencv/onnx-conformance-proxy", mid="onnx-proxy-test")
+        for _ in range(600):
+            again = harness.job(again["id"])
+            if again["state"] != "running":
+                break
+            time.sleep(0.5)
+        assert again["state"] == "done" and any("updating the clone" in line for line in again["log"])
+        gone = adoption.unregister("onnx-proxy-test")
+        assert not Path(gone["overlay_removed"]).exists() and clone.is_dir()
+        assert "onnx-proxy-test" not in registry.modules(refresh=True)
+    finally:
+        try:
+            harness.stop_hub("onnx-proxy-test")
+        except Exception:  # noqa: BLE001
+            pass
+        monkeypatch.undo()
+        registry.modules(refresh=True)

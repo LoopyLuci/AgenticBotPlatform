@@ -179,16 +179,16 @@ def register_tools() -> None:
         return await _local(harness.call, mid, op_id, args)
 
     async def setup(inp, **_):
-        try:
-            mid = _mid(inp)
-        except ModuleError as exc:
-            return f"Error: {exc}"
         action = str(inp.get("action") or "")
-        if action == "job":
+        if action == "job":             # a job by id (module_add's job belongs to a module that does not exist yet)
             job_id = str(inp.get("job_id") or "")
             if inp.get("machine"):
                 return await _remote(inp["machine"], "GET", f"/jobs/{job_id}")
             return await _local(harness.job, job_id)
+        try:
+            mid = _mid(inp)
+        except ModuleError as exc:
+            return f"Error: {exc}"
         if action not in SETUP_ACTIONS:
             return f"Error: action is one of {', '.join([*SETUP_ACTIONS, 'job'])}"
         method, route = SETUP_ACTIONS[action]
@@ -218,6 +218,24 @@ def register_tools() -> None:
         return await _local(adoption.adopt, str(inp.get("path") or ""), mid=str(inp.get("id") or ""),
                             name=str(inp.get("name") or ""), dry_run=bool(inp.get("dry_run")))
 
+    async def add(inp, **_):
+        from bot.modules import adoption
+        body = {k: inp.get(k) for k in ("url", "id", "name", "shallow", "branch") if inp.get(k) is not None}
+        if inp.get("machine"):
+            return await _remote(inp["machine"], "POST", "/add", body)
+        return await _local(adoption.add_from_url, str(inp.get("url") or ""), mid=str(inp.get("id") or ""),
+                            name=str(inp.get("name") or ""), shallow=inp.get("shallow", True) is not False,
+                            branch=str(inp.get("branch") or ""))
+
+    reg("module_add", "Make any git repo an ABP module in one step (the Module Management Hub): url is "
+        "https://github.com/owner/name (any https git host) or owner/name. ABP clones it (latest commit only unless "
+        "shallow=false), reads it (stacks, build, CLI, scripts, server routes, CMake...), writes its module files as "
+        "an overlay on ABP's side (the clone stays exactly upstream), checks it with a real hub and registers it. A "
+        "background job: follow it with module_setup (action job, job_id). Then module_operations / module_call work "
+        "on it. module_adopt forget removes it again (the clone stays).",
+        {"url": {"type": "string"}, "id": {"type": "string"}, "name": {"type": "string"},
+         "shallow": {"type": "boolean"}, "branch": {"type": "string"}}, ["url"], add, permission="config",
+        read_only=False)
     reg("module_list", "Every module ABP knows: separate programs it installs, updates, builds and drives (VM-Harness, "
         "Hermes-Manager, TransferDaemon, ModelMistress, Continuum, TridentDroid, BrainBuilder, Wrightspace, and any "
         "added in config). For each: what it is, installed? built? hub running? updates waiting? a job running?",
@@ -242,7 +260,7 @@ def register_tools() -> None:
         "in a console), register_mcp (add its MCP server to ABP's), jobs (its recent jobs), job (one job's log: "
         "job_id). Installs, updates, builds and pipelines run in the background: follow them with jobs or job.",
         {"module": MODULE, "action": {"type": "string", "enum": [*SETUP_ACTIONS, "job"]}, "job_id": {"type": "string"}},
-        ["module", "action"], setup, permission="config", read_only=False)
+        ["action"], setup, permission="config", read_only=False)
     reg("module_adopt", "Make any project folder an ABP module (abp_modkit): action adopt (default) reads the project "
         "(its stacks, how to build it, its server, CLI subcommands, scripts, HTTP routes, PowerShell functions, MCP "
         "server), writes abp-module.toml and abp-ops.toml into it (adopting again keeps hand edits) and registers it, "

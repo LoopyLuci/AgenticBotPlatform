@@ -194,6 +194,18 @@ def test_find_text_on_an_image_and_analyze(tmp_path):
         service.analyze(str(f), ["telepathy"])
 
 
+def test_registering_the_tools_loads_no_opencv():
+    """Every agent process registers the tools; OpenCV and numpy load only on a vision call (loading them during a turn
+    hung abp_acp on Windows, behind its reader thread's pending read on stdin)."""
+    import subprocess
+    import sys
+    code = "import sys; from bot.vision import tools; print('cv2' in sys.modules, 'numpy' in sys.modules)"
+    r = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True, timeout=120)
+    assert r.stdout.split() == ["False", "False"], r.stdout + r.stderr
+    from bot.vision import tools
+    assert tuple(service.TASKS) == tools.TASKS
+
+
 def test_the_agent_tools_and_the_camera_rule(tmp_path):
     from bot.agent_runtime import toolspec
     from bot.agent_runtime import tools  # noqa: F401 - registers them
