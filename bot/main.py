@@ -449,6 +449,11 @@ async def run() -> None:
 
     infra_task = asyncio.create_task(infra_automation.run_forever(stop_event))
 
+    # ABP Web Hosting's upkeep (bot/hosting): dynamic DNS, certificate renewals, the web server and tunnel kept up.
+    from bot.hosting import service as hosting_service
+
+    hosting_task = asyncio.create_task(hosting_service.run_forever(stop_event))
+
     # Reactive half of auto-management (bot/auto_manage.py) — a new
     # kanban card fires a real check-in for that board's owning instance,
     # if it's configured to react to this trigger. The scheduled half
@@ -500,6 +505,7 @@ async def run() -> None:
         providers_watch_task.cancel()
         hotreload_task.cancel()
         await infra_task
+        await hosting_task  # same shutdown contract as infra_task
         await scheduler_task  # stop_event is already set; run_forever exits its own loop cleanly
         await peers_health_task  # same shutdown contract as scheduler_task
         await cluster_task  # same shutdown contract as scheduler_task
