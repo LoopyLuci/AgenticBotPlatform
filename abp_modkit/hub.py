@@ -146,6 +146,8 @@ class Hub:
                 "venv_bin": str(v / ("Scripts" if WIN else "bin")) if v else str(Path(sys.executable).parent),
                 "port": str(port or ""), "bat": ".bat" if WIN else "",
                 "target": str(self.project / "target"),
+                # ABP's model store (Ollama layout; ABP exports it when it starts): modules that run models read it in place
+                "abp_models": os.environ.get("ABP_MODELS_DIR", ""),
                 "pwsh": shutil.which("pwsh") or shutil.which("powershell") or "pwsh", **self.variables}
 
     def _fill(self, s: str, extra: dict[str, str]) -> str:

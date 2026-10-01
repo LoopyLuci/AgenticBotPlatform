@@ -129,7 +129,22 @@ def test_a_stale_control_file_is_ignored(fake, tmp_path):
     assert client.find(registry.get("fake-mod")) is None
 
 
-def test_modules_without_a_hub_say_so(fake):
+def _hubless_brainbuilder(tmp_path, monkeypatch) -> None:
+    """A BrainBuilder checkout with only its markers, so the built-in manifest (no hub, no window) applies whatever
+    is checked out next to ABP on this machine (the real BrainBuilder has its own abp-module.toml)."""
+    d = tmp_path / "BrainBuilder"
+    for f in ("Cargo.toml", "gui/package.json", "core/Cargo.toml"):
+        (d / f).parent.mkdir(parents=True, exist_ok=True)
+        (d / f).write_text("", encoding="utf-8")
+    monkeypatch.setenv("ABP_MODULE_BRAINBUILDER_DIR", str(d))
+    # and none of this machine's adopted projects (modules.projects may list the real BrainBuilder)
+    cfg = registry._cfg
+    monkeypatch.setattr(registry, "_cfg", lambda: {k: v for k, v in cfg().items() if k != "projects"})
+    registry.modules(refresh=True)
+
+
+def test_modules_without_a_hub_say_so(fake, tmp_path, monkeypatch):
+    _hubless_brainbuilder(tmp_path, monkeypatch)
     with pytest.raises(ModuleError, match="no hub"):
         harness.operations("brainbuilder")
     with pytest.raises(ModuleError, match="no window"):
@@ -166,7 +181,8 @@ def test_update_refuses_over_uncommitted_changes_but_not_untracked_files(fake, t
 
 
 # ---- the API and the tools ----------------------------------------------------------------------------------------------
-def test_the_api_lists_starts_calls_and_stops(fake):
+def test_the_api_lists_starts_calls_and_stops(fake, tmp_path, monkeypatch):
+    _hubless_brainbuilder(tmp_path, monkeypatch)
     from bot.dashboard import modules_api
     app = FastAPI()
     modules_api.register(app, lambda: None, lambda: None)

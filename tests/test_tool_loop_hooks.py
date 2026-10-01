@@ -36,7 +36,7 @@ class _FakeAgentTools:
         self._output = output
         self.executed = []
 
-    def is_dangerous(self, name):
+    def is_dangerous(self, name, tool_input=None):
         return name in self._dangerous
 
     async def execute_tool(self, name, tool_input, *, workspace, instance_id, device_tier=None):

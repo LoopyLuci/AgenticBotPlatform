@@ -937,11 +937,12 @@ def _description_overrides() -> dict[str, str]:
     return {str(k): str(v) for k, v in raw.items() if isinstance(v, str) and v.strip()}
 
 
-def is_dangerous(name: str) -> bool:
+def is_dangerous(name: str, tool_input: Optional[dict] = None) -> bool:
+    """Whether a tool must be approved; with the call's input, for this call (tools whose approval depends on it)."""
     from bot import plugins as plugin_registry
     from bot.agent_runtime import toolspec
 
-    return name in DANGEROUS_TOOLS or toolspec.registered_dangerous(name) or plugin_registry.is_dangerous_tool(name)
+    return name in DANGEROUS_TOOLS or toolspec.registered_dangerous(name, tool_input) or plugin_registry.is_dangerous_tool(name)
 
 
 def resolve_workspace(instance_id: int, cwd_override: Optional[str]) -> Path:
@@ -1924,6 +1925,7 @@ from bot.agent_runtime import toolkit_tools as _toolkit_tools  # noqa: E402,F401
 from bot import power_tools as _power_tools  # noqa: E402,F401  (keep this machine awake, wake others)
 from bot.hosting import tools as _hosting_tools  # noqa: E402,F401  (ABP Web Hosting: sites, DNS, deploys)
 from bot.fileserver import tools as _fileserver_tools  # noqa: E402,F401  (ABP File Server: storage, search, jobs)
+from bot.localai import tools as _localai_tools  # noqa: E402,F401  (local AI and the Neural Lab: models, training, system models)
 try:   # vision_*: OpenCV and its model zoo (bot/vision); an install without OpenCV simply has no vision tools
     from bot.vision import tools as _vision_tools  # noqa: E402,F401
 except ImportError as _exc:  # pragma: no cover - opencv-contrib-python-headless is in requirements.txt
