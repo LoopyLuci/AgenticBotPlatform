@@ -17,7 +17,6 @@
 """
 from __future__ import annotations
 
-import argparse
 import asyncio
 import getpass
 import json
@@ -232,7 +231,7 @@ async def run(args, client) -> int:
             _out(args, await r("GET", f"{API}/tunnels"))
             return 0
         if args.action == "install":
-            if input("Download Cloudflare's cloudflared from github.com/cloudflare/cloudflared into ABP's hosting folder? [y/N] ").lower() != "y":
+            if (await asyncio.to_thread(input, "Download Cloudflare's cloudflared from github.com/cloudflare/cloudflared into ABP's hosting folder? [y/N] ")).lower() != "y":
                 return 2
             return await _follow(args, client, await r("POST", f"{API}/tunnels/cloudflared/install"))
         _out(args, await r("POST", f"{API}/tunnels/cloudflare/{args.action}"))
@@ -281,7 +280,7 @@ async def _account(args, client) -> int:
         values = {}
         for f in spec["fields"]:
             prompt = f"{f['label']}{'' if f['required'] else ' (optional)'}: "
-            v = getpass.getpass(prompt) if f["secret"] else input(prompt)
+            v = await asyncio.to_thread(getpass.getpass if f["secret"] else input, prompt)
             if v:
                 values[f["key"]] = v
         acc = await r("POST", f"{API}/accounts", json={"provider": args.target, "name": args.name, "values": values}, timeout=60.0)
@@ -357,8 +356,8 @@ async def _vps(args, client) -> int:
         if not size:
             print(f"no size {args.size} in {args.region}; see `abp host vps options {a}`", file=sys.stderr)
             return 2
-        answer = input(f"Create {args.name} ({args.size} in {args.region}) for about {size['monthly']:.2f} a month, billed by "
-                       f"the provider? Type the price to confirm: ")
+        answer = await asyncio.to_thread(input, f"Create {args.name} ({args.size} in {args.region}) for about {size['monthly']:.2f} a "
+                                         f"month, billed by the provider? Type the price to confirm: ")
         try:
             if abs(float(answer) - size["monthly"]) > 0.005:
                 raise ValueError
@@ -367,6 +366,6 @@ async def _vps(args, client) -> int:
             return 2
         return await _follow(args, client, await r("POST", f"{API}/servers/{a}", json={
             "name": args.name, "region": args.region, "size": args.size, "confirm_monthly": size["monthly"]}))
-    name = input(f"Destroying server {args.server} deletes everything on it. Type its name to confirm: ")
+    name = await asyncio.to_thread(input, f"Destroying server {args.server} deletes everything on it. Type its name to confirm: ")
     _out(args, await r("DELETE", f"{API}/servers/{a}/{args.server}", params={"confirm": name}))
     return 0

@@ -33,7 +33,7 @@ import ssl
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 logger = logging.getLogger("abp.edge")
 

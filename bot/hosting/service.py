@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from bot.hosting import netinfo, procs
-from bot.hosting.store import HostingError, load, root, save, update
+from bot.hosting.store import HostingError, load, root, update
 
 logger = logging.getLogger(__name__)
 Log = Callable[[str], None]

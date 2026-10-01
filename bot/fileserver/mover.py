@@ -121,7 +121,7 @@ def run(log: Log = lambda m: None, only_share: str = "") -> dict:
                     for f in files:
                         p = Path(dirpath) / f
                         items.append((hot.get(p.relative_to(base).as_posix(), 0.0), p, base))
-            for score, src, base in sorted(items, key=lambda t: -t[0]):     # the hottest first, while there is room
+            for _score, src, base in sorted(items, key=lambda t: -t[0]):     # the hottest first, while there is room
                 rel = src.relative_to(base).as_posix()
                 try:
                     size = src.stat().st_size
@@ -139,7 +139,7 @@ def run(log: Log = lambda m: None, only_share: str = "") -> dict:
 
 
 def _prune_empty(top: Path) -> None:
-    for dirpath, dirnames, files in os.walk(top, topdown=False):
+    for dirpath, _dirnames, _files in os.walk(top, topdown=False):
         if dirpath != str(top) and not os.listdir(dirpath):
             try:
                 os.rmdir(dirpath)
