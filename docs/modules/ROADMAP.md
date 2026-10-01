@@ -570,3 +570,16 @@ M0 framework ─┬─> R (all repos; done alongside M0, since it touches only t
 | LX-A | **done** 2026-09-30 | On the NixOS VM on Server: 14/14 (the module's service, token generated into `/var/lib/abp` owned by the service user, token auth, restart keeps it, the CLI on PATH, tkinter). Not yet checked: the dashboard in a browser on NixOS's own desktop. |
 | LX-B | **done** 2026-09-30 | 23/23 on Ubuntu 26.04 (Python 3.14) and Debian 13 (Python 3.13), ABP `7362362`: installer, server, token auth, CLI, TUI, dashboard in a browser, the whole test suite (3256 passed), the service installer, update, a rolled-back bad update, uninstall. The runs found and fixed: `install.sh` not executable in git; `abp-linux.sh` clobbering `NAME` from os-release; tests that fell back to the checkout's real `data/bot.db` (missing on a fresh clone); `abp mcp list` failing without Claude Desktop; uninstall leaving its folder. SSH Toolkit's tests skip without PowerShell (`pwsh` is not installed by the installer). |
 | LX-C | todo | |
+| MH-A | **done** 2026-09-30 | `ceb09f6`: overlays (`catalog/`, `data/module-overlays/`, `modules.overlay_dirs`), `adopt --overlay`, `check --project`; CMake detection. `c98fedf`: modules' own Python environments (`project.python_setup`, in the module's data folder). |
+| MH-B | **done** 2026-09-30 | `47ec447`: `add_from_url` (API, `module_add` tool, `abp modules add`, the Modules page), tested against a real GitHub repo end to end. |
+| MH-C…E | todo | Refresh with a diff of operations; assisted setup through Studio; a shared overlay catalog repo. |
+| CV-A | **done** 2026-09-30 | `c98fedf`: 14 OpenCV overlays, each passing `abp_modkit check`; checkouts in `E:/Projects/OpenCV` untouched. |
+| CV-B, CV-C | **done** 2026-09-30 | `04ffb2d` (+ `47ec447`): `bot/vision`, the vision tools, the Vision page, `/api/vision`, `abp vision`, MCP. Real models on OpenCV's own images: faces, objects (dog, bicycle, truck), OCR of UI text near-perfect after word splitting, QR, people. OpenCV 5 findings: its new DNN engine ignores GPU targets, the wheel's OpenCL kernels fail on AMD, Caffe is gone (WeChat QR runs without its CNN files). |
+| CV-D | **part** | Done: text and templates on the screen with `screen_center`; Studio's screenshot diff. Next: the screen-element model (AM "screen"). |
+| CV-E…G | todo | Benchmarks per device, COOL-Benchmark's multi-cloud layer (in a private copy of COOL), OpenCV built here with a working GPU path, ONNX conformance. |
+| GEN-0, GEN-2 | **done** 2026-09-30 | `a9310ab`: Studio. Live with three free OpenRouter models: two valid variants, a rate limit passed over to the next model, one unusable answer refused. |
+| GEN-D | **part** | Datasets (`sft.jsonl`, `prefs.jsonl`) from the log. Next: Knowledge Modules from applied changes. |
+| GEN-1 | todo | Needs AM-C; the rank model first, then the edit model (see docs/models/own-models.md). |
+| GEN-3 | **part** | A variant is validated (HTML, `node --check`) before it can be applied. Next: the pipeline in a sandbox before apply. |
+| AM-A, AM-B | **done** 2026-09-30 | docs/models/own-models.md. KotMoE's Kotlin core trains real MoE classifiers (MNIST 95.7%); its desktop app's chat answers with keyword-picked text, not a model. BrainBuilder trains real PyTorch models. |
+| AM-C, AM-D | todo | The shared loop; "stack" and "screen" first. |
