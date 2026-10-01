@@ -296,6 +296,17 @@ export const operations = {
   ],
   "query_params": []
  },
+ "DELETE /api/studio/variants/{vid}/file": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/studio/variants/{vid}/file",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": [
+   "path"
+  ]
+ },
  "DELETE /api/support-bot/training/{phrase_id}": {
   "body": false,
   "method": "DELETE",
@@ -2258,6 +2269,72 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/studio": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/studio",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/studio/jobs/{jid}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/studio/jobs/{jid}",
+  "path_params": [
+   "jid"
+  ],
+  "query_params": []
+ },
+ "GET /api/studio/log": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/studio/log",
+  "path_params": [],
+  "query_params": [
+   "limit",
+   "kind"
+  ]
+ },
+ "GET /api/studio/variants/{vid}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/studio/variants/{vid}",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": []
+ },
+ "GET /api/studio/variants/{vid}/file": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/studio/variants/{vid}/file",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": [
+   "path"
+  ]
+ },
+ "GET /api/studio/variants/{vid}/tokens": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/studio/variants/{vid}/tokens",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": [
+   "page"
+  ]
+ },
+ "GET /api/studio/variants/{vid}/version": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/studio/variants/{vid}/version",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": []
+ },
  "GET /api/support-bot/health": {
   "body": false,
   "method": "GET",
@@ -2713,6 +2790,22 @@ export const operations = {
    "repo_id"
   ]
  },
+ "GET /api/vision": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vision",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/vision/out/{name}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vision/out/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
  "GET /api/vm-harness/audit": {
   "body": false,
   "method": "GET",
@@ -2870,6 +2963,36 @@ export const operations = {
   "method": "GET",
   "path": "/metrics",
   "path_params": [],
+  "query_params": []
+ },
+ "GET /studio/v/{vid}/": {
+  "body": false,
+  "method": "GET",
+  "path": "/studio/v/{vid}/",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": []
+ },
+ "GET /studio/v/{vid}/components": {
+  "body": false,
+  "method": "GET",
+  "path": "/studio/v/{vid}/components",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": [
+   "theme"
+  ]
+ },
+ "GET /studio/v/{vid}/static/{path}": {
+  "body": false,
+  "method": "GET",
+  "path": "/studio/v/{vid}/static/{path}",
+  "path_params": [
+   "vid",
+   "path"
+  ],
   "query_params": []
  },
  "GET /webhooks/whatsapp": {
@@ -3859,6 +3982,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "POST /api/modules/add": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modules/add",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/modules/adopt": {
   "body": true,
   "method": "POST",
@@ -4640,6 +4770,88 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "POST /api/studio/datasets": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/studio/datasets",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/studio/generate": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/studio/generate",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/studio/revert": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/studio/revert",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/studio/variants": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/studio/variants",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/studio/variants/{vid}/apply": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/studio/variants/{vid}/apply",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": []
+ },
+ "POST /api/studio/variants/{vid}/discard": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/studio/variants/{vid}/discard",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": []
+ },
+ "POST /api/studio/variants/{vid}/rate": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/studio/variants/{vid}/rate",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": []
+ },
+ "POST /api/studio/variants/{vid}/shot": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/studio/variants/{vid}/shot",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": []
+ },
+ "POST /api/studio/variants/{vid}/tokens": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/studio/variants/{vid}/tokens",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": []
+ },
+ "POST /api/studio/variants/{vid}/validate": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/studio/variants/{vid}/validate",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": []
+ },
  "POST /api/support-bot/ask": {
   "body": true,
   "method": "POST",
@@ -5120,6 +5332,50 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "POST /api/vision/analyze": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vision/analyze",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/vision/compare": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vision/compare",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/vision/edit": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vision/edit",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/vision/faces": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vision/faces",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/vision/find": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vision/find",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/vision/models/{model}/fetch": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/vision/models/{model}/fetch",
+  "path_params": [
+   "model"
+  ],
+  "query_params": []
+ },
  "POST /api/vm-harness/call": {
   "body": true,
   "method": "POST",
@@ -5358,6 +5614,15 @@ export const operations = {
   "path_params": [
    "session_id",
    "index"
+  ],
+  "query_params": []
+ },
+ "PUT /api/studio/variants/{vid}/file": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/studio/variants/{vid}/file",
+  "path_params": [
+   "vid"
   ],
   "query_params": []
  },
@@ -9189,6 +9454,13 @@ export const operations = {
   ],
   "query_params": []
  },
+ "modules_add_api_modules_add_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modules/add",
+  "path_params": [],
+  "query_params": []
+ },
  "modules_adopt_api_modules_adopt_post": {
   "body": true,
   "method": "POST",
@@ -9954,6 +10226,204 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "studio_apply_api_studio_variants__vid__apply_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/studio/variants/{vid}/apply",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": []
+ },
+ "studio_components_studio_v__vid__components_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/studio/v/{vid}/components",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": [
+   "theme"
+  ]
+ },
+ "studio_create_api_studio_variants_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/studio/variants",
+  "path_params": [],
+  "query_params": []
+ },
+ "studio_datasets_api_studio_datasets_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/studio/datasets",
+  "path_params": [],
+  "query_params": []
+ },
+ "studio_discard_api_studio_variants__vid__discard_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/studio/variants/{vid}/discard",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": []
+ },
+ "studio_generate_api_studio_generate_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/studio/generate",
+  "path_params": [],
+  "query_params": []
+ },
+ "studio_job_api_studio_jobs__jid__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/studio/jobs/{jid}",
+  "path_params": [
+   "jid"
+  ],
+  "query_params": []
+ },
+ "studio_log_api_studio_log_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/studio/log",
+  "path_params": [],
+  "query_params": [
+   "limit",
+   "kind"
+  ]
+ },
+ "studio_overview_api_studio_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/studio",
+  "path_params": [],
+  "query_params": []
+ },
+ "studio_preview_studio_v__vid___get": {
+  "body": false,
+  "method": "GET",
+  "path": "/studio/v/{vid}/",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": []
+ },
+ "studio_rate_api_studio_variants__vid__rate_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/studio/variants/{vid}/rate",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": []
+ },
+ "studio_read_api_studio_variants__vid__file_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/studio/variants/{vid}/file",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": [
+   "path"
+  ]
+ },
+ "studio_reset_api_studio_variants__vid__file_delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/studio/variants/{vid}/file",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": [
+   "path"
+  ]
+ },
+ "studio_revert_api_studio_revert_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/studio/revert",
+  "path_params": [],
+  "query_params": []
+ },
+ "studio_set_tokens_api_studio_variants__vid__tokens_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/studio/variants/{vid}/tokens",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": []
+ },
+ "studio_shot_api_studio_variants__vid__shot_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/studio/variants/{vid}/shot",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": []
+ },
+ "studio_static_studio_v__vid__static__path__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/studio/v/{vid}/static/{path}",
+  "path_params": [
+   "vid",
+   "path"
+  ],
+  "query_params": []
+ },
+ "studio_tokens_api_studio_variants__vid__tokens_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/studio/variants/{vid}/tokens",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": [
+   "page"
+  ]
+ },
+ "studio_validate_api_studio_variants__vid__validate_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/studio/variants/{vid}/validate",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": []
+ },
+ "studio_variant_api_studio_variants__vid__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/studio/variants/{vid}",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": []
+ },
+ "studio_version_api_studio_variants__vid__version_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/studio/variants/{vid}/version",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": []
+ },
+ "studio_write_api_studio_variants__vid__file_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/studio/variants/{vid}/file",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": []
+ },
  "td_audit_api_transferdaemon_audit_get": {
   "body": false,
   "method": "GET",
@@ -10579,6 +11049,66 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/agent/permissions/validate",
+  "path_params": [],
+  "query_params": []
+ },
+ "vision_analyze_api_vision_analyze_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vision/analyze",
+  "path_params": [],
+  "query_params": []
+ },
+ "vision_compare_api_vision_compare_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vision/compare",
+  "path_params": [],
+  "query_params": []
+ },
+ "vision_edit_api_vision_edit_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vision/edit",
+  "path_params": [],
+  "query_params": []
+ },
+ "vision_faces_api_vision_faces_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vision/faces",
+  "path_params": [],
+  "query_params": []
+ },
+ "vision_fetch_api_vision_models__model__fetch_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/vision/models/{model}/fetch",
+  "path_params": [
+   "model"
+  ],
+  "query_params": []
+ },
+ "vision_find_api_vision_find_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/vision/find",
+  "path_params": [],
+  "query_params": []
+ },
+ "vision_out_api_vision_out__name__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vision/out/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "vision_status_api_vision_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vision",
   "path_params": [],
   "query_params": []
  },

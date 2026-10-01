@@ -335,7 +335,12 @@ def _page_with_token(path: Path, request: Request) -> HTMLResponse:
     """An HTML page of the dashboard, with the auto-generated DASHBOARD_TOKEN placed in it for a local page load
     (see _is_local_page_request). A page that carries the token is never stored anywhere; any other keeps the
     revalidate-every-time caching the dashboard has always had."""
-    html = path.read_text(encoding="utf-8")
+    return html_page(path.read_text(encoding="utf-8"), request)
+
+
+def html_page(html: str, request: Request, head_script: str = "") -> HTMLResponse:
+    """_page_with_token for HTML already in hand (Studio serves variants of the pages). head_script, when given, is
+    one more inline script the page may run (it gets this response's nonce)."""
     token = os.environ.get("DASHBOARD_TOKEN")
     cache = "no-cache"
     # The pages hold no inline script of their own (it all lives in /static/*.js), so the policy can forbid it:
@@ -348,6 +353,8 @@ def _page_with_token(path: Path, request: Request) -> HTMLResponse:
         snippet = f'<script nonce="{nonce}">window.__ABP_TOKEN__={literal};</script>'
         html = html.replace("</head>", snippet + "</head>", 1)
         cache = "no-store"
+    if head_script:
+        html = html.replace("</head>", f'<script nonce="{nonce}">{head_script}</script></head>', 1)
     return HTMLResponse(html, headers={"Cache-Control": cache, "Content-Security-Policy": page_csp(nonce)})
 
 
@@ -893,6 +900,11 @@ def build_app() -> FastAPI:
         vision_api.register(app, _require_token)
     except ImportError as exc:  # pragma: no cover - OpenCV is in requirements.txt
         logger.warning("vision API is off: %s", exc)
+
+    # Studio: generative code and GUI with a real-time preview (/studio/v/*, /api/studio/*; bot/studio).
+    from bot.dashboard import studio_api
+
+    studio_api.register(app, _require_token)
 
     # Browser-extension bridge (/api/browser/*): pairing, the extension WebSocket, policy, RPC.
     from bot.dashboard import browser_api
