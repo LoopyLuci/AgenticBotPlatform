@@ -459,7 +459,9 @@ def recycle_purge(days: Optional[int] = None) -> int:
         for share_dir in b.iterdir():
             keep = ((days if days is not None else shares().get(share_dir.name, {}).get("recycle_days", 30)) * 86400)
             for stamp in share_dir.iterdir():
-                if now - stamp.stat().st_mtime >= keep:
+                # max(0, …): the file system's clock can run a few ms ahead of time.time() (Windows), and an entry
+                # made just now is age 0, not negative (else days=0 would sometimes keep it)
+                if max(0.0, now - stamp.stat().st_mtime) >= keep:
                     shutil.rmtree(stamp, ignore_errors=True)
                     n += 1
     return n

@@ -916,6 +916,12 @@ def build_app() -> FastAPI:
 
     fileserver_api.register(app, _require_token)
 
+    # Local AI and the Neural Lab (/api/localai/*, /api/lab/*; bot/localai, bot/neurallab): models, fine-tuning, the
+    # lab's runs and designs, the toolkit's projects, the system models.
+    from bot.dashboard import localai_api
+
+    localai_api.register(app, _require_token)
+
     # Browser-extension bridge (/api/browser/*): pairing, the extension WebSocket, policy, RPC.
     from bot.dashboard import browser_api
 

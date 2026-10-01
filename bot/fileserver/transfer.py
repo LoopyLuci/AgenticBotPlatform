@@ -108,6 +108,7 @@ class LocalEndpoint(Endpoint):
 
     def __init__(self, base: Path):
         self.base = base
+        self.chunk = CHUNK            # the block size reads use; set per job from the transfer model (bot/neurallab/systune.py)
 
     def _p(self, rel: str) -> Path:
         return self.base / shares_mod.clean(rel)
@@ -132,7 +133,7 @@ class LocalEndpoint(Endpoint):
     def read(self, rel, offset=0):
         with open(self._p(rel), "rb") as f:
             f.seek(offset)
-            for c in iter(lambda: f.read(CHUNK), b""):
+            for c in iter(lambda: f.read(self.chunk), b""):
                 yield c
 
     def partial(self, rel: str) -> int:
@@ -437,7 +438,7 @@ def set_job(name: str, job: dict) -> dict:
     for side in ("source", "dest"):
         if not isinstance(job.get(side), dict):
             raise FsError(f"{side} is {{remote, path}} or {{path}}")
-    j = {"mode": "copy", "every_minutes": 0, "parallel": 4, "limit_kbps": 0, "verify": True, "exclude": [], **job}
+    j = {"mode": "copy", "every_minutes": 0, "parallel": 0, "limit_kbps": 0, "verify": True, "exclude": [], **job}
     update("transfer_jobs", {}, lambda js: js.__setitem__(name, j))
     return j
 
@@ -549,6 +550,9 @@ def run(name: str, log: Log = lambda m: None, dry_run: bool = False) -> dict:
     bucket = _Bucket(int(job.get("limit_kbps") or 0))
     s_tree, d_tree = None, None
     lock = threading.Lock()
+    parallel, tuned = _tuning(job, src, dst, actions, log)
+    out["parallel"], out["chunk"] = parallel, getattr(src, "chunk", CHUNK)
+    t_start = time.time()
 
     def do(act):
         nonlocal s_tree, d_tree
@@ -596,8 +600,14 @@ def run(name: str, log: Log = lambda m: None, dry_run: bool = False) -> dict:
                     return
                 time.sleep(1.5 * 2 ** attempt)
 
-    with ThreadPoolExecutor(max(1, min(16, int(job.get("parallel") or 4)))) as ex:
+    with ThreadPoolExecutor(parallel) as ex:
         list(ex.map(do, actions))
+    if tuned and out["bytes"]:
+        try:                                              # a real copy: more data for the transfer model
+            from bot.neurallab import systune
+            systune.record_copy(str(src.base), str(dst.base), out["bytes"], time.time() - t_start, out["chunk"], parallel)
+        except Exception:                                 # noqa: BLE001 - measuring must never fail a transfer
+            pass
     if job["mode"] == "two-way" and not out["failed"]:
         now_s = src.tree()
         with con:
@@ -610,6 +620,30 @@ def run(name: str, log: Log = lambda m: None, dry_run: bool = False) -> dict:
                                                                               "failed": len(out["failed"])}) if name in js else None)
     log(f"transfer {name}: {out['done']}/{out['planned']} done, {out['bytes'] >> 20} MiB, {len(out['failed'])} failed")
     return out
+
+
+def _tuning(job: dict, src: Endpoint, dst: Endpoint, actions: list, log: Log) -> tuple[int, bool]:
+    """Parallel files and block size: the job's own setting, else (between local folders) what the transfer model
+    advises for these two drives, else 4 files of 8 MiB blocks."""
+    if job.get("parallel"):
+        return max(1, min(16, int(job["parallel"]))), False
+    if not (isinstance(src, LocalEndpoint) and isinstance(dst, LocalEndpoint)):
+        return 4, False
+    puts = [a for a in actions if a[0] == "put"]
+    if not puts:
+        return 4, False
+    try:
+        from bot.neurallab import systune
+        tree = src.tree()
+        total = sum(tree.get(a[1], (0, 0))[0] for a in puts)
+        adv = systune.advise_copy(str(src.base), str(dst.base), total, len(puts))
+    except Exception as e:                                # noqa: BLE001 - no advice: the defaults
+        log(f"transfer tuning unavailable ({e}); 4 files at a time")
+        return 4, False
+    src.chunk = dst.chunk = int(adv["chunk"])
+    log(f"{len(puts)} file(s), {total >> 20} MiB: {adv['parallel']} at a time, {adv['chunk'] >> 10} KiB blocks "
+        f"({adv['source']}{', ~%s MB/s expected' % adv['predicted_mb_s'] if adv.get('predicted_mb_s') else ''})")
+    return int(adv["parallel"]), True
 
 
 def due() -> list[str]:

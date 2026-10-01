@@ -167,6 +167,20 @@ DENYLIST: frozenset[str] = frozenset({
     # the sign-in throttle, index.py the embedder choice.
     "bot.dashboard.fileserver_api", "bot.fileserver.tools", "bot.fileserver.store", "bot.fileserver.shares",
     "bot.fileserver.index", "bot.fileserver.service",
+    # Local AI and the Neural Lab: routes register once; engine.py holds the loaded models, telemetry.py and systune.py
+    # their caches and the recorder, service.py the recorder thread; tools.py registers at import time.
+    "bot.dashboard.localai_api", "bot.localai.engine", "bot.localai.service", "bot.localai.tools", "bot.neurallab.telemetry",
+    "bot.neurallab.systune", "bot.neurallab.service", "bot.neurallab.infer",
+    # The rest of hosting, the file server, local AI and the lab, and their TUI screens: separate processes (the file
+    # server, the edge, the model server, GPU workers) or state held across calls; they take effect on restart.
+    "bot.hosting.accounts", "bot.hosting.acme", "bot.hosting.caddy", "bot.hosting.deploy", "bot.hosting.dns",
+    "bot.hosting.edge", "bot.hosting.netinfo", "bot.hosting.procs", "bot.hosting.tunnels", "bot.hosting.vps",
+    "bot.fileserver.apps", "bot.fileserver.array", "bot.fileserver.backup", "bot.fileserver.dav", "bot.fileserver.disks",
+    "bot.fileserver.exports", "bot.fileserver.gf", "bot.fileserver.guard", "bot.fileserver.mover", "bot.fileserver.server",
+    "bot.fileserver.transfer", "bot.localai.discover", "bot.localai.gguf", "bot.localai.modelfile", "bot.localai.models",
+    "bot.localai.paths", "bot.localai.pull", "bot.localai.server", "bot.localai.train", "bot.localai.train_worker",
+    "bot.neurallab.edn", "bot.neurallab.interop", "bot.neurallab.lab", "bot.neurallab.nn_worker", "bot.neurallab.spec",
+    "bot.tui.screens.hosting", "bot.tui.screens.localai", "bot.tui.screens.storage",
     # Studio: routes register once and studio_api.py holds the generation jobs; variants.py holds its write lock.
     "bot.dashboard.studio_api", "bot.studio.variants", "bot.studio.log", "bot.studio.generate", "bot.studio.edits",
     "bot.studio.tokens", "bot.studio.shots",

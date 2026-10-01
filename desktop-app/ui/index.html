@@ -797,6 +797,8 @@
       <a href="#vision" data-kw="vision computer vision opencv image camera screen ocr text faces objects qr barcode detect find compare edit"><span class="ic">👁</span><span class="nav-txt"><b>Vision</b><small>Objects, faces, text, screen</small></span></a>
       <a href="#hosting" data-kw="hosting web site website domain dns cloudflare tunnel netlify vercel pages vps server deploy ssl https certificate port forward router ftp self-host"><span class="ic">🌐</span><span class="nav-txt"><b>Hosting</b><small>Websites, domains, DNS, deploys</small></span></a>
       <a href="#storage" data-kw="storage nas file server unraid parity array disks shares smb webdav backup sync transfer raid smart drive health duplicates cache mover ransomware"><span class="ic">🗄</span><span class="nav-txt"><b>Storage</b><small>File server, parity, backups</small></span></a>
+      <a href="#localai" data-kw="local ai ollama unsloth llama models gguf pull fine-tune finetune lora training gpu inference server"><span class="ic">🦙</span><span class="nav-txt"><b>Local AI</b><small>Models, server, fine-tuning</small></span></a>
+      <a href="#lab" data-kw="neural lab network design train moe mixture experts kotmoe brainbuilder amethyst kestrion system models tuning telemetry cpu stability"><span class="ic">🧠</span><span class="nav-txt"><b>Neural Lab</b><small>Design, train, system models</small></span></a>
       <a href="#studio" data-kw="studio generative ui gui code preview live variant theme design components generate model apply revert"><span class="ic">🎨</span><span class="nav-txt"><b>Studio</b><small>Change the UI, see it live</small></span></a>
       <a href="#modules" data-kw="modules programs repos install update build hub pipeline brainbuilder wrightspace tridentdroid modelmistress continuum"><span class="ic">▦</span><span class="nav-txt"><b>Modules</b><small>Every program ABP drives</small></span></a>
       <a href="#transferdaemon" data-kw="transferdaemon transfer daemon messages files send encrypted contacts relays p2p"><span class="ic">⇄</span><span class="nav-txt"><b>TransferDaemon</b><small>Encrypted messages &amp; files</small></span></a>
@@ -1803,6 +1805,16 @@
       <div id="std-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
+    <section id="localai">
+      <div class="sec-head"><h2>Local AI</h2><span class="desc">Run, serve and fine-tune models on this machine: everything Ollama and Unsloth do, inside ABP. An Ollama-compatible server (any Ollama app works against it) and OpenAI's API, llama.cpp on the GPU, models pulled from Ollama's registry or Hugging Face, imported, or used in place from other programs' folders, and LoRA fine-tuning on the GPU exported straight into the store.</span></div>
+      <div id="aip-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
+
+    <section id="lab">
+      <div class="sec-head"><h2>Neural Lab</h2><span class="desc">Design, train and ship neural networks: one design format for BrainBuilder graphs, KotMoE mixtures of experts, Amethyst modules and Kestrion's models, trained on the GPU; and the system models that learn this machine (drive transfers, model runtime options, memory, CPU stability) and tune ABP's own work.</span></div>
+      <div id="lab-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
+
     <section id="storage">
       <div class="sec-head"><h2>Storage</h2><span class="desc">ABP File Server: disks of any size pooled into shares and protected by one or two parity disks (sync, scrub for bitrot, rebuild a failed disk), a cache with a mover, users and share links, a web file manager and WebDAV for every device, search by contents and meaning, duplicates, drive health with failure risk, a ransomware guard, transfers and sync jobs, encrypted deduplicated backups, and one-click apps.</span></div>
       <div id="stp-root"><p class="cardnote">Connecting to the ABP server…</p></div>
@@ -2456,6 +2468,7 @@
 <script src="vision-panel.js"></script>
 <script src="hosting-panel.js"></script>
 <script src="storage-panel.js"></script>
+<script src="ai-panel.js"></script>
 <script src="studio-panel.js"></script>
 <script src="ollama-panel.js"></script>
 <script src="bot-agent-form.js"></script>

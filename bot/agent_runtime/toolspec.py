@@ -45,7 +45,11 @@ class ToolSpec:
     # None = derive from read_only (anything that can change something asks first).
     # A registered tool may say False for a change that is safe to make unprompted
     # (its own scratch state), or True for a read that is sensitive.
-    needs_approval: Optional[bool] = None
+    # Or a function of the call's input (one tool whose actions differ: reads that run freely, changes that ask).
+    # It fails closed: asked without an input, raising, or returning anything but a real bool means "ask". Write it
+    # as an allow-list of safe calls ("asks unless action is one of ..."): the input comes from the model, and may
+    # have been steered by untrusted content. Plan mode and taint treat such a tool as one that changes things.
+    needs_approval: Optional[bool | Callable[[dict], bool]] = None
     # True = a person must be asked every time, whatever the mode or rules say (a rule may still deny, plan mode still
     # blocks it). For a tool whose whole purpose is to hand something to a human, such as browser_handoff.
     always_ask: bool = False
@@ -223,10 +227,30 @@ async def dispatch(name: str, tool_input: dict, **context: Any) -> str:
     return await _registered[name][2](tool_input, **context)
 
 
-def registered_dangerous(name: str) -> bool:
-    """Whether a registered tool must be approved before it runs."""
+def registered_dangerous(name: str, tool_input: Optional[dict] = None) -> bool:
+    """Whether a registered tool must be approved before it runs (this call, when its input is given)."""
     entry: Optional[tuple] = _registered.get(name)
     if not entry:
         return False
     spec = entry[1]
-    return spec.needs_approval if spec.needs_approval is not None else not spec.read_only
+    return approval_needed(spec, tool_input)
+
+
+def approval_needed(spec: ToolSpec, tool_input: Optional[dict] = None) -> bool:
+    """spec.needs_approval resolved for one call; a per-call function fails closed (see ToolSpec)."""
+    rule = spec.needs_approval
+    if rule is None:
+        return not spec.read_only
+    if isinstance(rule, bool):
+        return rule
+    if not callable(rule) or not isinstance(tool_input, dict):
+        return True
+    try:
+        verdict = rule(dict(tool_input))           # a copy: the check can't change what runs
+    except Exception:  # noqa: BLE001 - a broken check asks rather than lets through
+        return True
+    return verdict if isinstance(verdict, bool) else True
+
+
+def approval_is_conditional(spec: ToolSpec) -> bool:
+    return callable(spec.needs_approval) and not isinstance(spec.needs_approval, bool)

@@ -43,6 +43,11 @@ SCOPES: dict[str, list[tuple[str, str]]] = {
     # ABP's OpenAI-compatible model gateway (any provider ABP has, the router's "auto", web and browser models)
     "models:use": [("GET", r"/api/browser/v1(/[a-z-]+)?/models"),
                    ("POST", r"/api/browser/v1(/[a-z-]+)?/(chat/completions|embeddings)")],
+    # ABP's local AI and the Neural Lab, read only: models, the server, runs, designs, the system models' advice
+    "localai:read": [("GET", r"/api/localai(/(models|discover|train|settings))?"), ("GET", r"/api/localai/models/show")],
+    "lab:read": [("GET", r"/api/lab(/(runs|designs|projects|systune|telemetry|brainbuilder|kotmoe))?"),
+                 ("GET", r"/api/lab/(runs|designs)/[A-Za-z0-9_.-]+"), ("GET", r"/api/lab/systune/advice"),
+                 ("POST", r"/api/lab/validate")],
 }
 
 PRESETS: dict[str, dict] = {
@@ -66,6 +71,14 @@ PRESETS: dict[str, dict] = {
                 "bot, running and polling swarms, registering Kestrion's MCP server, ABP's models and modules, and "
                 "announcing Kestrion's address so ABP can use it as a backend. No bot lifecycle, no Docker, no "
                 "config, no credentials.",
+    },
+    "omnisystem": {
+        "label": "Omnisystem (abp-connector module)",
+        "scopes": ["status:read", "bots:read", "agents:ask", "swarms:read", "swarms:run", "models:read", "models:use",
+                   "modules:read", "modules:call", "localai:read", "lab:read"],
+        "note": "What Omnisystem's abp-connector module does (Omnisystem/src/crates/abp-connector): ABP's status and bots, "
+                "asking a bot, swarms, ABP's model gateway, its modules, and its local AI and Neural Lab read-only. "
+                "No bot lifecycle, no Docker, no config, no credentials.",
     },
     "read-only": {"label": "read-only monitor", "scopes": ["status:read", "bots:read", "docker:read", "modules:read",
                                                             "cluster:read", "models:read"]},

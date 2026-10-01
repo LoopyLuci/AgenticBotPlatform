@@ -1246,6 +1246,42 @@ async def nas_duplicates(share: str = "") -> Any:
 
 
 @mcp.tool()
+async def localai_status() -> Any:
+    """ABP's local AI: the Ollama-compatible model server (port 11436), llama.cpp engines, GPUs, every model (pulled,
+    imported, referenced from other programs), what is loaded, fine-tuning runs and datasets."""
+    return await _request("GET", "/api/localai", timeout=60.0)
+
+
+@mcp.tool()
+async def localai_discover() -> Any:
+    """Models other programs already keep on this machine (Ollama, LM Studio, the Hugging Face cache, GPT4All, Jan,
+    Kestrion), and which ABP already uses."""
+    return await _request("GET", "/api/localai/discover", timeout=120.0)
+
+
+@mcp.tool()
+async def lab_status() -> Any:
+    """ABP's Neural Lab: training runs, saved designs, the toolkit's projects (BrainBuilder, KotMoE, Amethyst, Kestrion),
+    the ops a design can use, the system models and the CPU policy."""
+    return await _request("GET", "/api/lab", timeout=60.0)
+
+
+@mcp.tool()
+async def lab_validate(spec: dict) -> Any:
+    """Check a Neural Lab design: every node's shape, parameters, active parameters, FLOPs per row, training memory."""
+    return await _request("POST", "/api/lab/validate", json={"spec": spec})
+
+
+@mcp.tool()
+async def lab_advice(kind: str, src: str = "", dst: str = "", size_gb: float = 4, files: int = 100, model: str = "") -> Any:
+    """The system models' advice for this machine. kind: transfer (block size and parallel files for copying src -> dst),
+    llm (llama.cpp batch / micro-batch / flash attention for a model), memory (RAM use in five minutes), stability
+    (which processors ABP's heavy work may use, and why)."""
+    return await _request("GET", "/api/lab/systune/advice", params={"kind": kind, "src": src, "dst": dst, "size_gb": size_gb,
+                                                                    "files": files, "model": model}, timeout=60.0)
+
+
+@mcp.tool()
 async def hosting_status() -> Any:
     """ABP Web Hosting: every site (folder/app, domains, how it is exposed, deploy targets), the web server, tunnels,
     connected provider accounts (names only), certificates and settings."""

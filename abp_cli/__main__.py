@@ -23,6 +23,12 @@ Commands:
   nas status|disks|array|share|user|search|transfer|backup|app|...
                                           ABP File Server: parity array, shares, users, search, transfers,
                                           backups, apps (see abp_cli/nas.py)
+  ai status|list|ps|pull|rm|cp|show|import|create|discover|train|server|engine
+                                          ABP's local AI (Ollama and Unsloth in ABP): models, the server,
+                                          fine-tuning on the GPU (see abp_cli/ai.py)
+  lab status|runs|designs|validate|train|import|projects|systune|advice|bench|retrain|telemetry|hw
+                                          the Neural Lab: designs trained on the GPU, BrainBuilder / KotMoE /
+                                          Amethyst / Kestrion, the system models (see abp_cli/ai.py)
 
 Connection: --host (default 127.0.0.1:8787) and --token (default from .env's
 DASHBOARD_TOKEN, same as bot/tui/'s ConnectScreen). --json prints machine-readable output
@@ -145,6 +151,9 @@ async def _dispatch(args, client: DashboardClient) -> int:
     if cmd == "nas":
         from abp_cli import nas as _nas
         return await _nas.run(args, client)
+    if cmd in ("ai", "lab"):
+        from abp_cli import ai as _ai
+        return await _ai.run(args, client)
     if cmd == "swarms":
         return await _swarms(args, client)
     if cmd == "sessions":
@@ -940,6 +949,8 @@ def _parser() -> argparse.ArgumentParser:
     _host.add_parser(sub)
     from abp_cli import nas as _nas
     _nas.add_parser(sub)
+    from abp_cli import ai as _ai
+    _ai.add_parser(sub)
 
     swarms = sub.add_parser("swarms", help="fan-out/leader-vote/etc. multi-bot swarms")
     ssub = swarms.add_subparsers(dest="swarms_cmd", required=True)

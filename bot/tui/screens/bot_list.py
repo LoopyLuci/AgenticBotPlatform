@@ -31,6 +31,7 @@ class BotListScreen(Screen):
         ("o", "automation", "Infra automation"),
         ("n", "hosting", "Hosting"),
         ("f", "storage", "Storage"),
+        ("l", "localai", "Local AI & Lab"),
         ("q", "app.quit", "Quit"),
     ]
 
@@ -56,6 +57,7 @@ class BotListScreen(Screen):
             yield Button("Infra automation (o)", id="btn-automation")
             yield Button("Hosting (n)", id="btn-hosting")
             yield Button("Storage (f)", id="btn-storage")
+            yield Button("Local AI & Lab (l)", id="btn-localai")
         yield DataTable(id="bot-table")
         yield Label("", id="bot-list-status")
         yield Footer()
@@ -124,6 +126,7 @@ class BotListScreen(Screen):
             "btn-automation": self.action_automation,
             "btn-hosting": self.action_hosting,
             "btn-storage": self.action_storage,
+            "btn-localai": self.action_localai,
         }
         handler = actions.get(event.button.id)
         if handler:
@@ -206,6 +209,11 @@ class BotListScreen(Screen):
         from bot.tui.screens.storage import StorageScreen
 
         await self.app.push_screen(StorageScreen())
+
+    async def action_localai(self) -> None:
+        from bot.tui.screens.localai import LocalAIScreen
+
+        await self.app.push_screen(LocalAIScreen())
 
     async def _after_form(self, _result: object = None) -> None:
         await self.refresh_bots()

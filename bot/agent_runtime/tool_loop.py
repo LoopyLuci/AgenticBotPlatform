@@ -39,7 +39,7 @@ async def run_one_tool(
         trace.active().tool_call(
             name, tool_input, status=outcome["status"], duration_ms=int((time.monotonic() - started) * 1000),
             output=output, approval=outcome["approval"], error=outcome["error"],
-            read_only=not agent_tools.is_dangerous(name),
+            read_only=not agent_tools.is_dangerous(name, tool_input),
         )
 
 
@@ -90,7 +90,7 @@ async def _run_one_tool(
         tainted = taint.is_tainted(session_key or "")
         unrestricted_relaxation = device_tier == "unrestricted" and not tainted and name in (
             "run_shell", "write_file", "edit_file", "multi_edit", "apply_patch")
-        dangerous = agent_tools.is_dangerous(name)
+        dangerous = agent_tools.is_dangerous(name, tool_input)   # the input as it will run (after any hook rewrite)
         if verdict.decision == "allow":
             needs_approval = False                       # a rule or mode allowed it (already downgraded if tainted)
         elif verdict.decision == "ask":

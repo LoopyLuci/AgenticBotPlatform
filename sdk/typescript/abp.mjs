@@ -103,6 +103,69 @@ export const operations = {
   ],
   "query_params": []
  },
+ "DELETE /api/fileserver/backups/{name}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/fileserver/backups/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "DELETE /api/fileserver/links/{token}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/fileserver/links/{token}",
+  "path_params": [
+   "token"
+  ],
+  "query_params": []
+ },
+ "DELETE /api/fileserver/pools/{name}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/fileserver/pools/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "DELETE /api/fileserver/remotes/{name}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/fileserver/remotes/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "DELETE /api/fileserver/shares/{name}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/fileserver/shares/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "DELETE /api/fileserver/transfers/{name}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/fileserver/transfers/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "DELETE /api/fileserver/users/{name}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/fileserver/users/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
  "DELETE /api/hooks/{hook_id}": {
   "body": false,
   "method": "DELETE",
@@ -111,6 +174,59 @@ export const operations = {
    "hook_id"
   ],
   "query_params": []
+ },
+ "DELETE /api/hosting/accounts/{acc_id}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/hosting/accounts/{acc_id}",
+  "path_params": [
+   "acc_id"
+  ],
+  "query_params": []
+ },
+ "DELETE /api/hosting/dns/{acc_id}/records": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/hosting/dns/{acc_id}/records",
+  "path_params": [
+   "acc_id"
+  ],
+  "query_params": [
+   "zone",
+   "name",
+   "type"
+  ]
+ },
+ "DELETE /api/hosting/servers/{acc_id}/{server_id}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/hosting/servers/{acc_id}/{server_id}",
+  "path_params": [
+   "acc_id",
+   "server_id"
+  ],
+  "query_params": [
+   "confirm"
+  ]
+ },
+ "DELETE /api/hosting/sites/{sid}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/hosting/sites/{sid}",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "DELETE /api/hosting/upnp": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/hosting/upnp",
+  "path_params": [],
+  "query_params": [
+   "port",
+   "protocol"
+  ]
  },
  "DELETE /api/infra/rules/{rule_id}": {
   "body": false,
@@ -147,6 +263,15 @@ export const operations = {
   "path": "/api/kestrion/link",
   "path_params": [],
   "query_params": []
+ },
+ "DELETE /api/localai/models": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/localai/models",
+  "path_params": [],
+  "query_params": [
+   "name"
+  ]
  },
  "DELETE /api/mcp-external/{name}": {
   "body": false,
@@ -1265,6 +1390,188 @@ export const operations = {
    "path"
   ]
  },
+ "GET /api/fileserver": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver",
+  "path_params": [],
+  "query_params": [
+   "deep"
+  ]
+ },
+ "GET /api/fileserver/apps": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/apps",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/fileserver/array": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/array",
+  "path_params": [],
+  "query_params": [
+   "changes"
+  ]
+ },
+ "GET /api/fileserver/backups": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/backups",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/fileserver/backups/{name}/snapshots": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/backups/{name}/snapshots",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "GET /api/fileserver/disks": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/disks",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/fileserver/duplicates": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/duplicates",
+  "path_params": [],
+  "query_params": [
+   "share"
+  ]
+ },
+ "GET /api/fileserver/events": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/events",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "GET /api/fileserver/guard": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/guard",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/fileserver/index": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/index",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/fileserver/links": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/links",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/fileserver/pools": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/pools",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/fileserver/remotes": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/remotes",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/fileserver/runs/{rid}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/runs/{rid}",
+  "path_params": [
+   "rid"
+  ],
+  "query_params": [
+   "since"
+  ]
+ },
+ "GET /api/fileserver/search": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/search",
+  "path_params": [],
+  "query_params": [
+   "q",
+   "mode",
+   "share",
+   "kind",
+   "limit"
+  ]
+ },
+ "GET /api/fileserver/settings": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/settings",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/fileserver/shares": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/shares",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/fileserver/shares/{name}/nfs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/shares/{name}/nfs",
+  "path_params": [
+   "name"
+  ],
+  "query_params": [
+   "clients"
+  ]
+ },
+ "GET /api/fileserver/shares/{name}/smb": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/shares/{name}/smb",
+  "path_params": [
+   "name"
+  ],
+  "query_params": [
+   "platform"
+  ]
+ },
+ "GET /api/fileserver/stats": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/stats",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/fileserver/transfers": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/transfers",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/fileserver/users": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/users",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/hermes-manager/jobs": {
   "body": false,
   "method": "GET",
@@ -1321,6 +1628,175 @@ export const operations = {
   "query_params": [
    "event"
   ]
+ },
+ "GET /api/hosting": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/hosting/accounts": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/accounts",
+  "path_params": [],
+  "query_params": [
+   "cap"
+  ]
+ },
+ "GET /api/hosting/certs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/certs",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/hosting/dns/{acc_id}/records": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/dns/{acc_id}/records",
+  "path_params": [
+   "acc_id"
+  ],
+  "query_params": [
+   "zone"
+  ]
+ },
+ "GET /api/hosting/dns/{acc_id}/zones": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/dns/{acc_id}/zones",
+  "path_params": [
+   "acc_id"
+  ],
+  "query_params": []
+ },
+ "GET /api/hosting/edge": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/edge",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/hosting/edge/log": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/edge/log",
+  "path_params": [],
+  "query_params": [
+   "name",
+   "lines"
+  ]
+ },
+ "GET /api/hosting/network": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/network",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/hosting/providers": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/providers",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/hosting/resolve": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/resolve",
+  "path_params": [],
+  "query_params": [
+   "name",
+   "type"
+  ]
+ },
+ "GET /api/hosting/runs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/runs",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/hosting/runs/{rid}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/runs/{rid}",
+  "path_params": [
+   "rid"
+  ],
+  "query_params": [
+   "since"
+  ]
+ },
+ "GET /api/hosting/servers/{acc_id}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/servers/{acc_id}",
+  "path_params": [
+   "acc_id"
+  ],
+  "query_params": []
+ },
+ "GET /api/hosting/servers/{acc_id}/options": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/servers/{acc_id}/options",
+  "path_params": [
+   "acc_id"
+  ],
+  "query_params": []
+ },
+ "GET /api/hosting/settings": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/settings",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/hosting/sites": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/sites",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/hosting/sites/{sid}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/sites/{sid}",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "GET /api/hosting/sites/{sid}/plan": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/sites/{sid}/plan",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": [
+   "mode",
+   "account"
+  ]
+ },
+ "GET /api/hosting/tunnels": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/tunnels",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/hosting/upnp": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/upnp",
+  "path_params": [],
+  "query_params": []
  },
  "GET /api/hotreload/status": {
   "body": false,
@@ -1479,6 +1955,174 @@ export const operations = {
   "path": "/api/kestrion/sessions/{agent_type}/permissions",
   "path_params": [
    "agent_type"
+  ],
+  "query_params": []
+ },
+ "GET /api/lab": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/lab/brainbuilder": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/brainbuilder",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/lab/designs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/designs",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/lab/designs/{name}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/designs/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "GET /api/lab/kotmoe": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/kotmoe",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/lab/projects": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/projects",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/lab/runs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/runs",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/lab/runs/{rid}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/runs/{rid}",
+  "path_params": [
+   "rid"
+  ],
+  "query_params": []
+ },
+ "GET /api/lab/systune": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/systune",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/lab/systune/advice": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/systune/advice",
+  "path_params": [],
+  "query_params": [
+   "kind",
+   "src",
+   "dst",
+   "size_gb",
+   "files",
+   "model"
+  ]
+ },
+ "GET /api/lab/telemetry": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/telemetry",
+  "path_params": [],
+  "query_params": [
+   "seconds"
+  ]
+ },
+ "GET /api/lab/telemetry/hw": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/telemetry/hw",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/localai": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/localai",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/localai/discover": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/localai/discover",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/localai/models": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/localai/models",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/localai/models/show": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/localai/models/show",
+  "path_params": [],
+  "query_params": [
+   "name"
+  ]
+ },
+ "GET /api/localai/runs/{rid}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/localai/runs/{rid}",
+  "path_params": [
+   "rid"
+  ],
+  "query_params": [
+   "since"
+  ]
+ },
+ "GET /api/localai/settings": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/localai/settings",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/localai/stores": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/localai/stores",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/localai/train": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/localai/train",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/localai/train/{rid}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/localai/train/{rid}",
+  "path_params": [
+   "rid"
   ],
   "query_params": []
  },
@@ -3011,6 +3655,33 @@ export const operations = {
   ],
   "query_params": []
  },
+ "PATCH /api/fileserver/shares/{name}": {
+  "body": true,
+  "method": "PATCH",
+  "path": "/api/fileserver/shares/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "PATCH /api/hosting/accounts/{acc_id}": {
+  "body": true,
+  "method": "PATCH",
+  "path": "/api/hosting/accounts/{acc_id}",
+  "path_params": [
+   "acc_id"
+  ],
+  "query_params": []
+ },
+ "PATCH /api/hosting/sites/{sid}": {
+  "body": true,
+  "method": "PATCH",
+  "path": "/api/hosting/sites/{sid}",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
  "PATCH /api/tailscale/api/settings": {
   "body": true,
   "method": "PATCH",
@@ -3691,6 +4362,87 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "POST /api/fileserver/apps": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/apps",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/fileserver/array/{action}": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/array/{action}",
+  "path_params": [
+   "action"
+  ],
+  "query_params": []
+ },
+ "POST /api/fileserver/backups/{name}/{action}": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/backups/{name}/{action}",
+  "path_params": [
+   "name",
+   "action"
+  ],
+  "query_params": []
+ },
+ "POST /api/fileserver/guard/unfreeze": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/guard/unfreeze",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/fileserver/index": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/index",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/fileserver/mover": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/mover",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/fileserver/server/{action}": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/fileserver/server/{action}",
+  "path_params": [
+   "action"
+  ],
+  "query_params": []
+ },
+ "POST /api/fileserver/shares": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/shares",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/fileserver/transfers/{name}/run": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/fileserver/transfers/{name}/run",
+  "path_params": [
+   "name"
+  ],
+  "query_params": [
+   "dry"
+  ]
+ },
+ "POST /api/fileserver/users": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/users",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/hermes-manager/bridge/start": {
   "body": false,
   "method": "POST",
@@ -3810,6 +4562,123 @@ export const operations = {
   ],
   "query_params": []
  },
+ "POST /api/hosting/accounts": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hosting/accounts",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/hosting/accounts/{acc_id}/verify": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hosting/accounts/{acc_id}/verify",
+  "path_params": [
+   "acc_id"
+  ],
+  "query_params": []
+ },
+ "POST /api/hosting/certs": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hosting/certs",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/hosting/edge/start": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hosting/edge/start",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/hosting/edge/stop": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hosting/edge/stop",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/hosting/servers/{acc_id}": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hosting/servers/{acc_id}",
+  "path_params": [
+   "acc_id"
+  ],
+  "query_params": []
+ },
+ "POST /api/hosting/servers/{acc_id}/setup": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hosting/servers/{acc_id}/setup",
+  "path_params": [
+   "acc_id"
+  ],
+  "query_params": []
+ },
+ "POST /api/hosting/sites": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hosting/sites",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/hosting/sites/{sid}/check": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hosting/sites/{sid}/check",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/hosting/sites/{sid}/go-live": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hosting/sites/{sid}/go-live",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/hosting/sites/{sid}/publish": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hosting/sites/{sid}/publish",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/hosting/tunnels/cloudflare/run": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hosting/tunnels/cloudflare/run",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/hosting/tunnels/cloudflare/stop": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hosting/tunnels/cloudflare/stop",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/hosting/tunnels/cloudflared/install": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hosting/tunnels/cloudflared/install",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/hosting/upnp": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hosting/upnp",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/hotreload/run": {
   "body": false,
   "method": "POST",
@@ -3884,6 +4753,163 @@ export const operations = {
   "method": "POST",
   "path": "/api/kestrion/link",
   "path_params": [],
+  "query_params": []
+ },
+ "POST /api/lab/autotune": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/lab/autotune",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/lab/export/brainbuilder": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/lab/export/brainbuilder",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/lab/import": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/lab/import",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/lab/runs": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/lab/runs",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/lab/runs/{rid}/stop": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/lab/runs/{rid}/stop",
+  "path_params": [
+   "rid"
+  ],
+  "query_params": []
+ },
+ "POST /api/lab/systune/bench": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/lab/systune/bench",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/lab/systune/train": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/lab/systune/train",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/lab/validate": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/lab/validate",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/localai/discover/adopt": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/localai/discover/adopt",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/localai/discover/adopt-all": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/localai/discover/adopt-all",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/localai/engine/install": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/localai/engine/install",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/localai/models/copy": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/localai/models/copy",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/localai/models/create": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/localai/models/create",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/localai/models/import": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/localai/models/import",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/localai/models/pull": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/localai/models/pull",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/localai/server/{action}": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/localai/server/{action}",
+  "path_params": [
+   "action"
+  ],
+  "query_params": []
+ },
+ "POST /api/localai/train": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/localai/train",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/localai/train/setup": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/localai/train/setup",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/localai/train/{rid}/amethyst": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/localai/train/{rid}/amethyst",
+  "path_params": [
+   "rid"
+  ],
+  "query_params": []
+ },
+ "POST /api/localai/train/{rid}/export": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/localai/train/{rid}/export",
+  "path_params": [
+   "rid"
+  ],
+  "query_params": []
+ },
+ "POST /api/localai/train/{rid}/stop": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/localai/train/{rid}/stop",
+  "path_params": [
+   "rid"
+  ],
   "query_params": []
  },
  "POST /api/mcp-external": {
@@ -5531,6 +6557,79 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "PUT /api/fileserver/array": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/fileserver/array",
+  "path_params": [],
+  "query_params": []
+ },
+ "PUT /api/fileserver/backups/{name}": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/fileserver/backups/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "PUT /api/fileserver/guard": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/fileserver/guard",
+  "path_params": [],
+  "query_params": []
+ },
+ "PUT /api/fileserver/pools/{name}": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/fileserver/pools/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "PUT /api/fileserver/remotes/{name}": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/fileserver/remotes/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "PUT /api/fileserver/settings": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/fileserver/settings",
+  "path_params": [],
+  "query_params": []
+ },
+ "PUT /api/fileserver/transfers/{name}": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/fileserver/transfers/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "PUT /api/hosting/dns/{acc_id}/records": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/hosting/dns/{acc_id}/records",
+  "path_params": [
+   "acc_id"
+  ],
+  "query_params": []
+ },
+ "PUT /api/hosting/settings": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/hosting/settings",
+  "path_params": [],
+  "query_params": []
+ },
  "PUT /api/instances/{instance_id}/permissions": {
   "body": true,
   "method": "PUT",
@@ -5544,6 +6643,29 @@ export const operations = {
   "body": true,
   "method": "PUT",
   "path": "/api/integrations/framing",
+  "path_params": [],
+  "query_params": []
+ },
+ "PUT /api/lab/designs/{name}": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/lab/designs/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "PUT /api/localai/settings": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/localai/settings",
+  "path_params": [],
+  "query_params": []
+ },
+ "PUT /api/localai/stores": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/localai/stores",
   "path_params": [],
   "query_params": []
  },
@@ -5649,6 +6771,199 @@ export const operations = {
   "path_params": [
    "session_id",
    "index"
+  ],
+  "query_params": []
+ },
+ "ai_adopt_all_api_localai_discover_adopt_all_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/localai/discover/adopt-all",
+  "path_params": [],
+  "query_params": []
+ },
+ "ai_adopt_api_localai_discover_adopt_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/localai/discover/adopt",
+  "path_params": [],
+  "query_params": []
+ },
+ "ai_copy_api_localai_models_copy_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/localai/models/copy",
+  "path_params": [],
+  "query_params": []
+ },
+ "ai_create_api_localai_models_create_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/localai/models/create",
+  "path_params": [],
+  "query_params": []
+ },
+ "ai_delete_api_localai_models_delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/localai/models",
+  "path_params": [],
+  "query_params": [
+   "name"
+  ]
+ },
+ "ai_discover_api_localai_discover_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/localai/discover",
+  "path_params": [],
+  "query_params": []
+ },
+ "ai_engine_install_api_localai_engine_install_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/localai/engine/install",
+  "path_params": [],
+  "query_params": []
+ },
+ "ai_import_api_localai_models_import_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/localai/models/import",
+  "path_params": [],
+  "query_params": []
+ },
+ "ai_models_api_localai_models_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/localai/models",
+  "path_params": [],
+  "query_params": []
+ },
+ "ai_overview_api_localai_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/localai",
+  "path_params": [],
+  "query_params": []
+ },
+ "ai_pull_api_localai_models_pull_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/localai/models/pull",
+  "path_params": [],
+  "query_params": []
+ },
+ "ai_run_api_localai_runs__rid__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/localai/runs/{rid}",
+  "path_params": [
+   "rid"
+  ],
+  "query_params": [
+   "since"
+  ]
+ },
+ "ai_server_api_localai_server__action__post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/localai/server/{action}",
+  "path_params": [
+   "action"
+  ],
+  "query_params": []
+ },
+ "ai_settings_api_localai_settings_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/localai/settings",
+  "path_params": [],
+  "query_params": []
+ },
+ "ai_settings_put_api_localai_settings_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/localai/settings",
+  "path_params": [],
+  "query_params": []
+ },
+ "ai_show_api_localai_models_show_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/localai/models/show",
+  "path_params": [],
+  "query_params": [
+   "name"
+  ]
+ },
+ "ai_stores_api_localai_stores_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/localai/stores",
+  "path_params": [],
+  "query_params": []
+ },
+ "ai_stores_put_api_localai_stores_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/localai/stores",
+  "path_params": [],
+  "query_params": []
+ },
+ "ai_train_amethyst_api_localai_train__rid__amethyst_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/localai/train/{rid}/amethyst",
+  "path_params": [
+   "rid"
+  ],
+  "query_params": []
+ },
+ "ai_train_api_localai_train_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/localai/train",
+  "path_params": [],
+  "query_params": []
+ },
+ "ai_train_export_api_localai_train__rid__export_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/localai/train/{rid}/export",
+  "path_params": [
+   "rid"
+  ],
+  "query_params": []
+ },
+ "ai_train_setup_api_localai_train_setup_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/localai/train/setup",
+  "path_params": [],
+  "query_params": []
+ },
+ "ai_train_start_api_localai_train_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/localai/train",
+  "path_params": [],
+  "query_params": []
+ },
+ "ai_train_status_api_localai_train__rid__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/localai/train/{rid}",
+  "path_params": [
+   "rid"
+  ],
+  "query_params": []
+ },
+ "ai_train_stop_api_localai_train__rid__stop_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/localai/train/{rid}/stop",
+  "path_params": [
+   "rid"
   ],
   "query_params": []
  },
@@ -8652,6 +9967,398 @@ export const operations = {
    "limit"
   ]
  },
+ "fs_app_install_api_fileserver_apps_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/apps",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_apps_api_fileserver_apps_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/apps",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_array_action_api_fileserver_array__action__post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/array/{action}",
+  "path_params": [
+   "action"
+  ],
+  "query_params": []
+ },
+ "fs_array_api_fileserver_array_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/array",
+  "path_params": [],
+  "query_params": [
+   "changes"
+  ]
+ },
+ "fs_array_set_api_fileserver_array_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/fileserver/array",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_backup_action_api_fileserver_backups__name___action__post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/backups/{name}/{action}",
+  "path_params": [
+   "name",
+   "action"
+  ],
+  "query_params": []
+ },
+ "fs_backup_rm_api_fileserver_backups__name__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/fileserver/backups/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "fs_backup_set_api_fileserver_backups__name__put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/fileserver/backups/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "fs_backups_api_fileserver_backups_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/backups",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_disks_api_fileserver_disks_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/disks",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_dups_api_fileserver_duplicates_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/duplicates",
+  "path_params": [],
+  "query_params": [
+   "share"
+  ]
+ },
+ "fs_events_api_fileserver_events_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/events",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "fs_guard_api_fileserver_guard_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/guard",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_guard_set_api_fileserver_guard_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/fileserver/guard",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_index_api_fileserver_index_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/index",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_index_run_api_fileserver_index_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/index",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_link_rm_api_fileserver_links__token__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/fileserver/links/{token}",
+  "path_params": [
+   "token"
+  ],
+  "query_params": []
+ },
+ "fs_links_api_fileserver_links_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/links",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_mover_api_fileserver_mover_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/mover",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_nfs_api_fileserver_shares__name__nfs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/shares/{name}/nfs",
+  "path_params": [
+   "name"
+  ],
+  "query_params": [
+   "clients"
+  ]
+ },
+ "fs_overview_api_fileserver_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver",
+  "path_params": [],
+  "query_params": [
+   "deep"
+  ]
+ },
+ "fs_pool_rm_api_fileserver_pools__name__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/fileserver/pools/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "fs_pool_set_api_fileserver_pools__name__put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/fileserver/pools/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "fs_pools_api_fileserver_pools_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/pools",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_remote_rm_api_fileserver_remotes__name__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/fileserver/remotes/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "fs_remote_set_api_fileserver_remotes__name__put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/fileserver/remotes/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "fs_remotes_api_fileserver_remotes_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/remotes",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_run_api_fileserver_runs__rid__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/runs/{rid}",
+  "path_params": [
+   "rid"
+  ],
+  "query_params": [
+   "since"
+  ]
+ },
+ "fs_search_api_fileserver_search_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/search",
+  "path_params": [],
+  "query_params": [
+   "q",
+   "mode",
+   "share",
+   "kind",
+   "limit"
+  ]
+ },
+ "fs_server_api_fileserver_server__action__post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/fileserver/server/{action}",
+  "path_params": [
+   "action"
+  ],
+  "query_params": []
+ },
+ "fs_settings_api_fileserver_settings_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/settings",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_settings_put_api_fileserver_settings_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/fileserver/settings",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_share_add_api_fileserver_shares_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/shares",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_share_edit_api_fileserver_shares__name__patch": {
+  "body": true,
+  "method": "PATCH",
+  "path": "/api/fileserver/shares/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "fs_share_rm_api_fileserver_shares__name__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/fileserver/shares/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "fs_shares_api_fileserver_shares_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/shares",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_smb_api_fileserver_shares__name__smb_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/shares/{name}/smb",
+  "path_params": [
+   "name"
+  ],
+  "query_params": [
+   "platform"
+  ]
+ },
+ "fs_snaps_api_fileserver_backups__name__snapshots_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/backups/{name}/snapshots",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "fs_stats_api_fileserver_stats_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/stats",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_transfer_rm_api_fileserver_transfers__name__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/fileserver/transfers/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "fs_transfer_run_api_fileserver_transfers__name__run_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/fileserver/transfers/{name}/run",
+  "path_params": [
+   "name"
+  ],
+  "query_params": [
+   "dry"
+  ]
+ },
+ "fs_transfer_set_api_fileserver_transfers__name__put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/fileserver/transfers/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "fs_transfers_api_fileserver_transfers_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/transfers",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_unfreeze_api_fileserver_guard_unfreeze_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/guard/unfreeze",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_user_rm_api_fileserver_users__name__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/fileserver/users/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "fs_user_set_api_fileserver_users_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/users",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_users_api_fileserver_users_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/users",
+  "path_params": [],
+  "query_params": []
+ },
  "gateway_register_api_browser_gateway_register_post": {
   "body": false,
   "method": "POST",
@@ -8810,6 +10517,379 @@ export const operations = {
   "path": "/api/docker/git-stacks/{name}",
   "path_params": [
    "name"
+  ],
+  "query_params": []
+ },
+ "h_account_add_api_hosting_accounts_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hosting/accounts",
+  "path_params": [],
+  "query_params": []
+ },
+ "h_account_edit_api_hosting_accounts__acc_id__patch": {
+  "body": true,
+  "method": "PATCH",
+  "path": "/api/hosting/accounts/{acc_id}",
+  "path_params": [
+   "acc_id"
+  ],
+  "query_params": []
+ },
+ "h_account_rm_api_hosting_accounts__acc_id__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/hosting/accounts/{acc_id}",
+  "path_params": [
+   "acc_id"
+  ],
+  "query_params": []
+ },
+ "h_account_verify_api_hosting_accounts__acc_id__verify_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hosting/accounts/{acc_id}/verify",
+  "path_params": [
+   "acc_id"
+  ],
+  "query_params": []
+ },
+ "h_accounts_api_hosting_accounts_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/accounts",
+  "path_params": [],
+  "query_params": [
+   "cap"
+  ]
+ },
+ "h_cert_api_hosting_certs_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hosting/certs",
+  "path_params": [],
+  "query_params": []
+ },
+ "h_certs_api_hosting_certs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/certs",
+  "path_params": [],
+  "query_params": []
+ },
+ "h_cf_run_api_hosting_tunnels_cloudflare_run_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hosting/tunnels/cloudflare/run",
+  "path_params": [],
+  "query_params": []
+ },
+ "h_cf_stop_api_hosting_tunnels_cloudflare_stop_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hosting/tunnels/cloudflare/stop",
+  "path_params": [],
+  "query_params": []
+ },
+ "h_cfd_install_api_hosting_tunnels_cloudflared_install_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hosting/tunnels/cloudflared/install",
+  "path_params": [],
+  "query_params": []
+ },
+ "h_check_api_hosting_sites__sid__check_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hosting/sites/{sid}/check",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "h_edge_api_hosting_edge_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/edge",
+  "path_params": [],
+  "query_params": []
+ },
+ "h_edge_log_api_hosting_edge_log_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/edge/log",
+  "path_params": [],
+  "query_params": [
+   "name",
+   "lines"
+  ]
+ },
+ "h_edge_start_api_hosting_edge_start_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hosting/edge/start",
+  "path_params": [],
+  "query_params": []
+ },
+ "h_edge_stop_api_hosting_edge_stop_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hosting/edge/stop",
+  "path_params": [],
+  "query_params": []
+ },
+ "h_go_live_api_hosting_sites__sid__go_live_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hosting/sites/{sid}/go-live",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "h_network_api_hosting_network_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/network",
+  "path_params": [],
+  "query_params": []
+ },
+ "h_overview_api_hosting_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting",
+  "path_params": [],
+  "query_params": []
+ },
+ "h_plan_api_hosting_sites__sid__plan_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/sites/{sid}/plan",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": [
+   "mode",
+   "account"
+  ]
+ },
+ "h_providers_api_hosting_providers_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/providers",
+  "path_params": [],
+  "query_params": []
+ },
+ "h_publish_api_hosting_sites__sid__publish_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hosting/sites/{sid}/publish",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "h_record_rm_api_hosting_dns__acc_id__records_delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/hosting/dns/{acc_id}/records",
+  "path_params": [
+   "acc_id"
+  ],
+  "query_params": [
+   "zone",
+   "name",
+   "type"
+  ]
+ },
+ "h_record_set_api_hosting_dns__acc_id__records_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/hosting/dns/{acc_id}/records",
+  "path_params": [
+   "acc_id"
+  ],
+  "query_params": []
+ },
+ "h_records_api_hosting_dns__acc_id__records_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/dns/{acc_id}/records",
+  "path_params": [
+   "acc_id"
+  ],
+  "query_params": [
+   "zone"
+  ]
+ },
+ "h_resolve_api_hosting_resolve_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/resolve",
+  "path_params": [],
+  "query_params": [
+   "name",
+   "type"
+  ]
+ },
+ "h_run_api_hosting_runs__rid__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/runs/{rid}",
+  "path_params": [
+   "rid"
+  ],
+  "query_params": [
+   "since"
+  ]
+ },
+ "h_runs_api_hosting_runs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/runs",
+  "path_params": [],
+  "query_params": []
+ },
+ "h_servers_api_hosting_servers__acc_id__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/servers/{acc_id}",
+  "path_params": [
+   "acc_id"
+  ],
+  "query_params": []
+ },
+ "h_settings_api_hosting_settings_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/settings",
+  "path_params": [],
+  "query_params": []
+ },
+ "h_settings_put_api_hosting_settings_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/hosting/settings",
+  "path_params": [],
+  "query_params": []
+ },
+ "h_site_add_api_hosting_sites_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hosting/sites",
+  "path_params": [],
+  "query_params": []
+ },
+ "h_site_api_hosting_sites__sid__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/sites/{sid}",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "h_site_edit_api_hosting_sites__sid__patch": {
+  "body": true,
+  "method": "PATCH",
+  "path": "/api/hosting/sites/{sid}",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "h_site_rm_api_hosting_sites__sid__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/hosting/sites/{sid}",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "h_sites_api_hosting_sites_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/sites",
+  "path_params": [],
+  "query_params": []
+ },
+ "h_srv_create_api_hosting_servers__acc_id__post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hosting/servers/{acc_id}",
+  "path_params": [
+   "acc_id"
+  ],
+  "query_params": []
+ },
+ "h_srv_destroy_api_hosting_servers__acc_id___server_id__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/hosting/servers/{acc_id}/{server_id}",
+  "path_params": [
+   "acc_id",
+   "server_id"
+  ],
+  "query_params": [
+   "confirm"
+  ]
+ },
+ "h_srv_options_api_hosting_servers__acc_id__options_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/servers/{acc_id}/options",
+  "path_params": [
+   "acc_id"
+  ],
+  "query_params": []
+ },
+ "h_srv_setup_api_hosting_servers__acc_id__setup_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hosting/servers/{acc_id}/setup",
+  "path_params": [
+   "acc_id"
+  ],
+  "query_params": []
+ },
+ "h_tunnels_api_hosting_tunnels_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/tunnels",
+  "path_params": [],
+  "query_params": []
+ },
+ "h_upnp_add_api_hosting_upnp_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hosting/upnp",
+  "path_params": [],
+  "query_params": []
+ },
+ "h_upnp_api_hosting_upnp_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/upnp",
+  "path_params": [],
+  "query_params": []
+ },
+ "h_upnp_rm_api_hosting_upnp_delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/hosting/upnp",
+  "path_params": [],
+  "query_params": [
+   "port",
+   "protocol"
+  ]
+ },
+ "h_zones_api_hosting_dns__acc_id__zones_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hosting/dns/{acc_id}/zones",
+  "path_params": [
+   "acc_id"
   ],
   "query_params": []
  },
@@ -9222,6 +11302,170 @@ export const operations = {
   "body": false,
   "method": "DELETE",
   "path": "/api/kestrion/link",
+  "path_params": [],
+  "query_params": []
+ },
+ "lab_advice_api_lab_systune_advice_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/systune/advice",
+  "path_params": [],
+  "query_params": [
+   "kind",
+   "src",
+   "dst",
+   "size_gb",
+   "files",
+   "model"
+  ]
+ },
+ "lab_autotune_api_lab_autotune_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/lab/autotune",
+  "path_params": [],
+  "query_params": []
+ },
+ "lab_bb_api_lab_brainbuilder_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/brainbuilder",
+  "path_params": [],
+  "query_params": []
+ },
+ "lab_bench_api_lab_systune_bench_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/lab/systune/bench",
+  "path_params": [],
+  "query_params": []
+ },
+ "lab_design_api_lab_designs__name__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/designs/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "lab_design_put_api_lab_designs__name__put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/lab/designs/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "lab_designs_api_lab_designs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/designs",
+  "path_params": [],
+  "query_params": []
+ },
+ "lab_export_bb_api_lab_export_brainbuilder_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/lab/export/brainbuilder",
+  "path_params": [],
+  "query_params": []
+ },
+ "lab_hw_api_lab_telemetry_hw_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/telemetry/hw",
+  "path_params": [],
+  "query_params": []
+ },
+ "lab_import_api_lab_import_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/lab/import",
+  "path_params": [],
+  "query_params": []
+ },
+ "lab_kotmoe_api_lab_kotmoe_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/kotmoe",
+  "path_params": [],
+  "query_params": []
+ },
+ "lab_overview_api_lab_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab",
+  "path_params": [],
+  "query_params": []
+ },
+ "lab_projects_api_lab_projects_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/projects",
+  "path_params": [],
+  "query_params": []
+ },
+ "lab_run_api_lab_runs__rid__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/runs/{rid}",
+  "path_params": [
+   "rid"
+  ],
+  "query_params": []
+ },
+ "lab_runs_api_lab_runs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/runs",
+  "path_params": [],
+  "query_params": []
+ },
+ "lab_start_api_lab_runs_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/lab/runs",
+  "path_params": [],
+  "query_params": []
+ },
+ "lab_stop_api_lab_runs__rid__stop_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/lab/runs/{rid}/stop",
+  "path_params": [
+   "rid"
+  ],
+  "query_params": []
+ },
+ "lab_systune_api_lab_systune_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/systune",
+  "path_params": [],
+  "query_params": []
+ },
+ "lab_systune_train_api_lab_systune_train_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/lab/systune/train",
+  "path_params": [],
+  "query_params": []
+ },
+ "lab_telemetry_api_lab_telemetry_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/telemetry",
+  "path_params": [],
+  "query_params": [
+   "seconds"
+  ]
+ },
+ "lab_validate_api_lab_validate_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/lab/validate",
   "path_params": [],
   "query_params": []
  },

@@ -96,9 +96,11 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         for schema in tools.all_tool_schemas():
             name = schema.get("name", "")
             spec = toolspec.spec_for(name)
-            asks = spec.needs_approval if spec.needs_approval is not None else not spec.read_only
+            conditional = toolspec.approval_is_conditional(spec)
+            asks = True if conditional else toolspec.approval_needed(spec)
             out.append({"name": name, "description": _first_sentence(schema.get("description", "")),
                         "permission": spec.permission, "read_only": spec.read_only, "asks_first": bool(asks),
+                        "asks_depends_on_input": conditional,
                         "origin": spec.origin})
         out.sort(key=lambda t: (t["permission"], t["name"]))
         return {"tools": out}

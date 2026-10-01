@@ -569,6 +569,8 @@
       <a href="#vision" title="Vision"><span class="ic">👁</span><span class="nav-txt">Vision</span></a>
       <a href="#hosting" title="Hosting"><span class="ic">🌐</span><span class="nav-txt">Hosting</span></a>
       <a href="#storage" title="Storage"><span class="ic">🗄</span><span class="nav-txt">Storage</span></a>
+      <a href="#localai" title="Local AI"><span class="ic">🦙</span><span class="nav-txt">Local AI</span></a>
+      <a href="#lab" title="Neural Lab"><span class="ic">🧠</span><span class="nav-txt">Neural Lab</span></a>
       <a href="#studio" title="Studio"><span class="ic">🎨</span><span class="nav-txt">Studio</span></a>
       <a href="#modules" title="Modules"><span class="ic">▦</span><span class="nav-txt">Modules</span></a>
       <a href="#transferdaemon" title="TransferDaemon"><span class="ic">⇄</span><span class="nav-txt">TransferDaemon</span></a>
@@ -1401,6 +1403,16 @@
       <div id="std-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
+    <section id="localai">
+      <div class="sec-head"><h2>Local AI</h2><span class="desc">Run, serve and fine-tune models on this machine: everything Ollama and Unsloth do, inside ABP. An Ollama-compatible server (any Ollama app works against it) and OpenAI's API, llama.cpp on the GPU, models pulled from Ollama's registry or Hugging Face, imported, or used in place from other programs' folders, and LoRA fine-tuning on the GPU exported straight into the store.</span></div>
+      <div id="aip-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
+
+    <section id="lab">
+      <div class="sec-head"><h2>Neural Lab</h2><span class="desc">Design, train and ship neural networks: one design format for BrainBuilder graphs, KotMoE mixtures of experts, Amethyst modules and Kestrion's models, trained on the GPU; and the system models that learn this machine (drive transfers, model runtime options, memory, CPU stability) and tune ABP's own work.</span></div>
+      <div id="lab-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
+
     <section id="storage">
       <div class="sec-head"><h2>Storage</h2><span class="desc">ABP File Server: disks of any size pooled into shares and protected by one or two parity disks (sync, scrub for bitrot, rebuild a failed disk), a cache with a mover, users and share links, a web file manager and WebDAV for every device, search by contents and meaning, duplicates, drive health with failure risk, a ransomware guard, transfers and sync jobs, encrypted deduplicated backups, and one-click apps.</span></div>
       <div id="stp-root"><p class="cardnote">Connecting to the ABP server…</p></div>
@@ -2216,6 +2228,7 @@
 <script src="/static/vision-panel.js"></script>
 <script src="/static/hosting-panel.js"></script>
 <script src="/static/storage-panel.js"></script>
+<script src="/static/ai-panel.js"></script>
 <script src="/static/studio-panel.js"></script>
 <script src="/static/ollama-panel.js"></script>
 <script src="/static/bot-agent-form.js"></script>
