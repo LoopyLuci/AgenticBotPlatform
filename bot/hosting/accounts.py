@@ -12,7 +12,7 @@ import time
 import uuid
 from typing import Any, Optional
 
-from bot.hosting.store import HostingError, load, save, update
+from bot.hosting.store import HostingError, load, update
 
 # provider -> label, what it can do, its fields: (key, label, secret?, required?)
 PROVIDERS: dict[str, dict[str, Any]] = {

@@ -80,7 +80,7 @@ class HostingScreen(Screen):
                       f"{last.get('action', '')} {'ok' if last.get('ok') else ('failed' if last else '')}", key=s["id"])
         self.query_one("#host-account", Select).set_options([(f"{a['name']} ({a['label']})", a["id"]) for a in o["accounts"]])
         self._say(f"{len(o['sites'])} site(s)")
-        asyncio.create_task(self._network())
+        self._network_task = asyncio.create_task(self._network())   # a reference: tasks can be collected mid-run
 
     async def _network(self) -> None:
         try:

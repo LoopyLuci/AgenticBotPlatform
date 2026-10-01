@@ -45,7 +45,7 @@ from typing import Optional
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
 from starlette.routing import Route
 
 from bot.fileserver import shares
@@ -158,15 +158,26 @@ async def write_stream(dest: Path, stream, overwrite: bool) -> int:
     tmp = dest.with_name(dest.name + f".{secrets.token_hex(4)}.abp-upload")
     n = 0
     try:
-        with open(tmp, "wb") as f:
+        f = await asyncio.to_thread(open, tmp, "wb")       # file I/O off the event loop: a big upload never stalls it
+        try:
             async for chunk in stream:
-                f.write(chunk)
+                await asyncio.to_thread(f.write, chunk)
                 n += len(chunk)
+        finally:
+            await asyncio.to_thread(f.close)
         os.replace(tmp, dest)
     finally:
         if tmp.exists():
             tmp.unlink()
     return n
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
 
 
 def _copy(src_share: dict, src: str, dst_share: dict, dst: str) -> int:
@@ -308,22 +319,21 @@ def build_app() -> Starlette:
         if off != have:
             return JSONResponse({"detail": f"the upload is at {have}, not {off}", "offset": have}, 409, headers={"Upload-Offset": str(have)})
         n = 0
-        with open(tmp, "ab") as f:
+        f = await asyncio.to_thread(open, tmp, "ab")
+        try:
             async for chunk in request.stream():
                 n += len(chunk)
                 if have + n > u["size"] or n > UPLOAD_CHUNK_MAX:
-                    f.truncate(have)
+                    await asyncio.to_thread(f.truncate, have)
                     return _err(FsError("more data than the upload's size"))
-                f.write(chunk)
+                await asyncio.to_thread(f.write, chunk)
+        finally:
+            await asyncio.to_thread(f.close)
         have += n
         done = have == u["size"]
         if done:
             if u.get("sha256"):
-                h = hashlib.sha256()
-                with open(tmp, "rb") as f:
-                    for block in iter(lambda: f.read(1 << 20), b""):
-                        h.update(block)
-                if h.hexdigest() != u["sha256"].lower():
+                if await asyncio.to_thread(_sha256_file, tmp) != u["sha256"].lower():
                     tmp.unlink(missing_ok=True)
                     update("uploads", {}, lambda us: us.pop(uid, None))
                     return _err(FsError("the file arrived damaged (its SHA-256 does not match); upload it again"), 422)

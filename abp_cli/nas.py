@@ -267,7 +267,8 @@ async def run(args, client) -> int:
         if args.app not in cat:
             print(f"no app {args.app}; see `abp nas apps`", file=sys.stderr)
             return 2
-        if input(f"Install {cat[args.app]['title']}: Docker downloads {cat[args.app]['image']} from its registry. Go ahead? [y/N] ").lower() != "y":
+        if (await asyncio.to_thread(input, f"Install {cat[args.app]['title']}: Docker downloads {cat[args.app]['image']} from its registry. "
+                                          "Go ahead? [y/N] ")).lower() != "y":
             return 2
         return await _follow(client, await r("POST", f"{A}/apps", json={"app": args.app, "name": args.name, "mounts": mounts, "ports": ports}))
     print(f"unknown nas subcommand {c!r}", file=sys.stderr)

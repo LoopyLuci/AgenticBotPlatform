@@ -18,7 +18,6 @@ partial file), can be limited in speed (`limit_kbps`), and are verified (SHA-256
 """
 from __future__ import annotations
 
-import base64
 import datetime as _dt
 import hashlib
 import hmac

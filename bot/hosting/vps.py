@@ -17,7 +17,7 @@ import base64
 import secrets
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from bot.hosting import accounts
 from bot.hosting.dns import Provider as _Http

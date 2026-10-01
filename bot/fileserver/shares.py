@@ -32,7 +32,7 @@ import time
 from pathlib import Path, PurePosixPath
 from typing import Iterator, Optional
 
-from bot.fileserver.store import FsError, load, save, update
+from bot.fileserver.store import FsError, load, update
 
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$")
 RECYCLE = ".abp-recycle"
@@ -381,7 +381,7 @@ def _allocate(share: dict, disks: list[tuple[str, Path]], rel: str, size: int, m
         return room[0][1]
     mark = max(_total(b.parent) for _, b in room) / 2       # high-water: the first disk above the mark, halving it
     while mark >= 1 << 20:
-        for n, b in room:
+        for _n, b in room:
             if _free(b.parent) >= mark:
                 return b
         mark /= 2

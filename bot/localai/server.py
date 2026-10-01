@@ -452,10 +452,13 @@ async def blobs(request: Request):
     tmp = p.with_name(p.name + ".upload")
     p.parent.mkdir(parents=True, exist_ok=True)
     h = hashlib.sha256()
-    with open(tmp, "wb") as f:
+    f = await asyncio.to_thread(open, tmp, "wb")            # file I/O off the event loop (blobs are gigabytes)
+    try:
         async for chunk in request.stream():
-            f.write(chunk)
+            await asyncio.to_thread(f.write, chunk)
             h.update(chunk)
+    finally:
+        await asyncio.to_thread(f.close)
     if "sha256:" + h.hexdigest() != digest.replace("-", ":", 1):
         tmp.unlink()
         return _err("digest mismatch")
@@ -500,7 +503,7 @@ async def create(request: Request):
                     weights = models.resolve(src)["weights"] if not Path(src).exists() else src
                     src = _quantize(weights, b["quantize"].upper(), say)
                 lines.append(f"FROM {src}")
-                for a_name, digest in (b.get("adapters") or {}).items():
+                for _name, digest in (b.get("adapters") or {}).items():
                     lines.append(f"ADAPTER {models.blob_path(digest)}")
                 for k in ("template", "system", "license"):
                     v = b.get(k)
