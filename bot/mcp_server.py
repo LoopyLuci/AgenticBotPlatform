@@ -1220,6 +1220,32 @@ async def infra_rules(action: str, body: Optional[dict] = None) -> Any:
 
 
 @mcp.tool()
+async def nas_status() -> Any:
+    """ABP File Server: the server and its addresses, the parity array, pools, shares, users, ransomware alerts, transfer
+    and backup jobs, recent events."""
+    return await _request("GET", "/api/fileserver", timeout=60.0)
+
+
+@mcp.tool()
+async def nas_search(query: str, mode: str = "auto", share: str = "", kind: str = "") -> Any:
+    """Search the file server's shares by words in names/contents, what pictures show, or meaning (mode auto | words |
+    meaning; kind image, video, audio, document, text, code, archive)."""
+    return await _request("GET", "/api/fileserver/search", params={"q": query, "mode": mode, "share": share, "kind": kind}, timeout=120.0)
+
+
+@mcp.tool()
+async def nas_disks() -> Any:
+    """Every drive: health, temperature, SMART, failure risk with reasons; every volume's free space."""
+    return await _request("GET", "/api/fileserver/disks", timeout=120.0)
+
+
+@mcp.tool()
+async def nas_duplicates(share: str = "") -> Any:
+    """Exact duplicate files and near-identical photos on the shares, largest waste first."""
+    return await _request("GET", "/api/fileserver/duplicates", params={"share": share}, timeout=120.0)
+
+
+@mcp.tool()
 async def hosting_status() -> Any:
     """ABP Web Hosting: every site (folder/app, domains, how it is exposed, deploy targets), the web server, tunnels,
     connected provider accounts (names only), certificates and settings."""

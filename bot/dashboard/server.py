@@ -911,6 +911,11 @@ def build_app() -> FastAPI:
 
     hosting_api.register(app, _require_token)
 
+    # ABP File Server management (/api/fileserver/*; bot/fileserver): array, shares, users, jobs, index, guard, apps.
+    from bot.dashboard import fileserver_api
+
+    fileserver_api.register(app, _require_token)
+
     # Browser-extension bridge (/api/browser/*): pairing, the extension WebSocket, policy, RPC.
     from bot.dashboard import browser_api
 

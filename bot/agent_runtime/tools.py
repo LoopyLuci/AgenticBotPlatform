@@ -1923,6 +1923,7 @@ from bot.cluster import tools as _cluster_tools  # noqa: E402,F401  (the cluster
 from bot.agent_runtime import toolkit_tools as _toolkit_tools  # noqa: E402,F401  (abp_toolkit: lint, run, analyze, assets...)
 from bot import power_tools as _power_tools  # noqa: E402,F401  (keep this machine awake, wake others)
 from bot.hosting import tools as _hosting_tools  # noqa: E402,F401  (ABP Web Hosting: sites, DNS, deploys)
+from bot.fileserver import tools as _fileserver_tools  # noqa: E402,F401  (ABP File Server: storage, search, jobs)
 try:   # vision_*: OpenCV and its model zoo (bot/vision); an install without OpenCV simply has no vision tools
     from bot.vision import tools as _vision_tools  # noqa: E402,F401
 except ImportError as _exc:  # pragma: no cover - opencv-contrib-python-headless is in requirements.txt
