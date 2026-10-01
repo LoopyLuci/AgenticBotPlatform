@@ -28257,6 +28257,143 @@
     "summary": "Modules List"
    }
   },
+  "/api/modules/add": {
+   "post": {
+    "description": "Any git repo as a module (an overlay; the clone stays exactly upstream): a job.",
+    "operationId": "modules_add_api_modules_add_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-platform",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Platform"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-app-version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-App-Version"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-model",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Model"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-os-version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Os-Version"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-mesh-port",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Mesh-Port"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Modules Add"
+   }
+  },
   "/api/modules/adopt": {
    "post": {
     "operationId": "modules_adopt_api_modules_adopt_post",
@@ -45694,6 +45831,1085 @@
     "summary": "Api Ssh Toolkit Update Check"
    }
   },
+  "/api/studio": {
+   "get": {
+    "operationId": "studio_overview_api_studio_get",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Studio Overview"
+   }
+  },
+  "/api/studio/datasets": {
+   "post": {
+    "operationId": "studio_datasets_api_studio_datasets_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Studio Datasets"
+   }
+  },
+  "/api/studio/generate": {
+   "post": {
+    "operationId": "studio_generate_api_studio_generate_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Studio Generate"
+   }
+  },
+  "/api/studio/jobs/{jid}": {
+   "get": {
+    "operationId": "studio_job_api_studio_jobs__jid__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "jid",
+      "required": true,
+      "schema": {
+       "title": "Jid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Studio Job"
+   }
+  },
+  "/api/studio/log": {
+   "get": {
+    "operationId": "studio_log_api_studio_log_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 200,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "kind",
+      "required": false,
+      "schema": {
+       "default": "",
+       "title": "Kind",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Studio Log"
+   }
+  },
+  "/api/studio/revert": {
+   "post": {
+    "operationId": "studio_revert_api_studio_revert_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Studio Revert"
+   }
+  },
+  "/api/studio/variants": {
+   "post": {
+    "operationId": "studio_create_api_studio_variants_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "default": {},
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Studio Create"
+   }
+  },
+  "/api/studio/variants/{vid}": {
+   "get": {
+    "operationId": "studio_variant_api_studio_variants__vid__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "vid",
+      "required": true,
+      "schema": {
+       "title": "Vid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Studio Variant"
+   }
+  },
+  "/api/studio/variants/{vid}/apply": {
+   "post": {
+    "operationId": "studio_apply_api_studio_variants__vid__apply_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "vid",
+      "required": true,
+      "schema": {
+       "title": "Vid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Studio Apply"
+   }
+  },
+  "/api/studio/variants/{vid}/discard": {
+   "post": {
+    "operationId": "studio_discard_api_studio_variants__vid__discard_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "vid",
+      "required": true,
+      "schema": {
+       "title": "Vid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Studio Discard"
+   }
+  },
+  "/api/studio/variants/{vid}/file": {
+   "delete": {
+    "operationId": "studio_reset_api_studio_variants__vid__file_delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "vid",
+      "required": true,
+      "schema": {
+       "title": "Vid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "path",
+      "required": true,
+      "schema": {
+       "title": "Path",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Studio Reset"
+   },
+   "get": {
+    "operationId": "studio_read_api_studio_variants__vid__file_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "vid",
+      "required": true,
+      "schema": {
+       "title": "Vid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "path",
+      "required": true,
+      "schema": {
+       "title": "Path",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Studio Read"
+   },
+   "put": {
+    "operationId": "studio_write_api_studio_variants__vid__file_put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "vid",
+      "required": true,
+      "schema": {
+       "title": "Vid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Studio Write"
+   }
+  },
+  "/api/studio/variants/{vid}/rate": {
+   "post": {
+    "operationId": "studio_rate_api_studio_variants__vid__rate_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "vid",
+      "required": true,
+      "schema": {
+       "title": "Vid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Studio Rate"
+   }
+  },
+  "/api/studio/variants/{vid}/shot": {
+   "post": {
+    "operationId": "studio_shot_api_studio_variants__vid__shot_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "vid",
+      "required": true,
+      "schema": {
+       "title": "Vid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "default": {},
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Studio Shot"
+   }
+  },
+  "/api/studio/variants/{vid}/tokens": {
+   "get": {
+    "operationId": "studio_tokens_api_studio_variants__vid__tokens_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "vid",
+      "required": true,
+      "schema": {
+       "title": "Vid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page",
+      "required": false,
+      "schema": {
+       "default": "bot/dashboard/static/dashboard.html",
+       "title": "Page",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Studio Tokens"
+   },
+   "post": {
+    "operationId": "studio_set_tokens_api_studio_variants__vid__tokens_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "vid",
+      "required": true,
+      "schema": {
+       "title": "Vid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Studio Set Tokens"
+   }
+  },
+  "/api/studio/variants/{vid}/validate": {
+   "post": {
+    "operationId": "studio_validate_api_studio_variants__vid__validate_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "vid",
+      "required": true,
+      "schema": {
+       "title": "Vid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Studio Validate"
+   }
+  },
+  "/api/studio/variants/{vid}/version": {
+   "get": {
+    "operationId": "studio_version_api_studio_variants__vid__version_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "vid",
+      "required": true,
+      "schema": {
+       "title": "Vid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Studio Version"
+   }
+  },
   "/api/support-bot/ask": {
    "post": {
     "operationId": "api_support_bot_ask_api_support_bot_ask_post",
@@ -56938,6 +58154,436 @@
     "summary": "Api Validate Field"
    }
   },
+  "/api/vision": {
+   "get": {
+    "operationId": "vision_status_api_vision_get",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Vision Status"
+   }
+  },
+  "/api/vision/analyze": {
+   "post": {
+    "operationId": "vision_analyze_api_vision_analyze_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Vision Analyze"
+   }
+  },
+  "/api/vision/compare": {
+   "post": {
+    "operationId": "vision_compare_api_vision_compare_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Vision Compare"
+   }
+  },
+  "/api/vision/edit": {
+   "post": {
+    "operationId": "vision_edit_api_vision_edit_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Vision Edit"
+   }
+  },
+  "/api/vision/faces": {
+   "post": {
+    "operationId": "vision_faces_api_vision_faces_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Vision Faces"
+   }
+  },
+  "/api/vision/find": {
+   "post": {
+    "operationId": "vision_find_api_vision_find_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Vision Find"
+   }
+  },
+  "/api/vision/models/{model}/fetch": {
+   "post": {
+    "operationId": "vision_fetch_api_vision_models__model__fetch_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "model",
+      "required": true,
+      "schema": {
+       "title": "Model",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Vision Fetch"
+   }
+  },
+  "/api/vision/out/{name}": {
+   "get": {
+    "operationId": "vision_out_api_vision_out__name__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "name",
+      "required": true,
+      "schema": {
+       "title": "Name",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Vision Out"
+   }
+  },
   "/api/vm-harness/audit": {
    "get": {
     "operationId": "vmh_audit_api_vm_harness_audit_get",
@@ -59586,6 +61232,140 @@
      }
     },
     "summary": "Metrics"
+   }
+  },
+  "/studio/v/{vid}/": {
+   "get": {
+    "operationId": "studio_preview_studio_v__vid___get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "vid",
+      "required": true,
+      "schema": {
+       "title": "Vid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Studio Preview"
+   }
+  },
+  "/studio/v/{vid}/components": {
+   "get": {
+    "operationId": "studio_components_studio_v__vid__components_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "vid",
+      "required": true,
+      "schema": {
+       "title": "Vid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "theme",
+      "required": false,
+      "schema": {
+       "default": "",
+       "title": "Theme",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Studio Components"
+   }
+  },
+  "/studio/v/{vid}/static/{path}": {
+   "get": {
+    "operationId": "studio_static_studio_v__vid__static__path__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "vid",
+      "required": true,
+      "schema": {
+       "title": "Vid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "path",
+      "required": true,
+      "schema": {
+       "title": "Path",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Studio Static"
    }
   },
   "/webhooks/bluebubbles": {
