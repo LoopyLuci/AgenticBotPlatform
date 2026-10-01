@@ -163,6 +163,10 @@ DENYLIST: frozenset[str] = frozenset({
     # Hosting: routes register once and hosting_api.py holds the runs; tools.py registers at import time; store.py
     # holds the write lock, upnp.py the discovered router.
     "bot.dashboard.hosting_api", "bot.hosting.tools", "bot.hosting.store", "bot.hosting.upnp", "bot.hosting.service",
+    # File server: routes register once; tools.py registers at import time; store.py holds the write lock, shares.py
+    # the sign-in throttle, index.py the embedder choice.
+    "bot.dashboard.fileserver_api", "bot.fileserver.tools", "bot.fileserver.store", "bot.fileserver.shares",
+    "bot.fileserver.index", "bot.fileserver.service",
     # Studio: routes register once and studio_api.py holds the generation jobs; variants.py holds its write lock.
     "bot.dashboard.studio_api", "bot.studio.variants", "bot.studio.log", "bot.studio.generate", "bot.studio.edits",
     "bot.studio.tokens", "bot.studio.shots",

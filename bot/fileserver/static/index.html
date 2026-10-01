@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ABP Files</title>
+<style>
+:root{--bg:#f6f7f9;--surface:#fff;--ink:#1c2230;--muted:#667085;--line:#e3e6ec;--accent:#3a63d8;--bad:#c53030;--chip:#eef1f6}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#13161b;--surface:#1b1f26;--ink:#e7e9ee;--muted:#98a1b2;--line:#2b313b;--accent:#7a9cff;--bad:#ff7b7b;--chip:#252b34}}
+*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+header{display:flex;gap:10px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--surface);position:sticky;top:0;z-index:2;flex-wrap:wrap}
+header b{font-size:15px}header .sp{flex:1}
+main{padding:12px 16px;max-width:1200px;margin:0 auto}
+button,input,select{font:inherit;color:inherit;background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:6px 10px}
+button{cursor:pointer}button.pri{background:var(--accent);color:#fff;border-color:var(--accent)}button:disabled{opacity:.5}
+.crumbs a{color:var(--accent);text-decoration:none;cursor:pointer}.crumbs{margin:6px 0 10px;word-break:break-all}
+table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+td,th{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}th{font-size:12px;color:var(--muted);font-weight:600}
+tr:last-child td{border-bottom:0}td.n{word-break:break-all}td.n a{color:inherit;text-decoration:none;cursor:pointer}td.n a:hover{color:var(--accent)}
+.muted{color:var(--muted);font-size:12px}.chip{display:inline-block;background:var(--chip);border-radius:999px;padding:0 8px;font-size:11px;margin-left:4px}
+.acts button{padding:3px 7px;font-size:12px}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:14px;text-align:center;color:var(--muted);margin:10px 0}.drop.hot{border-color:var(--accent);color:var(--ink)}
+.bar{height:6px;background:var(--chip);border-radius:4px;overflow:hidden}.bar i{display:block;height:100%;background:var(--accent);width:0}
+#login{max-width:340px;margin:12vh auto;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;display:grid;gap:10px}
+.thumb{width:36px;height:36px;object-fit:cover;border-radius:5px;vertical-align:middle;background:var(--chip)}
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);max-width:min(92vw,900px)}
+dialog img,dialog video{max-width:100%;max-height:75vh;display:block;margin:auto}
+@media (max-width:640px){td.sz,th.sz,td.dt,th.dt{display:none}}
+</style>
+</head>
+<body>
+<div id="login" hidden>
+  <b>ABP Files</b>
+  <input id="lu" placeholder="user" autocomplete="username">
+  <input id="lp" type="password" placeholder="password" autocomplete="current-password">
+  <button class="pri" id="lgo">Sign in</button><div class="muted" id="lerr"></div>
+</div>
+<div id="app" hidden>
+<header><b>ABP Files</b><select id="share"></select><input id="q" placeholder="Search names, contents, what pictures show…" style="min-width:220px;flex:1;max-width:420px">
+<span class="sp"></span><span class="muted" id="who"></span><button id="out">Sign out</button></header>
+<main>
+  <div class="crumbs" id="crumbs"></div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap"><button id="mk">New folder</button><button id="up">Upload</button><input type="file" id="files" multiple hidden>
+  <button id="share-link">Share this folder</button><span class="muted" id="state"></span></div>
+  <div class="drop" id="drop">Drop files here to upload them (large files resume if the connection drops)</div>
+  <div id="uploads"></div>
+  <table><thead><tr><th></th><th>Name</th><th class="sz">Size</th><th class="dt">Changed</th><th></th></tr></thead><tbody id="rows"></tbody></table>
+</main>
+</div>
+<dialog id="dlg"><div id="dlgbody"></div><p style="text-align:right"><button onclick="document.getElementById('dlg').close()">Close</button></p></dialog>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const E = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const st = { share: '', path: '', write: false, me: null };
+const CHUNK = 8 << 20;
+async function call(path, opts = {}) {
+  const r = await fetch(path, Object.assign({ credentials: 'same-origin' }, opts));
+  if (r.status === 401) { showLogin(); throw new Error('sign in'); }
+  const ct = r.headers.get('content-type') || '';
+  const body = ct.includes('json') ? await r.json() : await r.text();
+  if (!r.ok) throw new Error((body && body.detail) || body || r.statusText);
+  return body;
+}
+const post = (p, b, m = 'POST') => call(p, { method: m, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+const q = (o) => new URLSearchParams(o).toString();
+const human = (n) => { const u = ['B', 'KB', 'MB', 'GB', 'TB']; let i = 0; while (n >= 1024 && i < 4) { n /= 1024; i++; } return (i ? n.toFixed(1) : n) + ' ' + u[i]; };
+const isImg = (n) => /\.(jpe?g|png|gif|webp|bmp|avif)$/i.test(n), isVid = (n) => /\.(mp4|webm|mov|m4v)$/i.test(n), isAud = (n) => /\.(mp3|ogg|wav|flac|m4a|opus)$/i.test(n);
+
+function showLogin() { $('app').hidden = true; $('login').hidden = false; $('lu').focus(); }
+$('lgo').onclick = async () => {
+  try { await post('/login', { user: $('lu').value, password: $('lp').value }); $('login').hidden = true; start(); }
+  catch (e) { $('lerr').textContent = e.message; }
+};
+$('lp').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('lgo').click(); });
+$('out').onclick = async () => { await post('/logout', {}); location.reload(); };
+
+async function start() {
+  let shares;
+  try { const w = await call('/api/whoami'); st.me = w.user; shares = await call('/api/shares'); } catch (e) { return; }
+  $('who').textContent = st.me ? st.me.name : 'guest';
+  $('out').hidden = !st.me;
+  $('app').hidden = false;
+  const h = new URLSearchParams(location.hash.slice(1));
+  $('share').innerHTML = shares.map((s) => `<option ${s.name === h.get('s') ? 'selected' : ''}>${E(s.name)}</option>`).join('');
+  st.share = h.get('s') || (shares[0] || {}).name || '';
+  st.path = h.get('p') || '';
+  if (!st.share) { $('rows').innerHTML = '<tr><td colspan=5 class=muted>No shares you can see.</td></tr>'; return; }
+  load();
+}
+$('share').onchange = () => { st.share = $('share').value; st.path = ''; load(); };
+window.addEventListener('hashchange', () => { const h = new URLSearchParams(location.hash.slice(1)); if (h.get('p') !== st.path || h.get('s') !== st.share) { st.share = h.get('s') || st.share; st.path = h.get('p') || ''; load(); } });
+
+async function load() {
+  location.hash = q({ s: st.share, p: st.path });
+  const parts = st.path ? st.path.split('/') : [];
+  $('crumbs').innerHTML = [`<a data-p="">${E(st.share)}</a>`].concat(parts.map((p, i) => `<a data-p="${E(parts.slice(0, i + 1).join('/'))}">${E(p)}</a>`)).join(' / ');
+  $('crumbs').querySelectorAll('a').forEach((a) => a.onclick = () => { st.path = a.dataset.p; load(); });
+  let res;
+  try { res = await call('/api/list?' + q({ share: st.share, path: st.path })); } catch (e) { $('rows').innerHTML = `<tr><td colspan=5>${E(e.message)}</td></tr>`; return; }
+  st.write = res.write;
+  ['mk', 'up'].forEach((id) => $(id).disabled = !st.write); $('drop').hidden = !st.write;
+  $('share-link').hidden = !st.me;
+  draw(res.entries);
+}
+function fileUrl(name, dl) { return '/api/file?' + q(Object.assign({ share: st.share, path: (st.path ? st.path + '/' : '') + name }, dl ? { download: 1 } : {})); }
+function draw(entries) {
+  $('rows').innerHTML = entries.map((e, i) => `<tr><td>${e.dir ? '📁' : isImg(e.name) ? `<img class=thumb loading=lazy src="/api/thumb?${q({ share: st.share, path: (st.path ? st.path + '/' : '') + e.name, size: 96 })}">` : '📄'}</td>
+<td class=n><a data-i="${i}">${E(e.name)}</a>${e.emulated ? '<span class=chip title="its disk is missing: read from parity">from parity</span>' : ''}${e.also_on ? '<span class=chip>duplicate on another disk</span>' : ''}</td>
+<td class=sz>${e.dir ? '' : human(e.size)}</td><td class=dt>${new Date(e.mtime * 1000).toLocaleString()}</td>
+<td class=acts>${e.dir ? '' : `<a href="${fileUrl(e.name, 1)}"><button>Download</button></a>`} ${st.me ? `<button data-link="${i}">Link</button>` : ''} ${st.write ? `<button data-ren="${i}">Rename</button> <button data-del="${i}">Delete</button>` : ''}</td></tr>`).join('') || '<tr><td colspan=5 class=muted>Empty</td></tr>';
+  const rows = $('rows');
+  rows.querySelectorAll('[data-i]').forEach((a) => a.onclick = () => { const e = entries[a.dataset.i]; if (e.dir) { st.path = (st.path ? st.path + '/' : '') + e.name; load(); } else preview(e); });
+  rows.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => { const e = entries[b.dataset.del]; if (!confirm(`Delete ${e.name}? (it goes to the recycle bin if the share keeps one)`)) return; try { await call('/api/file?' + q({ share: st.share, path: (st.path ? st.path + '/' : '') + e.name }), { method: 'DELETE' }); load(); } catch (x) { alert(x.message); } });
+  rows.querySelectorAll('[data-ren]').forEach((b) => b.onclick = async () => { const e = entries[b.dataset.ren]; const n = prompt('New name', e.name); if (!n || n === e.name) return; const base = st.path ? st.path + '/' : ''; try { await post('/api/move', { share: st.share, from: base + e.name, to: base + n }); load(); } catch (x) { alert(x.message); } });
+  rows.querySelectorAll('[data-link]').forEach((b) => b.onclick = () => makeLink((st.path ? st.path + '/' : '') + entries[b.dataset.link].name));
+}
+function preview(e) {
+  const u = fileUrl(e.name);
+  let html = `<p><b>${E(e.name)}</b> <span class=muted>${human(e.size)}</span> <a href="${fileUrl(e.name, 1)}">download</a></p>`;
+  if (isImg(e.name)) html += `<img src="${u}">`;
+  else if (isVid(e.name)) html += `<video src="${u}" controls autoplay></video>`;
+  else if (isAud(e.name)) html += `<audio src="${u}" controls autoplay></audio>`;
+  else if (/\.(txt|md|json|csv|log|py|js|ts|css|html|xml|yaml|yml|ini|toml|sh)$/i.test(e.name) && e.size < 2e6) { fetch(u).then((r) => r.text()).then((t) => { $('dlgbody').querySelector('pre').textContent = t; }); html += '<pre style="white-space:pre-wrap;max-height:70vh;overflow:auto"></pre>'; }
+  else if (/\.pdf$/i.test(e.name)) html += `<iframe src="${u}" style="width:80vw;height:75vh;border:0"></iframe>`;
+  $('dlgbody').innerHTML = html; $('dlg').showModal();
+}
+async function makeLink(path) {
+  const days = prompt('Share a link — for how many days? (0 = no expiry)', '7'); if (days === null) return;
+  const pw = prompt('A password for the link? (leave empty for none)', '') || '';
+  try {
+    const l = await post('/api/links', { share: st.share, path, expires_days: +days || 0, password: pw });
+    const url = `${location.origin}/s/${l.token}`;
+    $('dlgbody').innerHTML = `<p>Anyone with this address can open it${pw ? ' (with the password)' : ''}:</p><p><input style="width:100%" value="${E(url)}" onclick="this.select()"></p>`;
+    $('dlg').showModal();
+  } catch (x) { alert(x.message); }
+}
+$('share-link').onclick = () => makeLink(st.path);
+$('mk').onclick = async () => { const n = prompt('Folder name'); if (!n) return; try { await post('/api/mkdir', { share: st.share, path: (st.path ? st.path + '/' : '') + n }); load(); } catch (x) { alert(x.message); } };
+$('up').onclick = () => $('files').click();
+$('files').onchange = () => { upload([...$('files').files]); $('files').value = ''; };
+const drop = $('drop');
+drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('hot'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('hot'));
+drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('hot'); upload([...e.dataTransfer.files]); });
+
+async function upload(files) {
+  for (const f of files) {
+    const row = document.createElement('div');
+    row.innerHTML = `<div class=muted>${E(f.name)} <span>0%</span></div><div class=bar><i></i></div>`;
+    $('uploads').appendChild(row);
+    const pct = row.querySelector('span'), bar = row.querySelector('i');
+    const path = (st.path ? st.path + '/' : '') + f.name;
+    try {
+      let up;
+      try { up = await post('/api/uploads', { share: st.share, path, size: f.size }); }
+      catch (e) { if (/exists/.test(e.message) && confirm(`${f.name} exists. Replace it?`)) up = await post('/api/uploads', { share: st.share, path, size: f.size, overwrite: true }); else throw e; }
+      let off = up.offset, tries = 0;
+      while (off < f.size || (f.size === 0 && off === 0 && tries === 0)) {
+        try {
+          const r = await fetch(`/api/uploads/${up.id}`, { method: 'PATCH', credentials: 'same-origin', headers: { 'Upload-Offset': String(off) }, body: f.slice(off, off + CHUNK) });
+          const j = await r.json();
+          if (r.status === 409 && j.offset !== undefined) { off = j.offset; continue; }
+          if (!r.ok) throw new Error(j.detail || r.statusText);
+          off = j.offset; tries = 0;
+          if (j.done) break;
+        } catch (e) {
+          if (++tries > 8) throw e;
+          await new Promise((ok) => setTimeout(ok, 1000 * tries));
+          const s = await call(`/api/uploads/${up.id}`); off = s.offset;    // resume where the server is
+        }
+        const p = f.size ? Math.round(off / f.size * 100) : 100; pct.textContent = p + '%'; bar.style.width = p + '%';
+        if (f.size === 0) break;
+      }
+      pct.textContent = 'done'; bar.style.width = '100%'; setTimeout(() => row.remove(), 2500);
+    } catch (e) { pct.textContent = 'failed: ' + e.message; }
+  }
+  load();
+}
+
+let timer;
+$('q').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, 350); });
+async function search() {
+  const term = $('q').value.trim();
+  if (!term) { load(); return; }
+  try {
+    const res = await call('/api/search?' + q({ q: term }));
+    $('crumbs').innerHTML = `Results for <b>${E(term)}</b> <a id=clr>(clear)</a>`; $('clr').onclick = () => { $('q').value = ''; load(); };
+    $('rows').innerHTML = res.map((r, i) => `<tr><td>${r.kind === 'image' ? `<img class=thumb loading=lazy src="/api/thumb?${q({ share: r.share, path: r.path, size: 96 })}">` : '📄'}</td>
+<td class=n><a data-r="${i}">${E(r.share)}/${E(r.path)}</a><div class=muted>${E(r.snippet || '')}${r.tags.length ? ' · ' + E(r.tags.join(', ')) : ''}</div></td><td class=sz>${human(r.size)}</td><td class=dt>${new Date(r.mtime * 1000).toLocaleString()}</td><td></td></tr>`).join('') || '<tr><td colspan=5 class=muted>Nothing found</td></tr>';
+    $('rows').querySelectorAll('[data-r]').forEach((a) => a.onclick = () => { const r = res[a.dataset.r]; st.share = r.share; st.path = r.path.includes('/') ? r.path.slice(0, r.path.lastIndexOf('/')) : ''; $('share').value = r.share; load(); });
+  } catch (e) { $('rows').innerHTML = `<tr><td colspan=5>${E(e.message)}</td></tr>`; }
+}
+start();
+</script>
+</body>
+</html>

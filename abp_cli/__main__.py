@@ -20,6 +20,9 @@ Commands:
   host status|network|account|site|plan|live|publish|check|server|dns|tunnel|router|cert|vps
                                           ABP Web Hosting: sites on your domains from here, a VPS, your own
                                           server or a provider (see abp_cli/host.py)
+  nas status|disks|array|share|user|search|transfer|backup|app|...
+                                          ABP File Server: parity array, shares, users, search, transfers,
+                                          backups, apps (see abp_cli/nas.py)
 
 Connection: --host (default 127.0.0.1:8787) and --token (default from .env's
 DASHBOARD_TOKEN, same as bot/tui/'s ConnectScreen). --json prints machine-readable output
@@ -139,6 +142,9 @@ async def _dispatch(args, client: DashboardClient) -> int:
     if cmd == "host":
         from abp_cli import host as _host
         return await _host.run(args, client)
+    if cmd == "nas":
+        from abp_cli import nas as _nas
+        return await _nas.run(args, client)
     if cmd == "swarms":
         return await _swarms(args, client)
     if cmd == "sessions":
@@ -932,6 +938,8 @@ def _parser() -> argparse.ArgumentParser:
 
     from abp_cli import host as _host
     _host.add_parser(sub)
+    from abp_cli import nas as _nas
+    _nas.add_parser(sub)
 
     swarms = sub.add_parser("swarms", help="fan-out/leader-vote/etc. multi-bot swarms")
     ssub = swarms.add_subparsers(dest="swarms_cmd", required=True)

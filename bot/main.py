@@ -454,6 +454,11 @@ async def run() -> None:
 
     hosting_task = asyncio.create_task(hosting_service.run_forever(stop_event))
 
+    # ABP File Server's schedules (bot/fileserver): parity sync/scrub, mover, drive health, index, guard, jobs.
+    from bot.fileserver import service as fileserver_service
+
+    fileserver_task = asyncio.create_task(fileserver_service.run_forever(stop_event))
+
     # Reactive half of auto-management (bot/auto_manage.py) — a new
     # kanban card fires a real check-in for that board's owning instance,
     # if it's configured to react to this trigger. The scheduled half
@@ -506,6 +511,7 @@ async def run() -> None:
         hotreload_task.cancel()
         await infra_task
         await hosting_task  # same shutdown contract as infra_task
+        await fileserver_task  # same shutdown contract as infra_task
         await scheduler_task  # stop_event is already set; run_forever exits its own loop cleanly
         await peers_health_task  # same shutdown contract as scheduler_task
         await cluster_task  # same shutdown contract as scheduler_task
