@@ -186,3 +186,54 @@ def test_the_page_is_the_same_file_in_both_uis_and_both_pages_have_it():
     for page in (DASH, "desktop-app/ui/index.html"):
         html = (ROOT / page).read_text(encoding="utf-8")
         assert 'id="studio"' in html and 'id="std-root"' in html and "studio-panel.js" in html and 'href="#studio"' in html
+
+
+def test_the_api_applies_rates_themes_and_reverts(server, ui):
+    import httpx
+    H = {"X-Dashboard-Token": "unused"}
+    vid = httpx.post(f"{server}/api/studio/variants", headers=H, json={"name": "api"}).json()["id"]
+    live = (ui / "bot/dashboard/static/vision-panel.js").read_text(encoding="utf-8")
+    r = httpx.put(f"{server}/api/studio/variants/{vid}/file", headers=H,
+                  json={"path": "bot/dashboard/static/vision-panel.js", "content": live + "\n// api\n"})
+    assert r.status_code == 200
+    got = httpx.get(f"{server}/api/studio/variants/{vid}/file", headers=H,
+                    params={"path": "bot/dashboard/static/vision-panel.js"}).json()
+    assert got["own"] and got["content"].endswith("// api\n")
+    detail = httpx.get(f"{server}/api/studio/variants/{vid}", headers=H).json()
+    assert detail["files"] == ["bot/dashboard/static/vision-panel.js"] and "// api" in str(detail["diff"])
+    toks = httpx.get(f"{server}/api/studio/variants/{vid}/tokens", headers=H).json()
+    assert "--accent" in toks["light"]
+    assert httpx.post(f"{server}/api/studio/variants/{vid}/tokens", headers=H,
+                      json={"mode": "light", "values": {"--accent": "#123456"}}).status_code == 200
+    assert httpx.post(f"{server}/api/studio/variants/{vid}/tokens", headers=H,
+                      json={"mode": "light", "values": {"--accent": "url(x)"}}).status_code == 400
+    assert httpx.post(f"{server}/api/studio/variants/{vid}/validate", headers=H).json() == {"problems": []}
+    assert httpx.post(f"{server}/api/studio/variants/{vid}/rate", headers=H, json={"rating": 4}).json()["rating"] == 4
+    applied = httpx.post(f"{server}/api/studio/variants/{vid}/apply", headers=H).json()
+    assert "bot/dashboard/static/vision-panel.js" in applied["files"]
+    assert (ui / "bot/dashboard/static/vision-panel.js").read_text(encoding="utf-8").endswith("// api\n")
+    overview = httpx.get(f"{server}/api/studio", headers=H).json()
+    assert overview["backups"][0]["id"] == applied["backup"]
+    httpx.post(f"{server}/api/studio/revert", headers=H, json={"backup": applied["backup"]})
+    assert (ui / "bot/dashboard/static/vision-panel.js").read_text(encoding="utf-8") == live
+    assert httpx.post(f"{server}/api/studio/revert", headers=H, json={"backup": "x"}).status_code == 400
+    kinds = {e["kind"] for e in httpx.get(f"{server}/api/studio/log", headers=H).json()["events"]}
+    assert {"create", "edit", "theme", "rate", "apply", "revert"} <= kinds
+    ds = httpx.post(f"{server}/api/studio/datasets", headers=H).json()
+    assert set(ds) == {"sft.jsonl", "prefs.jsonl"}
+    # a broken variant is not applied
+    bad = httpx.post(f"{server}/api/studio/variants", headers=H, json={"name": "bad"}).json()["id"]
+    httpx.put(f"{server}/api/studio/variants/{bad}/file", headers=H,
+              json={"path": "bot/dashboard/static/vision-panel.js", "content": "function ("})
+    r = httpx.post(f"{server}/api/studio/variants/{bad}/apply", headers=H)
+    assert r.status_code == 400 and "problems" in r.text
+    assert httpx.delete(f"{server}/api/studio/variants/{bad}/file", headers=H,
+                        params={"path": "bot/dashboard/static/vision-panel.js"}).json()["reset"]
+    assert httpx.post(f"{server}/api/studio/variants/{bad}/discard", headers=H).json() == {"discarded": bad}
+    job = httpx.post(f"{server}/api/studio/generate", headers=H, json={"instruction": "", "files": []}).json()
+    for _ in range(50):
+        job = httpx.get(f"{server}/api/studio/jobs/{job['id']}", headers=H).json()
+        if job["state"] != "running":
+            break
+        time.sleep(0.1)
+    assert job["state"] == "failed" and "say what to change" in job["error"]

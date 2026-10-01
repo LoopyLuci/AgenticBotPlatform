@@ -246,3 +246,24 @@ def test_the_api(tmp_path, monkeypatch, temp_db):
     assert pic.status_code == 200 and pic.content[:4] == b"\x89PNG"
     assert c.get("/api/vision/out/..%5Csecret", headers=H).status_code in (400, 404)
     assert c.post("/api/vision/analyze", headers=H, json={"image": "http://10.0.0.1/x.png"}).status_code == 400
+
+
+def test_every_vision_tool_answers(tmp_path):
+    from bot.agent_runtime import toolspec
+    from bot.agent_runtime import tools  # noqa: F401
+    a, b = tmp_path / "a.png", tmp_path / "b.png"
+    img = _ui()
+    cv2.imwrite(str(a), img)
+    changed = img.copy()
+    cv2.rectangle(changed, (600, 250), (700, 300), (0, 160, 0), -1)
+    cv2.imwrite(str(b), changed)
+    cmp = json.loads(asyncio.run(toolspec.dispatch("vision_compare", {"before": str(a), "after": str(b)})))
+    assert not cmp["identical"] and cmp["regions"]
+    t = tmp_path / "t.png"
+    cv2.imwrite(str(t), img[40:96, 280:421])
+    found = json.loads(asyncio.run(toolspec.dispatch("vision_find", {"image": str(a), "template": str(t)})))
+    assert found["found"] >= 1 and found["matches"][0]["box"][:2] == [280, 40]
+    nofaces = json.loads(asyncio.run(toolspec.dispatch("vision_faces", {"a": str(a), "b": str(b)})))
+    assert nofaces["same_person"] is None
+    assert asyncio.run(toolspec.dispatch("vision_find", {"image": "camera"})).startswith("Error: the camera")
+    assert asyncio.run(toolspec.dispatch("vision_analyze", {"image": str(tmp_path / "missing.png")})).startswith("Error:")
