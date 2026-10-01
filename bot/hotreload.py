@@ -160,6 +160,9 @@ DENYLIST: frozenset[str] = frozenset({
     # dnn.py hold locks and the device fallbacks.
     "bot.dashboard.vision_api", "bot.vision.tools", "bot.vision.pipelines", "bot.vision.zoo", "bot.vision.dnn",
     "bot.vision.service", "bot.vision.images", "bot.vision.ops",
+    # Hosting: routes register once and hosting_api.py holds the runs; tools.py registers at import time; store.py
+    # holds the write lock, upnp.py the discovered router.
+    "bot.dashboard.hosting_api", "bot.hosting.tools", "bot.hosting.store", "bot.hosting.upnp", "bot.hosting.service",
     # Studio: routes register once and studio_api.py holds the generation jobs; variants.py holds its write lock.
     "bot.dashboard.studio_api", "bot.studio.variants", "bot.studio.log", "bot.studio.generate", "bot.studio.edits",
     "bot.studio.tokens", "bot.studio.shots",

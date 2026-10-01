@@ -906,6 +906,11 @@ def build_app() -> FastAPI:
 
     studio_api.register(app, _require_token)
 
+    # ABP Web Hosting (/api/hosting/*; bot/hosting): sites, DNS, tunnels, certificates, deploys, servers.
+    from bot.dashboard import hosting_api
+
+    hosting_api.register(app, _require_token)
+
     # Browser-extension bridge (/api/browser/*): pairing, the extension WebSocket, policy, RPC.
     from bot.dashboard import browser_api
 

@@ -17,6 +17,9 @@ Commands:
   vision status|analyze|find|compare|edit|fetch
                                           computer vision here (OpenCV + its model zoo): objects, faces, text,
                                           codes; find text or an image on the screen; compare two images
+  host status|network|account|site|plan|live|publish|check|server|dns|tunnel|router|cert|vps
+                                          ABP Web Hosting: sites on your domains from here, a VPS, your own
+                                          server or a provider (see abp_cli/host.py)
 
 Connection: --host (default 127.0.0.1:8787) and --token (default from .env's
 DASHBOARD_TOKEN, same as bot/tui/'s ConnectScreen). --json prints machine-readable output
@@ -133,6 +136,9 @@ async def _dispatch(args, client: DashboardClient) -> int:
         return await _modules(args, client)
     if cmd == "vision":
         return await _vision(args, client)
+    if cmd == "host":
+        from abp_cli import host as _host
+        return await _host.run(args, client)
     if cmd == "swarms":
         return await _swarms(args, client)
     if cmd == "sessions":
@@ -923,6 +929,9 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("image"); p.add_argument("steps")
     p = vsub.add_parser("fetch", help="download and verify one zoo model")
     p.add_argument("model")
+
+    from abp_cli import host as _host
+    _host.add_parser(sub)
 
     swarms = sub.add_parser("swarms", help="fan-out/leader-vote/etc. multi-bot swarms")
     ssub = swarms.add_subparsers(dest="swarms_cmd", required=True)

@@ -1220,6 +1220,75 @@ async def infra_rules(action: str, body: Optional[dict] = None) -> Any:
 
 
 @mcp.tool()
+async def hosting_status() -> Any:
+    """ABP Web Hosting: every site (folder/app, domains, how it is exposed, deploy targets), the web server, tunnels,
+    connected provider accounts (names only), certificates and settings."""
+    return await _request("GET", "/api/hosting", timeout=60.0)
+
+
+@mcp.tool()
+async def hosting_site(action: str, site: str = "", fields: Optional[dict] = None) -> Any:
+    """Create, edit or remove a hosted site. action: create | edit | remove. fields: name, kind (static | proxy |
+    redirect), root (folder), spa, upstream (http://127.0.0.1:PORT), redirect_to, domains (list), https (auto |
+    self-signed | off), build {command, cwd, output}, targets [{account}], user + password (basic auth)."""
+    if action == "create":
+        return await _request("POST", "/api/hosting/sites", json=fields or {})
+    if action == "edit":
+        return await _request("PATCH", f"/api/hosting/sites/{site}", json=fields or {})
+    if action == "remove":
+        return await _request("DELETE", f"/api/hosting/sites/{site}")
+    return {"error": "action is create, edit or remove"}
+
+
+async def _hosting_run(path: str, body: dict, timeout_s: float = 900.0) -> Any:
+    started = await _request("POST", path, json=body)
+    if not isinstance(started, dict) or "run" not in started:
+        return started
+    end = asyncio.get_event_loop().time() + timeout_s
+    while True:
+        run = await _request("GET", f"/api/hosting/runs/{started['run']}")
+        if not isinstance(run, dict) or run.get("done") or asyncio.get_event_loop().time() > end:
+            return run
+        await asyncio.sleep(2.0)
+
+
+@mcp.tool()
+async def hosting_go_live(site: str, mode: str = "", account: str = "") -> Any:
+    """Make a site reachable and wait for the outcome: mode lan | cloudflare-tunnel | tailscale-funnel | port-forward |
+    direct | server | provider (default: the site's own or the recommended one); account for tunnel/server/provider."""
+    return await _hosting_run(f"/api/hosting/sites/{site}/go-live", {"mode": mode, "account": account})
+
+
+@mcp.tool()
+async def hosting_publish(site: str, account: str = "") -> Any:
+    """Build a site and deploy it to its targets (SSH server, FTP, Netlify, Vercel, Cloudflare Pages, GitHub Pages)."""
+    return await _hosting_run(f"/api/hosting/sites/{site}/publish", {"account": account})
+
+
+@mcp.tool()
+async def hosting_check(site: str) -> Any:
+    """Check a site's names from outside: public DNS, http, https and the certificate."""
+    return await _request("POST", f"/api/hosting/sites/{site}/check", timeout=120.0)
+
+
+@mcp.tool()
+async def hosting_dns(account: str, zone: str = "", action: str = "records", name: str = "", type: str = "A",
+                      values: Optional[list] = None, ttl: int = 300) -> Any:
+    """DNS through a connected account: action zones | records | set | delete. set makes the record set name/type
+    exactly `values`."""
+    if action == "zones":
+        return await _request("GET", f"/api/hosting/dns/{account}/zones")
+    if action == "records":
+        return await _request("GET", f"/api/hosting/dns/{account}/records", params={"zone": zone})
+    if action == "set":
+        return await _request("PUT", f"/api/hosting/dns/{account}/records",
+                              json={"zone": zone, "name": name, "type": type, "values": values or [], "ttl": ttl})
+    if action == "delete":
+        return await _request("DELETE", f"/api/hosting/dns/{account}/records", params={"zone": zone, "name": name, "type": type})
+    return {"error": "action is zones, records, set or delete"}
+
+
+@mcp.tool()
 async def vision_analyze(image: str, tasks: Optional[list] = None, min_score: float = 0.4) -> Any:
     """Computer vision on ABP's machine (OpenCV + its model zoo): what is in an image. image: a file path, an http(s)
     URL, a data: URL, or "screen" / "screen:<n>". tasks (any of): objects, faces, text, codes, people, colors, shapes,
