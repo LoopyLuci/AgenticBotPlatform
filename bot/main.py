@@ -137,12 +137,20 @@ def _handle_asyncio_exception(loop: asyncio.AbstractEventLoop, context: dict) ->
     loop.default_exception_handler(context)
 
 
-async def build_telegram_instance(row: dict) -> "telegram.ext.Application":
+async def build_telegram_instance(row: dict, *, api_base_url: str = "", polling_error_callback=None) -> "telegram.ext.Application":
     """Builds, initializes, and starts polling for one Telegram bot
     instance — called once per enabled bot_instances row with
     platform="telegram" (bot/platform_supervisor.py owns the task that
     keeps each one alive). Public (not prefixed with _) since
     platform_supervisor imports it directly.
+
+    `api_base_url` is python-telegram-bot's own `base_url` builder option — the
+    full prefix including the trailing "/bot" (PTB appends "<token>/<method>"
+    to it verbatim), e.g. a self-hosted Bot API server. Empty (the default, and
+    every production path) means Telegram's real api.telegram.org.
+    `polling_error_callback` is PTB's `error_callback`: platform_supervisor
+    passes its own so a 409 Conflict from a second poller of this token stops
+    the instance instead of being retried forever (see that module's docstring).
     """
     from telegram import BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats, BotCommandScopeDefault
     from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
@@ -150,7 +158,10 @@ async def build_telegram_instance(row: dict) -> "telegram.ext.Application":
     from bot import handlers, outbox, slash_commands
 
     token = row["credentials"]["bot_token"]
-    application = Application.builder().token(token).build()
+    builder = Application.builder().token(token)
+    if api_base_url:
+        builder = builder.base_url(api_base_url)
+    application = builder.build()
     application.bot_data["instance_id"] = row["id"]
     application.bot_data["instance_name"] = row["name"]
     application.bot_data["allowed_ids"] = {int(i) for i in row["allowed_user_ids"]}
@@ -199,7 +210,7 @@ async def build_telegram_instance(row: dict) -> "telegram.ext.Application":
             )
 
     await application.start()
-    await application.updater.start_polling()
+    await application.updater.start_polling(error_callback=polling_error_callback)
     logger.info("Telegram bot instance %r (id=%s) connected", row["name"], row["id"])
     return application
 

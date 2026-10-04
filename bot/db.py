@@ -233,6 +233,7 @@ CREATE TABLE IF NOT EXISTS bot_instances (
     desktop_project    TEXT,                          -- optional per-instance Claude Desktop project name (ui backend only) — pins this instance's new sessions to one project's "New session in <name>" button instead of the bare "New" one; NULL means outside any project, today's historical behavior
     desktop_workspace_dir TEXT,                       -- optional per-instance absolute folder path (ui backend only) — new sessions open scoped to exactly this folder via Desktop's own Ctrl+N "Open folder..." replace flow, guaranteeing isolation from any existing project; takes priority over desktop_project when both are set
     desktop_effort     TEXT NOT NULL DEFAULT 'low',    -- ui backend only: Desktop's own "Effort" toolbar slider (low/medium/high/extra/max/ultracode) is forced to this level before every send — see bot/backends/ui_backend.py's EFFORT_LEVELS
+    takeover_when_gateway_down INTEGER NOT NULL DEFAULT 0, -- telegram only: this token belongs to a running Hermes gateway (bot/hermes_gateway.py), so ABP deliberately does not poll it; 1 lets ABP take the token over once that gateway stops (opt-in, default off so a deliberately-unpolled token never silently starts being polled)
     created_at         TEXT NOT NULL,
     updated_at         TEXT NOT NULL,
     last_started_at    TEXT,
@@ -1065,6 +1066,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE bot_instances ADD COLUMN desktop_workspace_dir TEXT")
     if "desktop_effort" not in instance_cols:
         conn.execute("ALTER TABLE bot_instances ADD COLUMN desktop_effort TEXT NOT NULL DEFAULT 'low'")
+    if "takeover_when_gateway_down" not in instance_cols:
+        # Telegram token is owned by a running Hermes gateway, so ABP does not
+        # poll it - see bot/hermes_gateway.py. Taking it over when that gateway
+        # later stops is opt-in per instance, because the whole point is that
+        # the user talks to Hermes directly on Telegram.
+        conn.execute("ALTER TABLE bot_instances ADD COLUMN takeover_when_gateway_down INTEGER NOT NULL DEFAULT 0")
 
     agent_settings_cols = {row["name"] for row in conn.execute("PRAGMA table_info(agent_settings)").fetchall()}
     if "fallback_provider" not in agent_settings_cols:

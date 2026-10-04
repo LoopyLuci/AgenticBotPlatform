@@ -51,6 +51,12 @@ def register(app: FastAPI) -> None:
         for row in rows:
             row["live_running"] = live.get(row["id"], {}).get("running", False)
             row["circuit"] = _router.circuit_status(row["id"])
+            # "" unless a running Hermes gateway owns this instance's Telegram
+            # token, in which case ABP is deliberately not polling it - see
+            # bot/hermes_gateway.py. Resolved per row (not just from a running
+            # task) so a freshly started dashboard already shows it.
+            row["served_by"] = platform_supervisor.served_by(row["id"])
+            row["live_status"] = live.get(row["id"], {}).get("status", "")
         if caller in ("peer", "integration"):
             rows = [bot_instances.redact_credentials(row) for row in rows]
         return rows
@@ -82,6 +88,7 @@ def register(app: FastAPI) -> None:
         row = bot_instances.get_instance(instance_id)
         if row is None:
             raise HTTPException(status_code=404, detail=f"bot instance {instance_id} not found")
+        row["served_by"] = platform_supervisor.served_by(instance_id)
         return bot_instances.redact_credentials(row) if caller in ("peer", "integration") else row
 
     @app.get("/api/bots/{instance_id}/profile", dependencies=[Depends(_require_token_or_api_key)])
@@ -134,6 +141,7 @@ def register(app: FastAPI) -> None:
                 custom_instructions=payload.get("custom_instructions") or None,
                 persona=payload.get("persona") or None,
                 hermes_home=payload.get("hermes_home") or None,
+                takeover_when_gateway_down=bool(payload.get("takeover_when_gateway_down", False)),
                 actor="dashboard",
             )
         except bot_instances.ValidationError as exc:
@@ -154,7 +162,7 @@ def register(app: FastAPI) -> None:
         fields = {
             k: v
             for k, v in payload.items()
-            if k in ("name", "platform", "backend", "enabled", "credentials", "allowed_user_ids", "admin_user_ids", "action_overrides", "can_target", "model", "custom_instructions", "persona", "hermes_home", "desktop_project", "desktop_workspace_dir", "desktop_effort")
+            if k in ("name", "platform", "backend", "enabled", "credentials", "allowed_user_ids", "admin_user_ids", "action_overrides", "can_target", "model", "custom_instructions", "persona", "hermes_home", "desktop_project", "desktop_workspace_dir", "desktop_effort", "takeover_when_gateway_down")
         }
         before = bot_instances.get_instance(instance_id)
         try:

@@ -2764,6 +2764,7 @@ async function refreshBots() {
       <div class="bc-meta">
         <span class="mono">${esc(b.platform)}</span> · <span class="mono">${esc(b.backend)}</span>
         ${b.platform === 'app' ? `<span class="pill"><span class="dot good"></span>App-only — no connection to start or stop</span>`
+          : b.served_by ? `<span class="pill" title="${esc(b.served_by)}"><span class="dot good"></span>Served by Hermes</span>`
           : `<span class="pill"><span class="dot ${b.live_running ? 'good' : (b.last_error ? 'critical' : '')}"></span>${b.live_running ? 'Running' : (b.last_error ? 'Crashed' : 'Stopped')}</span>`}
       </div>
       <div class="bc-model">
@@ -2774,7 +2775,8 @@ async function refreshBots() {
         </div>
       </div>
       ${manages.length ? `<div class="bc-manages"><span style="font-weight:600; color:var(--muted);">Manages:</span> ${manages.map(m => `<span class="chip neutral">${personaMeta(m.persona).icon} ${esc(m.name)}</span>`).join('')}</div>` : ''}
-      ${b.last_error ? `<div class="bc-error">${esc(b.last_error)}</div>` : ''}
+      ${b.served_by ? `<div class="bc-error">${esc(b.served_by)} — ABP is deliberately not polling this bot's token. Start/stop it from the Hermes gateway page.</div>` : ''}
+      ${b.last_error && !b.served_by ? `<div class="bc-error">${esc(b.last_error)}</div>` : ''}
       ${b.circuit && b.circuit.open ? `<div class="bc-error">Paused after ${b.circuit.consecutive_failures} consecutive failures — retrying automatically, or <a href="#" data-bot-circuit-reset="${b.id}">retry now</a>.</div>` : ''}
       <div class="bc-actions">
         <button class="btn" data-bot-edit="${b.id}" style="padding:3px 8px; font-size:11px;">Edit</button>

@@ -47,6 +47,9 @@ Commands:
   ai status|serve-status|models|list|ps|pull|rm|run|cp|show|import|create|discover|train|server|engine
                                           ABP's local AI (Ollama and Unsloth in ABP): models, the server,
                                           a real inference run, fine-tuning on the GPU (see abp_cli/ai.py)
+  hermes status|list|start|stop|restart|logs|instances|ask
+                                          Hermes Agent's own messaging gateway, driven from here while it
+                                          keeps serving Telegram (see abp_cli/hermes.py)
   lab status|runs|designs|validate|train|import|projects|systune|advice|bench|retrain|telemetry|hw
                                           the Neural Lab: designs trained on the GPU, BrainBuilder / KotMoE /
                                           Amethyst / Kestrion, the system models (see abp_cli/ai.py)
@@ -169,6 +172,9 @@ async def _dispatch(args, client: DashboardClient) -> int:
         return await _modules(args, client)
     if cmd == "vision":
         return await _vision(args, client)
+    if cmd == "hermes":
+        from abp_cli import hermes as _hermes
+        return await _hermes.run(args, client)
     if cmd == "host":
         from abp_cli import host as _host
         return await _host.run(args, client)
@@ -1328,7 +1334,7 @@ async def _bots(args, client: DashboardClient) -> int:
     sub = args.bots_cmd
     if sub == "list":
         bots = await client.list_bots()
-        _print(args, bots, table=["id", "name", "platform", "backend", "enabled", "live_running"])
+        _print(args, bots, table=["id", "name", "platform", "backend", "enabled", "live_running", "served_by"])
         return 0
     if sub == "show":
         _print(args, await client.get_bot(args.instance_id))
@@ -1360,8 +1366,11 @@ async def _bots(args, client: DashboardClient) -> int:
             payload["allowed_user_ids"] = _ids(args.allowed)
         if args.admins is not None:
             payload["admin_user_ids"] = _ids(args.admins)
+        if args.takeover_when_gateway_down is not None:
+            payload["takeover_when_gateway_down"] = args.takeover_when_gateway_down
         if not payload:
-            print("nothing to change — pass at least one of --name/--backend/--model/--allowed/--admins", file=sys.stderr)
+            print("nothing to change — pass at least one of --name/--backend/--model/--allowed/--admins",
+                  file=sys.stderr)
             return 2
         _print(args, await client.update_bot(args.instance_id, payload))
         return 0
@@ -1625,6 +1634,14 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--model", default=None)
     p.add_argument("--allowed", default=None, help="comma-separated, replaces the current list")
     p.add_argument("--admins", default=None, help="comma-separated, replaces the current list")
+    # Telegram only: the token is served by a running Hermes gateway, so ABP does
+    # not poll it (see `abp hermes instances`). Taking the token over once that
+    # gateway stops is opt-in, default off.
+    p.add_argument("--takeover-when-gateway-down", dest="takeover_when_gateway_down",
+                   action="store_true", default=None,
+                   help="poll this Telegram token once the Hermes gateway that owns it stops")
+    p.add_argument("--no-takeover-when-gateway-down", dest="takeover_when_gateway_down", action="store_false",
+                   help="keep leaving this token to the Hermes gateway (the default)")
     for name in ("delete", "start", "stop", "restart", "enable", "disable"):
         p = bsub.add_parser(name); p.add_argument("instance_id", type=int)
 
@@ -1733,6 +1750,8 @@ def _parser() -> argparse.ArgumentParser:
     _nas.add_parser(sub)
     from abp_cli import ai as _ai
     _ai.add_parser(sub)
+    from abp_cli import hermes as _hermes
+    _hermes.add_parser(sub)
 
     swarms = sub.add_parser("swarms", help="fan-out/leader-vote/etc. multi-bot swarms, and one-off sub-agent fan-outs")
     ssub = swarms.add_subparsers(dest="swarms_cmd", required=True)

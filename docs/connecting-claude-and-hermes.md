@@ -136,6 +136,12 @@ tells you directly if it finds an overlap.
 
 ### How to fix it
 
+Two answers, depending on which owner you actually want. If you want
+AgenticBotPlatform to own the bot, comment the token out of Hermes's `.env` as
+described below. If you want to keep talking to Hermes on Telegram and run
+AgenticBotPlatform beside it, **do nothing** — see the next section, which is
+the arrangement the rest of this doc supports.
+
 Comment out (or remove) the conflicting platform's lines in Hermes's own
 `.env` (typically `C:\Users\<you>\AppData\Local\hermes\.env` on Windows)
 — e.g.:
@@ -161,14 +167,103 @@ process, or a process that no longer claims the freed token) and
 confirming `bot.log` stops showing `Conflict: terminated by other
 getUpdates request` after Agentic Bot Platform restarts its own polling.
 
+## Agentic Bot Platform and a Hermes Telegram gateway side by side
+
+If you *do* want to keep talking to Hermes directly on Telegram — through
+Hermes's own gateway, with its Windows login item starting it at every boot —
+and run AgenticBotPlatform's own bots alongside it, you don't have to give
+either side up. A Telegram bot token can be long-polled by exactly one
+program, and AgenticBotPlatform now knows that.
+
+### Who owns the token, and how Agentic Bot Platform decides
+
+Before any Telegram bot instance starts polling, AgenticBotPlatform asks
+Hermes the same question `hermes gateway status` asks, reading Hermes's own
+files in every configured `HERMES_HOME` (the default one from `HERMES_HOME`,
+plus every per-instance `hermes_home`):
+
+| Hermes's file | What AgenticBotPlatform reads it for |
+| --- | --- |
+| `<HERMES_HOME>/.env` | an uncommented `TELEGRAM_BOT_TOKEN` |
+| `<HERMES_HOME>/config.yaml` | `platforms.telegram.enabled` (an explicit `false` means Hermes will not serve Telegram; absent means Hermes's own rule — credentials in `.env` enable it) |
+| `<HERMES_HOME>/gateway.pid`, `gateway_state.json` | the gateway's pid, which must still be alive **and** still look like a `hermes gateway run` process |
+
+If that token is one a running Hermes gateway is already serving, AgenticBotPlatform
+does not poll it at all. The bot's card in the dashboard reads **Served by
+Hermes** and says `served by the Hermes gateway (<home>)`; the same text is in
+the API (`served_by` on `/api/bots`) and in `abp hermes instances`. Tokens are
+only ever compared as a sha256 digest — nothing logs or returns the token.
+
+That instance stays unpolled for good, even after you stop the gateway: taking
+a token over is opt-in per instance, with `takeover_when_gateway_down: true`
+(Bots tab / `abp bots edit --takeover-when-gateway-down true`), and the card
+then explains itself instead of looking like a bot that needs pressing Start.
+
+The one instance this never applies to is one whose backend is `hermes_gateway`
+and whose `hermes_home` *is* the home owning the token: that instance is the
+gateway, AgenticBotPlatform manages it, and it keeps polling exactly as before.
+
+### If something else polls your token anyway
+
+If a second poller appears that AgenticBotPlatform can't see (a second
+AgenticBotPlatform, a `python -m telegram` script, an old gateway process),
+Telegram answers `getUpdates` with HTTP 409 and python-telegram-bot reports
+`telegram.error.Conflict`. python-telegram-bot's default is to log it and retry
+forever, backing off to 30 s — which just knocks the other poller off in turn,
+forever. AgenticBotPlatform instead stops that one instance, records
+`another program is polling this bot (409 Conflict)` as its `last_error`, and
+leaves it stopped until you start it again. There is no retry storm, and the
+reason survives an AgenticBotPlatform restart.
+
+### Driving the gateway from here
+
+Everything the gateway can do from a terminal, the dashboard API
+(`/api/hermes/gateway...`, `POST /api/hermes/ask`) and the CLI do from here:
+
+```
+abp hermes status --json        # parsed `hermes gateway status` (pids, service, raw text)
+abp hermes list                 # every Hermes profile and whether its gateway is running
+abp hermes start                # via Hermes's OWN login-item launcher - see below
+abp hermes stop | restart
+abp hermes logs --lines 200     # tail of <HERMES_HOME>/logs/gateway*.log
+abp hermes instances            # which AgenticBotPlatform bots are served by Hermes
+abp hermes ask "summarise today's errors"     # one-shot `hermes -z`
+```
+
+`abp hermes start` deliberately does **not** just spawn a child process.
+`hermes gateway status` warns that a gateway started from a shell inside a
+Windows Job Object gets killed when that shell exits (Hermes's own #91675), and
+AgenticBotPlatform is very often itself inside one (Tauri/Electron, Windows
+Terminal). So `start` reuses the launcher Hermes already installs for its login
+item — `<HERMES_HOME>/gateway-service/Hermes_Gateway.vbs`, run through `cscript`
+hidden and non-blocking — which starts the gateway outside AgenticBotPlatform's
+process tree, exactly as it does at logon. Everything is windowless: no console
+window ever appears on your desktop.
+
+`abp hermes ask` (and `POST /api/hermes/ask`) is `hermes -z`, a fresh
+per-invocation process. It never touches `getUpdates`, so AgenticBotPlatform's
+own channels can use Hermes as a backend *while* the gateway keeps serving
+Telegram — no token contention, no second gateway.
+
+### Checking it
+
+```powershell
+# who owns what, with no tokens printed
+abp hermes status --json
+abp hermes instances
+abp bots list          # the "served_by" column on any bot a Hermes gateway serves
+```
+
 ## Quick verification checklist
 
 - [ ] `hermes status` (or `hermes doctor`) shows a real model/provider and
       valid auth, independent of Agentic Bot Platform.
 - [ ] Control Center's Connections & Telemetry card (or Support Bot
       `"status"`) shows `ready` for every backend you actually use.
-- [ ] No platform token appears in both a Agentic Bot Platform bot instance's
-      credentials *and* Hermes's own `.env`.
+- [ ] No platform token is polled by two programs: either no token appears in
+      both a Agentic Bot Platform bot instance's credentials *and* Hermes's own
+      `.env`, or the instance one owns is marked `served by the Hermes
+      gateway` (`abp hermes instances`).
 - [ ] `bot.log` shows no `Conflict: terminated by other getUpdates
       request` errors after a restart.
 - [ ] (Optional) `hermes desktop` opens Hermes's own chat app cleanly,
