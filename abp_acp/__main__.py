@@ -138,6 +138,11 @@ async def amain(args) -> int:
 
 
 def main(argv=None) -> int:
+    # No console window may ever appear on the desktop, whatever this or the agent's tools
+    # start (bot/sandbox_ns/guard.py); a no-op off Windows.
+    from bot.sandbox_ns import guard
+
+    guard.install()
     ap = argparse.ArgumentParser(prog="abp_acp", description=__doc__.splitlines()[0])
     ap.add_argument("--model", default=os.environ.get("ABP_RUN_MODEL", ""))
     ap.add_argument("--permission-mode", choices=["plan", "default", "accept_edits", "bypass"], default=None)

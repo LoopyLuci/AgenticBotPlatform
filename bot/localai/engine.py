@@ -27,7 +27,8 @@ from typing import Optional
 import httpx
 
 from bot.localai import gguf, models
-from bot.localai.paths import LocalAIError, cpu_threads, guard, home, sub
+from bot.localai.paths import LocalAIError, cpu_threads, home, sub
+from bot.sandbox_ns import spawn
 
 RELEASES = "https://api.github.com/repos/ggml-org/llama.cpp/releases"
 _NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
@@ -376,10 +377,14 @@ def load(name: str, options: Optional[dict] = None, keep_alive: Optional[float] 
         log = open(_log_path(key), "ab")
         log.write(f"\n--- {time.strftime('%Y-%m-%d %H:%M:%S')} {' '.join(argv)}\n".encode())
         log.flush()
-        proc = subprocess.Popen(argv, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, creationflags=_NO_WINDOW,
-                                cwd=str(Path(eng["server"]).parent))
+        # preset "engine": one llama-server per model, windowless, below-normal priority, off the
+        # processors with a machine-check history, and capped at a share of the machine's CPU
+        # (it is the one process of ours allowed to be big; its own --threads stays the real limit).
+        flags = {"creationflags": _NO_WINDOW} if sys.platform == "win32" else {}     # POSIX Popen has no such flag
+        proc = spawn.spawn(argv, preset="engine", name=f"llama-server:{models.canonical(name)}", owner="localai.engine",
+                           cwd=Path(eng["server"]).parent, stdin=subprocess.DEVNULL, stdout=log,
+                           stderr=subprocess.STDOUT, **flags)
         log.close()
-        guard(proc.pid)
         r = Runner(key, rec, opts, port, proc, info, est)
         r.expires = _expiry(keep_alive)
         _runners[key] = r

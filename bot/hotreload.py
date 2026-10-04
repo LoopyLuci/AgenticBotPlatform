@@ -125,6 +125,14 @@ DENYLIST: frozenset[str] = frozenset({
     # sandbox.py is only ever imported by the (denied) shell module. A reload would reset them.
     "bot.agent_runtime.permissions", "bot.agent_runtime.taint", "bot.agent_runtime.secrets_guard",
     "bot.agent_runtime.mcp_pins", "bot.agent_runtime.sandbox", "bot.agent_runtime.win_job", "bot.agent_runtime.appcontainer",
+    # The Sandbox Nervous System: guard.py replaces subprocess.Popen process-wide (a reload would
+    # either install a second wrapper or restore the original and silently stop being windowless),
+    # and registry.py holds the live process table, the event ring buffer, the sampler thread and
+    # the run id whose entries live.json is keyed by. cell.py owns job handles and the cells the
+    # reflexes act on. Reloading any of them would orphan exactly the state this denylist exists
+    # to protect.
+    "bot.sandbox_ns.guard", "bot.sandbox_ns.registry", "bot.sandbox_ns.cell", "bot.sandbox_ns.spawn",
+    "bot.sandbox_ns.policy", "bot.sandbox_ns.reaper", "bot.sandbox_ns.reflexes",
     "bot.agent_runtime.settings_schema",  # imports permissions/sandbox (both denied above); a reload would split the classes it validates against
     "bot.agent_runtime.project_rules",  # imported by prompt.py; reloaded with it is not needed and is safe to skip
     "bot.agent_runtime.code_intel",  # running language servers are process state

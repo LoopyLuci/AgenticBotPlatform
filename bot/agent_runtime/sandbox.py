@@ -98,11 +98,15 @@ from typing import Optional
 
 from bot.agent_runtime import appcontainer, secrets_guard, win_job
 from bot.agent_runtime.errors import ToolError
+from bot.sandbox_ns import cell as ns_cell
+from bot.sandbox_ns import policy as ns_policy
+from bot.sandbox_ns import spawn as ns_spawn
 
 BACKENDS = ("local", "docker", "ssh", "wsl", "windows_job")
 ENV_MODES = ("secrets", "minimal", "inherit")
 NETWORKS = ("allow", "none")
 _MAC_OFFLINE_PROFILE = "(version 1)(allow default)(deny network*)"
+OWNER = "agent_runtime.sandbox"
 _MINIMAL = {"PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC", "TEMP", "TMP", "TMPDIR", "HOME", "USERPROFILE",
             "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA", "PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMDATA",
             "USER", "USERNAME", "LOGNAME", "SHELL", "LANG", "LC_ALL", "TERM", "TZ", "PWD", "NUMBER_OF_PROCESSORS",
@@ -323,42 +327,78 @@ def _wsl_argv(command: str, cwd: Path, workspace: Path, cfg: dict, pidfile: str)
     return argv
 
 
+def _label(command: str) -> str:
+    """A short, single-line name for a cell, so `registry.status()` and a kill event say which
+    command this was without carrying the whole (possibly multiline) command around."""
+    return " ".join(str(command).split())[:80]
+
+
+def _cell(command: str) -> ns_cell.Cell:
+    """The cell a command runs in. Deliberately not closed here: it belongs to the command, and
+    the registry closes it (which is what releases the job handle) as soon as the last process in
+    it is gone. Closing it when `start()` returns would kill the command it just started."""
+    return ns_cell.Cell(_local_policy(_config(), "local"), name=f"run_shell {_label(command)}", owner=OWNER)
+
+
+def _local_policy(cfg: dict, which: str) -> ns_policy.Policy:
+    """The 'tool' preset with this configuration's own windows_job limits, which is where an
+    operator sets a memory or process cap for agent commands (0 there = no cap)."""
+    j = cfg.get("windows_job") or {} if which == "windows_job" else {}
+    return ns_policy.policy_for("tool", {"memory_mb": int(j.get("memory_mb") or 0),
+                                         "max_processes": int(j.get("active_process_limit") or 0)})
+
+
+def _job_cell(command: str, cfg: dict) -> ns_cell.Cell:
+    """The cell a `windows_job` command runs in. Failing to get one is fatal and says so with
+    the same words this backend always used: a command that cannot be confined is not run."""
+    try:
+        return ns_cell.Cell(_local_policy(cfg, "windows_job"), name=f"run_shell {_label(command)}", owner=OWNER)
+    except OSError as exc:
+        raise ToolError(f"could not confine the command to a job object: {exc}") from exc
+
+
+async def _spawn(command, cwd: Path, env: dict, *, name: str, cell, shell: bool = False, pipes: Optional[dict] = None,
+                 policy=None) -> asyncio.subprocess.Process:
+    """One place where a sandbox backend hands a command to the nervous system, so the recorded
+    owner, name and cell are the same for every one of them. `policy` is only for the one case
+    with no cell (the offline launcher, which confines the command itself)."""
+    try:
+        return await ns_spawn.async_spawn(command, cell=cell, policy=policy, cwd=cwd, env=env, shell=shell,
+                                          name=f"run_shell {_label(name)}", owner=OWNER,
+                                          **(pipes or {"stdout": asyncio.subprocess.PIPE,
+                                                      "stderr": asyncio.subprocess.STDOUT}))
+    except OSError as exc:
+        raise ToolError(f"could not start the command: {exc}") from exc
+
+
 async def start(command: str, cwd: Path, workspace: Path) -> asyncio.subprocess.Process:
     """Start a command in the configured sandbox; stdout and stderr arrive on one pipe."""
     cfg = _config()
     which = backend()
     offline = network(cfg) == "none"
     pipes = dict(stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
-    spawn = {} if os.name == "nt" else {"start_new_session": True}
     try:
         if offline and which in ("local", "windows_job"):
             if os.name == "nt":
                 # The launcher creates the command inside the AppContainer and its own
-                # kill-on-close job (with windows_job's limits), so no outer job is needed.
+                # kill-on-close job (with windows_job's limits), so no outer job is needed -
+                # spawn() only records it and keeps it windowless.
                 limits = cfg.get("windows_job") if which == "windows_job" else None
                 argv = _offline_launcher(command, cwd, workspace, cfg, limits)
-                return await asyncio.create_subprocess_exec(*argv, cwd=str(cwd), env=build_env(cfg=cfg), **pipes)
+                return await _spawn(argv, cwd, build_env(cfg=cfg), name=command, cell=None,
+                                    policy=_local_policy(cfg, which), pipes=pipes)
             argv = _offline_posix_prefix() + ["/bin/sh", "-c", command]
-            return await asyncio.create_subprocess_exec(*argv, cwd=str(cwd), env=build_env(cfg=cfg), **pipes, **spawn)
+            return await _spawn(argv, cwd, build_env(cfg=cfg), name=command, cell=_cell(command))
 
         if which == "local":
-            return await asyncio.create_subprocess_shell(command, cwd=str(cwd), env=build_env(cfg=cfg), **pipes, **spawn)
+            # A cell, so the whole tree is guaranteed to die with the command (a job object on
+            # Windows; a session of its own elsewhere) instead of relying on taskkill's tree walk.
+            return await _spawn(command, cwd, build_env(cfg=cfg), name=command, cell=_cell(command),
+                                shell=True, pipes=pipes)
 
         if which == "windows_job":
-            proc = await asyncio.create_subprocess_shell(command, cwd=str(cwd), env=build_env(cfg=cfg), **pipes)
-            j = cfg.get("windows_job") or {}
-            try:
-                job = win_job.create(memory_mb=int(j.get("memory_mb") or 0),
-                                      active_process_limit=int(j.get("active_process_limit") or 0))
-                win_job.assign(job, proc.pid)
-            except OSError as exc:
-                try:
-                    proc.kill()
-                except (ProcessLookupError, OSError):
-                    pass
-                raise ToolError(f"could not confine the command to a job object: {exc}") from exc
-            proc.abp_job = job
-            return proc
+            return await _spawn(command, cwd, build_env(cfg=cfg), name=command, cell=_job_cell(command, cfg),
+                                shell=True, pipes=pipes)
 
         if which == "docker":
             docker = shutil.which("docker")
@@ -369,7 +409,8 @@ async def start(command: str, cwd: Path, workspace: Path) -> asyncio.subprocess.
             name = f"abp-{uuid.uuid4().hex[:12]}"
             argv = _docker_argv(command, cwd, workspace, name, cfg, injected)
             argv[0] = docker                                      # the resolved path: a bare name may not resolve on Windows
-            proc = await asyncio.create_subprocess_exec(*argv, env=client_env, **pipes, **spawn)
+            proc = await asyncio.create_subprocess_exec(*argv, env=client_env, **pipes,
+                                                        start_new_session=os.name != "nt")
             proc.abp_container = name                            # so kill() can remove the container, not just the client
             return proc
 
@@ -382,7 +423,8 @@ async def start(command: str, cwd: Path, workspace: Path) -> asyncio.subprocess.
             pidfile = f"{root.rstrip('/')}/.{name}.pid" if root else f"/tmp/.{name}.pid"
             argv = _ssh_argv(command, cwd, workspace, cfg, pidfile)
             argv[0] = ssh
-            proc = await asyncio.create_subprocess_exec(*argv, env=build_env(cfg=cfg), **pipes, **spawn)
+            proc = await asyncio.create_subprocess_exec(*argv, env=build_env(cfg=cfg), **pipes,
+                                                        start_new_session=os.name != "nt")
             proc.abp_remote_kill = _ssh_kill_argv(argv, pidfile)
             return proc
 
@@ -422,8 +464,15 @@ def _wsl_kill_argv(start_argv: list[str], pidfile: str) -> list[str]:
 
 def kill(proc) -> None:
     """Stop the command and everything it started; for docker, remove the container
-    too; for ssh/wsl, best-effort kill the remote side too; for windows_job, terminate
-    the job (which is by itself enough to guarantee the whole tree is gone)."""
+    too; for ssh/wsl, best-effort kill the remote side too; for a local or windows_job command,
+    terminate its cell (which is by itself enough to guarantee the whole tree is gone)."""
+    cell = getattr(proc, "abp_cell", None)
+    if cell is not None:
+        try:
+            cell.kill(f"sandbox.kill for {cell.name}")
+            return
+        except Exception:  # noqa: BLE001 - fall through to the per-process path below
+            pass
     name = getattr(proc, "abp_container", None)
     if name:
         try:

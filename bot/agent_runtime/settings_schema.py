@@ -34,6 +34,7 @@ YAML_ONLY = [
     {"key": "native_agent.sandbox.ssh", "why": "the ssh host, user, identity file and remote workspace root"},
     {"key": "native_agent.sandbox.wsl", "why": "the WSL distro name and extra wsl.exe arguments"},
     {"key": "native_agent.sandbox.windows_job", "why": "the job object's memory and process-count limits"},
+    {"key": "sandbox_ns", "why": "the Sandbox Nervous System: processors to keep off (sandbox_ns.avoid_cpus - this machine's faulty cores), the memory/CPU thresholds reflexes.py acts on, and per-preset Policy overrides; a top-level key, so it applies to every process ABP starts, not just an agent's"},
     {"key": "native_agent.skills.external_dirs", "why": "linked skill libraries: folders, or {path, exclude: [skill names]} (abp_import hermes / openclaw writes these)"},
     {"key": "backend_backup", "why": "backends (e.g. opencode, hermes_cli, hermes_gateway) tried, in order, when a bot's own backend fails — never Claude, per the standing 'never by default' instruction; a top-level key, not under native_agent, so it applies to every bot regardless of its own backend choice"},
 ]

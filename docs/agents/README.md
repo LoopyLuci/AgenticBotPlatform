@@ -14,6 +14,7 @@ tables say the same feature by feature. This index only points.
 | Know what is built and what is not | [ROADMAP.md](ROADMAP.md) |
 | Set up and tune ABP agents from the dashboard: bots, limits, safety, tools, sub-agents, skills | [agents-page.md](agents-page.md) |
 | Make the agent safe to leave alone: permissions, untrusted content, secrets, sandbox, hooks | [security.md](security.md) |
+| Know that no process ABP starts pops a window, leaks, or eats the machine | [../sandbox-nervous-system.md](../sandbox-nervous-system.md) |
 | Measure the agent | [evals.md](evals.md); results page: [../benchmarks/index.html](../benchmarks/index.html) |
 | Give it named agents, skill packs, custom commands | [skills-and-agents.md](skills-and-agents.md) |
 | Know what a model can do and how much free allowance is left | [models.md](models.md) |

@@ -22,9 +22,13 @@ from typing import Any, Callable, Optional
 
 from bot.vm_harness import client
 from bot.vm_harness.client import HarnessError
+from bot.sandbox_ns import spawn
 
 REPO_URL = "https://github.com/LoopyLuci/VM-Harness.git"
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+# A hidden console of its own (not DETACHED_PROCESS: a process with no console makes every console
+# program it starts open a visible window), in its own process group.
+DETACHED_HIDDEN_CONSOLE = (0x00000200 | NO_WINDOW) if os.name == "nt" else 0
 
 
 def _abp_root() -> Path:
@@ -201,11 +205,13 @@ def start_hub(wait_s: float = 45.0) -> dict:
     exe = python_exe(d, windowless=True)
     exe = exe if exe.is_file() else python_exe(d)
     client.vmh_home().mkdir(parents=True, exist_ok=True)
-    flags = (0x00000200 | NO_WINDOW) if os.name == "nt" else 0     # a hidden console its children inherit, own group
     with open(client.vmh_home() / "hub.log", "ab") as out:
-        subprocess.Popen([str(exe), "-m", "vm_harness", "serve"], cwd=str(d), stdin=subprocess.DEVNULL, stdout=out,
-                         stderr=subprocess.STDOUT, creationflags=flags, start_new_session=os.name != "nt",
-                         env={**os.environ, "PYTHONPATH": os.pathsep.join([str(d / "src"), str(d)])})
+        # preset "daemon": windowless with a hidden console its children inherit, its own process
+        # group, below-normal priority, recorded as persistent - the hub outlives ABP on purpose.
+        spawn.spawn([str(exe), "-m", "vm_harness", "serve"], preset="daemon", name="vm-harness-hub",
+                    owner="vm_harness", cwd=d, env={**os.environ, "PYTHONPATH": os.pathsep.join([str(d / "src"), str(d)])},
+                    stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
+                    creationflags=DETACHED_HIDDEN_CONSOLE)
     deadline = time.time() + wait_s
     while time.time() < deadline:
         found = client.find()

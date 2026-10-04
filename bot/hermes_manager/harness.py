@@ -18,9 +18,14 @@ from typing import Any, Callable, Optional
 
 from bot.hermes_manager import client
 from bot.hermes_manager.client import ManagerError
+from bot.sandbox_ns import spawn
 
 REPO_URL = "https://github.com/LoopyLuci/Hermes-Manager.git"
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+# A hidden console of its own (not DETACHED_PROCESS: a process with no console makes every console
+# program it starts open a visible window), in its own process group, so Ctrl+C in ABP's console
+# never reaches it.
+DETACHED_HIDDEN_CONSOLE = (0x00000200 | NO_WINDOW) if os.name == "nt" else 0
 
 
 def _cfg() -> dict:
@@ -229,12 +234,14 @@ def start_bridge(wait_s: float = 45.0) -> dict:
     paths = [str(d / "src" / "bridge")] + ([str(home / "hermes-agent")] if home and (home / "hermes-agent").is_dir() else [])
     env = {**os.environ, "HM_BRIDGE_TOKEN": secrets.token_hex(32), "PYTHONPATH": os.pathsep.join(paths)}
     client.hm_home().mkdir(parents=True, exist_ok=True)
-    flags = (0x00000200 | NO_WINDOW) if os.name == "nt" else 0     # a hidden console its children inherit, own group
+    argv = [str(py), "-m", "hermes_manager_bridge", "--discovery", "--owner", "abp",
+            *(["--hermes-home", str(home)] if home else [])]
     with open(client.hm_home() / "bridge.log", "ab") as out:
-        subprocess.Popen([str(py), "-m", "hermes_manager_bridge", "--discovery", "--owner", "abp",
-                          *(["--hermes-home", str(home)] if home else [])], cwd=str(d / "src" / "bridge"), env=env,
-                         stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, creationflags=flags,
-                         start_new_session=os.name != "nt")
+        # preset "daemon": a hidden console its children inherit, its own process group,
+        # below-normal priority, and recorded as persistent - it is meant to outlive ABP.
+        spawn.spawn(argv, preset="daemon", name="hermes-bridge", owner="hermes_manager", cwd=d / "src" / "bridge",
+                    env=env, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
+                    creationflags=DETACHED_HIDDEN_CONSOLE)
     deadline = time.time() + wait_s
     while time.time() < deadline:
         found = client.find()
