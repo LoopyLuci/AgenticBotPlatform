@@ -196,8 +196,9 @@ only ever compared as a sha256 digest — nothing logs or returns the token.
 
 That instance stays unpolled for good, even after you stop the gateway: taking
 a token over is opt-in per instance, with `takeover_when_gateway_down: true`
-(Bots tab / `abp bots edit --takeover-when-gateway-down true`), and the card
-then explains itself instead of looking like a bot that needs pressing Start.
+(Bots tab / `abp bots edit <id> --takeover-when-gateway-down`, and back with
+`--no-takeover-when-gateway-down`), and the card then explains itself instead of
+looking like a bot that needs pressing Start.
 
 The one instance this never applies to is one whose backend is `hermes_gateway`
 and whose `hermes_home` *is* the home owning the token: that instance is the

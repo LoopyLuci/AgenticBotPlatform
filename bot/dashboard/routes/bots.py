@@ -4,6 +4,7 @@ Moved verbatim out of bot/dashboard/server.py's build_app(); the route order ins
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Optional
 
 from fastapi import Body, Depends, FastAPI, HTTPException
@@ -48,6 +49,12 @@ def register(app: FastAPI) -> None:
 
         live = platform_supervisor.status()
         rows = bot_instances.list_instances()
+        # served_by() reads Hermes's own state files and stats a pid for every
+        # instance, so it goes off the event loop like every other blocking read
+        # in this app.
+        answers = await asyncio.gather(*(asyncio.to_thread(platform_supervisor.served_by, row["id"])
+                                         for row in rows))
+        served = dict(zip([row["id"] for row in rows], answers, strict=False))
         for row in rows:
             row["live_running"] = live.get(row["id"], {}).get("running", False)
             row["circuit"] = _router.circuit_status(row["id"])
@@ -55,7 +62,7 @@ def register(app: FastAPI) -> None:
             # token, in which case ABP is deliberately not polling it - see
             # bot/hermes_gateway.py. Resolved per row (not just from a running
             # task) so a freshly started dashboard already shows it.
-            row["served_by"] = platform_supervisor.served_by(row["id"])
+            row["served_by"] = served.get(row["id"], "")
             row["live_status"] = live.get(row["id"], {}).get("status", "")
         if caller in ("peer", "integration"):
             rows = [bot_instances.redact_credentials(row) for row in rows]

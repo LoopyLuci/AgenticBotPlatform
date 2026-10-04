@@ -801,29 +801,26 @@ async def ask(text: str, *, home: Optional[Any] = None, model: Optional[str] = N
     `session_id` (the `desktop_session_key` ABP already persists for Hermes
     instances) resumes that real conversation.
 
-    The HERMES_HOME override is applied to this process's own environment
-    (rather than passed through) because HermesCliBackend builds its argv from
-    the binary alone and Hermes resolves its home from the environment at
-    startup - exactly how hermes_gateway_backend's own `hermes serve` spawn does
-    it. It is restored in a finally block."""
+    The HERMES_HOME override is passed to the child process as its environment
+    (HermesCliBackend's own `env=` overlay, the same shape
+    hermes_gateway_backend's `hermes serve` spawn uses) rather than written into
+    this process's os.environ - `ask` is reachable from two API requests at once,
+    and two calls scoped to different homes must not swap homes mid-flight.
+    Hermes resolves its home from the environment at startup, so that is all the
+    override needs.
+    """
     from bot.backends.base import BackendError
     from bot.backends.hermes_cli_backend import HermesCliBackend
 
-    backend = HermesCliBackend(binary=hermes_binary(), model=model)
-    previous_home = os.environ.get("HERMES_HOME")
+    env = None
     if home:
-        os.environ["HERMES_HOME"] = str(home)
+        env = {**os.environ, "HERMES_HOME": str(home)}
+    backend = HermesCliBackend(binary=hermes_binary(), model=model, env=env)
     try:
         context = {"desktop_session_key": session_id} if session_id else {}
         result = await backend.ask(text, context=context, timeout_s=timeout_s)
     except BackendError as exc:
         raise GatewayError(str(exc)) from exc
-    finally:
-        if home:
-            if previous_home is None:
-                os.environ.pop("HERMES_HOME", None)
-            else:
-                os.environ["HERMES_HOME"] = previous_home
     return {"text": result.text, "tokens": result.tokens, "session_id": (result.raw or {}).get("desktop_session_key") or session_id}
 
 
