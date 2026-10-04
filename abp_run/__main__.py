@@ -43,6 +43,11 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
+    # No console window may ever appear on the desktop, whatever this or anything it calls
+    # starts (bot/sandbox_ns/guard.py); a no-op off Windows.
+    from bot.sandbox_ns import guard
+
+    guard.install()
     args = _parser().parse_args(argv)
     prompt = args.prompt
     if prompt in (None, "-"):

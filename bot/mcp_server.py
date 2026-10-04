@@ -1041,6 +1041,11 @@ async def run_swarm(source_instance: str, swarm: str, prompt: str) -> dict:
 
 
 if __name__ == "__main__":
+    # No console window may ever appear on the desktop for anything this process starts
+    # (bot/sandbox_ns/guard.py). stdio transport, so this is our own console either way.
+    from bot.sandbox_ns import guard
+
+    guard.install()
     _setup_logging()
     logger.info("agentic-bot-platform MCP server starting (dashboard at %s)", BASE_URL)
     try:

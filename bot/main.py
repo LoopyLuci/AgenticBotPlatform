@@ -561,11 +561,30 @@ async def run() -> None:
         cancelled = await bg.drain(5.0)
         if cancelled:
             logger.info("cancelled %d background task(s) still running at shutdown", cancelled)
+        # Last, after every owner has had its chance to stop its own children cleanly: whatever is
+        # still in a Sandbox Nervous System cell that is not meant to outlive ABP goes with it.
+        # Daemons (persistent) are only released - they are supposed to keep running.
+        from bot.sandbox_ns.registry import registry as ns_registry
+
+        stopped = ns_registry.close_cells()
+        if stopped:
+            logger.info("sandbox-ns: stopped %d cell(s) left open at shutdown", stopped)
         db.log_audit(actor="system", action="shutdown")
 
 
 def main() -> None:
+    # First, before anything in this process can start a child: no console window may ever
+    # appear on the person's desktop (bot/sandbox_ns/guard.py).
+    from bot.sandbox_ns import guard, reaper
+
+    guard.install()
     setup_logging()
+    # Then, before this run starts anything of its own: what the last run left running. Matched
+    # by pid AND create time, so a pid Windows has since handed to something else is never
+    # touched; daemons are persistent by policy and are left alone.
+    left = reaper.reap(log=logger.info)
+    if left["killed"]:
+        logger.info("sandbox-ns: stopped %d process(es) left by a previous run", len(left["killed"]))
     # Before anything reads config: a crash loop rolls config back to
     # last-known-good and starts in safe mode (bot/sentinel/bootguard.py).
     from bot.sentinel import bootguard

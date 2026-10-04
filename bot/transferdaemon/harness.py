@@ -20,9 +20,13 @@ from typing import Any, Callable, Optional
 
 from bot.transferdaemon import client
 from bot.transferdaemon.client import DaemonError
+from bot.sandbox_ns import spawn
 
 REPO_URL = "https://github.com/LoopyLuci/TransferDaemon.git"
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+# A hidden console of its own (not DETACHED_PROCESS: a process with no console makes every console
+# program it starts open a visible window), in its own process group.
+DETACHED_HIDDEN_CONSOLE = (0x00000200 | NO_WINDOW) if os.name == "nt" else 0
 EXE = ".exe" if os.name == "nt" else ""
 # What ABP builds: the daemon, both user interfaces, the CLI (also the MCP server) and the relays.
 PACKAGES = ["transferd", "transferd-ui", "transferd-tui", "transferd-cli", "relayd", "transferd-relay"]
@@ -250,10 +254,12 @@ def start_daemon(wait_s: float = 90.0) -> dict:
             env[{"bind": "TRANSFERD_BIND_ADDR", "relays": "TRANSFERD_RELAY_ADDR",
                  "dht_bootstrap": "TRANSFERD_DHT_BOOTSTRAP"}[key]] = ",".join(val) if isinstance(val, list) else str(val)
     client.data_dir().mkdir(parents=True, exist_ok=True)
-    flags = (0x00000200 | NO_WINDOW) if os.name == "nt" else 0     # a hidden console its children inherit, own group
     with open(client.data_dir() / "transferd.log", "ab") as out:
-        subprocess.Popen([str(exe)], cwd=str(bin_dir()), env=env, stdin=subprocess.DEVNULL, stdout=out,
-                         stderr=subprocess.STDOUT, creationflags=flags, start_new_session=os.name != "nt")
+        # preset "daemon": windowless with a hidden console its children inherit, its own process
+        # group, below-normal priority, recorded as persistent - the daemon outlives ABP on purpose.
+        spawn.spawn([str(exe)], preset="daemon", name="transferd", owner="transferdaemon", cwd=bin_dir(), env=env,
+                    stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
+                    creationflags=DETACHED_HIDDEN_CONSOLE)
     deadline = time.time() + wait_s
     while time.time() < deadline:
         found = client.find()

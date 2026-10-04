@@ -20,6 +20,7 @@ from typing import Any, Callable, Optional
 from bot.modules import adapters, client, registry
 from bot.modules.client import ModuleError
 from bot.modules.manifest import Manifest, this_os
+from bot.sandbox_ns import guard
 
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 # A hidden console of its own (not DETACHED_PROCESS: a process with no console makes every console program it
@@ -507,10 +508,14 @@ def _launch_visible(m: Manifest, cmd: list[str], console: bool) -> dict:
     exe = Path(cmd[0])
     if exe.is_absolute() and not exe.exists():
         raise ModuleError(f"{exe} is missing ({m.name} is not built yet)", code="not_installed")
+    # A console for a person is the one thing the windowless guard (bot/sandbox_ns/guard.py)
+    # takes away by default, so it is asked for explicitly here - inside guard.visible(), and
+    # nowhere else in this file.
     flags = NEW_CONSOLE if console else 0
-    p = subprocess.Popen([_which(cmd[0]) or cmd[0], *cmd[1:]], cwd=str(_workspace(m)), creationflags=flags,
-                         env={**os.environ, **abp_env(m)},
-                         stdin=None if console else subprocess.DEVNULL, start_new_session=os.name != "nt")
+    with guard.visible():
+        p = subprocess.Popen([_which(cmd[0]) or cmd[0], *cmd[1:]], cwd=str(_workspace(m)), creationflags=flags,
+                             env={**os.environ, **abp_env(m)},
+                             stdin=None if console else subprocess.DEVNULL, start_new_session=os.name != "nt")
     return {"opened": True, "pid": p.pid}
 
 

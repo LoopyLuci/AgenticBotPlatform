@@ -580,6 +580,13 @@ def load_next_token(d: dict, spec: dict):
 # ---- the run ------------------------------------------------------------------------------------------------------- #
 
 def main() -> int:
+    # A training run is the heaviest thing ABP ever starts on this machine. Windowless from the
+    # very first child (bot/sandbox_ns/guard.py); the caller's own below-normal priority and CPU
+    # thread cap (bot/neurallab/lab.py) still apply. Putting the run in a "worker" cell is the
+    # remaining step - see docs/sandbox-nervous-system.md.
+    from bot.sandbox_ns import guard
+
+    guard.install()
     job = json.loads((RUN / "job.json").read_text(encoding="utf-8"))
     torch.set_num_threads(int(job.get("cpu_threads", 4)))
     spec = job["spec"]
