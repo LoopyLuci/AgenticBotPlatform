@@ -364,3 +364,231 @@ def test_lab_trains_on_the_gpu_and_numpy_agrees(tmp_path, monkeypatch):
     m = infer.Model.load(lab.export_of(r["id"])["dir"])
     pred = m.predict(X[:200])[:, 0]
     assert np.corrcoef(pred, y[:200])[0, 1] > 0.97
+
+
+def test_dashboard_routes_for_models_lab_and_projects(home, tmp_path):
+    """Every route the Local AI and Neural Lab pages use, on real files; the projects' own designs and checkpoints
+    (BrainBuilder graphs, KotMoE's registry and checkpoints) where those projects sit next to ABP."""
+    from fastapi import FastAPI
+    from bot.dashboard import localai_api
+    from bot.neurallab import interop, telemetry
+    app = FastAPI()
+    localai_api.register(app, lambda: None)
+    c = TestClient(app)
+    A, L = "/api/localai", "/api/lab"
+    assert c.get(A).status_code == 200 and c.get(f"{A}/settings").json()["keep_alive_s"] == 300
+    assert c.put(f"{A}/settings", json={"keep_alive_s": 60}).json()["keep_alive_s"] == 60
+    assert c.put(f"{A}/settings", json={"nope": 1}).status_code == 400
+    assert c.post(f"{A}/server/dance").status_code == 404
+    assert c.post(f"{A}/models/pull", json={}).status_code == 400
+    g = write_gguf(tmp_path / "w" / "tiny-Q4_K_M.gguf")
+    assert c.post(f"{A}/models/import", json={"name": "me/tiny:q4", "path": str(g)}).json()["name"] == "me/tiny:q4"
+    assert c.post(f"{A}/models/import", json={"name": "me/ref:q4", "path": str(g), "reference": True}).status_code == 200
+    assert c.post(f"{A}/models/copy", json={"source": "me/tiny:q4", "destination": "me/two:q4"}).json() == {"copied": True}
+    made = c.post(f"{A}/models/create", json={"name": "me/sys:v1", "modelfile": "FROM me/tiny:q4\nSYSTEM hi"}).json()
+    assert made["name"] == "me/sys:v1"
+    assert c.get(f"{A}/models/show", params={"name": "me/sys:v1"}).json()["modelfile"].count("SYSTEM") == 1
+    assert c.get(f"{A}/models/show", params={"name": "none:1"}).status_code == 400
+    assert c.delete(f"{A}/models", params={"name": "me/two:q4"}).json() == {"deleted": True}
+    assert {m["name"] for m in c.get(f"{A}/models").json()} == {"me/tiny:q4", "me/ref:q4", "me/sys:v1"}
+    assert "found" in c.get(f"{A}/discover").json()
+    store = tmp_path / "other-store"
+    store.mkdir()
+    assert c.put(f"{A}/stores", json=[{"name": "Other", "path": str(store)}]).status_code == 400       # no manifests/
+    (store / "manifests").mkdir()
+    assert c.put(f"{A}/stores", json=[{"name": "Other", "path": str(store)}]).status_code == 200
+    assert c.get(f"{A}/stores").json()[0]["name"] == "Other"
+    tr = c.get(f"{A}/train").json()
+    assert "q4_k_m" in tr["quants"] and tr["defaults"]["rank"] == 16
+    assert c.post(f"{A}/train", json={"base": ""}).status_code == 400
+    assert c.get(f"{A}/train/19990101-000000").status_code == 400
+    # the lab
+    spec = {"name": "tiny-net", "input": {"kind": "features", "size": 4}, "layers": [{"op": "linear", "out": 2}]}
+    assert c.put(f"{L}/designs/tiny-net", json={"spec": spec}).status_code == 200
+    assert [d["name"] for d in c.get(f"{L}/designs").json()] == ["tiny-net"]
+    assert c.get(f"{L}/designs/tiny-net").json()["name"] == "tiny-net"
+    assert c.post(f"{L}/runs", json={}).status_code == 400
+    assert c.post(f"{L}/runs", json={"design": "tiny-net"}).status_code == 400
+    assert c.get(f"{L}/runs").json() == [] and c.get(f"{L}/runs/none").status_code == 400
+    assert c.get(L).status_code == 200
+    assert c.post(f"{L}/import", json={"kind": "onnx"}).status_code == 400
+    out = tmp_path / "net.bbir.edn"
+    assert c.post(f"{L}/export/brainbuilder", json={"spec": spec, "path": str(out)}).json()["path"] == str(out)
+    back = c.post(f"{L}/import", json={"kind": "brainbuilder", "path": str(out), "name": "round-trip"}).json()
+    assert "parameters 10" in back["text"] and "round-trip" in {d["name"] for d in c.get(f"{L}/designs").json()}
+    assert {p["id"] for p in c.get(f"{L}/projects").json()} == {"brainbuilder", "kotmoe", "amethyst", "kestrion"}
+    bb = c.get(f"{L}/brainbuilder").json()
+    if interop.project_dir("brainbuilder"):
+        assert bb and all("params" in g or "error" in g for g in bb)
+    km = c.get(f"{L}/kotmoe").json()
+    if km["registry"]:
+        imp = c.post(f"{L}/import", json={"kind": "kotmoe-registry", "id": km["registry"][0]["id"], "save": False}).json()
+        assert imp["spec"]["input"]["size"] == 784 and imp["spec"]["origin"]["project"] == "kotmoe"
+    assert c.post(f"{L}/import", json={"kind": "kotmoe-registry", "id": "no-such-id"}).status_code == 404
+    if km["checkpoints"]:
+        imp = c.post(f"{L}/import", json={"kind": "kotmoe-checkpoint", "path": km["checkpoints"][0]["path"], "save": False}).json()
+        assert imp["spec"]["origin"]["design"] == "kotmoe-gen"
+    assert c.post(f"{L}/import", json={"kind": "kotmoe-checkpoint", "path": str(out)}).status_code == 400
+    assert c.post(f"{L}/systune/bench", json={"kind": "memory"}).status_code == 400
+    assert c.post(f"{L}/systune/train", json={"kind": "transfer"}).status_code == 400       # nothing measured yet
+    for kind in ("transfer", "llm", "memory", "stability"):
+        assert c.get(f"{L}/systune/advice", params={"kind": kind, "src": str(tmp_path), "dst": str(tmp_path), "model": "me/tiny:q4"}).status_code == 200
+    assert c.get(f"{L}/systune/advice", params={"kind": "weather"}).status_code == 400
+    assert set(c.get(f"{L}/systune").json()["models"]) == {"transfer", "llm", "memory", "stability"}
+    telemetry.record(telemetry.sample())
+    assert c.get(f"{L}/telemetry", params={"seconds": 60}).json()["stats"]["samples"] == 1
+    assert len(c.get(f"{L}/telemetry/hw").json()["topology"]) >= 1
+    k = interop.kestrion_status()
+    assert isinstance(k, dict)
+
+
+def test_the_agents_tools_run_against_real_files(home, tmp_path):
+    import asyncio
+    from bot.agent_runtime import toolspec
+    import bot.localai.tools  # noqa: F401  registers
+
+    def call(name, inp):
+        return asyncio.run(toolspec._registered[name][2](inp))
+
+    g = write_gguf(tmp_path / "w" / "t.gguf")
+    assert '"name": "me/t:q4"' in call("localai_models", {"action": "import", "name": "me/t:q4", "path": str(g)})
+    assert "\"name\": \"me/r:q4\"" in call("localai_models", {"action": "reference", "name": "me/r:q4", "path": str(g)})
+    assert '"copied": true' in call("localai_models", {"action": "copy", "name": "me/t:q4", "destination": "me/c:q4"})
+    assert "me/m:v1" in call("localai_models", {"action": "create", "name": "me/m:v1", "modelfile": "FROM me/t:q4"})
+    assert '"deleted": true' in call("localai_models", {"action": "delete", "name": "me/c:q4"})
+    assert call("localai_models", {"action": "fly", "name": "x"}).startswith("Error: ValueError")
+    st = json.loads(call("localai_status", {}))
+    assert {m["name"] for m in st["models"]} == {"me/t:q4", "me/r:q4", "me/m:v1"}
+    assert "found" in json.loads(call("localai_discover", {}))
+    assert "no training run" in call("localai_train", {"action": "stop", "run": "19990101-000000"}) or \
+        call("localai_train", {"action": "stop", "run": "19990101-000000"}).startswith("Error")
+    assert call("localai_train", {"action": "dance"}).startswith("Error: ValueError")
+    assert "no such data file" in call("localai_train", {"action": "start", "base": "x", "data": [str(tmp_path / "none.jsonl")]}) or \
+        "not set up" in call("localai_train", {"action": "start", "base": "x", "data": [str(tmp_path / "none.jsonl")]})
+    d = json.loads(call("lab_design", {"spec": {"input": {"kind": "features", "size": 8}, "layers": [{"op": "linear", "out": 2}]}}))
+    assert d["stats"]["params"] == 18
+    assert call("lab_design", {"spec": {"input": {"kind": "features", "size": 8}, "layers": [{"op": "nope"}]}}).startswith("Error")
+    assert "designs" in json.loads(call("lab_status", {}))
+    from bot.neurallab import interop
+    out = interop.to_bbir({"name": "n", "input": {"kind": "features", "size": 4}, "layers": [{"op": "linear", "out": 2}]},
+                          tmp_path / "n.bbir.edn")
+    assert "parameters 10" in json.loads(call("lab_import", {"kind": "brainbuilder", "path": str(out), "name": "from-bb"}))["text"]
+    assert call("lab_import", {"kind": "onnx"}).startswith("Error: ValueError")
+    assert call("lab_train", {"spec": {"input": {"kind": "features", "size": 4}, "layers": [{"op": "linear", "out": 1}]},
+                              "data": {"path": str(tmp_path / "none.npz")}}).startswith("Error")
+    for action, extra in (("status", {}), ("advise_copy", {"src": str(tmp_path), "dst": str(tmp_path), "size_gb": 0.001}),
+                          ("advise_llm", {"model": "me/t:q4"}), ("forecast_memory", {}), ("cpu_policy", {})):
+        assert not call("lab_systune", {"action": action, **extra}).startswith("Error"), action
+    assert "measurements so far" in call("lab_systune", {"action": "train", "kind": "llm"})
+    assert call("lab_systune", {"action": "sing"}).startswith("Error: ValueError")
+
+
+def test_sizes_must_be_whole_and_positive():
+    from bot.neurallab import spec
+    base = {"input": {"kind": "features", "size": 8}}
+    for bad in (0, -3, 2.5, "8", True):
+        with pytest.raises(spec.SpecError, match="whole number of at least 1"):
+            spec.validate({**base, "layers": [{"op": "linear", "out": bad}]})
+    with pytest.raises(spec.SpecError, match="experts"):
+        spec.validate({**base, "layers": [{"op": "moe", "experts": 0, "hidden": 4}]})
+    assert spec.validate({**base, "layers": [{"op": "linear", "out": 4.0}]})["stats"]["params"] == 36
+
+
+def test_pulls_resume_verify_and_skip_what_is_there(home, tmp_path, monkeypatch):
+    """Ollama's registry API and a plain URL, served by a stand-in that honours Range requests: blobs land under their
+    digests, an interrupted download continues where it stopped, a damaged one is refused, shared blobs are skipped."""
+    import hashlib
+
+    import httpx
+
+    from bot.localai import models, pull
+    from bot.localai.paths import LocalAIError
+    weights = write_gguf(tmp_path / "src.gguf", arch="qwen2", pad=300_000).read_bytes()
+    config = json.dumps({"model_format": "gguf", "model_family": "qwen2"}).encode()
+    blobs = {"sha256:" + hashlib.sha256(b).hexdigest(): b for b in (weights, config)}
+    wd, cd = list(blobs)
+    manifest = {"schemaVersion": 2, "mediaType": models.MANIFEST_MT, "config": {"digest": cd, "size": len(config),
+                "mediaType": "application/vnd.docker.container.image.v1+json"},
+                "layers": [{"digest": wd, "size": len(weights), "mediaType": "application/vnd.ollama.image.model"}]}
+    served = {"ranges": [], "damage": False}
+
+    def registry(req: httpx.Request) -> httpx.Response:
+        p = req.url.path
+        if p == "/v2/library/tiny/manifests/1b":
+            return httpx.Response(200, json=manifest)
+        if p.startswith("/v2/library/") and "/manifests/" in p:
+            return httpx.Response(404, json={"errors": [{"code": "MANIFEST_UNKNOWN"}]})
+        body = blobs.get(p.rsplit("/", 1)[-1]) if "/blobs/" in p else (weights if p == "/files/tiny.gguf" else None)
+        if body is None:
+            return httpx.Response(404)
+        if served["damage"]:
+            body = body[:-1] + b"X"
+        rng = req.headers.get("range")
+        served["ranges"].append(rng)
+        if rng:
+            start = int(rng.split("=")[1].rstrip("-"))
+            return httpx.Response(206, content=body[start:], headers={"content-length": str(len(body) - start)})
+        return httpx.Response(200, content=body, headers={"content-length": str(len(body))})
+    monkeypatch.setattr(pull, "_TRANSPORT", httpx.MockTransport(registry))
+
+    part = models.blob_path(wd).with_name(models.blob_path(wd).name + "-partial")    # an earlier, interrupted pull
+    part.parent.mkdir(parents=True, exist_ok=True)
+    part.write_bytes(weights[:100_000])
+    seen = []
+    out = pull.pull("tiny:1b", seen.append)
+    assert out == {"name": "tiny:1b", "layers": 1, "size": len(weights)} and seen[-1] == {"status": "success"}
+    assert "bytes=100000-" in served["ranges"] and models.blob_path(wd).read_bytes() == weights
+    assert models.resolve("tiny:1b")["weights"] == str(models.blob_path(wd))
+    served["ranges"].clear()
+    pull.pull("tiny:1b")                                              # everything already here: nothing downloaded
+    assert served["ranges"] == []
+    with pytest.raises(LocalAIError, match="file does not exist"):
+        pull.pull("nothing:1")
+    # a plain URL, with its expected digest
+    got = pull.pull_url("https://models.example/files/tiny.gguf", "url/tiny:q4", sha256=wd.split(":")[1])
+    assert got["name"] == "url/tiny:q4" and got["digest"].endswith(wd.split(":")[1])
+    with pytest.raises(LocalAIError, match="does not match"):
+        pull.pull_url("https://models.example/files/tiny.gguf", "url/bad:q4", sha256="0" * 64)
+    with pytest.raises(LocalAIError, match="HTTP 404"):
+        pull.pull_url("https://models.example/files/missing.gguf", "url/none:q4")
+    served["damage"] = True                                           # a damaged download is refused, not stored
+    models.delete("tiny:1b")
+    models.prune()
+    with pytest.raises(LocalAIError, match="digest mismatch"):
+        pull.pull("tiny:1b")
+    assert not models.blob_path(cd).exists() and models.blob_path(wd).exists()     # the weights are still url/tiny's
+
+
+def test_the_tree_cache_layout_is_listed_and_laid_out_on_use(home, tmp_path, monkeypatch):
+    """Some downloaders write a Hugging Face cache with trees/<rev>.json and blobs but no snapshots/ folder: it is
+    listed without touching it, and laid out as a standard snapshot (hard links) when a run needs it."""
+    import hashlib
+    from bot.localai import discover
+    hub = tmp_path / "hf" / "hub"
+    repo = hub / "models--acme--tiny-llm"
+    (repo / "blobs").mkdir(parents=True)
+    (hub / "blobs" / "ab").mkdir(parents=True)
+    files = {"config.json": b'{"model_type": "llama"}', "tokenizer.json": b"{}", "model.safetensors": b"\0" * 4096}
+    tree = {}
+    for name, data in files.items():
+        if name.endswith(".safetensors"):                       # a large file: kept in the shared, content-addressed store
+            sha = "ab" + hashlib.sha256(data).hexdigest()[2:]
+            (hub / "blobs" / "ab" / sha).write_bytes(data)
+            tree[name] = {"size": len(data), "blob_id": "x" * 40, "lfs_sha256": sha}
+        else:
+            bid = hashlib.sha1(data).hexdigest()
+            (repo / "blobs" / bid).write_bytes(data)
+            tree[name] = {"size": len(data), "blob_id": bid}
+    tree["README.md"] = {"size": 5, "blob_id": "0" * 40}       # not in the cache: left out
+    (repo / "trees").mkdir()
+    (repo / "trees" / "rev1.json").write_text(json.dumps({"format_version": 1, "files": tree}))
+    monkeypatch.setenv("HF_HUB_CACHE", str(hub))
+    found = [f for f in discover._scan_hf(hub, 50) if f.get("repo") == "acme/tiny-llm"]
+    assert found and found[0]["layout"] == "trees" and found[0]["tokenizer"] and found[0]["size"] == 4096
+    assert not (repo / "snapshots").exists()                       # listing never writes into the cache
+    made = discover.materialize_trees(repo)
+    snap = repo / "snapshots" / "rev1"
+    assert made == [snap] and sorted(p.name for p in snap.iterdir()) == ["config.json", "model.safetensors", "tokenizer.json"]
+    assert (snap / "model.safetensors").read_bytes() == files["model.safetensors"]
+    assert discover.materialize_trees(repo) == []                    # already laid out
+    assert discover._scan_hf(hub, 50)[0]["path"] == str(snap)

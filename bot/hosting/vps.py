@@ -14,6 +14,7 @@ Hosting page shows and the person confirms (the CLI asks). Agents cannot create 
 from __future__ import annotations
 
 import base64
+import re
 import secrets
 import time
 from pathlib import Path
@@ -93,9 +94,16 @@ class Cloud(_Http):
         return price
 
     def after_create(self, name: str, ip: str) -> dict:
+        """The SSH account for a server just created (and paid for): its name must be one accounts accept and unique,
+        or the server would exist with no way for ABP to reach it."""
         key, _ = keypair()
-        acc = accounts.add("ssh", f"{name} ({self.label})", {"host": ip, "user": "abp", "key_path": str(key), "web_root": "/var/www"})
-        return acc
+        clean = re.sub(r"[^A-Za-z0-9 ._-]+", "-", name).strip(" .-_")[:40] or "server"
+        base = f"{clean} on {self.label}"
+        taken = {a["name"].lower() for a in accounts.listing()}
+        label, n = base, 2
+        while label.lower() in taken:
+            label, n = f"{base} {n}", n + 1
+        return accounts.add("ssh", label, {"host": ip, "user": "abp", "key_path": str(key), "web_root": "/var/www"})
 
 
 class Hetzner(Cloud):

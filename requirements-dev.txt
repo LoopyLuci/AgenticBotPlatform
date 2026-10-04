@@ -8,3 +8,6 @@ pip-audit>=2.7
 ruff>=0.16
 pytest-xdist>=3.6
 pytest-cov>=6.0
+# real SSH and FTP servers for the hosting deploy tests (tests/test_hosting_deploy.py)
+asyncssh>=2.17
+pyftpdlib>=2.0

@@ -51,7 +51,8 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     "ssh": {"label": "Server over SSH (VPS or your own machine)", "caps": ["server", "deploy"], "fields": [
         ("host", "Host name or IP", False, True), ("port", "Port (22)", False, False), ("user", "User", False, True),
         ("key_path", "Private key file (empty: your SSH agent / ~/.ssh defaults)", False, False),
-        ("web_root", "Where sites live on it (/var/www)", False, False)], "help": ""},
+        ("web_root", "Where sites live on it (/var/www)", False, False),
+        ("known_hosts", "Known-hosts file for this server (empty: ~/.ssh/known_hosts)", False, False)], "help": ""},
     "ftp": {"label": "FTP / FTPS (shared web hosting)", "caps": ["deploy"], "fields": [
         ("host", "Host", False, True), ("port", "Port (21)", False, False), ("user", "User", False, True),
         ("password", "Password", True, True), ("tls", "Use FTPS (yes/no, default yes)", False, False),

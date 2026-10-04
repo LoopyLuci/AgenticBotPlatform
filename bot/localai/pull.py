@@ -14,7 +14,7 @@ import hashlib
 import os
 import time
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 
 import httpx
 
@@ -23,6 +23,7 @@ from bot.localai.paths import LocalAIError
 
 Progress = Callable[[dict], None]
 UA = {"User-Agent": "ABP-LocalAI/1 (ollama-compatible)"}
+_TRANSPORT: Optional[httpx.BaseTransport] = None     # a registry's stand-in in tests
 
 
 def _registry(host: str) -> str:
@@ -79,7 +80,7 @@ def pull(name: str, progress: Progress = lambda s: None, insecure: bool = False)
     base = _registry(host)
     accept = {"Accept": f"{models.MANIFEST_MT}, application/vnd.oci.image.manifest.v1+json", **UA}
     progress({"status": "pulling manifest"})
-    with httpx.Client(timeout=httpx.Timeout(60, connect=20), verify=not insecure) as c:
+    with httpx.Client(timeout=httpx.Timeout(60, connect=20), verify=not insecure, transport=_TRANSPORT) as c:
         r = c.get(f"{base}/v2/{ns}/{model}/manifests/{tag}", headers=accept, follow_redirects=True)
         if r.status_code == 404:
             raise LocalAIError(f"pull model manifest: file does not exist ({models.canonical(name)} is not in {host})")
@@ -110,7 +111,7 @@ def pull_url(url: str, name: str, progress: Progress = lambda s: None, sha256: s
     dest = tmp_dir / (url.rstrip("/").rsplit("/", 1)[-1].split("?")[0] or "model.gguf")
     part = dest.with_name(dest.name + "-partial")
     have = part.stat().st_size if part.exists() else 0
-    with httpx.Client(timeout=httpx.Timeout(60, connect=20)) as c:
+    with httpx.Client(timeout=httpx.Timeout(60, connect=20), transport=_TRANSPORT) as c:
         with c.stream("GET", url, headers={**UA, **({"Range": f"bytes={have}-"} if have else {})}, follow_redirects=True) as r:
             if r.status_code >= 400 and r.status_code != 416:
                 raise LocalAIError(f"download failed: HTTP {r.status_code}")
