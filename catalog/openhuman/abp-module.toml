@@ -1,0 +1,50 @@
+# OpenHuman as an ABP module: an overlay (ABP keeps this file; the checkout stays exactly upstream).
+# Kept by hand. Operations: abp-ops.toml next to this file.
+#
+# LICENCE: OpenHuman is GPL-3.0-only (tinyhumansai/openhuman). Nothing of its source is copied into
+# ABP: these two files only describe how to build and drive the upstream program. Running it as a
+# separate process over HTTP keeps ABP's own code under ABP's licence; linking or embedding the core
+# would not, which is why this overlay only ever starts the binary.
+
+[module]
+id = "openhuman"
+name = "OpenHuman"
+repo = "https://github.com/tinyhumansai/openhuman.git"
+branch = "main"
+api = 1
+area = "agents"
+description = "OpenHuman, a GPL-3.0 agent harness with a Rust core: its JSON-RPC server on port 7788, its read-only stdio MCP server, and the core CLI's agent, memory and raw-call operations."
+
+[checkout]
+marker = ["Cargo.toml", "rust-toolchain.toml"]
+
+[toolchain]
+# rust-toolchain.toml pins 1.96.1 (rusqlite 0.40 needs cfg_select!); the desktop shell also wants
+# Node 24 (app/package.json engines), pnpm 10.10.0 and CMake for native dependencies.
+require = [{ tool = "cargo", min = "1.96.1", url = "https://rustup.rs" }, { tool = "cmake", min = "3.16", url = "https://cmake.org/download/" }, { tool = "git", url = "https://git-scm.com/downloads" }, { tool = "node", min = "24.0.0", url = "https://nodejs.org/en/download" }, { tool = "pnpm", url = "https://pnpm.io/installation" }]
+
+[build]
+# The core's crates path-depend on the vendored tiny* submodules, so they come first. CARGO_TARGET_DIR
+# already points at X:/cargo-target, so the build cache never lands on C:. The desktop app (pnpm build,
+# a Tauri bundle) is deliberately not part of this: it needs WebView2 and its own Cargo world.
+steps = [
+  ["git", "submodule", "update", "--init", "--recursive", "vendor/"],
+  ["cargo", "build", "--release", "--manifest-path", "Cargo.toml", "-p", "openhuman-cli", "--bin", "openhuman-core"],
+]
+outputs = ["{target}/release/openhuman-core{exe}"]
+# {target} is ABP's build cache for this module, so cargo is told to put its output exactly where the
+# operations look for it. The machine-wide CARGO_TARGET_DIR (X:/cargo-target) applies to ad-hoc
+# builds outside ABP; inside a build job this line is what counts.
+env = { CARGO_TARGET_DIR = "{target}" }
+
+[hub]
+start = ["{abp_python}", "-m", "abp_modkit", "serve", "--spec", "{overlay}/abp-ops.toml", "--project", "{repo}", "--home", "{data}", "--var", "target={target}"]
+control_file = "{data}/control.json"
+start_timeout_s = 30
+
+[mcp]
+stdio = ["{abp_python}", "-m", "abp_modkit", "mcp", "--home", "{data}"]
+
+[ui]
+panel = "operations"
+tui = ["{target}/release/openhuman-tui{exe}"]   # the terminal client (its own workspace crate)

@@ -1,0 +1,116 @@
+# NOEMA's operations for ABP, kept by hand (an overlay: they run against the owner's own project).
+# Format: the header of ABP's abp_modkit/spec.py.
+#
+# PYTHON: the commands use the training environment's interpreter, E:/ABP-LocalAI/venv-train/Scripts/python.exe,
+# because torch lives there (2.11.0+rocm7.13.0 on Python 3.11.9) and not in ABP's own environment.
+# src/ is put on PYTHONPATH rather than installed, so nothing is written into the project.
+# NOEMA caps its own threads before torch is imported (OMP/MKL/NOEMA_THREADS=4); it is repeated here so
+# every torch process this overlay starts is capped too. This host hard-crashes under all-core load.
+
+[service]
+id = "noema"
+name = "NOEMA"
+description = "NOEMA, an experimental byte-level language model (Python + PyTorch): its 128-test suite, text generation from checkpoints/phase3.pt, and its telemetry dashboard and MCP surface on port 8000."
+base_url = "http://127.0.0.1:8000"
+health = "/api/health"
+start = ["E:/ABP-LocalAI/venv-train/Scripts/python.exe", "-m", "noema.dashboard", "--host", "127.0.0.1", "--port", "8000", "--config", "configs/tiny_8m.yaml", "--ckpt", "checkpoints/phase3.pt"]
+env = { PYTHONPATH = "{project}/src", PYTHONIOENCODING = "utf-8", OMP_NUM_THREADS = "4", MKL_NUM_THREADS = "4", NOEMA_THREADS = "4" }
+ready_timeout_s = 300
+auth = "none"
+web = "/"
+
+[[op]]
+id = "status.health"
+kind = "http"
+method = "GET"
+path = "/api/health"
+summary = "Is the dashboard up? (open, loopback only)"
+mutating = false
+
+[[op]]
+id = "status.model"
+kind = "http"
+method = "GET"
+path = "/api/model"
+summary = "The model the dashboard loaded: parameters, config, whether weights are trained"
+mutating = false
+
+[[op]]
+id = "status.checkpoints"
+kind = "http"
+method = "GET"
+path = "/api/checkpoints"
+summary = "The checkpoints on disk, with their sizes and validation results"
+mutating = false
+
+[[op]]
+id = "status.training"
+kind = "http"
+method = "GET"
+path = "/api/train/status"
+summary = "The background training run the dashboard owns: state, step, loss"
+mutating = false
+
+[[op]]
+id = "telemetry.get"
+kind = "http"
+method = "GET"
+path = "/api/telemetry"
+summary = "Activation, attention and weight telemetry from the last forward pass"
+mutating = false
+
+[[op]]
+id = "generate.run"
+kind = "cmd"
+summary = "Generate text from a checkpoint with the project's own CLI (raw bytes, repr-printed; VRAM after)"
+argv = ["E:/ABP-LocalAI/venv-train/Scripts/python.exe", "-m", "noema.cli.main", "--config", "configs/tiny_8m.yaml", "--ckpt", "{ckpt}", "--prompt", "{prompt}", "--max-new", "{max_new}"]
+timeout_s = 1800
+mutating = false
+env = { PYTHONPATH = "{project}/src", PYTHONIOENCODING = "utf-8", OMP_NUM_THREADS = "4", MKL_NUM_THREADS = "4", NOEMA_THREADS = "4" }
+[op.inputs]
+ckpt = { type = "string", default = "checkpoints/phase3.pt", description = "checkpoint to load; empty for random weights" }
+prompt = { type = "string", default = "Once upon a time", description = "the prompt, as text" }
+max_new = { type = "string", default = "32", description = "how many new bytes to roll out" }
+
+[[op]]
+id = "generate.api"
+kind = "http"
+method = "POST"
+path = "/api/generate"
+summary = "Generate through the running dashboard (same decode path as generate.run, JSON back); body: {prompt_text, max_new, temperature, top_k, seed}"
+
+[[op]]
+id = "analysis.run"
+kind = "http"
+method = "POST"
+path = "/api/analysis"
+summary = "Patch segmentation and per-layer statistics through the running dashboard; body: {kind: activations|coconut|gears, text or hex}"
+
+[[op]]
+id = "test.run"
+kind = "cmd"
+summary = "NOEMA's own suite (pytest tests/); 128 tests, a few minutes on CPU"
+argv = ["E:/ABP-LocalAI/venv-train/Scripts/python.exe", "-m", "pytest", "tests/", "-q", "{filter}"]
+timeout_s = 3600
+background = true
+mutating = false
+env = { PYTHONPATH = "{project}/src", PYTHONIOENCODING = "utf-8", OMP_NUM_THREADS = "4", MKL_NUM_THREADS = "4", NOEMA_THREADS = "4" }
+[op.inputs]
+filter = { type = "string", description = "pytest -k expression; empty for the whole suite" }
+
+[[op]]
+id = "info.checkpoints"
+kind = "cmd"
+summary = "The checkpoints on disk with their sizes and mtimes, without starting the dashboard"
+argv = ["E:/ABP-LocalAI/venv-train/Scripts/python.exe", "-c", "import json,os,pathlib;d=pathlib.Path('checkpoints');print(json.dumps([{'name':p.name,'bytes':p.stat().st_size} for p in sorted(d.glob('*.pt'))]))"]
+timeout_s = 120
+mutating = false
+env = { PYTHONPATH = "{project}/src", PYTHONIOENCODING = "utf-8" }
+
+[[op]]
+id = "mcp.tools"
+kind = "http"
+method = "GET"
+path = "/api/mcp"
+summary = "The MCP tools the dashboard exposes to agents, and which servers back them"
+mutating = false

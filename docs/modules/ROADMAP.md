@@ -378,6 +378,15 @@ holds their `abp-module.toml` + `abp-ops.toml` on ABP's side, and the checkout s
 | MH-D | Assisted setup through GEN (§5.12): descriptions and curated summaries from the README and code, typed inputs for the most used operations, a generated panel for the module, previewed before it is kept | The Hub proposes, the user picks between variants, nothing is kept unseen |
 | MH-E | Sharing: overlays published to a catalog repo; installing a catalog entry clones upstream and applies its overlay | Another machine installs an overlay module from the catalog |
 
+**The catalog ABP ships** (`catalog/<folder>/`, each two files and nothing else; the checkout stays upstream):
+
+| Folder | Upstream | What ABP gets from it |
+|---|---|---|
+| `9router` | [decolua/9router](https://github.com/decolua/9router) (MIT) | Its OpenAI-compatible router on 20128 as an ABP **provider** (`/v1`), the dashboard in a pane, health/version/auth status, `GET /v1/models`, providers, usage, combos, its own vitest suite and its CLI's `connect` |
+| `mesh-llm` | [Mesh-LLM/mesh-llm](https://github.com/Mesh-LLM/mesh-llm) (Apache-2.0) | Its OpenAI API on 9337 as an ABP **provider**, the web console on 3131, plus its CLI: `status`, `doctor`, `gpus`, `models installed/recommended/search/show/download/delete`, `runtime list`, `discover` |
+| `openhuman` | [tinyhumansai/openhuman](https://github.com/tinyhumansai/openhuman) (**GPL-3.0-only**) | The Rust core's JSON-RPC server on 7788 (health, the full method schema), the core CLI's agent / memory / raw-call families, its Rust test suite, and its from-source build. GPL-3.0: ABP runs the binary and copies none of its code, so no provider is offered (its `/v1` is behind the core's per-launch bearer) |
+| `noema` | `X:/Projects/NOEMA` (the owner's own, not a git repo) | Its 128-test suite, generation from `checkpoints/phase3.pt`, and its telemetry dashboard and MCP surface on 8000, run with the training environment's interpreter (the one that has torch) |
+
 ### 5.11 Computer vision for every agent (added 2026-09-30)
 
 OpenCV's 14 repos are modules (overlays, MH-A), and vision is built into ABP itself (`bot/vision`), so any agent,
@@ -573,6 +582,7 @@ M0 framework ─┬─> R (all repos; done alongside M0, since it touches only t
 | MH-A | **done** 2026-09-30 | `ceb09f6`: overlays (`catalog/`, `data/module-overlays/`, `modules.overlay_dirs`), `adopt --overlay`, `check --project`; CMake detection. `c98fedf`: modules' own Python environments (`project.python_setup`, in the module's data folder). |
 | MH-B | **done** 2026-09-30 | `47ec447`: `add_from_url` (API, `module_add` tool, `abp modules add`, the Modules page), tested against a real GitHub repo end to end. |
 | MH-C…E | todo | Refresh with a diff of operations; assisted setup through Studio; a shared overlay catalog repo. |
+| MH-F (catalog) | **part** 2026-10-03 | Four more catalog overlays, each passing `abp_modkit check --project` with its checkout's `git status` clean: `9router` (its router on 20128 as a provider, verified live: `/api/health`, `/api/version`, `/v1/models`), `mesh-llm` (its API on 9337 as a provider, console on 3131, CLI read from `mesh-llm --help`), `openhuman` (GPL-3.0-only, so ABP runs the binary and copies none of its code; no provider, its `/v1` is behind the core's per-launch bearer), `noema` (the owner's own project, not a git repo: its suite, its checkpoint generation, its dashboard on 8000 — verified live through a real hub, generating and analysing text). Findings: `9router` needs `NODE_OPTIONS=--max-old-space-size` for `next build` (4 GB heap OOMs); its `npm run dev` regenerates `CLAUDE.md` in the checkout; `NOEMA`'s shipped `checkpoints/phase3.pt` no longer loads into the current runtime (strict key mismatch), while its dashboard's non-strict load does. |
 | CV-A | **done** 2026-09-30 | `c98fedf`: 14 OpenCV overlays, each passing `abp_modkit check`; checkouts in `E:/Projects/OpenCV` untouched. |
 | CV-B, CV-C | **done** 2026-09-30 | `04ffb2d` (+ `47ec447`): `bot/vision`, the vision tools, the Vision page, `/api/vision`, `abp vision`, MCP. Real models on OpenCV's own images: faces, objects (dog, bicycle, truck), OCR of UI text near-perfect after word splitting, QR, people. OpenCV 5 findings: its new DNN engine ignores GPU targets, the wheel's OpenCL kernels fail on AMD, Caffe is gone (WeChat QR runs without its CNN files). |
 | CV-D | **part** | Done: text and templates on the screen with `screen_center`; Studio's screenshot diff. Next: the screen-element model (AM "screen"). |

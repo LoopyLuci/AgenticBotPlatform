@@ -1,0 +1,42 @@
+# NOEMA as an ABP module: an overlay (ABP keeps this file; the checkout stays exactly upstream).
+# Kept by hand. Operations: abp-ops.toml next to this file.
+#
+# X:/Projects/NOEMA is the owner's own experimental project and not a git repository, so there is
+# nothing to publish; an overlay is the only way to describe it. Nothing is ever written into that
+# folder by this overlay: the operations run its tests, generate from a checkpoint and serve its
+# dashboard, and the hub's own files live in ABP's data folder.
+#
+# PYTHON: NOEMA needs torch. The interpreter used below is the training environment,
+# E:/ABP-LocalAI/venv-train/Scripts/python.exe (Python 3.11.9, torch 2.11.0+rocm7.13.0), because
+# ABP's own environment has no torch and installing one there is not this module's business.
+# Everything in NOEMA caps its own threads (OMP/MKL/NOEMA_THREADS=4) before importing torch: this
+# host raises fatal WHEA machine-check exceptions under sustained all-core load.
+
+[module]
+id = "noema"
+name = "NOEMA"
+repo = "local: X:/Projects/NOEMA"
+branch = "main"
+api = 1
+area = "models"
+description = "NOEMA, an experimental byte-level language model (Python + PyTorch): its 128-test suite, text generation from checkpoints/phase3.pt, and its telemetry dashboard and MCP surface on port 8000."
+
+[checkout]
+marker = ["pyproject.toml", "README.md"]
+
+[toolchain]
+# pyproject.toml: requires-python >= 3.11, torch >= 2.4, pyyaml, numpy, scipy;
+# the dashboard adds fastapi and uvicorn (the optional `dashboard` extra).
+require = [{ tool = "python", min = "3.11", url = "https://www.python.org/downloads/" }, { tool = "cargo", min = "1.75", url = "https://rustup.rs" }]
+
+[hub]
+start = ["{abp_python}", "-m", "abp_modkit", "serve", "--spec", "{overlay}/abp-ops.toml", "--project", "{repo}", "--home", "{data}", "--var", "target={target}"]
+control_file = "{data}/control.json"
+start_timeout_s = 30
+
+[mcp]
+stdio = ["{abp_python}", "-m", "abp_modkit", "mcp", "--home", "{data}"]
+
+[ui]
+panel = "operations"
+web = "service"   # its dashboard, once the service runs
