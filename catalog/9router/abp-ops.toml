@@ -1,0 +1,142 @@
+# 9Router's operations for ABP, kept by hand (an overlay: they run against the upstream checkout).
+# Format: the header of ABP's abp_modkit/spec.py.
+# Its dashboard and its OpenAI-compatible API are one Next server: PORT=20128 for both,
+# the dashboard at /dashboard and the API under /v1. Secrets go through service.set_secret
+# (JWT_SECRET, INITIAL_PASSWORD); they are never written into this file.
+
+[service]
+id = "m-9router"
+name = "9Router"
+description = "9Router, an OpenAI-compatible AI router on port 20128: it fronts 40+ providers and 100+ models with quota tracking, round-robin accounts and subscription-to-free fallback, and its dashboard shows in ABP."
+base_url = "http://127.0.0.1:20128"
+health = "/api/health"
+start = ["npm", "run", "start"]
+ready_timeout_s = 180
+auth = "none"
+web = "/dashboard"
+openai = "/v1"
+
+[[op]]
+id = "status.health"
+kind = "http"
+method = "GET"
+path = "/api/health"
+summary = "Is the router up? (open, no key: {\"ok\": true})"
+mutating = false
+
+[[op]]
+id = "status.version"
+kind = "http"
+method = "GET"
+path = "/api/version"
+summary = "The running version and whether a newer one is published"
+mutating = false
+
+[[op]]
+id = "status.auth"
+kind = "http"
+method = "GET"
+path = "/api/auth/status"
+summary = "How the dashboard is protected: password, OIDC or SAML, and whether a password exists yet"
+mutating = false
+
+[[op]]
+id = "models.list"
+kind = "http"
+method = "GET"
+path = "/v1/models"
+summary = "Every model the connected providers offer (OpenAI list); needs no API key unless REQUIRE_API_KEY is on"
+mutating = false
+
+[[op]]
+id = "models.info"
+kind = "http"
+method = "GET"
+path = "/v1/models/info"
+summary = "Details of one model (capabilities, context window, pricing); id is a model id from models.list"
+mutating = false
+
+[[op]]
+id = "keys.list"
+kind = "http"
+method = "GET"
+path = "/api/keys"
+summary = "The gateway's own API keys (dashboard session needed)"
+mutating = false
+
+[[op]]
+id = "usage.get"
+kind = "http"
+method = "GET"
+path = "/api/usage"
+summary = "Spend and request counts per provider and model (dashboard session needed)"
+mutating = false
+
+[[op]]
+id = "providers.list"
+kind = "http"
+method = "GET"
+path = "/api/providers"
+summary = "Connected providers and the state of their credentials (dashboard session needed; values are never returned)"
+mutating = false
+
+[[op]]
+id = "combos.list"
+kind = "http"
+method = "GET"
+path = "/api/combos"
+summary = "Routing combos: named groups of models with a fallback order (dashboard session needed)"
+mutating = false
+
+[[op]]
+id = "build.dev"
+kind = "cmd"
+summary = "Run the Next dev server (port 20127, hot reload; not the production server). Note: next dev regenerates CLAUDE.md in the checkout, so git status shows it modified afterwards"
+argv = ["npm", "run", "dev"]
+timeout_s = 86400
+background = true
+extra_args = true
+
+[[op]]
+id = "build.production"
+kind = "cmd"
+summary = "Build the production bundle (next build --webpack plus the standalone asset copy); long, and needs more than Node's default heap"
+argv = ["npm", "run", "build"]
+timeout_s = 7200
+background = true
+extra_args = true
+env = { NODE_OPTIONS = "--max-old-space-size=12288" }
+
+[[op]]
+id = "test.run"
+kind = "cmd"
+summary = "9Router's own vitest suite (tests/, after test.install); a filter is a substring of a test path, empty for all"
+argv = ["npx", "--prefix", "tests", "vitest", "run", "--reporter=dot", "{filter}"]
+timeout_s = 3600
+mutating = false
+[op.inputs]
+filter = { type = "string", description = "substring of a test file or name; empty for the whole suite" }
+
+[[op]]
+id = "test.install"
+kind = "cmd"
+summary = "Install 9Router's test dependencies (tests/ has its own package.json with vitest)"
+argv = ["npm", "install", "--prefix", "tests", "--no-audit", "--no-fund"]
+timeout_s = 900
+background = true
+
+[[op]]
+id = "cli.connect"
+kind = "cmd"
+summary = "Point Claude Code at a 9Router server (its CLI's connect command; the local server is the default)"
+argv = ["node", "cli/cli.js", "connect", "{server}"]
+timeout_s = 120
+[op.inputs]
+server = { type = "string", default = "http://127.0.0.1:20128", description = "the router's base URL" }
+
+[[op]]
+id = "git.update"
+kind = "cmd"
+summary = "Update the checkout from upstream (fast-forward only; nothing local is ever overwritten)"
+argv = ["git", "-C", "{project}", "pull", "--ff-only"]
+timeout_s = 1800

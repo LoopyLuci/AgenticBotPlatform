@@ -1,0 +1,48 @@
+# 9Router as an ABP module: an overlay (ABP keeps this file; the checkout stays exactly upstream).
+# Kept by hand. Operations: abp-ops.toml next to this file.
+# The id is m-9router because ABP's manifest ids start with a letter and abp_modkit's own slug() rule
+# mints exactly this for a project whose name starts with a digit; the catalog folder keeps the upstream name.
+# 9Router is MIT-licensed (decolua/9router); nothing of its source is copied into ABP.
+
+[module]
+id = "m-9router"
+name = "9Router"
+repo = "https://github.com/decolua/9router.git"
+branch = "master"
+api = 1
+area = "models"
+description = "9Router, an OpenAI-compatible AI router on port 20128: it fronts 40+ providers and 100+ models with quota tracking, round-robin accounts and subscription-to-free fallback, and its dashboard shows in ABP."
+
+[checkout]
+marker = ["package.json", "custom-server.js"]
+
+[toolchain]
+# node >= 18 is what cli/package.json and tests/package.json declare; npm ships with Node.
+require = [{ tool = "node", min = "18.0.0", url = "https://nodejs.org/en/download" }, { tool = "git", url = "https://git-scm.com/downloads" }]
+
+[build]
+# npm install and next build in the checkout. The npm cache is already on X: through
+# NPM_CONFIG_CACHE, so nothing lands on C:. next build needs more than Node's default 4 GB heap on
+# this machine (it OOMs at ~6 min); the upstream README notes the same and asks for swap instead.
+steps = [
+  ["npm", "install", "--no-audit", "--no-fund"],
+  ["npm", "run", "build"],
+]
+outputs = [".next/standalone/server.js", ".next/BUILD_ID"]
+env = { NODE_OPTIONS = "--max-old-space-size=12288" }
+
+[hub]
+start = ["{abp_python}", "-m", "abp_modkit", "serve", "--spec", "{overlay}/abp-ops.toml", "--project", "{repo}", "--home", "{data}", "--var", "target={target}"]
+control_file = "{data}/control.json"
+start_timeout_s = 30
+
+[mcp]
+stdio = ["{abp_python}", "-m", "abp_modkit", "mcp", "--home", "{data}"]
+
+[ui]
+panel = "operations"
+web = "service"   # its dashboard, on the same Next server as the API
+
+[provider]
+# /v1 speaks OpenAI (chat/completions, responses, models); ABP offers it as a provider while it runs.
+openai = "service"

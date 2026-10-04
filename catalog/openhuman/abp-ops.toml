@@ -1,0 +1,169 @@
+# OpenHuman's operations for ABP, kept by hand (an overlay: they run against the upstream checkout).
+# Format: the header of ABP's abp_modkit/spec.py.
+#
+# OpenHuman is GPL-3.0-only: ABP runs its binary as a separate process and copies none of its code.
+# The commands below are the openhuman-core CLI (crates/openhuman-cli) that build.core produces.
+# The core's server also nests an OpenAI-compatible /v1, but every route there is behind the
+# per-launch bearer, so ABP is not offered it as a provider here; use auth = bearer-env to reach /rpc.
+# The bearer is written to {workspace}/core.token at startup: read it and store it with
+# service.set_secret under OPENHUMAN_CORE_TOKEN for the http operations to authenticate.
+
+[service]
+id = "openhuman"
+name = "OpenHuman"
+description = "OpenHuman, a GPL-3.0 agent harness with a Rust core: its JSON-RPC server on port 7788, its read-only stdio MCP server, and the core CLI's agent, memory and raw-call operations."
+base_url = "http://127.0.0.1:7788"
+health = "/health"
+start = ["{target}/release/openhuman-core{exe}", "run", "--host", "127.0.0.1", "--port", "7788", "--jsonrpc-only"]
+cwd = "."
+ready_timeout_s = 120
+auth = "bearer-env:OPENHUMAN_CORE_TOKEN"
+
+[[op]]
+id = "status.health"
+kind = "http"
+method = "GET"
+path = "/health"
+summary = "Is the core up, and which subsystems are healthy? (open, no token: 503 when a critical one is not)"
+mutating = false
+
+[[op]]
+id = "status.schema"
+kind = "http"
+method = "GET"
+path = "/schema"
+summary = "Every JSON-RPC method the core exposes, with its parameters (open, no token)"
+mutating = false
+
+[[op]]
+id = "agent.list"
+kind = "cmd"
+summary = "The agents the core has registered"
+argv = ["{target}/release/openhuman-core{exe}", "agent", "list", "--json"]
+timeout_s = 300
+mutating = false
+
+[[op]]
+id = "agent.prompt_size"
+kind = "cmd"
+summary = "Prompt size and tool-table size for one agent (empty for every registered agent)"
+argv = ["{target}/release/openhuman-core{exe}", "agent", "prompt-size", "--agent", "{agent}", "--json"]
+timeout_s = 300
+mutating = false
+[op.inputs]
+agent = { type = "string", description = "one agent's name (orchestrator, archivist, welcome); empty for every registered agent" }
+
+[[op]]
+id = "agent.dump_prompt"
+kind = "cmd"
+summary = "The full prompt one agent would send (agent is required; --json for machine-readable)"
+argv = ["{target}/release/openhuman-core{exe}", "agent", "dump-prompt", "--agent", "{agent}", "--json"]
+timeout_s = 300
+mutating = false
+[op.inputs]
+agent = { type = "string", required = true, description = "the agent to dump" }
+
+[[op]]
+id = "memory.documents"
+kind = "cmd"
+summary = "Documents in the memory tree (`memory list`); a namespace narrows it"
+argv = ["{target}/release/openhuman-core{exe}", "memory", "list", "--namespace", "{namespace}"]
+timeout_s = 600
+mutating = false
+[op.inputs]
+namespace = { type = "string", description = "a namespace from memory.namespaces; empty for all of them" }
+
+[[op]]
+id = "memory.query"
+kind = "cmd"
+summary = "Search one namespace of the memory tree (`memory query`)"
+argv = ["{target}/release/openhuman-core{exe}", "memory", "query", "--namespace", "{namespace}", "--query", "{query}", "--limit", "{limit}"]
+timeout_s = 600
+mutating = false
+[op.inputs]
+namespace = { type = "string", required = true, description = "a namespace from memory.namespaces" }
+query = { type = "string", required = true, description = "what to search for" }
+limit = { type = "string", default = "20", description = "how many hits to return" }
+
+[[op]]
+id = "memory.namespaces"
+kind = "cmd"
+summary = "The memory tree's namespaces (`memory ns`)"
+argv = ["{target}/release/openhuman-core{exe}", "memory", "ns"]
+timeout_s = 600
+mutating = false
+
+[[op]]
+id = "memory.graph"
+kind = "cmd"
+summary = "Query the PMAL usage graph (`memory graph`); namespace, subject and predicate narrow it"
+argv = ["{target}/release/openhuman-core{exe}", "memory", "graph", "--namespace", "{namespace}", "--subject", "{subject}"]
+timeout_s = 600
+mutating = false
+[op.inputs]
+namespace = { type = "string", description = "a namespace to narrow the query to; empty for the whole graph" }
+subject = { type = "string", description = "a canonical entity to walk from; empty for the whole graph" }
+
+[[op]]
+id = "memory.ingest"
+kind = "cmd"
+summary = "Ingest a document into the memory tree (`memory ingest`); path is relative to the checkout"
+argv = ["{target}/release/openhuman-core{exe}", "memory", "ingest", "{path}"]
+timeout_s = 3600
+background = true
+[op.inputs]
+path = { type = "string", required = true, description = "the document to ingest, inside the checkout" }
+
+[[op]]
+id = "rpc.call"
+kind = "cmd"
+summary = "Call one JSON-RPC method directly (`openhuman call --method`), bypassing the CLI's namespace parsing"
+argv = ["{target}/release/openhuman-core{exe}", "call", "--method", "{method}", "--params", "{params}"]
+timeout_s = 1800
+[op.inputs]
+method = { type = "string", required = true, description = "a method name from status.schema" }
+params = { type = "string", default = "{}", description = "the method's parameters, as a JSON object" }
+
+[[op]]
+id = "cli.help"
+kind = "cmd"
+summary = "The core CLI's own help: its subcommands and every controller namespace"
+argv = ["{target}/release/openhuman-core{exe}"]
+timeout_s = 120
+mutating = false
+
+[[op]]
+id = "build.core"
+kind = "cmd"
+summary = "Build openhuman-core from this checkout (release; needs the vendored tiny* submodules); long"
+argv = ["cargo", "build", "--release", "--manifest-path", "Cargo.toml", "-p", "openhuman-cli", "--bin", "openhuman-core"]
+timeout_s = 14400
+background = true
+env = { CARGO_TARGET_DIR = "{target}" }
+
+[[op]]
+id = "build.submodules"
+kind = "cmd"
+summary = "Fetch the vendored tiny* crates the core path-depends on (git submodule update --init --recursive)"
+argv = ["git", "submodule", "update", "--init", "--recursive", "vendor/"]
+timeout_s = 3600
+background = true
+
+[[op]]
+id = "test.core"
+kind = "cmd"
+summary = "OpenHuman's Rust test suite across its workspace (cargo test); a filter is a substring of a test name, empty for all"
+argv = ["cargo", "test", "--manifest-path", "Cargo.toml", "--workspace", "--", "{filter}"]
+timeout_s = 14400
+background = true
+mutating = false
+env = { CARGO_TARGET_DIR = "{target}" }
+[op.inputs]
+filter = { type = "string", description = "substring of a test name; empty for the whole suite" }
+
+[[op]]
+id = "git.update"
+kind = "cmd"
+summary = "Update the checkout from upstream (fast-forward only; nothing local is ever overwritten)"
+argv = ["git", "-C", "{project}", "pull", "--ff-only", "--recurse-submodules"]
+timeout_s = 3600

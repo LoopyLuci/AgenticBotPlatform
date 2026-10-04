@@ -1,0 +1,179 @@
+# Mesh LLM's operations for ABP, kept by hand (an overlay: they run against the upstream checkout).
+# Format: the header of ABP's abp_modkit/spec.py.
+# The service is the OpenAI-compatible API on 9337; the web console answers on 3131 and its
+# read-only management API (/api/status, /api/models) is reached through console.* below.
+# The commands are the mesh-llm CLI, which is the release binary on PATH (0.74.0 here); a
+# source build from this checkout lands in {target}/release/mesh-llm.exe (see build.from_source).
+
+[service]
+id = "mesh-llm"
+name = "Mesh LLM"
+description = "Mesh LLM pools GPUs and memory across machines into one OpenAI-compatible API on port 9337 (console on 3131): models search, download, load, unload and diagnostics through its own CLI."
+base_url = "http://127.0.0.1:9337"
+health = "/health"
+# `mesh-llm serve` with no --model loads whatever [[models]] ~/.mesh-llm/config.toml lists
+# (no model means the API answers /v1/models empty). It never joins a mesh on its own:
+# that needs --auto or --join. On a fresh install the first serve may fetch a runtime.
+start = ["mesh-llm", "serve", "--port", "9337", "--console", "3131"]
+ready_timeout_s = 300
+auth = "none"
+openai = "/v1"
+
+[[op]]
+id = "status.health"
+kind = "http"
+method = "GET"
+path = "/health"
+summary = "Liveness of the API port (JSON, always 200 while it answers)"
+mutating = false
+
+[[op]]
+id = "models.api"
+kind = "http"
+method = "GET"
+path = "/v1/models"
+summary = "The models this node serves right now (OpenAI list); the same list ABP's provider offers"
+mutating = false
+
+[[op]]
+id = "status.local"
+kind = "cmd"
+summary = "Loaded models on a running mesh-llm instance (its `status` command, against the console port)"
+argv = ["mesh-llm", "status", "--port", "3131"]
+timeout_s = 120
+mutating = false
+
+[[op]]
+id = "console.status"
+kind = "cmd"
+summary = "The console's own view of the mesh: nodes, peers and serving state (GET /api/status on the console port; needs the console running)"
+argv = ["{python}", "-c", "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:3131/api/status',timeout=10).read().decode())"]
+timeout_s = 60
+mutating = false
+
+[[op]]
+id = "console.models"
+kind = "cmd"
+summary = "The console's model inventory with per-model routing metrics (GET /api/models on the console port; needs the console running)"
+argv = ["{python}", "-c", "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:3131/api/models',timeout=10).read().decode())"]
+timeout_s = 60
+mutating = false
+
+[[op]]
+id = "doctor.report"
+kind = "cmd"
+summary = "Diagnose local mesh, runtime and split-readiness problems (its `doctor` command, JSON)"
+argv = ["mesh-llm", "doctor", "--json"]
+timeout_s = 300
+mutating = false
+
+[[op]]
+id = "hardware.gpus"
+kind = "cmd"
+summary = "Local GPUs, their stable ids and the memory the node would advertise to a mesh (its `gpus`, JSON)"
+argv = ["mesh-llm", "gpus", "--json"]
+timeout_s = 300
+mutating = false
+
+[[op]]
+id = "models.installed"
+kind = "cmd"
+summary = "Models already in the Hugging Face cache on this machine (`models installed`, JSON)"
+argv = ["mesh-llm", "models", "installed", "--json"]
+timeout_s = 300
+mutating = false
+
+[[op]]
+id = "models.recommended"
+kind = "cmd"
+summary = "The remote catalog's recommended models (`models recommended`, JSON); reaches meshllm/catalog"
+argv = ["mesh-llm", "models", "recommended", "--json"]
+timeout_s = 300
+mutating = false
+
+[[op]]
+id = "models.search"
+kind = "cmd"
+summary = "Search the catalog and Hugging Face for GGUF models to run; query is free text, json makes it machine-readable"
+argv = ["mesh-llm", "models", "search", "{query}", "--gguf", "--json"]
+timeout_s = 300
+mutating = false
+[op.inputs]
+query = { type = "string", required = true, description = "search terms, e.g. gemma or smoll" }
+
+[[op]]
+id = "models.show"
+kind = "cmd"
+summary = "One exact model reference in detail (its `models show`): size, quantisation, context"
+argv = ["mesh-llm", "models", "show", "{model}"]
+timeout_s = 300
+mutating = false
+[op.inputs]
+model = { type = "string", required = true, description = "an exact reference from models.search or models.recommended" }
+
+[[op]]
+id = "models.download"
+kind = "cmd"
+summary = "Download one model from the catalog or Hugging Face (large; a background job)"
+argv = ["mesh-llm", "models", "download", "{model}"]
+timeout_s = 7200
+background = true
+[op.inputs]
+model = { type = "string", required = true, description = "an exact reference from models.search or models.recommended" }
+
+[[op]]
+id = "models.delete"
+kind = "cmd"
+summary = "Delete one model from local storage (its `models delete`); removes the file from the cache"
+argv = ["mesh-llm", "models", "delete", "{model}"]
+timeout_s = 600
+destructive = true
+[op.inputs]
+model = { type = "string", required = true, description = "the exact reference to delete" }
+
+[[op]]
+id = "runtime.list"
+kind = "cmd"
+summary = "Native runtimes available or installed (its `runtime list`); the node needs one before it can serve"
+argv = ["mesh-llm", "runtime", "list"]
+timeout_s = 300
+mutating = false
+
+[[op]]
+id = "mesh.discover"
+kind = "cmd"
+summary = "Discover meshes on Nostr or LAN mDNS (its `discover`; nothing is joined unless --auto is given)"
+argv = ["mesh-llm", "discover"]
+timeout_s = 300
+mutating = false
+
+[[op]]
+id = "serve.stop"
+kind = "cmd"
+summary = "Stop the mesh-llm processes on this machine (its `stop`)"
+argv = ["mesh-llm", "stop"]
+timeout_s = 120
+
+[[op]]
+id = "info.version"
+kind = "cmd"
+summary = "The installed CLI's version, and whether it is the one this checkout would build"
+argv = ["mesh-llm", "--version"]
+timeout_s = 60
+mutating = false
+
+[[op]]
+id = "build.from_source"
+kind = "cmd"
+summary = "Build mesh-llm from this checkout (scripts/build-windows.ps1, Vulkan backend); very long, a background job"
+argv = ["pwsh", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/build-windows.ps1", "-Backend", "vulkan", "-DynamicHost"]
+timeout_s = 28800
+background = true
+env = { CARGO_TARGET_DIR = "{target}" }
+
+[[op]]
+id = "git.update"
+kind = "cmd"
+summary = "Update the checkout from upstream (fast-forward only; nothing local is ever overwritten)"
+argv = ["git", "-C", "{project}", "pull", "--ff-only"]
+timeout_s = 1800

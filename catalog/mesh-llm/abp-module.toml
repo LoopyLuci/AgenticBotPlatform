@@ -1,0 +1,48 @@
+# Mesh LLM as an ABP module: an overlay (ABP keeps this file; the checkout stays exactly upstream).
+# Kept by hand. Operations: abp-ops.toml next to this file.
+# Mesh LLM is Apache-2.0 (Mesh-LLM/mesh-llm); nothing of its source is copied into ABP.
+# The CLI this drives is the release binary mesh-llm (already on PATH on this machine);
+# the checkout is what documents it and what build.from_source builds from.
+
+[module]
+id = "mesh-llm"
+name = "Mesh LLM"
+repo = "https://github.com/Mesh-LLM/mesh-llm.git"
+branch = "main"
+api = 1
+area = "models"
+description = "Mesh LLM pools GPUs and memory across machines into one OpenAI-compatible API on port 9337 (console on 3131): models search, download, load, unload and diagnostics through its own CLI."
+
+[checkout]
+marker = ["Cargo.toml", "README.md"]
+
+[toolchain]
+# Justfile: just, cmake, a Rust toolchain and Node 24 + npm. .nvmrc pins Node 24.20.0,
+# the workspace is edition 2024 (Rust 1.85+).
+require = [{ tool = "cargo", min = "1.85", url = "https://rustup.rs" }, { tool = "cmake", min = "3.16", url = "https://cmake.org/download/" }, { tool = "node", min = "24.0.0", url = "https://nodejs.org/en/download" }, { tool = "just", url = "https://just.systems/man/en/packages/just/" }, { tool = "powershell", url = "https://aka.ms/powershell" }, { tool = "git", url = "https://git-scm.com/downloads" }]
+
+[build]
+# just build on Windows is scripts/build-windows.ps1, which drives cargo for the host and
+# the native llama.cpp runtime. CARGO_TARGET_DIR is set here so cargo writes exactly where the
+# operations look ({target}/release), whichever cache ABP gives this module.
+steps = [
+  ["pwsh", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/build-windows.ps1", "-Backend", "vulkan", "-DynamicHost"],
+]
+outputs = ["{target}/release/mesh-llm{exe}"]
+env = { CARGO_TARGET_DIR = "{target}" }
+
+[hub]
+start = ["{abp_python}", "-m", "abp_modkit", "serve", "--spec", "{overlay}/abp-ops.toml", "--project", "{repo}", "--home", "{data}", "--var", "target={target}"]
+control_file = "{data}/control.json"
+start_timeout_s = 30
+
+[mcp]
+stdio = ["{abp_python}", "-m", "abp_modkit", "mcp", "--home", "{data}"]
+
+[ui]
+panel = "operations"
+web = "http://127.0.0.1:3131"   # the embedded web console (its own port, not the API's)
+
+[provider]
+# The OpenAI API is on 9337 (/v1/models, /v1/chat/completions); ABP offers it as a provider while it runs.
+openai = "service"
