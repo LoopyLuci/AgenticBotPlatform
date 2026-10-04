@@ -282,6 +282,26 @@ export const operations = {
   ],
   "query_params": []
  },
+ "DELETE /api/memory/entries/{entry_id}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/memory/entries/{entry_id}",
+  "path_params": [
+   "entry_id"
+  ],
+  "query_params": [
+   "scope"
+  ]
+ },
+ "DELETE /api/memory/sources/{source_id}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/memory/sources/{source_id}",
+  "path_params": [
+   "source_id"
+  ],
+  "query_params": []
+ },
  "DELETE /api/mobile-keys/{key_id}": {
   "body": false,
   "method": "DELETE",
@@ -2181,6 +2201,102 @@ export const operations = {
    "lines"
   ]
  },
+ "GET /api/memory": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/memory/context": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory/context",
+  "path_params": [],
+  "query_params": [
+   "q",
+   "instance_id",
+   "thread",
+   "backend"
+  ]
+ },
+ "GET /api/memory/diff": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory/diff",
+  "path_params": [],
+  "query_params": [
+   "source_id",
+   "checkpoint",
+   "since_read",
+   "commit",
+   "text"
+  ]
+ },
+ "GET /api/memory/entries": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory/entries",
+  "path_params": [],
+  "query_params": [
+   "scope",
+   "status"
+  ]
+ },
+ "GET /api/memory/search": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory/search",
+  "path_params": [],
+  "query_params": [
+   "q",
+   "instance_id",
+   "limit"
+  ]
+ },
+ "GET /api/memory/sources": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory/sources",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/memory/threads": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory/threads",
+  "path_params": [],
+  "query_params": [
+   "instance_id",
+   "limit"
+  ]
+ },
+ "GET /api/memory/threads/{thread}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory/threads/{thread}",
+  "path_params": [
+   "thread"
+  ],
+  "query_params": [
+   "after",
+   "limit"
+  ]
+ },
+ "GET /api/memory/tree/stats": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory/tree/stats",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/memory/vault": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory/vault",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/mobile-keys": {
   "body": false,
   "method": "GET",
@@ -3682,6 +3798,15 @@ export const operations = {
   ],
   "query_params": []
  },
+ "PATCH /api/memory/sources/{source_id}": {
+  "body": true,
+  "method": "PATCH",
+  "path": "/api/memory/sources/{source_id}",
+  "path_params": [
+   "source_id"
+  ],
+  "query_params": []
+ },
  "PATCH /api/tailscale/api/settings": {
   "body": true,
   "method": "PATCH",
@@ -4967,6 +5092,76 @@ export const operations = {
   "path_params": [
    "name"
   ],
+  "query_params": []
+ },
+ "POST /api/memory/diff/checkpoint": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/memory/diff/checkpoint",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/memory/entries": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/memory/entries",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/memory/entries/{entry_id}/{action}": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/memory/entries/{entry_id}/{action}",
+  "path_params": [
+   "entry_id",
+   "action"
+  ],
+  "query_params": []
+ },
+ "POST /api/memory/sources": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/memory/sources",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/memory/sources/{source_id}/sync": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/memory/sources/{source_id}/sync",
+  "path_params": [
+   "source_id"
+  ],
+  "query_params": []
+ },
+ "POST /api/memory/threads/{thread}": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/memory/threads/{thread}",
+  "path_params": [
+   "thread"
+  ],
+  "query_params": []
+ },
+ "POST /api/memory/tree": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/memory/tree",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/memory/tree/ingest": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/memory/tree/ingest",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/memory/vault/sync": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/memory/vault/sync",
+  "path_params": [],
   "query_params": []
  },
  "POST /api/mobile-keys": {
@@ -6666,6 +6861,13 @@ export const operations = {
   "body": true,
   "method": "PUT",
   "path": "/api/localai/stores",
+  "path_params": [],
+  "query_params": []
+ },
+ "PUT /api/memory/settings": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/memory/settings",
   "path_params": [],
   "query_params": []
  },
@@ -11504,6 +11706,208 @@ export const operations = {
   "path_params": [
    "name"
   ],
+  "query_params": []
+ },
+ "mem_add_api_memory_entries_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/memory/entries",
+  "path_params": [],
+  "query_params": []
+ },
+ "mem_checkpoint_api_memory_diff_checkpoint_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/memory/diff/checkpoint",
+  "path_params": [],
+  "query_params": []
+ },
+ "mem_context_api_memory_context_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory/context",
+  "path_params": [],
+  "query_params": [
+   "q",
+   "instance_id",
+   "thread",
+   "backend"
+  ]
+ },
+ "mem_diff_api_memory_diff_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory/diff",
+  "path_params": [],
+  "query_params": [
+   "source_id",
+   "checkpoint",
+   "since_read",
+   "commit",
+   "text"
+  ]
+ },
+ "mem_entries_api_memory_entries_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory/entries",
+  "path_params": [],
+  "query_params": [
+   "scope",
+   "status"
+  ]
+ },
+ "mem_forget_api_memory_entries__entry_id__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/memory/entries/{entry_id}",
+  "path_params": [
+   "entry_id"
+  ],
+  "query_params": [
+   "scope"
+  ]
+ },
+ "mem_overview_api_memory_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory",
+  "path_params": [],
+  "query_params": []
+ },
+ "mem_review_api_memory_entries__entry_id___action__post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/memory/entries/{entry_id}/{action}",
+  "path_params": [
+   "entry_id",
+   "action"
+  ],
+  "query_params": []
+ },
+ "mem_search_api_memory_search_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory/search",
+  "path_params": [],
+  "query_params": [
+   "q",
+   "instance_id",
+   "limit"
+  ]
+ },
+ "mem_settings_api_memory_settings_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/memory/settings",
+  "path_params": [],
+  "query_params": []
+ },
+ "mem_source_add_api_memory_sources_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/memory/sources",
+  "path_params": [],
+  "query_params": []
+ },
+ "mem_source_remove_api_memory_sources__source_id__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/memory/sources/{source_id}",
+  "path_params": [
+   "source_id"
+  ],
+  "query_params": []
+ },
+ "mem_source_sync_api_memory_sources__source_id__sync_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/memory/sources/{source_id}/sync",
+  "path_params": [
+   "source_id"
+  ],
+  "query_params": []
+ },
+ "mem_source_update_api_memory_sources__source_id__patch": {
+  "body": true,
+  "method": "PATCH",
+  "path": "/api/memory/sources/{source_id}",
+  "path_params": [
+   "source_id"
+  ],
+  "query_params": []
+ },
+ "mem_sources_api_memory_sources_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory/sources",
+  "path_params": [],
+  "query_params": []
+ },
+ "mem_thread_add_api_memory_threads__thread__post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/memory/threads/{thread}",
+  "path_params": [
+   "thread"
+  ],
+  "query_params": []
+ },
+ "mem_thread_api_memory_threads__thread__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory/threads/{thread}",
+  "path_params": [
+   "thread"
+  ],
+  "query_params": [
+   "after",
+   "limit"
+  ]
+ },
+ "mem_threads_api_memory_threads_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory/threads",
+  "path_params": [],
+  "query_params": [
+   "instance_id",
+   "limit"
+  ]
+ },
+ "mem_tree_api_memory_tree_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/memory/tree",
+  "path_params": [],
+  "query_params": []
+ },
+ "mem_tree_ingest_api_memory_tree_ingest_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/memory/tree/ingest",
+  "path_params": [],
+  "query_params": []
+ },
+ "mem_tree_stats_api_memory_tree_stats_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory/tree/stats",
+  "path_params": [],
+  "query_params": []
+ },
+ "mem_vault_api_memory_vault_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory/vault",
+  "path_params": [],
+  "query_params": []
+ },
+ "mem_vault_sync_api_memory_vault_sync_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/memory/vault/sync",
+  "path_params": [],
   "query_params": []
  },
  "metrics_metrics_get": {

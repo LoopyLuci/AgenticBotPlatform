@@ -111,9 +111,23 @@ def sections(instance_id: Optional[int], *, workspace: Optional[Path] = None,
         skills = bot_skills.summary(instance_id)
         if skills:
             out.append(("skills", skills))
-        memory = bot_memory.approved_summary(instance_id)
+        from bot.memoryfabric import store as memory_fabric
+
+        # shared and this bot's memories, the same block every turn (recall by message rides on the message itself)
+        memory = memory_fabric.memory_block(instance_id) or bot_memory.approved_summary(instance_id)
         if memory:
             out.append(("memory", memory))
+    # The person's goals and the tool-scoped rules hold for every agent, a bot's or not (bot/memoryfabric/rules.py).
+    from bot.memoryfabric import rules as memory_rules
+
+    try:
+        goals, tool_rules = memory_rules.goals_for_prompt(), memory_rules.rules_for_prompt()
+    except Exception:  # noqa: BLE001 - never block a prompt on these
+        goals, tool_rules = "", ""
+    if goals:
+        out.append(("goals", goals))
+    if tool_rules:
+        out.append(("tool_rules", tool_rules))
     if model_line:
         out.append(("model", model_line))
     if _flag(cfg, "environment"):

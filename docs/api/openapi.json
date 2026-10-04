@@ -34134,6 +34134,1391 @@
     "summary": "Api Mcp Logs"
    }
   },
+  "/api/memory": {
+   "get": {
+    "operationId": "mem_overview_api_memory_get",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mem Overview"
+   }
+  },
+  "/api/memory/context": {
+   "get": {
+    "operationId": "mem_context_api_memory_context_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "q",
+      "required": false,
+      "schema": {
+       "default": "",
+       "title": "Q",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "instance_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Instance Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "thread",
+      "required": false,
+      "schema": {
+       "default": "",
+       "title": "Thread",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "backend",
+      "required": false,
+      "schema": {
+       "default": "external",
+       "title": "Backend",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mem Context"
+   }
+  },
+  "/api/memory/diff": {
+   "get": {
+    "operationId": "mem_diff_api_memory_diff_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "source_id",
+      "required": false,
+      "schema": {
+       "default": "",
+       "title": "Source Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "checkpoint",
+      "required": false,
+      "schema": {
+       "default": "",
+       "title": "Checkpoint",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "since_read",
+      "required": false,
+      "schema": {
+       "default": true,
+       "title": "Since Read",
+       "type": "boolean"
+      }
+     },
+     {
+      "in": "query",
+      "name": "commit",
+      "required": false,
+      "schema": {
+       "default": true,
+       "title": "Commit",
+       "type": "boolean"
+      }
+     },
+     {
+      "in": "query",
+      "name": "text",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Text",
+       "type": "boolean"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mem Diff"
+   }
+  },
+  "/api/memory/diff/checkpoint": {
+   "post": {
+    "operationId": "mem_checkpoint_api_memory_diff_checkpoint_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mem Checkpoint"
+   }
+  },
+  "/api/memory/entries": {
+   "get": {
+    "operationId": "mem_entries_api_memory_entries_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "scope",
+      "required": false,
+      "schema": {
+       "default": "shared",
+       "title": "Scope",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "status",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Status"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mem Entries"
+   },
+   "post": {
+    "operationId": "mem_add_api_memory_entries_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mem Add"
+   }
+  },
+  "/api/memory/entries/{entry_id}": {
+   "delete": {
+    "operationId": "mem_forget_api_memory_entries__entry_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_id",
+      "required": true,
+      "schema": {
+       "title": "Entry Id",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "scope",
+      "required": false,
+      "schema": {
+       "default": "shared",
+       "title": "Scope",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mem Forget"
+   }
+  },
+  "/api/memory/entries/{entry_id}/{action}": {
+   "post": {
+    "operationId": "mem_review_api_memory_entries__entry_id___action__post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_id",
+      "required": true,
+      "schema": {
+       "title": "Entry Id",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "path",
+      "name": "action",
+      "required": true,
+      "schema": {
+       "title": "Action",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mem Review"
+   }
+  },
+  "/api/memory/search": {
+   "get": {
+    "operationId": "mem_search_api_memory_search_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "q",
+      "required": true,
+      "schema": {
+       "title": "Q",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "instance_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Instance Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 8,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mem Search"
+   }
+  },
+  "/api/memory/settings": {
+   "put": {
+    "operationId": "mem_settings_api_memory_settings_put",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mem Settings"
+   }
+  },
+  "/api/memory/sources": {
+   "get": {
+    "operationId": "mem_sources_api_memory_sources_get",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mem Sources"
+   },
+   "post": {
+    "operationId": "mem_source_add_api_memory_sources_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mem Source Add"
+   }
+  },
+  "/api/memory/sources/{source_id}": {
+   "delete": {
+    "operationId": "mem_source_remove_api_memory_sources__source_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "source_id",
+      "required": true,
+      "schema": {
+       "title": "Source Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mem Source Remove"
+   },
+   "patch": {
+    "operationId": "mem_source_update_api_memory_sources__source_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "source_id",
+      "required": true,
+      "schema": {
+       "title": "Source Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mem Source Update"
+   }
+  },
+  "/api/memory/sources/{source_id}/sync": {
+   "post": {
+    "operationId": "mem_source_sync_api_memory_sources__source_id__sync_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "source_id",
+      "required": true,
+      "schema": {
+       "title": "Source Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mem Source Sync"
+   }
+  },
+  "/api/memory/threads": {
+   "get": {
+    "operationId": "mem_threads_api_memory_threads_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "instance_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Instance Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mem Threads"
+   }
+  },
+  "/api/memory/threads/{thread}": {
+   "get": {
+    "operationId": "mem_thread_api_memory_threads__thread__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "thread",
+      "required": true,
+      "schema": {
+       "title": "Thread",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "after",
+      "required": false,
+      "schema": {
+       "default": 0,
+       "title": "After",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 200,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mem Thread"
+   },
+   "post": {
+    "operationId": "mem_thread_add_api_memory_threads__thread__post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "thread",
+      "required": true,
+      "schema": {
+       "title": "Thread",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mem Thread Add"
+   }
+  },
+  "/api/memory/tree": {
+   "post": {
+    "operationId": "mem_tree_api_memory_tree_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mem Tree"
+   }
+  },
+  "/api/memory/tree/ingest": {
+   "post": {
+    "operationId": "mem_tree_ingest_api_memory_tree_ingest_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mem Tree Ingest"
+   }
+  },
+  "/api/memory/tree/stats": {
+   "get": {
+    "operationId": "mem_tree_stats_api_memory_tree_stats_get",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mem Tree Stats"
+   }
+  },
+  "/api/memory/vault": {
+   "get": {
+    "operationId": "mem_vault_api_memory_vault_get",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mem Vault"
+   }
+  },
+  "/api/memory/vault/sync": {
+   "post": {
+    "operationId": "mem_vault_sync_api_memory_vault_sync_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mem Vault Sync"
+   }
+  },
   "/api/mobile-keys": {
    "get": {
     "operationId": "api_mobile_keys_list_api_mobile_keys_get",

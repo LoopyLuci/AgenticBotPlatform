@@ -72,6 +72,7 @@ def _tools(permission: str, *names: str) -> dict[str, tuple[str, bool, bool]]:
 # name -> (permission, read_only, concurrency_safe)
 _BUILTIN: dict[str, tuple[str, bool, bool]] = {
     **_reads("read_file", "list_dir", "git_status", "git_diff", "read_skill", "list_skills", "list_plugins",
+             "memory_search", "memory_tree", "memory_diff", "tool_output",
              "kanban_list_cards", "list_schedules", "list_subagents", "check_batch_status", "get_batch_results",
              "get_my_profile", "read_project_context", "list_project_context",
              "admin_list_bot_instances", "admin_get_bot_instance", "admin_get_agent_settings",
@@ -174,6 +175,10 @@ def limit_output(name: str, text: str, workspace: Optional[Path] = None) -> str:
     """Cap what a tool call puts into the context. Cuts at the ceiling and says so,
     keeping the tail too - for command and log output the end is usually what matters.
     With a workspace the full text is saved and the note says where, so nothing is lost."""
+    if name != "tool_output":                    # reading a kept original back must not compact it again
+        from bot.agent_runtime import tokenjuice
+
+        text = tokenjuice.compress(text, name)   # compacted first (originals kept); the ceiling below is the backstop
     cap = spec_for(name).max_output_chars
     if not isinstance(text, str) or len(text) <= cap:
         return text

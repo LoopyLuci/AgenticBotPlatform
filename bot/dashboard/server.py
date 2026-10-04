@@ -922,6 +922,16 @@ def build_app() -> FastAPI:
 
     localai_api.register(app, _require_token)
 
+    # The memory fabric (/api/memory/*; bot/memoryfabric): memories and conversations shared by every model.
+    from bot.dashboard import memory_api
+
+    memory_api.register(app, _require_token)
+
+    # Privacy mode (/api/privacy; bot/privacy.py): every model call and agent tool kept on this machine.
+    from bot.dashboard import privacy_api
+
+    privacy_api.register(app, _require_token)
+
     # Browser-extension bridge (/api/browser/*): pairing, the extension WebSocket, policy, RPC.
     from bot.dashboard import browser_api
 

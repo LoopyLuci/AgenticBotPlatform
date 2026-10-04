@@ -1267,6 +1267,40 @@ async def lab_status() -> Any:
 
 
 @mcp.tool()
+async def memory_search(query: str, instance_id: Optional[int] = None, limit: int = 8) -> Any:
+    """Search ABP's long-term memory by meaning: what every model ABP runs (and every program sharing it) has been told
+    to remember. instance_id adds that bot's own memories to the shared ones."""
+    return await _request("GET", "/api/memory/search", params={"q": query, "limit": limit,
+                                                                **({"instance_id": instance_id} if instance_id is not None else {})})
+
+
+@mcp.tool()
+async def memory_add(content: str, kind: str = "fact", instance_id: Optional[int] = None) -> Any:
+    """Remember something for every model ABP runs (or, with instance_id, for that bot). kind: user, feedback, project,
+    reference or fact. Goes through ABP's review gate: the answer says whether it is active or pending approval."""
+    return await _request("POST", "/api/memory/entries", json={"content": content, "kind": kind, "source": "mcp",
+                                                               "instance_id": instance_id, "shared": instance_id is None})
+
+
+@mcp.tool()
+async def memory_context(query: str = "", instance_id: Optional[int] = None) -> Any:
+    """The memory block ABP gives its own models for a message: put it in your system prompt so you know what they know."""
+    return await _request("GET", "/api/memory/context", params={"q": query,
+                                                                 **({"instance_id": instance_id} if instance_id is not None else {})})
+
+
+@mcp.tool()
+async def memory_tree(mode: str = "walk", query: str = "", name: str = "", entity: str = "", source_id: str = "",
+                      node_id: str = "", since: Optional[float] = None, until: Optional[float] = None, limit: int = 10) -> Any:
+    """ABP's knowledge base (its folders, notes, GitHub repos, feeds, web pages and past conversations, summarised into
+    trees). mode: walk (answer `query`), search_entities (`name`), neighbors (`entity`), query_source (`source_id`,
+    `query`, `since`, `until`), drill_down (`node_id`), cover_window (`since`, `until`, epoch seconds)."""
+    body = {k: v for k, v in {"mode": mode, "query": query, "name": name, "entity": entity, "source_id": source_id,
+                              "node_id": node_id, "since": since, "until": until, "limit": limit}.items() if v not in ("", None)}
+    return await _request("POST", "/api/memory/tree", json=body, timeout=120.0)
+
+
+@mcp.tool()
 async def lab_validate(spec: dict) -> Any:
     """Check a Neural Lab design: every node's shape, parameters, active parameters, FLOPs per row, training memory."""
     return await _request("POST", "/api/lab/validate", json={"spec": spec})

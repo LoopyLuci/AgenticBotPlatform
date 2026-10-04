@@ -181,6 +181,15 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.localai.paths", "bot.localai.pull", "bot.localai.server", "bot.localai.train", "bot.localai.train_worker",
     "bot.neurallab.edn", "bot.neurallab.interop", "bot.neurallab.lab", "bot.neurallab.nn_worker", "bot.neurallab.spec",
     "bot.tui.screens.hosting", "bot.tui.screens.localai", "bot.tui.screens.storage",
+    # The memory fabric: routes register once; store.py and knowledge.py hold their table set-up and the embedder,
+    # diff.py the git lock, service.py the daily close; the rest is used by those.
+    "bot.dashboard.memory_api", "bot.memoryfabric.store", "bot.memoryfabric.knowledge", "bot.memoryfabric.sources",
+    "bot.memoryfabric.vault", "bot.memoryfabric.diff", "bot.memoryfabric.service", "bot.memoryfabric.extract",
+    "bot.memoryfabric.rules",
+    # Privacy mode: routes register once; privacy.py caches its settings file. TokenJuice keeps compacted originals.
+    "bot.dashboard.privacy_api", "bot.privacy", "bot.agent_runtime.tokenjuice",
+    # The DNS resolver keeps its DNS-over-HTTPS connection open.
+    "bot.resolver",
     # Studio: routes register once and studio_api.py holds the generation jobs; variants.py holds its write lock.
     "bot.dashboard.studio_api", "bot.studio.variants", "bot.studio.log", "bot.studio.generate", "bot.studio.edits",
     "bot.studio.tokens", "bot.studio.shots",

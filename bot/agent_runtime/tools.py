@@ -212,8 +212,62 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "content": {"type": "string", "description": "The fact to remember, in plain English."},
                 "kind": {"type": "string", "enum": ["user", "feedback", "project", "reference", "fact"],
                          "description": "user = who they are; feedback = how they want you to work; project = about the work; reference = where things are."},
+                "shared": {"type": "boolean", "description": "true: every bot and model ABP runs should know it (not only this bot)."},
             },
             "required": ["content"],
+        },
+    },
+    {
+        "name": "memory_search",
+        "description": ("Search long-term memory by meaning: what every model ABP runs has been told to remember, shared "
+                        "and this bot's own, including ones not shown in the system prompt."),
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string", "description": "What to look for, in plain words."},
+                           "limit": {"type": "integer", "description": "How many (default 8)."}},
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "memory_tree",
+        "description": (
+            "Read ABP's knowledge base (folders, notes, GitHub repos, feeds, web pages, past conversations; summarised into "
+            "trees). Modes: walk (answer a question: query), search_entities (a name -> canonical ids: name), neighbors "
+            "(related entities: entity), query_source (one source by time/meaning: source_id, query?, since?, until?), "
+            "drill_down (a summary's children: node_id), cover_window (a time span, epoch seconds: since, until), "
+            "fetch_leaves (raw text for citation: ids), ingest_document (save a document: title, text)."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "mode": {"type": "string", "enum": ["walk", "search_entities", "neighbors", "query_source", "drill_down",
+                                                    "cover_window", "fetch_leaves", "ingest_document"]},
+                "query": {"type": "string"}, "name": {"type": "string"}, "entity": {"type": "string"},
+                "source_id": {"type": "string"}, "node_id": {"type": "string"}, "ids": {"type": "array", "items": {"type": "string"}},
+                "since": {"type": "number"}, "until": {"type": "number"}, "limit": {"type": "integer"},
+                "title": {"type": "string"}, "text": {"type": "string"},
+            },
+            "required": ["mode"],
+        },
+    },
+    {
+        "name": "tool_output",
+        "description": ("Read a tool output that was compacted (it ends with ⟦tj:<handle>⟧): `lines` lines from line `start`, "
+                        "or every line matching `pattern` (a regular expression) with its line number."),
+        "input_schema": {
+            "type": "object",
+            "properties": {"handle": {"type": "string"}, "start": {"type": "integer"}, "lines": {"type": "integer"},
+                           "pattern": {"type": "string"}},
+            "required": ["handle"],
+        },
+    },
+    {
+        "name": "memory_diff",
+        "description": ("What changed in the knowledge base: for a source, what arrived since you last asked (or since its "
+                        "previous sync); with a checkpoint, everything since that checkpoint; with neither, the sources."),
+        "input_schema": {
+            "type": "object",
+            "properties": {"source_id": {"type": "string"}, "checkpoint": {"type": "string"},
+                           "since_read": {"type": "boolean"}, "include_text_diff": {"type": "boolean"}},
         },
     },
     {
@@ -988,8 +1042,12 @@ async def execute_tool(
     name: str, tool_input: dict, *, workspace: Path, instance_id: Optional[int] = None,
     device_tier: Optional[str] = None,
 ) -> str:
+    from bot import privacy
     from bot.agent_runtime import toolspec
 
+    refused = privacy.check_tool(name, privacy.mcp_url_for_tool(name)) if privacy.enabled() else None
+    if refused:
+        raise ToolError(refused)
     if toolspec.has_handler(name):
         return await toolspec.dispatch(
             name, tool_input, workspace=workspace, instance_id=instance_id, device_tier=device_tier
@@ -1046,14 +1104,15 @@ async def execute_tool(
         return await _run_subprocess(["git", "diff"], workspace)
 
     if name == "save_memory":
-        from bot import memory as bot_memory
-
         content = (tool_input.get("content") or "").strip()
         if not content:
             raise ToolError("content can't be empty")
         if instance_id is None:
             raise ToolError("save_memory needs an instance context")
-        result = bot_memory.remember_full(instance_id, content, source="tool", kind=tool_input.get("kind") or "fact")
+        from bot.memoryfabric import store as memory_fabric
+
+        result = memory_fabric.remember(content, instance_id=instance_id, shared=bool(tool_input.get("shared")), source="tool",
+                                        kind=tool_input.get("kind") or "fact")
         entry_id, approved = result["id"], result["approved"]
         if result["duplicate"]:
             return f"Already remembered as memory #{entry_id}; refreshed it instead of saving a second copy."
@@ -1062,6 +1121,51 @@ async def execute_tool(
             if approved
             else f"Saved as memory #{entry_id} ({result['kind']}), pending human approval (/memory approve {entry_id})."
         )
+
+    if name == "memory_search":
+        from bot.memoryfabric import store as memory_fabric
+
+        query = (tool_input.get("query") or "").strip()
+        if not query:
+            raise ToolError("query can't be empty")
+        hits = await asyncio.to_thread(memory_fabric.recall, query, instance_id, int(tool_input.get("limit") or 8))
+        if not hits:
+            return "No memory matches that."
+        return "\n".join(f"- [{'shared' if h['shared'] else 'this bot'}, {h.get('kind', 'fact')}] {h['content']}" for h in hits)
+
+    if name == "memory_tree":
+        from bot.memoryfabric import knowledge
+
+        args = {k: v for k, v in tool_input.items() if k != "mode" and v not in (None, "")}
+        try:
+            out = await asyncio.to_thread(knowledge.query, tool_input.get("mode") or "walk", **args)
+        except (KeyError, ValueError) as e:
+            raise ToolError(f"memory_tree: {e}") from e
+        return _json_module.dumps(out, indent=1, default=str)[:16_000]
+
+    if name == "tool_output":
+        from bot.agent_runtime import tokenjuice
+
+        try:
+            return tokenjuice.read(str(tool_input.get("handle") or ""), int(tool_input.get("start") or 1),
+                                   int(tool_input.get("lines") or 200), str(tool_input.get("pattern") or ""))
+        except (KeyError, ValueError) as e:
+            raise ToolError(str(e)) from e
+
+    if name == "memory_diff":
+        from bot.memoryfabric import diff as memory_diff
+
+        try:
+            d = await asyncio.to_thread(memory_diff.diff, tool_input.get("source_id") or "",
+                                        checkpoint_name=tool_input.get("checkpoint") or "",
+                                        since_read=tool_input.get("since_read", True) is not False,
+                                        include_text=bool(tool_input.get("include_text_diff")))
+        except (ValueError, RuntimeError) as e:
+            raise ToolError(str(e)) from e
+        text = memory_diff.summary_text(d)
+        if tool_input.get("include_text_diff"):
+            text += "\n\n" + "\n".join(x.get("diff", "") for x in d.get("modified", []))[:6000]
+        return text
 
     if name == "read_skill":
         from bot import skills as bot_skills

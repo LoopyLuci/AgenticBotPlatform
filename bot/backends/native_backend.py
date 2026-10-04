@@ -241,9 +241,16 @@ class NativeAgentBackend(Backend):
             for entry in self.transport.tool_result_messages([(tc, "Cancelled: this call did not finish.") for tc in dangling]):
                 history.append(entry)
                 db.append_agent_message(session_key, entry["role"], entry["content"])
-        user_entry = self.transport.user_message(prompt_text, images=image_blocks or None, documents=document_blocks or None)
+        # The memory fabric (bot/memoryfabric): turns this loop missed while another model answered are kept in the
+        # history (it is reloaded every turn); memories related to this message are sent with it, not stored.
+        handoff, recall_note = (context or {}).get("memory_handoff"), (context or {}).get("memory_recall")
+        kept_text = f"{handoff}\n\n{prompt_text}" if handoff else prompt_text
+        sent_text = f"{recall_note}\n\n{kept_text}" if recall_note else kept_text
+        user_entry = self.transport.user_message(sent_text, images=image_blocks or None, documents=document_blocks or None)
         history.append(user_entry)
-        db.append_agent_message(session_key, user_entry["role"], user_entry["content"])
+        stored = user_entry if sent_text == kept_text else self.transport.user_message(
+            kept_text, images=image_blocks or None, documents=document_blocks or None)
+        db.append_agent_message(session_key, stored["role"], stored["content"])
 
         tool_schemas = agent_tools.all_tool_schemas()
         # Admin control surface (see docs/adr/0008-single-instance-admin-tool-gate.md):
