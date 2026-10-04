@@ -1,7 +1,9 @@
 """`abp ai ...` and `abp lab ...`: ABP's local AI and the Neural Lab from the command line (/api/localai, /api/lab).
 
-  abp ai status | settings [key=value ...] | server start|stop | engine install [--backend hip|vulkan|cuda|cpu]
-  abp ai list | ps | pull <name> | rm <name> | cp <src> <dst> | show <name>
+  abp ai status | serve-status | settings [key=value ...] | server start|stop
+               | engine install [--backend hip|vulkan|cuda|cpu]
+  abp ai models | list | ps | pull <name> | rm <name> | cp <src> <dst> | show <name>
+  abp ai run <model> <prompt...> [--generate] [--system TEXT]   a real inference run on a local model
   abp ai import <name> <file.gguf> [--reference] | create <name> -f Modelfile
   abp ai discover | adopt-all [--import]
   abp ai train setup | list | start <base> <data.jsonl> ... [--name n] [--method sft|dpo] [--steps N] [--epochs E]
@@ -28,8 +30,15 @@ A, L = "/api/localai", "/api/lab"
 def add_parser(sub) -> None:
     n = sub.add_parser("ai", help="ABP's local AI (Ollama and Unsloth in ABP): models, the server, fine-tuning")
     ns = n.add_subparsers(dest="ai_cmd", required=True)
-    for c in ("status", "list", "ps", "discover"):
+    for c in ("status", "list", "models", "ps", "discover"):
         ns.add_parser(c)
+    ns.add_parser("serve-status", help="just the inference server: is it up, where, which models are loaded")
+    p = ns.add_parser("run", help="a real inference run on a local model (chat by default, --generate to complete)")
+    p.add_argument("model")
+    p.add_argument("prompt", nargs="+", help="the prompt; joined with spaces")
+    p.add_argument("--generate", action="store_true", help="a completion instead of a chat turn")
+    p.add_argument("--system", default="")
+    p.add_argument("--timeout", type=float, default=900.0)
     p = ns.add_parser("settings"); p.add_argument("pairs", nargs="*")
     p = ns.add_parser("server"); p.add_argument("action", choices=["start", "stop"])
     p = ns.add_parser("engine"); p.add_argument("action", choices=["install"]); p.add_argument("--backend", default="")
@@ -122,7 +131,7 @@ async def run(args, client) -> int:
         for run_ in o["runs"][:5]:
             print(f"  run {run_['id']} {run_.get('state')} {run_.get('name')} step {run_.get('step', '-')} loss {run_.get('loss', '-')}")
         return 0
-    if c == "list":
+    if c == "list" or c == "models":
         ms = await r("GET", f"{A}/models", timeout=60.0)
         if args.json:
             _show(ms)
@@ -133,6 +142,47 @@ async def run(args, client) -> int:
         return 0
     if c == "ps":
         _show((await r("GET", A, timeout=60.0))["running"])
+        return 0
+    if c == "serve-status":
+        o = await r("GET", A, timeout=120.0)
+        if args.json:
+            _show({"server": o["server"], "running": o["running"]})
+            return 0
+        s = o["server"]
+        if s.get("running"):
+            version = f" (Ollama {s['version']})" if s.get("version") else ""
+            print(f"server: running at {s['url']}{version}")
+        else:
+            print("server: stopped (abp ai server start)")
+        for m in o["running"]:
+            print(f"  loaded: {m['name']} ({_size(m.get('size_vram') or m.get('size') or 0)})")
+        if not o["running"]:
+            print("  no models loaded")
+        return 0
+    if c == "run":
+        prompt = " ".join(args.prompt).strip()
+        if not prompt:
+            print("the prompt is empty", file=sys.stderr)
+            return 2
+        if args.generate:
+            body: dict[str, Any] = {"model": args.model, "prompt": prompt, "stream": False}
+            operation = "generate"
+            if args.system:
+                body["system"] = args.system
+        else:
+            message = {"role": "user", "content": prompt}
+            body = {"model": args.model, "messages": [message], "stream": False}
+            operation = "chat"
+            if args.system:
+                body["messages"].insert(0, {"role": "system", "content": args.system})
+        out = await r("POST", "/api/ollama/call", json={"operation": operation, "args": body,
+                                                        "timeout_s": args.timeout})
+        text = (out.get("result") or {}).get("message", {}).get("content") if operation == "chat" \
+            else (out.get("result") or {}).get("response")
+        if args.json:
+            _show(out)
+            return 0
+        print(text if text is not None else json.dumps(out.get("result"), indent=1, default=str))
         return 0
     if c == "settings":
         _show(await r("PUT", f"{A}/settings", json=_kv(args.pairs)) if args.pairs else await r("GET", f"{A}/settings"))
