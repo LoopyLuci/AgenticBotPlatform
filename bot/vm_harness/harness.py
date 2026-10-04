@@ -201,7 +201,7 @@ def start_hub(wait_s: float = 45.0) -> dict:
     exe = python_exe(d, windowless=True)
     exe = exe if exe.is_file() else python_exe(d)
     client.vmh_home().mkdir(parents=True, exist_ok=True)
-    flags = (0x00000008 | 0x00000200 | NO_WINDOW) if os.name == "nt" else 0
+    flags = (0x00000200 | NO_WINDOW) if os.name == "nt" else 0     # a hidden console its children inherit, own group
     with open(client.vmh_home() / "hub.log", "ab") as out:
         subprocess.Popen([str(exe), "-m", "vm_harness", "serve"], cwd=str(d), stdin=subprocess.DEVNULL, stdout=out,
                          stderr=subprocess.STDOUT, creationflags=flags, start_new_session=os.name != "nt",

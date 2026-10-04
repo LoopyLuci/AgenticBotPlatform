@@ -229,7 +229,7 @@ def start_bridge(wait_s: float = 45.0) -> dict:
     paths = [str(d / "src" / "bridge")] + ([str(home / "hermes-agent")] if home and (home / "hermes-agent").is_dir() else [])
     env = {**os.environ, "HM_BRIDGE_TOKEN": secrets.token_hex(32), "PYTHONPATH": os.pathsep.join(paths)}
     client.hm_home().mkdir(parents=True, exist_ok=True)
-    flags = (0x00000008 | 0x00000200 | NO_WINDOW) if os.name == "nt" else 0
+    flags = (0x00000200 | NO_WINDOW) if os.name == "nt" else 0     # a hidden console its children inherit, own group
     with open(client.hm_home() / "bridge.log", "ab") as out:
         subprocess.Popen([str(py), "-m", "hermes_manager_bridge", "--discovery", "--owner", "abp",
                           *(["--hermes-home", str(home)] if home else [])], cwd=str(d / "src" / "bridge"), env=env,

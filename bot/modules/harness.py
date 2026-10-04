@@ -22,7 +22,9 @@ from bot.modules.client import ModuleError
 from bot.modules.manifest import Manifest, this_os
 
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
-DETACHED = (0x00000008 | 0x00000200 | NO_WINDOW) if os.name == "nt" else 0     # no console, own process group
+# A hidden console of its own (not DETACHED_PROCESS: a process with no console makes every console program it
+# starts open a visible window), in its own process group. It still outlives ABP.
+DETACHED = (0x00000200 | NO_WINDOW) if os.name == "nt" else 0
 NEW_CONSOLE = 0x00000010 if os.name == "nt" else 0
 
 
