@@ -13,6 +13,11 @@ Keyed by instance_id (not platform name) so two bots on the same platform
 slot instead of the second registration silently overwriting the first.
 Instance ids are already globally unique across platforms (one
 bot_instances table, one autoincrement PK), so no composite key is needed.
+
+An ABP_SANDBOX_INSTANCE (bot/lease.py) never sends anything: its config is a
+COPY of the real one, so "its" bot token is the real bot's, and a sandbox that
+replies in a real chat is indistinguishable from the real thing until it
+disagrees with it.
 """
 
 from __future__ import annotations
@@ -49,6 +54,7 @@ def available_instances() -> list[int]:
 
 
 async def send_message(instance_id: int, chat_id: Any, text: str, thread_id: Optional[Any] = None) -> None:
+    _refuse_in_sandbox()
     if thread_id is not None:
         threaded = _threaded_senders.get(instance_id)
         if threaded is not None:
@@ -60,6 +66,22 @@ async def send_message(instance_id: int, chat_id: Any, text: str, thread_id: Opt
             f"bot instance {instance_id} isn't connected right now — check it's enabled and running"
         )
     await sender(chat_id, text)
+
+
+def _refuse_in_sandbox() -> None:
+    """The last line of defence for ABP_SANDBOX_INSTANCE: a sandbox is a COPY
+    of the real .env, so its bot_instances rows carry the REAL tokens. Nothing
+    stops a plugin, an agent tool or a future caller from reaching this module
+    directly, and one send from a sandbox is a real message in a real chat, so
+    this check lives at the one place every send goes through."""
+    from bot import lease
+
+    reason = lease.sandbox_blocked_reason()
+    if reason:
+        raise RuntimeError(
+            f"refusing to send: {reason}. A sandboxed instance never messages anyone — "
+            "use the real instance (abp_cli instance list) for that."
+        )
 
 
 # A separate registry (not a wider signature on _senders) since the two
@@ -81,6 +103,7 @@ def file_send_is_ready(instance_id: int) -> bool:
 
 
 async def send_file(instance_id: int, chat_id: Any, file_path: str, filename: str, caption: Optional[str] = None) -> None:
+    _refuse_in_sandbox()
     sender = _file_senders.get(instance_id)
     if sender is None:
         raise RuntimeError(

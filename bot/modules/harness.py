@@ -447,6 +447,19 @@ HUB_STARTED: list = []
 
 
 def start_hub(mid: str) -> dict:
+    # A module's hub is an auto-started service: a web UI and an
+    # OpenAI-compatible server bound on real ports, from the machine's module
+    # checkout. An agent's sandbox (ABP_SANDBOX_INSTANCE) must never bring one
+    # up - it would fight the real instance for the same port - so this refuses
+    # rather than letting "one hub per data dir" decide it.
+    from bot import lease
+
+    reason = lease.sandbox_blocked_reason()
+    if reason:
+        raise ModuleError(
+            f"a sandboxed instance never starts a module service: {reason}",
+            code="sandbox", status=409,
+        )
     m = _m(mid)
     a = _adapter(m)
     if a:

@@ -41,6 +41,14 @@ Commands:
   host status|network|account|site|plan|live|publish|check|server|dns|tunnel|router|cert|vps
                                           ABP Web Hosting: sites on your domains from here, a VPS, your own
                                           server or a provider (see abp_cli/host.py)
+  gate start|stop|status                    the always-on front door: one process owning 8787, instances
+                                          behind it, and new code swapped in with no downtime
+                                          (see abp_cli/gate.py)
+  instance list|swap <code-root>|rollback|sandbox <code-root>|stop <name>|logs <name>
+                                          the ABP instances the gate manages
+  dev up [--worktree <path>] | down | status
+                                          work on ABP itself: a git worktree with its own sandboxed ABP on
+                                          its own port, pointed at by the URL and token variable printed
   nas status|disks|array|share|user|search|transfer|backup|app|...
                                           ABP File Server: parity array, shares, users, search, transfers,
                                           backups, apps (see abp_cli/nas.py)
@@ -141,6 +149,14 @@ def _ids(raw: Optional[str]) -> list:
 
 
 async def _run(args) -> int:
+    # gate/instance/dev talk to abp_gate's own control API (a different port,
+    # authenticated the same way) instead of to the dashboard, so they need no
+    # DashboardClient and must not fail just because a dashboard token has not
+    # been resolved yet - `gate start` is the command that brings the whole thing
+    # up, including the token's first consumer.
+    if args.cmd in ("gate", "instance", "dev"):
+        from abp_cli import gate as _gate
+        return await _gate.run(args)
     client = _client(args)
     try:
         return await _dispatch(args, client)
@@ -1752,6 +1768,8 @@ def _parser() -> argparse.ArgumentParser:
     _ai.add_parser(sub)
     from abp_cli import hermes as _hermes
     _hermes.add_parser(sub)
+    from abp_cli import gate as _gate
+    _gate.add_parser(sub)
 
     swarms = sub.add_parser("swarms", help="fan-out/leader-vote/etc. multi-bot swarms, and one-off sub-agent fan-outs")
     ssub = swarms.add_subparsers(dest="swarms_cmd", required=True)
