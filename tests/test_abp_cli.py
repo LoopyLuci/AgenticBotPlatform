@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import pathlib
 import shutil
 import sys
 
@@ -53,6 +54,21 @@ def run(args_list, client):
             print(f"couldn't reach the dashboard: {exc}", file=sys.stderr)
             return 1
     return asyncio.run(_wrapped()), args
+
+
+async def arun(args_list, client):
+    """run() for a test that is already inside an event loop (approval.request_approval waits on a
+    resolve, so the CLI call that resolves it has to happen on the same loop)."""
+    args = _parser().parse_args(args_list)
+
+    try:
+        return await _dispatch(args, client)
+    except ApiError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:  # noqa: BLE001
+        print(f"couldn't reach the dashboard: {exc}", file=sys.stderr)
+        return 1
 
 
 def _create_instance(**overrides):
@@ -579,3 +595,548 @@ def test_editors_status_and_install(client, capsys, monkeypatch, tmp_path):
     monkeypatch.setattr(ed, "code_cli", lambda: None)
     code, _ = run(["editors", "install-vscode"], client)
     assert code == 1 and "was not found" in capsys.readouterr().err
+
+# ==================================================================================
+# Phase 3: the tool-free surfaces - the memory fabric, running agents and their
+# tools, approvals, swarms, the model router and catalog, privacy/DNS, modules,
+# local AI, and `doctor`. Same real-app harness as everything above.
+# ==================================================================================
+
+def test_memory_add_search_list_and_delete(client, capsys):
+    code, _ = run(["--json", "memory", "add", "the CLI test bot runs on port 8788"], client)
+    assert code == 0
+    added = json.loads(capsys.readouterr().out)
+    assert added["id"]
+
+    # shared memories go in pending by default (the fabric's own shared_approval gate), exactly like
+    # one written by a running bot, so they are approved before anything recalls them.
+    code, _ = run(["--json", "memory", "list", "--scope", "shared", "--status", "pending"], client)
+    assert code == 0
+    assert any(e["id"] == added["id"] for e in json.loads(capsys.readouterr().out))
+
+    code, _ = run(["--json", "memory", "approve", str(added["id"])], client)
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "approved"
+
+    code, _ = run(["--json", "memory", "search", "8788"], client)
+    assert code == 0
+    hits = json.loads(capsys.readouterr().out)
+    assert any("8788" in (h.get("content") or "") for h in hits), hits
+    assert "similarity" in hits[0]
+
+    code, _ = run(["memory", "delete", str(added["id"])], client)
+    assert code == 0
+    capsys.readouterr()
+    code, _ = run(["--json", "memory", "list", "--scope", "shared"], client)
+    assert all(e["id"] != added["id"] for e in json.loads(capsys.readouterr().out))
+
+
+def test_memory_context_threads_and_post_turn(client, capsys):
+    iid = _create_instance(name="mem-bot", platform="app", backend="native_agent",
+                           credentials={}, allowed_user_ids=[])
+    code, _ = run(["--json", "memory", "post-turn", "cli-thread", "user", "hello from the CLI",
+                   "--instance", str(iid)], client)
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["id"]
+
+    code, _ = run(["--json", "memory", "thread", "cli-thread"], client)
+    assert code == 0
+    assert any(t["text"] == "hello from the CLI" for t in json.loads(capsys.readouterr().out))
+
+    code, _ = run(["--json", "memory", "threads", "--instance", str(iid)], client)
+    assert code == 0
+    assert any(t["thread"] == "cli-thread" for t in json.loads(capsys.readouterr().out))
+
+    code, _ = run(["--json", "memory", "context", "hello", "--instance", str(iid)], client)
+    assert code == 0
+    assert "block" in json.loads(capsys.readouterr().out)
+
+
+def test_memory_knowledge_tree_sources_and_vault(client, capsys):
+    code, _ = run(["--json", "memory", "tree-ingest", "CLI note", "the CLI can ingest notes"], client)
+    assert code == 0
+    ingested = json.loads(capsys.readouterr().out)
+    assert ingested["source_id"] == "documents" and ingested["chunks"] >= 1
+
+    code, _ = run(["--json", "memory", "tree-stats"], client)
+    assert code == 0
+    stats = json.loads(capsys.readouterr().out)
+    assert stats["sources"]["documents"]["chunks"] >= 1 and isinstance(stats["entities"], int)
+
+    code, _ = run(["--json", "memory", "tree", "walk", "what can the CLI ingest"], client)
+    assert code == 0
+    assert {"route", "hits", "total"} <= set(json.loads(capsys.readouterr().out))
+
+    code, _ = run(["--json", "memory", "tree", "source", "documents"], client)
+    assert code == 0
+    assert isinstance(json.loads(capsys.readouterr().out), dict)
+
+    code, _ = run(["--json", "memory", "sources"], client)
+    assert code == 0
+    assert isinstance(json.loads(capsys.readouterr().out), list)
+
+    code, _ = run(["--json", "memory", "checkpoint", "cli-test"], client)
+    assert code == 1 and "nothing has been snapshotted" in capsys.readouterr().err
+
+    code, _ = run(["--json", "memory", "diff", "--no-commit"], client)
+    assert code == 0
+    assert isinstance(json.loads(capsys.readouterr().out), (dict, list))
+
+    code, _ = run(["--json", "memory", "vault"], client)
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["path"]
+
+
+def test_memory_tool_rules_and_goals(client, capsys):
+    code, _ = run(["--json", "memory", "rule-add", "shell", "never touch .env",
+                   "--priority", "critical"], client)
+    assert code == 0
+    rule = json.loads(capsys.readouterr().out)
+    rule_id = rule.get("id") or rule.get("rule_id")
+
+    code, _ = run(["--json", "memory", "rules", "--tool", "shell"], client)
+    assert code == 0
+    assert any(r.get("tool") == "shell" for r in json.loads(capsys.readouterr().out))
+
+    code, _ = run(["memory", "rule-remove", str(rule_id)], client)
+    assert code == 0
+    capsys.readouterr()
+
+    code, _ = run(["--json", "memory", "goal-add", "ship the CLI parity work"], client)
+    assert code == 0
+    goal = json.loads(capsys.readouterr().out)
+    assert goal["status"] == "active"
+
+    code, _ = run(["--json", "memory", "goals"], client)
+    assert code == 0
+    assert any(g["id"] == goal["id"] for g in json.loads(capsys.readouterr().out))
+
+    code, _ = run(["memory", "goal-done", goal["id"]], client)
+    assert code == 0
+    capsys.readouterr()
+    code, _ = run(["--json", "memory", "goals"], client)
+    assert all(g["id"] != goal["id"] for g in json.loads(capsys.readouterr().out))
+
+
+def test_memory_settings_get_and_set(client, capsys):
+    code, _ = run(["memory", "settings-set", "recall_k=5"], client)
+    assert code == 0
+    capsys.readouterr()
+    code, _ = run(["--json", "memory", "settings"], client)
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["recall_k"] == 5
+
+
+def test_tools_list_reports_permission_classes(client, capsys):
+    code, _ = run(["--json", "tools", "list"], client)
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["count"] == len(payload["tools"]) > 0
+    names = {t["name"] for t in payload["tools"]}
+    assert {"run_shell", "read_file"} <= names, sorted(names)
+    for tool in payload["tools"]:
+        assert {"name", "permission", "read_only", "asks_first"} <= set(tool), tool
+
+    code, _ = run(["--json", "tools", "list", "--read-only"], client)
+    assert code == 0
+    assert all(t["read_only"] for t in json.loads(capsys.readouterr().out)["tools"])
+
+
+def test_agent_run_streams_progress_through_the_api(client, capsys, monkeypatch):
+    """A real POST /api/chat/send-to-bot turn, with the fake ask recording a job and a tool event the
+    way bot/native_backend.py does, so the progress the CLI prints is real rows read back over the API."""
+    from types import SimpleNamespace
+
+    from bot import db
+    from bot.router import router
+
+    iid = _create_instance(name="agent-runner", platform="app", backend="native_agent",
+                           credentials={}, allowed_user_ids=[])
+
+    async def fake_ask(text, **kw):
+        job_id = db.create_job("quick_question", "native_agent", 0, text, instance_id=iid)
+        db.mark_job_running(job_id, backend="native_agent")
+        db.log_job_tool_event(job_id, "tool_started", "read_file", {"path": "README.md"})
+        await __import__("asyncio").sleep(0.12)
+        db.log_job_tool_event(job_id, "tool_completed", "read_file", {"ok": True})
+        db.mark_job_done(job_id, "success", result="done", tokens=42)
+        return SimpleNamespace(text=f"ran: {text}")
+    monkeypatch.setattr(router, "ask", fake_ask)
+
+    code, _ = run(["--json", "agent", "run", "summarise", "the", "repo", "--instance", str(iid),
+                   "--poll", "0.02"], client)
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["via"] == "api" and payload["instance_id"] == iid
+    assert payload["reply"] == "ran: summarise the repo"
+    assert [e["kind"] for e in payload["events"]] == ["job", "tool", "tool"], payload["events"]
+    assert payload["events"][1]["tool"] == "read_file"
+
+    code, _ = run(["--json", "agent", "runs", "--instance", str(iid)], client)
+    assert code == 0
+    runs = json.loads(capsys.readouterr().out)
+    job = runs[0]
+    assert job["status"] == "success" and job["tokens"] == 42
+
+    code, _ = run(["--json", "agent", "show", str(job["id"])], client)
+    assert code == 0
+    shown = json.loads(capsys.readouterr().out)
+    assert shown["job"]["id"] == job["id"]
+    assert [e["event_type"] for e in shown["tool_events"]] == ["tool_started", "tool_completed"]
+
+
+def test_agent_run_wait_follows_the_job_to_the_end(client, capsys, monkeypatch):
+    from types import SimpleNamespace
+
+    from bot import db
+    from bot.router import router
+
+    iid = _create_instance(name="agent-waiter", platform="app", backend="native_agent",
+                           credentials={}, allowed_user_ids=[])
+
+    async def fake_ask(text, **kw):
+        job_id = db.create_job("quick_question", "native_agent", 0, text, instance_id=iid)
+        db.mark_job_running(job_id, backend="native_agent")
+        db.mark_job_done(job_id, "success", result="done")
+        return SimpleNamespace(text="ok")
+    monkeypatch.setattr(router, "ask", fake_ask)
+
+    code, _ = run(["agent", "run", "wait", "for", "this", "--instance", str(iid), "--wait",
+                   "--poll", "0.02"], client)
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "ok" in out and "run " in out and "success" in out
+
+
+def test_agent_run_approve_flag_answers_an_approval_itself(client, capsys, monkeypatch):
+    """The point of the flag: with nobody watching a GUI, --approve resolves the approval the run is
+    blocked on, so the turn finishes instead of hanging."""
+    from types import SimpleNamespace
+
+    from bot.agent_runtime import approval
+    from bot.router import router
+
+    iid = _create_instance(name="auto-approver", platform="app", backend="native_agent",
+                           credentials={}, allowed_user_ids=[])
+
+    async def fake_ask(text, **kw):
+        async def notify(approval_id, tool_name, tool_input):
+            pass
+        outcome = await approval.request_approval(iid, "chat1", "session1", "shell",
+                                                  {"command": "ls"}, notify=notify)
+        return SimpleNamespace(text=f"tool outcome: {outcome}")
+    monkeypatch.setattr(router, "ask", fake_ask)
+
+    code, _ = run(["--json", "agent", "run", "list", "the", "files", "--instance", str(iid),
+                   "--approve", "allow", "--poll", "0.02"], client)
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["reply"] == "tool outcome: once"
+    approvals = [e for e in payload["events"] if e["kind"] == "approval"]
+    assert approvals and approvals[0]["outcome"] == "once"
+
+
+def test_agent_run_local_streams_through_abp_run(client, capsys, monkeypatch, tmp_path):
+    """--backend with no instance runs the same headless agent `python -m abp_run` runs, against a real
+    abp_run run (the transport is the only thing faked - the agent loop, tools and cleanup are real)."""
+    from abp_run import core
+
+    ran: dict = {}
+
+    async def fake_turn(prompt, *, transport, model, cwd, permission_mode=None, on_text=None, timeout_s=600,
+                        extra_context=None):
+        ran.update(prompt=prompt, model=model, cwd=str(cwd), permission_mode=permission_mode)
+        if on_text is not None:
+            await on_text("the answer")
+        return core.RunResult(ok=True, reply="the answer", model=model, tokens=7, run_id="r1", status="ok")
+
+    monkeypatch.setattr(core, "run_turn", fake_turn)
+
+    class _Transport:
+        pass
+
+    code, _ = run(["--json", "agent", "run", "explain", "this", "repo", "--backend", "anthropic",
+                   "--model", "claude-sonnet-5", "--workspace", str(tmp_path),
+                   "--permission-mode", "plan"], client)
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["via"] == "abp_run" and payload["model"] == "claude-sonnet-5"
+    assert payload["ok"] is True and payload["reply"] == "the answer"
+    assert ran["prompt"] == "explain this repo" and ran["permission_mode"] == "plan"
+    assert pathlib.Path(ran["cwd"]) == tmp_path.resolve()
+
+    code, _ = run(["agent", "run", "x", "--backend", "anthropic", "--workspace", str(tmp_path / "nope")], client)
+    assert code == 2 and "not a folder" in capsys.readouterr().err
+
+
+def test_agent_run_without_an_agent_instance_is_a_usage_error(client, capsys):
+    code, _ = run(["agent", "run", "do", "something"], client)
+    assert code == 2
+    assert "no agent-backed bot instance here" in capsys.readouterr().err
+
+
+def test_agent_run_with_an_unknown_instance_is_a_usage_error(client, capsys):
+    code, _ = run(["agent", "run", "do", "something", "--instance", "9999"], client)
+    assert code == 2
+    assert "no agent-backed bot instance 9999" in capsys.readouterr().err
+
+
+def test_agent_budget_show_and_set(client, capsys):
+    code, _ = run(["--json", "agent", "budget"], client)
+    assert code == 0
+    budget = json.loads(capsys.readouterr().out)
+    assert {"enabled", "max_children", "max_estimated_usd"} <= set(budget)
+
+    code, _ = run(["--json", "agent", "budget", "--max-children", "3"], client)
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["max_children"] == 3
+
+
+def test_approvals_list_show_approve_and_deny(client, capsys):
+    """A real waiting approval: request_approval registers a waiter and a pending row, and only a
+    resolve - this CLI's own `approvals approve` - can answer it."""
+    from bot.agent_runtime import approval
+
+    iid = _create_instance(name="approver", platform="app", backend="native_agent",
+                           credentials={}, allowed_user_ids=[])
+
+    async def scenario():
+        async def notify(approval_id, tool_name, tool_input):
+            pass
+
+        code = await arun(["--json", "approvals", "list", "--instance", str(iid)], client)
+        assert code == 0
+        assert json.loads(capsys.readouterr().out) == []
+
+        task = asyncio.ensure_future(
+            approval.request_approval(iid, "chat1", "session1", "shell", {"command": "echo hi"}, notify=notify))
+        await asyncio.sleep(0.05)
+
+        code = await arun(["--json", "approvals", "list", "--instance", str(iid)], client)
+        rows = json.loads(capsys.readouterr().out)
+        assert code == 0 and len(rows) == 1 and rows[0]["tool"] == "shell", rows
+        approval_id = rows[0]["id"]
+
+        code = await arun(["--json", "approvals", "show", str(approval_id)], client)
+        assert code == 0 and json.loads(capsys.readouterr().out)["id"] == approval_id
+
+        code = await arun(["--json", "approvals", "approve", str(approval_id)], client)
+        assert code == 0
+        assert json.loads(capsys.readouterr().out) == {"id": approval_id, "outcome": "once"}
+        assert await task == "once"
+    asyncio.run(scenario())
+
+    async def refused():
+        async def notify(approval_id, tool_name, tool_input):
+            pass
+
+        task = asyncio.ensure_future(
+            approval.request_approval(iid, "chat2", "session2", "shell", {"command": "rm -rf /"}, notify=notify))
+        await asyncio.sleep(0.05)
+        code = await arun(["--json", "approvals", "list", "--instance", str(iid)], client)
+        pending = json.loads(capsys.readouterr().out)
+        assert code == 0 and pending[0]["tool"] == "shell"
+        code = await arun(["--json", "approvals", "deny", str(pending[0]["id"])], client)
+        assert code == 0
+        assert await task == "deny"
+    asyncio.run(refused())
+
+
+def test_swarms_status_reports_budget_runs_and_delegation(client, capsys):
+    code, _ = run(["--json", "swarms", "status"], client)
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert {"budget", "swarms", "runs", "delegation"} == set(payload)
+    assert "max_children" in payload["budget"]
+
+
+def test_swarms_dispatch_splits_a_goal_for_a_native_instance(client, capsys, monkeypatch):
+    from bot import db
+
+    captured: dict = {}
+
+    async def fake_run_batch(tasks, *, role, provider, model, effort=None, max_children, parent_instance_id):
+        captured["tasks"] = tasks
+        return {"dispatch_id": "fake", "children": [
+            {"index": i, "goal": t["goal"], "model": f"{provider}/{model}", "status": "ok",
+             "result_excerpt": f"did {t['goal']}"} for i, t in enumerate(tasks)]}
+    monkeypatch.setattr("bot.agent_runtime.subagents.run_batch", fake_run_batch)
+
+    iid = _create_instance(name="dispatcher", platform="app", backend="native_agent",
+                           credentials={}, allowed_user_ids=[])
+    code, _ = run(["--json", "swarms", "dispatch", "ship", "the", "CLI", "--instance", str(iid),
+                   "--provider", "ollama", "--model", "llama3.1"], client)
+    assert code == 0
+    result = json.loads(capsys.readouterr().out)
+    assert captured["tasks"] == [{"goal": "ship the CLI"}]
+    assert result["ok"] is True and result["dispatch_id"] == "fake"
+    assert db.list_job_children(result["job_id"])[0]["goal"] == "ship the CLI"
+
+    code, _ = run(["--json", "swarms", "dispatch", "--task", "one", "--task", "two",
+                   "--instance", str(iid), "--provider", "ollama", "--model", "llama3.1"], client)
+    assert code == 0
+    capsys.readouterr()
+    assert [t["goal"] for t in captured["tasks"]] == ["one", "two"]
+
+    code, _ = run(["swarms", "dispatch"], client)
+    assert code == 2
+    assert "goal" in capsys.readouterr().err
+
+
+def test_swarms_goal_on_a_native_instance_explains_itself(client, capsys):
+    iid = _create_instance(name="goal-bot", platform="app", backend="native_agent",
+                           credentials={}, allowed_user_ids=[])
+    code, _ = run(["swarms", "goal", "ship", "it", "--instance", str(iid)], client)
+    assert code == 2
+    assert "swarms dispatch" in capsys.readouterr().err
+
+
+def test_route_explain_rules_and_set(client, capsys):
+    code, _ = run(["--json", "route", "explain", "refactor this python file and run the tests"], client)
+    assert code == 0
+    explained = json.loads(capsys.readouterr().out)
+    assert {"task_class", "reasons", "recommendations"} <= set(explained)
+
+    code, _ = run(["--json", "route", "rules"], client)
+    assert code == 0
+    assert "policy" in json.loads(capsys.readouterr().out)
+
+    code, _ = run(["--json", "route", "set", json.dumps({"sticky": False}), "--note", "cli test"], client)
+    assert code == 0
+    saved = json.loads(capsys.readouterr().out)
+    assert saved["version"] >= 1 and saved["changes"]
+    code, _ = run(["--json", "route", "rules"], client)
+    assert json.loads(capsys.readouterr().out)["policy"]["sticky"] is False
+
+    code, _ = run(["route", "set", "not json"], client)
+    assert code == 2
+    assert "JSON" in capsys.readouterr().err
+
+
+def test_models_list_free_and_usage(client, capsys):
+    code, _ = run(["--json", "models", "list", "--limit", "3"], client)
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert isinstance(payload, list) and len(payload) <= 3
+    if payload:
+        assert {"provider", "model", "context", "free"} <= set(payload[0]), payload[0]
+
+    code, _ = run(["--json", "models", "free", "--limit", "3"], client)
+    assert code == 0
+    assert all(m["free"] for m in json.loads(capsys.readouterr().out))
+
+    code, _ = run(["--json", "models", "usage", "--days", "1"], client)
+    assert code == 0
+    assert {"days", "models", "timezone"} <= set(json.loads(capsys.readouterr().out))
+
+
+def test_privacy_get_and_set(client, capsys):
+    code, _ = run(["--json", "privacy", "get"], client)
+    assert code == 0
+    assert "enabled" in json.loads(capsys.readouterr().out)
+
+    code, _ = run(["--json", "privacy", "set", "--enabled"], client)
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["enabled"] is True
+
+
+def test_dns_resolve(client, capsys):
+    code, _ = run(["--json", "dns", "resolve", "localhost"], client)
+    assert code == 0
+    resolved = json.loads(capsys.readouterr().out)
+    assert resolved["name"] == "localhost" and resolved["type"] == "A"
+    assert isinstance(resolved["values"], list)   # what the world sees; a local name may have none
+
+    code, _ = run(["dns", "resolve", "localhost", "--type", "TXT"], client)
+    assert code == 0
+    json.loads(capsys.readouterr().out)
+
+
+def test_modules_list_show_ops_status_and_logs(client, capsys):
+    code, _ = run(["--json", "modules", "list"], client)
+    assert code == 0
+    modules = json.loads(capsys.readouterr().out)
+    assert modules and {"id", "name", "area", "installed", "ready", "hub"} <= set(modules[0]), modules[0]
+    mid = modules[0]["id"]
+
+    code, _ = run(["--json", "modules", "status", mid], client)
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["module"]["id"] == mid
+
+    code, _ = run(["--json", "modules", "show", mid], client)
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["module"]["id"] == mid
+
+    code, _ = run(["--json", "modules", "logs", mid], client)
+    assert code == 0
+    assert isinstance(json.loads(capsys.readouterr().out), list)
+
+    # this checkout has no module installed, so its hub has no operations to list: a real 503 from the
+    # module API, not a silent empty answer.
+    code, _ = run(["--json", "modules", "ops", mid], client)
+    assert code == 1
+    assert "not installed" in capsys.readouterr().err
+
+
+def test_modules_run_op_reports_a_real_failure(client, capsys):
+    code, _ = run(["--json", "modules", "run-op", "no-such-module", "no-such-op"], client)
+    assert code == 1
+    assert "no-such-module" in capsys.readouterr().err
+
+
+def test_ai_models_ps_and_serve_status(client, capsys):
+    code, _ = run(["--json", "ai", "serve-status"], client)
+    assert code == 0
+    assert {"server", "running"} <= set(json.loads(capsys.readouterr().out))
+
+    code, _ = run(["--json", "ai", "models"], client)
+    assert code == 0
+    assert isinstance(json.loads(capsys.readouterr().out), list)
+
+    code, _ = run(["--json", "ai", "ps"], client)
+    assert code == 0
+    assert isinstance(json.loads(capsys.readouterr().out), list)
+
+
+def test_ai_run_reaches_the_real_inference_route(client, capsys):
+    """`ai run` posts to ABP's own /api/ollama/call. With no local Ollama serving a model this is a real
+    failure from that route, not a stubbed one."""
+    code, _ = run(["--json", "ai", "run", "some-model", "say", "hi"], client)
+    assert code == 1
+    err = capsys.readouterr().err.lower()
+    assert "error:" in err and "ollama is not running" in err, err
+
+    with pytest.raises(SystemExit) as exc:
+        run(["ai", "run", "some-model"], client)
+    assert exc.value.code == 2
+    assert "required" in capsys.readouterr().err
+
+
+def test_doctor_reports_every_feature_group(client, capsys):
+    code, _ = run(["--json", "doctor"], client)
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True and "ready" in payload
+    names = {c["name"] for c in payload["checks"]}
+    assert {"dashboard", "providers", "tools", "approvals", "memory", "swarms", "modules"} <= names, names
+    assert any(c["name"].startswith("setup:") for c in payload["checks"])
+    for check in payload["checks"]:
+        assert {"name", "ok", "detail"} == set(check), check
+
+    code, _ = run(["doctor"], client)
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "every feature answered" in out and "[ok] dashboard" in out
+
+
+def test_doctor_reports_an_unreachable_dashboard(client, monkeypatch, capsys):
+    import httpx
+
+    def refuse(*args, **kwargs):
+        raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(httpx.AsyncClient, "request", refuse)
+    code, _ = run(["--json", "doctor"], client)
+    assert code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is False and payload["checks"][0]["ok"] is False

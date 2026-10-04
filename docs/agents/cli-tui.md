@@ -38,7 +38,13 @@ what's still dashboard/desktop-app-only.
   (press `p` from the bot list). CLI: `abp_cli providers list|add|remove|catalog|models|toggle|restore`.
 - **Swarms**: create (any strategy — `fanout_synthesize`, `leader_vote`, `sequential_relay`,
   `decompose_delegate`, `custom`), list, enable/disable, run, watch recent runs, delete. TUI:
-  `SwarmsScreen` (press `w`). CLI: `abp_cli swarms list|show|create|delete|enable|disable|run|runs|run-show|run-cancel`.
+  `SwarmsScreen` (press `w`). CLI: `abp_cli swarms list|show|create|delete|enable|disable|run|runs|run-show|run-cancel`,
+  plus the two sub-agent fan-outs the MCP server's `dispatch_native_swarm_goal` and
+  `dispatch_swarm_goal` tools sit on — `swarms dispatch <goal>` (split it up front with `--task`,
+  or hand it over as one task; the route follows the instance's backend), `swarms goal <goal>`
+  (the goal-prompt indirection, `--native` to skip it), and `swarms status` (the spending guard,
+  the swarms, their latest runs and the delegation activity log). `abp_cli agent budget` reads and
+  sets the same guard (`/api/swarm-budget`) the fan-out routes check before they spend anything.
 - **Sessions**: list (with search), view a conversation's messages, delete. TUI: `SessionsScreen`
   (press `s`). CLI: `abp_cli sessions list|show|delete|new`.
 - **SSH Toolkit** ([github.com/LoopyLuci/SSH_Toolkit](https://github.com/LoopyLuci/SSH_Toolkit)) — a
@@ -58,6 +64,53 @@ what's still dashboard/desktop-app-only.
 **CLI only, no TUI screen yet** (all real, all tested against the live dashboard app — just not
 given a Textual screen in this phase):
 
+- **Memory** (`/api/memory/...`, `bot/dashboard/memory_api.py`, `bot/memoryfabric/`): the whole
+  fabric, not just the overview the dashboard shows. `abp_cli memory
+  search|add|list|delete|approve|reject|context` (memories, their review — a shared memory goes in
+  pending and needs an `approve` before anything recalls it — and the exact block a client puts in
+  front of a prompt), `threads|thread|post-turn` (the conversation every backend writes to),
+  `tree walk|search-entities|neighbors|source|drill-down|cover-window|fetch-leaves`,
+  `tree-ingest|tree-stats` (the knowledge base), `sources|source-add|source-sync|source-rm`,
+  `diff|checkpoint` (the diff ledger), `vault|vault-sync`,
+  `rules|rule-add|rule-remove` (tool rules) and `goals|goal-add|goal-done`, plus
+  `settings|settings-set`. One CLI subcommand per `knowledge.query()` mode, so the tree's own
+  vocabulary is what you type.
+- **Running an agent**: `abp_cli agent run <goal...>` — a real native-agent run, two ways. With a
+  bot instance (given with `--instance`, or the first one an ABP Agent backend drives) it goes
+  through `POST /api/chat/send-to-bot`, the same turn every platform handler uses, and prints the
+  run's own record as it lands: each new job, its tool events, and any approval it is blocked on.
+  `--approve allow|deny` answers those approvals from the terminal instead of leaving the run
+  waiting for a click in the GUI; `--wait` follows the job to a finished state. With `--backend` and
+  no instance to go through it runs headlessly on this machine instead, reusing `abp_run`'s
+  transport, throwaway database and agent loop (`--model`, `--workspace`, `--permission-mode`,
+  streaming the answer as it is written). Then `agent runs|show|cancel` (the run ledger, one run's
+  job row + tool events + per-child breakdown, cancelling a fan-out) and `agent budget`.
+- **The agent's tools**: `abp_cli tools list` (`GET /api/agent/tools`) — every tool the native agent
+  can be offered this turn, with its permission class, whether it is read-only, and whether it asks
+  first; `--read-only` and `--asks-first` narrow it. This is the same inventory the ABP Agents page
+  renders and the same `toolspec` the permission rules are written against.
+- **Approvals**: `abp_cli approvals list|show|approve|deny` (`/api/approvals`) — so a headless run
+  is never stuck waiting for a GUI click, from a second terminal, a CI job or another agent.
+  `approve --outcome session|always` grants standing approval (the dashboard token only, exactly as
+  the API requires).
+- **Routing** (`bot/model_router.py`, `bot/router_brain/`): `abp_cli route
+  explain <text>` — which task class a message is read as, why, and the ranked models with their
+  quality/economy/headroom/pricing — plus `route rules|set` (the editable policy, its history and a
+  rollback), `simulate`, `overview|models|decisions|decision|feedback|events|examples|example-add|example-rm`,
+  and the per-model `rest|release|forget` controls.
+- **Model knowledge**: `abp_cli models list|free|usage|info|refresh` — the catalogued models that
+  fit a need with their current headroom, the free ones, this week's calls/tokens/rate-limit hits per
+  model, and one model's full record with its allowance.
+- **Privacy and DNS**: `abp_cli privacy get|set` (privacy mode: what may leave this machine, and
+  whether a LAN client may connect) and `abp_cli dns resolve <name> [--type A|AAAA|TXT|MX...]`
+  (what the world sees for a name, resolved through ABP's own validating resolver first) and
+  `dns status` (Tailscale DNS).
+- **`abp_cli doctor`**: the one screen a person or an agent reads first — can this CLI reach ABP at
+  all (which is also the token check: a wrong one is a 401 on the very first call), which of the
+  feature groups (providers, agent overview, tools, approvals, memory, swarms, modules) answer, plus
+  the ABP Agents page's own setup checks as `setup:` lines. `ok` says whether every route answered,
+  `ready` whether the setup checks all pass (a fresh install is `ok` and not yet `ready`, which is not
+  a failure).
 - **Terminal**: `abp_cli terminal <text>` — runs one ABP slash command (`bot/commands.py`'s
   dispatcher, the same one every platform handler uses), **not a raw shell**.
 - **Hooks**: `abp_cli hooks list|add|enable|disable|remove`.
@@ -81,6 +134,11 @@ given a Textual screen in this phase):
   checked out) never fails the underlying peer link itself, only skips the SSH half of it.
 - **Kanban**: `abp_cli kanban boards|cards|add|move|remove`.
 - **Editors**: `abp_cli editors status|install-vscode` (the VS Code extension and the ACP command for other editors).
+- **Local AI and the Neural Lab**: `abp_cli ai status|serve-status|models|list|ps|pull|rm|run|cp|show|import|create|discover|adopt-all|train|server|engine`
+  and `abp_cli lab status|runs|run|stop|designs|validate|train|import|projects|systune|advice|bench|retrain|telemetry|hw`
+  (see `abp_cli/ai.py`). `ai serve-status` is just the inference server and its loaded models;
+  `ai run <model> <prompt...>` is a real inference run through ABP's own Ollama routes
+  (`--generate` for a completion instead of a chat turn).
 - **Tailscale / containers / VMs / infra rules**: `abp_cli tailscale|docker|vm|rules get|post|put|patch|delete
   <path> [--data JSON]` maps one-to-one onto `/api/tailscale/*`, `/api/docker/*`, `/api/vms/*` and
   `/api/infra/rules` (for example `abp_cli docker get containers`, `abp_cli docker post
@@ -96,10 +154,14 @@ given a Textual screen in this phase):
 
 ## What's still dashboard/desktop-app-only
 
-The terminal panel, hooks, plugins, skills, MCP, security/devices, snapshots/env/config/diagnostics,
-peers and kanban have no TUI screen yet (CLI-only, see above) — a later pass, not attempted
-half-way here. Also still GUI-only: Android push/mobile-key QR pairing UI, and the Models page's
-own usage/limit screens beyond plain provider/model browsing.
+The memory fabric, running agents, the tool inventory, approvals, routing, model knowledge,
+privacy/DNS, `doctor`, the terminal panel, hooks, plugins, skills, MCP, security/devices,
+snapshots/env/config/diagnostics, peers and kanban have no TUI screen yet (CLI-only, see above) — a
+later pass, not attempted half-way here. Also still GUI-only: Android push/mobile-key QR pairing
+UI, the modules page's own hub/job viewer beyond what `modules status|ops|logs` prints, and the
+Studio, Cluster, Octopus, Kestrion and Sentinel pages (no CLI surface at all for those route
+groups — `abp_cli`'s generic `tailscale|docker|vm|rules|browser` passthrough is the closest thing
+for infra).
 
 **SSH session monitor + recorder** (dashboard GUI only, no TUI/CLI surface yet) — the SSH Toolkit
 page's "Session monitor" card: run a command over a registered connection and watch every action
@@ -131,4 +193,8 @@ From there:
 
 `tests/test_tui.py` (Textual's own `App.run_test()` harness, against a real in-process dashboard app
 over `httpx.ASGITransport` — real request/response handling, not a mock) and `tests/test_abp_cli.py`
-(the same real-app pattern, driving `abp_cli`'s argument parser and dispatch directly).
+(the same real-app pattern, driving `abp_cli`'s argument parser and dispatch directly). Only the
+model is ever faked in the CLI tests — `router.ask` for a turn, `subagents.run_batch` for a fan-out,
+`abp_run.core.run_turn` for a local run — never a route, a client method or the dispatch itself.
+(The four `test_ssh_*` cases need the `vendor/ssh_toolkit` submodule checked out, so they skip or
+fail on a worktree that has not run `git submodule update --init`.)

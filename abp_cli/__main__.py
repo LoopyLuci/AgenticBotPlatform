@@ -11,8 +11,29 @@ Commands:
   chat <instance-id> <text...>            a real turn, same route the Android app uses
   agent-settings get|set                  a bot's own permission mode, sub-agent limits, ...
   agent-config schema|get|set             the ~65 native_agent.* settings (ABP Agents page)
+  agent run <goal...>                    a real native-agent run: through a bot instance's API turn
+                                           (streaming its progress), or headlessly on this machine via
+                                           abp_run with --backend/--model/--workspace
+  agent runs|show|cancel                  the run ledger, one run's detail, cancel a fan-out
+  tools list                             what the native agent can call, with its permission class
+  approvals list|show|approve|deny        tool approvals, so a headless run is never stuck on a GUI click
+  memory search|add|list|delete|context|threads|thread|post-turn|tree|tree-ingest|tree-stats
+        |sources|source-add|source-sync|source-rm|diff|checkpoint|vault|vault-sync|rules|rule-add
+        |rule-remove|goals|goal-add|goal-done|settings|settings-set|approve|reject
+                                           the memory fabric: memories, threads, the knowledge tree,
+                                           sources, the vault, tool rules and goals
+  swarms list|show|create|delete|enable|disable|run|runs|run-show|run-cancel
+      |dispatch|goal|status              fan-out through one instance (native or Hermes), the swarm
+                                           budget, and what has been dispatched recently
+  route explain|rules|set|simulate|overview|models|decisions|decision|feedback|examples|example-add
+        |example-rm|events|rest|release|forget|reset
+                                           the model router: which model a message would use, and why
+  models list|free|usage|info|refresh     the model catalog, its free models, and this week's usage
+  privacy get|set                        privacy mode
+  dns resolve|status                     resolve a name here; Tailscale DNS status
+  doctor                                 one screen: can it reach ABP, does the token work, what answers
   providers list|add|remove|catalog|models|toggle|restore
-  modules list|show|ops|call|setup|adopt|add|candidates|new|publish|forget
+  modules list|show|ops|run-op|start|stop|status|logs|call|setup|adopt|add|candidates|new|publish|forget
                                           every module; `modules adopt <folder>` makes any project one
   vision status|analyze|find|compare|edit|fetch
                                           computer vision here (OpenCV + its model zoo): objects, faces, text,
@@ -23,9 +44,9 @@ Commands:
   nas status|disks|array|share|user|search|transfer|backup|app|...
                                           ABP File Server: parity array, shares, users, search, transfers,
                                           backups, apps (see abp_cli/nas.py)
-  ai status|list|ps|pull|rm|cp|show|import|create|discover|train|server|engine
+  ai status|serve-status|models|list|ps|pull|rm|run|cp|show|import|create|discover|train|server|engine
                                           ABP's local AI (Ollama and Unsloth in ABP): models, the server,
-                                          fine-tuning on the GPU (see abp_cli/ai.py)
+                                          a real inference run, fine-tuning on the GPU (see abp_cli/ai.py)
   lab status|runs|designs|validate|train|import|projects|systune|advice|bench|retrain|telemetry|hw
                                           the Neural Lab: designs trained on the GPU, BrainBuilder / KotMoE /
                                           Amethyst / Kestrion, the system models (see abp_cli/ai.py)
@@ -35,6 +56,7 @@ DASHBOARD_TOKEN, same as bot/tui/'s ConnectScreen). --json prints machine-readab
 instead of plain text/tables, on every command.
 
 Exit status: 0 done | 1 the request failed | 2 bad usage.
+Every command takes --json for machine-readable output, and errors go to stderr.
 See docs/agents/cli-tui.md for what this covers today and what's still dashboard-only.
 """
 from __future__ import annotations
@@ -43,7 +65,9 @@ import argparse
 import asyncio
 import json
 import pathlib
+import shutil
 import sys
+import tempfile
 from typing import Any, Optional
 
 from bot.dashboard_client import ApiError, DashboardClient, default_connection
@@ -200,6 +224,24 @@ async def _dispatch(args, client: DashboardClient) -> int:
         return await _editors(args, client)
     if cmd == "ssh":
         return await _ssh(args, client)
+    if cmd == "memory":
+        return await _memory(args, client)
+    if cmd == "agent":
+        return await _agent(args, client)
+    if cmd == "tools":
+        return await _tools(args, client)
+    if cmd == "approvals":
+        return await _approvals(args, client)
+    if cmd == "route":
+        return await _route(args, client)
+    if cmd == "models":
+        return await _models(args, client)
+    if cmd == "privacy":
+        return await _privacy(args, client)
+    if cmd == "dns":
+        return await _dns(args, client)
+    if cmd == "doctor":
+        return await _doctor(args, client)
     print(f"unknown command {cmd!r}", file=sys.stderr)
     return 2
 
@@ -253,6 +295,617 @@ async def _ssh(args, client: DashboardClient) -> int:
     return 2
 
 
+async def _memory(args, client: DashboardClient) -> int:
+    sub = args.memory_cmd
+    if sub == "search":
+        _print(args, await client.memory_search(args.q, instance_id=args.instance, limit=args.limit),
+               table=["id", "content", "kind", "shared"])
+        return 0
+    if sub == "add":
+        _print(args, await client.memory_entry_add(args.content, kind=args.kind, shared=args.shared,
+                                                   instance_id=args.instance, source=args.source))
+        return 0
+    if sub == "list":
+        _print(args, await client.memory_entries_list(scope=args.scope, status=args.status),
+               table=["id", "content", "kind", "status"])
+        return 0
+    if sub == "delete":
+        _print(args, await client.memory_entry_delete(args.entry_id, scope=args.scope))
+        return 0
+    if sub == "approve":
+        _print(args, await client.memory_entry_review(args.entry_id, "approve"))
+        return 0
+    if sub == "reject":
+        _print(args, await client.memory_entry_review(args.entry_id, "reject"))
+        return 0
+    if sub == "context":
+        _print(args, await client.memory_context(args.q, instance_id=args.instance, thread=args.thread,
+                                                 backend=args.backend))
+        return 0
+    if sub == "threads":
+        _print(args, await client.memory_threads(instance_id=args.instance, limit=args.limit),
+               table=["thread", "instance_id", "turns"])
+        return 0
+    if sub == "thread":
+        _print(args, await client.memory_thread_get(args.thread, after=args.after, limit=args.limit),
+               table=["id", "role", "text", "created"])
+        return 0
+    if sub == "post-turn":
+        _print(args, await client.memory_thread_add(args.thread, args.role, args.text, backend=args.backend,
+                                                    model=args.model, instance_id=args.instance))
+        return 0
+    if sub == "tree":
+        data = await _memory_tree(args, client)
+        _print(args, data)
+        return 0
+    if sub == "tree-ingest":
+        _print(args, await client.memory_tree_ingest(args.title, args.text, source_id=args.source_id))
+        return 0
+    if sub == "tree-stats":
+        _print(args, await client.memory_tree_stats())
+        return 0
+    if sub == "sources":
+        _print(args, await client.memory_sources(), table=["id", "kind", "label", "enabled", "last_sync"])
+        return 0
+    if sub == "source-add":
+        _print(args, await client.memory_source_add(args.kind, args.label, path=args.path, repo=args.repo,
+                                                    url=args.url, glob=args.glob))
+        return 0
+    if sub == "source-sync":
+        _print(args, await client.memory_source_sync(args.source_id))
+        return 0
+    if sub == "source-rm":
+        _print(args, await client.memory_source_remove(args.source_id))
+        return 0
+    if sub == "diff":
+        _print(args, await client.memory_diff(source_id=args.source_id, checkpoint=args.checkpoint,
+                                              since_read=not args.all, commit=not args.no_commit, text=args.text))
+        return 0
+    if sub == "checkpoint":
+        _print(args, await client.memory_checkpoint(args.name))
+        return 0
+    if sub == "vault":
+        _print(args, await client.memory_vault())
+        return 0
+    if sub == "vault-sync":
+        _print(args, await client.memory_vault_sync())
+        return 0
+    if sub == "rules":
+        _print(args, await client.memory_tool_rules(tool=args.tool), table=["id", "tool", "rule", "priority"])
+        return 0
+    if sub == "rule-add":
+        _print(args, await client.memory_tool_rule_put(args.tool, args.rule, priority=args.priority,
+                                                       tags=args.tags, rule_id=args.rule_id))
+        return 0
+    if sub == "rule-remove":
+        _print(args, await client.memory_tool_rule_delete(args.rule_id))
+        return 0
+    if sub == "goals":
+        _print(args, await client.memory_goals(all=args.all), table=["id", "text", "status"])
+        return 0
+    if sub == "goal-add":
+        _print(args, await client.memory_goal_put(args.text, status=args.status, goal_id=args.goal_id))
+        return 0
+    if sub == "goal-done":
+        _print(args, await client.memory_goal_delete(args.goal_id))
+        return 0
+    if sub == "settings":
+        if args.json:
+            _print(args, await client.memory_settings_get())
+        else:
+            s = await client.memory_settings_get()
+            for k, v in s.items():
+                print(f"{k}: {v}")
+        return 0
+    if sub == "settings-set":
+        _print(args, await client.memory_settings_set(_parse_kv_pairs(args.changes)))
+        return 0
+    print(f"unknown memory subcommand {sub!r}", file=sys.stderr)
+    return 2
+
+
+async def _agent_target(args, client: DashboardClient) -> tuple[Optional[int], Optional[dict], list[dict]]:
+    """(instance id, its row, every agent-backed bot) for `agent run` and the swarm fan-outs. The
+    candidates come from GET /api/agent/overview's own `bots` list - the same filtered set the Agents
+    page shows - so this never needs its own idea of which backends are agent backends."""
+    candidates = (await client.agent_overview()).get("bots") or []
+    if args.instance is not None:
+        row = next((b for b in candidates if int(b["id"]) == args.instance), None)
+        if row is None:
+            print(f"no agent-backed bot instance {args.instance} here"
+                  + (f" (agent-backed: {', '.join(str(b['id']) for b in candidates)})" if candidates else
+                     " - create one: abp_cli bots create ... --backend native_agent"), file=sys.stderr)
+            return None, None, candidates
+        return int(row["id"]), row, candidates
+    row = candidates[0] if candidates else None
+    return (int(row["id"]) if row else None), row, candidates
+
+
+async def _memory_tree(args, client: DashboardClient) -> Any:
+    """The knowledge tree's own query modes (bot/memoryfabric/knowledge.py's query(), the same entry
+    point the agents' memory_tree tool and the MCP server use), one CLI subcommand each."""
+    t = args.tree_cmd
+    if t == "walk":
+        return await client.memory_tree("walk", query=args.query, limit=args.limit, max_hops=args.max_hops,
+                                        time_window_days=_number(args.window))
+    if t == "search-entities":
+        return await client.memory_tree("search_entities", name=args.name, limit=args.limit)
+    if t == "neighbors":
+        return await client.memory_tree("neighbors", entity=args.entity, limit=args.limit)
+    if t == "source":
+        return await client.memory_tree("query_source", source_id=args.source_id, query=args.query,
+                                        since=_number(args.since), until=_number(args.until), limit=args.limit)
+    if t == "drill-down":
+        return await client.memory_tree("drill_down", node_id=args.node_id, depth=args.depth, query=args.query,
+                                        limit=args.limit)
+    if t == "cover-window":
+        return await client.memory_tree("cover_window", since=_number(args.since), until=_number(args.until),
+                                        source_id=args.source_id, limit=args.limit)
+    return await client.memory_tree("fetch_leaves", ids=args.ids)
+
+
+def _number(raw: Optional[str]) -> Optional[float]:
+    """An optional timestamp: absent stays absent, anything else must be a number."""
+    if raw in (None, ""):
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        print(f"{raw!r} is not a number (a unix timestamp, or seconds)", file=sys.stderr)
+        raise SystemExit(2) from None
+
+
+async def _agent(args, client: DashboardClient) -> int:
+    sub = args.agent_cmd
+    if sub == "run":
+        return await _agent_run(args, client)
+    if sub == "runs":
+        rows = await client.list_jobs(status=args.status, limit=args.limit)
+        if args.instance is not None:
+            rows = [r for r in rows if int(r.get("instance_id") or 0) == args.instance]
+        _print(args, rows, table=["id", "instance_id", "action_type", "status", "backend", "created_at"])
+        return 0
+    if sub == "show":
+        return await _agent_show(args, client)
+    if sub == "cancel":
+        _print(args, await client.cancel_swarm_run(args.swarm_run_id))
+        return 0
+    if sub == "budget":
+        if args.max_children is None and args.max_usd is None and args.enabled is None:
+            _print(args, await client.swarm_budget())
+        else:
+            _print(args, await client.swarm_budget_set(enabled=args.enabled, max_children=args.max_children,
+                                                       max_estimated_usd=args.max_usd))
+        return 0
+    print(f"unknown agent subcommand {sub!r}", file=sys.stderr)
+    return 2
+
+
+async def _agent_show(args, client: DashboardClient) -> int:
+    """One run in full: its jobs row, every tool event, and its per-child breakdown (delegation.py's routes)."""
+    job = await client.job(args.job_id)
+    if job is None:
+        print(f"no job #{args.job_id}", file=sys.stderr)
+        return 1
+    detail: dict[str, Any] = {"job": job}
+    try:
+        detail["tool_events"] = await client.job_tool_events(args.job_id)
+        detail["children"] = await client.job_children(args.job_id)
+    except ApiError as exc:                      # a job with no events yet is normal, not a failure
+        detail["tool_events"], detail["children"] = [], []
+        detail["events_error"] = str(exc)
+    _print(args, detail)
+    return 0
+
+
+async def _agent_run(args, client: DashboardClient) -> int:
+    """One real native-agent run. Through a bot instance's API turn (its own tools, permissions and
+    approvals, recorded as a job the dashboard and `agent runs` both see), or - with --backend, and no
+    instance to go through - headlessly on this machine through abp_run."""
+    goal = " ".join(args.goal).strip()
+    if not goal:
+        print("the goal is empty", file=sys.stderr)
+        return 2
+    instance, row, candidates = await _agent_target(args, client)
+    if instance is None and not candidates:
+        if args.backend is None:
+            print("no agent-backed bot instance here, and --backend was not given. Create one "
+                  "(`abp_cli bots create ... --backend native_agent`), name one with --instance, or run the "
+                  "agent headlessly on this machine instead: --backend anthropic --model claude-sonnet-5.",
+                  file=sys.stderr)
+            return 2
+        return await _agent_run_local(args, goal)
+    if instance is None:
+        return 2
+    return await _agent_run_via_api(args, client, goal, instance, row)
+
+
+async def _agent_run_local(args, goal: str) -> int:
+    """No bot instance to go through: the same headless agent `python -m abp_run` runs (abp_run/core.py),
+    streaming the answer as it is written."""
+    from abp_run import core
+
+    workspace = pathlib.Path(args.workspace or ".").expanduser()
+    if not workspace.is_dir():
+        print(f"--workspace {workspace} is not a folder", file=sys.stderr)
+        return 2
+    if args.model:
+        ref = args.model if "/" in args.model else f"{args.backend or 'anthropic'}/{args.model}"
+    elif args.backend and "/" in args.backend:
+        ref = args.backend
+    else:
+        print("a local run needs a model: --model claude-sonnet-5, --model provider/model, or "
+              "--backend provider/model", file=sys.stderr)
+        return 2
+    try:
+        provider, model = core.split_model(ref)
+    except core.RunError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    streamed: list[str] = []
+
+    async def on_text(text: str) -> None:
+        streamed.append(text)
+        sys.stdout.write(text)
+        sys.stdout.flush()
+
+    # abp_run's own pieces, driven on this command's event loop instead of run_once()'s private one
+    # (run_once calls asyncio.run(), which cannot run inside the loop main() already has) - the same
+    # transport, the same throwaway database and trace store, the same agent loop.
+    try:
+        transport = core.transport_for(provider, model)
+    except core.RunError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    root = pathlib.Path(tempfile.mkdtemp(prefix="abp-run-"))
+    try:
+        from bot.agent_runtime import code_intel
+
+        with core.ephemeral_environment(root, "deny" if args.approve == "ask" else args.approve):
+            try:
+                result = await core.run_turn(goal, transport=transport, model=model, cwd=workspace.resolve(),
+                                             permission_mode=args.permission_mode,
+                                             on_text=on_text if not args.json else None,
+                                             timeout_s=args.timeout)
+            finally:
+                await code_intel.shutdown_all()   # language servers must not outlive this run
+    except core.RunError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+    if args.json:
+        print(json.dumps({"via": "abp_run", "provider": provider, "model": model,
+                          "workspace": str(workspace.resolve()), **result.to_dict()},
+                         ensure_ascii=False))
+    elif not streamed:
+        print(result.reply if result.ok else f"error: {result.error}", file=sys.stdout if result.ok else sys.stderr)
+    elif not result.ok:
+        print(f"\nerror: {result.error}", file=sys.stderr)
+    return result.exit_code
+
+
+async def _agent_run_via_api(args, client: DashboardClient, goal: str, instance: int,
+                             instance_row: Optional[dict]) -> int:
+    """POST /api/chat/send-to-bot is one synchronous turn, so the progress streamed here is the run's own
+    record as it lands: each new job, its tool events, and any tool approval it is waiting on (resolved
+    straight away with --approve allow|deny, so nothing waits for a click in the GUI)."""
+    seen_jobs: set[int] = {int(r["id"]) for r in await client.list_jobs(limit=200)}
+    watching: set[int] = set()
+    seen_events: dict[int, int] = {}
+    seen_approvals: set[int] = set()
+    for row in await client.list_approvals(status="pending", instance_id=instance, limit=200):
+        seen_approvals.add(int(row["id"]))
+    events: list[dict[str, Any]] = []
+    turn = asyncio.ensure_future(client.send_to_bot(instance, goal))
+
+    async def watch() -> None:
+        while not turn.done():
+            done, _ = await asyncio.wait({turn}, timeout=args.poll)
+            if done:
+                return
+            await _agent_run_poll(client, instance, seen_jobs, watching, seen_events, seen_approvals, args, events)
+
+    await watch()
+    try:
+        result = await turn
+    except ApiError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    reply = result.get("reply") or ""
+    if args.json:
+        print(json.dumps({"via": "api", "instance_id": instance, "instance": (instance_row or {}).get("name"),
+                          "backend": (instance_row or {}).get("backend"),
+                          "model": (instance_row or {}).get("model"),
+                          "goal": goal, "reply": reply, "events": events}, ensure_ascii=False))
+    else:
+        if reply:
+            print(reply)
+        for ev in events:
+            print(_event_line(ev))
+    jobs = await _agent_run_wait(client, args, instance)
+    if args.wait:
+        for job in jobs:
+            print(f"run {job['id']}: {job.get('status') or '-'} "
+                  f"({job.get('duration_ms') or 0} ms, {job.get('tokens') or 0} token(s))")
+    return 0
+
+
+async def _agent_run_poll(client: DashboardClient, instance: int, seen_jobs: set[int], watching: set[int],
+                          seen_events: dict[int, int], seen_approvals: set[int], args,
+                          events: list[dict[str, Any]]) -> None:
+    """One look at what the run has recorded since the last poll: the jobs it started, the tool events
+    of those, and any approval it is now blocked on. Only jobs this run started are watched, so an
+    earlier run's events are never replayed as if they were this one's."""
+    try:
+        for row in await client.list_jobs(limit=200):
+            jid = int(row["id"])
+            if int(row.get("instance_id") or 0) != instance:
+                continue
+            if jid not in seen_jobs:
+                seen_jobs.add(jid)
+                watching.add(jid)
+                events.append({"kind": "job", "id": jid, "status": row.get("status")})
+            if jid not in watching:
+                continue
+            fresh = await client.job_tool_events(jid)
+            for ev in fresh[seen_events.get(jid, 0):]:
+                events.append({"kind": "tool", "job_id": jid, "event": ev.get("event_type"),
+                               "tool": ev.get("tool_name")})
+            seen_events[jid] = len(fresh)
+        for row in await client.list_approvals(status="pending", instance_id=instance, limit=200):
+            aid = int(row["id"])
+            if aid in seen_approvals:
+                continue
+            seen_approvals.add(aid)
+            events.append({"kind": "approval", "id": aid, "tool": row.get("tool"), "summary": row.get("summary")})
+            if args.approve != "ask":
+                outcome = "once" if args.approve == "allow" else "deny"
+                await client.resolve_approval(aid, outcome)
+                events[-1]["outcome"] = outcome
+    except Exception:  # noqa: BLE001 - a poll that fails is not a reason to fail the run
+        return
+
+
+async def _agent_run_wait(client: DashboardClient, args, instance: int) -> list[dict]:
+    """Follow the run's newest job to a terminal state. The turn itself already returned, so this is
+    bounded by --timeout and by the job's own status flipping out of running/queued/retrying."""
+
+    async def newest() -> Optional[dict]:
+        for row in await client.list_jobs(limit=200):
+            if int(row.get("instance_id") or 0) == instance:
+                return row
+        return None
+
+    if not args.wait:
+        return []
+    deadline = asyncio.get_running_loop().time() + args.timeout
+    job = await newest()
+    while job is not None and (job.get("status") or "") in ("running", "queued", "retrying"):
+        if asyncio.get_running_loop().time() > deadline:
+            print(f"run {job['id']} is still {job.get('status')} after {args.timeout:.0f}s; stopping the wait",
+                  file=sys.stderr)
+            break
+        await asyncio.sleep(args.poll)
+        job = await newest() or job
+    return [job] if job is not None else []
+
+
+def _event_line(ev: dict[str, Any]) -> str:
+    kind = ev.get("kind")
+    if kind == "job":
+        return f"  job {ev['id']}: {ev.get('status') or 'new'}"
+    if kind == "approval":
+        return f"  approval {ev['id']} for {ev.get('tool')}: {ev.get('outcome') or 'waiting'}"
+    return f"  {ev.get('event') or 'tool'} {ev.get('tool') or ''}".rstrip()
+
+
+async def _tools(args, client: DashboardClient) -> int:
+    if args.tools_cmd != "list":
+        print(f"unknown tools subcommand {args.tools_cmd!r}", file=sys.stderr)
+        return 2
+    tools = await client.agent_tools()
+    if args.read_only:
+        tools = [t for t in tools if t.get("read_only")]
+    if args.asks_first:
+        tools = [t for t in tools if t.get("asks_first")]
+    if args.json:
+        _print(args, {"tools": tools, "count": len(tools)})
+        return 0
+    _print(args, tools, table=["name", "permission", "read_only", "asks_first", "origin"])
+    return 0
+
+
+async def _approvals(args, client: DashboardClient) -> int:
+    sub = args.approvals_cmd
+    if sub == "list":
+        rows = await client.list_approvals(status=args.status, instance_id=args.instance, limit=args.limit)
+        _print(args, rows, table=["id", "instance_id", "tool", "status", "summary", "created_at"])
+        return 0
+    if sub == "show":
+        _print(args, await client.get_approval(args.approval_id))
+        return 0
+    if sub in ("approve", "deny"):
+        outcome = "deny" if sub == "deny" else args.outcome
+        _print(args, await client.resolve_approval(args.approval_id, outcome))
+        return 0
+    print(f"unknown approvals subcommand {sub!r}", file=sys.stderr)
+    return 2
+
+
+async def _route(args, client: DashboardClient) -> int:
+    sub = args.route_cmd
+    if sub == "explain":
+        _print(args, await client.agent_router_recommend(args.text))
+        return 0
+    if sub == "rules":
+        _print(args, await client.router_policy())
+        return 0
+    if sub == "set":
+        try:
+            policy = json.loads(args.policy)
+        except ValueError as exc:
+            print(f"the policy must be a JSON object: {exc}", file=sys.stderr)
+            return 2
+        _print(args, await client.router_policy_save(policy, note=args.note))
+        return 0
+    if sub == "simulate":
+        _print(args, await client.router_simulate(args.text, candidates=args.candidates, images=args.images,
+                                                  context_tokens=args.context_tokens))
+        return 0
+    if sub == "overview":
+        _print(args, await client.router_overview(hours=args.hours))
+        return 0
+    if sub == "models":
+        _print(args, await client.router_models())
+        return 0
+    if sub == "decisions":
+        _print(args, await client.router_decisions(limit=args.limit, mode=args.mode, status=args.status,
+                                                   model=args.model, task_class=args.task_class),
+               table=["id", "chosen", "status", "task_class", "created_at"])
+        return 0
+    if sub == "decision":
+        _print(args, await client.router_decision(args.decision_id))
+        return 0
+    if sub == "feedback":
+        _print(args, await client.router_feedback(args.decision_id, rating=args.rating, note=args.note,
+                                                  correct_class=args.correct_class,
+                                                  preferred_model=args.preferred_model))
+        return 0
+    if sub == "examples":
+        _print(args, await client.router_examples(limit=args.limit), table=["id", "text", "task_class"])
+        return 0
+    if sub == "example-add":
+        _print(args, await client.router_example_add(args.text, task_class=args.task_class,
+                                                     preferred_model=args.preferred_model))
+        return 0
+    if sub == "example-rm":
+        _print(args, await client.router_example_delete(args.example_id))
+        return 0
+    if sub == "events":
+        _print(args, await client.router_events(limit=args.limit, kind=args.kind, model=args.model),
+               table=["id", "kind", "model", "created_at"])
+        return 0
+    if sub == "rest":
+        _print(args, await client.router_model_rest(args.model, seconds=args.seconds, reason=args.reason))
+        return 0
+    if sub == "release":
+        _print(args, await client.router_model_release(args.model))
+        return 0
+    if sub == "forget":
+        _print(args, await client.router_model_forget(args.model))
+        return 0
+    if sub == "reset":
+        _print(args, await client.router_reset(keep_policy=not args.no_keep_policy,
+                                               keep_examples=not args.no_keep_examples))
+        return 0
+    print(f"unknown route subcommand {sub!r}", file=sys.stderr)
+    return 2
+
+
+async def _models(args, client: DashboardClient) -> int:
+    sub = args.models_cmd
+    if sub == "list":
+        _print(args, await client.models_find(provider=args.provider, query=args.query, free_only=args.free_only,
+                                              min_context=args.min_context, needs=args.needs, limit=args.limit),
+               table=["provider", "model", "context", "free"])
+        return 0
+    if sub == "free":
+        _print(args, await client.models_find(free_only=True, provider=args.provider, limit=args.limit),
+               table=["provider", "model", "context"])
+        return 0
+    if sub == "usage":
+        _print(args, await client.models_usage(days=args.days))
+        return 0
+    if sub == "info":
+        _print(args, await client.models_info(args.provider, args.model))
+        return 0
+    if sub == "refresh":
+        _print(args, await client.models_refresh())
+        return 0
+    print(f"unknown models subcommand {sub!r}", file=sys.stderr)
+    return 2
+
+
+async def _privacy(args, client: DashboardClient) -> int:
+    sub = args.privacy_cmd
+    if sub == "get":
+        _print(args, await client.privacy_get())
+        return 0
+    if sub == "set":
+        _print(args, await client.privacy_set(enabled=args.enabled, allow_lan=args.allow_lan))
+        return 0
+    print(f"unknown privacy subcommand {sub!r}", file=sys.stderr)
+    return 2
+
+
+async def _dns(args, client: DashboardClient) -> int:
+    sub = args.dns_cmd
+    if sub == "resolve":
+        _print(args, await client.hosting_resolve(args.name, type=args.type))
+        return 0
+    if sub == "status":
+        _print(args, await client.tailscale_dns_status())
+        return 0
+    print(f"unknown dns subcommand {sub!r}", file=sys.stderr)
+    return 2
+
+
+async def _doctor(args, client: DashboardClient) -> int:
+    """The one screen a person or an agent reads first: can this CLI reach ABP at all (which is also
+    the token check - a wrong one is a 401 on the very first call), and which of the feature groups
+    answer. /api/agent/overview supplies the ABP Agents page's own readiness checks, so the CLI never
+    invents its own opinion about setup."""
+    checks: list[dict[str, Any]] = []
+
+    async def probe(name: str, call, detail=lambda v: f"{len(v)}" if isinstance(v, (list, dict)) else str(v)):
+        try:
+            value = await call()
+        except ApiError as exc:
+            checks.append({"name": name, "ok": False, "detail": str(exc)})
+            return None
+        except Exception as exc:  # noqa: BLE001 - an unreachable host, a missing local service
+            checks.append({"name": name, "ok": False, "detail": f"{type(exc).__name__}: {exc}"})
+            return None
+        checks.append({"name": name, "ok": True, "detail": detail(value)})
+        return value
+
+    bots = await probe("dashboard", client.list_bots,
+                       lambda v: f"token accepted: {len(v)} bot(s) at {client.base_url}")
+    if bots is None:
+        _print(args, {"ok": False, "host": client.base_url, "checks": checks})
+        return 1
+    await probe("providers", client.list_providers)
+    overview = await probe("agent overview", client.agent_overview,
+                           lambda v: f"{len(v.get('bots') or [])} agent bot(s), "
+                                     f"{v.get('permission_mode')} permissions")
+    await probe("tools", client.agent_tools)
+    await probe("approvals", client.list_approvals, lambda v: f"{len(v)} pending")
+    await probe("memory", client.memory_overview,
+                lambda v: f"{v.get('threads')} thread(s), {len(v.get('counts') or {})} bucket(s)")
+    await probe("swarms", client.list_swarms)
+    await probe("modules", lambda: client._request("GET", "/api/modules"),
+                lambda v: f"{len(v.get('modules') or [])} module(s)")
+    answered = len(checks)
+    setup: list[dict[str, Any]] = [
+        {"name": f"setup: {check['title']}", "ok": bool(check.get("ok")), "detail": check.get("detail") or ""}
+        for check in (overview or {}).get("checks") or []
+    ]
+    checks.extend(setup)
+    # ok: every route answered. ready: ABP's own Agents-page setup checks all pass, which is what a
+    # fresh install usually has not got yet and is not this command failing.
+    ok = all(c["ok"] for c in checks[:answered])
+    payload = {"ok": ok, "ready": all(c["ok"] for c in setup), "host": client.base_url, "checks": checks}
+    if args.json:
+        _print(args, payload)
+        return 0 if ok else 1
+    print(f"ABP at {client.base_url}: {'every feature answered' if ok else 'something did not answer'}"
+          f"{'' if payload['ready'] else '; setup is not finished yet'}")
+    for check in checks:
+        print(f"  [{'ok' if check['ok'] else 'XX'}] {check['name']}: {check['detail']}")
+    return 0 if ok else 1
+
+
 async def _swarms(args, client: DashboardClient) -> int:
     sub = args.swarms_cmd
     if sub == "list":
@@ -277,7 +930,7 @@ async def _swarms(args, client: DashboardClient) -> int:
         return 0
     if sub == "runs":
         _print(args, await client.list_swarm_runs(swarm_id=args.swarm_id, limit=args.limit),
-              table=["id", "swarm_id", "swarm_run_id", "status"])
+               table=["id", "swarm_id", "swarm_run_id", "status"])
         return 0
     if sub == "run-show":
         _print(args, await client.get_swarm_run(args.swarm_run_id))
@@ -285,8 +938,88 @@ async def _swarms(args, client: DashboardClient) -> int:
     if sub == "run-cancel":
         _print(args, await client.cancel_swarm_run(args.swarm_run_id))
         return 0
+    if sub == "dispatch":
+        return await _swarms_dispatch(args, client)
+    if sub == "goal":
+        return await _swarms_goal(args, client)
+    if sub == "status":
+        return await _swarms_status(args, client)
     print(f"unknown swarms subcommand {sub!r}", file=sys.stderr)
     return 2
+
+
+def _swarm_kind(row: Optional[dict]) -> str:
+    """Which dispatch route an instance needs: a native_agent fan-out takes the decomposed task list
+    directly, a Hermes one gets a goal prompt asking it to fan the goal out itself."""
+    return "native" if (row or {}).get("backend") == "native_agent" else "hermes"
+
+
+async def _swarms_dispatch(args, client: DashboardClient) -> int:
+    """Fan a goal out over sub-agents. --task decomposes it up front (this caller plays the role the
+    goal-prompt template plays for an external Hermes instance); without it the goal goes as one task.
+    Which route that is depends on the instance: a native_agent fan-out runs the task list directly, a
+    Hermes one gets a goal prompt asking its own agent to fan it out (bot/mcp_server.py's
+    dispatch_native_swarm_goal and dispatch_swarm_goal, over the same two routes)."""
+    instance, row, candidates = await _agent_target(args, client)
+    if instance is None:
+        return 2
+    goal = " ".join(args.goal).strip()
+    tasks = [{"goal": t} for t in (args.task or []) if t.strip()]
+    if not goal and not tasks:
+        print("give a goal, or one or more --task", file=sys.stderr)
+        return 2
+    payload: dict[str, Any] = {"worker_provider": args.provider, "worker_model": args.model,
+                               "max_children": args.max_children, "confirm": args.confirm}
+    if _swarm_kind(row) == "native":
+        result = await client.native_agent_dispatch(instance, tasks or [{"goal": goal}], **payload)
+    else:
+        result = await client.hermes_dispatch(instance, goal or "\n".join(t["goal"] for t in tasks), **payload)
+    if args.json:
+        _print(args, result)
+        return 0
+    print(result.get("result") or "")
+    print(f"job {result.get('job_id')}; {result.get('worker_provider')}/{result.get('worker_model')} "
+          f"(dispatch {result.get('dispatch_id') or 'hermes'})")
+    return 0
+
+
+async def _swarms_goal(args, client: DashboardClient) -> int:
+    """One goal, handed to an instance to fan out itself - the goal-prompt indirection, and the shape
+    `dispatch` uses for a Hermes instance. --native skips the indirection and runs it as a single task."""
+    instance, row, candidates = await _agent_target(args, client)
+    if instance is None:
+        return 2
+    goal = " ".join(args.goal).strip()
+    if not goal:
+        print("the goal is empty", file=sys.stderr)
+        return 2
+    if not args.native and _swarm_kind(row) == "native":
+        print(f"instance {instance} is native_agent, which takes a task list rather than a goal prompt: "
+              "`swarms dispatch <goal>` runs it as one task, or pass --native to be explicit.", file=sys.stderr)
+        return 2
+    payload: dict[str, Any] = {"worker_provider": args.provider, "worker_model": args.model,
+                               "max_children": args.max_children, "confirm": args.confirm}
+    if args.native:
+        result = await client.native_agent_dispatch(instance, [{"goal": goal}], **payload)
+    else:
+        result = await client.hermes_dispatch(instance, goal, **payload)
+    _print(args, result)
+    return 0
+
+
+async def _swarms_status(args, client: DashboardClient) -> int:
+    """Everything a headless operator needs to see what fan-out is doing: the spending guard, the
+    registered swarms, their latest runs, and the delegation activity log."""
+    budget = await client.swarm_budget()
+    runs = await client.list_swarm_runs(limit=args.limit)
+    payload = {
+        "budget": budget,
+        "swarms": await client.list_swarms(),
+        "runs": runs,
+        "delegation": await client.delegation_activity(limit=args.limit),
+    }
+    _print(args, payload)
+    return 0
 
 
 async def _sessions(args, client: DashboardClient) -> int:
@@ -716,9 +1449,43 @@ async def _modules(args, client: DashboardClient) -> int:
         _print(args, await client._request("GET", f"{api}/{args.module}/operations"),
                table=["id", "summary", "mutating"])
         return 0
-    if sub == "call":
+    if sub in ("run-op", "call"):
         body = {"operation": args.operation, "args": json.loads(args.args or "{}")}
+        if getattr(args, "timeout", None):
+            body["timeout_s"] = args.timeout
         _print(args, (await client._request("POST", f"{api}/{args.module}/call", json=body))["result"])
+        return 0
+    if sub == "start":
+        _print(args, await client._request("POST", f"{api}/{args.module}/hub/start"))
+        return 0
+    if sub == "stop":
+        _print(args, await client._request("POST", f"{api}/{args.module}/hub/stop"))
+        return 0
+    if sub == "status":
+        _print(args, await client._request("GET", f"{api}/{args.module}",
+                                           params={"fetch": "1"} if args.fetch else None))
+        return 0
+    if sub == "logs":
+        if args.job:
+            job = await client._request("GET", f"{api}/jobs/{args.job}")
+            if args.json:
+                _print(args, job)
+            else:
+                print(f"{job['id']}  {job.get('module')}  {job.get('kind')}  {job.get('state')}")
+                for line in (job.get("log") or [])[-args.lines:]:
+                    print(f"  {line}")
+            return 0
+        jobs = await client._request("GET", f"{api}/{args.module}/jobs")
+        if args.json:
+            _print(args, jobs)
+            return 0
+        for job in jobs:
+            print(f"{job.get('id')}  {job.get('kind')}  {job.get('state')}")
+            for line in (job.get("log") or [])[-args.lines:]:
+                print(f"  {line}")
+        return 0
+    if sub == "conformance":
+        _print(args, await client._request("POST", f"{api}/{args.module}/conformance"))
         return 0
     if sub == "setup":
         route = {"install": "setup", "start": "hub/start", "stop": "hub/stop", "open_gui": "gui", "open_tui": "tui",
@@ -907,10 +1674,25 @@ def _parser() -> argparse.ArgumentParser:
     mods = sub.add_parser("modules", help="modules: separate programs ABP builds and drives; adopt any project")
     msub = mods.add_subparsers(dest="modules_cmd", required=True)
     msub.add_parser("list")
-    for name in ("show", "ops", "forget"):
+    for name in ("show", "status", "ops", "forget", "conformance"):
         p = msub.add_parser(name); p.add_argument("module")
-    p = msub.add_parser("call"); p.add_argument("module"); p.add_argument("operation"); p.add_argument("args", nargs="?")
-    p = msub.add_parser("setup"); p.add_argument("module")
+        if name == "status":
+            p.add_argument("--fetch", action="store_true", help="also ask the module's own registry for updates")
+    for name in ("start", "stop"):
+        p = msub.add_parser(name, help="start or stop the module's hub (the thing that runs its operations)")
+        p.add_argument("module")
+    p = msub.add_parser("logs", help="its background jobs and their logs (setup/build/start/...)")
+    p.add_argument("module")
+    p.add_argument("--job", default=None, help="one job id (modules logs <module> --job abc123)")
+    p.add_argument("--lines", type=int, default=20)
+    p = msub.add_parser("run-op", help="call one of its hub operations")
+    p.add_argument("module"); p.add_argument("operation"); p.add_argument("args", nargs="?")
+    p.add_argument("--timeout", type=float, default=None)
+    p = msub.add_parser("call", help="the same as run-op (its older name)")
+    p.add_argument("module"); p.add_argument("operation"); p.add_argument("args", nargs="?")
+    p.add_argument("--timeout", type=float, default=None)
+    p = msub.add_parser("setup")
+    p.add_argument("module")
     p.add_argument("action", choices=["install", "update", "build", "pipeline", "start", "stop", "open_gui", "open_tui",
                                       "register_mcp", "jobs"])
     p = msub.add_parser("adopt", help="make a project folder a module (writes abp-module.toml + abp-ops.toml)")
@@ -952,7 +1734,7 @@ def _parser() -> argparse.ArgumentParser:
     from abp_cli import ai as _ai
     _ai.add_parser(sub)
 
-    swarms = sub.add_parser("swarms", help="fan-out/leader-vote/etc. multi-bot swarms")
+    swarms = sub.add_parser("swarms", help="fan-out/leader-vote/etc. multi-bot swarms, and one-off sub-agent fan-outs")
     ssub = swarms.add_subparsers(dest="swarms_cmd", required=True)
     ssub.add_parser("list")
     p = ssub.add_parser("show"); p.add_argument("swarm_id", type=int)
@@ -973,6 +1755,24 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--limit", type=int, default=50)
     p = ssub.add_parser("run-show"); p.add_argument("swarm_run_id")
     p = ssub.add_parser("run-cancel"); p.add_argument("swarm_run_id")
+    p = ssub.add_parser("dispatch", help="fan a goal out over sub-agents through one instance")
+    p.add_argument("goal", nargs="*", help="the goal; split it up front with --task instead")
+    p.add_argument("--task", action="append", default=None, help="a task of your own; repeatable")
+    p.add_argument("--instance", type=int, default=None, dest="instance")
+    p.add_argument("--provider", default=None, help="the model provider the sub-agents use")
+    p.add_argument("--model", default=None, help="the model the sub-agents use")
+    p.add_argument("--max-children", type=int, default=None, dest="max_children")
+    p.add_argument("--confirm", action="store_true", help="accept a cost above the swarm budget's confirm line")
+    p = ssub.add_parser("goal", help="one goal, handed to an instance to fan out itself")
+    p.add_argument("goal", nargs="+")
+    p.add_argument("--instance", type=int, default=None, dest="instance")
+    p.add_argument("--native", action="store_true", help="run it as one task instead of a goal prompt")
+    p.add_argument("--provider", default=None)
+    p.add_argument("--model", default=None)
+    p.add_argument("--max-children", type=int, default=None, dest="max_children")
+    p.add_argument("--confirm", action="store_true")
+    p = ssub.add_parser("status", help="the spending guard, the swarms, their latest runs, delegation activity")
+    p.add_argument("--limit", type=int, default=20)
 
     sessions = sub.add_parser("sessions", help="a bot's conversation sessions")
     sesub = sessions.add_subparsers(dest="sessions_cmd", required=True)
@@ -1175,9 +1975,180 @@ def _parser() -> argparse.ArgumentParser:
     sshsub.add_parser("check-update")
     sshsub.add_parser("update")
     p = sshsub.add_parser("auto-update", help="get, or set, how a submodule/sidecar install of this toolkit "
-                                              "picks up new releases")
+                                               "picks up new releases")
     p.add_argument("mode", nargs="?", choices=["never", "notify", "auto"], default=None,
                    help="omit to just show the current setting")
+
+    mem = sub.add_parser("memory", help="the memory fabric: memories, threads, the knowledge tree, sources, the vault")
+    msub = mem.add_subparsers(dest="memory_cmd", required=True)
+    p = msub.add_parser("search"); p.add_argument("q"); p.add_argument("--instance", type=int, default=None)
+    p.add_argument("--limit", type=int, default=8)
+    p = msub.add_parser("add"); p.add_argument("content"); p.add_argument("--kind", default=None)
+    p.add_argument("--shared", action="store_true"); p.add_argument("--instance", type=int, default=None)
+    p.add_argument("--source", default="user")
+    p = msub.add_parser("list"); p.add_argument("--scope", default="shared")
+    p.add_argument("--status", default=None, choices=["approved", "pending", "rejected"])
+    p = msub.add_parser("delete"); p.add_argument("entry_id", type=int); p.add_argument("--scope", default="shared")
+    p = msub.add_parser("approve"); p.add_argument("entry_id", type=int)
+    p = msub.add_parser("reject"); p.add_argument("entry_id", type=int)
+    p = msub.add_parser("context"); p.add_argument("q", nargs="?", default="")
+    p.add_argument("--instance", type=int, default=None); p.add_argument("--thread", default="")
+    p.add_argument("--backend", default="external")
+    p = msub.add_parser("threads"); p.add_argument("--instance", type=int, default=None)
+    p.add_argument("--limit", type=int, default=50)
+    p = msub.add_parser("thread"); p.add_argument("thread"); p.add_argument("--after", type=int, default=0)
+    p.add_argument("--limit", type=int, default=200)
+    p = msub.add_parser("post-turn"); p.add_argument("thread"); p.add_argument("role", choices=["user", "assistant"])
+    p.add_argument("text"); p.add_argument("--backend", default="external"); p.add_argument("--model", default="")
+    p.add_argument("--instance", type=int, default=None)
+    p = msub.add_parser("tree", help="query the knowledge tree")
+    tsub2 = p.add_subparsers(dest="tree_cmd", required=True)
+    q = tsub2.add_parser("walk", help="answer a question from the index, no model call")
+    q.add_argument("query"); q.add_argument("--limit", type=int, default=10)
+    q.add_argument("--max-hops", type=int, default=2, dest="max_hops")
+    q.add_argument("--window", type=float, default=None, help="only the last N days")
+    q = tsub2.add_parser("search-entities"); q.add_argument("name"); q.add_argument("--limit", type=int, default=20)
+    q = tsub2.add_parser("neighbors"); q.add_argument("entity"); q.add_argument("--limit", type=int, default=20)
+    q = tsub2.add_parser("source", help="what one source's index holds")
+    q.add_argument("source_id"); q.add_argument("--query", default=""); q.add_argument("--limit", type=int, default=10)
+    q.add_argument("--since", default=""); q.add_argument("--until", default="")
+    q = tsub2.add_parser("drill-down"); q.add_argument("node_id")
+    q.add_argument("--depth", type=int, default=1); q.add_argument("--query", default="")
+    q.add_argument("--limit", type=int, default=20)
+    q = tsub2.add_parser("cover-window", help="the fewest notes covering a span")
+    q.add_argument("since"); q.add_argument("until"); q.add_argument("--source-id", default="", dest="source_id")
+    q.add_argument("--limit", type=int, default=20)
+    q = tsub2.add_parser("fetch-leaves"); q.add_argument("ids", nargs="+")
+    p = msub.add_parser("tree-ingest"); p.add_argument("title"); p.add_argument("text")
+    p.add_argument("--source-id", default=None)
+    msub.add_parser("tree-stats")
+    msub.add_parser("sources")
+    p = msub.add_parser("source-add"); p.add_argument("kind", choices=["folder", "notes", "github", "rss", "web",
+                                                                      "conversation"])
+    p.add_argument("label"); p.add_argument("--path", default=None); p.add_argument("--repo", default=None)
+    p.add_argument("--url", default=None); p.add_argument("--glob", default=None)
+    p = msub.add_parser("source-sync"); p.add_argument("source_id")
+    p = msub.add_parser("source-rm"); p.add_argument("source_id")
+    p = msub.add_parser("diff"); p.add_argument("--source-id", default=""); p.add_argument("--checkpoint", default="")
+    p.add_argument("--all", action="store_true"); p.add_argument("--no-commit", action="store_true")
+    p.add_argument("--text", action="store_true")
+    p = msub.add_parser("checkpoint"); p.add_argument("name")
+    msub.add_parser("vault")
+    msub.add_parser("vault-sync")
+    p = msub.add_parser("rules"); p.add_argument("--tool", default="")
+    p = msub.add_parser("rule-add"); p.add_argument("tool"); p.add_argument("rule")
+    p.add_argument("--priority", default="normal", choices=["critical", "high", "normal"])
+    p.add_argument("--tags", default=None); p.add_argument("--rule-id", default="")
+    p = msub.add_parser("rule-remove"); p.add_argument("rule_id")
+    p = msub.add_parser("goals"); p.add_argument("--all", action="store_true")
+    p = msub.add_parser("goal-add"); p.add_argument("text"); p.add_argument("--status", default="active")
+    p.add_argument("--goal-id", default="")
+    p = msub.add_parser("goal-done"); p.add_argument("goal_id")
+    msub.add_parser("settings")
+    p = msub.add_parser("settings-set"); p.add_argument("changes", nargs="+")
+
+    agt = sub.add_parser("agent", help="run a native agent, watch its runs, the swarm spending guard")
+    agsub = agt.add_subparsers(dest="agent_cmd", required=True)
+    p = agsub.add_parser("run", help="one real native-agent run, streaming its progress")
+    p.add_argument("goal", nargs="+", help="what the agent should do; joined with spaces")
+    p.add_argument("--instance", type=int, default=None, dest="instance",
+                   help="the bot instance whose agent runs it (default: the first one an ABP Agent drives)")
+    p.add_argument("--backend", default=None,
+                   help="no instance: run it headlessly on this machine instead, on this provider")
+    p.add_argument("--model", default=None, help="model for the run; provider/model on the local path")
+    p.add_argument("--workspace", default=None, help="the folder the agent may use (local path only)")
+    p.add_argument("--permission-mode", default=None, dest="permission_mode",
+                   choices=["plan", "default", "accept_edits", "bypass"], help="local path only")
+    p.add_argument("--approve", default="ask", choices=["ask", "allow", "deny"],
+                   help="a tool approval that comes up: leave it pending, answer it once, or refuse it "
+                        "(nobody is here, so a local run refuses anything that would need an answer)")
+    p.add_argument("--wait", action="store_true", help="after the run, follow its job to a finished state")
+    p.add_argument("--timeout", type=float, default=600.0, help="seconds to wait (default 600)")
+    p.add_argument("--poll", type=float, default=0.4, help="seconds between progress polls (default 0.4)")
+    p = agsub.add_parser("runs", help="the run ledger (/api/jobs)")
+    p.add_argument("--instance", type=int, default=None)
+    p.add_argument("--status", default=None, help="running, success, failed, ...")
+    p.add_argument("--limit", type=int, default=50)
+    p = agsub.add_parser("show", help="one run: its job row, tool events and per-child breakdown")
+    p.add_argument("job_id", type=int)
+    p = agsub.add_parser("cancel", help="cancel a fan-out that is still running")
+    p.add_argument("swarm_run_id")
+    p = agsub.add_parser("budget", help="the swarm spending guard; with no flag, just show it")
+    p.add_argument("--enabled", action="store_true", default=None)
+    p.add_argument("--max-children", type=int, default=None, dest="max_children")
+    p.add_argument("--max-usd", type=float, default=None, dest="max_usd")
+
+    tools = sub.add_parser("tools", help="what the native agent can call, and what each one needs permission for")
+    tsub = tools.add_subparsers(dest="tools_cmd", required=True)
+    p = tsub.add_parser("list")
+    p.add_argument("--read-only", action="store_true", dest="read_only", help="only tools that change nothing")
+    p.add_argument("--asks-first", action="store_true", dest="asks_first", help="only tools that need approval")
+
+    appr = sub.add_parser("approvals", help="tool approvals: list, show, approve, deny")
+    apsub = appr.add_subparsers(dest="approvals_cmd", required=True)
+    p = apsub.add_parser("list")
+    p.add_argument("--status", default="pending",
+                   help="pending, all, approved_once, approved_session, approved_always, denied, expired")
+    p.add_argument("--instance", type=int, default=None); p.add_argument("--limit", type=int, default=50)
+    p = apsub.add_parser("show"); p.add_argument("approval_id", type=int)
+    p = apsub.add_parser("approve"); p.add_argument("approval_id", type=int)
+    p.add_argument("--outcome", default="once", choices=["once", "session", "always"],
+                   help="once this call, for the session, or always (session/always need the dashboard token)")
+    p = apsub.add_parser("deny"); p.add_argument("approval_id", type=int)
+
+    rte = sub.add_parser("route", help="the model router: explain, rules, simulate, decisions, examples")
+    rsub = rte.add_subparsers(dest="route_cmd", required=True)
+    p = rsub.add_parser("explain"); p.add_argument("text")
+    rsub.add_parser("rules")
+    p = rsub.add_parser("set"); p.add_argument("policy"); p.add_argument("--note", default="")
+    p = rsub.add_parser("simulate"); p.add_argument("text")
+    p.add_argument("--candidates", default=None); p.add_argument("--images", action="store_true")
+    p.add_argument("--context-tokens", type=int, default=0)
+    p = rsub.add_parser("overview"); p.add_argument("--hours", type=int, default=24)
+    rsub.add_parser("models")
+    p = rsub.add_parser("decisions"); p.add_argument("--limit", type=int, default=100)
+    p.add_argument("--mode", default=None); p.add_argument("--status", default=None)
+    p.add_argument("--model", default=None); p.add_argument("--task-class", default=None)
+    p = rsub.add_parser("decision"); p.add_argument("decision_id", type=int)
+    p = rsub.add_parser("feedback"); p.add_argument("decision_id", type=int)
+    p.add_argument("--rating", type=int, default=None); p.add_argument("--note", default="")
+    p.add_argument("--correct-class", default=None); p.add_argument("--preferred-model", default=None)
+    p = rsub.add_parser("examples"); p.add_argument("--limit", type=int, default=500)
+    p = rsub.add_parser("example-add"); p.add_argument("text")
+    p.add_argument("--task-class", default=None); p.add_argument("--preferred-model", default=None)
+    p = rsub.add_parser("example-rm"); p.add_argument("example_id", type=int)
+    p = rsub.add_parser("events"); p.add_argument("--limit", type=int, default=200)
+    p.add_argument("--kind", default=None); p.add_argument("--model", default=None)
+    p = rsub.add_parser("rest"); p.add_argument("model"); p.add_argument("--seconds", type=float, default=3600)
+    p.add_argument("--reason", default="rested by hand")
+    p = rsub.add_parser("release"); p.add_argument("model")
+    p = rsub.add_parser("forget"); p.add_argument("model")
+    p = rsub.add_parser("reset"); p.add_argument("--no-keep-policy", action="store_true")
+    p.add_argument("--no-keep-examples", action="store_true")
+
+    mods = sub.add_parser("models", help="model knowledge: list, free, usage, info")
+    mosub = mods.add_subparsers(dest="models_cmd", required=True)
+    p = mosub.add_parser("list"); p.add_argument("--provider", default=""); p.add_argument("--query", default="")
+    p.add_argument("--free-only", action="store_true"); p.add_argument("--min-context", type=int, default=0)
+    p.add_argument("--needs", default=""); p.add_argument("--limit", type=int, default=20)
+    p = mosub.add_parser("free"); p.add_argument("--provider", default="")
+    p.add_argument("--limit", type=int, default=20)
+    p = mosub.add_parser("usage"); p.add_argument("--days", type=int, default=1)
+    p = mosub.add_parser("info"); p.add_argument("provider"); p.add_argument("model")
+    mosub.add_parser("refresh")
+
+    priv = sub.add_parser("privacy", help="privacy mode: get or set")
+    prsub = priv.add_subparsers(dest="privacy_cmd", required=True)
+    prsub.add_parser("get")
+    p = prsub.add_parser("set"); p.add_argument("--enabled", action="store_true")
+    p.add_argument("--allow-lan", action="store_true")
+
+    dns = sub.add_parser("dns", help="DNS: resolve a name, Tailscale DNS status")
+    dnsub = dns.add_subparsers(dest="dns_cmd", required=True)
+    p = dnsub.add_parser("resolve"); p.add_argument("name"); p.add_argument("--type", default="A")
+    dnsub.add_parser("status")
+
+    sub.add_parser("doctor", help="one-screen health check: can it reach ABP, which features answer")
 
     return ap
 

@@ -603,3 +603,334 @@ class DashboardClient:
 
     async def ssh_recording_delete(self, recording_id: int) -> dict:
         return await self._request("DELETE", f"/api/ssh-toolkit/recordings/{recording_id}")
+
+    # ------------------------------------------------------------------- memory
+    async def memory_overview(self) -> dict:
+        return await self._request("GET", "/api/memory")
+
+    async def memory_settings_get(self) -> dict:
+        return (await self._request("GET", "/api/memory"))["settings"]
+
+    async def memory_settings_set(self, changes: dict) -> dict:
+        return await self._request("PUT", "/api/memory/settings", json=changes)
+
+    async def memory_entries_list(self, scope: str = "shared", status: Optional[str] = None) -> list[dict]:
+        params: dict[str, Any] = {"scope": scope}
+        if status is not None:
+            params["status"] = status
+        return await self._request("GET", "/api/memory/entries", params=params)
+
+    async def memory_entry_add(self, content: str, *, kind: Optional[str] = None, shared: Optional[bool] = None,
+                               instance_id: Optional[int] = None, source: str = "user") -> dict:
+        body: dict[str, Any] = {"content": content, "source": source}
+        if kind is not None:
+            body["kind"] = kind
+        if shared is not None:
+            body["shared"] = shared
+        if instance_id is not None:
+            body["instance_id"] = instance_id
+        return await self._request("POST", "/api/memory/entries", json=body)
+
+    async def memory_entry_review(self, entry_id: int, action: str) -> dict:
+        return await self._request("POST", f"/api/memory/entries/{entry_id}/{action}")
+
+    async def memory_entry_delete(self, entry_id: int, scope: str = "shared") -> dict:
+        return await self._request("DELETE", f"/api/memory/entries/{entry_id}", params={"scope": scope})
+
+    async def memory_search(self, q: str, instance_id: Optional[int] = None, limit: int = 8) -> list[dict]:
+        params: dict[str, Any] = {"q": q, "limit": limit}
+        if instance_id is not None:
+            params["instance_id"] = instance_id
+        return await self._request("GET", "/api/memory/search", params=params)
+
+    async def memory_context(self, q: str = "", instance_id: Optional[int] = None, thread: str = "",
+                             backend: str = "external") -> dict:
+        return await self._request("GET", "/api/memory/context",
+                                   params={"q": q, "instance_id": instance_id, "thread": thread, "backend": backend})
+
+    async def memory_threads(self, instance_id: Optional[int] = None, limit: int = 50) -> list[dict]:
+        params: dict[str, Any] = {"limit": limit}
+        if instance_id is not None:
+            params["instance_id"] = instance_id
+        return await self._request("GET", "/api/memory/threads", params=params)
+
+    async def memory_thread_get(self, thread: str, after: int = 0, limit: int = 200) -> list[dict]:
+        return await self._request("GET", f"/api/memory/threads/{thread}", params={"after": after, "limit": limit})
+
+    async def memory_thread_add(self, thread: str, role: str, text: str, *, backend: str = "external",
+                                model: str = "", instance_id: Optional[int] = None) -> dict:
+        body: dict[str, Any] = {"role": role, "text": text, "backend": backend, "model": model}
+        if instance_id is not None:
+            body["instance_id"] = instance_id
+        return await self._request("POST", f"/api/memory/threads/{thread}", json=body)
+
+    async def memory_sources(self) -> list[dict]:
+        return await self._request("GET", "/api/memory/sources")
+
+    async def memory_source_add(self, kind: str, label: str, **config) -> dict:
+        return await self._request("POST", "/api/memory/sources", json={"kind": kind, "label": label, **config})
+
+    async def memory_source_update(self, source_id: str, **fields) -> dict:
+        return await self._request("PATCH", f"/api/memory/sources/{source_id}", json=fields)
+
+    async def memory_source_remove(self, source_id: str) -> dict:
+        return await self._request("DELETE", f"/api/memory/sources/{source_id}")
+
+    async def memory_source_sync(self, source_id: str) -> dict:
+        return await self._request("POST", f"/api/memory/sources/{source_id}/sync")
+
+    async def memory_tree(self, mode: str = "walk", **params) -> Any:
+        return await self._request("POST", "/api/memory/tree", json={"mode": mode, **params})
+
+    async def memory_tree_ingest(self, title: str, text: str, source_id: Optional[str] = None) -> dict:
+        body: dict[str, Any] = {"title": title, "text": text}
+        if source_id is not None:
+            body["source_id"] = source_id
+        return await self._request("POST", "/api/memory/tree/ingest", json=body)
+
+    async def memory_tree_stats(self) -> dict:
+        return await self._request("GET", "/api/memory/tree/stats")
+
+    async def memory_diff(self, source_id: str = "", checkpoint: str = "", since_read: bool = True,
+                          commit: bool = True, text: bool = False) -> dict:
+        return await self._request("GET", "/api/memory/diff", params={"source_id": source_id, "checkpoint": checkpoint,
+                                                                        "since_read": since_read, "commit": commit,
+                                                                        "text": text})
+
+    async def memory_checkpoint(self, name: str) -> dict:
+        return await self._request("POST", "/api/memory/diff/checkpoint", json={"name": name})
+
+    async def memory_vault(self) -> dict:
+        return await self._request("GET", "/api/memory/vault")
+
+    async def memory_vault_sync(self) -> dict:
+        return await self._request("POST", "/api/memory/vault/sync")
+
+    async def memory_tool_rules(self, tool: str = "") -> list[dict]:
+        return await self._request("GET", "/api/memory/tool-rules", params={"tool": tool})
+
+    async def memory_tool_rule_put(self, tool: str, rule: str, priority: str = "normal", tags: Optional[list] = None,
+                                   rule_id: str = "") -> dict:
+        return await self._request("POST", "/api/memory/tool-rules",
+                                   json={"tool": tool, "rule": rule, "priority": priority, "tags": tags or [],
+                                         "id": rule_id})
+
+    async def memory_tool_rule_delete(self, rule_id: str) -> dict:
+        return await self._request("DELETE", f"/api/memory/tool-rules/{rule_id}")
+
+    async def memory_goals(self, all: bool = False) -> list[dict]:  # noqa: A002 - the query parameter's name
+        return await self._request("GET", "/api/memory/goals", params={"all": all})
+
+    async def memory_goal_put(self, text: str, status: str = "active", goal_id: str = "") -> dict:
+        return await self._request("POST", "/api/memory/goals", json={"text": text, "status": status, "id": goal_id})
+
+    async def memory_goal_delete(self, goal_id: str) -> dict:
+        return await self._request("DELETE", f"/api/memory/goals/{goal_id}")
+
+    # -------------------------------------------------------------- agent tools
+    async def agent_tools(self) -> list[dict]:
+        return (await self._request("GET", "/api/agent/tools"))["tools"]
+
+    async def agent_overview(self) -> dict:
+        return await self._request("GET", "/api/agent/overview")
+
+    async def agent_router_recommend(self, task: str = "") -> dict:
+        return await self._request("GET", "/api/agent/router/recommend", params={"task": task})
+
+    # --------------------------------------------------------------- approvals
+    async def list_approvals(self, status: str = "pending", instance_id: Optional[int] = None,
+                             limit: int = 50) -> list[dict]:
+        params: dict[str, Any] = {"status": status, "limit": limit}
+        if instance_id is not None:
+            params["instance_id"] = instance_id
+        return (await self._request("GET", "/api/approvals", params=params))["approvals"]
+
+    async def get_approval(self, approval_id: int) -> dict:
+        return await self._request("GET", f"/api/approvals/{approval_id}")
+
+    async def resolve_approval(self, approval_id: int, outcome: str) -> dict:
+        return await self._request("POST", f"/api/approvals/{approval_id}/resolve", json={"outcome": outcome})
+
+    # --------------------------------------------------------- hermes swarms
+    async def hermes_dispatch(self, instance_id: int, goal: str, **payload) -> dict:
+        return await self._request("POST", f"/api/hermes/{instance_id}/dispatch",
+                                   json={"goal": goal, **payload})
+
+    async def native_agent_dispatch(self, instance_id: int, tasks: list, **payload) -> dict:
+        return await self._request("POST", f"/api/native-agent/{instance_id}/dispatch",
+                                   json={"tasks": tasks, **payload})
+
+    async def hermes_swarm_tools_status(self) -> list[dict]:
+        return (await self._request("GET", "/api/hermes/swarm-tools-status"))["instances"]
+
+    async def hermes_enable_swarm_tools(self, instance_id: int) -> dict:
+        return await self._request("POST", f"/api/hermes/{instance_id}/enable-swarm-tools")
+
+    async def hermes_disable_swarm_tools(self, instance_id: int) -> dict:
+        return await self._request("POST", f"/api/hermes/{instance_id}/disable-swarm-tools")
+
+    async def hermes_delegation_get(self, instance_id: int) -> dict:
+        return await self._request("GET", f"/api/hermes/{instance_id}/delegation")
+
+    async def hermes_delegation_set(self, instance_id: int, **fields) -> dict:
+        return await self._request("POST", f"/api/hermes/{instance_id}/delegation", json=fields)
+
+    async def hermes_agent_config_get(self, instance_id: int) -> dict:
+        return await self._request("GET", f"/api/hermes/{instance_id}/agent-config")
+
+    async def hermes_agent_config_set(self, instance_id: int, **fields) -> dict:
+        return await self._request("POST", f"/api/hermes/{instance_id}/agent-config", json=fields)
+
+    # ------------------------------------------------------------------ router
+    async def router_overview(self, hours: int = 24) -> dict:
+        return await self._request("GET", "/api/router/overview", params={"hours": hours})
+
+    async def router_models(self) -> dict:
+        return await self._request("GET", "/api/router/models")
+
+    async def router_decisions(self, limit: int = 100, mode: Optional[str] = None, status: Optional[str] = None,
+                              model: Optional[str] = None, task_class: Optional[str] = None,
+                              before: Optional[int] = None, instance_id: Optional[int] = None) -> list[dict]:
+        params: dict[str, Any] = {"limit": limit}
+        for key, val in (("mode", mode), ("status", status), ("model", model), ("task_class", task_class),
+                         ("before", before), ("instance_id", instance_id)):
+            if val is not None:
+                params[key] = val
+        return (await self._request("GET", "/api/router/decisions", params=params))["decisions"]
+
+    async def router_decision(self, decision_id: int) -> dict:
+        return await self._request("GET", f"/api/router/decisions/{decision_id}")
+
+    async def router_feedback(self, decision_id: int, rating: Optional[int] = None, note: str = "",
+                             correct_class: Optional[str] = None, preferred_model: Optional[str] = None) -> dict:
+        body: dict[str, Any] = {"rating": rating, "note": note, "correct_class": correct_class,
+                                "preferred_model": preferred_model}
+        return await self._request("POST", f"/api/router/decisions/{decision_id}/feedback", json=body)
+
+    async def router_simulate(self, task: str, candidates: Optional[list] = None, images: bool = False,
+                              context_tokens: int = 0) -> dict:
+        body: dict[str, Any] = {"task": task, "images": images, "context_tokens": context_tokens}
+        if candidates is not None:
+            body["candidates"] = candidates
+        return await self._request("POST", "/api/router/simulate", json=body)
+
+    async def router_events(self, limit: int = 200, kind: Optional[str] = None, model: Optional[str] = None) -> list[dict]:
+        params: dict[str, Any] = {"limit": limit}
+        if kind is not None:
+            params["kind"] = kind
+        if model is not None:
+            params["model"] = model
+        return (await self._request("GET", "/api/router/events", params=params))["events"]
+
+    async def router_policy(self) -> dict:
+        return await self._request("GET", "/api/router/policy")
+
+    async def router_policy_save(self, policy: dict, note: str = "") -> dict:
+        return await self._request("PUT", "/api/router/policy", json={"policy": policy, "note": note})
+
+    async def router_policy_history(self, limit: int = 50) -> dict:
+        return await self._request("GET", "/api/router/policy/history", params={"limit": limit})
+
+    async def router_policy_rollback(self, version: int) -> dict:
+        return await self._request("POST", "/api/router/policy/rollback", json={"version": version})
+
+    async def router_examples(self, limit: int = 500) -> list[dict]:
+        return (await self._request("GET", "/api/router/examples", params={"limit": limit}))["examples"]
+
+    async def router_example_add(self, text: str, task_class: Optional[str] = None,
+                                 preferred_model: Optional[str] = None) -> dict:
+        body: dict[str, Any] = {"text": text}
+        if task_class is not None:
+            body["task_class"] = task_class
+        if preferred_model is not None:
+            body["preferred_model"] = preferred_model
+        return await self._request("POST", "/api/router/examples", json=body)
+
+    async def router_example_delete(self, example_id: int) -> dict:
+        return await self._request("DELETE", f"/api/router/examples/{example_id}")
+
+    async def router_model_rest(self, model: str, seconds: float = 3600, reason: str = "rested by hand") -> dict:
+        return await self._request("POST", "/api/router/models/rest",
+                                   json={"model": model, "seconds": seconds, "reason": reason})
+
+    async def router_model_release(self, model: str) -> dict:
+        return await self._request("POST", "/api/router/models/release", json={"model": model})
+
+    async def router_model_forget(self, model: str) -> dict:
+        return await self._request("POST", "/api/router/models/forget", json={"model": model})
+
+    async def router_reset(self, keep_policy: bool = True, keep_examples: bool = True) -> dict:
+        return await self._request("POST", "/api/router/reset",
+                                   json={"keep_policy": keep_policy, "keep_examples": keep_examples})
+
+    # ------------------------------------------------------------------ models
+    async def models_info(self, provider: str, model: str) -> dict:
+        return await self._request("GET", "/api/models/info", params={"provider": provider, "model": model})
+
+    async def models_usage(self, days: int = 1) -> dict:
+        return await self._request("GET", "/api/models/usage", params={"days": days})
+
+    async def models_find(self, provider: str = "", query: str = "", free_only: bool = False, min_context: int = 0,
+                          needs: str = "", limit: int = 20) -> list[dict]:
+        return (await self._request("GET", "/api/models/find", params={"provider": provider, "query": query,
+                                                                        "free_only": free_only, "min_context": min_context,
+                                                                        "needs": needs, "limit": limit}))["models"]
+
+    async def models_refresh(self) -> dict:
+        return await self._request("POST", "/api/models/refresh")
+
+    async def models_limits_set(self, key: str, **limits) -> dict:
+        return await self._request("PUT", "/api/models/limits", json={"key": key, **limits})
+
+    async def models_limits_clear(self, key: str) -> dict:
+        return await self._request("DELETE", "/api/models/limits", params={"key": key})
+
+    # ----------------------------------------------------------------- privacy
+    async def privacy_get(self) -> dict:
+        return await self._request("GET", "/api/privacy")
+
+    async def privacy_set(self, enabled: Optional[bool] = None, allow_lan: Optional[bool] = None) -> dict:
+        body: dict[str, Any] = {}
+        if enabled is not None:
+            body["enabled"] = enabled
+        if allow_lan is not None:
+            body["allow_lan"] = allow_lan
+        return await self._request("PUT", "/api/privacy", json=body)
+
+    # --------------------------------------------------------------------- dns
+    async def hosting_resolve(self, name: str, type: str = "A") -> dict:  # noqa: A002 - the query parameter's name
+        return await self._request("GET", "/api/hosting/resolve", params={"name": name, "type": type})
+
+    async def tailscale_dns_status(self) -> dict:
+        return await self._request("GET", "/api/tailscale/dns-status")
+
+    # -------------------------------------------------------------------- jobs
+    async def list_jobs(self, status: Optional[str] = None, limit: int = 50) -> list[dict]:
+        params: dict[str, Any] = {"limit": limit}
+        if status is not None:
+            params["status"] = status
+        return await self._request("GET", "/api/jobs", params=params)
+
+    async def job(self, job_id: int) -> Optional[dict]:
+        """The jobs table has no per-id route, so this is the newest-first list narrowed to one id."""
+        for row in await self._request("GET", "/api/jobs", params={"limit": 200}):
+            if int(row.get("id") or 0) == int(job_id):
+                return row
+        return None
+
+    async def job_tool_events(self, job_id: int) -> list[dict]:
+        return (await self._request("GET", f"/api/jobs/{job_id}/tool-events"))["events"]
+
+    async def job_children(self, job_id: int) -> list[dict]:
+        return (await self._request("GET", f"/api/jobs/{job_id}/children"))["children"]
+
+    # ------------------------------------------------------------- delegation
+    async def delegation_activity(self, limit: int = 20) -> list[dict]:
+        return (await self._request("GET", "/api/delegation-activity", params={"limit": limit}))["events"]
+
+    async def swarm_budget(self) -> dict:
+        return await self._request("GET", "/api/swarm-budget")
+
+    async def swarm_budget_set(self, **fields: Any) -> dict:
+        return await self._request("POST", "/api/swarm-budget", json={k: v for k, v in fields.items()
+                                                                        if v is not None})
