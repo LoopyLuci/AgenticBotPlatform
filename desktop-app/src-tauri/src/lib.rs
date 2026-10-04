@@ -278,7 +278,7 @@ fn python_reports_311(python: &std::path::Path) -> bool {
 /// install Python.Python.3.11` would use, then whatever "python" resolves
 /// to on PATH as a last resort.
 fn find_compatible_system_python() -> Option<PathBuf> {
-    if let Ok(output) = Command::new("py")
+    if let Ok(output) = no_window(&mut Command::new("py"))
         .args(["-3.11", "-c", "import sys; print(sys.executable)"])
         .output()
     {
@@ -312,7 +312,7 @@ fn find_compatible_system_python() -> Option<PathBuf> {
         }
     }
 
-    if let Ok(output) = Command::new("where").arg("python").output() {
+    if let Ok(output) = no_window(Command::new("where").arg("python")).output() {
         if output.status.success() {
             for line in String::from_utf8_lossy(&output.stdout).lines() {
                 let candidate = PathBuf::from(line.trim());
@@ -664,7 +664,7 @@ fn dashboard_is_healthy(port: u16) -> bool {
 /// standard way to map a port back to its owning process on Windows
 /// without pulling in a new dependency for this one lookup.
 fn pids_listening_on_port(port: u16) -> Vec<u32> {
-    let output = match Command::new("netstat").arg("-ano").output() {
+    let output = match no_window(Command::new("netstat").arg("-ano")).output() {
         Ok(o) => o,
         Err(_) => return Vec::new(),
     };
