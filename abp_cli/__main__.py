@@ -1369,8 +1369,8 @@ async def _bots(args, client: DashboardClient) -> int:
         if args.takeover_when_gateway_down is not None:
             payload["takeover_when_gateway_down"] = args.takeover_when_gateway_down
         if not payload:
-            print("nothing to change — pass at least one of --name/--backend/--model/--allowed/--admins",
-                  file=sys.stderr)
+            print("nothing to change — pass at least one of --name/--backend/--model/--allowed/--admins"
+                  "/--takeover-when-gateway-down", file=sys.stderr)
             return 2
         _print(args, await client.update_bot(args.instance_id, payload))
         return 0

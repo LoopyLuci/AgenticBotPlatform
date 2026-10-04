@@ -222,13 +222,12 @@ def update_instance(instance_id: int, actor: str = "dashboard", **fields: Any) -
 
     columns: list[str] = []
     params: list[Any] = []
-    for key in ("name", "platform", "backend", "enabled", "model", "custom_instructions", "persona", "hermes_home", "desktop_project", "desktop_workspace_dir", "desktop_effort"):
+    # takeover_when_gateway_down rides along here: sqlite3 stores a Python bool
+    # as the 0/1 the INTEGER column wants, exactly like `enabled` below.
+    for key in ("name", "platform", "backend", "enabled", "model", "custom_instructions", "persona", "hermes_home", "desktop_project", "desktop_workspace_dir", "desktop_effort", "takeover_when_gateway_down"):
         if key in fields:
             columns.append(f"{key}=?")
             params.append(1 if key == "enabled" and fields[key] else (0 if key == "enabled" else fields[key]))
-    if "takeover_when_gateway_down" in fields:
-        columns.append("takeover_when_gateway_down=?")
-        params.append(1 if fields["takeover_when_gateway_down"] else 0)
     for key in ("credentials", "allowed_user_ids", "admin_user_ids", "action_overrides", "can_target"):
         if key in fields:
             columns.append(f"{key}=?")

@@ -140,6 +140,13 @@ async def _run_telegram(row: dict[str, Any]) -> None:
         the moment the gateway is gone."""
     from bot import hermes_gateway
 
+    # Clear a 409 left over from a PREVIOUS run of this instance before anything
+    # waits on it. The event is only popped by stop_instance(), so a set one
+    # would still be set when this run parks on a Hermes-owned token — and
+    # _sleep_or_conflict() would return instantly, spinning this loop (and the
+    # ownership re-check it drives) as fast as the event loop can go.
+    _conflict_events.setdefault(row["id"], asyncio.Event()).clear()
+
     takeover = bool(row.get("takeover_when_gateway_down"))
     owner = hermes_gateway.instance_owner(row)
     while owner is not None and (owner.running or not takeover):
@@ -167,7 +174,6 @@ async def _run_telegram(row: dict[str, Any]) -> None:
 
     from bot.main import build_telegram_instance
 
-    _conflict_events.setdefault(row["id"], asyncio.Event()).clear()
     application = await build_telegram_instance(
         row,
         api_base_url=os.environ.get(API_BASE_URL_ENV, "").strip(),

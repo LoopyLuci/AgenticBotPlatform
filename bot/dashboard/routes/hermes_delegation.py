@@ -53,13 +53,19 @@ def register(app: FastAPI) -> None:
         from bot import hermes_gateway
 
         target = _gateway_home(home)
-        return {
-            "overview": await asyncio.to_thread(hermes_gateway.overview, target),
-            "status": await asyncio.to_thread(hermes_gateway.status, target),
-            "profiles": await asyncio.to_thread(hermes_gateway.list_profiles),
-            "served_instances": hermes_gateway.served_instances(),
-            "logs": await asyncio.to_thread(hermes_gateway.logs, target, 80),
-        }
+        try:
+            return {
+                "overview": await asyncio.to_thread(hermes_gateway.overview, target),
+                "status": await asyncio.to_thread(hermes_gateway.status, target),
+                "profiles": await asyncio.to_thread(hermes_gateway.list_profiles),
+                "served_instances": hermes_gateway.served_instances(),
+                "logs": await asyncio.to_thread(hermes_gateway.logs, target, 80),
+            }
+        except Exception as exc:
+            # A missing/failing `hermes` binary is the common case here (Hermes
+            # is a separate install), so it must be an honest 503 rather than a
+            # traceback: the page can still be useful without the CLI half.
+            raise _gateway_error(exc) from exc
 
     @app.get("/api/hermes/gateway/status", dependencies=[Depends(_require_token_or_api_key)])
     async def api_hermes_gateway_status(home: str = ""):

@@ -60,10 +60,18 @@ logger = logging.getLogger("bot.backends.hermes_cli")
 class HermesCliBackend(Backend):
     name = "hermes_cli"
 
-    def __init__(self, binary: str = "hermes", extra_args: Optional[list[str]] = None, model: Optional[str] = None):
+    def __init__(self, binary: str = "hermes", extra_args: Optional[list[str]] = None, model: Optional[str] = None,
+                 env: Optional[dict[str, str]] = None):
         self.binary = binary
         self.extra_args = extra_args or []
         self.model = model
+        # Per-call environment overlay, handed straight to the child instead of
+        # being written into os.environ: a caller that scopes HERMES_HOME to one
+        # home (bot/hermes_gateway.py's `ask`) must not mutate this process's
+        # environment to do it, or two concurrent calls would swap homes under
+        # each other. None keeps the child's environment untouched (it then
+        # simply inherits ours), exactly as before.
+        self.env = env
 
     async def ask(self, prompt: str, *, context=None, timeout_s: float = 60) -> BackendResult:
         from bot import effort as effort_mod
@@ -85,6 +93,7 @@ class HermesCliBackend(Backend):
                 *args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=self.env,
             )
         except FileNotFoundError as exc:
             usage_file.unlink(missing_ok=True)

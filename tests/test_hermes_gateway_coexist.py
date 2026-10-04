@@ -429,6 +429,16 @@ def test_takeover_when_gateway_down_is_an_explicit_opt_in(fake_home, live_gatewa
         assert asyncio.run(_go()) >= 1
 
 
+def test_takeover_defaults_to_off_and_round_trips_through_the_real_update(temp_db):
+    row = _make_row(temp_db, name="opt-in toggle")
+
+    assert row["takeover_when_gateway_down"] is False          # the default
+    bot_instances.update_instance(row["id"], takeover_when_gateway_down=True, actor="test")
+    assert bot_instances.get_instance(row["id"])["takeover_when_gateway_down"] is True
+    bot_instances.update_instance(row["id"], takeover_when_gateway_down=False, actor="test")
+    assert bot_instances.get_instance(row["id"])["takeover_when_gateway_down"] is False
+
+
 def test_409_conflict_stops_the_instance_and_is_recorded(temp_db, clean_supervisor, monkeypatch):
     """A real 409 off a real local Bot API server, raised by real
     python-telegram-bot, ends the instance instead of retrying forever."""
@@ -730,33 +740,78 @@ def test_ask_runs_a_one_shot_hermes_dash_z_while_the_gateway_serves_telegram(fak
     """ABP's own channels reach Hermes with `hermes -z`, a per-call process that
     never touches getUpdates - so there is no token contention with the running
     gateway at all. Proven against a real `hermes` stand-in that records its own
-    argv."""
+    argv and the environment it was handed."""
     bindir = tmp_path / "askbin"
     bindir.mkdir()
     recorded = tmp_path / "ask-args.txt"
+    other_home = tmp_path / "hermes-other"
+    other_home.mkdir()
     if os.name == "nt":
         script = bindir / "hermes.cmd"
         script.write_text(
             "@echo off\r\n"
             f'echo %* > "{recorded}"\r\n'
+            f'echo %HERMES_HOME% > "{recorded}.home"\r\n'
             "echo the answer\r\n",
             encoding="utf-8",
         )
     else:
         script = bindir / "hermes"
-        script.write_text(f'#!/bin/sh\necho "$@" > "{recorded}"\necho "the answer"\n', encoding="utf-8")
+        script.write_text(
+            f'#!/bin/sh\necho "$@" > "{recorded}"\necho "$HERMES_HOME" > "{recorded}.home"\necho "the answer"\n',
+            encoding="utf-8",
+        )
     script.chmod(0o755)
     monkeypatch.setenv("PATH", str(bindir) + os.pathsep + os.environ["PATH"])
     if os.name == "nt":
         monkeypatch.setenv("PATHEXT", ".CMD;.EXE;.BAT;.COM;" + os.environ.get("PATHEXT", ""))
 
-    answer = asyncio.run(hermes_gateway.ask("what is 2+2", home=fake_home))
+    answer = asyncio.run(hermes_gateway.ask("what is 2+2", home=other_home))
 
     assert answer["text"] == "the answer"
     argv = recorded.read_text(encoding="utf-8")
     assert "-z" in argv and "what is 2+2" in argv
-    # HERMES_HOME is restored afterwards: ask() overrides it only for the call.
+    # The home override reaches the CHILD, not this process: two `ask` calls
+    # scoped to different homes must not swap homes under each other.
+    assert Path((tmp_path / "ask-args.txt.home").read_text(encoding="utf-8").strip()) == other_home
     assert os.environ["HERMES_HOME"] == str(fake_home)
+
+
+def test_a_stale_conflict_event_does_not_spin_a_re_parked_instance(fake_home, live_gateway_process, temp_db,
+                                                                   clean_supervisor, monkeypatch):
+    """A 409 sets this instance's conflict event, and only stop_instance() pops
+    it. So a later run of the same instance can find it already set - and since
+    the park loop waits on that same event, it must not treat it as "stop now".
+    Otherwise the loop re-checks ownership as fast as the event loop turns.
+
+    Proven behaviourally: with a long re-check interval the status must still be
+    the served-by one a second later, i.e. no early re-check happened."""
+    record_gateway(fake_home, live_gateway_process.pid)
+    row = _make_row(temp_db, name="re-parked bot")
+    with _BotApi() as api:
+        monkeypatch.setenv(platform_supervisor.API_BASE_URL_ENV, api.base_url)
+        monkeypatch.setattr(platform_supervisor, "GATEWAY_RECHECK_S", 30.0)
+
+        async def _go():
+            # exactly what a previous 409 leaves behind
+            platform_supervisor._conflict_events[row["id"]] = asyncio.Event()
+            platform_supervisor._conflict_events[row["id"]].set()
+            await platform_supervisor.start_instance(row)
+            for _ in range(60):
+                await asyncio.sleep(0.05)
+                if platform_supervisor.served_by(row["id"]):
+                    break
+            (fake_home / "gateway.pid").unlink()      # the gateway exits
+            (fake_home / "gateway_state.json").unlink()
+            await asyncio.sleep(1.0)                  # far less than the 30 s interval
+            return platform_supervisor.status()[row["id"]], api.count("getUpdates")
+
+        live, updates = asyncio.run(_go())
+
+    assert updates == 0
+    assert live["running"] is True
+    assert live["served_by"] == f"served by the Hermes gateway ({fake_home})"
+    assert platform_supervisor._conflict_events[row["id"]].is_set() is False
 
 
 def test_the_dashboard_gateway_overview_route_never_leaks_the_token(fake_home, live_gateway_process,
