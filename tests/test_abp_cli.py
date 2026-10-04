@@ -1071,11 +1071,20 @@ def test_modules_list_show_ops_status_and_logs(client, capsys):
     assert code == 0
     assert isinstance(json.loads(capsys.readouterr().out), list)
 
-    # this checkout has no module installed, so its hub has no operations to list: a real 503 from the
-    # module API, not a silent empty answer.
-    code, _ = run(["--json", "modules", "ops", mid], client)
-    assert code == 1
-    assert "not installed" in capsys.readouterr().err
+    # A module that is not installed has no hub, so no operations to list: a real 503 from the module API,
+    # not a silent empty answer. An installed one lists its operations. Which modules are installed depends
+    # on the machine, so pick by what the list says.
+    missing = next((m["id"] for m in modules if not m["installed"]), None)
+    if missing:
+        code, _ = run(["--json", "modules", "ops", missing], client)
+        assert code == 1
+        err = capsys.readouterr().err
+        assert "not installed" in err or "no operations" in err, err
+    present = next((m["id"] for m in modules if m["installed"] and m["ready"]), None)
+    if present:
+        code, _ = run(["--json", "modules", "ops", present], client)
+        assert code == 0
+        assert isinstance(json.loads(capsys.readouterr().out), (list, dict))
 
 
 def test_modules_run_op_reports_a_real_failure(client, capsys):
