@@ -202,9 +202,14 @@ def main() -> int:
     # very first child (bot/sandbox_ns/guard.py); the caller's own below-normal priority and CPU
     # thread cap (bot/localai/train.py) still apply. Putting the run in a "worker" cell is the
     # remaining step - see docs/sandbox-nervous-system.md.
-    from bot.sandbox_ns import guard
-
-    guard.install()
+    # This worker runs in the training environment's own Python, where ABP's package is usually not
+    # importable; ABP already starts it windowless, so the guard is only a backstop here.
+    try:
+        from bot.sandbox_ns import guard
+    except ImportError:
+        guard = None
+    if guard is not None:
+        guard.install()
     job = json.loads((RUN / "job.json").read_text(encoding="utf-8"))
     import torch
     torch.set_num_threads(int(job.get("cpu_threads", 4)))
