@@ -293,12 +293,30 @@ export const operations = {
    "scope"
   ]
  },
+ "DELETE /api/memory/goals/{goal_id}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/memory/goals/{goal_id}",
+  "path_params": [
+   "goal_id"
+  ],
+  "query_params": []
+ },
  "DELETE /api/memory/sources/{source_id}": {
   "body": false,
   "method": "DELETE",
   "path": "/api/memory/sources/{source_id}",
   "path_params": [
    "source_id"
+  ],
+  "query_params": []
+ },
+ "DELETE /api/memory/tool-rules/{rule_id}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/memory/tool-rules/{rule_id}",
+  "path_params": [
+   "rule_id"
   ],
   "query_params": []
  },
@@ -2243,6 +2261,15 @@ export const operations = {
    "status"
   ]
  },
+ "GET /api/memory/goals": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory/goals",
+  "path_params": [],
+  "query_params": [
+   "all"
+  ]
+ },
  "GET /api/memory/search": {
   "body": false,
   "method": "GET",
@@ -2281,6 +2308,15 @@ export const operations = {
   "query_params": [
    "after",
    "limit"
+  ]
+ },
+ "GET /api/memory/tool-rules": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory/tool-rules",
+  "path_params": [],
+  "query_params": [
+   "tool"
   ]
  },
  "GET /api/memory/tree/stats": {
@@ -2650,6 +2686,13 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/api/power/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/privacy": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/privacy",
   "path_params": [],
   "query_params": []
  },
@@ -5118,6 +5161,13 @@ export const operations = {
   ],
   "query_params": []
  },
+ "POST /api/memory/goals": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/memory/goals",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/memory/sources": {
   "body": true,
   "method": "POST",
@@ -5141,6 +5191,13 @@ export const operations = {
   "path_params": [
    "thread"
   ],
+  "query_params": []
+ },
+ "POST /api/memory/tool-rules": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/memory/tool-rules",
+  "path_params": [],
   "query_params": []
  },
  "POST /api/memory/tree": {
@@ -6921,6 +6978,13 @@ export const operations = {
   "body": true,
   "method": "PUT",
   "path": "/api/power/settings",
+  "path_params": [],
+  "query_params": []
+ },
+ "PUT /api/privacy": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/privacy",
   "path_params": [],
   "query_params": []
  },
@@ -11768,6 +11832,31 @@ export const operations = {
    "scope"
   ]
  },
+ "mem_goal_delete_api_memory_goals__goal_id__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/memory/goals/{goal_id}",
+  "path_params": [
+   "goal_id"
+  ],
+  "query_params": []
+ },
+ "mem_goal_put_api_memory_goals_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/memory/goals",
+  "path_params": [],
+  "query_params": []
+ },
+ "mem_goals_api_memory_goals_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory/goals",
+  "path_params": [],
+  "query_params": [
+   "all"
+  ]
+ },
  "mem_overview_api_memory_get": {
   "body": false,
   "method": "GET",
@@ -11873,6 +11962,31 @@ export const operations = {
   "query_params": [
    "instance_id",
    "limit"
+  ]
+ },
+ "mem_tool_rule_delete_api_memory_tool_rules__rule_id__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/memory/tool-rules/{rule_id}",
+  "path_params": [
+   "rule_id"
+  ],
+  "query_params": []
+ },
+ "mem_tool_rule_put_api_memory_tool_rules_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/memory/tool-rules",
+  "path_params": [],
+  "query_params": []
+ },
+ "mem_tool_rules_api_memory_tool_rules_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/memory/tool-rules",
+  "path_params": [],
+  "query_params": [
+   "tool"
   ]
  },
  "mem_tree_api_memory_tree_post": {
@@ -12512,6 +12626,20 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/power/wake",
+  "path_params": [],
+  "query_params": []
+ },
+ "privacy_get_api_privacy_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/privacy",
+  "path_params": [],
+  "query_params": []
+ },
+ "privacy_put_api_privacy_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/privacy",
   "path_params": [],
   "query_params": []
  },

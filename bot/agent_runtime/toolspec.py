@@ -178,7 +178,12 @@ def limit_output(name: str, text: str, workspace: Optional[Path] = None) -> str:
     if name != "tool_output":                    # reading a kept original back must not compact it again
         from bot.agent_runtime import tokenjuice
 
+        original = text
         text = tokenjuice.compress(text, name)   # compacted first (originals kept); the ceiling below is the backstop
+        if text is not original and workspace is not None and isinstance(original, str):
+            saved = _spill(workspace, name, original)    # and, as always, the full output in the workspace for read_file
+            if saved:
+                text += f"\n(The full output is also saved at {saved}: read_file with offset/limit, or grep, reads it.)"
     cap = spec_for(name).max_output_chars
     if not isinstance(text, str) or len(text) <= cap:
         return text
