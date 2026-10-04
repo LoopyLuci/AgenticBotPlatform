@@ -166,6 +166,9 @@ def _confidence(p, shape):
     return shape[:-1] + (1,), d * h + h + h + 1, d * h + h
 
 
+# the size parameters ops take: each, when given, a whole number of at least 1
+_SIZES = ("out", "hidden", "experts", "top_k", "vocab", "rank", "kernel", "heads", "dim", "stride")
+
 OPS: dict[str, dict[str, Any]] = {
     "linear": {"rule": _lin, "need": ["out"], "doc": "y = xW + b"},
     "lora_linear": {"rule": _lora, "need": ["out"], "doc": "a linear layer with a trainable low-rank update (rank)"},
@@ -262,6 +265,10 @@ def validate(spec: dict) -> dict:
         for need in OPS[op]["need"]:
             if need not in p:
                 raise SpecError(f"{nid} ({op}) needs {need}")
+        for size in _SIZES:                          # a zero-width layer would validate and "train" to nothing
+            if p.get(size) is not None and (isinstance(p[size], bool) or not isinstance(p[size], (int, float))
+                                            or p[size] != int(p[size]) or int(p[size]) < 1):
+                raise SpecError(f"{nid}: {size} must be a whole number of at least 1, not {p[size]!r}")
         if op in ("add", "concat"):
             sh = [shapes[i] for i in ins]
             if len(ins) < 2:

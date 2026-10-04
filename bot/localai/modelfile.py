@@ -69,6 +69,11 @@ def _value(name: str, raw: str):
     return raw
 
 
+def _is_gguf(p: Path) -> bool:
+    with open(p, "rb") as f:
+        return f.read(4) == b"GGUF"
+
+
 def create(name: str, text: str, progress: Callable[[dict], None] = lambda s: None, base_dir: Optional[Path] = None) -> dict:
     ins = parse(text)
     params: dict = {}
@@ -83,7 +88,7 @@ def create(name: str, text: str, progress: Callable[[dict], None] = lambda s: No
         if not ggufs:
             raise LocalAIError(f"{p} holds no .gguf file")
         p = ggufs[0]
-    if p.suffix.lower() == ".gguf" and p.is_file():
+    if p.is_file() and (p.suffix.lower() == ".gguf" or _is_gguf(p)):     # uploaded blobs have no extension
         progress({"status": "creating model layer"})
         layers.append({"mediaType": models.MT["model"], **models.put_file(p)})
         config = models.config_for(p)

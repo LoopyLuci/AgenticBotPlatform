@@ -346,3 +346,143 @@ def test_the_cli_parses_nas_commands():
                  ["nas", "transfer", "set", "j", "--from", "C:/a", "--to", "remote:nas2/media", "--mode", "two-way"],
                  ["nas", "backup", "restore", "b", "snap", "C:/r"], ["nas", "app", "install", "jellyfin", "jf", "--mount", "media=share:media"]):
         assert p.parse_args(argv).nas_cmd == argv[1]
+
+
+@pytest.fixture
+def live_server(nas):
+    """This file server's app on a real port (another ABP's file server, as a remote sees it)."""
+    import socket
+    import threading
+
+    import uvicorn
+
+    from bot.fileserver.server import build_app
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    srv = uvicorn.Server(uvicorn.Config(build_app(), host="127.0.0.1", port=port, log_level="warning"))
+    th = threading.Thread(target=srv.run, daemon=True)
+    th.start()
+    for _ in range(100):
+        if srv.started:
+            break
+        time.sleep(0.05)
+    yield f"http://127.0.0.1:{port}"
+    srv.should_exit = True
+    th.join(10)
+
+
+def test_transfer_remotes_another_abp_webdav_and_a_share(nas, live_server, tmp_path):
+    shares.create("files", {"cache": "no", "access": "private", "users": {"ann": "rw"}})
+    shares.set_user("ann", "correct horse")
+    a = tmp_path / "A"
+    (a / "sub").mkdir(parents=True)
+    (a / "note.txt").write_text("hello")
+    big = os.urandom((8 << 20) + 12345)                              # more than one upload chunk
+    (a / "sub" / "big.bin").write_bytes(big)
+    transfer.set_remote("nas2", "abp", {"url": live_server, "user": "ann", "password": "correct horse"})
+    transfer.set_remote("dav", "webdav", {"url": live_server + "/dav/files", "user": "ann", "password": "correct horse"})
+    transfer.set_remote("sh", "share", {"share": "files"})
+    transfer.set_remote("here", "local", {"path": str(a)})
+    listed = {r["name"]: r for r in transfer.remotes()}
+    assert listed["nas2"]["secrets_set"] == ["password"] and "password" not in listed["nas2"]
+    with pytest.raises(FsError, match="one of"):
+        transfer.set_remote("x", "ftp", {})
+    with pytest.raises(FsError, match="letters"):
+        transfer.set_remote("bad name", "local", {"path": str(a)})
+    with pytest.raises(FsError, match="not a folder"):
+        transfer.set_remote("x", "local", {"path": str(tmp_path / "missing")})
+    with pytest.raises(FsError, match="starts with the share"):
+        transfer.endpoint({"remote": "nas2", "path": ""})
+    with pytest.raises(FsError, match="no remote"):
+        transfer.endpoint({"remote": "nobody"})
+
+    # to another ABP over its API, mirrored
+    transfer.set_job("up", {"source": {"remote": "here"}, "dest": {"remote": "nas2", "path": "files/backup"}, "mode": "mirror"})
+    r = transfer.run("up")
+    assert r["done"] == 2 and not r["failed"] and r["parallel"] == 4
+    hit = shares.locate(shares.get("files"), "backup/sub/big.bin")
+    assert hit and hit[1].read_bytes() == big
+    assert transfer.run("up", dry_run=True)["planned"] == 0
+    (a / "note.txt").unlink()
+    assert transfer.run("up")["done"] == 1 and not shares.locate(shares.get("files"), "backup/note.txt")
+
+    # back from it over WebDAV
+    c = tmp_path / "C"
+    c.mkdir()
+    transfer.set_job("down", {"source": {"remote": "dav", "path": "backup"}, "dest": {"path": str(c)}, "mode": "copy",
+                              "parallel": 2, "limit_kbps": 1 << 20})
+    r = transfer.run("down")
+    assert not r["failed"] and (c / "sub" / "big.bin").read_bytes() == big and r["parallel"] == 2
+    (c / "extra.txt").write_text("from C")
+    transfer.set_job("davup", {"source": {"path": str(c)}, "dest": {"remote": "dav", "path": "backup"}, "mode": "copy"})
+    assert transfer.run("davup")["done"] == 1 and shares.locate(shares.get("files"), "backup/extra.txt")[1].read_text() == "from C"
+
+    # two ways with a share on this machine, with a conflict kept on both sides
+    d = tmp_path / "D"
+    d.mkdir()
+    (d / "doc.txt").write_text("v1")
+    transfer.set_job("tw", {"source": {"path": str(d)}, "dest": {"remote": "sh", "path": "tw"}, "mode": "two-way", "every_minutes": 5})
+    assert not transfer.run("tw")["failed"]
+    assert shares.locate(shares.get("files"), "tw/doc.txt")[1].read_text() == "v1"
+    time.sleep(0.05)
+    (d / "doc.txt").write_text("from D")
+    shares.locate(shares.get("files"), "tw/doc.txt")[1].write_text("from the share")
+    r = transfer.run("tw")
+    assert r["conflicts"] == 1 and not r["failed"]
+    assert any("conflict" in n for n in os.listdir(d))
+    assert "tw" not in transfer.due()                                # just ran
+    assert {h["job"] for h in transfer.history()} >= {"up", "down", "davup", "tw"}
+    assert transfer.remove_job("tw") and not transfer.remove_job("tw") and transfer.remove_remote("here")
+    with pytest.raises(FsError, match="no transfer job"):
+        transfer.run("tw")
+    with pytest.raises(FsError, match="mode is"):
+        transfer.set_job("bad", {"source": {"path": "x"}, "dest": {"path": "y"}, "mode": "sideways"})
+    with pytest.raises(FsError, match="source is"):
+        transfer.set_job("bad", {"source": "x", "dest": {"path": "y"}})
+
+
+def test_the_service_runs_every_schedule_and_keeps_the_server_up(nas, tmp_path):
+    """One tick with every schedule due: the server process started, parity synced and scrubbed, the mover, drive
+    health, the guard, the index, a transfer job and a backup job, each leaving an event."""
+    import socket
+
+    from bot.fileserver import service
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    hour = time.localtime().tm_hour
+    with pytest.raises(FsError, match="unknown setting"):
+        service.set_settings({"colour": "red"})
+    service.set_settings({"port": port, "bind": "127.0.0.1", "autostart": True, "sync_hour": hour, "mover_hour": hour,
+                          "scrub_days": 1, "scrub_percent": 100.0, "smart_minutes": 1, "guard_minutes": 1, "index_minutes": 1,
+                          "describe_images": False, "index_budget_s": 10})
+    shares.create("media", {"cache": "yes"})
+    hit = shares.place(shares.get("media"), "film.txt")
+    hit.parent.mkdir(parents=True, exist_ok=True)
+    hit.write_text("a film about parity")
+    a, b = tmp_path / "TA", tmp_path / "TB"
+    a.mkdir()
+    b.mkdir()
+    (a / "x.txt").write_text("x")
+    transfer.set_job("nightly", {"source": {"path": str(a)}, "dest": {"path": str(b)}, "every_minutes": 1})
+    backup.set_job("docs", str(tmp_path / "repo"), [str(a)], "a long password!", every_hours=0.01)
+    try:
+        service.tick()
+        kinds = {e["kind"] for e in service.events()}
+        assert {"server", "parity", "transfer", "backup"} <= kinds, service.events()
+        assert (b / "x.txt").read_text() == "x"
+        for _ in range(50):
+            st = service.server_status()
+            if st.get("health") and "error" not in st["health"]:
+                break
+            time.sleep(0.2)
+        assert st["running"] and st["urls"]["webdav"].endswith(f":{port}/dav/")
+        ov = service.overview(deep=True)
+        assert [s["name"] for s in ov["shares"]] == ["media"] and "nightly" in ov["transfers"] and "docs" in ov["backups"]
+        n_parity = sum(1 for e in service.events() if e["kind"] == "parity")
+        service.tick()                                    # nothing is due again so soon: no new parity events
+        assert sum(1 for e in service.events() if e["kind"] == "parity") == n_parity
+    finally:
+        assert service.server_stop()
+    assert not service.server_status()["running"]

@@ -115,6 +115,10 @@ def load_rows(paths: list[str]) -> list[dict]:
 
 # ---- tokenizing --------------------------------------------------------------------------------------------------- #
 
+CHATML = ("{% for m in messages %}<|im_start|>{{ m['role'] }}\n{{ m['content'] }}<|im_end|>\n{% endfor %}"
+          "{% if add_generation_prompt %}<|im_start|>assistant\n{% endif %}")
+
+
 def encode_sft(tok, msgs, max_len: int):
     """input_ids and labels with -100 everywhere except the assistant's turns (train on responses only)."""
     if not getattr(tok, "chat_template", None):
@@ -216,6 +220,11 @@ def main() -> int:
         return 2
     if tok.pad_token_id is None:
         tok.pad_token = tok.eos_token
+    if not getattr(tok, "chat_template", None):
+        # A base model has no chat format: give it ChatML (what most chat fine-tunes use), so only the replies are
+        # trained and the template is saved with the merged model and its GGUF.
+        tok.chat_template = CHATML
+        report(note="the base model has no chat template: ChatML is used and saved with the result")
     model = AutoModelForCausalLM.from_pretrained(job["base"], dtype=dtype, attn_implementation="sdpa").to(dev)
     if job.get("gradient_checkpointing", True):
         model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})

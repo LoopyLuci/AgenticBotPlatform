@@ -188,6 +188,8 @@ def resolve_base(base: str, fetch_missing: bool = True) -> str:
     from bot.localai import discover
     for it in discover.scan()["found"]:
         if it["kind"] == "safetensors" and it.get("repo", "").lower() == base.lower():
+            if it.get("layout") == "trees" and not (Path(it["path"]) / "config.json").exists():
+                discover.materialize_trees(Path(it["path"]).parent.parent)     # the standard snapshot folder, linked
             if not has_tokenizer(Path(it["path"])):
                 if not fetch_missing:
                     raise LocalAIError(f"{base} in the Hugging Face cache has no tokenizer files")

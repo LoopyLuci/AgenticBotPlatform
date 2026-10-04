@@ -50,7 +50,9 @@ ignore = [
 # The floor only ever moves up: raise it when coverage rises, never lower it
 # to make a change pass.
 [tool.coverage.run]
-omit = ["*/tests/*", "bot/tui/*"]
+# The training workers run only under the training environment's interpreter (PyTorch, which ABP's own does not
+# have); tests/test_train_live.py and test_localai.py run them there.
+omit = ["*/tests/*", "bot/tui/*", "bot/localai/train_worker.py", "bot/neurallab/nn_worker.py"]
 
 [tool.coverage.report]
 fail_under = 77

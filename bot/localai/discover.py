@@ -17,8 +17,10 @@ A new user's existing collection is therefore a slot-in replacement: point ABP a
 """
 from __future__ import annotations
 
+import json
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 from typing import Optional
@@ -136,11 +138,70 @@ def _scan_folder(app: str, root: Path, limit: int) -> list[dict]:
     return out
 
 
+def materialize_trees(repo: Path) -> list[Path]:
+    """A repo cached in the tree layout (trees/<revision>.json listing each file's blob, no snapshots/ folder; what
+    some newer downloaders write) laid out as the standard snapshots/<revision>/ folder that transformers, peft and
+    llama.cpp's converter read. Files are hard links to the blobs already there (no extra space; a copy only when the
+    file system cannot link). Files whose blob is not in the cache are left out. Returns the snapshot folders made."""
+    made = []
+    root = repo.parent
+    for tree in sorted((repo / "trees").glob("*.json")):
+        snap = repo / "snapshots" / tree.stem
+        if snap.is_dir() and any(snap.iterdir()):
+            continue
+        try:
+            files = json.loads(tree.read_text(encoding="utf-8")).get("files") or {}
+        except (OSError, ValueError):
+            continue
+        linked = 0
+        for name, f in files.items():
+            sha = f.get("lfs_sha256") or ""
+            cands = [repo / "blobs" / str(f.get("blob_id", ""))] + (
+                [repo / "blobs" / sha, root / "blobs" / sha[:2] / sha] if sha else [])
+            blob = next((c for c in cands if c.is_file() and c.stat().st_size == int(f.get("size", -1))), None)
+            if blob is None:
+                continue
+            dest = snap / name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if not dest.exists():
+                try:
+                    os.link(blob, dest)
+                except OSError:
+                    shutil.copy2(blob, dest)
+            linked += 1
+        if linked:
+            made.append(snap)
+    return made
+
+
+def _tree_item(repo: Path, repo_id: str) -> Optional[dict]:
+    trees = sorted((repo / "trees").glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not trees:
+        return None
+    try:
+        files = json.loads(trees[0].read_text(encoding="utf-8")).get("files") or {}
+    except (OSError, ValueError):
+        return None
+    st = [n for n in files if n.endswith(".safetensors")]
+    if not st or "config.json" not in files:
+        return None
+    return {"app": "Hugging Face", "kind": "safetensors", "path": str(repo / "snapshots" / trees[0].stem), "repo": repo_id,
+            "size": sum(int(files[n].get("size", 0)) for n in st), "layout": "trees",
+            "name": f"hf-cache/{_slug(repo_id.split('/')[-1]).lower()}:f16", "quantized_4bit": "bnb-4bit" in repo_id.lower(),
+            "tokenizer": any(n in files for n in ("tokenizer.json", "tokenizer.model", "vocab.json")),
+            "actions": ["train-base", "convert"]}
+
+
 def _scan_hf(root: Path, limit: int) -> list[dict]:
     out = []
     for repo in sorted(root.glob("models--*")):
         repo_id = repo.name[len("models--"):].replace("--", "/")
         snaps = sorted((repo / "snapshots").glob("*"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not snaps and (repo / "trees").is_dir():          # the tree layout: listed from its manifest (read-only)
+            item = _tree_item(repo, repo_id)
+            if item:
+                out.append(item)
+            continue
         if not snaps:
             continue
         snap = snaps[0]

@@ -57,6 +57,9 @@ def _ssh_base(acc: dict) -> list[str]:
         raise HostingError("OpenSSH's ssh is not installed here")
     args = [exe, "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new",
             "-p", accounts.setting(acc, "port", "22")]
+    known = accounts.setting(acc, "known_hosts")
+    if known:
+        args += ["-o", f"UserKnownHostsFile={os.path.expanduser(known)}"]
     key = accounts.setting(acc, "key_path")
     if key:
         args += ["-i", os.path.expanduser(key)]
@@ -260,9 +263,13 @@ def ftp_publish(site: dict, folder: Path, acc: dict, target: dict, log: Log) -> 
 
 # ---- Netlify -------------------------------------------------------------------------------------------------- #
 
+_TRANSPORT: Optional[httpx.BaseTransport] = None     # the provider APIs' stand-ins in tests (as dns.provider's transport)
+
+
 def _http(method: str, url: str, token: str, label: str, **kw) -> httpx.Response:
     try:
-        r = httpx.request(method, url, headers={"Authorization": f"Bearer {token}", **kw.pop("headers", {})}, timeout=120.0, **kw)
+        with httpx.Client(transport=_TRANSPORT, timeout=120.0) as c:
+            r = c.request(method, url, headers={"Authorization": f"Bearer {token}", **kw.pop("headers", {})}, **kw)
     except httpx.HTTPError as e:
         raise HostingError(f"{label}: {e}") from e
     if r.status_code >= 400:

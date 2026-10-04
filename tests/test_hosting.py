@@ -392,3 +392,104 @@ def test_the_cli_parses_every_host_command():
                  ["host", "live", "x", "--mode", "cloudflare-tunnel", "--account", "cf"], ["host", "dns", "set", "cf", "a.com", "www", "A", "1.2.3.4"],
                  ["host", "vps", "create", "do", "--name", "w", "--region", "fra1", "--size", "s-1vcpu-1gb"], ["host", "router", "add", "443"]):
         assert p.parse_args(argv).host_cmd == argv[1]
+
+
+def test_the_edge_in_process_for_every_route(hosting, tmp_path):
+    """The same edge (edge.serve: uvicorn, the routing table, SNI certificates) on a thread of this process: ACME
+    challenges, clean URLs, directories, 404 pages, wildcards, sign-in, real certificates forcing https, an app that
+    is down, refused WebSockets and live reloads of the table."""
+    import asyncio
+
+    import websockets.sync.client as wsc
+
+    from bot.hosting import edge
+
+    site = tmp_path / "site"
+    (site / "docs").mkdir(parents=True)
+    (site / "docs" / "index.html").write_text("<h1>docs</h1>")
+    (site / "404.html").write_text("<h1>missing</h1>")
+    (site / "data.bin").write_bytes(b"\0" * 10)
+    sites = {"docs": {"name": "Docs", "kind": "static", "root": str(site), "domains": ["docs.localhost", "*.wild.localhost"],
+                      "headers": {"X-Site": "docs"}, "force_https": False},
+             "locked": {"name": "Locked", "kind": "static", "root": str(site), "domains": ["locked.localhost"],
+                        "auth": {"user": "me", "password_hash": edge.hash_password("right")}},
+             "secure": {"name": "Secure", "kind": "static", "root": str(site), "domains": ["secure.localhost"]},
+             "down": {"name": "Down", "kind": "proxy", "upstream": f"http://127.0.0.1:{_free_port()}", "domains": ["down.localhost"]},
+             "odd": {"name": "Odd", "kind": "mystery", "domains": ["odd.localhost"]},
+             "off": {"name": "Off", "kind": "static", "root": str(site), "domains": ["off.localhost"], "enabled": False}}
+    edge.hosting_dir().mkdir(parents=True, exist_ok=True)
+    (edge.hosting_dir() / "sites.json").write_text(json.dumps(sites))
+    (edge.challenge_dir() / "tok-123").write_text("tok-123.thumb")
+    real = edge.cert_dir("secure.localhost")                  # a "real" certificate: plain http must move to https
+    real.mkdir(parents=True, exist_ok=True)
+    c_pem, k_pem = edge.self_signed("secure.localhost")
+    (real / "cert.pem").write_bytes(c_pem)
+    (real / "key.pem").write_bytes(k_pem)
+    wild = edge.cert_dir("_wildcard.wild.localhost")
+    wild.mkdir(parents=True, exist_ok=True)
+    c_pem, k_pem = edge.self_signed("*.wild.localhost")
+    (wild / "cert.pem").write_bytes(c_pem)
+    (wild / "key.pem").write_bytes(k_pem)
+
+    http_port, https_port = _free_port(), _free_port()
+    loop = asyncio.new_event_loop()
+    task = loop.create_task(edge.serve(http_port, https_port, "127.0.0.1"))
+    def run():
+        try:
+            loop.run_until_complete(task)
+        except asyncio.CancelledError:                        # how the test stops it
+            pass
+    th = threading.Thread(target=run, daemon=True)
+    th.start()
+    base = f"http://127.0.0.1:{http_port}"
+    try:
+        for _ in range(100):
+            try:
+                if httpx.get(f"{base}/.well-known/abp-edge", timeout=1).status_code == 200:
+                    break
+            except httpx.HTTPError:
+                time.sleep(0.1)
+        c = httpx.Client(timeout=10)
+        H = lambda h: {"host": h}  # noqa: E731
+        health = c.get(f"{base}/.well-known/abp-edge").json()
+        assert health["edge"] and "off.localhost" not in health["hosts"] and health["wildcards"] == [".wild.localhost"]
+        assert c.get(f"{base}/.well-known/acme-challenge/tok-123", headers=H("anything")).text == "tok-123.thumb"
+        assert c.get(f"{base}/.well-known/acme-challenge/nope", headers=H("anything")).status_code == 404
+        r = c.get(f"{base}/docs?x=1", headers=H("docs.localhost"))
+        assert r.status_code == 301 and r.headers["location"] == "/docs/?x=1"
+        r = c.get(f"{base}/docs/", headers=H("docs.localhost"))
+        assert r.text == "<h1>docs</h1>" and r.headers["x-site"] == "docs"
+        r = c.get(f"{base}/nothing-here", headers=H("a.wild.localhost"))
+        assert r.status_code == 404 and r.text == "<h1>missing</h1>"
+        assert c.get(f"{base}/data.bin", headers=H("docs.localhost")).headers["cache-control"] == "public, max-age=3600"
+        assert c.get(f"{base}/", headers=H("locked.localhost"), auth=("me", "wrong")).status_code == 401
+        assert c.get(f"{base}/", headers={**H("locked.localhost"), "authorization": "Basic %%%"}).status_code == 401
+        assert c.get(f"{base}/docs/", headers=H("locked.localhost"), auth=("me", "right")).status_code == 200
+        r = c.get(f"{base}/p?q=1", headers=H("secure.localhost"))
+        assert r.status_code == 301 and r.headers["location"] == "https://secure.localhost/p?q=1"
+        assert c.get(f"{base}/", headers=H("down.localhost")).status_code == 502
+        assert c.get(f"{base}/", headers=H("odd.localhost")).status_code == 500
+        assert c.get(f"{base}/", headers=H("off.localhost")).status_code == 421
+        assert c.get(f"{base}/", headers={"host": ""}).status_code in (400, 421)
+        with pytest.raises(Exception):
+            with wsc.connect("ws://docs.localhost/ws", sock=socket.create_connection(("127.0.0.1", http_port))) as w:
+                w.recv(timeout=5)                             # a static site has no WebSocket: refused
+        ctx = ssl.create_default_context()
+        ctx.check_hostname, ctx.verify_mode = False, ssl.CERT_NONE
+        from cryptography import x509
+        for host, want in (("a.wild.localhost", "CN=*.wild.localhost"), ("secure.localhost", "CN=secure.localhost")):
+            with ctx.wrap_socket(socket.create_connection(("127.0.0.1", https_port)), server_hostname=host) as t:
+                assert x509.load_der_x509_certificate(t.getpeercert(binary_form=True)).subject.rfc4514_string() == want
+        sites["off"]["enabled"] = True                        # the table reloads when sites.json changes
+        time.sleep(0.05)
+        (edge.hosting_dir() / "sites.json").write_text(json.dumps(sites))
+        assert c.get(f"{base}/docs/", headers=H("off.localhost")).status_code == 200
+        (edge.hosting_dir() / "sites.json").write_text("{broken")     # a bad write keeps the previous routes
+        time.sleep(0.05)
+        assert c.get(f"{base}/docs/", headers=H("off.localhost")).status_code == 200
+        assert json.loads((edge.hosting_dir() / "edge.json").read_text())["https"] == https_port
+        assert not edge.check_password("x", "garbage") and edge.check_password("right", sites["locked"]["auth"]["password_hash"])
+    finally:
+        loop.call_soon_threadsafe(task.cancel)
+        th.join(10)
+        loop.close()
