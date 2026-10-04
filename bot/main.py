@@ -2,11 +2,32 @@
 sharing one asyncio event loop and one SQLite connection.
 
 Usage:
-    python -m bot.main
+    python -m bot.main              # serve now, lead as soon as the lease is free
+    python -m bot.main --standby    # serve now, but never lead
+
+Two things are deliberately decoupled from the process itself:
+
+  the API       the dashboard answers from the moment it is up, whether or
+                not this process leads anything. That is what makes a live
+                instance a usable hot-swap target: the gate can health-check
+                it and route to it before it owns a single singleton.
+  the singletons everything in bot/lease.py's LEASE_GATED list - platform
+                bots/pollers, the scheduler, the memory fabric, local AI, ...
+                - runs only while this process holds the leader lease on its
+                data directory. So a standby instance can sit there fully
+                warmed up without two pollers fighting over one bot token.
+
+The role comes from the environment, never from config (config is shared by
+every instance on the same data):
+
+    ABP_STANDBY=1           --standby: serve the API, never take the lease.
+    ABP_SANDBOX_INSTANCE=1  an agent's private copy of the state: never leads,
+                            and never starts an outward connector at all.
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
 import logging.handlers
@@ -14,12 +35,13 @@ import os
 import signal
 import sys
 import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from dotenv import load_dotenv
 
 from bot.envfile import PROJECT_ROOT as ROOT
 from bot.envfile import ensure_dashboard_token, resolve as resolve_env_path
+from bot import lease
 from bot import tasks as bg
 
 if TYPE_CHECKING:
@@ -423,140 +445,209 @@ async def run() -> None:
         except Exception:
             logger.warning("Support Bot warm-up failed; it will train on first use instead", exc_info=True)
 
-    bg.spawn(_warm_support_bot())
-
     from bot.agent_runtime import mcp_client
 
+    # Outbound MCP server CONNECTIONS, deliberately not lease-gated: they are
+    # per-process client connections with no shared state behind them, and an
+    # agent driving a standby instance's tools expects them to be there.
     await mcp_client.connect_all_enabled()
 
-    migrated_id = bot_instances.migrate_legacy_env_instance()
-    if migrated_id is not None:
-        logger.info("migrated legacy .env Telegram config into bot instance #%s", migrated_id)
+    # ------------------------------------------------------------- the lease
+    # Everything from here to mDNS is a singleton — it must not run twice
+    # against one data directory (bot/lease.py's LEASE_GATED is the
+    # authoritative list). The two closures below are what the lease
+    # controller runs and un-runs, so leadership can move from one live
+    # process to another (the gate's hot swap) with neither of them
+    # restarting and neither of them losing its API.
 
-    instances = bot_instances.list_instances(enabled_only=True)
-    await platform_supervisor.start_all_enabled(instances)
+    handles: dict[str, object] = {}
+    # One start/stop at a time: the supervise loop and POST /api/lease/take are
+    # separate coroutines and must never both be inside _start_singletons().
+    lifecycle_lock = asyncio.Lock()
 
-    if not instances:
-        logger.info(
-            "no bot instances configured yet — dashboard/desktop UI is still "
-            "available to add one from the Bots tab"
+    async def _start_singletons() -> None:
+        bg.spawn(_warm_support_bot())
+
+        migrated_id = bot_instances.migrate_legacy_env_instance()
+        if migrated_id is not None:
+            logger.info("migrated legacy .env Telegram config into bot instance #%s", migrated_id)
+
+        # A sandbox starts no poller at all, whatever its (copied, real-token)
+        # config says — bot/lease.py's SANDBOX_BLOCKED is the rule and this is
+        # its enforcement point. Two pollers on one Telegram token is not a
+        # degraded sandbox, it is the real bot answering twice.
+        outward_blocked = lease.sandbox_blocked_reason()
+        if outward_blocked:
+            logger.warning("outward connectors are off: %s", outward_blocked)
+            instances: list = []
+        else:
+            instances = bot_instances.list_instances(enabled_only=True)
+            await platform_supervisor.start_all_enabled(instances)
+
+        if not instances:
+            logger.info(
+                "no bot instances configured yet — dashboard/desktop UI is still "
+                "available to add one from the Bots tab"
+            )
+
+        watch_task = asyncio.create_task(config.watch_forever())
+        # config/providers.yaml too: a provider added outside the app (abp_import, an edit by hand) is picked up at once.
+        from bot import providers as provider_registry
+
+        providers_watch_task = asyncio.create_task(provider_registry._manager.watch_forever())
+
+        from bot import hotreload
+
+        hotreload_task = asyncio.create_task(hotreload.watch_forever())
+
+        from bot import scheduler
+
+        scheduler_task = asyncio.create_task(scheduler.run_forever(stop_event))
+
+        from bot import infra_automation
+
+        infra_task = asyncio.create_task(infra_automation.run_forever(stop_event))
+
+        # ABP Web Hosting's upkeep (bot/hosting): dynamic DNS, certificate renewals, the web server and tunnel kept up.
+        from bot.hosting import service as hosting_service
+
+        hosting_task = asyncio.create_task(hosting_service.run_forever(stop_event))
+
+        # ABP File Server's schedules (bot/fileserver): parity sync/scrub, mover, drive health, index, guard, jobs.
+        from bot.fileserver import service as fileserver_service
+
+        fileserver_task = asyncio.create_task(fileserver_service.run_forever(stop_event))
+
+        # ABP's local AI (bot/localai): the Ollama-compatible model server kept up, fine-tunes exported when they finish,
+        # and the model store shared with the modules that run models (ABP_MODELS_DIR).
+        from bot.localai import service as localai_service
+
+        localai_service.export_store_env()
+        localai_task = asyncio.create_task(localai_service.run_forever(stop_event))
+
+        # The Neural Lab (bot/neurallab): telemetry recorded and the system models that tune this machine kept current.
+        from bot.neurallab import service as neurallab_service
+
+        neurallab_task = asyncio.create_task(neurallab_service.run_forever(stop_event))
+
+        # The memory fabric (bot/memoryfabric): sources kept fresh, the daily close, the vault read back.
+        from bot.memoryfabric import service as memory_service
+
+        memory_task = asyncio.create_task(memory_service.run_forever(stop_event))
+
+        # Reactive half of auto-management (bot/auto_manage.py) — a new
+        # kanban card fires a real check-in for that board's owning instance,
+        # if it's configured to react to this trigger. The scheduled half
+        # needs no separate wiring here: it's a normal scheduled_commands row
+        # (kind="auto_manage") the scheduler task above already polls.
+        from bot import auto_manage, db as _db
+
+        def _on_kanban_card_created(card_id: int) -> None:
+            bg.spawn(auto_manage.maybe_trigger_from_kanban_card(card_id))
+
+        _db.on_kanban_card_created(_on_kanban_card_created)
+
+        from bot import peers
+
+        peers_health_task = asyncio.create_task(peers.health_check_forever(stop_event))
+
+        from bot.cluster import membership as cluster_membership
+
+        # The cluster's heartbeat: every linked peer's node report, rescheduling jobs whose node went down.
+        cluster_task = asyncio.create_task(cluster_membership.heartbeat_forever(stop_event))
+        # Git stacks' poller (bot/git_stacks.py): idle unless a stack has auto_deploy on.
+        import threading as _threading
+
+        from bot import git_stacks as _git_stacks
+        git_stacks_stop = _threading.Event()
+        _threading.Thread(target=_git_stacks.poller_forever, args=(git_stacks_stop,), daemon=True, name="git-stacks-poller").start()
+
+        from bot import retention
+
+        retention_task = asyncio.create_task(retention.run_forever(stop_event))
+
+        self_preservation.start(loop, stop_event)
+        sentinel_task = asyncio.create_task(self_preservation.run_forever(stop_event))
+
+        from bot import mdns_advertise
+
+        # Blocking (real socket I/O to send the mDNS announcement) but brief and
+        # one-shot — off the event loop rather than a long-lived task. Failure
+        # here (no multicast-capable network stack, etc.) is logged and
+        # swallowed inside start() itself; this is discovery sugar for the
+        # Android app's NsdDiscoveryClient, never a startup dependency.
+        await asyncio.to_thread(mdns_advertise.start, port)
+        handles.update(
+            tasks=[watch_task, providers_watch_task, hotreload_task, scheduler_task, infra_task, hosting_task,
+                   fileserver_task, localai_task, neurallab_task, memory_task, peers_health_task, cluster_task,
+                   retention_task, sentinel_task],
+            git_stacks_stop=git_stacks_stop,
         )
 
-    watch_task = asyncio.create_task(config.watch_forever())
-    # config/providers.yaml too: a provider added outside the app (abp_import, an edit by hand) is picked up at once.
-    from bot import providers as provider_registry
+    async def _stop_singletons() -> None:
+        """Give every singleton up, keeping the API answering. Cancels the
+        loops instead of setting the process-wide stop_event, because this
+        also runs mid-life when the gate hands the lease to a newer instance."""
+        tasks: list = list(handles.pop("tasks", []) or [])
+        git_stacks_stop = handles.pop("git_stacks_stop", None)
+        if git_stacks_stop is not None:
+            git_stacks_stop.set()
+        # Politely: platform pollers get a real shutdown (stop_polling), which
+        # is what keeps the next instance's poller from overlapping them on one
+        # bot token.
+        await platform_supervisor.stop_all()
+        for t in tasks:
+            t.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self_preservation.stop()
+        try:
+            from bot import mdns_advertise
 
-    providers_watch_task = asyncio.create_task(provider_registry._manager.watch_forever())
+            await asyncio.to_thread(mdns_advertise.stop)
+        except Exception:  # noqa: BLE001 — shutdown continues regardless
+            logger.debug("mDNS advertisement could not be withdrawn", exc_info=True)
 
-    from bot import hotreload
+    async def _start() -> None:
+        async with lifecycle_lock:
+            await _start_singletons()
 
-    hotreload_task = asyncio.create_task(hotreload.watch_forever())
+    async def _stop() -> None:
+        async with lifecycle_lock:
+            await _stop_singletons()
 
-    from bot import scheduler
-
-    scheduler_task = asyncio.create_task(scheduler.run_forever(stop_event))
-
-    from bot import infra_automation
-
-    infra_task = asyncio.create_task(infra_automation.run_forever(stop_event))
-
-    # ABP Web Hosting's upkeep (bot/hosting): dynamic DNS, certificate renewals, the web server and tunnel kept up.
-    from bot.hosting import service as hosting_service
-
-    hosting_task = asyncio.create_task(hosting_service.run_forever(stop_event))
-
-    # ABP File Server's schedules (bot/fileserver): parity sync/scrub, mover, drive health, index, guard, jobs.
-    from bot.fileserver import service as fileserver_service
-
-    fileserver_task = asyncio.create_task(fileserver_service.run_forever(stop_event))
-
-    # ABP's local AI (bot/localai): the Ollama-compatible model server kept up, fine-tunes exported when they finish,
-    # and the model store shared with the modules that run models (ABP_MODELS_DIR).
-    from bot.localai import service as localai_service
-
-    localai_service.export_store_env()
-    localai_task = asyncio.create_task(localai_service.run_forever(stop_event))
-
-    # The Neural Lab (bot/neurallab): telemetry recorded and the system models that tune this machine kept current.
-    from bot.neurallab import service as neurallab_service
-
-    neurallab_task = asyncio.create_task(neurallab_service.run_forever(stop_event))
-
-    # The memory fabric (bot/memoryfabric): sources kept fresh, the daily close, the vault read back.
-    from bot.memoryfabric import service as memory_service
-
-    memory_task = asyncio.create_task(memory_service.run_forever(stop_event))
-
-    # Reactive half of auto-management (bot/auto_manage.py) — a new
-    # kanban card fires a real check-in for that board's owning instance,
-    # if it's configured to react to this trigger. The scheduled half
-    # needs no separate wiring here: it's a normal scheduled_commands row
-    # (kind="auto_manage") the scheduler task above already polls.
-    from bot import auto_manage, db as _db
-
-    def _on_kanban_card_created(card_id: int) -> None:
-        bg.spawn(auto_manage.maybe_trigger_from_kanban_card(card_id))
-
-    _db.on_kanban_card_created(_on_kanban_card_created)
-
-    from bot import peers
-
-    peers_health_task = asyncio.create_task(peers.health_check_forever(stop_event))
-
-    from bot.cluster import membership as cluster_membership
-
-    # The cluster's heartbeat: every linked peer's node report, rescheduling jobs whose node went down.
-    cluster_task = asyncio.create_task(cluster_membership.heartbeat_forever(stop_event))
-    # Git stacks' poller (bot/git_stacks.py): idle unless a stack has auto_deploy on.
-    import threading as _threading
-
-    from bot import git_stacks as _git_stacks
-    git_stacks_stop = _threading.Event()
-    _threading.Thread(target=_git_stacks.poller_forever, args=(git_stacks_stop,), daemon=True, name="git-stacks-poller").start()
-
-    from bot import retention
-
-    retention_task = asyncio.create_task(retention.run_forever(stop_event))
-
-    self_preservation.start(loop, stop_event)
-    sentinel_task = asyncio.create_task(self_preservation.run_forever(stop_event))
-
-    from bot import mdns_advertise
-
-    # Blocking (real socket I/O to send the mDNS announcement) but brief and
-    # one-shot — off the event loop rather than a long-lived task. Failure
-    # here (no multicast-capable network stack, etc.) is logged and
-    # swallowed inside start() itself; this is discovery sugar for the
-    # Android app's NsdDiscoveryClient, never a startup dependency.
-    await asyncio.to_thread(mdns_advertise.start, port)
+    singletons = lease.Controller(_start, _stop)
+    lease.set_controller(singletons)
+    supervisor_task = asyncio.create_task(singletons.supervise(stop_event))
+    if lease.is_sandbox():
+        logger.warning(
+            "sandbox instance: %s. The API is fully usable; nothing reaches the outside world.",
+            lease.sandbox_blocked_reason(),
+        )
+    elif singletons.lease.locked_by_other():
+        logger.warning(
+            "another ABP instance holds the leader lease on %s — serving the API only until it frees up",
+            singletons.lease.path,
+        )
+    else:
+        logger.info("no other instance holds the leader lease — leading")
 
     try:
         await stop_event.wait()
     finally:
         logger.info("shutting down")
-        watch_task.cancel()
-        providers_watch_task.cancel()
-        hotreload_task.cancel()
-        await infra_task
-        await hosting_task  # same shutdown contract as infra_task
-        await fileserver_task  # same shutdown contract as infra_task
-        await localai_task  # same shutdown contract as infra_task
-        await neurallab_task  # same shutdown contract as infra_task
-        await memory_task  # same shutdown contract as infra_task
-        await scheduler_task  # stop_event is already set; run_forever exits its own loop cleanly
-        await peers_health_task  # same shutdown contract as scheduler_task
-        await cluster_task  # same shutdown contract as scheduler_task
-        git_stacks_stop.set()
-        await retention_task  # same shutdown contract as scheduler_task
-        await sentinel_task  # same shutdown contract as scheduler_task
-        await asyncio.to_thread(mdns_advertise.stop)
+        # The lease goes first: giving it up stops every gated service and
+        # releases the lock, so an instance waiting behind it can take over at
+        # once instead of waiting out this process's whole shutdown.
+        supervisor_task.cancel()
+        await _stop_singletons()
+        lease.set_controller(None)
         await dashboard_supervisor_task  # let its own retry loop notice stop_event and exit
         server = dashboard_state["server"]
         dashboard_task = dashboard_state["task"]
         if server is not None:  # None if every bind attempt ever failed
             server.should_exit = True
             await dashboard_task
-        await platform_supervisor.stop_all()
         from bot.router import router as _router
 
         await _router.shutdown_backends()
@@ -583,12 +674,28 @@ async def run() -> None:
         db.log_audit(actor="system", action="shutdown")
 
 
-def main() -> None:
+def _parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+    ap = argparse.ArgumentParser(
+        prog="python -m bot.main",
+        description="Serve ABP's API, and lead (run the singletons) whenever the leader lease is free.",
+    )
+    ap.add_argument(
+        "--standby", action="store_true",
+        help="serve the API but never take the leader lease, even when it is free "
+             "(the same as ABP_STANDBY=1)",
+    )
+    return ap.parse_args(argv)
+
+
+def main(argv: Optional[list[str]] = None) -> None:
     # First, before anything in this process can start a child: no console window may ever
     # appear on the person's desktop (bot/sandbox_ns/guard.py).
     from bot.sandbox_ns import guard, reaper
 
     guard.install()
+    args = _parse_args(argv)
+    if args.standby:
+        os.environ[lease.STANDBY_ENV] = "1"
     setup_logging()
     # Then, before this run starts anything of its own: what the last run left running. Matched
     # by pid AND create time, so a pid Windows has since handed to something else is never

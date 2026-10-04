@@ -227,3 +227,46 @@ def register(app: FastAPI) -> None:
         from bot import hotreload
 
         return await hotreload.trigger_manual_reload()
+
+    # ------------------------------------------------------------ the lease
+    # Who owns this data directory right now, and the two calls that move
+    # ownership. The gate calls release on the outgoing instance and take on
+    # the incoming one during a swap; `abp_cli instance swap` needs no direct
+    # access at all beyond these.
+
+    @app.get("/api/lease", dependencies=[Depends(_require_token)])
+    async def api_lease_status():
+        from bot import lease
+
+        controller = lease.controller()
+        if controller is not None:
+            return controller.status()
+        # Imported outside bot.main (a test, a one-off script): no controller
+        # exists, so report the raw lock state instead of pretending to lead.
+        return {**lease.status(), "singletons_running": False, "held": False, "wants_leadership": False}
+
+    @app.post("/api/lease/release", dependencies=[Depends(_require_token)])
+    async def api_lease_release():
+        """Stop the lease-gated services and give up the lease, but keep
+        serving the API. Idempotent - releasing when this process never held it
+        is a no-op, not an error."""
+        from bot import lease
+
+        controller = lease.controller()
+        if controller is None:
+            raise HTTPException(status_code=409, detail="this process has no lease controller (not started by bot.main)")
+        return await controller.release()
+
+    @app.post("/api/lease/take", dependencies=[Depends(_require_token)])
+    async def api_lease_take(timeout: float = 30.0):
+        """Take the lease as soon as it is free (up to `timeout` seconds).
+        A --standby instance normally refuses, but gate-managed instances
+        (ABP_GATE=1) are allowed to take it when explicitly requested."""
+        import os
+        from bot import lease
+
+        controller = lease.controller()
+        if controller is None:
+            raise HTTPException(status_code=409, detail="this process has no lease controller (not started by bot.main)")
+        force = os.environ.get("ABP_GATE") == "1"
+        return await controller.acquire(timeout=timeout, force=force)
