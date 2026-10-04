@@ -471,6 +471,11 @@ async def run() -> None:
 
     neurallab_task = asyncio.create_task(neurallab_service.run_forever(stop_event))
 
+    # The memory fabric (bot/memoryfabric): sources kept fresh, the daily close, the vault read back.
+    from bot.memoryfabric import service as memory_service
+
+    memory_task = asyncio.create_task(memory_service.run_forever(stop_event))
+
     # Reactive half of auto-management (bot/auto_manage.py) — a new
     # kanban card fires a real check-in for that board's owning instance,
     # if it's configured to react to this trigger. The scheduled half
@@ -526,6 +531,7 @@ async def run() -> None:
         await fileserver_task  # same shutdown contract as infra_task
         await localai_task  # same shutdown contract as infra_task
         await neurallab_task  # same shutdown contract as infra_task
+        await memory_task  # same shutdown contract as infra_task
         await scheduler_task  # stop_event is already set; run_forever exits its own loop cleanly
         await peers_health_task  # same shutdown contract as scheduler_task
         await cluster_task  # same shutdown contract as scheduler_task

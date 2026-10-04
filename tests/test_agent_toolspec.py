@@ -52,7 +52,8 @@ def test_unknown_tools_are_treated_conservatively():
     assert spec.permission == "external" and not spec.read_only and not spec.concurrency_safe
 
 
-def test_limit_output_keeps_head_and_tail_and_says_what_was_omitted():
+def test_limit_output_keeps_head_and_tail_and_says_what_was_omitted(monkeypatch):
+    monkeypatch.setenv("ABP_TOKENJUICE", "0")     # the ceiling itself (TokenJuice compacts first: tests/test_tokenjuice.py)
     big = "A" * 20_000 + "MIDDLE" + "Z" * 20_000
     out = toolspec.limit_output("some_plugin_tool", big)
     assert len(out) < len(big)

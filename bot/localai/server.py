@@ -83,6 +83,42 @@ def _format(fmt) -> Optional[dict]:
     raise LocalAIError('format is "json" or a JSON schema')
 
 
+MEMORY_SUFFIX = "+memory"
+
+
+def _memory(request: Request, b: dict, query: str) -> str:
+    """ABP's shared memory (bot/memoryfabric) for a client that asks for it: a model named "<model>+memory" or the
+    X-ABP-Memory header (X-ABP-Instance adds that bot's own memories). The suffix is taken off the model name."""
+    model = str(b.get("model") or "")
+    want = model.endswith(MEMORY_SUFFIX) or request.headers.get("x-abp-memory", "").lower() in ("1", "true", "yes", "on")
+    if model.endswith(MEMORY_SUFFIX):
+        b["model"] = model[: -len(MEMORY_SUFFIX)]
+    if not want:
+        return ""
+    try:
+        from bot.memoryfabric import store
+        iid = request.headers.get("x-abp-instance")
+        return store.memory_block(int(iid) if iid and iid.isdigit() else None, query)
+    except Exception:  # noqa: BLE001 - memory never fails a request
+        return ""
+
+
+def _last_user(msgs: list[dict]) -> str:
+    for m in reversed(msgs or []):
+        if m.get("role") == "user" and isinstance(m.get("content"), str):
+            return m["content"]
+    return ""
+
+
+def _with_memory(msgs: list[dict], block: str) -> list[dict]:
+    """The memory block in the conversation's one system message (added at the start when there is none)."""
+    if not block:
+        return msgs
+    if msgs and msgs[0].get("role") == "system" and isinstance(msgs[0].get("content"), str):
+        return [{**msgs[0], "content": f"{msgs[0]['content']}\n\n{block}"}] + msgs[1:]
+    return [{"role": "system", "content": block}] + list(msgs)
+
+
 def _messages(rec: dict, msgs: list[dict], system: Optional[str] = None) -> list[dict]:
     out = []
     if system or (rec.get("system") and not any(m.get("role") == "system" for m in msgs)):
@@ -233,6 +269,7 @@ def _ndjson(gen) -> StreamingResponse:
 async def chat(request: Request):
     try:
         b = await request.json()
+        block = await asyncio.to_thread(_memory, request, b, _last_user(b.get("messages") or []))
         model = b.get("model") or ""
         rec = await asyncio.to_thread(models.resolve, model)
         t0 = time.time()
@@ -249,7 +286,7 @@ async def chat(request: Request):
         before = time.time()
         r = await _load(model, b.get("options") or {}, b.get("keep_alive"))
         load_s = getattr(r, "load_seconds", 0.0) if r.started >= before else 0.0
-        body: dict[str, Any] = {"messages": _messages(rec, msgs), **_sampling(rec.get("params") or {}, b.get("options") or {})}
+        body: dict[str, Any] = {"messages": _with_memory(_messages(rec, msgs), block), **_sampling(rec.get("params") or {}, b.get("options") or {})}
         if b.get("tools"):
             body["tools"] = b["tools"]
         rf = _format(b.get("format"))
@@ -269,6 +306,7 @@ async def chat(request: Request):
 async def generate(request: Request):
     try:
         b = await request.json()
+        block = await asyncio.to_thread(_memory, request, b, str(b.get("prompt") or ""))
         model = b.get("model") or ""
         rec = await asyncio.to_thread(models.resolve, model)
         t0 = time.time()
@@ -303,7 +341,7 @@ async def generate(request: Request):
                 return _ndjson(iter([(json.dumps(out) + "\n").encode()]))
             return JSONResponse(out)
         msg = {"role": "user", "content": prompt, "images": b.get("images") or []}
-        body = {"messages": _messages(rec, [msg], b.get("system")), **samp}
+        body = {"messages": _with_memory(_messages(rec, [msg], b.get("system")), block), **samp}
         rf = _format(b.get("format"))
         if rf:
             body["response_format"] = rf
@@ -569,11 +607,14 @@ async def v1_models(request: Request):
 async def _v1_proxy(request: Request, path: str, embedding: bool = False):
     try:
         b = await request.json()
+        block = "" if embedding else await asyncio.to_thread(_memory, request, b, _last_user(b.get("messages") or []))
         model = b.get("model", "")
         rec = await asyncio.to_thread(models.resolve, model)
         r = await _load(model, {}, None, embedding)
         if path == "/v1/chat/completions" and rec.get("system") and not any(m.get("role") == "system" for m in b.get("messages", [])):
             b["messages"] = [{"role": "system", "content": rec["system"]}] + b.get("messages", [])
+        if block and isinstance(b.get("messages"), list):        # after the model's own system prompt, into the same message
+            b["messages"] = _with_memory(b["messages"], block)
         if b.get("stream"):
             async def gen():
                 r.busy += 1

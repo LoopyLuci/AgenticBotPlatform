@@ -333,7 +333,8 @@ def test_write_file_over_an_existing_file_needs_a_read_but_a_new_file_does_not(w
 
 
 # ---- output spill ----------------------------------------------------------------
-def test_large_output_is_saved_in_full_and_the_note_says_where(ws):
+def test_large_output_is_saved_in_full_and_the_note_says_where(ws, monkeypatch):
+    monkeypatch.setenv("ABP_TOKENJUICE", "0")     # the ceiling's spill (TokenJuice keeps its own originals)
     text = "".join(f"row {i}\n" for i in range(20_000))
     out = toolspec.limit_output("some_tool", text, ws)
     assert len(out) < len(text) and "saved at .abp-tool-output/" in out

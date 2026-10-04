@@ -7,13 +7,20 @@ backends can't silently drift on this shared, security-relevant path.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 import time
+from typing import Optional
 
 from bot.agent_runtime import toolspec, trace
 from bot import tasks as bg
 
 logger = logging.getLogger("bot.agent_runtime.tool_loop")
+
+
+# The current turn's failed tool calls, by tool (bot/router.py sets it per turn; bot/memoryfabric/rules.py turns two or
+# more failures of one tool into a normal-priority tool rule).
+turn_failures: "contextvars.ContextVar[Optional[dict]]" = contextvars.ContextVar("turn_failures", default=None)
 
 
 async def run_one_tool(
@@ -36,6 +43,10 @@ async def run_one_tool(
         outcome["error"] = f"{type(exc).__name__}: {exc}"
         raise
     finally:
+        if outcome["status"] == "failed":
+            failures = turn_failures.get()
+            if failures is not None:
+                failures.setdefault(name, []).append(outcome["error"] or "failed")
         trace.active().tool_call(
             name, tool_input, status=outcome["status"], duration_ms=int((time.monotonic() - started) * 1000),
             output=output, approval=outcome["approval"], error=outcome["error"],

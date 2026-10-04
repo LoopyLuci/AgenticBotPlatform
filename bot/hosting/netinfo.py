@@ -99,12 +99,20 @@ def overview(router: bool = True) -> dict:
 
 
 def resolve(name: str, rtype: str = "A", timeout: float = 8.0) -> list[str]:
-    """The record values the world sees for name/rtype, through DNS over HTTPS (Cloudflare, then Google)."""
+    """The record values the world sees for name/rtype: ABP's resolver first (Ironroot, then Quad9; bot/resolver.py),
+    then DNS over HTTPS through Cloudflare and Google."""
     rtype = rtype.upper()
     want = _TYPES.get(rtype)
     if not want:
         raise HostingError(f"cannot look up {rtype} records")
     last: Optional[Exception] = None
+    from bot import resolver                       # Ironroot on this machine, then Quad9 (both validate DNSSEC)
+    try:
+        return resolver.resolve(name, rtype).values
+    except resolver.ResolveError as e:
+        if resolver.settings()["require_validated"]:
+            raise HostingError(str(e)) from e
+        last = e
     for url in _DOH:
         try:
             r = httpx.get(url, params={"name": name, "type": rtype}, headers={"accept": "application/dns-json"}, timeout=timeout)

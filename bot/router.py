@@ -18,6 +18,7 @@ what actually happened, not just what was configured to happen.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass
@@ -35,6 +36,15 @@ from bot.config import config
 from bot import tasks as bg
 
 logger = logging.getLogger("bot.router")
+
+
+async def _extract_memories(instance_id: int, prompt: str) -> None:
+    """Memories the person stated outright in this message, proposed to the review gate (bot/memoryfabric/extract.py)."""
+    from bot.memoryfabric import extract, rules
+
+    await asyncio.to_thread(extract.propose, instance_id, prompt)
+    await asyncio.to_thread(rules.capture_edicts, prompt)          # "never ... with <tool>": a critical tool rule
+
 
 VALID_BACKENDS = ("api", "cli", "ui", "hermes_cli", "hermes_gateway", "custom_model", "native_agent", "opencode", "openclaw",
                   "kestrion")
@@ -554,6 +564,19 @@ class Router:
         context["job_id"] = job_id
         context["action_type"] = action_type
 
+        # The memory fabric (bot/memoryfabric): one conversation and one memory whichever model answers. The person's
+        # message is recorded once; each backend tried gets what it has not seen.
+        mf_thread: Optional[str] = None
+        if instance_id is not None:
+            try:
+                from bot.memoryfabric import store as memory_fabric
+
+                mf_thread = memory_fabric.thread_key(instance_id, chat_id, thread_id)
+                memory_fabric.record(mf_thread, "user", prompt, instance_id=instance_id)
+            except Exception:  # noqa: BLE001 - memory must never stop a turn
+                logger.exception("memory fabric: could not record the message")
+                mf_thread = None
+
         last_error: Optional[Exception] = None
         for i, backend_name in enumerate(chain):
             if i == 0:
@@ -574,10 +597,56 @@ class Router:
                 continue
 
             backend = self._get_backend(backend_name, cfg, model_override=instance_model, hermes_home=instance_hermes_home)
+            from bot import privacy
+
+            if privacy.enabled() and not privacy.backend_is_local(backend_name, backend):
+                exc = BackendError(f"privacy mode is on: {backend_name} would send this conversation to a model that is not "
+                                   "on this machine, so it was skipped (use a local model, or turn privacy mode off)")
+                db.log_connection_event(component=backend_name, event="request_error", detail=str(exc))
+                last_error = exc
+                continue
             timeout_s = timeouts.get(backend_name, 30)
+            model_name = str(getattr(backend, "model", None) or instance_model or "")
+            send_prompt = effective_prompt
+            context.pop("memory_handoff", None)
+            context.pop("memory_recall", None)
+            if mf_thread is not None:
+                try:
+                    from bot.memoryfabric import store as memory_fabric
+
+                    if memory_fabric.family(backend_name) == "native":
+                        context["memory_handoff"] = await asyncio.to_thread(memory_fabric.handoff, mf_thread, backend_name, model_name)
+                        context["memory_recall"] = await asyncio.to_thread(memory_fabric.related_block, instance_id, prompt)
+                    else:
+                        block = await asyncio.to_thread(memory_fabric.context_block, instance_id, prompt, mf_thread,
+                                                        backend_name, model_name)
+                        if block:
+                            send_prompt = f"{block}\n\n{effective_prompt}"
+                except Exception:  # noqa: BLE001
+                    logger.exception("memory fabric: no memories for this turn")
             t0 = time.monotonic()
+            from bot.agent_runtime import tool_loop
+
+            failures_token = tool_loop.turn_failures.set({})
             try:
-                result = await backend.ask(effective_prompt, context=context, timeout_s=timeout_s)
+                try:
+                    result = await backend.ask(send_prompt, context=context, timeout_s=timeout_s)
+                finally:
+                    failures = tool_loop.turn_failures.get() or {}
+                    tool_loop.turn_failures.reset(failures_token)
+                    if any(len(v) >= 2 for v in failures.values()):
+                        from bot.memoryfabric import rules as memory_rules
+
+                        bg.spawn(asyncio.to_thread(memory_rules.note_failures, failures), name="tool-rule-failures")
+                if mf_thread is not None:
+                    try:
+                        from bot.memoryfabric import store as memory_fabric
+
+                        memory_fabric.record(mf_thread, "assistant", result.text or "", instance_id=instance_id,
+                                             backend=backend_name, model=model_name)
+                        bg.spawn(_extract_memories(instance_id, prompt), name="memory-extract")
+                    except Exception:  # noqa: BLE001
+                        logger.exception("memory fabric: could not record the answer")
                 latency_ms = (time.monotonic() - t0) * 1000
                 db.log_telemetry(component=backend_name, metric="latency_ms", value=latency_ms)
                 if isinstance(result.raw, dict):

@@ -48,6 +48,11 @@ SCOPES: dict[str, list[tuple[str, str]]] = {
     "lab:read": [("GET", r"/api/lab(/(runs|designs|projects|systune|telemetry|brainbuilder|kotmoe))?"),
                  ("GET", r"/api/lab/(runs|designs)/[A-Za-z0-9_.-]+"), ("GET", r"/api/lab/systune/advice"),
                  ("POST", r"/api/lab/validate")],
+    # The memory fabric (bot/memoryfabric): what every model knows. Read: search, the prompt block, threads.
+    "memory:read": [("GET", r"/api/memory(/(search|context|threads|sources|tree/stats|diff|vault))?"),
+                    ("GET", r"/api/memory/threads/[^/]+"), ("POST", r"/api/memory/tree")],
+    # Write: propose memories (ABP's review gate still applies) and add another program's turns to a thread.
+    "memory:write": [("POST", r"/api/memory/entries"), ("POST", r"/api/memory/threads/[^/]+"), ("POST", r"/api/memory/tree/ingest")],
 }
 
 PRESETS: dict[str, dict] = {
@@ -75,9 +80,9 @@ PRESETS: dict[str, dict] = {
     "omnisystem": {
         "label": "Omnisystem (abp-connector module)",
         "scopes": ["status:read", "bots:read", "agents:ask", "swarms:read", "swarms:run", "models:read", "models:use",
-                   "modules:read", "modules:call", "localai:read", "lab:read"],
+                   "modules:read", "modules:call", "localai:read", "lab:read", "memory:read", "memory:write"],
         "note": "What Omnisystem's abp-connector module does (Omnisystem/src/crates/abp-connector): ABP's status and bots, "
-                "asking a bot, swarms, ABP's model gateway, its modules, and its local AI and Neural Lab read-only. "
+                "asking a bot, swarms, ABP's model gateway, its modules, its local AI and Neural Lab read-only, and the shared memory. "
                 "No bot lifecycle, no Docker, no config, no credentials.",
     },
     "read-only": {"label": "read-only monitor", "scopes": ["status:read", "bots:read", "docker:read", "modules:read",

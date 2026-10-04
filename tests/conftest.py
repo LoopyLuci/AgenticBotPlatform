@@ -84,6 +84,10 @@ def _isolated_cicd_event_store(monkeypatch, tmp_path):
     # machine; tests that want them clear this (tests/test_module_providers.py, tests/test_octopus.py).
     monkeypatch.setenv("ABP_NO_MODULE_PROVIDERS", "1")
     monkeypatch.setenv("ABP_AGENT_STATE_DIR", str(tmp_path / "agent-state"))
+    # Privacy mode and the memory vault: never the developer's (privacy mode on would refuse every test's cloud backend).
+    monkeypatch.setenv("ABP_PRIVACY_FILE", str(tmp_path / "privacy.json"))
+    monkeypatch.setenv("ABP_MEMORY_DIR", str(tmp_path / "memory-vault"))
+    monkeypatch.setenv("ABP_RESOLVER_FILE", str(tmp_path / "resolver.json"))
     monkeypatch.delenv("ABP_CICD_RUN", raising=False)
     # The model catalog (models.dev) is a downloaded cache; a test must never see the developer's copy.
     from bot import model_catalog, model_pricing

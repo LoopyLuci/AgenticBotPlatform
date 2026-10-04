@@ -23,6 +23,9 @@ MAX_SUMMARY_CHARS = 4000
 
 
 def approval_required(instance_id: int) -> bool:
+    if instance_id == 0:                     # shared by every bot and model (bot/memoryfabric): its own gate
+        from bot.memoryfabric import store
+        return bool(store.settings()["shared_approval"])
     instance = bot_instances.get_instance(instance_id)
     if instance is None:
         return True
