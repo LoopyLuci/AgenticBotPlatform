@@ -1,9 +1,16 @@
 """Dashboard routes: Hermes delegation.
 
 Moved verbatim out of bot/dashboard/server.py's build_app(); the route order inside is unchanged.
+
+Also hosts the `/api/hermes/gateway/*` routes, which drive Hermes Agent's OWN
+messaging gateway (bot/hermes_gateway.py) — the thing that keeps serving the
+user's Telegram bot directly while AgenticBotPlatform runs its own channels
+beside it. Registered first inside this area so the literal `/api/hermes/gateway/...`
+and `/api/hermes/ask` paths are matched before the `{instance_id}` ones.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 
 from fastapi import Body, Depends, FastAPI, HTTPException
@@ -15,6 +22,108 @@ from bot.router import router
 
 def register(app: FastAPI) -> None:
     from bot.dashboard.server import _require_token_or_api_key
+
+    # ---------------------------------------------- the user's own gateway ---
+    # `hermes gateway status|list|start|stop|restart`, `logs`, and a one-shot
+    # `hermes -z`. Every route below shells out to the real CLI windowless and
+    # returns Hermes's own parsed output plus a fingerprint-only view of the
+    # token that home owns — never the token itself.
+
+    def _gateway_home(home: str = "") -> str:
+        """Resolve the home to act on: the one named in the request, else this
+        machine's default Hermes home. Rejecting an unreadable path here (rather
+        than deep inside a subprocess) keeps the 400 honest."""
+        from bot import hermes_gateway
+
+        if not (home or "").strip():
+            return str(hermes_gateway.default_home())
+        return home.strip()
+
+    def _gateway_error(exc: Exception) -> HTTPException:
+        from bot.hermes_gateway import GatewayError
+
+        status = 503 if isinstance(exc, GatewayError) else 500
+        return HTTPException(status_code=status, detail=str(exc))
+
+    @app.get("/api/hermes/gateway", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_hermes_gateway_overview(home: str = ""):
+        """Everything one Hermes-gateway page needs: parsed status, the Telegram
+        ownership picture for this home, the launcher/login item to reuse for a
+        start, every configured home, and a log tail."""
+        from bot import hermes_gateway
+
+        target = _gateway_home(home)
+        return {
+            "overview": await asyncio.to_thread(hermes_gateway.overview, target),
+            "status": await asyncio.to_thread(hermes_gateway.status, target),
+            "profiles": await asyncio.to_thread(hermes_gateway.list_profiles),
+            "served_instances": hermes_gateway.served_instances(),
+            "logs": await asyncio.to_thread(hermes_gateway.logs, target, 80),
+        }
+
+    @app.get("/api/hermes/gateway/status", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_hermes_gateway_status(home: str = ""):
+        from bot import hermes_gateway
+
+        try:
+            return await asyncio.to_thread(hermes_gateway.status, _gateway_home(home))
+        except Exception as exc:
+            raise _gateway_error(exc) from exc
+
+    @app.get("/api/hermes/gateway/list", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_hermes_gateway_list():
+        from bot import hermes_gateway
+
+        try:
+            return {"profiles": await asyncio.to_thread(hermes_gateway.list_profiles)}
+        except Exception as exc:
+            raise _gateway_error(exc) from exc
+
+    @app.post("/api/hermes/gateway/{action}", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_hermes_gateway_action(action: str, payload: dict = Body(default={})):
+        """start/stop/restart. start reuses Hermes's own login-item launcher so
+        the gateway outlives both AgenticBotPlatform and any Windows Job Object
+        wrapping it (see bot/hermes_gateway.start)."""
+        from bot import hermes_gateway
+
+        if action not in ("start", "stop", "restart"):
+            raise HTTPException(status_code=404, detail=f"unknown gateway action {action!r}")
+        try:
+            result = await asyncio.to_thread(getattr(hermes_gateway, action), _gateway_home(payload.get("home", "")))
+        except Exception as exc:
+            raise _gateway_error(exc) from exc
+        db.log_audit(actor="dashboard", action=f"hermes_gateway_{action}",
+                     detail=str(result.get("home") or _gateway_home(payload.get("home", ""))))
+        return result
+
+    @app.get("/api/hermes/gateway/logs", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_hermes_gateway_logs(home: str = "", lines: int = 80):
+        from bot import hermes_gateway
+
+        return await asyncio.to_thread(hermes_gateway.logs, _gateway_home(home), lines)
+
+    @app.post("/api/hermes/ask", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_hermes_ask(payload: dict = Body(...)):
+        """One-shot `hermes -z` — how ABP's own channels reach Hermes while its
+        gateway serves Telegram. A separate per-call process, so no token
+        contention with the gateway's getUpdates poller."""
+        from bot import hermes_gateway
+
+        text = (payload.get("text") or "").strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="text is required")
+        home = (payload.get("hermes_home") or "").strip()
+        session_id = (payload.get("session_id") or "").strip() or None
+        if payload.get("instance_id") is not None:
+            instance = bot_instances.get_instance(int(payload["instance_id"]))
+            if instance is None:
+                raise HTTPException(status_code=404, detail=f"bot instance {payload['instance_id']} not found")
+            home = home or (instance.get("hermes_home") or "").strip()
+            session_id = session_id or instance.get("desktop_session_key")
+        try:
+            return await hermes_gateway.ask(text, home=home or None, model=payload.get("model") or None, session_id=session_id)
+        except Exception as exc:
+            raise _gateway_error(exc) from exc
 
     # Configures and drives Hermes Agent's own delegate_task sub-agent
     # system (see bot/hermes_config.py's module docstring for exactly why

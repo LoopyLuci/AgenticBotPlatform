@@ -1633,6 +1633,41 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/hermes/gateway": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hermes/gateway",
+  "path_params": [],
+  "query_params": [
+   "home"
+  ]
+ },
+ "GET /api/hermes/gateway/list": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hermes/gateway/list",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/hermes/gateway/logs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hermes/gateway/logs",
+  "path_params": [],
+  "query_params": [
+   "home",
+   "lines"
+  ]
+ },
+ "GET /api/hermes/gateway/status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hermes/gateway/status",
+  "path_params": [],
+  "query_params": [
+   "home"
+  ]
+ },
  "GET /api/hermes/swarm-tools-status": {
   "body": false,
   "method": "GET",
@@ -4658,6 +4693,22 @@ export const operations = {
   "method": "POST",
   "path": "/api/hermes-manager/window",
   "path_params": [],
+  "query_params": []
+ },
+ "POST /api/hermes/ask": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hermes/ask",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/hermes/gateway/{action}": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hermes/gateway/{action}",
+  "path_params": [
+   "action"
+  ],
   "query_params": []
  },
  "POST /api/hermes/{instance_id}/agent-config": {
@@ -7908,6 +7959,13 @@ export const operations = {
   ],
   "query_params": []
  },
+ "api_hermes_ask_api_hermes_ask_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hermes/ask",
+  "path_params": [],
+  "query_params": []
+ },
  "api_hermes_delegation_get_api_hermes__instance_id__delegation_get": {
   "body": false,
   "method": "GET",
@@ -7952,6 +8010,50 @@ export const operations = {
    "instance_id"
   ],
   "query_params": []
+ },
+ "api_hermes_gateway_action_api_hermes_gateway__action__post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hermes/gateway/{action}",
+  "path_params": [
+   "action"
+  ],
+  "query_params": []
+ },
+ "api_hermes_gateway_list_api_hermes_gateway_list_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hermes/gateway/list",
+  "path_params": [],
+  "query_params": []
+ },
+ "api_hermes_gateway_logs_api_hermes_gateway_logs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hermes/gateway/logs",
+  "path_params": [],
+  "query_params": [
+   "home",
+   "lines"
+  ]
+ },
+ "api_hermes_gateway_overview_api_hermes_gateway_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hermes/gateway",
+  "path_params": [],
+  "query_params": [
+   "home"
+  ]
+ },
+ "api_hermes_gateway_status_api_hermes_gateway_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hermes/gateway/status",
+  "path_params": [],
+  "query_params": [
+   "home"
+  ]
  },
  "api_hermes_swarm_tools_status_api_hermes_swarm_tools_status_get": {
   "body": false,

@@ -24,6 +24,12 @@ Platform-specific `credentials` JSON shapes:
   googlechat: {"service_account_json": "{...}", "audience": "<project number> or <endpoint URL>"}
   teams:     {"app_id": "<GUID>", "app_password": "...", "tenant_id": "<GUID>" (optional, single-tenant bots)}
   app:       {}  (no external platform at all - see PLATFORMS' own comment below)
+
+`takeover_when_gateway_down` (a per-instance boolean, default false) is not a
+credential but is set from the same place the credentials are: a Telegram token
+can be long-polled by only ONE program, and if that one is the user's own
+Hermes gateway (bot/hermes_gateway.py) AgenticBotPlatform deliberately does not
+poll it - see platform_supervisor's telegram runner.
 """
 
 from __future__ import annotations
@@ -98,6 +104,7 @@ def _row_to_dict(row) -> dict[str, Any]:
     d["action_overrides"] = json.loads(d["action_overrides"])
     d["can_target"] = json.loads(d["can_target"])
     d["enabled"] = bool(d["enabled"])
+    d["takeover_when_gateway_down"] = bool(d["takeover_when_gateway_down"])
     return d
 
 
@@ -151,6 +158,7 @@ def create_instance(
     desktop_project: Optional[str] = None,
     desktop_workspace_dir: Optional[str] = None,
     desktop_effort: Optional[str] = None,
+    takeover_when_gateway_down: bool = False,
     actor: str = "dashboard",
 ) -> int:
     name = (name or "").strip()
@@ -164,8 +172,8 @@ def create_instance(
         try:
             cur = conn.execute(
                 "INSERT INTO bot_instances "
-                "(name, platform, backend, enabled, credentials, allowed_user_ids, admin_user_ids, action_overrides, can_target, model, custom_instructions, persona, hermes_home, desktop_project, desktop_workspace_dir, desktop_effort, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "(name, platform, backend, enabled, credentials, allowed_user_ids, admin_user_ids, action_overrides, can_target, model, custom_instructions, persona, hermes_home, desktop_project, desktop_workspace_dir, desktop_effort, takeover_when_gateway_down, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     name,
                     platform,
@@ -183,6 +191,7 @@ def create_instance(
                     (desktop_project or "").strip() or None,
                     (desktop_workspace_dir or "").strip() or None,
                     (desktop_effort or "").strip().lower() or "low",
+                    1 if takeover_when_gateway_down else 0,
                     _now(),
                     _now(),
                 ),
@@ -217,6 +226,9 @@ def update_instance(instance_id: int, actor: str = "dashboard", **fields: Any) -
         if key in fields:
             columns.append(f"{key}=?")
             params.append(1 if key == "enabled" and fields[key] else (0 if key == "enabled" else fields[key]))
+    if "takeover_when_gateway_down" in fields:
+        columns.append("takeover_when_gateway_down=?")
+        params.append(1 if fields["takeover_when_gateway_down"] else 0)
     for key in ("credentials", "allowed_user_ids", "admin_user_ids", "action_overrides", "can_target"):
         if key in fields:
             columns.append(f"{key}=?")
