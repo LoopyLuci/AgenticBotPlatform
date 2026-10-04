@@ -88,7 +88,11 @@ class Registry:
     @property
     def path(self) -> Path:
         """`<data>/sandbox_ns/live.json`, where `<data>` is ABP's own state root - ABP_HOME
-        moves it, bot/envfile.py decides (PROJECT_ROOT, not CODE_ROOT)."""
+        moves it, bot/envfile.py decides (PROJECT_ROOT, not CODE_ROOT). ABP_SANDBOX_NS_FILE overrides it
+        (tests: parallel workers must never share, or reap from, the developer's real file)."""
+        override = os.environ.get("ABP_SANDBOX_NS_FILE", "").strip()
+        if override:
+            return Path(override)
         if self._path is None:
             from bot.envfile import PROJECT_ROOT
 

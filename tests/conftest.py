@@ -88,6 +88,9 @@ def _isolated_cicd_event_store(monkeypatch, tmp_path):
     monkeypatch.setenv("ABP_PRIVACY_FILE", str(tmp_path / "privacy.json"))
     monkeypatch.setenv("ABP_MEMORY_DIR", str(tmp_path / "memory-vault"))
     monkeypatch.setenv("ABP_RESOLVER_FILE", str(tmp_path / "resolver.json"))
+    # The Sandbox Nervous System's live process file: a test's reaper must never see (and kill) what another
+    # xdist worker, or the developer's running ABP, recorded.
+    monkeypatch.setenv("ABP_SANDBOX_NS_FILE", str(tmp_path / "sandbox_ns" / "live.json"))
     monkeypatch.delenv("ABP_CICD_RUN", raising=False)
     # The model catalog (models.dev) is a downloaded cache; a test must never see the developer's copy.
     from bot import model_catalog, model_pricing
