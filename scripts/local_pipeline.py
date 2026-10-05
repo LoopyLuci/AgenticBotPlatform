@@ -6,9 +6,14 @@ commit's checks to GitHub's own servers for. This runs the same checks
 (Python tests/audit, Rust fmt/clippy/build, Android unit tests, Docker
 image build) directly on your machine, then — only if every check that
 actually ran passed —
-rebuilds the production app and restarts whichever local OS service is
-registered to run it, so a green pipeline means the change is both
-verified and already live on this install.
+installs the build into the folder the app is launched from and restarts
+whichever local OS service is registered to run it, so a green pipeline
+means the change is both verified and already live on this install.
+
+That last step is scripts/deploy_local.py, run as-is: a rebuild on its own
+is not a deploy (see deploy_local.py's docstring for how a build that lands
+in CARGO_TARGET_DIR used to install nothing at all), and the result is
+verified rather than assumed.
 
 Invoked automatically by the pre-push git hook (scripts/git-hooks/pre-push,
 installed via scripts/install_git_hooks.sh / .ps1) so `git push` itself is
@@ -63,6 +68,7 @@ import psutil
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import release_guard  # noqa: E402  (shared pre-flight / lock-healing helpers)
+import deploy_local  # noqa: E402  (the build -> stop -> install -> restart -> verify deploy itself)
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -191,12 +197,16 @@ VSCODE_PREFIXES = ("integrations/vscode/", "abp_acp/", "abp_run/")
 DOCKER_PREFIXES = ("bot/", "requirements.txt", "requirements.lock", "Dockerfile", "docker-compose.yml",
                    ".dockerignore", "scripts/docker-entrypoint.sh")
 # The running instance's bot code, config, and app binary all come from a
-# copy baked into desktop-app/src-tauri/target/release/ at build time (see
-# find_running_instance()'s docstring) — a push that doesn't touch any of
-# these has nothing new for a stop/rebuild/restart cycle to actually pick
-# up, so it's pure overhead to run one.
+# copy baked into the folder the app is launched from (see
+# find_running_instance()'s docstring and deploy_local.py) — a push that
+# doesn't touch any of these has nothing new for a stop/rebuild/restart
+# cycle to actually pick up, so it's pure overhead to run one.
+# scripts/stage_bundle.py and docs/api/openapi.json are in this list for the
+# same reason: the first decides what the bundle contains, the second is the
+# spec the restarted app is verified against.
 DEPLOY_PREFIXES = ("bot/", "config/", "desktop-app/", "requirements.txt", "requirements.lock",
-                   "abp_acp/", "abp_run/", "abp_agenteval/")
+                   "abp_acp/", "abp_run/", "abp_agenteval/", "scripts/stage_bundle.py",
+                   "docs/api/openapi.json")
 
 
 def _matches(changed: set[str], prefixes: tuple[str, ...]) -> bool:
@@ -329,19 +339,18 @@ def stop_mcp_servers(pids: list[int]) -> None:
 
 
 def relaunch_bare() -> None:
+    """Brings the app that was running back after the pipeline stopped it
+    for a check and then decided not to deploy. It goes through
+    deploy_local.start_app, which on Windows launches it through
+    explorer.exe so it gets the user's own interactive environment — the
+    same way deploy() starts it, so "restore what was there" and "deploy the
+    new build" can't differ in how the app comes up."""
     if not _EXE_PATH.exists():
         return
-    if IS_WINDOWS:
-        # CREATE_NO_WINDOW, never DETACHED_PROCESS: a detached child has no console at all, so the
-        # first console program it starts afterwards allocates and shows a window - measured on this
-        # machine, and the reason bot/sandbox_ns/guard.py exists. The app is a GUI binary, so the
-        # hidden console it gets here costs it nothing and its own children inherit invisibly.
-        subprocess.Popen(
-            [str(_EXE_PATH)],
-            creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP,
-        )
-    else:
-        subprocess.Popen([str(_EXE_PATH)], start_new_session=True)
+    try:
+        deploy_local.start_app(_EXE_PATH, log=Step.doing)
+    except deploy_local.DeployError as exc:
+        Step.warn(f"could not start agentic-bot-platform again: {exc}")
 
 
 def restore_prior_state(was_running: bool) -> None:
@@ -570,38 +579,56 @@ def _service_restart_command() -> Optional[list[str]]:
     return None
 
 
-def deploy(was_running: bool) -> bool:
-    Step.head("Deploy — rebuild and restart the local install")
-    if shutil.which("cargo") and (ROOT / "desktop-app" / "src-tauri").exists():
-        Step.doing("cargo tauri build")
-        ok, out = _run(["cargo", "tauri", "build"], cwd=ROOT / "desktop-app" / "src-tauri", retries=1)
-        if not ok:
-            Step.err("production build failed:\n" + out[-4000:])
-            return False
-        Step.ok("production build complete")
-    else:
-        Step.skip("cargo not available — nothing to rebuild")
-
+def _restart_registered_service() -> None:
+    """Restarts whichever OS service scripts/install_* registered on this
+    machine. An install registered as a service must be restarted through
+    its service manager, not by starting a second copy of the app next to
+    the one the service supervises."""
     cmd = _service_restart_command()
-    if cmd is not None:
-        Step.doing("restarting the registered service")
-        ok, out = _run(cmd)
-        if not ok:
-            Step.err("service restart failed:\n" + out)
-            return False
-        Step.ok("service restarted — this build is now live")
-        return True
+    if cmd is None:
+        raise deploy_local.DeployError("no registered OS service")
+    ok, out = _run(cmd)
+    if not ok:
+        raise deploy_local.DeployError(f"service restart failed:\n{out[-2000:]}")
 
-    if was_running:
-        Step.doing("relaunching agentic-bot-platform (it was running before this pipeline started)")
-        relaunch_bare()
-        Step.ok("relaunched — this build is now live")
-    else:
+
+def deploy(was_running: bool) -> bool:
+    """Builds, installs and restarts the local app through
+    scripts/deploy_local.py — the same code `python scripts/deploy_local.py`
+    runs by hand, so a push and a person cannot deploy differently.
+
+    This used to rebuild with `cargo tauri build` and then relaunch the exe
+    from where it always sat, which silently deployed nothing whenever
+    CARGO_TARGET_DIR pointed the build somewhere else: Tauri copies the
+    bundled resources into the build directory, not into the folder the app
+    runs from, and a release build runs the Python sitting next to its own
+    exe. Every restart therefore reloaded whatever was last mirrored there.
+    deploy_local installs the build into the folder the app is launched
+    from, restarts it, and then proves the app that came back is serving
+    this commit's API."""
+    Step.head("Deploy — build, install and restart the local install")
+    cmd = _service_restart_command()
+    if not was_running and cmd is None:
         Step.skip("no registered OS service, and nothing was running before this "
                   "pipeline started — run scripts/install_service.sh (Linux), "
                   "install_service_macos.sh (macOS), or install_task.ps1 (Windows) "
                   "once to enable automatic restart on future pushes")
-    return True
+    # Same stance as every other tool-specific step here: no Rust toolchain,
+    # no rebuild — but still say plainly that what gets installed is the build
+    # that was already there, rather than calling it a fresh one.
+    can_build = shutil.which("cargo") is not None
+    if not can_build:
+        Step.warn("cargo not available — installing the build that is already there, unchanged")
+    try:
+        result = deploy_local.deploy(ROOT, do_build=can_build, start=was_running or cmd is not None,
+                                     restart=_restart_registered_service if cmd is not None else None,
+                                     log=Step.doing)
+    except deploy_local.DeployError as exc:
+        Step.err(str(exc))
+        return False
+    for message in result.failures:
+        Step.err(message)
+    return result.ok
 
 
 def main() -> int:

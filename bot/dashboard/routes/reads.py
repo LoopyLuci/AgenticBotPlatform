@@ -18,27 +18,37 @@ from bot import bot_instances, db, desktop
 from bot.config import config
 
 
+@functools.lru_cache(maxsize=1)
+def _build_info() -> dict:
+    """What is running: ABP's version, and the git commit it was built from (when run from a checkout, or a build
+    whose state root is one). Read once; a rebuild restarts the server.
+
+    `app_commit` is the CHECKOUT's HEAD, which is not necessarily the code answering this request: a release build
+    runs the Python bundled next to its own exe. `bundle_commit`/`bundle_stale` (bot/diagnostics.py) are that
+    bundle's own build stamp and whether it has fallen behind — the difference between "my working tree is current"
+    and "the running app is current"."""
+    import subprocess
+    from bot import __version__
+    from bot.diagnostics import build_status
+    from bot.envfile import PROJECT_ROOT
+    info = {"app_version": __version__, "app_commit": "", "app_commit_date": "", "started_at": time.time()}
+    try:
+        out = subprocess.run(["git", "-C", str(PROJECT_ROOT), "log", "-1", "--format=%h|%cs"], capture_output=True,
+                             text=True, timeout=5, creationflags=0x08000000 if os.name == "nt" else 0)
+        if out.returncode == 0 and "|" in out.stdout:
+            info["app_commit"], info["app_commit_date"] = out.stdout.strip().split("|", 1)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    bundle = build_status()
+    info["bundle_commit"] = bundle["commit"]
+    info["bundle_stale"] = bundle["stale"]
+    return info
+
+
 def register(app: FastAPI, *, json_download: Callable) -> None:
     from bot.dashboard.server import _require_token, _require_token_or_api_key, _require_token_or_api_key_or_peer, _ts_stamp
     _json_download = json_download
 
-
-    @functools.lru_cache(maxsize=1)
-    def _build_info() -> dict:
-        """What is running: ABP's version, and the git commit it was built from (when run from a checkout, or a build
-        whose state root is one). Read once; a rebuild restarts the server."""
-        import subprocess
-        from bot import __version__
-        from bot.envfile import PROJECT_ROOT
-        info = {"app_version": __version__, "app_commit": "", "app_commit_date": "", "started_at": time.time()}
-        try:
-            out = subprocess.run(["git", "-C", str(PROJECT_ROOT), "log", "-1", "--format=%h|%cs"], capture_output=True,
-                                 text=True, timeout=5, creationflags=0x08000000 if os.name == "nt" else 0)
-            if out.returncode == 0 and "|" in out.stdout:
-                info["app_commit"], info["app_commit_date"] = out.stdout.strip().split("|", 1)
-        except (OSError, subprocess.SubprocessError):
-            pass
-        return info
 
     @app.get("/api/overview", dependencies=[Depends(_require_token_or_api_key_or_peer)])
     async def api_overview():

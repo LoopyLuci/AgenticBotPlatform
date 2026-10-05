@@ -23,6 +23,7 @@ hiccup.
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import os
@@ -46,6 +47,16 @@ MAX_CRASH_REPORTS = 200
 MAX_SUPPORT_BUNDLES = 20
 MAX_RECENT_EVENTS = 500
 
+# The build stamp: written beside the staged code by scripts/stage_bundle.py
+# and shipped as a bundle resource, so it sits next to the `bot` package that
+# is actually executing rather than in some source tree.
+BUILD_STAMP_NAME = ".abp_build.json"
+# Where this `bot` package was imported from - the bundle, not the checkout.
+# Different from CODE_ROOT on purpose: for a release build inside a checkout,
+# CODE_ROOT is the checkout (bot/envfile.py's _checkout_behind_build_output)
+# while the code that is running is the copy next to the exe.
+BUNDLE_ROOT = Path(__file__).resolve().parent.parent
+
 
 def _read_app_version() -> str:
     # The desktop app passes its own version in; an installed copy has no
@@ -64,6 +75,67 @@ def _read_app_version() -> str:
 
 
 APP_VERSION = _read_app_version()
+
+
+def _short(sha: str) -> str:
+    return (sha or "")[:8]
+
+
+def _git_head(root: Path) -> str:
+    """The checkout's current HEAD, or "" where there isn't one (an
+    installed bundle with no checkout behind it, a source tarball)."""
+    import subprocess
+
+    try:
+        out = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True,
+                             timeout=5, creationflags=0x08000000 if os.name == "nt" else 0)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return out.stdout.strip() if out.returncode == 0 else ""
+
+
+def read_build_stamp(bundle_root: Optional[Path] = None) -> dict[str, Any]:
+    """The commit this bundle was built from, as scripts/stage_bundle.py
+    recorded it. An unreadable or absent stamp is an empty record, never an
+    exception: a bundle built before this existed (or assembled by hand)
+    must still start and still answer /healthz."""
+    try:
+        raw = (Path(bundle_root or BUNDLE_ROOT) / BUILD_STAMP_NAME).read_text(encoding="utf-8")
+        data = json.loads(raw)
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+@functools.lru_cache(maxsize=1)
+def build_status() -> dict[str, Any]:
+    """What is running, and is it what this checkout says it should be.
+
+    A release build executes the Python bundled next to its own exe, so the
+    source tree and the running code are two different things - and nothing
+    in the ordinary answer ("git says HEAD is current") can tell them apart.
+    Comparing the bundle's own build stamp against the checkout's HEAD is
+    what makes a stale deploy visible instead of silent.
+
+    `stale` is a real boolean when both sides are known and None when either
+    side is not: an installed app with no checkout behind it is not stale,
+    it simply has nothing to be stale against. Read once - a rebuild
+    restarts this process, so it cannot go stale underneath itself."""
+    stamp = read_build_stamp()
+    bundle_commit = str(stamp.get("commit") or "")
+    head = _git_head(CODE_ROOT)
+    same: Optional[bool] = None
+    if bundle_commit and head:
+        # Prefix-tolerant: a hand-written or abbreviated stamp still compares.
+        same = bundle_commit.startswith(head) or head.startswith(bundle_commit)
+    return {
+        "commit": _short(bundle_commit),
+        "commit_date": str(stamp.get("commit_date") or ""),
+        "built_at": str(stamp.get("built_at") or ""),
+        "dirty": bool(stamp.get("dirty")),
+        "checkout_commit": _short(head),
+        "stale": None if same is None else not same,
+    }
 
 
 class _Telemetry:

@@ -9,6 +9,7 @@ is specified in [cicd/](cicd/README.md) but not built.
 | Run ABP on my own Windows/macOS/Linux desktop | The installer from the [latest release](https://github.com/LoopyLuci/AgenticBotPlatform/releases/latest) (Windows), or `scripts/install.ps1` / `scripts/install.sh` from a checkout | works today |
 | Run it on a headless server, no desktop | Bare metal: `python scripts/install.py --no-system-deps --no-build --yes` then `scripts/run.sh`, or Docker: `docker compose up -d --build` | works today |
 | Embed it in another server (git submodule or container) | [embedding.md](embedding.md): set `ABP_HOME`, `DASHBOARD_PORT`, `DASHBOARD_TOKEN` in the *process environment* | works today |
+| Rebuild and redeploy a checkout I already have | `python scripts/deploy_local.py` — [deploy.md](deploy.md) | works today |
 | Keep it alive across reboots and crashes | `scripts/install_service.sh` (Linux), `scripts/install_service_macos.sh`, `scripts/install_task.ps1` (Windows) | works today |
 | Use it from my phone | [mobile-access.md](mobile-access.md) — pair the Android app | works today |
 | Control when and whether it updates itself | [cicd/configuration.md](cicd/configuration.md) | **planned** |
