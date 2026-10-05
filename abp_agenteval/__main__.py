@@ -62,6 +62,12 @@ def main(argv=None) -> int:
     cmp_.add_argument("--task", action="append")
     cmp_.add_argument("--out", help="write the comparison as JSON here")
     args = ap.parse_args(argv)
+    # A report carries whatever the provider said, in whatever language it said it: printing it on a
+    # Windows console (still cp1252 by default) would end the run that produced it with
+    # UnicodeEncodeError. Same guard as abp_import's CLI.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
 
     if args.cmd == "page":
         from . import page as page_mod

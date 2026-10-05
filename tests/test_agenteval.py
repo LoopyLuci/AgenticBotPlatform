@@ -2,7 +2,9 @@
 gate, and the exit codes CI relies on."""
 from __future__ import annotations
 
+import io
 import json
+import sys
 import tempfile
 from pathlib import Path
 
@@ -171,6 +173,25 @@ def test_render_lists_failures():
                         "checks": [{"name": "x", "ok": False, "detail": "why"}]}]}
     text = rep.render(bad)
     assert "FAIL" in text and "why" in text
+
+
+def test_a_report_the_console_cannot_encode_is_replaced_not_raised(monkeypatch):
+    """A report carries whatever the provider said, and a Windows console hands the CLI cp1252. Printing a
+    non-ASCII error used to end the run that had just produced it with UnicodeEncodeError, after the
+    tokens were already spent."""
+    import abp_agenteval.__main__ as cli
+
+    report = {"mode": "live", "model": "m", "score": 0.0, "passed": 0, "total": 1, "tokens": 10, "duration_ms": 5,
+              "results": [{"id": "t", "title": "T", "passed": False, "iterations": 1, "duration_ms": 1,
+                           "error": "provider said 服务不可用 (timeout)", "checks": []}]}
+    monkeypatch.setattr(cli, "run_suite", lambda *a, **k: report)
+    console = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")       # what a Windows console gives the CLI
+    monkeypatch.setattr(sys, "stdout", console)
+    assert cli.main(["run", "--live", "--provider", "anthropic", "--model", "m"]) == 1
+    console.flush()
+    out = console.buffer.getvalue().decode("cp1252")
+    assert "provider said" in out and "timeout" in out, out            # the ASCII of the error still reads
+    assert "服务不可用" not in out and "?" in out, out                  # the rest is replaced, not raised
 
 
 # ---- graders that only an agent taking the golden path would satisfy (found by the first live run) ----------
