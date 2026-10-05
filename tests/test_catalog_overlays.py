@@ -1,6 +1,6 @@
-"""The catalog's own overlays: 9Router, Mesh LLM, OpenHuman and NOEMA.
+"""The catalog's own overlays: 9Router, Mesh LLM, OpenHuman, NOEMA and Ironroot.
 
-Each of the four is a third-party project ABP drives without touching its checkout, so these tests
+Each of the five is a third-party project ABP drives without touching its checkout, so these tests
 read the two files ABP ships and assert what they say: the service it starts, the provider ABP offers
 while it runs, and the operations a person and ABP's agents actually need. They load each overlay
 through ABP's own loader (bot.modules.manifest for the manifest, abp_modkit.spec for the operations)
@@ -29,6 +29,8 @@ EXPECTED = {
                   "http://127.0.0.1:7788", "/health", "", ""),
     "noema": ("noema", "NOEMA", "models", "local: X:/Projects/NOEMA",
               "http://127.0.0.1:8000", "/api/health", "", "/"),
+    # no HTTP API at all: a resolver answers DNS on 127.0.0.1:5350, so there is no base_url to probe
+    "ironroot": ("ironroot", "Ironroot", "network", "https://github.com/LoopyLuci/ironroot.git", "", "", "", ""),
 }
 
 # Operations each overlay must offer, by id.
@@ -42,6 +44,8 @@ REQUIRED_OPS = {
                   "memory.documents", "memory.query", "rpc.call", "build.core", "test.core"],
     "noema": ["status.health", "status.model", "status.checkpoints", "status.training",
               "generate.run", "test.run", "mcp.tools"],
+    "ironroot": ["status.dns", "status.abp", "query.dig", "dnssec.check", "logs.tail",
+                 "abp.use", "abp.stop_using", "build.from_source", "git.update"],
 }
 
 IDS = sorted(EXPECTED)
@@ -162,3 +166,62 @@ def test_no_overlay_writes_into_its_checkout():
         for o in sp.load(CATALOG / folder / "abp-ops.toml").ops:
             assert o.cwd in (".", "") or o.cwd.startswith(("app", "scripts", "tests")), f"{mid}.{o.id}"
             assert ".." not in o.cwd, f"{mid}.{o.id} leaves the checkout"
+
+
+def test_ironroots_health_check_is_a_real_query_not_an_open_port():
+    """A resolver speaks DNS, not HTTP: there is nothing to point a base_url at, and "is it
+    validating" can only be answered by asking it."""
+    folder = CATALOG / "ironroot"
+    m = mf.load(folder / mf.MANIFEST_FILE)
+    s = sp.load(folder / "abp-ops.toml").service
+    assert not (s.base_url or s.health or s.web or s.openai), "a DNS server has no HTTP API to probe"
+    assert not (m.web or m.openai), "nor a pane or a provider to offer"
+    # the resolver itself, started with no flags: its own defaults are 127.0.0.1:5350
+    assert len(s.start) == 1 and s.start[0].endswith("ironroot{exe}"), s.start
+    assert s.env.get("RUST_LOG") == "info", "ironroot logs through env_logger; RUST_LOG is its own switch"
+
+
+def test_ironroot_asks_a_signed_name_and_reads_the_ad_flag():
+    """The two checks that matter: it answers, and what it answers was validated."""
+    ops = sp.load(CATALOG / "ironroot" / "abp-ops.toml")
+    by_id = {o.id: o for o in ops.ops}
+    health = by_id["status.dns"]
+    assert health.kind == "cmd" and not health.mutating, "a query changes nothing"
+    assert health.inputs["name"]["default"] == "isc.org", "a name signed all the way to the root"
+    assert health.inputs["server"]["default"] == "127.0.0.1:5350", "the resolver's own default port"
+    assert "ironroot-dig{exe}" in " ".join(health.argv) and "--json" in health.argv
+    check = by_id["dnssec.check"].argv[-1]
+    assert "isc.org" in check and "dnssec-failed.org" in check, "one that must validate, one that must not"
+    assert "SERVFAIL" in check and "validated" in check, "the AD bit decides, not the mere presence of an answer"
+    assert not by_id["dnssec.check"].mutating
+    assert not [o for o in ops.ops if "cache" in o.id or "flush" in o.id], (
+        "ironroot's CLI is its resolver's own flags - no control socket and no cache command - so there is "
+        "nothing to flush through; service.stop then service.start is the flush, and no operation may pretend")
+
+
+def test_ironroot_moves_abps_own_resolver_setting():
+    """ABP already asks 127.0.0.1:5350 (bot/resolver.py); the overlay moves that one setting and
+    touches no route that does not exist."""
+    ops = sp.load(CATALOG / "ironroot" / "abp-ops.toml")
+    by_id = {o.id: o for o in ops.ops}
+    for oid in ("abp.use", "abp.stop_using"):
+        code = by_id[oid].argv[-1]
+        assert "from bot import resolver" in code and "set_settings" in code, f"{oid} uses ABP's own settings"
+        assert "'ironroot'" in code, "that setting's name is the one in bot/resolver.py's DEFAULTS"
+        assert by_id[oid].mutating, "this changes how ABP resolves from now on"
+    assert "'ironroot':''" in by_id["abp.stop_using"].argv[-1], "stopping clears it; bot/resolver.py then skips it"
+    assert "ask_dns" in by_id["abp.use"].argv[-1], "ABP proves it can use the resolver before pointing at it"
+    assert not [o for o in ops.ops if o.kind == "http"], "there is no HTTP route here to invent"
+
+
+def test_ironroot_is_built_into_the_cache_and_never_into_its_checkout():
+    """The checkout is the owner's working copy, worked on by their own agent: cargo's output goes to
+    the build cache, and every path below says where that is."""
+    m = mf.load(CATALOG / "ironroot" / mf.MANIFEST_FILE)
+    cache = m.build_env.get("CARGO_TARGET_DIR", "")
+    assert cache and cache not in (".", "target"), "the default would be the checkout's own target/"
+    assert Path(cache).is_absolute()
+    assert m.build_steps and m.build_steps[0][:2] == ["cargo", "build"], "built from the checkout, with cargo"
+    for o in m.build_outputs:
+        assert o.startswith(cache), f"{o} is not where this build tells cargo to write ({cache})"
+    assert m.checkout_dir, "the checkout is this machine's own working copy, so the overlay says where it is"

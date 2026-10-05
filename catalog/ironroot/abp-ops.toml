@@ -1,0 +1,123 @@
+# Ironroot's operations for ABP, kept by hand (an overlay: they run against the owner's own checkout).
+# Format: the header of ABP's abp_modkit/spec.py.
+#
+# The service is the resolver process itself (UDP + TCP on 127.0.0.1:5350). There is no HTTP API to
+# route, so [service] has no base_url and no health path: "is it healthy" is a question only a real
+# query can answer, which is what status.dns does - ironroot-dig against a signed name, reading the
+# AD flag out of the answer. With no base_url the hub's service.start / service.status can only see
+# that the process is alive (both "running" and "answers" mean exactly that here); do not read either
+# as "resolving". RUST_LOG is ironroot's own env_logger variable (its default is info); it is named
+# here so the log level is a visible setting rather than a mystery.
+#
+# ABP's side: bot/resolver.py already asks 127.0.0.1:5350 before Quad9 and reads the AD flag out of
+# the answer it gets. abp.use / abp.stop_using change that one setting ("ironroot" in the resolver's
+# settings file, written by bot.resolver.set_settings - there is no dashboard route for it) and
+# nothing else, so the resolver ABP drives by hand and the resolver ABP uses are the same decision.
+#
+# NO flush-cache operation, on purpose: ironroot's CLI is its resolver's own flags (--listen,
+# --trust-anchor, --l1-entries, the rate limiter, the timeouts, --xdp-iface) and there is no control
+# socket, no admin port and no cache command anywhere in it. The cache is in-process, so a restart is
+# the only flush - service.stop then service.start, which is why there is no operation pretending
+# otherwise.
+
+[service]
+id = "ironroot"
+name = "Ironroot"
+description = "Ironroot, the recursive resolver on 127.0.0.1:5350 that checks DNSSEC from the root down and fails closed on a bad signature: ABP's own DNS asks it before Quad9, and ironroot-dig shows any answer's AD flag."
+# Its own defaults, with no flags at all: 127.0.0.1:5350 for UDP and TCP (5353 is the Windows mDNS
+# port, and the resolver says so), and the trust anchor wherever default_trust_anchor_path() puts it
+# - root.key beside the executable here. That file is bootstrapped from the built-in IANA root key if
+# it does not exist, and is where RFC 5011 refreshes are written; it is never written into the checkout.
+start = ["X:/cargo-target/release/ironroot{exe}"]
+env = { RUST_LOG = "info" }
+ready_timeout_s = 60
+auth = "none"
+
+[[op]]
+id = "status.dns"
+kind = "cmd"
+summary = "The real health check: one query for a signed name through ironroot-dig - \"validated\" is the AD bit out of the answer, with the rcode and the records. ironroot-dig exits 0 for an answer, 1 for an rcode that is not one (SERVFAIL, REFUSED) and 2 when nothing came back at all, so a dead port fails too; dnssec.check is the operation that insists on validation"
+argv = ["X:/cargo-target/release/ironroot-dig{exe}", "{name}", "{type}", "--server", "{server}", "--json", "--timeout-ms", "{timeout_ms}"]
+timeout_s = 60
+mutating = false
+[op.inputs]
+name = { type = "string", default = "isc.org", description = "the name to ask about; isc.org is signed all the way to the root" }
+type = { type = "string", default = "A", description = "record type: A, AAAA, MX, TXT, NS, SOA, SRV, CAA, CNAME, PTR" }
+server = { type = "string", default = "127.0.0.1:5350", description = "the resolver to ask" }
+timeout_ms = { type = "string", default = "15000", description = "how long to wait; a cold resolution from the root takes longer than ironroot-dig's own 5 s" }
+
+[[op]]
+id = "status.abp"
+kind = "cmd"
+summary = "ABP's own resolver view (bot/resolver.py status()): the settings file, and which of its resolvers answer right now and which validate (this reaches Quad9 over DNS-over-HTTPS, not just the local port)"
+argv = ["{python}", "-c", "import json;from bot import resolver as r;print(json.dumps(r.status(),indent=1,default=str))"]
+timeout_s = 120
+mutating = false
+
+[[op]]
+id = "query.dig"
+kind = "cmd"
+summary = "Ask the resolver anything through ironroot-dig (JSON out); extra arguments are appended, so --cd shows the unauthenticated answer and --tcp forces TCP"
+argv = ["X:/cargo-target/release/ironroot-dig{exe}", "{name}", "{type}", "--server", "{server}", "--json", "--timeout-ms", "{timeout_ms}"]
+timeout_s = 60
+extra_args = true
+mutating = false
+[op.inputs]
+name = { type = "string", required = true, description = "the name to look up" }
+type = { type = "string", default = "A", description = "record type: A, AAAA, MX, TXT, NS, SOA, SRV, CAA, CNAME, PTR" }
+server = { type = "string", default = "127.0.0.1:5350", description = "the resolver to ask" }
+timeout_ms = { type = "string", default = "15000", description = "how long to wait for the answer" }
+
+[[op]]
+id = "dnssec.check"
+kind = "cmd"
+summary = "Prove it fails closed: isc.org must come back validated (AD set) and dnssec-failed.org, whose signatures are deliberately broken, must come back SERVFAIL - exit 1 if either is wrong"
+argv = ["{python}", "-c", "import json,subprocess,sys;d='X:/cargo-target/release/ironroot-dig{exe}';q=lambda n: json.loads(subprocess.run([d,n,'A','--server','{server}','--json','--timeout-ms','15000'],capture_output=True,text=True).stdout);a,b=q('isc.org'),q('dnssec-failed.org');print(json.dumps({'isc.org':a,'dnssec-failed.org':b},indent=1));sys.exit(0 if a.get('validated') and b.get('rcode')=='SERVFAIL' else 1)"]
+timeout_s = 120
+mutating = false
+[op.inputs]
+server = { type = "string", default = "127.0.0.1:5350", description = "the resolver to check" }
+
+[[op]]
+id = "logs.tail"
+kind = "cmd"
+summary = "The end of the resolver's log, the file ABP writes when service.start starts it (the same file the built-in service.logs reads; ironroot logs to stderr through env_logger, so a resolver started by hand has no such file). The folder and the line count are passed as arguments, never pasted into the code: a Windows path inside a Python string would read \\t and \\D as escapes"
+argv = ["{python}", "-c", "import sys;from pathlib import Path;p=Path(sys.argv[1])/'service.log';print('\\n'.join(p.read_text(encoding='utf-8',errors='replace').splitlines()[-int(sys.argv[2]):]) if p.is_file() else 'no service.log: ABP writes it when service.start starts Ironroot (RUST_LOG controls what it says)')", "{data}", "{lines}"]
+timeout_s = 60
+mutating = false
+[op.inputs]
+lines = { type = "string", default = "200", description = "how many lines from the end" }
+
+[[op]]
+id = "abp.use"
+kind = "cmd"
+summary = "Point ABP at this resolver: proves the address answers isc.org with the AD flag first, then sets the resolver's \"ironroot\" setting to it (bot/resolver.py's own settings; nothing else changes)"
+argv = ["{python}", "-c", "import json,sys;from bot import resolver as r;a=r.ask_dns('{server}','isc.org','A',20.0);print(json.dumps({'server':'{server}','ad':a.validated,'rcode':a.rcode,'values':a.values},indent=1));sys.exit(1) if not (a.values and a.validated) else print(json.dumps(r.set_settings({'ironroot':'{server}'}),indent=1))"]
+timeout_s = 120
+mutating = true
+[op.inputs]
+server = { type = "string", default = "127.0.0.1:5350", description = "the resolver ABP should ask" }
+
+[[op]]
+id = "abp.stop_using"
+kind = "cmd"
+summary = "Stop ABP using it: clears that same \"ironroot\" setting, so ABP's resolver goes straight to Quad9 over DNS-over-HTTPS and never waits on a port that may be down"
+argv = ["{python}", "-c", "import json;from bot import resolver as r;print(json.dumps(r.set_settings({'ironroot':''}),indent=1))"]
+timeout_s = 60
+mutating = true
+
+[[op]]
+id = "build.from_source"
+kind = "cmd"
+summary = "Build the resolver and ironroot-dig from this checkout (cargo, release; long, so a background job)"
+argv = ["cargo", "build", "--release", "-p", "ironroot"]
+timeout_s = 28800
+background = true
+env = { CARGO_TARGET_DIR = "X:/cargo-target" }
+
+[[op]]
+id = "git.update"
+kind = "cmd"
+summary = "Update the checkout from upstream (fast-forward only; nothing local is ever overwritten, and nothing is ever written into it)"
+argv = ["git", "-C", "{project}", "pull", "--ff-only"]
+timeout_s = 1800

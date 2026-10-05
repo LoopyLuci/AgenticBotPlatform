@@ -1,0 +1,60 @@
+# Ironroot as an ABP module: an overlay (ABP keeps this file; the checkout stays exactly upstream).
+# Kept by hand. Operations: abp-ops.toml next to this file.
+#
+# Ironroot is the owner's own resolver (MIT OR Apache-2.0); nothing of its source is copied into ABP.
+# It is not a stranger's repo to describe: bot/resolver.py already asks it, on 127.0.0.1:5350, before
+# Quad9 over DNS-over-HTTPS. This overlay is how a person (or an agent) starts it, watches it and
+# checks that it really validates, instead of trusting that a port is answering.
+#
+# NOT HTTP: the resolver speaks DNS on UDP and TCP, and has no HTTP API and no control socket. So
+# [service] has no base_url (declaring one would make ABP probe a TCP connect and call it healthy on
+# the strength of a port being open), and the health check a module needs is a real query for a signed
+# name with the AD flag read - status.dns below. With no base_url the hub can only see that the process
+# is alive, which is what its "running" and "answers" both mean here: do not read either as "resolving".
+
+[module]
+id = "ironroot"
+name = "Ironroot"
+repo = "https://github.com/LoopyLuci/ironroot.git"
+branch = "main"
+api = 1
+area = "network"
+description = "Ironroot, the recursive resolver on 127.0.0.1:5350 that checks DNSSEC from the root down and fails closed on a bad signature: ABP's own DNS asks it before Quad9, and ironroot-dig shows any answer's AD flag."
+
+[checkout]
+# The owner's working checkout, which their own agent is working in: this overlay describes it and
+# builds out of it, and writes nothing into it - not even a target/ directory (see [build] below).
+# The one exception is deliberate and is an operation, not a build: git.update fast-forwards it, and
+# git itself refuses that while tracked files are dirty. A machine that keeps the checkout elsewhere
+# should drop this line and set modules.ironroot.path (or $ABP_MODULE_IRONROOT_DIR) instead.
+dir = "Z:/Projects/DNS-Resolver/ironroot"
+marker = ["Cargo.toml", "rust-toolchain.toml", "ironroot/src/main.rs", "ironroot/src/bin/ironroot-dig.rs"]
+
+[toolchain]
+# rust-toolchain.toml pins channel = "nightly" (rolling, with rust-src and llvm-tools), and the
+# workspace is edition 2021. Cargo is the only thing a build needs; git is for the update operation.
+require = [{ tool = "cargo", min = "1.75", url = "https://rustup.rs" }, { tool = "git", url = "https://git-scm.com/downloads" }]
+
+[build]
+# Both binaries: the resolver and ironroot-dig, the small dig the operations use. The BPF crate
+# (ironroot-ebpf) is left out, as the workspace's default-members already leave it out on Windows:
+# bpfel-unknown-none has no prebuilt artifacts for this host, and the XDP fast path is a Linux thing.
+# CARGO_TARGET_DIR is pinned to the machine's cargo cache instead of being left to {target}: with no
+# modules.build_cache configured, {target} is the checkout's own target/, which this overlay will not
+# write to. The same paths (this env, build.outputs, [service].start and the dig path in abp-ops.toml)
+# have to be changed together - setting modules.build_cache makes ABP redirect the build there, and
+# these outputs would then be missing.
+steps = [["cargo", "build", "--release", "-p", "ironroot"]]
+outputs = ["X:/cargo-target/release/ironroot{exe}", "X:/cargo-target/release/ironroot-dig{exe}"]
+env = { CARGO_TARGET_DIR = "X:/cargo-target" }
+
+[hub]
+start = ["{abp_python}", "-m", "abp_modkit", "serve", "--spec", "{overlay}/abp-ops.toml", "--project", "{repo}", "--home", "{data}"]
+control_file = "{data}/control.json"
+start_timeout_s = 30
+
+[mcp]
+stdio = ["{abp_python}", "-m", "abp_modkit", "mcp", "--home", "{data}"]
+
+[ui]
+panel = "operations"   # a resolver has no web UI: the operations panel is the whole interface
