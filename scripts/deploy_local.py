@@ -46,12 +46,40 @@ the one previous copy this keeps next to the install folder, and the app is
 started again on those. scripts/local_pipeline.py's deploy step is this
 same code, so `git push` deploys through exactly this path.
 
-Only the standard library and psutil (already a project requirement).
+**When a gate owns the public port, a deploy is a hot swap instead.** abp_gate
+(8787) is the always-on front door, and while it is up the app - and every
+Telegram bot it runs - does not have to go offline for a minute to be replaced.
+So when the gate answers on the port this deploy is about to verify (detected
+the way the desktop app detects it: the gate's own unauthenticated /healthz has
+a "gate" field in it), this script:
+
+  * installs the build into a NEW versioned folder beside the install folder
+    (`<install-dir>.v1`, `.v2`, ...) instead of over the files the running
+    instance has open - which is also why nothing has to be stopped at all;
+  * asks the gate to swap to it, through the gate's own control API and with
+    the same DASHBOARD_TOKEN the CLI uses, and waits for the whole handover;
+  * verifies exactly what the stop-and-restart path verifies, through the same
+    public port, so nothing downstream can tell the difference;
+  * lets the gate roll the swap back if the new code cannot take the leader
+    lease, and - if a deploy that DID swap then fails verification - swaps back
+    to the folder the previous instance was serving from, which is still on
+    disk precisely because it was a versioned one;
+  * keeps the last KEEP_VERSIONS folders and deletes older ones only once no
+    instance is running from them.
+
+Without a gate, every step above is skipped and the run is exactly what it
+always was. See docs/deploy.md and docs/always-on.md.
+
+Only the standard library and psutil (already a project requirement), plus
+abp_gate - imported lazily, and only to ask a running gate whether it is there
+and to talk to its control API.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
+import hashlib
 import json
 import os
 import shutil
@@ -59,10 +87,11 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterable, Optional
+from typing import Callable, Iterable, Iterator, Optional
 
 import psutil
 
@@ -109,6 +138,26 @@ OUTSIDE_CHECKOUT_ENV = "ABP_DEPLOY_OUTSIDE_CHECKOUT"
 DEFAULT_PORT = 8787
 BUILD_TIMEOUT = 45 * 60
 VERIFY_TIMEOUT = 300.0
+
+# --------------------------------------------------------------------------- #
+# The always-on path: a deploy behind abp_gate
+# --------------------------------------------------------------------------- #
+#: A versioned bundle folder is named after the install folder plus this, then a
+#: number: `<install-dir>.v1`. Beside the install folder, never inside it, so a
+#: version can never be mistaken for one of the app's own directories, and so
+#: the numbers sort in the order they were deployed.
+VERSION_PREFIX = ".v"
+#: How many versioned folders to keep. Two is what makes a deploy recoverable:
+#: the one that is running, and the one it replaced.
+KEEP_VERSIONS = 2
+#: A swap is health (90s) + lease handover (45s) + drain (15s) and then this
+#: script's own verification on top, so the call that triggers one has to be
+#: allowed to sit there - the same reason abp_cli uses a long timeout for it.
+GATE_SWAP_TIMEOUT = 300.0
+#: The environment variables abp_gate.paths resolves its own roots from. A
+#: deploy run from a shell with the wrong ABP_HOME is the most common way to get
+#: confusing answers about a gate, so the deploy honours them explicitly.
+GATE_ENV_VARS = ("ABP_HOME", "ABP_INSTANCES_DIR")
 
 
 class DeployError(RuntimeError):
@@ -311,33 +360,43 @@ def _remove(path: Path) -> None:
         path.unlink()
 
 
-def install_resources(plan: Plan, install_dir: Path, dry_run: bool = False, log: Callable[[str], None] = print) -> Path:
+def install_resources(plan: Plan, install_dir: Path, dry_run: bool = False,
+                      log: Callable[[str], None] = print, keep_previous: bool = True) -> Optional[Path]:
     """Copies every planned resource into the install folder, first moving
     whatever is there now into a single previous copy kept beside it. The
     manifest records which destinations had something before, so a rollback
-    can tell "restore this" from "delete what this deploy created"."""
+    can tell "restore this" from "delete what this deploy created".
+
+    `keep_previous=False` is for a versioned folder: a new one is empty, so
+    there is nothing to put back to, and keeping a second full copy of a
+    multi-hundred-megabyte bundle beside every version is how a disk fills up.
+    Recovery there is not a file copy at all - it is swapping back to the
+    previous version's folder, which is still on disk (see hot_swap())."""
     prev = previous_dir(install_dir)
     if dry_run:
-        log(f"  would keep one previous copy at {prev}")
+        if keep_previous:
+            log(f"  would keep one previous copy at {prev}")
         for r in plan.install:
             log(f"  would install {r.dest} (from {r.source}, "
                 f"{'replacing what is there' if r.dest.exists() else 'new'})")
-        return prev
+        return prev if keep_previous else None
 
-    if prev.exists():
+    if keep_previous and prev.exists():
         shutil.rmtree(prev)
     install_dir.mkdir(parents=True, exist_ok=True)
     had_previous: list[str] = []
     deployed: list[str] = []
 
     def _record() -> None:
+        if not keep_previous:
+            return
         prev.mkdir(parents=True, exist_ok=True)
         (prev / PREVIOUS_MANIFEST).write_text(
             json.dumps({"deployed": deployed, "had_previous": had_previous}, indent=2), encoding="utf-8")
 
     _record()
     for r in plan.install:
-        if r.dest.exists():
+        if keep_previous and r.dest.exists():
             backup = prev / r.rel
             backup.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(r.dest), str(backup))
@@ -354,7 +413,7 @@ def install_resources(plan: Plan, install_dir: Path, dry_run: bool = False, log:
             shutil.copy2(r.source, r.dest)
         log(f"  installed {r.rel}")
     _record()
-    return prev
+    return prev if keep_previous else None
 
 
 def rollback(install_dir: Path, log: Callable[[str], None] = print) -> list[str]:
@@ -777,6 +836,373 @@ def verify(install_dir: Path, port: int = DEFAULT_PORT, *, root: Path = ROOT, to
 
 
 # --------------------------------------------------------------------------- #
+# A deploy behind the always-on gate: install beside, then swap
+# --------------------------------------------------------------------------- #
+@contextlib.contextmanager
+def _scoped_env(values: dict[str, str]) -> Iterator[None]:
+    """Set environment variables for the length of one block and put back
+    exactly what was there. abp_gate.paths resolves every root from
+    os.environ on every single call, so this is how one deploy can ask about
+    one gate without changing the answer for anything else in the process."""
+    before = {name: os.environ.get(name) for name in values}
+    os.environ.update({k: str(v) for k, v in values.items()})
+    try:
+        yield
+    finally:
+        for name, old in before.items():
+            if old is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = old
+
+
+def gate_in_front(state: Path, port: int, *, environ: Optional[dict] = None) -> Optional[dict]:
+    """The gate that owns `port`, or None when there is not one.
+
+    Detected the way the desktop app detects it (desktop-app/src-tauri/src/
+    lib.rs's gate_is_running): the gate's own UNAUTHENTICATED /healthz answers
+    with a "gate" field, so a 200 from an unrelated service on the same control
+    port can never be taken for a gate. On top of that, the gate.json the gate
+    itself wrote has to name `port` among its public ports - a gate for another
+    ABP_HOME is a different front door, and swapping through it would deploy
+    somebody else's install.
+
+    Returns the gate's own meta (pid, control URL, the ports it owns) plus the
+    /healthz body, so the caller never has to ask twice."""
+    environ = os.environ if environ is None else environ
+    try:
+        from abp_gate import control, paths  # noqa: PLC0415 - lazy on purpose: see the docstring
+    except Exception:  # noqa: BLE001 - no abp_gate importable, then there is no gate
+        return None
+    scoped = {name: str(environ[name]) for name in GATE_ENV_VARS if environ.get(name)}
+    scoped["ABP_HOME"] = str(state)
+    with _scoped_env(scoped):
+        try:
+            meta = control.read_gate_meta()
+            running = control.gate_running()
+            default_control = f"http://127.0.0.1:{paths.control_port()}"
+        except Exception:  # noqa: BLE001 - an unreadable gate.json is not a gate
+            return None
+    if not meta or not running:
+        return None
+    try:
+        owned = [int(p) for p in (meta.get("public_ports") or [])]
+    except (TypeError, ValueError):
+        return None
+    if port not in owned:
+        return None
+    control_url = str(meta.get("control_url") or default_control).rstrip("/")
+    _status, body = _get(f"{control_url}/healthz", timeout=3.0)
+    if not isinstance(body, dict) or not isinstance(body.get("gate"), str):
+        return None
+    return {**meta, "control_url": control_url, "healthz": body}
+
+
+def gate_request(control_url: str, token: Optional[str], method: str, path: str,
+                 params: Optional[dict] = None, *,
+                 timeout: float = 30.0) -> tuple[int, object]:
+    """One call to the gate's control API, authenticated the way the CLI
+    authenticates (the same DASHBOARD_TOKEN, as a header, never in the URL).
+
+    urllib, like every other request this script makes: the control API is the
+    same localhost HTTP /healthz already spoke, and a deploy that had to import
+    an HTTP client of its own would be one more thing to go stale. Returns
+    (status, body) and never raises for a refusal - a 409 from the gate carries
+    the reason in its body, and that reason is what the person needs."""
+    query = urllib.parse.urlencode({k: str(v) for k, v in (params or {}).items() if v is not None})
+    url = f"{control_url.rstrip('/')}{path}" + (f"?{query}" if query else "")
+    request = urllib.request.Request(url, method=method,
+                                     headers={"X-Dashboard-Token": token} if token else {})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as resp:
+            raw, status = resp.read(), resp.status
+    except urllib.error.HTTPError as exc:
+        raw, status = exc.read(), exc.code
+    except Exception as exc:  # noqa: BLE001 - not up, or not the gate
+        return 0, str(exc)
+    try:
+        return status, json.loads(raw.decode("utf-8", "replace"))
+    except ValueError:
+        return status, raw.decode("utf-8", "replace")
+
+
+def gate_instances(gate: dict, token: Optional[str]) -> dict:
+    """The gate's own registry view: every instance, its code root, its pid."""
+    status, body = gate_request(gate["control_url"], token, "GET", "/api/instance")
+    return body if status == 200 and isinstance(body, dict) else {}
+
+
+def gate_active_instance(gate: dict, token: Optional[str]) -> dict:
+    """The instance traffic is going to right now, as the gate's own registry
+    describes it: which code root it runs from, and which state root it runs on.
+
+    Both matter to a deploy, and both are better read than guessed. The code root
+    is what a failed verification is swapped back to; the data root is what the
+    swap must keep using, because a swap that moved the state would come up as a
+    different, empty ABP - and the gate's own state root is not necessarily the
+    data root its instances were started on (`--data-root` exists for that)."""
+    data = gate_instances(gate, token)
+    active = (data.get("instances") or {}).get(data.get("active") or "") or {}
+    return {
+        "name": str(data.get("active") or ""),
+        "code_root": str(active.get("code_root") or ""),
+        "data_root": str(active.get("data_root") or ""),
+    }
+
+
+def versioned_dirs(install_dir: Path) -> list[tuple[int, Path]]:
+    """Every versioned bundle folder beside `install_dir`, oldest first."""
+    prefix = Path(install_dir).name + VERSION_PREFIX
+    found: list[tuple[int, Path]] = []
+    for path in Path(install_dir).parent.glob(prefix + "*"):
+        tail = path.name[len(prefix):]
+        if tail.isdigit() and path.is_dir():
+            found.append((int(tail), path))
+    return sorted(found)
+
+
+def next_version_dir(install_dir: Path) -> Path:
+    """The folder this deploy installs into: the next number on. Never the one
+    the running instance is serving from - writing over files a live process has
+    open is the whole problem the versioned folders exist to avoid."""
+    existing = versioned_dirs(install_dir)
+    number = (existing[-1][0] + 1) if existing else 1
+    return Path(install_dir).with_name(f"{Path(install_dir).name}{VERSION_PREFIX}{number}")
+
+
+def prune_versions(install_dir: Path, *, keep: int = KEEP_VERSIONS, in_use: Optional[set[Path]] = None,
+                   log: Callable[[str], None] = print) -> tuple[list[Path], list[Path]]:
+    """Delete the versioned folders past `keep`, and only the ones no instance
+    is running from.
+
+    `in_use` comes from the gate's own registry (an instance with a live pid),
+    not from this script's guess: a code root somebody swapped to by hand with
+    `abp instance swap <worktree>` is not a versioned folder of ours, and a
+    stopped instance holds nothing open. A folder that is still in use is kept
+    past the limit and said out loud, because quietly keeping more than asked
+    for is better than quietly deleting the code a rollback would need."""
+    in_use = {Path(p).resolve() for p in (in_use or set())}
+    folders = versioned_dirs(install_dir)
+    doomed = [path for _n, path in folders[:-keep]] if keep > 0 else [path for _n, path in folders]
+    deleted: list[Path] = []
+    spared: list[Path] = []
+    for path in doomed:
+        if path.resolve() in in_use:
+            spared.append(path)
+            log(f"  keeping {path.name}: an instance is still running from it")
+            continue
+        _remove(path)
+        deleted.append(path)
+        log(f"  deleted {path.name} (older than the last {keep} version(s), and nothing runs from it)")
+    return deleted, spared
+
+
+def state_dashboard_token(state: Path, root: Path = ROOT) -> Optional[str]:
+    """The DASHBOARD_TOKEN of `state` - the one the gate authenticates with, and
+    the one the running app reads.
+
+    Asked of an interpreter with ABP_HOME pointed at `state`, so the answer is
+    the token of THIS state root rather than of whatever checkout the deploy
+    happens to be standing in (bot/envfile.py's rule decides which). Never
+    printed, only ever used as a request header, exactly as the desktop shell's
+    own token fetch does."""
+    python = venv_python(state)
+    if not python.is_file():
+        python = venv_python(root)
+    if not python.is_file():
+        python = Path(sys.executable)
+    env = dict(os.environ)
+    env["ABP_HOME"] = str(state)
+    env["PYTHONPATH"] = str(root) + os.pathsep + env.get("PYTHONPATH", "")
+    code = "import sys; from bot import envfile; sys.stdout.write(envfile.get_var('DASHBOARD_TOKEN') or '')"
+    try:
+        proc = _popen([str(python), "-c", code], cwd=str(state), env=env, stdin=subprocess.DEVNULL,
+                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        token, _ = proc.communicate(timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return (token or "").strip() or None
+
+
+def _digest(path: Path) -> str:
+    """A content hash of one file, or "" if it cannot be read. Used only to say
+    whether the desktop app's own binary is the one that just changed."""
+    digest = hashlib.sha256()
+    try:
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(chunk)
+    except OSError:
+        return ""
+    return digest.hexdigest()
+
+
+def hot_swap(result: DeployResult, *, root: Path, profile: Path, target: Path, gate: dict,
+             port: int, dry_run: bool = False, skip_verify: bool = False, skip_bots: bool = False,
+             timeout_s: float = VERIFY_TIMEOUT, log: Callable[[str], None] = print) -> DeployResult:
+    """Install the build into a NEW versioned folder and let the gate swap to it.
+
+    Nothing is stopped. The running instance is serving out of the folder the
+    last deploy made, and this one writes beside it; then the gate does what it
+    exists for - standby, health, lease handover, routing flip, drain - and rolls
+    the swap back itself if the new code cannot take over. Verification is the
+    same verification, through the same public port, so nothing downstream can
+    tell a hot deploy from a stopped one."""
+    state = state_root(target)
+    versioned = next_version_dir(target)
+    control_url = str(gate.get("control_url") or "")
+    log(f"  a gate owns {base_url(port)}: this is a hot swap, not a restart")
+    log(f"  gate pid {gate.get('pid')} at {control_url}")
+    # Two roots, and the difference between them is not academic: the control
+    # API authenticates against the GATE's state root, while an instance answers
+    # /api/bots with the token of the data root it runs on. They are the same
+    # folder on any sane install, and where they are not, each call gets the
+    # token it is actually checked against.
+    control_state = Path(str(gate.get("state_root") or "") or state)
+    token = state_dashboard_token(control_state, root)
+    if not token:
+        result.fail(f"could not resolve the DASHBOARD_TOKEN of {control_state}, which is what the gate's control "
+                    f"API authenticates with — that folder holds the .env a boot writes, so either ABP has never "
+                    f"booted on it or the deploy cannot read it")
+        return result
+    current = gate_active_instance(gate, token)
+    data_root = Path(current["data_root"]) if current["data_root"] else control_state
+    if data_root != state:
+        log(f"  [!]  the running instance's state root is {data_root}, not this install's {state}: "
+            f"the swap keeps the data where it is rather than moving it")
+    instance_token = token if data_root == control_state else state_dashboard_token(data_root, root)
+    # The versioned folder is an install in its own right, but the state it runs
+    # on is the same one as the install it sits beside - so it is planned with
+    # that state root named, exactly as the running bundle is.
+    plan = plan_install(root, profile, versioned, environ={**os.environ, "ABP_HOME": str(data_root)},
+                        allow_missing=dry_run)
+    for rel, why in plan.skipped:
+        log(f"  skipping {rel}: {why}")
+    if plan.missing and dry_run:
+        log(f"  {len(plan.missing)} of these do not exist yet and the build would produce them: "
+            + ", ".join(plan.missing[:5]))
+    elif not plan.ok:
+        result.fail(f"the build in {profile} is missing {len(plan.missing)} resource(s) it should have "
+                    f"({', '.join(plan.missing[:5])}) — run without --no-build")
+        return result
+    log(f"  {len(plan.install)} file(s)/folder(s) to install into {versioned.name}, beside the running "
+        f"instance rather than over it")
+    if dry_run:
+        install_resources(plan, versioned, dry_run=True, log=log, keep_previous=False)
+        log(f"  would ask the gate to swap to {versioned} and wait for the handover, lease included")
+        log(f"  would verify: {base_url(port)}/healthz is ok, /openapi.json has the same paths as "
+            f"docs/api/openapi.json, and every enabled bot instance is live again")
+        log(f"  would let the gate roll the swap back if the new code cannot take the lease, and would "
+            f"keep the last {KEEP_VERSIONS} versioned folder(s)")
+        result.ran.append("dry run: nothing was installed, swapped or verified")
+        return result
+
+    previous_root = Path(current["code_root"]) if current["code_root"] else None
+    if previous_root is not None and not (previous_root / "bot" / "main.py").is_file():
+        # It is running from something that is not on this disk any more (a
+        # worktree that was deleted, a share that went away). There would be
+        # nothing to swap back to, so say so now rather than at the worst moment.
+        log(f"  [!]  the running instance's code root {previous_root} is not on this disk any more: "
+            f"a failed swap cannot be undone by going back to it")
+        previous_root = None
+    try:
+        install_resources(plan, versioned, log=log, keep_previous=False)
+    except OSError as exc:
+        result.fail(f"installing into {versioned} failed: {exc}")
+        return result
+    result.installed = [r.rel for r in plan.install]
+    result.ran.append(f"installed {len(plan.install)} item(s) into {versioned.name}")
+
+    status, body = gate_request(control_url, token, "POST", "/api/instance/swap",
+                                params={"code_root": versioned, "data_root": data_root},
+                                timeout=GATE_SWAP_TIMEOUT)
+    if status != 200 or not isinstance(body, dict) or not body.get("ok"):
+        result.fail(f"the gate could not swap to {versioned.name}: {_gate_reason(status, body)}")
+        result.ran.append("swap refused - the gate rolled back and the previous instance is still serving")
+        result.notes.append(f"{versioned.name} is on disk but is not running; the gate's own log says more "
+                            f"({gate.get('instances_dir')}/gate/gate.log)")
+        _prune_after_swap(gate, token, target, log)
+        return result
+    for step in body.get("steps") or []:
+        log(f"  {step}")
+    result.ran.append(f"swapped to {body.get('instance')} running {versioned.name}")
+    if previous_root is not None:
+        log(f"  the previous code root ({previous_root}) is still on disk, so a bad deploy can go back to it")
+
+    # A new exe does not reach the open desktop window: the app was launched from
+    # the install folder and is still running from it. ABP behind the gate is
+    # already on this build; the window needs the person to restart it.
+    if (target / EXE_NAME).is_file() and (versioned / EXE_NAME).is_file() and \
+            _digest(target / EXE_NAME) != _digest(versioned / EXE_NAME):
+        result.notes.append(f"the app binary itself changed. ABP behind the gate is already running this "
+                            f"build, but the open desktop window is still the one in {target.name} - "
+                            f"restart the app to pick the new binary up")
+
+    if skip_verify:
+        log("  not verifying (--skip-verify) — the deploy is unverified, which is the failure mode "
+            "this script exists to remove")
+        result.notes.append("swapped without verification (--skip-verify)")
+        _prune_after_swap(gate, token, target, log)
+        return result
+
+    outcome = verify(target, port, root=root, token=instance_token, timeout_s=timeout_s,
+                     require_bots=not skip_bots, log=log)
+    result.notes += outcome.notes
+    if outcome.ok:
+        result.ran.append("verified")
+    else:
+        for message in outcome.failures:
+            result.fail(message)
+        if previous_root is not None:
+            # The swap itself succeeded, so the gate's own rollback has nothing
+            # left to roll back to (a swap stops what it replaced). But the
+            # folder that code was running from is still on disk, and swapping
+            # back to it is the same zero-downtime move in the other direction.
+            log("  verification failed — swapping back to the code that was running")
+            back_status, back = gate_request(control_url, token, "POST", "/api/instance/swap",
+                                             params={"code_root": previous_root, "data_root": data_root},
+                                             timeout=GATE_SWAP_TIMEOUT)
+            if back_status == 200 and isinstance(back, dict) and back.get("ok"):
+                for step in back.get("steps") or []:
+                    log(f"  {step}")
+                result.ran.append(f"swapped back to {back.get('instance')} running {previous_root.name}")
+                result.notes.append(f"the deploy was undone: {previous_root.name} is serving again")
+            else:
+                result.fail(f"could not swap back to {previous_root}: {_gate_reason(back_status, back)}")
+    _prune_after_swap(gate, token, target, log)
+    return result
+
+
+def _gate_reason(status: int, body: object) -> str:
+    """The gate's own words for a refusal, which are the useful ones: a 409 from
+    a swap says which step failed and who is still serving."""
+    if isinstance(body, dict):
+        detail = body.get("detail") or body.get("error") or body
+        if isinstance(detail, (dict, list)):
+            detail = json.dumps(detail, default=str)
+        return f"HTTP {status}: {str(detail)[:600]}"
+    return f"HTTP {status}: {str(body)[:600]}" if status else f"no answer from the gate: {body}"
+
+
+def _prune_after_swap(gate: dict, token: Optional[str], target: Path,
+                      log: Callable[[str], None] = print) -> None:
+    """Keep the last KEEP_VERSIONS folders. The gate's registry is the authority
+    on which ones something is still running from, so a code root somebody
+    swapped to by hand is never deleted out from under a live instance."""
+    data = gate_instances(gate, token)
+    in_use: set[Path] = set()
+    for info in (data.get("instances") or {}).values():
+        pid = info.get("pid") if isinstance(info, dict) else None
+        code_root = str((info or {}).get("code_root") or "")
+        if not code_root or not isinstance(pid, int) or not psutil.pid_exists(pid):
+            continue
+        in_use.add(Path(code_root))
+    if in_use:
+        log(f"  code roots in use by a live instance: {', '.join(sorted(p.name for p in in_use))}")
+    prune_versions(target, in_use=in_use, log=log)
+
+
+# --------------------------------------------------------------------------- #
 # The deploy itself
 # --------------------------------------------------------------------------- #
 @dataclass
@@ -802,6 +1228,10 @@ def deploy(root: Path = ROOT, *, install_dir: Optional[str] = None, outside_chec
     """build -> stop -> install -> restart -> verify, rolling back to the
     one previous copy if any of the last three fails.
 
+    ...unless a gate owns the public port, in which case it is build -> install
+    into a new versioned folder -> hot_swap(), which stops nothing and rolls
+    back by swapping rather than by copying files. See hot_swap().
+
     `restart` exists for the one legitimate alternative to launching the exe:
     an install registered as an OS service (scripts/install_task.ps1 and
     friends) is restarted through its service manager, not by starting a
@@ -810,7 +1240,8 @@ def deploy(root: Path = ROOT, *, install_dir: Optional[str] = None, outside_chec
     `start=False` installs without starting anything, for the case where
     nothing was running from the install folder to begin with: the point is
     that the NEXT launch runs this commit, and starting a GUI app the person
-    deliberately closed is not a deploy's decision to make.
+    deliberately closed is not a deploy's decision to make. Behind a gate it
+    changes nothing: the gate IS running, so there is something to swap.
 
     `launcher` is how the app is started, for the same reason build() takes
     nothing: the default is the OS's own way (explorer.exe on Windows). A
@@ -835,6 +1266,23 @@ def deploy(root: Path = ROOT, *, install_dir: Optional[str] = None, outside_chec
     if do_build:
         if build(root, force=force_build, dry_run=dry_run, log=log) and not dry_run:
             result.ran.append("cargo tauri build")
+
+    # Before the plan, because it decides the plan: a gate in front of the port
+    # means nothing is installed over the install folder at all.
+    gate = gate_in_front(state_root(target), port)
+    if gate is not None:
+        if restart is not None:
+            result.notes.append("a registered OS service restart was asked for, but a gate owns the public "
+                                "port, so the swap is what puts this build in front of traffic")
+        if not start:
+            result.notes.append("--no-start was asked for, but the gate is up and serving, so the swap is "
+                                "what deploys this build")
+        result = hot_swap(result, root=root, profile=profile, target=target, gate=gate, port=port,
+                          dry_run=dry_run, skip_verify=skip_verify, skip_bots=skip_bots,
+                          timeout_s=timeout_s, log=log)
+        for note in result.notes:
+            log(f"  [!]  {note}")
+        return result
 
     plan = plan_install(root, profile, target)
     for rel, why in plan.skipped:
