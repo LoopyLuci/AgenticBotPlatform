@@ -965,6 +965,12 @@ def build_app() -> FastAPI:
 
     routines_api.register(app, _require_token_or_api_key, _require_token)
 
+    # Keyboard shortcuts and the command palette's bindings: a person's own key map for both UIs,
+    # kept with the rest of this install's settings so it follows them to another browser or device.
+    from bot.dashboard import shortcuts_api
+
+    shortcuts_api.register(app, _require_token_or_api_key, _require_token)
+
     # Channels added in P7 (SMS and iMessage webhooks), the canvas, and paired-phone nodes.
     from bot.dashboard import channels_api
 

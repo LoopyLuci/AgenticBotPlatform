@@ -430,6 +430,13 @@ export const operations = {
   ],
   "query_params": []
  },
+ "DELETE /api/shortcuts": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/shortcuts",
+  "path_params": [],
+  "query_params": []
+ },
  "DELETE /api/skills/{name}": {
   "body": false,
   "method": "DELETE",
@@ -3101,6 +3108,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/shortcuts": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/shortcuts",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/skills": {
   "body": false,
   "method": "GET",
@@ -3732,22 +3746,6 @@ export const operations = {
   "query_params": [
    "repo_id"
   ]
- },
- "GET /api/vision": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/vision",
-  "path_params": [],
-  "query_params": []
- },
- "GET /api/vision/out/{name}": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/vision/out/{name}",
-  "path_params": [
-   "name"
-  ],
-  "query_params": []
  },
  "GET /api/vm-harness/audit": {
   "body": false,
@@ -6121,6 +6119,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "POST /api/shortcuts/check": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/shortcuts/check",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/skills": {
   "body": true,
   "method": "POST",
@@ -6832,50 +6837,6 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
- "POST /api/vision/analyze": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/vision/analyze",
-  "path_params": [],
-  "query_params": []
- },
- "POST /api/vision/compare": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/vision/compare",
-  "path_params": [],
-  "query_params": []
- },
- "POST /api/vision/edit": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/vision/edit",
-  "path_params": [],
-  "query_params": []
- },
- "POST /api/vision/faces": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/vision/faces",
-  "path_params": [],
-  "query_params": []
- },
- "POST /api/vision/find": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/vision/find",
-  "path_params": [],
-  "query_params": []
- },
- "POST /api/vision/models/{model}/fetch": {
-  "body": false,
-  "method": "POST",
-  "path": "/api/vision/models/{model}/fetch",
-  "path_params": [
-   "model"
-  ],
-  "query_params": []
- },
  "POST /api/vm-harness/call": {
   "body": true,
   "method": "POST",
@@ -7234,6 +7195,13 @@ export const operations = {
    "session_id",
    "index"
   ],
+  "query_params": []
+ },
+ "PUT /api/shortcuts": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/shortcuts",
+  "path_params": [],
   "query_params": []
  },
  "PUT /api/studio/variants/{vid}/file": {
@@ -9907,6 +9875,13 @@ export const operations = {
    "sig"
   ]
  },
+ "check_shortcut_api_shortcuts_check_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/shortcuts/check",
+  "path_params": [],
+  "query_params": []
+ },
  "cicd_chain_api_cicd_chain_get": {
   "body": false,
   "method": "GET",
@@ -10207,6 +10182,13 @@ export const operations = {
   "path_params": [
    "routine_id"
   ],
+  "query_params": []
+ },
+ "delete_shortcuts_api_shortcuts_delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/shortcuts",
+  "path_params": [],
   "query_params": []
  },
  "desktop_ui_index_desktop_ui__get": {
@@ -11034,6 +11016,13 @@ export const operations = {
   "query_params": [
    "limit"
   ]
+ },
+ "get_shortcuts_api_shortcuts_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/shortcuts",
+  "path_params": [],
+  "query_params": []
  },
  "get_taint_api_agent_taint_get": {
   "body": false,
@@ -13038,6 +13027,13 @@ export const operations = {
   ],
   "query_params": []
  },
+ "put_shortcuts_api_shortcuts_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/shortcuts",
+  "path_params": [],
+  "query_params": []
+ },
  "refresh_catalog_api_models_refresh_post": {
   "body": false,
   "method": "POST",
@@ -14287,66 +14283,6 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/agent/permissions/validate",
-  "path_params": [],
-  "query_params": []
- },
- "vision_analyze_api_vision_analyze_post": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/vision/analyze",
-  "path_params": [],
-  "query_params": []
- },
- "vision_compare_api_vision_compare_post": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/vision/compare",
-  "path_params": [],
-  "query_params": []
- },
- "vision_edit_api_vision_edit_post": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/vision/edit",
-  "path_params": [],
-  "query_params": []
- },
- "vision_faces_api_vision_faces_post": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/vision/faces",
-  "path_params": [],
-  "query_params": []
- },
- "vision_fetch_api_vision_models__model__fetch_post": {
-  "body": false,
-  "method": "POST",
-  "path": "/api/vision/models/{model}/fetch",
-  "path_params": [
-   "model"
-  ],
-  "query_params": []
- },
- "vision_find_api_vision_find_post": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/vision/find",
-  "path_params": [],
-  "query_params": []
- },
- "vision_out_api_vision_out__name__get": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/vision/out/{name}",
-  "path_params": [
-   "name"
-  ],
-  "query_params": []
- },
- "vision_status_api_vision_get": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/vision",
   "path_params": [],
   "query_params": []
  },
