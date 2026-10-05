@@ -221,6 +221,9 @@ DENYLIST: frozenset[str] = frozenset({
     # Routines: the routes register once, and routines_view.py holds the run-history bookkeeping
     # a page's "run now" writes into.
     "bot.dashboard.routines_api", "bot.routines_view",
+    # Shortcuts: the routes register once, so a reloaded copy would serve its own idea of the
+    # saved bindings while the live app keeps the old app's routes.
+    "bot.dashboard.shortcuts_api",
     "bot.agent_runtime.session_export", "bot.backends.external_agent_backend",  # imported by denied modules (dashboard, router)
     "bot.model_catalog", "bot.agent_runtime.usage_limits", "bot.agent_runtime.model_tools",  # usage counters and per-process caches
     "bot.custom_commands", "bot.agent_runtime.skill_learning",  # small, stateless, but imported by denied modules only
