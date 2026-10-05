@@ -2,7 +2,8 @@
 
     run_forever(stop_event)   ABP's background task: the telemetry recorder (every 10 s), systune.tick every 5
                               minutes (adopt finished system-model runs; retrain when their data has grown)
-    overview()                runs, designs, the projects (BrainBuilder, PrivateProject, Amethyst, PrivateProject), system models
+    overview()                runs, designs, the projects (BrainBuilder, PrivateProject, Amethyst, PrivateProject), the model
+                              families ABP only runs (PRIVATE_PROJECT), system models
 """
 from __future__ import annotations
 
@@ -10,7 +11,7 @@ import asyncio
 import logging
 import time
 
-from bot.neurallab import interop, lab, spec, systune, telemetry
+from bot.neurallab import interop, lab, private_project, spec, systune, telemetry
 
 logger = logging.getLogger(__name__)
 _recorder: telemetry.Recorder | None = None
@@ -25,8 +26,8 @@ def settings() -> dict:
 
 def overview() -> dict:
     return {"runs": lab.runs(30), "designs": lab.designs(), "projects": interop.projects(), "ops": spec.ops_catalog(),
-            "systune": systune.status(), "settings": settings(), "recording": bool(_recorder and _recorder.thread
-                                                                                    and _recorder.thread.is_alive())}
+            "private_project": private_project.status(), "systune": systune.status(), "settings": settings(),
+            "recording": bool(_recorder and _recorder.thread and _recorder.thread.is_alive())}
 
 
 def start_recorder() -> None:

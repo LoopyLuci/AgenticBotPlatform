@@ -23,6 +23,9 @@ server's own API: Ollama's and OpenAI's, on port 11436.)
     POST    /api/lab/runs                         {spec | design, data, train?, ...} -> the run;  GET /runs/{id}; POST /runs/{id}/stop
     POST    /api/lab/autotune                     {spec, data, space, trials?, metric?} -> a run
     GET     /api/lab/projects                     the toolkit's projects; GET /brainbuilder, /private_project; POST /import {kind, ...}
+    GET     /api/lab/private_project                        the PRIVATE_PROJECT family: its checkpoints, its configs, whether it is here
+    GET     /api/lab/private_project/config?config=         one config's three layers and the numbers that describe the model
+    POST    /api/lab/private_project/generate               {ckpt?, prompt?, max_new?, config?, timeout?} -> one rollout
     POST    /api/lab/export/brainbuilder          {spec, path}
     GET     /api/lab/systune                      system models, CPU policy, telemetry;  POST /systune/bench {kind} -> a run
     POST    /api/lab/systune/train                {kind} -> the run;  GET /systune/advice?kind=&...
@@ -207,7 +210,7 @@ def register(app: FastAPI, require_token: Callable) -> None:
 
 
 def _register_lab(app: FastAPI, dep: list) -> None:
-    from bot.neurallab import interop, lab, spec, systune, telemetry
+    from bot.neurallab import interop, lab, private_project, spec, systune, telemetry
     from bot.neurallab import service as lab_service
     L = "/api/lab"
 
@@ -270,6 +273,21 @@ def _register_lab(app: FastAPI, dep: list) -> None:
     @app.get(f"{L}/projects", dependencies=dep)
     async def lab_projects():
         return interop.projects()
+
+    @app.get(f"{L}/private_project", dependencies=dep)
+    async def lab_private_project(limit: int = Query(200, ge=1, le=1000)):
+        return {"status": await _t(private_project.status), "checkpoints": await _t(private_project.checkpoints, limit),
+                "configs": await _t(private_project.configs), "default_config": private_project.DEFAULT_CONFIG}
+
+    @app.get(f"{L}/private_project/config", dependencies=dep)
+    async def lab_private_project_config(config: str = Query(private_project.DEFAULT_CONFIG)):
+        return await _t(private_project.config, config)
+
+    @app.post(f"{L}/private_project/generate", dependencies=dep)
+    async def lab_private_project_generate(body: dict = Body(default={})):
+        return await _t(private_project.generate, str(body.get("ckpt", "")), str(body.get("prompt", "Once upon a time")),
+                        int(body.get("max_new", 32)), str(body.get("config") or private_project.DEFAULT_CONFIG),
+                        float(body.get("timeout", 900.0)))
 
     @app.get(f"{L}/brainbuilder", dependencies=dep)
     async def lab_bb():

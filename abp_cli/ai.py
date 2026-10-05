@@ -12,7 +12,8 @@
   abp lab status | runs | run <id> | stop <id> | designs | validate <spec.json>
   abp lab train <spec.json | design> --data <file> [--target col] [--tokenizer t] [--steps N] [--wait]
   abp lab import brainbuilder <file.bbir.edn> | private_project <registry id> | kmoe <model.kmoe>   [--name n]
-  abp lab projects | systune | advice transfer <src> <dst> [--size-gb G] [--files N] | advice llm <model>
+  abp lab projects | private_project [checkpoints|config <name>] | private_project-generate <ckpt|"random"> <prompt...> [--max-new N]
+  abp lab systune | advice transfer <src> <dst> [--size-gb G] [--files N] | advice llm <model>
                | advice memory | advice stability | bench drives|llm | retrain <kind> | telemetry | hw
 (Inference itself: any Ollama client with OLLAMA_HOST=http://127.0.0.1:11436, or the OpenAI API at /v1.)
 """
@@ -66,6 +67,10 @@ def add_parser(sub) -> None:
     p.add_argument("--tokenizer", default=""); p.add_argument("--steps", type=int, default=0); p.add_argument("--wait", action="store_true")
     p = ls.add_parser("import"); p.add_argument("kind", choices=["brainbuilder", "private_project", "kmoe"]); p.add_argument("what")
     p.add_argument("--name", default="")
+    ls.add_parser("private_project")
+    p = ls.add_parser("private_project-config"); p.add_argument("config", nargs="?", default="")
+    p = ls.add_parser("private_project-generate"); p.add_argument("ckpt"); p.add_argument("prompt", nargs="+")
+    p.add_argument("--max-new", type=int, default=32); p.add_argument("--config", default=""); p.add_argument("--timeout", type=float, default=900.0)
     p = ls.add_parser("advice"); p.add_argument("kind", choices=["transfer", "llm", "memory", "stability"]); p.add_argument("rest", nargs="*")
     p.add_argument("--size-gb", type=float, default=4, dest="size_gb"); p.add_argument("--files", type=int, default=100)
     p = ls.add_parser("bench"); p.add_argument("kind", choices=["drives", "llm"])
@@ -333,6 +338,9 @@ async def _lab(args, client) -> int:
             _show(o)
             return 0
         print("projects: " + ", ".join(f"{p['folder']}{'' if p['present'] else ' (missing)'}" for p in o["projects"]))
+        nm = o.get("private_project") or {}
+        where = f"at {nm['path']}, {nm['checkpoints']} checkpoint(s)" if nm.get("present") else "not on this machine"
+        print(f"private_project: {where}")
         print(f"designs: {len(o['designs'])}; telemetry {'recording' if o['recording'] else 'off'}")
         for x in o["runs"][:8]:
             fin = x.get("final") or {}
@@ -362,6 +370,35 @@ async def _lab(args, client) -> int:
         _show({"projects": await r("GET", f"{L}/projects"), "brainbuilder": await r("GET", f"{L}/brainbuilder"),
                "private_project": await r("GET", f"{L}/private_project")})
         return 0
+    if c == "private_project":
+        o = await r("GET", f"{L}/private_project")
+        if args.json:
+            _show(o)
+            return 0
+        st = o["status"]
+        if not st["present"]:
+            print(f"PRIVATE_PROJECT is not on this machine (looked for {st['path'] or '/path/redacted'}; set PRIVATE_PROJECT_HOME)")
+            return 1
+        print(f"PRIVATE_PROJECT at {st['path']}; {st['checkpoints']} checkpoint(s) in {st['checkpoints_dir']}; "
+              f"{st['configs']} config(s); interpreter {'ready' if st['interpreter_present'] else 'missing'}")
+        for c_ in o["checkpoints"]:
+            print(f"  {c_['name']:<28} {_size(c_['bytes']):>9}  {c_['mtime_iso']}")
+        return 0
+    if c == "private_project-config":
+        _show(await r("GET", f"{L}/private_project/config", params={"config": args.config or "configs/tiny_8m.yaml"}))
+        return 0
+    if c == "private_project-generate":
+        g = await r("POST", f"{L}/private_project/generate", json={"ckpt": "" if args.ckpt == "random" else args.ckpt,
+                                                         "prompt": " ".join(args.prompt), "max_new": args.max_new,
+                                                         **({"config": args.config} if args.config else {}),
+                                                         "timeout": args.timeout}, timeout=args.timeout + 60.0)
+        if not args.json:
+            print(g.get("text") or g.get("error") or "(no bytes)")
+            print(f"  {g['n_bytes'] if 'n_bytes' in g else '-'} bytes from {g['checkpoint'] or 'random weights'} "
+                  f"in {g['seconds']}s (exit {g['exit_code']})")
+        if args.json:
+            _show(g)
+        return 0 if g.get("ok") else 1
     if c == "validate":
         v = await r("POST", f"{L}/validate", json={"spec": json.loads(Path(args.spec).read_text(encoding="utf-8"))})
         print(v["text"]) if not args.json else _show(v)
