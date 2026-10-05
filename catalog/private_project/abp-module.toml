@@ -1,36 +1,55 @@
-# PRIVATE_PROJECT as an ABP module: an overlay (ABP keeps this file; the checkout stays exactly upstream).
+# private_project as an ABP module: an overlay (ABP keeps this file; the checkout stays exactly upstream).
 # Kept by hand. Operations: abp-ops.toml next to this file.
 #
-# /path/redacted is the owner's own experimental project and not a git repository, so there is
-# nothing to publish; an overlay is the only way to describe it. Nothing is ever written into that
-# folder by this overlay: the operations run its tests, generate from a checkpoint and serve its
-# dashboard, and the hub's own files live in ABP's data folder.
+# private_project is the owner's own resolver (MIT OR Apache-2.0); nothing of its source is copied into ABP.
+# It is not a stranger's repo to describe: bot/resolver.py already asks it, on 127.0.0.1:5350, before
+# Quad9 over DNS-over-HTTPS. This overlay is how a person (or an agent) starts it, watches it and
+# checks that it really validates, instead of trusting that a port is answering.
 #
-# PYTHON: PRIVATE_PROJECT needs torch. The interpreter used below is the training environment,
-# /path/redacted (Python 3.11.9, torch 2.11.0+rocm7.13.0), because
-# ABP's own environment has no torch and installing one there is not this module's business.
-# Everything in PRIVATE_PROJECT caps its own threads (OMP/MKL/PRIVATE_PROJECT_THREADS=4) before importing torch: this
-# host raises fatal WHEA machine-check exceptions under sustained all-core load.
+# NOT HTTP: the resolver speaks DNS on UDP and TCP, and has no HTTP API and no control socket. So
+# [service] has no base_url (declaring one would make ABP probe a TCP connect and call it healthy on
+# the strength of a port being open), and the health check a module needs is a real query for a signed
+# name with the AD flag read - status.dns below. With no base_url the hub can only see that the process
+# is alive, which is what its "running" and "answers" both mean here: do not read either as "resolving".
 
 [module]
 id = "private_project"
-name = "PRIVATE_PROJECT"
-repo = "local: /path/redacted"
+name = "private_project"
+repo = "https://github.com/LoopyLuci/private_project.git"
 branch = "main"
 api = 1
-area = "models"
-description = "PRIVATE_PROJECT, an experimental byte-level language model (Python + PyTorch): its 128-test suite, text generation from checkpoints/phase3.pt, and its telemetry dashboard and MCP surface on port 8000."
+area = "network"
+description = "private_project, the recursive resolver on 127.0.0.1:5350 that checks DNSSEC from the root down and fails closed on a bad signature: ABP's own DNS asks it before Quad9, and private_project-dig shows any answer's AD flag."
 
 [checkout]
-marker = ["pyproject.toml", "README.md"]
+# The owner's working checkout, which their own agent is working in: this overlay describes it and
+# builds out of it, and writes nothing into it - not even a target/ directory (see [build] below).
+# The one exception is deliberate and is an operation, not a build: git.update fast-forwards it, and
+# git itself refuses that while tracked files are dirty. A machine that keeps the checkout elsewhere
+# should drop this line and set modules.private_project.path (or $ABP_MODULE_private_project_DIR) instead.
+dir = "/path/redacted"
+marker = ["Cargo.toml", "rust-toolchain.toml", "private_project/src/main.rs", "private_project/src/bin/private_project-dig.rs"]
 
 [toolchain]
-# pyproject.toml: requires-python >= 3.11, torch >= 2.4, pyyaml, numpy, scipy;
-# the dashboard adds fastapi and uvicorn (the optional `dashboard` extra).
-require = [{ tool = "python", min = "3.11", url = "https://www.python.org/downloads/" }, { tool = "cargo", min = "1.75", url = "https://rustup.rs" }]
+# rust-toolchain.toml pins channel = "nightly" (rolling, with rust-src and llvm-tools), and the
+# workspace is edition 2021. Cargo is the only thing a build needs; git is for the update operation.
+require = [{ tool = "cargo", min = "1.75", url = "https://rustup.rs" }, { tool = "git", url = "https://git-scm.com/downloads" }]
+
+[build]
+# Both binaries: the resolver and private_project-dig, the small dig the operations use. The BPF crate
+# (private_project-ebpf) is left out, as the workspace's default-members already leave it out on Windows:
+# bpfel-unknown-none has no prebuilt artifacts for this host, and the XDP fast path is a Linux thing.
+# CARGO_TARGET_DIR is pinned to the machine's cargo cache instead of being left to {target}: with no
+# modules.build_cache configured, {target} is the checkout's own target/, which this overlay will not
+# write to. The same paths (this env, build.outputs, [service].start and the dig path in abp-ops.toml)
+# have to be changed together - setting modules.build_cache makes ABP redirect the build there, and
+# these outputs would then be missing.
+steps = [["cargo", "build", "--release", "-p", "private_project"]]
+outputs = ["/path/redacted}", "/path/redacted}"]
+env = { CARGO_TARGET_DIR = "/path/redacted" }
 
 [hub]
-start = ["{abp_python}", "-m", "abp_modkit", "serve", "--spec", "{overlay}/abp-ops.toml", "--project", "{repo}", "--home", "{data}", "--var", "target={target}"]
+start = ["{abp_python}", "-m", "abp_modkit", "serve", "--spec", "{overlay}/abp-ops.toml", "--project", "{repo}", "--home", "{data}"]
 control_file = "{data}/control.json"
 start_timeout_s = 30
 
@@ -38,5 +57,4 @@ start_timeout_s = 30
 stdio = ["{abp_python}", "-m", "abp_modkit", "mcp", "--home", "{data}"]
 
 [ui]
-panel = "operations"
-web = "service"   # its dashboard, once the service runs
+panel = "operations"   # a resolver has no web UI: the operations panel is the whole interface
