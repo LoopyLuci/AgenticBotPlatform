@@ -17,10 +17,30 @@ Caddy processes ABP starts itself) and deliberately kept to the same rules:
     standby waiting to be swapped in, a sandbox an agent is using) runs BELOW
     NORMAL priority, so a dev sandbox can never make the machine feel slow for
     the person actually using ABP.
+
+Every instance also gets a Windows job object (bot/agent_runtime/win_job.py),
+which is the only reliable way to stop one. Two facts make anything less
+reliable, and both of them bit this project for real:
+
+  * a venv's python.exe is a LAUNCHER: it starts the real interpreter as a
+    CHILD and waits for it. Signalling the launcher alone leaves the
+    interpreter running, holding the instance's port, and a supervisor that
+    "restarted" it then started a second interpreter on top of that one.
+  * that is also why a dead launcher is not a dead instance, and why walking
+    `psutil.children()` at kill time is a race: the child may already be
+    orphaned, in which case the tree is empty and nothing gets killed.
+
+A job object closes both holes. It holds the interpreter no matter who its
+parent is, it holds every process the interpreter starts afterwards (children
+inherit membership), and JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE means the gate's
+handle closing - including because the gate itself was killed, however it was
+killed - takes the whole instance with it. Everything here degrades to psutil
+tree-killing plus `taskkill /T /F` where a job object is not available.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import sys
@@ -28,8 +48,19 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+logger = logging.getLogger("abp_gate.procs")
+
 NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 NEW_PROCESS_GROUP = 0x00000200 if sys.platform == "win32" else 0
+
+#: How long after a spawn an instance's job keeps absorbing processes the
+#: launcher already started. Assigning the launcher is not enough (see the
+#: module docstring); assigning its existing children covers the interpreter
+#: the launcher spawns in its first few milliseconds. This is best-effort, not
+#: airtight - the documented race in bot/agent_runtime/win_job.py - and what
+#: closes it for good is that the interpreter cannot have run any user code yet.
+JOB_ABSORB_S = 0.35
+JOB_ABSORB_INTERVAL_S = 0.05
 
 
 class ProcError(RuntimeError):
@@ -50,6 +81,125 @@ def python_for(code_root: Path) -> Path:
     return candidate if candidate.is_file() else Path(sys.executable)
 
 
+def _win_job():
+    """bot.agent_runtime.win_job, imported lazily and never fatally.
+
+    It is stdlib ctypes only (no ABP runtime), which is why the gate is allowed
+    to use it at all: nothing here can be broken by the code being swapped.
+    Anywhere it cannot be imported or the platform has no job objects, every
+    caller falls back to psutil tree-killing plus taskkill."""
+    try:
+        from bot.agent_runtime import win_job
+
+        return win_job if win_job.is_supported() else None
+    except Exception:  # noqa: BLE001 - no job objects here, then
+        return None
+
+
+class Job:
+    """One job object, holding exactly one instance and everything it starts.
+
+    `live` is False on any platform without job objects (and if creation
+    failed), and every method is then a no-op, so callers never have to ask
+    whether this one is real - `kill()` falls through to the pid-based tree
+    kill that has always been here.
+    """
+
+    def __init__(self, label: str = ""):
+        self.label = label
+        self.handle: Optional[int] = None
+        self.error = ""
+        win_job = _win_job()
+        if win_job is None:
+            self.error = "job objects are not available here"
+            return
+        try:
+            self.handle = win_job.create()
+        except OSError as exc:  # pragma: no cover - only on a locked-down host
+            self.error = str(exc)
+            logger.warning("no job object for %r (%s); falling back to tree-kill", label, exc)
+
+    @property
+    def live(self) -> bool:
+        return bool(self.handle)
+
+    def absorb(self, pid: int) -> None:
+        """Put `pid` - and anything it has already started - in the job."""
+        if not self.handle:
+            return
+        win_job = _win_job()
+        if win_job is None:  # pragma: no cover - cannot happen while live
+            return
+        deadline = time.monotonic() + JOB_ABSORB_S
+        seen: set[int] = set()
+        while True:
+            for target in [pid] + _tree(pid):
+                if target in seen:
+                    continue
+                seen.add(target)
+                try:
+                    win_job.assign(self.handle, target)
+                except OSError as exc:
+                    # Already dead, or the platform refused the nesting. Either
+                    # way there is nothing better to do here than log and let
+                    # the pid-based kill be the backstop.
+                    logger.debug("could not assign pid %s to the job for %r: %s", target, self.label, exc)
+            if time.monotonic() >= deadline:
+                return
+            time.sleep(JOB_ABSORB_INTERVAL_S)
+
+    def kill(self, exit_code: int = 1) -> None:
+        """Kill everything this job ever held and drop the handle.
+
+        Terminate-then-close rather than close alone: the explicit terminate
+        does not depend on the handle being the last one, which matters when a
+        gate is re-adopting instances it has no handle for."""
+        handle, self.handle = self.handle, None
+        if not handle:
+            return
+        win_job = _win_job()
+        if win_job is None:  # pragma: no cover
+            return
+        try:
+            win_job.terminate(handle, exit_code)
+        except Exception:  # noqa: BLE001 - the process is going away regardless
+            logger.debug("terminating the job for %r failed", self.label, exc_info=True)
+
+
+def _tree(pid: int) -> list[int]:
+    p = process(pid)
+    if p is None:
+        return []
+    try:
+        return [c.pid for c in p.children(recursive=True)]
+    except Exception:  # noqa: BLE001 - access denied / already gone
+        return []
+
+
+def tree_pids(pid: Optional[int]) -> list[int]:
+    """`pid` plus every process below it, right now.
+
+    The venv launcher is why this is more than one pid: the instance is the
+    interpreter it started, and an assertion (or a status line) that only
+    looked at the launcher would call a dead instance "stopped" while its
+    interpreter went on holding the port."""
+    if not pid:
+        return []
+    return [pid] + _tree(pid)
+
+
+def wait_gone(pids, timeout: float = 15.0) -> list[int]:
+    """Wait until every one of `pids` is gone; returns the ones that survived."""
+    wanted = [p for p in pids if p]
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        alive_left = [p for p in wanted if alive(p)]
+        if not alive_left:
+            return []
+        time.sleep(0.1)
+    return [p for p in wanted if alive(p)]
+
+
 def instance_argv(python: Path, *, standby: bool = False) -> list[str]:
     argv = [str(python), "-m", "bot.main"]
     if standby:
@@ -65,12 +215,17 @@ def spawn(
     log_path: Path,
     below_normal: bool = True,
     wait_s: float = 1.0,
+    job: Optional[Job] = None,
 ) -> int:
     """Start one instance, windowless, logging to `log_path`. Returns its pid.
 
     `wait_s` is short and only used to catch a process that dies on the spot
     (a bad code root, an import error at module scope) so the caller can report
-    the real traceback from the log instead of a bare exit code."""
+    the real traceback from the log instead of a bare exit code.
+
+    `job`, when given, is the instance's job object: the process (and the
+    interpreter its launcher starts) joins it before this returns, which is
+    what makes the whole instance killable afterwards."""
     log_path.parent.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y-%m-%d %H:%M:%S")
     with open(log_path, "ab") as log:
@@ -94,6 +249,8 @@ def spawn(
         except OSError as exc:
             raise ProcError(f"cannot start {' '.join(argv)}: {exc}") from exc
     pid = proc.pid
+    if job is not None:
+        job.absorb(pid)
     if below_normal:
         set_priority(pid)
     time.sleep(wait_s)
@@ -167,9 +324,14 @@ def psutil_normal() -> int:
 
 
 def stop(pid: Optional[int], *, timeout: float = 10.0, marker: str = "bot.main") -> bool:
-    """Stop the process TREE politely, then firmly. A venv's python.exe on
-    Windows re-execs the real interpreter as a child, so killing only the pid we
-    spawned leaves the actual ABP holding the port."""
+    """Stop the process TREE politely, then firmly, then by taskkill.
+
+    A venv's python.exe on Windows re-execs the real interpreter as a child, so
+    killing only the pid we spawned leaves the actual ABP holding the port.
+    `taskkill /T /F` is last because it is the only one of the three that
+    reliably walks a tree through a launcher whose children were reparented -
+    but it only knows about processes it can still find from `pid`, so it does
+    not replace the job object, it backs it up (see `Job`)."""
     p = process(pid)
     if p is None:
         return False
@@ -191,7 +353,32 @@ def stop(pid: Optional[int], *, timeout: float = 10.0, marker: str = "bot.main")
             psutil_wait(p, 5.0)
     except Exception:  # noqa: BLE001 - the process is going away regardless
         pass
+    if alive(pid) or any(alive(c.pid) for c in children):
+        taskkill(pid)
     return True
+
+
+def taskkill(pid: Optional[int], *, tree: bool = True) -> bool:
+    """`taskkill /F`, with `/T` unless the caller wants one process only.
+
+    The belt to `Job`'s braces. `tree=False` is for the case where a pid's
+    children are NOT meant to die - killing the gate's own interpreter without
+    taking the detached instance with it is how you see whether the two really
+    are independent."""
+    if not pid or sys.platform != "win32" or not alive(pid):
+        return False
+    argv = ["taskkill", "/F"] + (["/T"] if tree else []) + ["/PID", str(pid)]
+    try:
+        return subprocess.run(  # noqa: S603 - fixed argv, no shell
+            argv, capture_output=True, timeout=30, creationflags=NO_WINDOW, check=False,
+        ).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def taskkill_tree(pid: Optional[int]) -> bool:
+    """`taskkill /F /T /PID`: the process and everything it started."""
+    return taskkill(pid, tree=True)
 
 
 def with_suppress(fn, *args) -> None:

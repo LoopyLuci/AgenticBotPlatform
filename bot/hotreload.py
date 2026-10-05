@@ -274,10 +274,19 @@ DENYLIST: frozenset[str] = frozenset({
     # while every existing reference keeps incrementing the orphaned old
     # one, silently freezing the Diagnostics tab's counters.
     "bot.diagnostics",
-    # Caches this install's identity in a module-level variable (and its
-    # write is lock-guarded) — nothing worth re-executing mid-run, and a reload
+# Caches this install's identity in a module-level variable (and its
+    # write is lock-guarded) � nothing worth re-executing mid-run, and a reload
     # would only re-read the same file.
     "bot.server_identity",
+    # The leader lease owns an OS file lock (held for as long as this process
+    # leads) plus the running-singleton controller, and the dashboard's lease
+    # routes reach that controller through the module-level `_controller`
+    # singleton. A reload would rebind the module name to a fresh copy with no
+    # lock and no controller: /api/lease would answer from the new module while
+    # the old one keeps the singletons running, and the release/take the gate
+    # does mid-swap would go nowhere. New code reaches this machine through the
+    # gate's hot swap instead, which restarts the process on purpose.
+    "bot.lease",
 })
 
 # module dotted-name -> the platform name to pass to
