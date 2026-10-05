@@ -1291,6 +1291,40 @@ def wait_for_starts(gate: Gate, name: str, at_least: int, timeout: float = 60.0)
                          f"\n{registry.get(name, registry_path(gate))}")
 
 
+def test_the_registry_write_waits_out_a_reader_holding_it_open(tmp_path):
+    """The gate's own watcher reads the registry on every cycle, and Windows opens
+    a file for reading without FILE_SHARE_DELETE - so a rename onto it fails with
+    ACCESS DENIED for exactly as long as somebody is reading. The gate can lose
+    that race against itself, and it did: a `registry.json` rename failing with
+    WinError 5 failed a test run from the test's own `forget()` while the watcher's
+    reader had the file open.
+
+    Losing the race must not fail the write that lost it, so this holds the
+    registry open the way any reader does and writes anyway."""
+    from abp_gate import registry
+
+    path = tmp_path / "gate" / "registry.json"
+    registry.write({"active": None, "previous": None, "instances": {}}, path)
+    # A reader that has the file open for a moment, which is what the gate's own
+    # watcher does to it on every cycle - and on a busy one, for longer than a
+    # reader of a file this small ought to need.
+    opened = threading.Event()
+
+    def read_it() -> None:
+        with path.open("rb") as reader:
+            assert reader.read()
+            opened.set()
+            time.sleep(1.0)
+
+    thread = threading.Thread(target=read_it, daemon=True)
+    thread.start()
+    assert opened.wait(30), "the reader never got the file open"
+    data = registry.update(lambda d: d.update({"active": "prod"}), path)
+    thread.join(30)
+    assert data["active"] == "prod"
+    assert registry.read(path)["active"] == "prod"
+
+
 def test_a_running_instance_too_busy_to_answer_is_left_alone(tmp_path):
     """The other half of "is it crashed?": a process the OS says is THERE, that
     missed one probe, is not a crashed process.
