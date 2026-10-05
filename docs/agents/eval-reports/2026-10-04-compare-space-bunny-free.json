@@ -1,0 +1,31 @@
+{
+  "mode": "live",
+  "model": "opencode-zen/space-bunny-free",
+  "variants": [
+    {
+      "name": "baseline",
+      "passed": 2,
+      "total": 4,
+      "score": 50.0,
+      "tokens": 480063,
+      "iterations": 21,
+      "gained": [],
+      "lost": [],
+      "verdict": "baseline"
+    },
+    {
+      "name": "name-the-search-tools",
+      "passed": 1,
+      "total": 4,
+      "score": 25.0,
+      "tokens": 480962,
+      "iterations": 21,
+      "gained": [],
+      "lost": [
+        "create_file"
+      ],
+      "verdict": "within noise"
+    }
+  ],
+  "note": null
+}

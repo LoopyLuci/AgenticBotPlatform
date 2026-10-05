@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import gc
 import shutil
 import tempfile
 import time
@@ -16,6 +17,18 @@ from .task import Check, Context, Task
 
 class EvalError(RuntimeError):
     pass
+
+
+def _discard(root: Path) -> None:
+    """Throw the throwaway root away. Windows locks a SQLite file while anything still holds a
+    handle on it, so the first rmtree can leave the whole directory behind - one leaked directory
+    per task, per run, forever. Retry a few times, collecting first, and give up rather than spin."""
+    for attempt in range(4):
+        shutil.rmtree(root, ignore_errors=True)
+        if not root.exists():
+            return
+        gc.collect()
+        time.sleep(0.1 * (attempt + 1))
 
 
 @contextlib.contextmanager
@@ -47,9 +60,11 @@ def isolated_environment(root: Path, approvals: dict[str, str], task: Optional[T
     finally:
         undo()
         try:
-            if db_module._conn is not None:
-                db_module._conn.close()
-        except Exception:  # noqa: BLE001
+            # close_conn(), not _conn.close(): a tool that touched the database from a worker
+            # thread left its own connection open, and on Windows that keeps eval.db locked -
+            # so the throwaway root survived every task and piled up in TEMP.
+            db_module.close_conn()
+        except Exception:  # noqa: BLE001 - a stale handle must never skip the restore below
             pass
         db_module.DB_PATH, db_module._conn = saved[0], saved[1]
         if saved[2] is None:
@@ -135,12 +150,17 @@ def run_task(task: Task, make_transport: Callable[[Task], Any], *, model: str = 
                 if task.permission_mode:
                     ctx["permission_mode"] = task.permission_mode
                 async def turn():
-                    from bot.agent_runtime import code_intel
+                    from bot.agent_runtime import browser, code_intel
 
                     try:
                         return await backend.ask(task.prompt, context=ctx, timeout_s=timeout_s)
                     finally:
-                        await code_intel.shutdown_all()        # language servers must not outlive this task's event loop
+                        # Both of these own processes outside the agent's control - language
+                        # servers and a Playwright browser - that would otherwise outlive this
+                        # task's event loop. A browser left open also holds its profile, so the
+                        # next task in the suite would queue behind a window nobody is watching.
+                        await code_intel.shutdown_all()
+                        await browser.shutdown_all()
 
                 result = asyncio.run(turn())
                 reply = result.text or ""
@@ -172,7 +192,7 @@ def run_task(task: Task, make_transport: Callable[[Task], Any], *, model: str = 
         }
     finally:
         if not keep:
-            shutil.rmtree(root, ignore_errors=True)
+            _discard(root)
 
 
 def run_suite(tasks: list[Task], make_transport: Callable[[Task], Any], *, mode: str, model: str,

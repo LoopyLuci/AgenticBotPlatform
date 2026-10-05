@@ -96,6 +96,8 @@ def main(args, tasks: list) -> int:
         make, mode, model = (lambda t: ScriptedTransport(t.script)), "scripted", "scripted"
     result = compare(tasks, variants, make, mode=mode, model=model)
     if args.out:
-        Path(args.out).write_text(json.dumps(result, indent=2), encoding="utf-8")
+        from . import report as rep
+
+        rep.save(args.out, result)
     print(render(result))
     return 0

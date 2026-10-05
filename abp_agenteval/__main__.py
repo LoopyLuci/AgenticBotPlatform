@@ -116,7 +116,7 @@ def main(argv=None) -> int:
 
     report = run_suite(tasks, make, mode=mode, model=model, keep=args.keep, api_model=args.model if args.live else None)
     if args.out:
-        Path(args.out).write_text(json.dumps(report, indent=2), encoding="utf-8")
+        rep.save(args.out, report)
     print(json.dumps(report, indent=2) if args.json else rep.render(report))
     if args.record:
         if not args.live:
