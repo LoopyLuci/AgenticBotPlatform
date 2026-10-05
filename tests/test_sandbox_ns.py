@@ -307,6 +307,84 @@ def test_a_cells_kill_kills_the_grandchild_too(tmp_path):
     assert left == [], f"the tree outlived the cell: {left}"
 
 
+# ------------------------------------------------- what a record has to cover, not just who started it
+
+def _wait_record(reg, pid: int, timeout: float = 30.0):
+    """The registry's record for `pid`, once it has one. A process that is only a descendant of the
+    spawn is noticed on a sampling pass rather than at the spawn, so this drives those passes."""
+    deadline = time.monotonic() + timeout
+    while True:
+        row = reg.record_for(pid)
+        if row is not None:
+            return row
+        assert time.monotonic() < deadline, f"pid {pid} was started but never recorded"
+        reg.sample(reflexes=False)
+        time.sleep(0.05)
+
+
+def _wait_descendant(reg, parent_pid: int, name: str = "", timeout: float = 30.0):
+    """A recorded process directly below `parent_pid` - the one whose executable is `name`, if a
+    name is given - once there is one. `wait` because the child of a launcher is not there yet in
+    the microsecond after CreateProcess returns."""
+    deadline = time.monotonic() + timeout
+    while True:
+        for row in reg.records(alive_only=True):
+            if row.parent_pid == parent_pid and (not name or row.name.lower() == name.lower()):
+                return row
+        assert time.monotonic() < deadline, f"no {name or 'process'} under pid {parent_pid} was ever recorded"
+        reg.sample(reflexes=False)
+        time.sleep(0.05)
+
+
+def test_the_processes_a_spawned_process_starts_are_recorded_under_it(tmp_path):
+    """A record is a tree, not a process: `spawn()` hands back the pid `Popen` created, and that is
+    not always the process that does the work. Here the child starts a grandchild, and everything
+    below the spawn is recorded under it - same owner, same cell, same policy, each pointing at the
+    record that started it - because a `live.json` listing only the spawn is a list of what ABP asked
+    for rather than of what is running."""
+    reg = registry_mod.registry
+    with cell_for("tool", name="recorded-tree") as cell:
+        proc, grandchild = _child_with_a_sleeping_grandchild(cell, tmp_path)
+        assert reg.record_for(proc.pid).spawned(), "the spawn itself is the one record with no parent"
+        for pid in {proc.pid, grandchild}:
+            _wait_record(reg, pid)
+        tree = {r.pid: r for r in reg.records(alive_only=True) if r.cell == cell.id}
+        for pid, row in tree.items():
+            assert (row.owner, row.cell, row.policy) == ("test", cell.id, "tool"), row
+            assert row.create_time > 0, "without a create time the reaper cannot prove a pid is the same process"
+            if pid != proc.pid:
+                assert row.parent_pid in tree, f"pid {pid} is recorded, but nothing in this tree started it: {row}"
+        assert any(r.parent_pid == proc.pid for r in tree.values()), f"the spawn started nothing: {tree}"
+        assert tree[grandchild].summary()["role"] == "descendant"
+        on_disk = {p["pid"] for p in read_state()["runs"][reg.run_id]["processes"]}
+        assert set(tree) <= on_disk, "the tree has to be in live.json, or the next run cannot reap it"
+        cell.kill("the test asked for it")
+    assert wait_gone(list(tree)) == [], "the cell took the launcher and everything below it"
+
+
+@windows_only
+@pytest.mark.skipif(sys.executable == getattr(sys, "_base_executable", ""),
+                    reason="this interpreter is not behind a venv launcher, so a spawn is only one process")
+def test_a_venvs_launcher_and_the_interpreter_behind_it_are_both_recorded(tmp_path):
+    """The case that made this a bug: ABP runs from a venv, and on Windows
+    `.venv\\Scripts\\python.exe` is a launcher that starts the base interpreter as its child and
+    waits for it (measured on this machine). So `spawn([sys.executable, ...])` is two processes, and
+    recording only the pid `Popen` returned recorded the wrapper rather than the interpreter that
+    runs the work."""
+    reg = registry_mod.registry
+    with cell_for("tool", name="launcher") as cell:
+        proc = spawn([sys.executable, "-c", "import time; time.sleep(120)"], cell=cell, owner="test",
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        base = _wait_descendant(reg, proc.pid, "python.exe")
+        assert base.parent_pid == proc.pid and not base.spawned(), base
+        assert (base.owner, base.cell, base.policy) == ("test", cell.id, "tool"), base
+        assert Path(psutil.Process(base.pid).exe()) == Path(sys.base_prefix) / "python.exe", base
+        assert reg.record_for(base.pid) is base, "record_for() answers for a descendant as well"
+        assert base.pid in {p["pid"] for p in reg.status()["processes"]}, "and so does the status page"
+        cell.kill("the test asked for it")
+    assert wait_gone([proc.pid, base.pid]) == [], "the cell took the launcher and the interpreter"
+
+
 def test_closing_abps_cells_kills_the_non_persistent_ones_only():
     """What ABP does on its way out (bot/main.py's shutdown): every cell it still holds is closed,
     and only the daemons are let go. Built without `with` on purpose - a context manager would

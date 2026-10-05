@@ -7,6 +7,18 @@ secret-looking arguments masked, cwd, which component asked for it, the cell and
 under it), notices when it exits, and keeps `data/sandbox_ns/live.json` up to date so the
 *next* ABP run can find and stop what this one left behind (reaper.py).
 
+**The process ABP starts is often not the process that does the work.** On Windows a venv's
+`Scripts/python.exe` is a launcher: it starts the base interpreter as a child and waits for it,
+and that child is the one running the training worker, the module hub or the build step. A
+`cargo` under `npm`, Playwright's browser under its driver and `ssh` under `git` are the same
+shape. So a record is a *tree*, not a process: every descendant gets its own record, under the
+same owner, cell and policy as the one that started it (a job object, a cgroup and a session are
+all inherited, so it really is contained), with `parent_pid` pointing back up to it. A registry
+of launchers alone would be a list of what ABP asked for rather than of what is running, and the
+reaper, the status page and a "who is using 8 GB" question would all be reading the wrong pid.
+Measured on this machine: `sys.executable` inside a venv-launched child is the *base*
+interpreter, and every Python process ABP starts is two of them.
+
 **pid alone is not an identity.** Windows reuses pids freely, so every record carries the
 process's create time and both must match before anything is killed - a record whose pid
 belongs to a different, newer process is never touched.
@@ -18,7 +30,9 @@ and two ABP instances on one machine (a live one and a developer's) do not fight
 file.
 
 A sampler thread (psutil, every few seconds, only while something is registered) records CPU
-and memory per cell, which is what reflexes.py reacts to.
+and memory per cell, which is what reflexes.py reacts to, and takes one extra pass a moment
+after each spawn: the processes a spawn starts exist within milliseconds of it returning, and
+that is the only moment the accounting sees them as promptly.
 """
 
 from __future__ import annotations
@@ -36,8 +50,18 @@ from typing import Any, Iterable, Optional
 
 RUN_ID = f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
 MAX_EVENTS = 500
-MAX_RECORDS = 400
+#: One spawn is rarely one process any more (a venv launcher and the interpreter behind it, a
+#: build's compilers), so the table has room for a few trees rather than a few dozen commands.
+MAX_RECORDS = 1000
 SAMPLE_INTERVAL_S = 3.0
+#: How long after a spawn the tree it started is looked at. A launcher's child is not there yet in
+#: the microsecond after CreateProcess returns, and nowhere else in that process's life is the
+#: accounting this prompt; the sampler's own tick after that is the backstop.
+SETTLE_DELAY_S = 0.3
+#: How far apart two readings of the same process's create time may be and still be the same
+#: process (seconds). It is the same kernel counter read twice, so it should be exact; the slack
+#: only absorbs a rounding difference, never a genuinely different process.
+CREATE_TIME_SLACK_S = 1.0
 
 _SECRET_FLAG = re.compile(r"(?i)^--?[a-z0-9_.-]*(token|secret|passw|credential|api[_-]?key|access[_-]?key)[a-z0-9_.-]*")
 _SECRET_ASSIGN = re.compile(r"(?i)^([a-z0-9_.-]*(token|secret|passw|credential|api[_-]?key)[a-z0-9_.-]*)=(.*)$")
@@ -46,8 +70,10 @@ MASKED = "[secret]"
 
 @dataclass
 class Record:
-    """One process ABP started. `create_time` is the OS's own value for it (seconds since
-    the epoch, as psutil reports it), because that is what makes a pid unambiguous."""
+    """One process ABP started, or one that a process it started started. `create_time` is the
+    OS's own value for it (seconds since the epoch, as psutil reports it), because that is what
+    makes a pid unambiguous; `parent_pid` is the record above it in the tree, and 0 for the process
+    ABP spawned itself."""
     pid: int
     create_time: float
     argv: list = field(default_factory=list)
@@ -57,6 +83,7 @@ class Record:
     cell: str = ""
     policy: str = ""
     persistent: bool = False
+    parent_pid: int = 0
     started: float = field(default_factory=time.time)
     exited: Optional[float] = None
     exit_code: Optional[int] = None
@@ -64,10 +91,42 @@ class Record:
     def alive(self) -> bool:
         return self.exited is None
 
+    def spawned(self) -> bool:
+        """True for the process ABP started; False for one of its descendants."""
+        return not self.parent_pid
+
     def summary(self) -> dict:
         out = asdict(self)
         out["alive"] = self.alive()
+        out["role"] = "spawned" if self.spawned() else "descendant"
         return out
+
+
+@dataclass
+class _Snapshot:
+    """The machine's process table from one pass, as `{parent pid: [its children]}`. One pass for a
+    whole sampling pass whatever the number of records, which is what makes the walk affordable -
+    `Process.children()`, the public way to ask the same question, builds this map again for every
+    root it is called on."""
+    children: dict = field(default_factory=dict)
+
+    @classmethod
+    def take(cls) -> "_Snapshot":
+        out = cls()
+        for pid, parent in _parent_map().items():
+            if parent:
+                out.children.setdefault(parent, []).append(pid)
+        return out
+
+    def is_same(self, pid: int, create_time: float) -> bool:
+        """True only when `pid` is still the process that was recorded: Windows recycles pids, and
+        whatever answers to a record's pid after that process died is not its tree - attributing a
+        stranger's children to a cell is how a reaper ends up killing somebody's editor. A record
+        with no create time to check against is let through: there is nothing to compare."""
+        if create_time <= 0:
+            return True
+        now = create_time_of(pid)
+        return now > 0 and abs(now - create_time) <= CREATE_TIME_SLACK_S
 
 
 class Registry:
@@ -83,6 +142,8 @@ class Registry:
         self._samples: dict[str, dict] = {}
         self._sampler: Optional[threading.Thread] = None
         self._stop = threading.Event()
+        self._wake = threading.Event()          # a spawn happened: the sampler comes back early
+        self._spawned_at = 0.0                 # ... and when, so that pass comes back after SETTLE_DELAY_S
 
     # ---- where the state file lives -------------------------------------------------------
     @property
@@ -160,21 +221,39 @@ class Registry:
 
     # ---- processes --------------------------------------------------------------------------
     def record(self, *, pid: int, argv: Iterable, cwd: str = "", owner: str = "", name: str = "",
-               cell=None, policy=None, create_time: Optional[float] = None) -> Record:
+               cell=None, policy=None, create_time: Optional[float] = None, parent_pid: int = 0,
+               write: bool = True) -> Record:
+        """Write down one process ABP started. `parent_pid` is 0 for the spawn itself and the pid of
+        the record above it for one of its descendants (see the module docstring); `write=False`
+        leaves the state file to the caller, for recording a whole tree at once."""
         row = Record(pid=int(pid), create_time=float(create_time if create_time is not None else create_time_of(pid)),
                      argv=list(argv), cwd=str(cwd or ""), owner=owner, name=name or str(argv[0] if argv else pid),
                      cell=getattr(cell, "id", "") or "", policy=getattr(policy, "name", "") or "",
-                     persistent=bool(getattr(policy, "persistent", False)))
+                     persistent=bool(getattr(policy, "persistent", False)), parent_pid=int(parent_pid or 0))
+        self._add(row)
+        if write:
+            self.write_state()
+        self._spawned()
+        return row
+
+    def _add(self, row: Record) -> None:
+        """Put a row in the table and say so in the ring buffer. Split out of record() so that a
+        whole tree can be written down with one state-file write at the end."""
         with self._lock:
             self._records[row.pid] = row
             if len(self._records) > MAX_RECORDS:      # a runaway spawner must not eat memory
                 for old in sorted((r for r in self._records.values() if not r.alive()),
                                   key=lambda r: r.started)[:len(self._records) - MAX_RECORDS]:
                     self._records.pop(old.pid, None)
-        self.event("spawn", pid=row.pid, cell=row.cell, detail=" ".join(row.argv)[:400])
-        self.write_state()
+        self.event("descendant" if row.parent_pid else "spawn", pid=row.pid, cell=row.cell,
+                   detail=" ".join(row.argv)[:400] or row.name)
+
+    def _spawned(self) -> None:
+        """A process has been recorded, so the tree it starts is worth a look in a moment (see
+        SETTLE_DELAY_S). One flag, not a queue: a burst of spawns costs one pass, not one each."""
+        self._spawned_at = time.monotonic()
+        self._wake.set()
         self.start_sampler()
-        return row
 
     def finish(self, pid: int, exit_code: Optional[int] = None) -> Optional[Record]:
         """Mark a process gone. Safe to call twice (the second call changes nothing).
@@ -216,6 +295,111 @@ class Registry:
         with self._lock:
             return self._records.get(int(pid))
 
+    # ---- the tree below a recorded process -----------------------------------------------------
+    def record_descendants(self, pid: int, *, wait: float = 0.0, interval: float = 0.05) -> list[Record]:
+        """Record every process below `pid` that has no record yet, and return what was added.
+
+        This is what makes a record a tree rather than a single process (see the module docstring):
+        the venv launcher and the interpreter behind it, a build's compilers, the browser under
+        Playwright's driver. `wait` keeps looking until a pass finds nothing new or the time is up,
+        for a caller that needs the answer now - a single pass is usually too early, because a
+        launcher's child does not exist yet a microsecond after CreateProcess returns.
+
+        One pass over the machine's process table per try, which is why the sampler takes one
+        snapshot and walks every record from it instead of calling this per record."""
+        root = int(pid)
+        deadline = time.monotonic() + max(float(wait), 0.0)
+        while True:
+            try:
+                with self._lock:
+                    records = dict(self._records)
+                added = self._walk(root, _Snapshot.take(), records)
+            except Exception:  # noqa: BLE001 - no psutil, or a host that will not be asked
+                return []
+            if added:
+                self.write_state()
+                return added
+            if time.monotonic() >= deadline:
+                return []
+            time.sleep(max(float(interval), 0.01))
+
+    def _walk(self, root: int, snapshot: _Snapshot, records: dict) -> list[Record]:
+        """Every unrecorded process under `root` in one snapshot, breadth first, so each child's
+        `parent_pid` is a process that has a record of its own. `records` is the table this pass is
+        working from, updated as it goes - a shared copy, so walking fifty records costs one
+        snapshot rather than fifty.
+
+        Whether the root is still the process the record names is checked *after* asking whether
+        it has any new children at all: the check costs a process query, and a record with nothing
+        new under it has nothing that could be misattributed."""
+        parent = records.get(int(root))
+        if parent is None or not parent.alive():
+            return []                      # nothing to attribute a child to, or it is already gone
+        queue = deque([(int(root), parent.create_time)])
+        added: list[Record] = []
+        while queue:
+            current, current_created = queue.popleft()
+            fresh = [c for c in snapshot.children.get(current, ()) if self._unrecorded(c, snapshot, records)]
+            if not fresh:
+                continue
+            if current == int(root) and not snapshot.is_same(current, current_created):
+                return []                 # the pid has been recycled: whatever is under it is not ours
+            for child in fresh:
+                row = self._describe(child, current, parent)
+                if row is None or row.create_time < current_created - CREATE_TIME_SLACK_S:
+                    continue             # gone, or born before its "parent": a recycled pid, not our child
+                self._add(row)
+                added.append(row)
+                records[child] = row
+                queue.append((child, row.create_time))
+        return added
+
+    def _unrecorded(self, pid: int, snapshot: _Snapshot, records: dict) -> bool:
+        """True when `pid` needs a record: either it has none, or the one it has is for a process
+        that has since died and this pid has been handed to something else."""
+        seen = records.get(pid)
+        return seen is None or (not seen.alive() and not snapshot.is_same(pid, seen.create_time))
+
+    def _describe(self, pid: int, parent_pid: int, parent: Record) -> Optional[Record]:
+        """What a process we did not spawn says about itself, as a record under the one that
+        started it: same owner, cell and policy (containment is inherited with them), its own argv
+        and cwd read from the OS rather than copied from the parent, and that record as its parent.
+        None if it has already gone, which is the usual answer for something that appeared and
+        finished between two passes."""
+        import psutil
+
+        try:
+            proc = psutil.Process(int(pid))
+        except Exception:  # noqa: BLE001 - it exited between the snapshot and this question
+            return None
+        with proc.oneshot():             # one process handle for all three questions
+            argv = [str(a) for a in proc.cmdline()]
+            create_time = float(proc.create_time())
+            cwd = str(proc.cwd())
+        if not argv and create_time <= 0:
+            return None
+        return Record(pid=pid, create_time=create_time, argv=mask_argv(argv), cwd=cwd or parent.cwd,
+                      owner=parent.owner, name=os.path.basename(argv[0]) if argv else f"pid:{pid}",
+                      cell=parent.cell, policy=parent.policy, persistent=parent.persistent,
+                      parent_pid=parent_pid)
+
+    def account(self) -> list[Record]:
+        """One pass for the sake of the accounting alone: every process a recorded process has
+        started, recorded under it. Nothing is measured here - a tree is worth seeing within a
+        moment of the spawn that started it, while its CPU and memory can wait for the next tick."""
+        try:
+            snapshot = _Snapshot.take()
+            with self._lock:
+                records = dict(self._records)
+        except Exception:  # noqa: BLE001 - no psutil, or a host that will not be asked
+            return []
+        added: list[Record] = []
+        for pid in [r.pid for r in records.values() if r.alive()]:
+            added += self._walk(pid, snapshot, records)
+        if added:
+            self.write_state()
+        return added
+
     # ---- the state file ---------------------------------------------------------------------
     def state(self) -> dict:
         with self._lock:
@@ -256,13 +440,14 @@ class Registry:
 
     # ---- the sampler -------------------------------------------------------------------------
     def sample(self, *, reflexes: bool = True) -> None:
-        """One measurement pass: every registered process, folded into its cell's totals.
-        Called by the sampler thread, and directly by tests (so a rule can be checked without
-        waiting for a tick)."""
+        """One measurement pass: every registered process, folded into its cell's totals, plus the
+        processes the registered ones started since the last pass. Called by the sampler thread,
+        and directly by tests (so a rule can be checked without waiting for a tick)."""
         try:
             import psutil
         except ImportError:  # pragma: no cover - psutil is a hard dependency of ABP
             return
+        self.account()                         # a cell's totals are its tree's, not one process's
         rows = self.records(alive_only=True)
         per_cell: dict[str, dict] = {}
         for row in rows:
@@ -288,7 +473,9 @@ class Registry:
             try:
                 from bot.sandbox_ns import reflexes
 
-                reflexes.apply(self)
+                # The snapshot was taken above, so the rules read it rather than causing a second
+                # pass over every process in the machine.
+                reflexes.apply(self, sample=False)
             except Exception:  # noqa: BLE001 - a reflex must never take the sampler down
                 pass
 
@@ -304,11 +491,29 @@ class Registry:
 
         return float(psutil.cpu_percent(interval=interval))
 
+    def _delay(self) -> float:
+        """When the next pass is due: the rest of SETTLE_DELAY_S if a spawn was recorded less than
+        that long ago, and the ordinary interval otherwise."""
+        if not self._spawned_at:
+            return SAMPLE_INTERVAL_S
+        return max(0.0, SETTLE_DELAY_S - (time.monotonic() - self._spawned_at))
+
     def _run_sampler(self) -> None:
-        while not self._stop.wait(SAMPLE_INTERVAL_S):
+        """One thread with two jobs: an accounting pass a moment after a spawn (that is when the
+        processes it starts exist), and the ordinary measurement pass every SAMPLE_INTERVAL_S.
+        `record()` wakes the thread rather than queueing it, so a burst of spawns costs one pass."""
+        while not self._stop.is_set():
+            self._wake.wait(self._delay())
+            self._wake.clear()
+            if self._stop.is_set():
+                return
+            if self._spawned_at and time.monotonic() - self._spawned_at < SETTLE_DELAY_S:
+                continue                  # woken by a spawn too young to have started anything yet
+            settling = bool(self._spawned_at)
+            self._spawned_at = 0.0          # the settle pass is due now; the next one is a whole interval away
             try:
-                self.sample()
-            except Exception:  # noqa: BLE001 - the loop outlives any single bad sample
+                self.account() if settling else self.sample()
+            except Exception:  # noqa: BLE001 - the loop outlives any single bad pass
                 pass
 
     def start_sampler(self) -> None:
@@ -323,6 +528,7 @@ class Registry:
     def stop_sampler(self) -> None:
         with self._lock:
             self._stop.set()
+            self._wake.set()               # the thread may be waiting out an interval: let it go
             self._sampler = None
 
     # ---- what a person or a route wants to see ------------------------------------------------
@@ -352,6 +558,29 @@ def create_time_of(pid: int) -> float:
         return float(psutil.Process(int(pid)).create_time())
     except Exception:  # noqa: BLE001
         return 0.0
+
+
+def _parent_map() -> dict:
+    """`{pid: ppid}` for every process on the machine, in one pass.
+
+    This is psutil's own map - the one `Process.children()` is built on - rather than a loop asking
+    one process at a time: on Windows the platform reads the whole table in a single query
+    (measured here: 7 ms for 400 processes), while `Process(pid).ppid()` in a loop costs ~6 ms
+    *each*, which for a sampling pass is seconds of CPU in a background thread. The fallback is the
+    same answer the slow way, for a psutil that has moved it."""
+    import psutil
+
+    try:
+        return {int(pid): int(ppid) for pid, ppid in psutil._ppid_map().items()}
+    except (AttributeError, ImportError, TypeError, ValueError):
+        pass
+    out: dict[int, int] = {}
+    for pid in psutil.pids():
+        try:
+            out[int(pid)] = int(psutil.Process(pid).ppid())
+        except Exception:  # noqa: BLE001 - gone, or not ours to look at
+            continue
+    return out
 
 
 def _read_state(path: Path) -> dict:

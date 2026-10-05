@@ -3,7 +3,8 @@
     GET  /api/sandbox/status                    everything: the guard, every record, every cell with its
                                                 measured CPU/memory and the limits the OS really has, recent events
     GET  /api/sandbox/cells                     the cells, each with the processes under it
-    GET  /api/sandbox/processes                 every process this ABP process started, live ones first
+    GET  /api/sandbox/processes                 every process this ABP process started and everything it
+                                                started, live ones first
     GET  /api/sandbox/events?since=<epoch>      the event ring buffer, oldest first, only what is newer
     POST /api/sandbox/cells/{cell_id}/kill      stop one cell and everything in it
     POST /api/sandbox/estop                     stop every non-persistent cell (the daemons keep running)
@@ -82,7 +83,9 @@ def register(app: FastAPI, require_token: Callable) -> None:
     @app.get("/api/sandbox/events", dependencies=dep)
     async def sandbox_events(since: Optional[float] = Query(default=None, description="only events newer than this epoch seconds"),
                              limit: int = Query(default=200, ge=1, le=500)):
-        """The event ring buffer (spawn, exit, limit_hit, kill, reap, guard_converted), oldest first.
+        """The event ring buffer (spawn, descendant, exit, limit_hit, kill, reap, guard_converted),
+        oldest first. `descendant` is a process a recorded one started - the interpreter behind a
+        venv launcher, a build's compiler - recorded under its parent.
 
         `since` is what a poller passes back: the newest `ts` it has seen, so the answer is only what
         it has not seen. `now` comes back with it for the next call."""

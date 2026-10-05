@@ -62,12 +62,13 @@ async def _ps(args, client: DashboardClient) -> int:
     for p in procs:
         rows.append({
             "pid": p.get("pid", 0),
+            "of": p.get("parent_pid") or "",
             "cell": p.get("cell", "")[:30],
             "owner": p.get("owner", ""),
             "alive": "yes" if p.get("alive") else "no",
             "argv": " ".join(p.get("argv", []))[:60],
         })
-    _print(args, rows, table=["pid", "cell", "owner", "alive", "argv"])
+    _print(args, rows, table=["pid", "of", "cell", "owner", "alive", "argv"])
     return 0
 
 
@@ -99,11 +100,11 @@ def add_parser(sub) -> None:
     p = ssub.add_parser("cells", help="the cells this ABP holds, with their processes and measured CPU/memory")
     p.set_defaults(func=_cells)
 
-    p = ssub.add_parser("ps", help="every process ABP started and wrote down")
+    p = ssub.add_parser("ps", help="every process ABP started and wrote down, `of` being what started it")
     p.add_argument("--all", action="store_true", help="include exited processes")
     p.set_defaults(func=_ps)
 
-    p = ssub.add_parser("events", help="the event ring buffer (spawn, exit, limit_hit, kill, reap, guard_converted)")
+    p = ssub.add_parser("events", help="the event ring buffer (spawn, descendant, exit, limit_hit, kill, reap, guard_converted)")
     p.add_argument("--since", type=float, default=None, help="only events newer than this epoch seconds")
     p.add_argument("--limit", type=int, default=200, help="max events to return")
     p.set_defaults(func=_events)

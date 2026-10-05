@@ -114,6 +114,27 @@ def test_the_hub_starts_answers_and_stops(fake):
     assert client.find(registry.get("fake-mod")) is None
 
 
+def _hub_record(pid: int, timeout: float = 20.0):
+    """The nervous system's record for a pid, once it has one.
+
+    A module hub is started through the venv's `Scripts/python.exe`, which on Windows is a launcher
+    for the base interpreter, so the pid the hub reports about itself is a process the registry
+    learns about on a sampling pass rather than at the spawn. This waits for that pass instead of
+    assuming the record is already there."""
+    import time
+
+    from bot.sandbox_ns.registry import registry as ns
+
+    deadline = time.monotonic() + timeout
+    while True:
+        row = ns.record_for(pid)
+        if row is not None:
+            return row
+        assert time.monotonic() < deadline, f"pid {pid} was started but never recorded"
+        ns.sample(reflexes=False)
+        time.sleep(0.05)
+
+
 def test_the_hub_runs_in_a_persistent_daemon_cell_and_the_cell_stops_it(fake):
     """start_hub puts the hub in one `daemon` cell (the reaper and close_cells() leave a service
     alone), and this process's cell is still the handle that takes it - and what it started - down."""
@@ -121,15 +142,17 @@ def test_the_hub_runs_in_a_persistent_daemon_cell_and_the_cell_stops_it(fake):
 
     import psutil
 
-    from bot.sandbox_ns.registry import registry as ns
-
     started = harness.start_hub("fake-mod")
     pid = int(started["pid"])
     cell = harness._hub_cells["fake-mod"]
     assert cell.owner == "modules.harness" and cell.policy.persistent, cell.policy
-    row = ns.record_for(pid)
-    assert row is not None and row.cell == cell.id, row
+    row = _hub_record(pid)
+    assert row.cell == cell.id, row
     assert (row.owner, row.policy, row.persistent) == ("modules.harness", "daemon", True), row
+    # The process the spawn actually started - a venv launcher on Windows, whose child is the hub
+    # itself - is recorded under the same cell, and that cell is what the kill below goes through.
+    launcher = _hub_record(row.parent_pid) if row.parent_pid else row
+    assert launcher.cell == cell.id and launcher.spawned(), launcher
 
     cell.kill("the test asked for it")
     deadline = time.monotonic() + 20
