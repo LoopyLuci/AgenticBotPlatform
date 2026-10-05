@@ -959,6 +959,12 @@ def build_app() -> FastAPI:
 
     approvals_api.register(app, _require_token_or_api_key, _require_token, _caller_is_owner)
 
+    # Routines as things a person can see and run: the same saved tasks /routine and the agent's
+    # routine_save tool already make, listed with their schedules, and runnable from the page.
+    from bot.dashboard import routines_api
+
+    routines_api.register(app, _require_token_or_api_key, _require_token)
+
     # Channels added in P7 (SMS and iMessage webhooks), the canvas, and paired-phone nodes.
     from bot.dashboard import channels_api
 

@@ -821,6 +821,7 @@
       <a href="#browser" data-kw="browser extension chrome edge agent navigate tabs"><span class="ic">🌐</span><span class="nav-txt"><b>Browser</b><small>Link your real browser</small></span></a>
       <a href="#ssh-toolkit" data-kw="ssh toolkit connections remote machines"><span class="ic">🔑</span><span class="nav-txt"><b>SSH Toolkit</b><small>Manage SSH connections</small></span></a>
       <a href="#automation" data-kw="automation hooks agent settings auto-manage lifecycle"><span class="ic">🪝</span><span class="nav-txt"><b>Automation</b><small>Hooks, agent settings &amp; auto-manage</small></span></a>
+      <a href="#routines" data-kw="routines scheduled tasks recurring agent run pause resume template placeholders"><span class="ic">🔁</span><span class="nav-txt"><b>Routines</b><small>Saved tasks you can run &amp; re-time</small></span></a>
       <a href="#customize" data-kw="customize generative ui ai preview diff"><span class="ic">🪄</span><span class="nav-txt"><b>Customize UI</b><small>Describe a change, preview, apply</small></span></a>
       <a href="#platforms" data-kw="platforms legacy single-bot"><span class="ic">🔌</span><span class="nav-txt"><b>Platforms</b><small>Legacy single-bot config</small></span></a>
       <a href="#mobile" data-kw="mobile android pairing devices"><span class="ic">📱</span><span class="nav-txt"><b>Mobile</b><small>Pair &amp; manage devices</small></span></a>
@@ -2224,6 +2225,11 @@
       </div>
     </section>
 
+    <section id="routines">
+      <div class="sec-head"><h2>Routines</h2><span class="desc">Tasks the agent did once and saved, with placeholders for whatever changes between runs — run one now, re-time it, pause it, or delete it. A routine skips nothing: each run is an ordinary agent turn with the ordinary tools, permissions and approvals.</span></div>
+      <div id="rt-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
+
     <section id="customize">
       <div class="sec-head"><h2>Customize UI</h2><span class="desc">Describe a UI change in plain English — the AI generates real, working code, you review a live preview and diff, and nothing touches the real file until you approve it. This cannot guarantee generated code is bug-free; it guarantees nothing is applied unreviewed, and every apply is one click to revert.</span></div>
 
@@ -2490,6 +2496,7 @@
 <script src="modules-panel.js"></script>
 <script src="cluster-panel.js"></script>
 <script src="octopus-panel.js"></script>
+<script src="routines-panel.js"></script>
 <script src="vision-panel.js"></script>
 <script src="hosting-panel.js"></script>
 <script src="storage-panel.js"></script>
