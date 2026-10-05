@@ -51209,7 +51209,7 @@
   },
   "/api/sandbox/events": {
    "get": {
-    "description": "The event ring buffer (spawn, exit, limit_hit, kill, reap, guard_converted), oldest first.\n\n`since` is what a poller passes back: the newest `ts` it has seen, so the answer is only what\nit has not seen. `now` comes back with it for the next call.",
+    "description": "The event ring buffer (spawn, descendant, exit, limit_hit, kill, reap, guard_converted),\noldest first. `descendant` is a process a recorded one started - the interpreter behind a\nvenv launcher, a build's compiler - recorded under its parent.\n\n`since` is what a poller passes back: the newest `ts` it has seen, so the answer is only what\nit has not seen. `now` comes back with it for the next call.",
     "operationId": "sandbox_events_api_sandbox_events_get",
     "parameters": [
      {
