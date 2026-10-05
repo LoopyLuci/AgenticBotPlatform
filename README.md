@@ -311,6 +311,29 @@ python scripts/local_pipeline.py             # checks + rebuild + redeploy
 python scripts/local_pipeline.py --no-deploy # checks only
 ```
 
+To deploy on its own — same code the pipeline's deploy step runs — without
+running any checks:
+
+```bash
+python scripts/deploy_local.py             # build (or reuse), install, restart, verify
+python scripts/deploy_local.py --dry-run   # print exactly what it would do, touch nothing
+```
+
+That step exists because a rebuild alone is not a deploy: `cargo tauri
+build` copies the bundled resources into `$CARGO_TARGET_DIR/release/`, while
+the app you run lives in `desktop-app/src-tauri/target/release/` and executes
+the Python bundled *next to its own exe*. Whenever those are different
+folders, restarting the app reloaded whatever was last mirrored into its own
+— days-old code, with `git` reporting HEAD as current and every restart
+"succeeding". `deploy_local.py` installs the build into the folder the app is
+launched from, restarts it the way your session would, then proves it: the
+served `/openapi.json` must have the same paths as `docs/api/openapi.json`,
+health must be OK, and every enabled bot instance must be `live_running`
+again — otherwise the files are put back and the previous app is started.
+See [docs/deploy.md](docs/deploy.md) for what it will and will not touch
+(your `.env`, `data/` and live `config/` are never replaced) and how to spot
+a stale bundle from `/healthz`.
+
 Tool-specific checks are best-effort: if `cargo` or `docker` aren't on
 PATH (or the Docker daemon isn't running), that check is skipped with a
 clear note rather than failing the whole pipeline — matching this
@@ -328,12 +351,15 @@ to running everything, never to assuming nothing changed.
 If a build of this app is already running when the pipeline starts (and
 the push does touch deploy-relevant files), it's stopped first
 (gracefully, then forcefully if needed) — Tauri's own build step re-copies
-the bundled `.venv` into `target/release/` on every check, and that can
+the bundled `.venv` into the profile directory on every check, and that can
 never succeed while a running instance still has its own copy of those
-files loaded. On a fully green pipeline, the app is rebuilt and the same
-instance is brought back — a registered OS service (see "Bare metal"
-above) is restarted through its own service manager; otherwise the plain
-executable that was running is relaunched directly.
+files loaded. On a fully green pipeline the build is **installed** into the
+folder the app is launched from, the same instance is brought back (a
+registered OS service — see "Bare metal" above — through its own service
+manager, otherwise launched directly), and the result is verified: health
+OK, the served `/openapi.json` matching `docs/api/openapi.json`, every
+enabled bot instance `live_running` again. A deploy that fails any of that
+puts the previous files back and starts those instead.
 If any check fails, whatever was running beforehand is restored
 untouched, without deploying the broken build. Every run's full output is
 also saved under `logs/local_pipeline/` for later inspection.

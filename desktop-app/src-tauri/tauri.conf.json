@@ -38,6 +38,7 @@
     ],
     "resources": {
       "stage/bot": "bot",
+      "stage/.abp_build.json": ".abp_build.json",
       "stage/abp_cicd": "abp_cicd",
       "stage/abp_run": "abp_run",
       "stage/abp_acp": "abp_acp",

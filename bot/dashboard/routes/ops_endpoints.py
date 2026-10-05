@@ -35,8 +35,19 @@ def register(app: FastAPI) -> None:
         # bot/server_identity.py).
         from bot import server_identity
 
+        # bundle: which commit the code that is answering right now was built
+        # from, and whether that differs from the checkout it was started
+        # from. A release build runs the Python bundled next to its own exe,
+        # so this is the only place a stale deploy can be seen from outside -
+        # and scripts/deploy_local.py reads it to report the same thing after
+        # every deploy. A commit hash is not a secret (this route is
+        # unauthenticated by design), and every field is an empty string /
+        # None rather than an error when it can't be determined.
+        from bot.diagnostics import build_status
+
         return JSONResponse(
-            {"status": "ok" if db_ok else "degraded", "db_ok": db_ok, "server_id": server_identity.get_server_id()},
+            {"status": "ok" if db_ok else "degraded", "db_ok": db_ok, "server_id": server_identity.get_server_id(),
+             "bundle": build_status()},
             status_code=status_code,
         )
 

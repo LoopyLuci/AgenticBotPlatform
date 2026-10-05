@@ -330,6 +330,36 @@ async def _start_dashboard(
     return None, None
 
 
+def _log_build_provenance() -> None:
+    """Say which commit this process is actually running, at boot, and shout
+    when it is not the checkout's.
+
+    A release build runs the Python bundled next to its own exe
+    (desktop-app/src-tauri/src/lib.rs's resolve_paths), so "I just restarted
+    and it is still the old one" is a real, silent failure: the working tree
+    is at HEAD, git is happy, and the app is serving code from days earlier
+    out of a folder nothing has refreshed. The bundle's own build stamp
+    (scripts/stage_bundle.py) is the only thing that can tell the two apart,
+    so it is logged here, on every boot, before anything else goes wrong -
+    and the same information is served on /healthz."""
+    from bot.diagnostics import build_status
+
+    try:
+        info = build_status()
+    except Exception:  # noqa: BLE001 - provenance is never worth failing a boot over
+        return
+    if info["stale"]:
+        logger.warning(
+            "this bundle was built from %s but the checkout is at %s - the running code is STALE, and the source tree "
+            "you are looking at is not what is executing. Deploy it: python scripts/deploy_local.py",
+            info["commit"] or "an unknown commit", info["checkout_commit"] or "an unknown commit",
+        )
+    elif info["commit"]:
+        logger.info("running bundle %s%s (checkout HEAD)", info["commit"], " (dirty)" if info["dirty"] else "")
+    elif info["checkout_commit"]:
+        logger.info("no build stamp next to the bundled code; checkout HEAD is %s", info["checkout_commit"])
+
+
 def _open_database() -> None:
     """db.init_db(), with the Sentinel's repairs in the way of the two
     failures that would otherwise stop ABP from ever starting again: a
@@ -368,6 +398,7 @@ async def run() -> None:
     _open_database()
     logger.info("secrets loaded from %s (exists=%s)", _env_path, _env_path.exists())
     db.log_audit(actor="system", action="startup", detail=f"env: {_env_path}")
+    _log_build_provenance()
 
     from bot import plugins as plugin_registry
 

@@ -17,6 +17,8 @@ beforeBuildCommand; you can also run it by hand.
 """
 from __future__ import annotations
 
+import datetime
+import json
 import os
 import shutil
 import subprocess
@@ -24,6 +26,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 STAGE = ROOT / "desktop-app" / "src-tauri" / "stage"
+# Stamped next to the staged code and shipped as a bundle resource, so the
+# running app can always answer "which commit is this?" - see
+# bot/diagnostics.py's build_status() and scripts/deploy_local.py.
+BUILD_STAMP = ".abp_build.json"
 
 # Packages that are development/CI tooling (requirements-dev.txt), not runtime.
 DEV_ONLY_PACKAGES = {"pytest", "_pytest", "pluggy", "iniconfig", "pip_audit"}
@@ -128,6 +134,46 @@ def stage_vscode_extension(target: Path) -> None:
     shutil.copy2(ext / "dist" / "abp-vscode.vsix", target / "abp-vscode.vsix")
 
 
+def _git(*args: str) -> str:
+    """One git query, never fatal: a missing git, a hang, a non-checkout
+    directory all mean "no answer", which the stamp records honestly as an
+    empty value rather than failing a build over."""
+    try:
+        out = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return out.stdout.strip() if out.returncode == 0 else ""
+
+
+def write_build_stamp(stage_dir: Path = STAGE) -> Path:
+    """Records WHICH commit this bundle was built from, beside the staged
+    code, so a running app can compare it against the checkout it was
+    started from.
+
+    This exists because a release build runs the Python copied next to its
+    own exe (desktop-app/src-tauri/src/lib.rs's resolve_paths), not the
+    source tree - so "the running app is serving code from four days ago"
+    is possible, invisible (git says HEAD is current), and only visible by
+    asking the running process what it actually loaded. Empty values are
+    honest unknowns: a source tarball, or a checkout that has no git, simply
+    has no commit to report.
+
+    Deliberately NOT a build time only: the stamp is rewritten on every
+    `cargo tauri build` (this script is its beforeBuildCommand), so it
+    describes the code in the folder, not the machine."""
+    stamp = {
+        "commit": _git("rev-parse", "HEAD"),
+        "commit_date": _git("log", "-1", "--format=%cs"),
+        "dirty": bool(_git("status", "--porcelain", "--", "bot", "abp_cicd", "abp_run", "abp_acp", "abp_agenteval",
+                           "abp_toolkit", "abp_modkit", "catalog", "config/backends.yaml")),
+        "built_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+    }
+    path = Path(stage_dir) / BUILD_STAMP
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(stamp, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
 def stage(stage_dir: Path = STAGE, markers: list[str] | None = None) -> None:
     if stage_dir.exists():
         shutil.rmtree(stage_dir)
@@ -169,6 +215,8 @@ def stage(stage_dir: Path = STAGE, markers: list[str] | None = None) -> None:
         sanitize_pyvenv_cfg(cfg)
     (stage_dir / "config").mkdir()
     (stage_dir / "config" / "backends.yaml").write_bytes(shipped_config(ROOT))
+    stamp = write_build_stamp(stage_dir)
+    print(f"build stamp: {json.loads(stamp.read_text(encoding='utf-8'))['commit'] or 'no commit (not a checkout)'}")
 
     hits = scan_for_personal_paths(stage_dir, markers if markers is not None else personal_markers())
     if hits:
