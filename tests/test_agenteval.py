@@ -194,6 +194,105 @@ def test_a_report_the_console_cannot_encode_is_replaced_not_raised(monkeypatch):
     assert "服务不可用" not in out and "?" in out, out                  # the rest is replaced, not raised
 
 
+# ---- a provider that refused the call is not a model failure (found by the second live run) --------------
+class _Throttled(ScriptedTransport):
+    """One task of the run meets the error a free provider answers with - a 429 that says how long to
+    wait, or a 200 carrying nothing but an upstream error - and every other task behaves. A scripted
+    transport with a provider key of its own, so nothing it leaves in usage_limits reaches another
+    test's model."""
+
+    def __init__(self, script, *, error="429: rate limit", retry_after=1, throttle=False):
+        super().__init__(script)
+        self.catalog_id = "test-free-tier"
+        self._error, self._retry_after, self._throttle = error, retry_after, throttle
+
+    async def send(self, **kw):
+        if self._throttle:
+            self._throttle = False
+            from bot.backends.base import BackendError
+
+            self.rate_headers = {"retry-after": str(self._retry_after)}
+            raise BackendError(f"openai-compatible transport (https://free.test/v1) returned {self._error}")
+        return await super().send(**kw)
+
+
+class _ThrottledFactory:
+    """A per-task transport factory: task number `throttle_on` (1-based) meets the error first."""
+
+    def __init__(self, throttle_on: int, *, error="429: rate limit", retry_after=1):
+        self._throttle_on, self._error, self._retry_after, self._task = throttle_on, error, retry_after, 0
+
+    def __call__(self, task):
+        self._task += 1
+        return _Throttled(task.script, error=self._error, retry_after=self._retry_after,
+                          throttle=self._task == self._throttle_on)
+
+
+def _three_tasks():
+    return [_task("create_file"), _task("read_and_answer"), _task("count_files")]
+
+
+def test_a_rate_limited_task_is_not_scored_as_a_model_failure(monkeypatch):
+    """One 429 answered by a free tier used to make the rest of the run fail without the model ever
+    being asked, so a 22/31 run reported itself as 2/31. The score is over what was measured."""
+    from bot.agent_runtime import usage_limits
+
+    monkeypatch.setattr(usage_limits, "_blocked_until", {})      # keep the block out of other tests
+    report = run_suite(_three_tasks(), _ThrottledFactory(3), mode="live", model="free/m", api_model="m")
+    assert report["total"] == 3 and report["limited"] == 1 and report["measured"] == 2
+    assert report["passed"] == 2 and report["score"] == 100.0
+    assert report["results"][2]["limited"] and report["results"][2]["error"].startswith("BackendError:")
+    assert not report["results"][0]["limited"], "a task the model finished is not the provider's"
+
+
+def test_a_task_the_provider_refused_is_not_scored_as_a_model_failure(monkeypatch):
+    """OpenRouter answers an overloaded upstream with HTTP 200 and an error object, which the transport
+    used to reduce to "returned no choices": a model that was merely out of capacity read as a model
+    that could not do the work."""
+    from bot.agent_runtime import usage_limits
+
+    monkeypatch.setattr(usage_limits, "_blocked_until", {})
+    report = run_suite(_three_tasks(), _ThrottledFactory(2, error="503: Upstream error from Nvidia: temporarily overloaded"),
+                       mode="live", model="free/m", api_model="m")
+    assert report["limited"] == 1 and report["measured"] == 2 and report["score"] == 100.0
+    assert "temporarily overloaded" in report["results"][1]["error"]
+
+
+def test_the_run_waits_out_a_short_limit_and_the_next_task_still_runs(monkeypatch):
+    """The provider asked for a second; the suite waits it out between tasks and carries on. It never
+    retries the task that hit the limit - that one stays a limit failure."""
+    from bot.agent_runtime import usage_limits
+
+    monkeypatch.setattr(usage_limits, "_blocked_until", {})
+    report = run_suite(_three_tasks(), _ThrottledFactory(1, retry_after=1), mode="live", model="free/m", api_model="m")
+    assert [r["limited"] for r in report["results"]] == [True, False, False]
+    assert report["results"][2]["iterations"] > 0, "the task after the wait never ran"
+    assert report["measured"] == 2 and report["passed"] == 2
+
+
+def test_a_limit_longer_than_the_run_waits_stops_the_run_and_says_so(monkeypatch):
+    """A free tier can ask for an hour. The suite does not sit there for it: it stops, and the tasks
+    it never reached are reported as not run rather than as model failures."""
+    from bot.agent_runtime import usage_limits
+
+    monkeypatch.setattr(usage_limits, "_blocked_until", {})
+    report = run_suite(_three_tasks(), _ThrottledFactory(2, retry_after=600), mode="live", model="free/m", api_model="m")
+    assert report["results"][1]["limited"] and report["results"][1]["error"].startswith("BackendError:")
+    assert report["results"][2]["error"].startswith("not run: free/m asked us to wait") \
+        and "longer than this run waits" in report["results"][2]["error"]
+    assert report["results"][2]["limited"]
+    assert report["measured"] == 1 and report["passed"] == 1
+
+
+def test_render_says_a_limited_task_did_not_measure_the_model():
+    report = {"mode": "live", "model": "m", "score": 100.0, "passed": 2, "total": 3, "measured": 2, "limited": 1,
+              "tokens": 0, "duration_ms": 1,
+              "results": [{"id": "throttled", "title": "T", "passed": False, "iterations": 0, "duration_ms": 1,
+                           "error": "BackendError: returned 429", "checks": [], "limited": True}]}
+    text = rep.render(report)
+    assert "1 of 3 tasks did not measure the model" in text and "SKIP" in text and "2/2 passed" in text
+
+
 # ---- graders that only an agent taking the golden path would satisfy (found by the first live run) ----------
 def test_read_before_write_fails_a_run_that_changed_the_file_unread():
     """With the guard relaxed, an agent that changed a file it never read has to be caught -

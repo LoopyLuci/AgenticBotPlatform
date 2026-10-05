@@ -34,11 +34,19 @@ def compare(current: dict, baseline: dict, *, tolerance: float = 0.0) -> dict:
 
 
 def render(report: dict) -> str:
+    measured = report.get("measured", report["total"])
     lines = [f"agent eval - {report['mode']} - model {report['model']}",
-             f"score {report['score']}%  ({report['passed']}/{report['total']} passed)  "
-             f"{report['tokens']} tokens  {report['duration_ms']} ms", ""]
+             f"score {report['score']}%  ({report['passed']}/{measured} passed)  "
+             f"{report['tokens']} tokens  {report['duration_ms']} ms"]
+    if report.get("limited"):
+        # A task the provider's limit stopped measures the limit, not the model - say so rather than
+        # letting a free tier's 429 read as a model that could not do the work.
+        lines.append(f"{report['limited']} of {report['total']} tasks did not measure the model (its "
+                     f"allowance ran out); the score is over the {measured} that ran")
+    lines.append("")
     for r in report["results"]:
-        mark = "PASS" if r["passed"] else "FAIL"
+        limited = r.get("limited", False)
+        mark = "PASS" if r["passed"] else ("SKIP" if limited else "FAIL")
         lines.append(f"  {mark}  {r['id']:<22} {r['iterations']} calls  {r['duration_ms']} ms  {r['title']}")
         if not r["passed"]:
             if r.get("error"):

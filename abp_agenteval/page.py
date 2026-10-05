@@ -47,8 +47,12 @@ def render_html(reports: list[dict], *, title: str = "ABP agent evaluation resul
     out.append("<h2>Summary</h2><table><tr><th>Run</th><th>Mode</th><th>Model</th><th>Passed</th><th>Score</th><th>Tokens</th><th>When</th></tr>")
     for i, r in enumerate(reports, 1):
         when = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(r.get("when", 0))) if r.get("when") else ""
+        # A task the provider's own limit stopped measured the limit, not the model: it is left out of
+        # the denominator and says so here, rather than reading as a model that could not do the work.
+        measured = r.get("measured", r["total"])
+        skipped = (f"<div class=muted>{r['limited']} not measured</div>" if r.get("limited") else "")
         out.append(f"<tr><td>{i}</td><td class={'ok' if _kind(r) == 'live' else 'muted'}>{_kind(r)}</td><td>{_esc(r['model'])}</td>"
-                   f"<td>{r['passed']}/{r['total']}</td><td>{r['score']}%</td><td>{r['tokens']}</td><td>{_esc(when)}</td></tr>")
+                   f"<td>{r['passed']}/{measured}{skipped}</td><td>{r['score']}%</td><td>{r['tokens']}</td><td>{_esc(when)}</td></tr>")
     out.append("</table>")
     ids = sorted({x["id"] for r in reports for x in r["results"]})
     titles = {x["id"]: (x.get("title", ""), x.get("category", "")) for r in reports for x in r["results"]}
@@ -58,10 +62,11 @@ def render_html(reports: list[dict], *, title: str = "ABP agent evaluation resul
         for r in reports:
             hit = next((x for x in r["results"] if x["id"] == tid), None)
             cells.append("<td class=muted>-</td>" if hit is None else
-                         f"<td class={'ok' if hit['passed'] else 'bad'}>{'pass' if hit['passed'] else 'FAIL'}</td>")
+                         f"<td class={'muted' if hit.get('limited') else ('ok' if hit['passed'] else 'bad')}>"
+                         f"{'skip' if hit.get('limited') else ('pass' if hit['passed'] else 'FAIL')}</td>")
         out.append(f"<tr><td>{_esc(tid)}<div class=muted>{_esc(titles[tid][0])}</div></td><td>{_esc(titles[tid][1])}</td>{''.join(cells)}</tr>")
     out.append("</table>")
-    failures = [(i, x) for i, r in enumerate(reports, 1) for x in r["results"] if not x["passed"]]
+    failures = [(i, x) for i, r in enumerate(reports, 1) for x in r["results"] if not x["passed"] and not x.get("limited")]
     if failures:
         out.append("<h2>Failures</h2><table><tr><th>Run</th><th>Task</th><th>Why</th></tr>")
         for i, x in failures:
