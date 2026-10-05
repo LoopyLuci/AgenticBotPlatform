@@ -19,6 +19,22 @@ app's own version (the Android app versions independently — see its own
 - **`abp gate autostart on|off|status`** — the gate (and through it ABP) comes up at every logon, with no console window.
   - `on` writes one `.vbs` into your own Startup folder — per user, so no administrator and nothing to uninstall — which starts `abp_cli gate start` with window style 0, in the same shape as the Hermes gateway's own logon entry. The roots are written into the command rather than inherited, because a logon entry inherits nothing from any shell and an entry that came up against a different `ABP_HOME` would be a second front door on 8787.
   - `off` removes it, and says so when there was nothing there; `status` reports it, and warns when the entry no longer points at this checkout — the failure mode a Startup folder actually has, and one whose only symptom would otherwise be a log nobody reads.
+- **Voice messages work on Discord and Slack, not just Telegram** (roadmap P7; `bot/platforms/_voice.py`;
+  [docs/agents/channels-and-devices.md](docs/agents/channels-and-devices.md)).
+  - An audio attachment on Discord (a voice note, an mp3) or a file shared in a Slack conversation is fetched with that
+    bot's own token, size-capped, transcribed and then handled as the user's text: same allow-list, same slash commands,
+    same backend, the reply starting "Heard: ..." so a misheard message is visible.
+  - With `voice.reply_with_voice: true` the answer is sent back as audio too - a file attachment on Discord, an upload on
+    Slack - spoken by the same text-to-speech Telegram uses.
+  - It is the *same* pipeline, not a second one: `bot/voice.py` is unchanged in what it does, Telegram's handler now
+    takes its words from there too, and both adapters share `bot/platforms/_voice.py` for fetching and uploading. The
+    `voice:` block in `config/backends.yaml` is the only place any of it is configured, with the same defaults as before,
+    and audio is never sent to a speech-to-text service you have not configured - the person is told so, in the same
+    words on every channel.
+  - Tested against local HTTP stand-ins speaking the real Discord/Slack file endpoints and an OpenAI-compatible
+    `/v1/audio/transcriptions` and `/v1/audio/speech`, with a real WAV built with the stdlib `wave` module
+    (`tests/test_platform_voice.py`); Windows speech was used for the spoken reply and produced a real WAV. **Not tested
+    against a real Whisper service, Piper, whisper.cpp, a real Discord server or a real Slack workspace.**
 - **TransferDaemon as an ABP module** (the **TransferDaemon** page; `td_*` agent tools; `/api/transferdaemon/*`; [docs/agents/transferdaemon.md](docs/agents/transferdaemon.md)).
   - TransferDaemon stays its own program in its own repo. ABP finds a working copy (or clones one), builds it with cargo, updates it from the repo (never over uncommitted work), and starts its daemon.
   - Messages and files to contacts by name, transfers with pause, resume and cancel, contacts and groups, connections, settings, and all of its ~80 operations, from the agent and from forms on the page.

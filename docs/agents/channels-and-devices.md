@@ -46,9 +46,35 @@ and the wire format is in the `bot/nodes.py` docstring; both are what an app imp
 `/audio/transcriptions` endpoint (Groq's free tier includes Whisper; these calls are counted against its allowance like
 any model call - see [models.md](models.md)) or a command you supply (whisper.cpp, for example). Text to speech through
 an OpenAI-compatible `/audio/speech` endpoint, Windows' built-in speech (verified here: it produced a real WAV file), or a
-command (Piper, espeak). A Telegram voice message is transcribed, the reply begins "Heard: ..." so a wrong transcript is
-visible, and then it is handled exactly like typed text (same allow-list, permissions and approvals). With
-`reply_with_voice: true` the answer is also sent as audio. Voice on the other channels and in the apps is not done.
+command (Piper, espeak).
+
+**Telegram, Discord and Slack all run this one pipeline** (`bot/voice.py`, `bot/platforms/_voice.py` for the two
+adapters) off the same `voice:` block - there is no second implementation and no per-platform setting. A voice message
+is transcribed, the reply begins "Heard: ..." so a wrong transcript is visible, and then it is handled exactly like
+typed text: same allow-list, same slash commands, same permissions, same approvals. With `reply_with_voice: true` the
+answer is also sent back as audio.
+
+Where the audio comes from differs, and is the only thing that does:
+
+| Channel | Fetched from | Size cap | Reply as audio |
+|---|---|---|---|
+| Telegram | the Bot API's own `getFile`, with the bot's token | `media.file_size`, checked before the download | a voice note (`.ogg`) or a file |
+| Discord | the attachment's CDN url, with `Authorization: Bot <this bot's token>` | `attachment.size`, checked before the download, and again while the bytes stream | a `discord.File` attachment |
+| Slack | `url_private_download` (falling back to `url_private`) with `Authorization: Bearer <this bot's token>` | `file.size`, checked before the download, and again while the bytes stream | `files_upload_v2` |
+
+Audio is never sent to a speech-to-text service you have not configured: with no engine set, the person is told so in
+the same words on every channel and the recording stays where it is. The defaults are unchanged and shared by every
+channel - transcription off, voice replies off, `max_seconds: 300`. These settings live in `config/backends.yaml` (and
+are readable and settable through the generic `/api/config` and `/api/config/set` routes). They are **not**
+per-`bot_instances` columns and they have **no** form in the dashboard or the desktop app - Telegram's never had one,
+so "the same settings as Telegram" means exactly this one global block, shown wherever it was shown before (the YAML
+and the two generic config routes). Making them per instance would mean adding a `bot_instances` column and a form
+for all three channels at once; that is not done.
+
+Verified against local stand-ins speaking the real endpoints, with real WAV audio over real HTTP
+(`tests/test_platform_voice.py`): the transcript reaching the router as the user's text, the spoken reply produced
+(both an OpenAI-compatible endpoint and Windows speech), the size cap, and the no-engine-configured path.
+**Not tested against a real Whisper service, Piper, whisper.cpp, a real Discord server or a real Slack workspace.**
 
 ## The canvas
 
