@@ -685,12 +685,18 @@ const run = (action, target) => {
   // The Rust side registers GLOBAL shortcuts and emits {"action": "<id>"} on `abp://action`.
   // Running it through the registry means the same conflict checks, the same confirmation
   // dialogs and the same "row I meant" logic as a key pressed in the window.
+  const GLOBAL_ACTION_ALIASES = { 'palette.open': 'ui.palette', 'search.quick': 'ui.search', 'chat.new': 'chat.new' };
+
   async function listenForTauriActions() {
     if (!window.__TAURI__ || !window.__TAURI__.event || typeof window.__TAURI__.event.listen !== 'function') return;
     try {
       await window.__TAURI__.event.listen('abp://action', (event) => {
-        const id = event && event.payload && event.payload.action;
+        let id = event && event.payload && event.payload.action;
         if (!id) return;
+        // The global shortcuts' names (desktop-app/src-tauri/src/shortcuts.rs): app.toggle is handled by the
+        // window itself; the others map onto this registry's actions.
+        if (id === 'app.toggle') return;
+        id = GLOBAL_ACTION_ALIASES[id] || id;
         if (!registry().has(id)) { toast(`The desktop app asked for an action ABP does not have: ${id}`, 'error'); return; }
         run(registry().get(id), document.activeElement);
       });

@@ -37,11 +37,12 @@ for (const [group, actions] of Object.entries(groups)) {
 }
 
 const doc = fs.readFileSync(docPath, 'utf8');
-const start = '<!-- BEGIN GENERATED TABLE -->\n';
+// A Windows checkout has CRLF line endings: match the marker with either, and write the table with the file's own.
+const begin = /<!-- BEGIN GENERATED TABLE -->\r?\n/.exec(doc);
 const end = '<!-- END GENERATED TABLE -->';
-const from = doc.indexOf(start);
 const to = doc.indexOf(end);
-if (from === -1 || to === -1) throw new Error('docs/shortcuts.md lost its generated-table markers');
-const next = `${doc.slice(0, from + start.length)}${table}${doc.slice(to)}`;
+if (!begin || to === -1) throw new Error('docs/shortcuts.md lost its generated-table markers');
+const eol = begin[0].endsWith('\r\n') ? '\r\n' : '\n';
+const next = `${doc.slice(0, begin.index + begin[0].length)}${table.replace(/\r?\n/g, eol)}${doc.slice(to)}`;
 fs.writeFileSync(docPath, next);
 console.log(`wrote ${path.relative(ROOT, docPath)} (${list.length} actions)`);
