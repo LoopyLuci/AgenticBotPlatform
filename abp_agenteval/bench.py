@@ -32,7 +32,9 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-LIMIT_PATTERNS = re.compile(r"RateLimited|rate limit|429|allowance|quota", re.I)
+from .runner import LIMIT_PATTERN
+
+LIMIT_PATTERNS = LIMIT_PATTERN          # one pattern, two jobs: this module judges a whole run by it
 INCOMPLETE_SHARE = 0.5          # a run where at least half the tasks hit a limit measures the limit, not the model
 
 

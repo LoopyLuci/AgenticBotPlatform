@@ -119,6 +119,36 @@ def test_openai_non_streaming_send_is_unchanged(monkeypatch):
     assert resp.text == "plain" and resp.tokens == 2
 
 
+# ---- a provider that answers 200 with an error object ---------------------------------
+# OpenRouter reports an upstream failure (overloaded, rate-limited, no provider left) as HTTP 200
+# with `error` and no `choices` at all. Reduced to "returned no choices", a free model that was merely
+# busy looked like a model that could not answer, and the status code that would have told ABP to
+# back off was thrown away.
+_UPSTREAM_ERROR = {"id": "gen-1", "error": {"message": "Upstream error from Nvidia: Service temporarily overloaded",
+                                            "code": 503, "metadata": {"error_type": "provider_overloaded"}}}
+
+
+def test_an_error_object_inside_a_200_says_what_the_provider_said(monkeypatch):
+    _install_http(monkeypatch, lambda r: httpx.Response(200, json=_UPSTREAM_ERROR))
+    with pytest.raises(BackendError, match=r"returned 503: Upstream error from Nvidia: Service temporarily overloaded"):
+        _run(oai.OpenAICompatibleTransport("https://x/v1").send(
+            model="m", history=[{"role": "user", "content": "hi"}], tool_schemas=[], max_tokens=5, timeout_s=5))
+
+
+def test_an_error_object_inside_a_200_stream_is_not_a_silent_empty_reply(monkeypatch):
+    _install_http(monkeypatch, lambda r: httpx.Response(200, content=_sse(_UPSTREAM_ERROR),
+                                                        headers={"content-type": "text/event-stream"}))
+    with pytest.raises(BackendError, match="503"):
+        _run(_collect(oai.OpenAICompatibleTransport("https://x/v1")))
+
+
+def test_a_reply_with_no_choices_and_no_error_still_says_so(monkeypatch):
+    _install_http(monkeypatch, lambda r: httpx.Response(200, json={"choices": [], "usage": {}}))
+    with pytest.raises(BackendError, match="returned no choices"):
+        _run(oai.OpenAICompatibleTransport("https://x/v1").send(
+            model="m", history=[{"role": "user", "content": "hi"}], tool_schemas=[], max_tokens=5, timeout_s=5))
+
+
 # ---- Anthropic -----------------------------------------------------------------
 class _FakeStream:
     def __init__(self, pieces, final):

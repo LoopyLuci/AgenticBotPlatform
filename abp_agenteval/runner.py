@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import gc
+import re
 import shutil
 import tempfile
 import time
@@ -13,6 +14,16 @@ from typing import Any, Callable, Optional
 
 from . import SCHEMA_VERSION
 from .task import Check, Context, Task
+
+# A provider that answered 429, has no allowance left, or refused the call with any other status has
+# not measured the model - the model was never asked. Same pattern abp_agenteval/bench.py judges a
+# whole run by, kept in one place so the two cannot drift apart.
+LIMIT_PATTERN = re.compile(r"RateLimited|rate limit|429|allowance|quota|overloaded|upstream error|\b[45]\d\d\b", re.I)
+
+# The longest a suite waits for a provider that asked us to wait, between two tasks. Never a retry: the
+# task that hit the limit stays failed, and the next one starts after the wait. Longer than this and the
+# run gives up and says how many tasks it never got to (a free tier can ask for an hour).
+LIMIT_WAIT_CEILING_S = 120.0
 
 
 class EvalError(RuntimeError):
@@ -124,6 +135,20 @@ def _materialise(base: Path, files: dict[str, str]) -> None:
         target.write_text(text, encoding="utf-8")
 
 
+def _retry_at(exc: BaseException, transport: Any, model: str) -> Optional[float]:
+    """When this model may be called again, after a call the provider refused: the moment the error
+    itself carries (usage_limits.RateLimited), else the block it left behind for this provider."""
+    moment = getattr(exc, "retry_at", None)
+    if isinstance(moment, (int, float)) and moment > 0:
+        return float(moment)
+    try:
+        from bot.agent_runtime import usage_limits
+
+        return usage_limits.snapshot(getattr(transport, "provider_key", "") or "", model)["blocked_until"]
+    except Exception:  # noqa: BLE001 - a missing moment only costs the wait, never the report
+        return None
+
+
 def run_task(task: Task, make_transport: Callable[[Task], Any], *, model: str = "scripted",
              keep: bool = False, timeout_s: float = 300, api_model: Optional[str] = None) -> dict:
     """Run one task. `make_transport(task)` returns the transport to use. `model` labels the report ("provider/model");
@@ -141,6 +166,7 @@ def run_task(task: Task, make_transport: Callable[[Task], Any], *, model: str = 
 
     reply, error, run_id, started = "", None, None, time.monotonic()
     summary: dict = {}
+    retry_at: Optional[float] = None
     try:
         with isolated_environment(root, task.approvals, task):
             transport = make_transport(task)
@@ -167,6 +193,7 @@ def run_task(task: Task, make_transport: Callable[[Task], Any], *, model: str = 
                 run_id = (result.raw or {}).get("trace_run") if isinstance(result.raw, dict) else None
             except Exception as exc:  # noqa: BLE001 — a failed run is a result, not a crash
                 error = f"{type(exc).__name__}: {exc}"
+                retry_at = _retry_at(exc, transport, api_model or model)
             store = trace.get_store()
             if run_id is None:
                 # The run raised before returning; find it (newest start event).
@@ -188,6 +215,9 @@ def run_task(task: Task, make_transport: Callable[[Task], Any], *, model: str = 
             "error": error, "duration_ms": duration_ms, "iterations": summary.get("iterations", 0),
             "tokens": summary.get("tokens", 0), "tool_counts": summary.get("tool_counts", {}),
             "denied": summary.get("denied", 0), "run_id": run_id,
+            # The provider's limit, not the model: this task never measured anything.
+            "limited": bool(error and LIMIT_PATTERN.search(error)),
+            "retry_at": retry_at,
             "workspace": str(workspace) if keep else None,
         }
     finally:
@@ -195,14 +225,41 @@ def run_task(task: Task, make_transport: Callable[[Task], Any], *, model: str = 
             _discard(root)
 
 
+def _not_run(task: Task, why: str) -> dict:
+    """The entry a task gets when the suite stopped before reaching it."""
+    return {"id": task.id, "title": task.title, "category": task.category, "passed": False, "checks": [],
+            "error": f"not run: {why}", "duration_ms": 0, "iterations": 0, "tokens": 0, "tool_counts": {},
+            "denied": 0, "run_id": None, "limited": True, "retry_at": None, "workspace": None}
+
+
 def run_suite(tasks: list[Task], make_transport: Callable[[Task], Any], *, mode: str, model: str,
-              keep: bool = False, api_model: Optional[str] = None) -> dict:
-    results = [run_task(t, make_transport, model=model, keep=keep, api_model=api_model) for t in tasks]
-    passed = sum(1 for r in results if r["passed"])
+              keep: bool = False, api_model: Optional[str] = None,
+              wait_for_limit_s: float = LIMIT_WAIT_CEILING_S) -> dict:
+    """Every task in turn, one model call in flight at a time. A provider that answers 429 is not a
+    model failure, so the run waits it out between tasks and then carries on; a wait longer than
+    `wait_for_limit_s` stops the run, and the tasks it never reached are reported as not run rather
+    than counted against the model."""
+    results: list[dict] = []
+    stopped: Optional[str] = None
+    for t in tasks:
+        if stopped:
+            results.append(_not_run(t, stopped))
+            continue
+        result = run_task(t, make_transport, model=model, keep=keep, api_model=api_model)
+        results.append(result)
+        if result["limited"]:
+            wait = max(0.0, (result["retry_at"] or 0.0) - time.time())
+            if wait > wait_for_limit_s:
+                stopped = f"{model} asked us to wait {int(wait)}s, longer than this run waits"
+            elif wait > 0:
+                time.sleep(wait + 0.5)      # back off, then start the next task; the task itself is not retried
+    measured = [r for r in results if not r["limited"]]
+    passed = sum(1 for r in measured if r["passed"])
     return {
         "schema": SCHEMA_VERSION, "mode": mode, "model": model, "when": time.time(),
-        "total": len(results), "passed": passed,
-        "score": round(100.0 * passed / len(results), 1) if results else 0.0,
+        "total": len(results), "measured": len(measured), "limited": len(results) - len(measured),
+        "passed": passed,
+        "score": round(100.0 * passed / len(measured), 1) if measured else 0.0,
         "tokens": sum(r["tokens"] for r in results),
         "duration_ms": sum(r["duration_ms"] for r in results),
         "notes": ["auto-checkpoints are disabled in evals", "approvals are auto-answered (deny only where a task says so)"],

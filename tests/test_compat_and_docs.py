@@ -111,6 +111,18 @@ def test_a_task_missing_from_one_report_shows_a_dash():
     assert "<td class=muted>-</td>" in page.render_html([a, b])
 
 
+def test_a_task_the_provider_refused_is_not_on_the_page_as_a_model_failure():
+    """Same rule as the console: a task stopped by the provider's own limit measured the limit."""
+    throttled = {"mode": "live", "model": "free/x", "when": 1_800_000_000, "total": 2, "measured": 1, "limited": 1,
+                 "passed": 1, "score": 100.0, "tokens": 10,
+                 "results": [{"id": "a", "title": "Task A", "category": "files", "passed": True, "checks": []},
+                             {"id": "b", "title": "Task B", "category": "coding", "passed": False, "checks": [],
+                              "limited": True, "error": "BackendError: returned 429"}]}
+    text = page.render_html([throttled])
+    assert "1 not measured" in text and "<td class=muted>skip</td>" in text
+    assert "Failures" not in text, "a rate-limited task is not a model failure"
+
+
 def test_the_command_writes_the_file_and_rejects_bad_input(tmp_path, capsys):
     from abp_agenteval.__main__ import main
 

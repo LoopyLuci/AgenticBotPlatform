@@ -272,6 +272,8 @@ class OpenAICompatibleTransport(ProviderTransport):
                     event = json.loads(chunk)
                 except json.JSONDecodeError:
                     continue
+                if event.get("error") and not (event.get("choices") or []):
+                    raise _provider_error(event, self.base_url)   # an error can arrive inside a 200 stream too
                 if event.get("usage"):
                     usage = event["usage"]
                 for choice in event.get("choices") or []:
@@ -302,13 +304,30 @@ class _RetryWithoutUsage(Exception):
     pass
 
 
+def _provider_error(data: dict, base_url: str) -> BackendError:
+    """A 200 with no choices is not an empty answer. OpenRouter, among others, reports an upstream
+    failure - provider overloaded, rate-limited, no provider left for the model - as HTTP 200 with an
+    `error` object and no choices at all, so "returned no choices" hid both what the provider said
+    and which status it was: a free model that was merely busy read as a model that cannot do the
+    work. Say what came back, with its own code."""
+    error = data.get("error")
+    if not error:
+        return BackendError(f"openai-compatible transport ({base_url}) returned no choices")
+    if not isinstance(error, dict):
+        return BackendError(f"openai-compatible transport ({base_url}) returned an error: {str(error)[:400]}")
+    code = error.get("code")
+    status = f" {code}" if isinstance(code, int) and code >= 400 else ""
+    return BackendError(f"openai-compatible transport ({base_url}) returned{status}: "
+                        f"{str(error.get('message') or error)[:400]}")
+
+
 def _normalize(data: dict, base_url: str) -> NormalizedResponse:
     usage = data.get("usage") or {}
     tokens = (usage.get("prompt_tokens") or 0) + (usage.get("completion_tokens") or 0)
 
     choices = data.get("choices") or []
     if not choices:
-        raise BackendError(f"openai-compatible transport ({base_url}) returned no choices")
+        raise _provider_error(data, base_url)
     message = choices[0].get("message") or {}
     tool_calls_raw = message.get("tool_calls") or []
 
