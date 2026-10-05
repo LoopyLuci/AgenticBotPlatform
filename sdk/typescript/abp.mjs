@@ -2068,6 +2068,24 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/lab/private_project": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/private_project",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "GET /api/lab/private_project/config": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/private_project/config",
+  "path_params": [],
+  "query_params": [
+   "config"
+  ]
+ },
  "GET /api/lab/projects": {
   "body": false,
   "method": "GET",
@@ -2146,6 +2164,13 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/api/localai/discover",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/localai/mesh": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/localai/mesh",
   "path_params": [],
   "query_params": []
  },
@@ -5002,6 +5027,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "POST /api/lab/private_project/generate": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/lab/private_project/generate",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/lab/runs": {
   "body": true,
   "method": "POST",
@@ -7169,6 +7201,13 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/localai/models/import",
+  "path_params": [],
+  "query_params": []
+ },
+ "ai_mesh_api_localai_mesh_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/localai/mesh",
   "path_params": [],
   "query_params": []
  },
@@ -11804,6 +11843,31 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/api/lab/private_project",
+  "path_params": [],
+  "query_params": []
+ },
+ "lab_private_project_api_lab_private_project_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/private_project",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "lab_private_project_config_api_lab_private_project_config_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lab/private_project/config",
+  "path_params": [],
+  "query_params": [
+   "config"
+  ]
+ },
+ "lab_private_project_generate_api_lab_private_project_generate_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/lab/private_project/generate",
   "path_params": [],
   "query_params": []
  },
