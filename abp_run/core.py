@@ -178,13 +178,17 @@ def run_once(prompt: str, *, provider: str, model: str, cwd: Path, approve: str 
     root = Path(tempfile.mkdtemp(prefix="abp-run-"))
     try:
         async def turn() -> RunResult:
-            from bot.agent_runtime import code_intel
+            from bot.agent_runtime import browser, code_intel
 
             try:
                 return await run_turn(prompt, transport=transport, model=model, cwd=cwd, permission_mode=permission_mode,
                                       on_text=on_text, timeout_s=timeout_s, extra_context=extra_context)
             finally:
-                await code_intel.shutdown_all()            # language servers must not outlive this run's event loop
+                # Both own processes outside the agent's control - language servers and a Playwright
+                # browser - that would otherwise outlive this run's event loop (abp_agenteval does the
+                # same per task). A browser left open also holds its profile.
+                await code_intel.shutdown_all()
+                await browser.shutdown_all()
 
         if persist:
             return asyncio.run(turn())

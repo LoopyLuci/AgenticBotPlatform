@@ -131,9 +131,12 @@ async def amain(args) -> int:
         try:
             await server.serve()
         finally:
-            from bot.agent_runtime import code_intel
+            from bot.agent_runtime import browser, code_intel
 
+            # Language servers and the browser the agent's tools opened are processes outside this
+            # server's control: neither may outlive it.
             await code_intel.shutdown_all()
+            await browser.shutdown_all()
     return 0
 
 

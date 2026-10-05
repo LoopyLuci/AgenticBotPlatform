@@ -881,6 +881,22 @@ def test_agent_run_with_an_unknown_instance_is_a_usage_error(client, capsys):
     assert "no agent-backed bot instance 9999" in capsys.readouterr().err
 
 
+def test_a_local_agent_run_closes_the_browser_its_tools_opened(client, capsys, monkeypatch, tmp_path, fake_browser):
+    """A local run stops the language servers when the turn ends; the browser the agent's tools opened is
+    the same kind of process and used to outlive it, holding its profile until the whole CLI exited
+    (fake_browser asserts it was closed). The turn is real; only the model is scripted."""
+    from abp_agenteval.scripted import ScriptedTransport
+    from abp_agenteval.task import Say
+    from abp_run import core
+
+    monkeypatch.setattr(core, "transport_for", lambda p, m: ScriptedTransport([Say("looked")]))
+    code, _ = run(["--json", "agent", "run", "look", "at", "the", "page", "--backend", "anthropic",
+                   "--model", "claude-sonnet-5", "--workspace", str(tmp_path)], client)
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["reply"] == "looked"
+    assert fake_browser.closed
+
+
 def test_agent_budget_show_and_set(client, capsys):
     code, _ = run(["--json", "agent", "budget"], client)
     assert code == 0

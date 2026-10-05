@@ -165,6 +165,28 @@ def _isolated_cicd_event_store(monkeypatch, tmp_path):
 
 
 @pytest.fixture
+def fake_browser():
+    """A stand-in for a browser session the agent opened, sitting in bot.agent_runtime.browser._sessions.
+
+    Every exit path (abp_run, abp_cli, abp_acp) has to close whatever is in there - the module's own
+    shutdown_all() does, and a real Chromium is only needed where the test starts one (tests/test_browser.py).
+    Yields the session; if it is still open when the test ends, that is the failure."""
+    from bot.agent_runtime import browser
+
+    class Session:
+        closed = False
+
+        async def close(self):
+            self.closed = True
+
+    session = Session()
+    browser._sessions["fake"] = session
+    yield session
+    browser._sessions.pop("fake", None)
+    assert session.closed, "the browser outlived the run that opened it"
+
+
+@pytest.fixture
 def temp_db(monkeypatch, tmp_path):
     monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "test.db")
     monkeypatch.setattr(db_module, "_conn", None)

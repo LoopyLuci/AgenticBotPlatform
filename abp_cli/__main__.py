@@ -584,7 +584,7 @@ async def _agent_run_local(args, goal: str) -> int:
         return 2
     root = pathlib.Path(tempfile.mkdtemp(prefix="abp-run-"))
     try:
-        from bot.agent_runtime import code_intel
+        from bot.agent_runtime import browser, code_intel
 
         with core.ephemeral_environment(root, "deny" if args.approve == "ask" else args.approve):
             try:
@@ -594,6 +594,7 @@ async def _agent_run_local(args, goal: str) -> int:
                                              timeout_s=args.timeout)
             finally:
                 await code_intel.shutdown_all()   # language servers must not outlive this run
+                await browser.shutdown_all()      # and neither must the browser its tools opened
     except core.RunError as exc:
         print(str(exc), file=sys.stderr)
         return 2

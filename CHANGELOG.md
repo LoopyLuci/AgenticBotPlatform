@@ -107,7 +107,7 @@ app's own version (the Android app versions independently — see its own
 - The ssh and wsl sandbox backends left a `.abp-*.pid` file behind for every command that finished normally: in the remote workspace for ssh, and in your own workspace folder for wsl. The remote shell now removes it however the command ends.
 - The Docker manager (Infrastructure page) now starts the `docker` program by its full path, as the sandbox already did. On Windows a bare name only finds `.exe` files, so a `docker.cmd` shim was skipped and the wrong program could run.
 - Fire-and-forget background tasks could be garbage-collected mid-run with their errors never logged. They now go through `bot.tasks`.
-- Language-server processes, and the headless browser, outlived ABP on every shutdown.
+- Language-server processes, and the headless browser, outlived ABP on every shutdown. The headless run paths stopped the language servers but not the browser its tools had opened: `abp_run`, `abp agent run` and the ACP server now close it too, as the eval harness already did per task.
 - With the server unreachable, an open dashboard fired ~120 failing requests a minute until the browser ran out of connections.
 - Chat adapters went silent on unexpected errors. They now always reply. Slack file downloads are size-capped.
 - Swarm strategies aborted the whole run when one member raised an unexpected exception.
