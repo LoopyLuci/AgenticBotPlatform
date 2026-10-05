@@ -398,6 +398,19 @@ def test_a_bad_script_is_refused_at_startup(tmp_path):
         acp_main.make_runner(f"scripted:{tmp_path / 'missing.json'}", None)
 
 
+def test_the_editor_closing_its_pipe_stops_the_browser_too(monkeypatch, fake_browser):
+    """The server stops the language servers when it exits; the browser its agent opened is the same kind
+    of child process and has to go with them (the fake_browser fixture asserts it was closed)."""
+    import argparse
+    import io
+
+    from abp_acp import __main__ as acp_main
+
+    monkeypatch.setattr(sys, "stdin", io.StringIO(""))     # the editor hung up: serve() returns at once
+    assert asyncio.run(acp_main.amain(argparse.Namespace(model="anthropic/unused", permission_mode=None))) == 0
+    assert fake_browser.closed
+
+
 def test_auto_is_resolved_once_per_session_from_its_first_prompt(tmp_path, monkeypatch):
     from abp_acp import __main__ as acp_main
     from abp_acp.server import Session

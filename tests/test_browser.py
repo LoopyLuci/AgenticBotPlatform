@@ -290,6 +290,36 @@ def test_a_session_keeps_its_browser_in_a_cell_so_one_kill_takes_the_driver_and_
     assert not any(_running(p) for p in pids), "the cell did not take the browser with it"
 
 
+# ---- a run must not leave the browser it opened running ----------------------------------------------------------------
+def test_a_headless_run_closes_the_browser_its_agent_opened(cfg, server, tmp_path, monkeypatch):
+    """`python -m abp_run` stops the language servers when the turn ends; the browser its tools opened used
+    to be left running - a Playwright process and a Chromium outside the event loop that is about to close,
+    holding its profile. A real browser, driven through the real run path."""
+    from abp_agenteval.scripted import ScriptedTransport
+    from abp_agenteval.task import Call, Say
+    from abp_run import core
+
+    started: list = []
+    real_for = browser.session_for
+
+    async def spy(profile=None):
+        s = await real_for(profile)
+        started.append(s)
+        return s
+
+    monkeypatch.setattr(browser, "session_for", spy)
+    result = core.run_once("look at the page", provider="anthropic", model="m", cwd=tmp_path,
+                           transport=ScriptedTransport([Call("browser", {"action": "open",
+                                                                          "url": f"http://127.0.0.1:{server}/about"}),
+                                                        Say("looked")]))
+    assert result.ok, result.error
+    assert [c["tool"] for c in result.tool_calls] == ["browser"], result.tool_calls
+    if not started:
+        pytest.skip("no browser could be started on this machine (playwright install chromium, or Edge/Chrome)")
+    assert started[0].context is None and started[0].playwright is None, "the browser outlived the run"
+    assert not browser._sessions
+
+
 # ---- no browser needed ---------------------------------------------------------------------------------------------
 def test_the_tools_are_only_offered_when_enabled(monkeypatch):
     monkeypatch.setattr(browser, "_cfg", lambda: {})
