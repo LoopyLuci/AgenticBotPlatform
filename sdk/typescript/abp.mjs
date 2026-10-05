@@ -2873,6 +2873,39 @@ export const operations = {
    "limit"
   ]
  },
+ "GET /api/sandbox/cells": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/sandbox/cells",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/sandbox/events": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/sandbox/events",
+  "path_params": [],
+  "query_params": [
+   "since",
+   "limit"
+  ]
+ },
+ "GET /api/sandbox/processes": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/sandbox/processes",
+  "path_params": [],
+  "query_params": [
+   "alive_only"
+  ]
+ },
+ "GET /api/sandbox/status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/sandbox/status",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/security/allowed-users": {
   "body": false,
   "method": "GET",
@@ -5890,6 +5923,22 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/router/simulate",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/sandbox/cells/{cell_id}/kill": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/sandbox/cells/{cell_id}/kill",
+  "path_params": [
+   "cell_id"
+  ],
+  "query_params": []
+ },
+ "POST /api/sandbox/estop": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/sandbox/estop",
   "path_params": [],
   "query_params": []
  },
@@ -13108,6 +13157,55 @@ export const operations = {
   "path_params": [
    "rule_id"
   ],
+  "query_params": []
+ },
+ "sandbox_cells_api_sandbox_cells_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/sandbox/cells",
+  "path_params": [],
+  "query_params": []
+ },
+ "sandbox_estop_api_sandbox_estop_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/sandbox/estop",
+  "path_params": [],
+  "query_params": []
+ },
+ "sandbox_events_api_sandbox_events_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/sandbox/events",
+  "path_params": [],
+  "query_params": [
+   "since",
+   "limit"
+  ]
+ },
+ "sandbox_kill_cell_api_sandbox_cells__cell_id__kill_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/sandbox/cells/{cell_id}/kill",
+  "path_params": [
+   "cell_id"
+  ],
+  "query_params": []
+ },
+ "sandbox_processes_api_sandbox_processes_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/sandbox/processes",
+  "path_params": [],
+  "query_params": [
+   "alive_only"
+  ]
+ },
+ "sandbox_status_api_sandbox_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/sandbox/status",
+  "path_params": [],
   "query_params": []
  },
  "sentinel_backups_api_sentinel_backups_get": {

@@ -35,6 +35,9 @@ Three tools:
   to the model. For anything else - a CAPTCHA, a code sent by SMS, a payment - the agent uses `browser_handoff`,
   which stops and asks a person; with `headless: false` they can do it in the window and then approve.
 * The profile is persistent, so a login survives; it is per profile name, kept under the agent state folder.
+* Playwright starts its own driver process, so there is no spawn() here to convert: the session puts that driver in
+  a sandbox_ns cell as soon as it starts, which is what makes one close() take the browser and everything it started
+  with it, and what puts the browser on the diagnostics page with the rest of what ABP is running.
 
 Tested against local pages with Microsoft Edge driven by Playwright; **not tested against real websites**, and
 the numbered-element approach is a simple one that will miss things (shadow DOM, canvas, elements inside frames).
@@ -54,6 +57,8 @@ from bot.agent_runtime import toolspec
 from bot.agent_runtime.errors import ToolError
 
 logger = logging.getLogger("bot.browser")
+
+OWNER = "agent_runtime.browser"
 
 MAX_TEXT = 6000
 _SNAPSHOT_JS = """
@@ -123,8 +128,34 @@ class Session:
         self.page = None
         self.elements: dict[int, dict] = {}
         self.lock = asyncio.Lock()
+        self.cell = None
         self._host_ok: dict[str, bool] = {}
         self.blocked: list[str] = []
+
+    def _adopt(self) -> None:
+        """Put Playwright's driver process into this session's sandbox_ns cell, so the browser it
+        launches is in the cell too and one close() takes the whole set with it.
+
+        Playwright starts its own driver (a node process it hides with SW_HIDE), so there is no
+        spawn() call here to convert - the driver is put in the cell right after it starts, and
+        everything it launches from then on joins the cell with it. If some future version of
+        Playwright does not leave us a handle on that process, the browser still runs and is still
+        closed by context.close()/playwright.stop(); it just is not contained, which is said in the
+        cell's notes rather than pretended about."""
+        pid = _driver_pid(self.playwright)
+        if pid is None:
+            return
+        from bot.sandbox_ns.cell import new_cell
+        from bot.sandbox_ns.registry import registry
+
+        self.cell = new_cell("tool", name=f"browser {self.profile}", owner=OWNER)
+        try:
+            self.cell.admit(pid)
+        except OSError as exc:
+            self.cell.notes.append(f"the browser is not confined to this cell ({exc}); close() still stops it")
+            registry.event("limit_hit", pid=pid, cell=self.cell.id, detail=f"the browser is not confined ({exc})")
+        registry.record(pid=pid, argv=["playwright", "driver"], owner=OWNER, name=f"browser {self.profile}",
+                        cell=self.cell, policy=self.cell.policy)
 
     async def start(self) -> None:
         try:
@@ -135,6 +166,7 @@ class Session:
 
         cfg = _cfg()
         self.playwright = await async_playwright().start()
+        self._adopt()
         profile_dir = state_dir("browser", re.sub(r"[^A-Za-z0-9_.-]", "_", self.profile) or "default")
         options = dict(user_data_dir=str(profile_dir), headless=bool(cfg.get("headless", True)), accept_downloads=False,
                        viewport={"width": 1280, "height": 800}, permissions=[], service_workers="block")
@@ -147,7 +179,7 @@ class Session:
             except Exception as exc:  # noqa: BLE001
                 last = exc
         if self.context is None:
-            await self.playwright.stop()
+            await self.close()
             raise ToolError("no browser could be started (install one with `playwright install chromium`, or install Edge or Chrome): "
                             + str(last).splitlines()[0][:200])
         await self.context.route("**/*", self._route)
@@ -192,9 +224,30 @@ class Session:
             if self.context:
                 await self.context.close()
         finally:
-            if self.playwright:
-                await self.playwright.stop()
-            self.context = self.page = self.playwright = None
+            try:
+                if self.playwright:
+                    await self.playwright.stop()
+            finally:
+                self.context = self.page = self.playwright = None
+                if self.cell is not None:
+                    # The polite close first, then the cell: a browser that ignored it, and
+                    # anything it started, goes with the cell rather than being left behind.
+                    self.cell.kill(f"closing the {self.profile} browser")
+                    self.cell = None
+
+
+def _driver_pid(playwright) -> Optional[int]:
+    """The pid of the node driver process Playwright started, read out of its own transport.
+
+    There is no public API for it, and none is needed to be *correct* - close() stops the browser
+    either way. This is what puts the driver, and with it every browser the session launches, into
+    the cell. None when a future Playwright stops exposing it."""
+    try:
+        transport = playwright._impl_obj._connection._transport            # type: ignore[attr-defined]
+        pid = getattr(getattr(transport, "_proc", None), "pid", None)
+        return int(pid) if pid else None
+    except Exception:  # noqa: BLE001 - a private attribute moved; the browser still runs
+        return None
 
 
 _sessions: dict[str, Session] = {}

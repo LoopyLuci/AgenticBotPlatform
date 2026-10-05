@@ -29,6 +29,10 @@ diagnostics, symbols, definition, references, hover.
 Tested against a small stand-in server, and by hand against **rust-analyzer** (which showed that modern
 servers answer diagnostics on request instead of pushing them; both styles are handled). **Not yet run
 against pyright or typescript-language-server.** A server still indexing may say nothing at first.
+
+Every process here is in a sandbox_ns cell: a formatter with the 'tool' preset (recorded, windowless,
+bounded), and a language server in a cell of its own that is kept for as long as the server runs - so
+stopping a server, or ending one whose event loop is gone, takes the children it started with it.
 """
 from __future__ import annotations
 
@@ -44,7 +48,12 @@ from typing import Any, Optional
 from urllib.parse import quote, urlparse
 from urllib.request import url2pathname
 
+from bot.sandbox_ns.cell import Cell, new_cell
+from bot.sandbox_ns.spawn import async_spawn
+
 logger = logging.getLogger("bot.code_intel")
+
+OWNER = "agent_runtime.code_intel"
 
 FORMAT_TIMEOUT_S = 30.0
 SEVERITY = {1: "error", 2: "warning", 3: "info", 4: "hint"}
@@ -137,8 +146,9 @@ async def format_file(path: Path) -> str:
 
     before = path.read_bytes() if path.exists() else b""
     try:
-        proc = await asyncio.create_subprocess_exec(*argv, cwd=str(path.parent), env=sandbox.build_env(),
-                                                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        proc = await async_spawn(argv, preset="tool", cwd=str(path.parent), env=sandbox.build_env(),
+                                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                                 name=f"formatter {Path(exe).name}", owner=OWNER)
         try:
             _, err = await asyncio.wait_for(proc.communicate(), timeout=FORMAT_TIMEOUT_S)
         except asyncio.TimeoutError:
@@ -179,6 +189,7 @@ class LspClient:
         self.name, self.command, self.root = name, command, Path(root)
         self.env = env
         self.proc: Optional[asyncio.subprocess.Process] = None
+        self.cell: Optional[Cell] = None         # the sandbox_ns cell this server lives in
         self._next = 1
         self._pending: dict[int, asyncio.Future] = {}
         self._reader: Optional[asyncio.Task] = None
@@ -196,9 +207,19 @@ class LspClient:
         if exe is None:
             raise LspError(f"{self.command[0]!r} is not installed")
         self.loop = asyncio.get_running_loop()
-        self.proc = await asyncio.create_subprocess_exec(exe, *self.command[1:], cwd=str(self.root), env=self.env,
-                                                         stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-                                                         stderr=asyncio.subprocess.DEVNULL)
+        # One cell per server, kept for as long as the server runs: a language server starts children
+        # of its own (rust-analyzer runs cargo), and the kill that mattered was always the tree's -
+        # proc.kill() stopped the server and left the rest behind.
+        self.cell = new_cell("tool", name=f"lsp {self.name} ({self.root.name})", owner=OWNER)
+        try:
+            self.proc = await async_spawn([exe, *self.command[1:]], cell=self.cell, cwd=str(self.root), env=self.env,
+                                           stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                                           stderr=asyncio.subprocess.DEVNULL,
+                                           name=f"lsp {self.name}", owner=OWNER)
+        except OSError as exc:
+            self.cell.close()
+            self.cell = None
+            raise LspError(f"could not start {self.name}: {exc}") from exc
         self._reader = asyncio.create_task(self._read_loop())
         root_uri = uri_of(self.root)
         result = await self.request("initialize", {
@@ -238,6 +259,11 @@ class LspClient:
             await asyncio.wait_for(self.proc.wait(), timeout=5)
         except Exception:  # noqa: BLE001
             pass
+        # Whatever the polite shutdown and the single-pid kill did not reach - the server's own
+        # children - goes with the cell.
+        if self.cell is not None:
+            self.cell.kill(f"stopping the {self.name} language server")
+            self.cell = None
 
     # ---- wire -------------------------------------------------------------------------
     async def _send(self, message: dict) -> None:
@@ -423,8 +449,14 @@ async def client_for(path: Path, workspace: Path) -> Optional[LspClient]:
 
 
 def _kill_foreign(client: "LspClient") -> None:
-    """Ends a server process whose event loop is no longer the current one."""
+    """Ends a server process whose event loop is no longer the current one. The cell does it, so
+    this is still a tree kill - a server's pipes being unreachable is no reason to leave its
+    children running."""
     client.alive = False
+    if client.cell is not None:
+        client.cell.kill(f"the {client.name} language server belongs to a loop that is gone")
+        client.cell = None
+        return
     pid = getattr(client.proc, "pid", None)
     if pid is None:
         return

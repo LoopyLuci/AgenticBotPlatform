@@ -145,6 +145,19 @@ class Registry:
             closed += 1
         return closed
 
+    def estop(self, *, reason: str = "the emergency stop was pressed") -> list[str]:
+        """Stop the work, leave the services: every non-persistent cell is killed, and a daemon is
+        left exactly as it is - still running *and* still registered, unlike close_cells(), which
+        releases the daemons because APB's own exit is what is about to happen. Returns the cell ids
+        that were killed."""
+        killed = []
+        for cell in self.cells():
+            if cell.policy.persistent:
+                continue
+            cell.kill(reason)
+            killed.append(cell.id)
+        return killed
+
     # ---- processes --------------------------------------------------------------------------
     def record(self, *, pid: int, argv: Iterable, cwd: str = "", owner: str = "", name: str = "",
                cell=None, policy=None, create_time: Optional[float] = None) -> Record:

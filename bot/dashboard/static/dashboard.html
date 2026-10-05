@@ -224,6 +224,10 @@
   .segmented button { border:none; background:transparent; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:700; color:var(--ink-soft); cursor:pointer; font-family:var(--font-mono); }
   .segmented button.active { background:var(--surface); color:var(--accent); box-shadow:0 1px 2px rgba(0,0,0,.08); }
 
+  .tab-panels { position:relative; }
+  .tab-panel { display:none; }
+  .tab-panel.active { display:block; }
+
   .term { background:var(--chart-surface); color:#e4e1d8; border-radius:10px; overflow:hidden; border:1px solid var(--line); }
   .term .tb { display:flex; align-items:center; gap:6px; padding:9px 12px; border-bottom:1px solid rgba(255,255,255,.08); }
   .term .tb .d { width:9px; height:9px; border-radius:50%; background:rgba(255,255,255,.18); }
@@ -984,6 +988,26 @@
       <div class="card" style="margin-top:14px;">
         <h3>Crash reports <span class="cardnote" id="diag-crash-count"></span></h3>
         <div class="timeline" id="diag-crash-list"></div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Processes <span class="cardnote" id="diag-processes-note"></span></h3>
+        <div class="segmented" style="margin-bottom:10px;">
+          <button class="active" data-tab="cells">Cells</button>
+          <button data-tab="processes">Processes</button>
+          <button data-tab="events">Events</button>
+        </div>
+        <div class="tab-panels">
+          <div class="tab-panel active" data-tab="cells">
+            <div class="tablewrap"><table><thead><tr><th>Cell ID</th><th>Name</th><th>Owner</th><th>Preset</th><th>Persistent</th><th>Procs</th><th>CPU %</th><th>Mem MB</th><th>Action</th></tr></thead><tbody id="diag-cells-tbody"></tbody></table></div>
+          </div>
+          <div class="tab-panel" data-tab="processes">
+            <div class="tablewrap"><table><thead><tr><th>PID</th><th>Cell</th><th>Owner</th><th>Alive</th><th>Command</th></tr></thead><tbody id="diag-processes-tbody"></tbody></table></div>
+          </div>
+          <div class="tab-panel" data-tab="events">
+            <div class="tablewrap"><table><thead><tr><th>Time</th><th>Kind</th><th>PID</th><th>Cell</th><th>Detail</th></tr></thead><tbody id="diag-events-tbody"></tbody></table></div>
+          </div>
+        </div>
       </div>
     </section>
 

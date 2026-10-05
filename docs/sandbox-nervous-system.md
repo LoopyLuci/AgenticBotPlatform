@@ -106,8 +106,8 @@ are unioned, so a machine nobody configured is still protected. The presets' cap
 * **The server process itself is untouched.** It is not in a cell and keeps the OS default priority.
 * **Reaping only knows about what was recorded.** A process ABP started through plain `subprocess`
   before this existed is not in `live.json`. It is still windowless (the guard) - just not reaped.
-* **Nothing is migrated yet.** Only the call sites listed under
-  [Migration status](#migration-status) use `spawn()`.
+* **Not every call site is migrated.** The short, buffered helpers still call `subprocess` on
+  purpose - see [Migration status](#migration-status) for what is in a cell and what is not.
 
 ## Per OS
 
@@ -189,8 +189,14 @@ Rules of thumb:
 
 `bot.sandbox_ns.registry.registry.status()` returns the guard's state, every record, every cell
 with its measured CPU/memory and the limits the OS actually has, and the event ring buffer
-(`spawn`, `exit`, `limit_hit`, `kill`, `reap`, `guard_converted`). It is the data a diagnostics
-route would serve; nothing is wired to a route yet.
+(`spawn`, `exit`, `limit_hit`, `kill`, `reap`, `guard_converted`). Three surfaces read it, and all
+three are just this call:
+
+| Surface | What |
+|---|---|
+| `GET /api/sandbox/{status,cells,processes,events}` | the data itself, plus `POST /api/sandbox/cells/{id}/kill` and `POST /api/sandbox/estop` - both audited, both behind the dashboard token (`bot/dashboard/sandbox_ns_api.py`) |
+| `abp sandbox {status,cells,ps,events,kill,estop}` | the same API from a terminal (`abp_cli/sandbox.py`); `--json` for a script |
+| the diagnostics page, in both UIs | a Processes panel with Cells / Processes / Events tabs and a Kill button per cell (`bot/dashboard/static/`, and the desktop app's own copy in `desktop-app/ui/`) |
 
 ## Reflexes
 
@@ -207,13 +213,41 @@ Run by the registry's sampler (psutil, every three seconds, only while something
 
 ## Migration status
 
-Migrated to `spawn()`: `bot/agent_runtime/sandbox.py`'s `local` and `windows_job` backends
+**Migrated from the start:** `bot/agent_runtime/sandbox.py`'s `local` and `windows_job` backends
 (`local` now gets a cell, so its tree is contained by Windows rather than by `taskkill`), the three
 daemon harnesses (`bot/hermes_manager`, `bot/vm_harness`, `bot/transferdaemon` - `preset="daemon"`),
 and `bot/localai/engine.py`'s `llama-server` (`preset="engine"`).
 
-Still on plain `subprocess` - windowless and guarded, but not in a cell, not recorded as a cell, and
-not reaped: the CLI agent backends (`bot/backends/*_backend.py`), `bot/modules/harness.py`'s build
-and pipeline steps, `bot/localai/train.py` and `bot/neurallab/lab.py`'s training workers,
-`bot/code_intel.py` and `bot/agent_runtime/browser.py`, `bot/fileserver/server.py`, `bot/cluster`,
-`bot/hosting`. Each is a `spawn()` call with the right preset; that is the follow-up.
+**Migrated with the surface** (the routes, `abp sandbox` and the dashboard's Processes panel):
+
+| Call site | One cell per ... | Preset / policy |
+|---|---|---|
+| `bot/backends/cli_backend.py`, `external_agent_backend.py` (opencode, openclaw), `hermes_cli_backend.py` | run, so a timeout or a `/stop` takes the CLI's tool subprocesses too | `agent` |
+| `bot/backends/hermes_gateway_backend.py` | the `hermes serve` process, which is meant to outlive ABP | `daemon` (persistent) |
+| `bot/modules/harness.py` `_stream()` (build and pipeline steps) | build / pipeline run | `build` |
+| `bot/modules/harness.py` `start_hub()` | hub, released by `stop_hub()`; killed if it never answered | `daemon` (persistent) |
+| `bot/localai/train.py` `setup_env()` / `convert()` | setup or convert | `worker` |
+| `bot/localai/train.py` and `bot/neurallab/lab.py` `start()` | run, held in `_worker_cells` until `stop()` | `worker` |
+| `bot/hosting/procs.py` | (home, name), released by `stop()`, which falls back to `cell.kill()` | `daemon` (persistent) |
+| `bot/cluster/executor.py` | job, with the job's own reservation as its policy (`memory_mb`, `job_memory_mb`, `cpu_rate_percent`) | `tool` + that policy |
+| `bot/agent_runtime/code_intel.py` `LspClient` | language server, killed by `stop()` / `shutdown_all()` | `tool` |
+| `bot/agent_runtime/browser.py` `Session` | session: Playwright's driver is admitted at `_adopt()`, so the browser it launches is in the cell too, and `close()` kills it | `tool` |
+| `bot/git_stacks.py` `_git()` | - no cell: one buffered git call at a time, so the process *is* the tree | `tool` (through `spawn.run()`) |
+
+Each has a test that starts a real process through that call site and checks the record's
+`owner`/`cell`/`policy` and that stopping the cell stops the process (`tests/test_sandbox_migration.py`,
+plus the site's own test file).
+
+**Still plain `subprocess`, deliberately.** Windowless either way (the guard wraps `Popen`), but not
+in a cell and not in `live.json`:
+
+* short, buffered helpers whose output is captured and which have no tree of their own:
+  `bot/modules/harness.py`'s `_run()`/`_git()` (version probes, `rev-parse`, `git log`),
+  `bot/fileserver/disks.py` (`smartctl`/`lsblk`/PowerShell probes), `bot/cluster/inventory.py`
+  (CPU and memory probes), and `bot/hosting/{caddy,service,vps}.py`'s validate/reload/permission calls.
+* `bot/modules/harness.py`'s `_launch_visible()` - `open_gui` and `open_tui`, the one place a
+  console or window is for a person, spawned inside `guard.visible()`.
+* `bot/hosting/deploy.py`'s `ssh`/`wrangler`/`git` runs: buffered `subprocess.run()` with their own
+  timeouts, started from a person's click rather than by anything running on a timer. A cell each is
+  the obvious next step, not done in this pass.
+* `bot/fileserver/server.py` starts no process at all - uvicorn runs inside this one.

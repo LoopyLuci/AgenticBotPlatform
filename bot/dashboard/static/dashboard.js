@@ -528,9 +528,10 @@ const DIAG_COUNTER_LABELS = {
   'log.critical': 'Critical events logged',
 };
 async function refreshDiagnostics() {
-  const [summary, crashReports] = await Promise.all([
+  const [summary, crashReports, sandboxStatus] = await Promise.all([
     api('/api/diagnostics/summary'),
     api('/api/diagnostics/crash-reports?limit=30'),
+    api('/api/sandbox/status'),
   ]);
 
   document.getElementById('diag-system-info').innerHTML = Object.entries(DIAG_INFO_LABELS)
@@ -554,8 +555,100 @@ async function refreshDiagnostics() {
   document.getElementById('diag-crash-list').innerHTML = crashReports.reports.map(r => `
     <div class="tlitem"><div class="v">${esc(r.level)}${r.exception_type ? ' · ' + esc(r.exception_type) : ''}</div><div class="d">${esc(r.message)}</div><div class="m">${fmtTime(r.iso_time)} · ${esc(r.logger)}</div></div>`).join('')
     || '<p class="cardnote">No crash reports — nothing has crashed since this process started.</p>';
+
+  // Sandbox Nervous System - Processes panel
+  renderSandboxCells(sandboxStatus);
+  renderSandboxProcesses(sandboxStatus);
+  renderSandboxEvents(sandboxStatus);
 }
 document.getElementById('btn-diag-bundle').onclick = () => downloadUrl('/api/diagnostics/bundle');
+
+// Sandbox Nervous System renderers
+function renderSandboxCells(status) {
+  const cells = status.cells || [];
+  const tbody = document.getElementById('diag-cells-tbody');
+  if (!tbody) return;
+  if (!cells.length) {
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="9">No cells — nothing is running in a sandbox yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = cells.map(c => {
+    const pol = c.policy || {};
+    const sample = c.sample || {};
+    const limits = c.limits || {};
+    const persistent = pol.persistent ? 'yes' : 'no';
+    const persistentCls = pol.persistent ? 'good' : 'neutral';
+    return `<tr>
+      <td class="mono">${esc(c.id || '')}</td>
+      <td>${esc(c.name || '')}</td>
+      <td>${esc(c.owner || '')}</td>
+      <td>${esc(pol.name || '')}</td>
+      <td><span class="chip ${persistentCls}">${persistent}</span></td>
+      <td class="num">${c.process_count || 0}</td>
+      <td class="num">${sample.cpu_percent ? sample.cpu_percent.toFixed(1) : '—'}</td>
+      <td class="num">${sample.rss_mb ? sample.rss_mb.toFixed(1) : '—'}</td>
+      <td><button class="btn danger" data-kill-cell="${esc(c.id)}" style="padding:3px 8px; font-size:11px;">Kill</button></td>
+    </tr>`;
+  }).join('');
+  tbody.querySelectorAll('[data-kill-cell]').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm(`Kill cell ${btn.dataset.killCell} and everything in it?`)) return;
+      try {
+        await api(`/api/sandbox/cells/${encodeURIComponent(btn.dataset.killCell)}/kill`, { method: 'POST' });
+        refreshDiagnostics();
+      } catch (e) {
+        showToast('Kill failed: ' + e.message, 'error');
+      }
+    };
+  });
+}
+
+function renderSandboxProcesses(status) {
+  const processes = status.processes || [];
+  const tbody = document.getElementById('diag-processes-tbody');
+  if (!tbody) return;
+  const alive = processes.filter(p => p.alive);
+  document.getElementById('diag-processes-note').textContent = `${alive.length} alive, ${processes.length - alive.length} exited`;
+  if (!processes.length) {
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="5">No processes recorded yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = processes.map(p => `
+    <tr>
+      <td class="mono">${p.pid || '—'}</td>
+      <td>${esc(p.cell || '—')}</td>
+      <td>${esc(p.owner || '')}</td>
+      <td><span class="chip ${p.alive ? 'good' : 'neutral'}">${p.alive ? 'alive' : 'exited'}</span></td>
+      <td class="mono">${esc((p.argv || []).join(' ')).slice(0, 80)}</td>
+    </tr>`).join('');
+}
+
+function renderSandboxEvents(status) {
+  const events = status.events || [];
+  const tbody = document.getElementById('diag-events-tbody');
+  if (!tbody) return;
+  if (!events.length) {
+    tbody.innerHTML = '<tr class="emptyrow"><td colspan="5">No events yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = events.slice().reverse().map(e => `
+    <tr>
+      <td class="mono">${e.ts ? new Date(e.ts * 1000).toLocaleTimeString() : '—'}</td>
+      <td><span class="chip neutral">${esc(e.kind || '')}</span></td>
+      <td class="mono">${e.pid || '—'}</td>
+      <td>${esc(e.cell || '')}</td>
+      <td>${esc(e.detail || '')}</td>
+    </tr>`).join('');
+}
+
+// Tab switching for the Processes panel
+document.querySelectorAll('#diagnostics .segmented button').forEach(btn => {
+  btn.onclick = () => {
+    const tab = btn.dataset.tab;
+    document.querySelectorAll('#diagnostics .segmented button').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('#diagnostics .tab-panel').forEach(p => p.classList.toggle('active', p.dataset.tab === tab));
+  };
+});
 
 // ---------------------------------------------------------------- control
 async function refreshConfig() {

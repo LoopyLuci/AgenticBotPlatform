@@ -934,3 +934,25 @@ class DashboardClient:
     async def swarm_budget_set(self, **fields: Any) -> dict:
         return await self._request("POST", "/api/swarm-budget", json={k: v for k, v in fields.items()
                                                                         if v is not None})
+
+    # -------------------------------------------------------------------- sandbox
+    async def sandbox_status(self) -> dict:
+        return await self._request("GET", "/api/sandbox/status")
+
+    async def sandbox_cells(self) -> list[dict]:
+        return (await self._request("GET", "/api/sandbox/cells"))["cells"]
+
+    async def sandbox_processes(self, alive_only: bool = True) -> list[dict]:
+        return (await self._request("GET", "/api/sandbox/processes", params={"alive_only": alive_only}))["processes"]
+
+    async def sandbox_events(self, since: Optional[float] = None, limit: int = 200) -> dict:
+        params: dict[str, Any] = {"limit": limit}
+        if since is not None:
+            params["since"] = since
+        return await self._request("GET", "/api/sandbox/events", params=params)
+
+    async def sandbox_kill_cell(self, cell_id: str) -> dict:
+        return await self._request("POST", f"/api/sandbox/cells/{cell_id}/kill")
+
+    async def sandbox_estop(self, reason: str = "emergency stop from CLI") -> dict:
+        return await self._request("POST", "/api/sandbox/estop", json={"reason": reason})

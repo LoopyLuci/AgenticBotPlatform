@@ -285,6 +285,11 @@
   .segmented { display:inline-flex; background:var(--surface-2); border-radius:999px; padding:3px; gap:2px; }
   .segmented button { border:none; background:transparent; padding:6px 13px; border-radius:999px; font-size:12px; font-weight:700; color:var(--ink-soft); cursor:pointer; font-family:var(--font-mono); transition:background .12s ease, color .12s ease; }
   .segmented button.active { background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:#fff; }
+
+  .tab-panels { position:relative; }
+  .tab-panel { display:none; }
+  .tab-panel.active { display:block; }
+
   .icon-picker { display:flex; gap:12px; flex-wrap:wrap; margin:8px 0 14px; }
   .icon-choice { display:flex; flex-direction:column; align-items:center; gap:6px; background:none; border:none; cursor:pointer; padding:4px; width:76px; }
   .icon-choice img { width:56px; height:56px; border-radius:14px; box-shadow:0 0 0 1px var(--line); }
@@ -1248,6 +1253,26 @@
       <div class="card" style="margin-top:14px;">
         <h3>Crash reports <span class="cardnote" id="diag-crash-count"></span></h3>
         <div class="timeline" id="diag-crash-list"></div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Processes <span class="cardnote" id="diag-processes-note"></span></h3>
+        <div class="segmented" style="margin-bottom:10px;">
+          <button class="active" data-tab="cells">Cells</button>
+          <button data-tab="processes">Processes</button>
+          <button data-tab="events">Events</button>
+        </div>
+        <div class="tab-panels">
+          <div class="tab-panel active" data-tab="cells">
+            <div class="tablewrap"><table><thead><tr><th>Cell ID</th><th>Name</th><th>Owner</th><th>Preset</th><th>Persistent</th><th>Procs</th><th>CPU %</th><th>Mem MB</th><th>Action</th></tr></thead><tbody id="diag-cells-tbody"></tbody></table></div>
+          </div>
+          <div class="tab-panel" data-tab="processes">
+            <div class="tablewrap"><table><thead><tr><th>PID</th><th>Cell</th><th>Owner</th><th>Alive</th><th>Command</th></tr></thead><tbody id="diag-processes-tbody"></tbody></table></div>
+          </div>
+          <div class="tab-panel" data-tab="events">
+            <div class="tablewrap"><table><thead><tr><th>Time</th><th>Kind</th><th>PID</th><th>Cell</th><th>Detail</th></tr></thead><tbody id="diag-events-tbody"></tbody></table></div>
+          </div>
+        </div>
       </div>
     </section>
 

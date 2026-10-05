@@ -58,7 +58,8 @@ import secrets
 import subprocess
 from typing import Any, Optional
 
-from bot.backends.base import Backend, BackendError, BackendResult
+from bot.backends.base import Backend, BackendError, BackendResult, process_cell
+from bot.sandbox_ns.spawn import async_spawn
 
 logger = logging.getLogger("bot.backends.hermes_gateway")
 
@@ -99,6 +100,7 @@ class HermesGatewayBackend(Backend):
         self.hermes_home = hermes_home
         self._token = secrets.token_urlsafe(24)
         self._proc: Optional[asyncio.subprocess.Process] = None
+        self._cell: Optional[Any] = None             # the sandbox_ns cell `hermes serve` lives in
         self._ws: Optional[Any] = None
         self._reader_task: Optional[asyncio.Task] = None
         self._pending: dict[int, asyncio.Future] = {}
@@ -334,16 +336,25 @@ class HermesGatewayBackend(Backend):
         env["HERMES_DASHBOARD_SESSION_TOKEN"] = self._token
         if self.hermes_home:
             env["HERMES_HOME"] = self.hermes_home
+        # A daemon, so preset "daemon": the cell is persistent, which is what makes this the one
+        # backend whose process is meant to survive ABP's own exit (and be recorded, and windowless,
+        # and bounded). shutdown() below is what stops it, and the cell's close only lets go.
+        self._cell = process_cell(f"hermes serve :{self.port}", preset="daemon", owner="backends.hermes_gateway")
         try:
-            self._proc = await asyncio.create_subprocess_exec(
-                self.binary, "serve", "--host", "127.0.0.1", "--port", str(self.port),
-                "--isolated", "--skip-build",
+            self._proc = await async_spawn(
+                [self.binary, "serve", "--host", "127.0.0.1", "--port", str(self.port),
+                 "--isolated", "--skip-build"],
+                cell=self._cell,
                 env=env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
+                name=f"hermes serve :{self.port}",
+                owner="backends.hermes_gateway",
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
         except FileNotFoundError as exc:
+            self._cell.close()
+            self._cell = None
             raise BackendError(f"'{self.binary}' not found on PATH — is Hermes Agent installed?") from exc
 
         try:
@@ -451,6 +462,11 @@ class HermesGatewayBackend(Backend):
             except asyncio.TimeoutError:
                 self._proc.kill()
         self._proc = None
+        if self._cell is not None:
+            # A daemon cell's close only lets go of the job handle - the process above was stopped
+            # on purpose, and this releases what the cell was holding so nothing is left registered.
+            self._cell.kill(f"shutting down hermes serve :{self.port}")
+            self._cell = None
 
     def __repr__(self) -> str:
         home = f", hermes_home={self.hermes_home!r}" if self.hermes_home else ""

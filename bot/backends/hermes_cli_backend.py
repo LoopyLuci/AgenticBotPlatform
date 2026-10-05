@@ -1,7 +1,8 @@
 """Hermes Agent CLI backend — shells out to `hermes -z "<prompt>"`.
 
-Mirrors bot/backends/cli_backend.py's shape closely (same subprocess/
-timeout/kill pattern) since Hermes's one-shot mode is the same kind of
+Mirrors bot/backends/cli_backend.py's shape closely (same spawn/timeout/kill
+pattern, one sandbox_ns cell per call - see bot/backends/base.py's
+process_cell) since Hermes's one-shot mode is the same kind of
 integration as Claude Code CLI's headless print mode: no persistent
 process, one prompt in, one answer out per call.
 
@@ -52,7 +53,8 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
-from bot.backends.base import Backend, BackendError, BackendResult
+from bot.backends.base import Backend, BackendError, BackendResult, process_cell
+from bot.sandbox_ns.spawn import async_spawn
 
 logger = logging.getLogger("bot.backends.hermes_cli")
 
@@ -88,14 +90,21 @@ class HermesCliBackend(Backend):
         reasoning_args = ["--reasoning", reasoning] if reasoning else []
         args = [self.binary, "-z", prompt, "--usage-file", str(usage_file), *model_args, *resume_args, *reasoning_args, *self.extra_args]
 
+        # One cell per call (preset "agent"): the timeout and the /stop below stop the CLI and
+        # whatever it started, which a bare proc.kill() never did. See bot/backends/base.py.
+        cell = process_cell(f"hermes_cli {self.binary}", owner="backends.hermes_cli")
         try:
-            proc = await asyncio.create_subprocess_exec(
-                *args,
+            proc = await async_spawn(
+                args,
+                cell=cell,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=self.env,
+                name=f"hermes_cli {self.binary}",
+                owner="backends.hermes_cli",
             )
         except FileNotFoundError as exc:
+            cell.close()
             usage_file.unlink(missing_ok=True)
             raise BackendError(f"'{self.binary}' not found on PATH — is Hermes Agent installed?") from exc
 
@@ -103,13 +112,13 @@ class HermesCliBackend(Backend):
             try:
                 stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
             except asyncio.TimeoutError as exc:
-                proc.kill()
+                cell.kill(f"`{self.binary}` passed its {timeout_s:g}s timeout")
                 await proc.wait()
                 raise BackendError(f"hermes_cli backend timed out after {timeout_s}s") from exc
             except asyncio.CancelledError:
                 # /stop cancelling the task wrapping this call — see the
                 # matching comment in cli_backend.py.
-                proc.kill()
+                cell.kill("the run was cancelled")
                 await proc.wait()
                 raise
 
@@ -144,6 +153,7 @@ class HermesCliBackend(Backend):
             return BackendResult(text=text, tokens=tokens, raw=usage_raw)
         finally:
             usage_file.unlink(missing_ok=True)
+            cell.close()          # the call is over either way: release its job handle
 
     def __repr__(self) -> str:
         return f"HermesCliBackend(binary={self.binary!r})"

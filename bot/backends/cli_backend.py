@@ -6,6 +6,10 @@ prompts relayed from Telegram, per the security model in the design spec —
 widen `allowed_tools` in config/backends.yaml deliberately, per action type,
 if you want a chat-originated prompt to be able to touch files.
 
+Each run gets its own sandbox_ns cell (preset "agent", see
+bot/backends/base.py's process_cell), so the timeout and the /stop below stop the CLI *and
+the tool subprocesses it started* rather than only the client.
+
 Flag names (--output-format, --allowedTools) match Claude Code CLI as of
 this writing; if your installed version differs, adjust `extra_args` in
 config/backends.yaml rather than editing this file.
@@ -18,7 +22,8 @@ import json
 import logging
 from typing import Optional
 
-from bot.backends.base import Backend, BackendError, BackendResult
+from bot.backends.base import Backend, BackendError, BackendResult, process_cell
+from bot.sandbox_ns.spawn import async_spawn
 
 logger = logging.getLogger("bot.backends.cli")
 
@@ -48,55 +53,64 @@ class CliBackend(Backend):
 
         cwd = (context or {}).get("cwd") or self.cwd
 
+        cell = process_cell(f"cli {self.binary}", owner="backends.cli")
         try:
-            proc = await asyncio.create_subprocess_exec(
-                *args,
+            proc = await async_spawn(
+                args,
+                cell=cell,
                 cwd=cwd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                name=f"cli {self.binary}",
+                owner="backends.cli",
             )
         except FileNotFoundError as exc:
+            cell.close()
             raise BackendError(
                 f"'{self.binary}' not found on PATH — is Claude Code CLI installed?"
             ) from exc
 
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
-        except asyncio.TimeoutError as exc:
-            proc.kill()
-            await proc.wait()
-            raise BackendError(f"cli backend timed out after {timeout_s}s") from exc
-        except asyncio.CancelledError:
-            # /stop cancelling the task wrapping this call — without this,
-            # the subprocess would keep running orphaned after we stop
-            # waiting on it, which defeats the point of /stop.
-            proc.kill()
-            await proc.wait()
-            raise
+            try:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
+            except asyncio.TimeoutError as exc:
+                cell.kill(f"`{self.binary}` passed its {timeout_s:g}s timeout")
+                await proc.wait()
+                raise BackendError(f"cli backend timed out after {timeout_s}s") from exc
+            except asyncio.CancelledError:
+                # /stop cancelling the task wrapping this call — without this,
+                # the subprocess would keep running orphaned after we stop
+                # waiting on it, which defeats the point of /stop. The cell is
+                # what makes that true for the tools the CLI had started too.
+                cell.kill("the run was cancelled")
+                await proc.wait()
+                raise
 
-        if proc.returncode != 0:
-            detail = stderr.decode(errors="replace").strip()
-            if not detail:
-                # The CLI often reports the real error (auth failures, etc.)
-                # as JSON on stdout rather than stderr, even on nonzero exit.
-                try:
-                    data = json.loads(stdout.decode(errors="replace"))
-                    detail = data.get("result") or ""
-                except json.JSONDecodeError:
-                    pass
-            raise BackendError(f"cli exited {proc.returncode}: {detail[:500]}")
+            if proc.returncode != 0:
+                detail = stderr.decode(errors="replace").strip()
+                if not detail:
+                    # The CLI often reports the real error (auth failures, etc.)
+                    # as JSON on stdout rather than stderr, even on nonzero exit.
+                    try:
+                        data = json.loads(stdout.decode(errors="replace"))
+                        detail = data.get("result") or ""
+                    except json.JSONDecodeError:
+                        pass
+                raise BackendError(f"cli exited {proc.returncode}: {detail[:500]}")
 
-        raw_text = stdout.decode(errors="replace")
-        try:
-            data = json.loads(raw_text)
-            text = data.get("result") or data.get("output") or raw_text
-            tokens = None
-            usage = data.get("usage") or {}
-            if usage:
-                tokens = (usage.get("input_tokens", 0) or 0) + (usage.get("output_tokens", 0) or 0)
-            return BackendResult(text=text, tokens=tokens, raw=data)
-        except json.JSONDecodeError:
-            return BackendResult(text=raw_text, tokens=None, raw=raw_text)
+            raw_text = stdout.decode(errors="replace")
+            try:
+                data = json.loads(raw_text)
+                text = data.get("result") or data.get("output") or raw_text
+                tokens = None
+                usage = data.get("usage") or {}
+                if usage:
+                    tokens = (usage.get("input_tokens", 0) or 0) + (usage.get("output_tokens", 0) or 0)
+                return BackendResult(text=text, tokens=tokens, raw=data)
+            except json.JSONDecodeError:
+                return BackendResult(text=raw_text, tokens=None, raw=raw_text)
+        finally:
+            cell.close()          # the run is over either way: release its job handle
 
     def __repr__(self) -> str:
         return f"CliBackend(binary={self.binary!r}, allowed_tools={self.allowed_tools!r})"

@@ -159,6 +159,9 @@ def test_installing_twice_is_one_wrapper_and_uninstall_puts_popen_back():
     original = subprocess.Popen
     assert guard.install() is WINDOWS
     wrapped = subprocess.Popen
+    # It must still be a class: asyncio's Windows transport does `class Popen(subprocess.Popen)`,
+    # and a plain function in that slot makes the very next `import asyncio` raise a TypeError.
+    assert isinstance(wrapped, type), "the guard installed a function where a class has to be"
     guard.install()
     assert subprocess.Popen is wrapped, "install() must be idempotent, not layered"
     guard.uninstall()
@@ -185,6 +188,24 @@ def test_the_guarded_popen_is_still_a_class_and_still_a_popen():
         if proc.poll() is None:
             proc.kill()
             proc.wait(10)
+
+
+def test_the_guard_can_be_installed_before_a_process_ever_imports_asyncio():
+    """The failure an entry point would actually hit: it calls `guard.install()` first thing, and
+    only then does something import asyncio - whose Windows transport is built by writing
+    `class Popen(subprocess.Popen)` against whatever the guard left there."""
+    code = ("import subprocess\n"
+            "from bot.sandbox_ns import guard\n"
+            "assert guard.install() is True\n"
+            "import asyncio\n"
+            "assert isinstance(subprocess.Popen, type), 'the guard left a function behind'\n"
+            "asyncio.new_event_loop()\n"
+            "print('ok')\n")
+    env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])}
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                          timeout=120, env=env)
+    assert proc.stdout.strip().endswith("ok"), proc.stdout + proc.stderr
+    assert proc.returncode == 0, proc.stderr
 
 
 # ------------------------------------------------------------------ no window on the desktop
@@ -289,7 +310,14 @@ def test_a_cells_kill_kills_the_grandchild_too(tmp_path):
 def test_closing_abps_cells_kills_the_non_persistent_ones_only():
     """What ABP does on its way out (bot/main.py's shutdown): every cell it still holds is closed,
     and only the daemons are let go. Built without `with` on purpose - a context manager would
-    have closed them before close_cells() ever saw them."""
+    have closed them before close_cells() ever saw them.
+
+    The registry is one per *process* and this worker runs every test in it, so the count
+    close_cells() reports is not this test's to make: a command cell left over from an earlier
+    test (sandbox.py's per-command cell is reclaimed by the sampler, up to one sample interval
+    after the command exited) is closed by that same shutdown too. So this asserts about its own
+    two cells - both closed, both gone from the registry, the non-persistent one's process dead
+    and the daemon's alive - and only asks that the count covers them."""
     reg = registry_mod.registry
     quick = Cell(policy_mod.preset("tool"), name="short-lived", owner="test")
     daemon = Cell(policy_mod.preset("daemon"), name="long-lived", owner="test")
@@ -298,7 +326,10 @@ def test_closing_abps_cells_kills_the_non_persistent_ones_only():
     daemon_proc = spawn([sys.executable, "-c", SLEEPER % 60], cell=daemon, owner="test",
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
-        assert reg.close_cells(reason="the test is shutting ABP down") == 2
+        assert reg.close_cells(reason="the test is shutting ABP down") >= 2, (
+            "both of this test's cells are registered, so both must be among the ones closed")
+        left = {c.id for c in reg.cells()}
+        assert not {quick.id, daemon.id} & left, "a cell ABP has closed must not still be registered"
         assert wait_gone([quick_proc.pid]) == [], "a non-persistent cell must die with the process"
         time.sleep(0.5)
         assert _alive(daemon_proc.pid), "a daemon is supposed to outlive ABP"
@@ -699,3 +730,25 @@ def test_the_sandbox_local_backend_still_runs_and_still_contains_its_tree(tmp_pa
     assert "hello-from-local" in out
     assert returncode is not None, "kill() did not stop the command"
     assert sandbox.kill.__doc__
+
+
+# ------------------------------------------------------------------ the surface
+
+def test_the_diagnostics_processes_panel_is_in_both_uis_and_wired():
+    """Diagnostics shows what ABP is running in the web dashboard *and* in the desktop app's own
+    page: both serve it from the same /api/sandbox/status route, and neither may be left with a
+    table nobody fills in - an id in the HTML with no renderer behind it is a panel that says
+    "Loading." forever."""
+    root = Path(__file__).resolve().parent.parent
+    ids = ('id="diag-cells-tbody"', 'id="diag-processes-tbody"', 'id="diag-events-tbody"', 'id="diag-processes-note"')
+    for rel in ("bot/dashboard/static/dashboard.html", "desktop-app/ui/index.html"):
+        text = (root / rel).read_text(encoding="utf-8")
+        for needle in ids:
+            assert needle in text, f"{rel} is missing {needle}"
+        assert 'data-tab="cells"' in text and 'data-tab="events"' in text, rel
+        assert ".tab-panel" in text, f"{rel} has the panels but not the css that hides the inactive ones"
+    for rel in ("bot/dashboard/static/dashboard.js", "desktop-app/ui/main.js"):
+        text = (root / rel).read_text(encoding="utf-8")
+        for needle in ("renderSandboxCells", "renderSandboxProcesses", "renderSandboxEvents", "/api/sandbox/status"):
+            assert needle in text, f"{rel} never calls {needle}"
+        assert "data-kill-cell" in text, f"{rel} cannot stop a cell from the page"

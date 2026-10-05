@@ -8,9 +8,10 @@ accept() reserves its share of the offer (or refuses, with the reason) and recor
 start() (gang jobs start together once every member is reserved), otherwise it starts at once.
 
 Each job gets its own folder (<work_dir>/<id>/, results go in its out/ folder) and a clean environment: a short
-allowlist of system variables plus the job's own, never ABP's (which holds API keys). On Windows it runs in a job
-object with a hard CPU-rate cap (its share of the machine) and a memory cap; on Linux and macOS, under an address
-space limit and a lower priority. A timeout, a cancel, or ABP stopping kills the whole process tree.
+allowlist of system variables plus the job's own, never ABP's (which holds API keys). It runs in its own
+sandbox_ns cell whose policy is the job's reservation - a hard CPU-rate cap (its share of the machine), a memory
+cap for the job as a whole and per process, below-normal priority - which on Windows is a real Win32 Job Object
+and elsewhere a session with setrlimit/nice. A timeout, a cancel, or ABP stopping kills the whole process tree.
 
 Kinds:
     command       spec: {argv: [...], cwd?: a folder inside the job folder, stdin?: text}
@@ -34,6 +35,11 @@ from typing import Any, Optional
 
 from bot.cluster import inventory, store
 from bot.cluster.offer import Request, budget, work_root
+from bot.sandbox_ns.cell import new_cell
+from bot.sandbox_ns.policy import Policy
+from bot.sandbox_ns.spawn import spawn
+
+OWNER = "cluster.executor"
 
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,100}$")
@@ -44,7 +50,7 @@ SAFE_ENV = ("PATH", "PATHEXT", "SYSTEMROOT", "SystemRoot", "SYSTEMDRIVE", "WINDI
             "CommonProgramFiles", "LANG", "LC_ALL", "TZ", "SHELL", "CARGO_HOME", "RUSTUP_HOME", "JAVA_HOME",
             "ANDROID_HOME", "ANDROID_SDK_ROOT", "GOPATH", "DOTNET_ROOT", "NODE_PATH", "XDG_RUNTIME_DIR")
 MAX_TIMEOUT_S = 7 * 24 * 3600
-_procs: dict[str, dict] = {}          # job id -> {"proc", "job_handle", "timer", "cancelled"}
+_procs: dict[str, dict] = {}          # job id -> {"proc", "cell", "timer", "cancelled"}
 _lock = threading.Lock()
 
 
@@ -225,36 +231,30 @@ def _run_process(j: dict) -> None:
         cwd.mkdir(parents=True, exist_ok=True)
     res = j["reserved"]
     threads = inventory.static()["cpu"]["threads"] or 1
-    preexec = None
-    if os.name != "nt":
-        ram_bytes = int(res["ram_gb"] * 1024 ** 3)
-
-        def preexec() -> None:  # noqa: F811
-            import resource
-            os.nice(10)
-            if ram_bytes > 0:
-                resource.setrlimit(resource.RLIMIT_AS, (ram_bytes, ram_bytes))
     _log(j["id"], f"[cluster] {' '.join(argv)}  (cpu {res['cpu']}, ram {res['ram_gb']} GB, gpus {res['gpus'] or '-'})")
     log = open(d / "job.log", "ab")
+    # One cell per job, with the job's reservation as its policy: this is the job object this used
+    # to build by hand (the whole job's memory, its share of the CPU), plus the recording, the
+    # ownership and the guaranteed tree kill ABP's shutdown gets for free. `memory_mb` is the
+    # per-process cap the POSIX path enforced with setrlimit; `job_memory_mb` is the per-job one.
+    policy = Policy(name="cluster", memory_mb=int(res["ram_gb"] * 1024), job_memory_mb=int(res["ram_gb"] * 1024),
+                    cpu_rate_percent=min(100.0, res["cpu"] / threads * 100))
+    cell = new_cell("tool", policy=policy, name=f"job {j['id']}", owner=OWNER)
     try:
-        proc = subprocess.Popen(argv, cwd=str(cwd), env=env, stdout=log, stderr=subprocess.STDOUT,
-                                stdin=subprocess.PIPE if spec.get("stdin") else subprocess.DEVNULL,
-                                creationflags=NO_WINDOW, preexec_fn=preexec)
+        proc = spawn(argv, cell=cell, cwd=str(cwd), env=env, stdout=log, stderr=subprocess.STDOUT,
+                     stdin=subprocess.PIPE if spec.get("stdin") else subprocess.DEVNULL,
+                     name=f"job {j['id']}", owner=OWNER,
+                     **({"start_new_session": True} if os.name != "nt" else {"creationflags": NO_WINDOW}))
     except OSError as e:
         log.close()
+        cell.close()
         raise JobError(f"could not start {argv[0]}: {e}") from None
-    handle = 0
-    if os.name == "nt":
-        try:
-            from bot.agent_runtime import win_job
-            handle = win_job.create(job_memory_mb=int(res["ram_gb"] * 1024),
-                                    cpu_rate_percent=min(100.0, res["cpu"] / threads * 100))
-            win_job.assign(handle, proc.pid)
-        except OSError as e:
-            _log(j["id"], f"[cluster] warning: could not apply the CPU/memory caps: {e}")
+    for note in cell.notes:
+        _log(j["id"], f"[cluster] warning: {note}")
+    # The job's own timer, not the policy's: _kill() is what logs the reason and marks the run.
     timer = threading.Timer(j["timeout_s"], lambda: _kill(j["id"], "timed out"))
     with _lock:
-        _procs[j["id"]] = {"proc": proc, "job_handle": handle, "timer": timer, "cancelled": False}
+        _procs[j["id"]] = {"proc": proc, "cell": cell, "timer": timer, "cancelled": False}
     timer.start()
     store.update("runs", j["id"], state="running", pid=proc.pid)
     if spec.get("stdin"):
@@ -268,11 +268,10 @@ def _run_process(j: dict) -> None:
     log.close()
     with _lock:
         rec = _procs.get(j["id"]) or {}
-        handle, rec["job_handle"] = rec.get("job_handle", 0), 0      # _kill may already have closed it
+        cell, rec["cell"] = rec.get("cell"), None      # _kill may already have killed it
         why = rec.get("reason")
-    if handle:
-        from bot.agent_runtime import win_job
-        win_job.terminate(handle, 0)
+    if cell is not None:
+        cell.close()                # the job is done; this reclaims the handle and takes any stragglers
     _finish(j["id"], "done" if code == 0 else "failed", exit_code=code,
             **({"error": why} if why else {} if code == 0 else {"error": f"exit code {code}"}))
 
@@ -288,7 +287,7 @@ def _run_inline(j: dict, fn) -> None:
             box["error"] = str(e)
     t = threading.Thread(target=go, daemon=True)
     with _lock:
-        _procs[j["id"]] = {"proc": None, "job_handle": 0, "timer": None, "cancelled": False}
+        _procs[j["id"]] = {"proc": None, "cell": None, "timer": None, "cancelled": False}
     t.start()
     t.join(j["timeout_s"])
     if t.is_alive():
@@ -350,12 +349,14 @@ def _kill(job_id: str, reason: str) -> None:
         if rec is None:
             return
         rec["reason"] = reason
-        proc, handle = rec.get("proc"), rec.get("job_handle")
-        rec["job_handle"] = 0
+        proc, cell = rec.get("proc"), rec.get("cell")
+        rec["cell"] = None
     _log(job_id, f"[cluster] {reason}")
-    if handle:
-        from bot.agent_runtime import win_job
-        win_job.terminate(handle, 1)
+    if cell is not None:
+        # The cell is the job: killing it stops the job and everything it started, which is what
+        # this used to do with a job object plus a psutil tree walk.
+        cell.kill(reason)
+        return
     if proc is not None:
         try:
             import psutil

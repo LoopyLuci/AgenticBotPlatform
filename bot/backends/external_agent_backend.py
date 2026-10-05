@@ -11,7 +11,9 @@ is decided by their own configuration. That is the trade, and the reason each is
 rather than something a user could pick by accident.
 
 Both run as a subprocess without a shell, in the turn's working folder, with a timeout, and are killed with
-their process tree when the turn is cancelled.
+their process tree when the turn is cancelled - each turn in its own sandbox_ns cell (preset "agent"), so that
+kill is the cell's (a Win32 Job Object, or a session of its own) rather than a tree walk that can miss a
+process the agent forked.
 
 The command lines follow each product's own documentation for scripted use (opencode.ai/docs/cli,
 docs.openclaw.ai/cli/agent). OpenCode's own `run --help` and `--session`/`--format json` flags were confirmed live
@@ -37,7 +39,8 @@ import re
 import shutil
 from typing import Any, Optional
 
-from bot.backends.base import Backend, BackendError, BackendResult
+from bot.backends.base import Backend, BackendError, BackendResult, process_cell
+from bot.sandbox_ns.spawn import async_spawn
 
 logger = logging.getLogger("bot.backends.external")
 
@@ -106,29 +109,36 @@ class ExternalAgentBackend(Backend):
             import subprocess
 
             kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-        else:
-            kwargs["start_new_session"] = True
+        # One cell per turn (preset "agent"), so the tree kill _kill_tree() does below is the cell's
+        # own - a Win32 Job Object on Windows, a session of its own elsewhere - and the run shows up
+        # on the diagnostics page. See bot/backends/base.py's process_cell.
+        cell = process_cell(f"{self.name} {self.binary}", owner="backends.external")
         try:
-            proc = await asyncio.create_subprocess_exec(*args, cwd=cwd or None, stdin=asyncio.subprocess.DEVNULL,
-                                                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, **kwargs)
+            proc = await async_spawn(args, cell=cell, cwd=cwd or None, stdin=asyncio.subprocess.DEVNULL,
+                                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                                     name=f"{self.name} {self.binary}", owner="backends.external", **kwargs)
         except OSError as exc:
+            cell.close()
             raise BackendError(f"could not start {self.name}: {exc}") from exc
         try:
-            out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
-        except asyncio.TimeoutError as exc:
-            await _kill_tree(proc)
-            raise BackendError(f"{self.name} timed out after {timeout_s:g}s") from exc
-        except asyncio.CancelledError:
-            await _kill_tree(proc)
-            raise
-        text_out = out.decode("utf-8", "replace")[:MAX_OUTPUT_CHARS]
-        if proc.returncode != 0:
-            detail = _ANSI.sub("", err.decode("utf-8", "replace")).strip() or _ANSI.sub("", text_out).strip()
-            raise BackendError(f"{self.name} exited with status {proc.returncode}: {detail[:500]}")
-        reply = self.parse_output(text_out)
-        if not reply:
-            raise BackendError(f"{self.name} returned no text")
-        return BackendResult(text=reply, raw={"backend": self.name, "exit": proc.returncode, **self.extra_raw(text_out)})
+            try:
+                out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
+            except asyncio.TimeoutError as exc:
+                await _kill_tree(proc)
+                raise BackendError(f"{self.name} timed out after {timeout_s:g}s") from exc
+            except asyncio.CancelledError:
+                await _kill_tree(proc)
+                raise
+            text_out = out.decode("utf-8", "replace")[:MAX_OUTPUT_CHARS]
+            if proc.returncode != 0:
+                detail = _ANSI.sub("", err.decode("utf-8", "replace")).strip() or _ANSI.sub("", text_out).strip()
+                raise BackendError(f"{self.name} exited with status {proc.returncode}: {detail[:500]}")
+            reply = self.parse_output(text_out)
+            if not reply:
+                raise BackendError(f"{self.name} returned no text")
+            return BackendResult(text=reply, raw={"backend": self.name, "exit": proc.returncode, **self.extra_raw(text_out)})
+        finally:
+            cell.close()          # the turn is over either way: release its job handle
 
     def extra_raw(self, stdout: str) -> dict:
         """Extra BackendResult.raw fields a product's own output reveals — currently only

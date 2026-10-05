@@ -1,13 +1,20 @@
 """The long-running programs hosting starts (the edge, cloudflared, Caddy): started detached with their output in
 `<hosting>/logs/<name>.log`, remembered by pid file, checked with psutil (a reused pid is caught by comparing the
 command line), stopped politely then firmly. They outlive an ABP restart; ABP finds them again by their pid files.
-Every function takes `home`, the folder holding run/ and logs/ (default: hosting's; the file server passes its own)."""
+Every function takes `home`, the folder holding run/ and logs/ (default: hosting's; the file server passes its own).
+
+Each of them also gets a sandbox_ns cell (preset "daemon"), keyed by (home, name) like the pid file: persistent, so
+the reaper and ABP's own shutdown leave it running, and its kill is the whole tree - which is what stop() falls
+back on when a polite stop did not finish the job. A program an earlier ABP started has no cell here, so the pid
+file path stays exactly as it was.
+"""
 from __future__ import annotations
 
 import json
 import os
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -15,6 +22,23 @@ from typing import Optional
 import psutil
 
 from bot.hosting.store import HostingError, root
+from bot.sandbox_ns.cell import Cell, new_cell
+from bot.sandbox_ns.spawn import spawn as ns_spawn
+
+OWNER = "hosting.procs"
+
+#: The daemon cell per (home, name), for the programs this process started. Released by stop().
+_cells: dict[tuple[str, str], Cell] = {}
+_cells_lock = threading.Lock()
+
+
+def _key(name: str, home: Optional[Path] = None) -> tuple[str, str]:
+    return (str(home or root()), name)
+
+
+def _take_cell(name: str, home: Optional[Path] = None) -> Optional[Cell]:
+    with _cells_lock:
+        return _cells.pop(_key(name, home), None)
 
 
 def _meta(name: str, home: Optional[Path] = None) -> Path:
@@ -57,18 +81,26 @@ def start(name: str, argv: list[str], *, env: Optional[dict] = None, cwd: Option
         kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
     else:
         kw["start_new_session"] = True
+    cell = new_cell("daemon", name=name, owner=OWNER)
     try:
-        p = subprocess.Popen(argv, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, cwd=cwd,
-                             env={**os.environ, **(env or {})}, **kw)
+        p = ns_spawn(argv, cell=cell, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, cwd=cwd,
+                     env={**os.environ, **(env or {})}, name=name, owner=OWNER, **kw)
     except OSError as e:
+        cell.close()
         raise HostingError(f"cannot start {name} ({argv[0]}): {e}") from e
     finally:
         log.close()
+    with _cells_lock:
+        _cells[_key(name, home)] = cell
     shown = argv[: len(argv) - secret_args] + (["<hidden>"] * secret_args)
     info = {"pid": p.pid, "created": psutil.Process(p.pid).create_time(), "argv": shown, "started": time.time()}
     _meta(name, home).write_text(json.dumps(info), encoding="utf-8")
     time.sleep(0.8)
     if p.poll() is not None:
+        # It died at once: there is nothing to keep a cell for, and its log is what says why.
+        dead = _take_cell(name, home)
+        if dead is not None:
+            dead.kill(f"{name} exited at once (code {p.returncode})")
         tail = log_path(name, home).read_text(encoding="utf-8", errors="replace")[-1500:]
         raise HostingError(f"{name} exited at once (code {p.returncode}):\n{tail}")
     return status(name, home)
@@ -77,7 +109,10 @@ def start(name: str, argv: list[str], *, env: Optional[dict] = None, cwd: Option
 def stop(name: str, timeout: float = 8.0, home: Optional[Path] = None) -> bool:
     s = status(name, home)
     _meta(name, home).unlink(missing_ok=True)
+    cell = _take_cell(name, home)
     if not s["running"]:
+        if cell is not None:
+            cell.close()          # nothing to stop, just the job handle to release
         return False
     try:
         p = psutil.Process(s["pid"])
@@ -90,6 +125,10 @@ def stop(name: str, timeout: float = 8.0, home: Optional[Path] = None) -> bool:
             p.kill()
     except psutil.Error:
         pass
+    if cell is not None:
+        # Anything the polite stop did not finish - a grandchild that ignored the terminate -
+        # goes with the cell, tree and all.
+        cell.kill(f"stopping {name}")
     return True
 
 
