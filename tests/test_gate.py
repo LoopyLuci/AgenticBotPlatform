@@ -48,6 +48,8 @@ from typing import Optional
 import httpx
 import pytest
 
+from abp_gate import limits, manager
+
 CODE_ROOT = Path(__file__).resolve().parent.parent
 PYTHON = Path(sys.executable)
 NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
@@ -67,7 +69,20 @@ _STRIPPED = ("ABP_SANDBOX_INSTANCE", "ABP_STANDBY", "ABP_GATE", "ABP_HOME", "DAS
              "DASHBOARD_HOST", "ABP_GATE_PUBLIC_PORTS", "ABP_GATE_CONTROL_PORT", "ABP_INSTANCES_DIR",
              "ABP_LOCALAI_PORT", "ABP_CICD_DB", "ABP_GATE_CODE_ROOT", "ABP_DEV_WORKTREES_DIR",
              "ABP_GATE_MAX_INSTANCES", "ABP_GATE_RESTART_LIMIT", "ABP_GATE_RESTART_WINDOW_S",
-             "ABP_GATE_RESTART_BACKOFF_S", "ABP_GATE_WATCH_INTERVAL_S", "ABP_GATE_INSTANCE_LIFETIME")
+             "ABP_GATE_RESTART_BACKOFF_S", "ABP_GATE_WATCH_INTERVAL_S", "ABP_GATE_INSTANCE_LIFETIME",
+             "ABP_GATE_UNHEALTHY_GRACE_S")
+
+#: How long `start_gate` waits for the gate's first healthy instance, worked out
+#: from the gate's own numbers rather than picked: `abp gate start`'s promise is
+#: that ABP comes up, and the gate's answer to a boot that did not make it is to
+#: try again inside a bounded budget - manager.DEFAULT_HEALTH_TIMEOUT_S per
+#: attempt, limits.restart_limit() attempts, the restart backoff in between. A
+#: test that gives up before that budget is spent is racing the product instead
+#: of measuring it, and on a loaded machine (where a cold boot that used to take
+#: 3s takes 40) that is exactly what happens. Returns the instant the instance
+#: answers, so the normal case costs nothing.
+GATE_UP_TIMEOUT_S = (manager.DEFAULT_HEALTH_TIMEOUT_S * limits.restart_limit()
+                     + sum(limits.restart_backoff_s()[:limits.restart_limit() - 1]) + 30.0)
 
 
 # ------------------------------------------------------------------- helpers
@@ -187,6 +202,53 @@ def wait_gone(url: str, timeout: float = 40.0) -> None:
             return
         time.sleep(0.25)
     raise AssertionError(f"{url} is still answering after {timeout}s")
+
+
+def wait_lease(port: int, headers: dict, until, timeout: float = 120.0) -> dict:
+    """Wait until an instance's own /api/lease satisfies `until`, and return it.
+
+    /healthz answering 200 does NOT mean the boot is finished. bot/main.py binds
+    the dashboard from a task it creates BEFORE the lease controller exists (see
+    bot/main.py: the controller task and the role banner both come after
+    `await mcp_client.connect_all_enabled()`), and starting the lease-gated
+    services then blocks that same event loop - measured at 2.5-3.1s on an idle
+    machine, and much more on a loaded one, which is longer than the health
+    probe's own timeout. So reading the lease (or a log line) the moment the
+    port starts answering is reading state the boot has not written yet, and on a
+    loaded machine that is a failed test rather than a wrong answer.
+
+    Waits for the condition with a generous deadline; never sleeps a fixed time
+    and hopes."""
+    deadline = time.monotonic() + timeout
+    last: dict = {}
+    while time.monotonic() < deadline:
+        last = lease_of(port, headers)
+        if until(last):
+            return last
+        time.sleep(0.25)
+    raise AssertionError(f"the instance on {port} never reached the wanted lease state within "
+                         f"{timeout:.0f}s; last said {last}")
+
+
+def wait_log(log: Path, needle: str, timeout: float = 120.0) -> str:
+    """Wait for `needle` to appear in an instance's log; return the log.
+
+    The same gap as wait_lease above, in the log rather than in an API: what a
+    boot decides (this instance is a sandbox, so nothing reaches outward) is
+    written to its log at a point an answering port knows nothing about.
+    Asserting the absence of the markers a poller or the scheduler would leave is
+    only meaningful once the boot has got that far."""
+    deadline = time.monotonic() + timeout
+    text = ""
+    while time.monotonic() < deadline:
+        try:
+            text = log.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+        if needle in text:
+            return text
+        time.sleep(0.25)
+    raise AssertionError(f"{log} never said {needle!r} within {timeout}s:\n{text[-1500:]}")
 
 
 def token_from(home: Path) -> str:
@@ -365,7 +427,7 @@ def start_gate(tmp_root: Path, *, wait_for_instance: bool = True,
         if wait_for_instance:
             # 200 means the gate has a healthy instance behind it - and the token only
             # exists once an instance has booted and written it.
-            wait_http(f"{gate.control}/healthz", until="200", timeout=150.0)
+            wait_http(f"{gate.control}/healthz", until="200", timeout=GATE_UP_TIMEOUT_S)
             token_from(home)   # it only exists once an instance has booted and written it
     except BaseException:
         stop_gate(gate)
@@ -776,8 +838,12 @@ def test_a_sandbox_starts_no_outward_connector_even_when_its_config_has_one(tmp_
             assert [b["name"] for b in bots] == ["would-poll"], bots
             assert all(b["live_running"] is False for b in bots), bots
 
-            log = (tmp_path / "sandbox.log").read_text(encoding="utf-8", errors="replace")
-            assert "nothing reaches the outside world" in log, log[-1500:]
+            # The banner is this boot saying out loud what it decided, and it is
+            # written after the port starts answering (bot/main.py logs it once the
+            # lease controller exists, which is after the dashboard is bound). So
+            # wait for it - then, and only then, is "no poller started" a claim
+            # about the whole boot rather than about the first three seconds of it.
+            log = wait_log(tmp_path / "sandbox.log", "nothing reaches the outside world")
             # bot/platform_supervisor.py logs this line for every poller it starts,
             # and bot/scheduler.py logs its own - neither may appear in a sandbox.
             for marker in ("started bot instance", "scheduler started"):
@@ -808,8 +874,15 @@ def test_the_lease_stops_two_instances_from_both_running_the_singletons(tmp_path
         wait_http(f"http://127.0.0.1:{second_port}/healthz", until="200")
         headers = {"X-Dashboard-Token": token_from(home)}
 
-        one = lease_of(first_port, headers)
-        two = lease_of(second_port, headers)
+        # Both ports answering is not the same moment as "the first one leads":
+        # the lease controller is started after the dashboard is bound (see
+        # wait_lease), and it takes the lease itself, then starts the services
+        # that go with it. So wait for the leader decision instead of assuming a
+        # healthy port already made it - on a loaded machine the gap is seconds,
+        # not milliseconds, and the standby's own boot is not a clock to trust
+        # with somebody else's lease.
+        one = wait_lease(first_port, headers, until=lambda s: s["held"] and s["singletons_running"])
+        two = wait_lease(second_port, headers, until=lambda s: s["held_by_other"])
         assert one["held"] is True and one["singletons_running"] is True, one
         assert two["held"] is False and two["singletons_running"] is False, two
         assert two["held_by_other"] is True, two
@@ -1196,3 +1269,76 @@ arithmetic the runaway was missing."""
         assert not [i for i in status["instances"].values() if procs.alive(i["pid"])]
     finally:
         forget(watcher_gate, name)
+
+
+def wait_for_starts(gate: Gate, name: str, at_least: int, timeout: float = 60.0) -> int:
+    """Wait until the gate has really started `at_least` processes for `name`.
+
+    Counted from the spawn banners in the logs, not from the registry: the thing
+    under test is whether the gate STARTS a replacement, and a registry entry
+    saying "unhealthy" says nothing about processes."""
+    from abp_gate import registry
+
+    deadline = time.monotonic() + timeout
+    seen = 0
+    while time.monotonic() < deadline:
+        seen = gate.spawns_for(name)
+        if seen >= at_least:
+            return seen
+        time.sleep(0.25)
+    raise AssertionError(f"the gate started {seen} process(es) for {name!r} within {timeout:.0f}s, "
+                         f"expected {at_least}:\n{gate_log(gate.root)}"
+                         f"\n{registry.get(name, registry_path(gate))}")
+
+
+def test_a_running_instance_too_busy_to_answer_is_left_alone(tmp_path):
+    """The other half of "is it crashed?": a process the OS says is THERE, that
+    missed one probe, is not a crashed process.
+
+    Measured on this machine: a booting ABP blocks its own event loop for 2.5-3.1s
+    while it starts its lease-gated services, against a health probe with a 3s
+    timeout - so on a loaded machine one missed probe is what a healthy instance
+    looks like. A gate that acts on it kills a working ABP and boots a
+    replacement: an outage manufactured by the thing that exists to prevent them,
+    and a moving pid for anything reading the registry.
+
+    So an unanswerable-but-running instance has to stay that way for
+    ABP_GATE_UNHEALTHY_GRACE_S first - and must NOT stay that way forever, which
+    is the second half of this test: once the grace is spent the gate does try.
+    The instance here is a real running process that serves nothing, published by
+    hand like the two watcher tests above; a dead pid is the crash case, and
+    `test_the_watcher_stops_after_its_restart_budget` already covers that one."""
+    from abp_gate import procs
+
+    grace = 8.0
+    gate = start_gate(tmp_path, argv=["--no-start"], wait_for_instance=False,
+                      ABP_GATE_WATCH_INTERVAL_S="0.5", ABP_GATE_RESTART_BACKOFF_S="0.2",
+                      ABP_GATE_UNHEALTHY_GRACE_S=str(grace))
+    # A real process that is up and is not serving: exactly what the gate sees
+    # when an instance's event loop cannot answer in time.
+    busy = subprocess.Popen([str(PYTHON), "-c", "import time; time.sleep(300)"],
+                            creationflags=NO_WINDOW)
+    name = "busy-not-dead"
+    try:
+        publish(gate, name, code_root=str(broken_checkout(tmp_path)),
+                port=free_port(), pid=busy.pid, ever_healthy=True)
+        # Wait for the gate to have LOOKED and decided to wait - its own words,
+        # not a sleep - and then check what it did while waiting: nothing.
+        wait_log(tmp_path / "gate.log", "leaving it alone rather than replacing a busy instance",
+                 timeout=30.0)
+        assert gate.spawns_for(name) == 0, (
+            f"the gate replaced an instance that is running and simply not answering:\n"
+            f"{gate_log(gate.root)}")
+        assert procs.alive(busy.pid), "the gate killed a process that was still there"
+
+        # ...and once the grace is spent it does act: delayed, not disabled.
+        wait_for_starts(gate, name, 1)
+    finally:
+        forget(gate, name)
+        stop_gate(gate)
+        # taskkill, not procs.stop: this is not one of ours by command line, and
+        # killing the launcher alone would leave the interpreter it started
+        # sleeping on for another five minutes.
+        with contextlib.suppress(Exception):
+            procs.taskkill_tree(busy.pid)
+        busy.wait(30)

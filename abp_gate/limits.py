@@ -9,6 +9,8 @@ number somebody chose rather than a number nobody did:
     ABP_GATE_RESTART_WINDOW_S    how long that window is, in seconds (600)
     ABP_GATE_RESTART_BACKOFF_S   seconds to wait before restart 1, 2, 3, ... (5, 20, 60)
     ABP_GATE_WATCH_INTERVAL_S    how often the watcher looks (5)
+    ABP_GATE_UNHEALTHY_GRACE_S   how long a RUNNING instance that is not answering
+                                 is left alone before it counts as replaceable (30)
     ABP_GATE_INSTANCE_LIFETIME   `gate` (instances die with the gate) or
                                  `detached` (the active one survives it)
 
@@ -35,6 +37,24 @@ DEFAULT_RESTART_WINDOW_S = 600.0
 #: boot is retried rarely rather than constantly.
 DEFAULT_RESTART_BACKOFF_S = (5.0, 20.0, 60.0, 120.0, 300.0)
 DEFAULT_WATCH_INTERVAL_S = 5.0
+#: How long an instance that is still RUNNING but has stopped answering /healthz
+#: is left alone before the watcher treats it as replaceable.
+#:
+#: This exists because those are two different questions and only one of them is
+#: about a crash. "The process is gone" is answered by the OS, instantly and
+#: truthfully. "It did not answer a probe within three seconds" is answered by a
+#: busy machine as readily as by a sick one: measured on this machine, a booting
+#: ABP blocks its own event loop for 2.5-3.0s while it starts its
+#: lease-gated services (they are imported and started synchronously, inside
+#: supervisor.supervise(), on the same loop that serves /healthz). On a loaded
+#: machine that crosses the probe timeout, and a gate that acts on one failed
+#: probe kills a healthy ABP and boots a replacement - turning a three-second
+#: hiccup into a thirty-second outage, and handing the test suite a moving pid.
+#:
+#: So: a process the OS says is gone is restarted at once, and a process that is
+#: merely unanswerable has to stay that way for this long. The restart budget
+#: above is still what bounds the whole thing.
+DEFAULT_UNHEALTHY_GRACE_S = 30.0
 
 
 def _number(name: str, default: float) -> float:
@@ -80,6 +100,12 @@ def restart_backoff_s() -> tuple[float, ...]:
 
 def watch_interval_s() -> float:
     return max(0.1, _number("ABP_GATE_WATCH_INTERVAL_S", DEFAULT_WATCH_INTERVAL_S))
+
+
+def unhealthy_grace_s() -> float:
+    """Seconds a running-but-unanswerable instance is left alone. 0 restores the
+    old behaviour of acting on the very first failed probe."""
+    return max(0.0, _number("ABP_GATE_UNHEALTHY_GRACE_S", DEFAULT_UNHEALTHY_GRACE_S))
 
 
 def instance_lifetime() -> str:

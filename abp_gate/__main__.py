@@ -81,6 +81,10 @@ class Gate:
         #: --no-start means exactly that: the watcher may not start anything.
         self._may_start_production = False
         self._production_gave_up = False
+        #: When each instance was first seen RUNNING but not answering. A restart
+        #: is immediate for a process that is gone and gated on this for one that
+        #: is only slow - see _reconcile.
+        self._unhealthy_since: dict[str, float] = {}
 
     async def run(self, *, start_production: bool = True) -> None:
         import uvicorn
@@ -182,7 +186,17 @@ class Gate:
                              already cleaned up after its own failures
 
         Anything else is one restart, after waiting the backoff for however many
-        restarts this instance has already had."""
+        restarts this instance has already had.
+
+        The two questions are deliberately not one question. "The process is
+        gone" is the OS's answer, and it is acted on immediately. "It did not
+        answer a probe in time" is not: a booting instance blocks its own event
+        loop for seconds while it starts its singletons (measured: 2.5-3.0s,
+        against a 3s probe timeout), so on a loaded machine that question is
+        answered "no" by a perfectly healthy ABP. Replacing one on a single
+        failed probe kills a working instance and boots a replacement - an
+        outage manufactured by the thing meant to prevent outages. So that case
+        has to persist for limits.unhealthy_grace_s() first."""
         active_name = registry.active_name()
         logger.debug("watcher reconcile: active_name=%s", active_name)
         if not active_name:
@@ -192,9 +206,19 @@ class Gate:
         if inst is None:
             logger.debug("watcher: no instance for active_name=%s", active_name)
             return
-        if await self._is_healthy(inst):
+        dead = not procs.alive(inst.pid) or not inst.port
+        if not dead and await self._is_serving(inst):
+            self._unhealthy_since.pop(inst.name, None)
             logger.debug("watcher: instance %r is healthy", inst.name)
             return
+        if not dead:
+            # It was there a moment ago and did not answer. Ask the OS again: if it
+            # died while the probe was in flight this is a crash, and a crash does
+            # not wait out the grace.
+            dead = not procs.alive(inst.pid)
+            if not dead and not self._unanswerable_for(inst.name):
+                return
+        self._unhealthy_since.pop(inst.name, None)
         if inst.sandbox:
             # A sandbox that died is just a sandbox that died: record it and let
             # the agent start another. Restarting it behind their back would
@@ -234,6 +258,26 @@ class Gate:
             await self.mgr.restart_active()
         except manager.SwapError as exc:
             logger.error("could not restart the active instance: %s", exc)
+
+    def _unanswerable_for(self, name: str) -> bool:
+        """Has `name` been running but unanswerable for the whole grace period?
+
+        A per-instance clock, not a counter, so the grace is the same number of
+        seconds whether the watcher looks every half second or every five. It is
+        in memory on purpose: this is a judgement about one noisy probe, not a
+        budget - the budget that has to survive a restart of the gate is
+        registry.record_restart(), and it is untouched by this."""
+        now = time.monotonic()
+        waited = now - self._unhealthy_since.setdefault(name, now)
+        grace = limits.unhealthy_grace_s()
+        if waited < grace:
+            logger.info(
+                "active instance %r is running but has not answered /healthz for %.0fs of %.0fs; "
+                "leaving it alone rather than replacing a busy instance",
+                name, waited, grace,
+            )
+            return False
+        return True
 
     async def _maybe_start_production(self) -> None:
         """Nothing is serving at all: give starting one a bounded number of tries.
@@ -276,17 +320,18 @@ class Gate:
         except Exception as exc:  # noqa: BLE001 - the watcher outlives anything it finds
             logger.error("could not start the production instance: %s", exc)
 
-    async def _is_healthy(self, inst: registry.Instance) -> bool:
-        """Both questions: is the process there, and is it serving? Either one
-        alone is a false all-clear - an instance whose launcher died leaves a
-        live interpreter, and an interpreter whose launcher is fine can still be
-        refusing connections.
+    async def _is_serving(self, inst: registry.Instance) -> bool:
+        """Only the second of the two questions: is the port actually answering?
+
+        Liveness is checked by the caller, which is the point - the OS answers
+        that one instantly and truthfully, and this one can be answered "no" by a
+        healthy instance that is simply busy (see _reconcile).
 
         The probe is a blocking HTTP call with a 3s timeout, so it runs in a
         thread: the event loop also serves the public port, and blocking it for
         three seconds every cycle would be the gate causing the outage it is
         meant to be preventing."""
-        if not procs.alive(inst.pid) or not inst.port:
+        if not inst.port:
             return False
         probe = await asyncio.to_thread(manager.health, inst.port)
         return bool(probe.get("healthy"))

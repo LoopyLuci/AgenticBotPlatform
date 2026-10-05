@@ -5,9 +5,10 @@
              healthy.
     swap     start a standby instance from new code on the SAME data, wait for
              it to be healthy, tell the outgoing one to release the leader
-             lease, let the new one take it, flip routing, drain the old one and
-             stop it. If any step fails, the old one re-takes the lease,
-             keeps serving, and the failure is reported with the reason.
+             lease, let the new one take it, wait for it to answer again, flip
+             routing, drain the old one and stop it. If any step fails, the old
+             one re-takes the lease, keeps serving, and the failure is reported
+             with the reason.
     rollback flip routing back to the instance the last swap replaced, which is
              still alive and still has the data warm.
     sandbox a copy of the real state on its own port with ABP_SANDBOX_INSTANCE=1,
@@ -32,6 +33,13 @@ Two rules exist purely because the first version of this file did not have
   * there is a ceiling on how much of this can go wrong at once: a live
     instance cap and a bounded restart budget (both in limits.py), and
     `_spawn()` refusing to start anything when the cap is reached.
+
+And one that exists because the public port and this file share an event loop:
+
+  * everything here that waits on something - a process, a port, a probe, a
+    database copy - waits in a thread (`asyncio.to_thread`). Done inline it is
+    time the front door does not answer, and the front door is the one thing
+    this whole package is for.
 """
 
 from __future__ import annotations
@@ -63,6 +71,12 @@ DEFAULT_HEALTH_TIMEOUT_S = 90.0
 #: outgoing one gives it up.
 DEFAULT_LEASE_TIMEOUT_S = 45.0
 DEFAULT_DRAIN_S = 15.0
+#: How long a swap waits for the incoming instance to answer /healthz again,
+#: after it has taken the lease, before routing is handed over. It is a
+#: wait-for-a-condition with a deadline, not a sleep: the normal case returns as
+#: soon as the instance answers (a few seconds), and the deadline only matters if
+#: it never does, in which case the swap goes ahead anyway and says so.
+DEFAULT_SERVE_TIMEOUT_S = 30.0
 
 #: What happens to the instances when the gate process itself dies.
 #:
@@ -103,11 +117,11 @@ class Manager:
     def alive_instances(self) -> list[registry.Instance]:
         return [i for i in registry.all_instances() if procs.alive(i.pid)]
 
-    def list(self) -> dict[str, Any]:
+    async def list(self) -> dict[str, Any]:
         data = registry.read()
         instances = [registry.Instance.from_dict(v) for v in data["instances"].values()]
         for inst in instances:
-            self._refresh_health(inst)
+            await self._refresh_health(inst)
             if inst.name == data.get("active"):
                 inst.role = registry.ROLE_ACTIVE
             registry.put(inst.name, inst)
@@ -146,10 +160,15 @@ class Manager:
     def get(self, name: str) -> Optional[registry.Instance]:
         return registry.get(name)
 
-    def _refresh_health(self, inst: registry.Instance) -> None:
+    async def _refresh_health(self, inst: registry.Instance) -> None:
         """Truth from the OS, not from what we hope is true: is the pid alive,
         and is the port actually answering? A record saying "healthy" for a
-        process that died ten minutes ago is worse than no record at all."""
+        process that died ten minutes ago is worse than no record at all.
+
+        The probe is a blocking HTTP call with a three second timeout, in a
+        thread: it runs on the same event loop as the public port, and every
+        control request asks for this, so doing it inline would make a slow
+        instance a slow public port."""
         if not procs.alive(inst.pid):
             # Nothing is running, so the job has nothing left to hold: closing it
             # here is what keeps a gate that has been up for a month from
@@ -165,7 +184,7 @@ class Manager:
             return
         if not inst.port:
             return
-        probe = health(inst.port)
+        probe = await asyncio.to_thread(health, inst.port)
         if probe.get("healthy"):
             inst.health = registry.HEALTH_HEALTHY
             inst.error = ""
@@ -188,7 +207,7 @@ class Manager:
         async with self._ops:
             code = Path(code_root or paths.code_root()).resolve()
             data = Path(data_root).resolve() if data_root else paths.state_root()
-            existing = self._find_active()
+            existing = await self._find_active()
             if existing is not None and procs.alive(existing.pid):
                 await self._route_to(existing)
                 return {"ok": True, "instance": existing.name, "already": True,
@@ -210,7 +229,8 @@ class Manager:
                    data_root: Optional[Path] = None,
                    health_timeout_s: float = DEFAULT_HEALTH_TIMEOUT_S,
                    lease_timeout_s: float = DEFAULT_LEASE_TIMEOUT_S,
-                   drain_s: float = DEFAULT_DRAIN_S) -> dict[str, Any]:
+                   drain_s: float = DEFAULT_DRAIN_S,
+                   serve_timeout_s: float = DEFAULT_SERVE_TIMEOUT_S) -> dict[str, Any]:
         """New code in, with the public port never going quiet.
 
         The order matters and is the whole design:
@@ -220,7 +240,9 @@ class Manager:
              zero singletons);
           2. only once it is healthy does the outgoing one give up the lease,
              which stops its pollers/scheduler/etc.;
-          3. the incoming one takes the lease and starts those services;
+          3. the incoming one takes the lease and starts those services - and
+             then has to answer /healthz again before it is given the front
+             door, because those services are what it is busy starting;
           4. routing flips - a single pointer, so the next request goes to the
              new instance and nothing is closed underneath it;
           5. the outgoing one is drained and stopped.
@@ -229,11 +251,12 @@ class Manager:
         A failure at 3 is the interesting one: it means the new code is healthy
         but cannot lead, so we roll back by telling the outgoing one to take the
         lease again, which costs it a few seconds of services and no downtime.
+        The reason is reported either way.
         """
         code = Path(code_root).resolve()
         data = Path(data_root).resolve() if data_root else paths.state_root()
         async with self._ops:
-            outgoing = self._find_active()
+            outgoing = await self._find_active()
             new_name = name or registry.unique_name("swap")
 
             steps: list[str] = []
@@ -261,6 +284,9 @@ class Manager:
                 raise SwapError(f"swap to {code} rolled back at step 3 ({exc}); "
                                 f"{outgoing.name if outgoing else 'nothing'} is still serving") from exc
 
+            if not await self._wait_serving(inst, serve_timeout_s):
+                steps.append(f"{new_name} did not answer /healthz again; routing anyway, "
+                             f"and {outgoing.name if outgoing else 'the front door'} was serving until now")
             registry.set_active(new_name, previous=outgoing.name if outgoing else None)
             await self._route_to(inst)
             steps.append(f"routing now points at {new_name}")
@@ -308,7 +334,7 @@ class Manager:
                     f"{target_name} is no longer running, so there is nothing to roll back to. "
                     f"Swap to the code you want instead: abp_cli instance swap <code-root>"
                 )
-            outgoing = self._find_active()
+            outgoing = await self._find_active()
             steps: list[str] = []
             if outgoing is not None and outgoing.name != target_name:
                 await self._lease(outgoing, "release")
@@ -351,7 +377,10 @@ class Manager:
                 await self.stop(sandbox_name, keep_state=keep_state)
             data_root = paths.instance_state_dir(sandbox_name)
             if not keep_state or not (data_root / "data" / "bot.db").is_file():
-                seed_state(paths.state_root(), data_root)
+                # In a thread: this reads the live database through SQLite's
+                # backup API, which is as slow as the database is big, and the
+                # public port is waiting on the same loop.
+                await asyncio.to_thread(seed_state, paths.state_root(), data_root)
             inst = await self._spawn(sandbox_name, code, data_root, role=registry.ROLE_SANDBOX, sandbox=True)
             await self._wait_healthy(inst, timeout_s=DEFAULT_HEALTH_TIMEOUT_S)
             url = f"http://127.0.0.1:{inst.port}"
@@ -407,7 +436,7 @@ class Manager:
         than a new pile of them. How OFTEN this may be called is the watcher's
         business (abp_gate/__main__.py), not this method's."""
         async with self._ops:
-            inst = self._find_active()
+            inst = await self._find_active()
             if inst is None:
                 raise SwapError("no active instance to restart")
             code = Path(inst.code_root)
@@ -439,14 +468,14 @@ class Manager:
             raise SwapError(f"could not restart {inst.name}: {'; '.join(errors)}")
 
     # ------------------------------------------------------------- internals
-    def _find_active(self) -> Optional[registry.Instance]:
+    async def _find_active(self) -> Optional[registry.Instance]:
         name = registry.active_name()
         if not name:
             return None
         inst = registry.get(name)
         if inst is None:
             return None
-        self._refresh_health(inst)
+        await self._refresh_health(inst)
         registry.put(inst.name, inst)
         return inst
 
@@ -493,9 +522,18 @@ class Manager:
         # Below-normal for everything except the active instance: a standby
         # waiting to be swapped in, or an agent's sandbox, must never make the
         # machine feel slow for whoever is actually using ABP.
+        #
+        # In a thread, because it blocks: procs.spawn waits a moment to see
+        # whether the process dies on the spot, and absorbs the launcher's tree
+        # into the job, and both of those are seconds of wall clock. This runs on
+        # the event loop that also serves the public port, and a swap that makes
+        # the front door go quiet while it starts something is a swap that has
+        # broken the one promise the gate makes.
         try:
-            pid = procs.spawn(argv, cwd=code_root, env=env, log_path=log_path,
-                              below_normal=(role != registry.ROLE_ACTIVE), job=job)
+            pid = await asyncio.to_thread(
+                procs.spawn, argv, cwd=code_root, env=env, log_path=log_path,
+                below_normal=(role != registry.ROLE_ACTIVE), job=job,
+            )
         except Exception:
             # Never leave a record or a job behind for something that is not
             # running: an entry with no pid and no job is a mystery later.
@@ -535,18 +573,16 @@ class Manager:
         Job first (that is the whole tree in one call), then the pid tree for
         platforms without jobs and for anything the job missed, then anything of
         ours still holding the port - because an interpreter whose launcher is
-        gone is exactly the process a pid-only kill leaves behind."""
+        gone is exactly the process a pid-only kill leaves behind.
+
+        The stopping itself runs in a thread: `procs.stop` waits on a tree,
+        `kill_stragglers` runs netstat, and `wait_port_closed` waits on the OS,
+        and on a loaded machine that is tens of seconds in the worst case. All of
+        it on the event loop is all of it time the public port does not answer."""
         if inst is None:
             return []
         self._kill_job(inst.name)
-        leftover: list[int] = []
-        if inst.pid:
-            leftover = procs.tree_pids(inst.pid)
-        procs.stop(inst.pid)
-        if inst.port:
-            procs.kill_stragglers(inst.port)
-            procs.wait_port_closed(inst.port)
-            leftover = [pid for pid in leftover if procs.alive(pid)]
+        leftover = await asyncio.to_thread(_stop_processes, inst)
         if leftover:
             logger.warning("instance %r: %s process(es) outlived the stop: %s", inst.name, len(leftover), leftover)
         current = registry.get(inst.name)
@@ -575,6 +611,32 @@ class Manager:
             last = probe.get("error") or last
             await asyncio.sleep(0.25)
         raise SwapError(f"{inst.name} did not answer /healthz within {timeout_s:.0f}s ({last})")
+
+    async def _wait_serving(self, inst: registry.Instance,
+                            timeout_s: float = DEFAULT_SERVE_TIMEOUT_S) -> bool:
+        """Wait until `inst` answers /healthz. False if it never does.
+
+        The health check that passed a moment ago said this instance's port was
+        answering - but that was BEFORE it took the leader lease, and taking the
+        lease is precisely what starts the lease-gated services: a long sequence
+        of blocking work on that instance's own event loop, measured at 2.5-3.1s
+        (and much longer on a loaded machine). Flipping routing into an instance
+        that cannot answer for the next few seconds is the outage a swap exists
+        to prevent, and the instance being replaced is still serving and keeps
+        serving until the pointer moves - so waiting here costs nothing and
+        removing the stall costs every client of the public port.
+
+        Best effort on purpose: a slow answer is not on its own a reason to undo
+        a handover that has already happened (that costs more downtime than it
+        saves), so this reports the wait rather than raising. The caller puts it
+        in the swap's own step list, where a person can see it."""
+        deadline = time.monotonic() + timeout_s
+        while True:
+            if procs.alive(inst.pid) and (await asyncio.to_thread(health, inst.port)).get("healthy"):
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            await asyncio.sleep(0.25)
 
     async def _route_to(self, inst: registry.Instance) -> None:
         self.router.set("dashboard", str(inst.port))
@@ -665,6 +727,25 @@ def health(port: int, timeout: float = 3.0) -> dict[str, Any]:
     if not out["healthy"]:
         out["error"] = f"/healthz says {body.get('status')!r} (db_ok={body.get('db_ok')})"
     return out
+
+
+def _stop_processes(inst: registry.Instance) -> list[int]:
+    """The blocking half of stopping one instance, and the pids that outlived it.
+
+    Everything here waits on something the operating system does at its own pace:
+    a tree being signalled, a job's members being reaped, `netstat` answering, a
+    socket leaving TIME_WAIT. It is a module function rather than a method so
+    Manager._terminate can hand the whole of it to a thread - see its docstring
+    for why that matters (the same loop serves the public port)."""
+    leftover: list[int] = []
+    if inst.pid:
+        leftover = procs.tree_pids(inst.pid)
+    procs.stop(inst.pid)
+    if inst.port:
+        procs.kill_stragglers(inst.port)
+        procs.wait_port_closed(inst.port)
+        leftover = [pid for pid in leftover if procs.alive(pid)]
+    return leftover
 
 
 # --------------------------------------------------------------- state copy

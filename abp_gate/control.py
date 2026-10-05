@@ -59,7 +59,7 @@ def build_app(mgr: Optional[manager.Manager] = None) -> FastAPI:
     # ------------------------------------------------------------------ gate
     @app.get("/api/gate")
     async def gate_status():
-        data = mgr.list()
+        data = await mgr.list()
         return {
             "gate": {
                 "version": __version__,
@@ -112,7 +112,7 @@ def build_app(mgr: Optional[manager.Manager] = None) -> FastAPI:
     # -------------------------------------------------------------- instances
     @app.get("/api/instance")
     async def instance_list():
-        return mgr.list()
+        return await mgr.list()
 
     @app.get("/api/instance/{name}/logs")
     async def instance_logs(name: str, lines: int = 120):
@@ -184,7 +184,7 @@ def build_app(mgr: Optional[manager.Manager] = None) -> FastAPI:
         200 means there is a HEALTHY instance behind the public port. An
         instance the watcher has given up on is `failed`, and reporting that as
         a 503 is the honest answer: the port is up, ABP is not."""
-        data = mgr.list()
+        data = await mgr.list()
         active = data.get("active")
         current = (data.get("instances") or {}).get(active or "") or {}
         healthy = bool(active) and current.get("health") == registry.HEALTH_HEALTHY
