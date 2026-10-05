@@ -671,6 +671,17 @@ def test_verify_keeps_polling_through_an_error_body_while_the_bots_come_back(che
     assert result.ok, result.failures
 
 
+def test_verify_does_not_wait_for_an_app_only_instance(checkout, fake_abp):
+    """An enabled instance on the in-app platform has no poller and is never live_running; the first real
+    deploy rolled back waiting for one."""
+    server = fake_abp(_healthy_spec(bots=[{"id": 1, "name": "main", "enabled": True, "live": True},
+                                          {"id": 46, "name": "Hermes", "enabled": True, "live": False,
+                                           "platform": "app"}]))
+    result = deploy_local.verify(_install_dir(checkout), server.port, root=checkout, timeout_s=20,
+                                 log=lambda _s: None)
+    assert result.ok, result.failures
+
+
 def test_verify_fails_when_an_enabled_bot_never_comes_back(checkout, fake_abp):
     server = fake_abp(_healthy_spec(bots=[{"id": 1, "name": "main", "enabled": True, "live": False}]))
     result = deploy_local.verify(_install_dir(checkout), server.port, root=checkout, timeout_s=4,
