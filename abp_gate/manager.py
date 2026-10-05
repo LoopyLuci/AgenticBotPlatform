@@ -151,6 +151,10 @@ class Manager:
         and is the port actually answering? A record saying "healthy" for a
         process that died ten minutes ago is worse than no record at all."""
         if not procs.alive(inst.pid):
+            # Nothing is running, so the job has nothing left to hold: closing it
+            # here is what keeps a gate that has been up for a month from
+            # carrying a handle per instance it has ever lost.
+            self._kill_job(inst.name)
             if inst.health not in (registry.HEALTH_STOPPED, registry.HEALTH_FAILED):
                 inst.health = registry.HEALTH_STOPPED
             if inst.port and not procs.is_free(inst.port):
