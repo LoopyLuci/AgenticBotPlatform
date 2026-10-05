@@ -143,13 +143,44 @@ def read(path: Optional[Path] = None) -> dict[str, Any]:
     return raw
 
 
+#: How long a rename waits for whoever is reading the registry.
+#:
+#: Windows opens a file for reading WITHOUT FILE_SHARE_DELETE, so any reader that
+#: holds `registry.json` open makes a rename onto it fail with ACCESS DENIED -
+#: and the gate's own watcher reads the registry on every cycle, so the gate can
+#: lose that race against itself. Measured: the rename fails outright whenever a
+#: plain reader has the file open, and a read of a file this small already takes
+#: milliseconds on a busy disk, so "sometimes" here is "under load", which is
+#: exactly when a lost write costs the most.
+#:
+#: Waiting is not papering over anything: the write itself is atomic and
+#: correct, it just lost a race with a reader of the same file, and losing that
+#: race must not fail the operation that lost it. A real permissions problem
+#: still raises - it just takes a second to say so.
+REPLACE_ATTEMPTS = 20
+REPLACE_INTERVAL_S = 0.1
+
+
+def _replace(tmp: Path, target: Path) -> None:
+    """`os.replace(tmp, target)`, waiting out a reader holding the target open."""
+    deadline = time.monotonic() + REPLACE_ATTEMPTS * REPLACE_INTERVAL_S
+    while True:
+        try:
+            os.replace(tmp, target)
+            return
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(REPLACE_INTERVAL_S)
+
+
 def write(data: dict[str, Any], path: Optional[Path] = None) -> None:
     target = path or paths.registry_path()
     with _lock:
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(data, indent=1, default=str), encoding="utf-8")
-        os.replace(tmp, target)  # atomic: a crash mid-write never truncates the live registry
+        _replace(tmp, target)  # atomic: a crash mid-write never truncates the live registry
 
 
 def update(mutate, path: Optional[Path] = None) -> dict[str, Any]:
