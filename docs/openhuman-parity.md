@@ -14,7 +14,7 @@ is ABP's own code, written from OpenHuman's documented behaviour. This page trac
 | Scoring gate (signals, keep/drop bands, borderline model check, priority boost) | `knowledge.score` | Done |
 | Entity extraction + canonical ids + co-occurrence graph | `knowledge.entities`, `neighbors` | Done (regex + name heuristic; a local-model NER pass is planned) |
 | Retrieval modes: search_entities, query_source, drill_down, cover_window, fetch_leaves, ingest_document, walk | `knowledge.query`, agent tool `memory_tree`, MCP `memory_tree`, `POST /api/memory/tree` | Done |
-| Memory sources (folder, GitHub, RSS, web page, conversation) with status and freshness | `bot/memoryfabric/sources.py` | Done |
+| Memory sources (folder, GitHub, RSS, web page, conversation, NexusFoundry Knowledge Modules) with status and freshness | `bot/memoryfabric/sources.py` | Done |
 | Auto-fetch every 20 minutes | `bot/memoryfabric/service.py` | Done |
 | Memory diff (git-backed snapshots, read markers, checkpoints) | `bot/memoryfabric/diff.py`, tool `memory_diff` | Done |
 | Memory tools (recall, write, search) | `save_memory` (+ `shared`), `memory_search` | Done |

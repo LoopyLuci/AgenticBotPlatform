@@ -6,6 +6,7 @@
     rss            an RSS or Atom feed's items
     web            a web page (optionally narrowed to an element: tag, #id or .class)
     conversation   ABP's own conversations (the memory fabric's threads), one item per thread
+    nexusfoundry   a NexusFoundry checkout (or its Knowledge Module folder), one item per KM
 
 Each source has budgets (max_items, max_chars a sync) so a chatty source cannot flood the base; each sync records
 its stage and counts, and every source's freshness is derived from its newest chunk (active <= 30 s, recent <= 5 min,
@@ -30,8 +31,10 @@ import httpx
 from bot import db
 from bot.memoryfabric import knowledge
 
-KINDS = {"folder": ["path"], "notes": [], "github": ["repo"], "rss": ["url"], "web": ["url"], "conversation": []}
+KINDS = {"folder": ["path"], "notes": [], "github": ["repo"], "rss": ["url"], "web": ["url"], "conversation": [],
+         "nexusfoundry": ["path"]}
 MAX_FILE = 10 << 20
+KM_STORE = ("storage", "knowledge_modules")       # where NexusFoundry keeps the KMs its app builds
 _NO_WINDOW = 0x08000000
 
 
@@ -67,7 +70,7 @@ def add(kind: str, label: str = "", **config) -> dict:
     for f in KINDS[kind]:
         if not str(config.get(f) or "").strip():
             raise ValueError(f"a {kind} source needs {f}")
-    if kind == "folder" and not Path(config["path"]).is_dir():
+    if kind in ("folder", "nexusfoundry") and not Path(config["path"]).is_dir():
         raise ValueError(f"{config['path']} is not a folder")
     if kind == "github" and not re.fullmatch(r"[\w.-]+/[\w.-]+", config["repo"]):
         raise ValueError("repo is owner/name")
@@ -248,6 +251,67 @@ def _read_conversations(limit: int) -> Iterator[Item]:
         yield t["thread"], f"Conversation {t['thread']}", text, turns[-1]["created"], tags
 
 
+def km_root(path: str) -> Path:
+    """Where a nexusfoundry source's Knowledge Modules are: `path` itself, or a NexusFoundry
+    checkout's own store (the folder its app builds them in, storage/knowledge_modules)."""
+    p = Path(path)
+    store = p.joinpath(*KM_STORE)
+    return store if store.is_dir() else p
+
+
+def _km_meta(d: Path) -> Optional[dict]:
+    """A Knowledge Module's metadata, or None when the folder is not one: NexusFoundry's registry
+    (core/registry.py) skips a directory without meta.json and tolerates an unreadable one."""
+    if not d.is_dir() or not (d / "meta.json").is_file():
+        return None
+    try:
+        meta = json.loads((d / "meta.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return meta if isinstance(meta, dict) else None
+
+
+def _km_chunks(d: Path) -> list[str]:
+    """The fact bank: chunks.json, a JSON array of strings (NexusFoundry's core/km.py save()). A
+    LoRA-only module has none, and a half-written one may not parse; both are no chunks, not a failure."""
+    try:
+        raw = json.loads((d / "chunks.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [str(c).strip() for c in raw if str(c).strip()] if isinstance(raw, list) else []
+
+
+def _read_kms(root: Path, limit: int) -> Iterator[Item]:
+    """One item per Knowledge Module: its name and id as the document, its metadata as the entities
+    (domain, subdomain and tags) and its chunks as the body, so every model can recall what it holds."""
+    if not root.is_dir():
+        return
+    for d in sorted(root.iterdir()):
+        meta = _km_meta(d)
+        if meta is None:
+            continue
+        km_id = str(meta.get("km_id") or d.name)
+        name = str(meta.get("name") or km_id)
+        domain, subdomain = str(meta.get("domain") or ""), str(meta.get("subdomain") or "")
+        km_tags = [str(t) for t in (meta.get("tags") or []) if str(t).strip()]
+        chunks = _km_chunks(d)
+        if limit > 0:
+            chunks = chunks[:limit]
+        head = [f"{name} - Knowledge Module {km_id}, from NexusFoundry."]
+        if domain or subdomain:
+            head.append(f"Domain: {domain}. Subdomain: {subdomain}.")
+        if km_tags:
+            head.append("Tags: " + ", ".join(km_tags) + ".")
+        if str(meta.get("description") or "").strip():
+            head.append(str(meta["description"]).strip())
+        try:
+            ts = float(meta.get("created_at") or 0.0) or (d / "meta.json").stat().st_mtime
+        except (OSError, TypeError, ValueError):
+            ts = time.time()
+        tags = list(dict.fromkeys(["nexusfoundry", "km"] + [t for t in (domain, subdomain) if t] + km_tags))
+        yield km_id, name, "\n\n".join(head + chunks), ts, tags
+
+
 def read(source: dict) -> Iterator[Item]:
     k, limit = source["kind"], int(source.get("max_items", 200))
     if k == "folder":
@@ -263,9 +327,12 @@ def read(source: dict) -> Iterator[Item]:
         yield from _read_web(source["url"], source.get("selector", ""))
     elif k == "conversation":
         yield from _read_conversations(limit)
+    elif k == "nexusfoundry":
+        yield from _read_kms(km_root(source["path"]), int(source.get("max_chunks", 0)))
 
 
-KIND_OF = {"folder": "document", "notes": "note", "github": "github", "rss": "rss", "web": "web", "conversation": "conversation"}
+KIND_OF = {"folder": "document", "notes": "note", "github": "github", "rss": "rss", "web": "web",
+           "conversation": "conversation", "nexusfoundry": "note"}
 
 
 def sync(source_id: str, log=lambda m: None) -> dict:
@@ -291,7 +358,7 @@ def sync(source_id: str, log=lambda m: None) -> dict:
             added += item_id not in have
             changed += item_id in have
         removed = 0
-        if s["kind"] in ("folder", "notes", "conversation", "web"):        # complete listings: gone means deleted
+        if s["kind"] in ("folder", "notes", "conversation", "web", "nexusfoundry"):  # complete listings: gone = deleted
             for item_id in set(have) - seen:
                 knowledge.remove_item(source_id, item_id)
                 removed += 1

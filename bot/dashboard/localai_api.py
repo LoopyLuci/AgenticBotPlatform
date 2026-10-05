@@ -23,6 +23,9 @@ server's own API: Ollama's and OpenAI's, on port 11436.)
     POST    /api/lab/runs                         {spec | design, data, train?, ...} -> the run;  GET /runs/{id}; POST /runs/{id}/stop
     POST    /api/lab/autotune                     {spec, data, space, trials?, metric?} -> a run
     GET     /api/lab/projects                     the toolkit's projects; GET /brainbuilder, /kotmoe; POST /import {kind, ...}
+    GET     /api/lab/noema                        the NOEMA family: its checkpoints, its configs, whether it is here
+    GET     /api/lab/noema/config?config=         one config's three layers and the numbers that describe the model
+    POST    /api/lab/noema/generate               {ckpt?, prompt?, max_new?, config?, timeout?} -> one rollout
     POST    /api/lab/export/brainbuilder          {spec, path}
     GET     /api/lab/systune                      system models, CPU policy, telemetry;  POST /systune/bench {kind} -> a run
     POST    /api/lab/systune/train                {kind} -> the run;  GET /systune/advice?kind=&...
@@ -207,7 +210,7 @@ def register(app: FastAPI, require_token: Callable) -> None:
 
 
 def _register_lab(app: FastAPI, dep: list) -> None:
-    from bot.neurallab import interop, lab, spec, systune, telemetry
+    from bot.neurallab import interop, lab, noema, spec, systune, telemetry
     from bot.neurallab import service as lab_service
     L = "/api/lab"
 
@@ -270,6 +273,21 @@ def _register_lab(app: FastAPI, dep: list) -> None:
     @app.get(f"{L}/projects", dependencies=dep)
     async def lab_projects():
         return interop.projects()
+
+    @app.get(f"{L}/noema", dependencies=dep)
+    async def lab_noema(limit: int = Query(200, ge=1, le=1000)):
+        return {"status": await _t(noema.status), "checkpoints": await _t(noema.checkpoints, limit),
+                "configs": await _t(noema.configs), "default_config": noema.DEFAULT_CONFIG}
+
+    @app.get(f"{L}/noema/config", dependencies=dep)
+    async def lab_noema_config(config: str = Query(noema.DEFAULT_CONFIG)):
+        return await _t(noema.config, config)
+
+    @app.post(f"{L}/noema/generate", dependencies=dep)
+    async def lab_noema_generate(body: dict = Body(default={})):
+        return await _t(noema.generate, str(body.get("ckpt", "")), str(body.get("prompt", "Once upon a time")),
+                        int(body.get("max_new", 32)), str(body.get("config") or noema.DEFAULT_CONFIG),
+                        float(body.get("timeout", 900.0)))
 
     @app.get(f"{L}/brainbuilder", dependencies=dep)
     async def lab_bb():

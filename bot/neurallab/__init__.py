@@ -13,6 +13,8 @@ projects (KotMoE, BrainBuilder, Amethyst, Kestrion) and the system models that t
                sharing ABP's model store
     edn        BrainBuilder's EDN format
     infer      small exported models run with numpy inside ABP (microseconds per decision, no GPU)
+    noema      NOEMA as a model family: its checkpoints, their configs (YAML, read here without torch), and one
+               rollout from one through its own CLI as a sandbox_ns worker. Nothing here trains.
     telemetry  this machine's measurements: CPU topology (APIC ids), machine-check and power-loss history, a 10 s
                sampler of CPU, memory, disks, network and GPU into SQLite
     systune    the system models: drive transfer tuning, llama.cpp runtime options, memory forecasting, CPU stability

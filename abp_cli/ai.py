@@ -12,7 +12,8 @@
   abp lab status | runs | run <id> | stop <id> | designs | validate <spec.json>
   abp lab train <spec.json | design> --data <file> [--target col] [--tokenizer t] [--steps N] [--wait]
   abp lab import brainbuilder <file.bbir.edn> | kotmoe <registry id> | kmoe <model.kmoe>   [--name n]
-  abp lab projects | systune | advice transfer <src> <dst> [--size-gb G] [--files N] | advice llm <model>
+  abp lab projects | noema [checkpoints|config <name>] | noema-generate <ckpt|"random"> <prompt...> [--max-new N]
+  abp lab systune | advice transfer <src> <dst> [--size-gb G] [--files N] | advice llm <model>
                | advice memory | advice stability | bench drives|llm | retrain <kind> | telemetry | hw
 (Inference itself: any Ollama client with OLLAMA_HOST=http://127.0.0.1:11436, or the OpenAI API at /v1.)
 """
@@ -66,6 +67,10 @@ def add_parser(sub) -> None:
     p.add_argument("--tokenizer", default=""); p.add_argument("--steps", type=int, default=0); p.add_argument("--wait", action="store_true")
     p = ls.add_parser("import"); p.add_argument("kind", choices=["brainbuilder", "kotmoe", "kmoe"]); p.add_argument("what")
     p.add_argument("--name", default="")
+    ls.add_parser("noema")
+    p = ls.add_parser("noema-config"); p.add_argument("config", nargs="?", default="")
+    p = ls.add_parser("noema-generate"); p.add_argument("ckpt"); p.add_argument("prompt", nargs="+")
+    p.add_argument("--max-new", type=int, default=32); p.add_argument("--config", default=""); p.add_argument("--timeout", type=float, default=900.0)
     p = ls.add_parser("advice"); p.add_argument("kind", choices=["transfer", "llm", "memory", "stability"]); p.add_argument("rest", nargs="*")
     p.add_argument("--size-gb", type=float, default=4, dest="size_gb"); p.add_argument("--files", type=int, default=100)
     p = ls.add_parser("bench"); p.add_argument("kind", choices=["drives", "llm"])
@@ -333,6 +338,9 @@ async def _lab(args, client) -> int:
             _show(o)
             return 0
         print("projects: " + ", ".join(f"{p['folder']}{'' if p['present'] else ' (missing)'}" for p in o["projects"]))
+        nm = o.get("noema") or {}
+        where = f"at {nm['path']}, {nm['checkpoints']} checkpoint(s)" if nm.get("present") else "not on this machine"
+        print(f"noema: {where}")
         print(f"designs: {len(o['designs'])}; telemetry {'recording' if o['recording'] else 'off'}")
         for x in o["runs"][:8]:
             fin = x.get("final") or {}
@@ -362,6 +370,35 @@ async def _lab(args, client) -> int:
         _show({"projects": await r("GET", f"{L}/projects"), "brainbuilder": await r("GET", f"{L}/brainbuilder"),
                "kotmoe": await r("GET", f"{L}/kotmoe")})
         return 0
+    if c == "noema":
+        o = await r("GET", f"{L}/noema")
+        if args.json:
+            _show(o)
+            return 0
+        st = o["status"]
+        if not st["present"]:
+            print(f"NOEMA is not on this machine (looked for {st['path'] or 'X:/Projects/NOEMA'}; set NOEMA_HOME)")
+            return 1
+        print(f"NOEMA at {st['path']}; {st['checkpoints']} checkpoint(s) in {st['checkpoints_dir']}; "
+              f"{st['configs']} config(s); interpreter {'ready' if st['interpreter_present'] else 'missing'}")
+        for c_ in o["checkpoints"]:
+            print(f"  {c_['name']:<28} {_size(c_['bytes']):>9}  {c_['mtime_iso']}")
+        return 0
+    if c == "noema-config":
+        _show(await r("GET", f"{L}/noema/config", params={"config": args.config or "configs/tiny_8m.yaml"}))
+        return 0
+    if c == "noema-generate":
+        g = await r("POST", f"{L}/noema/generate", json={"ckpt": "" if args.ckpt == "random" else args.ckpt,
+                                                         "prompt": " ".join(args.prompt), "max_new": args.max_new,
+                                                         **({"config": args.config} if args.config else {}),
+                                                         "timeout": args.timeout}, timeout=args.timeout + 60.0)
+        if not args.json:
+            print(g.get("text") or g.get("error") or "(no bytes)")
+            print(f"  {g['n_bytes'] if 'n_bytes' in g else '-'} bytes from {g['checkpoint'] or 'random weights'} "
+                  f"in {g['seconds']}s (exit {g['exit_code']})")
+        if args.json:
+            _show(g)
+        return 0 if g.get("ok") else 1
     if c == "validate":
         v = await r("POST", f"{L}/validate", json={"spec": json.loads(Path(args.spec).read_text(encoding="utf-8"))})
         print(v["text"]) if not args.json else _show(v)
