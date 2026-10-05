@@ -32558,6 +32558,150 @@
     "summary": "Lab Validate"
    }
   },
+  "/api/lease": {
+   "get": {
+    "operationId": "api_lease_status_api_lease_get",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Api Lease Status"
+   }
+  },
+  "/api/lease/release": {
+   "post": {
+    "description": "Stop the lease-gated services and give up the lease, but keep\nserving the API. Idempotent - releasing when this process never held it\nis a no-op, not an error.",
+    "operationId": "api_lease_release_api_lease_release_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Api Lease Release"
+   }
+  },
+  "/api/lease/take": {
+   "post": {
+    "description": "Take the lease as soon as it is free (up to `timeout` seconds).\nA --standby instance normally refuses, but gate-managed instances\n(ABP_GATE=1) are allowed to take it when explicitly requested.",
+    "operationId": "api_lease_take_api_lease_take_post",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "timeout",
+      "required": false,
+      "schema": {
+       "default": 30.0,
+       "title": "Timeout",
+       "type": "number"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Api Lease Take"
+   }
+  },
   "/api/localai": {
    "get": {
     "operationId": "ai_overview_api_localai_get",

@@ -351,6 +351,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.android_apk",
     "bot.mobile_pairing",
     "bot.hermes_config",
+    "bot.hermes_gateway",  # which program owns a bot token; only a 5 s cache, but it sits beside hermes_config
     "bot.swarm.prompts",
     "bot.swarm.child_parser",
     "bot.swarm_budget",
