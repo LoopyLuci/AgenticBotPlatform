@@ -158,6 +158,10 @@ counted, in the registry, so the budget survives a restart of the gate itself:
 - then the gate **stops**, marks the instance `failed`, drops routing (the public
   port answers 503 rather than proxying to a corpse) and says so in
   `abp gate status`. Restarting it again is a decision somebody has to make.
+- **the same budget covers "there is no instance at all".** A gate whose own
+  first start failed retries it, because a boot that lost a race for a database
+  is worth another go — and stops after the same three tries, saying so in its
+  log. A gate started with `--no-start` never starts anything, watcher included.
 
 **A ceiling on how many instances can exist.** `ABP_GATE_MAX_INSTANCES` (8 by
 default); a start, swap or sandbox beyond it is refused with a reason. A bug
