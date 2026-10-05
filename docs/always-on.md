@@ -157,14 +157,14 @@ counted, in the registry, so the budget survives a restart of the gate itself:
 - **a crash and a slow answer are not the same question.** "The process is gone"
   is the OS's answer and the gate acts on it at once. "It did not answer a probe
   within three seconds" is answered "no" by a busy instance just as readily as
-  by a sick one — a booting ABP blocks its own event loop for a few seconds
-  while it starts its lease-gated services, and on a loaded machine that is
-  longer than the probe takes. So an instance that is **running but unanswerable**
-  has to stay that way for `ABP_GATE_UNHEALTHY_GRACE_S` (30s) before it counts as
-  replaceable, and the gate says so in its log while it waits. Replacing a working
-  instance over one slow probe would turn a three-second hiccup into a
-  thirty-second outage, and hand every reader of the registry a pid that stops
-  meaning anything;
+  by a sick one — a booting ABP stalls its own `/healthz` for 2.5–3.0s while it
+  starts its lease-gated services (measured here with the machine deliberately
+  loaded), which is the edge of the probe timeout on a quiet day and past it on a
+  busy one. So an instance that is **running but unanswerable** has to stay that
+  way for `ABP_GATE_UNHEALTHY_GRACE_S` (30s) before it counts as replaceable, and
+  the gate says so in its log while it waits. Replacing a working instance over
+  one slow probe would turn a three-second hiccup into a thirty-second outage, and
+  hand every reader of the registry a pid that stops meaning anything;
 - at most **3 restarts in 10 minutes** (`ABP_GATE_RESTART_LIMIT`,
   `ABP_GATE_RESTART_WINDOW_S`), with an exponential backoff between them
   (`ABP_GATE_RESTART_BACKOFF_S`, default 5s, 20s, 60s…);
