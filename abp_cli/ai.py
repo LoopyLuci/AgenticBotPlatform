@@ -3,6 +3,7 @@
   abp ai status | serve-status | settings [key=value ...] | server start|stop
                | engine install [--backend hip|vulkan|cuda|cpu]
   abp ai models | list | ps | pull <name> | rm <name> | cp <src> <dst> | show <name>
+  abp ai mesh status | models      mesh-llm (GPUs pooled across machines): the node, its peers, what it serves
   abp ai run <model> <prompt...> [--generate] [--system TEXT]   a real inference run on a local model
   abp ai import <name> <file.gguf> [--reference] | create <name> -f Modelfile
   abp ai discover | adopt-all [--import]
@@ -42,6 +43,7 @@ def add_parser(sub) -> None:
     p = ns.add_parser("settings"); p.add_argument("pairs", nargs="*")
     p = ns.add_parser("server"); p.add_argument("action", choices=["start", "stop"])
     p = ns.add_parser("engine"); p.add_argument("action", choices=["install"]); p.add_argument("--backend", default="")
+    p = ns.add_parser("mesh", help="mesh-llm: the pooled GPUs ABP's server serves models from"); p.add_argument("action", choices=["status", "models"])
     for c in ("pull", "rm", "show"):
         p = ns.add_parser(c); p.add_argument("name")
     p = ns.add_parser("cp"); p.add_argument("src"); p.add_argument("dst")
@@ -122,6 +124,8 @@ async def run(args, client) -> int:
         print(f"server: {'running at ' + s['url'] + ' (Ollama API ' + str(s.get('version')) + ')' if s.get('running') else 'stopped'}")
         e = o.get("engine")
         print(f"engine: {'llama.cpp ' + e['build'] + ' (' + e['backend'] + ')' if e else 'not installed: abp ai engine install'}")
+        m = o.get("mesh") or {}
+        print(f"mesh: {'reachable at ' + m['url'] + ': ' + str(len(m.get('models') or [])) + ' model(s), ' + str(len(m.get('peers') or [])) + ' peer(s)' if m.get('reachable') else 'mesh-llm not reachable at ' + str(m.get('url'))}")
         for g in o["gpus"]:
             print(f"gpu: {g['name']} {g.get('vram_gb', '')} GB")
         print(f"models: {len(o['models'])} in {o['home']}")
@@ -142,6 +146,36 @@ async def run(args, client) -> int:
         return 0
     if c == "ps":
         _show((await r("GET", A, timeout=60.0))["running"])
+        return 0
+    if c == "mesh":
+        m = await r("GET", f"{A}/mesh", timeout=60.0)
+        if args.json:
+            _show(m)
+            return 0
+        if args.action == "models":
+            if not m["reachable"]:
+                print(f"mesh-llm is not reachable at {m['url']}: {m['error']}")
+                return 1
+            print(f"{'NAME':<50} {'CONTEXT':>9}  QUANT          WHERE")
+            for x in m["models"]:
+                print(f"{x['name']:<50} {x['context_length'] or 0:>9}  {x['quantization']:<13} {x['where'] or 'not loaded'}")
+            print(f"\n{len(m['models'])} model(s) from {m['url']}; ask for one by that name on ABP's own server "
+                  f"(`abp ai status` for its URL), with +memory appended for ABP's shared memory")
+            return 0
+        if not m["reachable"]:
+            print(f"mesh-llm: not reachable at {m['url']} ({m['error']})")
+            print("  ABP's own models are unaffected; start mesh-llm (mesh-llm serve) and it appears here.")
+            return 1
+        n = m["node"]
+        print(f"mesh-llm: reachable at {m['url']}"
+              + (f", console {'on ' + m['console_url'] if m['console'] else 'not answering on ' + m['console_url']}" if m["console"] else ""))
+        print(f"  node: {n.get('hostname') or n.get('id')} ({n.get('state')}, mesh {n.get('mesh') or '-'}, v{n.get('version')})")
+        for g in m["gpus"]:
+            print(f"  gpu: {g['name']} {g['vram_gb']} GB")
+        for p_ in m["peers"]:
+            print(f"  peer: {p_.get('hostname') or p_['id']} ({p_.get('state')}, {p_.get('vram_gb')} GB, {len(p_.get('models') or [])} model(s))")
+        print(f"  serving: {', '.join(m['serving']) or 'nothing loaded'}")
+        print(f"  models: {len(m['models'])} (abp ai mesh models)")
         return 0
     if c == "serve-status":
         o = await r("GET", A, timeout=120.0)

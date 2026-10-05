@@ -44,13 +44,14 @@ def settings() -> dict:
     except (OSError, ValueError):
         st = {}
     return {"backend": "auto", "keep_alive_s": 300, "max_loaded": 3, "gpu_memory_gb": 0, "default_ctx": 8192,
-            "parallel": 2, "flash_attention": True, "auto_tune": True, **st}
+            "parallel": 2, "flash_attention": True, "auto_tune": True, "mesh_url": "http://127.0.0.1:9337",
+            "mesh_console_url": "http://127.0.0.1:3131", "mesh_timeout_s": 3.0, **st}
 
 
 def set_settings(changes: dict) -> dict:
     allowed = {"backend", "keep_alive_s", "max_loaded", "gpu_memory_gb", "default_ctx", "parallel", "flash_attention",
                "port", "bind", "autostart", "auto_tune", "scan_folders", "lab_telemetry", "lab_telemetry_interval_s",
-               "lab_auto_retrain"}
+               "lab_auto_retrain", "mesh_url", "mesh_console_url", "mesh_timeout_s"}
     bad = set(changes) - allowed
     if bad:
         raise LocalAIError(f"unknown setting(s): {', '.join(sorted(bad))}")

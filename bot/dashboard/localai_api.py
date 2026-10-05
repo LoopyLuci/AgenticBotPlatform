@@ -2,12 +2,13 @@
 Local AI and Neural Lab pages, the CLI (`abp ai`, `abp lab`), the TUI and MCP. (Model inference itself is the local AI
 server's own API: Ollama's and OpenAI's, on port 11436.)
 
-    GET     /api/localai                          overview: server, engines, GPUs, models, running, training, runs
+    GET     /api/localai                          overview: server, engines, GPUs, models, running, mesh, training, runs
     GET|PUT /api/localai/settings                 POST /server/start | /server/stop
     POST    /api/localai/engine/install           {backend?} -> a run
     GET     /api/localai/models                   POST /models/pull {name} -> a run;  DELETE /models?name=
     POST    /api/localai/models/import            {name, path, reference?}   POST /models/copy {source, destination}
     POST    /api/localai/models/create            {name, modelfile}          GET /models/show?name=
+    GET     /api/localai/mesh                     mesh-llm: reachable?, the node, its peers, GPUs, the models it serves
     GET     /api/localai/discover                 models other programs keep;  POST /discover/adopt {item, action?, name?}
                                                   POST /discover/adopt-all {gguf: reference|import}
     GET|PUT /api/localai/stores                   extra Ollama-format stores read in place
@@ -37,7 +38,7 @@ from typing import Callable
 from fastapi import Body, Depends, FastAPI, HTTPException, Query
 
 from bot.dashboard.hosting_api import _runs, start_run
-from bot.localai import discover, engine, models, modelfile, pull, service, train
+from bot.localai import discover, engine, mesh, models, modelfile, pull, service, train
 from bot.localai.paths import LocalAIError
 
 
@@ -128,6 +129,10 @@ def register(app: FastAPI, require_token: Callable) -> None:
     async def ai_show(name: str = Query(...)):
         rec = await _t(models.resolve, name)
         return {**rec, "modelfile": modelfile.render(rec)}
+
+    @app.get(f"{A}/mesh", dependencies=dep)
+    async def ai_mesh():
+        return await _t(mesh.status)
 
     @app.get(f"{A}/discover", dependencies=dep)
     async def ai_discover():
