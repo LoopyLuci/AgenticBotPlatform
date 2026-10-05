@@ -2128,6 +2128,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/lease": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lease",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/localai": {
   "body": false,
   "method": "GET",
@@ -5031,6 +5038,22 @@ export const operations = {
   "path": "/api/lab/validate",
   "path_params": [],
   "query_params": []
+ },
+ "POST /api/lease/release": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/lease/release",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/lease/take": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/lease/take",
+  "path_params": [],
+  "query_params": [
+   "timeout"
+  ]
  },
  "POST /api/localai/discover/adopt": {
   "body": true,
@@ -8206,6 +8229,29 @@ export const operations = {
    "card_id"
   ],
   "query_params": []
+ },
+ "api_lease_release_api_lease_release_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/lease/release",
+  "path_params": [],
+  "query_params": []
+ },
+ "api_lease_status_api_lease_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/lease",
+  "path_params": [],
+  "query_params": []
+ },
+ "api_lease_take_api_lease_take_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/lease/take",
+  "path_params": [],
+  "query_params": [
+   "timeout"
+  ]
  },
  "api_logs_api_logs_get": {
   "body": false,

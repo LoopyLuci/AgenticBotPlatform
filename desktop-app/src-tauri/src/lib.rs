@@ -692,7 +692,9 @@ mod gate_tests {
     fn rejects_anything_else_on_that_port() {
         // A different service on 8788 answers 200 too; without a "gate" field in
         // the body, claiming a gate would be a lie the log then repeats forever.
-        assert!(!body_is_gate_healthz(r#"{"status":"ok","service":"something-else"}"#));
+        assert!(!body_is_gate_healthz(
+            r#"{"status":"ok","service":"something-else"}"#
+        ));
         assert!(!body_is_gate_healthz(r#"{"gate":42}"#));
         assert!(!body_is_gate_healthz("not json at all"));
         assert!(!body_is_gate_healthz(""));
