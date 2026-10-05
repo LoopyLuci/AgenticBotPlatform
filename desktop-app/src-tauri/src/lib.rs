@@ -25,6 +25,7 @@ use android::{
     pair_android_device,
 };
 mod network;
+pub(crate) mod shortcuts;
 mod terminal;
 mod tray;
 mod updater;
@@ -75,7 +76,7 @@ pub(crate) struct ServerState {
 
 const LOG_BACKLOG_CAP: usize = 2000;
 
-fn push_backlog(state: &ServerState, line: LogLine) {
+pub(crate) fn push_backlog(state: &ServerState, line: LogLine) {
     if let Ok(mut backlog) = state.log_backlog.lock() {
         backlog.push(line);
         let len = backlog.len();
@@ -86,9 +87,9 @@ fn push_backlog(state: &ServerState, line: LogLine) {
 }
 
 #[derive(Clone, Serialize)]
-struct LogLine {
-    stream: String,
-    line: String,
+pub(crate) struct LogLine {
+    pub(crate) stream: String,
+    pub(crate) line: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -706,7 +707,7 @@ mod gate_tests {
 /// desktop-app/ui/main.js's API_BASE), so this isn't introducing a new
 /// assumption, just naming the existing one for the port-conflict check
 /// below.
-const DASHBOARD_PORT: u16 = 8787;
+pub(crate) const DASHBOARD_PORT: u16 = 8787;
 
 fn port_in_use(port: u16) -> bool {
     std::net::TcpListener::bind(("127.0.0.1", port)).is_err()
@@ -1205,6 +1206,16 @@ fn stop_server(app: AppHandle, state: State<ServerState>) -> Result<(), String> 
 
 #[tauri::command]
 fn restart_server(app: AppHandle, state: State<ServerState>) -> Result<(), String> {
+    restart_server_command(&app, &state)
+}
+
+/// The restart itself, callable from the tray menu as well as the UI (both
+/// share this one body, so "restart the server" cannot mean two different
+/// things depending on where it was clicked).
+pub(crate) fn restart_server_command(
+    app: &AppHandle,
+    state: &State<ServerState>,
+) -> Result<(), String> {
     {
         let mut guard = state
             .child
@@ -1222,7 +1233,26 @@ fn restart_server(app: AppHandle, state: State<ServerState>) -> Result<(), Strin
         },
     );
     thread::sleep(Duration::from_millis(300));
-    spawn_internal(&app, &state)
+    spawn_internal(app, state)
+}
+
+/// Where ABP's data lives — the tray's "Open data folder" target. Separate
+/// from `resolve_paths` on purpose: this only needs the root directory, and
+/// resolve_paths() can spend a long time repairing a broken bundled venv,
+/// which is not something a menu click should ever sit behind.
+pub(crate) fn data_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let root = if cfg!(debug_assertions) {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|p| p.parent())
+            .ok_or_else(|| "could not resolve project root".to_string())?
+            .to_path_buf()
+    } else {
+        app.path()
+            .resource_dir()
+            .map_err(|e| format!("could not resolve resource_dir: {e}"))?
+    };
+    Ok(shortcuts::data_dir(&root))
 }
 
 /// Everything emitted as a "server-log" event so far, oldest first — lets
@@ -1253,7 +1283,11 @@ fn get_boot_log(state: State<ServerState>) -> Result<Vec<LogLine>, String> {
 /// boundary) still requires pasting the token by hand.
 #[tauri::command]
 fn get_dashboard_token(app: AppHandle) -> Result<Option<String>, String> {
-    let (project_root, python) = resolve_paths(&app)?;
+    dashboard_token(&app)
+}
+
+pub(crate) fn dashboard_token(app: &AppHandle) -> Result<Option<String>, String> {
+    let (project_root, python) = resolve_paths(app)?;
     if !python.exists() {
         return Err(format!("python not found at {}", python.display()));
     }
@@ -1430,6 +1464,12 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             tray::show_main(app);
         }))
+        // No shortcuts are pre-registered here: the binding a user has is not
+        // necessarily the default one, and shortcuts::init() registers the
+        // resolved set (defaults overlaid with GET /api/shortcuts) from
+        // setup() instead.
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .manage(shortcuts::ShortcutRegistry::default())
         .manage(tray::TrayState::new())
         .manage(ServerState {
             child: Mutex::new(None),
@@ -1464,7 +1504,11 @@ pub fn run() {
             tray::set_tray_settings,
             tray::hide_main_window,
             tray::show_main_window,
-            tray::quit_app_command
+            tray::quit_app_command,
+            tray::trigger_tray_action,
+            shortcuts::get_shortcut_bindings,
+            shortcuts::get_shortcut_actions,
+            shortcuts::set_shortcut_bindings
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -1477,6 +1521,15 @@ pub fn run() {
             } else if tray::should_start_hidden(&handle) {
                 tray::hide_to_tray(&handle);
             }
+            // Global shortcuts work with or without a window, so they must not
+            // wait on the server coming up: register the defaults now (which
+            // is all a fresh install ever has) and let shortcuts::init()'s
+            // poll pick up the user's bindings once the server answers. The
+            // token is read on that poll's own worker thread, never here.
+            let token_handle = handle.clone();
+            shortcuts::init(&handle, DASHBOARD_PORT, move || {
+                dashboard_token(&token_handle).ok().flatten()
+            });
             let icon_fix_handle = handle.clone();
             thread::spawn(move || fix_shortcut_icons(&icon_fix_handle));
             let state = handle.state::<ServerState>();

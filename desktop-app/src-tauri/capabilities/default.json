@@ -36,6 +36,10 @@
     "allow-set-tray-settings",
     "allow-hide-main-window",
     "allow-show-main-window",
-    "allow-quit-app-command"
+    "allow-quit-app-command",
+    "allow-trigger-tray-action",
+    "allow-get-shortcut-bindings",
+    "allow-get-shortcut-actions",
+    "allow-set-shortcut-bindings"
   ]
 }

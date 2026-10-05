@@ -35,6 +35,11 @@ portable-pty = "0.8"
 # against the public key embedded in the binary, so a compromised GitHub
 # account/release can't push code to installed apps.
 ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
+# Global shortcuts (see src/shortcuts.rs): ABP has to be reachable with its
+# window minimized or hidden to the tray. Pinned to the 2.3 line rather than
+# a bare "2" because 2.4 pulls a newer tauri-runtime/tao than this app
+# builds against, and a shortcut plugin is not worth an event-loop upgrade.
+tauri-plugin-global-shortcut = "~2.3.2"
 
 [profile.release]
 panic = "abort"
