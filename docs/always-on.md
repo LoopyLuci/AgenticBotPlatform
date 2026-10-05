@@ -83,7 +83,11 @@ lease, and no outward connector is ever started - see
 2. it answers `/healthz`;
 3. the outgoing instance is told to release the leader lease (it stops its
    pollers, its scheduler, the rest — and keeps serving);
-4. the incoming one takes the lease and starts those services;
+4. the incoming one takes the lease, starts those services, and then has to
+   answer `/healthz` **again** — taking the lease is what makes it busy, and
+   routing the front door into an ABP that cannot answer for the next few
+   seconds is the outage the swap exists to prevent. The outgoing instance is
+   still serving throughout, so this waits for free;
 5. routing flips — one pointer, so the next request goes to the new instance and
    nothing is closed underneath anybody;
 6. the old instance is drained and stopped, whole tree and all.
@@ -150,6 +154,17 @@ counted, in the registry, so the budget survives a restart of the gate itself:
 
 - an instance that **never answered `/healthz` is never restarted** — a build
   that cannot start is not a process that crashed;
+- **a crash and a slow answer are not the same question.** "The process is gone"
+  is the OS's answer and the gate acts on it at once. "It did not answer a probe
+  within three seconds" is answered "no" by a busy instance just as readily as
+  by a sick one — a booting ABP blocks its own event loop for a few seconds
+  while it starts its lease-gated services, and on a loaded machine that is
+  longer than the probe takes. So an instance that is **running but unanswerable**
+  has to stay that way for `ABP_GATE_UNHEALTHY_GRACE_S` (30s) before it counts as
+  replaceable, and the gate says so in its log while it waits. Replacing a working
+  instance over one slow probe would turn a three-second hiccup into a
+  thirty-second outage, and hand every reader of the registry a pid that stops
+  meaning anything;
 - at most **3 restarts in 10 minutes** (`ABP_GATE_RESTART_LIMIT`,
   `ABP_GATE_RESTART_WINDOW_S`), with an exponential backoff between them
   (`ABP_GATE_RESTART_BACKOFF_S`, default 5s, 20s, 60s…);
@@ -169,6 +184,14 @@ counted, in the registry, so the budget survives a restart of the gate itself:
 default); a start, swap or sandbox beyond it is refused with a reason. A bug
 that starts instances without stopping them becomes a refusal instead of an
 out-of-memory machine.
+
+**Nothing slow ever runs on the loop that serves the public port.** Starting a
+process, stopping a tree, waiting for a port to close, probing an instance's
+`/healthz` and copying the database into a sandbox all wait on the operating
+system, and every one of them happens while the gate is serving traffic. All of
+it runs in threads, because the whole point of the gate is that a swap, a
+restart or a status page never makes the front door go quiet — a stall measured
+at 2.5s before this, against a budget of nothing at all.
 
 Every knob is in `abp_gate/limits.py`, and every one of them is an environment
 variable, so a test can run the same code with a small budget.
