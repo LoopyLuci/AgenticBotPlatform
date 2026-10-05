@@ -216,6 +216,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.nodes", "bot.canvas", "bot.voice", "bot.platforms._relay",
     "bot.platforms.email_platform", "bot.platforms.sms_platform", "bot.platforms.signal_platform", "bot.platforms.imessage_platform",
     "bot.platforms.googlechat_platform", "bot.platforms.teams_platform", "bot.platforms._jwt",  # long-running adapters
+    "bot.platforms._voice",  # loaded by the long-running Discord/Slack adapters, which are not reloaded
     "bot.agent_runtime.browser", "bot.vault", "bot.routines", "bot.approvals_view",  # a running browser / encrypted store / registered tools
     "bot.agent_runtime.session_export", "bot.backends.external_agent_backend",  # imported by denied modules (dashboard, router)
     "bot.model_catalog", "bot.agent_runtime.usage_limits", "bot.agent_runtime.model_tools",  # usage counters and per-process caches

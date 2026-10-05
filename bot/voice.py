@@ -30,13 +30,17 @@ Everything is off until configured (`voice:` in config/backends.yaml). There is 
 * `sapi` uses Windows' built-in speech (Windows PowerShell's System.Speech) and produces WAV.
 
 Voice messages are treated exactly like typed text once transcribed: same allow-list, same permissions, same approvals.
-A transcript can be wrong; the reply says what was heard, so a mistake is visible. Tested with fakes, and `sapi` on a
-Windows machine; **not tested against a real Whisper service, Piper or whisper.cpp.**
+A transcript can be wrong; the reply says what was heard, so a mistake is visible. Telegram (bot/handlers.py's on_voice),
+Discord (bot/platforms/discord_platform.py) and Slack (bot/platforms/slack_platform.py) all run these same two functions
+off the same `voice:` block — one pipeline, one set of settings, one set of words; bot/platforms/_voice.py is only how the
+two adapters get bytes in and audio out. Tested against local stand-ins and `sapi` on a Windows machine; **not tested
+against a real Whisper service, Piper, whisper.cpp, a real Discord server or a real Slack workspace.**
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+import mimetypes
 import os
 import shutil
 import tempfile
@@ -87,6 +91,54 @@ def max_bytes() -> int:
 def _key(section: dict) -> str:
     env = str(section.get("api_key_env") or "")
     return os.environ.get(env, "") if env else str(section.get("api_key") or "")
+
+
+# ---- what every channel says ----------------------------------------------------------------
+# One copy of the wording, so a person who speaks to the bot on Telegram, Discord or Slack is told the
+# same thing in the same words. The handlers use these instead of their own literals. NO_DOWNLOAD is the
+# platform adapters' extra case: Telegram's own file fetch reports its failures as a Bot API error.
+NO_STT = "Voice messages need speech-to-text, which isn't set up (voice.stt in config/backends.yaml)."
+TOO_LONG = "That voice message is too long for me to transcribe."
+NO_DOWNLOAD = "I couldn't download that audio to listen to it."
+
+
+def heard(text: str) -> str:
+    """The transcript, said out loud first so a mis-heard message is visible before the answer is."""
+    return f"Heard: {text}"
+
+
+def not_transcribed(exc: Exception) -> str:
+    return f"I couldn't transcribe that: {exc}"
+
+
+# What a platform calls audio. Discord sends a voice note as .ogg and an mp3 as .mp3; Slack sends a voice
+# message as .m4a and often supplies no mimetype at all, so the file name decides.
+AUDIO_SUFFIXES = frozenset({".ogg", ".oga", ".opus", ".mp3", ".m4a", ".wav", ".webm", ".aac", ".flac", ".amr", ".wma"})
+AUDIO_MIME_PREFIX = "audio/"
+# The standard library guesses ".oga" for audio/ogg; ".ogg" is what a voice note is called everywhere
+# else here, including this module's own default, so prefer it.
+_PREFERRED_SUFFIX = {"audio/ogg": ".ogg", "audio/oga": ".ogg", "audio/x-ogg": ".ogg", "audio/mp4": ".m4a"}
+
+
+def is_audio(filename: str = "", mimetype: str = "") -> bool:
+    """Whether an attachment handed over by a chat platform is speech rather than a document."""
+    if str(mimetype or "").split(";")[0].strip().lower().startswith(AUDIO_MIME_PREFIX):
+        return True
+    return Path(str(filename or "")).suffix.lower() in AUDIO_SUFFIXES
+
+
+def audio_name(filename: str = "", mimetype: str = "", *, default: str = "voice.ogg") -> str:
+    """A file name with a suffix the speech-to-text engine can recognise. Slack's file objects often carry
+    only a name and no extension (and Discord sometimes no name at all), and an engine run as a command
+    keys the suffix off the name, so this fills one in from the mimetype and then from the default."""
+    name = str(filename or "").strip().replace("\\", "/").rsplit("/", 1)[-1]
+    if Path(name).suffix:
+        return name
+    kind = str(mimetype or "").split(";")[0].strip().lower()
+    guessed = _PREFERRED_SUFFIX.get(kind) or mimetypes.guess_extension(kind) or ""
+    if guessed:
+        return (name or Path(default).stem or "voice") + guessed if is_audio(name, mimetype) else default
+    return name or default
 
 
 async def _run(argv: list[str], *, stdin: Optional[bytes] = None) -> tuple[bytes, bytes, int]:

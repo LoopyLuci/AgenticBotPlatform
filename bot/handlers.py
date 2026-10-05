@@ -798,10 +798,10 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if media is None:
         return
     if not voice.stt_enabled():
-        await msg.reply_text("Voice messages need speech-to-text, which isn't set up (voice.stt in config/backends.yaml).")
+        await msg.reply_text(voice.NO_STT)
         return
     if (media.file_size or 0) > voice.max_bytes():
-        await msg.reply_text("That voice message is too long for me to transcribe.")
+        await msg.reply_text(voice.TOO_LONG)
         return
     await msg.chat.send_action("typing")
     file = await context.bot.get_file(media.file_id)
@@ -809,10 +809,10 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         heard = await voice.transcribe(data, getattr(media, "mime_type", None) or "audio/ogg")
     except voice.VoiceError as exc:
-        await msg.reply_text(f"I couldn't transcribe that: {exc}")
+        await msg.reply_text(voice.not_transcribed(exc))
         return
     db.log_audit(actor=str(update.effective_user.id), action="voice_message", detail=f"{len(data)} bytes, {len(heard)} characters heard")
-    await msg.reply_text(f"Heard: {heard}")
+    await msg.reply_text(voice.heard(heard))
     context.user_data["voice_reply"] = voice.reply_with_voice()
     await _handle_ask(update, context, heard)
 
