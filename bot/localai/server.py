@@ -16,6 +16,10 @@ Ollama API
     POST /api/copy  DELETE /api/delete  GET /api/version  GET /
 OpenAI API
     GET /v1/models   POST /v1/chat/completions   POST /v1/completions   POST /v1/embeddings
+
+Models run by mesh-llm, the GPUs pooled across machines (bot/localai/mesh.py), are served here too: a model named
+"mesh/<the mesh's own id>" is proxied to that node's API instead of to a llama-server, and is listed in /api/tags
+alongside the local ones. Everything else is the local engine.
 """
 from __future__ import annotations
 
@@ -36,15 +40,28 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse, Response, StreamingResponse
 from starlette.routing import Route
 
-from bot.localai import engine, gguf, modelfile, models, pull
+from bot.localai import engine, gguf, mesh, modelfile, models, pull
 from bot.localai.paths import LocalAIError
 
 VERSION = "0.12.6"          # the Ollama API level this server speaks (clients check it); X-ABP-LocalAI says who it is
-_client = httpx.AsyncClient(timeout=httpx.Timeout(None, connect=10))
 OPTION_MAP = {"temperature": "temperature", "top_p": "top_p", "top_k": "top_k", "min_p": "min_p", "seed": "seed",
               "repeat_penalty": "repeat_penalty", "repeat_last_n": "repeat_last_n", "presence_penalty": "presence_penalty",
               "frequency_penalty": "frequency_penalty", "typical_p": "typical_p", "mirostat": "mirostat",
               "mirostat_tau": "mirostat_tau", "mirostat_eta": "mirostat_eta", "stop": "stop", "num_keep": "n_keep"}
+
+_clients: dict[Any, httpx.AsyncClient] = {}
+
+
+def _http() -> httpx.AsyncClient:
+    """One HTTP client per event loop: the server runs in one loop for its lifetime, and a pooled connection belongs
+    to the loop that opened it (so a test client, which makes a fresh loop each time, gets a fresh pool)."""
+    loop = asyncio.get_running_loop()
+    c = _clients.get(loop)
+    if c is None:
+        for gone in [k for k in _clients if k.is_closed()]:    # a loop that is gone takes its client with it
+            _clients.pop(gone, None)
+        c = _clients[loop] = httpx.AsyncClient(timeout=httpx.Timeout(None, connect=10))
+    return c
 
 
 def _now() -> str:
@@ -56,10 +73,43 @@ def _err(msg: str, status: int = 400) -> JSONResponse:
     return JSONResponse({"error": msg}, status, headers={"X-ABP-LocalAI": "1"})
 
 
-async def _load(name: str, options: dict, keep_alive, embedding: bool = False) -> engine.Runner:
+async def _load(name: str, rec: dict, options: dict, keep_alive, embedding: bool = False) -> engine.Runner | mesh.Target:
+    """The backend that runs a model: mesh-llm for a mesh model (nothing to start), else a llama-server for it."""
+    if rec.get("engine") == "mesh":
+        return await asyncio.to_thread(mesh.routed, name, embedding)
     ka = engine.parse_keep_alive(keep_alive)
     load_opts = {k: v for k, v in (options or {}).items() if k in ("num_ctx", "num_gpu", "seed")}
     return await asyncio.to_thread(engine.load, name, load_opts, ka, embedding)
+
+
+def _record(name: str) -> dict:
+    """The record for a model name: ABP's own store first (an explicit local model wins), then mesh-llm's."""
+    try:
+        return {**models.resolve(name), "engine": "llamacpp"}
+    except LocalAIError:
+        rec = mesh.record(name)
+        if rec:
+            return rec
+        raise
+
+
+def _wire_model(rec: dict) -> dict:
+    """The model field to send on: llama-server answers for the alias it was loaded with, mesh-llm for its own id."""
+    return {"model": rec["mesh_id"]} if rec.get("engine") == "mesh" else {}
+
+
+def _mesh_owned(name: str) -> bool:
+    """Whether a name is a mesh-llm model: an Ollama client asking to copy or delete one is told where it lives."""
+    try:
+        return _record(name).get("engine") == "mesh"
+    except LocalAIError:
+        return False
+
+
+def _all_models() -> list[dict]:
+    """Every model ABP's API lists: its own store and the mesh's, as one sorted list (a mesh that is down adds
+    nothing, and no error)."""
+    return sorted(models.listing() + mesh.listing(), key=lambda m: m["name"])
 
 
 def _sampling(rec_params: dict, options: dict) -> dict:
@@ -166,50 +216,54 @@ def _tool_calls(tcs: list[dict]) -> list[dict]:
 
 
 async def _chat_stream(r: engine.Runner, body: dict, model: str, t0: float, load_s: float, field: str) -> AsyncIterator[bytes]:
-    """llama-server's SSE (OpenAI deltas) -> Ollama's NDJSON chunks."""
+    """The backend's SSE (OpenAI deltas) -> Ollama's NDJSON chunks."""
     r.busy += 1
     tool_acc: dict[int, dict] = {}
     timings, done_reason = {}, "stop"
     try:
-        async with _client.stream("POST", f"{r.url}/v1/chat/completions", json={**body, "stream": True, "timings_per_token": False}) as resp:
-            if resp.status_code >= 400:
-                text = (await resp.aread()).decode(errors="replace")
-                yield (json.dumps({"error": f"engine: {text[:500]}"}) + "\n").encode()
-                return
-            async for line in resp.aiter_lines():
-                if not line.startswith("data: "):
-                    continue
-                data = line[6:].strip()
-                if data == "[DONE]":
-                    break
-                try:
-                    j = json.loads(data)
-                except ValueError:
-                    continue
-                if j.get("timings"):
-                    timings = j["timings"]
-                for ch in j.get("choices") or []:
-                    d = ch.get("delta") or {}
-                    if ch.get("finish_reason"):
-                        done_reason = "stop" if ch["finish_reason"] in ("stop", "tool_calls") else ch["finish_reason"]
-                    for tc in d.get("tool_calls") or []:
-                        acc = tool_acc.setdefault(tc.get("index", 0), {"function": {"name": "", "arguments": ""}})
-                        f = tc.get("function") or {}
-                        acc["function"]["name"] += f.get("name") or ""
-                        acc["function"]["arguments"] += f.get("arguments") or ""
-                    piece, think = d.get("content") or "", d.get("reasoning_content") or ""
-                    if piece or think:
-                        chunk: dict[str, Any] = {"model": model, "created_at": _now(), "done": False}
-                        if field == "message":
-                            msg = {"role": "assistant", "content": piece}
-                            if think:
-                                msg["thinking"] = think
-                            chunk["message"] = msg
-                        else:
-                            chunk["response"] = piece
-                            if think:
-                                chunk["thinking"] = think
-                        yield (json.dumps(chunk) + "\n").encode()
+        try:
+            async with _http().stream("POST", f"{r.url}/v1/chat/completions", json={**body, "stream": True, "timings_per_token": False}) as resp:
+                if resp.status_code >= 400:
+                    text = (await resp.aread()).decode(errors="replace")
+                    yield (json.dumps({"error": f"engine: {text[:500]}"}) + "\n").encode()
+                    return
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data = line[6:].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        j = json.loads(data)
+                    except ValueError:
+                        continue
+                    if j.get("timings"):
+                        timings = j["timings"]
+                    for ch in j.get("choices") or []:
+                        d = ch.get("delta") or {}
+                        if ch.get("finish_reason"):
+                            done_reason = "stop" if ch["finish_reason"] in ("stop", "tool_calls") else ch["finish_reason"]
+                        for tc in d.get("tool_calls") or []:
+                            acc = tool_acc.setdefault(tc.get("index", 0), {"function": {"name": "", "arguments": ""}})
+                            f = tc.get("function") or {}
+                            acc["function"]["name"] += f.get("name") or ""
+                            acc["function"]["arguments"] += f.get("arguments") or ""
+                        piece, think = d.get("content") or "", d.get("reasoning_content") or ""
+                        if piece or think:
+                            chunk: dict[str, Any] = {"model": model, "created_at": _now(), "done": False}
+                            if field == "message":
+                                msg = {"role": "assistant", "content": piece}
+                                if think:
+                                    msg["thinking"] = think
+                                chunk["message"] = msg
+                            else:
+                                chunk["response"] = piece
+                                if think:
+                                    chunk["thinking"] = think
+                            yield (json.dumps(chunk) + "\n").encode()
+        except httpx.HTTPError as e:                        # the backend went away mid-request (a mesh node, a llama-server)
+            yield (json.dumps({"error": f"engine: {e}"}) + "\n").encode()
+            return
         if tool_acc and field == "message":
             yield (json.dumps({"model": model, "created_at": _now(), "done": False, "message": {
                 "role": "assistant", "content": "", "tool_calls": _tool_calls([tool_acc[k] for k in sorted(tool_acc)])}}) + "\n").encode()
@@ -235,7 +289,9 @@ def _durations(t0: float, load_s: float, timings: dict) -> dict:
 async def _chat_once(r: engine.Runner, body: dict, model: str, t0: float, load_s: float, field: str) -> dict:
     r.busy += 1
     try:
-        resp = await _client.post(f"{r.url}/v1/chat/completions", json={**body, "stream": False})
+        resp = await _http().post(f"{r.url}/v1/chat/completions", json={**body, "stream": False})
+    except httpx.HTTPError as e:
+        raise LocalAIError(f"engine: {e}") from e
     finally:
         r.busy -= 1
         r.last_used = time.time()
@@ -271,22 +327,26 @@ async def chat(request: Request):
         b = await request.json()
         block = await asyncio.to_thread(_memory, request, b, _last_user(b.get("messages") or []))
         model = b.get("model") or ""
-        rec = await asyncio.to_thread(models.resolve, model)
+        rec = await asyncio.to_thread(_record, model)
         t0 = time.time()
         msgs = b.get("messages") or []
         if not msgs:                                        # load / unload only
+            if rec["engine"] == "mesh":                      # the mesh loads, unloads and keeps its own models
+                return JSONResponse({"model": rec["name"], "created_at": _now(),
+                                     "message": {"role": "assistant", "content": ""}, "done_reason": "load", "done": True})
             ka = engine.parse_keep_alive(b.get("keep_alive"))
             if ka == 0:
                 await asyncio.to_thread(engine.unload, model)
                 return JSONResponse({"model": rec["name"], "created_at": _now(), "message": {"role": "assistant", "content": ""},
                                      "done_reason": "unload", "done": True})
-            await _load(model, b.get("options") or {}, b.get("keep_alive"))
+            await _load(model, rec, b.get("options") or {}, b.get("keep_alive"))
             return JSONResponse({"model": rec["name"], "created_at": _now(), "message": {"role": "assistant", "content": ""},
                                  "done_reason": "load", "done": True})
         before = time.time()
-        r = await _load(model, b.get("options") or {}, b.get("keep_alive"))
+        r = await _load(model, rec, b.get("options") or {}, b.get("keep_alive"))
         load_s = getattr(r, "load_seconds", 0.0) if r.started >= before else 0.0
-        body: dict[str, Any] = {"messages": _with_memory(_messages(rec, msgs), block), **_sampling(rec.get("params") or {}, b.get("options") or {})}
+        body: dict[str, Any] = {**_wire_model(rec), "messages": _with_memory(_messages(rec, msgs), block),
+                                **_sampling(rec.get("params") or {}, b.get("options") or {})}
         if b.get("tools"):
             body["tools"] = b["tools"]
         rf = _format(b.get("format"))
@@ -308,28 +368,35 @@ async def generate(request: Request):
         b = await request.json()
         block = await asyncio.to_thread(_memory, request, b, str(b.get("prompt") or ""))
         model = b.get("model") or ""
-        rec = await asyncio.to_thread(models.resolve, model)
+        rec = await asyncio.to_thread(_record, model)
         t0 = time.time()
         prompt = b.get("prompt") or ""
         if not prompt and not b.get("suffix") and not b.get("images"):
+            if rec["engine"] == "mesh":                      # the mesh loads, unloads and keeps its own models
+                return JSONResponse({"model": rec["name"], "created_at": _now(), "response": "", "done": True, "done_reason": "load"})
             ka = engine.parse_keep_alive(b.get("keep_alive"))
             if ka == 0:
                 await asyncio.to_thread(engine.unload, model)
                 return JSONResponse({"model": rec["name"], "created_at": _now(), "response": "", "done": True, "done_reason": "unload"})
-            await _load(model, b.get("options") or {}, b.get("keep_alive"))
+            await _load(model, rec, b.get("options") or {}, b.get("keep_alive"))
             return JSONResponse({"model": rec["name"], "created_at": _now(), "response": "", "done": True, "done_reason": "load"})
         before = time.time()
-        r = await _load(model, b.get("options") or {}, b.get("keep_alive"))
+        r = await _load(model, rec, b.get("options") or {}, b.get("keep_alive"))
         load_s = getattr(r, "load_seconds", 0.0) if r.started >= before else 0.0
         samp = _sampling(rec.get("params") or {}, b.get("options") or {})
         if b.get("raw") or b.get("suffix"):                  # straight to the model: raw text, or fill-in-the-middle
+            if rec["engine"] == "mesh":
+                raise LocalAIError("raw and fill-in-the-middle generation are llama.cpp features; a mesh model answers "
+                                   "chat (/api/chat, /v1/chat/completions) and /api/generate with a prompt")
             path = "/infill" if b.get("suffix") else "/completion"
             body = {"prompt": prompt, "n_predict": samp.pop("max_tokens", -1), **samp, "stream": False}
             if b.get("suffix"):
                 body = {"input_prefix": prompt, "input_suffix": b["suffix"], **{k: v for k, v in body.items() if k != "prompt"}}
             r.busy += 1
             try:
-                resp = await _client.post(f"{r.url}{path}", json=body)
+                resp = await _http().post(f"{r.url}{path}", json=body)
+            except httpx.HTTPError as e:
+                raise LocalAIError(f"engine: {e}") from e
             finally:
                 r.busy -= 1
             if resp.status_code >= 400:
@@ -341,7 +408,7 @@ async def generate(request: Request):
                 return _ndjson(iter([(json.dumps(out) + "\n").encode()]))
             return JSONResponse(out)
         msg = {"role": "user", "content": prompt, "images": b.get("images") or []}
-        body = {"messages": _with_memory(_messages(rec, [msg], b.get("system")), block), **samp}
+        body = {**_wire_model(rec), "messages": _with_memory(_messages(rec, [msg], b.get("system")), block), **samp}
         rf = _format(b.get("format"))
         if rf:
             body["response_format"] = rf
@@ -354,13 +421,15 @@ async def generate(request: Request):
         return _err(str(e), 404 if "not found" in str(e) else 400)
 
 
-async def _embed(model: str, inputs: list[str], options: dict, keep_alive, truncate: bool = True) -> tuple[list, int, float]:
+async def _embed(rec: dict, model: str, inputs: list[str], options: dict, keep_alive) -> tuple[list, int, float]:
     t = time.time()
-    r = await _load(model, options, keep_alive, embedding=True)
+    r = await _load(model, rec, options, keep_alive, embedding=True)
     load_s = time.time() - t
     r.busy += 1
     try:
-        resp = await _client.post(f"{r.url}/v1/embeddings", json={"input": inputs})
+        resp = await _http().post(f"{r.url}/v1/embeddings", json={"input": inputs})
+    except httpx.HTTPError as e:
+        raise LocalAIError(f"engine: {e}") from e
     finally:
         r.busy -= 1
         r.last_used = time.time()
@@ -379,7 +448,8 @@ async def embed(request: Request):
         if not inputs:
             return _err("input is empty")
         t0 = time.time()
-        vecs, n, load_s = await _embed(b.get("model", ""), inputs, b.get("options") or {}, b.get("keep_alive"))
+        rec = await asyncio.to_thread(_record, b.get("model", ""))
+        vecs, n, load_s = await _embed(rec, b.get("model", ""), inputs, b.get("options") or {}, b.get("keep_alive"))
         out = []
         for v in vecs:
             norm = sum(x * x for x in v) ** 0.5 or 1.0
@@ -389,7 +459,7 @@ async def embed(request: Request):
                 norm = sum(x * x for x in v) ** 0.5 or 1.0
                 v = [x / norm for x in v]
             out.append(v)
-        return JSONResponse({"model": models.canonical(b["model"]), "embeddings": out, "total_duration": int((time.time() - t0) * 1e9),
+        return JSONResponse({"model": rec["name"], "embeddings": out, "total_duration": int((time.time() - t0) * 1e9),
                              "load_duration": int(load_s * 1e9), "prompt_eval_count": n})
     except LocalAIError as e:
         return _err(str(e), 404 if "not found" in str(e) else 400)
@@ -398,14 +468,16 @@ async def embed(request: Request):
 async def embeddings_legacy(request: Request):
     try:
         b = await request.json()
-        vecs, _n, _l = await _embed(b.get("model", ""), [b.get("prompt", "")], b.get("options") or {}, b.get("keep_alive"))
+        model = b.get("model", "")
+        rec = await asyncio.to_thread(_record, model)
+        vecs, _n, _l = await _embed(rec, model, [b.get("prompt", "")], b.get("options") or {}, b.get("keep_alive"))
         return JSONResponse({"embedding": vecs[0]})
     except LocalAIError as e:
         return _err(str(e), 404 if "not found" in str(e) else 400)
 
 
 async def tags(request: Request):
-    return JSONResponse({"models": await asyncio.to_thread(models.listing)})
+    return JSONResponse({"models": await asyncio.to_thread(_all_models)})
 
 
 async def ps(request: Request):
@@ -432,7 +504,9 @@ async def show(request: Request):
     try:
         b = await request.json()
         name = b.get("model") or b.get("name") or ""
-        rec = await asyncio.to_thread(models.resolve, name)
+        rec = await asyncio.to_thread(_record, name)
+        if rec["engine"] == "mesh":
+            return JSONResponse(await asyncio.to_thread(mesh.details, rec["mesh_id"]))
         info = await asyncio.to_thread(gguf.read, rec["weights"], bool(b.get("verbose")))
         s = gguf.summary(info)
         meta = {k: v for k, v in info["meta"].items() if b.get("verbose") or not isinstance(v, (list, dict))}
@@ -573,6 +647,8 @@ async def create(request: Request):
 async def copy_ep(request: Request):
     b = await request.json()
     try:
+        if _mesh_owned(b["source"]):
+            raise LocalAIError("a mesh-llm model is the mesh's own: it is not copied into ABP's store")
         await asyncio.to_thread(models.copy, b["source"], b["destination"])
         return Response(status_code=200)
     except (LocalAIError, KeyError) as e:
@@ -582,8 +658,11 @@ async def copy_ep(request: Request):
 async def delete_ep(request: Request):
     b = await request.json()
     try:
-        await asyncio.to_thread(engine.unload, b.get("model") or b.get("name") or "")
-        await asyncio.to_thread(models.delete, b.get("model") or b.get("name") or "")
+        name = b.get("model") or b.get("name") or ""
+        if _mesh_owned(name):
+            raise LocalAIError("a mesh-llm model is not in ABP's store: unload or delete it in the mesh")
+        await asyncio.to_thread(engine.unload, name)
+        await asyncio.to_thread(models.delete, name)
         return Response(status_code=200)
     except LocalAIError as e:
         return _err(str(e), 404)
@@ -600,8 +679,9 @@ async def root(request: Request):
 # ---- OpenAI-compatible ---------------------------------------------------------------------------------------------- #
 
 async def v1_models(request: Request):
-    ms = await asyncio.to_thread(models.listing)
-    return JSONResponse({"object": "list", "data": [{"id": m["name"], "object": "model", "created": 0, "owned_by": "abp"} for m in ms]})
+    ms = await asyncio.to_thread(_all_models)
+    return JSONResponse({"object": "list", "data": [{"id": m["name"], "object": "model", "created": 0,
+                                                       "owned_by": m.get("owned_by", "abp")} for m in ms]})
 
 
 async def _v1_proxy(request: Request, path: str, embedding: bool = False):
@@ -609,8 +689,9 @@ async def _v1_proxy(request: Request, path: str, embedding: bool = False):
         b = await request.json()
         block = "" if embedding else await asyncio.to_thread(_memory, request, b, _last_user(b.get("messages") or []))
         model = b.get("model", "")
-        rec = await asyncio.to_thread(models.resolve, model)
-        r = await _load(model, {}, None, embedding)
+        rec = await asyncio.to_thread(_record, model)
+        r = await _load(model, rec, {}, None, embedding)
+        b = {**b, **_wire_model(rec)}                   # mesh-llm routes on its own model id, not on ABP's name
         if path == "/v1/chat/completions" and rec.get("system") and not any(m.get("role") == "system" for m in b.get("messages", [])):
             b["messages"] = [{"role": "system", "content": rec["system"]}] + b.get("messages", [])
         if block and isinstance(b.get("messages"), list):        # after the model's own system prompt, into the same message
@@ -619,16 +700,21 @@ async def _v1_proxy(request: Request, path: str, embedding: bool = False):
             async def gen():
                 r.busy += 1
                 try:
-                    async with _client.stream("POST", f"{r.url}{path}", json=b) as resp:
+                    async with _http().stream("POST", f"{r.url}{path}", json=b) as resp:
                         async for chunk in resp.aiter_raw():
                             yield chunk
+                except httpx.HTTPError as e:                 # the backend went away mid-stream
+                    err = json.dumps({"error": {"message": f"engine: {e}", "type": "api_error"}})
+                    yield f"data: {err}\n\n".encode()
                 finally:
                     r.busy -= 1
                     r.last_used = time.time()
             return StreamingResponse(gen(), media_type="text/event-stream")
         r.busy += 1
         try:
-            resp = await _client.post(f"{r.url}{path}", json=b)
+            resp = await _http().post(f"{r.url}{path}", json=b)
+        except httpx.HTTPError as e:
+            raise LocalAIError(f"engine: {e}") from e
         finally:
             r.busy -= 1
             r.last_used = time.time()

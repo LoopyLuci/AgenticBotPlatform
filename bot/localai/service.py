@@ -4,7 +4,7 @@ ABP's model store made visible to the modules that run models (Kestrion reads it
     server_status / server_start / server_stop      the Ollama-compatible server (bot/localai/server.py), a process
                                                      of its own (bot/hosting/procs.py), on settings' port (11436)
     overview()                                       everything a page shows: server, engines, models, running,
-                                                     training environment, runs, GPUs
+                                                     mesh-llm, training environment, runs, GPUs
     run_forever(stop_event)                          ABP's background task (bot/main.py)
 """
 from __future__ import annotations
@@ -15,7 +15,7 @@ import os
 import sys
 import time
 
-from bot.localai import engine, models, train
+from bot.localai import engine, mesh, models, train
 from bot.localai.paths import LocalAIError, home, sub
 
 logger = logging.getLogger(__name__)
@@ -65,7 +65,7 @@ def overview() -> dict:
         eng = None
     return {"server": server_status(), "settings": engine.settings(), "engine": eng, "engines": engine.installed(),
             "gpus": engine.gpus(), "models": models.listing(), "stores": models.extra_stores(), "running": _running(),
-            "home": str(home()), "train_env": {"installed": train.python().exists(), "path": str(train.venv())},
+            "mesh": mesh.status(), "home": str(home()), "train_env": {"installed": train.python().exists(), "path": str(train.venv())},
             "runs": train.runs()[:20], "datasets": train.datasets()}
 
 

@@ -1,5 +1,5 @@
 // Local AI and Neural Lab pages (bot/localai, bot/neurallab).
-//   Local AI     Overview (the Ollama-compatible server, engine, GPUs, loaded models, settings) · Models (pull, import,
+//   Local AI     Overview (the Ollama-compatible server, engine, mesh-llm, GPUs, loaded models, settings) · Models (pull, import,
 //                reference, show, delete) · Discover (other programs' models: use them in place or import) ·
 //                Fine-tune (the GPU training environment, LoRA SFT/DPO runs with live loss, export, Amethyst modules)
 //   Neural Lab   Runs · Designer (a spec: check shapes/parameters, train on the GPU) · Projects (BrainBuilder graphs,
@@ -65,6 +65,22 @@
   const metrics = (f) => Object.entries(f || {}).filter(([k]) => k.startsWith('val_')).map(([k, v]) => `${k.slice(4)} ${E(v)}`).join(' · ');
 
   // ================= Local AI =================
+  function aiMesh(o) {
+    const m = o.mesh || { reachable: false, url: '', error: 'not looked up' };
+    if (!m.reachable) return `<div class="aip-grid"><div class="aip-card"><b>Mesh (mesh-llm)</b><div>${chip('warn', 'not reachable')} <span class="aip-mono">${E(m.url)}</span>
+<div class="aip-muted">${E((m.error || 'not looked up') + '.')} ABP's own models are unaffected. Start mesh-llm (it pools GPUs across machines) and its models appear here, served by the model server under <span class="aip-mono">mesh/&lt;model&gt;</span>.</div>
+<div class="aip-muted">Console: ${E(m.console_url || '')}${m.console ? '' : ' (not answering)'}</div></div></div>`;
+    const n = m.node || {};
+    return `<div class="aip-grid"><div class="aip-card"><b>Mesh (mesh-llm)</b><div>${chip('ok', 'reachable')} <span class="aip-mono">${E(m.url)}</span> ${E(n.version ? '· v' + n.version : '')}
+<div class="aip-muted">node ${E(n.hostname || n.id || '')} · ${E(n.state || '')}${n.mesh ? ' · mesh ' + E(n.mesh) : ''}${n.vram_gb ? ' · ' + E(n.vram_gb) + ' GB' : ''}</div>
+<div>${(m.gpus || []).map((g) => `${E(g.name)} ${E(g.vram_gb)} GB`).join('<br>') || '<span class="aip-muted">no GPU reported</span>'}</div>
+${(m.peers || []).length ? `<div class="aip-wrap"><table class="aip-table"><tr><th>Peer</th><th>State</th><th>GPU</th><th>Serving</th></tr>${m.peers.map((p) => `<tr><td>${E(p.hostname || p.id)}</td><td>${chip(p.state === 'serving' ? 'ok' : '', p.state || '')}</td><td>${E(p.vram_gb)} GB</td><td class="aip-muted">${E((p.serving || []).join(', ') || 'idle')}</td></tr>`).join('')}</table></div>` : '<div class="aip-muted">no peers: this node is the whole mesh</div>'}
+<div class="aip-muted">serving now: ${E((m.serving || []).join(', ') || 'nothing loaded')}</div></div>
+<div class="aip-card"><b>Mesh models</b><div class="aip-muted">Ask for one by this name on the model server (port ${E(o.server.port || 11436)}); ABP proxies it to the mesh, "+memory" and all.</div>
+<div class="aip-wrap"><table class="aip-table"><tr><th>Name</th><th>Context</th><th>Quant</th><th>Where</th></tr>
+${(m.models || []).map((x) => `<tr><td class="aip-mono">${E(x.name)}</td><td>${E(x.context_length || '')}</td><td>${E(x.quantization)}</td><td class="aip-muted">${E(x.where || 'not loaded')}</td></tr>`).join('') || '<tr><td class="aip-muted" colspan="4">the node serves no models yet</td></tr>'}</table></div></div></div>`;
+  }
+
   async function aiOverview(o) {
     const s = o.server, e = o.engine;
     return `<div class="aip-grid"><div class="aip-card"><b>Model server</b>
@@ -81,7 +97,8 @@
 <span>Keep loaded (s)</span><input id="aip-ka" type="number" value="${E(o.settings.keep_alive_s)}">
 <span>Default context</span><input id="aip-ctx" type="number" value="${E(o.settings.default_ctx)}">
 <span>Models at once</span><input id="aip-max" type="number" value="${E(o.settings.max_loaded)}"></div>
-<div class="aip-row"><button class="btn ghost" id="aip-save">Save</button><span class="aip-muted">Store: ${E(o.home)}</span></div></div></div>`;
+<div class="aip-row"><button class="btn ghost" id="aip-save">Save</button><span class="aip-muted">Store: ${E(o.home)}</span></div></div></div>`
+      + aiMesh(o);
   }
 
   function aiModels(o) {
