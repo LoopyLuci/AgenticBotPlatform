@@ -218,6 +218,9 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.platforms.googlechat_platform", "bot.platforms.teams_platform", "bot.platforms._jwt",  # long-running adapters
     "bot.platforms._voice",  # loaded by the long-running Discord/Slack adapters, which are not reloaded
     "bot.agent_runtime.browser", "bot.vault", "bot.routines", "bot.approvals_view",  # a running browser / encrypted store / registered tools
+    # Routines: the routes register once, and routines_view.py holds the run-history bookkeeping
+    # a page's "run now" writes into.
+    "bot.dashboard.routines_api", "bot.routines_view",
     "bot.agent_runtime.session_export", "bot.backends.external_agent_backend",  # imported by denied modules (dashboard, router)
     "bot.model_catalog", "bot.agent_runtime.usage_limits", "bot.agent_runtime.model_tools",  # usage counters and per-process caches
     "bot.custom_commands", "bot.agent_runtime.skill_learning",  # small, stateless, but imported by denied modules only

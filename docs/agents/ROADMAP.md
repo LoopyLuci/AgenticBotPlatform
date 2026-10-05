@@ -10,7 +10,7 @@
 > runner; the real OpenCode and OpenClaw programs; Gmail / a real mailbox, Twilio, a Signal bridge, BlueBubbles; a real Whisper service or Piper;
 > real websites in the browser tool (a real Edge against local pages *was* used); Firebase push; and the Android app, which implements none of
 > the new node, approval or canvas surfaces; Google Chat and Teams (built and tested against stand-ins of Google's and Microsoft's servers).
-> **Not built at all:** the shared cloud computer, native computer use, dashboard screens for traces / permissions / usage / vault / routines,
+> **Not built at all:** the shared cloud computer, native computer use, dashboard screens for traces / permissions / usage / vault / approvals,
 > and consumption of streaming by the UIs.
 
 | Phase | What | Status |
@@ -22,7 +22,7 @@
 | P4 | Agents, skills and commands | **Built** (no registry; git fetch untested against a real remote) |
 | PM | Model knowledge, limits and usage (added later) | **Built** (API and chat only; no dashboard screen) |
 | P5 | Code intelligence and developer surfaces | **Built**, including the VS Code extension (none of it run against Zed, pyright, a GitHub runner or the real OpenCode / OpenClaw) |
-| P6 | Browser, computer use, routines (the Grok Bot pillar) | **Partly built** (browser, vault, routines, approvals; not the cloud computer or computer use) |
+| P6 | Browser, computer use, routines (the Grok Bot pillar) | **Partly built** (browser, vault, routines, approvals, routines dashboard screen; not the cloud computer or computer use) |
 | P7 | Channels, devices and voice | **Partly built** (six new channels including Google Chat and Teams, node protocol, voice on Telegram/Discord/Slack, canvas - all against fakes; Android does not implement nodes) |
 | P8 | Learning and efficiency | **Built** (the model router auto-selects and auto-fails-over; the tuning harness has had its first live-model run, which came back within noise at n=4) |
 | P9 | Compatibility and docs | **Built**, except the repeated live benchmark itself, which needs a provider key ABP can actually use (the benchmark harness and page are built, and `run --live` has been run — see [evals.md](evals.md)) The Claude Code and OpenCode importers have now been dry-run against the real installs on this machine, not only against files written from their docs |
@@ -217,7 +217,7 @@ would want to know about a model.
 | Browser tools (`browser`, `browser_act`, `browser_handoff`) on Playwright: numbered-element snapshots, persistent per-profile logins, every request checked against the public-internet rules, downloads refused, page content marks the session untrusted | Built, off by default. **Tested with a real Microsoft Edge against local pages** (including a proof that a page cannot reach a non-allowed address); **not tested on real websites**. Screenshots are saved as files, not shown to the model; shadow DOM, canvas and frames are not covered |
 | Credential vault (`python -m bot.vault`) with the agent never seeing a secret: filled only into the site an entry belongs to, redacted from output, blocked from leaving in requests; TOTP codes | Built. RFC 6238 vectors pass. **The key file sits beside the vault unless `ABP_VAULT_KEY` is set**, so it protects against backups and casual reads, not against someone who owns the machine |
 | Human hand-off: `browser_handoff` is always put to a person (also in bypass mode); the agent refuses to type passwords, card numbers and one-time codes | Built. A person can act in the page only with `headless: false` |
-| Routines: the agent writes a parameterised template after doing a task (`routine_save`); `/routine run / schedule / pause / resume / history / delete`; runs recorded in history | Built on the existing scheduler. **Not a click recorder**: a routine is a prompt, not a replay. No dashboard screen |
+| Routines: the agent writes a parameterised template after doing a task (`routine_save`); `/routine run / schedule / pause / resume / history / delete`; runs recorded in history | Built on the existing scheduler. **Not a click recorder**: a routine is a prompt, not a replay. Dashboard screen in both web and desktop UIs, plus `abp_cli routine ...` |
 | Approvals as objects: `/api/approvals` with a diff / command preview, deciding from any surface, standing grants only with the dashboard token, a phone push notification when one is created | Built and tested. **Push is untested against a real Firebase project** and the **Android app does not show them yet** |
 | Shared cloud computer (container with a browser and desktop, live view, take-over) | **Not built** - needs infrastructure this repository does not have |
 | Native computer-use tool | **Not built** - the transports do not carry images in tool results, and there is no display to control |

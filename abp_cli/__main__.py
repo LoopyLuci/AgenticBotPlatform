@@ -17,6 +17,9 @@ Commands:
   agent runs|show|cancel                  the run ledger, one run's detail, cancel a fan-out
   tools list                             what the native agent can call, with its permission class
   approvals list|show|approve|deny        tool approvals, so a headless run is never stuck on a GUI click
+  routine list|show|run|pause|resume|schedule|delete
+                                           saved, parameterised tasks: run one now, re-time it, pause it
+                                           (`routine run <name> repo=owner/name`, an id or a name both work)
   memory search|add|list|delete|context|threads|thread|post-turn|tree|tree-ingest|tree-stats
         |sources|source-add|source-sync|source-rm|diff|checkpoint|vault|vault-sync|rules|rule-add
         |rule-remove|goals|goal-add|goal-done|settings|settings-set|approve|reject
@@ -257,6 +260,9 @@ async def _dispatch(args, client: DashboardClient) -> int:
         return await _tools(args, client)
     if cmd == "approvals":
         return await _approvals(args, client)
+    if cmd == "routine":
+        from abp_cli import routine as _routine
+        return await _routine.run(args, client)
     if cmd == "route":
         return await _route(args, client)
     if cmd == "models":
@@ -1956,6 +1962,9 @@ def _parser() -> argparse.ArgumentParser:
 
     from abp_cli import sandbox as _sandbox
     _sandbox.add_parser(sub)
+
+    from abp_cli import routine as _routine
+    _routine.add_parser(sub)
 
     peers = sub.add_parser("peers", help="linked/federated AgenticBotPlatform servers")
     pesub = peers.add_subparsers(dest="peers_cmd", required=True)

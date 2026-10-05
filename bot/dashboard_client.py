@@ -126,6 +126,39 @@ class DashboardClient:
     async def delete_schedule(self, instance_id: int, sched_id: int) -> dict:
         return await self._request("DELETE", f"/api/bots/{instance_id}/schedules/{sched_id}")
 
+    # -------------------------------------------------------------- routines
+    async def list_routines(self, instance_id: Optional[int] = None) -> list[dict]:
+        params = {"instance_id": instance_id} if instance_id is not None else None
+        return (await self._request("GET", "/api/routines", params=params))["routines"]
+
+    async def get_routine(self, routine_id: int, history_limit: int = 20) -> dict:
+        return await self._request("GET", f"/api/routines/{routine_id}", params={"history_limit": history_limit})
+
+    async def routine_history(self, routine_id: int, limit: int = 20) -> list[dict]:
+        return (await self._request("GET", f"/api/routines/{routine_id}/history", params={"limit": limit}))["history"]
+
+    async def run_routine(self, routine_id: int, values: Optional[dict] = None, chat_id: Any = None) -> dict:
+        payload: dict[str, Any] = {"values": values or {}}
+        if chat_id is not None:
+            payload["chat_id"] = chat_id
+        return await self._request("POST", f"/api/routines/{routine_id}/run", json=payload)
+
+    async def pause_routine(self, routine_id: int) -> dict:
+        return await self._request("POST", f"/api/routines/{routine_id}/pause")
+
+    async def resume_routine(self, routine_id: int) -> dict:
+        return await self._request("POST", f"/api/routines/{routine_id}/resume")
+
+    async def set_routine_schedule(self, routine_id: int, interval: str, values: Optional[dict] = None,
+                                   chat_id: Any = None) -> dict:
+        payload: dict[str, Any] = {"interval": interval, "values": values or {}}
+        if chat_id is not None:
+            payload["chat_id"] = chat_id
+        return await self._request("PUT", f"/api/routines/{routine_id}/schedule", json=payload)
+
+    async def delete_routine(self, routine_id: int) -> dict:
+        return await self._request("DELETE", f"/api/routines/{routine_id}")
+
     # ---------------------------------------------------------------- chat
     async def send_to_bot(self, instance_id: int, text: str) -> dict:
         """POST /api/chat/send-to-bot - a real turn through the same CmdContext/

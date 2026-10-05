@@ -8,6 +8,8 @@ import json
 import pathlib
 import shutil
 import sys
+import time
+from unittest import mock
 
 import httpx
 import pytest
@@ -1309,3 +1311,80 @@ def test_the_sandbox_api_refuses_any_call_without_the_dashboard_token(monkeypatc
     assert raw.post("/api/sandbox/cells/any/kill").status_code == 401
     ok = raw.get("/api/sandbox/status", headers={"X-Dashboard-Token": "test-token"})
     assert ok.status_code == 200 and {"run_id", "cells", "processes", "events"} <= set(ok.json())
+
+
+def test_routine_list_show_run_pause_resume_schedule_and_delete(client, capsys):
+    """`abp_cli routine ...` against the real app: a headless run can be triggered and a broken
+    schedule fixed without a GUI, which is the whole reason the subcommand exists. Routines are
+    addressed by name the way they are in chat, and by id too."""
+    from bot import db, routines
+
+    iid = _create_instance(name="runner")
+    rid = routines.save(iid, "pr-digest",
+                        "Summarise the open pull requests in {{repo}} from the last {{days}} days.",
+                        description="weekly", params={"repo": {"description": "owner/name"},
+                                                     "days": {"description": "how far back", "default": 7}})
+
+    code, _ = run(["--json", "routine", "list"], client)
+    assert code == 0
+    listed = json.loads(capsys.readouterr().out)
+    assert [(r["id"], r["name"]) for r in listed] == [(rid, "pr-digest")]
+
+    code, _ = run(["routine", "show", "pr-digest"], client)
+    out = capsys.readouterr().out
+    assert code == 0 and "Template:" in out and "owner/name" in out and "never run" in out
+
+    # A missing value is reported before anything else, and a routine with no schedule yet has no
+    # chat to deliver to: the API says so instead of half-doing either.
+    code, _ = run(["routine", "schedule", "pr-digest", "7d"], client)
+    assert code == 1 and "needs a value for: repo" in capsys.readouterr().err
+    code, _ = run(["routine", "schedule", "pr-digest", "7d", "repo=o/r"], client)
+    assert code == 1 and "no chat to deliver to" in capsys.readouterr().err
+    code, _ = run(["routine", "schedule", "pr-digest", "soon", "repo=o/r", "--chat", "5"], client)
+    assert code == 1 and "unrecognized interval" in capsys.readouterr().err
+
+    code, _ = run(["--json", "routine", "schedule", "pr-digest", "1h", "repo=o/r", "--chat", "5"], client)
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["interval_s"] == 3600
+    row = db.get_scheduled_command(routines.schedules(rid)[0]["id"])
+    assert row["kind"] == "routine" and "o/r" in row["prompt"] and row["chat_id"] == "5"
+
+    code, _ = run(["--json", "routine", "pause", str(rid)], client)
+    assert code == 0 and json.loads(capsys.readouterr().out) == {"paused": True, "changed": 1}
+    code, _ = run(["--json", "routine", "resume", "pr-digest"], client)
+    assert code == 0 and json.loads(capsys.readouterr().out) == {"paused": False, "changed": 1}
+
+    ran = []
+
+    async def fake_ask(prompt, **kwargs):
+        ran.append(prompt)
+        from types import SimpleNamespace
+
+        return SimpleNamespace(text="posted it")
+
+    async def never_sends(*a, **kw):
+        return None
+
+    with mock.patch("bot.router.router.ask", fake_ask), mock.patch("bot.outbox.send_message", never_sends):
+        code, _ = run(["--json", "routine", "run", "pr-digest", "repo=o/other", "days=2"], client)
+        assert code == 0
+        assert json.loads(capsys.readouterr().out)["delivered_to"] == "5"
+    for _ in range(100):                       # the turn is a background one; wait for it to land
+        if routines.history(rid) and routines.history(rid)[0]["outcome"] != "started":
+            break
+        time.sleep(0.02)
+    assert ran and "o/other" in ran[0] and "last 2 days" in ran[0]
+    assert routines.history(rid)[0]["outcome"] == "ok" and "posted it" in routines.history(rid)[0]["summary"]
+
+    code, _ = run(["--json", "routine", "delete", "pr-digest"], client)
+    assert code == 0 and json.loads(capsys.readouterr().out) == {"deleted": "pr-digest", "schedules": 1}
+    code, _ = run(["--json", "routine", "list"], client)
+    assert code == 0 and json.loads(capsys.readouterr().out) == []
+    code, _ = run(["--json", "routine", "show", "nope"], client)
+    assert code != 0 and "no routine named" in capsys.readouterr().err
+
+
+def test_routine_list_says_so_when_there_are_none(client, capsys):
+    code, _ = run(["routine", "list"], client)
+    assert code == 0 and "No routines yet" in capsys.readouterr().out
+

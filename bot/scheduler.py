@@ -54,12 +54,23 @@ def _max_consecutive_failures() -> int:
     return (config.current.get("scheduler") or {}).get("max_consecutive_failures", 5)
 
 
+def check_interval(interval_s: int) -> None:
+    """The one place the minimum interval is decided, so create() and anything that edits an existing
+    row's interval (bot/routines_view.py's set_schedule) cannot drift apart."""
+    if interval_s < 5:
+        raise ScheduleError("interval must be at least 5 seconds")
+
+
+def next_run_at(interval_s: int) -> str:
+    """The next_run_at a row created or re-armed now would get."""
+    return _iso(_now() + timedelta(seconds=interval_s))
+
+
 def create(
     instance_id: int, chat_id, kind: str, prompt: str, interval_s: int,
     max_runs: Optional[int] = None, thread_id=None,
 ) -> int:
-    if interval_s < 5:
-        raise ScheduleError("interval must be at least 5 seconds")
+    check_interval(interval_s)
     # Preflight: confirm the target instance actually exists BEFORE
     # accepting the schedule — a schedule pointed at a bogus/typo'd
     # instance id used to just silently no-op every poll cycle forever
@@ -76,8 +87,7 @@ def create(
 
     if bot_instances.get_instance(instance_id) is None:
         raise ScheduleError(f"no bot instance with id {instance_id}")
-    next_run = _iso(_now() + timedelta(seconds=interval_s))
-    return db.create_scheduled_command(instance_id, chat_id, kind, prompt, interval_s, next_run, max_runs, thread_id=thread_id)
+    return db.create_scheduled_command(instance_id, chat_id, kind, prompt, interval_s, next_run_at(interval_s), max_runs, thread_id=thread_id)
 
 
 def list_for_chat(instance_id: int, chat_id, thread_id=None) -> list[dict]:

@@ -86,4 +86,4 @@ The Android app does not show these yet: the API is what it would call.
   carry images back in tool results yet, and there is no display to control.
 * **Recording a workflow automatically** by watching clicks. A routine is a prompt the agent writes after doing the
   task, not a replay.
-* A dashboard or desktop screen for routines, the vault or approvals (API and chat commands only).
+* A dashboard or desktop screen for the vault or approvals (API and chat commands only).

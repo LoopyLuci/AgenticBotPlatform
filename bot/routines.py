@@ -128,10 +128,14 @@ def get_by_id(routine_id: int) -> Optional[dict]:
     return _row(row) if row else None
 
 
-def listing(instance_id: int) -> list[dict]:
+def listing(instance_id: Optional[int] = None) -> list[dict]:
+    """Every routine, ordered by name. `instance_id` narrows it to one bot; without one this is
+    across all of them, which is what a page listing every routine needs."""
     out = []
     conn = _conn()
-    for row in conn.execute("SELECT * FROM routines WHERE instance_id=? ORDER BY name", (instance_id,)).fetchall():
+    sql, args = ("SELECT * FROM routines ORDER BY name", ()) if instance_id is None else (
+        "SELECT * FROM routines WHERE instance_id=? ORDER BY name", (instance_id,))
+    for row in conn.execute(sql, args).fetchall():
         r = _row(row)
         r["schedules"] = schedules(r["id"])
         last = conn.execute("SELECT outcome, started_at FROM routine_runs WHERE routine_id=? ORDER BY id DESC LIMIT 1", (r["id"],)).fetchone()
@@ -214,13 +218,24 @@ def routine_for_schedule(schedule_id: int) -> Optional[int]:
     return row["routine_id"] if row else None
 
 
-def record_run(routine_id: int, outcome: str, summary: str = "", schedule_id: Optional[int] = None) -> None:
+def record_run(routine_id: int, outcome: str, summary: str = "", schedule_id: Optional[int] = None) -> int:
+    """Write one run and return its id. `finish_run` updates that row with the outcome later, so a
+    run shown as "started" becomes "ok"/"error" rather than being a second, separate row."""
     with db._lock:
         conn = _conn()
-        conn.execute("INSERT INTO routine_runs (routine_id, schedule_id, started_at, outcome, summary) VALUES (?,?,?,?,?)",
-                     (routine_id, schedule_id, time.time(), outcome, (summary or "")[:500]))
+        cur = conn.execute("INSERT INTO routine_runs (routine_id, schedule_id, started_at, outcome, summary) VALUES (?,?,?,?,?)",
+                           (routine_id, schedule_id, time.time(), outcome, (summary or "")[:500]))
         conn.execute("DELETE FROM routine_runs WHERE routine_id=? AND id NOT IN (SELECT id FROM routine_runs WHERE routine_id=? ORDER BY id DESC LIMIT 200)",
                      (routine_id, routine_id))
+        conn.commit()
+        return cur.lastrowid
+
+
+def finish_run(run_id: int, outcome: str, summary: str = "") -> None:
+    """The real outcome of a run `record_run` already started."""
+    with db._lock:
+        conn = _conn()
+        conn.execute("UPDATE routine_runs SET outcome=?, summary=? WHERE id=?", (outcome, (summary or "")[:500], run_id))
         conn.commit()
 
 
