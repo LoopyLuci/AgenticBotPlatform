@@ -162,6 +162,8 @@ counted, in the registry, so the budget survives a restart of the gate itself:
   first start failed retries it, because a boot that lost a race for a database
   is worth another go — and stops after the same three tries, saying so in its
   log. A gate started with `--no-start` never starts anything, watcher included.
+  That also means stopping the active instance through `abp instance stop` gets
+  you a fresh one a moment later: keeping ABP down is `abp gate stop`.
 
 **A ceiling on how many instances can exist.** `ABP_GATE_MAX_INSTANCES` (8 by
 default); a start, swap or sandbox beyond it is refused with a reason. A bug
