@@ -7,6 +7,7 @@
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
@@ -51,6 +52,13 @@ pub(crate) fn no_window(cmd: &mut Command) -> &mut Command {
 
 pub(crate) struct ServerState {
     child: Mutex<Option<Child>>,
+    // Set when the port was already being served by something this app did not
+    // start — an abp_gate, or a bot.main somebody else left running. Nothing in
+    // this file may stop such a process: the gate exists precisely so that ABP
+    // stays up when the window closes, and killing it on exit would defeat that
+    // (it is not `child`, so stop_bot_server() is already a no-op — this flag
+    // makes the promise explicit and testable rather than incidental).
+    attached: AtomicBool,
     // Every "server-log"/"server-status" event is also mirrored here so a
     // late-attaching frontend listener can catch up. Real gap found live:
     // spawn_internal() runs in Tauri's .setup() hook, which fires well
@@ -126,7 +134,14 @@ pub(crate) fn terminate_child(mut child: Child) {
 /// real gap, not hypothetical: the freshly-installed new version's own
 /// spawn_internal() would then either fail to bind the port or end up
 /// running alongside a competing leftover instance.
+///
+/// Does nothing when this app ATTACHED to a server it did not start (an
+/// abp_gate, or somebody else's bot.main): closing the window must not take
+/// ABP offline, which is the entire reason the gate exists.
 pub(crate) fn stop_bot_server(state: &ServerState) {
+    if state.attached.load(Ordering::SeqCst) {
+        return;
+    }
     let mut guard = match state.child.lock() {
         Ok(g) => g,
         Err(_) => return,
@@ -642,6 +657,48 @@ Active Connections
     }
 }
 
+/// The body abp_gate's /healthz answers with. Split out from gate_is_running()
+/// so the "is this really the gate?" decision is testable against fixed text
+/// without an HTTP round trip — that decision is the one that stops this app
+/// claiming a gate that is not there.
+fn body_is_gate_healthz(body: &str) -> bool {
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(body) else {
+        return false;
+    };
+    json.get("gate").and_then(|v| v.as_str()).is_some()
+}
+
+#[cfg(test)]
+mod gate_tests {
+    use super::body_is_gate_healthz;
+
+    #[test]
+    fn recognises_the_gate_healthz_body() {
+        assert!(body_is_gate_healthz(
+            r#"{"status":"ok","gate":"0.1.0","active":"prod","routing":{"dashboard":"8791"},"healthy":true}"#
+        ));
+    }
+
+    #[test]
+    fn recognises_it_while_it_has_no_healthy_instance() {
+        // 503 + "no healthy instance" is the gate being honest about an outage,
+        // not being absent - the app should still say it attached to the gate.
+        assert!(body_is_gate_healthz(
+            r#"{"status":"no healthy instance","gate":"0.1.0","active":"prod","healthy":false,"error":"x"}"#
+        ));
+    }
+
+    #[test]
+    fn rejects_anything_else_on_that_port() {
+        // A different service on 8788 answers 200 too; without a "gate" field in
+        // the body, claiming a gate would be a lie the log then repeats forever.
+        assert!(!body_is_gate_healthz(r#"{"status":"ok","service":"something-else"}"#));
+        assert!(!body_is_gate_healthz(r#"{"gate":42}"#));
+        assert!(!body_is_gate_healthz("not json at all"));
+        assert!(!body_is_gate_healthz(""));
+    }
+}
+
 /// bot/main.py's own DASHBOARD_PORT default (bot/main.py:178) — the
 /// desktop app has always hardcoded this same default itself (see
 /// desktop-app/ui/main.js's API_BASE), so this isn't introducing a new
@@ -658,6 +715,38 @@ fn dashboard_is_healthy(port: u16) -> bool {
         .timeout(Duration::from_secs(2))
         .call()
         .is_ok()
+}
+
+/// abp_gate's own control port (abp_gate/paths.py CONTROL_PORT). Deliberately
+/// not 8787: the gate owns the public port, and this one is how anything finds
+/// out that the gate is the thing answering there.
+const GATE_CONTROL_PORT: u16 = 8788;
+
+/// Is an abp_gate running for this machine right now?
+///
+/// Asks the gate's UNAUTHENTICATED /healthz (abp_gate/control.py answers it by
+/// design, so a supervisor can probe it) and reads the body rather than trusting
+/// a 200: the split between "the gate process is up" and "a gate is really
+/// there" is the whole question, and any unrelated service on 8788 would answer
+/// the status code. Returns false on anything unexpected — the caller then just
+/// says "something else is serving 8787" instead of claiming a gate that is not
+/// there.
+fn gate_is_running() -> bool {
+    let response = ureq::get(&format!("http://127.0.0.1:{GATE_CONTROL_PORT}/healthz"))
+        .timeout(Duration::from_secs(2))
+        .call();
+    let Ok(response) = response else {
+        return false;
+    };
+    // 503 is the gate's honest answer while it has no healthy instance behind
+    // it; the process is still the gate, which is all this asks.
+    if !(200..300).contains(&response.status()) && response.status() != 503 {
+        return false;
+    }
+    let Ok(body) = response.into_string() else {
+        return false;
+    };
+    body_is_gate_healthz(&body)
 }
 
 /// PIDs currently LISTENING on `port`, parsed from `netstat -ano` — the
@@ -771,6 +860,29 @@ fn spawn_internal(app: &AppHandle, state: &State<ServerState>) -> Result<(), Str
     // then proceed to spawn fresh.
     if port_in_use(DASHBOARD_PORT) {
         if dashboard_is_healthy(DASHBOARD_PORT) {
+            // Something that is not ours is already serving 8787. Attach to it
+            // rather than starting a second ABP that can only fail to bind — and
+            // say out loud whether that something is the gate, because "the app
+            // started ABP" and "the app is looking at the gate that owns ABP"
+            // are different situations and the log should not claim the first.
+            state.attached.store(true, Ordering::SeqCst);
+            let line = if gate_is_running() {
+                "abp_gate owns port 8787: attaching to it. ABP keeps running when this \
+                 window closes; swap code with `abp instance swap <code-root>`."
+                    .to_string()
+            } else {
+                format!(
+                    "port {DASHBOARD_PORT} is already served by an ABP this app did not \
+                     start: attaching to it instead of starting a second one."
+                )
+            };
+            eprintln!("[agentic-bot-platform] {line}");
+            let payload = LogLine {
+                stream: "stderr".into(),
+                line,
+            };
+            push_backlog(state, payload.clone());
+            let _ = app.emit("server-log", payload);
             return Ok(());
         }
         stop_our_python_on_port(DASHBOARD_PORT);
@@ -1319,6 +1431,7 @@ pub fn run() {
         .manage(tray::TrayState::new())
         .manage(ServerState {
             child: Mutex::new(None),
+            attached: AtomicBool::new(false),
             log_backlog: Mutex::new(Vec::new()),
         })
         .manage(android::AndroidBuildState::default())

@@ -74,6 +74,13 @@ def build_app(mgr: Optional[manager.Manager] = None) -> FastAPI:
                 "token_env_var": "DASHBOARD_TOKEN",
                 "since": app.state.started,
                 "routing": mgr.router.targets(),
+                # What happens to the instances if this process is killed, and
+                # how many there may be: both are answers somebody debugging
+                # "where did that python.exe come from" needs to not have to
+                # read the source for.
+                "instance_lifetime": mgr.instance_lifetime,
+                "limits": data.get("limits"),
+                "restarts": data.get("restarts"),
             },
             **data,
         }
@@ -172,17 +179,25 @@ def build_app(mgr: Optional[manager.Manager] = None) -> FastAPI:
     async def healthz():
         """Unauthenticated, like ABP's own /healthz: a liveness probe for the
         gate process itself. It reports the routing target but nothing an
-        attacker could use - no paths, no pids, no config."""
+        attacker could use - no paths, no pids, no config.
+
+        200 means there is a HEALTHY instance behind the public port. An
+        instance the watcher has given up on is `failed`, and reporting that as
+        a 503 is the honest answer: the port is up, ABP is not."""
         data = mgr.list()
+        active = data.get("active")
+        current = (data.get("instances") or {}).get(active or "") or {}
+        healthy = bool(active) and current.get("health") == registry.HEALTH_HEALTHY
         return JSONResponse(
             {
-                "status": "ok",
+                "status": "ok" if healthy else "no healthy instance",
                 "gate": __version__,
-                "active": data["active"],
+                "active": active,
                 "routing": mgr.router.targets(),
-                "healthy": bool(data["active"]),
+                "healthy": healthy,
+                "error": current.get("error") or "",
             },
-            status_code=200 if data["active"] else 503,
+            status_code=200 if healthy else 503,
         )
 
     app.state.started = time.time()

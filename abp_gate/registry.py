@@ -19,6 +19,10 @@ gate's only durable state and it is deliberately trivial:
 reason a rollback can be automatic: the outgoing instance is named in the
 registry before it is asked to leave, not remembered in somebody's head.
 
+`restarts` is the watcher's memory: when the watcher last tried to restart each
+instance, so a crash loop can be told apart from one unlucky crash even across a
+restart of the gate itself.
+
 Role transitions are the manager's business; this module only stores and
 sanitises them, and every field is optional on read so a registry written by an
 older gate is still usable.
@@ -48,6 +52,13 @@ HEALTH_UNHEALTHY = "unhealthy"
 HEALTH_STOPPED = "stopped"
 HEALTH_FAILED = "failed"
 
+#: How far back the restart history is kept. Ten minutes is long enough that a
+#: crash loop has to be a crash loop (not a single unlucky restart) before the
+#: watcher's budget is spent, and short enough that an instance which stays
+#: broken is not left marked failed forever. limits.restart_window_s() is the
+#: overridable version of this.
+DEFAULT_RESTART_WINDOW_S = 600.0
+
 # One registry writer per process. uvicorn runs the control app in a single
 # event loop, so this is belt-and-braces rather than a real requirement - but
 # a swap is a multi-step read-modify-write and two of them interleaving would
@@ -71,6 +82,11 @@ class Instance:
     error: str = ""
     log: str = ""
     source: str = ""  # the git ref/branch it was started from, when known
+    #: Has it ever answered /healthz? The watcher refuses to restart an
+    #: instance that never did: a process that cannot start is not a process
+    #: that crashed, and retrying it on a timer is how one bad checkout becomes
+    #: thousands of processes.
+    ever_healthy: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -209,6 +225,43 @@ def unique_name(base: str, path: Optional[Path] = None) -> str:
 
 def stamp() -> float:
     return time.time()
+
+
+# ------------------------------------------------------------ restart history
+
+
+def record_restart(name: str, when: Optional[float] = None,
+                   window_s: float = DEFAULT_RESTART_WINDOW_S) -> list[float]:
+    """Note that the watcher restarted `name`; returns the starts still inside
+    the window (oldest first).
+
+    Persisted rather than kept in the gate's memory on purpose: the budget has
+    to survive the gate itself being restarted, or "restart the gate" becomes a
+    way to get a fresh allowance of runaway restarts."""
+    at = time.time() if when is None else when
+
+    def _apply(data: dict) -> None:
+        history = [float(t) for t in (data.get("restarts") or {}).get(name, []) if isinstance(t, (int, float))]
+        history.append(at)
+        data.setdefault("restarts", {})[name] = [t for t in history if t > at - window_s]
+
+    return update(_apply)["restarts"].get(name, [])
+
+
+def restarts_in_window(name: str, window_s: float = DEFAULT_RESTART_WINDOW_S) -> list[float]:
+    now = time.time()
+    return [float(t) for t in (read().get("restarts") or {}).get(name, []) if now - float(t) <= window_s]
+
+
+def clear_restarts(name: str) -> None:
+    """The instance came back healthy, so whatever budget it had is spent -
+    reset, or an instance that flapped once an hour would eventually be left
+    marked failed while it serves perfectly well."""
+
+    def _apply(data: dict) -> None:
+        (data.get("restarts") or {}).pop(name, None)
+
+    update(_apply)
 
 
 def to_jsonable(instances: list[Instance], active: Optional[str], previous: Optional[str]) -> dict[str, Any]:

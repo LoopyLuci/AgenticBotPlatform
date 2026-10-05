@@ -2,7 +2,7 @@
 
 Binds the public port(s) and the control port, starts the production instance
 unless told not to, and then does nothing but watch: if the active instance
-dies, it is restarted on the same data and the same code.
+dies, it is restarted on the same data and the same code - up to a point.
 
 Started windowless by `abp_cli gate start` (or by the desktop app), so it
 outlives the terminal that launched it. Run it in the foreground to watch it:
@@ -11,6 +11,14 @@ that is the same process, just attached to a console.
     python -m abp_gate                     # bind and serve, start production
     python -m abp_gate --no-start          # bind and serve, start nothing
     python -m abp_gate --public-port 18787 --control-port 18788
+
+The watcher's limits (limits.py) are the other half of this module, and they
+are not decoration: the first version of the gate restarted whatever was
+unhealthy on every cycle, forever, without ever killing the processes it was
+replacing, and a test run turned into six thousand orphaned python.exe
+processes. It now refuses to restart an instance that never worked, backs off
+between attempts, and after three restarts in ten minutes stops and says so
+rather than starting a fourth.
 """
 
 from __future__ import annotations
@@ -24,15 +32,10 @@ import signal
 import time
 from typing import Any, Optional
 
-from abp_gate import __version__, control, manager, paths, procs, registry
+from abp_gate import __version__, control, limits, manager, paths, procs, registry
 from abp_gate.proxy import ProxyApp, Router
 
 logger = logging.getLogger("abp_gate")
-
-#: How often the daemon looks at the active instance. Cheap (one /healthz and
-#: one psutil query), and short enough that a crashed instance is back inside
-#: the time it takes somebody to notice.
-WATCH_INTERVAL_S = 5.0
 
 
 def _setup_logging(verbose: bool = False) -> None:
@@ -58,15 +61,18 @@ class Gate:
     """The running gate: the proxy apps, the control app, and the one task that
     watches the active instance."""
 
-    def __init__(self, *, public_ports: Optional[list[int]] = None, control_port: Optional[int] = None):
+    def __init__(self, *, public_ports: Optional[list[int]] = None, control_port: Optional[int] = None,
+                 instance_lifetime: Optional[str] = None):
         self.router = Router()
-        self.mgr = manager.Manager(self.router)
+        self.mgr = manager.Manager(self.router,
+                                  instance_lifetime=instance_lifetime or limits.instance_lifetime())
         self.public_ports = public_ports or paths.public_ports()
         self.control_port = control_port if control_port is not None else paths.control_port()
         self.control_app = control.build_app(self.mgr)
         self._stop = asyncio.Event()
         self._servers: list[Any] = []
         self._control_task: Optional[asyncio.Task] = None
+        self.watch_interval_s = limits.watch_interval_s()
 
     async def run(self, *, start_production: bool = True) -> None:
         import uvicorn
@@ -108,9 +114,13 @@ class Gate:
         await self._stop.wait()
         # The control API's /api/gate/stop stops the instances itself, then sets
         # the flag this loop is waiting on. Any OTHER exit - Ctrl-C, a taskkill
-        # from a supervisor - deliberately leaves the instances running: they
-        # outlive the gate on purpose, so a gate that dies is a gate that can
-        # come straight back and re-adopt them from the registry.
+        # from a supervisor - deliberately leaves the instances alone, and lets
+        # the job objects do the rest: every instance is in a kill-on-close job
+        # this process holds the handle to, so its handle closing when this
+        # process dies takes them with it. The one deliberate exception is the
+        # active instance in `detached` lifetime, which is not in a job at all
+        # (manager.LIFETIMES) and is re-adopted from the registry by the next
+        # gate.
         await self.shutdown(stop_instances=False)
 
     async def shutdown(self, *, stop_instances: bool = False) -> None:
@@ -131,11 +141,12 @@ class Gate:
 
     async def _watch(self) -> None:
         """The always-on part: a crashed active instance is restarted, on the
-        same code and the same data, with the same public port. A sandbox an
-        agent started is left alone - it is theirs, and its exit is theirs too."""
+        same code and the same data, with the same public port - within the
+        budget `limits.py` sets. A sandbox an agent started is left alone - it
+        is theirs, and its exit is theirs too."""
         while not self._stop.is_set():
             try:
-                await asyncio.wait_for(self._stop.wait(), timeout=WATCH_INTERVAL_S)
+                await asyncio.wait_for(self._stop.wait(), timeout=self.watch_interval_s)
                 return
             except asyncio.TimeoutError:
                 pass
@@ -145,6 +156,19 @@ class Gate:
                 logger.exception("the instance watch iteration failed")
 
     async def _reconcile(self) -> None:
+        """One look at the active instance. Four answers, in this order:
+
+          healthy            nothing to do (and its restart budget is reset)
+          a sandbox          mark it stopped; it is not ours to restart
+          never healthy      mark it failed and LEAVE IT - a process that cannot
+                             start is not one that crashed, and retrying it on a
+                             timer is how one bad checkout becomes thousands of
+                             processes
+          budget spent       mark it failed and report it; restart_active() has
+                             already cleaned up after its own failures
+
+        Anything else is one restart, after waiting the backoff for however many
+        restarts this instance has already had."""
         active_name = registry.active_name()
         logger.debug("watcher reconcile: active_name=%s", active_name)
         if not active_name:
@@ -153,28 +177,86 @@ class Gate:
         if inst is None:
             logger.debug("watcher: no instance for active_name=%s", active_name)
             return
-        logger.debug("watcher: checking instance %r (pid=%s, port=%s)", inst.name, inst.pid, inst.port)
-        if procs.alive(inst.pid) and manager.health(inst.port).get("healthy"):
+        if await self._is_healthy(inst):
             logger.debug("watcher: instance %r is healthy", inst.name)
             return
         if inst.sandbox:
             # A sandbox that died is just a sandbox that died: record it and let
             # the agent start another. Restarting it behind their back would
             # resurrect an instance whose code root they may have deleted.
-            inst.health = registry.HEALTH_STOPPED
-            registry.put(inst.name, inst)
+            self._mark(inst, registry.HEALTH_STOPPED, "the sandbox is not running any more")
             return
+        if not inst.ever_healthy:
+            self._mark(
+                inst, registry.HEALTH_FAILED,
+                f"{inst.name} never answered /healthz, so it is not being restarted: "
+                f"a build that cannot start does not start on a retry"
+            )
+            return
+        recent = registry.restarts_in_window(inst.name)
+        if len(recent) >= limits.restart_limit():
+            self._mark(
+                inst, registry.HEALTH_FAILED,
+                f"{inst.name} was restarted {len(recent)} time(s) in the last "
+                f"{limits.restart_window_s() / 60:.0f} minute(s) and is still not healthy; "
+                f"the gate has stopped restarting it. Fix the code or stop the instance, "
+                f"then start it again (`abp_cli instance logs {inst.name}`)"
+            )
+            return
+        backoff = limits.restart_backoff_s()
+        wait_s = backoff[min(len(recent), len(backoff) - 1)]
+        if wait_s > 0:
+            logger.warning("active instance %r is not healthy; restarting in %.0fs (restart %s of %s)",
+                           inst.name, wait_s, len(recent) + 1, limits.restart_limit())
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=wait_s)
+                return
+            except asyncio.TimeoutError:
+                pass
+        registry.record_restart(inst.name)
         logger.warning("active instance %r is not healthy (pid=%s) - restarting it", inst.name, inst.pid)
         try:
             await self.mgr.restart_active()
         except manager.SwapError as exc:
             logger.error("could not restart the active instance: %s", exc)
 
+    async def _is_healthy(self, inst: registry.Instance) -> bool:
+        """Both questions: is the process there, and is it serving? Either one
+        alone is a false all-clear - an instance whose launcher died leaves a
+        live interpreter, and an interpreter whose launcher is fine can still be
+        refusing connections.
+
+        The probe is a blocking HTTP call with a 3s timeout, so it runs in a
+        thread: the event loop also serves the public port, and blocking it for
+        three seconds every cycle would be the gate causing the outage it is
+        meant to be preventing."""
+        if not procs.alive(inst.pid) or not inst.port:
+            return False
+        probe = await asyncio.to_thread(manager.health, inst.port)
+        return bool(probe.get("healthy"))
+
+    def _mark(self, inst: registry.Instance, health: str, why: str) -> None:
+        """Record a verdict on an instance and say it out loud.
+
+        Marking `failed` (rather than leaving it `unhealthy`) is the difference
+        between "the gate is watching this" and "the gate gave up on this", and
+        it is what `abp_cli gate status` prints."""
+        logger.error("%s", why)
+        inst.health = health
+        inst.error = why
+        registry.put(inst.name, inst)
+        if health == registry.HEALTH_FAILED:
+            # 503 at the public port, honestly, instead of proxying to a corpse.
+            self.router.set("dashboard", None)
+            if inst.localai_port:
+                self.router.set("localai", None)
+
 
 def _install_signal_handlers(on_stop) -> None:
     """Ctrl-C stops the gate. Windows has no loop-level signal handler for
-    SIGTERM, which is fine: a taskkill of the gate is a hard stop, and the
-    instances it left behind are re-adopted when the gate comes back."""
+    SIGTERM, which is fine: a taskkill of the gate is a hard stop, and whatever
+    the gate's job objects do about its instances happens without this module's
+    help."""
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
@@ -202,6 +284,12 @@ def _parser() -> argparse.ArgumentParser:
     ap.add_argument("--state-root", default=None, help="the real ABP state root (default: ABP_HOME or the code root)")
     ap.add_argument("--instances-dir", default=None,
                     help=f"where instances live (default <state root>/{paths.INSTANCES_ENV})")
+    ap.add_argument("--instance-lifetime", choices=manager.LIFETIMES, default=None,
+                    help="'gate' (default): every instance dies with the gate. 'detached': the ACTIVE "
+                         "instance outlives it, so a gate that comes straight back re-adopts it")
+    ap.add_argument("--watch-interval", type=float, default=None,
+                    help=f"how often the watcher looks at the active instance "
+                         f"(default {limits.DEFAULT_WATCH_INTERVAL_S:.0f}s)")
     ap.add_argument("--no-start", action="store_true", help="do not start the production instance")
     ap.add_argument("-v", "--verbose", action="store_true")
     return ap
@@ -219,6 +307,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         os.environ["ABP_GATE_PUBLIC_PORTS"] = ",".join(str(p) for p in args.public_port)
     if args.control_port is not None:
         os.environ["ABP_GATE_CONTROL_PORT"] = str(args.control_port)
+    if args.instance_lifetime:
+        os.environ["ABP_GATE_INSTANCE_LIFETIME"] = args.instance_lifetime
+    if args.watch_interval is not None:
+        os.environ["ABP_GATE_WATCH_INTERVAL_S"] = str(args.watch_interval)
     _setup_logging(args.verbose)
 
     gate = Gate()

@@ -145,6 +145,12 @@ def add_parser(sub) -> None:
                    help="bind the ports but do not start the production instance yet")
     p.add_argument("--foreground", action="store_true",
                    help="run it in this terminal instead of detaching (for watching it)")
+    p.add_argument("--instance-lifetime", choices=gate_manager.LIFETIMES, default=gate_manager.LIFETIME_DETACHED,
+                   dest="instance_lifetime",
+                   help="what happens to the instances when the gate itself dies. 'detached' (default): the "
+                        "ACTIVE instance survives and the next gate re-adopts it, which is what keeps ABP up "
+                        "across a gate crash. 'gate': every instance dies with the gate - nothing can outlive it, "
+                        "and ABP stays down until it is started again")
     gsub.add_parser("stop", help="stop every instance, then the gate itself")
     gsub.add_parser("status", help="is the gate up, what is active, where traffic goes")
     for verb in ("stop", "status"):
@@ -232,7 +238,29 @@ async def _gate_status(args) -> int:
         return 0
     data = await _call(args, "GET", "/api/gate")
     _print(args, data)
+    if not args.json:
+        _print_watch(data)
     return 0
+
+
+def _print_watch(data: dict) -> None:
+    """The lines that answer "is the gate coping, and what has it given up on?".
+
+    A circuit breaker nobody can see is just an outage that stops being fixed,
+    so the budget and any instance the watcher has marked failed are printed in
+    words rather than left in a JSON field."""
+    gate = data.get("gate") or {}
+    limits = gate.get("limits") or {}
+    restarts = gate.get("restarts") or {}
+    print(f"\ninstances {limits.get('alive')}/{limits.get('max_instances')} alive, "
+          f"lifetime {gate.get('instance_lifetime')}")
+    window_s = float(restarts.get("window_s") or 0)
+    for name, info in (restarts.get("instances") or {}).items():
+        spent = f"{info.get('restarts_last_window')}/{info.get('budget')} restarts in the last {window_s / 60:.0f}m"
+        print(f"  {name}: {spent}" + (" - RESTARTING STOPPED" if info.get("circuit_open") else ""))
+    for inst in (data.get("instances") or {}).values():
+        if inst.get("error"):
+            print(f"  {inst.get('name')} [{inst.get('health')}]: {inst['error']}")
 
 
 async def _gate_stop(args) -> int:
@@ -258,11 +286,13 @@ async def _gate_start(args) -> int:
     if args.foreground:
         # Same process, same behaviour, just attached to this terminal.
         from abp_gate.__main__ import main as gate_main
-        argv = ["--no-start"] if args.no_start else []
+        argv = ["--instance-lifetime", args.instance_lifetime]
+        if args.no_start:
+            argv.append("--no-start")
         return gate_main(argv)
     code_root = Path(args.code_root or paths.code_root()).resolve()
     python = procs.python_for(code_root)
-    argv = [str(python), "-m", "abp_gate"]
+    argv = [str(python), "-m", "abp_gate", "--instance-lifetime", args.instance_lifetime]
     if args.no_start:
         argv.append("--no-start")
     for flag, value in (("--code-root", args.code_root), ("--state-root", args.state_root),
@@ -282,6 +312,9 @@ async def _gate_start(args) -> int:
         return 1
     print(f"abp_gate is up (pid {pid}) - control {control_url}, public "
           f"http://127.0.0.1:{paths.public_ports()[0]}")
+    print(f"instances are {args.instance_lifetime}: "
+          + ("the active one outlives this gate and the next gate re-adopts it" if args.instance_lifetime
+             == gate_manager.LIFETIME_DETACHED else "everything dies with the gate"))
     return await _gate_status(args)
 
 

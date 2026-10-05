@@ -11,16 +11,19 @@ today) and reverse-proxies to whichever ABP instance is currently active, so:
     new instance does not come up healthy or does not take the leader lease
     (bot/lease.py).
 
-It is small on purpose. Nothing in here imports bot.*, so it keeps working
-while the code it fronts is being replaced underneath it, and a bug in ABP's
-business logic can't take the front door down with it. The only bot.* import is
-a deliberate, late one to read the dashboard token (control.py), and that is a
-plain .env read.
+It is small on purpose. Nothing in here imports the ABP runtime, so it keeps
+working while the code it fronts is being replaced underneath it, and a bug in
+ABP's business logic can't take the front door down with it. There are exactly
+two deliberate imports of bot.*, both late and both plain: the dashboard token
+(control.py, a .env read) and the job-object wrapper (procs.py, stdlib ctypes
+only) that makes an instance stoppable as a whole.
 
     paths.py      where files go, which ports we own
+    limits.py     the numbers that bound us: instances, restarts, watch interval
     registry.py   the instance registry (name, code root, data root, port, pid,
                   role, health) and its atomic on-disk form
-    procs.py      windowless start / tree stop / health check / log tail
+    procs.py      windowless start / job-per-instance tree stop / health check /
+                  log tail
     proxy.py      the ASGI reverse proxy (HTTP incl. SSE + chunked, and
                   WebSockets) and the public listeners
     manager.py    the orchestration: start, swap, rollback, sandbox, stop

@@ -6,7 +6,7 @@
     swap     start a standby instance from new code on the SAME data, wait for
              it to be healthy, tell the outgoing one to release the leader
              lease, let the new one take it, flip routing, drain the old one and
-             stop it. If any step fails, the old instance re-takes the lease,
+             stop it. If any step fails, the old one re-takes the lease,
              keeps serving, and the failure is reported with the reason.
     rollback flip routing back to the instance the last swap replaced, which is
              still alive and still has the data warm.
@@ -19,6 +19,19 @@
 Every step here is idempotent-ish and reports what it actually did, because
 every one of these commands is run by a person or an agent who needs to know
 whether it worked.
+
+Two rules exist purely because the first version of this file did not have
+    them, and the machine found out the hard way (thousands of orphaned
+    python.exe processes in ten minutes):
+
+  * nothing is ever replaced without its whole process TREE going first.
+    `_terminate()` kills the instance's job object - the launcher, the real
+    interpreter it started, and everything either of them started - then walks
+    the pid tree, then kills whatever of ours is still holding its port. An
+    instance is two processes, not one, on Windows.
+  * there is a ceiling on how much of this can go wrong at once: a live
+    instance cap and a bounded restart budget (both in limits.py), and
+    `_spawn()` refusing to start anything when the cap is reached.
 """
 
 from __future__ import annotations
@@ -29,15 +42,15 @@ import logging
 import os
 import shutil
 import sqlite3
-import subprocess
-import sys
 import time
+from contextlib import closing
 from pathlib import Path
 from typing import Any, Optional
+from uuid import uuid4
 
 import httpx
 
-from abp_gate import paths, procs, registry
+from abp_gate import limits, paths, procs, registry
 from abp_gate.proxy import Router
 
 logger = logging.getLogger("abp_gate.manager")
@@ -51,18 +64,45 @@ DEFAULT_HEALTH_TIMEOUT_S = 90.0
 DEFAULT_LEASE_TIMEOUT_S = 45.0
 DEFAULT_DRAIN_S = 15.0
 
+#: What happens to the instances when the gate process itself dies.
+#:
+#:   LIFETIME_GATE      every instance is in a kill-on-close job owned by the
+#:                      gate, so a gate that is killed - even a taskkill /F,
+#:                      even just its launcher - leaves nothing behind.
+#: LIFETIME_DETACHED   the ACTIVE instance is deliberately started outside any
+#:                      job and survives the gate, so a gate that comes straight
+#:                      back can re-adopt it from the registry and ABP is up
+#:                      again in seconds. Everything else (standbys, sandboxes)
+#:                      still dies with the gate.
+LIFETIME_GATE = "gate"
+LIFETIME_DETACHED = "detached"
+LIFETIMES = (LIFETIME_GATE, LIFETIME_DETACHED)
+
 
 class SwapError(RuntimeError):
     """A swap that failed and was (or could not be) rolled back."""
 
 
 class Manager:
-    def __init__(self, router: Optional[Router] = None):
+    def __init__(self, router: Optional[Router] = None, *,
+                 instance_lifetime: str = LIFETIME_GATE,
+                 max_instances: Optional[int] = None):
         self.router = router or Router()
         self._ops = asyncio.Lock()  # one start/swap/rollback/stop at a time
-        self._restarts: dict[str, float] = {}
+        #: One job object per instance, keyed by instance name. A handle cannot
+        #: be written to the registry, so a gate that is restarted comes back
+        #: with none of them - see LIFETIME_DETACHED for why that is survivable.
+        self._jobs: dict[str, procs.Job] = {}
+        self.instance_lifetime = instance_lifetime if instance_lifetime in LIFETIMES else LIFETIME_GATE
+        self._max_instances = max_instances
 
     # ------------------------------------------------------------- read side
+    def max_instances(self) -> int:
+        return self._max_instances or limits.max_instances()
+
+    def alive_instances(self) -> list[registry.Instance]:
+        return [i for i in registry.all_instances() if procs.alive(i.pid)]
+
     def list(self) -> dict[str, Any]:
         data = registry.read()
         instances = [registry.Instance.from_dict(v) for v in data["instances"].values()]
@@ -72,10 +112,36 @@ class Manager:
                 inst.role = registry.ROLE_ACTIVE
             registry.put(inst.name, inst)
         data = registry.read()
-        return registry.to_jsonable(
+        alive = self.alive_instances()
+        out = registry.to_jsonable(
             [registry.Instance.from_dict(v) for v in data["instances"].values()],
             data["active"], data["previous"],
         )
+        out["limits"] = {
+            "max_instances": self.max_instances(),
+            "alive": len(alive),
+            "instance_lifetime": self.instance_lifetime,
+        }
+        out["restarts"] = self.restart_report()
+        return out
+
+    def restart_report(self, window_s: float = registry.DEFAULT_RESTART_WINDOW_S) -> dict[str, Any]:
+        """What the watcher's restart budget looks like right now, per instance.
+
+        In the control API's output because the whole point of a circuit breaker
+        is that stopping is visible: `abp_cli gate status` has to be able to say
+        "it gave up after 3 restarts", not just show an instance as unhealthy."""
+        limit = limits.restart_limit()
+        out: dict[str, Any] = {}
+        for inst in registry.all_instances():
+            recent = registry.restarts_in_window(inst.name, window_s)
+            out[inst.name] = {
+                "restarts_last_window": len(recent),
+                "budget": limit,
+                "circuit_open": len(recent) >= limit,
+                "ever_healthy": inst.ever_healthy,
+            }
+        return {"window_s": window_s, "limit": limit, "instances": out}
 
     def get(self, name: str) -> Optional[registry.Instance]:
         return registry.get(name)
@@ -88,12 +154,19 @@ class Manager:
             if inst.health not in (registry.HEALTH_STOPPED, registry.HEALTH_FAILED):
                 inst.health = registry.HEALTH_STOPPED
             if inst.port and not procs.is_free(inst.port):
+                # The launcher is gone but its interpreter is still serving:
+                # that is the shape of "killed the wrong pid", so the port is
+                # the thing to trust here.
                 procs.kill_stragglers(inst.port)
             return
         if not inst.port:
             return
         probe = health(inst.port)
-        inst.health = probe.get("health", registry.HEALTH_UNHEALTHY)
+        if probe.get("healthy"):
+            inst.health = registry.HEALTH_HEALTHY
+            inst.error = ""
+        else:
+            inst.health = registry.HEALTH_UNHEALTHY
         if probe.get("error"):
             inst.error = probe["error"]
 
@@ -193,25 +266,13 @@ class Manager:
                 steps.append(f"drained {outgoing.name} ({left} request(s) still in flight)" if left
                              else f"drained {outgoing.name}")
                 procs.set_priority(outgoing.pid, below_normal=True)
-                logger.info("stopping outgoing instance %r (pid=%s)", outgoing.name, outgoing.pid)
-                stop_result = procs.stop(outgoing.pid)
-                logger.info("procs.stop returned: %s", stop_result)
-                # Verify the process is actually gone
-                for _ in range(20):
-                    if not procs.alive(outgoing.pid):
-                        break
-                    await asyncio.sleep(0.25)
-                logger.info("outgoing instance %r alive after stop: %s", outgoing.name, procs.alive(outgoing.pid))
-                # Check if port is still listening
-                logger.info("port %s free after stop: %s", outgoing.port, procs.is_free(outgoing.port))
-                # Check for any processes still on that port
-                pids_on_port = procs.pids_on_port(outgoing.port)
-                logger.info("pids on port %s after stop: %s", outgoing.port, pids_on_port)
-                outgoing = registry.get(outgoing.name)
-                if outgoing is not None:
-                    outgoing.health = registry.HEALTH_STOPPED
-                    outgoing.role = registry.ROLE_STANDBY
-                    registry.put(outgoing.name, outgoing)
+                logger.info("stopping outgoing instance %r (pid=%s, port=%s)", outgoing.name, outgoing.pid, outgoing.port)
+                await self._terminate(outgoing)
+                current = registry.get(outgoing.name)
+                if current is not None:
+                    current.health = registry.HEALTH_STOPPED
+                    current.role = registry.ROLE_STANDBY
+                    registry.put(outgoing.name, current)
                 steps.append(f"stopped {outgoing.name}")
             logger.info("swapped to %r from %s", new_name, code)
             return {
@@ -262,7 +323,7 @@ class Manager:
             if outgoing is not None and outgoing.name != target_name:
                 left = await self.router.drain("dashboard", drain_s)
                 steps.append(f"drained {outgoing.name} ({left} still in flight)" if left else f"drained {outgoing.name}")
-                procs.stop(outgoing.pid)
+                await self._terminate(outgoing)
                 cur = registry.get(outgoing.name)
                 if cur is not None:
                     cur.health = registry.HEALTH_STOPPED
@@ -288,7 +349,7 @@ class Manager:
             if not keep_state or not (data_root / "data" / "bot.db").is_file():
                 seed_state(paths.state_root(), data_root)
             inst = await self._spawn(sandbox_name, code, data_root, role=registry.ROLE_SANDBOX, sandbox=True)
-            await self._wait_healthy(inst, health_timeout_s=DEFAULT_HEALTH_TIMEOUT_S)
+            await self._wait_healthy(inst, timeout_s=DEFAULT_HEALTH_TIMEOUT_S)
             url = f"http://127.0.0.1:{inst.port}"
             return {
                 "ok": True,
@@ -308,8 +369,7 @@ class Manager:
             if inst is None:
                 raise SwapError(f"no instance named {name!r}")
             was_active = registry.active_name() == name
-            procs.stop(inst.pid)
-            procs.wait_port_closed(inst.port)
+            await self._terminate(inst)
             if inst.sandbox and not keep_state:
                 shutil.rmtree(paths.instance_state_dir(name), ignore_errors=True)
             registry.drop(name)
@@ -333,7 +393,15 @@ class Manager:
         port - so from outside, nothing changed; there is just a second or two
         of 503 while the new process boots. A restart that keeps failing is left
         failed rather than retried forever, because a loop that can't bind its
-        port or can't open its database will never start working on its own."""
+        port or can't open its database will never start working on its own.
+
+        The old instance's entire tree is dead BEFORE the replacement starts.
+        Not "shortly after": an instance is a launcher plus an interpreter, and
+        a replacement that starts while the old interpreter is still holding the
+        port is a second writer of the same database. Each attempt cleans up its
+        own failure too, so a failed restart leaves one stopped instance rather
+        than a new pile of them. How OFTEN this may be called is the watcher's
+        business (abp_gate/__main__.py), not this method's."""
         async with self._ops:
             inst = self._find_active()
             if inst is None:
@@ -342,10 +410,9 @@ class Manager:
             data = Path(inst.data_root) if inst.data_root else None
             errors: list[str] = []
             for attempt in range(1, attempts + 1):
-                self._restarts[inst.name] = attempt
+                fresh: Optional[registry.Instance] = None
                 try:
-                    procs.stop(inst.pid)
-                    await asyncio.sleep(0.5)
+                    await self._terminate(inst)
                     fresh = await self._spawn(registry.unique_name(inst.name), code, data,
                                               role=registry.ROLE_ACTIVE, sandbox=False)
                     await self._wait_healthy(fresh, DEFAULT_HEALTH_TIMEOUT_S)
@@ -358,6 +425,9 @@ class Manager:
                 except Exception as exc:  # noqa: BLE001 - every failure is retried
                     errors.append(f"attempt {attempt}: {exc}")
                     logger.exception("restart of %r failed on attempt %s", inst.name, attempt)
+                    if fresh is not None:
+                        # Otherwise attempt 2 starts on top of attempt 1's corpse.
+                        await self._abandon(fresh, [], f"restart attempt {attempt} failed")
             inst.health = registry.HEALTH_FAILED
             inst.error = "; ".join(errors)[-800:]
             registry.put(inst.name, inst)
@@ -380,6 +450,7 @@ class Manager:
                      sandbox: bool, standby: bool = False) -> registry.Instance:
         if not (code_root / "bot" / "main.py").is_file():
             raise SwapError(f"{code_root} is not an ABP checkout (no bot/main.py)")
+        self._check_capacity(name)
         port = registry.free_port()
         localai_port = 0
         extra: dict[str, str] = {}
@@ -409,14 +480,76 @@ class Manager:
             log=str(log_path),
         )
         registry.put(name, inst)
+        # The active instance in `detached` mode is deliberately started OUTSIDE
+        # a job: it has to outlive the gate (see LIFETIME_DETACHED), and a
+        # kill-on-close job would take it with the gate's handle. Everything
+        # else gets one, which is what makes a hard gate death take the rest.
+        detached = role == registry.ROLE_ACTIVE and self.instance_lifetime == LIFETIME_DETACHED
+        job = None if detached else procs.Job(f"instance:{name}")
         # Below-normal for everything except the active instance: a standby
         # waiting to be swapped in, or an agent's sandbox, must never make the
         # machine feel slow for whoever is actually using ABP.
-        pid = procs.spawn(argv, cwd=code_root, env=env, log_path=log_path,
-                          below_normal=(role != registry.ROLE_ACTIVE))
+        try:
+            pid = procs.spawn(argv, cwd=code_root, env=env, log_path=log_path,
+                              below_normal=(role != registry.ROLE_ACTIVE), job=job)
+        except Exception:
+            # Never leave a record or a job behind for something that is not
+            # running: an entry with no pid and no job is a mystery later.
+            registry.drop(name)
+            if job is not None:
+                job.kill()
+            raise
+        if job is not None:
+            self._jobs[name] = job
         inst.pid = pid
         registry.put(name, inst)
         return inst
+
+    def _check_capacity(self, name: str) -> None:
+        """Refuse to become one process too many.
+
+        The cap exists because the alternative was measured: a gate that starts
+        instances without ever stopping them reaches six thousand of them on a
+        machine with 32 GB, and the failure mode is the whole machine, not the
+        gate."""
+        limit = self.max_instances()
+        alive = [i for i in self.alive_instances() if i.name != name]
+        if len(alive) >= limit:
+            raise SwapError(
+                f"the gate already has {len(alive)} instance(s) alive and the cap is {limit}; "
+                f"stop one first (abp_cli instance list, then abp_cli instance stop <name>)"
+            )
+
+    def _kill_job(self, name: str) -> None:
+        job = self._jobs.pop(name, None)
+        if job is not None:
+            job.kill()
+
+    async def _terminate(self, inst: Optional[registry.Instance]) -> list[int]:
+        """Stop one instance, completely, and say what was left over.
+
+        Job first (that is the whole tree in one call), then the pid tree for
+        platforms without jobs and for anything the job missed, then anything of
+        ours still holding the port - because an interpreter whose launcher is
+        gone is exactly the process a pid-only kill leaves behind."""
+        if inst is None:
+            return []
+        self._kill_job(inst.name)
+        leftover: list[int] = []
+        if inst.pid:
+            leftover = procs.tree_pids(inst.pid)
+        procs.stop(inst.pid)
+        if inst.port:
+            procs.kill_stragglers(inst.port)
+            procs.wait_port_closed(inst.port)
+            leftover = [pid for pid in leftover if procs.alive(pid)]
+        if leftover:
+            logger.warning("instance %r: %s process(es) outlived the stop: %s", inst.name, len(leftover), leftover)
+        current = registry.get(inst.name)
+        if current is not None and current.health != registry.HEALTH_FAILED:
+            current.health = registry.HEALTH_STOPPED
+            registry.put(inst.name, current)
+        return leftover
 
     async def _wait_healthy(self, inst: registry.Instance, timeout_s: float) -> dict[str, Any]:
         deadline = time.monotonic() + timeout_s
@@ -428,7 +561,11 @@ class Manager:
             if probe.get("healthy"):
                 inst.health = registry.HEALTH_HEALTHY
                 inst.error = ""
+                inst.ever_healthy = True
                 registry.put(inst.name, inst)
+                # Healthy again: whatever restart budget this instance had was
+                # for a problem it no longer has.
+                registry.clear_restarts(inst.name)
                 procs.set_priority(inst.pid, below_normal=(inst.role != registry.ROLE_ACTIVE))
                 return probe
             last = probe.get("error") or last
@@ -441,8 +578,7 @@ class Manager:
 
     async def _abandon(self, inst: Optional[registry.Instance], steps: list[str], why: str) -> None:
         if inst is not None:
-            procs.stop(inst.pid)
-            procs.wait_port_closed(inst.port)
+            await self._terminate(inst)
             registry.drop(inst.name)
             logger.warning("swap abandoned %r: %s", inst.name, why)
             steps.append(f"discarded {inst.name}: {why}")
@@ -543,17 +679,9 @@ def seed_state(source: Path, dest: Path) -> dict[str, Any]:
     Caches, logs, backups and model/attachment blobs are skipped on purpose:
     they are large, they are rebuilt on demand, and copying them is how a
     sandbox ends up serving stale files that look authoritative."""
-    # Clean the destination directory to avoid file locks from previous runs
-    if dest.exists():
-        # On Windows, use rmdir /s /q which is more aggressive than shutil.rmtree
-        if sys.platform == "win32":
-            try:
-                subprocess.run(["rmdir", "/s", "/q", str(dest)], check=False, capture_output=True,
-                               creationflags=subprocess.CREATE_NO_WINDOW)
-            except Exception:
-                pass
-        else:
-            shutil.rmtree(dest, ignore_errors=True)
+    # Start from nothing: a half-removed directory from a previous sandbox is
+    # how a "fresh" sandbox ends up serving the last one's leftovers.
+    shutil.rmtree(dest, ignore_errors=True)
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "data").mkdir(parents=True, exist_ok=True)
     (dest / "logs").mkdir(parents=True, exist_ok=True)
@@ -571,22 +699,22 @@ def seed_state(source: Path, dest: Path) -> dict[str, Any]:
         src = source / name
         if not src.is_dir():
             continue
-        dst = dest / name
-        if sys.platform == "win32":
-            try:
-                subprocess.run(["rmdir", "/s", "/q", str(dst)], check=False, capture_output=True,
-                               creationflags=subprocess.CREATE_NO_WINDOW)
-            except Exception:
-                pass
-        else:
-            shutil.rmtree(dst, ignore_errors=True)
-        shutil.copytree(src, dst, ignore=shutil.ignore_patterns(*SKIP_DIRS, ".tmp"))
+        shutil.copytree(src, dest / name, ignore=shutil.ignore_patterns(*SKIP_DIRS, ".tmp"))
         copied.append(name)
     for db_name in ("bot.db", "provider_store.db"):
         src = source / "data" / db_name
         if not src.is_file():
             continue
-        online_backup(src, dest / "data" / db_name)
+        try:
+            online_backup(src, dest / "data" / db_name)
+        except OSError as exc:
+            # Almost always "the sandbox's last process still has this file
+            # open", which is worth saying out loud rather than surfacing as a
+            # bare WinError from deep inside the copy.
+            raise SwapError(
+                f"could not seed {dest / 'data' / db_name} from the live state ({exc}); "
+                f"stop the sandbox {dest.name!r} and try again"
+            ) from exc
         copied.append(f"data/{db_name}")
 
     manifest = dest / "data" / "sandbox.json"
@@ -601,33 +729,23 @@ def seed_state(source: Path, dest: Path) -> dict[str, Any]:
 def online_backup(src: Path, dest: Path) -> None:
     """SQLite's own online backup API, not a file copy: the real instance is
     running and writing while this happens, and a plain copy of a live WAL
-    database gives you a file whose -wal and main pages disagree."""
+    database gives you a file whose -wal and main pages disagree.
+
+    Written to a temporary name and moved into place, so a failure part way
+    through can never leave a half-copied database where the next start would
+    happily open it. `closing()` matters on Windows: `with sqlite3.connect(...)`
+    only ends the transaction, so the file handle would still be open when the
+    rename happens, and the rename would fail with a sharing violation."""
     dest.parent.mkdir(parents=True, exist_ok=True)
-    # Use a unique temp file name to avoid conflicts
-    import uuid
-    tmp = dest.with_name(f"{dest.stem}.{uuid.uuid4().hex}.tmp")
+    tmp = dest.with_name(f"{dest.stem}.{uuid4().hex}.tmp")
     try:
-        with sqlite3.connect(f"file:{src.as_posix()}?mode=ro", uri=True, timeout=15) as source_conn:
-            with sqlite3.connect(tmp) as dest_conn:
+        with closing(sqlite3.connect(f"file:{src.as_posix()}?mode=ro", uri=True, timeout=15)) as source_conn:
+            with closing(sqlite3.connect(tmp)) as dest_conn:
                 source_conn.backup(dest_conn)
-        # Ensure the connection is fully closed before replace
-        import gc
-        gc.collect()
-        # On Windows, retry replace with exponential backoff
-        for attempt in range(20):
-            try:
-                os.replace(tmp, dest)
-                break
-            except PermissionError:
-                time.sleep(0.05 * (attempt + 1))
-        else:
-            os.replace(tmp, dest)  # final attempt, let it raise
+                dest_conn.commit()
+        os.replace(tmp, dest)
     finally:
-        if tmp.exists():
-            try:
-                tmp.unlink(missing_ok=True)
-            except PermissionError:
-                pass  # best effort
+        tmp.unlink(missing_ok=True)
 
 
 def _json_str(value: Any) -> str:
