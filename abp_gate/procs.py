@@ -124,7 +124,14 @@ class Job:
         return bool(self.handle)
 
     def absorb(self, pid: int) -> None:
-        """Put `pid` - and anything it has already started - in the job."""
+        """Put `pid` - and anything it has already started - in the job.
+
+        Assigning the launcher is the part that matters: everything it starts
+        afterwards inherits membership, so the interpreter it is about to spawn
+        is already covered. The re-scan is the belt to that braces, for anything
+        created in the window between CreateProcess returning and the assignment
+        - and it stops as soon as two passes in a row find nothing new, so the
+        cost is one process enumeration in the normal case."""
         if not self.handle:
             return
         win_job = _win_job()
@@ -132,28 +139,34 @@ class Job:
             return
         deadline = time.monotonic() + JOB_ABSORB_S
         seen: set[int] = set()
+        quiet = 0
         while True:
+            fresh = 0
             for target in [pid] + _tree(pid):
                 if target in seen:
                     continue
                 seen.add(target)
+                fresh += 1
                 try:
                     win_job.assign(self.handle, target)
                 except OSError as exc:
-                    # Already dead, or the platform refused the nesting. Either
-                    # way there is nothing better to do here than log and let
+                    # Already dead, or the platform refused the nesting (a child
+                    # that inherited this job is already a member, and says so).
+                    # Either way there is nothing better to do than log and let
                     # the pid-based kill be the backstop.
                     logger.debug("could not assign pid %s to the job for %r: %s", target, self.label, exc)
-            if time.monotonic() >= deadline:
+            quiet = 0 if fresh else quiet + 1
+            if quiet >= 2 or time.monotonic() >= deadline:
                 return
             time.sleep(JOB_ABSORB_INTERVAL_S)
 
     def kill(self, exit_code: int = 1) -> None:
-        """Kill everything this job ever held and drop the handle.
+        """Kill everything this job ever held, and drop the handle.
 
-        Terminate-then-close rather than close alone: the explicit terminate
-        does not depend on the handle being the last one, which matters when a
-        gate is re-adopting instances it has no handle for."""
+        Terminate and then close, rather than only closing: KILL_ON_JOB_CLOSE
+        would do the killing on its own, but an explicit TerminateJobObject does
+        not depend on this being the last handle to the job, and it is the call
+        that works when a job has outlived the process that made it."""
         handle, self.handle = self.handle, None
         if not handle:
             return
