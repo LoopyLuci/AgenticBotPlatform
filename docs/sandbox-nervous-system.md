@@ -32,10 +32,23 @@ either stack a second wrapper or silently stop being windowless.
 
 **No console window on the desktop, ever.** Every entry point calls `guard.install()` before it
 can start anything: `bot/main.py`, `abp_cli`, `abp_run`, `abp_acp`, `bot/tui`, `bot/mcp_server.py`,
-and the two worker scripts (`bot/localai/train_worker.py`, `bot/neurallab/nn_worker.py`). Because
+`scripts/local_pipeline.py` (the pre-push hook's own process - `git.exe` started without a console
+leaves the whole chain console-less), and the two worker scripts
+(`bot/localai/train_worker.py`, `bot/neurallab/nn_worker.py`). Because
 `subprocess.run`, `subprocess.call`, `subprocess.check_output` and asyncio's Windows subprocess
 transport all go through `subprocess.Popen`, that one wrapper covers every one of them -
 `tests/test_sandbox_ns.py` checks the asyncio case against a real child rather than assuming it.
+
+The test session installs the guard too, from `tests/conftest.py` - the one file imported before
+any test module. Otherwise every test outside `tests/test_sandbox_ns.py` spawns unguarded and a
+blank window is one ordinary `subprocess` call away. `tests/no_windows_plugin.py` (registered from
+the same conftest) then *checks* the promise instead of trusting it: on Windows a daemon thread
+polls `EnumWindows` for new visible `ConsoleWindowClass` / `CASCADIA_HOSTING_WINDOW_CLASS` /
+`PseudoConsoleWindow` windows - the same three classes `X:/Dev/swarm/popup_watch.ps1` watches - and
+fails the test that was running when one appeared, with the process chain that opened it. Windows
+that were already open when the session started are ignored, and so is a window whose chain does
+not reach that pytest worker (a shared desktop has other things on it).
+`ABP_ALLOW_WINDOWS=1` turns the watcher off for a person debugging a popup on purpose.
 
 The two Windows flags are not interchangeable, which is the whole reason this is a wrapper:
 
@@ -46,8 +59,10 @@ The two Windows flags are not interchangeable, which is the whole reason this is
 | `CREATE_NEW_CONSOLE` | `CREATE_NO_WINDOW`, **unless** inside `guard.visible()` | a console for a person is deliberate, not something to take away |
 | `CREATE_NEW_PROCESS_GROUP` | kept | Ctrl+C in ABP's console must not reach the child |
 
-The one deliberate exception in the codebase is `bot/modules/harness.py`'s `open_tui`, which wraps
-its spawn in `guard.visible()`. That is the pattern; nothing else should need it.
+The two deliberate exceptions in the codebase are `bot/modules/harness.py`'s `open_tui` and
+`bot/tui/screens/infra.py`'s `shell_into`, which both wrap their spawn in `guard.visible()`: a
+console a person types into (a module's TUI, and "Shell" handing the real terminal to
+`docker exec -it`) is asked for, not taken away. That is the pattern; nothing else should need it.
 
 **Every process is contained.** A `Cell` on Windows is a real Win32 Job Object
 (`bot/agent_runtime/win_job.py`, extended here with CPU rate, affinity and priority limits). Every
@@ -165,7 +180,8 @@ Rules of thumb:
   children). A cell per process means `kill()` cannot stop the tree.
 * `preset="daemon"` only for something that must keep running after ABP exits. It is recorded and
   windowless, but the reaper and `close_cells()` will not stop it.
-* Only `bot/modules/harness.py`'s `open_tui` needs `guard.visible()`.
+* Only `bot/modules/harness.py`'s `open_tui` and `bot/tui/screens/infra.py`'s `shell_into` need
+  `guard.visible()` - both are a person typing into a console on purpose.
 * `Policy.environment()` delegates to `sandbox.build_env` and `Policy.offline()` to the sandbox's
   network launcher. Do not reimplement either; if you need a new mode, add it there.
 

@@ -35,9 +35,25 @@ os.environ["AGENTICBOTPLATFORM_SUPPORT_BOT_MODEL_PATH"] = str(_STATE / "support_
 os.environ["AGENTICBOTPLATFORM_SUPPORT_BOT_MODULES_DIR"] = str(_STATE / "support_bot_modules")
 os.environ["AGENTICBOTPLATFORM_SUPPORT_BOT_MANIFEST_PATH"] = str(_STATE / "support_bot_manifest.json")
 
-import pytest
+# Same rule, same reason, for the process layer: bot/sandbox_ns/guard.py wraps subprocess.Popen so
+# every process this session starts is windowless. In the real app this is a boot-time call from
+# every entry point (bot/main.py, abp_cli, bot/tui, ...); in the test session it belongs here, in
+# the one file that is imported before any test module - otherwise every test outside
+# tests/test_sandbox_ns.py spawns unguarded and the blank console window this exists to stop is
+# one ordinary subprocess call away. A test that needs the real Popen uninstalls it locally and
+# puts it back (tests/test_sandbox_ns.py does exactly that).
+from bot.sandbox_ns import guard as _sandbox_guard  # noqa: E402
 
-from bot import db as db_module
+_sandbox_guard.install()
+
+# The window question can only be answered by Windows itself, so tests/no_windows_plugin.py polls
+# EnumWindows for new visible console windows during the session and fails whichever test was
+# running. ABP_ALLOW_WINDOWS=1 turns it off for a person deliberately debugging a popup.
+pytest_plugins = ["no_windows_plugin"]
+
+import pytest  # noqa: E402
+
+from bot import db as db_module  # noqa: E402
 
 
 _COMMITTED: dict = {}
