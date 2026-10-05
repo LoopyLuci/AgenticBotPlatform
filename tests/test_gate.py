@@ -1325,6 +1325,56 @@ def test_the_registry_write_waits_out_a_reader_holding_it_open(tmp_path):
     assert registry.read(path)["active"] == "prod"
 
 
+#: A writer that does nothing but hammer one registry file, in its own process -
+#: which is the whole point: the gate and something else are two processes, and
+#: the lock in registry.py is per process.
+_REGISTRY_WRITER = """
+import sys
+from pathlib import Path
+sys.path.insert(0, __CODE_ROOT__)
+from abp_gate import registry
+path = Path(sys.argv[1])
+for i in range(60):
+    registry.update(lambda d: d.update({"previous": i}), path)
+print("ok")
+"""
+
+
+def test_two_processes_writing_the_registry_do_not_destroy_each_other(tmp_path):
+    """One temporary file per write, because one shared one is a lost update.
+
+    The gate is not the only thing that ever writes its registry - an agent's
+    script, or a test putting an instance in by hand, is a separate process, and
+    `registry._lock` cannot see it. With a shared `registry.json.tmp` the two
+    writers overwrite each other's file and rename each other's file away, which
+    showed up as a FileNotFoundError out of `registry.write` and could just as
+    easily put the wrong content into the live registry."""
+    from abp_gate import registry
+
+    path = tmp_path / "gate" / "registry.json"
+    registry.write({"active": None, "previous": None, "instances": {}}, path)
+    script = _REGISTRY_WRITER.replace("__CODE_ROOT__", repr(str(CODE_ROOT)))
+    writers = [subprocess.Popen([str(PYTHON), "-c", script, str(path)],  # noqa: S603
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, creationflags=NO_WINDOW)
+               for _ in range(3)]
+    try:
+        for writer in writers:
+            out, _ = writer.communicate(timeout=120)
+            assert writer.returncode == 0, f"a concurrent writer failed: {out}"
+            assert out.strip().endswith("ok"), out
+        # One writer's update must not have been able to land in another's file:
+        # whatever the interleaving was, what is on disk is valid JSON with the
+        # shape the gate expects, and no temporary file is left behind.
+        assert registry.read(path)["previous"] is not None
+        assert not list(path.parent.glob("*.tmp")), list(path.parent.glob("*.tmp"))
+    finally:
+        for writer in writers:
+            if writer.poll() is None:  # pragma: no cover - only if the assert above failed
+                writer.kill()
+                writer.wait(30)
+
+
 def test_a_running_instance_too_busy_to_answer_is_left_alone(tmp_path):
     """The other half of "is it crashed?": a process the OS says is THERE, that
     missed one probe, is not a crashed process.

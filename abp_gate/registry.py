@@ -38,6 +38,7 @@ import time
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any, Optional
+from uuid import uuid4
 
 from abp_gate import paths
 
@@ -178,9 +179,18 @@ def write(data: dict[str, Any], path: Optional[Path] = None) -> None:
     target = path or paths.registry_path()
     with _lock:
         target.parent.mkdir(parents=True, exist_ok=True)
-        tmp = target.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(data, indent=1, default=str), encoding="utf-8")
-        _replace(tmp, target)  # atomic: a crash mid-write never truncates the live registry
+        # A temporary name of its own, never a shared one: the lock above is per
+        # process, so the gate and anything else writing this registry (an agent's
+        # script, a test putting an instance in by hand) can be inside `write` at
+        # the same time. With one shared name they wrote each other's file and then
+        # renamed each other's file away - which is a FileNotFoundError for one of
+        # them, or a rename of the WRONG content into the live registry.
+        tmp = target.with_name(f"{target.name}.{os.getpid()}.{uuid4().hex}.tmp")
+        try:
+            tmp.write_text(json.dumps(data, indent=1, default=str), encoding="utf-8")
+            _replace(tmp, target)  # atomic: a crash mid-write never truncates the live registry
+        finally:
+            tmp.unlink(missing_ok=True)  # a no-op after a successful rename; no litter after a failure
 
 
 def update(mutate, path: Optional[Path] = None) -> dict[str, Any]:
