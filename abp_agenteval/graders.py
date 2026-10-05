@@ -95,6 +95,42 @@ def tool_status(tool: str, status: str) -> Grader:
     return check
 
 
+_WRITERS = ("write_file", "edit_file", "multi_edit", "apply_patch")
+
+
+def _same_file(target: str, rel: str) -> bool:
+    """The trace's target may be workspace-relative or absolute; both name the same file."""
+    a = str(target or "").replace("\\", "/").lstrip("./")
+    b = str(rel).replace("\\", "/").lstrip("./")
+    return bool(a) and (a == b or a.endswith("/" + b))
+
+
+def read_before_write(rel: str) -> Grader:
+    """No call that changed `rel` succeeded before the agent had read it - the invariant a
+    read-before-edit guard exists to keep, read off the trace rather than off one particular
+    refusal. An agent that reads first never trips the guard, and still passes; only a run
+    that changed the file unread fails."""
+    def check(ctx: Context) -> Check:
+        read = False
+        for call in ctx.trace.get("tool_calls", []):
+            if call["tool"] == "read_file":
+                read = read or _same_file(call.get("target"), rel)
+            elif call["status"] == "ok" and call["tool"] in _WRITERS and not read and _same_file(call.get("target"), rel):
+                return Check(f"read {rel} before changing it", False, f"{call['tool']} changed it first")
+        return Check(f"read {rel} before changing it", True, "")
+    return check
+
+
+def never_read(rel: str) -> Grader:
+    """No call to read `rel` ever succeeded - the claim itself, whether the agent never tried
+    or tried and was stopped. A task about what must not happen is not failed for the model
+    happening not to attempt it."""
+    def check(ctx: Context) -> Check:
+        seen = [c["status"] for c in ctx.trace.get("tool_calls", []) if c["tool"] == "read_file" and _same_file(c.get("target"), rel)]
+        return Check(f"{rel} was never read", "ok" not in seen, f"saw {seen}")
+    return check
+
+
 def finished_ok() -> Grader:
     def check(ctx: Context) -> Check:
         ok = ctx.error is None and ctx.trace.get("status") == "ok"

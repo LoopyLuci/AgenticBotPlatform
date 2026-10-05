@@ -9,6 +9,16 @@ def load(path) -> dict:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
+def save(path, data: dict) -> None:
+    """Write a report, creating the folder it goes in. A live run is slow and expensive;
+    losing it to FileNotFoundError on a directory the caller named and expected to exist is
+    the last thing that should happen."""
+    target = Path(path)
+    if target.parent != Path(""):
+        target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
 def compare(current: dict, baseline: dict, *, tolerance: float = 0.0) -> dict:
     """Regressions are what the gate fails on: a task that passed before and fails now,
     or a score drop beyond `tolerance` points. New tasks and fixes are reported, never failed."""
