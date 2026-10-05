@@ -54,6 +54,10 @@ CODE_ROOT = Path(__file__).resolve().parent.parent
 PYTHON = Path(sys.executable)
 NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
+# Every test here starts real ABP instances (and a gate). Run them one after another in one worker: several at once on
+# a machine that is also running the rest of the suite starve each other of the CPU their health checks need.
+pytestmark = pytest.mark.xdist_group("abp_gate_live")
+
 #: Stripped from the environment these processes inherit: a stray
 #: ABP_SANDBOX_INSTANCE or DASHBOARD_PORT in the shell that ran pytest must not
 #: silently change what is being tested. The gate's own limits are stripped too,
@@ -95,7 +99,8 @@ def free_port() -> int:
 
 
 def base_env(**extra) -> dict[str, str]:
-    env = {k: v for k, v in os.environ.items() if k not in _STRIPPED}
+    env = {k: v for k, v in os.environ.items()
+           if k not in _STRIPPED and not k.startswith(("COV_CORE_", "COVERAGE_"))}  # never run instances traced
     env.update(PYTHONPATH=str(CODE_ROOT), PYTHONUNBUFFERED="1", PYTHONUTF8="1", ABP_DISABLE_MDNS="1")
     env.update({k: str(v) for k, v in extra.items()})
     return env
