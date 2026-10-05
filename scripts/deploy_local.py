@@ -816,7 +816,9 @@ def verify(install_dir: Path, port: int = DEFAULT_PORT, *, root: Path = ROOT, to
     if status != 200 or not isinstance(bots, list):
         result.fail(f"could not list bot instances (HTTP {status})")
         return result
-    enabled = [b for b in bots if isinstance(b, dict) and b.get("enabled")]
+    # An app-only instance (platform "app") has no poller to start, so it is never "live_running": waiting for it
+    # would fail every deploy (the first real one did, on instance 46).
+    enabled = [b for b in bots if isinstance(b, dict) and b.get("enabled") and b.get("platform") != "app"]
     while True:
         running = {b.get("id") for b in bots if b.get("live_running")}
         missing = [b for b in enabled if b.get("id") not in running]
