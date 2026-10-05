@@ -1080,7 +1080,11 @@ def test_modules_list_show_ops_status_and_logs(client, capsys):
         assert code == 1
         err = capsys.readouterr().err
         assert "not installed" in err or "no operations" in err, err
-    present = next((m["id"] for m in modules if m["installed"] and m["ready"]), None)
+    # Only a hub that is actually running has operations to list; installed-but-stopped is the machine's state,
+    # not a CLI bug.
+    present = next((m["id"] for m in modules
+                    if m["installed"] and m["ready"] and isinstance(m.get("hub"), dict) and m["hub"].get("running")),
+                   None)
     if present:
         code, _ = run(["--json", "modules", "ops", present], client)
         assert code == 0
