@@ -137,3 +137,23 @@ commands.allow = ["show_main_window"]
 identifier = "allow-quit-app-command"
 description = "Quits the app completely, stopping the bot server."
 commands.allow = ["quit_app_command"]
+
+[[permission]]
+identifier = "allow-trigger-tray-action"
+description = "Runs one of the tray menu's actions (show/hide/new chat/quick search/emergency stop/restart server/open data folder/quit)."
+commands.allow = ["trigger_tray_action"]
+
+[[permission]]
+identifier = "allow-get-shortcut-bindings"
+description = "Reads the global shortcut bindings that are registered, and any that could not be."
+commands.allow = ["get_shortcut_bindings"]
+
+[[permission]]
+identifier = "allow-get-shortcut-actions"
+description = "Lists the actions a global shortcut can trigger, with their default bindings."
+commands.allow = ["get_shortcut_actions"]
+
+[[permission]]
+identifier = "allow-set-shortcut-bindings"
+description = "Changes the global shortcut bindings and re-registers them."
+commands.allow = ["set_shortcut_bindings"]
