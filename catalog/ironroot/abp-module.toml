@@ -39,17 +39,21 @@ require = [{ tool = "cargo", min = "1.75", url = "https://rustup.rs" }, { tool =
 # Both binaries: the resolver and ironroot-dig, the small dig the operations use. The BPF crate
 # (ironroot-ebpf) is left out, as the workspace's default-members already leave it out on Windows:
 # bpfel-unknown-none has no prebuilt artifacts for this host, and the XDP fast path is a Linux thing.
-# CARGO_TARGET_DIR is pinned to the machine's cargo cache instead of being left to {target}: with no
-# modules.build_cache configured, {target} is the checkout's own target/, which this overlay will not
-# write to. The same paths (this env, build.outputs, [service].start and the dig path in abp-ops.toml)
-# have to be changed together - setting modules.build_cache makes ABP redirect the build there, and
-# these outputs would then be missing.
+# Everything below follows {target} - ABP's cargo target dir for this module - instead of a path
+# written into this file: modules.build_cache (or $ABP_MODULE_BUILD_CACHE) decides where that is, and
+# ABP points CARGO_TARGET_DIR at it for the build, so the outputs, the service start and the dig paths
+# in abp-ops.toml must all ask for the same place or a rebuild puts ironroot.exe where nothing looks.
+# With no build cache configured {target} is the checkout's own target/, which is why the header above
+# recommends modules.build_cache (or modules.ironroot.path for a checkout kept elsewhere): it is what
+# keeps the owner's working copy free of build output.
 steps = [["cargo", "build", "--release", "-p", "ironroot"]]
-outputs = ["X:/cargo-target/release/ironroot{exe}", "X:/cargo-target/release/ironroot-dig{exe}"]
-env = { CARGO_TARGET_DIR = "X:/cargo-target" }
+outputs = ["{target}/release/ironroot{exe}", "{target}/release/ironroot-dig{exe}"]
+env = { CARGO_TARGET_DIR = "{target}" }
 
 [hub]
-start = ["{abp_python}", "-m", "abp_modkit", "serve", "--spec", "{overlay}/abp-ops.toml", "--project", "{repo}", "--home", "{data}"]
+# --var target={target}: the operations in abp-ops.toml start and query {target}/release/ironroot*, so the
+# hub is told which target dir this module built into (its own default would be the checkout's target/).
+start = ["{abp_python}", "-m", "abp_modkit", "serve", "--spec", "{overlay}/abp-ops.toml", "--project", "{repo}", "--home", "{data}", "--var", "target={target}"]
 control_file = "{data}/control.json"
 start_timeout_s = 30
 

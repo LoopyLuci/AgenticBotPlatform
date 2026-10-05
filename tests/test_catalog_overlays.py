@@ -16,6 +16,7 @@ import pytest
 
 from abp_modkit import spec as sp
 from bot.modules import manifest as mf
+from bot.modules import registry
 
 CATALOG = Path(__file__).resolve().parent.parent / "catalog"
 
@@ -214,14 +215,49 @@ def test_ironroot_moves_abps_own_resolver_setting():
     assert not [o for o in ops.ops if o.kind == "http"], "there is no HTTP route here to invent"
 
 
-def test_ironroot_is_built_into_the_cache_and_never_into_its_checkout():
-    """The checkout is the owner's working copy, worked on by their own agent: cargo's output goes to
-    the build cache, and every path below says where that is."""
-    m = mf.load(CATALOG / "ironroot" / mf.MANIFEST_FILE)
-    cache = m.build_env.get("CARGO_TARGET_DIR", "")
-    assert cache and cache not in (".", "target"), "the default would be the checkout's own target/"
-    assert Path(cache).is_absolute()
-    assert m.build_steps and m.build_steps[0][:2] == ["cargo", "build"], "built from the checkout, with cargo"
-    for o in m.build_outputs:
-        assert o.startswith(cache), f"{o} is not where this build tells cargo to write ({cache})"
+def test_ironroots_outputs_follow_the_target_dir_the_build_used(tmp_path, monkeypatch):
+    """The checkout is the owner's working copy, so where cargo writes is ABP's decision, not this
+    file's: modules.build_cache moves it, and the overlay's outputs, the service it starts and the dig
+    the operations run all have to land in the same place - with the cache set and without it."""
+    from bot.modules import harness
+
+    monkeypatch.delenv("ABP_MODULE_BUILD_CACHE", raising=False)
+    m = registry.get("ironroot")
+    exe = registry.placeholders(m)["exe"]
     assert m.checkout_dir, "the checkout is this machine's own working copy, so the overlay says where it is"
+    assert m.build_steps and m.build_steps[0][:2] == ["cargo", "build"], "built from the checkout, with cargo"
+    ops = sp.load(CATALOG / "ironroot" / "abp-ops.toml")
+    dig_ops = {o.id: o for o in ops.ops if "ironroot-dig" in " ".join(o.argv)}
+    assert set(dig_ops) == {"status.dns", "query.dig", "dnssec.check"}, sorted(dig_ops)
+    binaries = [a for o in dig_ops.values() for a in o.argv if "ironroot-dig" in a] + list(ops.service.start)
+
+    for cache in (None, tmp_path / "fast-cargo"):
+        monkeypatch.setattr(registry, "_cfg", lambda c=cache: {"build_cache": str(c)} if c else {})
+        target = registry.target_dir(m)
+        assert target == (cache / "ironroot" if cache else Path(m.checkout_dir) / "target")
+        # what the build job really runs with: harness._build_env is what redirects CARGO_TARGET_DIR
+        assert Path(harness._build_env(m)["CARGO_TARGET_DIR"]) == target
+        assert Path(registry.expand(m, m.build_env["CARGO_TARGET_DIR"])) == target
+        outputs = [registry.expand_cmd(m, [o])[0] for o in m.build_outputs]
+        assert [Path(o).name for o in outputs] == [f"ironroot{exe}", f"ironroot-dig{exe}"], outputs
+        for o in outputs:
+            assert Path(o).parent == target / "release", f"{o} is not where this build writes ({target})"
+        assert Path(registry.expand_cmd(m, [ops.service.start[0]])[0]) == target / "release" / f"ironroot{exe}"
+        for a in binaries:
+            assert "{target}/release/ironroot" in a, f"{a} names a path instead of asking for the build ABP made"
+            assert registry.expand(m, a).count(f"{target}/release/") == 1, f"{a} would look in the wrong build"
+        # the hub has to tell the operations which build this is, or they fall back to the checkout's target/
+        assert "target={target}" in m.hub.start, m.hub.start
+
+
+def test_the_other_cargo_overlays_follow_the_target_dir_too():
+    """Same rule for the overlays that build with cargo: {target} in outputs, in CARGO_TARGET_DIR and in
+    the --var the hub hands the operations - a literal path here goes stale the moment build_cache is set."""
+    for mid in ("mesh-llm", "openhuman"):
+        m = mf.load(CATALOG / mid / mf.MANIFEST_FILE)
+        assert m.build_env.get("CARGO_TARGET_DIR") == "{target}", f"{mid}: cargo must write where {mid} looks"
+        assert m.build_outputs and all(o.startswith("{target}/") for o in m.build_outputs), m.build_outputs
+        assert "target={target}" in m.hub.start, m.hub.start
+# openhuman's service is the binary its own build produced; mesh-llm's is the release CLI on PATH
+    start = sp.load(CATALOG / "openhuman" / "abp-ops.toml").service.start
+    assert start and start[0].startswith("{target}/"), start
