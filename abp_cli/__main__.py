@@ -638,6 +638,10 @@ async def _agent_run_via_api(args, client: DashboardClient, goal: str, instance:
     except ApiError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    # The turn is over, so its record is final: one more look for whatever landed since the last poll.
+    # watch() stops the moment the turn finishes, and the run's last tool events are written just before
+    # that, so without this the streamed progress loses its tail.
+    await _agent_run_poll(client, instance, seen_jobs, watching, seen_events, seen_approvals, args, events)
     reply = result.get("reply") or ""
     if args.json:
         print(json.dumps({"via": "api", "instance_id": instance, "instance": (instance_row or {}).get("name"),

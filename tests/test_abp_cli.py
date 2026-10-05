@@ -753,11 +753,24 @@ def test_agent_run_streams_progress_through_the_api(client, capsys, monkeypatch)
     iid = _create_instance(name="agent-runner", platform="app", backend="native_agent",
                            credentials={}, allowed_user_ids=[])
 
+    # The second tool event is written only once the CLI has read this job's events, and only after that
+    # read: a fixed sleep raced with the poll loop (the streamed progress lost its last event when the
+    # turn ended between two polls), so this waits on the condition with a generous deadline instead.
+    polled = asyncio.Event()
+    real_tool_events = client.job_tool_events
+
+    async def watch_tool_events(job_id):
+        fresh = await real_tool_events(job_id)
+        polled.set()
+        return fresh
+
+    monkeypatch.setattr(client, "job_tool_events", watch_tool_events)
+
     async def fake_ask(text, **kw):
         job_id = db.create_job("quick_question", "native_agent", 0, text, instance_id=iid)
         db.mark_job_running(job_id, backend="native_agent")
         db.log_job_tool_event(job_id, "tool_started", "read_file", {"path": "README.md"})
-        await __import__("asyncio").sleep(0.12)
+        await asyncio.wait_for(polled.wait(), 30)
         db.log_job_tool_event(job_id, "tool_completed", "read_file", {"ok": True})
         db.mark_job_done(job_id, "success", result="done", tokens=42)
         return SimpleNamespace(text=f"ran: {text}")
@@ -771,6 +784,7 @@ def test_agent_run_streams_progress_through_the_api(client, capsys, monkeypatch)
     assert payload["reply"] == "ran: summarise the repo"
     assert [e["kind"] for e in payload["events"]] == ["job", "tool", "tool"], payload["events"]
     assert payload["events"][1]["tool"] == "read_file"
+    assert [e.get("event") for e in payload["events"][1:]] == ["tool_started", "tool_completed"], payload["events"]
 
     code, _ = run(["--json", "agent", "runs", "--instance", str(iid)], client)
     assert code == 0
