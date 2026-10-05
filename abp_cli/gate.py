@@ -4,6 +4,7 @@ instances behind it (abp_gate/).
   abp gate start [--code-root P] [--state-root P] [--instances-dir P] [--no-start]
   abp gate stop                                        stop every instance, then the gate
   abp gate status                                      what is running, and where traffic goes
+  abp gate autostart on|off|status                     start the gate at every logon, hidden
 
   abp instance list                                    every instance: role, port, pid, health
   abp instance swap <code-root> [--name N]             new code in, zero downtime, auto-rollback
@@ -155,6 +156,15 @@ def add_parser(sub) -> None:
     gsub.add_parser("status", help="is the gate up, what is active, where traffic goes")
     for verb in ("stop", "status"):
         _add_roots(gsub.choices[verb])
+    autostart = gsub.add_parser("autostart", help="have the gate come up at every logon, with no console window")
+    asub = autostart.add_subparsers(dest="autostart_cmd", required=True)
+    for verb, what in (("on", "write the logon entry"),
+                       ("off", "delete the logon entry"),
+                       ("status", "is there a logon entry, and what does it start")):
+        p = asub.add_parser(verb, help=f"{what}")
+        p.add_argument("--startup-dir", default=None, dest="startup_dir",
+                       help="the Startup folder to use instead of this user's own (Windows only)")
+        _add_roots(p)
 
     inst = sub.add_parser("instance", help="the ABP instances the gate manages: swap, sandbox, stop")
     isub = inst.add_subparsers(dest="instance_cmd", required=True)
@@ -223,6 +233,8 @@ async def _gate(args) -> int:
         return await _gate_stop(args)
     if args.gate_cmd == "start":
         return await _gate_start(args)
+    if args.gate_cmd == "autostart":
+        return _gate_autostart(args)
     print(f"unknown gate subcommand {args.gate_cmd!r}", file=sys.stderr)
     return 2
 
@@ -358,6 +370,196 @@ async def _wait_for_gate(control_url: str, timeout_s: float) -> None:
                 last = f"/healthz returned {resp.status_code}"
             await asyncio.sleep(0.25)
     raise TimeoutError(last)
+
+
+# ------------------------------------------------------------------ autostart
+
+#: The logon entry's name inside the Startup folder. `abp_` prefixed so it is
+#: obvious in a folder full of other people's shortcuts, and .vbs because that
+#: is the one thing in a Startup folder that can start a program with NO console
+#: window at all - a shortcut would flash one, and a scheduled task or a service
+#: registration is a machine-wide change this does not get to make.
+AUTOSTART_NAME = "abp_gate_autostart.vbs"
+#: Where a test (or somebody with an unusual profile layout) says the Startup
+#: folder is. Never the default, and never consulted silently by the gate itself.
+STARTUP_DIR_ENV = "ABP_GATE_STARTUP_DIR"
+
+
+def startup_dir(chosen: Optional[str] = None) -> Path:
+    """This user's Startup folder - the one Windows runs at logon, per user and
+    not per machine, so it needs no administrator and no uninstall step.
+
+    `chosen` (or ABP_GATE_STARTUP_DIR) is how a test points this at a throwaway
+    folder: the real one belongs to the person, and a test that wrote a logon
+    entry into it would start a gate on their machine at their next logon."""
+    raw = chosen or (os.environ.get(STARTUP_DIR_ENV) or "").strip()
+    if raw:
+        return Path(os.path.expandvars(raw)).expanduser()
+    appdata = (os.environ.get("APPDATA") or "").strip()
+    if not appdata:
+        raise ApiError(0, "APPDATA is not set, so this shell cannot find the Startup folder; "
+                          "pass --startup-dir with the path to it")
+    return Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+
+
+def autostart_path(chosen: Optional[str] = None) -> Path:
+    return startup_dir(chosen) / AUTOSTART_NAME
+
+
+def _vbs(value: str) -> str:
+    """A VBScript string literal. Doubling the quote is the only escape there
+    is; a backslash is an ordinary character, which is why these are Windows
+    paths and not anything regex-shaped."""
+    return '"' + str(value).replace('"', '""') + '"'
+
+
+def autostart_command(*, code_root: Path, python: Path,
+                      state_root: Optional[Path] = None,
+                      instances_dir: Optional[Path] = None) -> str:
+    """The exact command the logon entry runs.
+
+    `abp_cli gate start`, and not `python -m abp_gate`: it is the documented way
+    in, it detaches the daemon properly and it prints where the log is if the
+    gate does not come up. The roots are passed explicitly rather than left to
+    the environment, because a Startup entry has no environment to inherit -
+    that is the whole reason a logon entry can silently come up against the
+    wrong ABP_HOME."""
+    argv = [str(python), "-m", "abp_cli", "gate", "start", "--code-root", str(code_root)]
+    for flag, value in (("--state-root", state_root), ("--instances-dir", instances_dir)):
+        if value:
+            argv += [flag, str(value)]
+    return " ".join(argv)
+
+
+def autostart_script(*, command: str, code_root: Path, python: Path) -> str:
+    """The .vbs itself, in the shape Hermes's own gateway entry uses: set the
+    few variables the process needs on the PROCESS environment WScript.Shell
+    hands it, then Run the command with window style 0 and do not wait.
+
+    Window style 0 is the load-bearing part. It is what makes a logon start
+    invisible, and it is why this is a .vbs and not a shortcut or a bare
+    pythonw guess - a console that appears while somebody is logging in to
+    their own machine is the one thing this must never do (see
+    docs/sandbox-nervous-system.md for the same rule everywhere else in ABP)."""
+    lines = [
+        "' ABP gate - start it at every logon, with no console window.",
+        "' Written by `abp_cli gate autostart on`; remove it with `abp_cli gate autostart off`.",
+        f"' Starts: {command}",
+        "Option Explicit",
+        "Dim sh, env, pp",
+        'Set sh = CreateObject("WScript.Shell")',
+        'Set env = sh.Environment("PROCESS")',
+        f'env.Item("PYTHONPATH") = {_vbs(code_root)}',
+        'env.Item("PYTHONUNBUFFERED") = "1"',
+        'env.Item("PYTHONUTF8") = "1"',
+        'env.Item("ABP_GATE") = "1"',
+    ]
+    # VIRTUAL_ENV only when the interpreter really is in a venv: procs.python_for
+    # falls back to the base interpreter when the checkout has none, and
+    # pointing VIRTUAL_ENV at the base prefix would be a lie a child process
+    # could act on.
+    if python.parent.name in ("Scripts", "bin"):
+        lines.append(f'env.Item("VIRTUAL_ENV") = {_vbs(python.parent.parent)}')
+    lines += [
+        'pp = env.Item("PYTHONPATH")',
+        "If Len(pp) > 0 And Left(pp, Len(" + _vbs(code_root) + ")) <> " + _vbs(code_root) + " Then",
+        "  env.Item(\"PYTHONPATH\") = " + _vbs(code_root) + " & \";\" & pp",
+        "End If",
+        f"sh.CurrentDirectory = {_vbs(code_root)}",
+        f"sh.Run {_vbs(command)}, 0, False",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def autostart_state(chosen: Optional[str] = None, *, code_root: Optional[Path] = None,
+                    python: Optional[Path] = None) -> dict[str, Any]:
+    """What the logon entry is, whether it is there, and whether it is still
+    pointing at this checkout.
+
+    `matches` is the question that matters after a few months: an entry written
+    by a build of ABP in a checkout that has since been moved or deleted starts
+    a gate that cannot work, and the only symptom is a log nobody reads."""
+    code_root = Path(code_root or paths.code_root()).resolve()
+    python = Path(python or procs.python_for(code_root))
+    path = autostart_path(chosen)
+    want = autostart_command(code_root=code_root, python=python,
+                             state_root=Path(os.environ["ABP_HOME"]) if os.environ.get("ABP_HOME") else None,
+                             instances_dir=(Path(os.environ[paths.INSTANCES_ENV])
+                                            if os.environ.get(paths.INSTANCES_ENV) else None))
+    info: dict[str, Any] = {"installed": path.is_file(), "path": str(path), "startup_dir": str(path.parent),
+                            "code_root": str(code_root), "python": str(python), "expected_command": want}
+    if not info["installed"]:
+        info["command"] = ""
+        info["matches"] = False
+        return info
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        info["command"] = f"(unreadable: {exc})"
+        info["matches"] = False
+        return info
+    started = [line for line in text.splitlines() if line.strip().startswith("sh.Run ")]
+    # The command is the quoted argument of sh.Run; a VBScript literal doubles
+    # any quote inside it, which a command line never has.
+    quoted = started[0].split('"', 2)[1] if started else ""
+    info["command"] = quoted.replace('""', '"')
+    info["matches"] = want in text
+    return info
+
+
+def _gate_autostart(args) -> int:
+    """`gate autostart on|off|status`.
+
+    Deliberately a separate verb rather than a flag on `gate start`: this writes
+    something into the person's own Windows profile that runs at every logon,
+    and that has to be a decision somebody makes out loud, twice - once to
+    write it, once to remove it."""
+    action = args.autostart_cmd
+    if sys.platform != "win32":
+        print("`gate autostart` is the Windows Startup folder. On this platform the gate is a detached "
+              "process you start yourself (abp_cli gate start), or a unit your init system owns; the "
+              "instance lifetime rules are the same either way.", file=sys.stderr)
+        return 1
+    if action == "on":
+        before = autostart_state(args.startup_dir)
+        path = Path(before["path"])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(autostart_script(command=before["expected_command"],
+                                          code_root=Path(before["code_root"]),
+                                          python=Path(before["python"])), encoding="utf-8")
+        if before["installed"] and not before["matches"]:
+            print(f"replaced the logon entry that was pointing at {before['code_root']}")
+        print(f"ABP will be up at every logon: {path}")
+        print(f"  it runs, hidden: {before['expected_command']}")
+        print("  instances default to `detached`, so the active ABP survives the gate being restarted")
+        print("remove it again with: abp_cli gate autostart off")
+        return 0
+    if action == "off":
+        path = autostart_path(args.startup_dir)
+        if not path.is_file():
+            print(f"there is no autostart entry at {path} - nothing to remove")
+            return 0
+        path.unlink()
+        print(f"removed {path}: ABP will no longer start at logon "
+              f"(a gate that is already running keeps running until it is stopped)")
+        return 0
+    info = autostart_state(args.startup_dir)
+    if args.json:
+        _print(args, info)
+        return 0
+    if not info["installed"]:
+        print(f"not installed: there is no {AUTOSTART_NAME} in {info['startup_dir']}")
+        print("install it with: abp_cli gate autostart on")
+        return 0
+    print(f"installed: {info['path']}")
+    print(f"  starts: {info['command'] or '(nothing this script recognises)'}")
+    if info["matches"]:
+        print("  points at this checkout")
+    else:
+        print(f"  [!]  does NOT point at this checkout ({info['code_root']}) - rewrite it with "
+              f"`abp_cli gate autostart on`, or ABP may come up from somewhere that no longer exists")
+    return 0
 
 
 # -------------------------------------------------------------- instance impl

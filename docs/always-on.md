@@ -19,6 +19,14 @@ abp gate start          # the gate, windowless and detached - it outlives this t
 abp gate status         # what is running, where traffic goes, what the gate has given up on
 ```
 
+and, if you want ABP to be up before you ask for it:
+
+```bash
+abp gate autostart on   # start the gate at every logon, with no console window
+abp gate autostart off  # take that back out
+abp gate autostart status
+```
+
 ## The pieces
 
 | file                 | what it is                                                              |
@@ -45,11 +53,50 @@ being replaced underneath it.
 abp gate start [--no-start] [--foreground] [--instance-lifetime gate|detached]
 abp gate status
 abp gate stop                     # stops every instance, then the gate itself
+abp gate autostart on|off|status
 ```
 
 `--foreground` runs the same daemon attached to the terminal, which is how you
 watch it. `abp gate stop` is the graceful exit; it is also what the dashboard's
 **Restart** uses.
+
+### At every logon
+
+```bash
+abp gate autostart on      # writes ONE file into your Startup folder
+abp gate autostart off     # deletes it again
+abp gate autostart status  # is it there, and does it still point at this checkout
+```
+
+`on` writes `abp_gate_autostart.vbs` into
+`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup` — per user, so no
+administrator, no service registration, and nothing left behind when you delete
+it. The file is a VBScript, in the same shape as the one
+[X:/Dev/hermes/gateway-service/Hermes_Gateway.vbs](../..) uses: it sets the few
+variables the process needs on the environment `WScript.Shell` hands it
+(`PYTHONPATH`, `VIRTUAL_ENV`, `ABP_GATE`), then
+
+```vbscript
+sh.Run "<python> -m abp_cli gate start --code-root <checkout>", 0, False
+```
+
+Window style `0` and do not wait: a logon entry that flashes a console window is
+worse than no autostart at all (see
+[sandbox-nervous-system.md](sandbox-nervous-system.md) for the same rule
+everywhere else). The roots are written into the command rather than inherited,
+because a logon entry inherits nothing from any shell — an entry that came up
+against a different `ABP_HOME` would be a second front door on 8787.
+
+`--startup-dir DIR` (or `ABP_GATE_STARTUP_DIR`) points it at a different folder,
+which is how the tests run it without touching anybody's real Startup folder.
+
+`status` is not decoration: an entry written by a build in a checkout that has
+since been moved or deleted starts a gate that cannot work, and the only symptom
+would be a log nobody reads. So `status` compares what is in the file with what
+this checkout would write and says so when they differ.
+
+Instances start with `--instance-lifetime detached` (the CLI's default), so the
+active ABP survives the gate itself being restarted.
 
 ### Instances
 
@@ -61,6 +108,10 @@ abp instance sandbox <code-root> [--name N] [--keep-state]
 abp instance stop <name> [--forget-state]
 abp instance logs <name> [--lines N] [--follow]
 ```
+
+`instance swap` is the same move `python scripts/deploy_local.py` makes when
+this gate owns the port, with the code root already installed and verified —
+see [Deploying while the gate is up](#deploying-while-the-gate-is-up).
 
 ### For an agent working on ABP itself
 
@@ -96,6 +147,46 @@ A failure at 1, 3 or 4 leaves the outgoing instance serving, untouched. A failur
 at 4 is the interesting one: the new code is healthy but cannot lead, so the
 rollback is "tell the outgoing instance to take the lease again" — a few seconds
 of services and no downtime. The reason is reported either way.
+
+## Deploying while the gate is up
+
+`python scripts/deploy_local.py` — and the `git push` that runs the same code —
+does not stop anything when the gate owns the public port. It installs the new
+bundle into a **new versioned folder** beside the install folder
+(`<install-dir>.v1`, `.v2`, …), asks this gate to swap to it over the control
+API, and verifies the result through the same public port as always. The
+install folder itself is not written to at all: the point of the versioned
+folder is that the files a live process has open are never the ones being
+replaced. [docs/deploy.md](deploy.md#when-a-gate-owns-the-port) has the whole
+sequence; this is what it means for the things this document describes:
+
+- **A failed swap leaves everything as it was**, which is the rollback above:
+  the outgoing instance keeps the lease and keeps serving, and the deploy prints
+  the gate's own reason. The failed version's folder stays on disk as evidence.
+- **A swap that succeeds cannot be undone by `abp instance rollback`**, because a
+  swap stops what it replaced. The deploy's own recovery is the previous *code
+  root*, still on disk as a versioned folder: swapping back to it is the same
+  move in the other direction, and the deploy does exactly that and says the
+  deploy was undone.
+- **The last two versioned folders are kept** (`KEEP_VERSIONS` in
+  `scripts/deploy_local.py`), and an older one is deleted only once the registry
+  says no live instance has its code root. So after a deploy, the folders on
+  disk are the code running and the code it replaced — and a code root somebody
+  swapped to by hand (`abp instance swap <worktree>`) is never deleted out from
+  under a live instance.
+- **A rebuild of the desktop app's own binary does not reach an open window.**
+  The window was launched from the install folder and is still running from it;
+  ABP behind the gate is already on the new build, and the window needs a
+  restart to pick up a new `agentic-bot-platform.exe`. The deploy says so in a
+  note whenever the exe's bytes actually changed.
+- **The install folder is left as it was**, so launching the app directly with
+  the gate stopped serves whatever bundle was last installed *there*, and
+  `/healthz` reports it as a `stale` bundle naming both commits. Deploy again
+  with the gate stopped to refresh it.
+
+`abp instance swap <code-root>` remains the manual version of the same move, for
+a worktree or a clone: that is how you try your own branch on the real data with
+the real ABP up.
 
 ## The leader lease
 
@@ -204,32 +295,44 @@ that could only fail to bind. When the thing it attached to is the gate, it says
 so in the log panel, and closing the window does not stop it: closing the app
 must not take ABP offline.
 
+The window is the one part of the app a deploy does not replace. It is launched
+from the install folder and keeps running the binary it was launched with, so a
+deploy that changed `agentic-bot-platform.exe` needs the person to restart the
+app — the deploy says so in a note. Everything behind the gate is already on the
+new build.
+
 ## What is *not* covered
 
 - **Only one gate per data root.** It owns 8787/8788 in the name of one
   `ABP_HOME`; a second gate with a different `ABP_HOME` is a second front door on
   the same port, which the second one will lose.
 - **The gate does not manage the desktop app's bundled venv**, and does not
-  install, upgrade or migrate anything.
+  install, upgrade or migrate anything. `scripts/deploy_local.py` does the
+  installing, and does it as a swap *to* this gate rather than through it.
 - **A swap is not a database migration.** Both instances run the same schema
   code path; a release needing a real migration is a different piece of work.
 - **`rollback` only works while the previous instance is still alive.** A swap
   stops what it replaced (that is what makes it a clean swap), so an explicit
   rollback afterwards correctly refuses and says so rather than silently
-  re-running the newest code.
+  re-running the newest code. The versioned folders a deploy leaves behind are
+  what you point a new swap at instead.
 - **Sandboxes get a copy of the state, not a shared view of it.** A write made
   through a sandbox never reaches the real data, by design; bringing one back is
   a deliberate operation, not automatic.
-- **No Windows service / launchd unit.** "Always on" means a detached,
-  windowless process that survives closing the terminal; it does not survive a
-  reboot on its own.
+- **Autostart is a logon entry, not a service.** It covers logging in on that
+  machine, and it is deliberately a per-user Startup file rather than a Windows
+  service or a launchd unit: no administrator, nothing to uninstall, and no
+  second machine-wide thing whose lifetime disagrees with the gate's. Nothing
+  comes up before the first logon, and a session that never logs in never gets a
+  gate.
 
 ## Where to look when something is wrong
 
 ```bash
 abp gate status                     # limits, restart budget, per-instance errors
-abp instance list                   # role, port, pid, health
+abp instance list                   # role, port, pid, health, code root
 abp instance logs <name> --follow   # that instance's own stdout/stderr
+abp gate autostart status           # is there a logon entry, and is it still valid
 ```
 
 Files, under `ABP_INSTANCES_DIR` (default `<data root>/instances`):
@@ -241,6 +344,17 @@ instances/gate/gate.json        the gate's pid and the ports it owns (no secrets
 instances/<name>.log            that instance's stdout/stderr
 instances/<name>/               a sandbox's copied state
 ```
+
+and, beside the install folder rather than here (they are whole installs, not
+gate bookkeeping):
+
+```text
+<install-dir>.v1, .v2, ...      the bundles a deploy has installed; a code root the gate can swap to
+```
+
+`abp_cli instance list` is the thing that ties the two together: its `code_root`
+column is where each instance is running from, and it is the only input the
+deploy uses when it decides which versioned folder it may delete.
 
 The control API (8788) answers `GET /api/gate`, `GET /api/instance`,
 `GET /api/instance/<name>/logs`, `GET /api/instance/<name>/lease`, and an

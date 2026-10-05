@@ -12,6 +12,12 @@ the files it was about to install put back and the previous app running
 again. `scripts/local_pipeline.py`'s deploy step (i.e. `git push`) is this
 same code, so a push and a person cannot deploy differently.
 
+**If [abp_gate](always-on.md) owns port 8787, the same command is a hot
+swap instead of a restart**: the build is installed into a new versioned
+folder beside the install folder — never over the files the running instance
+has open — and the gate is asked to swap to it, so nothing goes offline while
+the code is replaced. [What that changes](#when-a-gate-owns-the-port) below.
+
 ## Why it exists
 
 `cargo tauri build` writes its output where `CARGO_TARGET_DIR` says. Tauri
@@ -66,6 +72,82 @@ That is what this script fixes.
    folder, and the app is started again on those. `--no-rollback` to leave a
    failed deploy in place for debugging.
 
+Steps 3 and 5 — stop, restart — only exist because a running app has its own
+folder's files open. With a gate in front, neither happens; see below.
+
+## When a gate owns the port
+
+[abp_gate](always-on.md) is one process that owns 8787 and reverse-proxies to
+whichever ABP instance is active. While it is up, a deploy has somewhere better
+to put the new code than on top of the running instance, and a way to start it
+that does not need the old one to go away first. The same `deploy_local.py`
+notices and takes that path — the detection is the one the desktop app already
+uses: the gate's own unauthenticated `/healthz` has a `gate` field in it, and
+the `gate.json` the gate wrote has to name the port being deployed.
+
+There is no flag for this and no opt-in: with a gate in front of the port, a
+deploy is a hot swap, because that is what deploying *is* there. To deploy the
+old stop-and-restart way, stop the gate first (`abp gate stop`) — which is also
+the only way to get the install folder itself refreshed.
+
+What changes:
+
+1. **Install beside, not over.** The build goes into a *versioned folder* next
+   to the install folder — `<install-dir>.v1`, `.v2`, … — so the files the
+   running instance has open are never the ones being written. Nothing is
+   stopped, no lock is waited for, and no `.previous` copy is kept: a new
+   folder has nothing to put back to, and the whole point of keeping the old
+   folder is that it is still there.
+2. **Ask the gate to swap.** `POST /api/instance/swap` on the gate's control
+   port (8788), authenticated with the install's own `DASHBOARD_TOKEN` read
+   exactly the way the CLI and the desktop app read it (never printed), with
+   the same state root the running instance uses — a swap keeps the same data.
+   The deploy waits for the whole handover: standby, health, lease release,
+   lease take, routing flip, drain, stop of the old instance.
+3. **Verify exactly as before**, through the same public port: `/healthz` ok,
+   `/openapi.json` identical to `docs/api/openapi.json`, every enabled bot
+   instance `live_running` again. Nothing downstream can tell a hot deploy from
+   a stopped one — which is the point.
+4. **Roll back by swapping, not by copying.** If the swap itself fails, the
+   gate has already rolled it back (the outgoing instance is still serving, and
+   the 409 says which step failed and why); the deploy reports the gate's own
+   words. If a deploy that *did* swap then fails verification — new code, right
+   API shape, wrong content — the previous code root is still on disk, so the
+   deploy swaps back to it and says the deploy was undone. That is the recovery
+   a stop-and-restart deploy gets from its `.previous` copy, and the reason the
+   versions are folders rather than copies.
+5. **Keep the last two.** `KEEP_VERSIONS = 2`: the version running and the one
+   it replaced. Older folders are deleted only after the gate's own registry
+   says no live instance has its code root; one that still does is kept past the
+   limit and the deploy says so.
+
+What is *not* zero-downtime, with a gate in front:
+
+- **The desktop window itself restarts** — no. It does not restart at all, and
+  that is the point: closing or leaving the app open changes nothing. But the
+  app binary is a different matter. The window was launched from the install
+  folder and is still running from it, so a change to
+  `agentic-bot-platform.exe` is installed into the new version's folder and
+  **reaches the open window only when the person restarts the app**. The deploy
+  says so in a note whenever the exe bytes actually changed, because "the
+  deploy passed" is not a claim about the window.
+- **The install folder itself is left alone** during a gate deploy. It is the
+  folder the app is launched from, and it is the one the versioned folders exist
+  to stop being written over. The consequence worth knowing: stop the gate and
+  launch the app directly, and it serves whatever bundle was last installed
+  *there* — which `/healthz` will report as a `stale` bundle, naming both
+  commits. Run the deploy again with the gate stopped to refresh it.
+- **A database migration is still not covered.** Both instances run the same
+  schema code path during a swap; a release that needs a real migration is a
+  different piece of work (see [always-on.md](always-on.md#what-is-not-covered)).
+- **`--no-start` and a registered OS service** are overridden when a gate owns
+  the port, and the deploy says so: the gate *is* running and serving, so the
+  swap is what deploys the build. The service is not what is answering 8787, and
+  starting a second copy of it could only fail to bind.
+
+The dry run prints the whole plan either way, including which of the two paths
+it would take and that it would stop nothing.
+
 ## What it will not touch
 
 - **`.env`, `data/`, `logs/`** are never installed into, in any configuration.
@@ -119,11 +201,11 @@ same stale files.
 | Flag | What it does |
 |---|---|
 | `--dry-run` | print every step, install nothing, start nothing, verify nothing |
-| `--install-dir DIR` | install into `DIR` instead of the checkout's `target/release` |
+| `--install-dir DIR` | install into `DIR` instead of the checkout's `target/release` (the versioned folders sit beside it) |
 | `--outside-checkout` | permit a `DIR` that is inside no checkout |
 | `--no-build` / `--force-build` | skip / always run `cargo tauri build` |
 | `--skip-verify` | do not verify (not recommended: an unverified deploy is the failure mode this script exists to remove) |
-| `--no-start` | install without starting the app — nothing can then be verified, and the run says so |
+| `--no-start` | install without starting the app — nothing can then be verified, and the run says so. With a gate in front of the port the swap is what deploys the build, and the run says that too |
 | `--skip-bots` | verify health and the API, but not the bot instances |
 | `--no-rollback` | leave a failed deploy in place |
 | `--port N` / `--timeout S` | dashboard port (8787) and how long to wait for the app to come up (300s) |
@@ -139,12 +221,24 @@ the previous copy itself is the problem it lives in `<install-dir>.previous`
 `.abp_deploy_previous.json` manifest — the same shape the app itself was in
 before the deploy, ready to copy back by hand.
 
+With a gate in front there is no `.previous`: the previous *version* is a whole
+folder beside the install folder, which is a better thing to look at (it is
+complete, and it is a code root the gate can be pointed back at):
+
+```bash
+abp_cli instance list                     # which instance is active, from which code root
+abp_cli instance logs <name> --follow     # that instance's own stdout/stderr
+python scripts/deploy_local.py --dry-run  # what the next deploy would do
+```
+
 A failed `cargo tauri build` leaves the install folder exactly as it was: the
 build runs before anything is stopped.
 
 ## Related
 
 - [install.md](install.md) — installing ABP on a machine for the first time
+- [always-on.md](always-on.md) — the gate: one process owning the public port,
+  hot swaps, and starting it at logon
 - [cicd/README.md](cicd/README.md) — the full local CI/CD pipeline and the
   release gate
 - [sandbox-nervous-system.md](sandbox-nervous-system.md) — why no spawn from

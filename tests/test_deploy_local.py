@@ -832,3 +832,119 @@ def fake_abp_process_started(exe: Path, server: FakeAbp):
     assert exe.name == EXE
     assert psutil.pid_exists(server.proc.pid)
     return server.proc
+
+
+# --------------------------------------------------------------------------- #
+# The always-on path: versioned folders, and a gate in front of the port
+#
+# The end-to-end half of this (a real gate, a real swap, a client that never
+# sees a failed request) is tests/test_deploy_gate_hot_swap.py. What is here is
+# the decisions around it, which are worth pinning down on their own: which
+# folder a deploy writes to, what may be deleted, and when this script is
+# allowed to believe there is a gate in front of the port.
+# --------------------------------------------------------------------------- #
+def test_versioned_folders_are_numbered_beside_the_install_folder_and_never_reused(tmp_path):
+    install = tmp_path / "release"
+    install.mkdir()
+    for name in ("release.v1", "release.v2", "release.v10", "release.previous", "release.vbs"):
+        (tmp_path / name).mkdir()
+    (tmp_path / "release.v1" / "bot").mkdir()
+
+    assert deploy_local.next_version_dir(install) == tmp_path / "release.v11", "must sort as a number, not as text"
+    assert [p.name for _n, p in deploy_local.versioned_dirs(install)] == ["release.v1", "release.v2", "release.v10"], \
+        "only numbered folders are versions, and .previous/.vbs are somebody else's"
+    assert deploy_local.next_version_dir(tmp_path / "nothing-here-yet") == tmp_path / "nothing-here-yet.v1"
+
+
+def test_only_the_last_n_versioned_folders_go_and_never_one_an_instance_runs_from(tmp_path):
+    """Three rules, and the third is the one that matters: a folder an instance
+    is still running from is kept past the limit and SAID out loud, because
+    quietly keeping more than asked for beats quietly deleting the code a
+    rollback would need."""
+    install = tmp_path / "release"
+    install.mkdir()
+    for n in range(1, 6):
+        (tmp_path / f"release.v{n}").mkdir()
+    lines: list[str] = []
+    in_use = {tmp_path / "release.v1", tmp_path / "release.v3"}
+
+    deleted, spared = deploy_local.prune_versions(install, keep=2, in_use=in_use, log=lines.append)
+
+    assert deleted == [tmp_path / "release.v2"], deleted
+    assert spared == [tmp_path / "release.v1", tmp_path / "release.v3"], spared
+    assert sorted(p.name for p in tmp_path.glob("release*")) == ["release", "release.v1", "release.v3",
+                                                                  "release.v4", "release.v5"]
+    assert any("keeping release.v1: an instance is still running from it" in line for line in lines), lines
+    assert any("deleted release.v2" in line for line in lines), lines
+
+    # Nothing left in use: the limit is then exactly the limit.
+    deleted, spared = deploy_local.prune_versions(install, keep=2, in_use={tmp_path / "release.v4"},
+                                                  log=lambda _s: None)
+    assert deleted == [tmp_path / "release.v1", tmp_path / "release.v3"], deleted
+    assert spared == []
+
+
+def test_a_versioned_folder_is_installed_into_with_no_second_copy_beside_it(checkout, build):
+    """A versioned folder is new and empty, so there is nothing to put back to -
+    and keeping a whole second copy of a multi-hundred-megabyte bundle beside
+    every version is how a disk fills up. Recovery is a swap, not a copy."""
+    install = _install_dir(checkout)
+    versioned = deploy_local.next_version_dir(install)
+    plan = deploy_local.plan_install(checkout, build / "release", versioned)
+    assert deploy_local.install_resources(plan, versioned, log=lambda _s: None, keep_previous=False) is None
+    assert (versioned / "bot" / "nested" / "deep.py").read_text(encoding="utf-8") == "DEEP = 'v1'\n"
+    assert not deploy_local.previous_dir(versioned).exists()
+    assert list(versioned.parent.iterdir()) == [versioned], "no .previous was left behind"
+
+
+def test_a_gate_is_only_trusted_when_it_says_so_and_owns_the_port(tmp_path, monkeypatch):
+    """Three ways "is there a gate in front of this port?" can go wrong, and all
+    three have to be answered no:
+
+      * nothing is there (the ordinary case - this is the whole point, a deploy
+        on a machine with no gate behaves exactly as it always did);
+      * something answers the control port's /healthz but is not a gate - the
+        same decision the desktop app makes, so a stray service can never be
+        taken for one;
+      * a real gate, for a different ABP_HOME, that therefore does not own this
+        port. Swapping through it would deploy somebody else's install.
+
+    The healthz answer is stubbed here because the decision is what is under
+    test; the real gate, really answering, really swapping, is
+    tests/test_deploy_gate_hot_swap.py."""
+    from abp_gate import control
+
+    state = tmp_path / "home"
+    state.mkdir()
+    env = {"ABP_HOME": str(state), "ABP_INSTANCES_DIR": str(tmp_path / "instances")}
+
+    assert deploy_local.gate_in_front(state, 8787, environ=env) is None, "no gate has ever run here"
+
+    monkeypatch.setattr(control, "gate_running", lambda: True)
+    monkeypatch.setattr(control, "read_gate_meta", lambda: {
+        "pid": 4242, "control_url": "http://127.0.0.1:9999", "public_ports": [8787]})
+
+    monkeypatch.setattr(deploy_local, "_get", lambda *a, **k: (200, {"status": "ok"}))
+    assert deploy_local.gate_in_front(state, 8787, environ=env) is None, "a service that does not name itself is not a gate"
+
+    monkeypatch.setattr(deploy_local, "_get", lambda *a, **k: (200, {"gate": "0.1.0", "healthy": True}))
+    found = deploy_local.gate_in_front(state, 8787, environ=env)
+    assert found and found["control_url"] == "http://127.0.0.1:9999" and found["pid"] == 4242
+    assert deploy_local.gate_in_front(state, 9999, environ=env) is None, "a gate that does not own this port is another machine's"
+
+    monkeypatch.setattr(control, "gate_running", lambda: False)
+    assert deploy_local.gate_in_front(state, 8787, environ=env) is None, "a stale gate.json must not conjure a gate"
+
+
+def test_a_gate_refusal_is_reported_in_the_gates_own_words():
+    """A 409 from a swap says which step failed and who is still serving, and
+    that sentence is the whole diagnosis. Keeping it verbatim is the point; a
+    bare "HTTP 409" would send somebody to the gate's log to re-read it."""
+    detail = "swap to X failed at step 1 (the instance exited at once); prod-1 is still serving"
+    reason = deploy_local._gate_reason(409, {"detail": detail})
+    assert "HTTP 409" in reason and "failed at step 1" in reason and "still serving" in reason
+    assert "no answer from the gate" in deploy_local._gate_reason(0, "Connection refused")
+    assert "HTTP 503" in deploy_local._gate_reason(503, "no DASHBOARD_TOKEN in this install's .env yet")
+    # Whatever shape the body is in, it must not raise: this is on the path of a
+    # command a person just ran.
+    assert deploy_local._gate_reason(500, "<html>gateway</html>").startswith("HTTP 500")
