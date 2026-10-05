@@ -124,7 +124,9 @@ def _venv_python() -> str:
     return str(py) if py.exists() else sys.executable
 
 
-PYTEST_TIMEOUT = 45 * 60
+# The whole suite's wall-clock cap. 45 minutes on a quiet machine; a machine that runs other test suites at the same
+# time (several agents working on worktrees) needs longer, without a code change: ABP_PIPELINE_PYTEST_TIMEOUT_MIN.
+PYTEST_TIMEOUT = int(os.environ.get("ABP_PIPELINE_PYTEST_TIMEOUT_MIN", "45") or 45) * 60
 BUILD_TIMEOUT = 30 * 60
 # A liveness ping, not a build — must never share BUILD_TIMEOUT's 30 minutes.
 # A Windows Docker Desktop backend hiccup that leaves `docker info` hanging
