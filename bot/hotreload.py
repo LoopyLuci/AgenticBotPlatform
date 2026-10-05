@@ -188,7 +188,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.fileserver.transfer", "bot.localai.discover", "bot.localai.gguf", "bot.localai.mesh", "bot.localai.modelfile",
     "bot.localai.models", "bot.localai.paths", "bot.localai.pull", "bot.localai.server", "bot.localai.train",
     "bot.localai.train_worker",
-    "bot.neurallab.edn", "bot.neurallab.interop", "bot.neurallab.lab", "bot.neurallab.nn_worker", "bot.neurallab.spec",
+    "bot.neurallab.edn", "bot.neurallab.noema", "bot.neurallab.interop", "bot.neurallab.lab", "bot.neurallab.nn_worker", "bot.neurallab.spec",
     "bot.tui.screens.hosting", "bot.tui.screens.localai", "bot.tui.screens.storage",
     # The memory fabric: routes register once; store.py and knowledge.py hold their table set-up and the embedder,
     # diff.py the git lock, service.py the daily close; the rest is used by those.
