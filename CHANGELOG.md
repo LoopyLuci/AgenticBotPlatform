@@ -85,7 +85,7 @@ app's own version (the Android app versions independently — see its own
 ### Security
 - **Slash-command permission tiers are now enforced on every platform.** Before this fix, with an admin list configured, a non-admin on Discord, Slack, Matrix, WhatsApp, SMS or iMessage could run any command. Telegram was the only platform that enforced tiers.
 - The dashboard pages run under a strict, nonce-based Content-Security-Policy with no inline script, so an escaping bug can no longer reach the dashboard token.
-- Vulnerable dependencies fixed: httpx2 (PYSEC-2026-3846/3848/3849), setuptools (CVE-2022-40897, CVE-2024-6345, CVE-2025-47273, CVE-2026-59890), and rustls in the desktop app (RUSTSEC-2026-0285).
+- Vulnerable dependencies fixed: httpx2 (PYSEC-2026-3846/3848/3849, and the floor now names CVE-2026-84380 too), setuptools (CVE-2022-40897, CVE-2024-6345, CVE-2025-47273, CVE-2026-59890), and rustls in the desktop app (RUSTSEC-2026-0285).
 - The Docker image no longer runs as root, its base image is pinned by digest, and it has a health check.
 - The firewall helper only passes a genuine port number to its elevated command.
 - The Android signing key is pinned into ABP's own backed-up keystore (ADR-0010), so a rebuild on another machine no longer breaks in-app updates.
