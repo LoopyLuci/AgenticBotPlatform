@@ -122,6 +122,7 @@ _FAKE_ABP = textwrap.dedent('''
 
     spec = json.load(open(os.environ["FAKE_SPEC"], encoding="utf-8"))
     started = time.monotonic()
+    calls = {"bots": 0}
 
     def live(row):
         return bool(row.get("live")) and (time.monotonic() - started) >= spec.get("bots_delay", 0.0)
@@ -148,6 +149,9 @@ _FAKE_ABP = textwrap.dedent('''
                 expected = spec.get("token")
                 if expected is not None and self.headers.get("X-Dashboard-Token") != expected:
                     return self._send(401, {"detail": "invalid dashboard token"})
+                calls["bots"] += 1
+                if calls["bots"] in spec.get("bots_error_calls", ()):    # a starting app: 503 with an error body
+                    return self._send(503, {"detail": "starting"})
                 return self._send(200, [dict(row, live_running=live(row)) for row in spec["bots"]])
             return self._send(404, {"detail": "not found"})
 
@@ -656,6 +660,15 @@ def test_verify_waits_for_a_bot_instance_that_is_still_coming_back(checkout, fak
                                  log=lambda _s: None)
     assert result.ok, result.failures
     assert time.monotonic() - started >= 3.0, "it did not actually wait for the instance"
+
+
+def test_verify_keeps_polling_through_an_error_body_while_the_bots_come_back(checkout, fake_abp):
+    """The real first deploy: /api/bots answered a list, then a 503 error body while the instances started,
+    and verify iterated that body (AttributeError) instead of polling again."""
+    server = fake_abp(_healthy_spec(bots_delay=4.0, bots_error_calls=[2, 3]))
+    result = deploy_local.verify(_install_dir(checkout), server.port, root=checkout, timeout_s=60,
+                                 log=lambda _s: None)
+    assert result.ok, result.failures
 
 
 def test_verify_fails_when_an_enabled_bot_never_comes_back(checkout, fake_abp):

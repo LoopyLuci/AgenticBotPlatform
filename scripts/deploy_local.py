@@ -769,9 +769,11 @@ def verify(install_dir: Path, port: int = DEFAULT_PORT, *, root: Path = ROOT, to
             result.fail(f"{len(missing)} enabled bot instance(s) did not come back within the deadline: {names}")
             return result
         time.sleep(2.0)
-        status, bots = _get(f"{base}/api/bots", token=token)
-        if status != 200 or not isinstance(bots, list):
-            continue
+        # A starting app answers 503 (or an error body) for a while: keep polling with the last good list rather
+        # than iterating whatever the error body was.
+        status, fresh = _get(f"{base}/api/bots", token=token)
+        if status == 200 and isinstance(fresh, list):
+            bots = fresh
 
 
 # --------------------------------------------------------------------------- #
