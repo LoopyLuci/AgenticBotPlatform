@@ -7,9 +7,11 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs
 
+import psutil
 import pytest
 
 pytest.importorskip("playwright")
@@ -102,6 +104,13 @@ def scenario(coro_fn):
 
 def call(name, inp, workspace=None):
     return tools.execute_tool(name, inp, workspace=workspace, instance_id=1)
+
+
+def _running(pid: int) -> bool:
+    try:
+        return psutil.pid_exists(pid) and psutil.Process(pid).is_running()
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def test_open_snapshot_click_type_and_read(cfg, server):
@@ -247,6 +256,38 @@ def test_close_ends_the_session_and_a_new_one_starts_cleanly(cfg, server):
         assert "Page: Home" in await call("browser", {"action": "open", "url": f"http://127.0.0.1:{server}/"})
 
     scenario(go)
+
+
+def test_a_session_keeps_its_browser_in_a_cell_so_one_kill_takes_the_driver_and_the_browser(cfg, server):
+    """Playwright starts its own driver process behind our back, so the session adopts it into a
+    cell the moment it starts: the browser it then launches is in that cell too, and one kill of
+    the cell is enough to take the whole set down."""
+    from bot.sandbox_ns.registry import registry
+
+    async def go():
+        await call("browser", {"action": "open", "url": f"http://127.0.0.1:{server}/"})
+        session = browser._sessions["test"]
+        assert session.cell is not None, "the session did not put its browser in a cell"
+        cell = session.cell
+        assert cell.owner == "agent_runtime.browser" and not cell.closed, cell
+        pid = browser._driver_pid(session.playwright)
+        assert pid is not None, "no driver pid: the cell would be a promise nobody can keep"
+        row = registry.record_for(pid)
+        assert row is not None and row.cell == cell.id, row
+        assert (row.owner, row.name) == ("agent_runtime.browser", "browser test"), row
+        started = [c.pid for c in psutil.Process(pid).children(recursive=True)]
+        assert started, "the driver had nothing under it: this test would prove nothing"
+        cell.kill("the test asked for it")
+        # The session's own handle is dead with it; drop it so the scenario's shutdown does not
+        # try to close a browser that is no longer there.
+        browser._sessions.pop("test", None)
+        return [pid, *started]
+
+    pids = scenario(go)
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline and any(_running(p) for p in pids):
+        time.sleep(0.2)
+    assert not any(_running(p) for p in pids), "the cell did not take the browser with it"
 
 
 # ---- no browser needed ---------------------------------------------------------------------------------------------

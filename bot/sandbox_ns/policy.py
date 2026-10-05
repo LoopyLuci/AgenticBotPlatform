@@ -38,6 +38,7 @@ class Policy:
     reported in the cell's status rather than silently dropped."""
     name: str = "custom"
     memory_mb: int = 0                       # per process; 0 = no cap
+    job_memory_mb: int = 0                   # every process of the cell together (Windows jobs only); 0 = no cap
     cpu_rate_percent: float = 0.0            # hard Job Object CPU cap (cycles per 10 000); 0 = none
     max_processes: int = 0                   # how many processes the whole cell may hold
     priority: str = "below_normal"           # "below_normal" for everything but the server itself

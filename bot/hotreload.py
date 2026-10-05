@@ -133,6 +133,9 @@ DENYLIST: frozenset[str] = frozenset({
     # to protect.
     "bot.sandbox_ns.guard", "bot.sandbox_ns.registry", "bot.sandbox_ns.cell", "bot.sandbox_ns.spawn",
     "bot.sandbox_ns.policy", "bot.sandbox_ns.reaper", "bot.sandbox_ns.reflexes",
+    # The routes into that registry: they register once, and a reloaded copy would serve its own
+    # (empty) idea of what is running.
+    "bot.dashboard.sandbox_ns_api",
     "bot.agent_runtime.settings_schema",  # imports permissions/sandbox (both denied above); a reload would split the classes it validates against
     "bot.agent_runtime.project_rules",  # imported by prompt.py; reloaded with it is not needed and is safe to skip
     "bot.agent_runtime.code_intel",  # running language servers are process state

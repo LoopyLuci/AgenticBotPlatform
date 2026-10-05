@@ -1153,3 +1153,129 @@ def test_doctor_reports_an_unreachable_dashboard(client, monkeypatch, capsys):
     assert code == 1
     payload = json.loads(capsys.readouterr().out)
     assert payload["ok"] is False and payload["checks"][0]["ok"] is False
+
+# ---- the sandbox nervous system: `abp sandbox ...` and /api/sandbox/* -------------------------------------------
+
+def _hold(tmp_path, preset: str):
+    """A live process in a cell of its own, started the way ABP starts everything: the surface under
+    test is the cell and the registry, so neither may be stubbed here. Returns (process, cell)."""
+    from bot.sandbox_ns.cell import new_cell
+    from bot.sandbox_ns.spawn import spawn
+
+    script = tmp_path / f"sleeper-{preset}.py"
+    script.write_text("import time\ntime.sleep(120)\n", encoding="utf-8")
+    cell = new_cell(preset, name=f"test {preset}", owner="tests.test_abp_cli")
+    proc = spawn([sys.executable, str(script)], cell=cell, name=f"test {preset}", owner="tests.test_abp_cli")
+    return proc, cell
+
+
+def _release(proc, cell) -> None:
+    """Whatever the test did, no process of ours is left behind."""
+    if not cell.closed:
+        cell.kill("the test is over")
+    try:
+        proc.wait(timeout=30)
+    except Exception:  # noqa: BLE001 - already gone
+        pass
+
+
+def test_the_sandbox_surfaces_describe_a_real_process_and_a_kill_stops_it(client, tmp_path, capsys):
+    from bot.sandbox_ns import guard
+
+    proc, cell = _hold(tmp_path, "tool")
+    try:
+        pid = proc.pid
+
+        status = asyncio.run(client.sandbox_status())
+        assert {"run_id", "state_file", "guard", "processes", "cells", "events"} <= set(status)
+        assert set(status["guard"]) == {"installed", "converted"}
+        assert status["guard"]["installed"] is guard.is_installed()
+
+        cells = asyncio.run(client.sandbox_cells())
+        mine = next((c for c in cells if c["id"] == cell.id), None)
+        assert mine is not None, "the cell the process was started in is not on the page"
+        assert mine["owner"] == "tests.test_abp_cli" and mine["persistent"] is False
+        assert mine["process_count"] >= 1 and any(p["pid"] == pid for p in mine["processes"])
+
+        procs = asyncio.run(client.sandbox_processes())
+        row = next((r for r in procs if r["pid"] == pid), None)
+        assert row is not None and row["alive"] is True, row
+        assert (row["cell"], row["owner"]) == (cell.id, "tests.test_abp_cli"), row
+        seen_finished = False
+        for r in procs:                                   # live ones first, so a page of old runs cannot bury the now
+            if r["alive"]:
+                assert not seen_finished, "a running process was listed after a finished one"
+            else:
+                seen_finished = True
+
+        # the same answers through the CLI, which is this API with a table on it
+        code, _ = run(["--json", "sandbox", "status"], client)
+        out = json.loads(capsys.readouterr().out)
+        assert code == 0 and out["run_id"] == status["run_id"]
+
+        code, _ = run(["--json", "sandbox", "cells"], client)
+        cells = json.loads(capsys.readouterr().out)["cells"]
+        assert code == 0 and any(c["id"] == cell.id and c["owner"] == "tests.test_abp_cli" for c in cells)
+
+        code, _ = run(["--json", "sandbox", "ps"], client)
+        procs = json.loads(capsys.readouterr().out)["processes"]
+        assert code == 0 and any(p["pid"] == pid and p["alive"] for p in procs)
+
+        code, _ = run(["sandbox", "ps"], client)          # the human table is the same rows
+        out = capsys.readouterr().out
+        assert code == 0 and "pid" in out.splitlines()[0] and str(pid) in out
+
+        code, _ = run(["--json", "sandbox", "kill", cell.id], client)
+        killed = json.loads(capsys.readouterr().out)
+        assert code == 0 and killed["killed"] is True, killed
+        assert killed == {"killed": True, "cell": cell.id, "name": "test tool", "owner": "tests.test_abp_cli"}
+
+        proc.wait(timeout=30)
+        assert proc.poll() is not None, "the kill left the process running"
+        code, _ = run(["--json", "sandbox", "ps"], client)
+        assert pid not in {p["pid"] for p in json.loads(capsys.readouterr().out)["processes"]}
+
+        code, _ = run(["--json", "sandbox", "events", "--limit", "100"], client)
+        events = json.loads(capsys.readouterr().out)["events"]
+        assert code == 0
+        assert any(e["kind"] == "kill" and e["cell"] == cell.id and "killed from the dashboard" in e["detail"]
+                   for e in events), "the kill is not in the event log the CLI reads"
+    finally:
+        _release(proc, cell)
+
+
+def test_an_emergency_stop_takes_the_work_and_leaves_the_services_running(client, tmp_path, capsys):
+    tool = _hold(tmp_path, "tool")
+    daemon = _hold(tmp_path, "daemon")
+    try:
+        assert daemon[1].policy.persistent is True and tool[1].policy.persistent is False
+
+        code, _ = run(["--json", "sandbox", "estop", "--reason", "the test said so"], client)
+        out = json.loads(capsys.readouterr().out)
+        assert code == 0 and out["reason"] == "the test said so", out
+        assert tool[1].id in out["killed"], "the emergency stop did not take the ordinary cell"
+        assert daemon[1].id not in out["killed"], "a daemon is somebody's running service: it stays up"
+        assert out["count"] == len(out["killed"])
+
+        tool[0].wait(timeout=30)
+        assert tool[0].poll() is not None, "the stopped cell left its process running"
+        assert daemon[0].poll() is None, "the emergency stop took a daemon with it"
+        cells = asyncio.run(client.sandbox_cells())
+        assert any(c["id"] == daemon[1].id for c in cells), "the daemon is gone from the page too"
+    finally:
+        _release(*tool)
+        _release(*daemon)
+
+
+def test_the_sandbox_api_refuses_any_call_without_the_dashboard_token(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("DASHBOARD_TOKEN", "test-token")
+    raw = TestClient(build_app())
+    for path in ("/api/sandbox/status", "/api/sandbox/cells", "/api/sandbox/processes", "/api/sandbox/events"):
+        assert raw.get(path).status_code == 401, f"{path} answered without the token"
+        assert raw.get(path, headers={"X-Dashboard-Token": "not-the-token"}).status_code == 401, path
+    assert raw.post("/api/sandbox/estop", json={"reason": "no"}).status_code == 401
+    assert raw.post("/api/sandbox/cells/any/kill").status_code == 401
+    ok = raw.get("/api/sandbox/status", headers={"X-Dashboard-Token": "test-token"})
+    assert ok.status_code == 200 and {"run_id", "cells", "processes", "events"} <= set(ok.json())

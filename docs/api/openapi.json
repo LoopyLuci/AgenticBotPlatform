@@ -51045,6 +51045,345 @@
     "summary": "Router Simulate"
    }
   },
+  "/api/sandbox/cells": {
+   "get": {
+    "description": "The cells this process holds, each with the processes under it and its measured CPU/memory.",
+    "operationId": "sandbox_cells_api_sandbox_cells_get",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Sandbox Cells"
+   }
+  },
+  "/api/sandbox/cells/{cell_id}/kill": {
+   "post": {
+    "description": "Stop one cell: every process in it, and every process those started.",
+    "operationId": "sandbox_kill_cell_api_sandbox_cells__cell_id__kill_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "cell_id",
+      "required": true,
+      "schema": {
+       "title": "Cell Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Sandbox Kill Cell"
+   }
+  },
+  "/api/sandbox/estop": {
+   "post": {
+    "description": "The emergency stop: every non-persistent cell dies. Daemons are somebody's running service\nand are left alone - still running, and still on this page.",
+    "operationId": "sandbox_estop_api_sandbox_estop_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "anyOf": [
+         {
+          "additionalProperties": true,
+          "type": "object"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Body"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Sandbox Estop"
+   }
+  },
+  "/api/sandbox/events": {
+   "get": {
+    "description": "The event ring buffer (spawn, exit, limit_hit, kill, reap, guard_converted), oldest first.\n\n`since` is what a poller passes back: the newest `ts` it has seen, so the answer is only what\nit has not seen. `now` comes back with it for the next call.",
+    "operationId": "sandbox_events_api_sandbox_events_get",
+    "parameters": [
+     {
+      "description": "only events newer than this epoch seconds",
+      "in": "query",
+      "name": "since",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "number"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "only events newer than this epoch seconds",
+       "title": "Since"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 200,
+       "maximum": 500,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Sandbox Events"
+   }
+  },
+  "/api/sandbox/processes": {
+   "get": {
+    "description": "Every process ABP started and wrote down: the live ones first, then the newest of those left.",
+    "operationId": "sandbox_processes_api_sandbox_processes_get",
+    "parameters": [
+     {
+      "description": "only the processes that are still running",
+      "in": "query",
+      "name": "alive_only",
+      "required": false,
+      "schema": {
+       "default": true,
+       "description": "only the processes that are still running",
+       "title": "Alive Only",
+       "type": "boolean"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Sandbox Processes"
+   }
+  },
+  "/api/sandbox/status": {
+   "get": {
+    "description": "Everything the nervous system knows: guard, records, cells (with limits and samples), events.",
+    "operationId": "sandbox_status_api_sandbox_status_get",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Sandbox Status"
+   }
+  },
   "/api/security/allowed-users": {
    "get": {
     "operationId": "api_allowed_users_api_security_allowed_users_get",

@@ -30,13 +30,14 @@ from pathlib import Path
 from typing import Any, Optional
 
 from bot import db, docker_mgr as dk
+from bot.sandbox_ns.spawn import run as ns_run
 
 logger = logging.getLogger("bot.git_stacks")
+OWNER = "git_stacks"
 _REF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
 _PATH = re.compile(r"^[A-Za-z0-9_.][A-Za-z0-9_./-]{0,199}$")
 _ENV_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _REPO = re.compile(r"^(https://[^\s'\"]+|ssh://[^\s'\"]+|git@[A-Za-z0-9.-]+:[^\s'\"]+|/[^\s'\"]+|[A-Za-z]:[\\/][^'\"]+)$")
-NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 _deploy_lock = threading.Lock()
 
 
@@ -191,8 +192,12 @@ def listing() -> list[dict]:
 # ---- git and deploys -----------------------------------------------------------------------------------------
 
 def _git(args: list[str], cwd: Optional[Path] = None, timeout: int = 300) -> str:
-    p = subprocess.run(["git", *args], cwd=str(cwd) if cwd else None, capture_output=True, text=True, timeout=timeout,
-                       creationflags=NO_WINDOW, env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+    """One git command, buffered. It goes through the Sandbox Nervous System's run() rather than a
+    plain subprocess: a clone (900s) and a fetch (600s) start helpers of their own, and the 'tool'
+    preset's timeout now takes that tree with it instead of only the git process. The environment
+    is passed in explicitly, exactly as before, so git keeps this machine's own credentials."""
+    p = ns_run(["git", *args], timeout=timeout, cwd=str(cwd) if cwd else None,
+               env={**os.environ, "GIT_TERMINAL_PROMPT": "0"}, name=f"git {args[0]}", owner=OWNER)
     if p.returncode != 0:
         raise StackError(f"git {args[0]}: {(p.stderr or p.stdout).strip()[-400:]}")
     return p.stdout

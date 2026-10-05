@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 
+import psutil
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
@@ -47,6 +48,38 @@ def _wait_run(rid: str, timeout: float = 60) -> dict:
             return j
         time.sleep(0.1)
     raise AssertionError(f"{rid} still {executor.get(rid)['state']}")
+
+
+def _alive(pid: int) -> bool:
+    try:
+        return psutil.pid_exists(pid) and psutil.Process(pid).is_running()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _wait_gone(pids, timeout: float = 30) -> list:
+    """Which of `pids` are still running after waiting for them to stop."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        left = [p for p in pids if _alive(p)]
+        if not left:
+            return []
+        time.sleep(0.2)
+    return [p for p in pids if _alive(p)]
+
+
+def _wait_record(name: str, timeout: float = 60):
+    """The registry row a spawn wrote for the process it just started - matched by name, because
+    the pid is exactly what has to be looked up rather than guessed."""
+    from bot.sandbox_ns.registry import registry
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        row = next((r for r in registry.records() if r.name == name), None)
+        if row is not None:
+            return row
+        time.sleep(0.1)
+    raise AssertionError(f"nothing was ever recorded as {name!r}")
 
 
 # ---- offers -------------------------------------------------------------------------------------------------------------
@@ -141,6 +174,42 @@ def test_timeouts_and_cancels_stop_the_whole_job(cluster):
     time.sleep(0.5)
     executor.cancel("slow2")
     assert _wait_run("slow2", 30)["state"] == "cancelled"
+
+
+def test_a_job_runs_in_a_cell_of_its_own_whose_policy_is_its_reservation_and_cancelling_takes_the_tree(cluster, tmp_path, monkeypatch):
+    """The cell *is* this job: its policy is the reservation the scheduler made (a hard cpu rate and
+    memory cap, not a wish), and cancelling stops the cell - the job and everything it started."""
+    from bot.sandbox_ns.registry import registry
+
+    monkeypatch.setattr(registry, "_path", tmp_path / "sandbox_ns" / "live.json")
+    grand = tmp_path / "grand.pid"
+    code = ("import subprocess, sys, time\n"
+            "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'],"
+            " stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+            f"open({str(grand)!r}, 'w').write(str(p.pid))\n"
+            "time.sleep(120)\n")
+    executor.accept({"id": "celltree", "kind": "python", "spec": {"code": code}, "req": {"cpu": 1}})
+
+    row = _wait_record("job celltree")
+    cell = next((c for c in registry.cells() if c.id == row.cell), None)
+    assert cell is not None, "the job's process was started with no cell around it"
+    assert (row.owner, row.policy) == ("cluster.executor", "cluster"), row
+    assert cell.owner == "cluster.executor" and cell.policy.name == "cluster", cell.policy
+    reserved = executor.get("celltree")["reserved"]                 # what the scheduler really took
+    assert cell.policy.memory_mb == int(reserved["ram_gb"] * 1024), cell.policy
+    assert cell.policy.job_memory_mb == int(reserved["ram_gb"] * 1024), cell.policy
+    assert 0 < cell.policy.cpu_rate_percent <= 100, cell.policy
+
+    deadline = time.time() + 60
+    while time.time() < deadline and not grand.exists():
+        time.sleep(0.1)
+    child = int(grand.read_text().strip())
+    assert _alive(child), "the job's child never got going"
+
+    executor.cancel("celltree")
+    assert _wait_run("celltree", 30)["state"] == "cancelled"
+    assert _wait_gone([row.pid, child]) == [], "the cell did not take the job's own child with it"
+    assert not any(c.id == cell.id for c in registry.cells()), "the killed cell is still on the list"
 
 
 def test_held_jobs_wait_for_start(cluster):

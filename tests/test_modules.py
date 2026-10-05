@@ -114,6 +114,37 @@ def test_the_hub_starts_answers_and_stops(fake):
     assert client.find(registry.get("fake-mod")) is None
 
 
+def test_the_hub_runs_in_a_persistent_daemon_cell_and_the_cell_stops_it(fake):
+    """start_hub puts the hub in one `daemon` cell (the reaper and close_cells() leave a service
+    alone), and this process's cell is still the handle that takes it - and what it started - down."""
+    import time
+
+    import psutil
+
+    from bot.sandbox_ns.registry import registry as ns
+
+    started = harness.start_hub("fake-mod")
+    pid = int(started["pid"])
+    cell = harness._hub_cells["fake-mod"]
+    assert cell.owner == "modules.harness" and cell.policy.persistent, cell.policy
+    row = ns.record_for(pid)
+    assert row is not None and row.cell == cell.id, row
+    assert (row.owner, row.policy, row.persistent) == ("modules.harness", "daemon", True), row
+
+    cell.kill("the test asked for it")
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        try:
+            if not psutil.Process(pid).is_running():
+                break
+        except psutil.Error:
+            break
+        time.sleep(0.2)
+    else:
+        pytest.fail("the hub outlived the cell it was started in")
+    assert harness.stop_hub("fake-mod")["running"] is False
+
+
 def test_the_fake_module_passes_conformance(fake):
     result = conformance.check("fake-mod")
     assert result["ok"], result["checks"]

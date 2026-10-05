@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import time
 from pathlib import Path
 
+import psutil
 import pytest
 
 from bot.agent_runtime import code_intel, tools
@@ -186,6 +188,39 @@ def test_the_lsp_tool_is_only_offered_when_enabled(cfg):
     assert "lsp" not in {s["name"] for s in tools.all_tool_schemas()}
     with_lsp(cfg)
     assert "lsp" in {s["name"] for s in tools.all_tool_schemas()}
+
+
+# ---- the processes a server is made of ------------------------------------------------------------
+def _running(pid: int) -> bool:
+    try:
+        return psutil.pid_exists(pid) and psutil.Process(pid).is_running()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def test_a_language_server_lives_in_a_cell_that_stops_it_and_its_children(tmp_path, cfg):
+    """One cell per server, kept for as long as the server runs: the record says who started it,
+    and killing that cell is what takes the server - and anything under it - down with it."""
+    from bot.sandbox_ns.registry import registry
+
+    with_lsp(cfg)
+    (tmp_path / "a.py").write_text("x = 1\n")
+    client = run(code_intel.client_for(tmp_path / "a.py", tmp_path))
+    assert client is not None and client.proc is not None and client.cell is not None
+    cell, pid = client.cell, client.proc.pid
+
+    row = registry.record_for(pid)
+    assert row is not None and row.cell == cell.id, row
+    assert (row.owner, row.policy) == ("agent_runtime.code_intel", "tool"), row
+    assert cell.owner == "agent_runtime.code_intel", cell
+    children = [c.pid for c in psutil.Process(pid).children(recursive=True)]
+
+    cell.kill("the test asked for it")
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline and any(_running(p) for p in [pid, *children]):
+        time.sleep(0.2)
+    assert not any(_running(p) for p in [pid, *children]), "the cell did not take the server with it"
+    run(code_intel.shutdown_all())
 
 
 # ---- formatters --------------------------------------------------------------------------------------------------

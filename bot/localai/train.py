@@ -23,6 +23,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import zipfile
 from pathlib import Path
@@ -32,7 +33,10 @@ import httpx
 
 from bot.localai import engine, models
 from bot.localai.paths import LocalAIError, cpu_threads, guard, home, sub
+from bot.sandbox_ns.cell import Cell, cell_for, new_cell
+from bot.sandbox_ns.spawn import spawn as ns_spawn
 
+OWNER = "localai.train"
 WORKER = Path(__file__).with_name("train_worker.py")
 AMD_INDEX = "https://repo.amd.com/rocm/whl/{arch}/"       # AMD's official PyTorch wheels (ROCm 7.x, Windows and Linux)
 LIBS = ["transformers", "peft", "datasets", "accelerate", "safetensors", "sentencepiece", "protobuf", "numpy"]
@@ -40,6 +44,14 @@ QUANTS = ["q4_k_m", "q5_k_m", "q6_k", "q8_0", "q4_0", "q3_k_m", "q2_k", "iq4_xs"
 _NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 _BELOW_NORMAL = 0x00004000 if sys.platform == "win32" else 0
 Log = Callable[[str], None]
+
+#: The 'worker' cell per run id, for the training workers this process started. A run is hours of
+#: GPU work in one process, so it gets the heavy preset (memory, CPU rate, the processors ABP must
+#: keep off) and a cell whose kill really is its whole tree. The worker itself still stops the way
+#: it always has - by noticing <run>/stop and saving its checkpoints - so stop() only writes that
+#: sentinel; this is here so the run is recorded, bounded, and visible on the diagnostics page.
+_worker_cells: dict[str, Cell] = {}
+_worker_lock = threading.Lock()
 
 
 # ---- the training environment ------------------------------------------------------------------------------------- #
@@ -92,20 +104,28 @@ def setup_env(log: Log = lambda m: None, vendor: str = "") -> dict:
     vendor = vendor or next((g["vendor"] for g in engine.gpus() if g["vendor"] in ("amd", "nvidia")), "")
     if not vendor:
         raise LocalAIError("no AMD or NVIDIA GPU found: fine-tuning needs one (this machine's CPU must not train)")
+    # One cell for the whole setup: these five commands are one unit of work, and a half-installed
+    # venv is what a stop halfway through leaves behind.
+    with cell_for("worker", name="train env setup", owner=OWNER) as cell:
+        _setup_env(cell, log, vendor)
+    return env_status()
+
+
+def _setup_env(cell: Cell, log: Log, vendor: str) -> None:
     if not python().exists():
         base = _base_python()
         log(f"creating {venv()} with {base}")
-        _run([base, "-m", "venv", str(venv())], log)
-    _run([str(python()), "-m", "pip", "install", "--upgrade", "pip"], log)
+        _run([base, "-m", "venv", str(venv())], log, cell=cell)
+    _run([str(python()), "-m", "pip", "install", "--upgrade", "pip"], log, cell=cell)
     if vendor == "amd":
         idx = AMD_INDEX.format(arch=_gfx_family())
         log(f"installing PyTorch (ROCm) from AMD's index {idx}")
-        _run([str(python()), "-m", "pip", "install", "--index-url", idx, "torch"], log)
+        _run([str(python()), "-m", "pip", "install", "--index-url", idx, "torch"], log, cell=cell)
     else:
         log("installing PyTorch (CUDA 12.8) from download.pytorch.org")
-        _run([str(python()), "-m", "pip", "install", "--index-url", "https://download.pytorch.org/whl/cu128", "torch"], log)
-    _run([str(python()), "-m", "pip", "install", *LIBS], log)
-    return env_status()
+        _run([str(python()), "-m", "pip", "install", "--index-url", "https://download.pytorch.org/whl/cu128", "torch"],
+             log, cell=cell)
+    _run([str(python()), "-m", "pip", "install", *LIBS], log, cell=cell)
 
 
 def _base_python() -> str:
@@ -126,9 +146,17 @@ def _base_python() -> str:
     return cands[0]
 
 
-def _run(cmd: list[str], log: Log, cwd: Optional[Path] = None, env: Optional[dict] = None) -> None:
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=cwd, env=env,
-                         creationflags=_NO_WINDOW | _BELOW_NORMAL, encoding="utf-8", errors="replace")
+def _run(cmd: list[str], log: Log, cwd: Optional[Path] = None, env: Optional[dict] = None,
+         cell: Optional[Cell] = None) -> None:
+    """One conversion or install command, its output streamed into `log`.
+
+    `cell` is the one the caller's unit of work made (an export's convert + quantize, a venv
+    setup): these commands start children of their own and none of them had a timeout at all, so
+    without a cell a hung pip left a process nobody was watching. With one, the 'worker' preset
+    applies and the whole sequence is contained."""
+    p = ns_spawn(cmd, cell=cell, preset="worker", cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                 text=True, creationflags=_NO_WINDOW | _BELOW_NORMAL, encoding="utf-8", errors="replace",
+                 name=Path(cmd[0]).name, owner=OWNER)
     guard(p.pid)
     tail = []
     for line in p.stdout:
@@ -248,11 +276,34 @@ def start(base: str, data: list[str], name: str = "", export: str = "q4_k_m", **
     (run / "job.json").write_text(json.dumps(job, indent=1), encoding="utf-8")
     (run / "status.json").write_text(json.dumps({"state": "starting", "time": time.time()}), encoding="utf-8")
     logf = open(run / "worker.log", "ab")
-    proc = subprocess.Popen([str(python()), str(WORKER), str(run)], stdout=logf, stderr=subprocess.STDOUT, cwd=str(run),
-                            env=_cpu_env(), creationflags=_NO_WINDOW | _BELOW_NORMAL)
+    # One 'worker' cell for the whole run: hours of training in one process, and the cell is what
+    # bounds it (memory, CPU rate, the processors ABP keeps off) and contains whatever it starts.
+    cell = new_cell("worker", name=f"train {rid}", owner=OWNER)
+    try:
+        proc = ns_spawn([str(python()), str(WORKER), str(run)], cell=cell, stdout=logf, stderr=subprocess.STDOUT,
+                        cwd=str(run), env=_cpu_env(), creationflags=_NO_WINDOW | _BELOW_NORMAL,
+                        name=f"train_worker {rid}", owner=OWNER)
+    except OSError as exc:
+        cell.close()
+        raise LocalAIError(f"could not start the training worker: {exc}") from None
+    finally:
+        logf.close()             # the worker has its own copy of the handle; ours is done with it
     guard(proc.pid)
+    with _worker_lock:
+        _worker_cells[rid] = cell
     (run / "pid").write_text(str(proc.pid))
     return {"id": rid, "dir": str(run), "pid": proc.pid, **{k: job[k] for k in ("base", "method", "name", "export")}}
+
+
+def worker_cell(rid: str) -> Optional[Cell]:
+    """The cell this process started run `rid`'s worker in, or None once that worker is gone (or
+    for a run an earlier ABP started, whose cell died with it)."""
+    with _worker_lock:
+        cell = _worker_cells.get(rid)
+        if cell is not None and cell.closed:
+            _worker_cells.pop(rid, None)
+            cell = None
+        return cell
 
 
 def _slug(s: str) -> str:
@@ -362,16 +413,18 @@ def convert_to_gguf(hf_dir: str, name: str, quant: str = "q4_k_m", log: Log = la
     out_dir.mkdir(parents=True, exist_ok=True)
     full = "bf16" if quant == "bf16" else "f16"
     f16 = out_dir / f"model-{full}.gguf"
-    log(f"converting {hf} to GGUF ({full})")
-    _run([str(python()), str(src / "convert_hf_to_gguf.py"), str(hf), "--outfile", str(f16), "--outtype", full],
-         log, env=_conv_env(src))
-    final = f16
-    if quant not in ("f16", "bf16"):
-        final = out_dir / f"model-{quant}.gguf"
-        n = cpu_threads()
-        log(f"quantizing to {quant.upper()} ({n} threads)")
-        _run([engine.tool("llama-quantize"), str(f16), str(final), quant.upper(), str(n)], log)
-        f16.unlink()
+    # Convert and quantize are one unit of work (hours on a big checkpoint), so they share a cell.
+    with cell_for("worker", name=f"convert {name}", owner=OWNER) as cell:
+        log(f"converting {hf} to GGUF ({full})")
+        _run([str(python()), str(src / "convert_hf_to_gguf.py"), str(hf), "--outfile", str(f16), "--outtype", full],
+             log, env=_conv_env(src), cell=cell)
+        final = f16
+        if quant not in ("f16", "bf16"):
+            final = out_dir / f"model-{quant}.gguf"
+            n = cpu_threads()
+            log(f"quantizing to {quant.upper()} ({n} threads)")
+            _run([engine.tool("llama-quantize"), str(f16), str(final), quant.upper(), str(n)], log, cell=cell)
+            f16.unlink()
     rec = models.import_file(name, str(final))
     log(f"registered {rec['name']} ({final.stat().st_size >> 20} MiB)")
     return {"name": rec["name"], "gguf": str(final), "size": final.stat().st_size, "quant": quant}
@@ -395,8 +448,9 @@ def export(rid: str, quant: str = "", name: str = "", log: Log = lambda m: None,
         lora.parent.mkdir(exist_ok=True)
         log("converting the LoRA adapter to GGUF")
         try:
-            _run([str(python()), str(src / "convert_lora_to_gguf.py"), str(run / "adapter"), "--base", job["base"],
-                  "--outfile", str(lora), "--outtype", "f16"], log, env=_conv_env(src))
+            with cell_for("worker", name=f"convert adapter {rid}", owner=OWNER) as cell:
+                _run([str(python()), str(src / "convert_lora_to_gguf.py"), str(run / "adapter"), "--base", job["base"],
+                      "--outfile", str(lora), "--outtype", "f16"], log, env=_conv_env(src), cell=cell)
             out["adapter"] = str(lora)
         except LocalAIError as e:
             out["adapter_error"] = str(e)[:400]

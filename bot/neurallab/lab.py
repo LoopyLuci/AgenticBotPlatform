@@ -5,13 +5,15 @@ stop it, compare runs, search designs.
     <lab home>/designs/<name>.json            saved specs (from the GUI's designer, BrainBuilder, KotMoE, templates)
 
 The lab home is <localai home>/lab (E:\\ABP-LocalAI\\lab on this machine). Training shares the GPU with ABP's other
-GPU work: one run at a time, queued otherwise.
+GPU work: one run at a time, queued otherwise. Each run's worker process lives in its own sandbox_ns cell
+(preset "worker"), so a run is bounded, recorded and contained like ABP's other heavy background work.
 """
 from __future__ import annotations
 
 import json
 import random
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Callable, Optional
@@ -19,9 +21,17 @@ from typing import Callable, Optional
 from bot.localai import train as lt
 from bot.localai.paths import LocalAIError, cpu_threads, guard, home
 from bot.neurallab import spec as specs
+from bot.sandbox_ns.cell import Cell, new_cell
+from bot.sandbox_ns.spawn import spawn as ns_spawn
 
+OWNER = "neurallab.lab"
 WORKER = Path(__file__).with_name("nn_worker.py")
 ACTIVE = ("starting", "loading", "training", "stopping")
+
+#: The 'worker' cell per run id, for the lab workers this process started - see train.py's twin of
+#: this, which is where the fine-tuning runs keep theirs.
+_worker_cells: dict[str, Cell] = {}
+_worker_lock = threading.Lock()
 
 
 def root() -> Path:
@@ -90,11 +100,35 @@ def start(spec: dict, data: dict, train: Optional[dict] = None, label: str = "",
     (run / "job.json").write_text(json.dumps(job, indent=1), encoding="utf-8")
     (run / "status.json").write_text(json.dumps({"state": "starting", "time": time.time()}), encoding="utf-8")
     logf = open(run / "worker.log", "ab")
-    proc = subprocess.Popen([str(lt.python()), str(WORKER), str(run)], stdout=logf, stderr=subprocess.STDOUT, cwd=str(run),
-                            env=lt._cpu_env(), creationflags=lt._NO_WINDOW | lt._BELOW_NORMAL)
+    # One 'worker' cell per run (the same heavy preset ABP's own fine-tuning uses): hours of GPU
+    # training in one process, bounded by the cell and contained with anything it starts. stop()
+    # below is still only the sentinel file - the worker saves its checkpoints on the way out.
+    cell = new_cell("worker", name=f"lab {rid}", owner=OWNER)
+    try:
+        proc = ns_spawn([str(lt.python()), str(WORKER), str(run)], cell=cell, stdout=logf, stderr=subprocess.STDOUT,
+                        cwd=str(run), env=lt._cpu_env(), creationflags=lt._NO_WINDOW | lt._BELOW_NORMAL,
+                        name=f"nn_worker {rid}", owner=OWNER)
+    except OSError as exc:
+        cell.close()
+        raise LocalAIError(f"could not start the lab worker: {exc}") from None
+    finally:
+        logf.close()             # the worker has its own copy of the handle; ours is done with it
     guard(proc.pid)
+    with _worker_lock:
+        _worker_cells[rid] = cell
     (run / "pid").write_text(str(proc.pid))
     return {"id": rid, "dir": str(run), "pid": proc.pid, "name": s["name"], "params": s["stats"]["params"]}
+
+
+def worker_cell(rid: str) -> Optional[Cell]:
+    """The cell this process started run `rid`'s worker in, or None once that worker is gone (or
+    for a run an earlier ABP started, whose cell died with it)."""
+    with _worker_lock:
+        cell = _worker_cells.get(rid)
+        if cell is not None and cell.closed:
+            _worker_cells.pop(rid, None)
+            cell = None
+        return cell
 
 
 def status(rid: str) -> dict:

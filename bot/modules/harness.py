@@ -4,6 +4,12 @@ Every module stays its own program in its own checkout. ABP clones it (or uses a
 ABP's folder), pulls updates with fast-forward only, and never overwrites uncommitted work. Builds, updates and
 pipeline runs are background jobs with a streamed log (one at a time per module). Modules with an adapter (the three
 ABP drove before this framework) go through their own code.
+
+Every process here is in a sandbox_ns cell (bot/sandbox_ns): a build or a pipeline run gets one cell for the whole
+job, so the timeout and a stop take the compiler and everything it started with them, and a module's hub - which is
+meant to outlive ABP - gets a persistent "daemon" cell that records it and bounds it without stopping it. The short
+git calls (`_run`/`_git`: rev-parse, log, status, a version probe) stay plain subprocess: they start no children of
+their own, they are buffered rather than streamed, and the windowless guard already covers them.
 """
 from __future__ import annotations
 
@@ -21,6 +27,10 @@ from bot.modules import adapters, client, registry
 from bot.modules.client import ModuleError
 from bot.modules.manifest import Manifest, this_os
 from bot.sandbox_ns import guard
+from bot.sandbox_ns.cell import Cell, cell_for, new_cell
+from bot.sandbox_ns.spawn import spawn as ns_spawn
+
+OWNER = "modules.harness"
 
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 # A hidden console of its own (not DETACHED_PROCESS: a process with no console makes every console program it
@@ -193,19 +203,30 @@ def _start_job(m: Manifest, kind: str, fn: Callable[[Callable[[str], None]], Any
 
 
 def _stream(m: Manifest, cmd: list[str], cwd: Path, env: dict, log: Callable[[str], None], timeout: float,
-            keep: Callable[[str], bool] = lambda line: True) -> None:
-    """Run a command, logging its output as it comes; kill its whole process tree on timeout."""
+            keep: Callable[[str], bool] = lambda line: True, cell: Optional[Cell] = None) -> None:
+    """Run a command, logging its output as it comes; on timeout, kill its whole process tree.
+
+    `cell` is the build cell the caller's job made (one per build, one per pipeline run), so a
+    timeout stops the compiler and anything it started - the cell, not the one pid we happen to
+    know. Without one the command is spawned with the 'build' preset on its own, which still
+    records it and bounds it."""
     exe = _which(cmd[0]) or cmd[0]
     argv = [exe, *cmd[1:]]
     if os.name == "nt" and exe.lower().endswith((".cmd", ".bat")):
         argv = ["cmd", "/c", *argv]
     log("$ " + " ".join(cmd))
+    label = f"{m.id}: {' '.join(cmd)[:60]}"
     try:
-        proc = subprocess.Popen(argv, cwd=str(cwd), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                                encoding="utf-8", errors="replace", creationflags=NO_WINDOW, stdin=subprocess.DEVNULL)
+        proc = ns_spawn(argv, cell=cell, preset="build", cwd=str(cwd), env=env, stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
+                        stdin=subprocess.DEVNULL, name=label, owner=OWNER)
     except FileNotFoundError:
         raise ModuleError(f"{cmd[0]} is not installed", code="not_installed") from None
-    timer = threading.Timer(timeout, lambda: _kill_tree(proc.pid))
+    # The timer is kept rather than handed to spawn()'s own watchdog because the log is read here,
+    # line by line, and it must stop the tree whether or not the pipe ever closes.
+    stop = (lambda: cell.kill(f"`{' '.join(cmd)}` passed its {timeout:g}s timeout")) if cell is not None \
+        else (lambda: _kill_tree(proc.pid))
+    timer = threading.Timer(timeout, stop)
     timer.start()
     tail: list[str] = []
     try:
@@ -253,8 +274,12 @@ def _build(m: Manifest, log: Callable[[str], None]) -> None:
     env = _build_env(m)
     ws = _workspace(m)
     noisy = re.compile(r"^\s*(Compiling|Checking|Downloaded|Downloading|Fresh|Blocking|Updating crates)\b")
-    for step in m.build_steps:
-        _stream(m, registry.expand_cmd(m, step), ws, env, log, timeout=7200, keep=lambda line: not noisy.match(line))
+    # One cell for the whole build: the steps belong together, so one kill (the timeout above, or
+    # the diagnostics page) stops whichever one is running and everything under it.
+    with cell_for("build", name=f"{m.id} build", owner=OWNER) as cell:
+        for step in m.build_steps:
+            _stream(m, registry.expand_cmd(m, step), ws, env, log, timeout=7200,
+                    keep=lambda line: not noisy.match(line), cell=cell)
     missing = [o for o, ok in built(m).items() if not ok]
     if missing:
         raise ModuleError("the build finished but these are missing: " + ", ".join(registry.expand(m, o) for o in missing))
@@ -444,6 +469,9 @@ def service_urls(m: Manifest, ttl: float = 5.0) -> dict:
 
 # Called with the module id after a hub this harness started answers (bot/octopus/connectors.py hands it a session).
 HUB_STARTED: list = []
+#: The daemon cell per module id, for the hubs this process started. A hub is meant to outlive ABP,
+#: so its cell is persistent: recorded, windowless and bounded, and only stop_hub() stops it.
+_hub_cells: dict[str, Cell] = {}
 
 
 def start_hub(mid: str) -> dict:
@@ -476,9 +504,18 @@ def start_hub(mid: str) -> dict:
     data = registry.data_dir(m)
     data.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, "ABP_MODULE_ID": m.id, "ABP_MODULE_DATA": str(data), **_modkit_env(), **abp_env(m)}
-    with open(data / "hub.log", "ab") as out:
-        subprocess.Popen([_which(cmd[0]) or cmd[0], *cmd[1:]], cwd=str(_workspace(m)), env=env, stdin=subprocess.DEVNULL,
-                         stdout=out, stderr=subprocess.STDOUT, creationflags=DETACHED, start_new_session=os.name != "nt")
+    # A hub is a service that has to keep answering after ABP restarts, so it gets a persistent cell:
+    # the reaper leaves it alone (its owner stops it), and close_cells() only releases it.
+    cell = new_cell("daemon", name=f"{m.id} hub", owner=OWNER)
+    try:
+        with open(data / "hub.log", "ab") as out:
+            ns_spawn([_which(cmd[0]) or cmd[0], *cmd[1:]], cell=cell, cwd=str(_workspace(m)), env=env,
+                     stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, creationflags=DETACHED,
+                     start_new_session=os.name != "nt", name=f"{m.id} hub", owner=OWNER)
+    except OSError as exc:
+        cell.close()
+        raise ModuleError(f"cannot start {m.name}'s hub ({cmd[0]}): {exc}", code="not_installed") from None
+    _hub_cells[m.id] = cell
     deadline = time.time() + m.hub.start_timeout_s
     while time.time() < deadline:
         found = client.find(m)
@@ -490,8 +527,20 @@ def start_hub(mid: str) -> dict:
                     pass
             return {"running": True, "url": found.url, "pid": found.pid, "already": False}
         time.sleep(0.4)
+    # It never answered: take the cell with it, rather than leave a hub nothing is watching.
+    cell.kill(f"{m.name}'s hub did not start within {m.hub.start_timeout_s:.0f}s")
+    _hub_cells.pop(m.id, None)
     raise ModuleError(f"{m.name}'s hub did not start within {m.hub.start_timeout_s:.0f}s (see {data / 'hub.log'})",
                       code="timeout")
+
+
+def _release_hub_cell(mid: str) -> Optional[Cell]:
+    """Let go of a hub's daemon cell. A persistent cell's close only releases the job handle - the
+    hub itself is somebody else's business now (stopped, or another ABP's)."""
+    cell = _hub_cells.pop(mid, None)
+    if cell is not None:
+        cell.close()
+    return cell
 
 
 def stop_hub(mid: str) -> dict:
@@ -501,6 +550,7 @@ def stop_hub(mid: str) -> dict:
         return a.stop_hub()
     hub = client.find(m) if m.hub else None
     if hub is None:
+        _release_hub_cell(mid)
         return {"running": False}
     try:
         client.stop(m, hub)
@@ -508,11 +558,17 @@ def stop_hub(mid: str) -> dict:
         pass
     for _ in range(80):
         if client.find(m, timeout=1.0) is None:
+            _release_hub_cell(mid)
             return {"running": False}
         time.sleep(0.25)
-    if hub.pid:
+    # Still answering: the cell is what stops it, tree and all, when this process started the hub.
+    # A hub from an earlier ABP has no cell here, so its pid is the only handle there is.
+    cell = _hub_cells.pop(m.id, None)
+    if cell is not None:
+        cell.kill(f"stopping {m.name}'s hub")
+    elif hub.pid:
         _kill_tree(hub.pid)
-        time.sleep(0.5)
+    time.sleep(0.5)
     return {"running": client.find(m, timeout=1.0) is not None, "killed": True}
 
 
@@ -558,7 +614,14 @@ def run_pipeline(mid: str) -> dict:
     if not d.is_dir():
         raise ModuleError(f"{m.name} is not installed yet", code="not_installed")
     env = {**_build_env(m), "NO_COLOR": "1"}
-    return _start_job(m, "pipeline", lambda log: _stream(m, registry.expand_cmd(m, m.pipeline), d, env, log, timeout=7200))
+
+    def go(log):
+        # The pipeline is one unit of work, so it gets its own cell: its timeout stops the whole
+        # run rather than one step of it.
+        with cell_for("build", name=f"{m.id} pipeline", owner=OWNER) as cell:
+            _stream(m, registry.expand_cmd(m, m.pipeline), d, env, log, timeout=7200, cell=cell)
+
+    return _start_job(m, "pipeline", go)
 
 
 def register_mcp(mid: str) -> dict:

@@ -84,7 +84,8 @@ class Cell:
         # going to be closed (at GC, or when ABP exits) while the daemon keeps running, and the
         # default kill-on-close would take it down exactly when ABP was not watching.
         try:
-            self._job = win_job.create(memory_mb=p.memory_mb, active_process_limit=p.max_processes,
+            self._job = win_job.create(memory_mb=p.memory_mb, job_memory_mb=p.job_memory_mb,
+                                       active_process_limit=p.max_processes,
                                        cpu_rate_percent=p.cpu_rate_percent, affinity=affinity,
                                        priority=p.priority, kill_on_close=p.kill_on_close and not p.persistent)
         except OSError as exc:
@@ -258,7 +259,8 @@ class Cell:
 
                 out["job"] = win_job.query(self._job)
                 out["limits_applied"] = {k: out["job"].get(k) for k in
-                                         ("memory_mb", "cpu_rate_percent", "affinity", "priority", "active_process_limit")}
+                                         ("memory_mb", "job_memory_mb", "cpu_rate_percent", "affinity", "priority",
+                                          "active_process_limit")}
             else:
                 out["job"] = {"error": "no job handle" if not p.kill_on_close else "closed"}
         else:

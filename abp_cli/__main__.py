@@ -238,6 +238,9 @@ async def _dispatch(args, client: DashboardClient) -> int:
         return await _config(args, client)
     if cmd == "diagnostics":
         return await _diagnostics(args, client)
+    if cmd == "sandbox":
+        from abp_cli import sandbox as _sandbox
+        return await _sandbox.run(args, client)
     if cmd == "peers":
         return await _peers(args, client)
     if cmd == "kanban":
@@ -1945,6 +1948,9 @@ def _parser() -> argparse.ArgumentParser:
     diagsub = diag.add_subparsers(dest="diagnostics_cmd", required=True)
     diagsub.add_parser("summary")
     p = diagsub.add_parser("crash-reports"); p.add_argument("--limit", type=int, default=50)
+
+    from abp_cli import sandbox as _sandbox
+    _sandbox.add_parser(sub)
 
     peers = sub.add_parser("peers", help="linked/federated AgenticBotPlatform servers")
     pesub = peers.add_subparsers(dest="peers_cmd", required=True)

@@ -1021,6 +1021,12 @@ def build_app() -> FastAPI:
 
     power_api.register(app, control_auth("power", write=False), control_auth("power", write=True))
 
+    # The Sandbox Nervous System: every process ABP started and is still running, its cell, what that
+    # cell may do, and the two ways to stop it (one cell, or every non-persistent cell).
+    from bot.dashboard import sandbox_ns_api
+
+    sandbox_ns_api.register(app, _require_token)
+
     # Editor integrations: install the VS Code extension, show the ACP command.
     from bot.dashboard import editors_api
 
