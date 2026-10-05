@@ -270,5 +270,10 @@ def test_a_rollout_runs_private_project_s_own_cli_as_a_sandbox_worker(tmp_path, 
         assert (r["ok"] and r["n_bytes"] >= r["prompt_bytes"]) or (r["error"] and r["exit_code"] != 0)
     # it ran as a sandbox worker in a cell that the call took down with it
     rec = [x for x in registry.records() if x.owner == "neurallab.private_project" and x not in mine]
-    assert len(rec) == 1 and rec[0].name.startswith("private_project-generate:") and rec[0].policy == "worker"
-    assert rec[0].cell and all(c.id != rec[0].cell for c in registry.cells())      # the cell is closed
+    spawned = [x for x in rec if x.spawned()]
+    assert len(spawned) == 1 and spawned[0].name.startswith("private_project-generate:") and spawned[0].policy == "worker"
+    assert spawned[0].cell and all(c.id != spawned[0].cell for c in registry.cells())      # the cell is closed
+    # ... and what that spawn started is recorded too: PRIVATE_PROJECT runs out of its own venv, whose
+    # `python.exe` is a launcher on Windows, so the process that did the work is its child.
+    assert all((x.owner, x.cell, x.policy) == (spawned[0].owner, spawned[0].cell, "worker") for x in rec), rec
+    assert any(x.parent_pid for x in rec), f"only the launcher was recorded: {rec}"

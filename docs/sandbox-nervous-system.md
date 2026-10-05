@@ -20,7 +20,7 @@ and how new code uses it.
 | `bot/sandbox_ns/policy.py` | `Policy`: memory, CPU rate, processor set, priority, lifetime, environment and network mode - with a named preset per kind of process |
 | `bot/sandbox_ns/cell.py` | one sandbox: a policy plus the OS thing that enforces it (a Win32 Job Object, or a session/limits cell on POSIX) |
 | `bot/sandbox_ns/spawn.py` | `spawn()` / `async_spawn()` / `run()`: how new code starts a process |
-| `bot/sandbox_ns/registry.py` | what is running: records, an event ring buffer, `data/sandbox_ns/live.json`, a CPU/memory sampler |
+| `bot/sandbox_ns/registry.py` | what is running: a record per process (the spawn and everything it started), an event ring buffer, `data/sandbox_ns/live.json`, a CPU/memory sampler |
 | `bot/sandbox_ns/reaper.py` | what the last run left behind, stopped at start-up |
 | `bot/sandbox_ns/reflexes.py` | a cell over its memory cap is killed; a hot machine demotes builds and workers; the emergency stop stops the work |
 
@@ -77,6 +77,23 @@ its argv with secret-looking arguments masked, cwd, which component asked for it
 policy under it. The file is keyed by run, so a worker process writing its own entries cannot erase
 the server's bookkeeping.
 
+**And a record covers the tree, not just the pid `Popen` handed back.** The process ABP starts is
+often not the process that does the work. On Windows a venv's `Scripts/python.exe` is a *launcher*:
+it starts the base interpreter as a child and waits for it, and that child is what runs the
+training worker, the module hub or the build step (measured here: ABP runs from a venv, so every
+Python child it starts is two processes, and `sys.executable` *inside* the child is the base
+interpreter). A `cargo` under `npm`, Playwright's browser under its driver and `ssh` under `git`
+are the same shape. So the sampler walks each record's descendants and records each one under it -
+same owner, same cell, same policy (a job object, a cgroup and a session are all inherited, so
+containment is already true), with `parent_pid` saying which record started it. `record_for(pid)`,
+`/api/sandbox/processes` and `abp sandbox ps` (an `of` column) answer for any of them.
+
+The walk runs a moment after each spawn - the child of a launcher does not exist yet in the
+microsecond after `CreateProcess` returns, and that is the only point in its life where it is seen
+this promptly - and again on every sampling pass, one pass over the machine's process table for all
+records rather than one per record. So a process that appeared and finished between two passes is
+not recorded: the reaper only ever knows what a pass caught, same as before.
+
 **Left-over processes are reaped.** At start-up `reaper.reap()` reads that file and kills what a
 previous run left running - matching **pid *and* create time**, so a pid Windows has since handed to
 something else is never touched. Daemons are recorded `persistent` and left alone: they are supposed
@@ -96,6 +113,13 @@ are unioned, so a machine nobody configured is still protected. The presets' cap
 * **The assign race is real.** A process has to be assigned to the job *after* it is spawned, so
   anything it starts in those few milliseconds is not guaranteed to be in the job. It is milliseconds
   wide (spawn, read the pid, assign) and unlike a container's namespaces it is not airtight.
+* **A cell's processes are what the OS says, plus a walk.** Containment is the job object, and the
+  status page reports the limits Windows actually has; the *accounting* of which processes are in
+  the tree is the sampler's walk of parent pids, not a query of the job. Two consequences, both
+  measured rather than assumed: the walk costs one pass over the machine's process table (a few
+  milliseconds here, seconds if psutil is asked one process at a time), and the console host
+  Windows creates for a windowless console (`conhost.exe`) is recorded too, because it really is a
+  process in the cell and it really does cost memory.
 * **A cap that was not applied is reported, not assumed.** `Cell.status()` lists the limits Windows
   actually has (`QueryInformationJobObject`), plus `notes` explaining anything that could not be
   applied - a job affinity mask names at most 64 processors; `RLIMIT_NPROC` counts every process of
@@ -189,8 +213,8 @@ Rules of thumb:
 
 `bot.sandbox_ns.registry.registry.status()` returns the guard's state, every record, every cell
 with its measured CPU/memory and the limits the OS actually has, and the event ring buffer
-(`spawn`, `exit`, `limit_hit`, `kill`, `reap`, `guard_converted`). Three surfaces read it, and all
-three are just this call:
+(`spawn`, `descendant`, `exit`, `limit_hit`, `kill`, `reap`, `guard_converted`; `descendant` is a
+process a recorded one started). Three surfaces read it, and all three are just this call:
 
 | Surface | What |
 |---|---|
@@ -200,7 +224,10 @@ three are just this call:
 
 ## Reflexes
 
-Run by the registry's sampler (psutil, every three seconds, only while something is registered):
+Run by the registry's sampler (psutil, every three seconds, only while something is registered). A
+cell's numbers are its *tree's*, because every process under the spawn is a record: a build's
+memory is the compilers as well as the build command, which is what the cap was always meant to
+bound.
 
 * **memory** - a cell past its own cap (plus `memory_margin`) is killed, `limit_hit` is logged.
 * **CPU** - when the *machine* stays over `cpu_percent` for `cpu_samples` samples in a row, `build`
@@ -233,10 +260,11 @@ and `bot/localai/engine.py`'s `llama-server` (`preset="engine"`).
 | `bot/agent_runtime/code_intel.py` `LspClient` | language server, killed by `stop()` / `shutdown_all()` | `tool` |
 | `bot/agent_runtime/browser.py` `Session` | session: Playwright's driver is admitted at `_adopt()`, so the browser it launches is in the cell too, and `close()` kills it | `tool` |
 | `bot/git_stacks.py` `_git()` | - no cell: one buffered git call at a time, so the process *is* the tree | `tool` (through `spawn.run()`) |
-
 Each has a test that starts a real process through that call site and checks the record's
 `owner`/`cell`/`policy` and that stopping the cell stops the process (`tests/test_sandbox_migration.py`,
-plus the site's own test file).
+plus the site's own test file). Each of those also checks the *tree*: the process that does the
+work - the interpreter behind the venv launcher, in every Python case here - is recorded under the
+spawn, and the cell kill takes the whole of it.
 
 **Still plain `subprocess`, deliberately.** Windowless either way (the guard wraps `Popen`), but not
 in a cell and not in `live.json`:

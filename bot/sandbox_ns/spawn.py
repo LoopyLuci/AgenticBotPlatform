@@ -81,7 +81,12 @@ def spawn(argv: Argv, *, cell: Optional[Cell] = None, preset: str = "tool", cwd=
     record (`registry.record_for(pid)`), and the cell - if there is one - is what a later kill
     has to go through. `cwd`, `env` and the stdio arguments are Popen's own; `env=None` means
     the policy's environment (scrubbed of secret-looking names for 'tool', inherited
-    otherwise)."""
+    otherwise).
+
+    The pid here is the one Popen created, which is not always the process that ends up doing the
+    work - on Windows a venv's `python.exe` is a launcher for the base interpreter - so the
+    registry records what that process starts as well, under this one (registry.py's module
+    docstring)."""
     guard.install()
     args = _argv(argv)
     if not args:
@@ -174,7 +179,10 @@ def _cmdline(args) -> str:
 def _register(pid: int, argv: list, cwd, owner: str, name: str, cell: Optional[Cell], policy: Policy, proc) -> None:
     """Put the process in its cell and write it down. A cell that could not contain the process
     is fatal for a non-persistent policy - an uncontained process is exactly the leak this
-    package exists to stop - so the process is killed rather than left running free."""
+    package exists to stop - so the process is killed rather than left running free.
+
+    What the process goes on to start is recorded by the registry's sampler, a moment later and
+    again on every pass: none of it exists yet in the instant after CreateProcess returns."""
     from bot.sandbox_ns import registry as registry_mod
     from bot.sandbox_ns.registry import registry
 

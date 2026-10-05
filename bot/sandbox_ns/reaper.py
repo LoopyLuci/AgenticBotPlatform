@@ -14,6 +14,11 @@ this kills somebody's editor.
 a developer's checkout), and they share one `live.json`. A run whose owning pid is still alive is
 somebody's running ABP, not a leftover: it is skipped whole, process by process.
 
+**A leftover is a whole tree, not one pid.** A run recorded the processes its spawns started as
+well as the spawns themselves (registry.py's module docstring), so a leftover is reaped process by
+process rather than by walking down from a launcher that may itself be gone - and each of them is
+still matched on pid *and* create time, so the tree is only ever this run's own.
+
 `persistent` entries (daemons - a module hub, the Hermes bridge) are recorded but not killed:
 they are supposed to outlive ABP, and the code that owns them is what stops them. Everything
 else is a leak by definition.
@@ -26,9 +31,10 @@ import os
 from typing import Optional
 
 #: How far apart two readings of the same process's create time may be and still be the same
-#: process (seconds). It is the same kernel counter read twice, so it should be exact; the
-#: slack only absorbs a rounding difference, never a genuinely different process.
-CREATE_TIME_SLACK_S = 1.0
+#: process. It is the same kernel counter read twice, so it should be exact; the slack only absorbs
+#: a rounding difference, never a genuinely different process. It is the registry's, because that is
+#: where the record it is compared against is written - reaping is the same identity question.
+from bot.sandbox_ns.registry import CREATE_TIME_SLACK_S
 
 
 def _runs(path=None, *, run_id: Optional[str] = None) -> dict:
