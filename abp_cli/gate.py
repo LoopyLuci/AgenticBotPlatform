@@ -253,7 +253,7 @@ def _print_watch(data: dict) -> None:
     limits = gate.get("limits") or {}
     restarts = gate.get("restarts") or {}
     print(f"\ninstances {limits.get('alive')}/{limits.get('max_instances')} alive, "
-          f"lifetime {gate.get('instance_lifetime')}")
+          f"lifetime {limits.get('instance_lifetime') or gate.get('instance_lifetime')}")
     window_s = float(restarts.get("window_s") or 0)
     for name, info in (restarts.get("instances") or {}).items():
         spent = f"{info.get('restarts_last_window')}/{info.get('budget')} restarts in the last {window_s / 60:.0f}m"
@@ -497,6 +497,11 @@ async def _instance_logs(args) -> int:
 
 
 async def _dev(args) -> int:
+    # Every dev command ends up talking to the gate's control API - including
+    # `dev up`, which otherwise made a worktree first and only then failed with
+    # "all connection attempts failed". The gate is the thing that runs the
+    # sandbox, so say which command to run before doing any of the work.
+    _require_gate(args)
     if args.dev_cmd == "up":
         return await _dev_up(args)
     if args.dev_cmd == "down":
