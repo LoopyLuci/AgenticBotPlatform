@@ -56,6 +56,10 @@ _SPEC.loader.exec_module(deploy_local)
 from bot.sandbox_ns.cell import Cell  # noqa: E402
 from bot.sandbox_ns.policy import Policy  # noqa: E402
 
+# Every test here starts real ABP instances (and a gate). Run them one after another in one worker: several at once on
+# a machine that is also running the rest of the suite starve each other of the CPU their health checks need.
+pytestmark = pytest.mark.xdist_group("abp_gate_live")
+
 EXE = deploy_local.EXE_NAME
 NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
@@ -366,7 +370,8 @@ class Gate:
 
 def _start_gate(world: World) -> Gate:
     world.public_port, world.control_port = _free_port(), _free_port()
-    env = {k: v for k, v in os.environ.items() if k not in _STRIPPED}
+    env = {k: v for k, v in os.environ.items()
+           if k not in _STRIPPED and not k.startswith(("COV_CORE_", "COVERAGE_"))}  # never run instances traced
     env.update({
         "PYTHONPATH": str(ROOT), "PYTHONUNBUFFERED": "1", "PYTHONUTF8": "1",
         "ABP_HOME": str(world.home), "ABP_INSTANCES_DIR": str(world.instances_dir),

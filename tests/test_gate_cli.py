@@ -32,6 +32,10 @@ from abp_gate import limits
 from abp_gate import manager as gate_manager
 from abp_gate import paths, procs
 
+# Every test here starts real ABP instances (and a gate). Run them one after another in one worker: several at once on
+# a machine that is also running the rest of the suite starve each other of the CPU their health checks need.
+pytestmark = pytest.mark.xdist_group("abp_gate_live")
+
 GATE_ENV_VARS = ("ABP_HOME", "ABP_INSTANCES_DIR", "ABP_GATE_CODE_ROOT", "ABP_GATE_PUBLIC_PORTS",
                  "ABP_GATE_CONTROL_PORT", "DASHBOARD_TOKEN", "ABP_GATE_INSTANCE_LIFETIME",
                  "ABP_GATE_STARTUP_DIR")
