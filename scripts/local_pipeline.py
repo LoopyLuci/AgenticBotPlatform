@@ -66,6 +66,18 @@ import release_guard  # noqa: E402  (shared pre-flight / lock-healing helpers)
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+
+# This script is not always started from a terminal: the pre-push hook (scripts/git-hooks/pre-push)
+# is exec'd by git.exe, and anything that starts git.exe without a console - a GUI Git client, an
+# editor, an agent's shell - leaves git.exe, the hook's bash and therefore THIS process with no
+# console at all. A console-less parent is the one shape that turns into a blank window on this
+# person's desktop: every console program started afterwards (cargo, ruff, pytest, docker, git, npm)
+# allocates and *shows* a console of its own. bot/sandbox_ns/guard.py fixes that once, process-wide,
+# by making subprocess.Popen windowless; a no-op off Windows. See docs/sandbox-nervous-system.md.
+from bot.sandbox_ns import guard as _sandbox_guard  # noqa: E402
+
+_sandbox_guard.install()
+
 from abp_cicd import recorder  # noqa: E402  (telemetry: every pipeline run is recorded)
 
 # The run being recorded; a no-op until _run_pipeline starts a real one.
@@ -320,9 +332,13 @@ def relaunch_bare() -> None:
     if not _EXE_PATH.exists():
         return
     if IS_WINDOWS:
+        # CREATE_NO_WINDOW, never DETACHED_PROCESS: a detached child has no console at all, so the
+        # first console program it starts afterwards allocates and shows a window - measured on this
+        # machine, and the reason bot/sandbox_ns/guard.py exists. The app is a GUI binary, so the
+        # hidden console it gets here costs it nothing and its own children inherit invisibly.
         subprocess.Popen(
             [str(_EXE_PATH)],
-            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+            creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP,
         )
     else:
         subprocess.Popen([str(_EXE_PATH)], start_new_session=True)

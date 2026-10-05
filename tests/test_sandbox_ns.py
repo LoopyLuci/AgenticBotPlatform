@@ -166,6 +166,27 @@ def test_installing_twice_is_one_wrapper_and_uninstall_puts_popen_back():
     assert guard.install() is WINDOWS       # leave the guard in place for the rest of the session
 
 
+@windows_only
+def test_the_guarded_popen_is_still_a_class_and_still_a_popen():
+    """A drop-in replacement, not just a callable: `subprocess.Popen` is subscripted in annotations
+    that are evaluated while a class body runs - `popen_obj: subprocess.Popen[bytes]` in
+    `mcp/os/win32/utilities.py`, which does not use `from __future__ import annotations`. Making the
+    guard a plain wrapper *function* therefore made the whole `mcp` package unimportable, and
+    `bot/mcp_server.py` with it, the moment the guard went session-wide. Found by the test suite,
+    which is the only reason it is written down."""
+    real = guard._original_popen
+    assert real is not None and isinstance(real, type), "the saved original must be the real class"
+    assert isinstance(subprocess.Popen, type) and issubclass(subprocess.Popen, real)
+    assert subprocess.Popen[bytes] is not None, "Popen must stay subscriptable"
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    try:
+        assert isinstance(proc, subprocess.Popen) and proc.wait(timeout=60) == 0
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(10)
+
+
 # ------------------------------------------------------------------ no window on the desktop
 
 @windows_only

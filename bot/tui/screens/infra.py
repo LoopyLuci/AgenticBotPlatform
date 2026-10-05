@@ -17,6 +17,7 @@ from textual.containers import Horizontal
 from textual.screen import Screen
 from textual.widgets import Button, DataTable, Footer, Input, Label, RichLog, Select, Static
 
+from bot.sandbox_ns import guard
 from bot.tui.client import ApiError
 
 
@@ -248,7 +249,10 @@ class ContainersScreen(InfraScreen):
             self.say(str(exc), error=True)
             return
         try:
-            with self.app.suspend():
+            # guard.visible(): a person is about to type into this shell, which is the one thing the
+            # windowless guard takes away by default. Without it the shell would inherit a hidden
+            # console and look like it hung. Same pattern as bot/modules/harness.py's open_tui.
+            with self.app.suspend(), guard.visible():
                 subprocess.run(argv)  # noqa: ASYNC221 — the TUI is suspended and hands the terminal to this shell on purpose
         except SuspendNotSupported:
             self.say("This terminal can't hand over the screen; run the shell from the desktop app or the dashboard.", error=True)

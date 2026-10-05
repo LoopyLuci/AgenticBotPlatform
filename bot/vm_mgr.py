@@ -325,7 +325,14 @@ def _qmp(name: str, command: str, arguments: Optional[dict] = None, timeout: flo
 def qemu_status(name: str) -> dict:
     spec = _load(name)
     pid = spec.get("pid")
-    alive = bool(pid) and psutil.pid_exists(pid) and "qemu" in (psutil.Process(pid).name().lower())
+    # One psutil call, not two: `pid_exists(pid)` and then `Process(pid)` is a race a shutting-down
+    # VM wins, and it raised NoSuchProcess straight out of a status poll (tests/test_tui_infra.py
+    # polls this while the VM is being stopped - measured, 2 flakes in 8 runs). "Is it still our
+    # qemu" is one question, so ask it once and treat any psutil complaint as "off".
+    try:
+        alive = bool(pid) and "qemu" in psutil.Process(pid).name().lower()
+    except (psutil.Error, TypeError, ValueError):
+        alive = False
     if not alive:
         return {"name": name, "running": False, "state": "off"}
     try:
