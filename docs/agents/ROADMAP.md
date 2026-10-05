@@ -25,7 +25,7 @@
 | P6 | Browser, computer use, routines (the Grok Bot pillar) | **Partly built** (browser, vault, routines, approvals; not the cloud computer or computer use) |
 | P7 | Channels, devices and voice | **Partly built** (six new channels including Google Chat and Teams, node protocol, voice, canvas - all against fakes; Android does not implement nodes) |
 | P8 | Learning and efficiency | **Built** (the model router now auto-selects and auto-fails-over, not advisory-only; it and the tuning harness have never had a live model to measure) |
-| P9 | Compatibility and docs | **Built**, except the live benchmark run itself, which needs a provider key (the benchmark harness and page are built) |
+| P9 | Compatibility and docs | **Built**, except the live benchmark run itself, which needs a provider key (the benchmark harness and page are built). The Claude Code and OpenCode importers have now been dry-run against the real installs on this machine, not only against files written from their docs |
 
 ## 1. What "ABP Agents" are today
 
@@ -246,7 +246,7 @@ would want to know about a model.
 
 | Deliverable | State |
 |---|---|
-| Importers: Claude Code (`settings.json`, `settings.local.json`, `.mcp.json`) and OpenCode (`opencode.json(c)`) into permission rules, hooks and MCP servers; dry run by default; never widens permissions | Built and tested against sample files written from the documented formats, **not against real installs** |
+| Importers: Claude Code (`settings.json`, `settings.local.json`, `.mcp.json`, `~/.claude.json`) and OpenCode (`$OPENCODE_CONFIG`, `opencode.json(c)`) into permission rules, hooks and MCP servers; dry run by default; never widens permissions | Built and tested against the **real installs on the development machine** (Claude Code's user folder, `~/.claude.json`, five `Z:/Projects` `.claude/settings.local.json`, OpenCode's global config and the `opencode-swarm.jsonc` its launcher passes in `$OPENCODE_CONFIG`), every plan line read. That check found and fixed: `PowerShell(...)` rules dropped (212 of 735 real entries), `//c/...`/`//z/...` paths that could never match, a `SessionStart` hook lost to its `startup\|resume\|clear\|compact` matcher, `~/.claude.json`'s per-project servers / allowedTools / disabled servers, and OpenCode's config not being where ABP looked. `--apply` against a real install not run: that is the user's call |
 | Importers: Hermes Agent and OpenClaw (`abp_import hermes` / `openclaw`): providers and keys, router models (never Claude), MCP servers, the skill library linked in place, SOUL.md as instructions, memories, prompt jobs (paused), chat channels (switched off), deny rules | **Built; formats taken from real installs** (masked) and each product's own code. A dry run against the real Hermes install on the development machine reads everything and explains every skip. Linked libraries made scalable for it: `list_skills` search, cached parsing, background loading (10,000 skills: 1 ms a turn). `--apply` against the real installs not run: that is the user's call |
 | Plugin SDK versioning: `SDK_VERSION`, `REQUIRES_SDK` / `PLUGIN_VERSION`, a refusal that names both versions | Built. See [plugin-sdk.md](plugin-sdk.md) |
 | Results page (`abp_agenteval page`) and a committed one | Built. The committed page shows a **scripted** run and says it is not a model comparison |

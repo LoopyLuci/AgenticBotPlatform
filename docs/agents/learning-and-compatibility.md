@@ -30,15 +30,72 @@ reported as noise. This has not been run against a live model; that would spend 
 
 ## Importing another product's settings
 
-`python -m abp_import claude-code` and `python -m abp_import opencode` read `.claude/settings.json`, `.claude/settings.local.json`,
-`.mcp.json` and `~/.claude/settings.json` (Claude Code), or `opencode.json(c)` (OpenCode), and print a plan. **A dry run unless you
-add `--apply`.** Permissions become ABP rules (allow / ask / deny with the tool names and patterns translated; deny rules are
-written first); hooks become ABP hooks; MCP servers become external MCP servers (untrusted by default, whatever they were
-before). It never widens what the agent may do on its own: a blanket allow such as a bare `Bash` is reported and skipped, "bypass
-permissions" is never imported, and a host with locked permissions refuses to be rewritten. Model settings, API keys, themes,
-keybindings, agents, skills and commands are not imported (ABP reads the `.claude/` and `.opencode/` folders directly). Checked
-against sample files written from those products' documented formats, **not against real configuration files from real
-installs**.
+`python -m abp_import claude-code` and `python -m abp_import opencode` read the configuration the products themselves read and
+print a plan. **A dry run unless you add `--apply`.** Permissions become ABP rules (allow / ask / deny with the tool names and
+patterns translated; deny rules are written first); hooks become ABP hooks; MCP servers become external MCP servers (untrusted by
+default, whatever they were before). It never widens what the agent may do on its own: a blanket allow such as a bare `Bash` is
+reported and skipped, "bypass permissions" is never imported, and a host with locked permissions refuses to be rewritten. Model
+settings, API keys, themes, keybindings, agents, skills and commands are not imported (ABP reads the `.claude/` and `.opencode/`
+folders directly).
+
+| From | Read from |
+|---|---|
+| Claude Code | `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR`), the project's `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json`, and `~/.claude.json` - where `claude mcp add` keeps this project's user-scope servers, the tools it allowed there, and the `.mcp.json` servers this project has switched off |
+| OpenCode | `$OPENCODE_CONFIG` (the file it was launched with), `$XDG_CONFIG_HOME` or `~/.config/opencode/opencode.json(c)`, then the project's `opencode.json(c)` |
+
+`${VAR}` in a server's environment is read from your environment (and never printed). `permissions.additionalDirectories` and
+OpenCode's `permission.external_directory` have **no** ABP equivalent and are reported: a bot's workspace is its own folder, so
+ABP cannot be widened to reach a sibling folder. The SSE transport is reported too - ABP speaks stdio and streamable HTTP.
+
+### How it was checked
+
+Against the **real installs on the development machine**, read with every value masked and never written to: `~/.claude/` (which
+holds no `settings.json` on this machine, so the user-settings importer had nothing to read - the rules all live in the projects),
+`~/.claude.json`, the `opencode.jsonc` the swarm's own launcher passes in `$OPENCODE_CONFIG`, the global
+`~/.config/opencode/opencode.jsonc` (50 bytes, `$schema` only), and the `.claude/settings.local.json` of five `Z:/Projects`
+checkouts plus one `claude/settings.json` with hooks in a sixth (all 225 folders searched for `opencode.json(c)` and `.mcp.json`;
+none). Both importers were run as a dry run against each of them and every line of every plan read. `--apply` was **not** run
+against anything real: that is yours to do.
+
+That found things a docs-based importer cannot:
+
+- **`PowerShell(...)` permissions.** Claude Code has a separate PowerShell tool on Windows and the real files are full of it -
+  212 of 735 entries in the largest one. ABP dropped every one with "names a tool ABP does not have". It is ABP's only shell, so
+  they are now `run_shell` rules, with one note per file saying the dialect is not the same (ABP's `run_shell` is the platform
+  shell, `cmd.exe` on Windows, so PowerShell-only syntax in those patterns will not run).
+- **`//c/Users/...` and `//z/Projects/...` paths.** Claude Code spells a Windows folder with a leading `//` and a drive letter. The
+  pattern was copied verbatim, so it could never match what ABP matches on. It is normalised now, and a path inside the project
+  becomes workspace-relative, which is what the entry meant.
+- **`SessionStart` hooks lost to their own matcher.** A session event's matcher (`startup|resume|clear|compact`) names session
+  sources, not tools, so translating it as a tool name matched nothing and the hook was **dropped**. ABP fires these hooks
+  unconditionally, so the matcher is dropped with a note and the hook is kept.
+- **`~/.claude.json`.** 43 project entries, each with `mcpServers`, `allowedTools`, `enabledMcpjsonServers` and
+  `disabledMcpjsonServers` - all ignored before. A server this project has switched off is now left out of `.mcp.json`.
+- **OpenCode's config is not where ABP looked.** The launcher sets `$OPENCODE_CONFIG`, so the real config had no `opencode.json`
+  name and the importer found nothing but the 50-byte `$schema` stub in `~/.config/opencode`. `$OPENCODE_CONFIG` and
+  `$XDG_CONFIG_HOME` are honoured now.
+- **A switched-off server and an unreadable decision value** were skipped in silence; both are reported by name now, and so is a
+  hook's `timeout` / `statusMessage` (an ABP hook is given 30 seconds and no progress message).
+- **`%USERPROFILE%\.mcp.json`** on this machine holds `{"inputs": [], "servers": {...}}` - not Claude Code's `mcpServers` shape. It
+  belongs to another tool, so ABP deliberately does not read it.
+
+The dry-run summary, per real file, counts only (no values):
+
+| Real file | Rules before -> after | Hooks | MCP servers | Notes before -> after |
+|---|---|---|---|---|
+| `Omnisystem/.claude/settings.local.json` (735 entries, 212 of them PowerShell, 9 additionalDirectories) | 533 -> **745** | 0 | 0 | 213 -> **3** |
+| `TransferDaemon/.claude/settings.local.json` | 5 -> **11** | 0 | 0 | 6 -> **1** |
+| `NeuroForge/.claude/settings.local.json` | 29 -> **31** | 0 | 0 | 2 -> **1** |
+| `JumpingSpiderSimulator/.claude/settings.local.json` | 13 -> **13** | 0 | 0 | 0 -> 0 |
+| `AI_Transcriber_Caption_Maker/.claude/settings.local.json` | 1 -> **1** | 0 | 0 | 0 -> 0 |
+| a `claude/settings.json` with `SessionStart` / `SessionEnd` hooks (a `Z:/Projects` checkout) | 0 -> 0 | 1 -> **2** | 0 | 4 -> **2** |
+| `~/.claude.json` (43 project entries; every list in them is empty on this machine) | 0 | 0 | 0 | 0 |
+| `~/.config/opencode/opencode.jsonc` (the real global config: `$schema` only) | 0 | 0 | 0 | 0 |
+| `$OPENCODE_CONFIG` = the swarm's `opencode-swarm.jsonc` (6 servers, all `enabled: false`; 4 `allow` permission values) | 0 | 0 | 0 | 0 -> **5** |
+
+Nothing on this machine widens: every rule that got imported was an `allow` the user had already written for a shell or a file
+tool, the only `allow`s refused are the blanket ones, and ABP's own `permissions.decide()` is run against the imported rules in
+the tests. The tests use fixtures in these shapes with every value replaced by a fake.
 
 ### Hermes Agent and OpenClaw
 

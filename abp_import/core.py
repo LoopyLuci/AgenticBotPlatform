@@ -11,35 +11,57 @@
 * permissions become ABP permission rules (`native_agent.permissions.rules`). A blanket allow such as a bare `Bash` (run
   anything) is **not** imported as an allow - it is reported and skipped - and a "bypass permissions" default mode is never
   imported. Allow / ask / deny rules that name a command or path pattern are.
-* hooks (Claude Code's `command` hooks) become ABP hooks with the tool names translated (`Bash` -> `run_shell`, ...).
+* hooks (Claude Code's `command` hooks) become ABP hooks with the tool names translated (`Bash` -> `run_shell`, ...). Only
+  the three tool events carry a tool matcher; a session event's matcher filters *session starts*, which ABP has no notion of,
+  so it is dropped (with a note) rather than losing the hook.
 * MCP servers become external MCP servers, **untrusted by default** in ABP whatever they were in the other product, and
-  their tool descriptions are pinned on first connection like any other.
+  their tool descriptions are pinned on first connection like any other. `${VAR}` in a server's environment is read from this
+  process's environment.
+
+Where the files are, as the products themselves look for them:
+
+* Claude Code: `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR`), the project's `.claude/settings.json`,
+  `.claude/settings.local.json`, `.mcp.json`, and `~/.claude.json` - where `claude mcp add` keeps a project's user-scope
+  servers, the tools it allowed there, and the `.mcp.json` servers this project has switched off.
+* OpenCode: `$OPENCODE_CONFIG` (the file it was launched with), `$XDG_CONFIG_HOME`/`~/.config/opencode/opencode.json(c)`,
+  then the project's `opencode.json(c)`.
 
 Not imported, and said so in the report: model and provider settings and API keys (set them in config/providers.yaml), themes and
-keybindings, agents / skills / commands (ABP already reads `.claude/` and `.opencode/` folders directly), and anything whose meaning
-could not be established. Hermes and OpenClaw carry much more (providers and keys, a persona, memories, skill libraries, scheduled
-jobs, chat channels): their importers are in agents.py and use the extra plan fields below.
+keybindings, agents / skills / commands (ABP already reads `.claude/` and `.opencode/` folders directly), folders outside the
+workspace (`permissions.additionalDirectories`, OpenCode's `permission.external_directory` - a bot's workspace is its own folder),
+the SSE transport (ABP speaks stdio and streamable HTTP), and anything whose meaning could not be established. Hermes and OpenClaw
+carry much more (providers and keys, a persona, memories, skill libraries, scheduled jobs, chat channels): their importers are in
+agents.py and use the extra plan fields below.
 
 Server environment values (which may hold tokens) are copied into ABP's database only on --apply and are never printed.
 """
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
 # Claude Code / OpenCode tool names -> ABP tools (matches bot/agent_runtime/agent_defs.ALIASES, but for rules and hooks).
+# Claude Code's PowerShell tool is ABP's shell too: it is the only shell ABP has, so a `PowerShell(...)` permission is the
+# nearest rule there is (translate_rule says so once per file - the dialect is not the same).
 TOOLS = {
-    "bash": ["run_shell"], "shell": ["run_shell"], "read": ["read_file", "list_dir"], "edit": ["edit_file", "multi_edit", "apply_patch"],
+    "bash": ["run_shell"], "shell": ["run_shell"], "powershell": ["run_shell"],
+    "bashoutput": ["shell_output"], "killshell": ["shell_kill"], "killbash": ["shell_kill"],
+    "read": ["read_file", "list_dir"], "edit": ["edit_file", "multi_edit", "apply_patch"],
     "multiedit": ["multi_edit"], "write": ["write_file"], "patch": ["apply_patch"], "grep": ["grep"], "glob": ["glob"], "ls": ["list_dir"],
     "list": ["list_dir"], "webfetch": ["web_fetch"], "websearch": ["web_search"], "todowrite": ["todo_write"], "todoread": ["todo_read"],
     "task": ["spawn_subagent"], "notebookedit": ["edit_file"],
 }
+FILE_TOOLS = frozenset({"read_file", "list_dir", "edit_file", "multi_edit", "apply_patch", "write_file"})
 MODE_MAP = {"default": "default", "acceptedits": "accept_edits", "plan": "plan"}
 HOOK_EVENTS = {"PreToolUse", "PostToolUse", "PostToolUseFailure", "SessionStart", "SessionEnd", "UserPromptSubmit", "Stop", "SubagentStop",
                "PreCompact", "Notification"}
+# ABP judges a hook's matcher against the tool being called, and only for these three (bot/agent_runtime/hooks.py).
+TOOL_HOOK_EVENTS = frozenset({"PreToolUse", "PostToolUse", "PostToolUseFailure"})
+_ENV_REF = re.compile(r"\$\{(\w+)\}")
 
 
 @dataclass
@@ -87,39 +109,76 @@ def _tool_names(name: str) -> list[str]:
     return TOOLS.get(n.lower().replace("_", ""), [])
 
 
-def _pattern(tool: str, spec: str) -> str:
-    """The ABP `match` for a Claude-style specifier: '<prefix>:*' is a prefix match; 'domain:x' is a host."""
+def _path_key(path: Any) -> str:
+    """One spelling of a folder, so `Z:/Projects/X`, `z:\\Projects\\X` and `z:/Projects/X/` all compare equal.
+    Claude Code's own store keys projects by path and writes both cases."""
+    text = str(path).replace("\\", "/").rstrip("/")
+    return re.sub(r"^([A-Za-z]):/", lambda m: f"{m.group(1).lower()}:/", text).lower()
+
+
+def _relative_to(path: str, root: str) -> Optional[str]:
+    """`path` as a root-relative posix path, or None when it is not inside root."""
+    low, base = path.lower().rstrip("/"), root.lower().rstrip("/")
+    return path[len(base) + 1:] if low.startswith(base + "/") else None
+
+
+def _file_pattern(spec: str, project: Optional[Path]) -> str:
+    """A Claude-style file specifier as an ABP `match`. Claude Code writes a Windows folder as `//c/Users/...` and mixes
+    separators; ABP matches a file tool's subject relative to the workspace when the path is inside it, and as written
+    otherwise (bot/agent_runtime/permissions.subjects)."""
+    p = spec.strip().replace("\\", "/")
+    while p.startswith("//"):
+        p = p[1:]                                                        # //c/Users -> /c/Users
+    if re.match(r"^/[A-Za-z]/", p):
+        p = p[1].upper() + ":" + p[2:]                                    # /c/Users -> C:/Users
+    if project is not None and re.match(r"^[A-Za-z]:/", p):
+        rel = _relative_to(p, str(project).replace("\\", "/"))
+        if rel is not None:
+            return rel
+    return p[2:] if p.startswith("./") else p
+
+
+def _pattern(tool: str, spec: str, project: Optional[Path] = None) -> str:
+    """The ABP `match` for a Claude-style specifier: '<prefix>:*' is a prefix match; 'domain:x' is a host;
+    a file tool's path is rewritten to the form ABP matches on (a shell command is left alone, `./build.sh`
+    included - it is matched against the command as the agent wrote it)."""
     spec = spec.strip()
     if tool == "web_fetch" and spec.lower().startswith("domain:"):
         return spec[7:].strip()
     if spec.endswith(":*"):
         return spec[:-2] + "*"
-    if spec.startswith("./"):
-        return spec[2:]
-    return spec
+    return _file_pattern(spec, project) if tool in FILE_TOOLS else spec
 
 
 _RULE = re.compile(r"^\s*([A-Za-z_][\w]*)\s*(?:\((.*)\))?\s*$", re.S)
 
 
-def translate_rule(decision: str, entry: str, source: str, plan: Plan) -> None:
+def _claude_tool(entry: str) -> str:
+    """The Claude Code tool a permission entry names ('' when the entry cannot be read)."""
+    m = _RULE.match(entry or "")
+    return m.group(1) if m else ""
+
+
+def translate_rule(decision: str, entry: str, source: str, plan: Plan, project: Optional[Path] = None) -> list[str]:
+    """Adds the ABP rules one Claude-style permission entry means, and returns the tools they name."""
     m = _RULE.match(entry or "")
     if not m:
         plan.warnings.append(f"{source}: could not read the permission {entry!r}")
-        return
+        return []
     name, spec = m.group(1), m.group(2)
     tools = _tool_names(name)
     if not tools:
         plan.warnings.append(f"{source}: {entry!r} names a tool ABP does not have ({name}); skipped")
-        return
+        return []
     specific_mcp_tool = name.lower().startswith("mcp__") and name.count("__") >= 2        # one named tool, not "everything"
     if decision == "allow" and not spec and not specific_mcp_tool:
         plan.warnings.append(f"{source}: allow {entry!r} would let the agent use {name} without asking for anything; not imported (name a pattern to import it)")
-        return
+        return []
     for tool in tools:
-        rule = {"decision": decision, "tool": tool, "match": _pattern(tool, spec) if spec else "", "note": f"imported from {plan.source}"}
+        rule = {"decision": decision, "tool": tool, "match": _pattern(tool, spec, project) if spec else "", "note": f"imported from {plan.source}"}
         if rule not in plan.rules:
             plan.rules.append(rule)
+    return tools
 
 
 def _hook_matcher(matcher: str, plan: Plan, where: str) -> Optional[str]:
@@ -139,26 +198,71 @@ def _hook_matcher(matcher: str, plan: Plan, where: str) -> Optional[str]:
 def translate_hooks(hooks: Any, plan: Plan, source: str) -> None:
     if not isinstance(hooks, dict):
         return
+    untranslatable: set[str] = set()
     for event, groups in hooks.items():
         if event not in HOOK_EVENTS:
             plan.warnings.append(f"{source}: hook event {event!r} does not exist in ABP; skipped")
             continue
+        tool_event = event in TOOL_HOOK_EVENTS
+        said_source = False
         for group in groups if isinstance(groups, list) else []:
-            matcher = _hook_matcher(str((group or {}).get("matcher") or ""), plan, source)
-            for h in (group or {}).get("hooks") or []:
+            if not isinstance(group, dict):
+                plan.warnings.append(f"{source}: a {event} hook entry that is not an object was skipped")
+                continue
+            raw = str(group.get("matcher") or "")
+            # A session event's matcher names session sources ('startup|resume|clear|compact'), not tools. ABP fires these
+            # hooks unconditionally, so translating it would either lose the hook or match nothing: drop it and say so.
+            matcher = _hook_matcher(raw, plan, source) if tool_event else None
+            if not tool_event and raw and raw != "*" and not said_source:
+                said_source = True
+                plan.warnings.append(f"{source}: the {event} matcher {raw!r} chooses which session starts run the hook; ABP "
+                                     f"has no such filter, so the hook runs on every {event}")
+            for h in group.get("hooks") or []:
                 if not isinstance(h, dict) or h.get("type", "command") != "command" or not h.get("command"):
                     plan.warnings.append(f"{source}: a {event} hook that is not a command hook was skipped")
                     continue
+                untranslatable.update(k for k in ("timeout", "statusMessage") if k in h)
                 entry = {"event": event, "matcher": matcher, "command": str(h["command"])}
                 if matcher != "__no_match__" and entry not in plan.hooks:
                     plan.hooks.append(entry)
+    if untranslatable:
+        plan.warnings.append(f"{source}: a hook's {', '.join(sorted(untranslatable))} is not imported "
+                             "(an ABP hook is given 30 seconds and no progress message)")
 
 
-def translate_mcp(servers: Any, plan: Plan, source: str) -> None:
+def _server_env(spec: dict, plan: Plan, source: str, name: str) -> dict[str, str]:
+    """A server's environment. `${VAR}` is read from this process's environment, like the products read it; the value is
+    never printed. Anything still holding a `${...}` that is not one reference is not expanded."""
+    raw = spec.get("env") or spec.get("environment") or {}
+    if not isinstance(raw, dict):
+        plan.warnings.append(f"{source}: MCP server {name!r} has an 'env' that is not an object; skipped")
+        return {}
+    out: dict[str, str] = {}
+    for key, value in raw.items():
+        text = "" if value is None else str(value).strip()
+        ref = _ENV_REF.fullmatch(text)
+        if ref:
+            text = os.environ.get(ref.group(1), "")
+            if not text:
+                plan.warnings.append(f"{source}: MCP server {name!r} env {key} is ${{{ref.group(1)}}}, which is not set here; "
+                                     "imported with an empty value")
+        elif "${" in text:
+            plan.warnings.append(f"{source}: MCP server {name!r} env {key} is not a single ${{VAR}} reference; not imported")
+            text = ""
+        out[str(key)] = text
+    return out
+
+
+def translate_mcp(servers: Any, plan: Plan, source: str, skip: frozenset[str] = frozenset()) -> None:
     if not isinstance(servers, dict):
         return
+    switched_off: list[str] = []
     for name, spec in servers.items():
-        if not isinstance(spec, dict) or spec.get("disabled") or spec.get("enabled") is False:
+        if not isinstance(spec, dict):
+            plan.warnings.append(f"{source}: MCP server {name!r} is not an object; skipped")
+            continue
+        if spec.get("disabled") or spec.get("enabled") is False or str(name) in skip:
+            switched_off.append(str(name))
             continue
         clean = re.sub(r"[^A-Za-z0-9_-]", "_", str(name))
         kind = str(spec.get("type") or ("stdio" if spec.get("command") else "http")).lower()
@@ -171,7 +275,7 @@ def translate_mcp(servers: Any, plan: Plan, source: str) -> None:
                 plan.warnings.append(f"{source}: MCP server {name!r} has no command; skipped")
                 continue
             plan.mcp_servers.append({"name": clean, "transport": "stdio", "command": str(command), "args": [str(a) for a in args],
-                                     "env": {str(k): str(v) for k, v in (spec.get("env") or spec.get("environment") or {}).items()}})
+                                     "env": _server_env(spec, plan, source, str(name))})
         elif kind in ("http", "remote", "streamable-http", "streamable_http"):
             if not spec.get("url"):
                 plan.warnings.append(f"{source}: MCP server {name!r} has no url; skipped")
@@ -185,38 +289,101 @@ def translate_mcp(servers: Any, plan: Plan, source: str) -> None:
             plan.mcp_servers.append({"name": clean, "transport": "remote", "url": str(spec["url"]), "auth_token": token})
         else:
             plan.warnings.append(f"{source}: MCP server {name!r} uses the {kind!r} transport, which ABP does not support; skipped")
+    if switched_off:
+        plan.warnings.append(f"{source}: MCP server {', '.join(repr(n) for n in switched_off)} is switched off; not imported")
+
+
+def claude_dir(home: Path) -> Path:
+    """Claude Code keeps its user-level settings in ~/.claude, or wherever CLAUDE_CONFIG_DIR points (the product's own
+    override). Like agents.py's HERMES_HOME, only trusted for the real home, so --user-home stays hermetic."""
+    override = os.environ.get("CLAUDE_CONFIG_DIR", "").strip()
+    if override and home == Path.home():
+        return Path(os.path.expandvars(override)).expanduser()
+    return home / ".claude"
+
+
+def _claude_project_entry(project: Path, home: Path) -> Optional[dict]:
+    """`claude mcp add` writes a project's user-scope MCP servers, the tools allowed there and the `.mcp.json` servers this
+    project has switched off into ~/.claude.json, not into a settings file. Its keys are folder paths in either case."""
+    projects = (_load(home / ".claude.json") or {}).get("projects")
+    if not isinstance(projects, dict):
+        return None
+    want = _path_key(project)
+    for key, entry in projects.items():
+        if isinstance(entry, dict) and _path_key(key) == want:
+            return entry
+    return None
 
 
 def claude_code(project: Path, home: Path) -> Plan:
     plan = Plan("Claude Code")
-    for label, path in (("user settings", home / ".claude" / "settings.json"), ("project settings", project / ".claude" / "settings.json"),
-                        ("local settings", project / ".claude" / "settings.local.json"), ("project MCP", project / ".mcp.json")):
+    entry = _claude_project_entry(project, home)
+    switched_off = {str(n) for n in (entry or {}).get("disabledMcpjsonServers") or []}
+    if entry is not None:
+        plan.files.append(str(home / ".claude.json"))
+    for label, path, skip in (("user settings", claude_dir(home) / "settings.json", frozenset()),
+                              ("project settings", project / ".claude" / "settings.json", frozenset()),
+                              ("local settings", project / ".claude" / "settings.local.json", frozenset()),
+                              ("project MCP", project / ".mcp.json", frozenset(switched_off))):
         data = _load(path)
         if data is None:
             continue
         plan.files.append(str(path))
         perms = data.get("permissions") or {}
+        if not isinstance(perms, dict):
+            plan.warnings.append(f"{label}: 'permissions' is not an object; skipped")
+            perms = {}
+        shells = 0
         for decision in ("deny", "ask", "allow"):                  # deny first so a later allow can never precede it
-            for entry in perms.get(decision) or []:
-                translate_rule(decision, str(entry), label, plan)
+            for entry_text in perms.get(decision) or []:
+                if translate_rule(decision, str(entry_text), label, plan, project) and _claude_tool(str(entry_text)).lower() == "powershell":
+                    shells += 1
+        if shells:
+            plan.warnings.append(f"{label}: {shells} PowerShell(...) rule(s) became run_shell rules - ABP's run_shell is the "
+                                 "platform shell (cmd.exe on Windows), so PowerShell-only syntax in them will not run")
+        extra = perms.get("additionalDirectories")
+        if isinstance(extra, list) and extra:
+            plan.warnings.append(f"{label}: {len(extra)} additionalDirectories (folders Claude Code may reach outside the "
+                                 "project) have no ABP equivalent - a bot's workspace is its own folder; not imported")
         mode = str(perms.get("defaultMode") or "").replace("_", "").lower()
         if mode in MODE_MAP and MODE_MAP[mode] != "default":
             plan.mode = MODE_MAP[mode]
         elif mode:
             plan.warnings.append(f"{label}: default mode {perms.get('defaultMode')!r} is not imported (bypassing permissions is never imported)")
         translate_hooks(data.get("hooks"), plan, label)
-        translate_mcp(data.get("mcpServers"), plan, label)
+        translate_mcp(data.get("mcpServers"), plan, label, skip)
         for key in ("env", "model", "apiKeyHelper", "statusLine"):
             if key in data:
                 plan.warnings.append(f"{label}: '{key}' is not imported")
+    if entry is not None:
+        for tool in entry.get("allowedTools") or []:
+            translate_rule("allow", str(tool), "claude.json allowedTools", plan, project)
+        translate_mcp(entry.get("mcpServers"), plan, "claude.json mcpServers")
     return plan
+
+
+def opencode_configs(project: Path, home: Path) -> list[Path]:
+    """Where OpenCode keeps its configuration: `$OPENCODE_CONFIG` (the file it was launched with, as the swarm's own
+    launcher does), then `$XDG_CONFIG_HOME`/`~/.config/opencode/opencode.json(c)`, then the project folder. The two
+    environment overrides are honoured only for the real home, so --user-home stays hermetic."""
+    out: list[Path] = []
+    if home == Path.home():
+        named = os.environ.get("OPENCODE_CONFIG", "").strip()
+        if named:
+            given = Path(os.path.expandvars(named)).expanduser()
+            out += [given / n for n in ("opencode.json", "opencode.jsonc")] if given.is_dir() else [given]
+        base = os.environ.get("XDG_CONFIG_HOME", "").strip()
+        config_home = Path(os.path.expandvars(base)).expanduser() if base else home / ".config"
+    else:
+        config_home = home / ".config"
+    out += [config_home / "opencode" / n for n in ("opencode.json", "opencode.jsonc")]
+    out += [project / n for n in ("opencode.json", "opencode.jsonc")]
+    return list(dict.fromkeys(out))
 
 
 def opencode(project: Path, home: Path) -> Plan:
     plan = Plan("OpenCode")
-    candidates = [home / ".config" / "opencode" / "opencode.json", home / ".config" / "opencode" / "opencode.jsonc",
-                  project / "opencode.json", project / "opencode.jsonc"]
-    for path in candidates:
+    for path in opencode_configs(project, home):
         data = _load(path)
         if data is None:
             continue
@@ -233,6 +400,8 @@ def opencode(project: Path, home: Path) -> Plan:
             for pattern, decision in entries.items():
                 decision = str(decision).lower()
                 if decision not in ("allow", "ask", "deny"):
+                    plan.warnings.append(f"{label}: permission {key!r} for {pattern!r} is {decision!r}, which is not a "
+                                         "decision ABP knows (allow / ask / deny); skipped")
                     continue
                 if decision == "allow" and pattern == "*":
                     plan.warnings.append(f"{label}: blanket allow for {key!r} not imported (name a pattern to import it)")
