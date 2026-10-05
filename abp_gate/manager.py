@@ -619,12 +619,15 @@ class Manager:
         The health check that passed a moment ago said this instance's port was
         answering - but that was BEFORE it took the leader lease, and taking the
         lease is precisely what starts the lease-gated services: a long sequence
-        of blocking work on that instance's own event loop, measured at 2.5-3.1s
-        (and much longer on a loaded machine). Flipping routing into an instance
-        that cannot answer for the next few seconds is the outage a swap exists
-        to prevent, and the instance being replaced is still serving and keeps
-        serving until the pointer moves - so waiting here costs nothing and
-        removing the stall costs every client of the public port.
+        of blocking work on that instance's own event loop, which stalls its
+        /healthz for 2.5-3.0s here under a deliberate load (and for longer on a
+        busier machine - measured through the public port during a real swap:
+        one request took 2.5s, which on a loaded machine is a client timeout).
+        Flipping routing into an instance that cannot answer for the next few
+        seconds is the outage a swap exists to prevent, and the instance being
+        replaced is still serving and keeps serving until the pointer moves - so
+        waiting here costs nothing and removing the stall costs every client of
+        the public port.
 
         Best effort on purpose: a slow answer is not on its own a reason to undo
         a handover that has already happened (that costs more downtime than it

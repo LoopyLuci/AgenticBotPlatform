@@ -43,13 +43,14 @@ DEFAULT_WATCH_INTERVAL_S = 5.0
 #: This exists because those are two different questions and only one of them is
 #: about a crash. "The process is gone" is answered by the OS, instantly and
 #: truthfully. "It did not answer a probe within three seconds" is answered by a
-#: busy machine as readily as by a sick one: measured on this machine, a booting
-#: ABP blocks its own event loop for 2.5-3.0s while it starts its
-#: lease-gated services (they are imported and started synchronously, inside
-#: supervisor.supervise(), on the same loop that serves /healthz). On a loaded
-#: machine that crosses the probe timeout, and a gate that acts on one failed
-#: probe kills a healthy ABP and boots a replacement - turning a three-second
-#: hiccup into a thirty-second outage, and handing the test suite a moving pid.
+#: busy machine as readily as by a sick one: measured on this machine with a
+#: deliberate CPU load, a booting ABP stalls its own /healthz for 2.5-3.0s while
+#: it starts its lease-gated services (they are imported and started
+#: synchronously, inside supervisor.supervise(), on the same loop that serves
+#: /healthz) - i.e. at the edge of the probe timeout here, and over it on a
+#: busier machine. A gate that acts on one failed probe kills a healthy ABP and
+#: boots a replacement - turning a three-second hiccup into a thirty-second
+#: outage, and handing the test suite a moving pid.
 #:
 #: So: a process the OS says is gone is restarted at once, and a process that is
 #: merely unanswerable has to stay that way for this long. The restart budget

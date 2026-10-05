@@ -211,11 +211,13 @@ def wait_lease(port: int, headers: dict, until, timeout: float = 120.0) -> dict:
     the dashboard from a task it creates BEFORE the lease controller exists (see
     bot/main.py: the controller task and the role banner both come after
     `await mcp_client.connect_all_enabled()`), and starting the lease-gated
-    services then blocks that same event loop - measured at 2.5-3.1s on an idle
-    machine, and much more on a loaded one, which is longer than the health
-    probe's own timeout. So reading the lease (or a log line) the moment the
-    port starts answering is reading state the boot has not written yet, and on a
-    loaded machine that is a failed test rather than a wrong answer.
+    services then blocks that same event loop. Measured on this machine with a
+    deliberate CPU load (four to sixteen spinning processes): 2.5-3.1s between
+    the port answering and the lease being reported held, and /healthz stalling
+    for 2.5-3.0s inside that window - which is longer than the health probe's
+    own 3s timeout. So reading the lease (or a log line) the moment the port
+    starts answering is reading state the boot has not written yet, and on a
+    busier machine that is a failed test rather than a wrong answer.
 
     Waits for the condition with a generous deadline; never sleeps a fixed time
     and hopes."""
@@ -1379,12 +1381,14 @@ def test_a_running_instance_too_busy_to_answer_is_left_alone(tmp_path):
     """The other half of "is it crashed?": a process the OS says is THERE, that
     missed one probe, is not a crashed process.
 
-    Measured on this machine: a booting ABP blocks its own event loop for 2.5-3.1s
-    while it starts its lease-gated services, against a health probe with a 3s
-    timeout - so on a loaded machine one missed probe is what a healthy instance
-    looks like. A gate that acts on it kills a working ABP and boots a
-    replacement: an outage manufactured by the thing that exists to prevent them,
-    and a moving pid for anything reading the registry.
+    Measured on this machine with the CPU deliberately loaded: a booting ABP
+    stalls its own /healthz for 2.5-3.0s while it starts its lease-gated
+    services, against a health probe with a 3s timeout - so on a loaded machine
+    one missed probe is what a healthy instance looks like. A gate that acts on
+    it kills a working ABP and boots a replacement: an outage manufactured by the
+    thing that exists to prevent them, and a moving pid for anything reading the
+    registry. (Reproduced directly, on a healthy instance: suspend its
+    interpreter for four seconds and the old watcher replaced it.)
 
     So an unanswerable-but-running instance has to stay that way for
     ABP_GATE_UNHEALTHY_GRACE_S first - and must NOT stay that way forever, which
