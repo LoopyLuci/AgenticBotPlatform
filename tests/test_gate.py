@@ -1083,6 +1083,59 @@ def wait_for_error(gate: Gate, name: str, needle: str, timeout: float = 90.0) ->
                          f"{gate_log(gate.root)}")
 
 
+def test_a_gate_with_nothing_running_gives_up_on_starting_production_too(tmp_path):
+    """The mirror image of the restart budget: a boot that failed is worth
+    another go, and a checkout that cannot start is not.
+
+    `abp gate start`'s promise is that ABP comes up; a gate whose own first
+    attempt failed has to try again or it is a promise with a hole in it. Bounded
+    the same way, and it says so when it stops. The gate here runs a code root
+    whose bot/main.py exits at once, so every attempt is a real process that dies
+    - counted here, not assumed."""
+    gate = start_gate(
+        tmp_path, argv=["--code-root", str(broken_checkout(tmp_path))], wait_for_instance=False,
+        ABP_GATE_WATCH_INTERVAL_S="0.5", ABP_GATE_RESTART_LIMIT="2",
+        ABP_GATE_RESTART_WINDOW_S="120", ABP_GATE_RESTART_BACKOFF_S="0.2",
+    )
+    try:
+        deadline = time.monotonic() + 60.0
+        gave_up = ""
+        while time.monotonic() < deadline:
+            gave_up = "\n".join(line for line in gate_log(tmp_path).splitlines()
+                               if "has stopped trying" in line)
+            if gave_up:
+                break
+            time.sleep(0.5)
+        assert gave_up, f"the gate never said it had stopped trying:\n{gate_log(tmp_path)}"
+        assert "abp_cli instance swap" in gave_up, gave_up
+
+        # Its own first attempt plus one retry, and not one more: two starts, and
+        # the gate is done asking.
+        assert gate.spawns_for("prod") == 2, gate.spawns_for("prod")
+        time.sleep(2.0)
+        assert gate.spawns_for("prod") == 2, "the gate kept starting a build that cannot start"
+        assert gate.instances()["active"] is None
+    finally:
+        stop_gate(gate)
+
+
+def test_a_gate_started_with_no_start_never_starts_anything(tmp_path):
+    """`--no-start` means bind the ports and start nothing, and the watcher's
+    "there is no instance, let me start one" has to respect that: it is exactly
+    the instruction a person gives when they do not want an ABP yet."""
+    gate = start_gate(
+        tmp_path, argv=["--no-start"], wait_for_instance=False, ABP_GATE_WATCH_INTERVAL_S="0.5",
+        ABP_GATE_RESTART_BACKOFF_S="0.2",
+    )
+    try:
+        time.sleep(3.0)
+        assert gate.instances()["instances"] == {}, gate.instances()
+        assert not list(gate.instances_dir.glob("prod*.log")), "it started something anyway"
+        assert httpx.get(f"{gate.control}/healthz", timeout=10.0).status_code == 503
+    finally:
+        stop_gate(gate)
+
+
 def test_an_instance_that_never_worked_is_not_restarted(watcher_gate: Gate):
     """A build that cannot start is not a process that crashed.
 

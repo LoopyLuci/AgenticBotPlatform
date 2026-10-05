@@ -37,6 +37,11 @@ from abp_gate.proxy import ProxyApp, Router
 
 logger = logging.getLogger("abp_gate")
 
+#: The restart-budget key for "there is no instance at all", as opposed to a
+#: named one. Not an instance name, so it cannot collide with one: `prod` is a
+#: perfectly ordinary name for the production instance.
+PRODUCTION_BUDGET = "__no_instance__"
+
 
 def _setup_logging(verbose: bool = False) -> None:
     root = logging.getLogger()
@@ -73,10 +78,14 @@ class Gate:
         self._servers: list[Any] = []
         self._control_task: Optional[asyncio.Task] = None
         self.watch_interval_s = limits.watch_interval_s()
+        #: --no-start means exactly that: the watcher may not start anything.
+        self._may_start_production = False
+        self._production_gave_up = False
 
     async def run(self, *, start_production: bool = True) -> None:
         import uvicorn
 
+        self._may_start_production = start_production
         control.save_gate_meta({"public_url": f"http://127.0.0.1:{self.public_ports[0]}"})
         logger.info("abp_gate %s up: public %s, control http://127.0.0.1:%s",
                     __version__, self.public_ports, self.control_port)
@@ -108,7 +117,11 @@ class Gate:
                 logger.info("production instance ready: %s", json.dumps({k: v for k, v in result.items()
                                                                          if k != "log"}))
             except Exception:  # noqa: BLE001 - a broken checkout must not stop the gate existing
-                logger.exception("could not start the production instance - the gate is up and will retry")
+                logger.exception("could not start the production instance - the gate is up")
+                # The first failure costs an attempt, so the watcher's budget
+                # starts where this one stopped instead of handing out a fresh
+                # allowance the moment the watcher comes up.
+                registry.record_restart(PRODUCTION_BUDGET)
 
         self._control_task = asyncio.create_task(self._watch())
         await self._stop.wait()
@@ -156,9 +169,10 @@ class Gate:
                 logger.exception("the instance watch iteration failed")
 
     async def _reconcile(self) -> None:
-        """One look at the active instance. Four answers, in this order:
+        """One look at the active instance. Five answers, in this order:
 
           healthy            nothing to do (and its restart budget is reset)
+          no instance at all  try to start the production one, within the budget
           a sandbox          mark it stopped; it is not ours to restart
           never healthy      mark it failed and LEAVE IT - a process that cannot
                              start is not one that crashed, and retrying it on a
@@ -172,6 +186,7 @@ class Gate:
         active_name = registry.active_name()
         logger.debug("watcher reconcile: active_name=%s", active_name)
         if not active_name:
+            await self._maybe_start_production()
             return
         inst = registry.get(active_name)
         if inst is None:
@@ -219,6 +234,47 @@ class Gate:
             await self.mgr.restart_active()
         except manager.SwapError as exc:
             logger.error("could not restart the active instance: %s", exc)
+
+    async def _maybe_start_production(self) -> None:
+        """Nothing is serving at all: give starting one a bounded number of tries.
+
+        The mirror image of the restart budget, and for the same reason. A boot
+        that failed on a locked database is worth another go, and the gate
+        owning the public port is exactly the thing that should notice. A
+        checkout that cannot start is not - and retrying that forever is how this
+        gate used to fill a machine with processes.
+
+        A gate started with --no-start never does this: it was told to bind the
+        ports and start nothing, and that instruction outranks availability."""
+        if not self._may_start_production:
+            return
+        recent = registry.restarts_in_window(PRODUCTION_BUDGET)
+        if len(recent) >= limits.restart_limit():
+            if not self._production_gave_up:
+                self._production_gave_up = True
+                logger.error(
+                    "no instance is running and starting one has failed %s time(s) in the last "
+                    "%s minutes, so the gate has stopped trying. Fix the code, then run "
+                    "`abp_cli instance swap <code-root>` (or restart the gate).",
+                    len(recent), int(limits.restart_window_s() / 60))
+            return
+        wait_s = limits.restart_backoff_s()[min(len(recent), len(limits.restart_backoff_s()) - 1)]
+        if wait_s > 0:
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=wait_s)
+                return
+            except asyncio.TimeoutError:
+                pass
+        registry.record_restart(PRODUCTION_BUDGET)
+        logger.warning("no instance is running; starting the production one (attempt %s of %s)",
+                       len(recent) + 1, limits.restart_limit())
+        try:
+            result = await self.mgr.start_production()
+            logger.info("production instance ready: %s", json.dumps({k: v for k, v in result.items()
+                                                                     if k != "log"}))
+            self._production_gave_up = False
+        except Exception as exc:  # noqa: BLE001 - the watcher outlives anything it finds
+            logger.error("could not start the production instance: %s", exc)
 
     async def _is_healthy(self, inst: registry.Instance) -> bool:
         """Both questions: is the process there, and is it serving? Either one
