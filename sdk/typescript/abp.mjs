@@ -2721,10 +2721,24 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/peers/routes": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/peers/routes",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/peers/self-address": {
   "body": false,
   "method": "GET",
   "path": "/api/peers/self-address",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/peers/transport": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/peers/transport",
   "path_params": [],
   "query_params": []
  },
@@ -4453,6 +4467,15 @@ export const operations = {
   ],
   "query_params": []
  },
+ "POST /api/cluster/jobs/{pid}/collect": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/cluster/jobs/{pid}/collect",
+  "path_params": [
+   "pid"
+  ],
+  "query_params": []
+ },
  "POST /api/cluster/refresh": {
   "body": false,
   "method": "POST",
@@ -4473,6 +4496,16 @@ export const operations = {
   "path": "/api/cluster/runs/{rid}/cancel",
   "path_params": [
    "rid"
+  ],
+  "query_params": []
+ },
+ "POST /api/cluster/runs/{rid}/files/{name}/send": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/cluster/runs/{rid}/files/{name}/send",
+  "path_params": [
+   "rid",
+   "name"
   ],
   "query_params": []
  },
@@ -8920,10 +8953,24 @@ export const operations = {
   ],
   "query_params": []
  },
+ "api_peers_routes_api_peers_routes_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/peers/routes",
+  "path_params": [],
+  "query_params": []
+ },
  "api_peers_self_address_api_peers_self_address_get": {
   "body": false,
   "method": "GET",
   "path": "/api/peers/self-address",
+  "path_params": [],
+  "query_params": []
+ },
+ "api_peers_transport_api_peers_transport_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/peers/transport",
   "path_params": [],
   "query_params": []
  },
@@ -10317,6 +10364,15 @@ export const operations = {
   ],
   "query_params": []
  },
+ "cluster_job_collect_api_cluster_jobs__pid__collect_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/cluster/jobs/{pid}/collect",
+  "path_params": [
+   "pid"
+  ],
+  "query_params": []
+ },
  "cluster_job_logs_api_cluster_jobs__pid__logs_get": {
   "body": false,
   "method": "GET",
@@ -10417,6 +10473,16 @@ export const operations = {
   "query_params": [
    "offset"
   ]
+ },
+ "cluster_run_send_file_api_cluster_runs__rid__files__name__send_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/cluster/runs/{rid}/files/{name}/send",
+  "path_params": [
+   "rid",
+   "name"
+  ],
+  "query_params": []
  },
  "cluster_run_start_api_cluster_runs__rid__start_post": {
   "body": false,
