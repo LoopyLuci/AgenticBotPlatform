@@ -45,6 +45,7 @@
       "stage/abp_agenteval": "abp_agenteval",
       "stage/abp_toolkit": "abp_toolkit",
       "stage/abp_modkit": "abp_modkit",
+      "stage/abp_native": "abp_native",
       "stage/catalog": "catalog",
       "stage/integrations": "integrations",
       "stage/config/backends.yaml": "config/backends.yaml",

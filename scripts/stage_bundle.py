@@ -165,7 +165,7 @@ def write_build_stamp(stage_dir: Path = STAGE) -> Path:
         "commit": _git("rev-parse", "HEAD"),
         "commit_date": _git("log", "-1", "--format=%cs"),
         "dirty": bool(_git("status", "--porcelain", "--", "bot", "abp_cicd", "abp_run", "abp_acp", "abp_agenteval",
-                           "abp_toolkit", "abp_modkit", "catalog", "config/backends.yaml")),
+                           "abp_toolkit", "abp_modkit", "abp_native", "catalog", "config/backends.yaml")),
         "built_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
     }
     path = Path(stage_dir) / BUILD_STAMP
@@ -188,7 +188,9 @@ def stage(stage_dir: Path = STAGE, markers: list[str] | None = None) -> None:
     # the installed folder; it runs turns through abp_run, and its scripted test mode uses
     # abp_agenteval's replay transport. The agent's toolkit_* tools come from abp_toolkit. abp_modkit is what makes
     # a project a module (the adopt routes import it, and adopted modules' hubs run `python -m abp_modkit`).
-    for pkg in ("abp_run", "abp_acp", "abp_agenteval", "abp_toolkit", "abp_modkit"):
+    # abp_native is the pure-Python face of the Rust accelerators: core modules import it, and the compiled modules
+    # it uses (and abp_wasm, abp_rules) ship inside .venv, so a machine without them runs the Python fallbacks.
+    for pkg in ("abp_run", "abp_acp", "abp_agenteval", "abp_toolkit", "abp_modkit", "abp_native"):
         if (ROOT / pkg).is_dir():
             shutil.copytree(ROOT / pkg, stage_dir / pkg, ignore=_bot_ignore)
     # The module catalog: overlays ABP ships for third-party repos (bot/modules/registry.py reads <root>/catalog).
