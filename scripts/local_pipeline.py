@@ -499,6 +499,56 @@ def check_android() -> Optional[bool]:
     return True
 
 
+def check_leak_guard() -> bool:
+    """The public-repo leak guard over every tracked file: no machine paths, and nothing the
+    private denylist lists. Always runs and never skips — this repo is public, so a leak here
+    is a leak to everyone, unlike the toolchain-dependent checks around it."""
+    Step.head("Public-repo leak guard")
+    import leak_guard
+
+    raw = os.environ.get("ABP_PRIVATE_DIR", "").strip()
+    private = Path(os.path.expandvars(raw)).expanduser() if raw else None
+    cfg = leak_guard.settings(private)
+    findings = leak_guard.scan(ROOT, private_dir=private, allow=cfg["allow"])
+    failing, warning = leak_guard.report(findings, cfg["modes"])
+    for f in failing:
+        Step.err(str(f))
+    for f in warning:
+        Step.warn(str(f))
+    if failing:
+        Step.err(f"{len(failing)} finding(s) that must not be in a public repo "
+                 f"({len(warning)} warning(s)) - fix these or allow them in the private leak_guard.yaml")
+        return False
+    if warning:
+        Step.warn(f"leak guard: {len(warning)} warning(s), nothing failing")
+    else:
+        Step.ok("no machine paths and no private terms in the tracked files")
+    return True
+
+
+def check_extension_tests() -> Optional[bool]:
+    """The test directories local extensions declared (ABP_PRIVATE_DIR/extensions/<name>/
+    tests). None when no extension declared any — the ordinary public install has none."""
+    Step.head("Extension tests")
+    try:
+        from bot import extensions
+        dirs = extensions.test_dirs()
+    except Exception as exc:  # noqa: BLE001 — a broken private folder must not fail the pipeline here
+        Step.warn(f"couldn't read the extensions: {exc}")
+        return None
+    if not dirs:
+        Step.skip("no extension declared a test directory")
+        return None
+    for d in dirs:
+        Step.doing(str(d))
+        ok, out = _run([_venv_python(), "-m", "pytest", "-q", str(d)], cwd=ROOT)
+        if not ok:
+            Step.err(f"the extension tests in {d} failed:\n" + out[-4000:])
+            return False
+    Step.ok(f"tests from {len(dirs)} extension test director(ies) passed")
+    return True
+
+
 def check_vscode() -> Optional[bool]:
     Step.head("VS Code extension - typecheck, unit tests, tests in a real VS Code")
     ext = ROOT / "integrations" / "vscode"
@@ -767,6 +817,10 @@ def _run_pipeline_body(args: argparse.Namespace) -> int:
                 Step.warn("still locked by something outside this repo: " + ", ".join(healed.still_locked[:3]))
 
         results: dict[str, Optional[bool]] = {"python": _timed("python", check_python)}
+        # Two checks no change-detection can skip: this repo is public, so a leak is a leak to
+        # everyone, and the extensions a local install adds are its own to test.
+        results["leak-guard"] = _timed("leak-guard", check_leak_guard)
+        results["extension-tests"] = _timed("extension-tests", check_extension_tests)
         for name, needed, fn in (("rust", rust_needed, check_rust), ("android", android_needed, check_android),
                                  ("vscode", vscode_needed, check_vscode),
                                  ("docker", docker_needed, check_docker)):

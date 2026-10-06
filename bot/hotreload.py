@@ -77,6 +77,9 @@ def _enabled_by_default() -> bool:
 # for module-level mutable containers, not by inspection alone).
 DENYLIST: frozenset[str] = frozenset({
     "bot.main", "bot.router", "bot.db", "bot.config", "bot.dashboard.server", "bot.dashboard.cicd_api", "bot.dashboard.agent_security_api", "bot.dashboard.models_info_api", "bot.dashboard.approvals_api", "bot.dashboard.channels_api", "bot.dashboard.agent_config_api", "bot.dashboard.tailscale_api", "bot.dashboard.infra_api", "bot.dashboard.browser_api", "bot.dashboard.browser_gateway_api", "bot.browser_gateway",
+    # Extensions (ABP_PRIVATE_DIR): the loader is loaded once and caches what it found, and its
+    # routes are registered on the live app at build time - same reason bot.config is here.
+    "bot.extensions", "bot.dashboard.extensions_api",
     "bot.agent_runtime.engine", "bot.agent_runtime.approval", "bot.agent_runtime.subagent_registry",
     "bot.platform_supervisor",
     "bot.tasks",  # holds the strong references that keep in-flight background tasks alive

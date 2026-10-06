@@ -5,7 +5,7 @@ on local drives, inference runs on the local GPU, and training runs on the local
 
 | Piece | What it does |
 |---|---|
-| `paths.py` | `ABP_LOCALAI_HOME`, else `/path/redacted` where an E: drive exists, else `<data>/localai`. `cpu_threads()` returns the CPU threads ABP's heavy work may use right now (see the Neural Lab's stability policy). |
+| `paths.py` | `ABP_LOCALAI_HOME`, else `<data>/localai`. `cpu_threads()` returns the CPU threads ABP's heavy work may use right now (see the Neural Lab's stability policy). |
 | `models.py` | The store, laid out exactly like Ollama's: `models/manifests/<host>/<ns>/<model>/<tag>` plus `models/blobs/sha256-…`. A model is *pulled*, *imported* (hard-linked when on the same drive), or *referenced* (used in place, recorded in `abp-references.json`). Other Ollama-format stores can be read in place (`stores.json`). |
 | `discover.py` | Finds models other programs keep: Ollama (`OLLAMA_MODELS`, `~/.ollama/models`, other drives), LM Studio, the Hugging Face cache, GPT4All, Jan, PrivateProject (`~/.private_project/models`), and added folders. `adopt_all()` is a new user's slot-in: Ollama stores are read in place and GGUF files are referenced, so nothing is downloaded again. |
 | `pull.py` | Downloads from Ollama's registry (`qwen2.5:0.5b`) and Hugging Face (`hf.co/<org>/<repo>:<quant>`), or from a URL. Resumable and SHA-256 verified. |
@@ -39,7 +39,7 @@ abp ai train setup
 ```
 
 ```bash
-abp ai train start unsloth/qwen3-1.7b /path/redacted --steps 150 --name abp/qwen3-abp:v2
+abp ai train start unsloth/qwen3-1.7b <data dir>/localai/datasets/abp-localai-qa.jsonl --steps 150 --name abp/qwen3-abp:v2
 ```
 
 When it finishes, ABP's loop exports the run to `abp/qwen3-abp:v2` (Q4_K_M) and it can be run at once. A cached

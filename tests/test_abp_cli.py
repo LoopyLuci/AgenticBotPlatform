@@ -498,7 +498,7 @@ def test_ssh_full_lifecycle(client, ssh_toolkit_home, capsys):
     assert json.loads(capsys.readouterr().out) == []
 
     code, _ = run(["ssh", "add", "--name", "cli-test-ssh", "--host-name", "10.5.5.5",
-                   "--user", "tester", "--identity-file", "C:/fake/key", "--tags", "test"], client)
+                   "--user", "tester", "--identity-file", "/fake/key", "--tags", "test"], client)
     assert code == 0
     capsys.readouterr()
 
@@ -540,7 +540,7 @@ def test_ssh_run_command_over_a_real_local_loopback(client, ssh_toolkit_home, ca
     # Not a live SSH server - just confirms the run path (add -> run -> remove) works
     # and a failure to actually connect surfaces as a real, non-crashing error.
     code, _ = run(["ssh", "add", "--name", "cli-test-run", "--host-name", "127.0.0.1",
-                   "--port", "1", "--identity-file", "C:/fake/key"], client)
+                   "--port", "1", "--identity-file", "/fake/key"], client)
     assert code == 0
     capsys.readouterr()
 
@@ -1103,15 +1103,18 @@ def test_modules_list_show_ops_status_and_logs(client, capsys):
     assert code == 0
     assert isinstance(json.loads(capsys.readouterr().out), list)
 
-    # A module that is not installed has no hub, so no operations to list: a real 503 from the module API,
-    # not a silent empty answer. An installed one lists its operations. Which modules are installed depends
-    # on the machine, so pick by what the list says.
-    missing = next((m["id"] for m in modules if not m["installed"]), None)
+    # A module that is not installed has no hub answering, so no operations to list: a real 503 from the
+    # module API, not a silent empty answer. An installed one lists its operations. Which modules are
+    # installed depends on the machine, so pick by what the list says. An adapter's operations
+    # (vm_harness's, say) are this install's own and answer whether or not that module is installed, and
+    # a hub that is actually running answers for itself, so only a plain stopped one proves the 503.
+    missing = next((m["id"] for m in modules
+                    if not m["installed"] and not m.get("adapter") and m.get("has_hub")
+                    and not (m.get("hub") or {}).get("running")), None)
     if missing:
         code, _ = run(["--json", "modules", "ops", missing], client)
-        assert code == 1
         err = capsys.readouterr().err
-        assert "not installed" in err or "no operations" in err, err
+        assert code == 1 and "503" in err, (code, err)
     # Only a hub that is actually running has operations to list; installed-but-stopped is the machine's state,
     # not a CLI bug.
     present = next((m["id"] for m in modules

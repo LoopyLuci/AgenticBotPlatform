@@ -211,7 +211,7 @@ documents. With `backend: windows_job`, its memory and process limits apply insi
 Your user folder is out of reach, including `.ssh`, browser profiles and saved credentials. So is a
 per-user Python or Node install, until you list it. This is deliberate: a network block that a
 command could bypass by reading your saved tokens would not be worth much. Write an absolute
-program path in quotes (`"C:\tools\x.exe"`): cmd.exe's lookup of an unquoted absolute path can be
+program path in quotes (`"<tools>\x.exe"`): cmd.exe's lookup of an unquoted absolute path can be
 refused inside a container, while a quoted path or a `PATH` lookup works.
 
 **Verified for real** (`tests/test_sandbox_offline.py`):

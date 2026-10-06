@@ -64,7 +64,7 @@ def hermes_home(tmp_path: Path) -> Path:
         "fallback_providers": [{"provider": "ollama", "model": "llama3.1:8b"}, {"provider": "anthropic", "model": "claude-x"},
                                {"provider": "mystery", "model": "m"}],
         "mcp_servers": {
-            "arduino": {"command": "python", "args": '["/path/redacted server.py", "--port", "8"]', "timeout": 180},
+            "arduino": {"command": "python", "args": '["/srv/tools/arduino server.py", "--port", "8"]', "timeout": 180},
             "saver": {"command": "python", "args": "-m saver --flag", "env": {"SS_API_URL": "http://127.0.0.1:8125"}},
             "trader": {"url": "http://127.0.0.1:8128/mcp", "timeout": 120},
             "filtered": {"command": "srv", "tools": {"include": ["a"]}},
@@ -81,7 +81,7 @@ def hermes_home(tmp_path: Path) -> Path:
                          "TELEGRAM_BOT_TOKEN=unused-telegram\nTELEGRAM_ALLOWED_USERS=111, 222\n"
                          "DISCORD_BOT_TOKEN=unused-discord\n# a comment\nEMPTY_KEY=\n")
     write(home / "SOUL.md", "You are Hermes, a careful assistant.\n")
-    write(home / "memories" / "MEMORY.md", "The server runs on port 8123\n§\nBackups go to D:\n§\n\n§\nDeploys happen on Fridays")
+    write(home / "memories" / "MEMORY.md", "The server runs on port 8123\n§\nBackups go to /srv/backups\n§\n\n§\nDeploys happen on Fridays")
     write(home / "memories" / "USER.md", "Prefers short answers\n§\nIs in New York")
     skills = home / "skills"
     skill(skills, "software-development/android-gradle-workflow", "Build Android apps with Gradle")
@@ -132,7 +132,7 @@ def test_hermes_models_go_to_the_router_but_never_claude(tmp_path):
 
 def test_hermes_mcp_args_in_every_real_shape(tmp_path):
     servers = {s["name"]: s for s in hermes_plan(tmp_path).mcp_servers}
-    assert servers["arduino"]["args"] == ["/path/redacted server.py", "--port", "8"]
+    assert servers["arduino"]["args"] == ["/srv/tools/arduino server.py", "--port", "8"]
     assert servers["saver"]["args"] == ["-m", "saver", "--flag"] and servers["saver"]["env"] == {"SS_API_URL": "http://127.0.0.1:8125"}
     assert servers["trader"]["transport"] == "remote" and servers["trader"]["url"] == "http://127.0.0.1:8128/mcp"
 
@@ -159,7 +159,7 @@ def test_hermes_soul_memories_jobs_and_channels(tmp_path):
     plan = hermes_plan(tmp_path)
     assert plan.agent == {"name": "Hermes", "instructions": "You are Hermes, a careful assistant."}
     facts = [m["content"] for m in plan.memories if m["kind"] == "fact"]
-    assert facts == ["The server runs on port 8123", "Backups go to D:", "Deploys happen on Fridays"]
+    assert facts == ["The server runs on port 8123", "Backups go to /srv/backups", "Deploys happen on Fridays"]
     assert [m["content"] for m in plan.memories if m["kind"] == "user"] == ["Prefers short answers", "Is in New York"]
     jobs = {s["name"]: s for s in plan.schedules}
     assert set(jobs) == {"Hourly check", "Morning brief"}

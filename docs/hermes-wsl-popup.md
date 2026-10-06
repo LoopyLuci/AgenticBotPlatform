@@ -1,22 +1,22 @@
 # The Hermes -> python -> wsl.exe console popup
 
-**Status:** finding + proposed patch. Nothing in `/path/redacted` was modified; Hermes is upstream
+**Status:** finding + proposed patch. Nothing in the Hermes checkout was modified; Hermes is upstream
 code and READ-ONLY for this task.
 
 ## What the watcher logged
 
-`/path/redacted` (`/path/redacted`, 2026-10-04 11:37:01):
+a standalone window watcher (its own log file, 2026-10-04 11:37:01):
 
 ```
-NEW ConsoleWindowClass 'C:\Windows\System32\wsl.exe'
+NEW ConsoleWindowClass '<Windows>\System32\wsl.exe'
     146148(gone) python.exe []
-    <= 186696 python.exe ["/path/redacted\tools\python-3.14.7+20260901-win32-x64\python.exe" -m hermes_cli.main gateway run]
+    <= 186696 python.exe ["<hermes checkout>\tools\python-3.14.7+20260901-win32-x64\python.exe" -m hermes_cli.main gateway run]
     <= 164768(gone, unseen)
 ```
 
 Two facts survive the watcher's 400 ms polling and its pid cache:
 
-* a **visible `ConsoleWindowClass` window titled `C:\Windows\System32\wsl.exe`** appeared, and
+* a **visible `ConsoleWindowClass` window titled `<Windows>\System32\wsl.exe`** appeared, and
 * its owner process descended from the Hermes gateway
   (`python -m hermes_cli.main gateway run`).
 
@@ -31,8 +31,8 @@ mechanism below, and Hermes' own source says the same thing in its own words.
 
 | Path | FileDescription |
 |---|---|
-| `C:\Windows\System32\bash.exe` (90 KB) | `Microsoft Bash Launcher` |
-| `C:\Windows\System32\wsl.exe` (168 KB) | `Microsoft Windows Subsystem for Linux Launcher` |
+| `<Windows>\System32\bash.exe` (90 KB) | `Microsoft Bash Launcher` |
+| `<Windows>\System32\wsl.exe` (168 KB) | `Microsoft Windows Subsystem for Linux Launcher` |
 
 `System32\bash.exe` is the WSL stub: it hands off to `wsl.exe`. `CreateProcess` searches
 `System32` **before** `PATH`, so any spawn of a bare `bash` (or `sh`) reaches WSL even when Git Bash
@@ -173,7 +173,7 @@ but not for *"why did my `bash -c` run inside WSL instead of Git Bash"*.
 
 ## How to check the patch worked
 
-1. Leave `/path/redacted` running for a normal Hermes day and confirm no new
+1. Leave the standalone watcher running for a normal Hermes day and confirm no new
    `ConsoleWindowClass` row names a Hermes descendant.
 2. Hermes' own suite: add the ABP-shaped test - a `pytest` plugin that polls `EnumWindows` for
    `ConsoleWindowClass` / `CASCADIA_HOSTING_WINDOW_CLASS` / `PseudoConsoleWindow` and fails the
@@ -186,6 +186,6 @@ but not for *"why did my `bash -c` run inside WSL instead of Git Bash"*.
 ## Note for ABP
 
 ABP's half of this chain is already covered. The Hermes spawn ledger
-(`/path/redacted`) shows the gateway running ABP's `bot.mcp_server` as an
+(the spawn ledger beside the Hermes checkout) shows the gateway running ABP's `bot.mcp_server` as an
 `mcp-helper`, and `bot/mcp_server.py` installs `bot.sandbox_ns.guard` at start-up, so ABP processes
 under Hermes are windowless. The popup above is Hermes' own subprocess layer.

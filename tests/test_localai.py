@@ -285,9 +285,9 @@ def test_system_models_fall_back_without_a_model(home, monkeypatch):
     import psutil
     from bot.neurallab import systune
     monkeypatch.setattr(systune, "drives", lambda refresh=False, cached_only=False: {})
-    small = systune.advise_copy("C:/a", "/path/redacted", 1 << 20, 1)
+    small = systune.advise_copy("/srv/a", "/srv/b", 1 << 20, 1)
     assert small["parallel"] == 4 and "memory" in small["source"]
-    big = systune.advise_copy("C:/a", "/path/redacted", psutil.virtual_memory().total * 2, 100)
+    big = systune.advise_copy("/srv/a", "/srv/b", psutil.virtual_memory().total * 2, 100)
     assert big["source"].startswith("default") and big["chunk"] == 8 << 20
     assert systune.advise_llm("anything") == {} and systune.forecast_memory() is None
     with pytest.raises(Exception, match="measurements so far"):
@@ -322,7 +322,7 @@ def test_cli_parses():
     ai.add_parser(sub)
     a = p.parse_args(["ai", "train", "start", "unsloth/qwen3-1.7b", "d.jsonl", "--steps", "50"])
     assert a.ai_cmd == "train" and a.rest == ["unsloth/qwen3-1.7b", "d.jsonl"] and a.steps == 50
-    a = p.parse_args(["lab", "advice", "transfer", "/path/redacted", "/path/redacted", "--size-gb", "20"])
+    a = p.parse_args(["lab", "advice", "transfer", "/srv/a", "/srv/b", "--size-gb", "20"])
     assert a.lab_cmd == "advice" and a.size_gb == 20
 
 

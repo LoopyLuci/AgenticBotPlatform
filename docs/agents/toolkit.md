@@ -44,5 +44,5 @@ change files or run programs get a second tool, `toolkit_<group>_act`, which ask
 python -m abp_toolkit list
 python -m abp_toolkit call lint.check path=src min_severity=warning
 python -m abp_toolkit call asset.chart path=sales.svg kind=bar --json '{"labels": ["Q1","Q2"], "series": {"2026": [3, 5]}}'
-python -m abp_toolkit mcp --workspace /path/redacted            # add --read-only for an MCP client that must not change anything
+python -m abp_toolkit mcp --workspace /path/to/MyApp               # add --read-only for an MCP client that must not change anything
 ```

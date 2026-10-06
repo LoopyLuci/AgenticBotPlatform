@@ -44,7 +44,7 @@ any test module. Otherwise every test outside `tests/test_sandbox_ns.py` spawns 
 blank window is one ordinary `subprocess` call away. `tests/no_windows_plugin.py` (registered from
 the same conftest) then *checks* the promise instead of trusting it: on Windows a daemon thread
 polls `EnumWindows` for new visible `ConsoleWindowClass` / `CASCADIA_HOSTING_WINDOW_CLASS` /
-`PseudoConsoleWindow` windows - the same three classes `/path/redacted` watches - and
+`PseudoConsoleWindow` windows - the same three classes a watch script catches - and
 fails the test that was running when one appeared, with the process chain that opened it. Windows
 that were already open when the session started are ignored, and so is a window whose chain does
 not reach that pytest worker (a shared desktop has other things on it).

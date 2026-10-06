@@ -112,7 +112,7 @@
         <p class="us-muted">Bots use a loaded model as <span class="us-mono">${E(sm.provider || 'unsloth')}/&lt;model&gt;</span>; the model router offers loaded ones to bots on auto.</p></div>
       <div class="us-card"><h4>Training</h4><b>${E(tr.phase || 'idle')}</b>${tr.running ? ` · step ${tr.step}/${tr.total_steps} · loss ${tr.loss == null ? '—' : Number(tr.loss).toFixed(4)}` : ''}<div class="us-muted">${E(tr.message || '')}</div></div>
       <div class="us-card"><h4>Where models go</h4><div class="us-mono">${E(stg.models_dir || '(Studio default)')}</div><div class="us-muted">${gb(stg.free_bytes)} free${stg.writable === false ? ' · not writable' : ''}</div>
-        <form class="us-row" data-us-form="storage" style="margin-top:8px"><input name="models_dir" placeholder="e.g. /path/redacted" value="${E(stg.models_dir || '')}" style="flex:1;min-width:180px"><button class="btn" type="submit">Use this folder</button></form></div>
+        <form class="us-row" data-us-form="storage" style="margin-top:8px"><input name="models_dir" placeholder="e.g. /srv/models/unsloth" value="${E(stg.models_dir || '')}" style="flex:1;min-width:180px"><button class="btn" type="submit">Use this folder</button></form></div>
     </div>`;
   }
 
@@ -187,7 +187,7 @@
     const s = await api('/api/unsloth/export/status');
     body.innerHTML = `<div class="us-grid"><div class="us-card"><h4>Export the trained model</h4>
         <form class="us-form" data-us-form="export"><label>Kind <select name="kind"><option>gguf</option><option>lora</option><option>merged</option><option>base</option></select></label>
-        <label>Save to folder <input name="save_directory" placeholder="/path/redacted"></label>
+        <label>Save to folder <input name="save_directory" placeholder="/srv/models/unsloth/exports/my-model"></label>
         <label>GGUF quantization <input name="quantization_method" value="Q4_K_M"></label>
         <label class="chk"><input type="checkbox" name="push_to_hub"> push to the Hugging Face hub</label><label>Hub repo <input name="repo_id" placeholder="you/my-model"></label>
         <div><button class="btn primary" type="submit">Export</button></div></form></div>

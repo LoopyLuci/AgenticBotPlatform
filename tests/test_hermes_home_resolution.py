@@ -28,11 +28,11 @@ def test_prefers_hermes_home_env_var_over_any_platform_default(monkeypatch):
 def test_windows_default_is_localappdata_hermes_not_dot_hermes(monkeypatch):
     monkeypatch.delenv("HERMES_HOME", raising=False)
     monkeypatch.setattr(hermes_config.sys, "platform", "win32")
-    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\test\AppData\Local")
+    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\<you>\AppData\Local")
 
     home = hermes_config._default_hermes_home()
 
-    assert home == Path(r"C:\Users\test\AppData\Local\hermes")
+    assert home == Path(r"C:\Users\<you>\AppData\Local\hermes")
     assert ".hermes" not in str(home)
 
 

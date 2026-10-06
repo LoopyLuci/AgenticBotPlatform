@@ -60,7 +60,8 @@ def _exe(name: str) -> Optional[str]:
     found = shutil.which(name)
     if found:
         return found
-    for base in (r"C:\Program Files\qemu", os.path.expanduser(r"~\scoop\apps\qemu\current")):
+    for base in (Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "qemu",
+                 os.path.expanduser(r"~\scoop\apps\qemu\current")):
         cand = os.path.join(base, name + (".exe" if os.name == "nt" else ""))
         if os.path.isfile(cand):
             return cand

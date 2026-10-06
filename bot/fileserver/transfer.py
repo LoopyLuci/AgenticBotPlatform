@@ -405,7 +405,7 @@ class S3Endpoint(Endpoint):
 
 
 def endpoint(spec: dict) -> Endpoint:
-    """spec: {"remote": <name> | "local" path, "path": sub-path} or {"path": "C:/x"} for a plain folder."""
+    """spec: {"remote": <name> | "local" path, "path": sub-path} or {"path": "/srv/x"} for a plain folder."""
     name = spec.get("remote", "")
     if not name:
         return LocalEndpoint(Path(spec["path"]))

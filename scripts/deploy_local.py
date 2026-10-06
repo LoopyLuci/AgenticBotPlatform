@@ -3,8 +3,8 @@
 
 Why this exists: `cargo tauri build` writes its output where CARGO_TARGET_DIR
 says, not necessarily where the app is launched from. With
-CARGO_TARGET_DIR=/path/redacted, Tauri copies every bundle.resources entry
-into /path/redacted, while the exe the person runs lives in
+a build in a separate CARGO_TARGET_DIR: Tauri copies every bundle.resources entry
+into that build's release/ folder, while the exe the person runs lives in
 <checkout>/desktop-app/src-tauri/target/release/. A release build runs the
 Python BUNDLED next to its own exe (desktop-app/src-tauri/src/lib.rs's
 resolve_paths), so that folder's copy of bot/ is the code that actually

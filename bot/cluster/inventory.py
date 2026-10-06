@@ -188,16 +188,17 @@ def _gpu_mem_background() -> Optional[float]:
 def _hypervisors() -> list[str]:
     found = []
     if sys.platform == "win32":
-        system32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
+        system32 = Path(os.environ.get("SystemRoot", "C:/Windows")) / "System32"
         if (system32 / "WinHvPlatform.dll").is_file():
             found.append("whp")
         if (system32 / "vmms.exe").is_file():
             found.append("hyperv")
     if Path("/dev/kvm").exists():
         found.append("kvm")
-    if shutil.which("qemu-system-x86_64") or Path(r"C:\Program Files\qemu\qemu-system-x86_64.exe").is_file():
+    program_files = Path(os.environ.get("ProgramFiles", "C:/Program Files"))
+    if shutil.which("qemu-system-x86_64") or (program_files / "qemu" / "qemu-system-x86_64.exe").is_file():
         found.append("qemu")
-    if shutil.which("VBoxManage") or Path(r"C:\Program Files\Oracle\VirtualBox\VBoxManage.exe").is_file():
+    if shutil.which("VBoxManage") or (program_files / "Oracle" / "VirtualBox" / "VBoxManage.exe").is_file():
         found.append("virtualbox")
     return found
 

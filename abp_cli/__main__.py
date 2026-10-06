@@ -273,6 +273,9 @@ async def _dispatch(args, client: DashboardClient) -> int:
         return await _dns(args, client)
     if cmd == "doctor":
         return await _doctor(args, client)
+    for spec in _extension_commands():
+        if spec["name"] == cmd:
+            return await spec["run"](args, client)
     print(f"unknown command {cmd!r}", file=sys.stderr)
     return 2
 
@@ -2207,7 +2210,31 @@ def _parser() -> argparse.ArgumentParser:
 
     sub.add_parser("doctor", help="one-screen health check: can it reach ABP, which features answer")
 
+    # Commands a local extension registered (ABP_PRIVATE_DIR). With that variable unset there
+    # are none, and this adds nothing. A name ABP already owns is skipped rather than shadowed.
+    taken = set(sub.choices)
+    for spec in _extension_commands():
+        if spec["name"] in taken:
+            print(f"note: the extension command {spec['name']!r} is already an ABP command; skipping it",
+                  file=sys.stderr)
+            continue
+        taken.add(spec["name"])
+        p = sub.add_parser(spec["name"], help=spec.get("help") or f"from the {spec['name']} extension")
+        if callable(spec.get("add_arguments")):
+            spec["add_arguments"](p)
+
     return ap
+
+
+def _extension_commands() -> list[dict]:
+    """The CLI commands every loaded extension asked for. A broken extension is already
+    recorded as an error by the loader (bot/extensions.py); this only keeps the rest working."""
+    try:
+        from bot import extensions
+
+        return [c for e in extensions.loaded().extensions for c in e.api.cli_commands]
+    except Exception:  # noqa: BLE001 — a broken extension must not stop the CLI from being built
+        return []
 
 
 def main(argv=None) -> int:

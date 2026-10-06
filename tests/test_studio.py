@@ -53,7 +53,7 @@ def test_a_variant_overlays_the_ui_and_apply_and_revert_round_trip(ui):
     v = variants.create("Bigger buttons")
     vid = v["id"]
     assert variants.read(vid, "bot/dashboard/static/vision-panel.js") == live_js and variants.files(vid) == []
-    for bad in ("../secrets.txt", "bot/vision/service.py", "bot/dashboard/static/.hidden.js", "C:/x/dashboard.html"):
+    for bad in ("../secrets.txt", "bot/vision/service.py", "bot/dashboard/static/.hidden.js", "/srv/x/dashboard.html"):
         with pytest.raises(StudioError):
             variants.check_rel(bad)
     stamp = variants.version(vid)

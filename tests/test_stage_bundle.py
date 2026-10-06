@@ -30,7 +30,7 @@ def _fake_project(root: Path, *, leak: bool = False) -> None:
         content = f"{PERSONAL}\\venv\\python.exe" if leak and name == "pip.exe" else "x"
         (venv / "Scripts" / name).write_text(content, encoding="utf-8")
     (venv / "pyvenv.cfg").write_text(
-        "home = C:\\Python311\nversion = 3.11.9\ncommand = python -m venv " + PERSONAL + "\\proj\\.venv\n",
+        "home = C:\\<drive>\\Python311\nversion = 3.11.9\ncommand = python -m venv " + PERSONAL + "\\proj\\.venv\n",
         encoding="utf-8",
     )
     sp = venv / "Lib" / "site-packages"
@@ -77,7 +77,7 @@ def test_pyvenv_cfg_no_longer_records_the_builders_path(project):
     cfg = (_stage(project) / ".venv" / "pyvenv.cfg").read_text(encoding="utf-8")
     assert "command" not in cfg.lower()
     assert PERSONAL not in cfg
-    assert "home = C:\\Python311" in cfg  # the Rust side needs this key present
+    assert "home = C:\\<drive>\\Python311" in cfg  # the Rust side needs this key present
 
 
 def test_only_backends_yaml_is_staged_from_config(project):

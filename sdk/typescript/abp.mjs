@@ -1415,6 +1415,13 @@ export const operations = {
    "format"
   ]
  },
+ "GET /api/extensions": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/extensions",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/files": {
   "body": false,
   "method": "GET",
@@ -3906,6 +3913,16 @@ export const operations = {
   "method": "GET",
   "path": "/desktop-ui/index.html",
   "path_params": [],
+  "query_params": []
+ },
+ "GET /extensions/{name}/{path}": {
+  "body": false,
+  "method": "GET",
+  "path": "/extensions/{name}/{path}",
+  "path_params": [
+   "name",
+   "path"
+  ],
   "query_params": []
  },
  "GET /healthz": {
@@ -10574,6 +10591,23 @@ export const operations = {
   "query_params": [
    "format"
   ]
+ },
+ "extension_file_extensions__name___path__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/extensions/{name}/{path}",
+  "path_params": [
+   "name",
+   "path"
+  ],
+  "query_params": []
+ },
+ "extensions_list_api_extensions_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/extensions",
+  "path_params": [],
+  "query_params": []
  },
  "fetch_pack_api_skills_fetch_post": {
   "body": true,

@@ -237,7 +237,7 @@ ${p.reasons.map((r) => `<div class="aip-muted">• ${E(r)}</div>`).join('')}<div
 ${Object.entries(s.models).map(([k, m]) => `<div class="aip-card"><b>${E(names[k] || k)}</b><div>${m.adopted ? chip('ok', 'in use') : chip('', 'learning')} ${E(m.measurements)}/${E(m.needed)} measurements</div>
 ${m.metrics ? `<div class="aip-muted">${metrics(m.metrics)}</div>` : ''}${m.last_error ? `<div class="aip-muted">${E(m.last_error)}</div>` : ''}
 <div class="aip-row">${k === 'transfer' ? '<button class="btn ghost" data-bench="transfer">Measure drives</button>' : ''}${k === 'llm' ? '<button class="btn ghost" data-bench="llm">Measure the GPU</button>' : ''}<button class="btn ghost" data-retrain="${k}">Retrain</button></div></div>`).join('')}
-<div class="aip-card"><b>Ask</b><div class="aip-row"><input id="lab-src" placeholder="from, e.g. /path/redacted" size="8"><input id="lab-dst" placeholder="to, e.g. /path/redacted" size="8"><input id="lab-gb" type="number" value="50" size="4">GB<button class="btn ghost" id="lab-adv-copy">Copy settings</button></div>
+<div class="aip-card"><b>Ask</b><div class="aip-row"><input id="lab-src" placeholder="from, e.g. /srv/data" size="8"><input id="lab-dst" placeholder="to, e.g. /srv/backup" size="8"><input id="lab-gb" type="number" value="50" size="4">GB<button class="btn ghost" id="lab-adv-copy">Copy settings</button></div>
 <div class="aip-row"><button class="btn ghost" id="lab-adv-mem">Memory in 5 min</button></div><div class="aip-mono" id="lab-adv"></div></div></div>
 <div class="aip-log" id="lab-bench-log" style="display:none"></div>`;
   }

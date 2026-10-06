@@ -4,7 +4,7 @@ stop it, compare runs, search designs.
     <lab home>/runs/<id>/{job.json, status.json, worker.log, best.pt, export/}
     <lab home>/designs/<name>.json            saved specs (from the GUI's designer, BrainBuilder, PrivateProject, templates)
 
-The lab home is <localai home>/lab (/path/redacted on this machine). Training shares the GPU with ABP's other
+The lab home is <localai home>/lab. Training shares the GPU with ABP's other
 GPU work: one run at a time, queued otherwise. Each run's worker process lives in its own sandbox_ns cell
 (preset "worker"), so a run is bounded, recorded and contained like ABP's other heavy background work.
 """

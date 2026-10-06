@@ -70,8 +70,8 @@ describe("findAbp", () => {
   });
 
   it("knows the desktop app's install folders", () => {
-    expect(installLocations("win32", { LOCALAPPDATA: "C:\\Users\\u\\AppData\\Local" }, "C:\\Users\\u")[0]).toBe(
-      "C:\\Users\\u\\AppData\\Local\\AgenticBotPlatform",
+    expect(installLocations("win32", { LOCALAPPDATA: "C:\\Users\\<you>\\AppData\\Local" }, "C:\\Users\\<you>")[0]).toBe(
+      "C:\\Users\\<you>\\AppData\\Local\\AgenticBotPlatform",
     );
     expect(installLocations("darwin", {}, "/Users/u")[0]).toBe("/Applications/AgenticBotPlatform.app/Contents/Resources");
     expect(installLocations("linux", {}, "/home/u")).toContain("/usr/lib/AgenticBotPlatform");

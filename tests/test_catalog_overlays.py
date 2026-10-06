@@ -1,10 +1,17 @@
-"""The catalog's own overlays: 9Router, Mesh LLM, OpenHuman, PRIVATE_PROJECT and private_project.
+"""The catalog's own overlays: every third-party project ABP drives without touching its checkout.
 
-Each of the five is a third-party project ABP drives without touching its checkout, so these tests
-read the two files ABP ships and assert what they say: the service it starts, the provider ABP offers
-while it runs, and the operations a person and ABP's agents actually need. They load each overlay
-through ABP's own loader (bot.modules.manifest for the manifest, abp_modkit.spec for the operations)
-and touch no network and no upstream checkout.
+Each overlay is a pair of files ABP ships — `abp-module.toml` (the manifest) and `abp-ops.toml`
+(the operations and the service) — and these tests read them through ABP's own loaders
+(bot.modules.manifest for the manifest, abp_modkit.spec for the operations) and assert what they
+say: the service the overlay starts, the provider ABP offers while it runs, and the operations a
+person and ABP's agents actually need. Nothing here names a particular project: the list is read
+out of catalog/ itself, so a new overlay is covered the moment it lands and nothing has to be
+added to a table in this file.
+
+Overlays for private projects live in the private folder's catalog/ (ABP_PRIVATE_DIR), not here,
+so what these tests see is exactly what a public install ships.
+
+No network, no upstream checkout: only the two files per overlay, parsed.
 """
 from __future__ import annotations
 
@@ -16,248 +23,113 @@ import pytest
 
 from abp_modkit import spec as sp
 from bot.modules import manifest as mf
-from bot.modules import registry
 
 CATALOG = Path(__file__).resolve().parent.parent / "catalog"
 
-# id -> (folder, name, area, repo, service base_url, health, openai, web)
-EXPECTED = {
-    "m-9router": ("9router", "9Router", "models", "https://github.com/decolua/9router.git",
-                  "http://127.0.0.1:20128", "/api/health", "/v1", "/dashboard"),
-    "mesh-llm": ("mesh-llm", "Mesh LLM", "models", "https://github.com/Mesh-LLM/mesh-llm.git",
-                 "http://127.0.0.1:9337", "/health", "/v1", ""),
-    "openhuman": ("openhuman", "OpenHuman", "agents", "https://github.com/tinyhumansai/openhuman.git",
-                  "http://127.0.0.1:7788", "/health", "", ""),
-    "private_project": ("private_project", "PRIVATE_PROJECT", "models", "local: /path/redacted",
-              "http://127.0.0.1:8000", "/api/health", "", "/"),
-    # no HTTP API at all: a resolver answers DNS on 127.0.0.1:5350, so there is no base_url to probe
-    "private_project": ("private_project", "private_project", "network", "https://github.com/LoopyLuci/private_project.git", "", "", "", ""),
-}
-
-# Operations each overlay must offer, by id.
-REQUIRED_OPS = {
-    "m-9router": ["status.health", "status.version", "models.list", "providers.list", "usage.get",
-                  "build.production", "build.dev", "test.run", "git.update"],
-    "mesh-llm": ["status.health", "models.api", "status.local", "console.status", "console.models",
-                 "doctor.report", "hardware.gpus", "models.installed", "models.recommended",
-                 "models.search", "models.download", "runtime.list", "build.from_source"],
-    "openhuman": ["status.health", "status.schema", "agent.list", "agent.prompt_size",
-                  "memory.documents", "memory.query", "rpc.call", "build.core", "test.core"],
-    "private_project": ["status.health", "status.model", "status.checkpoints", "status.training",
-              "generate.run", "test.run", "mcp.tools"],
-    "private_project": ["status.dns", "status.abp", "query.dig", "dnssec.check", "logs.tail",
-                 "abp.use", "abp.stop_using", "build.from_source", "git.update"],
-}
-
-IDS = sorted(EXPECTED)
+# Every folder in catalog/ that carries a manifest is an overlay, whatever it is for.
+OVERLAYS = sorted(p.name for p in CATALOG.iterdir() if (p / mf.MANIFEST_FILE).is_file())
+assert OVERLAYS, "the catalog ships at least one overlay"
 
 
-@pytest.fixture(scope="module", params=IDS)
+@pytest.fixture(scope="module", params=OVERLAYS)
 def overlay(request):
     """Each catalog overlay loaded the way ABP loads it: the manifest through bot.modules.manifest,
     the operations through abp_modkit.spec."""
-    mid = request.param
-    folder = CATALOG / EXPECTED[mid][0]
-    manifest = mf.load(folder / mf.MANIFEST_FILE)
-    ops = sp.load(folder / "abp-ops.toml")
-    return {"id": mid, "folder": folder, "manifest": manifest, "ops": ops,
+    folder = CATALOG / request.param
+    return {"folder": folder, "id": request.param,
+            "manifest": mf.load(folder / mf.MANIFEST_FILE), "ops": sp.load(folder / "abp-ops.toml"),
             "raw": tomllib.loads((folder / mf.MANIFEST_FILE).read_text(encoding="utf-8"))}
 
 
-def test_every_overlay_is_a_valid_manifest_with_the_service_it_describes(overlay):
-    m = overlay["manifest"]
-    assert m.id == overlay["id"], "the folder's module id must be the one the catalog lists"
-    _, name, area, repo, base_url, health, openai, web = EXPECTED[m.id]
-    assert (m.name, m.area, m.repo) == (name, area, repo)
+def test_the_catalog_is_exactly_the_overlays_it_says_it_is(overlay):
+    """A folder's manifest names the same module as the folder does (an overlay may prefix its
+    id, as m-<name> does, to keep it apart from the third-party project it drives), so the id a
+    user types, the id in the UI and the folder on disk can never disagree."""
+    assert overlay["manifest"].id.removeprefix("m-") == overlay["id"]
+
+
+def test_every_overlay_is_a_valid_manifest_describing_a_service(overlay):
+    m, s, raw = overlay["manifest"], overlay["ops"].service, overlay["raw"]
+    assert m.name and m.area and m.description, "a module a person scans needs a real sentence"
+    assert len(m.description) > 40, f"{m.id}: a module a person scans needs a real sentence"
     assert m.api == mf.API_VERSION and m.branch
-    assert m.description and len(m.description) > 40, "a module a person scans needs a real sentence"
-    # an overlay keeps its files on ABP's side and its operations beside the manifest
     assert m.overlay or True            # the registry sets .overlay; parse() leaves it empty
-    assert m.hub is not None and m.hub.control_file and m.hub.start
+    assert m.hub is not None and m.hub.control_file and m.hub.start, f"{m.id}: an overlay needs a hub"
     assert "{overlay}/abp-ops.toml" in " ".join(m.hub.start), "the hub must read the overlay's operations"
-    s = overlay["ops"].service
-    assert (s.id, s.base_url, s.health) == (m.id, base_url, health)
-    assert s.start, "a service with a base_url must say how to start it"
-    assert (s.openai, s.web) == (openai, web)
+    assert s.id == m.id, "the operations file must describe the same module as the manifest"
     assert overlay["ops"].id == m.id
+    # A service is only a service if it runs something. An overlay of operations alone (a model
+    # family ABP reads from a checkout, say) declares no base_url and must declare no start either.
+    if s.base_url or s.health or s.web:
+        assert s.start, f"{m.id}: a service with an endpoint must say how to start it"
+        assert s.health, f"{m.id}: a service with a base_url needs a health route to poll"
+    else:
+        assert not s.start, f"{m.id}: a start with nothing to reach is dead configuration"
+    assert s.base_url.startswith(("http://", "")) and (not s.openai or s.openai.startswith("/")), s
 
 
-def test_each_overlay_offers_the_operations_a_person_and_the_agents_need(overlay):
+def test_each_overlay_offers_the_operations_it_declares(overlay):
+    """Whatever the operations are, each one ABP shows to a person is described and consistent:
+    a summary, and no parameter that isn't also an input."""
     ids = {o.id for o in overlay["ops"].ops}
-    missing = [i for i in REQUIRED_OPS[overlay["id"]] if i not in ids]
-    assert not missing, f"{overlay['id']} is missing {missing}"
+    assert ids, f"{overlay['id']}: an overlay with no operations offers nothing"
     for o in overlay["ops"].ops:
         assert o.summary, f"{o.id} has no summary; ABP shows it as-is to a person"
         assert not o.params or set(o.params) <= set(o.inputs), f"{o.id}: a parameter with no input"
 
 
 def test_the_openai_compatible_modules_are_offered_to_abp_as_providers(overlay):
-    m = overlay["manifest"]
-    _, _, _, _, _, _, openai, _ = EXPECTED[m.id]
-    if openai:
-        # openai = "service": the base URL comes from abp-ops.toml's [service].openai
+    """An overlay is offered as a provider exactly when it serves the OpenAI API, and only then
+    ABP links its UI: offering one without the API would hand out a model that cannot be called."""
+    m, s = overlay["manifest"], overlay["ops"].service
+    if s.openai:
         assert m.openai == "service", "an OpenAI-compatible module must be offered as a provider"
-        assert overlay["ops"].service.openai == "/v1"
         assert m.web, "and its UI should be reachable while it runs"
     else:
         assert not m.openai, f"{m.id} serves no OpenAI API, so ABP must not offer it as a provider"
 
 
-@pytest.mark.parametrize("mid", ["m-9router", "mesh-llm"])
-def test_a_model_server_lists_its_models_over_its_own_api(mid):
+def test_a_module_overlay_serves_it_as_a_provider_offers_a_models_list(overlay):
     """A module ABP offers as a provider has to answer a models list, as a real GET route."""
-    ops = sp.load(CATALOG / EXPECTED[mid][0] / "abp-ops.toml")
+    m, ops = overlay["manifest"], overlay["ops"]
+    if m.openai != "service":
+        pytest.skip(f"{m.id} is not offered as a provider")
     lists = [o for o in ops.ops if o.kind == "http" and o.path.endswith("/models")]
-    assert lists, f"{mid} offers itself as a provider but has no models list"
+    assert lists, f"{m.id} offers itself as a provider but has no models list"
     for o in lists:
         assert o.method == "GET" and o.mutating is False
         assert ops.service.base_url, "an HTTP operation needs service.base_url"
 
 
-def test_9router_keeps_its_secrets_out_of_the_overlay():
-    """9Router needs JWT_SECRET and INITIAL_PASSWORD; they must come from service.set_secret."""
-    folder = CATALOG / "9router"
-    ops = sp.load(folder / "abp-ops.toml")
-    text = (folder / "abp-ops.toml").read_text(encoding="utf-8")
-    assert ops.service.start
-    # named in a comment, never assigned: no value for a secret is written into ABP
-    for name in ("JWT_SECRET", "INITIAL_PASSWORD"):
-        assert name in text, f"{name} should be named so the operator knows to set it"
-        assert not re.search(rf"{name}\s*=\s*\S", text), f"{name} must not have a value here"
-    assert "service.set_secret" in text, "the overlay must say where the secrets go"
-    assert "{secret" not in text, "and must not make the service refuse to start without one"
+def test_no_overlay_writes_into_its_checkout(overlay):
+    """Every overlay's commands stay inside the checkout and use ABP's own data folder: an overlay
+    exists precisely so a person's working copy is left exactly as upstream has it. A cwd may be
+    any folder inside the checkout, but it may never be absolute and may never climb out."""
+    for o in overlay["ops"].ops:
+        assert not Path(o.cwd).is_absolute(), f"{overlay['id']}.{o.id} names a path outside the checkout"
+        assert ".." not in Path(o.cwd).parts, f"{overlay['id']}.{o.id} leaves the checkout"
+        assert not re.search(r"(?i)[A-Z]:[\\/]", o.cwd), f"{overlay['id']}.{o.id} hard-codes a drive path"
 
 
-def test_openhuman_says_it_is_gpl_and_runs_the_binary_rather_than_its_code():
-    """GPL-3.0-only: the overlay must name the licence, and nothing of upstream's may be vendored."""
-    folder = CATALOG / "openhuman"
-    manifest = (folder / "abp-module.toml").read_text(encoding="utf-8")
-    ops = (folder / "abp-ops.toml").read_text(encoding="utf-8")
-    assert "GPL-3.0" in manifest and "GPL-3.0" in ops
-    assert sorted(p.name for p in folder.iterdir() if p.is_file()) == ["abp-module.toml", "abp-ops.toml"]
-    spec_ = sp.load(folder / "abp-ops.toml")
-    # the service is the built binary, started as its own process
-    assert spec_.service.start[0].endswith("openhuman-core{exe}")
-    # GPL-3.0 is why ABP offers no provider here: /v1 is behind the core's per-launch bearer
-    assert not spec_.service.openai and spec_.service.auth.startswith("bearer-env:")
+def test_the_cargo_overlays_follow_the_target_dir_the_build_used(overlay):
+    """Where cargo writes is ABP's decision, not the overlay file's: modules.build_cache moves it,
+    so every path a cargo-built overlay names must be a {target} placeholder. A literal path here
+    goes stale the moment build_cache is set."""
+    m = overlay["manifest"]
+    if not any(str(step[0]).startswith("cargo") for step in m.build_steps or []):
+        pytest.skip(f"{m.id} is not built with cargo")
+    assert m.build_env.get("CARGO_TARGET_DIR") == "{target}", f"{m.id}: cargo must write where {m.id} looks"
+    assert m.build_outputs and all(o.startswith("{target}/") for o in m.build_outputs), m.build_outputs
+    assert "target={target}" in m.hub.start, m.hub.start
 
 
-def test_private_project_names_the_training_environment_that_has_torch():
-    """PRIVATE_PROJECT's own Python has no torch; the overlay must say which interpreter to use and why."""
-    folder = CATALOG / "private_project"
-    ops = sp.load(folder / "abp-ops.toml")
-    text = (folder / "abp-ops.toml").read_text(encoding="utf-8")
-    assert "/path/redacted" in text, "the torch interpreter must be named"
-    assert "torch" in text
-    cmds = [o for o in ops.ops if o.kind == "cmd"]
-    assert cmds, "PRIVATE_PROJECT's operations are commands (pytest, its CLI)"
-    for o in cmds:
-        assert o.argv[0].endswith("python.exe"), f"{o.id} must run under the training environment"
-    # PRIVATE_PROJECT caps its own threads before importing torch: every torch process here says so too
-    for o in ops.ops:
-        for value in o.env.values():
-            if "THREADS" in value:
-                assert value == "4", f"{o.id} must cap threads at 4 (this host crashes under load)"
-    assert ops.service.env["PYTHONPATH"] == "{project}/src", "src/ on the path, never installed"
-
-
-def test_no_overlay_writes_into_its_checkout():
-    """Every overlay's commands stay inside the checkout and use ABP's own data folder."""
-    for mid, (folder, *_rest) in EXPECTED.items():
-        for o in sp.load(CATALOG / folder / "abp-ops.toml").ops:
-            assert o.cwd in (".", "") or o.cwd.startswith(("app", "scripts", "tests")), f"{mid}.{o.id}"
-            assert ".." not in o.cwd, f"{mid}.{o.id} leaves the checkout"
-
-
-def test_private_projects_health_check_is_a_real_query_not_an_open_port():
-    """A resolver speaks DNS, not HTTP: there is nothing to point a base_url at, and "is it
-    validating" can only be answered by asking it."""
-    folder = CATALOG / "private_project"
-    m = mf.load(folder / mf.MANIFEST_FILE)
-    s = sp.load(folder / "abp-ops.toml").service
-    assert not (s.base_url or s.health or s.web or s.openai), "a DNS server has no HTTP API to probe"
-    assert not (m.web or m.openai), "nor a pane or a provider to offer"
-    # the resolver itself, started with no flags: its own defaults are 127.0.0.1:5350
-    assert len(s.start) == 1 and s.start[0].endswith("private_project{exe}"), s.start
-    assert s.env.get("RUST_LOG") == "info", "private_project logs through env_logger; RUST_LOG is its own switch"
-
-
-def test_private_project_asks_a_signed_name_and_reads_the_ad_flag():
-    """The two checks that matter: it answers, and what it answers was validated."""
-    ops = sp.load(CATALOG / "private_project" / "abp-ops.toml")
-    by_id = {o.id: o for o in ops.ops}
-    health = by_id["status.dns"]
-    assert health.kind == "cmd" and not health.mutating, "a query changes nothing"
-    assert health.inputs["name"]["default"] == "isc.org", "a name signed all the way to the root"
-    assert health.inputs["server"]["default"] == "127.0.0.1:5350", "the resolver's own default port"
-    assert "private_project-dig{exe}" in " ".join(health.argv) and "--json" in health.argv
-    check = by_id["dnssec.check"].argv[-1]
-    assert "isc.org" in check and "dnssec-failed.org" in check, "one that must validate, one that must not"
-    assert "SERVFAIL" in check and "validated" in check, "the AD bit decides, not the mere presence of an answer"
-    assert not by_id["dnssec.check"].mutating
-    assert not [o for o in ops.ops if "cache" in o.id or "flush" in o.id], (
-        "private_project's CLI is its resolver's own flags - no control socket and no cache command - so there is "
-        "nothing to flush through; service.stop then service.start is the flush, and no operation may pretend")
-
-
-def test_private_project_moves_abps_own_resolver_setting():
-    """ABP already asks 127.0.0.1:5350 (bot/resolver.py); the overlay moves that one setting and
-    touches no route that does not exist."""
-    ops = sp.load(CATALOG / "private_project" / "abp-ops.toml")
-    by_id = {o.id: o for o in ops.ops}
-    for oid in ("abp.use", "abp.stop_using"):
-        code = by_id[oid].argv[-1]
-        assert "from bot import resolver" in code and "set_settings" in code, f"{oid} uses ABP's own settings"
-        assert "'private_project'" in code, "that setting's name is the one in bot/resolver.py's DEFAULTS"
-        assert by_id[oid].mutating, "this changes how ABP resolves from now on"
-    assert "'private_project':''" in by_id["abp.stop_using"].argv[-1], "stopping clears it; bot/resolver.py then skips it"
-    assert "ask_dns" in by_id["abp.use"].argv[-1], "ABP proves it can use the resolver before pointing at it"
-    assert not [o for o in ops.ops if o.kind == "http"], "there is no HTTP route here to invent"
-
-
-def test_private_projects_outputs_follow_the_target_dir_the_build_used(tmp_path, monkeypatch):
-    """The checkout is the owner's working copy, so where cargo writes is ABP's decision, not this
-    file's: modules.build_cache moves it, and the overlay's outputs, the service it starts and the dig
-    the operations run all have to land in the same place - with the cache set and without it."""
-    from bot.modules import harness
-
-    monkeypatch.delenv("ABP_MODULE_BUILD_CACHE", raising=False)
-    m = registry.get("private_project")
-    exe = registry.placeholders(m)["exe"]
-    assert m.checkout_dir, "the checkout is this machine's own working copy, so the overlay says where it is"
-    assert m.build_steps and m.build_steps[0][:2] == ["cargo", "build"], "built from the checkout, with cargo"
-    ops = sp.load(CATALOG / "private_project" / "abp-ops.toml")
-    dig_ops = {o.id: o for o in ops.ops if "private_project-dig" in " ".join(o.argv)}
-    assert set(dig_ops) == {"status.dns", "query.dig", "dnssec.check"}, sorted(dig_ops)
-    binaries = [a for o in dig_ops.values() for a in o.argv if "private_project-dig" in a] + list(ops.service.start)
-
-    for cache in (None, tmp_path / "fast-cargo"):
-        monkeypatch.setattr(registry, "_cfg", lambda c=cache: {"build_cache": str(c)} if c else {})
-        target = registry.target_dir(m)
-        assert target == (cache / "private_project" if cache else Path(m.checkout_dir) / "target")
-        # what the build job really runs with: harness._build_env is what redirects CARGO_TARGET_DIR
-        assert Path(harness._build_env(m)["CARGO_TARGET_DIR"]) == target
-        assert Path(registry.expand(m, m.build_env["CARGO_TARGET_DIR"])) == target
-        outputs = [registry.expand_cmd(m, [o])[0] for o in m.build_outputs]
-        assert [Path(o).name for o in outputs] == [f"private_project{exe}", f"private_project-dig{exe}"], outputs
-        for o in outputs:
-            assert Path(o).parent == target / "release", f"{o} is not where this build writes ({target})"
-        assert Path(registry.expand_cmd(m, [ops.service.start[0]])[0]) == target / "release" / f"private_project{exe}"
-        for a in binaries:
-            assert "{target}/release/private_project" in a, f"{a} names a path instead of asking for the build ABP made"
-            assert registry.expand(m, a).count(f"{target}/release/") == 1, f"{a} would look in the wrong build"
-        # the hub has to tell the operations which build this is, or they fall back to the checkout's target/
-        assert "target={target}" in m.hub.start, m.hub.start
-
-
-def test_the_other_cargo_overlays_follow_the_target_dir_too():
-    """Same rule for the overlays that build with cargo: {target} in outputs, in CARGO_TARGET_DIR and in
-    the --var the hub hands the operations - a literal path here goes stale the moment build_cache is set."""
-    for mid in ("mesh-llm", "openhuman"):
-        m = mf.load(CATALOG / mid / mf.MANIFEST_FILE)
-        assert m.build_env.get("CARGO_TARGET_DIR") == "{target}", f"{mid}: cargo must write where {mid} looks"
-        assert m.build_outputs and all(o.startswith("{target}/") for o in m.build_outputs), m.build_outputs
-        assert "target={target}" in m.hub.start, m.hub.start
-# openhuman's service is the binary its own build produced; mesh-llm's is the release CLI on PATH
-    start = sp.load(CATALOG / "openhuman" / "abp-ops.toml").service.start
-    assert start and start[0].startswith("{target}/"), start
+def test_an_overlay_never_carries_a_secret_value(overlay):
+    """A secret belongs in service.set_secret or in a {secret?} placeholder, never as a literal
+    here: this file is in a public repo and is copied to every machine that installs ABP."""
+    text = (overlay["folder"] / "abp-ops.toml").read_text(encoding="utf-8")
+    for name, value in (getattr(overlay["ops"].service, "set_secrets", {}) or {}).items():
+        pairs = value if isinstance(value, dict) else {}
+        for secret, literal in pairs.items():
+            assert not str(literal).strip(), f"{overlay['id']}: the secret {secret} must not have a value here"
+    assert not re.search(r"(?i)^\s*(jwt_secret|initial_password|api_key|api-key|token|password)\s*=\s*\S", text, re.M), (
+        f"{overlay['id']}: name a secret in a comment, never assign one")

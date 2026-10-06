@@ -13,7 +13,7 @@ via Funnel.
 Adding/removing a root is desktop-token-only (see bot/dashboard/server.py
 — a meaningfully bigger grant than browsing an already-configured one; a
 stolen mobile device key must never be able to mount a new root, e.g.
-"C:\\"). Browsing/downloading within an already-configured root uses the
+a drive root). Browsing/downloading within an already-configured root uses the
 token-or-api-key gate the rest of the API uses, since reaching a file
 from anywhere is the whole point.
 
@@ -126,7 +126,7 @@ def resolve_safe_path(root_name: str, rel_path: str = "") -> Path:
     """The real, on-disk path for `rel_path` under root `root_name` —
     raises KeyError if the root isn't configured, PathEscapeError if the
     resolved path would land outside that root. Safe even against a
-    `rel_path` that's itself absolute (e.g. "/etc/passwd" or "C:\\Windows")
+    `rel_path` that's itself absolute (e.g. "/etc/passwd" or a Windows system folder)
     — pathlib's `/` operator would otherwise silently replace the root
     entirely, but the check here is on the final *resolved* path against
     the root, not on how the two were joined, so an override still lands

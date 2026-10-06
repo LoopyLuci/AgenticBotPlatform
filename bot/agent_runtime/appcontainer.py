@@ -305,7 +305,7 @@ def run(command: str, cwd: Path, *, grants: list[tuple[Path, int]], memory_mb: i
             si.StartupInfo.dwFlags = _STARTF_USESTDHANDLES
             si.StartupInfo.hStdInput, si.StartupInfo.hStdOutput, si.StartupInfo.hStdError = _inheritable_std_handles()
             si.lpAttributeList = ctypes.cast(attrs, wintypes.LPVOID)
-            comspec = os.environ.get("COMSPEC") or r"C:\Windows\System32\cmd.exe"
+            comspec = os.environ.get("COMSPEC") or str(Path(os.environ.get("SystemRoot", "C:/Windows")) / "System32" / "cmd.exe")
             cmdline = ctypes.create_unicode_buffer(f'"{comspec}" /d /s /c "{command}"')
             pi = _PROCESS_INFORMATION()
             _win_check(_k32.CreateProcessW(comspec, cmdline, None, None, True,

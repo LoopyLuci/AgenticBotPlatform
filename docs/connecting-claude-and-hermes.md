@@ -143,7 +143,7 @@ AgenticBotPlatform beside it, **do nothing** — see the next section, which is
 the arrangement the rest of this doc supports.
 
 Comment out (or remove) the conflicting platform's lines in Hermes's own
-`.env` (typically `C:\Users\<you>\AppData\Local\hermes\.env` on Windows)
+`.env` (typically under the local app-data folder on Windows, `hermes\.env`)
 — e.g.:
 
 ```diff

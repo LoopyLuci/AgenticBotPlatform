@@ -1,0 +1,8 @@
+# The example extension's own manifest. Everything about it is generic: no project name, no
+# path, nothing that would mean anything outside the folder it lives in.
+[extension]
+name = "hello"
+version = "1.0.0"
+description = "The smallest useful extension: one backend, one route, one panel, one CLI command, one MCP tool."
+entry = "ext_hello"
+minimum_abp = "0.1.0"

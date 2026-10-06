@@ -1044,6 +1044,19 @@ def build_app() -> FastAPI:
 
     editors_api.register(app, _require_token_or_api_key, _require_token)
 
+    # Extensions: what this install added on top of the public ABP (ABP_PRIVATE_DIR). With that
+    # variable unset there is nothing to list and nothing to serve, and the routes below add
+    # nothing but themselves.
+    from bot import extensions as _extensions
+    from bot.dashboard import extensions_api
+
+    extensions_api.register(app, _require_token_or_api_key)
+    for _name, _register in _extensions.loaded().routes:
+        try:
+            _register(app, _require_token_or_api_key, _require_token)
+        except Exception:  # noqa: BLE001 — a broken extension's routes cost it its own routes, nothing else
+            logger.exception("extension %s could not register its routes; ABP continues without them", _name)
+
     # Every other route area lives in bot/dashboard/routes/, registered in this exact order.
     from bot.dashboard import routes as _routes  # noqa: F401 — the package
     import importlib

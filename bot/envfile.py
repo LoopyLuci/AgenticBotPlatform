@@ -53,7 +53,7 @@ def _checkout_behind_build_output(package_root: Path) -> Optional[Path]:
     or a value entered through one silently doesn't exist in the other. So
     when this package is running from such a build output INSIDE a source
     checkout, that checkout is the root. (This used to be a hardcoded
-    developer path, `/path/redacted`, that took over on any
+    developer path that took over on any
     machine where it happened to exist.)"""
     parts = package_root.parts
     if len(parts) >= 5 and parts[-2] == "target" and parts[-3] == "src-tauri" and parts[-4] == "desktop-app":

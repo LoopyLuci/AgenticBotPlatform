@@ -342,9 +342,9 @@ def test_the_agents_tools_ask_before_changing_storage():
 def test_the_cli_parses_nas_commands():
     from abp_cli.__main__ import _parser
     p = _parser()
-    for argv in (["nas", "status"], ["nas", "array", "set", "--disk", "d1=/path/redacted", "--parity", "F:/p"], ["nas", "search", "tax", "2025"],
-                 ["nas", "transfer", "set", "j", "--from", "C:/a", "--to", "remote:nas2/media", "--mode", "two-way"],
-                 ["nas", "backup", "restore", "b", "snap", "C:/r"], ["nas", "app", "install", "jellyfin", "jf", "--mount", "media=share:media"]):
+    for argv in (["nas", "status"], ["nas", "array", "set", "--disk", "d1=/mnt/d1", "--parity", "/mnt/parity"], ["nas", "search", "tax", "2025"],
+                 ["nas", "transfer", "set", "j", "--from", "/mnt/a", "--to", "remote:nas2/media", "--mode", "two-way"],
+                 ["nas", "backup", "restore", "b", "snap", "/mnt/r"], ["nas", "app", "install", "jellyfin", "jf", "--mount", "media=share:media"]):
         assert p.parse_args(argv).nas_cmd == argv[1]
 
 

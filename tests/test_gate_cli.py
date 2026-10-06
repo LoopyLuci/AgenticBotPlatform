@@ -267,14 +267,14 @@ def test_a_logon_entry_pointing_at_another_checkout_is_reported_not_hidden(tmp_p
     so `status` compares what is in the file with what this checkout would write,
     and `on` says that it is replacing it."""
     (startup / gate_cli.AUTOSTART_NAME).write_text(
-        gate_cli.autostart_script(command="/path/redacted -m abp_cli gate start --code-root /path/redacted",
-                                  code_root=Path("/path/redacted"), python=Path("/path/redacted")),
+        gate_cli.autostart_script(command="<drive>:/gone/venv/Scripts/python.exe -m abp_cli gate start --code-root <drive>:/gone",
+                                  code_root=Path("<drive>:/gone"), python=Path("<drive>:/gone/.venv/Scripts/python.exe")),
         encoding="utf-8")
     code, out, err = autostart(tmp_path, capsys, "status")
     assert code == 0, err
     assert "installed:" in out
     assert "does NOT point at this checkout" in out
-    assert "/path/redacted" in out
+    assert "<drive>:/gone" in out
 
     code, out, err = autostart(tmp_path, capsys, "on")
     assert code == 0, err

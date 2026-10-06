@@ -16,7 +16,10 @@ from pathlib import Path
 import pytest
 from starlette.testclient import TestClient
 
-REAL = Path(os.environ.get("ABP_LOCALAI_REAL_HOME", "/path/redacted"))
+_real = os.environ.get("ABP_LOCALAI_REAL_HOME", "").strip()
+#: The real LocalAI runtime this test drives. No default: a test that reaches a real runtime has to be
+#: told where it is, and skips itself when nobody says (see pytestmark below).
+REAL = Path(_real) if _real else Path("abp-localai-real-home-not-configured")
 CHAT = "hf.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF:Q4_K_M"
 EMBED = "hf.co/nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0"
 

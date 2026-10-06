@@ -16,7 +16,10 @@ from pathlib import Path
 
 import pytest
 
-REAL = Path(os.environ.get("ABP_LOCALAI_REAL_HOME", "/path/redacted"))
+_real = os.environ.get("ABP_LOCALAI_REAL_HOME", "").strip()
+#: The real LocalAI runtime this test drives. No default: a test that reaches a real runtime has to be
+#: told where it is, and skips itself when nobody says (see pytestmark below).
+REAL = Path(_real) if _real else Path("abp-localai-real-home-not-configured")
 PY = REAL / "venv-train" / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
 BASE = "HuggingFaceTB/SmolLM2-135M"         # a base model (no chat template): the trainer gives it ChatML
 HF = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface")) / "hub" / "models--HuggingFaceTB--SmolLM2-135M"

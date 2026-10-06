@@ -67,7 +67,7 @@ Claude Desktop or any other MCP client can run it directly. VM-Harness's `docs/c
 
 ## Checked on this machine (2026-09-28)
 
-ABP found the working copy at `/path/redacted`, started its hub, and listed:
+ABP found the working copy beside its own, started its hub, and listed:
 
 - 158 operations;
 - the working hypervisors (Hyper-V, QEMU, VirtualBox, WSL) and Docker;

@@ -34,5 +34,8 @@ def make_png(path: str) -> None:
 
 
 if __name__ == "__main__":
-    make_png(r"/path/redacted")
-    print("wrote icon-source.png")
+    from pathlib import Path
+
+    out = Path(__file__).resolve().parent.parent / "desktop-app" / "src-tauri" / "icon-source.png"
+    make_png(str(out))
+    print("wrote", out)

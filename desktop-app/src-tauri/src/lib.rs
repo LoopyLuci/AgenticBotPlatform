@@ -309,9 +309,12 @@ fn find_compatible_system_python() -> Option<PathBuf> {
         }
     }
 
+    // Built from %SystemDrive% rather than a literal drive letter so the fixed locations
+    // follow Windows onto whatever volume it lives on (and so no drive path is written here).
+    let sysdrive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".to_string());
     let mut candidates: Vec<PathBuf> = vec![
-        PathBuf::from(r"C:\Program Files\Python311\python.exe"),
-        PathBuf::from(r"C:\Python311\python.exe"),
+        PathBuf::from(format!(r"{}\Program Files\Python311\python.exe", sysdrive)),
+        PathBuf::from(format!(r"{}\Python311\python.exe", sysdrive)),
     ];
     if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
         candidates.push(
@@ -569,26 +572,27 @@ mod pyvenv_repair_tests {
              include-system-site-packages = false\n\
              version = 3.11.9\n\
              executable = C:\\Program Files\\Python311\\python.exe\n\
-             command = C:\\Program Files\\Python311\\python.exe -m venv /path/redacted\n",
+             command = C:\\Program Files\\Python311\\python.exe -m venv C:\\Users\\<you>\\venvs\\old\\.venv\n",
         )
         .unwrap();
 
         let replacement =
-            PathBuf::from(r"C:\Users\someone\AppData\Local\Programs\Python\Python311\python.exe");
+            PathBuf::from(r"C:\Users\<you>\AppData\Local\Programs\Python\Python311\python.exe");
         rewrite_pyvenv_cfg(&cfg_path, &replacement).unwrap();
 
         let rewritten = std::fs::read_to_string(&cfg_path).unwrap();
         assert!(
-            rewritten.contains(r"home = C:\Users\someone\AppData\Local\Programs\Python\Python311")
+            rewritten.contains(r"home = C:\Users\<you>\AppData\Local\Programs\Python\Python311")
         );
         assert!(rewritten.contains(
-            r"executable = C:\Users\someone\AppData\Local\Programs\Python\Python311\python.exe"
+            r"executable = C:\Users\<you>\AppData\Local\Programs\Python\Python311\python.exe"
         ));
         // Untouched, purely informational lines survive as-is.
         assert!(rewritten.contains("include-system-site-packages = false"));
         assert!(rewritten.contains("version = 3.11.9"));
-        assert!(rewritten
-            .contains(r"command = C:\Program Files\Python311\python.exe -m venv /path/redacted"));
+        assert!(rewritten.contains(
+            r"command = C:\Program Files\Python311\python.exe -m venv C:\Users\<you>\venvs\old\.venv"
+        ));
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -603,12 +607,12 @@ mod pyvenv_repair_tests {
         let cfg_path = dir.join("pyvenv.cfg");
         std::fs::write(&cfg_path, "version = 3.11.9\n").unwrap();
 
-        let replacement = PathBuf::from(r"C:\Python311\python.exe");
+        let replacement = PathBuf::from(r"C:\Program Files\Python311\python.exe");
         rewrite_pyvenv_cfg(&cfg_path, &replacement).unwrap();
 
         let rewritten = std::fs::read_to_string(&cfg_path).unwrap();
-        assert!(rewritten.contains(r"home = C:\Python311"));
-        assert!(rewritten.contains(r"executable = C:\Python311\python.exe"));
+        assert!(rewritten.contains(r"home = C:\Program Files\Python311"));
+        assert!(rewritten.contains(r"executable = C:\Program Files\Python311\python.exe"));
 
         std::fs::remove_dir_all(&dir).ok();
     }

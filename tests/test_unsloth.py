@@ -43,7 +43,7 @@ class FakeStudio:
         self.loaded: list[str] = []
         self.load_delay = 0.0
         self.downloads = {}
-        self.cache_home = r"/path/redacted"
+        self.cache_home = r"/srv/models/unsloth"
         self.key_ok = "unused"
 
     def handle(self, method: str, url: str, params=None, json_body=None, headers=None):
@@ -207,12 +207,12 @@ def test_download_waits_until_studio_says_complete(studio, monkeypatch):
 
 
 def test_storage_is_read_and_set(studio, monkeypatch):
-    assert harness.storage()["models_dir"] == r"/path/redacted"
-    assert harness.set_models_dir(r"/path/redacted")["models_dir"] == r"/path/redacted"
+    assert harness.storage()["models_dir"] == r"/srv/models/unsloth"
+    assert harness.set_models_dir(r"/srv/other")["models_dir"] == r"/srv/other"
     from bot.config import config
 
-    monkeypatch.setattr(config, "_data", {**config._data, "unsloth": {"models_dir": r"/path/redacted"}})
-    assert harness.ensure_models_dir()["models_dir"] == r"/path/redacted" == studio.cache_home
+    monkeypatch.setattr(config, "_data", {**config._data, "unsloth": {"models_dir": r"/srv/models/unsloth"}})
+    assert harness.ensure_models_dir()["models_dir"] == r"/srv/models/unsloth" == studio.cache_home
     before = len(studio.calls)
     harness.ensure_models_dir()
     assert not any(c[0] == "PUT" for c in studio.calls[before:]), "already there: nothing is changed"
@@ -226,14 +226,14 @@ def test_training_and_export_check_what_they_need(studio):
         harness.export("onnx", {"save_directory": "x"})
     with pytest.raises(client.StudioError, match="save_directory"):
         harness.export("gguf", {})
-    assert harness.export("gguf", {"save_directory": "/path/redacted"}) == {"output_path": "/path/redacted"}
+    assert harness.export("gguf", {"save_directory": "/srv/out"}) == {"output_path": "/srv/out"}
 
 
 def test_status_summary(studio):
     studio.loaded = ["unsloth/a"]
     s = harness.summary()
     assert s["running"] and s["loaded"] == ["unsloth/a"] and s["gpus"][0]["vram_total_gb"] == 24
-    assert s["storage"]["models_dir"] == r"/path/redacted"
+    assert s["storage"]["models_dir"] == r"/srv/models/unsloth"
 
 
 # ---- a bot on an Unsloth model --------------------------------------------------------------------------------------------
@@ -317,14 +317,14 @@ def test_the_api(studio, monkeypatch):
     h = {"X-Dashboard-Token": "t" * 48}
     assert c.get("/api/unsloth/status").status_code == 401
     s = c.get("/api/unsloth/status", headers=h).json()
-    assert s["summary"]["running"] and s["storage"]["models_dir"] == r"/path/redacted"
+    assert s["summary"]["running"] and s["storage"]["models_dir"] == r"/srv/models/unsloth"
     assert c.post("/api/unsloth/load", headers=h, json={}).status_code == 400
     assert c.post("/api/unsloth/load", headers=h, json={"model": "unsloth/a", "context": 4096}).json()["context_length"] == 4096
     assert c.get("/api/unsloth/models", headers=h).json()["available"][0] == {"id": "unsloth/a", "name": "unsloth/a", "loaded": True,
                                                                               "context_length": None}
     assert c.post("/api/unsloth/unload", headers=h, json={"model": "unsloth/a"}).json()["unloaded"]
     assert c.get("/api/unsloth/variants?repo_id=x", headers=h).json()["variants"][1]["downloaded"]
-    assert c.put("/api/unsloth/storage", headers=h, json={"models_dir": "/path/redacted"}).json()["models_dir"] == "/path/redacted"
+    assert c.put("/api/unsloth/storage", headers=h, json={"models_dir": "/srv/m"}).json()["models_dir"] == "/srv/m"
     ops = c.get("/api/unsloth/operations", headers=h).json()
     assert ops["count"] == 5
     assert c.post("/api/unsloth/call", headers=h, json={"operation": "variants", "args": {"repo_id": "a"}}).json()["operation"] == "variants"

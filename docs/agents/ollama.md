@@ -78,8 +78,8 @@ to it through any ABP channel.
 
 ## Checked on this machine (2026-09-28, Ollama 0.34.4, RX 7900 XTX)
 
-- **Moving old models.** Six older models (6 GB, 18 files) were moved from `C:/Users/user\.ollama\models` into
-  `/path/redacted`, each file verified, and Ollama listed them again.
+- **Moving old models.** Six older models (6 GB, 18 files) were moved out of the default per-user
+  `~/.ollama/models` into a shared models folder, each file verified, and Ollama listed them again.
 - **Pulling.** `gemma4:31b-cloud` was registered, `qwen3.5:9b` (6.6 GB) was pulled in 140 s, and `gemma4:26b` (17 GB)
   was pulled too, all through ABP.
 - **Agent tasks.** An ABP agent on `gemma4:31b-cloud` read a file with its tool and answered correctly in 7 s. On

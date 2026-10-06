@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import os
 import shutil
+from pathlib import Path
 from typing import Optional
 
 from bot.studio import log, variants
 
 
 def browser_channel() -> Optional[str]:
-    for ch, paths, cmd in (("msedge", [r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-                                       r"C:\Program Files\Microsoft\Edge\Application\msedge.exe"], "microsoft-edge"),
-                           ("chrome", [r"C:\Program Files\Google\Chrome\Application\chrome.exe"], "google-chrome")):
+    pf = os.environ.get("ProgramFiles", "C:/Program Files")
+    for ch, paths, cmd in (("msedge", [str(Path(pf) / r"Microsoft\Edge\Application\msedge.exe"),
+                                       str(Path(os.environ.get("ProgramFiles(x86)", pf))
+                                           / r"Microsoft\Edge\Application\msedge.exe")], "microsoft-edge"),
+                           ("chrome", [str(Path(pf) / r"Google\Chrome\Application\chrome.exe")], "google-chrome")):
         if any(os.path.exists(p) for p in paths) or shutil.which(cmd):
             return ch
     return None

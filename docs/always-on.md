@@ -72,7 +72,7 @@ abp gate autostart status  # is it there, and does it still point at this checko
 `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup` — per user, so no
 administrator, no service registration, and nothing left behind when you delete
 it. The file is a VBScript, in the same shape as the one
-[/path/redacted](../..) uses: it sets the few
+a Hermes launch script (the one the Hermes Manager's install step writes) uses: it sets the few
 variables the process needs on the environment `WScript.Shell` hands it
 (`PYTHONPATH`, `VIRTUAL_ENV`, `ABP_GATE`), then
 

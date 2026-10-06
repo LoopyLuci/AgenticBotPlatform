@@ -124,13 +124,13 @@ def test_register_agenticbotplatform_mcp_server_uses_stable_python_not_sys_execu
     # MCP server process from that path blocked a real `cargo tauri
     # build` deploy (Windows file-in-use). Must go through
     # envfile.stable_python_executable() instead.
-    monkeypatch.setattr(envfile, "stable_python_executable", lambda: "/path/redacted")
+    monkeypatch.setattr(envfile, "stable_python_executable", lambda: "/stable/python.exe")
 
     result = hermes_config.register_agenticbotplatform_mcp_server(hermes_home=str(tmp_path))
 
-    assert result["command"] == "/path/redacted"
+    assert result["command"] == "/stable/python.exe"
     text = (tmp_path / "config.yaml").read_text(encoding="utf-8")
-    assert "/path/redacted" in text
+    assert "/stable/python.exe" in text
     assert sys.executable not in text
 
 

@@ -101,7 +101,7 @@ async def _run(args: list[str], *, json_output: bool = True, timeout: float = 30
         # above don't touch at all. Without this, a test running on an
         # administrator account either fails needing real elevation or, if it
         # had elevation, would actually mutate the real machine's
-        # C:\ProgramData\ssh\administrators_authorized_keys - neither of
+        # ProgramData\ssh\administrators_authorized_keys - neither of
         # which a test may ever do.
         child_env["ProgramData"] = test_home
     try:
