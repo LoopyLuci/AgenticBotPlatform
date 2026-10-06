@@ -511,10 +511,18 @@ def _main_body(args: argparse.Namespace) -> None:
     step("Pre-flight")
     with _RUN.step("preflight") as pf:
         checks = guard.run_preflight(version, ROOT, resume=args.resume)
-        heal = guard.heal_locks(ROOT)
-        checks.append(guard.Check("build outputs are not locked", heal.ok,
-                                  ", ".join(heal.still_locked[:3]) or (f"stopped {', '.join(heal.stopped)}" if heal.stopped else ""),
-                                  "close whatever holds them", fixed=bool(heal.stopped) and heal.ok))
+        if args.dry_run:
+            # A dry run changes nothing, so it only names what the real run will stop. The live app runs out of
+            # target/release, and a dry run that healed locks once took the owner's running bots down.
+            holders = [f"{n}({pid})" for n, pid in guard.describe_processes(guard.find_lock_holders(ROOT))]
+            checks.append(guard.Check("build outputs are not locked", True,
+                                      f"the release will stop {', '.join(holders)}" if holders else "",
+                                      warn=bool(holders)))
+        else:
+            heal = guard.heal_locks(ROOT)
+            checks.append(guard.Check("build outputs are not locked", heal.ok,
+                                      ", ".join(heal.still_locked[:3]) or (f"stopped {', '.join(heal.stopped)}" if heal.stopped else ""),
+                                      "close whatever holds them", fixed=bool(heal.stopped) and heal.ok))
         if not args.resume:
             checks.append(guard.sync_cargo_lock(version, ROOT, apply=False))  # report only; the bump step applies it
         blocking = guard.report(checks)

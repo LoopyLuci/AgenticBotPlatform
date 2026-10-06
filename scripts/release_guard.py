@@ -394,6 +394,17 @@ def find_lock_holders(root: Path = ROOT) -> list[psutil.Process]:
     return found
 
 
+def describe_processes(procs: list[psutil.Process]) -> list[tuple[str, int]]:
+    """(name, pid) for each process still running, for a report that stops nothing."""
+    out = []
+    for p in procs:
+        try:
+            out.append((p.name(), p.pid))
+        except psutil.Error:
+            continue
+    return out
+
+
 def stop_processes(procs: list[psutil.Process], grace: float = 6.0) -> list[str]:
     """Stops each process and its children: polite terminate, then kill."""
     protected = _ancestor_pids()

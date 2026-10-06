@@ -264,6 +264,17 @@ def test_dry_run_stops_after_preflight_and_touches_nothing(env):
     assert env["builds"] == 0 and not pr.JOURNAL_PATH.exists()
 
 
+def test_dry_run_never_stops_the_running_app(env, monkeypatch):
+    """The live app runs out of target/release: a dry run names it and leaves it running."""
+    monkeypatch.setattr(g, "heal_locks", lambda *a, **k: pytest.fail("a dry run must not stop processes"))
+    monkeypatch.setattr(g, "find_lock_holders", lambda *a, **k: ["live-app"])
+    monkeypatch.setattr(g, "describe_processes", lambda procs: [("agentic-bot-platform.exe", 4242)] if procs else [])
+    args = _args()
+    args.dry_run = True
+    pr._main_locked(args)
+    assert env["builds"] == 0 and not pr.JOURNAL_PATH.exists()
+
+
 @pytest.mark.parametrize("eol", [b"\n", b"\r\n"])
 def test_version_bumps_keep_each_files_own_line_endings(env, eol):
     """A bump that rewrote LF files as CRLF (Windows text-mode I/O) made git flag
