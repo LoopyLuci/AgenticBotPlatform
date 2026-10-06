@@ -30,12 +30,38 @@ def register(app: FastAPI) -> None:
     # the list and proxying a peer's own overview/bots/actions stay on
     # _require_token_or_api_key, matching every other bot-management route
     # a paired device can already reach.
+    #
+    # Nothing in the default flow asks anyone to open a port: the pairing
+    # token carries this machine's TransferDaemon overlay invite, the
+    # handshake rides the overlay endpoint, and /api/peers/firewall-open
+    # stays what it has always been — an explicit, manual, advanced action
+    # for a direct address on a private network, which ABP never offers on
+    # its own.
 
     @app.get("/api/peers/self-address", dependencies=[Depends(_require_token)])
     async def api_peers_self_address():
         from bot import peers
 
         return {"base_url": peers.detect_own_base_url()}
+
+    @app.get("/api/peers/transport", dependencies=[Depends(_require_token)])
+    async def api_peers_transport():
+        """This machine's TransferDaemon: is the overlay up, and should ABP offer to install it.
+
+        The offer matters because without TransferDaemon linking still works — directly — but only between
+        machines that can already reach each other's port."""
+        from bot import peers
+
+        return peers.td_state()
+
+    @app.get("/api/peers/routes", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_peers_routes():
+        """How each linked peer is reached right now: overlay kind, RTT, loss and state, or the direct address.
+
+        The heartbeat refreshes these, so a route that changed shows up here on its own."""
+        from bot import peers
+
+        return peers.td_routes()
 
     @app.get("/api/peers/firewall-status", dependencies=[Depends(_require_token)])
     async def api_peers_firewall_status():
@@ -46,6 +72,10 @@ def register(app: FastAPI) -> None:
 
     @app.post("/api/peers/firewall-open", dependencies=[Depends(_require_token)])
     def api_peers_firewall_open():
+        """Add the named inbound rule for this machine's dashboard port.
+
+        Advanced and manual on purpose, never part of pairing: with TransferDaemon on both machines a link
+        needs no open port at all. This only matters for a direct address on a private network."""
         from bot import firewall
 
         port = int(os.environ.get("DASHBOARD_PORT", "8787"))
@@ -59,8 +89,9 @@ def register(app: FastAPI) -> None:
         from bot import peers
 
         base_url = (payload.get("base_url") or "").strip() or None
+        name = (payload.get("name") or "").strip() or (os.environ.get("AGENTICBOTPLATFORM_NAME") or socket.gethostname())
         try:
-            result = peers.generate_pairing_token(base_url)
+            result = peers.generate_pairing_token(base_url, name)
         except peers.PeerError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="peer_pairing_token_generated", detail="generated a server pairing token")
@@ -97,6 +128,7 @@ def register(app: FastAPI) -> None:
             result = await peers.accept_handshake(
                 name, api_key, base_url, my_name, pairing_token,
                 ssh_public_key=payload.get("ssh_public_key"), ssh_username=payload.get("ssh_username"),
+                transferdaemon=payload.get("transferdaemon") or {},
             )
         except peers.PeerError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
@@ -141,7 +173,17 @@ def register(app: FastAPI) -> None:
 
     @app.get("/api/peers", dependencies=[Depends(_require_token_or_api_key)])
     def api_peers_list():
-        return [_peer_public(dict(r)) for r in db.list_peer_servers()]
+        from bot import peers
+
+        # Each row carries its route (kind, RTT, state) and the address the next call will actually use,
+        # so the Linked Servers page can show how a peer is reached without a second request.
+        out = []
+        for r in db.list_peer_servers():
+            row = dict(r)
+            row["route"] = peers.route_info(row)
+            row["reachable_at"] = peers.peer_base_url(row)
+            out.append(_peer_public(row))
+        return out
 
     @app.delete("/api/peers/{peer_id}", dependencies=[Depends(_require_token)])
     def api_peers_unlink(peer_id: int):

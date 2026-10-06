@@ -50,28 +50,43 @@ def _health(entry: dict) -> str:
 
 
 def nodes(include_self: bool = True) -> list[dict]:
-    """Every node: {"name", "peer" (None for this machine), "health", "latency_ms", "info"}."""
+    """Every node: {"name", "peer" (None for this machine), "health", "latency_ms", "route", "info"}.
+
+    `route` is how TransferDaemon's overlay currently reaches it (kind, RTT, loss, state) or None for a node
+    with no overlay route — placement scores on it (bot/cluster/scheduler.py) and the dashboard shows it."""
     out = []
     if include_self:
         out.append({"name": inventory.static()["hostname"], "peer": None, "health": "ok", "latency_ms": 0,
-                    "info": this_node()})
+                    "route": None, "info": this_node()})
     try:
-        from bot import db
-        linked = [r["name"] for r in db.list_peer_servers()]
+        from bot import db, peers
+        linked = db.list_peer_servers()
     except Exception:  # noqa: BLE001
         linked = []
-    for name in linked:
+    for row in linked:
+        name = row["name"]
         e = _nodes.get(name) or {}
+        try:
+            route = peers.route_info(row)
+        except Exception:  # noqa: BLE001
+            route = None
         out.append({"name": name, "peer": name, "health": _health(e) if e else "unknown",
                     "latency_ms": e.get("latency_ms"), "error": e.get("error"), "info": e.get("info"),
-                    "seen": e.get("seen")})
+                    "seen": e.get("seen"), "route": route})
     return out
 
 
 async def poll_peer(row) -> None:
+    """Ask one peer for its node report, over whatever route currently reaches it (the overlay endpoint when
+    TransferDaemon has one, the advertised address otherwise), and remember how far away it was."""
     from bot import peers
     name = row["name"]
     e = _nodes.setdefault(name, {})
+    await asyncio.to_thread(peers.refresh_route, row)
+    row = db_row(name) or row                      # re-read: refresh_route may have filled in the overlay identity
+    if not peers.peer_base_url(row):
+        e["error"] = "no address for this peer yet"
+        return
     t0 = time.monotonic()
     try:
         info = await peers.proxy(row, "GET", "/api/cluster/node", timeout=20, wake=False)
@@ -83,13 +98,22 @@ async def poll_peer(row) -> None:
         e["unsupported"] = "404" in msg or "only /api/" in msg
 
 
+def db_row(name: str):
+    """The stored row for a linked peer, or None — the heartbeat re-reads it after a route refresh."""
+    try:
+        from bot import peers
+        return peers.find_peer(name)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 async def poll_all() -> None:
     try:
-        from bot import db
-        rows = [r for r in db.list_peer_servers() if r["base_url"]]
+        from bot import db, peers
+        rows = [r for r in db.list_peer_servers() if peers.peer_base_url(r)]
     except Exception:  # noqa: BLE001
         return
-    await asyncio.gather(*(poll_peer(r) for r in rows), return_exceptions=True)
+    await asyncio.gather(*(poll_peer(dict(r)) for r in rows), return_exceptions=True)
 
 
 async def heartbeat_forever(stop_event: asyncio.Event) -> None:
