@@ -701,7 +701,7 @@ app's own version (the Android app versions independently — see its own
 
 ### Changed
 - The project root is no longer a hardcoded developer path. `bot/envfile.py`
-  used to prefer `/path/redacted` on any machine where that
+  used to prefer one developer's own checkout on any machine where that
   directory existed. It now separates `CODE_ROOT` (the running package, UI
   assets, venv) from `PROJECT_ROOT` (state), and a built app running from a
   `cargo tauri build` output inside a source checkout still shares that

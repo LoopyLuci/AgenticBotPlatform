@@ -97,7 +97,7 @@ ${(s.targets || []).length ? `<div class="hsp-muted">deploys to: ${(s.targets ||
     return `<div class="hsp-card"><b>${s.id ? `Edit ${E(s.name)}` : 'New site'}</b><div class="hsp-form">
 <label>Name</label><input id="hsp-f-name" value="${E(s.name || '')}" placeholder="My blog">
 <label>What it serves</label><select id="hsp-f-kind">${[['static', 'A folder of files (HTML, a built app)'], ['proxy', 'An app running on a port'], ['redirect', 'A redirect to another address']].map(([k, l]) => `<option value="${k}" ${s.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
-<label class="k-static">Folder</label><input class="k-static" id="hsp-f-root" value="${E(s.root || '')}" placeholder="/path/redacted (or the project, with a build below)">
+<label class="k-static">Folder</label><input class="k-static" id="hsp-f-root" value="${E(s.root || '')}" placeholder="/srv/sites/blog (or the project, with a build below)">
 <label class="k-static">Single-page app</label><span class="k-static"><input type="checkbox" id="hsp-f-spa" ${s.spa ? 'checked' : ''}> unknown paths load index.html</span>
 <label class="k-static">Build command</label><input class="k-static" id="hsp-f-bcmd" value="${E(b.command || '')}" placeholder="optional: npm run build">
 <label class="k-static">Build in / output</label><span class="k-static hsp-row"><input id="hsp-f-bcwd" value="${E(b.cwd || '')}" placeholder="project folder" style="flex:2"><input id="hsp-f-bout" value="${E(b.output || 'dist')}" style="flex:1"></span>

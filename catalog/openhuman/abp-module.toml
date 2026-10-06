@@ -25,7 +25,7 @@ require = [{ tool = "cargo", min = "1.96.1", url = "https://rustup.rs" }, { tool
 
 [build]
 # The core's crates path-depend on the vendored tiny* submodules, so they come first. CARGO_TARGET_DIR
-# already points at /path/redacted, so the build cache never lands on C:. The desktop app (pnpm build,
+# already points at a fast drive, so the build cache never lands on the system drive. The desktop app (pnpm build,
 # a Tauri bundle) is deliberately not part of this: it needs WebView2 and its own Cargo world.
 steps = [
   ["git", "submodule", "update", "--init", "--recursive", "vendor/"],
@@ -33,7 +33,7 @@ steps = [
 ]
 outputs = ["{target}/release/openhuman-core{exe}"]
 # {target} is ABP's build cache for this module, so cargo is told to put its output exactly where the
-# operations look for it. The machine-wide CARGO_TARGET_DIR (/path/redacted) applies to ad-hoc
+# operations look for it. The machine-wide CARGO_TARGET_DIR applies to ad-hoc
 # builds outside ABP; inside a build job this line is what counts.
 env = { CARGO_TARGET_DIR = "{target}" }
 

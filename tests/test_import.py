@@ -152,7 +152,7 @@ def local_settings(proj: Path) -> dict:
         "Bash(cmd /c install.bat)",
         "Bash(./scripts/build.sh)",
         f"Read({_claude_path(proj)}/src/**)",
-        "Read(//c/Users/someone/.cargo/bin/**)",
+        "Read(//c/Users/<you>/.cargo/bin/**)",
         "Read(./docs/**)",
         "WebFetch(domain:docs.example.org)",
         "WebSearch",
@@ -175,7 +175,7 @@ def test_the_real_local_settings_shape_keeps_every_entry_a_docs_based_fixture_wo
     assert ("allow", "run_shell", 'python -c "import sys; sys.path.insert(0, \'.\'); import pytest; pytest.main([\'-x\'])"') in rules, "nested parentheses are read whole"
     assert ("allow", "read_file", "src/**") in rules and ("allow", "list_dir", "src/**") in rules, "a //<drive>/ path inside the project becomes relative"
     assert ("allow", "read_file", "docs/**") in rules, "./docs/** is the workspace-relative docs/**"
-    assert ("allow", "read_file", "C:/Users/someone/.cargo/bin/**") in rules, "//c/... is a Windows drive, not a UNC path"
+    assert ("allow", "read_file", "C:/Users/<you>/.cargo/bin/**") in rules, "//c/... is a Windows drive, not a UNC path"
     assert ("allow", "web_fetch", "docs.example.org") in rules
     assert len(plan.rules) == 13, "10 allow entries, Read counting as two tools each"
     notes = "\n".join(plan.warnings)
@@ -191,7 +191,7 @@ def test_the_real_path_rules_really_govern_the_agent(tmp_path):
     assert decide("run_shell", {"command": "cargo build --release"}) == "allow"
     assert decide("read_file", {"path": "src/app.py"}) == "allow"
     assert decide("read_file", {"path": str(Path.home().anchor) + "x"}) == "default", "a rule for src/** is not a rule for everything"
-    assert decide("read_file", {"path": "C:/Users/someone/.cargo/bin/cargo.exe"}) == "allow"
+    assert decide("read_file", {"path": "C:/Users/<you>/.cargo/bin/cargo.exe"}) == "allow"
 
 
 HOOKS_SETTINGS = {
@@ -227,7 +227,7 @@ def test_claude_json_project_entry_is_read_and_its_disabled_servers_are_left_out
                                               "mcpServers": {"local-one": {"command": "python", "args": ["-m", "one"]}},
                                               "enabledMcpjsonServers": ["wanted"], "disabledMcpjsonServers": ["shared"],
                                               "mcpContextUris": [], "hasTrustDialogAccepted": True},
-        "C:/somewhere/else": {"mcpServers": {"not-mine": {"command": "srv"}}},
+        "/somewhere/else": {"mcpServers": {"not-mine": {"command": "srv"}}},
     }})
     plan = core.claude_code(proj, home)
     assert {(r["decision"], r["tool"], r["match"]) for r in plan.rules} == {("allow", "run_shell", "git status*")}

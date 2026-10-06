@@ -1,7 +1,7 @@
 """ABP's own local AI runtime: run, serve, manage and fine-tune models on this machine — what Ollama and Unsloth do,
 built into ABP, with an Ollama-compatible API so anything written for Ollama works against ABP unchanged.
 
-    paths      where the runtime lives (ABP_LOCALAI_HOME; /path/redacted on this machine, else <data>/localai)
+    paths      where the runtime lives (ABP_LOCALAI_HOME, else <data>/localai)
     gguf       reads a GGUF file's metadata (architecture, size, context, quantization, chat template...) without
                loading it
     models     ABP's model store: pulled models (its own folder), imported ones (copied or hard-linked in) and

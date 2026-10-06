@@ -360,7 +360,7 @@ def _record(msg, exc=None, name="bot.x", level=logging.ERROR):
 
 
 def test_errors_collapse_into_one_issue_regardless_of_ids():
-    bug_hunter.observe(_record("job 1234 failed for user 'alice' at C:/x/y.py"))
+    bug_hunter.observe(_record("job 1234 failed for user 'alice' at /srv/x/y.py"))
     bug_hunter.observe(_record("job 99 failed for user 'bob' at /tmp/z.py"))
     issues = bug_hunter.issues()
     assert len(issues) == 1 and issues[0]["count"] == 2

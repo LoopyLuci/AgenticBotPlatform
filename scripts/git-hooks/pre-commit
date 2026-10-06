@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# AgenticBotPlatform's public-repo leak guard — runs before every commit, on the lines the
+# index is about to add. ABP is public: an absolute drive-letter path or a term from the
+# private denylist must never reach it. See scripts/leak_guard.py. Installed via
+# scripts/install_git_hooks.sh / .ps1 (this file is the tracked source; .git/hooks isn't
+# version-controlled, so it's copied there, not run from here directly).
+set -e
+
+py=".venv/Scripts/python.exe"
+[ -x "$py" ] || py=".venv/bin/python"
+[ -x "$py" ] || py="python"
+
+# --staged rather than the whole tree on purpose: a match already in a file nobody touched
+# must not block an unrelated commit, and the pipeline checks the full tree on its own.
+exec "$py" scripts/leak_guard.py --staged

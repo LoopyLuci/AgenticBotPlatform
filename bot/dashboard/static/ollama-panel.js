@@ -146,7 +146,7 @@
       <div class="ol-card"><h4>Recommended by Ollama</h4>${rec.recommendations.map((x) => `<div class="ol-row" style="margin:6px 0"><div style="flex:1"><span class="ol-mono">${E(x.model)}</span> ${x.required_plan ? `<span class="ol-chip ${x.required_plan === 'free' ? 'on' : 'warn'}">${E(x.required_plan)} plan</span>` : '<span class="ol-chip">local</span>'}<br><span class="ol-muted">${E(x.description || '')}</span></div><button class="btn" data-ol="pull" data-model="${E(x.model)}">Pull</button></div>`).join('') || '<p class="ol-muted">None offered.</p>'}</div>
       <div class="ol-card" style="grid-column:1/-1"><h4>Import a GGUF file</h4><p class="ol-muted">Make a .gguf on this computer an Ollama model, for example one Unsloth Studio downloaded, without downloading it again. The file is uploaded to Ollama once; the model gets ABP's default context.</p>
         <form class="ol-form" data-ol-form="import"><label>File <select name="path" required>${files.files.map((f) => `<option value="${E(f.path)}">${E(f.name)} (${gb(f.size_bytes)})</option>`).join('')}<option value="">(type a path below)</option></select></label>
-          <label>…or a path <input name="custom_path" placeholder="/path/redacted"></label><label>Model name <input name="model" placeholder="my-model:latest" required></label>
+          <label>…or a path <input name="custom_path" placeholder="/srv/models/my-model.gguf"></label><label>Model name <input name="model" placeholder="my-model:latest" required></label>
           <label>System prompt (optional) <input name="system"></label><div><button class="btn primary" type="submit">Import</button></div></form></div></div>`;
     if (jobs.jobs.some((j) => j.state === 'running')) watchJobs();
   }

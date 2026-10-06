@@ -1,7 +1,7 @@
 """ABP_HOME — keep all mutable state (.env, config/, data/, logs/) outside the
 checkout, for an ABP that is embedded as a submodule/sidecar of another server.
 
-The old code hardcoded one developer's path (/path/redacted)
+The old code hardcoded one developer's own checkout path
 and preferred it on any machine where it existed, and had no override at all,
 so a read-only checkout crashed at import and two hosts shared one database.
 """

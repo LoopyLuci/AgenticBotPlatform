@@ -94,8 +94,8 @@ ${a.errors.length ? `<div>${chip('bad', `${a.errors.length} corrupted block(s)`)
 <div class="stp-row"><select id="stp-fix-disk"><option value="">Rebuild a disk onto a new drive…</option>${a.disks.map((d) => `<option>${E(d.name)}</option>`).join('')}</select><input id="stp-fix-target" placeholder="the new drive's folder"><button class="btn ghost" id="stp-fix-go">Rebuild</button></div>
 <div class="stp-log" id="stp-a-log" style="display:none"></div>` : '<p class="cardnote">Not set up. Each data disk is a folder on its own drive (any size); parity goes on a drive at least as large as the largest data disk.</p>'}</div>
 <div class="stp-card"><b>${a.configured ? 'Change the array' : 'Set up the array'}</b><div class="stp-form">
-<label>Data disks</label><textarea id="stp-a-disks" rows="4" placeholder="d1=E:\\nas\\disk1&#10;d2=F:\\nas\\disk2">${E(cfg ? cfg.disks : (a.disks || []).map((d) => `${d.name}=${d.path}`).join('\n'))}</textarea>
-<label>Parity</label><input id="stp-a-p1" value="${E((a.parity[0] || {}).path || '')}" placeholder="G:\\nas\\parity">
+<label>Data disks</label><textarea id="stp-a-disks" rows="4" placeholder="d1=/mnt/disk1&#10;d2=/mnt/disk2">${E(cfg ? cfg.disks : (a.disks || []).map((d) => `${d.name}=${d.path}`).join('\n'))}</textarea>
+<label>Parity</label><input id="stp-a-p1" value="${E((a.parity[0] || {}).path || '')}" placeholder="/mnt/parity">
 <label>Second parity</label><input id="stp-a-p2" value="${E((a.parity[1] || {}).path || '')}" placeholder="optional: survives two failed disks">
 <label>Block size (KiB)</label><select id="stp-a-bs">${[64, 128, 256, 512, 1024].map((b) => `<option ${b === (a.block_kib || 256) ? 'selected' : ''}>${b}</option>`).join('')}</select>
 <label>Same drive</label><span><input type="checkbox" id="stp-a-same"> allow parity on a data disk's drive (testing only: no protection)</span></div>

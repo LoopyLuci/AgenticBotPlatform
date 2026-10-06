@@ -4,9 +4,9 @@ The built-in list covers the LoopyLuci modules. A module's own ``abp-module.toml
 built-in manifest once the repo ships one, and more modules can be added in config/backends.yaml:
 
     modules:
-      build_cache: /path/redacted        # optional: cargo target dirs go here (fast storage), one folder per module
+      build_cache: /srv/abp-build      # optional: cargo target dirs go here (fast storage), one folder per module
                                        # ($ABP_MODULE_BUILD_CACHE overrides it)
-      brainbuilder: {path: /path/redacted, enabled: true}
+      brainbuilder: {path: /srv/src/BrainBuilder, enabled: true}
       extra:
         - {id: my-tool, name: My Tool, repo: https://github.com/me/my-tool.git}
 
@@ -17,7 +17,7 @@ Any project can become a module: `python -m abp_modkit adopt <folder> --register
 the folder to modules.projects, where ABP finds it (its id comes from its own manifest):
 
     modules:
-      projects: [/path/redacted, /path/redacted]
+      projects: [/srv/projects/MyModule, /srv/projects/AnotherModule]
 """
 from __future__ import annotations
 
@@ -28,6 +28,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+from bot import extensions
 from bot.modules import manifest as mf
 from bot.modules.manifest import Manifest, ManifestError
 
@@ -134,10 +135,15 @@ def _project_manifests(taken: set[str]) -> tuple[list[Manifest], dict[str, str]]
 
 
 def overlay_roots() -> list[Path]:
-    """Where overlays live: the ones ABP ships (catalog/), the ones users made (data/module-overlays/), and any folders
-    listed in modules.overlay_dirs."""
-    return [abp_root() / "catalog", user_overlay_root(),
-            *(Path(str(p)).expanduser() for p in (_cfg().get("overlay_dirs") or []))]
+    """Where overlays live, first match wins: the ones ABP ships (catalog/), the private ones a local install adds
+    (<ABP_PRIVATE_DIR>/catalog, absent on a public install), the ones users made (data/module-overlays/), and any
+    folders listed in modules.overlay_dirs."""
+    roots = [abp_root() / "catalog", user_overlay_root(),
+             *(Path(str(p)).expanduser() for p in (_cfg().get("overlay_dirs") or []))]
+    private = extensions.catalog_root()
+    if private is not None:
+        roots.insert(1, private)
+    return roots
 
 
 def user_overlay_root() -> Path:
@@ -169,11 +175,14 @@ def _builtin_manifests() -> list[Manifest]:
     out = [mf.parse(d) for d in BUILTIN]
     from bot.private_project import connectors   # the PrivateProject estate's connectors, one repo each
     out += [mf.parse(d) for d in connectors.manifests()]
-    for extra in _cfg().get("extra") or []:
+    # modules.extra from the config, then whatever a local extension registered (ABP_PRIVATE_DIR):
+    # same shape, same resolution, so a private project is a module without being in the repo.
+    cfg = _cfg()
+    for extra in [*(cfg.get("extra") or []), *extensions.loaded().module_entries]:
         if isinstance(extra, dict):
             try:
                 out.append(mf.parse({"module": {k: extra.get(k) for k in ("id", "name", "repo", "branch", "area",
-                                                                            "description")},
+                                                                        "description")},
                                      "checkout": {"marker": extra.get("marker") or []}}, source="config"))
             except ManifestError:
                 continue

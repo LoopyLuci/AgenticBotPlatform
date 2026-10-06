@@ -166,10 +166,10 @@ def test_linux_refuses_when_user_namespaces_are_disabled(monkeypatch):
 
 
 def test_the_launcher_argv_carries_limits_and_extra_paths(ws):
-    argv = appcontainer.launcher_argv("py", 'echo "a b"', ws / "sub", ws, extra_paths=["C:/tools"], memory_mb=64,
+    argv = appcontainer.launcher_argv("py", 'echo "a b"', ws / "sub", ws, extra_paths=["/srv/tools"], memory_mb=64,
                                       active_process_limit=3)
     assert argv[:2] == ["py", "-I"] and argv[-2:] == ["--", 'echo "a b"']
-    assert argv[argv.index("--read") + 1] == "C:/tools"
+    assert argv[argv.index("--read") + 1] == "/srv/tools"
     assert argv[argv.index("--memory-mb") + 1] == "64" and argv[argv.index("--procs") + 1] == "3"
 
 

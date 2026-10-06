@@ -54,8 +54,8 @@ its own hub.
 
 ```yaml
 modules:
-  build_cache: /path/redacted          # cargo target dirs on fast storage, one folder per module
-  brainbuilder: {path: /path/redacted}
+  build_cache: /srv/abp-build          # cargo target dirs on fast storage, one folder per module
+  brainbuilder: {path: /srv/src/BrainBuilder}
   wrightspace: {enabled: false}      # hide a module
   extra:
     - {id: my-tool, name: My Tool, repo: https://github.com/me/my-tool.git, marker: [Cargo.toml]}

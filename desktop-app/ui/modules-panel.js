@@ -160,8 +160,8 @@ ${r.installed ? `<div class="mdp-mono mdp-muted">${E(r.path || '')}${r.commit ? 
     return `<details class="mdp-card" style="margin-bottom:12px"${st.adoptOpen ? ' open' : ''} id="mdp-adopt"><summary><b>Add a project as a module</b> <span class="mdp-muted">ABP reads it (stacks, build, server, commands, routes, MCP) and makes every part of it an operation</span></summary>
 <div class="mdp-row" style="margin-top:8px"><input id="mdp-add-url" placeholder="A repo: https://github.com/owner/name, or owner/name" style="flex:1;min-width:240px" value="${E(st.addUrl || '')}"><label class="mdp-row mdp-muted"><input type="checkbox" id="mdp-add-full"> whole history</label><button class="btn" id="mdp-add-go">Add from URL</button></div>
 <div class="mdp-muted">From a URL, ABP clones it, keeps its module files on its own side (the clone stays exactly as upstream has it), checks it with a real hub and registers it.</div>
-<div class="mdp-row"><input id="mdp-adopt-path" placeholder="Project folder, e.g. /path/redacted" style="flex:1;min-width:240px" value="${E(st.adoptPath || '')}"><button class="btn ghost" id="mdp-adopt-preview">Preview</button><button class="btn" id="mdp-adopt-go">Adopt</button></div>
-<div class="mdp-row"><input id="mdp-adopt-folder" placeholder="…or a folder of projects, e.g. /path/redacted" style="flex:1;min-width:240px" value="${E(st.adoptFolder || '')}"><button class="btn ghost" id="mdp-adopt-find">Find projects</button></div>
+<div class="mdp-row"><input id="mdp-adopt-path" placeholder="Project folder, e.g. /srv/projects/MyModule" style="flex:1;min-width:240px" value="${E(st.adoptPath || '')}"><button class="btn ghost" id="mdp-adopt-preview">Preview</button><button class="btn" id="mdp-adopt-go">Adopt</button></div>
+<div class="mdp-row"><input id="mdp-adopt-folder" placeholder="…or a folder of projects, e.g. /srv/projects" style="flex:1;min-width:240px" value="${E(st.adoptFolder || '')}"><button class="btn ghost" id="mdp-adopt-find">Find projects</button></div>
 <div id="mdp-adopt-out"></div></details>`;
   }
 

@@ -23,7 +23,7 @@ Two optional settings go in `config/backends.yaml`:
 ```yaml
 unsloth:
   context_length: 32768          # the context a model is loaded with (Studio's own default can be 2048, far too small for an agent)
-  models_dir: /path/redacted   # where Studio downloads models; ABP can set it (Unsloth page > Overview)
+  models_dir: /srv/models/unsloth   # where Studio downloads models; ABP can set it (Unsloth page > Overview)
 ```
 
 ## Using a Studio model in a bot
@@ -77,7 +77,8 @@ ABP channel.
 
 These were run against Unsloth Studio 2026.9 on an RX 7900 XTX (ROCm):
 
-- **Download.** `unsloth/Qwen3.5-9B-MTP-GGUF` (Q4_K_M) was downloaded through ABP into `/path/redacted` in about
+- **Download.** `unsloth/Qwen3.5-9B-MTP-GGUF` (Q4_K_M) was downloaded through ABP into the configured
+  `models_dir` in about
   2 minutes.
 - **Load.** It was loaded through ABP at 32,768 tokens of context in 24 s, using about 12 GB of VRAM.
 - **Agent task.** An ABP agent on that model read a file with its tool and answered correctly in 12 s.

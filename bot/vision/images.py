@@ -1,7 +1,7 @@
 """Where images come from and where results go.
 
 A source is one of:
-    a file path                  "C:/pics/a.png", "~/shot.jpg"
+    a file path                  "/srv/pics/a.png", "~/shot.jpg"
     an http(s) URL               fetched with a size cap, public addresses only
     a data: URL                  "data:image/png;base64,..."
     "screen" / "screen:<n>"      a screenshot of every monitor, or of monitor n (1 = the first)

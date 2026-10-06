@@ -210,7 +210,7 @@ def test_a_page_cannot_make_the_browser_reach_private_addresses(cfg, server):
 
 def test_only_public_http_pages_can_be_opened(cfg, server):
     async def go():
-        for bad in ("file:///C:/Windows/win.ini", "javascript:alert(1)", "data:text/html,<h1>x</h1>", "http://169.254.169.254/latest/meta-data/",
+        for bad in ("file:///etc/hosts", "javascript:alert(1)", "data:text/html,<h1>x</h1>", "http://169.254.169.254/latest/meta-data/",
                     "http://localhost:1/", "ftp://example.com/"):
             with pytest.raises(ToolError):
                 await call("browser", {"action": "open", "url": bad})

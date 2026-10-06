@@ -54,7 +54,7 @@ Reading is free. Anything that changes Hermes or the window asks for approval fi
 
 ## Checked on this machine (2026-09-28)
 
-ABP found the working copy at `/path/redacted` and Hermes at `%LOCALAPPDATA%\hermes`. It then:
+ABP found the working copy beside its own and Hermes at `%LOCALAPPDATA%\hermes`. It then:
 
 - used the running bridge: 49 operations, the gateway (running), 10,037 skills;
 - opened the window through the bridge, switched to Config, read the widgets and took a screenshot.

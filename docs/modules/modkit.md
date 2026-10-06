@@ -5,12 +5,12 @@ two files that describe it, and serves its operations. Nothing has to be written
 has to change.
 
 ```bash
-abp modules adopt /path/redacted        # through a running ABP (also: Modules page -> Add a project)
+abp modules adopt /srv/projects/MyModule     # through a running ABP (also: Modules page -> Add a project)
 python -m abp_modkit adopt . --register       # without one; --register adds it to this ABP's config
 python -m abp_modkit adopt . --dry-run        # show both files, write nothing
 python -m abp_modkit new ./my-tool --lang python   # a new, empty project that is already a module
 python -m abp_modkit check .                  # load both files, start a real hub, list operations, bridge MCP, stop
-abp modules candidates /path/redacted            # which folders there are projects, and which are modules already
+abp modules candidates /srv/projects          # which folders there are projects, and which are modules already
 abp modules publish <id> [--push]             # commit the module files; create its private GitHub repo
 ```
 

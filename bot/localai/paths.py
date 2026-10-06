@@ -9,13 +9,13 @@
     <home>/venv-train/                    the training environment (PyTorch for the GPU)
     <home>/state.json, logs/, run/        settings, process logs and pid files
 
-<home> is ABP_LOCALAI_HOME, else /path/redacted where an E: drive exists (this project's fast drive), else
-<data>/localai.
+<home> is ABP_LOCALAI_HOME, else <data>/localai. A machine that keeps its models on a separate
+fast drive sets ABP_LOCALAI_HOME (in its own .env or shell, never in the repo) to that folder;
+nothing here assumes a drive exists.
 """
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 
 CPU_THREADS = 4          # cap for llama.cpp's CPU work and quantizing (see the package docstring)
@@ -25,8 +25,6 @@ def home() -> Path:
     env = os.environ.get("ABP_LOCALAI_HOME", "").strip()
     if env:
         p = Path(env)
-    elif sys.platform == "win32" and Path("/path/redacted").exists():
-        p = Path("/path/redacted")
     else:
         from bot.envfile import PROJECT_ROOT
         p = PROJECT_ROOT / "data" / "localai"

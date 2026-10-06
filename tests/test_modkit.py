@@ -22,6 +22,14 @@ from abp_modkit import spec as sp
 ROOT = Path(__file__).resolve().parent.parent
 
 
+@pytest.fixture(autouse=True)
+def _this_checkouts_own_config(monkeypatch):
+    """These tests drive THIS checkout's own config file and catalog. A developer's private folder
+    would put its projects and modules into every list they assert about, so it stays out of the way
+    here; the overlay machinery has its own tests (tests/test_extensions.py)."""
+    monkeypatch.delenv("ABP_PRIVATE_DIR", raising=False)
+
+
 def _free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -746,7 +754,7 @@ def test_repo_urls_are_https_or_owner_name_only():
     assert adoption.parse_repo("opencv/opencv_zoo.git")[0] == "https://github.com/opencv/opencv_zoo.git"
     assert adoption.parse_repo("github.com/a/b/")[0] == "https://github.com/a/b.git"
     assert adoption.parse_repo("https://gitlab.com/g/p.git")[0] == "https://gitlab.com/g/p.git"
-    for bad in ("file:///etc/passwd", "git@github.com:a/b.git", "C:/x/y", "../x", "http://github.com/a/b", "a",
+    for bad in ("file:///etc/passwd", "git@github.com:a/b.git", "/srv/x/y", "../x", "http://github.com/a/b", "a",
                 "https://github.com/a/b/tree/main"):
         with pytest.raises(ModuleError):
             adoption.parse_repo(bad)

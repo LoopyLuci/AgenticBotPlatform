@@ -6,7 +6,7 @@ clones one), keeps it up to date from the repo, starts its hub and window, and r
 Where the checkout is, first match wins:
     $ABP_VM_HARNESS_DIR
     vm_harness.path in config/backends.yaml
-    a VM-Harness folder next to ABP's own (a developer's working copy, e.g. /path/redacted)
+    a VM-Harness folder next to ABP's own (a developer's working copy)
     data/modules/VM-Harness (cloned there by setup)
 """
 from __future__ import annotations

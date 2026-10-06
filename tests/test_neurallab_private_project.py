@@ -204,11 +204,17 @@ def test_the_generated_line_is_read_out_of_private_project_s_own_output():
 
 
 def test_the_lab_runs_the_very_cli_the_overlay_runs():
-    """The lab asks for bytes with PRIVATE_PROJECT's own command, so it must be the one catalog/private_project's
-    generate.run runs: same module, same flags, the same default config, and the same interpreter."""
+    """The lab asks for bytes with PRIVATE_PROJECT's own command, so it must be the one the private_project overlay's
+    generate.run runs: same module, same flags, the same default config, and the same interpreter.
+
+    That overlay is not in the public catalog - a private project's overlay lives in the private
+    folder's catalog/ (ABP_PRIVATE_DIR), so on a public install there is nothing here to compare
+    against and this check has nothing to say."""
     import sys
 
     overlay = Path(__file__).resolve().parent.parent / "catalog" / "private_project" / "abp-ops.toml"
+    if not overlay.is_file():
+        pytest.skip("the private_project overlay is not in the public catalog (it lives in the private folder)")
     ops = {o["id"]: o for o in tomllib.loads(overlay.read_text(encoding="utf-8"))["op"]}
     from bot.neurallab import private_project
 

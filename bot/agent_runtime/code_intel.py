@@ -98,7 +98,7 @@ def uri_of(path: Path) -> str:
 def path_of(uri: str) -> Path:
     raw = urlparse(uri).path
     if os.name == "nt" and len(raw) > 2 and raw[0] == "/" and raw[2] == ":":
-        raw = raw[1:]                                    # /C:/x -> C:/x
+        raw = raw[1:]                                    # drop the URI's leading slash so the drive letter starts the path
     return Path(url2pathname(raw))
 
 

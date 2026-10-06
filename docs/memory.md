@@ -66,7 +66,7 @@ scored chunks, entities and summary trees, which the agents' `memory_tree` tool,
 | `private_project` | the PrivateProject foundry's Knowledge Modules, one item per KM | `path` |
 
 ```
-abp memory source-add private_project "PrivateProject" --path /path/redacted
+abp memory source-add private_project "PrivateProject" --path /srv/projects/PrivateProject
 abp memory source-sync <the id it printed>
 ```
 

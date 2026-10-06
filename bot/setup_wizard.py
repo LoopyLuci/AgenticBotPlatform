@@ -431,7 +431,7 @@ DASHBOARD_HOST=127.0.0.1
 DASHBOARD_PORT=8787
 
 # Optional: override Claude Desktop's install path if auto-detection fails.
-# CLAUDE_DESKTOP_EXE=C:\\Users\\you\\AppData\\Local\\AnthropicClaude\\Claude.exe
+# CLAUDE_DESKTOP_EXE=C:\\Users\\<you>\\AppData\\Local\\AnthropicClaude\\Claude.exe
 """
 
 

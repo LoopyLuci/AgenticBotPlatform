@@ -20,6 +20,7 @@ from typing import Any, Callable
 
 import yaml
 
+from bot import extensions
 from bot.envfile import PROJECT_ROOT
 
 logger = logging.getLogger("bot.config")
@@ -100,7 +101,15 @@ class ConfigManager:
         if self.missing_ok and not self.path.exists():
             return {}
         with open(self.path, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
+            data = yaml.safe_load(f) or {}
+        if not isinstance(data, dict):
+            # Not merged, and deliberately: reload() rejects a wrong-shaped root by name, and a
+            # merge that quietly turned a list into {} would hide exactly that mistake.
+            return data
+        # <ABP_PRIVATE_DIR>/config/<name>.yaml deep-merged over the tracked file, plus whatever
+        # the extensions registered. Unset, that merge is a no-op and this stays the public
+        # install's config exactly as tracked.
+        return extensions.merged_config(self.path.stem, data)
 
     def read_raw(self) -> dict:
         """Fresh read straight from disk, bypassing the in-memory cache —

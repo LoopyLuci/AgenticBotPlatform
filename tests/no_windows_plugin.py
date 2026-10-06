@@ -3,12 +3,12 @@
 `bot/sandbox_ns/guard.py` is the fix: every process ABP starts gets `CREATE_NO_WINDOW`. This is
 the regression test for the fix, at the only level that can actually see the complaint - Windows
 itself. A daemon thread polls `EnumWindows` for the window classes a console program puts up (the
-same three `/path/redacted` watches), remembers which handles were already open when
+same three a standalone watcher script reports), remembers which handles were already open when
 the session started - the person's own windows are none of our business - and fails the test that
 was running when a new one appeared, with the process chain that opened it.
 
 The chain matters because the window's owner is usually gone by the time anyone notices the flash:
-`popup_watch.ps1` had to keep a 1.5 s process cache for exactly that reason. Polling at 200 ms and
+a standalone watcher had to keep a 1.5 s process cache for exactly that reason. Polling at 200 ms and
 naming the chain on the spot catches nearly everything; a window both created and closed inside
 one poll interval is invisible to any poller, which is why the fix is the guard and not this.
 

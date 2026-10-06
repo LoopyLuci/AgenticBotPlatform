@@ -15,7 +15,7 @@
     ["chrome://settings", false, true],
     ["edge://flags", false, true],
     ["chrome-extension://abc/page.html", false, true],
-    ["file:///C:/secrets.txt", false, true],
+    ["file:///srv/secrets.txt", false, true],
     ["javascript:alert(1)", false, true],
     ["data:text/html,hi", false, true],
     ["not a url", false, true]

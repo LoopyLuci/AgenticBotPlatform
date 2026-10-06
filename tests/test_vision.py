@@ -21,8 +21,8 @@ from bot.vision.images import VisionError
 
 ROOT = Path(__file__).resolve().parent.parent
 MODELS = Path(os.environ.get("ABP_VISION_MODELS_DIR") or ROOT / "data" / "vision" / "models")
-SAMPLES = [Path(p) for p in (os.environ.get("ABP_OPENCV_DIR", ""), "/path/redacted") if p]
-EXTRA = [Path(p) for p in (os.environ.get("ABP_OPENCV_EXTRA_DIR", ""), "/path/redacted") if p]
+SAMPLES = [Path(p) for p in (os.environ.get("ABP_OPENCV_DIR", ""), "/srv/opencv") if p]
+EXTRA = [Path(p) for p in (os.environ.get("ABP_OPENCV_EXTRA_DIR", ""), "/srv/opencv_extra") if p]
 
 
 @pytest.fixture(autouse=True)

@@ -110,7 +110,7 @@ def _tool_names(name: str) -> list[str]:
 
 
 def _path_key(path: Any) -> str:
-    """One spelling of a folder, so `/path/redacted`, `/path/redacted` and `/path/redacted` all compare equal.
+    """One spelling of a folder, so `/srv/projects/X`, `\\srv\\projects\\X` and `/srv/projects/X/` all compare equal.
     Claude Code's own store keys projects by path and writes both cases."""
     text = str(path).replace("\\", "/").rstrip("/")
     return re.sub(r"^([A-Za-z]):/", lambda m: f"{m.group(1).lower()}:/", text).lower()
@@ -130,7 +130,7 @@ def _file_pattern(spec: str, project: Optional[Path]) -> str:
     while p.startswith("//"):
         p = p[1:]                                                        # //c/Users -> /c/Users
     if re.match(r"^/[A-Za-z]/", p):
-        p = p[1].upper() + ":" + p[2:]                                    # /c/Users -> C:/Users
+        p = p[1].upper() + ":" + p[2:]                                    # a Git-Bash /c/Users -> a Windows C:/Users
     if project is not None and re.match(r"^[A-Za-z]:/", p):
         rel = _relative_to(p, str(project).replace("\\", "/"))
         if rel is not None:

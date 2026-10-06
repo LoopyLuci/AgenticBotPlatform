@@ -52,7 +52,7 @@ ABP cannot be widened to reach a sibling folder. The SSE transport is reported t
 Against the **real installs on the development machine**, read with every value masked and never written to: `~/.claude/` (which
 holds no `settings.json` on this machine, so the user-settings importer had nothing to read - the rules all live in the projects),
 `~/.claude.json`, the `opencode.jsonc` the swarm's own launcher passes in `$OPENCODE_CONFIG`, the global
-`~/.config/opencode/opencode.jsonc` (50 bytes, `$schema` only), and the `.claude/settings.local.json` of five `/path/redacted`
+`~/.config/opencode/opencode.jsonc` (50 bytes, `$schema` only), and the `.claude/settings.local.json` of five project
 checkouts plus one `claude/settings.json` with hooks in a sixth (all 225 folders searched for `opencode.json(c)` and `.mcp.json`;
 none). Both importers were run as a dry run against each of them and every line of every plan read. `--apply` was **not** run
 against anything real: that is yours to do.
@@ -88,7 +88,7 @@ The dry-run summary, per real file, counts only (no values):
 | `NeuroForge/.claude/settings.local.json` | 29 -> **31** | 0 | 0 | 2 -> **1** |
 | `JumpingSpiderSimulator/.claude/settings.local.json` | 13 -> **13** | 0 | 0 | 0 -> 0 |
 | `AI_Transcriber_Caption_Maker/.claude/settings.local.json` | 1 -> **1** | 0 | 0 | 0 -> 0 |
-| a `claude/settings.json` with `SessionStart` / `SessionEnd` hooks (a `/path/redacted` checkout) | 0 -> 0 | 1 -> **2** | 0 | 4 -> **2** |
+| a `claude/settings.json` with `SessionStart` / `SessionEnd` hooks (a project checkout) | 0 -> 0 | 1 -> **2** | 0 | 4 -> **2** |
 | `~/.claude.json` (43 project entries; every list in them is empty on this machine) | 0 | 0 | 0 | 0 |
 | `~/.config/opencode/opencode.jsonc` (the real global config: `$schema` only) | 0 | 0 | 0 | 0 |
 | `$OPENCODE_CONFIG` = the swarm's `opencode-swarm.jsonc` (6 servers, all `enabled: false`; 4 `allow` permission values) | 0 | 0 | 0 | 0 -> **5** |

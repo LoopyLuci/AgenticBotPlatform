@@ -379,7 +379,7 @@ def test_a_target_inside_the_checkout_needs_no_permission(tmp_path, checkout, bu
 def test_the_install_dir_can_come_from_the_environment(checkout, monkeypatch):
     monkeypatch.setenv("ABP_INSTALL_DIR", str(checkout / "somewhere-else"))
     assert deploy_local.resolve_install_dir(checkout) == (checkout / "somewhere-else").resolve()
-    assert deploy_local.resolve_install_dir(checkout, "/path/redacted") == Path("/path/redacted").resolve()
+    assert deploy_local.resolve_install_dir(checkout, "<drive>:/explicit") == Path("<drive>:/explicit").resolve()
     monkeypatch.delenv("ABP_INSTALL_DIR")
     assert deploy_local.resolve_install_dir(checkout) == _install_dir(checkout).resolve()
 
@@ -571,7 +571,7 @@ def test_builds_need_cargo(checkout, build, monkeypatch):
 def test_on_windows_the_app_is_started_through_explorer_so_it_gets_the_users_environment():
     """The command is asserted, not run: launching the real GUI binary (or
     explorer.exe) from a test is not this test's business."""
-    exe = Path("/path/redacted")
+    exe = Path("<drive>:/somewhere/agentic-bot-platform.exe")
     assert deploy_local.launch_command(exe) == ["explorer.exe", str(exe)]
 
 

@@ -318,8 +318,8 @@ def test_acme_signs_verifiable_jws_and_refuses_without_agreement(hosting):
 
 def test_caddy_blocks_for_each_kind():
     from bot.hosting import caddy
-    st = caddy.block({"id": "a", "kind": "static", "root": "C:\\www\\a", "spa": True, "domains": ["a.com", "www.a.com"]})
-    assert st.startswith("a.com, www.a.com {") and 'root * "C:/www/a"' in st and "/index.html" in st and "file_server" in st
+    st = caddy.block({"id": "a", "kind": "static", "root": "/www/a", "spa": True, "domains": ["a.com", "www.a.com"]})
+    assert st.startswith("a.com, www.a.com {") and 'root * "/www/a"' in st and "/index.html" in st and "file_server" in st
     px = caddy.block({"id": "b", "kind": "proxy", "upstream": "http://127.0.0.1:3000", "domains": ["b.lan"]})
     assert "reverse_proxy http://127.0.0.1:3000" in px and "tls internal" in px
     rd = caddy.block({"id": "c", "kind": "redirect", "redirect_to": "https://x.org/", "domains": ["c.com"], "https": "off"})
@@ -388,7 +388,7 @@ def test_the_page_is_the_same_file_in_both_uis_and_both_pages_have_it():
 def test_the_cli_parses_every_host_command():
     from abp_cli.__main__ import _parser
     p = _parser()
-    for argv in (["host", "status"], ["host", "site", "add", "--name", "x", "--root", "C:/w", "--domains", "a.com"],
+    for argv in (["host", "status"], ["host", "site", "add", "--name", "x", "--root", "/srv/w", "--domains", "a.com"],
                  ["host", "live", "x", "--mode", "cloudflare-tunnel", "--account", "cf"], ["host", "dns", "set", "cf", "a.com", "www", "A", "1.2.3.4"],
                  ["host", "vps", "create", "do", "--name", "w", "--region", "fra1", "--size", "s-1vcpu-1gb"], ["host", "router", "add", "443"]):
         assert p.parse_args(argv).host_cmd == argv[1]

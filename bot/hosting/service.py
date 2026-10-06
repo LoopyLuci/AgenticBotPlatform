@@ -3,14 +3,14 @@
 A site (stored in `<hosting>/sites.json`, which the edge reads directly):
 
     {"name": "Blog", "kind": "static" | "proxy" | "redirect",
-     "root": "/path/redacted",            static: the folder served (or the build's output)
+     "root": "/srv/sites/blog/dist",            static: the folder served (or the build's output)
      "spa": false,                            static: unknown paths fall back to /index.html
      "upstream": "http://127.0.0.1:3000",     proxy: the app
      "redirect_to": "https://example.com",    redirect
      "domains": ["blog.example.com"],
      "https": "auto" | "self-signed" | "off", "force_https": true,
      "serve": "edge" | "none",                served by this machine, or only deployed elsewhere
-     "build": {"command": "npm run build", "cwd": "/path/redacted", "output": "dist"},
+     "build": {"command": "npm run build", "cwd": "/srv/sites/blog", "output": "dist"},
      "auth": {"user": "me", "password_hash": "pbkdf2$..."},
      "exposure": {"mode": "cloudflare-tunnel" | "tailscale-funnel" | "port-forward" | "direct" | "lan", "account": id},
      "targets": [{"account": id, ...}],         where `publish` sends the files

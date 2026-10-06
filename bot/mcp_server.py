@@ -314,7 +314,7 @@ async def create_bot_instance(
     isolated Hermes runtime (own config.yaml/sessions/cwd/port) instead of
     sharing the one machine-wide default every other hermes_gateway
     instance uses — pass a dedicated directory path (e.g.
-    'C:\\hermes-homes\\worker1' or '~/.hermes-worker1') to actually get
+    '/srv/hermes-homes/worker1' or '~/.hermes-worker1') to actually get
     independent agents, not just independent bot_instances rows pointed
     at the same shared Hermes state."""
     return await _request("POST", "/api/bots", json={
@@ -1417,3 +1417,18 @@ async def vision_edit(image: str, steps: list) -> Any:
     """Edit an image and save the result: steps like [{"op": "resize", "width": 800}, {"op": "gray"}]; ops: resize,
     crop, rotate, flip, gray, blur, sharpen, edges, threshold, invert, brightness, denoise."""
     return await _request("POST", "/api/vision/edit", timeout=300.0, json={"image": image, "steps": steps})
+
+# ---- extensions (ABP_PRIVATE_DIR) ----------------------------------------------------
+# Tools an extension registered through ExtensionAPI.add_mcp_tool(), added to the same server
+# as every tool above. One broken extension costs its own tools and nothing else.
+def _load_extension_tools() -> None:
+    from bot import extensions
+
+    for func, name in extensions.loaded().mcp_tools:
+        try:
+            mcp.add_tool(func, name=name or None)
+        except Exception:  # noqa: BLE001 — a rejected tool is this extension's problem, not ABP's
+            logger.exception("could not add the MCP tool %s from an extension", name or func.__name__)
+
+
+_load_extension_tools()
