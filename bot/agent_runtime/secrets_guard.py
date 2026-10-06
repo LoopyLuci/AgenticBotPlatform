@@ -22,15 +22,20 @@ import re
 from urllib.parse import unquote
 from typing import Iterable, Optional
 
+from abp_native import is_secret_name as _is_secret_name
+
 MIN_LENGTH = 8
-_NAME = re.compile(r"(?i)(token|secret|passw(or)?d|passwd|api[_-]?key|private[_-]?key|credential|auth(orization)?[_-]?key|"
-                   r"access[_-]?key|session[_-]?key|signing[_-]?key)")
 _BORING = re.compile(r"^(true|false|none|null|yes|no|on|off|\d+)$", re.I)
 _extra: dict[str, str] = {}
 
 
 def is_secret_name(name: str) -> bool:
-    return bool(_NAME.search(name or ""))
+    """Whether a variable's name looks like a credential. This runs once per environment
+    variable per `redact()` call, so it is in `abp_native` (Rust when it is built, the
+    pure-Python reference otherwise) - see docs/perf/hotspots.md. It stays a Python-level
+    function on purpose: callers replace it (the agent-eval security tasks do), and
+    `known_secrets` has to keep asking through it."""
+    return _is_secret_name(name)
 
 
 def register(name: str, value: str) -> None:
@@ -80,6 +85,10 @@ def _candidates(environ: Optional[dict]) -> list[tuple[str, str]]:
 
 
 def redact(text: str, environ: Optional[dict] = None) -> str:
+    # The value replacement stayed in Python: measured at parity with the compiled version
+    # (docs/perf/hotspots.md), because `str.replace` is already C and a handful of needles
+    # over a few hundred kilobytes is not what costs anything here. What did cost anything
+    # was the name scan above, and that is in abp_native now.
     if not isinstance(text, str) or len(text) < MIN_LENGTH:
         return text
     for name, value in _candidates(environ):

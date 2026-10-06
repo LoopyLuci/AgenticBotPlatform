@@ -14,10 +14,10 @@ There is no hosted "share link": ABP has no public server to host one. The expor
 from __future__ import annotations
 
 import json
-import re
 import time
 from typing import Any, Optional
 
+import abp_native
 from bot.agent_runtime import secrets_guard
 
 MAX_TOOL_ARGS = 400
@@ -80,23 +80,11 @@ def normalise(messages: list[dict]) -> list[dict]:
     return out
 
 
-# Things that look like credentials even if this server never held them (a key the user pasted into the chat).
-_SHAPES = [(re.compile(p), r) for p, r in [
-    (r"(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", "[private key removed]"),
-    (r"\b(?:sk|pk|rk)-[A-Za-z0-9_\-]{16,}", "[key removed]"),
-    (r"\bgh[pousr]_[A-Za-z0-9]{20,}", "[token removed]"),
-    (r"\bxox[abprs]-[A-Za-z0-9\-]{10,}", "[token removed]"),
-    (r"\bAKIA[0-9A-Z]{16}\b", "[key removed]"),
-    (r"\bAIza[0-9A-Za-z_\-]{30,}", "[key removed]"),
-    (r"(?i)\bBearer\s+[A-Za-z0-9._~+/=\-]{16,}", "Bearer [token removed]"),
-    (r"(?i)\b(api[_-]?key|secret|token|password|passwd)\b(\\?\"?\s*[:=]\s*\\?\"?)[^\s\\\"',;]{6,}", r"\1\2[removed]"),
-]]
-
-
+# Things that look like credentials even if this server never held them (a key the user pasted into the chat) are
+# in `abp_native` now: they run over every text block of every export, and there are eight of them.
 def _clean(text: str) -> str:
-    for rx, repl in _SHAPES:                  # first: the patterns would otherwise mangle the [secret:NAME] markers below
-        text = rx.sub(repl, text)
-    return secrets_guard.redact(text)
+    # The shapes first: they would otherwise mangle the [secret:NAME] markers below.
+    return secrets_guard.redact(abp_native.scrub_credentials(text))
 
 
 def render(messages: list[dict], fmt: str = "md", *, title: str = "", meta: Optional[dict] = None) -> str:

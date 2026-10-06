@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import os
 import re
 import time
@@ -169,28 +168,20 @@ def embed_backend() -> tuple[str, Callable[[list[str]], np.ndarray]]:
 _WORD = re.compile(r"[\w']+", re.UNICODE)
 
 
-def _features(text: str) -> dict[str, float]:
-    words = [w.lower() for w in _WORD.findall(text)][:20000]
-    feats: dict[str, float] = {}
-    for w in words:
-        feats["w:" + w] = feats.get("w:" + w, 0) + 1
-        padded = f"#{w}#"
-        for i in range(len(padded) - 2):
-            g = "c:" + padded[i:i + 3]
-            feats[g] = feats.get(g, 0) + 0.3
-    for a, b in zip(words, words[1:]):
-        k = f"b:{a} {b}"
-        feats[k] = feats.get(k, 0) + 0.7
-    return feats
-
-
 def hash_vectors(texts: list[str]) -> np.ndarray:
-    out = np.zeros((len(texts), DIM), dtype=np.float32)
-    for i, t in enumerate(texts):
-        for f, c in _features(t).items():
-            h = int.from_bytes(hashlib.blake2b(f.encode(), digest_size=8).digest(), "little")
-            out[i, h % DIM] += (1.0 if (h >> 63) & 1 else -1.0) * (1 + math.log(c))
-    return out / np.maximum(np.linalg.norm(out, axis=1, keepdims=True), 1e-9)
+    """The always-there embedder: hashed TF-IDF over words, word pairs and character
+    trigrams, `DIM` floats per text, L2 normalised. Lexical rather than semantic, but it
+    needs no model and tolerates a near-miss in wording or spelling.
+
+    The feature extraction and hashing are in `abp_native` (Rust when it is built, the
+    pure-Python reference otherwise); what comes back is exactly the matrix this used to
+    build here. `docs/perf/hotspots.md` has the numbers: indexing 60 documents of about 5 KB
+    went from 122 ms to 23 ms."""
+    from abp_native import hash_vectors as native_vectors
+
+    if not texts:
+        return np.zeros((0, DIM), dtype=np.float32)
+    return np.frombuffer(b"".join(native_vectors(texts)), dtype=np.float32).reshape(len(texts), DIM)
 
 
 def _doc_text(path: str, text: str, tags: list[str]) -> str:

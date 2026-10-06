@@ -24,21 +24,19 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from typing import Iterable, Optional
 
+import abp_native
 from bot.agent_runtime import session_export, trace
 
 MAX_TOOL_CHARS_DEFAULT = 2000
-_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-_PHONE = re.compile(r"(?<![\w.])\+?\d[\d\s().-]{8,16}\d(?![\w.])")
-_IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 
 
 def scrub_pii(text: str) -> str:
-    text = _EMAIL.sub("[email]", text)
-    text = _IPV4.sub("[ip]", text)
-    return _PHONE.sub("[phone]", text)
+    """E-mail addresses, phone numbers and IP addresses masked. The three patterns are in
+    `abp_native` (Rust when it is built, the pure-Python reference otherwise), because this
+    runs over every text block of every export - see docs/perf/hotspots.md."""
+    return abp_native.scrub_pii(text)
 
 
 def to_chat(messages: list[dict], *, max_tool_chars: int = MAX_TOOL_CHARS_DEFAULT, pii: bool = False) -> list[dict]:
