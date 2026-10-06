@@ -63,6 +63,13 @@ pytestmark = pytest.mark.xdist_group("abp_gate_live")
 #: silently change what is being tested. The gate's own limits are stripped too,
 #: so a value left in somebody's shell cannot change what "the default" means -
 #: the tests that care set them explicitly.
+#: DASHBOARD_TOKEN is in there because of how loudly it fails: bot/main.py mints a
+#: token into its own state root's .env only when the environment has none, so an
+#: inherited one means the instance writes no .env at all and every token_from()
+#: below reads nothing. Nothing sets it deliberately here, and something else in a
+#: pytest session does set it for good - importing bot.main (which tests/test_fast_
+#: startup.py and three others do at module level) assigns it at import time, so the
+#: worker that runs these tests inherits it from whatever it collected.
 #: A Telegram bot token shape the dashboard's validator accepts, and which is
 #: obviously not anybody's: bot/validators.py wants `<digits>:<35+ chars>`, and a
 #: row that cannot be created is a row no poller will ever start. This test is
@@ -70,11 +77,11 @@ pytestmark = pytest.mark.xdist_group("abp_gate_live")
 FAKE_TELEGRAM_TOKEN = "123456789:AAExampleTokenFromBotFather-unused"
 
 _STRIPPED = ("ABP_SANDBOX_INSTANCE", "ABP_STANDBY", "ABP_GATE", "ABP_HOME", "DASHBOARD_PORT",
-             "DASHBOARD_HOST", "ABP_GATE_PUBLIC_PORTS", "ABP_GATE_CONTROL_PORT", "ABP_INSTANCES_DIR",
-             "ABP_LOCALAI_PORT", "ABP_CICD_DB", "ABP_GATE_CODE_ROOT", "ABP_DEV_WORKTREES_DIR",
-             "ABP_GATE_MAX_INSTANCES", "ABP_GATE_RESTART_LIMIT", "ABP_GATE_RESTART_WINDOW_S",
-             "ABP_GATE_RESTART_BACKOFF_S", "ABP_GATE_WATCH_INTERVAL_S", "ABP_GATE_INSTANCE_LIFETIME",
-             "ABP_GATE_UNHEALTHY_GRACE_S")
+             "DASHBOARD_HOST", "DASHBOARD_TOKEN", "ABP_GATE_PUBLIC_PORTS", "ABP_GATE_CONTROL_PORT",
+             "ABP_INSTANCES_DIR", "ABP_LOCALAI_PORT", "ABP_CICD_DB", "ABP_GATE_CODE_ROOT",
+             "ABP_DEV_WORKTREES_DIR", "ABP_GATE_MAX_INSTANCES", "ABP_GATE_RESTART_LIMIT",
+             "ABP_GATE_RESTART_WINDOW_S", "ABP_GATE_RESTART_BACKOFF_S", "ABP_GATE_WATCH_INTERVAL_S",
+             "ABP_GATE_INSTANCE_LIFETIME", "ABP_GATE_UNHEALTHY_GRACE_S")
 
 #: How long `start_gate` waits for the gate's first healthy instance, worked out
 #: from the gate's own numbers rather than picked: `abp gate start`'s promise is
@@ -1380,6 +1387,39 @@ def test_two_processes_writing_the_registry_do_not_destroy_each_other(tmp_path):
             if writer.poll() is None:  # pragma: no cover - only if the assert above failed
                 writer.kill()
                 writer.wait(30)
+
+
+def test_an_instance_never_inherits_the_dashboard_token_of_the_process_that_started_it(monkeypatch,
+                                                                                       tmp_path):
+    """Whose token an instance runs with: its own.
+
+    bot/main.py mints a DASHBOARD_TOKEN into <state root>/.env on an install's first
+    boot, and on purpose skips that when the environment already carries one - "a host
+    that supplies its own token never gets its .env rewritten". So an inherited token is
+    not a convenience, it is a decision that no .env is ever written: every
+    token_from(home) in this file then reads nothing, and a real gate cannot
+    authenticate against its own instance at all (control.require_token compares against
+    <state root>/.env, so every call 503s for a missing token).
+
+    It is also easy to inherit one by accident. Anything that imports bot.main in the
+    process that starts a gate leaves DASHBOARD_TOKEN in that process's environment for
+    good - bot/main.py assigns it at import time - and a pytest worker collects
+    tests/test_fast_startup.py, tests/test_main_dashboard_retry.py and
+    tests/test_main_uncaught_exception_hooks.py long before it runs anything here. That
+    is what made the whole of this module fail in the full suite and pass on its own.
+
+    Both places that build an environment for an instance have to say no, then."""
+    from abp_gate import procs
+
+    monkeypatch.setenv("DASHBOARD_TOKEN", "left-over-by-whatever-ran-pytest")
+    home, port = tmp_path / "own-state", free_port()
+    assert "DASHBOARD_TOKEN" not in procs.instance_env(code_root=CODE_ROOT, data_root=home, port=port)
+    assert "DASHBOARD_TOKEN" not in base_env(ABP_HOME=home, DASHBOARD_PORT=port)
+    # ...and one set on purpose still gets through: `extra` is a deliberate override,
+    # inheriting is the accident.
+    given = procs.instance_env(code_root=CODE_ROOT, data_root=home, port=port,
+                              extra={"DASHBOARD_TOKEN": "unused"})
+    assert given["DASHBOARD_TOKEN"] == "unused"
 
 
 def test_a_running_instance_too_busy_to_answer_is_left_alone(tmp_path):

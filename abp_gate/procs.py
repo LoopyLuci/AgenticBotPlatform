@@ -456,8 +456,10 @@ def instance_env(
 
     Only what makes an instance an instance; everything else is inherited:
     ABP_HOME (its own state), DASHBOARD_PORT (its own private port),
-    ABP_LOCALAI_PORT (private, so the gate can own the public 11436), and the
-    two role flags bot/lease.py reads."""
+    ABP_LOCALAI_PORT (private, so the gate can own the public 11436), and
+    the two role flags bot/lease.py reads.
+
+    A dashboard token is deliberately NOT inherited - see below."""
     env = dict(os.environ)
     env.update(
         {
@@ -480,6 +482,20 @@ def instance_env(
         env.pop("ABP_HOME", None)
     if localai_port:
         env["ABP_LOCALAI_PORT"] = str(localai_port)
+    # A dashboard token belongs to a STATE ROOT, not to an environment. bot/main.py
+    # mints one into <state root>/.env on an install's first boot, and deliberately
+    # skips that when the environment already has one - "a host that supplies its own
+    # token never gets its .env rewritten". A gate is not such a host, it needs the
+    # opposite: the control API and `abp_cli` both authenticate against
+    # <state root>/.env (control.require_token -> manager.dashboard_token), so an
+    # instance that inherited a token instead of writing one is a gate whose every
+    # control call 503s with "no DASHBOARD_TOKEN in this install's .env yet".
+    #
+    # This is not a corner case either: anything that imports bot.main in the process
+    # that starts a gate leaves DASHBOARD_TOKEN in that process's environment for good
+    # (bot/main.py assigns it at import time), and a shell that once exported one keeps
+    # it too. `extra` below can still set one on purpose; inheriting one is the mistake.
+    env.pop("DASHBOARD_TOKEN", None)
     env.update(extra or {})
     return env
 
