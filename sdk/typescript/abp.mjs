@@ -392,6 +392,15 @@ export const operations = {
   ],
   "query_params": []
  },
+ "DELETE /api/rules/{rule_id}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/rules/{rule_id}",
+  "path_params": [
+   "rule_id"
+  ],
+  "query_params": []
+ },
  "DELETE /api/security/allowed-users/{telegram_id}": {
   "body": false,
   "method": "DELETE",
@@ -2919,6 +2928,33 @@ export const operations = {
   "query_params": [
    "limit"
   ]
+ },
+ "GET /api/rules": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/rules",
+  "path_params": [],
+  "query_params": [
+   "kind",
+   "target",
+   "instance_id"
+  ]
+ },
+ "GET /api/rules/status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/rules/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/rules/{rule_id}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/rules/{rule_id}",
+  "path_params": [
+   "rule_id"
+  ],
+  "query_params": []
  },
  "GET /api/sandbox/cells": {
   "body": false,
@@ -6007,6 +6043,45 @@ export const operations = {
   ],
   "query_params": []
  },
+ "POST /api/rules": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/rules",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/rules/test": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/rules/test",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/rules/validate": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/rules/validate",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/rules/{rule_id}/enabled": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/rules/{rule_id}/enabled",
+  "path_params": [
+   "rule_id"
+  ],
+  "query_params": []
+ },
+ "POST /api/rules/{rule_id}/test": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/rules/{rule_id}/test",
+  "path_params": [
+   "rule_id"
+  ],
+  "query_params": []
+ },
  "POST /api/sandbox/cells/{cell_id}/kill": {
   "body": false,
   "method": "POST",
@@ -7244,6 +7319,15 @@ export const operations = {
   "path": "/api/routines/{routine_id}/schedule",
   "path_params": [
    "routine_id"
+  ],
+  "query_params": []
+ },
+ "PUT /api/rules/{rule_id}": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/rules/{rule_id}",
+  "path_params": [
+   "rule_id"
   ],
   "query_params": []
  },
@@ -10235,12 +10319,28 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "create_rule_api_rules_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/rules",
+  "path_params": [],
+  "query_params": []
+ },
  "delete_routine_api_routines__routine_id__delete": {
   "body": false,
   "method": "DELETE",
   "path": "/api/routines/{routine_id}",
   "path_params": [
    "routine_id"
+  ],
+  "query_params": []
+ },
+ "delete_rule_api_rules__rule_id__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/rules/{rule_id}",
+  "path_params": [
+   "rule_id"
   ],
   "query_params": []
  },
@@ -11076,6 +11176,15 @@ export const operations = {
   "query_params": [
    "limit"
   ]
+ },
+ "get_rule_api_rules__rule_id__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/rules/{rule_id}",
+  "path_params": [
+   "rule_id"
+  ],
+  "query_params": []
  },
  "get_shortcuts_api_shortcuts_get": {
   "body": false,
@@ -12176,6 +12285,17 @@ export const operations = {
   "path": "/api/routines",
   "path_params": [],
   "query_params": [
+   "instance_id"
+  ]
+ },
+ "list_rules_api_rules_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/rules",
+  "path_params": [],
+  "query_params": [
+   "kind",
+   "target",
    "instance_id"
   ]
  },
@@ -13349,6 +13469,13 @@ export const operations = {
   ],
   "query_params": []
  },
+ "rules_status_api_rules_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/rules/status",
+  "path_params": [],
+  "query_params": []
+ },
  "run_routine_api_routines__routine_id__run_post": {
   "body": true,
   "method": "POST",
@@ -13510,6 +13637,15 @@ export const operations = {
   "path": "/api/routines/{routine_id}/schedule",
   "path_params": [
    "routine_id"
+  ],
+  "query_params": []
+ },
+ "set_rule_enabled_api_rules__rule_id__enabled_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/rules/{rule_id}/enabled",
+  "path_params": [
+   "rule_id"
   ],
   "query_params": []
  },
@@ -13825,6 +13961,22 @@ export const operations = {
   "method": "GET",
   "path": "/api/terminals",
   "path_params": [],
+  "query_params": []
+ },
+ "test_rule_api_rules_test_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/rules/test",
+  "path_params": [],
+  "query_params": []
+ },
+ "test_saved_rule_api_rules__rule_id__test_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/rules/{rule_id}/test",
+  "path_params": [
+   "rule_id"
+  ],
   "query_params": []
  },
  "tool_inventory_api_agent_tools_get": {
@@ -14286,6 +14438,15 @@ export const operations = {
    "repo_id"
   ]
  },
+ "update_rule_api_rules__rule_id__put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/rules/{rule_id}",
+  "path_params": [
+   "rule_id"
+  ],
+  "query_params": []
+ },
  "v1_chat_api_browser_v1_chat_completions_post": {
   "body": true,
   "method": "POST",
@@ -14343,6 +14504,13 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/agent/permissions/validate",
+  "path_params": [],
+  "query_params": []
+ },
+ "validate_rule_api_rules_validate_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/rules/validate",
   "path_params": [],
   "query_params": []
  },

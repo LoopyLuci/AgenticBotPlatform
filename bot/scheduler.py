@@ -164,6 +164,19 @@ async def _fire(row) -> None:
         # check back next poll instead of firing on top of it.
         return
 
+    if row["kind"] == "routine":
+        # A routine's condition rule (bot/rules) is part of deciding *whether* this runs, so it is
+        # asked here rather than noticed afterwards. The row is re-armed exactly like a successful
+        # run: the condition is about now, not about this attempt, and the routine is untouched in
+        # its history because nothing ran.
+        from bot import routines
+
+        allowed, why = routines.scheduled_run_allowed(row["id"], prompt=row["prompt"])
+        if not allowed:
+            logger.info("scheduled command %s skipped: %s", row["id"], why)
+            db.mark_scheduled_command_ran(row["id"], _iso(_now() + timedelta(seconds=row["interval_s"])))
+            return
+
     if row["kind"] == "auto_manage":
         # Funnels through bot/auto_manage.py's single shared check-in path
         # (the same one the reactive kanban-card trigger uses) instead of

@@ -16,6 +16,10 @@ the template - they are the scheduling person's own words, not something fetched
 
 Storage is two small tables created on first use (`routines`, `routine_runs`); scheduling uses `scheduled_commands`
 with `kind = 'routine'` (bot/scheduler.py records each run here).
+
+A routine may also carry a **condition rule** (bot/rules): "only on a weekday", "only after the
+standup tag is present". It is an extra condition, not a replacement - the schedule still decides
+when, `enabled` still decides whether, and a routine with no rule runs exactly as before.
 """
 from __future__ import annotations
 
@@ -216,6 +220,54 @@ def set_active(routine_id: int, active: bool) -> int:
 def routine_for_schedule(schedule_id: int) -> Optional[int]:
     row = _conn().execute("SELECT routine_id FROM routine_schedules WHERE schedule_id=?", (schedule_id,)).fetchone()
     return row["routine_id"] if row else None
+
+
+def condition_allows(routine: dict, *, prompt: str = "", schedule_id: Optional[int] = None,
+                     now=None) -> tuple[bool, str]:
+    """Whether a rule condition says this routine's run may go ahead, and why.
+
+    A rule is an *alternative* to the conditions a routine already has, not a replacement for them:
+    the schedule still decides when, `enabled` still decides whether, and a routine with no rule
+    bound to it runs exactly as it always has. What a rule adds is the ability to say "only on a
+    weekday before the release", which a schedule cannot express and which does not deserve a
+    Python function.
+
+    With no rule engine installed this is always yes: a feature that cannot run must not be the
+    reason a routine stops running (the same fail-open stance bot/agent_runtime/hooks.py takes for a
+    broken hook command)."""
+    from bot.rules import context as rule_context
+    from bot.rules import integration
+
+    if not engine_available():
+        return True, ""
+    instance_id = routine.get("instance_id")
+    ctx = rule_context.build(message=prompt, instance_id=instance_id,
+                             bot=rule_context.instance_name(instance_id), action_type="scheduled", now=now,
+                             extra={"routine": routine.get("name") or "", "schedule_id": schedule_id or 0})
+    verdict = integration.routine_allowed(routine, ctx, instance_id=instance_id)
+    return verdict.ok, verdict.reason
+
+
+def scheduled_run_allowed(schedule_id: int, *, prompt: str = "", now=None) -> tuple[bool, str]:
+    """The same question asked of a scheduled_commands row: which routine is this, and does its rule
+    say yes? bot/scheduler.py asks this before it dispatches a due routine, so the condition is part
+    of deciding *whether* to run rather than something noticed afterwards."""
+    routine_id = routine_for_schedule(schedule_id)
+    routine = get_by_id(routine_id) if routine_id is not None else None
+    if routine is None:
+        return True, ""
+    return condition_allows(routine, prompt=prompt, schedule_id=schedule_id, now=now)
+
+
+def engine_available() -> bool:
+    """Whether a rule engine is installed. Asked here rather than imported at module scope so a bot
+    with no native module built never even looks."""
+    try:
+        from bot.rules import engine
+
+        return engine.available()
+    except Exception:  # noqa: BLE001 - a broken rules package must not stop a routine
+        return False
 
 
 def record_run(routine_id: int, outcome: str, summary: str = "", schedule_id: Optional[int] = None) -> int:

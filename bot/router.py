@@ -6,7 +6,10 @@ Precedence, cheapest override first:
   3. (if instance_id given) that bot instance's own default backend
   4. the action_type's entry in config.action_overrides (global fallback)
   5. config.default_backend (global fallback)
-  6. on failure, retry once against the resolved entry's backup chain
+  6. a routing rule (bot/rules) that names a backend for this message, which goes to the
+     front of the chain the steps above produced - so a backend it picks that turns out to
+     be down still falls back exactly as before
+  7. on failure, retry once against the resolved entry's backup chain
 
 Backend *definitions* (model, binary path, timeouts) stay global/shared in
 config/backends.yaml regardless of instance — only the routing *choice* is
@@ -438,6 +441,13 @@ class Router:
 
         cfg = config.current
         chain = self.resolve_chain(action_type, backend_override, instance_id=instance_id)
+        rule_backend, rule_model = self._rule_route(prompt, action_type, instance_id, user_id)
+        if rule_backend and rule_backend not in chain:
+            # A routing rule picks the first choice; the chain the rest of resolve_chain() worked out
+            # stays behind it, so a backend a rule sent a turn to that turns out to be down still falls
+            # back exactly as it would have.
+            logger.info("job routing: rule sent this turn to %s", rule_backend)
+            chain = [rule_backend, *[name for name in chain if name != rule_backend]]
         timeouts = cfg.get("timeouts", {})
 
         instance_model: Optional[str] = None
@@ -477,6 +487,13 @@ class Router:
                 custom_instructions = (instance.get("custom_instructions") or "").strip()
                 if custom_instructions:
                     effective_prompt = f"{custom_instructions}\n\n{prompt}"
+        if rule_model:
+            # A routing rule is per-message, the instance's own model is a standing choice, and a
+            # rule exists precisely to send this one message somewhere else. It is applied outside
+            # the instance block because a rule with no instance of its own still applies to a turn
+            # that has none either.
+            logger.info("job routing: rule picked model %s for this turn", rule_model)
+            instance_model = rule_model
 
         # ui/hermes_gateway are session-aware backends (see their own
         # ask()) — they need to know which bot instance this call belongs
@@ -689,6 +706,42 @@ class Router:
         if instance_id is not None:
             self._record_circuit_result(instance_id, success=False)
         raise last_error or BackendError("all backends in chain failed")
+
+    @staticmethod
+    def _rule_route(prompt: str, action_type: str, instance_id: Optional[int], user_id: int
+                    ) -> tuple[Optional[str], Optional[str]]:
+        """What a routing rule (bot/rules) decided for this turn: which backend, which model. Either
+        may be None, and both are None unless somebody wrote a rule.
+
+        This is the last step of the precedence chain, not a new one: it runs after the explicit
+        --backend= flag, the instance's own overrides, the global action_overrides and the default,
+        because a rule that could overrule an explicit flag would make the flag a lie. The
+        instance's own model is a standing choice and a rule is a per-message one, so the rule does
+        move it - but only when a rule exists.
+
+        Everything about it is wrapped in one broad `except`: this sits on the hot path for every
+        message, and a rules package that is missing, broken or merely unhappy must never be the
+        reason a turn does not happen."""
+        try:
+            from bot.rules import context as rule_context
+            from bot.rules import store
+            from bot.rules.integration import routed_backend, routed_model
+
+            if not store.enabled_count("route", instance_id):
+                return None, None
+            instance = None
+            bot_name = ""
+            if instance_id is not None:
+                from bot import bot_instances
+
+                instance = bot_instances.get_instance(instance_id)
+                bot_name = str((instance or {}).get("name") or "")
+            ctx = rule_context.from_message(prompt, sender_id=user_id, action_type=action_type,
+                                            instance_id=instance_id, bot=bot_name)
+            return routed_backend(ctx, VALID_BACKENDS), routed_model(ctx)
+        except Exception:  # noqa: BLE001 - a routing rule must never break a turn
+            logger.exception("router: could not consult the routing rules")
+            return None, None
 
     def get_backend_for_instance(self, instance_id: int) -> Optional[Backend]:
         """The live Backend object this instance's own `backend`/`model`

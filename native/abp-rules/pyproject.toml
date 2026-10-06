@@ -1,0 +1,17 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "abp-rules"
+version = "0.1.0"
+description = "A sandboxed Rhai rule engine for AgenticBotPlatform: conditions, filters and routes, with hard limits and no I/O."
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+[tool.maturin]
+# The PyO3 bridge (and with it the interpreter linkage) lives behind the `python` feature, so
+# `cargo test` and `cargo clippy` in this crate need no Python at all. Building the extension module
+# means building that feature.
+features = ["python"]
+module-name = "abp_rules"
