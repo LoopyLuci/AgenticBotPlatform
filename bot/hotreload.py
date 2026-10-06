@@ -224,6 +224,11 @@ DENYLIST: frozenset[str] = frozenset({
     # Shortcuts: the routes register once, so a reloaded copy would serve its own idea of the
     # saved bindings while the live app keeps the old app's routes.
     "bot.dashboard.shortcuts_api",
+    # Rules (bot/rules): engine.py holds the compiled-rule cache and the one-shot "is an engine
+    # installed" answer, store.py owns the module's import of bot.db, and the routes register once -
+    # all three would split a running turn from the table it is reading.
+    "bot.rules.engine", "bot.rules.store", "bot.rules.integration", "bot.rules.context",
+    "bot.dashboard.routes.rules",
     "bot.agent_runtime.session_export", "bot.backends.external_agent_backend",  # imported by denied modules (dashboard, router)
     "bot.model_catalog", "bot.agent_runtime.usage_limits", "bot.agent_runtime.model_tools",  # usage counters and per-process caches
     "bot.custom_commands", "bot.agent_runtime.skill_learning",  # small, stateless, but imported by denied modules only

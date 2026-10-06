@@ -29,6 +29,12 @@ What a hook may say:
   starts with http:// or https://, a URL that receives the same JSON in a POST and answers
   with the same JSON. Hooks are operator configuration and trusted, so a URL may be on a
   private address.
+- A hook may also be **gated by a filter rule** (bot/rules): a rule bound to
+  `hook:<event>`, `hook:<event>:<matcher>` or unbound (every hook) runs first, and the hooks
+  only run when it says yes. That is how "only run this hook in production", or "skip the Bash
+  hook while a deploy is in flight", is expressed without a shell script that has to parse the
+  event itself. With no rule bound to anything - or with no rule engine installed - nothing
+  changes.
 - Still not built: async / background hook modes, MCP-tool, prompt and agent hook types.
 - Never agent-creatable — hooks are dashboard/Telegram-config-only,
   the same trust boundary `create_plugin` already requires human
@@ -112,7 +118,8 @@ async def _run_http_hook(url: str, payload: dict) -> Optional[dict]:
     return result if isinstance(result, dict) else None
 
 
-def _matching_hooks(event: str, matcher_value: Optional[str], instance_id: Optional[int]) -> list:
+def _matching_hooks(event: str, matcher_value: Optional[str], instance_id: Optional[int],
+                    payload: Optional[dict] = None) -> list:
     from bot import db
 
     # Deliberately does NOT pass instance_id into list_agent_hooks() —
@@ -136,6 +143,38 @@ def _matching_hooks(event: str, matcher_value: Optional[str], instance_id: Optio
         if matcher and matcher_value is not None and matcher != matcher_value:
             continue
         matched.append(row)
+    return _after_filters(event, matcher_value, instance_id, payload, matched)
+
+
+def _after_filters(event: str, matcher_value: Optional[str], instance_id: Optional[int],
+                   payload: Optional[dict], matched: list) -> list:
+    """Applies the filter rules (bot/rules) to an already-matched set of hooks.
+
+    A hook runs only when every rule bound to it says yes — `hook:<event>:<matcher>` for one tool,
+    `hook:<event>` for the whole event, and an unbound filter for all of them. With no rule bound to
+    anything, or no rule engine installed, the set comes back exactly as it went in: a feature that
+    is not configured cannot change what a hook does.
+
+    Fail-open, like every other hook failure here: a rule that will not run is logged and ignored,
+    because a broken filter must not be the reason a permission check or an audit hook stops
+    happening."""
+    if not matched:
+        return matched
+    try:
+        from bot.rules import context as rule_context
+        from bot.rules import engine as rule_engine
+        from bot.rules import integration
+
+        if not rule_engine.available():
+            return matched
+        ctx = rule_context.from_event(event, payload, instance_id=instance_id, matcher=matcher_value or "")
+        verdict = integration.hook_allowed(event, matcher_value, ctx, instance_id=instance_id)
+    except Exception:  # noqa: BLE001 - a broken rules package is not a reason a hook stops running
+        logger.exception("hooks: could not consult the hook filter rules for %s", event)
+        return matched
+    if not verdict.ok:
+        logger.info("hooks for %s%s skipped: %s", event, f"/{matcher_value}" if matcher_value else "", verdict.reason)
+        return []
     return matched
 
 
@@ -151,7 +190,7 @@ async def run_pre_tool_use_full(tool_name: str, tool_input: dict, *, instance_id
     `updatedInput` (a JSON object) replaces the arguments. A deny always beats a rewrite."""
     updated: Optional[dict] = None
     current = tool_input
-    for hook in _matching_hooks("PreToolUse", tool_name, instance_id):
+    for hook in _matching_hooks("PreToolUse", tool_name, instance_id, {"tool": tool_name, "tool_input": current}):
         result = await _run_hook_command(
             hook["command"], {"event": "PreToolUse", "tool_name": tool_name, "tool_input": current})
         if result is None:
@@ -174,21 +213,21 @@ async def run_pre_tool_use(tool_name: str, tool_input: dict, *, instance_id: Opt
 
 
 async def run_post_tool_use(tool_name: str, tool_input: dict, output: str, *, instance_id: Optional[int] = None) -> None:
-    for hook in _matching_hooks("PostToolUse", tool_name, instance_id):
+    for hook in _matching_hooks("PostToolUse", tool_name, instance_id, {"tool": tool_name, "output": output[:4000]}):
         await _run_hook_command(
             hook["command"], {"event": "PostToolUse", "tool_name": tool_name, "tool_input": tool_input, "output": output},
         )
 
 
 async def run_post_tool_failure(tool_name: str, tool_input: dict, error: str, *, instance_id: Optional[int] = None) -> None:
-    for hook in _matching_hooks("PostToolUseFailure", tool_name, instance_id):
+    for hook in _matching_hooks("PostToolUseFailure", tool_name, instance_id, {"tool": tool_name, "error": error[:4000]}):
         await _run_hook_command(hook["command"], {
             "event": "PostToolUseFailure", "tool_name": tool_name, "tool_input": tool_input, "error": error})
 
 
 async def run_stop(reply: str, *, instance_id: Optional[int] = None, stop_reason: str = "end_turn") -> Optional[str]:
     """The agent has a final answer. Returns a reason to keep going if a hook blocks the stop, else None."""
-    for hook in _matching_hooks("Stop", None, instance_id):
+    for hook in _matching_hooks("Stop", None, instance_id, {"reply": reply[:4000], "stop_reason": stop_reason}):
         result = await _run_hook_command(hook["command"], {"event": "Stop", "reply": reply[:4000], "stop_reason": stop_reason})
         if result and result.get("decision") == "block":
             return str(result.get("reason") or "A Stop hook asked you to keep going.")
@@ -196,7 +235,7 @@ async def run_stop(reply: str, *, instance_id: Optional[int] = None, stop_reason
 
 
 async def run_subagent_stop(result_text: str, *, instance_id: Optional[int] = None) -> None:
-    for hook in _matching_hooks("SubagentStop", None, instance_id):
+    for hook in _matching_hooks("SubagentStop", None, instance_id, {"result": result_text[:4000]}):
         await _run_hook_command(hook["command"], {"event": "SubagentStop", "result": result_text[:4000]})
 
 
@@ -205,12 +244,12 @@ async def run_pre_compact(*, instance_id: Optional[int] = None, messages: int = 
 
 
 async def run_notification(kind: str, message: str, *, instance_id: Optional[int] = None) -> None:
-    for hook in _matching_hooks("Notification", None, instance_id):
+    for hook in _matching_hooks("Notification", None, instance_id, {"kind": kind, "message": message[:1000]}):
         await _run_hook_command(hook["command"], {"event": "Notification", "kind": kind, "message": message[:1000]})
 
 
 async def run_session_end(*, instance_id: Optional[int] = None, reason: str = "new_session") -> None:
-    for hook in _matching_hooks("SessionEnd", None, instance_id):
+    for hook in _matching_hooks("SessionEnd", None, instance_id, {"reason": reason}):
         await _run_hook_command(hook["command"], {"event": "SessionEnd", "reason": reason})
 
 
@@ -224,8 +263,9 @@ async def run_user_prompt_submit(prompt: str, *, instance_id: Optional[int] = No
 
 async def _run_context_hooks(event: str, payload: dict, instance_id: Optional[int]) -> Optional[str]:
     contexts: list[str] = []
-    for hook in _matching_hooks(event, None, instance_id):
+    for hook in _matching_hooks(event, None, instance_id, payload):
         result = await _run_hook_command(hook["command"], {"event": event, **payload})
         if result and result.get("additionalContext"):
             contexts.append(str(result["additionalContext"]))
     return "\n".join(contexts) if contexts else None
+

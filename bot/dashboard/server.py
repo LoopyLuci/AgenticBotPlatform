@@ -1048,7 +1048,7 @@ def build_app() -> FastAPI:
     from bot.dashboard import routes as _routes  # noqa: F401 — the package
     import importlib
 
-    for _area in ('ops_endpoints', 'reads', 'files', 'setup_wizard', 'platforms', 'bots', 'schedules', 'pairing', 'kanban', 'swarms', 'agent_control', 'hermes_delegation', 'shared_context', 'delegation', 'mutations', 'chat', 'server_chat', 'mobile_keys', 'peers', 'android_apk', 'devices'):
+    for _area in ('ops_endpoints', 'reads', 'files', 'setup_wizard', 'platforms', 'bots', 'schedules', 'rules', 'pairing', 'kanban', 'swarms', 'agent_control', 'hermes_delegation', 'shared_context', 'delegation', 'mutations', 'chat', 'server_chat', 'mobile_keys', 'peers', 'android_apk', 'devices'):
         _mod = importlib.import_module(f"bot.dashboard.routes.{_area}")
         if "json_download" in _mod.register.__code__.co_varnames:
             _mod.register(app, json_download=_json_download)

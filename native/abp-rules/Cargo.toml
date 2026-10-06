@@ -1,0 +1,32 @@
+[package]
+name = "abp-rules"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT"
+description = "A sandboxed Rhai rule engine for AgenticBotPlatform: conditions, filters and routes, with hard limits and no I/O."
+publish = false
+
+[lib]
+name = "abp_rules"
+# rlib as well as cdylib so `cargo test` can link the Rust-side tests against the crate.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# No `metadata`, `internals` or `unchecked`: the rule language is meant to be a small, stable
+# expression language, and the sandbox must not quietly grow new builtins underneath it. `sync` is
+# what makes an AST shareable across the threads ABP evaluates rules on.
+rhai = { version = "1.19", default-features = false, features = ["std", "sync"] }
+# abi3 keeps one artifact working on every CPython 3.11+ on the host. The extension's interpreter
+# linkage is behind the `python` feature, so the default build - the one `cargo test` and
+# `cargo clippy` run - links no interpreter at all and needs no Python installed.
+pyo3 = { version = "0.29", features = ["abi3-py311", "extension-module"], optional = true }
+
+[features]
+default = []
+python = ["dep:pyo3"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
