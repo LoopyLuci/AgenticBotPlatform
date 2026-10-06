@@ -283,7 +283,7 @@ def bound(target: str, kind: str, instance_id: Optional[int] = None) -> list[Rul
 
 
 def history(rule_id: int, limit: int = 50) -> list[dict]:
-    """Rules keep one counter and one last error rather than a run log: a rule is consulted on
+    """Rules keep one counter and one last error rather than a per-check log: a rule is consulted on
     every turn, and a table that grows without bound to answer "has this ever failed" is not worth
     what it costs."""
     rule = get(rule_id)
