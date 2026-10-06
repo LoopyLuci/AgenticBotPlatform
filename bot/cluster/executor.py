@@ -415,6 +415,21 @@ def file_path(job_id: str, name: str) -> Path:
     return p
 
 
+def send_result(job_id: str, name: str, to_node_id: str) -> dict:
+    """Hand one of this job's result files to another machine with TransferDaemon's own transfer.
+
+    Called on the machine that *ran* the job: the scheduler asking over the peer link cannot pull bytes, but
+    it can ask this node to push the file to the asker's overlay node id. TransferDaemon's transfer is a send,
+    so this is the direction it works in — and it is why a result of any size moves at the platform's speed
+    instead of through an HTTP body. Refuses anything that is not one of this job's own result files."""
+    p = file_path(job_id, name)
+    from bot.transferdaemon import overlay
+    try:
+        return overlay.send_file(p, to_node_id)
+    except overlay.DaemonError as exc:
+        raise JobError(str(exc), code=getattr(exc, "code", "error"), status=400) from None
+
+
 def cleanup(older_than_days: float = 7) -> int:
     """Delete the folders of jobs that finished more than older_than_days ago (their records stay)."""
     root = work_root()

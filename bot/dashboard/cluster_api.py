@@ -152,6 +152,20 @@ def register(app: FastAPI, identify: Callable) -> None:
         p = await run(executor.file_path, rid, name)
         return FileResponse(str(p), filename=p.name)
 
+    @app.post("/api/cluster/runs/{rid}/files/{name:path}/send")
+    async def cluster_run_send_file(rid: str, name: str, body: dict = Body(...), c: Caller = Depends(caller)):
+        """This node sends one of its own result files to another machine with TransferDaemon's transfer.
+
+        The scheduler calls this for a big result instead of pulling it over the peer link: TransferDaemon's
+        transfer is a send, so the machine holding the bytes is the one that has to push them. body: {to: the
+        asker's TransferDaemon node id}."""
+        await run(own_run, rid, c)
+        to = str(body.get("to") or "")
+        if not to:
+            raise HTTPException(status_code=400, detail={"error": "to: the asker's TransferDaemon node id",
+                                                         "code": "invalid"})
+        return await run(asyncio.to_thread, executor.send_result, rid, name, to)
+
     # ---- the cluster, from here ----------------------------------------------------------------------------------------
     @app.get("/api/cluster")
     async def cluster_overview(c: Caller = Depends(local_user)):
@@ -165,7 +179,8 @@ def register(app: FastAPI, identify: Callable) -> None:
     @app.post("/api/cluster/candidates")
     async def cluster_candidates(body: dict = Body(...), c: Caller = Depends(local_user)):
         from bot.cluster.offer import Request
-        fits, why_not = scheduler.candidates(Request.from_dict(body.get("req")), str(body.get("kind") or "command"))
+        fits, why_not = scheduler.candidates(Request.from_dict(body.get("req")), str(body.get("kind") or "command"),
+                                             service_group=body.get("service_group"))
         return {"fits": [n["name"] for n in fits], "why_not": why_not}
 
     @app.post("/api/cluster/jobs")
@@ -193,6 +208,17 @@ def register(app: FastAPI, identify: Callable) -> None:
     @app.get("/api/cluster/jobs/{pid}/logs")
     async def cluster_job_logs(pid: str, offset: int = Query(0, ge=0), c: Caller = Depends(local_user)):
         return await run(scheduler.logs, pid, offset)
+
+    @app.post("/api/cluster/jobs/{pid}/collect")
+    async def cluster_job_collect(pid: str, body: dict = Body(default={}), c: Caller = Depends(local_user)):
+        """Bring a finished job's big result files here with TransferDaemon's own transfer.
+
+        Files at or above min_bytes (default 8 MB) are pushed by the node that ran the job and copied out of
+        TransferDaemon's downloads folder into <work>/fetched/. Everything smaller stays on the ordinary file
+        route, where a transfer would cost more than it saves."""
+        min_bytes = int(body.get("min_bytes") or scheduler.BIG_RESULT_BYTES)
+        return await run(scheduler.collect, pid, min_bytes=min_bytes,
+                         wait_s=float(body.get("wait_s") or 600.0))
 
     @app.post("/api/cluster/jobs/{pid}/cancel")
     async def cluster_job_cancel(pid: str, c: Caller = Depends(scheduler_writer)):

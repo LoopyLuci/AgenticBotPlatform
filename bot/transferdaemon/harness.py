@@ -238,6 +238,16 @@ def update() -> dict:
     return _start_job("update", _update)
 
 
+def ensure_running(wait_s: float = 30.0) -> dict:
+    """Start the daemon if it is installed and not already running — what ABP does on start-up, so the
+    overlay is up before anything needs it. Starts nothing and installs nothing that is not already here."""
+    if client.find() is not None:
+        return {"running": True, "started": False}
+    if not binary("transferd").is_file():
+        return {"running": False, "installed": False, "offer_install": True}
+    return {"running": True, "started": True, **(start_daemon(wait_s=wait_s) or {}), "wait_s": wait_s}
+
+
 def start_daemon(wait_s: float = 90.0) -> dict:
     """Start the daemon (no console window) if it is not running. Its identity unlocks itself (the protected phrase
     cache), so contacts and relays come back without anyone typing the phrase."""

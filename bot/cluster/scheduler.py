@@ -15,13 +15,16 @@ plus the attempt ("abc123-a1"), so a node never runs the same attempt twice.
 from __future__ import annotations
 
 import asyncio
+import re
+import shutil
 import time
 import uuid
 import zlib
+from pathlib import Path
 from typing import Any, Optional
 
 from bot.cluster import executor, membership, store
-from bot.cluster.offer import Request
+from bot.cluster.offer import Request, work_root
 
 
 class ScheduleError(Exception):
@@ -69,19 +72,43 @@ def _fits_reported(info: dict, req: Request, kind: str) -> tuple[bool, str]:
     return True, ""
 
 
+def _distance_ms(node: dict) -> float:
+    """How far away a node is, in milliseconds.
+
+    TransferDaemon's route metrics are the measure when there is a route (bot/peers.py keeps each peer's
+    overlay route on its node entry): it knows the RTT of the actual path — direct, relayed, or whatever the
+    overlay picked — and how lossy it is, which the cluster's own round-trip measurement cannot see. Without
+    a route it falls back to the heartbeat's measured latency, exactly as before.
+
+    Loss is charged in retransmissions, not in percent: a route dropping a fifth of its packets costs several
+    times its RTT once every lost packet has to be sent again, which is why a low-RTT lossy route loses to a
+    slower clean one."""
+    from bot.transferdaemon import overlay
+
+    route = node.get("route") or {}
+    rtt = route.get("rtt_ms")
+    if rtt is None:
+        return float(node.get("latency_ms") or 0)
+    return float(rtt) * (1 + 4 * overlay.loss_fraction(route.get("loss")))
+
+
 def _score(node: dict, req: Request) -> float:
     """Higher is better: the most room left after placing (spreads load), a little for being this machine (no data to
-    move), a little against latency."""
+    move), a little against distance — which is TransferDaemon's route RTT where there is one."""
     info = node["info"] or {}
     f, cap = info.get("free") or {}, info.get("capacity") or {}
     cpu_left = (f.get("cpu", 0) - req.cpu) / max(cap.get("cpu", 0) or 1, 1e-6)
     ram_left = (f.get("ram_gb", 0) - req.ram_gb) / max(cap.get("ram_gb", 0) or 1, 1e-6)
     load = float((info.get("live") or {}).get("cpu_pct") or 0) / 100
-    return cpu_left + ram_left - 0.5 * load + (0.15 if node["peer"] is None else 0) - float(node.get("latency_ms") or 0) / 2000
+    return cpu_left + ram_left - 0.5 * load + (0.15 if node["peer"] is None else 0) - _distance_ms(node) / 2000
 
 
-def candidates(req: Request, kind: str, *, exclude: tuple = (), only: Optional[str] = None) -> tuple[list[dict], dict]:
-    """The nodes that could take this job, best first, and why each other node could not."""
+def candidates(req: Request, kind: str, *, exclude: tuple = (), only: Optional[str] = None,
+               service_group: Optional[str] = None) -> tuple[list[dict], dict]:
+    """The nodes that could take this job, best first, and why each other node could not. `service_group`
+    narrows the choice to the TransferDaemon nodes in that service group (the overlay's own grouping, for a
+    gang that wants one specific set of machines)."""
+    group_nodes = _group_nodes(service_group) if service_group else None
     fits, why_not = [], {}
     for n in membership.nodes():
         if n["name"] in exclude or (only and n["name"].lower() != only.lower()):
@@ -89,6 +116,9 @@ def candidates(req: Request, kind: str, *, exclude: tuple = (), only: Optional[s
         if n["health"] not in ("ok",):
             why_not[n["name"]] = {"unsupported": "runs an ABP without the cluster layer (update it)",
                                   "unknown": "not heard from yet"}.get(n["health"], n["health"])
+            continue
+        if group_nodes is not None and not (n["peer"] is None or (n.get("route") or {}).get("td_node_id") in group_nodes):
+            why_not[n["name"]] = f"not in the TransferDaemon group {service_group!r}"
             continue
         ok, why = _fits_reported(n["info"], req, kind)
         if ok:
@@ -99,9 +129,22 @@ def candidates(req: Request, kind: str, *, exclude: tuple = (), only: Optional[s
     return fits, why_not
 
 
+def _group_nodes(service_group: str) -> set:
+    """Which overlay node ids a TransferDaemon service group covers. Empty when the overlay cannot say, which
+    leaves the caller with no candidates and the reason spelled out rather than a silent wrong placement."""
+    from bot.transferdaemon import overlay
+
+    try:
+        return overlay.group_nodes(service_group)
+    except Exception:  # noqa: BLE001
+        return set()
+
+
 # ---- talking to a node ------------------------------------------------------------------------------------------------
 async def _node_call(node_name: Optional[str], method: str, path: str, body: Any = None, timeout: float = 60) -> Any:
-    """A node's cluster API: this machine directly, a peer over the peer link (waking it if it sleeps)."""
+    """A node's cluster API: this machine directly, a peer over whatever route currently reaches it
+    (TransferDaemon's overlay endpoint when there is one, the advertised address otherwise — waking it if it
+    sleeps)."""
     if node_name is None or node_name == membership.inventory.static()["hostname"]:
         return await asyncio.to_thread(_local, method, path, body)
     row = membership.peer_row(node_name)
@@ -111,7 +154,16 @@ async def _node_call(node_name: Optional[str], method: str, path: str, body: Any
     return await peers.proxy(row, method, "/api/cluster" + path, body, timeout=timeout)
 
 
+_SEND_FILE_RE = re.compile(r"^/runs/([^/]+)/files/(.+)/send$")
+
+
 def _local(method: str, path: str, body: Any) -> Any:
+    """The node half of the cluster API, called in-process. The result file's own name may contain slashes
+    ({name:path} on the route), so the send route is matched whole rather than split apart."""
+    path = "/" + path.strip("/")
+    send = _SEND_FILE_RE.match(path)
+    if send and method == "POST":
+        return executor.send_result(send.group(1), send.group(2), str((body or {}).get("to") or ""))
     parts = path.strip("/").split("/")
     if parts[0] != "runs":
         raise ScheduleError(f"unknown local route {path}")
@@ -124,7 +176,7 @@ def _local(method: str, path: str, body: Any) -> Any:
         return executor.start(rid)
     if parts[2] == "cancel":
         return executor.cancel(rid)
-    if parts[2] == "logs":
+    if parts[2].startswith("logs"):
         off = int((body or {}).get("offset", 0))
         return executor.logs(rid, off)
     raise ScheduleError(f"unknown local route {path}")
@@ -148,9 +200,10 @@ def _run_doc(p: dict, attempt: int, *, hold: bool = False, group: Optional[dict]
 
 
 async def _place(p: dict, *, exclude: tuple = (), hold: bool = False, group: Optional[dict] = None,
-                 task: Optional[dict] = None, only: Optional[str] = None) -> dict:
+                 task: Optional[dict] = None, only: Optional[str] = None,
+                 service_group: Optional[str] = None) -> dict:
     req = Request.from_dict(p["req"])
-    fits, why_not = candidates(req, p["kind"], exclude=exclude, only=only)
+    fits, why_not = candidates(req, p["kind"], exclude=exclude, only=only, service_group=service_group)
     if p.get("prefer"):
         fits.sort(key=lambda n: n["name"].lower() != str(p["prefer"]).lower())
     attempt = len(p.get("attempts") or []) + 1
@@ -176,7 +229,8 @@ def _placement(spec: dict, *, name: str = "", group_id: Optional[str] = None) ->
             "spec": spec.get("spec") or {}, "req": Request.from_dict(spec.get("req")).public(),
             "timeout_s": float(spec.get("timeout_s") or 3600), "env": spec.get("env") or {},
             "retries": int(spec.get("retries") or 0), "prefer": spec.get("prefer"), "state": "placing",
-            "group_id": group_id, "created": time.time()}
+            "group_id": group_id, "service_group": spec.get("service_group"),
+            "created": time.time()}
 
 
 async def submit(spec: dict) -> dict:
@@ -226,6 +280,59 @@ async def logs(pid: str, offset: int = 0) -> dict:
     return await _node_call(p["peer"], "GET", f"/runs/{p['run_id']}/logs?offset={int(offset)}", timeout=30)
 
 
+# ---- results big enough to want TransferDaemon --------------------------------------------------------------------------
+# A result file over this size does not come back as an HTTP body: it is handed to TransferDaemon's own
+# transfer, which is what the platform is for (chunked, resumable, checked end to end). Smaller files stay on
+# the plain HTTP route, where setting up a transfer would cost more than it saves.
+BIG_RESULT_BYTES = 8 * 1024 * 1024
+
+
+async def collect(pid: str, *, min_bytes: int = BIG_RESULT_BYTES, wait_s: float = 600.0) -> dict:
+    """Fetch a finished remote job's big result files with TransferDaemon instead of over the peer link.
+
+    The node holding the file is what sends it (executor.send_result): TransferDaemon's transfer is a send,
+    not a fetch, so the peer is asked to push the bytes to this machine's overlay node id. Each file is
+    copied out of TransferDaemon's own downloads folder into this job's <work>/fetched/, and the placement
+    records where it landed. Anything that goes wrong is reported per file rather than aborting the rest."""
+    from bot.transferdaemon import overlay
+
+    p = store.get("placements", pid)
+    if p is None or not p.get("run_id"):
+        raise ScheduleError(f"no job {pid}")
+    files = [f for f in (p.get("run") or {}).get("files") or [] if int(f.get("size") or 0) >= min_bytes]
+    if not files:
+        return {"job": pid, "files": [], "errors": [],
+                "note": f"no result file is {min_bytes} bytes or bigger, so none needs a file transfer"}
+    if not p.get("peer"):
+        return {"job": pid, "files": [], "errors": [],
+                "note": "this job ran on this machine, so its results are already here"}
+    me = overlay.node_id()
+    if not me:
+        return {"job": pid, "files": [], "errors": [],
+                "note": "this machine has no TransferDaemon overlay identity, so there is nothing to send to"}
+    dest = work_root() / p["run_id"] / "fetched"
+    dest.mkdir(parents=True, exist_ok=True)
+    fetched, errors = [], []
+    for f in files:
+        name = str(f["name"])
+        try:
+            sent = await _node_call(p["peer"], "POST", f"/runs/{p['run_id']}/files/{name}/send", {"to": me}, timeout=600)
+        except Exception as e:  # noqa: BLE001
+            errors.append({"name": name, "error": str(e)[:300]})
+            continue
+        target = dest / Path(str(f["name"])).name
+        got = await asyncio.to_thread(overlay.await_download, target.name, wait_s)
+        if not got:
+            errors.append({"name": name, "error": "TransferDaemon reported no completed transfer for it",
+                           "transfer": sent})
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(got, target)
+        fetched.append({"name": name, "size": f.get("size"), "path": str(target), "transfer": sent})
+    store.put("placements", {**store.get("placements", pid), "fetched": fetched, "fetch_errors": errors})
+    return {"job": pid, "files": fetched, "errors": errors}
+
+
 async def wait(pid: str, timeout_s: float = 600, poll_s: float = 2) -> dict:
     deadline = time.time() + timeout_s
     while True:
@@ -243,7 +350,7 @@ async def submit_group(spec: dict) -> dict:
         raise ScheduleError("replicas is 1-256")
     gid = uuid.uuid4().hex[:12]
     req = Request.from_dict(spec.get("req"))
-    fits, why_not = candidates(req, str(spec.get("kind")))
+    fits, why_not = candidates(req, str(spec.get("kind")), service_group=spec.get("service_group"))
     if len(fits) < n:
         raise ScheduleError(f"{n} nodes are needed and {len(fits)} can take a member now", why_not)
     chosen = fits[:n]
