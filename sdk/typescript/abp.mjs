@@ -3897,6 +3897,20 @@ export const operations = {
   ],
   "query_params": []
  },
+ "GET /api/wasm-plugins": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/wasm-plugins",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/wasm-plugins/status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/wasm-plugins/status",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /canvas/{name}": {
   "body": false,
   "method": "GET",
@@ -7074,6 +7088,49 @@ export const operations = {
   ],
   "query_params": []
  },
+ "POST /api/wasm-plugins/install": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/wasm-plugins/install",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/wasm-plugins/{name}/disable": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/wasm-plugins/{name}/disable",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "POST /api/wasm-plugins/{name}/enable": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/wasm-plugins/{name}/enable",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "POST /api/wasm-plugins/{name}/invoke": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/wasm-plugins/{name}/invoke",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "POST /api/wasm-plugins/{name}/uninstall": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/wasm-plugins/{name}/uninstall",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
  "POST /webhooks/bluebubbles": {
   "body": false,
   "method": "POST",
@@ -9847,6 +9904,63 @@ export const operations = {
   "method": "POST",
   "path": "/api/validate-field",
   "path_params": [],
+  "query_params": []
+ },
+ "api_wasm_plugins_disable_api_wasm_plugins__name__disable_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/wasm-plugins/{name}/disable",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "api_wasm_plugins_enable_api_wasm_plugins__name__enable_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/wasm-plugins/{name}/enable",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "api_wasm_plugins_install_api_wasm_plugins_install_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/wasm-plugins/install",
+  "path_params": [],
+  "query_params": []
+ },
+ "api_wasm_plugins_invoke_api_wasm_plugins__name__invoke_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/wasm-plugins/{name}/invoke",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "api_wasm_plugins_list_api_wasm_plugins_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/wasm-plugins",
+  "path_params": [],
+  "query_params": []
+ },
+ "api_wasm_plugins_status_api_wasm_plugins_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/wasm-plugins/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "api_wasm_plugins_uninstall_api_wasm_plugins__name__uninstall_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/wasm-plugins/{name}/uninstall",
+  "path_params": [
+   "name"
+  ],
   "query_params": []
  },
  "approve_draft_api_skills_drafts_approve_post": {
