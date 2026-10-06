@@ -50,15 +50,6 @@ DUPLICATE_OVERLAP = 0.85       # share of words two memories must have in common
 DECAY_DAYS = 180.0
 
 
-def _norm(text: str) -> str:
-    text = text.replace("'", "").replace("’", "")          # user's and users are the same word
-    return " ".join("".join(c.lower() if c.isalnum() else " " for c in text).split())
-
-
-def _numbers(normalised: str) -> list[str]:
-    return [t for t in normalised.split() if any(c.isdigit() for c in t)]
-
-
 def _age_days(row) -> float:
     import datetime as _dt
 
@@ -82,25 +73,19 @@ def _score(row) -> float:
 
 
 def find_duplicate(instance_id: int, content: str) -> Optional[dict]:
-    """An existing pending or approved memory that says the same thing, if any."""
-    target = _norm(content)
-    if not target:
-        return None
-    words = set(target.split())
-    for row in db.list_memory_entries(instance_id):
-        if row["status"] not in ("pending", "approved"):
-            continue
-        other = _norm(row["content"])
-        if other == target:
-            return dict(row)
-        # Near-identical wording counts as the same memory - but never when the numbers differ
-        # ("the port is 8080" and "the port is 8081" are different facts), and never when a single
-        # word of a short sentence differs ("notes about billing" vs "notes about invoices").
-        other_words = set(other.split())
-        overlap = len(words & other_words) / max(len(words | other_words), 1)
-        if _numbers(target) == _numbers(other) and overlap >= DUPLICATE_OVERLAP:
-            return dict(row)
-    return None
+    """An existing pending or approved memory that says the same thing, if any.
+
+    Near-identical wording counts as the same memory - but never when the numbers differ
+    ("the port is 8080" and "the port is 8081" are different facts), and never when a single
+    word of a short sentence differs ("notes about billing" vs "notes about invoices").
+    Comparing every stored memory is a scan of the whole store on every memory written, so
+    it lives in `abp_native` (Rust when it is built, the pure-Python reference otherwise):
+    see docs/perf/hotspots.md."""
+    from abp_native import memory_duplicate
+
+    rows = db.list_memory_entries(instance_id)
+    hit = memory_duplicate(content, [(r["status"], r["content"]) for r in rows], DUPLICATE_OVERLAP)
+    return dict(rows[hit]) if hit >= 0 else None
 
 
 def remember_full(instance_id: int, content: str, source: str = "user", kind: str = "fact") -> dict:

@@ -1,0 +1,28 @@
+[package]
+name = "abp-native"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "ABP's Rust fast paths: the CPU-bound pure-Python work py-spy found in the profile (docs/perf/hotspots.md)"
+license = "MIT"
+publish = false
+
+# A self-contained package: native/ is not a workspace, each crate here stands alone.
+[lib]
+name = "abp_native_core"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+blake2 = "0.10.6"
+pyo3 = { version = "0.29.3", features = ["abi3-py311"] }
+regex = "1.12"
+
+# maturin turns this on for the wheel (an extension module must not link libpython itself);
+# `cargo test` and `cargo clippy` run without it, against the interpreter's own library.
+[features]
+extension-module = ["pyo3/extension-module"]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
