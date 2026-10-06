@@ -1,0 +1,18 @@
+[package]
+name = "abp-wasm-sdk"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Write an ABP WebAssembly plugin: one trait, one macro, one command"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[lib]
+# A guest is a component, which is a cdylib; the rlib is here so the SDK's own tests
+# (and `cargo check` on a plugin crate) can use it as a normal dependency.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# `bitflags` is what WASI's flag types (OpenFlags, PathFlags, DescriptorFlags) are
+# generated as; without it the generated filesystem bindings do not compile.
+wit-bindgen = { version = "0.61", features = ["bitflags"] }

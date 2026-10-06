@@ -406,6 +406,12 @@ async def run() -> None:
         logger.warning("safe mode: plugins are not loaded this boot (see the Sentinel journal)")
     else:
         plugin_registry.load_enabled()
+        # WebAssembly plugins, alongside the Python ones and under the same safe-mode rule. The
+        # call is a no-op when the native module is not built - runtime.py has already said so
+        # once by then - so ABP starts the same either way.
+        from bot import wasm_plugins
+
+        wasm_plugins.load_enabled()
 
     # The dashboard comes FIRST. The desktop app's window waits on it to finish loading, so nothing that can be
     # slow or fail (connecting external MCP servers, starting chat platforms, a flaky network) may sit in front of
