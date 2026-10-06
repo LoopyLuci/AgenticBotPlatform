@@ -95,6 +95,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.dashboard.routes.pairing", "bot.dashboard.routes.peers", "bot.dashboard.routes.platforms",
     "bot.dashboard.routes.reads", "bot.dashboard.routes.schedules", "bot.dashboard.routes.server_chat",
     "bot.dashboard.routes.setup_wizard", "bot.dashboard.routes.shared_context", "bot.dashboard.routes.swarms",
+    "bot.dashboard.routes.wasm_plugins",
     # The Sentinel holds live state (the running watchdog thread, the installed
     # log handler, alert de-duplication, the boot record). A reload would orphan
     # the old watchdog and double-count every error.
@@ -103,6 +104,10 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.sentinel.guardian", "bot.dashboard.sentinel_api", "bot.dashboard.editors_api",
     "bot.provider_store",  # owns a lock and the path of the on-disk provider store; a reload would orphan both
     "bot.envfile", "bot.handlers", "bot.outbox", "bot.plugins", "bot.attachments",
+    # The wasm plugin registry holds live compiled components (an engine reference, a few MB
+    # each) and a module-level dict of them; a reload would orphan both, the way the MCP
+    # client above loses its connections.
+    "bot.wasm_plugins.manager", "bot.wasm_plugins.tools", "bot.wasm_plugins.runtime",
     # Same hazard class as outbox.py/plugins.py above: _connections/
     # _tool_index are module-level dicts holding LIVE external MCP
     # subprocess/HTTP sessions (each an open AsyncExitStack). A reload

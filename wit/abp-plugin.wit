@@ -1,0 +1,90 @@
+package abp:plugin@0.1.0;
+
+/// What a plugin says about itself: its identity and the tools it offers.
+interface manifest {
+  /// One tool the agent can call, with the JSON Schema for its arguments.
+  record tool {
+    name: string,
+    description: string,
+    /// JSON Schema for `invoke`'s `args-json`, as a JSON string. ABP hands it to the
+    /// model verbatim, so it is the plugin's job to make it a real schema.
+    schema: string,
+  }
+
+  record manifest {
+    name: string,
+    version: string,
+    description: string,
+    tools: list<tool>,
+    /// Host directories the plugin wants opened for it, as the guest sees them. ABP
+    /// grants only the ones a person approved, and hands over nothing else.
+    preopens: list<string>,
+    /// Host names (or `host:port`) the plugin wants to reach over `http-fetch`. Anything
+    /// not listed is refused before a request is made.
+    network: list<string>,
+  }
+}
+
+/// The host's half of the deal. ABP implements these; a plugin only imports them.
+interface host {
+  /// A line for the plugin's log, at one of `trace`, `debug`, `info`, `warn`, `error`.
+  log: func(level: string, msg: string);
+
+  /// This plugin's own key-value store. Scoped to the plugin and persisted by the
+  /// host: one plugin's keys are invisible to every other, and to the host's own state.
+  store-get: func(key: string) -> option<string>;
+  store-set: func(key: string, value: string);
+  store-delete: func(key: string);
+  /// Every key in this plugin's store, sorted.
+  store-keys: func() -> list<string>;
+
+  /// An HTTP request, made by the host rather than the guest. The URL is checked
+  /// against the plugin's approved `network` list first; a refusal comes back as an
+  /// `err` with the reason, so the guest can say so in its own result.
+  http-fetch: func(method: string, url: string, headers: list<tuple<string, string>>, body: option<string>) -> result<response, string>;
+
+  /// Milliseconds since the Unix epoch.
+  now-ms: func() -> u64;
+  /// Cryptographically strong random bytes.
+  random-bytes: func(len: u32) -> list<u8>;
+
+  record response {
+    status: u16,
+    headers: list<tuple<string, string>>,
+    body: string,
+  }
+}
+
+/// What every plugin exports. ABP calls `describe` once, at install time and at
+/// start-up, and `invoke` once per tool call.
+interface guest {
+  use manifest.{manifest};
+
+  /// Who this plugin is and what it can do. Read at install time so a person sees the
+  /// capabilities before approving anything.
+  describe: func() -> manifest;
+
+  /// Run one tool. `args-json` is the arguments object as JSON, matching the schema
+  /// `describe` published; the `ok` value is the result as JSON.
+  invoke: func(tool: string, args-json: string) -> result<string, string>;
+}
+
+/// The world ABP loads. WASI p2 is imported so a guest gets the clock, randomness and
+/// the preopened directories it was granted, and nothing else: the host sets those up
+/// per plugin from what its manifest asked for and what a person approved.
+world plugin {
+  import host;
+  import wasi:clocks/wall-clock@0.2.12;
+  import wasi:clocks/monotonic-clock@0.2.12;
+  import wasi:random/random@0.2.12;
+  import wasi:filesystem/types@0.2.12;
+  import wasi:filesystem/preopens@0.2.12;
+  import wasi:io/streams@0.2.12;
+  import wasi:io/error@0.2.12;
+  import wasi:io/poll@0.2.12;
+  import wasi:cli/environment@0.2.12;
+  import wasi:cli/stdout@0.2.12;
+  import wasi:cli/stderr@0.2.12;
+
+  export guest;
+}

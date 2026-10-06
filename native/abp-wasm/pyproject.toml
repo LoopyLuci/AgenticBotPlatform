@@ -1,0 +1,21 @@
+[build-system]
+requires = ["maturin>=1.5,<2"]
+build-backend = "maturin"
+
+[project]
+name = "abp-wasm"
+description = "ABP's WebAssembly component runtime (the host half of the abp:plugin world)"
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+]
+dynamic = ["version"]
+
+[tool.maturin]
+module-name = "abp_wasm"
+manifest-path = "Cargo.toml"
+# The tests need the interpreter's symbols at link time, so the extension-module feature that
+# hides them is off here and on for the wheel (build.py passes it).
+features = ["pyo3/extension-module"]
+strip = true
