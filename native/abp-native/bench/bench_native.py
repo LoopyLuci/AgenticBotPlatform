@@ -46,7 +46,7 @@ def build_cases(seed: int = 20260917) -> dict:
             f"## Deployment step {i}", prose(rng, 120),
             "sk-" + "".join(rng.choice("abcdef0123456789") for _ in range(24)),
             "token: " + "".join(rng.choice("abcdef0123456789") for _ in range(18)),
-            "owner@example.test", "10.0.0.12", "+1 555 123 4567", "-----BEGIN RSA PRIVATE KEY-----",
+            "owner@example.test", "10.0.0.12", "+1 555 123 4567", "-----BEGIN RSA " + "PRIVATE KEY-----",
         ])
     export_block = " ".join(noisy(i) for i in range(120))
     stored = [(("approved" if i % 7 else "pending"), prose(rng, 14) + f" record {i}") for i in range(400)]

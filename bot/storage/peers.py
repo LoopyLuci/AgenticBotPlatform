@@ -56,6 +56,15 @@ def get_peer_server(peer_id: int) -> Optional[sqlite3.Row]:
     return conn.execute("SELECT * FROM peer_servers WHERE id=?", (peer_id,)).fetchone()
 
 
+def set_peer_transport(peer_id: int, *, td_node_id: str) -> None:
+    """Records a peer's TransferDaemon overlay node id: from then on the link is addressed by it and its
+    traffic goes over the overlay endpoint (see bot/peers.py's route handling)."""
+    conn = _db.get_conn()
+    with _db._lock:
+        conn.execute("UPDATE peer_servers SET td_node_id=? WHERE id=?", (str(td_node_id or ""), peer_id))
+        conn.commit()
+
+
 def mark_peer_server_ok(peer_id: int) -> None:
     """Called after every successful proxied call to a peer (see
     bot/peers.py) so the dashboard can show whether a linked server is

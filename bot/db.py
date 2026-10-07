@@ -273,6 +273,11 @@ CREATE TABLE IF NOT EXISTS pairing_codes (
 -- as the link target, or the peer voluntarily shared it during handshake)
 -- — a peer that never shared a reachable address can still call us, just
 -- not be called back.
+-- `td_node_id` is the peer's TransferDaemon overlay node id (empty when TransferDaemon is not in the
+-- picture): once it is set, peers are addressed by that id and their API traffic goes over the overlay
+-- endpoint overlay.connect hands out, so no firewall rule and no forwarded port are ever needed. The
+-- advertised `base_url` stays as it was — one route among the others, and the only one when TransferDaemon
+-- is not installed anywhere.
 CREATE TABLE IF NOT EXISTS peer_servers (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     name                TEXT NOT NULL,
@@ -281,7 +286,8 @@ CREATE TABLE IF NOT EXISTS peer_servers (
     inbound_api_key_id  INTEGER NOT NULL,
     linked_at           TEXT NOT NULL,
     last_seen_at        TEXT,
-    last_error          TEXT
+    last_error          TEXT,
+    td_node_id          TEXT NOT NULL DEFAULT ''
 );
 
 -- Short-lived, single-use tokens minted specifically to authenticate the
@@ -1145,6 +1151,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
         # before a job was ever created).
         conn.execute("ALTER TABLE audit_log ADD COLUMN job_id INTEGER")
 
+    peer_cols = {row["name"] for row in conn.execute("PRAGMA table_info(peer_servers)").fetchall()}
+    if "td_node_id" not in peer_cols:
+        # A peer linked before TransferDaemon was in the picture has no overlay identity: it keeps being
+        # reached directly, and picks one up the next time it is linked.
+        conn.execute("ALTER TABLE peer_servers ADD COLUMN td_node_id TEXT NOT NULL DEFAULT ''")
+
     api_key_cols = {row["name"] for row in conn.execute("PRAGMA table_info(api_keys)").fetchall()}
     if "kind" not in api_key_cols:
         # 'device' (default, every key minted before this column existed)
@@ -1490,7 +1502,7 @@ from bot.storage.support_bot import (  # noqa: E402,F401
 )
 from bot.storage.peers import (  # noqa: E402,F401
     create_peer_server, list_peer_servers, get_peer_server, mark_peer_server_ok, mark_peer_server_error,
-    delete_peer_server, create_server_pairing_token, consume_server_pairing_token,
+    delete_peer_server, create_server_pairing_token, consume_server_pairing_token, set_peer_transport,
 )
 from bot.storage.stats import (  # noqa: E402,F401
     prune_old_data, get_overview, get_usage_summary, get_insights, get_jobs_timeseries_24h,

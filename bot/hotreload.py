@@ -141,6 +141,8 @@ DENYLIST: frozenset[str] = frozenset({
     # to protect.
     "bot.sandbox_ns.guard", "bot.sandbox_ns.registry", "bot.sandbox_ns.cell", "bot.sandbox_ns.spawn",
     "bot.sandbox_ns.policy", "bot.sandbox_ns.reaper", "bot.sandbox_ns.reflexes",
+    # wasm.py's cells live in that registry: a reloaded WasmCell class would not match the live ones.
+    "bot.sandbox_ns.wasm",
     # The routes into that registry: they register once, and a reloaded copy would serve its own
     # (empty) idea of what is running.
     "bot.dashboard.sandbox_ns_api",
@@ -162,6 +164,8 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.hermes_manager.client", "bot.hermes_manager.harness", "bot.hermes_manager.tools", "bot.dashboard.hermes_manager_api",
     # TransferDaemon: harness.py holds the background build/update jobs, tools.py registers tools at import time.
     "bot.transferdaemon.client", "bot.transferdaemon.harness", "bot.transferdaemon.tools", "bot.dashboard.transferdaemon_api",
+    # overlay.py's lock and status/route cache: a reload would split the lock and serve an empty cache.
+    "bot.transferdaemon.overlay",
     # Modules: harness.py holds the background jobs, registry.py the manifest cache, tools.py registers at import time.
     "bot.modules.manifest", "bot.modules.registry", "bot.modules.client", "bot.modules.adapters", "bot.modules.harness",
     "bot.modules.tools", "bot.modules.conformance", "bot.modules.adoption", "bot.dashboard.modules_api",
