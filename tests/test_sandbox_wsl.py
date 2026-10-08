@@ -47,7 +47,7 @@ def run_shell(ws, command, **kw):
 
 
 def test_win_to_wsl_path_translation():
-    assert sandbox._win_to_wsl_path("/path/redacted<drive>\\Projects\\MyProject") == "/mnt/z/<drive>/Projects/MyProject"
+    assert sandbox._win_to_wsl_path("Y:\\<drive>\\Projects\\MyProject") == "/mnt/y/<drive>/Projects/MyProject"
     assert sandbox._win_to_wsl_path("C:\\") == "/mnt/c"
 
 

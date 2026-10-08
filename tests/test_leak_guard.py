@@ -90,8 +90,8 @@ def _private(tmp_path: Path, denylist: str = "", guard: str = "") -> Path:
     "root = 'A:/Data/Thing'",
     'root = "B:\\Repo\\Thing"',
     "cd C:/src",
-    'home = r"/path/redacted"',
-    "the checkout is at /path/redacted",
+    'home = r"F:\\Cache"',
+    "the checkout is at G:/Projects/MyModule/abp-module.toml",
 ])
 def test_an_absolute_drive_path_is_a_leak(line):
     found = list(leak_guard.scan_text("bot/x.py", line, leak_guard._build_rules(None)))
