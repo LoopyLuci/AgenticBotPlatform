@@ -75,7 +75,7 @@ class Guest(exports.Guest):
         try:
             args = json.loads(args_json)
         except json.JSONDecodeError as exc:
-            raise Err(f"the arguments are not JSON: {exc}")
+            raise Err(f"the arguments are not JSON: {exc}") from None
         if not isinstance(args, dict):
             raise Err("greet's arguments must be an object")
         name = args.get("name")
