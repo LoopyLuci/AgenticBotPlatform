@@ -3,13 +3,10 @@ local socket (UDP, and TCP when the answer is truncated), DNS-over-HTTPS, the fa
 validated-only policy. The last tests ask Quad9 for real, when it can be reached."""
 from __future__ import annotations
 
-import shutil
 import socket
 import struct
-import subprocess
 import threading
 import time
-from pathlib import Path
 
 import httpx
 import pytest
