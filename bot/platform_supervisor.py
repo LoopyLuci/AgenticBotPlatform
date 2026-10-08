@@ -31,6 +31,11 @@ Telegram carries two extra rules here, both because a Telegram bot token's
     useless retry loop that also knocks the other poller off in turn. This
     module instead stops that one instance, records the reason, and leaves it
     stopped until an operator starts it again.
+
+Every platform, Telegram included, first takes a machine-wide claim on the
+bot's credentials (bot/poller_claim.py, see _run_claimed): a second copy of
+ABP with its own data directory, which the leader lease cannot see, parks
+instead of connecting the same bot a second time.
 """
 
 from __future__ import annotations
@@ -62,6 +67,10 @@ _restart_state: dict[int, dict[str, float]] = {}
 # dashboard open on top of it costs nothing, short enough that stopping the
 # gateway by hand takes effect in well under a minute.
 GATEWAY_RECHECK_S = 30.0
+
+# How often an instance parked behind another ABP's claim on the same bot
+# (bot/poller_claim.py) checks whether that copy has stopped.
+CLAIM_RECHECK_S = 15.0
 
 # Set for a Telegram instance the moment python-telegram-bot reports a 409, so
 # the runner's wait ends immediately instead of after a full polling backoff.
@@ -371,6 +380,40 @@ async def _restart_after_crash(instance_id: int, name: str) -> None:
         telemetry.increment("platform.auto_restart")
 
 
+async def _run_claimed(row: dict[str, Any], runner: Any) -> None:
+    """Run one instance's platform connection only while this process holds the
+    machine-wide claim on that bot (bot/poller_claim.py). Another copy of ABP
+    with the same credentials - a different data directory the leader lease
+    cannot see - parks here instead of polling, and takes over when the holder
+    stops."""
+    from bot import poller_claim
+
+    try:
+        claim = poller_claim.for_instance(row)
+    except Exception as exc:  # noqa: BLE001 - never let the guard itself keep a bot down
+        logger.error("bot instance %r (id=%s): poller claim unavailable (%s); starting unguarded",
+                     row["name"], row["id"], exc)
+        claim = None
+    if claim is None:
+        await runner(row)
+        return
+    announced = False
+    while not claim.try_acquire(poller_claim.holder_info(row)):
+        text = poller_claim.held_text(claim.holder())
+        _set_status(row["id"], text)
+        if not announced:
+            logger.warning("not starting bot instance %r (id=%s): %s", row["name"], row["id"], text)
+            announced = True
+        await asyncio.sleep(CLAIM_RECHECK_S)
+    if announced:
+        logger.info("bot instance %r (id=%s): the other copy stopped; starting it here", row["name"], row["id"])
+        _set_status(row["id"], "")
+    try:
+        await runner(row)
+    finally:
+        claim.release()
+
+
 async def start_instance(row: dict[str, Any]) -> None:
     instance_id = row["id"]
     if instance_id in _handles:
@@ -380,7 +423,7 @@ async def start_instance(row: dict[str, Any]) -> None:
     runner = _RUNNERS.get(row["platform"])
     if runner is None:
         raise ValueError(f"unknown platform {row['platform']!r}")
-    task = asyncio.create_task(runner(row))
+    task = asyncio.create_task(_run_claimed(row, runner))
     task.add_done_callback(_done_callback(instance_id, row["name"]))
     _handles[instance_id] = _Handle(instance_id=instance_id, name=row["name"], platform=row["platform"], task=task)
     bot_instances.record_start(instance_id)

@@ -344,6 +344,8 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.support_bot.llm_fallback",  # pure async dispatch functions, no module-level mutable state
     "bot.server_chat_admin",  # pure async dispatch functions, no module-level mutable state
     "bot.validators",
+    "bot.poller_claim",  # pure path/key functions; each held claim lives on its runner task, not the module
+    "bot.config_backups",  # constants and file functions; callers reach it as `config_backups.<fn>`, nothing cached
     "bot.network_info",
     "bot.platform_guides",
     "bot.personas",

@@ -197,9 +197,11 @@ class Lease:
     once a second from an asyncio loop and touched from a FastAPI handler, and
     both of those are microseconds of work."""
 
-    def __init__(self, state_root: Optional[Path] = None):
-        self.path = lease_path(state_root)
-        self.meta_path = meta_path(state_root)
+    def __init__(self, state_root: Optional[Path] = None, *, path: Optional[Path] = None):
+        # `path` locks some other file with the same mechanics (bot/poller_claim.py
+        # uses it for one lock per bot token); its sidecar is "<name>.json" beside it.
+        self.path = lease_path(state_root) if path is None else Path(path)
+        self.meta_path = meta_path(state_root) if path is None else self.path.with_name(self.path.name + ".json")
         self._fd: Optional[int] = None
 
     @property

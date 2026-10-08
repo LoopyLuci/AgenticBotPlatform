@@ -107,6 +107,9 @@ def _isolated_cicd_event_store(monkeypatch, tmp_path):
     # The Sandbox Nervous System's live process file: a test's reaper must never see (and kill) what another
     # xdist worker, or the developer's running ABP, recorded.
     monkeypatch.setenv("ABP_SANDBOX_NS_FILE", str(tmp_path / "sandbox_ns" / "live.json"))
+    # Machine-wide claims on bot tokens (bot/poller_claim.py): a test bot must never park behind, or block, the
+    # developer's running ABP.
+    monkeypatch.setenv("ABP_POLLER_CLAIM_DIR", str(tmp_path / "poller-claims"))
     monkeypatch.delenv("ABP_CICD_RUN", raising=False)
     # The model catalog (models.dev) is a downloaded cache; a test must never see the developer's copy.
     from bot import model_catalog, model_pricing
