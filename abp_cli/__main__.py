@@ -2083,8 +2083,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--source-id", default=None)
     msub.add_parser("tree-stats")
     msub.add_parser("sources")
-    p = msub.add_parser("source-add"); p.add_argument("kind", choices=["folder", "notes", "github", "rss", "web",
-                                                                      "conversation", "private_project"])
+    p = msub.add_parser("source-add"); p.add_argument("kind", help="folder, github, rss, web, conversation, or a kind an extension adds")
     p.add_argument("label"); p.add_argument("--path", default=None); p.add_argument("--repo", default=None)
     p.add_argument("--url", default=None); p.add_argument("--glob", default=None)
     p = msub.add_parser("source-sync"); p.add_argument("source_id")

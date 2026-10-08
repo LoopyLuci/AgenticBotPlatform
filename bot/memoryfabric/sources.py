@@ -6,7 +6,7 @@
     rss            an RSS or Atom feed's items
     web            a web page (optionally narrowed to an element: tag, #id or .class)
     conversation   ABP's own conversations (the memory fabric's threads), one item per thread
-    private_project   a PrivateProject checkout (or its Knowledge Module folder), one item per KM
+    (extensions)   any kind an extension adds (bot/extensions.py add_memory_source)
 
 Each source has budgets (max_items, max_chars a sync) so a chatty source cannot flood the base; each sync records
 its stage and counts, and every source's freshness is derived from its newest chunk (active <= 30 s, recent <= 5 min,
@@ -31,10 +31,19 @@ import httpx
 from bot import db
 from bot.memoryfabric import knowledge
 
-KINDS = {"folder": ["path"], "notes": [], "github": ["repo"], "rss": ["url"], "web": ["url"], "conversation": [],
-         "private_project": ["path"]}
+KINDS = {"folder": ["path"], "notes": [], "github": ["repo"], "rss": ["url"], "web": ["url"], "conversation": []}
 MAX_FILE = 10 << 20
-KM_STORE = ("storage", "knowledge_modules")       # where PrivateProject keeps the KMs its app builds
+
+
+def _extension_kinds() -> dict:
+    from bot import extensions
+
+    return {k: v for k, v in extensions.loaded().memory_sources.items() if k not in KINDS}
+
+
+def kinds() -> dict[str, list[str]]:
+    """Every source kind and the config fields it needs: ABP's own, then those extensions add."""
+    return {**KINDS, **{k: v["required"] for k, v in _extension_kinds().items()}}
 _NO_WINDOW = 0x08000000
 
 
@@ -65,12 +74,16 @@ def get(source_id: str) -> dict:
 
 
 def add(kind: str, label: str = "", **config) -> dict:
-    if kind not in KINDS or kind == "notes":
-        raise ValueError(f"a source is one of {', '.join(k for k in KINDS if k != 'notes')}")
-    for f in KINDS[kind]:
+    known = kinds()
+    if kind not in known or kind == "notes":
+        raise ValueError(f"a source is one of {', '.join(k for k in known if k != 'notes')}")
+    for f in known[kind]:
         if not str(config.get(f) or "").strip():
             raise ValueError(f"a {kind} source needs {f}")
-    if kind in ("folder", "private_project") and not Path(config["path"]).is_dir():
+    ext = _extension_kinds().get(kind)
+    if ext and ext.get("validate"):
+        ext["validate"](config)
+    if kind == "folder" and not Path(config["path"]).is_dir():
         raise ValueError(f"{config['path']} is not a folder")
     if kind == "github" and not re.fullmatch(r"[\w.-]+/[\w.-]+", config["repo"]):
         raise ValueError("repo is owner/name")
@@ -251,67 +264,6 @@ def _read_conversations(limit: int) -> Iterator[Item]:
         yield t["thread"], f"Conversation {t['thread']}", text, turns[-1]["created"], tags
 
 
-def km_root(path: str) -> Path:
-    """Where a private_project source's Knowledge Modules are: `path` itself, or a PrivateProject
-    checkout's own store (the folder its app builds them in, storage/knowledge_modules)."""
-    p = Path(path)
-    store = p.joinpath(*KM_STORE)
-    return store if store.is_dir() else p
-
-
-def _km_meta(d: Path) -> Optional[dict]:
-    """A Knowledge Module's metadata, or None when the folder is not one: PrivateProject's registry
-    (core/registry.py) skips a directory without meta.json and tolerates an unreadable one."""
-    if not d.is_dir() or not (d / "meta.json").is_file():
-        return None
-    try:
-        meta = json.loads((d / "meta.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    return meta if isinstance(meta, dict) else None
-
-
-def _km_chunks(d: Path) -> list[str]:
-    """The fact bank: chunks.json, a JSON array of strings (PrivateProject's core/km.py save()). A
-    LoRA-only module has none, and a half-written one may not parse; both are no chunks, not a failure."""
-    try:
-        raw = json.loads((d / "chunks.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return []
-    return [str(c).strip() for c in raw if str(c).strip()] if isinstance(raw, list) else []
-
-
-def _read_kms(root: Path, limit: int) -> Iterator[Item]:
-    """One item per Knowledge Module: its name and id as the document, its metadata as the entities
-    (domain, subdomain and tags) and its chunks as the body, so every model can recall what it holds."""
-    if not root.is_dir():
-        return
-    for d in sorted(root.iterdir()):
-        meta = _km_meta(d)
-        if meta is None:
-            continue
-        km_id = str(meta.get("km_id") or d.name)
-        name = str(meta.get("name") or km_id)
-        domain, subdomain = str(meta.get("domain") or ""), str(meta.get("subdomain") or "")
-        km_tags = [str(t) for t in (meta.get("tags") or []) if str(t).strip()]
-        chunks = _km_chunks(d)
-        if limit > 0:
-            chunks = chunks[:limit]
-        head = [f"{name} - Knowledge Module {km_id}, from PrivateProject."]
-        if domain or subdomain:
-            head.append(f"Domain: {domain}. Subdomain: {subdomain}.")
-        if km_tags:
-            head.append("Tags: " + ", ".join(km_tags) + ".")
-        if str(meta.get("description") or "").strip():
-            head.append(str(meta["description"]).strip())
-        try:
-            ts = float(meta.get("created_at") or 0.0) or (d / "meta.json").stat().st_mtime
-        except (OSError, TypeError, ValueError):
-            ts = time.time()
-        tags = list(dict.fromkeys(["private_project", "km"] + [t for t in (domain, subdomain) if t] + km_tags))
-        yield km_id, name, "\n\n".join(head + chunks), ts, tags
-
-
 def read(source: dict) -> Iterator[Item]:
     k, limit = source["kind"], int(source.get("max_items", 200))
     if k == "folder":
@@ -327,12 +279,17 @@ def read(source: dict) -> Iterator[Item]:
         yield from _read_web(source["url"], source.get("selector", ""))
     elif k == "conversation":
         yield from _read_conversations(limit)
-    elif k == "private_project":
-        yield from _read_kms(km_root(source["path"]), int(source.get("max_chunks", 0)))
+    elif k in _extension_kinds():
+        yield from _extension_kinds()[k]["read"](source)
 
 
 KIND_OF = {"folder": "document", "notes": "note", "github": "github", "rss": "rss", "web": "web",
-           "conversation": "conversation", "private_project": "note"}
+           "conversation": "conversation"}
+
+
+def kind_of(kind: str) -> str:
+    ext = _extension_kinds().get(kind)
+    return ext["item_kind"] if ext else KIND_OF[kind]
 
 
 def sync(source_id: str, log=lambda m: None) -> dict:
@@ -353,12 +310,13 @@ def sync(source_id: str, log=lambda m: None) -> dict:
             if item_id in have and _digest_of(source_id, item_id) == digest:
                 continue
             status.update(stage="ingesting", item=item_id)
-            knowledge.ingest(source_id, item_id, title, text, kind=KIND_OF[s["kind"]], ts=ts, tags=tags)
+            knowledge.ingest(source_id, item_id, title, text, kind=kind_of(s["kind"]), ts=ts, tags=tags)
             _set_digest(source_id, item_id, digest)
             added += item_id not in have
             changed += item_id in have
         removed = 0
-        if s["kind"] in ("folder", "notes", "conversation", "web", "private_project"):  # complete listings: gone = deleted
+        complete = s["kind"] in ("folder", "notes", "conversation", "web") or (_extension_kinds().get(s["kind"]) or {}).get("complete")
+        if complete:  # complete listings: gone = deleted
             for item_id in set(have) - seen:
                 knowledge.remove_item(source_id, item_id)
                 removed += 1

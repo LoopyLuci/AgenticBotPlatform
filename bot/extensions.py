@@ -370,17 +370,18 @@ class ExtensionAPI:
         self.lab_families[str(family_id)] = {"label": str(label), "status": status}
 
     def add_memory_source(self, kind: str, *, required: list, read: Callable, item_kind: str = "note",
-                          complete: bool = True, label: str = "") -> None:
+                          complete: bool = True, label: str = "", validate: Optional[Callable] = None) -> None:
         """A kind of memory-fabric source (bot/memoryfabric/sources.py), like "folder" or "web".
 
-        `read(config) -> [{"key", "title", "text", "tags"?, "updated"?}]` lists what the source holds now;
-        `required` names the config fields a source of this kind must have. `complete`: the listing is the whole
-        source, so an item that disappears from it was deleted."""
+        `read(source)` yields (item_id, title, text, timestamp, tags) for what the source holds now, `source` being
+        its stored config; `required` names the config fields a source of this kind must have, and
+        `validate(config)` may raise ValueError for a bad one. `complete`: the listing is the whole source, so an
+        item that disappears from it was deleted. `item_kind` is the knowledge base's kind for its items."""
         if not callable(read):
             raise TypeError(f"extension {self.name}: add_memory_source() needs a callable read")
         self.memory_sources[str(kind)] = {"required": [str(f) for f in required], "read": read,
                                           "item_kind": str(item_kind), "complete": bool(complete),
-                                          "label": str(label or kind)}
+                                          "label": str(label or kind), "validate": validate}
 
     def add_model_location(self, app: str, path: str | Path, namespace: str) -> None:
         """A folder where another program on this machine keeps model files, for Local AI's Discover

@@ -63,20 +63,8 @@ scored chunks, entities and summary trees, which the agents' `memory_tree` tool,
 | `rss` | an RSS or Atom feed's items | `url` |
 | `web` | a web page, optionally one element (config `selector`: a tag, `#id` or `.class`) | `url` |
 | `conversation` | ABP's own threads, one item per thread | - |
-| `private_project` | the PrivateProject foundry's Knowledge Modules, one item per KM | `path` |
 
 ```
 abp memory source-add private_project "PrivateProject" --path /srv/projects/PrivateProject
-abp memory source-sync <the id it printed>
-```
-
-A `private_project` source points at a PrivateProject checkout or straight at a Knowledge Module folder (a
-checkout's own store, `storage/knowledge_modules`, is found by itself). Each KM becomes one document in
-the base: its name and `km_id` as the title, its domain, subdomain and tags as the entities a model can
-match on, and the contents of its `chunks.json` as the body - so every model ABP runs can recall what the
-KMs hold, not just the ones running a PrivateProject adapter. A folder without `meta.json` is not a module
-and is skipped, an unreadable one is skipped rather than failing the sync, and a module deleted from the
-store is dropped from the base on the next sync. `max_chunks` (default: all) caps one module's facts.
-
-The same seven kinds are what `GET/POST /api/memory/sources` accepts, and `GET /api/memory/sources` reports
+abp An extension can add more kinds (`api.add_memory_source`, docs/extensions.md)./sources` reports
 each one's chunk counts and freshness (`active` / `recent` / `idle`).
