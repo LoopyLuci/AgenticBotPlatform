@@ -196,5 +196,8 @@ def remove_root(name: str, actor: str = "dashboard") -> bool:
 
 
 def _write(data: dict, yaml, actor: str) -> None:
+    from bot import config_backups
+
+    config_backups.before_write(_manager.path, actor)  # the version about to be replaced is kept
     _atomic_write_yaml(_manager.path, data, yaml)
     _manager.reload(actor=actor)

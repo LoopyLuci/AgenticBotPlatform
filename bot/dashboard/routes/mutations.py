@@ -89,6 +89,46 @@ def register(app: FastAPI) -> None:
             raise HTTPException(status_code=404, detail=f"no snapshot named {name!r}")
         return {"ok": True}
 
+    # Config history (bot/config_backups.py): a copy of each config file before every write, and a way back.
+    @app.get("/api/config/backups", dependencies=[Depends(_require_token)])
+    def api_config_backups_files():
+        from bot import config_backups
+
+        return {"files": config_backups.list_files()}
+
+    @app.get("/api/config/backups/{name}", dependencies=[Depends(_require_token)])
+    def api_config_backups_versions(name: str):
+        from bot import config_backups
+
+        try:
+            return {"file": name, "versions": config_backups.list_versions(name)}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/config/backups/{name}/{version}", dependencies=[Depends(_require_token)])
+    def api_config_backups_read(name: str, version: str):
+        from bot import config_backups
+
+        try:
+            return {"file": name, "version": version, "text": config_backups.read_masked(name, version)}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/config/backups/{name}/{version}/restore", dependencies=[Depends(_require_token)])
+    def api_config_backups_restore(name: str, version: str):
+        from bot import config_backups
+
+        try:
+            result = config_backups.restore(name, version, actor="dashboard")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        db.log_audit(actor="dashboard", action="config_restore", detail=f"{name} <- {version}")
+        return result
+
     @app.post("/api/ui-customize/generate", dependencies=[Depends(_require_token)])
     async def api_ui_customize_generate(payload: dict = Body(...)):
         from bot import ui_customize

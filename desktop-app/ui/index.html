@@ -1110,6 +1110,22 @@
         </div>
       </div>
 
+      <div class="card" style="margin-top:14px;" id="config-backups-card">
+        <h3>Config history</h3>
+        <p class="cardnote">A copy of each config file is kept before every change, and whenever the file is edited by hand. Restore puts a version back and applies it at once; the version it replaces is kept too, so a restore can be undone. Secret values are shown as &lt;hidden&gt;.</p>
+        <div class="row" style="margin-top:6px; gap:8px; align-items:center;">
+          <label class="cardnote" for="config-backups-file">File</label>
+          <select id="config-backups-file" aria-label="Config file"></select>
+        </div>
+        <div class="tablewrap" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>When</th><th>By</th><th>Restoring it would change</th><th></th></tr></thead>
+            <tbody id="config-backups-tbody"></tbody>
+          </table>
+        </div>
+        <pre id="config-backups-view" class="cardnote" style="display:none; max-height:320px; overflow:auto; white-space:pre-wrap;"></pre>
+      </div>
+
       <div class="card" style="margin-top:14px;" id="hotreload-card">
         <h3>Hot Reload</h3>
         <p class="cardnote">Applies an edit to AgenticBotPlatform's own <code>bot/*.py</code> to this already-running process — most files take effect on the very next call; Discord/Slack/Matrix code gets a brief reconnect; a documented set of core files (routing, the database connection, the dashboard itself) still need a full restart, reported here as "restart required" rather than silently skipped.</p>

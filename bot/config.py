@@ -164,6 +164,12 @@ class ConfigManager:
 
         summary = _diff_summary(old_data, new_data)
         logger.info("config reloaded -> v%d (%s)", version, summary)
+        try:  # the version now running is kept too, however it was written (a hand edit included)
+            from bot import config_backups
+
+            config_backups.after_reload(self.path, actor)
+        except Exception:  # noqa: BLE001
+            logger.exception("could not keep a copy of the reloaded config")
 
         for cb in self._on_reload:
             try:
@@ -223,6 +229,9 @@ class ConfigManager:
         tmp_path = self.path.with_suffix(".yaml.tmp")
         with open(tmp_path, "w", encoding="utf-8") as f:
             y.dump(data, f)
+        from bot import config_backups
+
+        config_backups.before_write(self.path, actor)  # the version about to be replaced is kept
         tmp_path.replace(self.path)  # atomic on the same filesystem
         self.reload(actor=actor)
 

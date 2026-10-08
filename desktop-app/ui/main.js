@@ -1076,6 +1076,55 @@ document.getElementById('btn-snapshot-create').onclick = async () => {
   refreshSnapshots();
 };
 
+// ------------------------------------------------------ config history ----
+// bot/config_backups.py: every config file is copied before each change; restore puts a version back.
+async function refreshConfigBackups() {
+  const select = document.getElementById('config-backups-file');
+  const tbody = document.getElementById('config-backups-tbody');
+  if (!getToken() || !select || !tbody) return;
+  let files;
+  try {
+    files = (await api('/api/config/backups')).files || [];
+  } catch (_e) { return; }
+  const chosen = select.value || (files[0] && files[0].file) || '';
+  select.innerHTML = files.map(f => `<option value="${esc(f.file)}">${esc(f.file)} (${f.versions})</option>`).join('');
+  select.value = chosen;
+  select.onchange = () => { document.getElementById('config-backups-view').style.display = 'none'; refreshConfigBackups(); };
+  if (!chosen) { tbody.innerHTML = '<tr><td colspan="4" class="cardnote">No config files.</td></tr>'; return; }
+  let versions;
+  try {
+    versions = (await api(`/api/config/backups/${encodeURIComponent(chosen)}`)).versions || [];
+  } catch (_e) { return; }
+  tbody.innerHTML = versions.length ? versions.map(v => `
+    <tr>
+      <td title="${esc(v.reason || '')}">${esc(new Date(v.time).toLocaleString())}</td>
+      <td>${esc(v.actor)}</td>
+      <td class="cardnote">${esc(v.restoring_changes)}</td>
+      <td>
+        <button class="btn small" data-cfgbk-view="${esc(v.version)}">View</button>
+        <button class="btn small" data-cfgbk-restore="${esc(v.version)}">Restore</button>
+      </td>
+    </tr>`).join('') : '<tr><td colspan="4" class="cardnote">No earlier versions kept yet: one is kept at the next change.</td></tr>';
+  tbody.querySelectorAll('[data-cfgbk-view]').forEach(btn => btn.onclick = async () => {
+    const view = document.getElementById('config-backups-view');
+    try {
+      const r = await api(`/api/config/backups/${encodeURIComponent(chosen)}/${encodeURIComponent(btn.dataset.cfgbkView)}`);
+      view.textContent = r.text;
+      view.style.display = 'block';
+    } catch (e) { showToast(e.message || 'Could not read that version.', 'error'); }
+  });
+  tbody.querySelectorAll('[data-cfgbk-restore]').forEach(btn => btn.onclick = async () => {
+    const version = btn.dataset.cfgbkRestore;
+    if (!confirm(`Restore ${chosen} to the version from ${btn.closest('tr').cells[0].textContent}? The current version is kept, so this can be undone.`)) return;
+    try {
+      const r = await api(`/api/config/backups/${encodeURIComponent(chosen)}/${encodeURIComponent(version)}/restore`, { method: 'POST' });
+      showToast(`Restored ${chosen}${r.summary ? ': ' + r.summary : ''}`, 'info');
+    } catch (e) { showToast(e.message || 'Restore failed.', 'error'); return; }
+    refreshConfig();
+    refreshConfigBackups();
+  });
+}
+
 // ------------------------------------------------------- customize UI ----
 let _customizePendingChange = null; // {change_id, target} for the last generated-but-not-yet-applied change
 
@@ -1470,6 +1519,8 @@ function startDashboardPolling() {
   pollWhenVisible(refreshPlugins, 15000, 'bots');
   refreshSnapshots();
   pollWhenVisible(refreshSnapshots, 15000);
+  refreshConfigBackups();
+  pollWhenVisible(refreshConfigBackups, 30000);
   refreshCustomizeHistory();
   refreshHotReload();
   pollWhenVisible(refreshHotReload, 15000, 'control');
