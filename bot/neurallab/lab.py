@@ -2,7 +2,7 @@
 stop it, compare runs, search designs.
 
     <lab home>/runs/<id>/{job.json, status.json, worker.log, best.pt, export/}
-    <lab home>/designs/<name>.json            saved specs (from the GUI's designer, BrainBuilder, PrivateProject, templates)
+    <lab home>/designs/<name>.json            saved specs (from the GUI's designer, BrainBuilder, importers, templates)
 
 The lab home is <localai home>/lab. Training shares the GPU with ABP's other
 GPU work: one run at a time, queued otherwise. Each run's worker process lives in its own sandbox_ns cell
@@ -82,8 +82,9 @@ def _slug(s: str) -> str:
 # ---- runs ---------------------------------------------------------------------------------------------------------- #
 
 def start(spec: dict, data: dict, train: Optional[dict] = None, label: str = "", **extra) -> dict:
-    """Train a design on the GPU. data: {"path", "target"?, "features"?, "tokenizer"?}. extra: init_kmoe (a PrivateProject
-    checkpoint to start from), init_weights, kmoe (write PrivateProject's format too), sample_prompt, allow_cpu."""
+    """Train a design on the GPU. data: {"path", "target"?, "features"?, "tokenizer"?}. extra: init_from ({format,
+    path}: a checkpoint an extension's worker plugin reads), init_weights, export (the plugin formats to write; default
+    every one that applies), sample_prompt, allow_cpu."""
     if not lt.python().exists():
         raise LocalAIError("the training environment is not set up: `abp ai train setup` or the Local AI page")
     s = specs.validate(spec)
@@ -96,7 +97,10 @@ def start(spec: dict, data: dict, train: Optional[dict] = None, label: str = "",
     rid = time.strftime("%Y%m%d-%H%M%S") + f"-{random.randrange(16**3):03x}"
     run = _dir("runs") / rid
     run.mkdir()
-    job = {"spec": s, "data": data, "train": train or {}, "label": label or s["name"], "cpu_threads": cpu_threads(), **extra}
+    from bot import extensions
+
+    job = {"spec": s, "data": data, "train": train or {}, "label": label or s["name"], "cpu_threads": cpu_threads(),
+           "plugins": [str(p) for p in extensions.loaded().lab_worker_plugins], **extra}
     (run / "job.json").write_text(json.dumps(job, indent=1), encoding="utf-8")
     (run / "status.json").write_text(json.dumps({"state": "starting", "time": time.time()}), encoding="utf-8")
     logf = open(run / "worker.log", "ab")

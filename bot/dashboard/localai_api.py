@@ -22,10 +22,7 @@ server's own API: Ollama's and OpenAI's, on port 11436.)
     GET     /api/lab/designs                      PUT /designs/{name} {spec};  GET /designs/{name}
     POST    /api/lab/runs                         {spec | design, data, train?, ...} -> the run;  GET /runs/{id}; POST /runs/{id}/stop
     POST    /api/lab/autotune                     {spec, data, space, trials?, metric?} -> a run
-    GET     /api/lab/projects                     the toolkit's projects; GET /brainbuilder, /private_project; POST /import {kind, ...}
-    GET     /api/lab/private_project                        the PRIVATE_PROJECT family: its checkpoints, its configs, whether it is here
-    GET     /api/lab/private_project/config?config=         one config's three layers and the numbers that describe the model
-    POST    /api/lab/private_project/generate               {ckpt?, prompt?, max_new?, config?, timeout?} -> one rollout
+    GET     /api/lab/projects                     the toolkit's projects; GET /brainbuilder, /importers; POST /import {kind, ...}
     POST    /api/lab/export/brainbuilder          {spec, path}
     GET     /api/lab/systune                      system models, CPU policy, telemetry;  POST /systune/bench {kind} -> a run
     POST    /api/lab/systune/train                {kind} -> the run;  GET /systune/advice?kind=&...
@@ -210,7 +207,7 @@ def register(app: FastAPI, require_token: Callable) -> None:
 
 
 def _register_lab(app: FastAPI, dep: list) -> None:
-    from bot.neurallab import interop, lab, private_project, spec, systune, telemetry
+    from bot.neurallab import interop, lab, spec, systune, telemetry
     from bot.neurallab import service as lab_service
     L = "/api/lab"
 
@@ -244,7 +241,7 @@ def _register_lab(app: FastAPI, dep: list) -> None:
         data = b.pop("data", None)
         if not data:
             raise HTTPException(400, "data is required ({path, target?, tokenizer?})")
-        extra = {k: b[k] for k in ("init_kmoe", "init_weights", "kmoe", "sample_prompt", "sample_tokens") if k in b}
+        extra = {k: b[k] for k in ("init_from", "init_weights", "export", "sample_prompt", "sample_tokens") if k in b}
         return await _t(lab.start, s, data, b.get("train"), b.get("label", ""), **extra)
 
     @app.get(f"{L}/runs", dependencies=dep)
@@ -274,43 +271,20 @@ def _register_lab(app: FastAPI, dep: list) -> None:
     async def lab_projects():
         return interop.projects()
 
-    @app.get(f"{L}/private_project", dependencies=dep)
-    async def lab_private_project(limit: int = Query(200, ge=1, le=1000)):
-        return {"status": await _t(private_project.status), "checkpoints": await _t(private_project.checkpoints, limit),
-                "configs": await _t(private_project.configs), "default_config": private_project.DEFAULT_CONFIG}
-
-    @app.get(f"{L}/private_project/config", dependencies=dep)
-    async def lab_private_project_config(config: str = Query(private_project.DEFAULT_CONFIG)):
-        return await _t(private_project.config, config)
-
-    @app.post(f"{L}/private_project/generate", dependencies=dep)
-    async def lab_private_project_generate(body: dict = Body(default={})):
-        return await _t(private_project.generate, str(body.get("ckpt", "")), str(body.get("prompt", "Once upon a time")),
-                        int(body.get("max_new", 32)), str(body.get("config") or private_project.DEFAULT_CONFIG),
-                        float(body.get("timeout", 900.0)))
-
     @app.get(f"{L}/brainbuilder", dependencies=dep)
     async def lab_bb():
         return await _t(interop.brainbuilder_graphs)
 
-    @app.get(f"{L}/private_project", dependencies=dep)
-    async def lab_private_project():
-        return {"registry": await _t(interop.private_project_registry), "checkpoints": await _t(interop.private_project_checkpoints)}
+    @app.get(f"{L}/importers", dependencies=dep)
+    async def lab_importers():
+        return await _t(interop.importers)
 
     @app.post(f"{L}/import", dependencies=dep)
     async def lab_import(body: dict = Body(...)):
-        kind = body.get("kind")
-        if kind == "brainbuilder":
-            s = await _t(interop.from_bbir, body["path"])
-        elif kind == "private_project-registry":
-            row = next((r for r in interop.private_project_registry() if r["id"] == body["id"]), None)
-            if not row:
-                raise HTTPException(404, f"no PrivateProject registry entry {body.get('id')}")
-            s = interop.from_private_project_registry(row)
-        elif kind == "private_project-checkpoint":
-            s = await _t(interop.from_kmoe, body["path"])
-        else:
-            raise HTTPException(400, "kind is brainbuilder, private_project-registry or private_project-checkpoint")
+        try:
+            s = await _t(interop.import_design, body)
+        except (LookupError, FileNotFoundError) as e:
+            raise HTTPException(404, str(e.args[-1] if isinstance(e, FileNotFoundError) else e.args[0] if e.args else e)) from e
         if body.get("save", True):
             await _t(lab.save_design, s, body.get("name", ""))
         return {"spec": s, "text": spec.describe(s)}

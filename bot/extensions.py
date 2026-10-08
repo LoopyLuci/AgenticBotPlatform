@@ -216,6 +216,8 @@ class Extension:
             "backend_classes": sorted(self.api.backend_classes),
             "integration_presets": sorted(self.api.integration_presets),
             "lab_importers": sorted(self.api.lab_importers),
+            "lab_projects": sorted(self.api.lab_projects),
+            "lab_families": sorted(self.api.lab_families),
             "memory_sources": sorted(self.api.memory_sources),
             "model_locations": [m["app"] for m in self.api.model_locations],
             "lab_worker_plugins": [str(p) for p in self.api.lab_worker_plugins],
@@ -247,6 +249,8 @@ class ExtensionAPI:
         self.integration_scopes: dict[str, list[tuple[str, str]]] = {}
         self.integration_presets: dict[str, dict] = {}
         self.lab_importers: dict[str, dict] = {}
+        self.lab_projects: dict[str, str] = {}
+        self.lab_families: dict[str, dict] = {}
         self.memory_sources: dict[str, dict] = {}
         self.model_locations: list[dict] = []
         self.lab_worker_plugins: list[Path] = []
@@ -354,6 +358,17 @@ class ExtensionAPI:
             raise TypeError(f"extension {self.name}: add_lab_importer() needs a callable run")
         self.lab_importers[str(kind)] = {"label": str(label), "run": run, "list": list_items}
 
+    def add_lab_project(self, key: str, folder: str) -> None:
+        """A project the Neural Lab lists (its Projects card): found as <ABP_PROJECTS_DIR>/<folder>."""
+        self.lab_projects[str(key)] = str(folder)
+
+    def add_lab_family(self, family_id: str, *, label: str, status: Callable) -> None:
+        """A model family the lab runs but does not train (its own checkpoints, its own runtime): `status() ->
+        {"present", ...}` is shown in the lab's overview."""
+        if not callable(status):
+            raise TypeError(f"extension {self.name}: add_lab_family() needs a callable status")
+        self.lab_families[str(family_id)] = {"label": str(label), "status": status}
+
     def add_memory_source(self, kind: str, *, required: list, read: Callable, item_kind: str = "note",
                           complete: bool = True, label: str = "") -> None:
         """A kind of memory-fabric source (bot/memoryfabric/sources.py), like "folder" or "web".
@@ -459,6 +474,14 @@ class Loaded:
     @property
     def memory_sources(self) -> dict[str, dict]:
         return self._merged("memory_sources")
+
+    @property
+    def lab_projects(self) -> dict[str, str]:
+        return self._merged("lab_projects")
+
+    @property
+    def lab_families(self) -> dict[str, dict]:
+        return self._merged("lab_families")
 
     @property
     def model_locations(self) -> list[dict]:

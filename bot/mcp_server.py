@@ -1266,7 +1266,7 @@ async def localai_discover() -> Any:
 
 @mcp.tool()
 async def lab_status() -> Any:
-    """ABP's Neural Lab: training runs, saved designs, the toolkit's projects (BrainBuilder, PrivateProject, Amethyst, PrivateProject),
+    """ABP's Neural Lab: training runs, saved designs, the toolkit's projects (BrainBuilder, Amethyst, extensions'),
     the ops a design can use, the system models and the CPU policy."""
     return await _request("GET", "/api/lab", timeout=60.0)
 

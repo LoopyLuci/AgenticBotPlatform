@@ -8,7 +8,7 @@ A spec is JSON:
      "nodes": [{"id": "h", "op": "linear", "in": "input", "params": {"out": 64}}, ...],
      "output": "head",                                           the node whose output is the model's output
      "train": {"loss": "mse", "lr": 1e-3, "epochs": 20, ...},
-     "origin": {"project": "brainbuilder", "path": "..."}}       where it came from (BrainBuilder, PrivateProject, ...)
+     "origin": {"project": "brainbuilder", "path": "..."}}       where it came from (BrainBuilder, an importer, ...)
 
 or, for a plain stack, "layers": [{"op": "linear", "out": 64}, {"op": "gelu"}, ...] instead of "nodes" (each layer
 takes the previous one's output). "in" may be a list for add / concat. Shapes are inferred node by node (sizes
@@ -366,7 +366,7 @@ def moe_regressor(name: str, features: int, outputs: int = 1, dim: int = 64, exp
 
 def moe_lm(name: str, vocab: int, ctx: int, dim: int = 256, layers: int = 4, heads: int = 4, experts: int = 8,
            top_k: int = 2, hidden: int = 512) -> dict:
-    """A decoder-only mixture-of-experts language model (the PrivateProject-gen design)."""
+    """A decoder-only mixture-of-experts language model (GPT-2 blocks whose MLP is a routed set of experts)."""
     nodes = [{"id": "emb", "op": "embedding", "in": "input", "params": {"vocab": vocab, "dim": dim}}]
     prev = "emb"
     for i in range(layers):

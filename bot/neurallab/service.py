@@ -2,8 +2,8 @@
 
     run_forever(stop_event)   ABP's background task: the telemetry recorder (every 10 s), systune.tick every 5
                               minutes (adopt finished system-model runs; retrain when their data has grown)
-    overview()                runs, designs, the projects (BrainBuilder, PrivateProject, Amethyst, PrivateProject), the model
-                              families ABP only runs (PRIVATE_PROJECT), system models
+    overview()                runs, designs, the projects (BrainBuilder, Amethyst, extensions'), the model
+                              families ABP only runs (from extensions), system models
 """
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import asyncio
 import logging
 import time
 
-from bot.neurallab import interop, lab, private_project, spec, systune, telemetry
+from bot.neurallab import interop, lab, spec, systune, telemetry
 
 logger = logging.getLogger(__name__)
 _recorder: telemetry.Recorder | None = None
@@ -24,9 +24,22 @@ def settings() -> dict:
             "auto_retrain": st.get("lab_auto_retrain", True)}
 
 
+def families() -> list[dict]:
+    """Model families an extension added to the lab (bot/extensions.py add_lab_family): each one's own status."""
+    from bot import extensions
+
+    out = []
+    for fid, fam in extensions.loaded().lab_families.items():
+        try:
+            out.append({"id": fid, "label": fam["label"], **(fam["status"]() or {})})
+        except Exception as e:  # noqa: BLE001 - a family that cannot answer says so
+            out.append({"id": fid, "label": fam["label"], "present": False, "error": str(e)})
+    return out
+
+
 def overview() -> dict:
     return {"runs": lab.runs(30), "designs": lab.designs(), "projects": interop.projects(), "ops": spec.ops_catalog(),
-            "private_project": private_project.status(), "systune": systune.status(), "settings": settings(),
+            "families": families(), "systune": systune.status(), "settings": settings(),
             "recording": bool(_recorder and _recorder.thread and _recorder.thread.is_alive())}
 
 

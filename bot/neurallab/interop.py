@@ -2,13 +2,11 @@
 
     BrainBuilder  graphs (*.bbir.edn: nodes of components, edges between ports, a training block) <-> specs; its
                   examples and saved graphs listed; a lab design written back as a graph BrainBuilder opens
-    PrivateProject        the auto-training registry's MoE classifier designs -> specs; private_project-gen checkpoints (model.kmoe:
-                  the generative MoE transformer) -> a spec plus the weights, so training continues on the GPU here and
-                  the result goes back as model.kmoe; its MNIST data (IDX files) -> a lab dataset
+    MNIST data    IDX files -> a lab dataset (npz)
     Amethyst      a fine-tuned LoRA (bot/localai/train.py) -> a module package (.apkg: manifest.json, weights/, templates/,
                   tests/) and installed into Amethyst with its own CLI; its installed modules listed
-    PrivateProject      shares ABP's model store (PRIVATE_PROJECT_MODEL_DIRS, set when ABP starts it) and ABP reads ~/.private_project/models
-                  (bot/localai/discover.py)
+    extensions    more importers and projects (bot/extensions.py add_lab_importer, add_lab_project): import_design()
+                  and importers() below ask them
 
 Projects are found at ABP_PROJECTS_DIR (default: the folder holding ABP's checkout), each by its usual folder name.
 """
@@ -28,21 +26,26 @@ from bot.localai.paths import LocalAIError
 from bot.neurallab import edn
 from bot.neurallab import spec as specs
 
-PROJECTS = {"brainbuilder": "BrainBuilder", "private_project": "PrivateProject", "amethyst": "AmethystModularScalableModelArchitechture",
-            "private_project": "PrivateProject"}
+PROJECTS = {"brainbuilder": "BrainBuilder", "amethyst": "AmethystModularScalableModelArchitechture"}
+
+
+def _projects() -> dict[str, str]:
+    from bot import extensions
+
+    return {**extensions.loaded().lab_projects, **PROJECTS}
 _NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 
 def project_dir(key: str) -> Optional[Path]:
     from bot.envfile import PROJECT_ROOT
     base = Path(os.environ.get("ABP_PROJECTS_DIR") or PROJECT_ROOT.parent)
-    p = base / PROJECTS[key]
+    p = base / _projects()[key]
     return p if p.is_dir() else None
 
 
 def projects() -> list[dict]:
     out = []
-    for key, folder in PROJECTS.items():
+    for key, folder in _projects().items():
         p = project_dir(key)
         out.append({"id": key, "folder": folder, "path": str(p) if p else None, "present": bool(p)})
     return out
@@ -193,74 +196,7 @@ def brainbuilder_graphs() -> list[dict]:
     return out
 
 
-# ---- PrivateProject ------------------------------------------------------------------------------------------------------- #
-
-_REG_COLS = ["id", "experts", "hidden", "top_k", "capacity", "batch", "accum", "epochs", "lr", "weight_decay", "aux",
-             "dropout", "best_acc", "last_acc", "epoch", "expanded", "model_path", "inference_path", "status"]
-
-
-def private_project_registry() -> list[dict]:
-    root = project_dir("private_project")
-    f = root / "auto_training_registry.json" if root else None
-    if not f or not f.exists():
-        return []
-    out = []
-    for line in f.read_text(encoding="utf-8").splitlines():
-        parts = line.strip().split("|")
-        if len(parts) >= 13:
-            out.append(dict(zip(_REG_COLS, parts)))
-    return out
-
-
-def from_private_project_registry(row: dict) -> dict:
-    """PrivateProject's MoE classifier (784 inputs -> dense -> experts -> 10 classes) as a lab design (same architecture and
-    hyperparameters; PrivateProject's .bin weights are its own Java serialisation and stay in PrivateProject)."""
-    h, e, k = int(row["hidden"]), int(row["experts"]), int(row["top_k"])
-    return {"name": f"private_project-{row['id']}", "task": "classify", "input": {"kind": "features", "size": 784},
-            "nodes": [{"id": "dense", "op": "linear", "in": "input", "params": {"out": h}},
-                      {"id": "act", "op": "relu", "in": "dense"},
-                      {"id": "drop", "op": "dropout", "in": "act", "params": {"p": float(row.get("dropout") or 0)}},
-                      {"id": "experts", "op": "moe", "in": "drop", "params": {"experts": e, "top_k": k, "hidden": h,
-                                                                               "aux": float(row.get("aux") or 0.01)}},
-                      {"id": "out", "op": "linear", "in": "experts", "params": {"out": 10}}],
-            "output": "out", "train": {"lr": float(row["lr"]), "weight_decay": float(row["weight_decay"]),
-                                       "epochs": int(row["epochs"]), "batch_size": int(row["batch"])},
-            "origin": {"project": "private_project", "registry_id": row["id"], "private_project_best_accuracy": float(row.get("best_acc") or 0)}}
-
-
-def kmoe_header(path: str | Path) -> dict:
-    with open(path, "rb") as f:
-        head = f.read(48)
-    if len(head) < 48 or struct.unpack(">ii", head[:8]) != (0x4B4D4F45, 1):
-        raise LocalAIError(f"{path} is not a PrivateProject-gen checkpoint")
-    v = struct.unpack(">8i", head[8:40])
-    aux, step = struct.unpack(">fi", head[40:48])
-    return dict(zip(["vocab", "ctx", "dim", "layers", "heads", "experts", "top_k", "hidden"], v), aux=aux, step=step)
-
-
-def from_kmoe(path: str | Path) -> dict:
-    """A private_project-gen checkpoint -> its design (weights load at training time with init_kmoe)."""
-    h = kmoe_header(path)
-    s = specs.moe_lm(f"private_project-gen-{Path(path).parent.name}", h["vocab"], h["ctx"], h["dim"], h["layers"], h["heads"],
-                     h["experts"], h["top_k"], h["hidden"])
-    for n in s["nodes"]:
-        if n["op"] == "transformer_block":
-            n["params"]["aux"] = h["aux"]
-    s["origin"] = {"project": "private_project", "design": "private_project-gen", "checkpoint": str(path), "step": h["step"]}
-    return s
-
-
-def private_project_checkpoints() -> list[dict]:
-    out = []
-    roots = [p for p in (project_dir("private_project"), Path("/path/redacted")) if p and p.exists()]
-    for r in roots:
-        for f in r.rglob("model.kmoe"):
-            try:
-                out.append({"path": str(f), **kmoe_header(f)})
-            except (LocalAIError, OSError):
-                continue
-    return out
-
+# ---- MNIST-style data ---------------------------------------------------------------------------------------- #
 
 def idx_to_npz(images: str | Path, labels: str | Path, out: str | Path, limit: int = 0) -> dict:
     """MNIST-style IDX files (PrivateProject's mnist_data) -> a lab dataset (X: pixels 0..1, y: the digit)."""
@@ -384,18 +320,33 @@ def amethyst_modules() -> str:
     return amethyst("list")
 
 
-# ---- PrivateProject ----------------------------------------------------------------------------------------------------- #
+# ---- importing a design ------------------------------------------------------------------------------------------ #
 
-def private_project_status() -> dict:
-    """Whether PrivateProject's inference server is up and which of its models come from ABP's store."""
-    import httpx
-    from bot.localai import models
-    try:
-        r = httpx.get("http://127.0.0.1:11435/api/tags", timeout=3)
-        tags = r.json().get("models", []) if r.status_code == 200 else []
-        up = r.status_code == 200
-    except (httpx.HTTPError, ValueError):
-        tags, up = [], False
-    store = str(models.store_root())
-    return {"up": up, "models": len(tags), "store_shared": store, "env": {"PRIVATE_PROJECT_MODEL_DIRS": store},
-            "note": "ABP starts PrivateProject with PRIVATE_PROJECT_MODEL_DIRS set to its store, so PrivateProject runs ABP's models in place"}
+def import_design(body: dict) -> dict:
+    """A design spec from one of the importers: "brainbuilder" ({path}) or an extension's kind. An importer raises
+    LookupError for something it cannot find (the API answers 404) and LocalAIError/ValueError for a bad request."""
+    from bot import extensions
+
+    kind = str(body.get("kind") or "")
+    if kind == "brainbuilder":
+        return from_bbir(body["path"])
+    imp = extensions.loaded().lab_importers.get(kind)
+    if imp is None:
+        kinds = ["brainbuilder", *extensions.loaded().lab_importers]
+        raise ValueError(f"kind is one of {', '.join(kinds)}")
+    return imp["run"](body)
+
+
+def importers() -> list[dict]:
+    """Every extension's importer with what it offers now: [{kind, label, items: [{id, label, detail, body}]}]."""
+    from bot import extensions
+
+    out = []
+    for kind, imp in extensions.loaded().lab_importers.items():
+        row = {"kind": kind, "label": imp["label"], "items": []}
+        try:
+            row["items"] = list(imp["list"]() or []) if imp.get("list") else []
+        except Exception as e:  # noqa: BLE001 - one importer's failure is its own row's note
+            row["error"] = str(e)
+        out.append(row)
+    return out

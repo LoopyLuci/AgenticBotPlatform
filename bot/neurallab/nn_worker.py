@@ -6,10 +6,10 @@ exports it. Runs in the training environment (<localai home>/venv-train), never 
 Data (job["data"]):
     {"path": "x.csv" | "x.jsonl" | "x.npz", "target": "col", "features": [...]}     features / regress / classify
     {"path": "x.npz"}                     arrays X (N,F) or (N,T,F) and y; anomaly needs X only
-    {"path": "corpus.txt", "tokenizer": "byte" | "<private_project .bpe file>" | "<HF tokenizer folder>"}   language models
+    {"path": "corpus.txt", "tokenizer": "byte" | "words" | "<tokenizer file a plugin reads>" | "<HF tokenizer folder>"}
 Exports (in <run>/export/): weights.safetensors, weights.npz (for ABP's numpy inference of small models), model.json
-(the spec, input normalisation, labels, metrics), and model.kmoe when the design is PrivateProject-gen (PrivateProject's own checkpoint
-format, loadable by PrivateProject's Kotlin runtime).
+(the spec, input normalisation, labels, metrics), and a checkpoint in every format a plugin writes for this design.
+job["init_from"] = {"format", "path"} starts from a checkpoint a plugin reads; job["plugins"] lists the plugin files.
 
 Standalone (no ABP imports). CPU threads capped; a GPU is required unless the job says allow_cpu.
 """
@@ -20,7 +20,6 @@ import json
 import math
 import os
 import random
-import struct
 import sys
 import time
 from pathlib import Path
@@ -67,7 +66,7 @@ class MLP(nn.Module):
 class MoE(nn.Module):
     """Top-k routing over expert MLPs, gates renormalised over the chosen experts, and the Switch/GShard balance loss
     (aux = coef * E * sum_e f_e * P_e, f = share of rows whose first choice is e, P = mean router probability) — the
-    same maths as PrivateProject's Kotlin model, so weights move between them."""
+    standard formulation, so weights move to and from other implementations of it."""
 
     def __init__(self, d, h, experts, top_k=2, out=None, aux=0.01, shared_expert=False, act="gelu", router_bias=False):
         super().__init__()
@@ -289,7 +288,7 @@ class Graph(nn.Module):
             self._gpt_init(sum(1 for _, op in self.order if op in ("transformer_block", "attention")))
 
     def _gpt_init(self, layers: int) -> None:
-        """PrivateProject's (GPT-2's) initialisation for token models: N(0, 0.02), residual projections scaled by
+        """GPT-2's initialisation for token models: N(0, 0.02), residual projections scaled by
         1/sqrt(2 * layers), norms at 1, biases at 0. (PyTorch's N(0, 1) embedding would make a tied head's first
         logits huge: a starting loss far above ln(vocab).)"""
         proj_std = 0.02 / math.sqrt(2 * max(1, layers))
@@ -334,60 +333,28 @@ def _in_shape(inp):
     return (int(inp["size"]),) if k == "features" else ("tok", int(inp["ctx"])) if k == "tokens" else (int(inp["steps"]), int(inp["size"]))
 
 
-# ---- PrivateProject-gen checkpoints (PrivateProject's Kotlin format, big-endian floats) ------------------------------------------- #
+# ---- formats an extension adds (bot/extensions.py add_lab_worker_plugin) ----------------------------------------- #
+# A plugin is a Python file with register(worker): it is handed this module and adds to the three registries below.
+# lab.start() lists every loaded extension's plugin in job["plugins"]; main() imports them by file location.
 
-def kmoe_order(model: Graph):
-    """PrivateProject's parameter order: wte, wpe, per block (ln1, qkv, attproj, ln2, router, experts fc/proj), lnf."""
-    emb = next(m for m in model.modules() if isinstance(m, Embed))
-    out = [emb.wte.weight, emb.wpe.weight]
-    for b in (m for m in model.modules() if isinstance(m, Block)):
-        out += [b.ln1.weight, b.ln1.bias, b.attn.qkv.weight, b.attn.qkv.bias, b.attn.proj.weight, b.attn.proj.bias,
-                b.ln2.weight, b.ln2.bias, b.ff.router.weight]
-        for e in b.ff.experts:
-            out += [e.fc.weight, e.fc.bias, e.proj.weight, e.proj.bias]
-    lnf = [m for m in model.modules() if isinstance(m, nn.LayerNorm)][-1]
-    return out + [lnf.weight, lnf.bias]
+TOKENIZER_LOADERS: list = []      # fn(path) -> a tokenizer (encode/decode/vocab), or None when the file is not its format
+CHECKPOINT_READERS: dict = {}     # format -> fn(model, spec, path) -> the step the checkpoint was saved at
+CHECKPOINT_WRITERS: dict = {}     # format -> (applies(spec) -> bool, write(model, spec, path, step), file name)
 
 
-def kmoe_config(spec: dict) -> list[int]:
-    blocks = [n for n in spec["nodes"] if n["op"] == "transformer_block"]
-    emb = next(n for n in spec["nodes"] if n["op"] == "embedding")
-    p = blocks[0]["params"]
-    dim = int(emb["params"]["dim"])
-    return [int(emb["params"]["vocab"]), int(spec["input"]["ctx"]), dim, len(blocks), int(p.get("heads", 4)),
-            int(p["experts"]), int(p.get("top_k", 2)), int(p.get("hidden", 4 * dim))]
+def load_plugins(paths) -> list[str]:
+    import importlib.util
 
-
-def save_kmoe(model: Graph, spec: dict, path: Path, step: int) -> None:
-    aux = float(next(n for n in spec["nodes"] if n["op"] == "transformer_block")["params"].get("aux", 0.01))
-    with open(path, "wb") as f:
-        f.write(struct.pack(">ii", 0x4B4D4F45, 1))
-        f.write(struct.pack(">8i", *kmoe_config(spec)))
-        f.write(struct.pack(">fi", aux, step))
-        for t in kmoe_order(model):
-            f.write(t.detach().float().cpu().contiguous().numpy().astype(">f4").tobytes())
-
-
-def load_kmoe(model: Graph, spec: dict, path: Path) -> int:
-    import numpy as np
-    data = Path(path).read_bytes()
-    magic, ver = struct.unpack(">ii", data[:8])
-    if magic != 0x4B4D4F45 or ver != 1:
-        raise ValueError(f"{path} is not a PrivateProject checkpoint")
-    cfg = list(struct.unpack(">8i", data[8:40]))
-    if cfg != kmoe_config(spec):
-        raise ValueError(f"{path} is {cfg}, the spec is {kmoe_config(spec)} (vocab ctx dim layers heads experts topK hidden)")
-    _aux, step = struct.unpack(">fi", data[40:48])
-    off = 48
-    with torch.no_grad():
-        for t in kmoe_order(model):
-            n = t.numel()
-            arr = np.frombuffer(data, dtype=">f4", count=n, offset=off).astype("float32")
-            t.copy_(torch.from_numpy(arr).view_as(t))
-            off += 4 * n
-    if off != len(data):
-        raise ValueError(f"{path}: {len(data) - off} bytes left over (not the same design)")
-    return step
+    loaded = []
+    for i, p in enumerate(paths or []):
+        spec_ = importlib.util.spec_from_file_location(f"_lab_worker_plugin_{i}", p)
+        if spec_ is None or spec_.loader is None:
+            raise ImportError(f"cannot load the lab worker plugin {p}")
+        mod = importlib.util.module_from_spec(spec_)
+        spec_.loader.exec_module(mod)
+        mod.register(sys.modules[__name__])
+        loaded.append(str(p))
+    return loaded
 
 
 # ---- tokenizers ---------------------------------------------------------------------------------------------------- #
@@ -400,74 +367,6 @@ class ByteTok:
 
     def decode(self, ids):
         return bytes(i for i in ids if i < 256).decode("utf-8", "replace")
-
-
-class PrivateProjectTok:
-    """PrivateProject's byte-level BPE (private_project-bpe 1 files), the same pieces and merges as Tokenizer.kt."""
-
-    def __init__(self, path):
-        lines = Path(path).read_text(encoding="utf-8").splitlines()
-        if lines[0] != "private_project-bpe 1":
-            raise ValueError(f"{path} is not a PrivateProject tokenizer")
-        self.merges = [tuple(map(int, l.split())) for l in lines[1:] if l.strip()]
-        self.rank = {m: 256 + i for i, m in enumerate(self.merges)}
-        self.bytes = [bytes([i]) for i in range(256)]
-        for a, b in self.merges:
-            self.bytes.append(self.bytes[a] + self.bytes[b])
-        self.vocab = 256 + len(self.merges)
-
-    @staticmethod
-    def pieces(text):
-        out, i, n = [], 0, len(text)
-        w = lambda c: c.isalnum() or c == "_"
-        while i < n:
-            start, c = i, text[i]
-            if c == " " and i + 1 < n and w(text[i + 1]):
-                i += 1
-                while i < n and w(text[i]):
-                    i += 1
-            elif w(c):
-                while i < n and w(text[i]):
-                    i += 1
-            elif c in " \t":
-                while i < n and text[i] in " \t":
-                    i += 1
-                if i < n and w(text[i]) and text[i - 1] == " " and i - 1 > start:
-                    i -= 1
-            else:
-                i += 1
-            if i == start:
-                i += 1
-            out.append(text[start:i])
-        return out
-
-    def _piece(self, bs):
-        ids = list(bs)
-        while len(ids) > 1:
-            best = min(((self.rank.get((ids[j], ids[j + 1]), 1 << 30), j) for j in range(len(ids) - 1)), default=(1 << 30, -1))
-            if best[0] >= 1 << 30:
-                break
-            r, out, j = best[0], [], 0
-            while j < len(ids):
-                if j < len(ids) - 1 and self.rank.get((ids[j], ids[j + 1])) == r:
-                    out.append(r)
-                    j += 2
-                else:
-                    out.append(ids[j])
-                    j += 1
-            ids = out
-        return ids
-
-    def encode(self, s):
-        cache, out = {}, []
-        for p in self.pieces(s):
-            if p not in cache:
-                cache[p] = self._piece(p.encode("utf-8"))
-            out += cache[p]
-        return out
-
-    def decode(self, ids):
-        return b"".join(self.bytes[i] for i in ids if i < len(self.bytes)).decode("utf-8", "replace")
 
 
 class HFTok:
@@ -509,7 +408,12 @@ def tokenizer(name, text="", vocab=0):
         return ByteTok()
     p = Path(name)
     if p.is_file():
-        return PrivateProjectTok(p)
+        for load in TOKENIZER_LOADERS:
+            tok = load(p)
+            if tok is not None:
+                return tok
+        raise ValueError(f"{p}: no tokenizer format recognises this file (byte, words, an HF tokenizer folder, or a "
+                         f"format an extension adds)")
     return HFTok(name)
 
 
@@ -593,6 +497,7 @@ def main() -> int:
     if guard is not None:
         guard.install()
     job = json.loads((RUN / "job.json").read_text(encoding="utf-8"))
+    load_plugins(job.get("plugins"))
     torch.set_num_threads(int(job.get("cpu_threads", 4)))
     spec = job["spec"]
     tr = {**spec.get("train", {}), **job.get("train", {})}
@@ -605,9 +510,15 @@ def main() -> int:
         return 2
     report(state="loading", device=torch.cuda.get_device_name(0) if dev == "cuda" else "cpu")
     model = Graph(spec).to(dev)
-    if job.get("init_kmoe"):
-        report(state="loading", note=f"weights from PrivateProject checkpoint {job['init_kmoe']}")
-        load_kmoe(model, spec, Path(job["init_kmoe"]))
+    init = job.get("init_from") or {}
+    if init:
+        read_ckpt = CHECKPOINT_READERS.get(str(init.get("format")))
+        if read_ckpt is None:
+            report(state="failed", error=f"no reader for checkpoint format {init.get('format')!r} "
+                                         f"(known: {', '.join(CHECKPOINT_READERS) or 'none'})")
+            return 2
+        report(state="loading", note=f"weights from {init['format']} checkpoint {init['path']}")
+        read_ckpt(model, spec, Path(init["path"]))
     if job.get("init_weights"):
         model.load_state_dict(torch.load(job["init_weights"], map_location=dev), strict=False)
     nparams = sum(p.numel() for p in model.parameters())
@@ -755,11 +666,13 @@ def main() -> int:
         save_file(uniq, str(exp / "weights.safetensors"))
     except ImportError:
         pass
-    if lm and any(n_["op"] == "transformer_block" and n_["params"].get("experts") for n_ in spec["nodes"]) and job.get("kmoe", True):
-        try:
-            save_kmoe(model, spec, exp / "model.kmoe", best_step or step)
-        except (StopIteration, AttributeError, ValueError) as e:
-            report(note=f"no PrivateProject checkpoint: {e}")
+    wanted = job.get("export")          # None: every format whose writer applies to this design
+    for fmt, (applies, write_ckpt, fname) in CHECKPOINT_WRITERS.items():
+        if (wanted is None or fmt in wanted) and applies(spec):
+            try:
+                write_ckpt(model, spec, exp / fname, best_step or step)
+            except (StopIteration, AttributeError, ValueError) as e:
+                report(note=f"no {fmt} checkpoint: {e}")
     if lm:
         x = torch.tensor([tok.encode(job.get("sample_prompt", "The "))[-int(spec["input"]["ctx"]):]], device=dev)
         model.eval()

@@ -2,8 +2,8 @@
 //   Local AI     Overview (the Ollama-compatible server, engine, mesh-llm, GPUs, loaded models, settings) · Models (pull, import,
 //                reference, show, delete) · Discover (other programs' models: use them in place or import) ·
 //                Fine-tune (the GPU training environment, LoRA SFT/DPO runs with live loss, export, Amethyst modules)
-//   Neural Lab   Runs · Designer (a spec: check shapes/parameters, train on the GPU) · Projects (BrainBuilder graphs,
-//                PrivateProject designs and checkpoints in; Amethyst, PrivateProject) · System models (the models that tune this
+//   Neural Lab   Runs · Designer (a spec: check shapes/parameters, train on the GPU) · Projects (BrainBuilder graphs
+//                and every extension's importer in; Amethyst) · System models (the models that tune this
 //                machine: advice, CPU policy, measuring, retraining) · Telemetry (this machine, live)
 // Identical in the dashboard (bot/dashboard/static/) and the desktop app (desktop-app/ui/); tests/test_localai.py fails
 // if the two differ. It uses the page's own api(), esc() and showToast(), and draws into #aip-root and #lab-root.
@@ -212,19 +212,18 @@ ${o.runs.map((r) => `<tr><td class="aip-mono">${E(r.id)}</td><td>${E(r.name)}<di
 <select id="lab-load"><option value="">open a saved design…</option>${o.designs.map((d) => `<option>${E(d.name)}</option>`).join('')}</select></div>
 <div class="aip-mono" id="lab-desc"></div></div>
 <div class="aip-card"><b>Train on the GPU</b><div class="aip-form"><span>Data</span><input id="lab-data" placeholder="a .csv, .jsonl, .npz or text file">
-<span>Target column</span><input id="lab-target" placeholder="(csv/jsonl)"><span>Tokenizer</span><input id="lab-tok" placeholder="byte, words, a PrivateProject .bpe, an HF folder">
+<span>Target column</span><input id="lab-target" placeholder="(csv/jsonl)"><span>Tokenizer</span><input id="lab-tok" placeholder="byte, words, a tokenizer file, an HF folder">
 <span>Steps</span><input id="lab-steps" type="number" placeholder="(from epochs)"></div>
 <div class="aip-row"><button class="btn" id="lab-train">Train</button></div>
 <b>Ops</b><div class="aip-muted">${o.ops.map((x) => `<b>${E(x.op)}</b>${x.needs.length ? ' (' + E(x.needs.join(', ')) + ')' : ''}: ${E(x.doc)}`).join('<br>')}</div></div></div>`;
   }
 
   async function labProjects(o) {
-    const bb = await api(`${L}/brainbuilder`).catch(() => []), km = await api(`${L}/private_project`).catch(() => ({ registry: [], checkpoints: [] }));
+    const bb = await api(`${L}/brainbuilder`).catch(() => []), importers = await api(`${L}/importers`).catch(() => []);
     return `<div class="aip-grid"><div class="aip-card"><b>Projects</b><table class="aip-table">${o.projects.map((p) => `<tr><td>${E(p.folder)}</td><td>${p.present ? chip('ok', 'found') : chip('warn', 'missing')}</td><td class="aip-mono">${E(p.path || '')}</td></tr>`).join('')}</table>
-<div class="aip-muted">PrivateProject reads ABP's model store when ABP starts it (PRIVATE_PROJECT_MODEL_DIRS), and ABP finds PrivateProject's models under Discover. Amethyst modules come from fine-tunes (Local AI → Fine-tune → Amethyst module).</div></div>
+<div class="aip-muted">Amethyst modules come from fine-tunes (Local AI → Fine-tune → Amethyst module).</div></div>
 <div class="aip-card"><b>BrainBuilder graphs</b><table class="aip-table">${bb.map((g) => `<tr><td>${E(g.name || g.path)}<div class="aip-muted">${E(g.error || g.task + ' · ' + (+g.params).toLocaleString() + ' parameters')}</div></td><td>${g.error ? '' : `<button class="btn ghost" data-imp-bb="${E(g.path)}">Bring in</button>`}</td></tr>`).join('') || '<tr><td class="aip-muted">none</td></tr>'}</table></div>
-<div class="aip-card"><b>PrivateProject</b><table class="aip-table">${km.registry.map((r) => `<tr><td>${E(r.id)}<div class="aip-muted">${E(r.experts)} experts · top ${E(r.top_k)} · hidden ${E(r.hidden)} · ${E(r.status)}</div></td><td><button class="btn ghost" data-imp-km="${E(r.id)}">Bring in</button></td></tr>`).join('')}
-${km.checkpoints.map((c) => `<tr><td class="aip-mono">${E(c.path)}<div class="aip-muted">private_project-gen · ${E(c.layers)} layers · ${E(c.experts)} experts · step ${E(c.step)}</div></td><td><button class="btn ghost" data-imp-kc="${E(c.path)}">Bring in</button></td></tr>`).join('') || ''}</table></div></div>
+${importers.map((imp) => `<div class="aip-card"><b>${E(imp.label)}</b><table class="aip-table">${(imp.items || []).map((it) => `<tr><td>${E(it.label)}<div class="aip-muted">${E(it.detail || '')}</div></td><td><button class="btn ghost" data-imp-ext="${E(JSON.stringify({ kind: imp.kind, ...(it.body || {}) }))}">Bring in</button></td></tr>`).join('') || `<tr><td class="aip-muted">${E(imp.error || 'none')}</td></tr>`}</table></div>`).join('')}</div>
 <div class="aip-mono" id="lab-imp-out"></div>`;
   }
 
@@ -268,8 +267,7 @@ ${last ? `<div>CPU ${E(last.cpu)}% (busiest core ${E(last.cpu_max)}%) · ${E(las
         .then((r) => { toast(`Run ${r.id}: ${(+r.params).toLocaleString()} parameters on the GPU`); lab.tab = 'runs'; renderLab(); }).catch((e) => toast(errText(e), 'error')); } catch (e) { toast(e.message, 'error'); } });
     const imp = (body) => send(`${L}/import`, 'POST', body).then((r) => { $('lab-imp-out').textContent = r.text; store('lab.draft', JSON.stringify(r.spec, null, 1)); toast('Saved as a design (open the Designer)'); }).catch((e) => toast(errText(e), 'error'));
     on('[data-imp-bb]', (b) => imp({ kind: 'brainbuilder', path: b.dataset.impBb }));
-    on('[data-imp-km]', (b) => imp({ kind: 'private_project-registry', id: b.dataset.impKm }));
-    on('[data-imp-kc]', (b) => imp({ kind: 'private_project-checkpoint', path: b.dataset.impKc }));
+    on('[data-imp-ext]', (b) => imp(JSON.parse(b.dataset.impExt)));
     on('[data-bench]', (b) => { const k = b.dataset.bench; if (!confirm(k === 'transfer' ? 'Measure every drive with room: about 2.5 GB written and read on each (removed afterwards)?' : 'Measure each model with llama-bench on the GPU?')) return;
       runInto(send(`${L}/systune/bench`, 'POST', { kind: k }), 'lab-bench-log', renderLab); });
     on('[data-retrain]', (b) => send(`${L}/systune/train`, 'POST', { kind: b.dataset.retrain }).then((r) => toast(`Training run ${r.id}`)).catch((e) => toast(errText(e), 'error')));

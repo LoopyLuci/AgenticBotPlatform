@@ -62,8 +62,8 @@ Commands:
                                           Hermes Agent's own messaging gateway, driven from here while it
                                           keeps serving Telegram (see abp_cli/hermes.py)
   lab status|runs|designs|validate|train|import|projects|systune|advice|bench|retrain|telemetry|hw
-                                          the Neural Lab: designs trained on the GPU, BrainBuilder / PrivateProject /
-                                          Amethyst / PrivateProject, the system models (see abp_cli/ai.py)
+                                          the Neural Lab: designs trained on the GPU, BrainBuilder /
+                                          Amethyst / extensions' importers, the system models (see abp_cli/ai.py)
 
 Connection: --host (default 127.0.0.1:8787) and --token (default from .env's
 DASHBOARD_TOKEN, same as bot/tui/'s ConnectScreen). --json prints machine-readable output

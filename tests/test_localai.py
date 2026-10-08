@@ -1,6 +1,6 @@
 """bot/localai and bot/neurallab on real files in temporary folders: the Ollama-layout store (import, reference, copy,
 delete, Modelfiles), discovery of other programs' models, the Ollama-compatible API, the Neural Lab's design format
-(checked against PrivateProject's own parameter arithmetic), BrainBuilder's EDN graphs and PrivateProject's checkpoints, numpy
+(checked against a reference MoE implementation's parameter arithmetic), BrainBuilder's EDN graphs, MNIST data, numpy
 inference, telemetry, the system models' fallbacks, the dashboard routes and the pages; and per-call tool approval,
 which fails closed. GPU training runs only where the training environment exists (bot/localai/train.py)."""
 from __future__ import annotations
@@ -169,8 +169,9 @@ def test_ollama_api_without_loading(home, tmp_path):
 
 # ---- the Neural Lab's designs -------------------------------------------------------------------------------------------- #
 
-def test_spec_counts_match_private_project():
-    """PrivateProject's Kotlin model reported 1,202,432 parameters, 938,752 active per token, for this design."""
+def test_spec_counts_match_a_reference_moe():
+    """A reference MoE transformer implementation reported 1,202,432 parameters, 938,752 active per token, for this
+    design."""
     from bot.neurallab import spec
     s = spec.validate(spec.moe_lm("k", vocab=4096, ctx=128, dim=128, layers=2, heads=4, experts=4, top_k=2, hidden=256))
     assert s["stats"]["params"] == 1_202_432 and s["stats"]["active_params"] == 938_752
@@ -212,15 +213,8 @@ def test_edn_and_brainbuilder_round_trip(tmp_path):
     assert [n["op"] for n in spec.validate(back)["nodes"]] == [n["op"] for n in v["nodes"]]
 
 
-def test_private_project_checkpoint_header_and_mnist_idx(tmp_path):
-    from bot.neurallab import interop, spec
-    cfg = [4096, 128, 128, 2, 4, 4, 2, 256]
-    f = tmp_path / "run" / "model.kmoe"
-    f.parent.mkdir()
-    f.write_bytes(struct.pack(">ii", 0x4B4D4F45, 1) + struct.pack(">8i", *cfg) + struct.pack(">fi", 0.01, 777))
-    h = interop.kmoe_header(f)
-    assert h["step"] == 777 and h["experts"] == 4 and abs(h["aux"] - 0.01) < 1e-6
-    assert spec.validate(interop.from_kmoe(f))["stats"]["params"] == 1_202_432
+def test_mnist_idx(tmp_path):
+    from bot.neurallab import interop
     imgs = tmp_path / "img.idx"
     labs = tmp_path / "lab.idx"
     imgs.write_bytes(struct.pack(">IIII", 0x00000803, 3, 2, 2) + bytes(range(12)))
@@ -368,7 +362,7 @@ def test_lab_trains_on_the_gpu_and_numpy_agrees(tmp_path, monkeypatch):
 
 def test_dashboard_routes_for_models_lab_and_projects(home, tmp_path):
     """Every route the Local AI and Neural Lab pages use, on real files; the projects' own designs and checkpoints
-    (BrainBuilder graphs, PrivateProject's registry and checkpoints) where those projects sit next to ABP."""
+    (BrainBuilder graphs) where those projects sit next to ABP; extensions' importers have their own tests."""
     from fastapi import FastAPI
     from bot.dashboard import localai_api
     from bot.neurallab import interop, telemetry
@@ -416,19 +410,11 @@ def test_dashboard_routes_for_models_lab_and_projects(home, tmp_path):
     assert c.post(f"{L}/export/brainbuilder", json={"spec": spec, "path": str(out)}).json()["path"] == str(out)
     back = c.post(f"{L}/import", json={"kind": "brainbuilder", "path": str(out), "name": "round-trip"}).json()
     assert "parameters 10" in back["text"] and "round-trip" in {d["name"] for d in c.get(f"{L}/designs").json()}
-    assert {p["id"] for p in c.get(f"{L}/projects").json()} == {"brainbuilder", "private_project", "amethyst", "private_project"}
+    assert {p["id"] for p in c.get(f"{L}/projects").json()} == {"brainbuilder", "amethyst"}
+    assert c.get(f"{L}/importers").json() == []                    # none without an extension
     bb = c.get(f"{L}/brainbuilder").json()
     if interop.project_dir("brainbuilder"):
         assert bb and all("params" in g or "error" in g for g in bb)
-    km = c.get(f"{L}/private_project").json()
-    if km["registry"]:
-        imp = c.post(f"{L}/import", json={"kind": "private_project-registry", "id": km["registry"][0]["id"], "save": False}).json()
-        assert imp["spec"]["input"]["size"] == 784 and imp["spec"]["origin"]["project"] == "private_project"
-    assert c.post(f"{L}/import", json={"kind": "private_project-registry", "id": "no-such-id"}).status_code == 404
-    if km["checkpoints"]:
-        imp = c.post(f"{L}/import", json={"kind": "private_project-checkpoint", "path": km["checkpoints"][0]["path"], "save": False}).json()
-        assert imp["spec"]["origin"]["design"] == "private_project-gen"
-    assert c.post(f"{L}/import", json={"kind": "private_project-checkpoint", "path": str(out)}).status_code == 400
     assert c.post(f"{L}/systune/bench", json={"kind": "memory"}).status_code == 400
     assert c.post(f"{L}/systune/train", json={"kind": "transfer"}).status_code == 400       # nothing measured yet
     for kind in ("transfer", "llm", "memory", "stability"):
@@ -438,8 +424,6 @@ def test_dashboard_routes_for_models_lab_and_projects(home, tmp_path):
     telemetry.record(telemetry.sample())
     assert c.get(f"{L}/telemetry", params={"seconds": 60}).json()["stats"]["samples"] == 1
     assert len(c.get(f"{L}/telemetry/hw").json()["topology"]) >= 1
-    k = interop.private_project_status()
-    assert isinstance(k, dict)
 
 
 def test_the_agents_tools_run_against_real_files(home, tmp_path):

@@ -9,7 +9,7 @@ trains, or changes the model store asks the person.
     lab_status        the Neural Lab: runs, designs, the toolkit's projects, the system models, the CPU policy
     lab_design        check a design (a spec): shapes, parameters, active parameters, FLOPs
     lab_train         train a design on the GPU (asks first)
-    lab_import        bring a BrainBuilder graph or a PrivateProject design / checkpoint in as a design
+    lab_import        bring a BrainBuilder graph, or what an extension's importer offers, in as a design
     lab_systune       the system models: advice (copy settings, model options, memory forecast, CPU policy, status)
                       runs freely; measuring the drives or the GPU and retraining ask first (per-call approval)
 """
@@ -69,16 +69,7 @@ def _train(inp: dict) -> Any:
 
 def _lab_import(inp: dict) -> Any:
     from bot.neurallab import interop, lab, spec
-    k = inp["kind"]
-    if k == "brainbuilder":
-        s = interop.from_bbir(inp["path"])
-    elif k == "private_project-registry":
-        row = next(r for r in interop.private_project_registry() if r["id"] == inp["id"])
-        s = interop.from_private_project_registry(row)
-    elif k == "private_project-checkpoint":
-        s = interop.from_kmoe(inp["path"])
-    else:
-        raise ValueError("kind is brainbuilder, private_project-registry or private_project-checkpoint")
+    s = interop.import_design(inp)
     saved = lab.save_design(s, inp.get("name", ""))
     return {"design": saved["name"], "text": spec.describe(s)}
 
@@ -173,18 +164,18 @@ def register_tools() -> None:
          "method": {"type": "string", "enum": ["sft", "dpo"]}, "rank": {"type": "integer"}, "learning_rate": {"type": "number"},
          "epochs": {"type": "number"}, "max_steps": {"type": "integer"}, "export": {"type": "string"}, "quant": {"type": "string"}},
         ["action"], train_t, read_only=False, needs_approval=True)
-    reg("lab_status", "The Neural Lab: recent training runs, saved designs, the toolkit's projects (BrainBuilder, PrivateProject, "
-        "Amethyst, PrivateProject), the ops a design can use, and the system models with the current CPU policy.", {}, [], lab_status)
+    reg("lab_status", "The Neural Lab: recent training runs, saved designs, the toolkit's projects (BrainBuilder, Amethyst, "
+        "and those extensions add), the ops a design can use, and the system models with the current CPU policy.", {}, [], lab_status)
     reg("lab_design", "Check a model design (a Neural Lab spec): every node's output shape, parameters, active parameters "
         "(mixture-of-experts layers run top_k experts), FLOPs per row and training memory.",
         {"spec": {"type": "object"}}, ["spec"], lab_design)
     reg("lab_train", "Train a Neural Lab design on the GPU. data: {path (csv/jsonl/npz/text), target?, features?, "
-        "tokenizer? (byte, words, a PrivateProject .bpe, an HF tokenizer folder)}. Asks first.",
+        "tokenizer? (byte, words, a tokenizer file an extension reads, an HF tokenizer folder)}. Asks first.",
         {"spec": {"type": "object"}, "data": {"type": "object"}, "train": {"type": "object"}, "label": {"type": "string"}},
         ["spec", "data"], lab_train, read_only=False, needs_approval=True)
-    reg("lab_import", "Bring a design in from the toolkit's projects: a BrainBuilder graph (*.bbir.edn), a PrivateProject registry "
-        "design (id), or a private_project-gen checkpoint (model.kmoe); saved as a lab design.",
-        {"kind": {"type": "string", "enum": ["brainbuilder", "private_project-registry", "private_project-checkpoint"]},
+    reg("lab_import", "Bring a design in: a BrainBuilder graph (kind brainbuilder, path *.bbir.edn), or anything an "
+        "extension's importer offers (lab_status lists them; GET /api/lab/importers has their items); saved as a lab design.",
+        {"kind": {"type": "string"},
          "path": {"type": "string"}, "id": {"type": "string"}, "name": {"type": "string"}}, ["kind"], lab_imp)
     reg("lab_systune", "The system models that tune this machine. Free: copy settings for two drives (advise_copy src "
         "dst size_gb files), llama.cpp options for a model (advise_llm), RAM use in five minutes (forecast_memory), which "
