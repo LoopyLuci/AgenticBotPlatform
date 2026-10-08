@@ -1071,6 +1071,32 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/config/backups": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/config/backups",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/config/backups/{name}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/config/backups/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "GET /api/config/backups/{name}/{version}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/config/backups/{name}/{version}",
+  "path_params": [
+   "name",
+   "version"
+  ],
+  "query_params": []
+ },
  "GET /api/context": {
   "body": false,
   "method": "GET",
@@ -4515,6 +4541,16 @@ export const operations = {
   "path": "/api/cluster/runs/{rid}/start",
   "path_params": [
    "rid"
+  ],
+  "query_params": []
+ },
+ "POST /api/config/backups/{name}/{version}/restore": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/config/backups/{name}/{version}/restore",
+  "path_params": [
+   "name",
+   "version"
   ],
   "query_params": []
  },
@@ -8093,6 +8129,42 @@ export const operations = {
   "method": "GET",
   "path": "/api/config",
   "path_params": [],
+  "query_params": []
+ },
+ "api_config_backups_files_api_config_backups_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/config/backups",
+  "path_params": [],
+  "query_params": []
+ },
+ "api_config_backups_read_api_config_backups__name___version__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/config/backups/{name}/{version}",
+  "path_params": [
+   "name",
+   "version"
+  ],
+  "query_params": []
+ },
+ "api_config_backups_restore_api_config_backups__name___version__restore_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/config/backups/{name}/{version}/restore",
+  "path_params": [
+   "name",
+   "version"
+  ],
+  "query_params": []
+ },
+ "api_config_backups_versions_api_config_backups__name__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/config/backups/{name}",
+  "path_params": [
+   "name"
+  ],
   "query_params": []
  },
  "api_config_reload_api_config_reload_post": {
