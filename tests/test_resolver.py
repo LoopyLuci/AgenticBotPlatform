@@ -1,6 +1,6 @@
 """ABP's DNS (bot/resolver.py): queries built and answers parsed in wire format, against a real DNS server on a
 local socket (UDP, and TCP when the answer is truncated), DNS-over-HTTPS, the fallback order, and the
-validated-only policy. The last tests ask Quad9 and a locally running private_project for real, when they can be reached."""
+validated-only policy. The last tests ask Quad9 for real, when it can be reached."""
 from __future__ import annotations
 
 import shutil
@@ -109,13 +109,13 @@ def test_udp_tcp_fallback_order_and_policy(monkeypatch):
     failing = LocalDNS([], rcode=2)
     try:
         a = r.ask_dns(f"127.0.0.1:{signed.port}", "isc.org", "A")
-        assert a.values == ["192.0.2.7"] and a.validated and a.via.startswith("private_project@")
+        assert a.values == ["192.0.2.7"] and a.validated and a.via.startswith("local@")
         assert r.ask_dns(f"127.0.0.1:{big.port}", "isc.org", "A").values == ["192.0.2.8"] and big.seen == ["udp", "tcp"]
-        r.set_settings({"private_project": f"127.0.0.1:{unsigned.port}", "upstreams": []})
+        r.set_settings({"local": f"127.0.0.1:{unsigned.port}", "upstreams": []})
         assert r.resolve("github.com").values == ["192.0.2.9"]                       # unsigned but answered
         with pytest.raises(r.ResolveError, match="without DNSSEC validation"):
             r.resolve("github.com", require_validated=True)
-        r.set_settings({"private_project": f"127.0.0.1:{failing.port}", "upstreams": []})
+        r.set_settings({"local": f"127.0.0.1:{failing.port}", "upstreams": []})
         with pytest.raises(r.ResolveError, match="no validated answer.*SERVFAIL"):
             r.resolve("dnssec-failed.org", require_validated=True)
         # SERVFAIL from the validator, not strict: the system resolver is the last resort (localhost always resolves)
@@ -125,7 +125,7 @@ def test_udp_tcp_fallback_order_and_policy(monkeypatch):
         dead.bind(("127.0.0.1", 0))
         dead_port = dead.getsockname()[1]
         dead.close()
-        r.set_settings({"private_project": f"127.0.0.1:{dead_port}", "upstreams": ["quad9"], "timeout_s": 0.5})
+        r.set_settings({"local": f"127.0.0.1:{dead_port}", "upstreams": ["quad9"], "timeout_s": 0.5})
 
         def doh(req: httpx.Request) -> httpx.Response:
             assert req.headers["content-type"] == "application/dns-message" and req.content[:2] == b"\x00\x00"
@@ -161,26 +161,5 @@ def test_quad9_for_real():
     assert r.ask_doh(q, "dnssec-failed.org", "A").rcode == 2          # deliberately broken signatures: refused
 
 
-private_project = next((p for p in (Path("/path/redacted"), Path(shutil.which("private_project") or "")) if p.is_file()), None)
-
-
-@pytest.mark.skipif(private_project is None or not _online(), reason="no private_project build, or no network to resolve from the root")
-def test_private_project_for_real(tmp_path):
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-        s.bind(("127.0.0.1", 0))
-        port = s.getsockname()[1]
-    proc = subprocess.Popen([str(private_project), "--listen", f"127.0.0.1:{port}", "--trust-anchor", str(tmp_path / "root.key")],
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    try:
-        a = None
-        for _ in range(40):
-            try:
-                a = r.ask_dns(f"127.0.0.1:{port}", "isc.org", "A", timeout=5)
-                break
-            except (OSError, r.ResolveError):
-                time.sleep(0.5)
-        assert a is not None and a.values and a.validated              # resolved from the root down and validated
-        assert r.ask_dns(f"127.0.0.1:{port}", "dnssec-failed.org", "A", timeout=10).rcode == 2
-    finally:
-        proc.kill()
-        proc.wait()
+def test_a_public_install_asks_no_local_resolver_unless_told_to():
+    assert r.DEFAULTS["local"] == ""

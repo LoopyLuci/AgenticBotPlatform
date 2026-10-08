@@ -99,14 +99,14 @@ def overview(router: bool = True) -> dict:
 
 
 def resolve(name: str, rtype: str = "A", timeout: float = 8.0) -> list[str]:
-    """The record values the world sees for name/rtype: ABP's resolver first (private_project, then Quad9; bot/resolver.py),
+    """The record values the world sees for name/rtype: ABP's resolver first (a local validating resolver when one is set, then Quad9; bot/resolver.py),
     then DNS over HTTPS through Cloudflare and Google."""
     rtype = rtype.upper()
     want = _TYPES.get(rtype)
     if not want:
         raise HostingError(f"cannot look up {rtype} records")
     last: Optional[Exception] = None
-    from bot import resolver                       # private_project on this machine, then Quad9 (both validate DNSSEC)
+    from bot import resolver                       # the local validating resolver, then Quad9 (both validate DNSSEC)
     try:
         return resolver.resolve(name, rtype).values
     except resolver.ResolveError as e:

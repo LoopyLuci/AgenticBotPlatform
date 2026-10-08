@@ -1,8 +1,8 @@
-"""ABP's DNS: answers that can be trusted, from a validating resolver on this machine (private_project) or Quad9.
+"""ABP's DNS: answers that can be trusted, from a validating resolver on this machine or Quad9.
 
     resolve(name, rtype)  -> Answer(values, validated, via, rcode)
-        1. private_project on this machine (settings "private_project", default 127.0.0.1:5350): a recursive resolver that checks
-           DNSSEC from the root down and fails closed. Plain DNS over UDP (TCP when the answer is truncated).
+        1. A validating resolver on this machine, when one is set (settings "local", e.g. 127.0.0.1:5350; off by
+           default): a recursive resolver that checks DNSSEC from the root down and fails closed. Plain DNS over UDP (TCP when the answer is truncated).
         2. Quad9 over DNS-over-HTTPS (RFC 8484, https://dns.quad9.net/dns-query): validates DNSSEC and blocks known
            malicious domains.
         3. Only when require_validated is off: the system's own resolver (never marked validated).
@@ -32,7 +32,7 @@ TYPES = {"A": 1, "NS": 2, "CNAME": 5, "SOA": 6, "PTR": 12, "MX": 15, "TXT": 16, 
 NAMES = {v: k for k, v in TYPES.items()}
 QUAD9 = {"quad9": "https://dns.quad9.net/dns-query", "quad9-ecs": "https://dns11.quad9.net/dns-query",
          "quad9-unfiltered": "https://dns10.quad9.net/dns-query"}
-DEFAULTS = {"private_project": "127.0.0.1:5350", "upstreams": ["quad9"], "require_validated": False, "timeout_s": 4.0}
+DEFAULTS = {"local": "", "upstreams": ["quad9"], "require_validated": False, "timeout_s": 4.0}
 
 
 class ResolveError(Exception):
@@ -204,7 +204,7 @@ def ask_dns(server: str, name: str, rtype: str, timeout: float = 4.0) -> Answer:
             n = struct.unpack(">H", _recv_exact(t, 2))[0]
             data = _recv_exact(t, n)
     a = parse_response(data, name, rtype, qid)
-    a.via = f"private_project@{server}"
+    a.via = f"local@{server}"
     return a
 
 
@@ -267,8 +267,8 @@ def resolve(name: str, rtype: str = "A", *, require_validated: Optional[bool] = 
     timeout = float(st["timeout_s"])
     errors = []
     tries: list = []
-    if st.get("private_project"):
-        tries.append(("dns", st["private_project"]))
+    if st.get("local"):
+        tries.append(("dns", st["local"]))
     tries += [("doh", QUAD9.get(u, u)) for u in st.get("upstreams") or []]
     for kind, where in tries:
         try:
@@ -301,7 +301,7 @@ def status() -> dict:
     """Which resolvers answer right now, and whether they validate (a lookup of a signed name: isc.org)."""
     st = settings()
     out = {"settings": st, "resolvers": []}
-    targets = ([("private_project", "dns", st["private_project"])] if st.get("private_project") else []) + \
+    targets = ([("local", "dns", st["local"])] if st.get("local") else []) + \
         [(u, "doh", QUAD9.get(u, u)) for u in st.get("upstreams") or []]
     for label, kind, where in targets:
         try:
