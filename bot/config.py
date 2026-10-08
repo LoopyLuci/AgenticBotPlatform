@@ -201,9 +201,14 @@ class ConfigManager:
         heavily documented, so a settings page that saved through it would strip that documentation on the first
         click. This uses ruamel.yaml's round-trip mode instead (the same approach bot/providers.py takes for
         providers.yaml) and writes atomically. `changes` maps a key path, such as ("native_agent", "limits",
-        "max_iterations"), to the new value."""
+        "max_iterations"), to the new value.
+
+        With a private overlay for this file (<ABP_PRIVATE_DIR>/config/<name>.yaml) the edits go THERE: the overlay
+        wins the merge, so an edit written under it would never take effect, and this machine's settings must not
+        land in the public checkout's tracked file."""
         if not changes:
             return
+        target = self.write_path()
         from ruamel.yaml import YAML
 
         y = YAML(typ="rt")
@@ -212,7 +217,7 @@ class ConfigManager:
         y.indent(mapping=2, sequence=4, offset=2)
         # ruamel writes None as an empty value; keep the file's own `null`s so a save does not rewrite unrelated lines.
         y.representer.add_representer(type(None), lambda r, _v: r.represent_scalar("tag:yaml.org,2002:null", "null"))
-        with open(self.path, encoding="utf-8") as f:
+        with open(target, encoding="utf-8") as f:
             data = y.load(f)
         if data is None:
             data = {}
@@ -226,14 +231,22 @@ class ConfigManager:
                 node = child
             node[path[-1]] = value
 
-        tmp_path = self.path.with_suffix(".yaml.tmp")
+        tmp_path = target.with_suffix(".yaml.tmp")
         with open(tmp_path, "w", encoding="utf-8") as f:
             y.dump(data, f)
         from bot import config_backups
 
-        config_backups.before_write(self.path, actor)  # the version about to be replaced is kept
-        tmp_path.replace(self.path)  # atomic on the same filesystem
+        config_backups.before_write(target, actor)  # the version about to be replaced is kept
+        tmp_path.replace(target)  # atomic on the same filesystem
         self.reload(actor=actor)
+
+    def overlay_path(self) -> "Path | None":
+        """This file's private overlay, when ABP_PRIVATE_DIR has one (bot/extensions.py)."""
+        return extensions.config_overlay(self.path.stem)
+
+    def write_path(self) -> Path:
+        """Where an edit made through ABP is written: the overlay when there is one, else the tracked file."""
+        return self.overlay_path() or self.path
 
     async def watch_forever(self) -> None:
         """Background task: watch the config file and hot-reload on change.
@@ -255,7 +268,9 @@ class ConfigManager:
                     self.reload(actor="file-watch")
                 continue
             try:
-                async for _changes in awatch(str(self.path)):
+                # The overlay is part of what this config is, so a hand edit there reloads too.
+                watched = [str(p) for p in (self.path, self.overlay_path()) if p is not None]
+                async for _changes in awatch(*watched):
                     self.reload(actor="file-watch")
             except Exception:
                 logger.exception("config file watcher crashed — restarting it")

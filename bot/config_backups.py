@@ -32,6 +32,9 @@ ROOT = PROJECT_ROOT / "data" / "config-backups"
 #: Only files in this folder are kept (see _keep).
 CONFIG_DIR = PROJECT_ROOT / "config"
 KEEP = 100
+#: The history name of a private overlay file (<ABP_PRIVATE_DIR>/config/<name>.yaml), so it never mixes with the
+#: tracked file of the same name.
+PRIVATE_PREFIX = "private-"
 _NAME = re.compile(r"^[A-Za-z0-9._-]+\.ya?ml$")
 _VERSION = re.compile(r"^\d{8}T\d{6}(\d{3})?Z__[A-Za-z0-9._-]{1,40}\.ya?ml$")
 
@@ -41,6 +44,9 @@ def _tracked() -> dict[str, Path]:
     from bot import config as config_mod
 
     out = {Path(config_mod.CONFIG_PATH).name: Path(config_mod.CONFIG_PATH)}
+    overlay = config_mod.config.overlay_path()
+    if overlay is not None:  # this machine's private settings: kept under their own name
+        out[PRIVATE_PREFIX + overlay.name] = overlay
     try:
         from bot import providers
 
@@ -73,14 +79,14 @@ def _versions(d: Path) -> list[Path]:
 def _keep(path: Path, actor: str, reason: str, root: Optional[Path] = None) -> Optional[dict]:
     """Store the file's current content as a version, unless the newest version already has it. Only ABP's own
     config files are kept (a test's temporary config never lands in the real history), unless `root` is given."""
-    if root is None and (path.resolve() not in {p.resolve() for p in _tracked().values()}
-                         or path.resolve().parent != Path(CONFIG_DIR).resolve()):
+    name = _history_name(path)
+    if root is None and name is None:
         return None  # a test points a writer at a temporary file: that never belongs in the real history
     try:
         data = path.read_bytes()
     except OSError:
         return None  # nothing there yet: the first write creates it
-    d = _dir(path.name, root)
+    d = _dir(name or path.name, root)
     d.mkdir(parents=True, exist_ok=True)
     existing = _versions(d)
     if existing and _sha(existing[0].read_bytes()) == _sha(data):
@@ -99,7 +105,17 @@ def _keep(path: Path, actor: str, reason: str, root: Optional[Path] = None) -> O
                 p.unlink()
             except OSError:
                 pass
-    return {"file": path.name, "version": target.name}
+    return {"file": name or path.name, "version": target.name}
+
+
+def _history_name(path: Path) -> Optional[str]:
+    """The name a config file's versions are kept under, or None when it is not one of ABP's own config files
+    (in ABP's config folder, or this machine's private overlay)."""
+    resolved = path.resolve()
+    for name, p in _tracked().items():
+        if p.resolve() == resolved and (name.startswith(PRIVATE_PREFIX) or resolved.parent == Path(CONFIG_DIR).resolve()):
+            return name
+    return None
 
 
 def before_write(path: Path, actor: str = "unknown", reason: str = "before a change", *,
@@ -207,6 +223,7 @@ def restore(name: str, version: str, actor: str = "dashboard", root: Optional[Pa
 def _reload(name: str, actor: str) -> tuple[bool, str]:
     from bot import config as config_mod
 
+    name = name[len(PRIVATE_PREFIX):] if name.startswith(PRIVATE_PREFIX) else name
     if name == Path(config_mod.CONFIG_PATH).name:
         return config_mod.config.reload(actor=actor)
     if name == "providers.yaml":

@@ -52,6 +52,12 @@ Only one overlay is worth writing by hand: `backends.yaml`. It is where the mach
 (`modules.build_cache`, `modules.projects`, a resolver address), and it is the file a tracked
 default must stay generic in.
 
+While a `backends.yaml` overlay exists, a setting saved through ABP (a Settings page, a learned
+wake-on-LAN address, a linked backend) is written into the overlay, not the tracked file: the
+overlay wins the merge, so an edit under it would never take effect, and the machine's own settings
+must not end up in the checkout. A hand edit of the overlay hot-reloads like one of the tracked
+file, and Config history keeps the overlay's versions as `private-backends.yaml`.
+
 ## Module overlays
 
 `<ABP_PRIVATE_DIR>/catalog/` is one more overlay root, listed by `bot/modules/registry.py:overlay_roots()`
