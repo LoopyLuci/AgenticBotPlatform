@@ -13,6 +13,7 @@ their own, they are buffered rather than streamed, and the windowless guard alre
 """
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
@@ -29,6 +30,8 @@ from bot.modules.manifest import Manifest, this_os
 from bot.sandbox_ns import guard
 from bot.sandbox_ns.cell import Cell, cell_for, new_cell
 from bot.sandbox_ns.spawn import spawn as ns_spawn
+
+logger = logging.getLogger("bot.modules.harness")
 
 OWNER = "modules.harness"
 
@@ -480,7 +483,8 @@ def service_urls(m: Manifest, ttl: float = 5.0) -> dict:
     return {**svc, **out}
 
 
-# Called with the module id after a hub this harness started answers (bot/private_project/connectors.py hands it a session).
+# Called with the module id after a hub this harness started answers (an extension's on_hub_started hooks join them,
+# e.g. to hand the hub a session).
 HUB_STARTED: list = []
 #: The daemon cell per module id, for the hubs this process started. A hub is meant to outlive ABP,
 #: so its cell is persistent: recorded, windowless and bounded, and only stop_hub() stops it.
@@ -533,11 +537,13 @@ def start_hub(mid: str) -> dict:
     while time.time() < deadline:
         found = client.find(m)
         if found:
-            for hook in HUB_STARTED:
+            from bot import extensions
+
+            for hook in [*HUB_STARTED, *extensions.loaded().hub_started_hooks]:
                 try:
                     hook(m.id)
                 except Exception:  # noqa: BLE001 - a hook never fails a start
-                    pass
+                    logger.warning("a hub-started hook failed for %s", m.id, exc_info=True)
             return {"running": True, "url": found.url, "pid": found.pid, "already": False}
         time.sleep(0.4)
     # It never answered: take the cell with it, rather than leave a hub nothing is watching.

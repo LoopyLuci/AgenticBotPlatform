@@ -122,7 +122,6 @@ Generated from the registry; `tests/test_shortcuts.py` checks this table against
 | `nav.router` | Go to Model Router | `g ro` | anywhere |
 | `nav.unsloth` | Go to Unsloth | `g un` | anywhere |
 | `nav.cluster` | Go to Cluster | `g cl` | anywhere |
-| `nav.private_project` | Go to PrivateProject | `g oc` | anywhere |
 | `nav.vision` | Go to Vision | `g vi` | anywhere |
 | `nav.hosting` | Go to Hosting | `g ho` | anywhere |
 | `nav.storage` | Go to Storage | `g st` | anywhere |

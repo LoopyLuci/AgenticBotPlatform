@@ -1,9 +1,9 @@
-"""Integration keys (bot/integrations.py) and the contract private_project-router depends on.
+"""Integration keys (bot/integrations.py) and the contract a bot-platform view depends on.
 
-The Router's server/botplatform.js (PrivateProject-Security/private_project-router) drives ABP's bots and Docker manager with
-one ABP credential. These tests make exactly its calls with an integration key minted from the
-"private_project-router" preset, so a change to ABP that would break the Router's Bot Platform view fails here first:
-the routes, their auth, and the response shapes it reads. They also prove the key reaches nothing else.
+A router's bot-platform view drives ABP's bots and Docker manager with one ABP credential. These tests make exactly
+those calls with an integration key minted from the "bot-platform" preset, so a change to ABP that would break such
+a view fails here first: the routes, their auth, and the response shapes it reads. They also prove the key reaches
+nothing else.
 """
 from __future__ import annotations
 
@@ -26,17 +26,17 @@ def client(temp_db, monkeypatch):
 @pytest.fixture
 def router_key(client):
     r = client.post("/api/integrations/keys", headers={"X-Dashboard-Token": "test-token"},
-                    json={"preset": "private_project-router", "allow_framing": False})
+                    json={"preset": "bot-platform", "allow_framing": False})
     assert r.status_code == 200, r.text
     return {"X-Dashboard-Token": r.json()["key"]}
 
 
 def test_minting_needs_the_desktop_token_and_known_scopes(client, router_key):
-    assert client.post("/api/integrations/keys", headers=router_key, json={"preset": "private_project-router"}).status_code in (401, 403)
+    assert client.post("/api/integrations/keys", headers=router_key, json={"preset": "bot-platform"}).status_code in (401, 403)
     bad = client.post("/api/integrations/keys", headers={"X-Dashboard-Token": "test-token"}, json={"scopes": ["root"]})
     assert bad.status_code == 422
     listing = client.get("/api/integrations", headers={"X-Dashboard-Token": "test-token"}).json()
-    assert listing["keys"][0]["preset"] == "private_project-router" and "docker:control" in listing["keys"][0]["scopes"]
+    assert listing["keys"][0]["preset"] == "bot-platform" and "docker:control" in listing["keys"][0]["scopes"]
     assert "key" not in listing["keys"][0]
 
 
@@ -131,7 +131,7 @@ def test_a_down_docker_daemon_is_one_readable_line(monkeypatch):
 
 
 def test_a_companion_app_key_uses_the_model_gateway_as_an_openai_client_would(client, router_key):
-    """PrivateProject, PrivateProject and Cognitive Companion reach ABP's models through the OpenAI-compatible gateway with a key of
+    """Companion apps (an IDE, a model toolkit, a desktop assistant) reach ABP's models through the OpenAI-compatible gateway with a key of
     their own (Authorization: Bearer, the way an OpenAI client sends it), never the dashboard token."""
     r = client.post("/api/integrations/keys", headers={"X-Dashboard-Token": "test-token"},
                     json={"preset": "companion-app", "allow_framing": False})

@@ -1,5 +1,5 @@
 """Git stacks and their poller (bot/git_stacks.py) against a real local git repo, with `docker compose` stubbed:
-the hazards private_project-ops/PORTAINER-EXIT.md lists (env wiped on redeploy, retrying a bad commit for ever, a push that
+the hazards of moving off Portainer (env wiped on redeploy, retrying a bad commit for ever, a push that
 silently does not deploy, self-hosting stacks first) must not happen."""
 from __future__ import annotations
 
@@ -112,7 +112,7 @@ def test_routes(env, monkeypatch):
     assert c.post("/api/docker/git-stacks/app/deploy", headers=K, json={}).status_code == 200
     assert c.post("/api/docker/git-stacks", headers=K, json={"name": "x", "repo": "/x"}).status_code == 403
     assert c.patch("/api/docker/git-stacks/app", headers=K, json={"env": {}}).status_code == 403
-    router = c.post("/api/integrations/keys", headers=D, json={"preset": "private_project-router", "allow_framing": False}).json()["key"]
+    router = c.post("/api/integrations/keys", headers=D, json={"preset": "bot-platform", "allow_framing": False}).json()["key"]
     assert c.post("/api/docker/git-stacks/app/deploy", headers={"X-Dashboard-Token": router}, json={}).status_code == 403
 
 

@@ -74,10 +74,10 @@ class TestFindNewChatButton:
 
     def test_matches_new_session_in_project(self):
         backend = UiBackend()
-        target = _button("New session in PrivateProject")
+        target = _button("New session in SampleProject")
         win = _win([_button("New"), target, _button("New session in Other")])
 
-        found = backend._find_new_chat_button(win, project="PrivateProject")
+        found = backend._find_new_chat_button(win, project="SampleProject")
 
         assert found is target
 
@@ -85,10 +85,10 @@ class TestFindNewChatButton:
         backend = UiBackend()
         win = _win([_button("New session in Other")])
         try:
-            backend._find_new_chat_button(win, project="PrivateProject")
+            backend._find_new_chat_button(win, project="SampleProject")
             assert False, "expected BackendError"
         except Exception as exc:
-            assert "PrivateProject" in str(exc)
+            assert "SampleProject" in str(exc)
 
 
 class TestSessionButtons:
@@ -99,15 +99,15 @@ class TestSessionButtons:
         its bare title."""
         backend = UiBackend()
         win = _win([
-            _button("Idle PrivateProject"),
+            _button("Idle SampleProject"),
             _button("Running AgenticBotPlatform"),
             _button("New"),  # not a session row — must be excluded
-            _button("More options for PrivateProject"),  # not a session row either
+            _button("More options for SampleProject"),  # not a session row either
         ])
 
         items = backend._session_buttons(win)
 
-        assert set(items.keys()) == {"PrivateProject", "AgenticBotPlatform"}
+        assert set(items.keys()) == {"SampleProject", "AgenticBotPlatform"}
 
 
 class TestListProjects:
@@ -115,7 +115,7 @@ class TestListProjects:
         backend = UiBackend()
         win = _win([
             _button("New"),
-            _button("New session in PrivateProject"),
+            _button("New session in SampleProject"),
             _button("New session in Omnisystem"),
             _button("Search"),
         ])
@@ -123,7 +123,7 @@ class TestListProjects:
 
         projects = backend._sync_list_projects()
 
-        assert projects == ["PrivateProject", "Omnisystem"]
+        assert projects == ["SampleProject", "Omnisystem"]
 
 
 class TestCreateSessionSentinel:
@@ -132,10 +132,10 @@ class TestCreateSessionSentinel:
         label from until its first message names it — create_session()
         can't return a real key immediately, only this placeholder."""
         backend = UiBackend(poll_interval_s=0.01)
-        win = _win([_button("New session in PrivateProject")])
+        win = _win([_button("New session in SampleProject")])
         backend._connect = lambda: win  # type: ignore[method-assign]
 
-        key = backend._sync_create_session(timeout_s=1, project="PrivateProject")
+        key = backend._sync_create_session(timeout_s=1, project="SampleProject")
 
         assert key == UNTITLED_SESSION_KEY
 
@@ -336,7 +336,7 @@ class TestListProjectsWithSessions:
         backend = UiBackend()
         win = _win([
             _button("New"),
-            _button("New session in PrivateProject"),
+            _button("New session in SampleProject"),
             _button("Idle Fix the login bug"),
             _button("More options for Fix the login bug"),
             _button("Idle Refactor the parser"),
@@ -348,7 +348,7 @@ class TestListProjectsWithSessions:
         grouped = backend._sync_list_projects_with_sessions()
 
         assert grouped == {
-            "PrivateProject": ["Fix the login bug", "Refactor the parser"],
+            "SampleProject": ["Fix the login bug", "Refactor the parser"],
             "TridentDroid": ["Android crash triage"],
         }
 
@@ -356,7 +356,7 @@ class TestListProjectsWithSessions:
         backend = UiBackend()
         win = _win([
             _button("Running AgenticBotPlatform"),
-            _button("New session in PrivateProject"),
+            _button("New session in SampleProject"),
             _button("Idle Fix the login bug"),
         ])
         backend._connect = lambda: win  # type: ignore[method-assign]
@@ -364,7 +364,7 @@ class TestListProjectsWithSessions:
         grouped = backend._sync_list_projects_with_sessions()
 
         assert grouped[UiBackend.NO_PROJECT_BUCKET] == ["AgenticBotPlatform"]
-        assert grouped["PrivateProject"] == ["Fix the login bug"]
+        assert grouped["SampleProject"] == ["Fix the login bug"]
 
     def test_a_project_with_no_sessions_yet_still_appears(self):
         backend = UiBackend()
@@ -378,14 +378,14 @@ class TestListProjectsWithSessions:
     def test_pinned_project_shortcut_is_not_reported_as_a_standalone_chat(self):
         """Real bug found live: Desktop's "Pinned" section shows a
         shortcut per pinned PROJECT styled identically to a real session
-        button ("Idle PrivateProject"), appearing before any "New session in X"
-        marker — a naive scan reported "PrivateProject" as a standalone chat in
-        NO_PROJECT_BUCKET even though "PrivateProject" was also a real project
+        button ("Idle SampleProject"), appearing before any "New session in X"
+        marker — a naive scan reported "SampleProject" as a standalone chat in
+        NO_PROJECT_BUCKET even though "SampleProject" was also a real project
         with its own sessions found later in the same scan."""
         backend = UiBackend()
         win = _win([
-            _button("Idle PrivateProject"),  # pinned shortcut, not a real chat
-            _button("New session in PrivateProject"),
+            _button("Idle SampleProject"),  # pinned shortcut, not a real chat
+            _button("New session in SampleProject"),
             _button("Idle Fix the login bug"),
         ])
         backend._connect = lambda: win  # type: ignore[method-assign]
@@ -393,11 +393,11 @@ class TestListProjectsWithSessions:
         grouped = backend._sync_list_projects_with_sessions()
 
         assert UiBackend.NO_PROJECT_BUCKET not in grouped
-        assert grouped["PrivateProject"] == ["Fix the login bug"]
+        assert grouped["SampleProject"] == ["Fix the login bug"]
 
     def test_no_project_bucket_omitted_when_empty(self):
         backend = UiBackend()
-        win = _win([_button("New session in PrivateProject"), _button("Idle Fix the login bug")])
+        win = _win([_button("New session in SampleProject"), _button("Idle Fix the login bug")])
         backend._connect = lambda: win  # type: ignore[method-assign]
 
         grouped = backend._sync_list_projects_with_sessions()
@@ -412,10 +412,10 @@ class TestClickProjectHeader:
         accessibility tree (not collapsed, not paginated) until that
         project's own plain header button is clicked."""
         backend = UiBackend()
-        private_project_header = _button("PrivateProject")
-        win = _win([private_project_header, _button("New session in PrivateProject")])
+        private_project_header = _button("SampleProject")
+        win = _win([private_project_header, _button("New session in SampleProject")])
 
-        found = backend._sync_click_project_header(win, "PrivateProject")
+        found = backend._sync_click_project_header(win, "SampleProject")
 
         assert found is True
         private_project_header.click_input.assert_called_once()
@@ -431,15 +431,15 @@ class TestClickProjectHeader:
         assert found is False
 
     def test_pinned_shortcut_is_never_mistaken_for_the_real_header(self):
-        """The pinned section's "Idle PrivateProject" shortcut must not be
-        clicked instead of the real plain "PrivateProject" header — only an
+        """The pinned section's "Idle SampleProject" shortcut must not be
+        clicked instead of the real plain "SampleProject" header — only an
         exact, unprefixed name match counts."""
         backend = UiBackend()
-        pinned_shortcut = _button("Idle PrivateProject")
-        real_header = _button("PrivateProject")
-        win = _win([pinned_shortcut, real_header, _button("New session in PrivateProject")])
+        pinned_shortcut = _button("Idle SampleProject")
+        real_header = _button("SampleProject")
+        win = _win([pinned_shortcut, real_header, _button("New session in SampleProject")])
 
-        backend._sync_click_project_header(win, "PrivateProject")
+        backend._sync_click_project_header(win, "SampleProject")
 
         pinned_shortcut.click_input.assert_not_called()
         real_header.click_input.assert_called_once()
@@ -470,8 +470,8 @@ class TestListProjectsWithSessionsAccordion:
                 # Realistic ordering: each project's own header + sessions
                 # (when expanded) sit right after that project's own "New
                 # session in X" marker, before the next project's.
-                buttons = [_button("PrivateProject"), _button("New session in PrivateProject")]
-                if expanded["project"] == "PrivateProject":
+                buttons = [_button("SampleProject"), _button("New session in SampleProject")]
+                if expanded["project"] == "SampleProject":
                     buttons.append(_button("Idle Fix the login bug"))
                 buttons += [_button("TridentDroid"), _button("New session in TridentDroid")]
                 if expanded["project"] == "TridentDroid":
@@ -493,9 +493,9 @@ class TestListProjectsWithSessionsAccordion:
 
         grouped = backend._sync_list_projects_with_sessions()
 
-        assert click_log == ["PrivateProject", "TridentDroid"]
+        assert click_log == ["SampleProject", "TridentDroid"]
         assert grouped == {
-            "PrivateProject": ["Fix the login bug"],
+            "SampleProject": ["Fix the login bug"],
             "TridentDroid": ["Android crash triage"],
         }
 
@@ -503,7 +503,7 @@ class TestListProjectsWithSessionsAccordion:
 class TestExpandPaginatedSessions:
     def test_clicks_show_more_until_it_disappears(self):
         backend = UiBackend(poll_interval_s=0.001)
-        show_more = _button("Show 3 more in PrivateProject")
+        show_more = _button("Show 3 more in SampleProject")
         state = {"expanded": False}
 
         def descendants(control_type=None, **_):

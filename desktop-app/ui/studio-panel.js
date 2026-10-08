@@ -62,7 +62,7 @@ ${Object.values(groups).map((g) => `<div class="std-grid" style="margin-bottom:1
 
   function previewTab() {
     const sec = st.section;
-    const secs = ['', 'overview', 'bots', 'chat', 'modules', 'vision', 'private_project', 'cluster', 'studio', 'settings'];
+    const secs = ['', 'overview', 'bots', 'chat', 'modules', 'vision', 'cluster', 'studio', 'settings'];
     const head = `<div class="std-row" style="margin-bottom:8px"><label>Show <select id="std-cur">${variantOptions(st.cur, true)}</select></label>
 <label class="std-row"><input type="checkbox" id="std-side" ${st.side ? 'checked' : ''}> beside <select id="std-other">${variantOptions(st.other, true)}</select></label>
 <label>at <select id="std-sec">${secs.map((s) => `<option value="${s}" ${s === sec ? 'selected' : ''}>${s ? '#' + s : 'the top'}</option>`).join('')}</select></label>

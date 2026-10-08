@@ -171,12 +171,8 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.modules.tools", "bot.modules.conformance", "bot.modules.adoption", "bot.dashboard.modules_api",
     # Integration keys: the gate middleware is registered once at startup.
     "bot.integrations", "bot.dashboard.integrations_api",
-    # The Router app: its install job and process handle live in module state.
-    "bot.private_project.router_app",
     # Git stacks: the poller thread and the deploy lock; the routes register once.
     "bot.git_stacks", "bot.dashboard.git_stacks_api",
-    # PrivateProject: routes are registered once at startup.
-    "bot.dashboard.private_project_api",
     # Vision: routes register once, tools.py registers at import time, pipelines.py caches loaded models, zoo.py and
     # dnn.py hold locks and the device fallbacks.
     "bot.dashboard.vision_api", "bot.vision.tools", "bot.vision.pipelines", "bot.vision.zoo", "bot.vision.dnn",
@@ -358,7 +354,6 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.retention",
     "bot.peers",
     "bot.cache",  # CacheIt's client: a reload only drops its pooled connection and its cached hub address
-    "bot.private_project.estate", "bot.private_project.sso", "bot.private_project.router", "bot.private_project.connectors",  # the estate's status cache is rebuilt on demand
     "bot.tailscale_mgr",
     "bot.browser_policy",
     "bot.native_host",

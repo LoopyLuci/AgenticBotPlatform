@@ -173,13 +173,17 @@ def _overlay_manifests(taken: set[str]) -> tuple[list[Manifest], dict[str, str]]
 
 def _builtin_manifests() -> list[Manifest]:
     out = [mf.parse(d) for d in BUILTIN]
-    from bot.private_project import connectors   # the PrivateProject estate's connectors, one repo each
-    out += [mf.parse(d) for d in connectors.manifests()]
     # modules.extra from the config, then whatever a local extension registered (ABP_PRIVATE_DIR):
-    # same shape, same resolution, so a private project is a module without being in the repo.
+    # same shape, same resolution, so a private project is a module without being in the repo. An extension may
+    # also hand over a full manifest (a dict with a "module" table, like abp-module.toml parsed).
     cfg = _cfg()
     for extra in [*(cfg.get("extra") or []), *extensions.loaded().module_entries]:
-        if isinstance(extra, dict):
+        if isinstance(extra, dict) and isinstance(extra.get("module"), dict):
+            try:
+                out.append(mf.parse(extra))
+            except ManifestError:
+                continue
+        elif isinstance(extra, dict):
             try:
                 out.append(mf.parse({"module": {k: extra.get(k) for k in ("id", "name", "repo", "branch", "area",
                                                                         "description")},
@@ -214,7 +218,7 @@ def install_dir(m: Manifest) -> Path:
     sibling = abp_root().parent / m.name
     if is_checkout(m, sibling):
         return sibling
-    # A checkout named after its repo (abp-private_project-budget), next to ABP or in a folder listed in modules.search_paths.
+    # A checkout named after its repo (abp-some-service), next to ABP or in a folder listed in modules.search_paths.
     repo_name = m.repo.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git") if m.repo else ""
     if repo_name:
         for folder in [abp_root().parent, *(_cfg().get("search_paths") or [])]:

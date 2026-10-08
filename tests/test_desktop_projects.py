@@ -38,24 +38,24 @@ class TestCmdDesktopProjectsListing:
         iid = _make_ui_instance(temp_db)
 
         async def fake_grouped():
-            return {"PrivateProject": ["Fix the login bug", "Refactor the parser"], "TridentDroid": []}
+            return {"SampleProject": ["Fix the login bug", "Refactor the parser"], "TridentDroid": []}
 
         monkeypatch.setattr(router, "list_desktop_projects_with_sessions", fake_grouped)
 
         reply = _run(commands.cmd_desktop_projects(_ctx(iid), []))
 
-        assert "PrivateProject (2 chats)" in reply
+        assert "SampleProject (2 chats)" in reply
         assert "TridentDroid (0 chats)" in reply
 
     def test_lists_chats_within_one_project(self, temp_db, monkeypatch):
         iid = _make_ui_instance(temp_db)
 
         async def fake_grouped():
-            return {"PrivateProject": ["Fix the login bug", "Refactor the parser"]}
+            return {"SampleProject": ["Fix the login bug", "Refactor the parser"]}
 
         monkeypatch.setattr(router, "list_desktop_projects_with_sessions", fake_grouped)
 
-        reply = _run(commands.cmd_desktop_projects(_ctx(iid), ["PrivateProject"]))
+        reply = _run(commands.cmd_desktop_projects(_ctx(iid), ["SampleProject"]))
 
         assert "1. Fix the login bug" in reply
         assert "2. Refactor the parser" in reply
@@ -64,7 +64,7 @@ class TestCmdDesktopProjectsListing:
         iid = _make_ui_instance(temp_db)
 
         async def fake_grouped():
-            return {"PrivateProject": []}
+            return {"SampleProject": []}
 
         monkeypatch.setattr(router, "list_desktop_projects_with_sessions", fake_grouped)
 
@@ -99,7 +99,7 @@ class TestCmdDesktopProjectsContinue:
         iid = _make_ui_instance(temp_db)
 
         async def fake_grouped():
-            return {"PrivateProject": ["Fix the login bug", "Refactor the parser"]}
+            return {"SampleProject": ["Fix the login bug", "Refactor the parser"]}
 
         linked = {}
 
@@ -109,7 +109,7 @@ class TestCmdDesktopProjectsContinue:
         monkeypatch.setattr(router, "list_desktop_projects_with_sessions", fake_grouped)
         monkeypatch.setattr(router, "link_existing_desktop_session", fake_link)
 
-        reply = _run(commands.cmd_desktop_projects(_ctx(iid), ["PrivateProject", "2"]))
+        reply = _run(commands.cmd_desktop_projects(_ctx(iid), ["SampleProject", "2"]))
 
         assert "Refactor the parser" in reply
         assert linked["args"] == (iid, 42, "Refactor the parser", None)
@@ -118,11 +118,11 @@ class TestCmdDesktopProjectsContinue:
         iid = _make_ui_instance(temp_db)
 
         async def fake_grouped():
-            return {"PrivateProject": ["Fix the login bug"]}
+            return {"SampleProject": ["Fix the login bug"]}
 
         monkeypatch.setattr(router, "list_desktop_projects_with_sessions", fake_grouped)
 
-        reply = _run(commands.cmd_desktop_projects(_ctx(iid), ["PrivateProject", "5"]))
+        reply = _run(commands.cmd_desktop_projects(_ctx(iid), ["SampleProject", "5"]))
 
         assert "only has 1 chat" in reply.lower()
 
@@ -132,7 +132,7 @@ class TestLinkExistingDesktopSession:
         iid = _make_ui_instance(temp_db)
 
         async def fake_grouped():
-            return {"PrivateProject": ["Fix the login bug"]}
+            return {"SampleProject": ["Fix the login bug"]}
 
         monkeypatch.setattr(router, "list_desktop_projects_with_sessions", fake_grouped)
 
@@ -152,7 +152,7 @@ class TestLinkExistingDesktopSession:
         iid = _make_ui_instance(temp_db)
 
         async def fake_grouped():
-            return {"PrivateProject": ["Fix the login bug"]}
+            return {"SampleProject": ["Fix the login bug"]}
 
         monkeypatch.setattr(router, "list_desktop_projects_with_sessions", fake_grouped)
 

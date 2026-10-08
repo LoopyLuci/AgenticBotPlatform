@@ -50,8 +50,8 @@ def register(app: FastAPI, require_desktop: Callable, identify_caller: Callable)
         if origin and payload.get("allow_framing", True):
             await asyncio.to_thread(_add_origin, integrations.normalize_origin(origin))
         return {"id": key_id, "key": plaintext, "scopes": integrations.validate_scopes(scopes),
-                "note": "Shown once. Paste it where the other program keeps ABP's token (private_project-router: Settings -> "
-                        "Bot Platform). It is not the dashboard token and reaches only these scopes."}
+                "note": "Shown once. Paste it where the other program keeps ABP's token. "
+                        "It is not the dashboard token and reaches only these scopes."}
 
     @app.delete("/api/integrations/keys/{key_id}", dependencies=[Depends(require_desktop)])
     async def integrations_revoke(key_id: int):

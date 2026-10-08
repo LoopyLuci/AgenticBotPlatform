@@ -292,8 +292,8 @@ def test_a_bots_own_agent_settings_are_separate_from_what_it_inherits(client):
 
 
 def test_set_value_keeps_the_files_comments_too(temp_config):
-    config.set_value(["private_project", "router_url"], "http://127.0.0.1:3030", actor="test")
+    config.set_value(["integrations", "frame_src"], ["http://127.0.0.1:3030"], actor="test")
     config.set_value(["git_stacks", "paused"], True, actor="test")
     text = temp_config.read_text(encoding="utf-8")
     assert [ln for ln in text.splitlines() if ln.strip().startswith("#")], "set_value stripped the comments"
-    assert config.current["private_project"]["router_url"] == "http://127.0.0.1:3030" and config.current["git_stacks"]["paused"] is True
+    assert config.current["integrations"]["frame_src"] == ["http://127.0.0.1:3030"] and config.current["git_stacks"]["paused"] is True

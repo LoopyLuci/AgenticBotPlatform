@@ -250,6 +250,8 @@ class ExtensionAPI:
         self.memory_sources: dict[str, dict] = {}
         self.model_locations: list[dict] = []
         self.lab_worker_plugins: list[Path] = []
+        self.provider_sources: list[Callable] = []
+        self.hub_started_hooks: list[Callable] = []
 
     # -- configuration -------------------------------------------------------------
 
@@ -370,6 +372,21 @@ class ExtensionAPI:
         (bot/localai/discover.py). `namespace` prefixes the names ABP gives the models it finds there."""
         self.model_locations.append({"app": str(app), "path": Path(str(path)).expanduser(), "namespace": str(namespace)})
 
+    def add_provider_source(self, source: Callable) -> None:
+        """Model providers that exist only while something is up (like a module's own OpenAI-compatible server):
+        `source() -> {name: {"base_url", "protocol", "api_key", "description"}}`, asked whenever ABP lists its live
+        providers (bot/providers.py) and cached with them. Raising or returning nothing simply adds none."""
+        if not callable(source):
+            raise TypeError(f"extension {self.name}: add_provider_source() needs a callable")
+        self.provider_sources.append(source)
+
+    def on_hub_started(self, hook: Callable) -> None:
+        """`hook(module_id)` runs after a module hub ABP started answers (bot/modules/harness.py), e.g. to hand it a
+        session. A hook that raises is logged and skipped."""
+        if not callable(hook):
+            raise TypeError(f"extension {self.name}: on_hub_started() needs a callable")
+        self.hub_started_hooks.append(hook)
+
     def add_lab_worker_plugin(self, path: str | Path) -> None:
         """A Python file the Neural Lab's training worker imports (by file location, in its own process) for
         formats ABP does not ship: `TOKENIZERS`, `CHECKPOINT_READERS` and `CHECKPOINT_WRITERS`, see
@@ -450,6 +467,14 @@ class Loaded:
     @property
     def lab_worker_plugins(self) -> list[Path]:
         return [p for e in self.extensions for p in e.api.lab_worker_plugins if p.is_file()]
+
+    @property
+    def provider_sources(self) -> list[Callable]:
+        return [s for e in self.extensions for s in e.api.provider_sources]
+
+    @property
+    def hub_started_hooks(self) -> list[Callable]:
+        return [h for e in self.extensions for h in e.api.hub_started_hooks]
 
     @property
     def config_overlay(self) -> dict:

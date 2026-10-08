@@ -150,7 +150,6 @@
     [['router'], 'Model Router', 'ro'],
     [['unsloth'], 'Unsloth', 'un'],
     [['cluster'], 'Cluster', 'cl'],
-    [['private_project'], 'PrivateProject', 'oc'],
     [['vision'], 'Vision', 'vi'],
     [['hosting'], 'Hosting', 'ho'],
     [['storage'], 'Storage', 'st'],

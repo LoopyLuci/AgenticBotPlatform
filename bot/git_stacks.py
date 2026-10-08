@@ -1,6 +1,6 @@
 """Git stacks: compose stacks whose definition lives in a git repo, deployed by ABP, with a poller that makes a push
-deploy. This is the part of Portainer the PrivateProject estate depends on (private_project-ops/PORTAINER-EXIT.md), done so the
-hazards that plan lists cannot happen:
+deploy. This is the part of Portainer a self-hosted estate depends on most, done so the hazards of moving off
+Portainer cannot happen:
 
 - **A registry that stores desired state.** Each stack's repo, ref, compose file, flags and environment are stored
   here; a deploy writes exactly that. Nothing is echoed back from a running stack, so a deploy can never wipe the

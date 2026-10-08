@@ -178,14 +178,15 @@ def module_providers() -> dict[str, dict]:
                              "module": m.id, "description": f"{m.name} (module): {m.description}"[:200]}
     except Exception as e:  # noqa: BLE001
         logger.debug("module providers from manifests: %s", e)
-    try:   # private_project-router's metered /v1, while its owner token is set (bot/private_project/router.py)
-        from bot.private_project import router as private_project_router
+    from bot import extensions
 
-        entry = private_project_router.openai_provider()
-        if entry:
-            out["private_project-router"] = entry
-    except Exception as e:  # noqa: BLE001
-        logger.debug("private_project-router provider: %s", e)
+    for source in extensions.loaded().provider_sources:   # providers an extension offers while they are up
+        try:
+            for name, entry in (source() or {}).items():
+                if entry and name not in out:
+                    out[str(name)] = dict(entry)
+        except Exception as e:  # noqa: BLE001 - a broken extension never breaks provider lookups
+            logger.debug("extension provider source %s: %s", getattr(source, "__qualname__", source), e)
     _module_cache = (now, out)
     return dict(out)
 

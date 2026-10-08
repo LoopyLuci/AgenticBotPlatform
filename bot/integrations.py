@@ -1,5 +1,5 @@
-"""Integration keys: least-privilege API keys for other programs that drive ABP (private_project-router's Bot Platform
-view first), instead of the dashboard token, which is root on this machine.
+"""Integration keys: least-privilege API keys for other programs that drive ABP (a router's bot-platform view, a
+companion IDE), instead of the dashboard token, which is root on this machine.
 
 An integration key is an api_keys row of kind "integration" plus a list of scopes (table integration_scopes).
 Every request made with one is checked against its scopes' route allowlist before any route runs
@@ -54,10 +54,10 @@ SCOPES: dict[str, list[tuple[str, str]]] = {
 }
 
 PRESETS: dict[str, dict] = {
-    "private_project-router": {
-        "label": "private_project-router (Bot Platform view)",
+    "bot-platform": {
+        "label": "a router's bot-platform view",
         "scopes": ["status:read", "bots:read", "bots:control", "docker:read", "docker:control", "modules:read"],
-        "note": "What private_project-router's server/botplatform.js calls: bots and their lifecycle, Docker read and "
+        "note": "What a router or dashboard that shows ABP's bots calls: bots and their lifecycle, Docker read and "
                 "start/stop/restart/pause/unpause/pull/up. No destructive Docker verbs, no config, no credentials.",
     },
     "companion-app": {

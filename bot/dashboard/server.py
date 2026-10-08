@@ -872,7 +872,7 @@ def build_app() -> FastAPI:
         peer_access_enabled=peer_infra_enabled,
     )
 
-    # Integration keys (/api/integrations): scoped keys for programs like private_project-router. Registered after the infra
+    # Integration keys (/api/integrations): scoped keys for programs that drive ABP. Registered after the infra
     # API so its gate middleware is outermost and runs before the infra fan-out.
     from bot.dashboard import integrations_api
 
@@ -882,11 +882,6 @@ def build_app() -> FastAPI:
     from bot.dashboard import git_stacks_api
 
     git_stacks_api.register(app, _require_token, control_auth("docker", write=False), control_auth("docker", write=True))
-
-    # The PrivateProject estate: catalog and status, private_project-router, SSO (/api/private_project).
-    from bot.dashboard import private_project_api
-
-    private_project_api.register(app, _require_token)
 
     # Computer vision on this machine (/api/vision): OpenCV and its model zoo (bot/vision).
     try:
