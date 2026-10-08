@@ -38,6 +38,8 @@ desktop-app/src-tauri/stage/
 
 # Local agent handoff notes — not user-facing docs, never published
 PLAN.md
+PLAN-*.md
+TODO.md
 
 # Whole runtime directories — nothing under these is source. (The narrower
 # entries above missed e.g. data/checkpoint_store/ and rotated logs/bot.log.1,

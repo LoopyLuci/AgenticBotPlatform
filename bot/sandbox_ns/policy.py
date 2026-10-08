@@ -176,6 +176,11 @@ PRESETS: dict[str, Policy] = {
     "daemon": Policy(name="daemon", persistent=True, max_processes=256),
     # A training or lab worker: heavy, background, and never more important than the desktop.
     "worker": Policy(name="worker", memory_mb=12288, cpu_rate_percent=50.0, max_processes=128),
+    # A WebAssembly plugin call (bot/sandbox_ns/wasm.py). It runs inside ABP's own process, so there
+    # is no process tree: the deadline and memory cap are enforced by the engine. cell.new_cell
+    # hands this preset to a WasmCell, never to a job object (max_processes=0 would mean "no cap"
+    # there).
+    "wasm": Policy(name="wasm", max_processes=0, persistent=False),
 }
 # The affinity default is resolved once, lazily: it costs a config read and (on a machine with
 # a stability history) a hardware-event-log look, neither of which belongs on an import path.

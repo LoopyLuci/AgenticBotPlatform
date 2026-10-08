@@ -184,7 +184,9 @@ impl PluginHandle {
         match outcome {
             Ok(result) => Python::attach(|py| {
                 let out = PyDict::new(py);
-                out.set_item("ok", result.json)?;
+                // The world's `err` is the tool's own failure: reported as `error`, so it is never
+                // mistaken for a result.
+                out.set_item(if result.failed { "error" } else { "ok" }, result.json)?;
                 out.set_item("logs", result.logs)?;
                 out.set_item("elapsed_ms", elapsed_ms)?;
                 Ok(out.unbind())

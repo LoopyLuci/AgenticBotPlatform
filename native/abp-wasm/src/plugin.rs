@@ -162,8 +162,11 @@ pub struct Response {
 /// What one invocation produced: the JSON result, and anything the plugin logged.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct CallResult {
+    /// The tool's result as JSON, or, when `failed`, the message the tool reported.
     pub json: String,
     pub logs: Vec<String>,
+    /// The tool reported its own failure (the world's `err`): an answer, not a trap.
+    pub failed: bool,
 }
 
 /// The store's data: WASI's own state, the host services, the limits, and this call's log.
@@ -541,12 +544,20 @@ impl LoadedPlugin {
                         self.grants.max_output_bytes
                     )));
                 }
-                Ok(CallResult { json, logs })
+                Ok(CallResult {
+                    json,
+                    logs,
+                    failed: false,
+                })
             }
             // A tool that reports its own failure is a result, not a trap: it decided its
             // arguments were wrong, which is the model's mistake to fix, rather than a
             // sandbox failure to report.
-            Ok(Err(why)) => Ok(CallResult { json: why, logs }),
+            Ok(Err(why)) => Ok(CallResult {
+                json: why,
+                logs,
+                failed: true,
+            }),
             Err(e) => Err(classify(e)),
         }
     }

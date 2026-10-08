@@ -41,7 +41,7 @@ logger = logging.getLogger("bot.sandbox_ns.wasm")
 #: reads like every other cell and so the cap has somewhere to be written down. Below-normal
 #: priority is not applicable (a thread's priority is ABP's, and a plugin cannot be given its
 #: own), so this preset says only what is true.
-PRESET: Policy = Policy(name="wasm", max_processes=0, persistent=False)
+PRESET: Policy = policy_mod.PRESETS["wasm"]
 
 
 class WasmCell:

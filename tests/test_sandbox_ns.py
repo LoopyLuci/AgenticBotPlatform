@@ -657,7 +657,7 @@ def test_the_reaper_leaves_another_running_apps_processes_alone(state_file):
 # ------------------------------------------------------------------ policy and reflexes (pure)
 
 def test_the_presets_say_what_they_are():
-    assert set(policy_mod.PRESETS) == {"tool", "agent", "build", "engine", "daemon", "worker"}
+    assert set(policy_mod.PRESETS) == {"tool", "agent", "build", "engine", "daemon", "worker", "wasm"}
     for name, p in policy_mod.PRESETS.items():
         assert p.name == name
         assert p.priority == "below_normal", f"{name} would compete with the person at the keyboard"
@@ -666,6 +666,15 @@ def test_the_presets_say_what_they_are():
     assert all(not p.persistent for n, p in policy_mod.PRESETS.items() if n != "daemon")
     with pytest.raises(KeyError, match="unknown sandbox preset"):
         policy_mod.preset("server")
+
+
+def test_the_wasm_preset_gets_a_wasm_cell_never_a_job_object():
+    from bot.sandbox_ns import cell as cell_mod, wasm
+
+    assert wasm.PRESET is policy_mod.PRESETS["wasm"]
+    with cell_mod.cell_for("wasm", name="hello.greet", owner="agent:3") as c:
+        assert isinstance(c, wasm.WasmCell)
+        assert c.name == "hello.greet" and c.pids() == []
 
 
 def test_the_default_processor_set_is_everything_except_what_must_be_avoided(monkeypatch):

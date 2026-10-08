@@ -602,6 +602,15 @@ class Router:
                 db.mark_job_retrying(job_id, backend=backend_name)
                 logger.info("job %s: %s failed, retrying via backup %s", job_id, chain[i - 1], backend_name)
 
+            features = cfg.get("features") or {}
+            if backend_name == "ui" and features.get("ui_automation_enabled", True) is False:
+                # Settings -> "UI automation backend": off means nothing is routed to the desktop window.
+                exc = BackendError("the UI automation backend is turned off (Settings -> UI automation backend), so "
+                                   "this was not sent to the desktop window")
+                db.log_connection_event(component=backend_name, event="request_error", detail=str(exc))
+                last_error = exc
+                continue
+
             ready, reason = setup_wizard.check_backend_ready(backend_name)
             if not ready:
                 exc = BackendError(
@@ -676,6 +685,10 @@ class Router:
                     if "cache_read_tokens" in result.raw:
                         db.log_telemetry(component=backend_name, metric="cache_read_tokens", value=result.raw["cache_read_tokens"])
                 db.log_connection_event(component=backend_name, event="request_ok")
+                if features.get("verbose_telemetry"):
+                    # Settings -> "Verbose telemetry": every call goes to the log, not only the failures.
+                    logger.info("job %s: %s%s answered in %.0f ms (%s tokens)", job_id, backend_name,
+                                f"/{model_name}" if model_name else "", latency_ms, result.tokens)
                 db.mark_job_done(job_id, status="success", result=result.text, tokens=result.tokens)
                 if instance_id is not None and isinstance(result.raw, dict) and result.raw.get("desktop_session_key"):
                     reported_key = result.raw["desktop_session_key"]

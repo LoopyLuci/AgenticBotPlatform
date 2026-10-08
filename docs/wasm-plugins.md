@@ -142,22 +142,26 @@ and the plugin's, so a caller can shorten a call and never lengthen one.
   output cap), `kv`, `read` (from a preopen) and `fetch`. Asks for `/data` and `127.0.0.1`, so
   the tests can install it granted and ungranted.
 * [`examples/wasm/py-hello`](../examples/wasm/py-hello/) - the same plugin as `rust-hello`, in
-  Python, for `componentize-py`. See below for its state.
+  Python, for `componentize-py`.
+* [`examples/wasm/js-hello`](../examples/wasm/js-hello/) - the same plugin in JavaScript, for
+  `jco componentize`.
 
 ### JavaScript
 
-Not built here. The steps, which are the standard ones:
+`examples/wasm/js-hello/abp_plugin.js` exports the world's `guest` interface as an object and
+imports `log` from `abp:plugin/host@0.1.0`. [jco](https://github.com/bytecodealliance/jco)
+(1.37, with `@bytecodealliance/componentize-js`; `npm install` per-user, no admin) compiles it:
 
 ```
-npm install --save-dev @bytecodealliance/jco        # per-user, no admin
-npx jco transpile                                       # emit the JS bindings for wit/
-# implement describe() and invoke() against the generated imports/exports
-npx jco componentize examples/wasm/js-hello -o hello.wasm
+npx jco componentize abp_plugin.js --wit ../../../wit --world-name plugin --disable http fetch-event -o abp_js_hello.wasm
 ```
 
-`jco` has no ABP-specific glue to be written here, and ABP cannot verify a component it did not
-build, so an unbuilt example is left as instructions rather than committed as something that
-may or may not work.
+`--disable http fetch-event` is required: by default componentize-js imports `wasi:http` for
+`fetch`, which ABP does not provide (a plugin reaches the network only through the host's
+checked `http-fetch`), and the component would not load. In JavaScript a WIT record is a plain
+object with camelCase fields and `result<string, string>` is a returned string for `ok` and a
+thrown value for `err`. About 13 MB; the first load compiles it (about 11 s here), after that it
+comes from the compiled-component cache. A call takes about 4 ms.
 
 ### Python
 
@@ -169,11 +173,14 @@ may or may not work.
 componentize-py -d ../../../wit -w plugin componentize abp_plugin -o abp_py_hello.wasm
 ```
 
-**The build succeeds and ABP cannot yet load the result**: the component traps with
-`unreachable` before `describe()` returns, with componentize-py 0.25.1 against this world. The
-Rust path is unaffected and is what the tests use. The source and the command are here because
-they are the correct way to write this plugin and because the next version of componentize-py
-may well fix it - but nothing in this repository claims the Python example runs.
+The types matter: `describe` returns the generated `Manifest` record (a plain dict cannot be
+lowered, and the component traps with `unreachable` - which is what the first version of this
+example did), the class subclasses the generated `exports.Guest` and is called on an instance, and
+`result<string, string>` is a returned `str` for `ok` and a raised `Err(str)` for `err`. About
+18 MB; first load about 10 s, a call about 4 ms.
+
+A tool that reports its own failure (the world's `err`) comes back from the runtime as
+`{"error": ...}`, never as `{"ok": ...}`, so a refusal is never mistaken for a result.
 
 ## Tests
 
@@ -184,7 +191,8 @@ python -m pytest tests/test_wasm_plugins.py tests/test_wasm_disabled.py -q -p no
 Nothing is mocked: the components under test are the examples above, built for
 `wasm32-wasip2`; the HTTP server the network test reaches is a real one on 127.0.0.1 that the
 test starts and stops; the files the filesystem test reads are real; the audit rows are real
-rows. `tests/test_wasm_plugins.py` builds the example components on first use (found already
+rows. `tests/test_wasm_plugins.py` builds the example components on first use (the Python and
+JavaScript ones only when `componentize-py` or `jco` is installed, and skips them otherwise) (found already
 built under `$CARGO_TARGET_DIR`, otherwise `cargo build --target wasm32-wasip2` through
 `bot.sandbox_ns.spawn`, so it is windowless and killable). Without cargo it skips with the
 reason rather than passing vacuously.

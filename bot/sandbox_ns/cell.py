@@ -353,6 +353,14 @@ def new_cell(preset: str = "tool", *, name: str = "", owner: str = "",
              policy: Optional[Policy] = None) -> Cell:
     """A cell for a named preset (or an explicit policy). Every caller that starts more than
     one process that belongs together should use one, so `Cell.kill()` really is one call."""
+    if preset == "wasm" and policy is None:
+        # A plugin call has no process to put in a job object: the wasm preset gets its own cell.
+        from bot.sandbox_ns import wasm
+
+        cell = wasm.WasmCell(owner=owner)
+        if name:
+            cell.name = name
+        return cell  # type: ignore[return-value]
     return Cell(policy or policy_mod.policy_for(preset), name=name, owner=owner)
 
 

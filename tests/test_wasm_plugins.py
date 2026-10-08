@@ -19,6 +19,8 @@ import asyncio
 import json
 import os
 import shutil
+import subprocess
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -94,6 +96,62 @@ def hello_component() -> Path:
     return _build("rust-hello", "abp_wasm_example_hello")
 
 
+@pytest.fixture(scope="session")
+def py_hello_component() -> Path:
+    """The Python example, compiled with componentize-py when it is installed (on PATH, or
+    importable); skipped otherwise. Built once into the cargo target folder."""
+    if not runtime.available():
+        pytest.skip("the native wasm module is not built")
+    out = _target_dir() / "abp_py_hello.wasm"
+    src = EXAMPLES / "py-hello"
+    if out.exists() and out.stat().st_mtime >= (src / "abp_plugin.py").stat().st_mtime:
+        return out
+    exe = shutil.which("componentize-py")
+    if exe:
+        cmd = [exe]
+    else:
+        try:
+            import componentize_py  # noqa: F401
+        except ImportError:
+            pytest.skip("componentize-py is not installed: cannot build the Python example")
+        cmd = [sys.executable, "-c", "import sys, componentize_py; sys.argv[0] = \"componentize-py\"; componentize_py.script()"]
+    from bot.sandbox_ns import spawn
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    result = spawn.run(cmd + ["-d", str(EXAMPLES.parent.parent / "wit"), "-w", "plugin", "componentize", "abp_plugin",
+                              "-o", str(out)], cwd=src, timeout=600, check=False,
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if result.returncode != 0 or not out.exists():
+        said = result.stdout if isinstance(result.stdout, str) else (result.stdout or b"").decode(errors="replace")
+        said = said[-1500:]
+        pytest.fail(f"componentize-py could not build the Python example (exit {result.returncode}):\n{said}")
+    return out
+
+
+@pytest.fixture(scope="session")
+def js_hello_component() -> Path:
+    """The JavaScript example, compiled with jco when `jco` is on PATH; skipped otherwise."""
+    if not runtime.available():
+        pytest.skip("the native wasm module is not built")
+    out = _target_dir() / "abp_js_hello.wasm"
+    src = EXAMPLES / "js-hello"
+    if out.exists() and out.stat().st_mtime >= (src / "abp_plugin.js").stat().st_mtime:
+        return out
+    jco = shutil.which("jco")
+    if not jco:
+        pytest.skip("jco is not on PATH: cannot build the JavaScript example")
+    from bot.sandbox_ns import spawn
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    result = spawn.run([jco, "componentize", "abp_plugin.js", "--wit", str(EXAMPLES.parent.parent / "wit"),
+                        "--world-name", "plugin", "--disable", "http", "fetch-event", "-o", str(out)],
+                       cwd=src, timeout=600, check=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if result.returncode != 0 or not out.exists():
+        said = result.stdout if isinstance(result.stdout, str) else (result.stdout or b"").decode(errors="replace")
+        pytest.fail(f"jco could not build the JavaScript example (exit {result.returncode}):\n{said[-1500:]}")
+    return out
+
+
 @pytest.fixture
 def project(tmp_path, monkeypatch):
     """ABP's data directory, under tmp_path, so installs and stores land somewhere throwaway."""
@@ -127,6 +185,36 @@ def test_a_tool_call_returns_the_plugins_own_result(hello_component, project):
     assert handle.tool_names() == ["greet"]
     result = handle.invoke("greet", json.dumps({"name": "world"}), timeout_ms=2000)
     assert json.loads(result["ok"]) == {"greeting": "Hello, world!"}
+
+
+def test_a_tool_that_reports_its_own_failure_comes_back_as_an_error(hello_component, project):
+    handle = runtime.Runtime.shared().load(
+        hello_component, grants=runtime.grants_for(), services=_services("hello", project)
+    )
+    result = handle.invoke("no-such-tool", "{}", timeout_ms=2000)
+    assert "ok" not in result and result["error"]
+
+
+def test_the_python_example_runs(py_hello_component, project):
+    handle = runtime.Runtime.shared().load(
+        py_hello_component, grants=runtime.grants_for(), services=_services("py-hello", project)
+    )
+    assert handle.tool_names() == ["greet"]
+    result = handle.invoke("greet", json.dumps({"name": "world"}), timeout_ms=5000)
+    assert json.loads(result["ok"]) == {"greeting": "Hello, world!"}
+    assert result["logs"] == ["[info] greeted world"]
+    assert "name" in handle.invoke("greet", json.dumps({}), timeout_ms=5000)["error"]
+
+
+def test_the_javascript_example_runs(js_hello_component, project):
+    handle = runtime.Runtime.shared().load(
+        js_hello_component, grants=runtime.grants_for(), services=_services("js-hello", project)
+    )
+    assert handle.tool_names() == ["greet"]
+    result = handle.invoke("greet", json.dumps({"name": "world"}), timeout_ms=5000)
+    assert json.loads(result["ok"]) == {"greeting": "Hello, world!"}
+    assert result["logs"] == ["[info] greeted world"]
+    assert "name" in handle.invoke("greet", json.dumps({}), timeout_ms=5000)["error"]
 
 
 def test_the_manifest_says_what_the_plugin_offers(hello_component, project):
@@ -188,7 +276,7 @@ def test_a_request_outside_the_allowlist_is_denied(probes_component, project):
         services=_services("probes", project),
     )
     result = handle.invoke("fetch", json.dumps({"url": "http://example.com/"}), timeout_ms=2000)
-    assert "may not reach example.com" in result["ok"]
+    assert "may not reach example.com" in result["error"]
 
 
 def test_a_request_inside_the_allowlist_goes_through(probes_component, project):
@@ -231,8 +319,8 @@ def test_a_file_outside_the_preopens_cannot_be_reached(probes_component, project
     )
     for path in ("/etc/hosts", str(outside).replace("\\", "/"), "/data/../secret.txt"):
         result = handle.invoke("read", json.dumps({"path": path}), timeout_ms=2000)
-        assert "ok" in result, f"{path} was readable: {result}"
-        assert "could not read" in result["ok"]
+        assert "ok" not in result, f"{path} was readable: {result}"
+        assert "could not read" in result["error"]
 
 
 def test_each_plugins_store_is_its_own(probes_component, hello_component, project):
