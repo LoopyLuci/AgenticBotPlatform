@@ -34,8 +34,19 @@ BACKEND_FAMILY: dict[str, str] = {
     "native_agent": "custom",
     "opencode": "custom",       # provider/model strings, like custom_model; the model itself is resolved by that product
     "openclaw": "custom",
-    "private_project": "private_project",     # its "model" is one of PrivateProject's agent types
 }
+
+
+def backend_families() -> dict[str, str]:
+    """BACKEND_FAMILY plus the family of every backend an extension registered (bot/extensions.py)."""
+    from bot import extensions
+
+    out = {k: v["family"] for k, v in extensions.loaded().backend_classes.items() if k not in BACKEND_FAMILY}
+    return {**BACKEND_FAMILY, **out}
+
+
+def backend_family(backend: str, default: str | None = None) -> str | None:
+    return backend_families().get(backend, default)
 
 # The one hardcoded model id in this module — not a "list of choices" (the
 # module docstring's promise stays intact: every choice offered anywhere
@@ -85,7 +96,7 @@ async def known_models_for(backend: str) -> Optional[list[str]]:
     Used wherever a model name needs checking against "does this actually
     exist right now" (e.g. /model set), as opposed to instance_model_groups'
     provider-grouped shape used by the picker UI."""
-    family = BACKEND_FAMILY.get(backend, "claude")
+    family = backend_family(backend, "claude")
     if family == "hermes":
         grouped = live_hermes_models()
         if not grouped:

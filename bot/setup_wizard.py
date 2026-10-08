@@ -257,7 +257,6 @@ _READINESS_CHECKS: dict[str, Callable[[], tuple[bool, str]]] = {
     "native_agent": _custom_model_ready,  # same providers.yaml registry
     "opencode": _opencode_ready,
     "openclaw": _openclaw_ready,
-    "private_project": lambda: __import__("bot.private_project", fromlist=["ready"]).ready(),
 }
 
 
@@ -266,6 +265,10 @@ def check_backend_ready(name: str) -> tuple[bool, str]:
     every attempt, so a missing prerequisite is a clear directive instead
     of a raw exception three layers down."""
     fn = _READINESS_CHECKS.get(name)
+    if fn is None:
+        from bot import extensions
+
+        fn = (extensions.loaded().backend_classes.get(name) or {}).get("ready")
     return fn() if fn else (True, "")
 
 

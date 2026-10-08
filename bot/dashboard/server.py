@@ -888,11 +888,6 @@ def build_app() -> FastAPI:
 
     private_project_api.register(app, _require_token)
 
-    # PrivateProject: the link that lets ABP use it as a backend (/api/private_project).
-    from bot.dashboard import private_project_api
-
-    private_project_api.register(app, _require_token)
-
     # Computer vision on this machine (/api/vision): OpenCV and its model zoo (bot/vision).
     try:
         from bot.dashboard import vision_api

@@ -206,12 +206,19 @@ class Extension:
             "path": str(self.directory),
             "backends": sorted(self.api.backends),
             "integrations": sorted(self.api.integrations),
-            "routes": sorted(self.api.routes),
+            # Counted and named, not sorted as-is: two (name, callable) pairs or two command dicts do not compare.
+            "routes": len(self.api.routes),
             "panels": [p.id for p in self.api.panels],
-            "cli_commands": sorted(self.api.cli_commands),
-            "mcp_tools": sorted(self.api.mcp_tools),
+            "cli_commands": sorted(c["name"] for c in self.api.cli_commands),
+            "mcp_tools": sorted(name for _func, name in self.api.mcp_tools),
             "modules": [str(m.get("id", "")) for m in self.api.modules],
             "test_dirs": [str(p) for p in self.api.test_dirs],
+            "backend_classes": sorted(self.api.backend_classes),
+            "integration_presets": sorted(self.api.integration_presets),
+            "lab_importers": sorted(self.api.lab_importers),
+            "memory_sources": sorted(self.api.memory_sources),
+            "model_locations": [m["app"] for m in self.api.model_locations],
+            "lab_worker_plugins": [str(p) for p in self.api.lab_worker_plugins],
         }
 
 
@@ -236,6 +243,13 @@ class ExtensionAPI:
         self.mcp_tools: list[tuple[Callable, str]] = []
         self.modules: list[dict] = []
         self.test_dirs: list[Path] = []
+        self.backend_classes: dict[str, dict] = {}
+        self.integration_scopes: dict[str, list[tuple[str, str]]] = {}
+        self.integration_presets: dict[str, dict] = {}
+        self.lab_importers: dict[str, dict] = {}
+        self.memory_sources: dict[str, dict] = {}
+        self.model_locations: list[dict] = []
+        self.lab_worker_plugins: list[Path] = []
 
     # -- configuration -------------------------------------------------------------
 
@@ -303,6 +317,66 @@ class ExtensionAPI:
         resolved = raw if raw.is_absolute() else self.directory / raw
         self.test_dirs.append(resolved)
 
+    # -- backends, integration keys, the Neural Lab, the memory fabric, local models ------
+
+    def add_backend_class(self, kind: str, factory: Callable, *, family: str = "custom", label: str = "",
+                          ready: Optional[Callable] = None) -> None:
+        """A backend a bot can be routed to, next to ABP's own (api, cli, native_agent, ...).
+
+        `factory(settings, model)` returns a bot.backends Backend: `settings` is `backends.<kind>` from the
+        effective config, `model` the bot's model field (None when it has none). `family` groups it in the
+        model pickers (bot.models.backend_family). `ready() -> (ok, reason)` is the pre-flight check the router
+        runs before each attempt (bot/setup_wizard.py). A kind ABP already has is ignored: ABP's own wins."""
+        if not callable(factory):
+            raise TypeError(f"extension {self.name}: add_backend_class() needs a callable factory")
+        self.backend_classes[str(kind)] = {"factory": factory, "family": str(family), "label": str(label or kind),
+                                           "ready": ready}
+
+    def add_integration_scope(self, name: str, rules: list) -> None:
+        """An integration-key scope (bot/integrations.py): a list of (HTTP method, path regex) pairs, usually the
+        extension's own routes, so another program can be given exactly those and nothing else."""
+        self.integration_scopes[str(name)] = [(str(m).upper(), str(p)) for m, p in rules]
+
+    def add_integration_preset(self, name: str, *, label: str, scopes: list, note: str = "") -> None:
+        """A named set of scopes offered when minting an integration key for a known program."""
+        self.integration_presets[str(name)] = {"label": str(label), "scopes": [str(s) for s in scopes],
+                                               **({"note": str(note)} if note else {})}
+
+    def add_lab_importer(self, kind: str, *, label: str, run: Callable, list_items: Optional[Callable] = None) -> None:
+        """A way to bring a design into the Neural Lab (next to BrainBuilder graphs).
+
+        `run(body) -> spec` turns the import request's body into a design spec (bot/neurallab/spec.py);
+        `list_items() -> [{"id", "label", "detail", "body"}]` is what the Neural Lab shows as importable, each
+        `body` being what an Import click sends back to `run`."""
+        if not callable(run):
+            raise TypeError(f"extension {self.name}: add_lab_importer() needs a callable run")
+        self.lab_importers[str(kind)] = {"label": str(label), "run": run, "list": list_items}
+
+    def add_memory_source(self, kind: str, *, required: list, read: Callable, item_kind: str = "note",
+                          complete: bool = True, label: str = "") -> None:
+        """A kind of memory-fabric source (bot/memoryfabric/sources.py), like "folder" or "web".
+
+        `read(config) -> [{"key", "title", "text", "tags"?, "updated"?}]` lists what the source holds now;
+        `required` names the config fields a source of this kind must have. `complete`: the listing is the whole
+        source, so an item that disappears from it was deleted."""
+        if not callable(read):
+            raise TypeError(f"extension {self.name}: add_memory_source() needs a callable read")
+        self.memory_sources[str(kind)] = {"required": [str(f) for f in required], "read": read,
+                                          "item_kind": str(item_kind), "complete": bool(complete),
+                                          "label": str(label or kind)}
+
+    def add_model_location(self, app: str, path: str | Path, namespace: str) -> None:
+        """A folder where another program on this machine keeps model files, for Local AI's Discover
+        (bot/localai/discover.py). `namespace` prefixes the names ABP gives the models it finds there."""
+        self.model_locations.append({"app": str(app), "path": Path(str(path)).expanduser(), "namespace": str(namespace)})
+
+    def add_lab_worker_plugin(self, path: str | Path) -> None:
+        """A Python file the Neural Lab's training worker imports (by file location, in its own process) for
+        formats ABP does not ship: `TOKENIZERS`, `CHECKPOINT_READERS` and `CHECKPOINT_WRITERS`, see
+        bot/neurallab/nn_worker.py. Relative paths are resolved against the extension's folder."""
+        raw = Path(str(path))
+        self.lab_worker_plugins.append(raw if raw.is_absolute() else self.directory / raw)
+
 
 # --------------------------------------------------------------------------------------
 # Loading
@@ -340,6 +414,42 @@ class Loaded:
         """Every module entry an extension registered, so a private project is a module. Read by
         bot/modules/registry.py, which re-reads its manifests within seconds."""
         return [m for e in self.extensions for m in e.api.modules]
+
+    def _merged(self, attr: str) -> dict:
+        """One extension-registered dict across every loaded extension (the first to register a key keeps it)."""
+        out: dict[str, Any] = {}
+        for e in self.extensions:
+            for k, v in getattr(e.api, attr).items():
+                out.setdefault(k, v)
+        return out
+
+    @property
+    def backend_classes(self) -> dict[str, dict]:
+        return self._merged("backend_classes")
+
+    @property
+    def integration_scopes(self) -> dict[str, list]:
+        return self._merged("integration_scopes")
+
+    @property
+    def integration_presets(self) -> dict[str, dict]:
+        return self._merged("integration_presets")
+
+    @property
+    def lab_importers(self) -> dict[str, dict]:
+        return self._merged("lab_importers")
+
+    @property
+    def memory_sources(self) -> dict[str, dict]:
+        return self._merged("memory_sources")
+
+    @property
+    def model_locations(self) -> list[dict]:
+        return [m for e in self.extensions for m in e.api.model_locations]
+
+    @property
+    def lab_worker_plugins(self) -> list[Path]:
+        return [p for e in self.extensions for p in e.api.lab_worker_plugins if p.is_file()]
 
     @property
     def config_overlay(self) -> dict:
@@ -418,7 +528,9 @@ def _import_extension_module(directory: Path, entry: str):
     digest = hashlib.md5(str(directory.resolve()).encode("utf-8", "replace")).hexdigest()[:10]
     name = f"_abp_extension_{digest}_{entry.replace('.', '_')}"
     sys.modules.pop(name, None)
-    spec = importlib.util.spec_from_file_location(name, candidate)
+    # A package entry is loaded AS a package, so its own modules can import each other relatively (from . import x).
+    search = [str(candidate.parent)] if candidate.name == "__init__.py" else None
+    spec = importlib.util.spec_from_file_location(name, candidate, submodule_search_locations=search)
     if spec is None or spec.loader is None:
         raise ImportError(f"couldn't load {candidate}")
     mod = importlib.util.module_from_spec(spec)

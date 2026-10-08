@@ -2,7 +2,7 @@
 trains, or changes the model store asks the person.
 
     localai_status    the model server, engines, GPUs, models (pulled, imported, referenced), what is loaded, runs
-    localai_discover  models other programs keep on this machine (Ollama, LM Studio, Hugging Face, PrivateProject...)
+    localai_discover  models other programs keep on this machine (Ollama, LM Studio, Hugging Face, ...)
     localai_models    pull / import / reference / copy / delete / create (Modelfile) a model (asks first)
     localai_train     fine-tune a model on the GPU (LoRA SFT or DPO), stop a run, export it (asks first); runs and
                       their progress are in localai_status
@@ -159,7 +159,7 @@ def register_tools() -> None:
     reg("localai_status", "ABP's local AI: the Ollama-compatible model server (port 11436), llama.cpp engines, GPUs, every "
         "model (pulled, imported, referenced from other programs), what is loaded, fine-tuning runs.", {}, [], status)
     reg("localai_discover", "Models other programs already keep on this machine (Ollama, LM Studio, the Hugging Face cache, "
-        "GPT4All, Jan, PrivateProject, added folders), and which ABP already uses.", {}, [], disc)
+        "GPT4All, Jan, extensions' folders, added folders), and which ABP already uses.", {}, [], disc)
     reg("localai_models", "Change ABP's model store: pull a model (\"qwen2.5:0.5b\", \"hf.co/<repo>:<quant>\"), import or "
         "reference a GGUF file, copy, delete, or create one from a Modelfile. Asks first.",
         {"action": {"type": "string", "enum": ["pull", "import", "reference", "copy", "delete", "create"]},

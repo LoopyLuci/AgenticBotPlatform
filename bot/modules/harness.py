@@ -423,9 +423,10 @@ def abp_env(m: Manifest) -> dict:
     if not m.abp_connect:
         return {}
     from bot import integrations
-    preset = integrations.PRESETS.get(m.abp_preset)
+    presets = integrations.all_presets()
+    preset = presets.get(m.abp_preset)
     if preset is None:
-        raise ModuleError(f"{m.name}: [abp] preset {m.abp_preset!r} is not one of {', '.join(integrations.PRESETS)}",
+        raise ModuleError(f"{m.name}: [abp] preset {m.abp_preset!r} is not one of {', '.join(presets)}",
                           code="invalid", status=400)
     data = registry.data_dir(m)
     data.mkdir(parents=True, exist_ok=True)

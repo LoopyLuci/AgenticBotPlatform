@@ -183,7 +183,7 @@ async def cmd_gateway(ctx: CmdContext, args: list[str]) -> str:
     misleading). Outside a linked chat (no bound instance) there's no
     family to scope to, so everything is shown."""
     from bot import bot_instances
-    from bot.models import BACKEND_FAMILY
+    from bot.models import backend_family
 
     cfg = config.current
     readiness = setup_wizard.backend_readiness()
@@ -192,7 +192,7 @@ async def cmd_gateway(ctx: CmdContext, args: list[str]) -> str:
     if ctx.instance_id is not None:
         instance = bot_instances.get_instance(ctx.instance_id)
         if instance is not None:
-            family = BACKEND_FAMILY.get(instance["backend"])
+            family = backend_family(instance["backend"])
 
     if family == "hermes":
         names = ("hermes_cli", "hermes_gateway")
@@ -314,9 +314,9 @@ async def instance_model_groups(backend: str, instance_id: Optional[int] = None)
     heuristic — each group then also carries "free_ids" so callers (e.g.
     instance_model_page's provider free_count) can use the real
     classification instead of re-guessing from the id string."""
-    from bot.models import BACKEND_FAMILY, live_api_models, live_custom_models, live_hermes_models
+    from bot.models import backend_family, live_api_models, live_custom_models, live_hermes_models
 
-    family = BACKEND_FAMILY.get(backend, "claude")
+    family = backend_family(backend, "claude")
     if family == "hermes":
         if instance_id is not None:
             from bot.models import hermes_models_with_pricing

@@ -1,5 +1,5 @@
 """The local AI runtime inside ABP: its model server kept running, fine-tuning runs exported when they finish, and
-ABP's model store made visible to the modules that run models (PrivateProject reads it through ABP_MODELS_DIR).
+ABP's model store made visible to the modules that run models (a module reads it through ABP_MODELS_DIR).
 
     server_status / server_start / server_stop      the Ollama-compatible server (bot/localai/server.py), a process
                                                      of its own (bot/hosting/procs.py), on settings' port (11436)

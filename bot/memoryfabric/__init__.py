@@ -8,10 +8,10 @@ what was learned or said.
                     server, a local Ollama, or hashed TF-IDF when neither runs) on top of the most confirmed ones.
     Threads         every turn of every conversation, whichever backend answered, recorded at the router. When the
                     next turn goes to a different model, or to a backend that keeps no history of its own (a CLI,
-                    Hermes, PrivateProject, an external agent), it gets the conversation so far: a running summary plus the
+                    Hermes, a companion IDE, an external agent), it gets the conversation so far: a running summary plus the
                     latest turns, sized to that model's context window.
     Everywhere      the dashboard API (/api/memory), MCP tools, the agents' tools, and ABP's Ollama-compatible server
-                    (a model named "<model>+memory", or the X-ABP-Memory header) so PrivateProject, mesh-llm, openhuman,
+                    (a model named "<model>+memory", or the X-ABP-Memory header) so a companion IDE, mesh-llm, openhuman,
                     9router or any Ollama/OpenAI client sees the same memories.
 
     store.py    tables, recall, threads, the context block       extract.py  memories proposed from a conversation

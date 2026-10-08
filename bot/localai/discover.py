@@ -5,7 +5,7 @@
     LM Studio          ~/.lmstudio/models, ~/.cache/lm-studio/models (publisher/repo/file.gguf)
     Hugging Face       the hub cache (HF_HUB_CACHE, HF_HOME/hub, ~/.cache/huggingface/hub): GGUF files are runnable;
                        safetensors checkpoints are base models for fine-tuning (bot/localai/train.py), or convertible
-    GPT4All, Jan, PrivateProject   their model folders (PrivateProject: ~/.private_project/models; PrivateProject reads ABP's store back)
+    GPT4All, Jan             their model folders; an extension adds its own program's (bot/extensions.py add_model_location)
     text-generation-webui, KoboldCpp, llamafile, any folder
                        folders a person adds (settings "scan_folders")
 
@@ -76,7 +76,9 @@ def known_locations() -> list[dict]:
               _HOME / "Library" / "Application Support" / "nomic.ai" / "GPT4All")]
     locs += [{"app": "Jan", "kind": "folder", "path": p} for p in
              (_HOME / "jan" / "models", appdata / "Jan" / "data" / "models", _HOME / ".local" / "share" / "Jan" / "data" / "models")]
-    locs += [{"app": "PrivateProject", "kind": "folder", "path": _HOME / ".private_project" / "models"}]
+    from bot import extensions
+
+    locs += [{"app": m["app"], "kind": "folder", "path": m["path"]} for m in extensions.loaded().model_locations]
     locs += [{"app": "Folder", "kind": "folder", "path": Path(p)} for p in engine.settings().get("scan_folders", [])]
     seen, out = set(), []
     for l in locs:
@@ -103,7 +105,10 @@ def suggest_name(app: str, path: Path) -> str:
     shard = re.search(r"-(\d{5})-of-\d{5}$", repo)
     if shard:
         repo = repo[:shard.start()]
-    ns = {"LM Studio": "lmstudio", "Hugging Face": "hf-cache", "GPT4All": "gpt4all", "Jan": "jan", "PrivateProject": "private_project"}.get(app, "local")
+    from bot import extensions
+
+    ns = {"LM Studio": "lmstudio", "Hugging Face": "hf-cache", "GPT4All": "gpt4all", "Jan": "jan",
+          **{m["app"]: m["namespace"] for m in extensions.loaded().model_locations}}.get(app, "local")
     return f"{ns}/{_slug(repo).lower()}:{_slug(tag)}"
 
 

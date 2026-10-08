@@ -1,6 +1,6 @@
 """The memory fabric over HTTP (/api/memory; bot/memoryfabric): memories shared by every bot and model and each bot's
 own, their review, recall by meaning, the conversation threads every backend writes to, and the block a client puts
-in front of a prompt (what PrivateProject, mesh-llm, openhuman, 9router or any other program uses to share ABP's memory).
+in front of a prompt (what a companion IDE, mesh-llm, openhuman, 9router or any other program uses to share ABP's memory).
 
     GET    /api/memory                          settings, the embedder in use, counts
     PUT    /api/memory/settings                 shared_approval, recall_k, recall_min, block_chars, handoff_*, inject, auto_extract

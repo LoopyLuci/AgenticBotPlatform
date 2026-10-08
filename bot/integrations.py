@@ -33,13 +33,11 @@ SCOPES: dict[str, list[tuple[str, str]]] = {
     "modules:call": [("POST", r"/api/modules/[A-Za-z0-9_.-]+/call")],
     "cluster:read": [("GET", r"/api/cluster/(status|nodes|jobs)(/[A-Za-z0-9_.-]+)?")],
     "models:read": [("GET", r"/api/models"), ("GET", r"/api/providers")],
-    # asking bots, running swarms, registering an MCP server: what PrivateProject's ABP Connector does (its ADR-0096)
+    # asking bots, running swarms, registering an MCP server: what a companion IDE's connector does
     "agents:ask": [("POST", r"/api/agent/ask")],
     "swarms:read": [("GET", r"/api/swarms"), ("GET", r"/api/swarms/runs(/[A-Za-z0-9_.-]+)?")],
     "swarms:run": [("POST", r"/api/swarms/\d+/run")],
     "mcp:register": [("GET", r"/api/mcp-external"), ("POST", r"/api/mcp-external")],
-    # PrivateProject announcing where its session API is, so ABP can use it as a backend (bot/private_project.py)
-    "private_project:link": [("GET", r"/api/private_project"), ("POST", r"/api/private_project/link")],
     # ABP's OpenAI-compatible model gateway (any provider ABP has, the router's "auto", web and browser models)
     "models:use": [("GET", r"/api/browser/v1(/[a-z-]+)?/models"),
                    ("POST", r"/api/browser/v1(/[a-z-]+)?/(chat/completions|embeddings)")],
@@ -63,19 +61,10 @@ PRESETS: dict[str, dict] = {
                 "start/stop/restart/pause/unpause/pull/up. No destructive Docker verbs, no config, no credentials.",
     },
     "companion-app": {
-        "label": "a companion app (PrivateProject, PrivateProject, Cognitive Companion)",
+        "label": "a companion app (an IDE, a model toolkit, a desktop assistant)",
         "scopes": ["status:read", "bots:read", "models:read", "models:use", "modules:read", "modules:call"],
         "note": "An app that uses ABP as its model provider (the OpenAI-compatible gateway, with Authorization: Bearer) "
                 "and drives ABP's modules. No bot control, no Docker, no config, no credentials.",
-    },
-    "private_project": {
-        "label": "PrivateProject (ABP Connector)",
-        "scopes": ["status:read", "bots:read", "agents:ask", "swarms:read", "swarms:run", "mcp:register",
-                   "private_project:link", "models:read", "models:use", "modules:read", "modules:call"],
-        "note": "Everything PrivateProject's ABP Connector does, without ABP's dashboard token: status and bots, asking a "
-                "bot, running and polling swarms, registering PrivateProject's MCP server, ABP's models and modules, and "
-                "announcing PrivateProject's address so ABP can use it as a backend. No bot lifecycle, no Docker, no "
-                "config, no credentials.",
     },
     "omnisystem": {
         "label": "Omnisystem (abp-connector module)",
@@ -89,7 +78,28 @@ PRESETS: dict[str, dict] = {
                                                             "cluster:read", "models:read"]},
 }
 
-_COMPILED = {s: [(m, re.compile(p + r"/?")) for m, p in rules] for s, rules in SCOPES.items()}
+def all_scopes() -> dict[str, list[tuple[str, str]]]:
+    """SCOPES plus every scope a loaded extension registered for its own routes (bot/extensions.py); ABP's own win."""
+    from bot import extensions
+
+    return {**extensions.loaded().integration_scopes, **SCOPES}
+
+
+def all_presets() -> dict[str, dict]:
+    """PRESETS plus every preset a loaded extension registered; ABP's own win."""
+    from bot import extensions
+
+    return {**extensions.loaded().integration_presets, **PRESETS}
+
+
+_compiled_cache: dict[tuple, list] = {}
+
+
+def _compiled(scope: str) -> list:
+    rules = tuple(all_scopes().get(scope, ()))
+    if rules not in _compiled_cache:
+        _compiled_cache[rules] = [(m, re.compile(p + r"/?")) for m, p in rules]
+    return _compiled_cache[rules]
 
 
 def _conn():
@@ -101,9 +111,10 @@ def _conn():
 
 def validate_scopes(scopes: Iterable[str]) -> list[str]:
     out = sorted({str(s) for s in scopes})
-    bad = [s for s in out if s not in SCOPES]
+    known = all_scopes()
+    bad = [s for s in out if s not in known]
     if bad:
-        raise ValueError(f"unknown scope(s): {', '.join(bad)} (known: {', '.join(SCOPES)})")
+        raise ValueError(f"unknown scope(s): {', '.join(bad)} (known: {', '.join(known)})")
     if not out:
         raise ValueError("an integration key needs at least one scope")
     return out
@@ -167,7 +178,7 @@ def allows(scopes: Iterable[str], method: str, path: str) -> bool:
     if method == "HEAD":
         method = "GET"
     for s in scopes:
-        for m, rx in _COMPILED.get(s, ()):
+        for m, rx in _compiled(s):
             if m == method and rx.fullmatch(path):
                 return True
     return False

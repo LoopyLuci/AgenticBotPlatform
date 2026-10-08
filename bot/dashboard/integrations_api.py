@@ -29,16 +29,17 @@ def register(app: FastAPI, require_desktop: Callable, identify_caller: Callable)
     @app.get("/api/integrations", dependencies=[Depends(require_desktop)])
     async def integrations_overview():
         return {"keys": await asyncio.to_thread(integrations.list_keys),
-                "scopes": {s: [f"{m} {p}" for m, p in rules] for s, rules in integrations.SCOPES.items()},
-                "presets": integrations.PRESETS,
+                "scopes": {s: [f"{m} {p}" for m, p in rules] for s, rules in integrations.all_scopes().items()},
+                "presets": integrations.all_presets(),
                 "frame_ancestors": integrations.frame_ancestors(), "frame_src": integrations.frame_src()}
 
     @app.post("/api/integrations/keys", dependencies=[Depends(require_desktop)])
     async def integrations_mint(payload: dict = Body(...)):
         preset = str(payload.get("preset") or "")
-        if preset and preset not in integrations.PRESETS:
+        presets = integrations.all_presets()
+        if preset and preset not in presets:
             raise HTTPException(status_code=422, detail=f"unknown preset {preset!r}")
-        p = integrations.PRESETS.get(preset, {})
+        p = presets.get(preset, {})
         scopes = payload.get("scopes") or p.get("scopes") or []
         label = str(payload.get("label") or p.get("label") or "integration")
         origin = str(payload.get("origin") or "")

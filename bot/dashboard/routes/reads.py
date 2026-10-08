@@ -147,13 +147,13 @@ def register(app: FastAPI, *, json_download: Callable) -> None:
 
     @app.get("/api/models", dependencies=[Depends(_require_token_or_api_key)])
     async def api_models(instance_id: Optional[int] = None):
-        from bot.models import BACKEND_FAMILY, live_api_models, live_custom_models, live_hermes_models
+        from bot.models import backend_families, live_api_models, live_custom_models, live_hermes_models
 
         live_api = await live_api_models()
         live_hermes = live_hermes_models()
         live_custom = await live_custom_models()
         result = {
-            "family": BACKEND_FAMILY,
+            "family": backend_families(),
             "current": {
                 name: (config.current.get("backends", {}).get(name) or {}).get("model")
                 for name in ("api", "hermes_cli", "hermes_gateway", "opencode", "openclaw")

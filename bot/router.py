@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -49,8 +50,34 @@ async def _extract_memories(instance_id: int, prompt: str) -> None:
     await asyncio.to_thread(rules.capture_edicts, prompt)          # "never ... with <tool>": a critical tool rule
 
 
-VALID_BACKENDS = ("api", "cli", "ui", "hermes_cli", "hermes_gateway", "custom_model", "native_agent", "opencode", "openclaw",
-                  "private_project")
+BUILTIN_BACKENDS = ("api", "cli", "ui", "hermes_cli", "hermes_gateway", "custom_model", "native_agent", "opencode",
+                    "openclaw")
+
+
+class _BackendNames(Sequence):
+    """ABP's own backends plus every backend kind a loaded extension registered (bot/extensions.py
+    add_backend_class). Read live, so `name in VALID_BACKENDS` anywhere sees an extension's backend without importing
+    the extensions module itself."""
+
+    def _all(self) -> tuple:
+        from bot import extensions
+
+        return BUILTIN_BACKENDS + tuple(k for k in extensions.loaded().backend_classes if k not in BUILTIN_BACKENDS)
+
+    def __getitem__(self, i):
+        return self._all()[i]
+
+    def __len__(self) -> int:
+        return len(self._all())
+
+    def __contains__(self, name: object) -> bool:
+        return name in BUILTIN_BACKENDS or name in self._all()
+
+    def __repr__(self) -> str:
+        return repr(self._all())
+
+
+VALID_BACKENDS: Sequence = _BackendNames()
 
 
 def set_default_backend(backend: str, actor: str) -> dict:
@@ -61,9 +88,9 @@ def set_default_backend(backend: str, actor: str) -> dict:
     agent-runtime tool so there's exactly one implementation."""
     if backend not in VALID_BACKENDS:
         raise ValueError(f"unknown backend {backend!r}")
-    from bot.models import BACKEND_FAMILY
+    from bot.models import backend_family
 
-    key = "default_hermes_backend" if BACKEND_FAMILY.get(backend) == "hermes" else "default_backend"
+    key = "default_hermes_backend" if backend_family(backend) == "hermes" else "default_backend"
     config.set_value([key], backend, actor=actor)
     return {"ok": True, "version": config.version}
 
@@ -268,15 +295,6 @@ class Router:
                 api_key=providers.get_api_key(provider_name),
                 max_tokens=b_cfg.get("max_tokens", 4096),
             )
-        if name == "private_project":
-            # PrivateProject's agent answers, through its remote session API (bot/backends/private_project_backend.py). The bot's
-            # model field is PrivateProject's agent type; the address and ABP's device token come from the link PrivateProject's
-            # owner granted (bot/private_project.py).
-            from bot import private_project
-            from bot.backends.private_project_backend import PrivateProjectBackend
-
-            return PrivateProjectBackend(base_url=private_project.base_url(), device_token=private_project.token(),
-                                   agent_type=model_override or private_project.default_agent_type())
         if name in ("opencode", "openclaw"):
             # Another agent product does the work (bot/backends/external_agent_backend.py). ABP's own permission
             # rules and tool loop do not apply inside it.
@@ -287,6 +305,12 @@ class Router:
                 binary=b_cfg.get("binary", name), model=model_override or b_cfg.get("model"), agent=b_cfg.get("agent"),
                 extra_args=b_cfg.get("extra_args", []), cwd=b_cfg.get("cwd"), auto_approve=bool(b_cfg.get("auto_approve", False)),
             )
+        from bot import extensions
+
+        ext = extensions.loaded().backend_classes.get(name)
+        if ext is not None:
+            # A backend a private extension provides (bot/extensions.py add_backend_class).
+            return ext["factory"](dict(b_cfg), model_override)
         raise ValueError(f"unknown backend {name!r}")
 
     def _get_backend(

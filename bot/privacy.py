@@ -1,7 +1,7 @@
 """Privacy mode: one switch that keeps every model call and every agent tool on this machine.
 
 When it is on:
-  - the router (bot/router.py) only uses backends whose model runs here: a provider or PrivateProject at a loopback
+  - the router (bot/router.py) only uses backends whose model runs here: a provider or an extension's backend at a loopback
     address (ABP's own model server, Ollama, LM Studio, llama.cpp, vLLM on localhost). Claude (API, CLI, Desktop),
     Hermes, OpenCode and OpenClaw talk to cloud models and are skipped; a turn with no local backend in its chain fails
     with a clear message instead of quietly going to the cloud.

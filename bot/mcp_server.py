@@ -1260,7 +1260,7 @@ async def localai_status() -> Any:
 @mcp.tool()
 async def localai_discover() -> Any:
     """Models other programs already keep on this machine (Ollama, LM Studio, the Hugging Face cache, GPT4All, Jan,
-    PrivateProject), and which ABP already uses."""
+    and folders extensions add), and which ABP already uses."""
     return await _request("GET", "/api/localai/discover", timeout=120.0)
 
 

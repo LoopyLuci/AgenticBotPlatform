@@ -512,8 +512,8 @@ class UiBackend(Backend):
 
     @staticmethod
     def _sync_click_project_header(win, project: str) -> bool:
-        """Clicks [project]'s own plain header button (e.g. "PrivateProject",
-        distinct from its "New session in PrivateProject" button) — confirmed
+        """Clicks [project]'s own plain header button (e.g. "MyProject",
+        distinct from its "New session in MyProject" button) — confirmed
         live this is what actually scrolls/expands that project's
         sessions into the sidebar's rendered range (they are otherwise
         genuinely absent from the accessibility tree, not merely
