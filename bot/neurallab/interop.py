@@ -199,7 +199,7 @@ def brainbuilder_graphs() -> list[dict]:
 # ---- MNIST-style data ---------------------------------------------------------------------------------------- #
 
 def idx_to_npz(images: str | Path, labels: str | Path, out: str | Path, limit: int = 0) -> dict:
-    """MNIST-style IDX files (PrivateProject's mnist_data) -> a lab dataset (X: pixels 0..1, y: the digit)."""
+    """MNIST-style IDX files -> a lab dataset (X: pixels 0..1, y: the digit)."""
     import numpy as np
     def read(p):
         data = Path(p).read_bytes()

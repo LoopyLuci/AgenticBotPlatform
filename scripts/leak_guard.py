@@ -116,6 +116,8 @@ SKIP_GLOBS = (
     "browser-extension/dist/**", "desktop-app/ui/vendor/**", "*.min.js", "*.map",
     "*.png", "*.jpg", "*.ico", "*.woff", "*.woff2", "*.pdf", "*.zip", "*.bin",
     ".git/**", "data/**", "logs/**", "node_modules/**", ".venv/**",
+    # The guard's own tests: their fixtures are the very things it must catch.
+    "tests/test_leak_guard.py",
 )
 
 MODES = ("fail", "warn")

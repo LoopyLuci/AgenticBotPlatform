@@ -112,6 +112,19 @@ invisible.
 | `api.add_mcp_tool(func, name=None)` | an MCP tool on `bot/mcp_server.py`'s server; the docstring is the tool's description |
 | `api.add_module(entry)` | a module entry (one item of `modules.extra`'s shape), so a private project is a module |
 | `api.add_test_dir(path)` | tests the local pipeline runs when `ABP_PRIVATE_DIR` is set |
+| `api.add_backend_class(kind, factory, *, family, label, ready)` | a backend a bot can be routed to: `factory(settings, model)` returns a `bot.backends` Backend; `ready()` is the router's pre-flight check. ABP's own kinds win |
+| `api.add_integration_scope(name, rules)` / `add_integration_preset(name, *, label, scopes, note)` | integration-key scopes for the extension's own routes, and a named preset another program's key is minted from |
+| `api.add_provider_source(source)` | model providers that exist only while something is up: `source() -> {name: {base_url, protocol, api_key, description}}` |
+| `api.on_hub_started(hook)` | `hook(module_id)` after a module hub ABP started answers |
+| `api.add_model_location(app, path, namespace)` | a folder where another program keeps model files, for Local AI's Discover |
+| `api.add_memory_source(kind, *, required, read, item_kind, complete, label, validate)` | a memory-fabric source kind: `read(source)` yields `(item_id, title, text, timestamp, tags)` |
+| `api.add_lab_importer(kind, *, label, run, list_items)` | a way to bring a design into the Neural Lab: `run(body) -> spec`; `list_items()` is what its Projects page offers |
+| `api.add_lab_project(key, folder)` / `add_lab_family(id, *, label, status)` | a project the lab lists, and a model family it runs but does not train |
+| `api.add_lab_worker_plugin(path)` | a file the lab's training worker imports in its own process: `register(worker)` adds tokenizer loaders, checkpoint readers and writers (`init_from`, `export`) |
+
+`api.add_module(entry)` also takes a full manifest (a dict with a `module` table, the shape `abp-module.toml` parses to).
+An extension's tests can run on ABP's own fixtures: `pytest_plugins = ["tests.conftest"]` in the test folder's
+`conftest.py`, with `python -m pytest <folder>` run from ABP's root (what the pipeline does).
 
 Backends and integrations are merged into the effective config as one document, so an extension
 can set a value the private overlay would otherwise have to repeat. Everything else is applied where

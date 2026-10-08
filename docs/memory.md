@@ -1,6 +1,6 @@
 # Shared memory: one memory and one conversation for every model
 
-Switch a bot from Claude to a local Qwen, from OpenCode to PrivateProject, or let a backup backend answer when the first
+Switch a bot from Claude to a local Qwen, from OpenCode to a companion IDE's agent, or let a backup backend answer when the first
 fails: the next model knows what the others were told to remember and what was said. That is the memory fabric
 (`bot/memoryfabric`).
 
@@ -21,9 +21,9 @@ turned off.
 - **Memories.** The most confirmed ones sit in the system prompt (the same block every turn, so prompt caching keeps
   working). The ones related to the message - found by meaning with ABP's local embedding model, a local Ollama, or
   hashed TF-IDF when neither runs - are sent with the message. Backends that build no system prompt of their own
-  (Claude CLI, Claude Desktop, Hermes, PrivateProject, OpenCode, OpenClaw) get the block in front of the message.
+  (Claude CLI, Claude Desktop, Hermes, OpenCode, OpenClaw, an extension's backend) get the block in front of the message.
 - **The conversation.** Each backend gets the turns it did not see: a backend that keeps its own session (the native
-  loop, the Claude CLI, Hermes, PrivateProject) gets only the turns other models answered since it last spoke; a one-shot
+  loop, the Claude CLI, Hermes, an extension's backend) gets only the turns other models answered since it last spoke; a one-shot
   backend gets the recent conversation every time. Long conversations hand over a running summary plus the latest
   turns, within `handoff_chars`.
 - **Things said outright** ("remember that ...", "my name is ...", "I prefer ...", "never ...") are proposed as
@@ -53,7 +53,7 @@ turned off.
 
 Underneath the memories sits the knowledge tree (`bot/memoryfabric/knowledge.py`): every source's text as
 scored chunks, entities and summary trees, which the agents' `memory_tree` tool, MCP and
-`POST /api/memory/tree` all query. There are seven kinds, one of them the vault's own notes:
+`POST /api/memory/tree` all query. There are six kinds, one of them the vault's own notes:
 
 | Kind | Reads | Needs |
 |---|---|---|
@@ -64,7 +64,7 @@ scored chunks, entities and summary trees, which the agents' `memory_tree` tool,
 | `web` | a web page, optionally one element (config `selector`: a tag, `#id` or `.class`) | `url` |
 | `conversation` | ABP's own threads, one item per thread | - |
 
-```
-abp memory source-add private_project "PrivateProject" --path /srv/projects/PrivateProject
-abp An extension can add more kinds (`api.add_memory_source`, docs/extensions.md)./sources` reports
+An extension can add more kinds (`api.add_memory_source`, docs/extensions.md).
+
+The same kinds are what `GET/POST /api/memory/sources` accepts, and `GET /api/memory/sources` reports
 each one's chunk counts and freshness (`active` / `recent` / `idle`).

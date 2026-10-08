@@ -257,13 +257,6 @@ export const operations = {
    "instance_id"
   ]
  },
- "DELETE /api/private_project/link": {
-  "body": false,
-  "method": "DELETE",
-  "path": "/api/private_project/link",
-  "path_params": [],
-  "query_params": []
- },
  "DELETE /api/localai/models": {
   "body": false,
   "method": "DELETE",
@@ -2050,45 +2043,6 @@ export const operations = {
    "board"
   ]
  },
- "GET /api/private_project": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project",
-  "path_params": [],
-  "query_params": []
- },
- "GET /api/private_project/models": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/models",
-  "path_params": [],
-  "query_params": []
- },
- "GET /api/private_project/sessions": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/sessions",
-  "path_params": [],
-  "query_params": []
- },
- "GET /api/private_project/sessions/{agent_type}/messages": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/sessions/{agent_type}/messages",
-  "path_params": [
-   "agent_type"
-  ],
-  "query_params": []
- },
- "GET /api/private_project/sessions/{agent_type}/permissions": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/sessions/{agent_type}/permissions",
-  "path_params": [
-   "agent_type"
-  ],
-  "query_params": []
- },
  "GET /api/lab": {
   "body": false,
   "method": "GET",
@@ -2119,30 +2073,12 @@ export const operations = {
   ],
   "query_params": []
  },
- "GET /api/lab/private_project": {
+ "GET /api/lab/importers": {
   "body": false,
   "method": "GET",
-  "path": "/api/lab/private_project",
+  "path": "/api/lab/importers",
   "path_params": [],
   "query_params": []
- },
- "GET /api/lab/private_project": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/lab/private_project",
-  "path_params": [],
-  "query_params": [
-   "limit"
-  ]
- },
- "GET /api/lab/private_project/config": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/lab/private_project/config",
-  "path_params": [],
-  "query_params": [
-   "config"
-  ]
  },
  "GET /api/lab/projects": {
   "body": false,
@@ -2585,77 +2521,6 @@ export const operations = {
   "query_params": [
    "wait"
   ]
- },
- "GET /api/private_project/connectors": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/connectors",
-  "path_params": [],
-  "query_params": []
- },
- "GET /api/private_project/estate": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/estate",
-  "path_params": [],
-  "query_params": [
-   "refresh"
-  ]
- },
- "GET /api/private_project/router": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/router",
-  "path_params": [],
-  "query_params": []
- },
- "GET /api/private_project/router-app": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/router-app",
-  "path_params": [],
-  "query_params": []
- },
- "GET /api/private_project/router/conversations/{cid}/messages": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/router/conversations/{cid}/messages",
-  "path_params": [
-   "cid"
-  ],
-  "query_params": []
- },
- "GET /api/private_project/router/missions/{mid}": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/router/missions/{mid}",
-  "path_params": [
-   "mid"
-  ],
-  "query_params": []
- },
- "GET /api/private_project/router/{what}": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/router/{what}",
-  "path_params": [
-   "what"
-  ],
-  "query_params": []
- },
- "GET /api/private_project/sso": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/sso",
-  "path_params": [],
-  "query_params": []
- },
- "GET /api/private_project/sso/verify": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/sso/verify",
-  "path_params": [],
-  "query_params": []
  },
  "GET /api/ollama/gguf-files": {
   "body": false,
@@ -5215,20 +5080,6 @@ export const operations = {
   ],
   "query_params": []
  },
- "POST /api/private_project/ask": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/private_project/ask",
-  "path_params": [],
-  "query_params": []
- },
- "POST /api/private_project/link": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/private_project/link",
-  "path_params": [],
-  "query_params": []
- },
  "POST /api/lab/autotune": {
   "body": true,
   "method": "POST",
@@ -5247,13 +5098,6 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/lab/import",
-  "path_params": [],
-  "query_params": []
- },
- "POST /api/lab/private_project/generate": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/lab/private_project/generate",
   "path_params": [],
   "query_params": []
  },
@@ -5740,75 +5584,6 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/nodes/result",
-  "path_params": [],
-  "query_params": []
- },
- "POST /api/private_project/connectors/push": {
-  "body": false,
-  "method": "POST",
-  "path": "/api/private_project/connectors/push",
-  "path_params": [],
-  "query_params": []
- },
- "POST /api/private_project/router-app/{action}": {
-  "body": false,
-  "method": "POST",
-  "path": "/api/private_project/router-app/{action}",
-  "path_params": [
-   "action"
-  ],
-  "query_params": []
- },
- "POST /api/private_project/router/chat": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/private_project/router/chat",
-  "path_params": [],
-  "query_params": []
- },
- "POST /api/private_project/router/route-preview": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/private_project/router/route-preview",
-  "path_params": [],
-  "query_params": []
- },
- "POST /api/private_project/router/runs": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/private_project/router/runs",
-  "path_params": [],
-  "query_params": []
- },
- "POST /api/private_project/router/runs/{rid}/cancel": {
-  "body": false,
-  "method": "POST",
-  "path": "/api/private_project/router/runs/{rid}/cancel",
-  "path_params": [
-   "rid"
-  ],
-  "query_params": []
- },
- "POST /api/private_project/router/runs/{rid}/confirm": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/private_project/router/runs/{rid}/confirm",
-  "path_params": [
-   "rid"
-  ],
-  "query_params": []
- },
- "POST /api/private_project/sso/login": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/private_project/sso/login",
-  "path_params": [],
-  "query_params": []
- },
- "POST /api/private_project/sso/logout": {
-  "body": false,
-  "method": "POST",
-  "path": "/api/private_project/sso/logout",
   "path_params": [],
   "query_params": []
  },
@@ -7412,20 +7187,6 @@ export const operations = {
   "path_params": [
    "device_id"
   ],
-  "query_params": []
- },
- "PUT /api/private_project/router/token": {
-  "body": true,
-  "method": "PUT",
-  "path": "/api/private_project/router/token",
-  "path_params": [],
-  "query_params": []
- },
- "PUT /api/private_project/router/url": {
-  "body": true,
-  "method": "PUT",
-  "path": "/api/private_project/router/url",
-  "path_params": [],
   "query_params": []
  },
  "PUT /api/peers/control": {
@@ -12298,66 +12059,6 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
- "private_project_ask_api_private_project_ask_post": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/private_project/ask",
-  "path_params": [],
-  "query_params": []
- },
- "private_project_link_api_private_project_link_post": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/private_project/link",
-  "path_params": [],
-  "query_params": []
- },
- "private_project_messages_api_private_project_sessions__agent_type__messages_get": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/sessions/{agent_type}/messages",
-  "path_params": [
-   "agent_type"
-  ],
-  "query_params": []
- },
- "private_project_models_api_private_project_models_get": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/models",
-  "path_params": [],
-  "query_params": []
- },
- "private_project_permissions_api_private_project_sessions__agent_type__permissions_get": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/sessions/{agent_type}/permissions",
-  "path_params": [
-   "agent_type"
-  ],
-  "query_params": []
- },
- "private_project_sessions_api_private_project_sessions_get": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/sessions",
-  "path_params": [],
-  "query_params": []
- },
- "private_project_status_api_private_project_get": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project",
-  "path_params": [],
-  "query_params": []
- },
- "private_project_unlink_api_private_project_link_delete": {
-  "body": false,
-  "method": "DELETE",
-  "path": "/api/private_project/link",
-  "path_params": [],
-  "query_params": []
- },
  "lab_advice_api_lab_systune_advice_get": {
   "body": false,
   "method": "GET",
@@ -12439,35 +12140,10 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
- "lab_private_project_api_lab_private_project_get": {
+ "lab_importers_api_lab_importers_get": {
   "body": false,
   "method": "GET",
-  "path": "/api/lab/private_project",
-  "path_params": [],
-  "query_params": []
- },
- "lab_private_project_api_lab_private_project_get": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/lab/private_project",
-  "path_params": [],
-  "query_params": [
-   "limit"
-  ]
- },
- "lab_private_project_config_api_lab_private_project_config_get": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/lab/private_project/config",
-  "path_params": [],
-  "query_params": [
-   "config"
-  ]
- },
- "lab_private_project_generate_api_lab_private_project_generate_post": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/lab/private_project/generate",
+  "path": "/api/lab/importers",
   "path_params": [],
   "query_params": []
  },
@@ -13123,160 +12799,6 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/nodes/result",
-  "path_params": [],
-  "query_params": []
- },
- "private_project_connectors_api_private_project_connectors_get": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/connectors",
-  "path_params": [],
-  "query_params": []
- },
- "private_project_connectors_push_api_private_project_connectors_push_post": {
-  "body": false,
-  "method": "POST",
-  "path": "/api/private_project/connectors/push",
-  "path_params": [],
-  "query_params": []
- },
- "private_project_estate_api_private_project_estate_get": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/estate",
-  "path_params": [],
-  "query_params": [
-   "refresh"
-  ]
- },
- "private_project_router_app_action_api_private_project_router_app__action__post": {
-  "body": false,
-  "method": "POST",
-  "path": "/api/private_project/router-app/{action}",
-  "path_params": [
-   "action"
-  ],
-  "query_params": []
- },
- "private_project_router_app_api_private_project_router_app_get": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/router-app",
-  "path_params": [],
-  "query_params": []
- },
- "private_project_router_cancel_api_private_project_router_runs__rid__cancel_post": {
-  "body": false,
-  "method": "POST",
-  "path": "/api/private_project/router/runs/{rid}/cancel",
-  "path_params": [
-   "rid"
-  ],
-  "query_params": []
- },
- "private_project_router_chat_api_private_project_router_chat_post": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/private_project/router/chat",
-  "path_params": [],
-  "query_params": []
- },
- "private_project_router_confirm_api_private_project_router_runs__rid__confirm_post": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/private_project/router/runs/{rid}/confirm",
-  "path_params": [
-   "rid"
-  ],
-  "query_params": []
- },
- "private_project_router_messages_api_private_project_router_conversations__cid__messages_get": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/router/conversations/{cid}/messages",
-  "path_params": [
-   "cid"
-  ],
-  "query_params": []
- },
- "private_project_router_mission_api_private_project_router_missions__mid__get": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/router/missions/{mid}",
-  "path_params": [
-   "mid"
-  ],
-  "query_params": []
- },
- "private_project_router_preview_api_private_project_router_route_preview_post": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/private_project/router/route-preview",
-  "path_params": [],
-  "query_params": []
- },
- "private_project_router_read_api_private_project_router__what__get": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/router/{what}",
-  "path_params": [
-   "what"
-  ],
-  "query_params": []
- },
- "private_project_router_start_run_api_private_project_router_runs_post": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/private_project/router/runs",
-  "path_params": [],
-  "query_params": []
- },
- "private_project_router_status_api_private_project_router_get": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/router",
-  "path_params": [],
-  "query_params": []
- },
- "private_project_router_token_api_private_project_router_token_put": {
-  "body": true,
-  "method": "PUT",
-  "path": "/api/private_project/router/token",
-  "path_params": [],
-  "query_params": []
- },
- "private_project_router_url_api_private_project_router_url_put": {
-  "body": true,
-  "method": "PUT",
-  "path": "/api/private_project/router/url",
-  "path_params": [],
-  "query_params": []
- },
- "private_project_sso_api_private_project_sso_get": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/sso",
-  "path_params": [],
-  "query_params": []
- },
- "private_project_sso_login_api_private_project_sso_login_post": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/private_project/sso/login",
-  "path_params": [],
-  "query_params": []
- },
- "private_project_sso_logout_api_private_project_sso_logout_post": {
-  "body": false,
-  "method": "POST",
-  "path": "/api/private_project/sso/logout",
-  "path_params": [],
-  "query_params": []
- },
- "private_project_sso_verify_api_private_project_sso_verify_get": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/private_project/sso/verify",
   "path_params": [],
   "query_params": []
  },

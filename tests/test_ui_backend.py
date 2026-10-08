@@ -412,13 +412,13 @@ class TestClickProjectHeader:
         accessibility tree (not collapsed, not paginated) until that
         project's own plain header button is clicked."""
         backend = UiBackend()
-        private_project_header = _button("SampleProject")
-        win = _win([private_project_header, _button("New session in SampleProject")])
+        project_header = _button("SampleProject")
+        win = _win([project_header, _button("New session in SampleProject")])
 
         found = backend._sync_click_project_header(win, "SampleProject")
 
         assert found is True
-        private_project_header.click_input.assert_called_once()
+        project_header.click_input.assert_called_once()
 
     def test_missing_header_is_a_safe_no_op(self):
         """Some projects (e.g. a very new one) show no separate header

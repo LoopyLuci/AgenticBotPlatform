@@ -141,19 +141,19 @@ def test_a_person_edits_memories_in_the_vault(kb):
     from bot import db, memory
     from bot.memoryfabric import store, vault
     store.set_settings({"shared_approval": False})
-    a = store.remember("The office wifi is called Lattice.", shared=True)
+    a = store.remember("The office wifi is called Meshnet.", shared=True)
     b = store.remember("Backups run at 3 am.", shared=True)
     path = vault.write_memories(0)
     text = path.read_text()
     assert f"<!-- m{a['id']} -->" in text and "Backups run at 3 am." in text
     assert vault.read_memories(0) == {"changed": 0, "added": 0, "removed": 0}       # not edited: nothing to do
     time.sleep(0.05)
-    text = text.replace("Lattice.", "Lattice-5G.").replace(f"- Backups run at 3 am. <!-- m{b['id']} -->\n", "")
+    text = text.replace("Meshnet.", "Meshnet-5G.").replace(f"- Backups run at 3 am. <!-- m{b['id']} -->\n", "")
     text = text.replace("## Other things to remember\n", "## Other things to remember\n\n- The printer is on floor 2.\n")
     path.write_text(text)
     assert vault.read_memories(0) == {"changed": 1, "added": 1, "removed": 1}
     now = {r["content"] for r in db.list_memory_entries(0, status="approved")}
-    assert now == {"The office wifi is called Lattice-5G.", "The printer is on floor 2."}
+    assert now == {"The office wifi is called Meshnet-5G.", "The printer is on floor 2."}
     assert vault.sync_memories() == {"changed": 0, "added": 0, "removed": 0}
     assert memory.find_duplicate(0, "the printer is on floor 2")
 

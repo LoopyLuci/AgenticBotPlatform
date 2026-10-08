@@ -65,7 +65,7 @@ GALLERY = """<!doctype html><html lang="en"{theme}><head><meta charset="utf-8"><
 <h3>Card</h3><div class="card"><div class="sec-head"><h2>Section title</h2><span class="desc">A description of what this section does.</span></div>
 <p class="cardnote">A note in a card, as panels show while they load.</p><div class="row"><input placeholder="A field"><select><option>An option</option></select></div></div>
 <h3>Chat</h3><div class="chat-window"><div class="chat-row in"><div class="chat-bubble">How many modules are running?<span class="chat-meta">you · 12:01</span></div></div>
-<div class="chat-row out"><div class="chat-bubble">Three hubs are running: opencv-zoo, private_project and cacheit.<span class="chat-meta">ABP · 12:01</span></div></div></div>
+<div class="chat-row out"><div class="chat-bubble">Three hubs are running: opencv-zoo, modelmistress and cacheit.<span class="chat-meta">ABP · 12:01</span></div></div></div>
 <h3>Table</h3><div class="tablewrap"><table><tr><th>Module</th><th>State</th><th>Operations</th></tr>
 <tr><td>OpenCV model zoo</td><td><span class="chip good">hub running</span></td><td class="num">8</td></tr>
 <tr><td>COOL Benchmark</td><td><span class="chip">stopped</span></td><td class="num">3</td></tr></table></div>

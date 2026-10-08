@@ -12,5 +12,5 @@ live, several variants side by side, and one is applied (with a backup, one clic
     log        every step logged (data/studio/log.jsonl), and datasets built from it for ABP's own models
 
 Layer 0 is the person editing (files, theme, components) with the preview live; layer 2 is models proposing variants;
-layer 1 (ABP's own PrivateProject / BrainBuilder models trained on this log) is roadmap item GEN-1.
+layer 1 (ABP's own models trained on this log) is roadmap item GEN-1.
 """

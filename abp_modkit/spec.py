@@ -1,11 +1,11 @@
 """The operations spec, ``abp-ops.toml``: what a project can do, as ABP operations.
 
     [service]                    # the project's own server, if it has one (all optional)
-    id = "private_project"
-    name = "PrivateProject"
+    id = "streamer"
+    name = "Streamer"
     base_url = "http://127.0.0.1:18431"   # where its HTTP API answers ("" = no HTTP API)
     health = "/health"                    # probed for service.status ("" = no probe)
-    start = ["{python}", "-m", "uvicorn", "private_project.app:app", "--port", "18431"]   # how to start it ([] = not managed)
+    start = ["{python}", "-m", "uvicorn", "streamer.app:app", "--port", "18431"]   # how to start it ([] = not managed)
                                           # (a process with no base_url - a chat bot, a worker - is managed too:
                                           # "running" is then "its process is alive")
     cwd = "."                             # relative to the project

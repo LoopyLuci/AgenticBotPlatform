@@ -191,7 +191,7 @@ class ConfigManager:
         """Edit one key in the live config and persist it atomically to disk, then reload so the change is visible
         immediately. Goes through set_values(), which keeps the file's comments: this used to re-dump the whole file
         with yaml.safe_dump, and every caller silently stripped backends.yaml's documentation (found 2026-09-29,
-        when three PrivateProject settings saved through it removed all 222 comment lines)."""
+        when three settings saved through it removed all 222 comment lines)."""
         self.set_values({tuple(path): value}, actor=actor)
 
     def set_values(self, changes: "dict[tuple[str, ...], Any]", actor: str = "dashboard") -> None:

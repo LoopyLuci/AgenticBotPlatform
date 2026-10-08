@@ -23,14 +23,14 @@ def _setup(tmp_path, monkeypatch, overlay_text: str | None):
 
 
 def test_a_save_goes_to_the_overlay_and_takes_effect(tmp_path, monkeypatch):
-    tracked, overlay, mgr = _setup(tmp_path, monkeypatch, "modules:\n  build_cache: /path/redacted\n")
+    tracked, overlay, mgr = _setup(tmp_path, monkeypatch, "modules:\n  build_cache: /srv/cache\n")
     before = tracked.read_text(encoding="utf-8")
-    mgr.set_values({("modules", "build_cache"): "Y:/elsewhere", ("power", "wake"): {"Server": {"mac": "x"}}})
+    mgr.set_values({("modules", "build_cache"): "/srv/elsewhere", ("power", "wake"): {"Server": {"mac": "x"}}})
     assert tracked.read_text(encoding="utf-8") == before            # the public file is untouched
     saved = yaml.safe_load(overlay.read_text(encoding="utf-8"))
-    assert saved["modules"]["build_cache"] == "Y:/elsewhere"
+    assert saved["modules"]["build_cache"] == "/srv/elsewhere"
     assert saved["power"]["wake"]["Server"]["mac"] == "x"
-    assert mgr.current["modules"]["build_cache"] == "Y:/elsewhere"  # and it is what ABP now runs with
+    assert mgr.current["modules"]["build_cache"] == "/srv/elsewhere"  # and it is what ABP now runs with
     assert mgr.current["default_backend"] == "api"
 
 

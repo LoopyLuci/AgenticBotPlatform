@@ -43,7 +43,7 @@ SCOPES: dict[str, list[tuple[str, str]]] = {
                    ("POST", r"/api/browser/v1(/[a-z-]+)?/(chat/completions|embeddings)")],
     # ABP's local AI and the Neural Lab, read only: models, the server, runs, designs, the system models' advice
     "localai:read": [("GET", r"/api/localai(/(models|discover|train|settings))?"), ("GET", r"/api/localai/models/show")],
-    "lab:read": [("GET", r"/api/lab(/(runs|designs|projects|systune|telemetry|brainbuilder|private_project))?"),
+    "lab:read": [("GET", r"/api/lab(/(runs|designs|projects|systune|telemetry|brainbuilder|importers))?"),
                  ("GET", r"/api/lab/(runs|designs)/[A-Za-z0-9_.-]+"), ("GET", r"/api/lab/systune/advice"),
                  ("POST", r"/api/lab/validate")],
     # The memory fabric (bot/memoryfabric): what every model knows. Read: search, the prompt block, threads.

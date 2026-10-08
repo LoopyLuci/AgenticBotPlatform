@@ -159,7 +159,7 @@ privacy/DNS, `doctor`, the terminal panel, hooks, plugins, skills, MCP, security
 snapshots/env/config/diagnostics, peers and kanban have no TUI screen yet (CLI-only, see above) — a
 later pass, not attempted half-way here. Also still GUI-only: Android push/mobile-key QR pairing
 UI, the modules page's own hub/job viewer beyond what `modules status|ops|logs` prints, and the
-Studio, Cluster, PrivateProject, PrivateProject and Sentinel pages (no CLI surface at all for those route
+Studio, Cluster and Sentinel pages, and extensions' pages, (no CLI surface at all for those route
 groups — `abp_cli`'s generic `tailscale|docker|vm|rules|browser` passthrough is the closest thing
 for infra).
 

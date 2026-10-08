@@ -325,14 +325,8 @@ def test_the_pipeline_runs_the_guard_as_its_own_step(repo, monkeypatch, tmp_path
     assert lp.check_leak_guard() is True
 
 
-def test_this_repository_has_no_machine_path_of_its_own_outside_the_private_integration_files():
-    """ABP's own tree, scanned by the guard it ships: the machine paths that remain are the ones
-    the private-integration move is still to remove, and this test names exactly those."""
+def test_this_repository_has_no_machine_path_of_its_own():
+    """ABP's own tree, scanned by the guard it ships: since the private-integration move (2026-10-08) nothing in it
+    names a machine path (the guard's own test file, whose fixtures are what it catches, is skipped by the guard)."""
     findings = leak_guard.scan(ROOT)
-    known = {"bot/neurallab/private_project.py", "bot/neurallab/interop.py", "abp_cli/ai.py", "docs/neurallab.md",
-             "docs/private_project.md", "tests/test_neurallab_private_project.py", "tests/test_resolver.py",
-             "tests/test_leak_guard.py",  # fixtures contain absolute paths for the guard tests
-             "scripts/leak_guard.py"}
-    unexpected = {f.path for f in findings} - known
-    assert not unexpected, f"unexpected machine paths: {sorted(unexpected)}"
-    assert all(f.category == "machine_paths" for f in findings), "a public install's own tree has no denylist"
+    assert not findings, f"machine paths in the public tree: {sorted({(f.path, f.match) for f in findings})}"
