@@ -72,6 +72,72 @@ def _venv_ignore(directory: str, names: list[str]) -> set[str]:
     return ignored
 
 
+def _venv_python(venv: Path) -> Path:
+    return venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+
+def stage_native(stage_venv: Path, root: Path | None = None, log=print) -> list[str]:
+    """Build each native/<crate> extension from this tree and install it into the STAGED venv.
+
+    Copying the developer's .venv ships whatever build happens to be installed there - possibly an older one, or
+    a `maturin develop` install whose metadata points back at this checkout. Instead every crate's release wheel is
+    built with the developer's interpreter and unpacked into the staged site-packages (a wheel is a zip laid out
+    for site-packages), replacing the copied install. Nothing has the staged venv open, so this never fights a
+    running ABP or test for a locked .pyd. Returns the crates installed.
+
+    Without cargo the copied builds ship as they are (and ABP's Python fallbacks cover a missing one);
+    ABP_STAGE_NATIVE=0 skips the builds for a quick restage."""
+    import tempfile
+    import zipfile
+
+    root = ROOT if root is None else root
+    crates = sorted(p.parent for p in (root / "native").glob("*/pyproject.toml"))
+    if not crates:
+        return []
+    if os.environ.get("ABP_STAGE_NATIVE", "1").strip() == "0":
+        log("native extensions: not rebuilt (ABP_STAGE_NATIVE=0) - shipping the copies from .venv")
+        return []
+    if not shutil.which("cargo"):
+        log("native extensions: cargo not on PATH - shipping the copies from .venv")
+        return []
+    builder = _venv_python(root / ".venv")
+    found = [stage_venv / "Lib" / "site-packages"] if os.name == "nt" else sorted(stage_venv.glob("lib/python3*/site-packages"))
+    site = found[0] if found and found[0].is_dir() else None
+    if site is None:
+        raise SystemExit(f"[FAILED] no site-packages in the staged venv {stage_venv}")
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    installed = []
+    with tempfile.TemporaryDirectory(prefix="abp-native-wheels-") as tmp:
+        for crate in crates:
+            out = Path(tmp) / crate.name
+            log(f"native extensions: building {crate.name}")
+            env = {**os.environ, "PYO3_PYTHON": str(builder)}
+            done = subprocess.run([str(builder), "-m", "maturin", "build", "--release", "--out", str(out)],
+                                  cwd=str(crate), env=env, capture_output=True, text=True, encoding="utf-8",
+                                  errors="replace", creationflags=flags)
+            wheels = sorted(out.glob("*.whl"))
+            if done.returncode != 0 or not wheels:
+                raise SystemExit(f"[FAILED] building native/{crate.name}:\n{(done.stderr or done.stdout)[-3000:]}")
+            with zipfile.ZipFile(wheels[-1]) as whl:
+                tops = {n.split("/", 1)[0] for n in whl.namelist()}
+                dist = next(t for t in tops if t.endswith(".dist-info"))
+                project = dist.split("-", 1)[0].lower()
+                # Drop the copied install of this project (any version, editable or not) before unpacking.
+                for old in site.iterdir():
+                    if old.name.endswith(".dist-info") and old.name.split("-", 1)[0].lower() == project:
+                        shutil.rmtree(old)
+                for top in tops:
+                    target = site / top
+                    if target.is_dir():
+                        shutil.rmtree(target)
+                    elif target.exists():
+                        target.unlink()
+                whl.extractall(site)
+            installed.append(crate.name)
+    log(f"native extensions: {', '.join(installed)} built from this tree into the bundle")
+    return installed
+
+
 def _bot_ignore(_directory: str, names: list[str]) -> set[str]:
     return {n for n in names if n == "__pycache__" or n.endswith((".pyc", ".pyo"))}
 
@@ -215,6 +281,7 @@ def stage(stage_dir: Path = STAGE, markers: list[str] | None = None) -> None:
     cfg = stage_dir / ".venv" / "pyvenv.cfg"
     if cfg.is_file():
         sanitize_pyvenv_cfg(cfg)
+    stage_native(stage_dir / ".venv")
     (stage_dir / "config").mkdir()
     (stage_dir / "config" / "backends.yaml").write_bytes(shipped_config(ROOT))
     stamp = write_build_stamp(stage_dir)

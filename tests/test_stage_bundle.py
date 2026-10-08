@@ -189,3 +189,41 @@ def test_the_module_catalog_ships_in_the_bundle():
     assert '"catalog"' in (root / "scripts" / "stage_bundle.py").read_text(encoding="utf-8")
     resources = json.loads((root / "desktop-app" / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))["bundle"]["resources"]
     assert resources.get("stage/catalog") == "catalog"
+
+
+def test_native_extensions_are_built_from_the_tree_into_the_staged_venv(tmp_path, monkeypatch):
+    """The copied venv may hold an old or `maturin develop` (editable) install; the staged venv gets the wheel
+    built from this tree instead, with no trace of the copied one."""
+    import zipfile
+
+    root = tmp_path / "proj"
+    (root / "native" / "abp-demo").mkdir(parents=True)
+    (root / "native" / "abp-demo" / "pyproject.toml").write_text("[project]\nname='abp-demo'\n", encoding="utf-8")
+    site = tmp_path / "stage" / ".venv" / ("Lib/site-packages" if sb.os.name == "nt" else "lib/python3.11/site-packages")
+    (site / "abp_demo").mkdir(parents=True)
+    (site / "abp_demo" / "old.pyd").write_text("old", encoding="utf-8")
+    (site / "abp_demo-0.0.9.dist-info").mkdir()
+    (site / "abp_demo-0.0.9.dist-info" / "direct_url.json").write_text('{"dir_info": {"editable": true}}', encoding="utf-8")
+
+    def fake_run(argv, cwd=None, **kw):
+        out = Path(argv[argv.index("--out") + 1])
+        out.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(out / "abp_demo-0.1.0-cp311-none-any.whl", "w") as whl:
+            whl.writestr("abp_demo/new.pyd", "new")
+            whl.writestr("abp_demo-0.1.0.dist-info/RECORD", "")
+        return sb.subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(sb.shutil, "which", lambda name: "cargo")
+    monkeypatch.setattr(sb.subprocess, "run", fake_run)
+    monkeypatch.delenv("ABP_STAGE_NATIVE", raising=False)
+    assert sb.stage_native(tmp_path / "stage" / ".venv", root=root, log=lambda *_: None) == ["abp-demo"]
+    assert sorted(p.name for p in (site / "abp_demo").iterdir()) == ["new.pyd"]
+    assert sorted(p.name for p in site.iterdir()) == ["abp_demo", "abp_demo-0.1.0.dist-info"]
+
+
+def test_native_builds_are_skipped_without_cargo(tmp_path, monkeypatch):
+    root = tmp_path / "proj"
+    (root / "native" / "abp-demo").mkdir(parents=True)
+    (root / "native" / "abp-demo" / "pyproject.toml").write_text("", encoding="utf-8")
+    monkeypatch.setattr(sb.shutil, "which", lambda name: None)
+    assert sb.stage_native(tmp_path / "venv", root=root, log=lambda *_: None) == []

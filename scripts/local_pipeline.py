@@ -192,6 +192,8 @@ def _run(cmd: list[str], cwd: Optional[Path] = None, retries: int = 0,
 # under one of these (README/CHANGELOG/docs/tests-only edits, for example)
 # doesn't need that step re-run — see changed_files() below.
 RUST_PREFIXES = ("desktop-app/src-tauri/",)
+# Each native/<crate> is its own island with its own gate (`build.py --check`: fmt, clippy, tests).
+NATIVE_PREFIXES = ("native/",)
 ANDROID_PREFIXES = ("android-app/",)
 # The VS Code extension drives abp_acp (which runs turns through abp_run), so a change to
 # either side re-runs its tests.
@@ -208,7 +210,7 @@ DOCKER_PREFIXES = ("bot/", "requirements.txt", "requirements.lock", "Dockerfile"
 # spec the restarted app is verified against.
 DEPLOY_PREFIXES = ("bot/", "config/", "desktop-app/", "requirements.txt", "requirements.lock",
                    "abp_acp/", "abp_run/", "abp_agenteval/", "scripts/stage_bundle.py",
-                   "docs/api/openapi.json")
+                   "docs/api/openapi.json", "native/", "abp_native/")
 
 
 def _matches(changed: set[str], prefixes: tuple[str, ...]) -> bool:
@@ -478,6 +480,27 @@ def check_rust() -> Optional[bool]:
         Step.err("cargo check --release failed:\n" + out[-4000:])
         return False
     Step.ok("release build check passed")
+    return True
+
+
+def check_native() -> Optional[bool]:
+    """Every native/<crate>'s own gate, `build.py --check` (fmt, clippy with warnings as errors, the crate's
+    tests). The bundle builds the same crates from this tree (scripts/stage_bundle.py's stage_native), so a
+    crate that fails here would fail the deploy anyway - this says which one, and why, before anything stops."""
+    Step.head("Native crates — format, clippy, tests")
+    crates = sorted(p.parent for p in (ROOT / "native").glob("*/build.py"))
+    if not crates:
+        Step.skip("no native/ crates")
+        return None
+    if not shutil.which("cargo"):
+        Step.skip("cargo not on PATH — skipping (ABP runs its Python fallbacks without the native crates)")
+        return None
+    for crate in crates:
+        ok, out = _run([_venv_python(), str(crate / "build.py"), "--check"], cwd=crate)
+        if not ok:
+            Step.err(f"native/{crate.name}: build.py --check failed:\n" + out[-4000:])
+            return False
+        Step.ok(f"native/{crate.name}: fmt, clippy and tests clean")
     return True
 
 
@@ -761,15 +784,17 @@ def _run_pipeline_body(args: argparse.Namespace) -> int:
         changed = changed_files()
         if changed is None:
             Step.warn("couldn't determine which files changed — running the full pipeline")
-            rust_needed = docker_needed = android_needed = vscode_needed = deploy_needed = True
+            rust_needed = docker_needed = android_needed = vscode_needed = deploy_needed = native_needed = True
         else:
             rust_needed = _matches(changed, RUST_PREFIXES)
+            native_needed = _matches(changed, NATIVE_PREFIXES)
             docker_needed = _matches(changed, DOCKER_PREFIXES)
             android_needed = _matches(changed, ANDROID_PREFIXES)
             vscode_needed = _matches(changed, VSCODE_PREFIXES)
             deploy_needed = _matches(changed, DEPLOY_PREFIXES)
             Step.ok(f"{len(changed)} file(s) changed since the last push")
             for name, needed, why in (("rust", rust_needed, "no desktop-app/src-tauri changes"),
+                                      ("native", native_needed, "no native/ changes"),
                                       ("docker", docker_needed, "no Docker-relevant changes"),
                                       ("android", android_needed, "no android-app changes"),
                                       ("vscode", vscode_needed, "no VS Code extension or ACP changes")):
@@ -778,6 +803,8 @@ def _run_pipeline_body(args: argparse.Namespace) -> int:
                                   inputs={"files_changed": len(changed)})
             if not rust_needed:
                 Step.skip("no desktop-app/src-tauri changes — skipping Rust fmt/clippy/check")
+            if not native_needed:
+                Step.skip("no native/ changes - skipping the native crates' fmt/clippy/tests")
             if not docker_needed:
                 Step.skip("no Docker-relevant changes — skipping the Docker image build")
             if not android_needed:
@@ -821,7 +848,8 @@ def _run_pipeline_body(args: argparse.Namespace) -> int:
         # everyone, and the extensions a local install adds are its own to test.
         results["leak-guard"] = _timed("leak-guard", check_leak_guard)
         results["extension-tests"] = _timed("extension-tests", check_extension_tests)
-        for name, needed, fn in (("rust", rust_needed, check_rust), ("android", android_needed, check_android),
+        for name, needed, fn in (("rust", rust_needed, check_rust), ("native", native_needed, check_native),
+                                 ("android", android_needed, check_android),
                                  ("vscode", vscode_needed, check_vscode),
                                  ("docker", docker_needed, check_docker)):
             if needed:
