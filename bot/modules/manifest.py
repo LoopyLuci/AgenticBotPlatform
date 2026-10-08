@@ -87,6 +87,8 @@ class Manifest:
     build_steps: list[list[str]] = field(default_factory=list)
     build_outputs: list[str] = field(default_factory=list)
     build_env: dict[str, str] = field(default_factory=dict)
+    # The build cell's memory cap in MB when the 'build' preset's is too small for this module (0 = the preset's).
+    build_memory_mb: int = 0
     hub: Optional[Hub] = None
     mcp_stdio: list[str] = field(default_factory=list)
     gui: list[str] = field(default_factory=list)
@@ -173,6 +175,10 @@ def parse(data: dict, source: str = "builtin") -> Manifest:
     if not isinstance(env, dict):
         raise ManifestError("build.env must be a table")
     m.build_env = {str(k): str(v) for k, v in env.items()}
+    mem = b.get("memory_mb", 0)
+    if not isinstance(mem, int) or isinstance(mem, bool) or not 0 <= mem <= 262144:
+        raise ManifestError("build.memory_mb must be a whole number of MB (0 = the build preset's cap)")
+    m.build_memory_mb = mem
 
     h = data.get("hub")
     if h is not None:

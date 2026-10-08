@@ -30,6 +30,8 @@ steps = [
 ]
 outputs = [".next/standalone/server.js", ".next/BUILD_ID"]
 env = { NODE_OPTIONS = "--max-old-space-size=12288" }
+# The build cell's memory cap has to be above Node's heap, or the cell kills the build the heap was raised for.
+memory_mb = 14336
 
 [hub]
 start = ["{abp_python}", "-m", "abp_modkit", "serve", "--spec", "{overlay}/abp-ops.toml", "--project", "{repo}", "--home", "{data}", "--var", "target={target}"]

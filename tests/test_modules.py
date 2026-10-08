@@ -39,6 +39,8 @@ def test_every_builtin_manifest_parses():
     ({**FAKE, "build": {"steps": "cargo build"}}, "list of commands"),
     ({**FAKE, "checkout": {"marker": ["x"], "subdir": "../escape"}}, "inside the repo"),
     ({**FAKE, "host": {"os": ["plan9"]}}, "unknown"),
+    ({**FAKE, "build": {"steps": [["npm", "run", "build"]], "memory_mb": "lots"}}, "build.memory_mb"),
+    ({**FAKE, "build": {"steps": [["npm", "run", "build"]], "memory_mb": -1}}, "build.memory_mb"),
 ])
 def test_bad_manifests_are_refused_with_a_clear_reason(data, message):
     with pytest.raises(mf.ManifestError, match=message.replace("[", r"\[").replace("{", r"\{").replace("}", r"\}")):
@@ -288,3 +290,21 @@ def test_a_peer_can_reach_the_modules_list_itself():
     assert peers.control_area_of("/api/modules") == "modules"
     assert peers.control_area_of("/api/modules?x=1") == "modules"
     assert peers.control_area_of("/api/modulesX") is None
+
+
+def test_a_module_can_raise_its_build_cells_memory_cap():
+    from bot.modules import harness
+    from bot.sandbox_ns import policy as policy_mod
+
+    plain = mf.parse({**FAKE, "build": {"steps": [["npm", "run", "build"]]}})
+    assert plain.build_memory_mb == 0 and harness._build_policy(plain) is None
+    big = mf.parse({**FAKE, "build": {"steps": [["npm", "run", "build"]], "memory_mb": 14336}})
+    p = harness._build_policy(big)
+    assert p.memory_mb == 14336 and p.name == "build"
+    assert p.cpu_rate_percent == policy_mod.policy_for("build").cpu_rate_percent  # only the memory cap changes
+
+
+def test_9routers_build_cell_fits_its_node_heap():
+    m = mf.load(Path(__file__).resolve().parent.parent / "catalog" / "9router" / "abp-module.toml")
+    heap = int(m.build_env["NODE_OPTIONS"].split("=")[1])
+    assert m.build_memory_mb > heap

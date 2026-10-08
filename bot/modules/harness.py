@@ -266,6 +266,18 @@ def _workspace(m: Manifest) -> Path:
     return d / m.subdir if m.subdir else d
 
 
+def _build_policy(m: Manifest):
+    """The build cell's policy: the 'build' preset, with the manifest's own memory cap when it asks for one
+    (a Next.js build can need more heap than the preset's cap, and a cap below that kills it)."""
+    if not m.build_memory_mb:
+        return None
+    import dataclasses
+
+    from bot.sandbox_ns import policy as policy_mod
+
+    return dataclasses.replace(policy_mod.policy_for("build"), memory_mb=m.build_memory_mb)
+
+
 def _build(m: Manifest, log: Callable[[str], None]) -> None:
     if not m.build_steps:
         log("this module has no build steps yet")
@@ -276,7 +288,7 @@ def _build(m: Manifest, log: Callable[[str], None]) -> None:
     noisy = re.compile(r"^\s*(Compiling|Checking|Downloaded|Downloading|Fresh|Blocking|Updating crates)\b")
     # One cell for the whole build: the steps belong together, so one kill (the timeout above, or
     # the diagnostics page) stops whichever one is running and everything under it.
-    with cell_for("build", name=f"{m.id} build", owner=OWNER) as cell:
+    with cell_for("build", name=f"{m.id} build", owner=OWNER, policy=_build_policy(m)) as cell:
         for step in m.build_steps:
             _stream(m, registry.expand_cmd(m, step), ws, env, log, timeout=7200,
                     keep=lambda line: not noisy.match(line), cell=cell)
