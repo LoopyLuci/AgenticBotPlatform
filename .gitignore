@@ -69,3 +69,4 @@ ProjectData.md
 # native-messaging host registration (machine-specific; scripts/install_native_host.py writes these)
 /native_host/
 /native_host_install.json
+.coverage
