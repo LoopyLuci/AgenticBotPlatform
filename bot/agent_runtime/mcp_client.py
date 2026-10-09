@@ -448,6 +448,10 @@ async def connect(name: str, *, wait_s: float = CONNECT_WAIT_S) -> bool:
     this returns False for a server that has oauth_enabled set."""
     from bot import db
 
+    if _runtime_booted():
+        from bot.runtime import pluggables
+
+        return await pluggables.reconnect(name)           # one connection table: the mcp:<name> unit owns it
     await disconnect(name)
     row = db.get_external_mcp_server(name)
     if row is None or not row["enabled"]:
@@ -471,7 +475,20 @@ async def connect(name: str, *, wait_s: float = CONNECT_WAIT_S) -> bool:
     return True
 
 
+def _runtime_booted() -> bool:
+    try:
+        from bot.runtime import live
+
+        return bool(live.booted)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 async def disconnect(name: str) -> None:
+    if _runtime_booted():
+        from bot.runtime import pluggables
+
+        await pluggables.disconnect(name)
     conn = _connections.pop(name, None)
     task = _owner_tasks.pop(name, None)
     if conn is not None:
@@ -493,6 +510,87 @@ async def disconnect(name: str) -> None:
     _rebuild_tool_index()
 
 
+# Servers whose connection a unit (`mcp:<name>`, bot/runtime/pluggables.py) owns: connect_all_enabled() leaves them alone.
+runtime_owned: set[str] = set()
+
+
+class PrivateConnection:
+    """A connection owned by one unit version rather than the process-wide table: it is not in `_connections` or
+    `_tool_index`, so a new version can connect beside the old one and the old one is closed after the swap. The
+    task that opened the connection's exit stack is the one that closes it (see _connection_owner)."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.session: Any = None
+        self.tools: list[dict] = []
+        self.close_event = asyncio.Event()
+        self.task: Optional[asyncio.Task] = None
+
+    @property
+    def open(self) -> bool:
+        return self.session is not None and not self.close_event.is_set()
+
+    async def call(self, real_name: str, arguments: dict) -> str:
+        if not self.open:
+            raise RuntimeError(f"external MCP server {self.name!r} is no longer connected")
+        return _result_text(await self.session.call_tool(real_name, arguments or {}))
+
+    async def close(self) -> None:
+        self.close_event.set()
+        task, self.task = self.task, None
+        if task is not None:
+            try:
+                await asyncio.wait_for(task, timeout=10.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                task.cancel()
+            except Exception:  # noqa: BLE001
+                logger.exception("external MCP server %r: error while closing connection", self.name)
+        self.session = None
+
+
+def server_kwargs(name: str) -> dict:
+    """The connection settings of a configured, enabled server. Raises KeyError if there is none."""
+    from bot import db
+
+    row = db.get_external_mcp_server(name)
+    if row is None or not row["enabled"]:
+        raise KeyError(f"no enabled external MCP server named {name!r}")
+    return _row_to_kwargs(row)
+
+
+async def open_private(name: str, kwargs: dict, *, wait_s: float = CONNECT_WAIT_S) -> PrivateConnection:
+    """Connect to a server without touching the process-wide connection table. Raises if it fails or is not ready
+    within `wait_s` (the half-open connection is closed)."""
+    conn = PrivateConnection(name)
+    ready = asyncio.Event()
+    result: dict = {}
+
+    async def owner() -> None:
+        stack = AsyncExitStack()
+        try:
+            session, tools = await _build_session(stack, name, **kwargs)
+        except BaseException as exc:  # noqa: BLE001 - reported to the opener
+            result["error"] = exc
+            ready.set()
+            await stack.aclose()
+            return
+        conn.session, conn.tools = session, tools
+        ready.set()
+        await conn.close_event.wait()
+        await stack.aclose()
+
+    conn.task = asyncio.get_running_loop().create_task(owner(), name=f"mcp-private:{name}")
+    try:
+        await asyncio.wait_for(ready.wait(), timeout=wait_s)
+    except asyncio.TimeoutError:
+        await conn.close()
+        raise TimeoutError(f"external MCP server {name!r} did not answer within {wait_s:.0f}s") from None
+    if "error" in result:
+        await conn.close()
+        raise RuntimeError(f"external MCP server {name!r}: {type(result['error']).__name__}: {result['error']}")
+    return conn
+
+
 async def disconnect_all() -> None:
     for name in list(_connections):
         await disconnect(name)
@@ -505,7 +603,7 @@ async def connect_all_enabled() -> None:
     from bot import db
 
     for row in db.list_external_mcp_servers():
-        if row["enabled"]:
+        if row["enabled"] and row["name"] not in runtime_owned:
             await connect(row["name"])
 
 
@@ -584,7 +682,10 @@ async def call_tool(name: str, arguments: dict) -> str:
     conn = _connections.get(server_name)
     if conn is None:
         raise RuntimeError(f"external MCP server {server_name!r} is no longer connected")
-    result = await conn.session.call_tool(real_name, arguments or {})
+    return _result_text(await conn.session.call_tool(real_name, arguments or {}))
+
+
+def _result_text(result: Any) -> str:
     parts = []
     for block in result.content or []:
         text = getattr(block, "text", None)
@@ -596,4 +697,4 @@ async def call_tool(name: str, arguments: dict) -> str:
 
 
 def connected_servers() -> list[str]:
-    return sorted(_connections)
+    return sorted(set(_connections) | runtime_owned)

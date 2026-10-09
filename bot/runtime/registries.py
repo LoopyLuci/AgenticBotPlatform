@@ -7,6 +7,7 @@ Non-default instances get suffixed tool names (`tool@instance`).
 from __future__ import annotations
 
 import dataclasses
+import logging
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping
@@ -21,6 +22,7 @@ class Snapshot:
     panels: tuple
     cli: tuple
     overlay: Mapping[str, Any]
+    registrations: tuple = ()        # apply()/revert() objects of the live instances
 
     @staticmethod
     def empty() -> "Snapshot":
@@ -35,6 +37,13 @@ def deep_merge(base: Mapping, over: Mapping) -> dict:
         else:
             out[key] = value
     return out
+
+
+def _guarded(fn: Any) -> None:
+    try:
+        fn()
+    except Exception:  # noqa: BLE001 - a registration hook must not undo a commit
+        logging.getLogger("bot.runtime.registries").exception("registration hook %r failed", fn)
 
 
 def _suffixed(entry: tuple, instance_id: str) -> tuple:
@@ -72,6 +81,7 @@ class Registries:
         panels: list[dict] = []
         cli: list = []
         overlay: dict = {}
+        registrations: list = []
         for inst in sorted(instances, key=lambda i: i.ref):
             c = inst.contributions
             for raw in c.tools:
@@ -85,12 +95,21 @@ class Registries:
                 panels.append(_panel(panel, inst))
             cli.extend(c.cli)
             overlay = deep_merge(overlay, c.config_overlay)
+            registrations.extend(c.registrations)
         panels.sort(key=lambda p: (p.get("order", 100), p.get("id", "")))
-        return Snapshot(MappingProxyType(tools), tuple(panels), tuple(cli), MappingProxyType(overlay))
+        return Snapshot(MappingProxyType(tools), tuple(panels), tuple(cli), MappingProxyType(overlay), tuple(registrations))
 
     def publish(self, snap: Snapshot) -> None:
+        new_ids = {id(r) for r in snap.registrations}
+        old_ids = {id(r) for r in self.snapshot.registrations}
+        for reg in self.snapshot.registrations:           # what leaves is reverted before what arrives is applied
+            if id(reg) not in new_ids:
+                _guarded(reg.revert)
         for name in set(self.snapshot.tools) - set(snap.tools):
             toolspec.unregister(name)
         for schema, spec, handler, enabled in snap.tools.values():
             toolspec.register(schema, spec, handler, enabled)
+        for reg in snap.registrations:
+            if id(reg) not in old_ids:
+                _guarded(reg.apply)
         self.snapshot = snap

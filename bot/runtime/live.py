@@ -10,13 +10,14 @@
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 from pathlib import Path
 from typing import Any, Optional
 
-from bot.runtime import legacy
+from bot.runtime import legacy, pluggables
 from bot.runtime.engine import RuntimeEngine, UnitFactories
 from bot.runtime.manifest import BranchStore, InstanceSpec, Manifest
 from bot.runtime.state import StateStore
@@ -27,6 +28,7 @@ logger = logging.getLogger("bot.runtime.live")
 _engine: Optional[RuntimeEngine] = None
 _key: Any = None
 booted = False
+_loop: Any = None            # the event loop the engine runs on (set by boot)
 
 
 def get_engine() -> RuntimeEngine:
@@ -43,9 +45,12 @@ def get_engine() -> RuntimeEngine:
                 pass
         factories = UnitFactories()
         legacy.register_factories(factories)
+        pluggables.register_factories(factories)        # ext:/plugin:/wasm:/mcp: units (phase 3B)
         data_dir = Path(db.DB_PATH).parent
         _engine = RuntimeEngine(factories=factories, store=StateStore(db.DB_PATH),
                                 branches=BranchStore(data_dir / "runtime" / "branches"))
+        _engine.version_resolver = pluggables.version_of
+        pluggables.reset()
         _key, booted = key, False
     return _engine
 
@@ -78,15 +83,20 @@ def selected_units(config: Optional[dict] = None) -> list[str]:
 
 
 def boot_manifest() -> Manifest:
-    return Manifest(instances={make_ref(u, DEFAULT_INSTANCE): InstanceSpec(u) for u in selected_units()})
+    instances = {make_ref(u, DEFAULT_INSTANCE): InstanceSpec(u) for u in selected_units()}
+    if str(os.environ.get("ABP_UNITS") or "").strip().lower() != "none":
+        instances.update(pluggables.boot_instances())        # extensions, plugins, WASM plugins, MCP servers
+    return Manifest(instances=instances)
 
 
 async def boot() -> None:
     """Load the selected units. A unit that fails is reported (GET /api/runtime) and left out; ABP carries on."""
-    global booted
+    global booted, _loop
     engine = get_engine()
+    _loop = asyncio.get_running_loop()
     try:
         report = await engine.boot(boot_manifest())
+        pluggables.note_boot_failures(engine)
         if report.failed:
             logger.warning("units that failed to load: %s", report.failed)
     except Exception as exc:  # noqa: BLE001 - the runtime never stops ABP from starting
@@ -103,6 +113,23 @@ async def shutdown() -> None:
             await _engine.shutdown()
         except Exception:  # noqa: BLE001
             logger.exception("unit runtime shutdown failed")
+
+
+def run_sync(coro_factory: Any, timeout: float = 120.0) -> Any:
+    """Run an engine transaction from synchronous code. From a worker thread it runs on the engine's loop and waits
+    for the result; from the loop's own thread (which must not block) it is scheduled and None is returned; before
+    the engine has booted it does nothing (the caller's direct effect is all there is yet)."""
+    if not booted or _loop is None or not _loop.is_running():
+        return None
+    try:
+        running = asyncio.get_running_loop()
+    except RuntimeError:
+        running = None
+    if running is None:
+        return asyncio.run_coroutine_threadsafe(coro_factory(), _loop).result(timeout)
+    if running is _loop:
+        get_engine().supervisor.spawn("runtime:sync", coro_factory, "sync")
+    return None
 
 
 def state_of(unit_id: str) -> str:
@@ -148,10 +175,14 @@ def route_fallback(original: Any) -> Any:
     """The router's handler for requests no route matched: /api/<unit>... that the dispatcher can serve (a live
     instance, or a unit that is loading / failed) goes to it; everything else keeps the app's own 404."""
     async def handler(scope: dict, receive: Any, send: Any) -> None:
-        if scope.get("type") in ("http", "websocket") and scope.get("path", "").startswith("/api/") and booted:
-            dispatcher = get_engine().dispatcher
+        if scope.get("type") in ("http", "websocket") and scope.get("path", "").startswith("/api/"):
+            engine = get_engine()
+            dispatcher = engine.dispatcher
+            if not booted:
+                await pluggables.ensure_loaded(engine)       # a dashboard served without the lifespan still has its extensions
             found = dispatcher._resolve(scope)
-            if isinstance(found[0], Instance) or found[2] != "unloaded":
+            if isinstance(found[0], Instance) or found[2] != "unloaded" or dispatcher.is_known_path(
+                    scope.get("path", "")):
                 await dispatcher(scope, receive, send)
                 return
         await original(scope, receive, send)

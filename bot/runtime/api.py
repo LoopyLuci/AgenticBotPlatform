@@ -116,11 +116,14 @@ def build_router(engine: RuntimeEngine, read_auth: Callable, write_auth: Callabl
                                              branch=body.get("branch")))
 
     @router.post("/api/runtime/units/{unit}/swap", dependencies=write)
-    async def swap_unit(unit: str, body: dict = Body(...)):
-        if not body.get("version"):
+    async def swap_unit(unit: str, body: dict = Body(default={})):
+        version = body.get("version")
+        if not version and engine.version_resolver is not None:
+            version = engine.version_resolver(unit)           # a reload: the unit's current version on disk
+        if not version:
             raise HTTPException(status_code=400, detail="version is required")
         return await unit_call(engine.swap(
-            unit, str(body["version"]), instance=body.get("instance") or "default",
+            unit, str(version), instance=body.get("instance") or "default",
             settings=body.get("settings"), branch=body.get("branch")))
 
     @router.post("/api/runtime/instances", dependencies=write)

@@ -49,6 +49,8 @@ class Contributions:
     cli: list = field(default_factory=list)
     tasks: list[Callable[[], Awaitable[Any]]] = field(default_factory=list)
     config_overlay: dict = field(default_factory=dict)        # defaults merged into config while the instance is live
+    route_prefixes: list = field(default_factory=list)        # absolute /api/... prefixes the routes answer at (extensions)
+    registrations: list = field(default_factory=list)         # objects with apply() / revert(): run at commit, sync, idempotent
 
 
 class Unit(Protocol):

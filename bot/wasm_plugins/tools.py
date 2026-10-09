@@ -39,14 +39,11 @@ def tool_name_for(plugin: str, tool: str) -> str:
     return f"{plugin}_{tool}".replace("-", "_")
 
 
-def register_plugin(plugin: str, manifest: dict) -> None:
-    """Register every tool in a plugin's manifest, and unregister whatever it had before.
-
-    Re-registering rather than refusing to: a plugin can be reinstalled with a new version,
-    and the tools of the old one must not stay behind with a stale schema.
-    """
-    unregister_plugin(plugin)
+def plugin_entries(plugin: str, manifest: dict) -> tuple[dict, list]:
+    """The agent tools a manifest describes, without registering them: ({tool: agent-facing name}, [(schema, spec,
+    handler)]). The unit runtime hands the entries to its registry; `register_plugin` registers them directly."""
     names: dict = {}
+    entries: list = []
     for tool in manifest.get("tools", []):
         raw = str(tool.get("name") or "").strip()
         if not raw:
@@ -57,22 +54,29 @@ def register_plugin(plugin: str, manifest: dict) -> None:
             logger.warning("wasm plugin %s: tools %r collide as %s; the second is not registered", plugin, raw, name)
             continue
         schema = _schema_for(tool, raw)
-        try:
-            toolspec.register(
-                {
-                    "name": name,
-                    "description": _description_for(plugin, raw, tool),
-                    "input_schema": schema,
-                },
-                toolspec.ToolSpec(name=name, permission="external", read_only=False, origin="plugin"),
-                _handler(plugin, raw),
-            )
-        except ValueError as exc:
-            # A tool name that collides with a built-in, or with another plugin's, is refused
-            # rather than allowed to shadow it.
-            logger.error("wasm plugin %s: tool %s not registered: %s", plugin, name, exc)
+        if name in toolspec.builtin_names():
+            # A tool name that collides with a built-in is refused rather than allowed to shadow it.
+            logger.error("wasm plugin %s: tool %s not registered: it is a built-in tool", plugin, name)
             continue
+        entries.append((
+            {"name": name, "description": _description_for(plugin, raw, tool), "input_schema": schema},
+            toolspec.ToolSpec(name=name, permission="external", read_only=False, origin="plugin"),
+            _handler(plugin, raw),
+        ))
         names[raw] = name
+    return names, entries
+
+
+def register_plugin(plugin: str, manifest: dict) -> None:
+    """Register every tool in a plugin's manifest, and unregister whatever it had before.
+
+    Re-registering rather than refusing to: a plugin can be reinstalled with a new version,
+    and the tools of the old one must not stay behind with a stale schema.
+    """
+    unregister_plugin(plugin)
+    names, entries = plugin_entries(plugin, manifest)
+    for schema, spec, handler in entries:
+        toolspec.register(schema, spec, handler)
     _registered[plugin] = names
     if names:
         logger.info("wasm plugin %s registered %d tool(s): %s", plugin, len(names), ", ".join(sorted(names.values())))

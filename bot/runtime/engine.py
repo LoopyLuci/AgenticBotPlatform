@@ -42,15 +42,21 @@ class UnitFactories:
 
     def __init__(self) -> None:
         self._factories: dict[tuple[str, str], Callable[[InstanceSpec], Any]] = {}
+        self._prefixes: dict[str, Callable[[InstanceSpec], Any]] = {}      # "ext:" -> factory for every ext:<name>
 
     def register(self, unit_id: str, factory: Callable[[InstanceSpec], Any], version: str = "*") -> None:
         self._factories[(unit_id, version)] = factory
+
+    def register_prefix(self, prefix: str, factory: Callable[[InstanceSpec], Any]) -> None:
+        self._prefixes[prefix] = factory
 
     def unregister(self, unit_id: str, version: str = "*") -> None:
         self._factories.pop((unit_id, version), None)
 
     def build(self, spec: InstanceSpec) -> Any:
         factory = self._factories.get((spec.unit, spec.version)) or self._factories.get((spec.unit, "*"))
+        if factory is None:
+            factory = next((f for p, f in self._prefixes.items() if spec.unit.startswith(p)), None)
         if factory is None:
             raise LookupError(f"no factory for unit {spec.unit!r} version {spec.version!r}")
         return factory(spec)
@@ -126,6 +132,7 @@ class RuntimeEngine:
         self.stage_timeout = stage_timeout
         self.generation = 0
         self.last_transaction: Optional[Report] = None
+        self.version_resolver: Optional[Callable[[str], Optional[str]]] = None   # unit id -> its current version on disk
         self.boot_error = ""                  # set by the application when its boot failed (shown in status)
         self._manifest = Manifest()
         self._active: dict[str, Instance] = {}

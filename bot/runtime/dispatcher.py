@@ -11,7 +11,7 @@ previews). An unknown, unloaded or failed unit answers 404 JSON, never a stack t
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping, Optional
 
@@ -22,6 +22,7 @@ from bot.runtime.unit import DEFAULT_INSTANCE, Instance, make_ref
 class RouteTable:
     mounts: Mapping[str, Instance]          # ref -> instance
     states: Mapping[str, str]               # ref -> loading | failed | unloaded, for refs without a mount
+    paths: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))   # absolute /api/... prefix -> ref (units whose routes keep their own paths)
 
     @staticmethod
     def empty() -> "RouteTable":
@@ -30,7 +31,8 @@ class RouteTable:
 
 def build_table(instances: Iterable[Instance], states: Optional[Mapping[str, str]] = None) -> RouteTable:
     mounts = {i.ref: i for i in instances if i.app is not None}
-    return RouteTable(MappingProxyType(mounts), MappingProxyType(dict(states or {})))
+    paths = {p: i.ref for i in mounts.values() for p in i.contributions.route_prefixes}
+    return RouteTable(MappingProxyType(mounts), MappingProxyType(dict(states or {})), MappingProxyType(paths))
 
 
 class Dispatcher:
@@ -39,6 +41,7 @@ class Dispatcher:
         self._table = RouteTable.empty()
         self._staged = RouteTable.empty()
         self._branches: Mapping[str, RouteTable] = MappingProxyType({})
+        self._known: dict[str, str] = {}          # every absolute prefix ever mounted -> ref (so an unload answers unit_unavailable)
 
     # -- publishing (each is one reference swap) --
     @property
@@ -46,7 +49,20 @@ class Dispatcher:
         return self._table
 
     def publish(self, table: RouteTable) -> None:
+        self._known.update(table.paths)
         self._table = table
+
+    def is_known_path(self, path: str) -> bool:
+        """Whether `path` falls under an absolute prefix a unit has mounted (now or earlier)."""
+        return self._match(self._known, path) is not None
+
+    @staticmethod
+    def _match(paths: Mapping[str, str], path: str) -> Optional[str]:
+        best = None
+        for prefix, ref in paths.items():
+            if (path == prefix or path.startswith(prefix + "/")) and (best is None or len(prefix) > len(best[0])):
+                best = (prefix, ref)
+        return best[1] if best else None
 
     def set_staged(self, table: Optional[RouteTable]) -> None:
         self._staged = table or RouteTable.empty()
@@ -86,6 +102,7 @@ class Dispatcher:
         root = scope.get("root_path", "")
         if root and path.startswith(root):
             path = path[len(root):]
+        full = path
         if path.startswith(self.prefix + "/"):
             path = path[len(self.prefix):]
         segs = path.lstrip("/").split("/")
@@ -100,6 +117,13 @@ class Dispatcher:
         ref = make_ref(unit, inst_id or DEFAULT_INSTANCE)
         inst = table.mounts.get(ref)
         if inst is None:
+            owner = self._match(table.paths, full)
+            if owner is not None and owner in table.mounts:
+                return table.mounts[owner], full         # absolute: the unit's router holds the full path
+            if owner is None and table is self._table:
+                owner = self._match(self._known, full)
+                if owner is not None:
+                    return None, owner.partition("@")[0], table.states.get(owner, "unloaded")
             return None, key, table.states.get(ref, "unloaded")
         return inst, rest
 
