@@ -717,14 +717,22 @@ def build_app() -> FastAPI:
         from bot import power
         power.keeper.start()
         ssh_update_task = asyncio.create_task(_ssh_toolkit_auto_update_loop())
+        # The unit runtime: load the selected feature-area units (ABP_UNITS / runtime.units); never stops startup.
+        from bot.runtime import live as _live
+        await _live.boot()
         try:
             yield
         finally:
+            await _live.shutdown()
             task.cancel()
             ssh_update_task.cancel()
             power.keeper.stop()
 
     app = FastAPI(title="Bot Control Dashboard API", lifespan=_lifespan)
+
+    # Unit runtime: a feature area's routes stay registered, but answer 404 unit_unavailable while its unit is off.
+    from bot.runtime import live as _runtime_live
+    app.add_middleware(_runtime_live.UnitGate)
 
     def _json_download(data, filename: str) -> Response:
         body = json.dumps(data, indent=2, default=str).encode("utf-8")
@@ -1070,5 +1078,14 @@ def build_app() -> FastAPI:
             _mod.register(app, json_download=_json_download)
         else:
             _mod.register(app)
+
+    # The unit runtime: its API, the live changes pushed to every open dashboard, and the dispatcher for the
+    # /api/<unit>/... paths no route above matched (units that serve their own routes).
+    from bot.runtime.api import build_router as _runtime_router
+
+    _engine = _runtime_live.get_engine()
+    _engine.on_commit = _broadcast_soon
+    app.include_router(_runtime_router(_engine, _require_token_or_api_key, _require_token))
+    app.router.default = _runtime_live.route_fallback(app.router.default)
 
     return app

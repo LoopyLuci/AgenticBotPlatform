@@ -18,7 +18,7 @@ def test_the_panel_is_identical_in_both_uis():
 def test_both_pages_mount_it_with_a_nav_item():
     for page in ("bot/dashboard/static/dashboard.html", "desktop-app/ui/index.html"):
         text = (ROOT / page).read_text(encoding="utf-8")
-        assert '<section id="router">' in text and 'id="rt-root"' in text and 'href="#router"' in text
+        assert re.search(r'<section id="router"[^>]*>', text) and 'id="rt-root"' in text and 'href="#router"' in text
         assert re.search(r'<script src="(/static/)?router-panel\.js"></script>', text)
 
 

@@ -126,6 +126,7 @@ class RuntimeEngine:
         self.stage_timeout = stage_timeout
         self.generation = 0
         self.last_transaction: Optional[Report] = None
+        self.boot_error = ""                  # set by the application when its boot failed (shown in status)
         self._manifest = Manifest()
         self._active: dict[str, Instance] = {}
         self._standby: dict[str, tuple[Instance, float]] = {}
@@ -165,7 +166,7 @@ class RuntimeEngine:
             "generation": self.generation, "manifest_id": self._manifest.id,
             "units": [i.describe() for _r, i in sorted(self._active.items())],
             "standby": [i.describe() for r, (i, exp) in sorted(self._standby.items()) if exp > now],
-            "failed": dict(self._failures), "previews": sorted(self._previews),
+            "failed": dict(self._failures), "boot_error": self.boot_error, "previews": sorted(self._previews),
             "tasks": self.supervisor.total(),
             "last_transaction": self.last_transaction.to_dict() if self.last_transaction else None,
         }

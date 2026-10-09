@@ -3,6 +3,7 @@ bot's call finds it unloaded), downloads, storage, training and export, the agen
 page. Everything runs against a stand-in Studio; tests/test_unsloth_live.py is not needed for these."""
 from __future__ import annotations
 
+import re
 import asyncio
 import threading
 import time
@@ -354,7 +355,7 @@ def test_the_page_is_identical_in_both_uis_and_mounted():
     assert dash == (ROOT / "desktop-app/ui/unsloth-panel.js").read_text(encoding="utf-8")
     for page in ("bot/dashboard/static/dashboard.html", "desktop-app/ui/index.html"):
         text = (ROOT / page).read_text(encoding="utf-8")
-        assert '<section id="unsloth">' in text and 'id="us-root"' in text and 'href="#unsloth"' in text
+        assert re.search(r'<section id="unsloth"[^>]*>', text) and 'id="us-root"' in text and 'href="#unsloth"' in text
         assert re.search(r'<script src="(/static/)?unsloth-panel\.js"></script>', text)
     called = set(re.findall(r"['`](/api/unsloth/[a-z/-]+)", dash))
     from bot.dashboard import unsloth_api
