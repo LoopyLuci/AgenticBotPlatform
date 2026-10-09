@@ -2017,22 +2017,8 @@ from bot.agent_runtime import ext_browser as _ext_browser  # noqa: E402,F401
 from bot import routines as _routines  # noqa: E402,F401
 from bot import canvas as _canvas  # noqa: E402,F401
 from bot import nodes as _nodes  # noqa: E402,F401
-from bot import model_router as _model_router  # noqa: E402,F401
-from bot.unsloth import tools as _unsloth_tools  # noqa: E402,F401  (offered only while Unsloth Studio runs)
 # Feature areas that are units (bot/runtime/legacy.py): imported here only while ABP_UNITS / runtime.units selects them,
 # so the agent has their tools without the dashboard; the unit runtime unregisters / re-registers exactly these.
 from bot.runtime import legacy as _legacy_units  # noqa: E402
 _legacy_units.import_area_tools()  # noqa: E402
-from bot.transferdaemon import tools as _transferdaemon_tools  # noqa: E402,F401  (offered while TransferDaemon is installed)
-from bot.modules import tools as _module_tools  # noqa: E402,F401  (offered once any module is installed)
-from bot.cluster import tools as _cluster_tools  # noqa: E402,F401  (the cluster: this machine and linked servers)
 from bot.agent_runtime import toolkit_tools as _toolkit_tools  # noqa: E402,F401  (abp_toolkit: lint, run, analyze, assets...)
-from bot import power_tools as _power_tools  # noqa: E402,F401  (keep this machine awake, wake others)
-from bot.hosting import tools as _hosting_tools  # noqa: E402,F401  (ABP Web Hosting: sites, DNS, deploys)
-from bot.fileserver import tools as _fileserver_tools  # noqa: E402,F401  (ABP File Server: storage, search, jobs)
-from bot.localai import tools as _localai_tools  # noqa: E402,F401  (local AI and the Neural Lab: models, training, system models)
-try:   # vision_*: OpenCV and its model zoo (bot/vision); an install without OpenCV simply has no vision tools
-    from bot.vision import tools as _vision_tools  # noqa: E402,F401
-except ImportError as _exc:  # pragma: no cover - opencv-contrib-python-headless is in requirements.txt
-    import logging as _logging
-    _logging.getLogger(__name__).warning("vision tools are off: %s", _exc)
