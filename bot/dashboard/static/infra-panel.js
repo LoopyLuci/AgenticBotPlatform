@@ -13,7 +13,7 @@
   const toast = (m, t) => (typeof showToast === 'function' ? showToast(m, t) : console.log(m));
   const J = (method, body) => ({ method, body: JSON.stringify(body || {}) });
   const fail = (e) => { let m = e && e.message ? e.message : String(e); try { m = JSON.parse(m).detail || m; } catch (_) {} toast(m, 'error'); return null; };
-  const errText = (e) => { let m = e && e.message ? e.message : String(e); try { m = JSON.parse(m).detail || m; } catch (_) {} return m; };
+  const errText = (e) => { if (window.ABP && ABP.unitUnavailable && ABP.unitUnavailable(e)) return 'This module is not loaded.'; let m = e && e.message ? e.message : String(e); try { m = JSON.parse(m).detail || m; } catch (_) {} return m; };
   const sure = (msg) => window.confirm(msg);
   const pre = (t) => `<pre class="infra-pre">${esc(typeof t === 'string' ? t : JSON.stringify(t, null, 2))}</pre>`;
   const btn = (act, label, attrs, cls) => `<button class="btn${cls === 'primary' ? ' primary' : ''}" style="padding:4px 10px;margin:1px" data-act="${act}" ${attrs || ''}>${esc(label)}</button>`;

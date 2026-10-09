@@ -341,6 +341,8 @@
     else setHtml(tabsEl, tabsHtml());
   }
   async function loadTools() { try { S.tools = (await api('/api/agent/tools')).tools; } catch (_e) { S.tools = []; } if (S.tab === 'tools') render(); }
+  // A unit loaded or unloaded: its tools came or went, so the cached list is stale. module-host.js fires this.
+  window.addEventListener('abp:runtime-changed', () => { if (S.tools) loadTools(); });
   async function loadRouter() {
     try { S.router = await api('/api/agent/router/recommend'); } catch (e) { S.router = { error: String(e && e.message || e), recommendations: [], skipped: [] }; }
     if (S.tab === 'models') render();

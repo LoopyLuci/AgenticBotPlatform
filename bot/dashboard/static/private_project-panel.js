@@ -14,7 +14,7 @@
   const $ = (id) => document.getElementById(id);
   const E = (s) => (typeof esc === 'function' ? esc(s) : String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
   const toast = (m, t) => (typeof showToast === 'function' ? showToast(m, t) : console.log(m));
-  const errText = (e) => { let m = e && e.message ? e.message : String(e); try { const d = JSON.parse(m).detail; m = d || m; } catch (_) {} return typeof m === 'string' ? m : JSON.stringify(m); };
+  const errText = (e) => { if (window.ABP && ABP.unitUnavailable && ABP.unitUnavailable(e)) return 'This module is not loaded.'; let m = e && e.message ? e.message : String(e); try { const d = JSON.parse(m).detail; m = d || m; } catch (_) {} return typeof m === 'string' ? m : JSON.stringify(m); };
   const send = (path, body, method) => api(path, { method: method || 'POST', body: JSON.stringify(body || {}) });
   const KIND_LABEL = { platform: 'Control plane', app: 'Apps', bot: 'Bots', infra: 'Data, security and infrastructure', tool: 'Tools', library: 'Libraries', security: 'Security training' };
   const st = { tab: 'estate', estate: null, router: null, chat: [], timer: null, rv1: 'all', rv2: '' };
