@@ -702,7 +702,23 @@ class _NoCacheStaticFiles(StaticFiles):
         return response
 
 
+def _area_routes(app: FastAPI, units, module: str, *args, **kwargs) -> None:
+    """Register a feature area's routes (bot/dashboard/<module>.register). An import or registration failure is
+    recorded for the area's unit(s), which then start failed (bot.runtime.live.boot reports it); ABP carries on."""
+    import importlib
+    from bot.runtime import live as _live
+
+    try:
+        importlib.import_module(f"bot.dashboard.{module}").register(app, *args, **kwargs)
+    except Exception as exc:  # noqa: BLE001 - a broken area costs that unit, never the app
+        for unit in ((units,) if isinstance(units, str) else units):
+            _live.record_failure(unit, f"{type(exc).__name__}: {exc}")
+
+
 def build_app() -> FastAPI:
+    from bot.runtime import live as _live_reset
+
+    _live_reset.clear_failures()
     _seed_support_bot_training_ops_skill()
 
     from contextlib import asynccontextmanager
@@ -892,9 +908,7 @@ def build_app() -> FastAPI:
     git_stacks_api.register(app, _require_token, control_auth("docker", write=False), control_auth("docker", write=True))
 
     # The PrivateProject estate: catalog and status, private_project-router, SSO (/api/private_project).
-    from bot.dashboard import private_project_api
-
-    private_project_api.register(app, _require_token)
+    _area_routes(app, "private_project", "private_project_api", _require_token)
 
     # PrivateProject: the link that lets ABP use it as a backend (/api/private_project).
     from bot.dashboard import private_project_api
@@ -902,38 +916,23 @@ def build_app() -> FastAPI:
     private_project_api.register(app, _require_token)
 
     # Computer vision on this machine (/api/vision): OpenCV and its model zoo (bot/vision).
-    try:
-        from bot.dashboard import vision_api
-
-        vision_api.register(app, _require_token)
-    except ImportError as exc:  # pragma: no cover - OpenCV is in requirements.txt
-        logger.warning("vision API is off: %s", exc)
+    _area_routes(app, "vision", "vision_api", _require_token)
 
     # Studio: generative code and GUI with a real-time preview (/studio/v/*, /api/studio/*; bot/studio).
-    from bot.dashboard import studio_api
-
-    studio_api.register(app, _require_token)
+    _area_routes(app, "studio", "studio_api", _require_token)
 
     # ABP Web Hosting (/api/hosting/*; bot/hosting): sites, DNS, tunnels, certificates, deploys, servers.
-    from bot.dashboard import hosting_api
-
-    hosting_api.register(app, _require_token)
+    _area_routes(app, "hosting", "hosting_api", _require_token)
 
     # ABP File Server management (/api/fileserver/*; bot/fileserver): array, shares, users, jobs, index, guard, apps.
-    from bot.dashboard import fileserver_api
-
-    fileserver_api.register(app, _require_token)
+    _area_routes(app, "storage", "fileserver_api", _require_token)
 
     # Local AI and the Neural Lab (/api/localai/*, /api/lab/*; bot/localai, bot/neurallab): models, fine-tuning, the
     # lab's runs and designs, the toolkit's projects, the system models.
-    from bot.dashboard import localai_api
-
-    localai_api.register(app, _require_token)
+    _area_routes(app, ("localai", "neurallab"), "localai_api", _require_token)
 
     # The memory fabric (/api/memory/*; bot/memoryfabric): memories and conversations shared by every model.
-    from bot.dashboard import memory_api
-
-    memory_api.register(app, _require_token)
+    _area_routes(app, "memoryfabric", "memory_api", _require_token)
 
     # Privacy mode (/api/privacy; bot/privacy.py): every model call and agent tool kept on this machine.
     from bot.dashboard import privacy_api
@@ -995,51 +994,33 @@ def build_app() -> FastAPI:
     sentinel_api.register(app, _require_token_or_api_key, _require_token)
 
     # The model router: its decisions and reasoning, what it learned, training, and its editable policy.
-    from bot.dashboard import router_api
-
-    router_api.register(app, _require_token_or_api_key, _require_token)
+    _area_routes(app, "router", "router_api", _require_token_or_api_key, _require_token)
 
     # Unsloth Studio: load and serve its models, download, train, export, and every other operation it offers.
-    from bot.dashboard import unsloth_api
-
-    unsloth_api.register(app, _require_token_or_api_key, _require_token)
+    _area_routes(app, "unsloth", "unsloth_api", _require_token_or_api_key, _require_token)
 
     # Ollama: pull, load and serve its models, build models from Modelfiles or GGUF files, and every route it serves.
-    from bot.dashboard import ollama_api
-
-    ollama_api.register(app, _require_token_or_api_key, _require_token)
+    _area_routes(app, "ollama", "ollama_api", _require_token_or_api_key, _require_token)
 
     # VM-Harness: a separate program ABP installs, updates and drives (VMs, containers, and its own window).
-    from bot.dashboard import vm_harness_api
-
-    vm_harness_api.register(app, control_auth("vm-harness", write=False), control_auth("vm-harness", write=True))
+    _area_routes(app, "vm-harness", "vm_harness_api", control_auth("vm-harness", write=False), control_auth("vm-harness", write=True))
 
     # Hermes Manager: a separate program ABP installs, updates and drives (Hermes's gateway, logs, config, backups...
     # and its own window).
-    from bot.dashboard import hermes_manager_api
-
-    hermes_manager_api.register(app, control_auth("hermes-manager", write=False), control_auth("hermes-manager", write=True))
+    _area_routes(app, "hermes-manager", "hermes_manager_api", control_auth("hermes-manager", write=False), control_auth("hermes-manager", write=True))
 
     # TransferDaemon: a separate program ABP builds, updates and drives (encrypted messages and files between devices,
     # its window, terminal UI and relays).
-    from bot.dashboard import transferdaemon_api
-
-    transferdaemon_api.register(app, control_auth("transferdaemon", write=False), control_auth("transferdaemon", write=True))
+    _area_routes(app, "transferdaemon", "transferdaemon_api", control_auth("transferdaemon", write=False), control_auth("transferdaemon", write=True))
 
     # Modules: every separate program ABP installs, updates, builds and drives, on one page (bot/modules/).
-    from bot.dashboard import modules_api
-
-    modules_api.register(app, control_auth("modules", write=False), control_auth("modules", write=True))
+    _area_routes(app, "modules", "modules_api", control_auth("modules", write=False), control_auth("modules", write=True))
 
     # Cluster: this machine as a node (what it shares, the jobs it runs for peers) and the cluster seen from here.
-    from bot.dashboard import cluster_api
-
-    cluster_api.register(app, _identify_caller)
+    _area_routes(app, "cluster", "cluster_api", _identify_caller)
 
     # Power: keep this machine awake while it is in use, wake other machines (Wake-on-LAN).
-    from bot.dashboard import power_api
-
-    power_api.register(app, control_auth("power", write=False), control_auth("power", write=True))
+    _area_routes(app, "power", "power_api", control_auth("power", write=False), control_auth("power", write=True))
 
     # The Sandbox Nervous System: every process ABP started and is still running, its cell, what that
     # cell may do, and the two ways to stop it (one cell, or every non-persistent cell).

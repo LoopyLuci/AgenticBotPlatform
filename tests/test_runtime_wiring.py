@@ -18,15 +18,26 @@ ROUTES = {"vm-harness": "/api/vm-harness/status", "hermes-manager": "/api/hermes
           "ollama": "/api/ollama/status"}
 
 
+PANEL_AREAS = [u for u, a in legacy.AREAS.items() if a.panel]
+
+
 def _tool_names(unit: str) -> list[str]:
-    return legacy.tool_names(legacy.AREAS[unit])
+    try:
+        return legacy.tool_names(legacy.AREAS[unit])
+    except Exception:  # noqa: BLE001 - an area whose optional dependency is missing has no tools here
+        return []
+
+
+async def _idle(stop_event):
+    import asyncio
+    await asyncio.Event().wait()
 
 
 @pytest.fixture
 def pilot_tools():
-    """Tool names of the pilot areas; the toolspec registry is process-wide, so start with them unregistered and
+    """Tool names of every area; the toolspec registry is process-wide, so start with them unregistered and
     put back what an earlier test had registered."""
-    names = {u: _tool_names(u) for u in PILOTS}
+    names = {u: _tool_names(u) for u in legacy.AREAS}
     before = {n: toolspec._registered.get(n) for ns in names.values() for n in ns}
     for ns in names.values():
         for n in ns:
@@ -42,10 +53,23 @@ def pilot_tools():
 
 @pytest.fixture
 def env(monkeypatch, temp_db, pilot_tools):
+    """The real app, with the real tools and routes of every area, but idle stand-ins for their background tasks
+    (hosting, DNS, file server ... must not do real work in a test)."""
+    import dataclasses
+    import sys
+    import types
+
     from bot.hermes_manager import harness as hm
     from bot.ollama import harness as ol
     from bot.vm_harness import harness as vm
 
+    fake = types.ModuleType("abp_test_idle_tasks")
+    fake.idle = _idle
+    monkeypatch.setitem(sys.modules, "abp_test_idle_tasks", fake)
+    for uid, area in list(legacy.AREAS.items()):
+        if area.tasks:
+            monkeypatch.setitem(legacy.AREAS, uid, dataclasses.replace(
+                area, tasks=tuple("abp_test_idle_tasks:idle" for _ in area.tasks)))
     monkeypatch.setenv("DASHBOARD_TOKEN", TOKEN)
     monkeypatch.delenv("ABP_UNITS", raising=False)
     monkeypatch.setattr(vm, "status", lambda backends=True: {"unit": "vm"})
@@ -53,8 +77,10 @@ def env(monkeypatch, temp_db, pilot_tools):
     monkeypatch.setattr(ol, "status", lambda: {})
     monkeypatch.setattr(ol, "summary", lambda full=None: {"unit": "ol"})
     live.reset()
+    live.clear_failures()
     yield pilot_tools
     live.reset()
+    live.clear_failures()
 
 
 def _manifest_units(c: TestClient) -> set[str]:
@@ -64,11 +90,11 @@ def _manifest_units(c: TestClient) -> set[str]:
 def test_all_units_listed_and_pilot_routes_work(env):
     with TestClient(build_app()) as c:
         units = _manifest_units(c)
-        assert set(PILOTS) <= units and units == set(legacy.AREAS)       # every page stays visible
+        assert set(PILOTS) <= units and units == set(PANEL_AREAS)       # every page stays visible
         for unit, path in ROUTES.items():
             assert c.get(path, headers=H).status_code == 200, unit
-        for names in env.values():
-            assert names and all(toolspec.has_handler(n) or n in toolspec._registered for n in names)
+        for unit, names in env.items():
+            assert (names or not legacy.AREAS[unit].tools) and all(toolspec.has_handler(n) or n in toolspec._registered for n in names)
         status = c.get("/api/runtime", headers=H).json()
         assert {u["unit"] for u in status["units"]} == set(legacy.AREAS) and not status["failed"]
         # unmatched paths keep the app's own 404 and wrong methods keep 405
@@ -88,6 +114,8 @@ def test_none_boots_core_only(env, monkeypatch):
                 "code": "unit_unavailable", "unit": unit, "state": "unloaded"}, unit
         for names in env.values():
             assert not any(n in toolspec._registered for n in names)
+        assert live.get_engine().supervisor.total() == 0
+        assert c.get("/api/ui/manifest", headers=H).json()["panels"] == []
 
 
 def test_comma_list_selects_units(env, monkeypatch):
@@ -102,6 +130,7 @@ def test_config_key_selects_units_when_env_unset():
     assert live.selected_units({"runtime": {"units": ["ollama"]}}) == ["ollama"]
     assert live.selected_units({"runtime": {"units": "none"}}) == []
     assert live.selected_units({}) == list(legacy.AREAS)
+    assert len(legacy.AREAS) == 17
 
 
 def test_unload_and_load_a_unit_over_http(env):
@@ -220,3 +249,135 @@ def test_a_boot_failure_is_recorded_and_shown(env, monkeypatch):
     with TestClient(build_app()) as c:
         assert "kaput" in c.get("/api/runtime", headers=H).json()["boot_error"]
         assert c.get("/api/overview", headers=H).status_code == 200
+
+
+# -- every feature area is a full unit ----------------------------------------------------------------------------
+
+def _probe(c: TestClient, area: "legacy.Area") -> dict:
+    """What a request under the area's first route prefix answers: the unit_unavailable error object, or {}."""
+    r = c.get(area.routes[0] + "/__probe__", headers=H)
+    try:
+        body = r.json()
+    except ValueError:
+        return {}
+    err = body.get("error") if isinstance(body, dict) else None
+    return err if isinstance(err, dict) and err.get("code") == "unit_unavailable" else {}
+
+
+def _groups(unit: str) -> list[str]:
+    return [g for g in live.get_engine().supervisor.groups() if g.startswith(f"{unit}@")]
+
+
+def _wait_tasks(unit: str, want: bool) -> None:
+    import time
+    for _ in range(100):
+        if bool(_groups(unit)) == want:
+            return
+        time.sleep(0.02)
+
+
+@pytest.mark.parametrize("unit", list(legacy.AREAS))
+def test_every_area_loads_unloads_and_loads_again(env, unit):
+    area = legacy.AREAS[unit]
+    names = env[unit]
+    assert area.routes, f"{unit} declares no route prefixes"
+    assert names or not area.tools
+    with TestClient(build_app()) as c:
+        # loaded: panel, tools, routes, tasks
+        assert (unit in _manifest_units(c)) == area.panel
+        assert all(n in toolspec._registered for n in names)
+        assert not _probe(c, area)
+        _wait_tasks(unit, bool(area.tasks))
+        assert bool(_groups(unit)) == bool(area.tasks)
+        # unloaded: all of it gone, the other areas untouched
+        assert c.post(f"/api/runtime/units/{unit}/unload", headers=H).json()["ok"]
+        assert unit not in _manifest_units(c)
+        assert not any(n in toolspec._registered for n in names)
+        assert _probe(c, area) == {"code": "unit_unavailable", "unit": unit, "state": "unloaded"}
+        _wait_tasks(unit, False)
+        assert _groups(unit) == []
+        others = [a for a in legacy.AREAS.values() if a.id != unit]
+        assert all(not _probe(c, a) for a in others)
+        # loaded again
+        assert c.post(f"/api/runtime/units/{unit}/load", headers=H).status_code == 200
+        assert (unit in _manifest_units(c)) == area.panel
+        assert all(n in toolspec._registered for n in names)
+        assert not _probe(c, area)
+        _wait_tasks(unit, bool(area.tasks))
+        assert bool(_groups(unit)) == bool(area.tasks)
+
+
+def test_none_leaves_no_area_behind(env, monkeypatch):
+    monkeypatch.setenv("ABP_UNITS", "none")
+    with TestClient(build_app()) as c:
+        assert c.get("/api/overview", headers=H).status_code == 200
+        assert c.get("/api/runtime", headers=H).json()["failed"] == {}
+        for area in legacy.AREAS.values():
+            assert _probe(c, area)["state"] == "unloaded", area.id
+        assert not any(n in toolspec._registered for names in env.values() for n in names)
+        assert live.get_engine().supervisor.total() == 0
+        assert _manifest_units(c) == set()
+
+
+def test_task_targets_resolve_to_coroutine_functions():
+    import importlib
+    import inspect
+
+    for area in legacy.AREAS.values():
+        for target in area.tasks:
+            mod_name, _, fn = target.partition(":")
+            assert inspect.iscoroutinefunction(getattr(importlib.import_module(mod_name), fn)), target
+
+
+def test_a_tools_module_that_raises_fails_only_its_unit(env, monkeypatch, tmp_path):
+    import dataclasses
+
+    (tmp_path / "abp_test_raising_tools.py").write_text("raise RuntimeError('tools exploded')\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.setitem(legacy.AREAS, "hosting", dataclasses.replace(
+        legacy.AREAS["hosting"], tools=("abp_test_raising_tools",)))
+    monkeypatch.delitem(legacy.RECORDED, "hosting", raising=False)    # forget the tools recorded earlier
+    live.reset()
+    with TestClient(build_app()) as c:
+        failed = c.get("/api/runtime", headers=H).json()["failed"]
+        assert list(failed) == ["hosting@default"] and "tools exploded" in failed["hosting@default"]
+        assert _manifest_units(c) == set(PANEL_AREAS) - {"hosting"}
+        assert _probe(c, legacy.AREAS["hosting"])["state"] == "failed"
+        assert not _probe(c, legacy.AREAS["cluster"])
+        assert c.get("/api/overview", headers=H).status_code == 200
+
+
+def test_routes_that_fail_to_register_fail_only_their_unit(env, monkeypatch):
+    import sys
+    import types
+
+    broken = types.ModuleType("bot.dashboard.power_api")
+
+    def register(app, *a, **k):
+        raise RuntimeError("routes exploded")
+
+    broken.register = register
+    monkeypatch.setitem(sys.modules, "bot.dashboard.power_api", broken)
+    with TestClient(build_app()) as c:
+        failed = c.get("/api/runtime", headers=H).json()["failed"]
+        assert list(failed) == ["power@default"] and "routes exploded" in failed["power@default"]
+        assert _probe(c, legacy.AREAS["power"])["state"] == "failed"
+        assert _manifest_units(c) == set(PANEL_AREAS) - {"power"}
+        assert not _probe(c, legacy.AREAS["cluster"])
+        assert c.get("/api/overview", headers=H).status_code == 200
+
+
+def test_the_module_tool_lists_every_known_module(monkeypatch):
+    from bot.modules import registry, tools as module_tools
+
+    saved = toolspec._registered.get("module_status")
+    monkeypatch.setattr(registry, "modules", lambda refresh=False: {"alpha": object(), "overlay-beta": object()})
+    try:
+        module_tools.register_tools()
+        schema = toolspec._registered["module_status"][0]
+        assert "overlay-beta" in schema["input_schema"]["properties"]["module"]["description"]
+    finally:
+        monkeypatch.undo()
+        module_tools.register_tools()
+        if saved is None:
+            toolspec.unregister("module_status")

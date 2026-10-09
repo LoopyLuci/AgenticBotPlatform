@@ -29,6 +29,21 @@ _engine: Optional[RuntimeEngine] = None
 _key: Any = None
 booted = False
 _loop: Any = None            # the event loop the engine runs on (set by boot)
+_failures: dict[str, str] = {}      # unit id -> why its routes could not be registered (set by build_app)
+
+
+def record_failure(unit_id: str, error: str) -> None:
+    """build_app could not import / register an area's routes: that unit starts failed with this error."""
+    _failures[unit_id] = error
+    logger.error("routes of unit %s could not be registered: %s", unit_id, error)
+
+
+def failure_of(unit_id: str) -> str:
+    return _failures.get(unit_id, "")
+
+
+def clear_failures() -> None:
+    _failures.clear()
 
 
 def get_engine() -> RuntimeEngine:
@@ -109,8 +124,12 @@ async def shutdown() -> None:
     global booted
     booted = False
     if _engine is not None:
+        # Stopping the engine unregisters the tools of every active unit; the process-wide registry is what an
+        # agent without the dashboard (and the next app in this process) uses, so put those back afterwards.
+        active = [r.partition("@")[0] for r in list(_engine._active)]
         try:
             await _engine.shutdown()
+            legacy.restore_tools(active)
         except Exception:  # noqa: BLE001
             logger.exception("unit runtime shutdown failed")
 

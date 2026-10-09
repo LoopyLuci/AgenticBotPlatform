@@ -25,7 +25,24 @@ MAX_OUT = 12_000
 API = "/api/modules"
 MACHINE = {"type": "string", "description": "a linked server's name (Peers page) to do this on that machine instead of "
                                             "this one; its owner must allow it (peers.remote_control: [modules])"}
-MODULE = {"type": "string", "description": "the module's id or name: " + ", ".join(d["module"]["id"] for d in registry.BUILTIN)}
+
+
+def _module_ids() -> list[str]:
+    """Every module the registry knows (built-in, overlays, projects, extension modules); the built-in ids if the
+    registry cannot be read."""
+    try:
+        ids = list(registry.modules())
+    except Exception:  # noqa: BLE001
+        ids = []
+    return ids or [d["module"]["id"] for d in registry.BUILTIN]
+
+
+def _module_description() -> str:
+    return "the module's id or name: " + ", ".join(_module_ids())
+
+
+# the description is refreshed whenever the tools are (re)registered, so it lists the modules known at that time
+MODULE = {"type": "string", "description": _module_description()}
 SETUP_ACTIONS = {"install": ("POST", "setup"), "update": ("POST", "update"), "build": ("POST", "build"),
                  "pipeline": ("POST", "pipeline"), "start": ("POST", "hub/start"), "stop": ("POST", "hub/stop"),
                  "open_gui": ("POST", "gui"), "open_tui": ("POST", "tui"), "register_mcp": ("POST", "mcp"),
@@ -105,6 +122,8 @@ def _enabled() -> bool:
 
 def register_tools() -> None:
     from bot.agent_runtime import toolspec
+
+    MODULE["description"] = _module_description()
 
     def reg(name, description, props, required, handler, *, permission, read_only):
         props = {**props, "machine": MACHINE}
