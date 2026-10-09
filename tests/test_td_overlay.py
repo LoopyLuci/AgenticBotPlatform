@@ -24,6 +24,12 @@ ROOT = Path(__file__).resolve().parents[1]
 SERVICE = "abp"
 
 
+class _OpError(Exception):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
 class FakeOverlay:
     """A stand-in for TransferDaemon's overlay hub: the contract above, plus a file transfer that really moves
     the bytes (into a downloads folder, as the real daemon does), so a test can check what arrived."""
@@ -33,13 +39,11 @@ class FakeOverlay:
         self.calls: list[tuple[str, dict]] = []
         self.paired: dict[str, str] = {}                 # invite -> the node that accepted it
         self.exposed: dict[str, dict] = {}               # service -> what was published
-        self.connects: dict[str, str] = {}               # node id -> the endpoint handed out
+        self.connects: dict[str, str] = {}               # node id -> the socket address handed out
         self.route: dict = {"kind": "direct", "rtt_ms": 12.0, "loss": 0.0, "mbps": 900.0, "state": "up"}
-        self.routes: list[dict] = []
-        self.services: list[dict] = []
         self.group: dict[str, list[str]] = {}
         self.events: list[dict] = []
-        self.proxy_status: dict = {"ok": True, "relays": 2}
+        self.proxy_status: dict = {"socks5_addr": None, "http_proxy_addr": None}
         self.sent: list[dict] = []
         self.downloads = tmp_path / "downloads" if tmp_path else None
 
@@ -60,60 +64,87 @@ class FakeOverlay:
         result = getattr(self, f"_op_{op.replace('.', '_')}", None)
         if result is None:
             return httpx.Response(404, json={"error": {"code": "unknown_operation", "message": f"no {op}"}})
-        return httpx.Response(200, json={"result": result(body)})
+        try:
+            return httpx.Response(200, json={"result": result(body if isinstance(body, dict) else {})})
+        except _OpError as e:
+            return httpx.Response(400, json={"error": {"code": e.code, "message": str(e)}})
 
-    # ---- the operations ---------------------------------------------------------------------------
+    # ---- the operations (the shapes of the real daemon: crates/transferd-overlay/src/ops.rs) -------------
+    def _known_nodes(self) -> list[str]:
+        return list(dict.fromkeys([*self.connects, *self.paired.values()]))
+
     def _op_overlay_status(self, _b):
-        return {"node_id": self.node_id, "name": self.node_id, "state": "up", "services": [SERVICE]}
+        return {"node_id": self.node_id, "name": self.node_id, "version": "0.1.0", "protocol_versions": [1],
+                "lanes": [], "relays": [], "nat": "open", "listener": "127.0.0.1:0", "proxies": {},
+                "exposes": sorted(self.exposed), "connects": [{"local_addr": a} for a in self.connects.values()]}
 
     def _op_overlay_peers(self, _b):
-        return {"peers": [{"node_id": self.node_id, "name": "self", **self.route}]}
+        # A bare list, one row per peer, each with all its routes.
+        return [{"node_id": n, "name": n, "state": self.route.get("state", "up"),
+                 "routes": [{"kind": self.route.get("kind", "direct"), "rtt_ms": self.route.get("rtt_ms", 0.0),
+                             "loss": self.route.get("loss", 0.0), "mbps": self.route.get("mbps", 0.0),
+                             "active": True}],
+                 "services": [SERVICE], "protocol_version": 1}
+                for n in self._known_nodes()]
 
     def _op_overlay_invite_create(self, b):
-        return {"invite": f"inv-{self.node_id}", "node_id": self.node_id, "ttl_s": b.get("ttl_s"),
-                "expires_at": "2099-01-01T00:00:00+00:00"}
+        return {"invite": f"tdov1:inv-{self.node_id}"}
 
     def _op_overlay_invite_accept(self, b):
         invite = str(b.get("invite") or "")
-        peer = invite.removeprefix("inv-") or "td-peer"
+        if not invite:
+            raise _OpError("protocol", "missing invite")
+        peer = invite.removeprefix("tdov1:").removeprefix("inv-") or "td-peer"
         self.paired[invite] = peer
-        self.connects.setdefault(peer, f"http://127.0.0.1:19000/{peer}")
-        self.routes.append({"node_id": peer, "name": b.get("name") or peer, **self.route})
+        self.connects.setdefault(peer, "127.0.0.1:19000")
         return {"node_id": peer, "name": b.get("name") or peer}
 
     def _op_overlay_expose(self, b):
-        self.exposed[SERVICE] = {"local_addr": b.get("local_addr"), "allow": b.get("allow") or []}
-        return {"service": SERVICE, "local_addr": b.get("local_addr"), "allow": b.get("allow") or []}
+        local = str(b.get("local_addr") or "")
+        host, _, port = local.rpartition(":")
+        if "://" in local or not host or not port.isdigit():
+            raise _OpError("protocol", f"{local} is not host:port")
+        self.exposed[SERVICE] = {"local_addr": local, "allow": b.get("allow") or [],
+                                 "description": b.get("description") or ""}
+        return {}
 
     def _op_overlay_unexpose(self, _b):
         self.exposed.pop(SERVICE, None)
-        return {"service": SERVICE, "exposed": False}
+        return {}
 
     def _op_overlay_connect(self, b):
         target = str(b.get("node_id") or b.get("group") or "")
         if not target:
-            raise AssertionError("overlay.connect needs node_id or group")
+            raise _OpError("protocol", "connect needs node_id or group")
         if b.get("group"):
             members = self.group.get(target) or []
             if not members:
-                return {}
+                raise _OpError("not_found", f"no group {target}")
             target = members[0]
-        return {"local_addr": self.connects.get(target, f"http://127.0.0.1:19000/{target}"),
-                "route": {"node_id": target, **self.route}}
+        local = self.connects.setdefault(target, "127.0.0.1:19000")
+        return {"local_addr": local, "route": str(self.route.get("kind", "direct")),
+                "service": str(b.get("service") or SERVICE)}
 
     def _op_overlay_disconnect(self, b):
-        self.connects.pop(str(b.get("node_id") or ""), None)
-        return {"node_id": b.get("node_id"), "connected": False}
+        local = str(b.get("local_addr") or "")
+        if not local:
+            raise _OpError("protocol", "missing local_addr")
+        for node in [n for n, a in self.connects.items() if a == local]:
+            del self.connects[node]
+        return {}
 
     def _op_overlay_services(self, _b):
-        return {"services": [{"service": SERVICE, "group": g, "nodes": nodes}
-                             for g, nodes in sorted(self.group.items())]}
+        return {"exposed": [{"service": s, "local_addr": v["local_addr"], "allow": v["allow"],
+                             "description": v.get("description", "")} for s, v in self.exposed.items()],
+                "connected": [{"local_addr": a, "target": n, "service": SERVICE, "route": self.route.get("kind"),
+                               "listening": True} for n, a in self.connects.items()],
+                "groups": [{"name": g, "members": list(m)} for g, m in sorted(self.group.items())]}
 
     def _op_overlay_proxy_status(self, _b):
         return dict(self.proxy_status)
 
     def _op_overlay_events(self, _b):
-        return {"events": list(self.events)}
+        return list(self.events)
 
     def _op_transfers_send_file(self, b):
         src = Path(str(b.get("file_path") or ""))
@@ -189,11 +220,11 @@ def test_pairing_carries_the_td_invite_and_pairs_the_daemons(temp_db, td):
     token = peers.generate_pairing_token("http://192.168.1.20:8787", "home")
     assert "overlay.invite_create" in [op for op, _ in td.calls], td.calls
     assert td.ops_called("overlay.invite_create")[0]["ttl_s"] == 600
-    assert td.exposed[SERVICE] == {"local_addr": "http://192.168.1.20:8787", "allow": ["*paired"]}, td.exposed
+    assert td.exposed[SERVICE] == {"local_addr": "192.168.1.20:8787", "allow": ["*paired"], "description": ""}, td.exposed
 
     base_url, secret, carried = peers._decode_pairing_token(token["pairing_token"])
     assert base_url == "http://192.168.1.20:8787"
-    assert carried["invite"] == "inv-td-self" and carried["node_id"] == "td-self"
+    assert carried["invite"] == "tdov1:inv-td-self" and carried["node_id"] == "td-self"
     assert td.paired == {}                                             # issued here; the linking side accepts it
     assert db.consume_server_pairing_token(secret)                     # and it is a real single-use token
     assert token["transferdaemon"]["available"] is True
@@ -225,12 +256,12 @@ def test_linking_pairs_td_and_travels_over_the_overlay(temp_db, td, monkeypatch)
     monkeypatch.setattr(db, "create_server_pairing_token", lambda *a, **k: ("secret", "2099-01-01T00:00:00+00:00"))
     peer = asyncio.run(peers.link_peer("Laptop", token, "Home", setup_ssh=False))
 
-    assert seen["url"] == "http://127.0.0.1:19000/td-laptop/api/peers/handshake", seen["url"]
+    assert seen["url"] == "http://127.0.0.1:19000/api/peers/handshake", seen["url"]
     assert seen["payload"]["transferdaemon"]["node_id"] == "td-self"        # our own identity rides along
     assert td.paired == {"inv-td-laptop": "td-laptop"}                      # the two daemons are paired
     assert peer["td_node_id"] == "td-laptop"
-    assert peer["route"]["kind"] == "direct" and peer["route"]["local_addr"] == "http://127.0.0.1:19000/td-laptop"
-    assert peers.peer_base_url(peer) == "http://127.0.0.1:19000/td-laptop"
+    assert peer["route"]["kind"] == "direct" and peer["route"]["local_addr"] == "http://127.0.0.1:19000"
+    assert peers.peer_base_url(peer) == "http://127.0.0.1:19000"
 
 
 def test_the_receiving_side_pairs_and_publishes_to_paired_nodes_only(temp_db, td):
@@ -250,7 +281,7 @@ def test_the_receiving_side_pairs_and_publishes_to_paired_nodes_only(temp_db, td
 def test_a_peer_with_an_unreachable_address_is_reached_over_the_overlay(peer, td):
     assert peer["base_url"] == "http://10.0.2.15:8787"
     assert peers.refresh_route(peer) is True
-    assert peers.peer_base_url(peer) == "http://127.0.0.1:19000/td-laptop"
+    assert peers.peer_base_url(peer) == "http://127.0.0.1:19000"
     info = peers.route_info(peer)
     assert (info["kind"], info["state"], info["td_node_id"]) == ("direct", "up", "td-laptop")
 
@@ -270,18 +301,18 @@ def test_a_route_change_picks_itself_up_on_the_heartbeat(peer, td, monkeypatch):
     peers.refresh_route(peer)
     first = peers.peer_base_url(peer)
 
-    td.connects["td-laptop"] = "http://127.0.0.1:19111/td-laptop"
+    td.connects["td-laptop"] = "127.0.0.1:19111"
     td.route = {"kind": "relay", "rtt_ms": 140.0, "loss": 0.02, "mbps": 4.0, "state": "up"}
     assert asyncio.run(peers.health_check_all()) is None
     after = peers.route_info(peer)
-    assert peers.peer_base_url(peer) == "http://127.0.0.1:19111/td-laptop"
+    assert peers.peer_base_url(peer) == "http://127.0.0.1:19111"
     assert (after["kind"], after["rtt_ms"], after["loss"]) == ("relay", 140.0, 0.02)
-    assert first == "http://127.0.0.1:19000/td-laptop"
+    assert first == "http://127.0.0.1:19000"
 
-    td.connects["td-laptop"] = "http://127.0.0.1:19222/td-laptop"
+    td.connects["td-laptop"] = "127.0.0.1:19222"
     td.route = {"kind": "direct", "rtt_ms": 8.0, "loss": 0.0, "mbps": 950.0, "state": "up"}
     asyncio.run(peers.health_check_all())
-    assert peers.peer_base_url(peer) == "http://127.0.0.1:19222/td-laptop"
+    assert peers.peer_base_url(peer) == "http://127.0.0.1:19222"
     assert peers.route_info(peer)["kind"] == "direct"
 
 
@@ -289,7 +320,7 @@ def test_the_routes_endpoint_shows_kind_rtt_and_state(peer, td):
     peers.refresh_route(peer)
     routes = peers.td_routes()
     assert routes["Laptop"]["kind"] == "direct" and routes["Laptop"]["rtt_ms"] == 12.0
-    assert routes["Laptop"]["state"] == "up" and routes["Laptop"]["local_addr"].endswith("/td-laptop")
+    assert routes["Laptop"]["state"] == "up" and routes["Laptop"]["local_addr"] == "http://127.0.0.1:19000"
 
 
 # ---- placement on route metrics ---------------------------------------------------------------------------------------
