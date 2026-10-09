@@ -83,6 +83,10 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.agent_runtime.engine", "bot.agent_runtime.approval", "bot.agent_runtime.subagent_registry",
     "bot.platform_supervisor",
     "bot.tasks",  # holds the strong references that keep in-flight background tasks alive
+    # The unit runtime owns the live route/tool/panel tables, the task groups and an sqlite connection; a reload
+    # would orphan them. (The runtime replaces units itself, through its own transactions.)
+    "bot.runtime.unit", "bot.runtime.tasks", "bot.runtime.state", "bot.runtime.dispatcher",
+    "bot.runtime.registries", "bot.runtime.manifest", "bot.runtime.engine", "bot.runtime.api",
     # bot.db's per-area functions (bot/storage/): part of bot.db, which is denylisted above for the connection it
     # owns; reloading a piece would leave bot.db re-exporting the stale functions.
     "bot.storage.agent_settings", "bot.storage.approvals", "bot.storage.chat", "bot.storage.devices",
