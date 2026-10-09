@@ -352,3 +352,40 @@ def test_g8_a_branch_switch_is_all_or_nothing_and_a_shadow_never_changes_live(re
     # the old live manifest is the rollback target
     assert app.post("/api/runtime/rollback").status_code == 200
     assert app.get("/api/toy/x").json()["v"] == "1" and app.get("/api/other/x").status_code == 404
+
+
+def test_a_plugin_install_disable_enable_remove_never_removes_another_units_tools(real_app, tmp_path):
+    """A plugin transaction through the dashboard routes touches only the plugin's own tools: after every step the
+    tools of every active area are still registered."""
+    plugin = tmp_path / "isolation_plugin.py"
+    plugin.write_text(
+        "def setup(api):\n"
+        "    async def handler(tool_input, *, workspace=None, instance_id=None):\n"
+        "        return 'ok'\n"
+        "    api.register_tool('isolation_plugin_tool', 'Say ok.', {'type': 'object', 'properties': {}}, handler)\n",
+        encoding="utf-8")
+    app = real_app("all")
+    expected = {u: _tool_names(u) for u in AREA_IDS}
+    assert any(expected.values())
+
+    def check(step: str) -> None:
+        for unit, names in expected.items():
+            if unit in app.units():
+                assert _registered(names) == names, f"after {step}: {unit} lost {set(names) - set(_registered(names))}"
+
+    check("boot")
+    assert app.post("/api/plugins", {"path": str(plugin)}).status_code == 200
+    app.settle()
+    check("install")
+    from bot import plugins
+    assert plugins.has_tool("isolation_plugin_tool")
+    assert app.post("/api/plugins/isolation_plugin/disable").status_code == 200
+    app.settle()
+    check("disable")
+    assert app.post("/api/plugins/isolation_plugin/enable").status_code == 200
+    app.settle()
+    check("enable")
+    assert app.http.delete("/api/plugins/isolation_plugin").status_code == 200
+    app.settle()
+    check("remove")
+    assert not plugins.has_tool("isolation_plugin_tool")

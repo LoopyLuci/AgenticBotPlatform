@@ -358,6 +358,7 @@ def test_routes_that_fail_to_register_fail_only_their_unit(env, monkeypatch):
 
     broken.register = register
     monkeypatch.setitem(sys.modules, "bot.dashboard.power_api", broken)
+    monkeypatch.delitem(legacy.BOOT, "power", raising=False)          # version "1" is the code as first loaded: forget it
     with TestClient(build_app()) as c:
         failed = c.get("/api/runtime", headers=H).json()["failed"]
         assert list(failed) == ["power@default"] and "routes exploded" in failed["power@default"]

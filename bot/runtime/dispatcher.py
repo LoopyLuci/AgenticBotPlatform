@@ -111,11 +111,16 @@ class Dispatcher:
             table, segs = self._staged, segs[1:]
         elif segs[0] == "_branch" and len(segs) >= 2:
             table, segs = self._branches.get(segs[1], RouteTable.empty()), segs[2:]
+        owner = self._match(table.paths, full)
+        if owner is not None and owner in table.mounts:
+            return table.mounts[owner], full             # absolute: the unit's router holds the full path
         key = segs[0] if segs else ""
         rest = "/" + "/".join(segs[1:])
         unit, _, inst_id = key.partition("@")
         ref = make_ref(unit, inst_id or DEFAULT_INSTANCE)
         inst = table.mounts.get(ref)
+        if inst is not None and inst.contributions.route_prefixes:
+            rest = inst.contributions.route_prefixes[0] + rest      # a staged / branch preview of an absolute-path unit
         if inst is None:
             owner = self._match(table.paths, full)
             if owner is not None and owner in table.mounts:
@@ -130,7 +135,7 @@ class Dispatcher:
     async def _unavailable(self, scope: dict, receive: Any, send: Any, unit: str, state: str) -> None:
         if scope["type"] == "websocket":
             await receive()
-            await send({"type": "websocket.close", "code": 1008})
+            await send({"type": "websocket.close", "code": 4404, "reason": "unit_unavailable"})
             return
         body = json.dumps({"error": {"code": "unit_unavailable", "unit": unit, "state": state}}).encode()
         await send({"type": "http.response.start", "status": 404,

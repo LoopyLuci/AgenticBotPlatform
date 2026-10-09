@@ -66,6 +66,7 @@ def env(tmp_path, monkeypatch, temp_db):
     monkeypatch.setenv("SAMPLE_PROBE", str(tmp_path / "probe.log"))
     pluggables.reset()
     pluggables.set_auth(_noauth, _noauth)
+    import bot.agent_runtime.tools  # noqa: F401 - registers the areas' tools now, so they are part of `saved`
     saved = dict(toolspec._registered)
     e = Env(tmp_path)
     yield e

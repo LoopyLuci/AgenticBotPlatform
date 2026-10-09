@@ -150,6 +150,8 @@ def list_dir(root_name: str, rel_path: str = "") -> list[dict]:
     group. Raises KeyError/PathEscapeError (see resolve_safe_path) or
     NotADirectoryError/FileNotFoundError for a bad rel_path."""
     target = resolve_safe_path(root_name, rel_path)
+    if not rel_path.strip("/") and not target.exists():
+        return []           # a configured root whose folder is not there yet (e.g. no Android build has run) is empty
     if not target.is_dir():
         raise NotADirectoryError(str(target))
     entries = []

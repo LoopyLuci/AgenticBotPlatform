@@ -89,7 +89,14 @@ Only one transaction commits at a time (a queue); staging work of one transactio
 
 One ASGI app mounted once at startup routes `/api/<unit>[@instance]/…` to the live instance's router via an immutable
 table (swapped at commit). An unknown or unloaded unit answers `404 {"error": {"code": "unit_unavailable", "unit": …,
-"state": "unloaded|failed|loading"}}` — never a stack trace. In-flight counting and connection pinning live here.
+"state": "unloaded|failed|loading"}}` — never a stack trace (a WebSocket is closed with code 4404). In-flight counting
+and connection pinning live here.
+
+A feature area's HTTP routes are part of its unit: the area's `register(app, *auth)` (bot/dashboard/<x>_api.py) is run
+against a collector when the unit is staged, from the freshly imported module on a hot-reload swap, and the router is
+served at the area's own absolute paths (`/api/ollama/…`, `/studio/v/…`). Core routes registered on the app win; a wrong
+method gets the router's 405. The OpenAPI document merges the areas' routes in, so `/openapi.json` and the committed
+spec still describe them. An app used without its lifespan (no engine) serves the same routes from a plain app.
 
 ## Events and the UI
 

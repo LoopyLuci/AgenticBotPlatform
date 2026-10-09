@@ -45,17 +45,10 @@ def browser():
         b.close()
 
 
-# Resource 404s that do not depend on any unit (present with every unit and with none): the page asks for a
-# favicon the app does not serve, and for the Android builds folder, which a fresh temporary data folder lacks.
-IGNORED_404 = ("/favicon.ico", "/api/files/android-builds")
-
-
 def _console(msg, errors: list) -> None:
     if msg.type != "error":
         return
     url = (msg.location or {}).get("url", "")
-    if "status of 404" in msg.text and any(part in url for part in IGNORED_404):
-        return
     errors.append(f"console.error: {msg.text} [{url}]")
 
 

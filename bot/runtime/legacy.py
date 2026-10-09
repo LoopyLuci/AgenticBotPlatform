@@ -6,8 +6,10 @@ the route prefixes its FastAPI routes live under, the modules whose import regis
 inside `contributions()`, so an area that is not loaded costs nothing and one whose import fails is reported failed
 by the engine without touching ABP or any other unit.
 
-Routes registered on the FastAPI app cannot be removed, so `UnitGate` (an ASGI middleware, see bot/runtime/live.py)
-answers 404 `unit_unavailable` for an area's route prefixes while its unit is not active.
+An area's routes are part of its unit's contributions: its `register(app, *auth)` (bot/dashboard/<x>_api.py, unchanged)
+is run against a collector at stage time, from the possibly freshly imported module, and the resulting router is served
+by the dispatcher at the area's own absolute paths. A swap therefore replaces the HTTP handlers too, and an unloaded
+unit answers 404 `unit_unavailable` (websockets close 4404) through the dispatcher (bot/runtime/live.py `route_fallback`).
 
 Every area is converted. `converted=False` (an entry that only lists its page) and `panel=False` (an area without a
 dashboard page) remain for entries added later or by tests. Route registration (bot/dashboard/server.py) records an
@@ -42,6 +44,7 @@ class Area:
     converted: bool = True
     panel: bool = True              # False: no dashboard page (nothing in the UI manifest)
     packages: tuple = ()            # dotted packages/modules holding the area's code (default: derived from tools/tasks)
+    api: str = ""                   # dotted module whose register(app, *auth) adds the area's routes (bot/dashboard/<x>_api)
 
 
 def _area(id, title, icon, order, section="", **kw) -> tuple:
@@ -50,32 +53,32 @@ def _area(id, title, icon, order, section="", **kw) -> tuple:
 
 AREAS: dict[str, Area] = dict([
     # every feature area: its routes, tools and tasks belong to the unit
-    _area("vm-harness", "VM-Harness", "🖧", 182, routes=("/api/vm-harness",), tools=("bot.vm_harness.tools",)),
+    _area("vm-harness", "VM-Harness", "🖧", 182, routes=("/api/vm-harness",), tools=("bot.vm_harness.tools",), api="bot.dashboard.vm_harness_api"),
     _area("hermes-manager", "Hermes Manager", "☤", 183, routes=("/api/hermes-manager",),
-          tools=("bot.hermes_manager.tools",)),
-    _area("ollama", "Ollama", "🦙", 184, routes=("/api/ollama",), tools=("bot.ollama.tools",)),
-    _area("router", "Model Router", "🧭", 160, routes=("/api/router",), tools=("bot.model_router",)),
-    _area("unsloth", "Unsloth", "🦥", 161, routes=("/api/unsloth",), tools=("bot.unsloth.tools",)),
+          tools=("bot.hermes_manager.tools",), api="bot.dashboard.hermes_manager_api"),
+    _area("ollama", "Ollama", "🦙", 184, routes=("/api/ollama",), tools=("bot.ollama.tools",), api="bot.dashboard.ollama_api"),
+    _area("router", "Model Router", "🧭", 160, routes=("/api/router",), tools=("bot.model_router",), api="bot.dashboard.router_api"),
+    _area("unsloth", "Unsloth", "🦥", 161, routes=("/api/unsloth",), tools=("bot.unsloth.tools",), api="bot.dashboard.unsloth_api"),
     _area("cluster", "Cluster", "⧉", 162, routes=("/api/cluster",), tools=("bot.cluster.tools",),
-          tasks=("bot.cluster.membership:heartbeat_forever",)),
-    _area("private_project", "PrivateProject", "🐙", 163, routes=("/api/private_project",)),
-    _area("vision", "Vision", "👁", 164, routes=("/api/vision",), tools=("bot.vision.tools",)),
+          tasks=("bot.cluster.membership:heartbeat_forever",), api="bot.dashboard.cluster_api"),
+    _area("private_project", "PrivateProject", "🐙", 163, routes=("/api/private_project",), api="bot.dashboard.private_project_api"),
+    _area("vision", "Vision", "👁", 164, routes=("/api/vision",), tools=("bot.vision.tools",), api="bot.dashboard.vision_api"),
     _area("hosting", "Hosting", "🌐", 165, routes=("/api/hosting",), tools=("bot.hosting.tools",),
-          tasks=("bot.hosting.service:run_forever",)),
+          tasks=("bot.hosting.service:run_forever",), api="bot.dashboard.hosting_api"),
     _area("storage", "Storage", "🗄", 166, routes=("/api/fileserver",), tools=("bot.fileserver.tools",),
-          tasks=("bot.fileserver.service:run_forever",)),
+          tasks=("bot.fileserver.service:run_forever",), api="bot.dashboard.fileserver_api"),
     _area("localai", "Local AI", "🦙", 167, routes=("/api/localai",), tools=("bot.localai.tools",),
-          tasks=("bot.localai.service:run_forever",)),
+          tasks=("bot.localai.service:run_forever",), api="bot.dashboard.localai_api"),
     _area("neurallab", "Neural Lab", "🧠", 168, section="lab", routes=("/api/lab",),
-          tasks=("bot.neurallab.service:run_forever",)),
-    _area("studio", "Studio", "🎨", 169, routes=("/api/studio", "/studio/v")),
-    _area("modules", "Modules", "▦", 170, routes=("/api/modules",), tools=("bot.modules.tools",)),
+          tasks=("bot.neurallab.service:run_forever",), api="bot.dashboard.localai_api"),
+    _area("studio", "Studio", "🎨", 169, routes=("/api/studio", "/studio/v"), api="bot.dashboard.studio_api"),
+    _area("modules", "Modules", "▦", 170, routes=("/api/modules",), tools=("bot.modules.tools",), api="bot.dashboard.modules_api"),
     _area("transferdaemon", "TransferDaemon", "⇄", 171, routes=("/api/transferdaemon",),
-          tools=("bot.transferdaemon.tools",)),
-    _area("power", "Power", "⏻", 172, routes=("/api/power",), tools=("bot.power_tools",)),
+          tools=("bot.transferdaemon.tools",), api="bot.dashboard.transferdaemon_api"),
+    _area("power", "Power", "⏻", 172, routes=("/api/power",), tools=("bot.power_tools",), api="bot.dashboard.power_api"),
     # the memory fabric has no page of its own: routes and the upkeep task only
     _area("memoryfabric", "Memory Fabric", "", 173, routes=("/api/memory",),
-          tasks=("bot.memoryfabric.service:run_forever",), panel=False),
+          tasks=("bot.memoryfabric.service:run_forever",), panel=False, api="bot.dashboard.memory_api"),
 ])
 
 
@@ -124,15 +127,16 @@ def import_area_tools() -> list[str]:
 # ------------------------------------------------------------------ source, versions, fresh imports (hot reload)
 def area_packages(area: Area) -> tuple:
     """The dotted names whose code belongs to the area: `packages`, else the package (or top-level module) of each
-    tools / tasks module."""
-    if area.packages:
-        return tuple(area.packages)
-    out: list[str] = []
-    for name in list(area.tools) + [t.partition(":")[0] for t in area.tasks]:
-        parent = name.rpartition(".")[0]
-        pkg = parent if parent and parent != "bot" else name
-        if pkg not in out:
-            out.append(pkg)
+    tools / tasks module; plus its route module (`api`)."""
+    out: list[str] = list(area.packages)
+    if not out:
+        for name in list(area.tools) + [t.partition(":")[0] for t in area.tasks]:
+            parent = name.rpartition(".")[0]
+            pkg = parent if parent and parent != "bot" else name
+            if pkg not in out:
+                out.append(pkg)
+    if area.api and area.api not in out:
+        out.append(area.api)                     # the route module is part of the area: editing it swaps the unit
     return tuple(out)
 
 
@@ -224,7 +228,7 @@ def fresh_import(area: Area) -> tuple:
     for name in old:
         del sys.modules[name]
     try:
-        for name in list(area.tools) + [t.partition(":")[0] for t in area.tasks] + list(old):
+        for name in list(area.tools) + [t.partition(":")[0] for t in area.tasks] + ([area.api] if area.api else []) + list(old):
             mod = importlib.import_module(name)
             if name in area.tools and hasattr(mod, "register_tools") and not getattr(mod, "REGISTER_ON_IMPORT", True):
                 mod.register_tools()
@@ -246,6 +250,7 @@ def install(mods: dict) -> dict:
     previous = {n: sys.modules[n] for n in mods if n in sys.modules}
     sys.modules.update(mods)
     _bind(mods)
+    reset_static()
     return previous
 
 
@@ -284,6 +289,92 @@ def restore_tools(unit_ids: Any) -> None:
 
 def tool_names(area: Area) -> list[str]:
     return [entry[1].name for entry in area_tools(area)]
+
+
+# ------------------------------------------------------------------ routes
+# unit id -> (args, kwargs) handed to the area's `register(app, *args, **kwargs)`: the dashboard's auth dependencies
+# (bot/dashboard/server.py `_area_routes`, run by build_app).
+API_AUTH: dict[str, tuple] = {}
+
+
+def set_api_auth(units: Any, args: tuple, kwargs: dict) -> None:
+    for unit in ((units,) if isinstance(units, str) else units):
+        API_AUTH[unit] = (tuple(args), dict(kwargs))
+    reset_static()
+
+
+def _under_prefix(path: str, prefixes: Any) -> bool:
+    return any(path == p or path.startswith(p + "/") for p in prefixes)
+
+
+def area_for_path(path: str) -> Optional[str]:
+    """The id of the converted area whose route prefix `path` falls under (the longest prefix), if any."""
+    best: Optional[tuple] = None
+    for area in AREAS.values():
+        if not area.converted:
+            continue
+        for prefix in area.routes:
+            if _under_prefix(path, (prefix,)) and (best is None or len(prefix) > best[0]):
+                best = (len(prefix), area.id)
+    return best[1] if best else None
+
+
+def build_router(area: Area, mod: Any = None) -> Any:
+    """Run the area's `register(app, *auth)` against a collector and return the router it filled (None-free: an
+    area without routes gives an empty router). `mod` is the (possibly freshly imported) route module. An area that
+    shares its module with another (localai / neurallab) keeps only the routes under its own prefixes."""
+    from fastapi import APIRouter
+
+    from bot.runtime.pluggables import _Collector
+
+    args, kwargs = API_AUTH.get(area.id, ((), {}))
+    mod = mod or importlib.import_module(area.api)
+    collector = _Collector()
+    mod.register(collector, *args, **kwargs)
+    if sum(1 for a in AREAS.values() if a.api == area.api) > 1:
+        shared = APIRouter()
+        shared.routes.extend(r for r in collector.routes if _under_prefix(getattr(r, "path", ""), area.routes))
+        return shared
+    return collector
+
+
+# Routes served without a booted engine (an app used without its lifespan, and the OpenAPI document): every area's
+# router built from the modules as loaded now, held in one plain app.
+_static: dict = {}
+
+
+def reset_static() -> None:
+    _static.clear()
+
+
+def static_routers() -> dict:
+    if "routers" not in _static:
+        routers: dict = {}
+        for area in AREAS.values():
+            if not area.api or not area.converted:
+                continue
+            try:
+                routers[area.id] = build_router(area)
+            except Exception:  # noqa: BLE001 - a broken area costs that area only
+                logger.exception("routes of %s could not be built", area.id)
+        _static["routers"] = routers
+    return _static["routers"]
+
+
+def static_app() -> Any:
+    if "app" not in _static:
+        from fastapi import FastAPI
+
+        app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+        for router in static_routers().values():
+            app.include_router(router)
+        _static["app"] = app
+    return _static["app"]
+
+
+def doc_routes() -> list:
+    """Every area's routes, for the OpenAPI document (they are served by the dispatcher, not registered on the app)."""
+    return [r for router in static_routers().values() for r in router.routes]
 
 
 # bot/main.py sets this: background tasks then run only while this process holds the leader lease (as the singletons
@@ -375,6 +466,8 @@ class LegacyUnit:
                 self._mods, self._entries = fresh_import(a)
             else:
                 if a.id not in BOOT or a.id not in RECORDED:                # version "1" is the code as first loaded, whatever runs now
+                    if a.api:
+                        importlib.import_module(a.api)
                     entries = {e[1].name: e for e in area_tools(a)}
                     prefixes = area_packages(a)
                     BOOT[a.id] = (entries, {n: m for n, m in sys.modules.items() if _under(n, prefixes)})
@@ -391,7 +484,12 @@ class LegacyUnit:
         if error:
             raise RuntimeError(f"routes of {a.id} could not be registered: {error}")
         tools = self._load()
-        return Contributions(panels=[panel] if a.panel else [], tools=tools,
+        router = None
+        if a.api and a.converted:
+            built = build_router(a, self._mods.get(a.api))
+            router = built if built.routes else None
+        return Contributions(panels=[panel] if a.panel else [], tools=tools, routes=router,
+                             route_prefixes=list(a.routes) if router is not None else [],
                              tasks=[_task(t) for t in a.tasks], registrations=[_CodeSwap(self)])
 
     async def start(self, ctx: Any) -> None:

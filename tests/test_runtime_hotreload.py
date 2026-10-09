@@ -40,19 +40,24 @@ def _tool_src(value: str, name: str) -> str:
 
 @pytest.fixture
 def toys(tmp_path, monkeypatch, temp_db):
-    """Two toy areas (toya, toyb), each a one-module package with one tool, on a runtime with nothing else loaded."""
+    """Three toy areas (toya, toyb, toyc), each a package with one tool (toyc also has a route module, toyc/api.py), on a
+    runtime with nothing else loaded."""
     sys.dont_write_bytecode = True
     registry_before = dict(toolspec._registered)        # scrubbing unregisters every area this toy engine isn't running
-    for pkg in ("toya", "toyb"):
+    for pkg in ("toya", "toyb", "toyc"):
         d = tmp_path / "src" / pkg
         d.mkdir(parents=True)
         (d / "__init__.py").write_text("", encoding="utf-8")
         (d / "tools.py").write_text(_tool_src("one", f"{pkg}_tool"), encoding="utf-8")
+    (tmp_path / "src" / "toyc" / "api.py").write_text(_api_src("one"), encoding="utf-8")
     monkeypatch.syspath_prepend(str(tmp_path / "src"))
     importlib.invalidate_caches()
     areas = dict(legacy.AREAS)
     for pkg in ("toya", "toyb"):
         areas[pkg] = legacy.Area(pkg, pkg, order=900, tools=(f"{pkg}.tools",), panel=False)
+    areas["toyc"] = legacy.Area("toyc", "toyc", order=900, tools=("toyc.tools",), panel=False,
+                                routes=("/api/toyc",), api="toyc.api")
+    legacy.set_api_auth("toyc", (), {})
     monkeypatch.setattr(legacy, "AREAS", areas)
     monkeypatch.delenv("ABP_UNITS", raising=False)
     live.reset()
@@ -64,14 +69,26 @@ def toys(tmp_path, monkeypatch, temp_db):
     hotreload._last_events.clear()
     hotreload._last_units.clear()
     yield tmp_path / "src"
-    for name in [n for n in sys.modules if n.split(".")[0] in ("toya", "toyb")]:
+    for name in [n for n in sys.modules if n.split(".")[0] in ("toya", "toyb", "toyc")]:
         del sys.modules[name]
+    legacy.API_AUTH.pop("toyc", None)
     toolspec._registered.clear()
     toolspec._registered.update(registry_before)
     for table in (legacy.BOOT, legacy.RECORDED, legacy.KNOWN_TOOLS):
-        for uid in ("toya", "toyb"):
+        for uid in ("toya", "toyb", "toyc"):
             table.pop(uid, None)
     live.reset()
+
+
+def _api_src(value: str) -> str:
+    return textwrap.dedent(f"""
+        VALUE = {value!r}
+
+        def register(app, *auth):
+            @app.get("/api/toyc/hello")
+            def hello():
+                return {{"value": VALUE}}
+    """)
 
 
 def _edit(root: Path, pkg: str, value: str) -> Path:
@@ -280,3 +297,33 @@ def test_importing_the_router_registers_no_tools_with_no_units():
             "print('suggest_model' in toolspec._registered)")
     assert _probe("none", both) == "False"             # the tool module loads, but no unit asked for the router's tools
     assert _probe(None, both) == "True"                # with every unit, the router unit registers them
+
+
+def test_an_area_swap_changes_its_http_handlers_and_unload_answers_unit_unavailable(toys):
+    import httpx
+
+    async def not_found(scope, receive, send):
+        await send({"type": "http.response.start", "status": 404, "headers": []})
+        await send({"type": "http.response.body", "body": b"core 404"})
+
+    async def go():
+        engine = live.get_engine()
+        await _load(engine, "toyc")
+        asgi = live.route_fallback(not_found)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=asgi), base_url="http://t") as http:
+            assert (await http.get("/api/toyc/hello")).json() == {"value": "one"}
+            assert (await http.post("/api/toyc/hello")).status_code == 405
+            assert (await http.get("/api/toyc/nothing")).status_code == 404
+            path = toys / "toyc" / "api.py"
+            path.write_text(_api_src("two"), encoding="utf-8")
+            importlib.invalidate_caches()
+            result = await _reload(path)
+            assert result["status"] == "applied" and result["units"][0]["action"] == "swap", result
+            assert (await http.get("/api/toyc/hello")).json() == {"value": "two"}
+            report = await engine.apply(Manifest(instances={}), label="unload")
+            assert report.ok, report.error
+            gone = await http.get("/api/toyc/hello")
+            assert gone.status_code == 404
+            assert gone.json() == {"error": {"code": "unit_unavailable", "unit": "toyc", "state": "unloaded"}}
+
+    asyncio.run(go())

@@ -23,7 +23,7 @@ from urllib.parse import urlsplit
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from bot import db, envfile
@@ -702,14 +702,17 @@ class _NoCacheStaticFiles(StaticFiles):
         return response
 
 
-def _area_routes(app: FastAPI, units, module: str, *args, **kwargs) -> None:
-    """Register a feature area's routes (bot/dashboard/<module>.register). An import or registration failure is
-    recorded for the area's unit(s), which then start failed (bot.runtime.live.boot reports it); ABP carries on."""
+def _area_routes(units, module: str, *args, **kwargs) -> None:
+    """Hand a feature area's route registration (bot/dashboard/<module>.register) to the runtime: its auth arguments
+    are recorded for the area's unit(s), which run `register` against a collector when they are staged and serve the
+    routes through the dispatcher. The module is imported here so a broken one is recorded (bot.runtime.live.boot
+    reports that unit failed) and ABP carries on."""
     import importlib
-    from bot.runtime import live as _live
+    from bot.runtime import legacy as _legacy, live as _live
 
+    _legacy.set_api_auth(units, args, kwargs)
     try:
-        importlib.import_module(f"bot.dashboard.{module}").register(app, *args, **kwargs)
+        importlib.import_module(f"bot.dashboard.{module}")
     except Exception as exc:  # noqa: BLE001 - a broken area costs that unit, never the app
         for unit in ((units,) if isinstance(units, str) else units):
             _live.record_failure(unit, f"{type(exc).__name__}: {exc}")
@@ -746,9 +749,9 @@ def build_app() -> FastAPI:
 
     app = FastAPI(title="Bot Control Dashboard API", lifespan=_lifespan)
 
-    # Unit runtime: a feature area's routes stay registered, but answer 404 unit_unavailable while its unit is off.
+    # Unit runtime: a feature area's routes are its unit's contributions, served by the runtime's dispatcher (404
+    # unit_unavailable while the unit is off); the OpenAPI document merges them back in (see _openapi below).
     from bot.runtime import live as _runtime_live
-    app.add_middleware(_runtime_live.UnitGate)
 
     def _json_download(data, filename: str) -> Response:
         body = json.dumps(data, indent=2, default=str).encode("utf-8")
@@ -846,6 +849,11 @@ def build_app() -> FastAPI:
             except Exception:
                 logger.exception("ssh_toolkit auto-update loop iteration failed")
 
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon():
+        # Browsers ask for /favicon.ico whatever the page links; answer with the icon the pages already ship.
+        return FileResponse(STATIC_DIR / "icons" / "vaporwave.png", media_type="image/png")
+
     @app.get("/")
     async def index(request: Request):
         return _page_with_token(STATIC_DIR / "dashboard.html", request)
@@ -908,7 +916,7 @@ def build_app() -> FastAPI:
     git_stacks_api.register(app, _require_token, control_auth("docker", write=False), control_auth("docker", write=True))
 
     # The PrivateProject estate: catalog and status, private_project-router, SSO (/api/private_project).
-    _area_routes(app, "private_project", "private_project_api", _require_token)
+    _area_routes("private_project", "private_project_api", _require_token)
 
     # PrivateProject: the link that lets ABP use it as a backend (/api/private_project).
     from bot.dashboard import private_project_api
@@ -916,23 +924,23 @@ def build_app() -> FastAPI:
     private_project_api.register(app, _require_token)
 
     # Computer vision on this machine (/api/vision): OpenCV and its model zoo (bot/vision).
-    _area_routes(app, "vision", "vision_api", _require_token)
+    _area_routes("vision", "vision_api", _require_token)
 
     # Studio: generative code and GUI with a real-time preview (/studio/v/*, /api/studio/*; bot/studio).
-    _area_routes(app, "studio", "studio_api", _require_token)
+    _area_routes("studio", "studio_api", _require_token)
 
     # ABP Web Hosting (/api/hosting/*; bot/hosting): sites, DNS, tunnels, certificates, deploys, servers.
-    _area_routes(app, "hosting", "hosting_api", _require_token)
+    _area_routes("hosting", "hosting_api", _require_token)
 
     # ABP File Server management (/api/fileserver/*; bot/fileserver): array, shares, users, jobs, index, guard, apps.
-    _area_routes(app, "storage", "fileserver_api", _require_token)
+    _area_routes("storage", "fileserver_api", _require_token)
 
     # Local AI and the Neural Lab (/api/localai/*, /api/lab/*; bot/localai, bot/neurallab): models, fine-tuning, the
     # lab's runs and designs, the toolkit's projects, the system models.
-    _area_routes(app, ("localai", "neurallab"), "localai_api", _require_token)
+    _area_routes(("localai", "neurallab"), "localai_api", _require_token)
 
     # The memory fabric (/api/memory/*; bot/memoryfabric): memories and conversations shared by every model.
-    _area_routes(app, "memoryfabric", "memory_api", _require_token)
+    _area_routes("memoryfabric", "memory_api", _require_token)
 
     # Privacy mode (/api/privacy; bot/privacy.py): every model call and agent tool kept on this machine.
     from bot.dashboard import privacy_api
@@ -994,33 +1002,33 @@ def build_app() -> FastAPI:
     sentinel_api.register(app, _require_token_or_api_key, _require_token)
 
     # The model router: its decisions and reasoning, what it learned, training, and its editable policy.
-    _area_routes(app, "router", "router_api", _require_token_or_api_key, _require_token)
+    _area_routes("router", "router_api", _require_token_or_api_key, _require_token)
 
     # Unsloth Studio: load and serve its models, download, train, export, and every other operation it offers.
-    _area_routes(app, "unsloth", "unsloth_api", _require_token_or_api_key, _require_token)
+    _area_routes("unsloth", "unsloth_api", _require_token_or_api_key, _require_token)
 
     # Ollama: pull, load and serve its models, build models from Modelfiles or GGUF files, and every route it serves.
-    _area_routes(app, "ollama", "ollama_api", _require_token_or_api_key, _require_token)
+    _area_routes("ollama", "ollama_api", _require_token_or_api_key, _require_token)
 
     # VM-Harness: a separate program ABP installs, updates and drives (VMs, containers, and its own window).
-    _area_routes(app, "vm-harness", "vm_harness_api", control_auth("vm-harness", write=False), control_auth("vm-harness", write=True))
+    _area_routes("vm-harness", "vm_harness_api", control_auth("vm-harness", write=False), control_auth("vm-harness", write=True))
 
     # Hermes Manager: a separate program ABP installs, updates and drives (Hermes's gateway, logs, config, backups...
     # and its own window).
-    _area_routes(app, "hermes-manager", "hermes_manager_api", control_auth("hermes-manager", write=False), control_auth("hermes-manager", write=True))
+    _area_routes("hermes-manager", "hermes_manager_api", control_auth("hermes-manager", write=False), control_auth("hermes-manager", write=True))
 
     # TransferDaemon: a separate program ABP builds, updates and drives (encrypted messages and files between devices,
     # its window, terminal UI and relays).
-    _area_routes(app, "transferdaemon", "transferdaemon_api", control_auth("transferdaemon", write=False), control_auth("transferdaemon", write=True))
+    _area_routes("transferdaemon", "transferdaemon_api", control_auth("transferdaemon", write=False), control_auth("transferdaemon", write=True))
 
     # Modules: every separate program ABP installs, updates, builds and drives, on one page (bot/modules/).
-    _area_routes(app, "modules", "modules_api", control_auth("modules", write=False), control_auth("modules", write=True))
+    _area_routes("modules", "modules_api", control_auth("modules", write=False), control_auth("modules", write=True))
 
     # Cluster: this machine as a node (what it shares, the jobs it runs for peers) and the cluster seen from here.
-    _area_routes(app, "cluster", "cluster_api", _identify_caller)
+    _area_routes("cluster", "cluster_api", _identify_caller)
 
     # Power: keep this machine awake while it is in use, wake other machines (Wake-on-LAN).
-    _area_routes(app, "power", "power_api", control_auth("power", write=False), control_auth("power", write=True))
+    _area_routes("power", "power_api", control_auth("power", write=False), control_auth("power", write=True))
 
     # The Sandbox Nervous System: every process ABP started and is still running, its cell, what that
     # cell may do, and the two ways to stop it (one cell, or every non-persistent cell).
@@ -1067,5 +1075,23 @@ def build_app() -> FastAPI:
     _engine.on_commit = _broadcast_soon
     app.include_router(_runtime_router(_engine, _require_token_or_api_key, _require_token))
     app.router.default = _runtime_live.route_fallback(app.router.default)
+
+    # The feature areas' routes are served by the dispatcher, so they are not on the app; the OpenAPI document (and
+    # /openapi.json, the committed spec, the SDK) still describes them: their routes are merged in when it is built.
+    def _openapi() -> dict:
+        from fastapi.openapi.utils import get_openapi
+        from bot.runtime import legacy as _legacy
+
+        if app.openapi_schema is None:
+            app.openapi_schema = get_openapi(
+                title=app.title, version=app.version, openapi_version=app.openapi_version, summary=app.summary,
+                description=app.description, terms_of_service=app.terms_of_service, contact=app.contact,
+                license_info=app.license_info, routes=list(app.routes) + _legacy.doc_routes(),
+                webhooks=app.webhooks.routes, tags=app.openapi_tags, servers=app.servers,
+                separate_input_output_schemas=app.separate_input_output_schemas,
+                external_docs=app.openapi_external_docs)
+        return app.openapi_schema
+
+    app.openapi = _openapi  # type: ignore[method-assign]
 
     return app

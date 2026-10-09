@@ -4,14 +4,15 @@
   built-in feature area registered as a unit factory (bot/runtime/legacy.py).
 * `selected_units()` decides what boots: ABP_UNITS = "all" (default) | "none" | a comma list, else the config key
   `runtime.units`; the default manifest has every built-in area enabled, so ABP behaves as before.
-* `UnitGate` answers 404 `unit_unavailable` for the route prefixes of a unit that is not active (those routes stay
-  registered on the app because FastAPI cannot remove them). Until the engine has booted it lets everything through.
-* `route_fallback()` gives the router's "no route matched" handler to the dispatcher, for /api/... paths only.
+* `route_fallback()` gives the router's "no route matched" handler to the dispatcher: /api/... paths, and the route
+  prefixes of the feature areas (their routes are unit contributions served by the dispatcher, not registered on the
+  app). An area that is not active answers 404 `unit_unavailable` (websockets close 4404). Until the engine has
+  booted, the areas' routes are served from a plain app built from the loaded modules (an app used without its
+  lifespan behaves as it always did).
 """
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 from pathlib import Path
@@ -160,50 +161,32 @@ def state_of(unit_id: str) -> str:
     return engine.dispatcher.table.states.get(ref, "unloaded")
 
 
-def _prefix_table() -> list[tuple[str, str]]:
-    return [(p, a.id) for a in legacy.AREAS.values() if a.converted for p in a.routes]
-
-
-class UnitGate:
-    """ASGI middleware: a converted area's routes answer `unit_unavailable` while its unit is not active."""
-
-    def __init__(self, app: Any) -> None:
-        self.app = app
-
-    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
-        if scope.get("type") in ("http", "websocket") and booted:
-            path = scope.get("path", "")
-            for prefix, unit in _prefix_table():
-                if path == prefix or path.startswith(prefix + "/"):
-                    state = state_of(unit)
-                    if state != "active" and scope["type"] == "websocket":
-                        await receive()
-                        await send({"type": "websocket.close", "code": 4404, "reason": "unit_unavailable"})
-                        return
-                    if state != "active":
-                        body = json.dumps({"error": {"code": "unit_unavailable", "unit": unit, "state": state}}).encode()
-                        await send({"type": "http.response.start", "status": 404, "headers": [
-                            (b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]})
-                        await send({"type": "http.response.body", "body": body})
-                        return
-                    break
-        await self.app(scope, receive, send)
-
-
 def route_fallback(original: Any) -> Any:
     """The router's handler for requests no route matched: /api/<unit>... that the dispatcher can serve (a live
-    instance, or a unit that is loading / failed) goes to it; everything else keeps the app's own 404."""
+    instance, or a unit that is loading / failed) goes to it, as do the route prefixes of the feature areas (a unit
+    that is not active answers `unit_unavailable`); everything else keeps the app's own 404."""
     async def handler(scope: dict, receive: Any, send: Any) -> None:
-        if scope.get("type") in ("http", "websocket") and scope.get("path", "").startswith("/api/"):
-            engine = get_engine()
-            dispatcher = engine.dispatcher
-            if not booted:
-                await pluggables.ensure_loaded(engine)       # a dashboard served without the lifespan still has its extensions
-            found = dispatcher._resolve(scope)
-            if isinstance(found[0], Instance) or found[2] != "unloaded" or dispatcher.is_known_path(
-                    scope.get("path", "")):
-                await dispatcher(scope, receive, send)
+        if scope.get("type") in ("http", "websocket"):
+            path = scope.get("path", "")
+            area = legacy.area_for_path(path)
+            if area is not None and not booted:
+                await legacy.static_app()(scope, receive, send)
                 return
+            if area is not None or path.startswith("/api/"):
+                engine = get_engine()
+                dispatcher = engine.dispatcher
+                if not booted:
+                    await pluggables.ensure_loaded(engine)       # a dashboard served without the lifespan still has its extensions
+                found = dispatcher._resolve(scope)
+                if isinstance(found[0], Instance):
+                    await dispatcher(scope, receive, send)
+                    return
+                if area is not None:
+                    await dispatcher._unavailable(scope, receive, send, area, state_of(area))
+                    return
+                if found[2] != "unloaded" or dispatcher.is_known_path(path):
+                    await dispatcher(scope, receive, send)
+                    return
         await original(scope, receive, send)
 
     return handler
