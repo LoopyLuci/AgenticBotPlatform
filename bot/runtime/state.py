@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Optional
@@ -35,12 +36,27 @@ class StateStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         self._lock = threading.RLock()
-        self._conn = sqlite3.connect(str(path), check_same_thread=False)
-        self._conn.execute("PRAGMA journal_mode=WAL;")
-        self._conn.execute("PRAGMA synchronous=NORMAL;")
-        self._conn.execute("PRAGMA busy_timeout=5000;")
-        self._conn.executescript(_SCHEMA)
-        self._conn.commit()
+        self._conn = self._open()
+
+    def _open(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(str(self.path), check_same_thread=False)
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+        conn.execute("PRAGMA busy_timeout=5000;")
+        conn.executescript(_SCHEMA)
+        conn.commit()
+        return conn
+
+    @contextmanager
+    def exclusive(self) -> Iterator[None]:
+        """Hold every other user of the store off and release the database file while the caller replaces it (a
+        snapshot restore); the connection is reopened on the way out."""
+        with self._lock:
+            self._conn.close()
+            try:
+                yield
+            finally:
+                self._conn = self._open()
 
     def close(self) -> None:
         with self._lock:

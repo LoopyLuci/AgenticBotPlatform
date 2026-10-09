@@ -13,18 +13,41 @@ connection can run against itself without being closed. Restoring one
 does briefly interrupt DB access — the shared connection has to be
 closed and reopened to swap the underlying file safely — but that's a
 few-millisecond in-process pause, not a process restart.
+
+A snapshot also holds the unit runtime's state (`runtime.json`: the live
+manifest -- which units, versions, instances, settings and config were live --
+and the stored branches). Restoring that part is one engine transaction (a
+switch to the restored manifest, bot/runtime/snapshot.py), not a file copy
+under a running engine.
+
+What is atomic and what is not on restore: each config file and the database
+file are written to a temporary file and moved into place with os.replace (a
+crash leaves the old file or the new one, never half of one); the runtime part
+is one engine transaction (all or nothing). The three parts together are *not*
+one atomic step: config files, then the database, then the runtime transaction,
+in that order, and a failure in a later part leaves the earlier ones restored
+(the result reports it). The two config files are replaced one after the
+other, so a crash between them leaves one restored and one not. Unit code is
+not snapshotted: a restored unit version whose source has changed since cannot
+be rebuilt, which fails the runtime transaction and leaves what is running
+untouched.
 """
 
 from __future__ import annotations
 
 import json
+import logging
+import os
 import shutil
 import sqlite3
 import time
+from contextlib import nullcontext
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from bot.envfile import PROJECT_ROOT
+
+logger = logging.getLogger("bot.snapshots")
 
 SNAPSHOTS_ROOT = PROJECT_ROOT / "data" / "snapshots"
 
@@ -38,11 +61,11 @@ def _snapshot_dir(name: str) -> Path:
 
 
 def create_snapshot(label: Optional[str] = None) -> dict:
-    """Copies the live config files and a consistent point-in-time copy
-    of the live database into data/snapshots/<timestamp>[-<label>]/.
-    Returns the manifest dict. Safe to call at any time — never stops or
-    blocks the running app for more than the final commit of the
-    database backup."""
+    """Copies the live config files, a consistent point-in-time copy of the
+    live database and the runtime's manifest and branches into
+    data/snapshots/<timestamp>[-<label>]/. Returns the manifest dict. Safe
+    to call at any time — never stops or blocks the running app for more
+    than the final commit of the database backup."""
     from bot import db as db_module
 
     timestamp = time.strftime("%Y%m%d-%H%M%S")
@@ -63,7 +86,17 @@ def create_snapshot(label: Optional[str] = None) -> dict:
         finally:
             dest_conn.close()
 
-    manifest = {"name": name, "label": label, "created_at": timestamp}
+    runtime_part = None
+    try:
+        from bot.runtime import snapshot as runtime_snapshot
+
+        runtime_part = runtime_snapshot.export()
+    except Exception:  # noqa: BLE001 - best effort: config and data are saved either way
+        logger.exception("snapshot: could not export the runtime state")
+    if runtime_part is not None:
+        (dest_dir / "runtime.json").write_text(json.dumps(runtime_part), encoding="utf-8")
+
+    manifest = {"name": name, "label": label, "created_at": timestamp, "runtime": runtime_part is not None}
     (dest_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     return manifest
 
@@ -90,14 +123,27 @@ def list_snapshots() -> list[dict]:
     return out
 
 
-def restore_snapshot(name: str) -> None:
-    """Restores config files and the database from a previously-created
-    snapshot. Config files go through the same atomic write-then-replace
-    pattern bot/config.py's own set_value() uses; the database is
-    restored by closing the shared connection, replacing the file (and
-    clearing any stale -wal/-shm so a half-applied WAL from before the
-    restore can't resurface), and reopening. Raises ValueError if no
-    snapshot named `name` exists."""
+def _runtime_store() -> Any:
+    """The running engine's state store (it holds the database file open), if there is one."""
+    try:
+        from bot.runtime import live
+
+        return live._engine.store if live._engine is not None else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def restore_snapshot(name: str) -> dict:
+    """Restores config files, the database and the runtime's manifest from a
+    previously-created snapshot. Config files and the database are written to
+    a temporary file and moved into place with os.replace; the database's
+    shared connection (and the runtime's state store) is closed around the
+    swap and reopened, and stale -wal/-shm files are cleared first so a
+    half-applied WAL from before the restore can't resurface. The runtime part
+    is one engine transaction (see the module docstring for what is and is not
+    atomic). Raises ValueError if no snapshot named `name` exists. Returns
+    {"runtime": {...}} describing the runtime part (None for a snapshot made
+    before it existed)."""
     src_dir = _snapshot_dir(name)
     if not (src_dir / "manifest.json").exists():
         raise ValueError(f"no snapshot named {name!r}")
@@ -113,21 +159,38 @@ def restore_snapshot(name: str) -> None:
         dest = PROJECT_ROOT / rel
         tmp = dest.with_suffix(dest.suffix + ".tmp")
         shutil.copy2(src, tmp)
-        tmp.replace(dest)
+        os.replace(tmp, dest)
 
     db_src = src_dir / "bot.db"
     if db_src.exists():
-        db_module.close_conn()
-        dest = db_module.DB_PATH
-        for suffix in ("", "-wal", "-shm"):
-            stale = Path(str(dest) + suffix)
-            if stale.exists():
-                stale.unlink()
-        shutil.copy2(db_src, dest)
+        store = _runtime_store()
+        with (store.exclusive() if store is not None else nullcontext()):
+            db_module.close_conn()
+            dest = Path(db_module.DB_PATH)
+            tmp = dest.with_name(dest.name + ".restore.tmp")
+            shutil.copy2(db_src, tmp)  # the new file is complete before anything is touched
+            for suffix in ("-wal", "-shm"):
+                stale = Path(str(dest) + suffix)
+                if stale.exists():
+                    stale.unlink()
+            os.replace(tmp, dest)
         db_module.get_conn()  # reopen eagerly so the next caller doesn't pay for it
 
     backends_config.reload(actor="snapshot-restore")
     provider_registry.reload(actor="snapshot-restore")
+
+    runtime_result = None
+    runtime_file = src_dir / "runtime.json"
+    if runtime_file.exists():
+        try:
+            from bot.runtime import snapshot as runtime_snapshot
+
+            runtime_result = runtime_snapshot.restore(json.loads(runtime_file.read_text(encoding="utf-8")),
+                                                      label=f"snapshot restore {name}")
+        except Exception as exc:  # noqa: BLE001 - config and data are restored; say what happened to the runtime
+            logger.exception("snapshot restore: the runtime part failed")
+            runtime_result = {"applied": False, "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+    return {"runtime": runtime_result}
 
 
 def delete_snapshot(name: str) -> bool:

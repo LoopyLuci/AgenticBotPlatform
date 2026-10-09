@@ -75,11 +75,11 @@ def register(app: FastAPI) -> None:
         from bot import snapshots
 
         try:
-            snapshots.restore_snapshot(name)
+            result = snapshots.restore_snapshot(name)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         db.log_audit(actor="dashboard", action="snapshot_restore", detail=name)
-        return {"ok": True}
+        return {"ok": True, "runtime": (result or {}).get("runtime")}
 
     @app.delete("/api/snapshots/{name}", dependencies=[Depends(_require_token)])
     def api_snapshots_delete(name: str):

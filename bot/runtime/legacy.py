@@ -16,11 +16,12 @@ import/registration failure with `bot.runtime.live.record_failure`; the unit the
 from __future__ import annotations
 
 import asyncio
+import _imp
 import importlib
 import logging
 import sys
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 from bot.runtime.unit import Contributions, Health
 
@@ -40,6 +41,7 @@ class Area:
     tasks: tuple = ()               # "module:function" -- async function(stop_event), run until cancelled
     converted: bool = True
     panel: bool = True              # False: no dashboard page (nothing in the UI manifest)
+    packages: tuple = ()            # dotted packages/modules holding the area's code (default: derived from tools/tasks)
 
 
 def _area(id, title, icon, order, section="", **kw) -> tuple:
@@ -79,6 +81,8 @@ AREAS: dict[str, Area] = dict([
 
 # area id -> {tool name: (schema, spec, handler, enabled)} -- what importing the area's tools modules registered
 RECORDED: dict[str, dict] = {}
+BOOT: dict[str, tuple] = {}           # area id -> (tool entries, modules) of version "1", the code as first loaded
+KNOWN_TOOLS: dict[str, set] = {}      # area id -> every tool name it has ever registered (kept after a purge)
 
 
 def _import_tools(area: Area) -> dict:
@@ -90,11 +94,12 @@ def _import_tools(area: Area) -> dict:
     for name in area.tools:
         already = name in sys.modules
         mod = importlib.import_module(name)
-        if already and hasattr(mod, "register_tools"):
-            mod.register_tools()                  # imported earlier (maybe unregistered since): register again
+        if hasattr(mod, "register_tools") and (already or not getattr(mod, "REGISTER_ON_IMPORT", True)):
+            mod.register_tools()                  # imported earlier (maybe unregistered since), or registers only when asked
     entries = {n: e for n, e in toolspec._registered.items() if before.get(n) is not e}
     if entries:
         RECORDED.setdefault(area.id, {}).update(entries)
+        KNOWN_TOOLS.setdefault(area.id, set()).update(entries)
     return RECORDED.get(area.id, {})
 
 
@@ -114,6 +119,150 @@ def import_area_tools() -> list[str]:
             failed.append(unit)
             logger.exception("tools of %s could not be imported; that unit starts failed", unit)
     return failed
+
+
+# ------------------------------------------------------------------ source, versions, fresh imports (hot reload)
+def area_packages(area: Area) -> tuple:
+    """The dotted names whose code belongs to the area: `packages`, else the package (or top-level module) of each
+    tools / tasks module."""
+    if area.packages:
+        return tuple(area.packages)
+    out: list[str] = []
+    for name in list(area.tools) + [t.partition(":")[0] for t in area.tasks]:
+        parent = name.rpartition(".")[0]
+        pkg = parent if parent and parent != "bot" else name
+        if pkg not in out:
+            out.append(pkg)
+    return tuple(out)
+
+
+def _under(name: str, prefixes: Any) -> bool:
+    return any(name == p or name.startswith(p + ".") for p in prefixes)
+
+
+def source_files(area: Area) -> list:
+    """Every .py file of the area's packages, found without importing them."""
+    import importlib.util
+    from pathlib import Path
+
+    files: list = []
+    for pkg in area_packages(area):
+        try:
+            spec = importlib.util.find_spec(pkg)
+        except (ImportError, ValueError):
+            spec = None
+        if spec is None:
+            continue
+        if spec.submodule_search_locations:
+            for loc in spec.submodule_search_locations:
+                files.extend(p for p in Path(loc).rglob("*.py") if "__pycache__" not in p.parts)
+        elif spec.origin and spec.origin.endswith(".py"):
+            files.append(Path(spec.origin))
+    return sorted(set(files))
+
+
+def source_version(area: Area) -> str:
+    """`v-<hash>` of the area's source files (names and bytes)."""
+    import hashlib
+
+    digest = hashlib.sha256()
+    for path in source_files(area):
+        try:
+            digest.update(path.name.encode() + b"\0" + path.read_bytes() + b"\0")
+        except OSError:
+            continue
+    return "v-" + digest.hexdigest()[:12]
+
+
+def area_owning(path: Any) -> Optional[Area]:
+    """The area whose source contains this file, if any."""
+    from pathlib import Path
+
+    target = Path(path).resolve()
+    for area in AREAS.values():
+        for f in source_files(area):
+            if f.resolve() == target:
+                return area
+    return None
+
+
+def _bind(mods: dict) -> None:
+    """Point each module's parent package at it (the import system does this on import, not on sys.modules edits)."""
+    for name, mod in mods.items():
+        parent, _, tail = name.rpartition(".")
+        if parent and parent in sys.modules:
+            try:
+                setattr(sys.modules[parent], tail, mod)
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def _forget(area: Area) -> None:
+    for name in [n for n in sys.modules if _under(n, area_packages(area))]:
+        del sys.modules[name]
+
+
+def purge(area: Area) -> None:
+    """Make the next load of an area that is not running import its code afresh (no import, no tool registration)."""
+    _forget(area)
+    RECORDED.pop(area.id, None)
+    BOOT.pop(area.id, None)
+
+
+def fresh_import(area: Area) -> tuple:
+    """Import the area's code afresh into private module objects without disturbing what is live: sys.modules and
+    the tool registry are put back as they were before returning. Returns (modules, tool entries). Raises if the new
+    source does not import. The caller installs the modules at commit (`install`)."""
+    from bot.agent_runtime import toolspec
+
+    prefixes = area_packages(area)
+    # The global import lock (re-entrant for this thread) keeps other threads from importing the area while its live
+    # modules are out of sys.modules: they wait and then see the live ones again, never a half-swapped package.
+    _imp.acquire_lock()
+    old = {n: m for n, m in sys.modules.items() if _under(n, prefixes)}
+    tools_before = dict(toolspec._registered)
+    for name in old:
+        del sys.modules[name]
+    try:
+        for name in list(area.tools) + [t.partition(":")[0] for t in area.tasks] + list(old):
+            mod = importlib.import_module(name)
+            if name in area.tools and hasattr(mod, "register_tools") and not getattr(mod, "REGISTER_ON_IMPORT", True):
+                mod.register_tools()
+        new = {n: m for n, m in sys.modules.items() if _under(n, prefixes)}
+        entries = {n: e for n, e in toolspec._registered.items() if tools_before.get(n) is not e}
+        return new, entries
+    finally:
+        _forget(area)
+        sys.modules.update(old)
+        _bind(old)
+        for name in [n for n in toolspec._registered if n not in tools_before]:
+            toolspec._registered.pop(name, None)
+        toolspec._registered.update(tools_before)
+        _imp.release_lock()
+
+
+def install(mods: dict) -> dict:
+    """Make these modules the ones importers get (commit time). Returns what they replaced, for `install(previous)`."""
+    previous = {n: sys.modules[n] for n in mods if n in sys.modules}
+    sys.modules.update(mods)
+    _bind(mods)
+    return previous
+
+
+def scrub_inactive_tools() -> list[str]:
+    """Unregister the tools of areas that are not running (a module reload may have registered them as an import
+    side effect); returns the names removed."""
+    from bot.agent_runtime import toolspec
+    from bot.runtime import live
+
+    removed: list[str] = []
+    for area_id, entries in list(KNOWN_TOOLS.items()):
+        if live.state_of(area_id) == "active":
+            continue
+        for name in entries:
+            if toolspec._registered.pop(name, None) is not None:
+                removed.append(name)
+    return removed
 
 
 def area_tools(area: Area) -> list:
@@ -184,12 +333,53 @@ def _task(target: str):
     return run
 
 
-class LegacyUnit:
-    """The Unit contract over an existing feature area."""
+class _CodeSwap:
+    """A registration: at commit the version's freshly imported modules become the ones importers get; an instance
+    stopped without ever having been committed (an aborted transaction) never installed anything."""
 
-    def __init__(self, area: Area) -> None:
+    def __init__(self, unit: "LegacyUnit") -> None:
+        self.unit = unit
+
+    def apply(self) -> None:
+        u = self.unit
+        if u._mods:
+            install(u._mods)
+        u._applied = True
+        if u._entries is not None:
+            RECORDED[u.area.id] = dict(u._entries)
+            KNOWN_TOOLS.setdefault(u.area.id, set()).update(u._entries)
+
+    def revert(self) -> None:
+        return None
+
+
+class LegacyUnit:
+    """The Unit contract over an existing feature area. A version other than the boot version "1" (`v-<hash>`) is a
+    hot-reloaded one: its code is imported afresh while the old version keeps serving, and installed at commit."""
+
+    def __init__(self, area: Area, version: str = "1") -> None:
         self.id = area.id
         self.area = area
+        self.version = version
+        self._mods: dict = {}
+        self._entries: Any = None
+        self._applied = False
+
+    def _load(self) -> list:
+        a = self.area
+        if self._entries is None:
+            if self.version.startswith("v-"):
+                now = source_version(a)
+                if now != self.version:
+                    raise LookupError(f"the source of {a.id} is no longer at version {self.version} (it is {now})")
+                self._mods, self._entries = fresh_import(a)
+            else:
+                if a.id not in BOOT or a.id not in RECORDED:                # version "1" is the code as first loaded, whatever runs now
+                    entries = {e[1].name: e for e in area_tools(a)}
+                    prefixes = area_packages(a)
+                    BOOT[a.id] = (entries, {n: m for n, m in sys.modules.items() if _under(n, prefixes)})
+                self._entries, self._mods = dict(BOOT[a.id][0]), dict(BOOT[a.id][1])
+        return list(self._entries.values())
 
     def contributions(self, ctx: Any) -> Contributions:
         a = self.area
@@ -200,11 +390,12 @@ class LegacyUnit:
         error = live.failure_of(a.id)
         if error:
             raise RuntimeError(f"routes of {a.id} could not be registered: {error}")
-        return Contributions(panels=[panel] if a.panel else [], tools=area_tools(a),
-                             tasks=[_task(t) for t in a.tasks])
+        tools = self._load()
+        return Contributions(panels=[panel] if a.panel else [], tools=tools,
+                             tasks=[_task(t) for t in a.tasks], registrations=[_CodeSwap(self)])
 
     async def start(self, ctx: Any) -> None:
-        return None
+        self._applied = False
 
     async def health(self, ctx: Any) -> Health:
         return Health("ok")
@@ -215,4 +406,4 @@ class LegacyUnit:
 
 def register_factories(factories: Any) -> None:
     for area in AREAS.values():
-        factories.register(area.id, lambda spec, a=area: LegacyUnit(a))
+        factories.register(area.id, lambda spec, a=area: LegacyUnit(a, spec.version))

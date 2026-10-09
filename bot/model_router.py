@@ -508,6 +508,11 @@ def reroute_reason(ref: str) -> Optional[str]:
     return None
 
 
+# Importing this module has no side effects on the tool registry: the router unit's tool import
+# (bot/runtime/legacy.py) calls register_tools(), so with ABP_UNITS=none nothing is registered.
+REGISTER_ON_IMPORT = False
+
+
 def register_tools() -> None:
     from bot.agent_runtime import toolspec
 
@@ -527,6 +532,3 @@ def register_tools() -> None:
          "input_schema": {"type": "object", "properties": {"task": {"type": "string"}, "candidates": {"type": "array", "items": {"type": "string"}},
                                                            "images": {"type": "boolean"}, "context_tokens": {"type": "integer"}}, "required": ["task"]}},
         toolspec.ToolSpec("suggest_model", "read", read_only=True, concurrency_safe=True, origin="registered"), _suggest)
-
-
-register_tools()

@@ -146,6 +146,40 @@ def version_of(unit: str) -> Optional[str]:
     return spec.version if spec else None
 
 
+def refs_for_paths(paths: list) -> dict[str, list]:
+    """`ext:`/`plugin:` unit refs whose files are among `paths` -> those paths (hot reload)."""
+    out: dict[str, list] = {}
+    resolved = [(Path(p).resolve(), Path(p)) for p in paths]
+    try:
+        for name, folder in ext_folders().items():
+            root = folder.resolve()
+            hit = [orig for res, orig in resolved if res == root or root in res.parents]
+            if hit:
+                out[make_ref(EXT + name)] = hit
+    except OSError:
+        pass
+    for name, row in _plugin_rows().items():
+        try:
+            target = Path(row["path"]).resolve()
+        except (OSError, KeyError):
+            continue
+        hit = [orig for res, orig in resolved if res == target]
+        if hit:
+            out[make_ref(PLUGIN + name)] = hit
+    return out
+
+
+def watch_roots() -> list:
+    """Folders outside bot/ whose changes hot reload should see (the extensions folder)."""
+    try:
+        from bot import extensions
+
+        root = extensions.extensions_root()
+    except Exception:  # noqa: BLE001
+        root = None
+    return [root] if root is not None else []
+
+
 def boot_instances() -> dict[str, InstanceSpec]:
     return desired()
 

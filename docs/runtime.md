@@ -134,3 +134,22 @@ table (swapped at commit). An unknown or unloaded unit answers `404 {"error": {"
 7. Two instances of one unit keep separate state and can be swapped independently.
 8. A branch switch is all-or-nothing; a shadow branch never changes live behaviour.
 9. Every front end reflects a commit within a second (event) or one poll (fallback), with no console errors.
+
+## Hot reload and snapshots
+
+- **Hot reload is a swap.** When a changed file belongs to a unit (a feature area's package, an extension's folder, a
+  plugin's file), `bot/hotreload.py` hands it to `bot/runtime/reload.py`, which runs the usual transaction: the new
+  version id is a hash of the unit's source; an area's code is imported afresh into private module objects beside the
+  running ones, health-checked, and installed together with its tools and tasks in the single commit; the old version
+  drains and stays as standby, so `POST /api/runtime/rollback` works. If the new source does not compile, import or
+  pass health, the old version keeps serving, the failure is the engine's last transaction (`GET /api/runtime`) and a
+  `units` entry of `GET /api/hotreload/status`, and the **next** edit reloads normally: a failed unit swap never
+  degrades hot reload. A unit that is not running is not imported and registers nothing; its cached code is dropped so
+  its next load uses the new source. Kernel and other denylisted modules still need a restart (reported as such).
+  Not covered: routes already registered on the app by `bot/dashboard/*_api.py` keep the functions they imported, so a
+  change to what a route handler calls needs a restart; only tools, tasks and panels move with the swap.
+- **Snapshots include the runtime.** `bot/snapshots.py` saves the live manifest and stored branches (`runtime.json`).
+  A restore switches to the saved manifest as one engine transaction (the pre-restore manifest becomes `previous`), so
+  it is all-or-nothing and emits `runtime.changed`; it fails, leaving what runs untouched, if a saved unit version can
+  no longer be built (its code changed). Config files and the database are replaced with tmp-write + `os.replace`;
+  the three parts (config, database, runtime) are not one atomic step.
