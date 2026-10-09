@@ -20,7 +20,7 @@
   const $ = (id) => document.getElementById(id);
   const E = (s) => (typeof esc === 'function' ? esc(s) : String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
   const toast = (m, t) => (typeof showToast === 'function' ? showToast(m, t) : console.log(m));
-  const errText = (e) => { let m = e && e.message ? e.message : String(e); try { const d = JSON.parse(m).detail; m = (d && d.error) || d || m; } catch (_) {} return m; };
+  const errText = (e) => { if (window.ABP && ABP.unitUnavailable && ABP.unitUnavailable(e)) return 'This module is not loaded.'; let m = e && e.message ? e.message : String(e); try { const d = JSON.parse(m).detail; m = (d && d.error) || d || m; } catch (_) {} return m; };
   const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body || {}) });
   const call = (operation, args) => post('/api/hermes-manager/call', { operation, args: args || {} }).then((r) => r.result);
   const TABS = [['overview', 'Overview'], ['gateway', 'Gateway'], ['window', 'Window'], ['all', 'All features']];

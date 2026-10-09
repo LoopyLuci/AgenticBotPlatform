@@ -21,3 +21,17 @@
     if (localStorage.getItem('bs-sidebar-collapsed') === '1') root.classList.add('bs-sidebar-collapsed');
   } catch (_e) { /* localStorage unavailable (private mode, etc.) — fall back to defaults */ }
 })();
+
+// Shared by every module panel: true when an API error is the dispatcher's "this unit is not loaded" answer
+// (404 {"error": {"code": "unit_unavailable"}}), so a panel can say "module not loaded" instead of raw JSON.
+(function () {
+  var ABP = window.ABP = window.ABP || {};
+  ABP.unitUnavailable = function (e) {
+    try {
+      var m = e && e.message ? e.message : String(e);
+      var d = JSON.parse(m);
+      var err = d && (d.error || (d.detail && d.detail.error) || d.detail);
+      return !!(err && (err.code === 'unit_unavailable' || d.code === 'unit_unavailable')) || d.code === 'unit_unavailable';
+    } catch (_e) { return false; }
+  };
+})();

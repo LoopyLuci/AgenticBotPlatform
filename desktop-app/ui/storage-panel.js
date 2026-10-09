@@ -15,7 +15,7 @@
   const $ = (id) => document.getElementById(id);
   const E = (s) => (typeof esc === 'function' ? esc(s) : String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
   const toast = (m, t) => (typeof showToast === 'function' ? showToast(m, t) : console.log(m));
-  const errText = (e) => { let m = e && e.message ? e.message : String(e); try { const d = JSON.parse(m).detail; m = d || m; } catch (_) {} return typeof m === 'string' ? m : JSON.stringify(m); };
+  const errText = (e) => { if (window.ABP && ABP.unitUnavailable && ABP.unitUnavailable(e)) return 'This module is not loaded.'; let m = e && e.message ? e.message : String(e); try { const d = JSON.parse(m).detail; m = d || m; } catch (_) {} return typeof m === 'string' ? m : JSON.stringify(m); };
   const send = (path, method, body) => api(path, { method, body: body === undefined ? undefined : JSON.stringify(body) });
   const A = '/api/fileserver';
   const human = (n) => { n = +n || 0; const u = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']; let i = 0; while (n >= 1024 && i < 5) { n /= 1024; i++; } return (i ? n.toFixed(1) : n) + ' ' + u[i]; };

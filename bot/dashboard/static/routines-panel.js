@@ -13,7 +13,7 @@
   // model wrote, and none of it is markup.
   const E = (s) => (typeof esc === 'function' ? esc(s) : String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
   const toast = (m, t) => (typeof showToast === 'function' ? showToast(m, t) : console.log(m));
-  const errText = (e) => { let m = e && e.message ? e.message : String(e); try { m = JSON.parse(m).detail || m; } catch (_) {} return m; };
+  const errText = (e) => { if (window.ABP && ABP.unitUnavailable && ABP.unitUnavailable(e)) return 'This module is not loaded.'; let m = e && e.message ? e.message : String(e); try { m = JSON.parse(m).detail || m; } catch (_) {} return m; };
   const when = (ts) => {
     if (!ts) return '—';
     const d = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);

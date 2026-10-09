@@ -93,7 +93,9 @@ async function api(path, opts = {}) {
   side.querySelectorAll('nav.sidenav a').forEach(function (a) {
     a.addEventListener('click', closeMobileNav);
   });
-  side.querySelectorAll('nav.sidenav a[href^="#"]').forEach(function (a) {
+  function wireNavLink(a) {
+    if (a.__abpWired) return;
+    a.__abpWired = true;
     a.addEventListener('click', function (e) {
       const target = document.getElementById(a.getAttribute('href').slice(1));
       if (!target) return; // no matching section — let the default (no-op) happen
@@ -149,7 +151,10 @@ async function api(path, opts = {}) {
       document.querySelector('main').addEventListener('scrollend', revert, { once: true });
       setTimeout(revert, 4000);
     });
-  });
+  }
+  side.querySelectorAll('nav.sidenav a[href^="#"]').forEach(wireNavLink);
+  // module-host.js calls this for nav links it creates at runtime.
+  window.__abpWireNavLink = function (a) { a.addEventListener('click', closeMobileNav); wireNavLink(a); };
   window.addEventListener('resize', function () {
     if (window.innerWidth > 980 && side.classList.contains('mobile-open')) closeMobileNav();
   });
@@ -1405,6 +1410,12 @@ function _observeSections() {
   if (_sectionObserver) document.querySelectorAll('section[id]').forEach((s) => _sectionObserver.observe(s));
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _observeSections); else _observeSections();
+
+// module-host.js: sections created or removed at runtime join / leave the on-screen tracking.
+window.__abpObserveSection = function (s, on) {
+  if (!_sectionObserver) return;
+  if (on === false) { _sectionObserver.unobserve(s); _onScreen.delete(s.id); } else _sectionObserver.observe(s);
+};
 
 // ------------------------------------------------------------------- boot
 // Skips a poll tick while the tab/window isn't visible (backgrounded or
@@ -4050,10 +4061,11 @@ function connectLiveEventsSocket() {
   }
   // This socket retries every 4 s on its own; the moment it gets through, the
   // server is back, so the pollers' backoff (see _net) ends right away.
-  liveEventsSocket.onopen = () => _netOk();
+  liveEventsSocket.onopen = () => { _netOk(); if (window.ABP && ABP.moduleHost) ABP.moduleHost.socketUp(true); };
   liveEventsSocket.onmessage = (evt) => {
     try {
       const msg = JSON.parse(evt.data);
+      if (msg.type === 'runtime.changed' && window.ABP && ABP.moduleHost) ABP.moduleHost.onEvent(msg);
       if ((msg.type === 'job_tool_event' || msg.type === 'job_children_update') && msg.job_id === openDelegationDetailJobId) {
         renderDelegationDetail(msg.job_id);
       }
@@ -4073,6 +4085,7 @@ function connectLiveEventsSocket() {
     } catch (_e) { /* malformed frame, ignore */ }
   };
   liveEventsSocket.onclose = liveEventsSocket.onerror = () => {
+    if (window.ABP && ABP.moduleHost) ABP.moduleHost.socketUp(false);
     liveEventsSocket = null;
     liveEventsRetryTimer = setTimeout(connectLiveEventsSocket, 4000);
   };

@@ -1,25 +1,23 @@
 /* Extensions: what this install added on top of the public ABP.
 
-   Both UIs load this (it is one of the /static/*.js the pages' CSP allows) and it asks the
-   server what /api/extensions lists. Every panel an extension registered becomes a section, a
-   nav entry and a <script> tag built here at runtime, so a private panel never has to be
-   copied into dashboard.html or index.html — and when ABP_PRIVATE_DIR is unset the list is
-   empty and this adds nothing.
-
-   Sections are appended inside <main>, after the last one the HTML has, and the nav entry
-   before </nav>; both UIs' nav is a plain <nav id="sidenav"> of <a href="#id"> links, and
-   dashboard.js/main.js already scroll to whatever section a link names. */
+   With a runtime that serves /api/ui/manifest, module-host.js builds every extension panel (they arrive in the
+   manifest as `script` panels) and this file does nothing. It is the fallback for an older backend that has no
+   manifest: it asks /api/extensions once and adds each panel as a section, a nav entry and a <script> tag, so a
+   private panel never has to be copied into dashboard.html or index.html. Unset ABP_PRIVATE_DIR means an empty
+   list and nothing is added. */
 (function () {
   'use strict';
   if (typeof fetch !== 'function') return;
 
   const E = (s) => (typeof esc === 'function' ? esc(s) : String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'));
+  const base = () => (typeof API_BASE !== 'undefined' && API_BASE) ? String(API_BASE) : '';
+  const token = () => (typeof getToken === 'function' ? getToken() : window.__ABP_TOKEN__) || '';
 
   async function load() {
     let data;
     try {
-      const res = await fetch('/api/extensions', { headers: { 'X-Dashboard-Token': window.__ABP_TOKEN__ || '' } });
+      const res = await fetch(base() + '/api/extensions', { headers: { 'X-Dashboard-Token': token() } });
       if (!res.ok) return;
       data = await res.json();
     } catch (e) {
@@ -37,28 +35,41 @@
     const link = document.createElement('a');
     link.href = '#' + panel.id;
     link.title = panel.title;
+    link.setAttribute('data-ext-panel', panel.id);
     link.innerHTML = '<span class="ic">' + E(panel.icon || '◆') + '</span><span class="nav-txt">' + E(panel.title) + '</span>';
     nav.appendChild(link);
+    if (typeof window.__abpWireNavLink === 'function') window.__abpWireNavLink(link);
 
     const section = document.createElement('section');
     section.id = panel.id;
+    section.setAttribute('data-ext-panel', panel.id);
     section.innerHTML = '<div class="sec-head"><h2>' + E(panel.title) + '</h2>' +
       (panel.description ? '<span class="desc">' + E(panel.description) + '</span>' : '') + '</div>' +
       '<div id="' + E(panel.id) + '-root"><p class="cardnote">Loading…</p></div>';
     main.appendChild(section);
+    if (typeof window.__abpObserveSection === 'function') window.__abpObserveSection(section, true);
 
     (panel.styles || []).forEach(function (href) {
       const link2 = document.createElement('link');
       link2.rel = 'stylesheet';
-      link2.href = href;
+      link2.href = base() + href;
       document.head.appendChild(link2);
     });
     // Loaded after the section exists, so the panel's own init finds its root div.
     const script = document.createElement('script');
-    script.src = panel.script;
+    script.src = base() + panel.script;
+    script.onerror = function () {
+      const root = document.getElementById(panel.id + '-root');
+      if (root) root.innerHTML = '<p class="cardnote">This panel could not be loaded.</p>';
+    };
     document.body.appendChild(script);
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
-  else load();
+  function start() {
+    const host = window.ABP && window.ABP.moduleHost;
+    if (!host) { load(); return; }
+    host.ready.then(function (r) { if (r && r.available === false) load(); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
 })();
