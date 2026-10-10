@@ -57,6 +57,8 @@ AREAS: dict[str, Area] = dict([
     _area("hermes-manager", "Hermes Manager", "☤", 183, routes=("/api/hermes-manager",),
           tools=("bot.hermes_manager.tools",), api="bot.dashboard.hermes_manager_api"),
     _area("ollama", "Ollama", "🦙", 184, routes=("/api/ollama",), tools=("bot.ollama.tools",), api="bot.dashboard.ollama_api"),
+    _area("modelmistress", "ModelMistress", "", 185, routes=("/api/modelmistress",), tools=("bot.modelmistress.tools",),
+          panel=False, api="bot.dashboard.modelmistress_api"),
     _area("router", "Model Router", "🧭", 160, routes=("/api/router",), tools=("bot.model_router",), api="bot.dashboard.router_api"),
     _area("unsloth", "Unsloth", "🦥", 161, routes=("/api/unsloth",), tools=("bot.unsloth.tools",), api="bot.dashboard.unsloth_api"),
     _area("cluster", "Cluster", "⧉", 162, routes=("/api/cluster",), tools=("bot.cluster.tools",),

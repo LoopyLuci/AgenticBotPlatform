@@ -21,6 +21,7 @@ tables say the same feature by feature. This index only points.
 | See, teach and change how bots on `auto` pick a model | [router.md](router.md) |
 | Run, fine-tune and export local models with Unsloth Studio | [unsloth.md](unsloth.md) |
 | Pull, load, build and serve models with Ollama | [ollama.md](ollama.md) |
+| Pull, load and serve local models with ModelMistress (preferred over Ollama and Unsloth Studio while it runs) | [modelmistress.md](modelmistress.md) |
 | Control virtual machines, containers and the VM-Harness window | [vm-harness.md](vm-harness.md) |
 | Manage Hermes (gateway, logs, config, backups, skills...) and the Hermes Manager window | [hermes-manager.md](hermes-manager.md) |
 | Send encrypted messages and files between devices; drive TransferDaemon's window, terminal UI and relays | [transferdaemon.md](transferdaemon.md) |

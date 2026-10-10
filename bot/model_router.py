@@ -237,8 +237,17 @@ def candidate_models() -> list[str]:
     # install names the provider. (Searching the whole catalog filled the list with models of providers nobody had
     # set up; the router ranked them first and `auto` then failed with every real provider configured.)
     free: list[str] = []
-    for name, pcfg in sorted(registry.list_providers().items()):
+    try:
+        from bot.modelmistress import client as mm
+        replaced = mm.replaced_by_modelmistress
+    except Exception:  # noqa: BLE001 - without the ModelMistress client every local provider stays a candidate
+        def replaced(_name, _pcfg=None):
+            return False
+    # ModelMistress first, and while it runs Ollama / Unsloth Studio are left out: it serves their models itself.
+    for name, pcfg in sorted(registry.list_providers().items(), key=lambda kv: (kv[0] != "modelmistress", kv[0])):
         if model_catalog.catalog_provider_for(name) == "anthropic":
+            continue
+        if replaced(name, pcfg or {}):
             continue
         live = _local_models(name, pcfg or {})
         if live is not None:

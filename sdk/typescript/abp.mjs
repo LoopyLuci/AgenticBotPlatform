@@ -2474,6 +2474,32 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/modelmistress/jobs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modelmistress/jobs",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/modelmistress/models": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modelmistress/models",
+  "path_params": [],
+  "query_params": [
+   "peer",
+   "refresh"
+  ]
+ },
+ "GET /api/modelmistress/status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modelmistress/status",
+  "path_params": [],
+  "query_params": [
+   "peer"
+  ]
+ },
  "GET /api/models": {
   "body": false,
   "method": "GET",
@@ -5628,6 +5654,27 @@ export const operations = {
   "path_params": [
    "key_id"
   ],
+  "query_params": []
+ },
+ "POST /api/modelmistress/load": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modelmistress/load",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/modelmistress/pull": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modelmistress/pull",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/modelmistress/unload": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modelmistress/unload",
+  "path_params": [],
   "query_params": []
  },
  "POST /api/models/refresh": {
@@ -13030,6 +13077,53 @@ export const operations = {
   "query_params": [
    "days"
   ]
+ },
+ "modelmistress_jobs_api_modelmistress_jobs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modelmistress/jobs",
+  "path_params": [],
+  "query_params": []
+ },
+ "modelmistress_load_api_modelmistress_load_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modelmistress/load",
+  "path_params": [],
+  "query_params": []
+ },
+ "modelmistress_models_api_modelmistress_models_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modelmistress/models",
+  "path_params": [],
+  "query_params": [
+   "peer",
+   "refresh"
+  ]
+ },
+ "modelmistress_pull_api_modelmistress_pull_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modelmistress/pull",
+  "path_params": [],
+  "query_params": []
+ },
+ "modelmistress_status_api_modelmistress_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modelmistress/status",
+  "path_params": [],
+  "query_params": [
+   "peer"
+  ]
+ },
+ "modelmistress_unload_api_modelmistress_unload_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modelmistress/unload",
+  "path_params": [],
+  "query_params": []
  },
  "models_catalog_api_browser_models_catalog_get": {
   "body": false,

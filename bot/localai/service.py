@@ -58,6 +58,17 @@ def server_stop() -> bool:
     return procs.stop("localai", home=home())
 
 
+def modelmistress_serving() -> dict | None:
+    """The ModelMistress hub that serves this machine's local models, when one runs and is preferred (it replaces this
+    server for chat; the model store here stays usable either way). None otherwise. Never waits on the network."""
+    try:
+        from bot.modelmistress import client
+        hub = client.find_cached()
+        return {"url": hub.url, "version": hub.version} if hub and client.prefer_enabled() else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def overview() -> dict:
     try:
         eng = engine.engine()
@@ -66,7 +77,7 @@ def overview() -> dict:
     return {"server": server_status(), "settings": engine.settings(), "engine": eng, "engines": engine.installed(),
             "gpus": engine.gpus(), "models": models.listing(), "stores": models.extra_stores(), "running": _running(),
             "mesh": mesh.status(), "home": str(home()), "train_env": {"installed": train.python().exists(), "path": str(train.venv())},
-            "runs": train.runs()[:20], "datasets": train.datasets()}
+            "runs": train.runs()[:20], "datasets": train.datasets(), "modelmistress": modelmistress_serving()}
 
 
 def _running() -> list[dict]:
@@ -87,7 +98,8 @@ _last: dict[str, float] = {}
 def tick() -> None:
     st = engine.settings()
     now = time.time()
-    if st.get("autostart", True) and engine.installed() and not server_status()["running"] and now - _last.get("restart", 0) > 120:
+    if (st.get("autostart", True) and engine.installed() and now - _last.get("restart", 0) > 120
+            and modelmistress_serving() is None and not server_status()["running"]):    # ModelMistress running: no second server
         _last["restart"] = now
         try:
             server_start()

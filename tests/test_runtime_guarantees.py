@@ -211,6 +211,7 @@ def _hammer(app, path: str, workers: int = 6):
         return results, errors
 
     finish.versions = versions
+    finish.results = results
 
     return finish
 
@@ -246,6 +247,8 @@ def test_g4_an_area_swapped_under_load_drops_no_request(real_app):
             r = app.swap("vm-harness", str(v))
             assert r.status_code == 200, r.text
             time.sleep(0.05)
+        # enough requests ran, however slow the machine is (the swaps alone can finish before 20 answers)
+        _until(lambda: len(finish.results) > 20, 10.0)
     finally:
         results, errors = finish()
     assert len(results) > 20 and not errors, (len(results), errors[:3])

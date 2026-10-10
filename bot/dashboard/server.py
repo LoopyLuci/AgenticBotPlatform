@@ -1010,6 +1010,9 @@ def build_app() -> FastAPI:
     # Ollama: pull, load and serve its models, build models from Modelfiles or GGUF files, and every route it serves.
     _area_routes("ollama", "ollama_api", _require_token_or_api_key, _require_token)
 
+    # ModelMistress: the local model hub that replaces Ollama / Unsloth Studio while it runs (models, load, pull).
+    _area_routes("modelmistress", "modelmistress_api", _require_token_or_api_key, _require_token)
+
     # VM-Harness: a separate program ABP installs, updates and drives (VMs, containers, and its own window).
     _area_routes("vm-harness", "vm_harness_api", control_auth("vm-harness", write=False), control_auth("vm-harness", write=True))
 
