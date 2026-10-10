@@ -349,7 +349,6 @@ def test_the_api_says_when_studio_is_not_running(temp_db, monkeypatch):
 
 
 def test_the_page_is_identical_in_both_uis_and_mounted():
-    import re
 
     dash = (ROOT / "bot/dashboard/static/unsloth-panel.js").read_text(encoding="utf-8")
     assert dash == (ROOT / "desktop-app/ui/unsloth-panel.js").read_text(encoding="utf-8")
