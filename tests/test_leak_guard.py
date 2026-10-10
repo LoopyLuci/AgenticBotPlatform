@@ -331,6 +331,7 @@ def test_this_repository_has_no_machine_path_of_its_own_outside_the_private_inte
     findings = leak_guard.scan(ROOT)
     known = {"bot/neurallab/private_project.py", "bot/neurallab/interop.py", "abp_cli/ai.py", "docs/neurallab.md",
              "docs/private_project.md", "tests/test_neurallab_private_project.py", "tests/test_resolver.py",
+             "tests/test_config_overlay_writes.py",  # fake drive letters as fixture config values
              "tests/test_leak_guard.py",  # fixtures contain absolute paths for the guard tests
              "scripts/leak_guard.py"}
     unexpected = {f.path for f in findings} - known

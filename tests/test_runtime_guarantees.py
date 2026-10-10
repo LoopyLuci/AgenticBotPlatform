@@ -182,12 +182,20 @@ def _hammer(app, path: str, workers: int = 6):
     stop = threading.Event()
     results: list = []
     errors: list = []
+    versions: set = set()          # which version answered, for units that say so ({"v": ...})
 
     def work():
         with httpx.Client(base_url=app.url, headers=H, timeout=30.0) as c:
             while not stop.is_set():
                 try:
-                    results.append(c.get(path).status_code)
+                    r = c.get(path)
+                    results.append(r.status_code)
+                    try:
+                        body = r.json()
+                        if isinstance(body, dict) and "v" in body:
+                            versions.add(body["v"])
+                    except ValueError:
+                        pass
                 except Exception as exc:  # noqa: BLE001
                     errors.append(repr(exc))
 
@@ -200,6 +208,8 @@ def _hammer(app, path: str, workers: int = 6):
         for t in threads:
             t.join(timeout=30)
         return results, errors
+
+    finish.versions = versions
 
     return finish
 
@@ -216,7 +226,8 @@ def test_g4_a_toy_swapped_repeatedly_under_load_drops_no_request(real_app):
             time.sleep(0.03)
     finally:
         results, errors = finish()
-    assert len(results) > 50, len(results)
+    # The requests really ran across the swaps (several versions answered), however slow the machine is.
+    assert len(finish.versions) >= 3, sorted(finish.versions)
     assert not errors, errors[:3]
     assert set(results) == {200}, {c: results.count(c) for c in set(results)}
     assert app.get("/api/toy/x").json()["v"] == "11"

@@ -34,7 +34,9 @@ def test_load_use_unload_reload_leaves_nothing(tmp_path):
                 assert eng.ui_manifest()["panels"] == []
                 assert eng.effective_config() == {}
                 assert eng.supervisor.total() == 0 and eng.supervisor.groups() == []
-        assert thread_names() == threads
+        # nothing the runtime started is left running (a daemon thread another test owns, e.g. a model-hub probe, is not ours)
+        leaked = {n for n in thread_names() - threads if not n.startswith("unsloth-find")}
+        assert not leaked, leaked
     run(go())
 
 

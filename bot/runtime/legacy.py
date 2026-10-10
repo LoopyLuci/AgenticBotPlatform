@@ -380,6 +380,9 @@ def doc_routes() -> list:
 # bot/main.py sets this: background tasks then run only while this process holds the leader lease (as the singletons
 # they replace did), and stop when it is given up. Off (default), tasks run as soon as the unit is active.
 LEADER_GATED = False
+# Only a process that opts in (bot/main.py) runs the areas' background tasks; any other app that boots the runtime
+# (tests, embedded use) gets them as idle placeholders, so it does not start heartbeats, servers or probes.
+TASKS_ENABLED = False
 _LEADER_POLL = 1.0
 
 
@@ -402,6 +405,9 @@ def _task(target: str):
             stop.set()
 
     async def run() -> None:
+        if not TASKS_ENABLED:
+            await asyncio.Event().wait()  # idle until the unit stops (cancelled)
+            return
         if not LEADER_GATED:
             await run_once()
             return

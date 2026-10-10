@@ -394,6 +394,7 @@ async def run() -> None:
 
     # the feature areas' background tasks (units) run only while this process leads, like the singletons they replace
     _unit_adapter.LEADER_GATED = True
+    _unit_adapter.TASKS_ENABLED = True
     from bot.config import config
     from bot.sentinel import bootguard
     from bot.sentinel import sentinel as self_preservation

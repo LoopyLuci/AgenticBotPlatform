@@ -66,6 +66,7 @@ def env(monkeypatch, temp_db, pilot_tools):
     fake = types.ModuleType("abp_test_idle_tasks")
     fake.idle = _idle
     monkeypatch.setitem(sys.modules, "abp_test_idle_tasks", fake)
+    monkeypatch.setattr(legacy, "TASKS_ENABLED", True)  # the stand-ins below are idle
     for uid, area in list(legacy.AREAS.items()):
         if area.tasks:
             monkeypatch.setitem(legacy.AREAS, uid, dataclasses.replace(
@@ -199,6 +200,7 @@ def test_task_entries_run_and_stop_with_the_unit(env, monkeypatch):
     mod = types.ModuleType("abp_test_tasks_mod")
     mod.run_forever = run_forever
     monkeypatch.setitem(sys.modules, "abp_test_tasks_mod", mod)
+    monkeypatch.setattr(legacy, "TASKS_ENABLED", True)
     monkeypatch.setitem(legacy.AREAS, "tasked", legacy.Area("tasked", "Tasked", tasks=("abp_test_tasks_mod:run_forever",)))
     monkeypatch.setenv("ABP_UNITS", "tasked")
     with TestClient(build_app()) as c:

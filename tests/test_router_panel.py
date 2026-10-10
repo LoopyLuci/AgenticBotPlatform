@@ -24,9 +24,10 @@ def test_both_pages_mount_it_with_a_nav_item():
 
 def test_the_panel_only_calls_router_routes_that_exist(temp_db):
     from bot.dashboard.server import build_app
+    from bot.runtime import legacy
 
     app = build_app()
-    routes = {getattr(r, "path", "") for r in app.routes}
+    routes = {getattr(r, "path", "") for r in [*app.routes, *legacy.doc_routes()]}  # area routes: runtime dispatcher
     js = (ROOT / "bot/dashboard/static/router-panel.js").read_text(encoding="utf-8")
     called = set(re.findall(r"'(/api/router/[a-z/]+)", js)) | set(re.findall(r"`(/api/router/[a-z/]+)", js))
     assert called

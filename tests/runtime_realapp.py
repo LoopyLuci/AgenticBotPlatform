@@ -25,10 +25,21 @@ TOKEN = "test-token"
 H = {"X-Dashboard-Token": TOKEN}
 
 
+# Ports Chromium refuses to load (ERR_UNSAFE_PORT): a browser test on one of them cannot work.
+UNSAFE_PORTS = frozenset({
+    1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95, 101, 102, 103, 104, 109, 110,
+    111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179, 389, 427, 465, 512, 513, 514, 515, 526, 530, 531, 532,
+    540, 548, 554, 556, 563, 587, 601, 636, 989, 990, 993, 995, 1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061,
+    6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080})
+
+
 def free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+    while True:
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        if port not in UNSAFE_PORTS:
+            return port
 
 
 async def _idle(stop_event):
@@ -119,6 +130,7 @@ def real_app(monkeypatch, temp_db, tmp_path):
     fake = types.ModuleType("abp_test_idle_tasks")
     fake.idle = _idle
     monkeypatch.setitem(sys.modules, "abp_test_idle_tasks", fake)
+    monkeypatch.setattr(legacy, "TASKS_ENABLED", True)  # the stand-ins below are idle
     for uid, area in list(legacy.AREAS.items()):
         if area.tasks:
             monkeypatch.setitem(legacy.AREAS, uid, dataclasses.replace(
