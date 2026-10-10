@@ -14,7 +14,7 @@ from pathlib import Path
 import httpx
 import uvicorn
 
-from bot.cluster import membership
+from bot.cluster import inventory, membership
 from bot.dashboard.server import build_app
 from bot.modules import registry
 from bot.runtime import legacy
@@ -63,6 +63,8 @@ def test_a_hung_module_hub_does_not_delay_requests_while_the_heartbeat_runs(temp
     monkeypatch.setenv("ABP_MODULE_FAKE_MOD_DIR", str(repo))
     monkeypatch.setattr(registry, "data_dir", lambda m: tmp_path / "data" / m.id)
     registry.modules(refresh=True)
+    # this machine's software inventory is cached for 2 minutes; a test before this one may have filled it
+    monkeypatch.setattr(inventory, "_static", {"at": 0.0, "data": None})
     hole = BlackHole()
     (tmp_path / "data" / "fake-mod").mkdir(parents=True)
     (tmp_path / "data" / "fake-mod" / "control.json").write_text(

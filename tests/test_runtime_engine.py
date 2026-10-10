@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 
 from runtime_toys import WS, Toy, client, make_engine, manifest, thread_names
 
@@ -35,7 +36,9 @@ def test_load_use_unload_reload_leaves_nothing(tmp_path):
                 assert eng.effective_config() == {}
                 assert eng.supervisor.total() == 0 and eng.supervisor.groups() == []
         # nothing the runtime started is left running (a daemon thread another test owns, e.g. a model-hub probe, is not ours)
-        leaked = {n for n in thread_names() - threads if not n.startswith("unsloth-find")}
+        # Backend clients (ollama, unsloth ...) start "<name>-find" probe threads when another test on the same worker
+        # touches them.
+        leaked = {n for n in thread_names() - threads if not re.match(r"[\w.]+-find\b", n)}
         assert not leaked, leaked
     run(go())
 
