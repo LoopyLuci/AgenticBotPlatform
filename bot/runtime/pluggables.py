@@ -31,7 +31,7 @@ from typing import Any, Callable, Optional
 from fastapi import APIRouter, HTTPException
 
 from bot.runtime.manifest import InstanceSpec, Manifest
-from bot.runtime.unit import Contributions, Health, make_ref
+from bot.runtime.unit import DEFAULT_INSTANCE, Contributions, Health, make_ref, split_ref
 
 logger = logging.getLogger("bot.runtime.pluggables")
 
@@ -206,6 +206,11 @@ async def sync(engine: Any, kinds: tuple = KINDS):
             if _failed_versions.get(ref) == spec.version:
                 spec = live.instances[ref]                     # keep what runs; this version already failed
             instances[ref] = spec
+        for ref, cur in live.instances.items():           # other instances of a unit follow its default's version
+            unit, name = split_ref(ref)
+            base = instances.get(make_ref(unit))
+            if _owned(ref, kinds) and name != DEFAULT_INSTANCE and base is not None:
+                instances[ref] = InstanceSpec(cur.unit, base.version, dict(cur.settings))
         target = Manifest(live.config, instances)
         if engine.plan(target).empty:
             _synced.add((id(engine), _scope_key()))

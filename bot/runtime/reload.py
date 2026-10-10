@@ -20,7 +20,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from bot.runtime.unit import make_ref
+from bot.runtime.manifest import InstanceSpec
+from bot.runtime.unit import DEFAULT_INSTANCE, split_ref
 
 logger = logging.getLogger("bot.runtime.reload")
 
@@ -64,31 +65,51 @@ async def reload_units(paths: list) -> dict[str, Any]:
     return out
 
 
+def live_refs(engine: Any, unit: str) -> list:
+    """Every live instance (`unit@name`) of `unit`, the default one first."""
+    refs = [r for r in engine._active if split_ref(r)[0] == unit]
+    return sorted(refs, key=lambda r: (split_ref(r)[1] != DEFAULT_INSTANCE, r))
+
+
 async def _swap_area(engine: Any, area: Any, files: list) -> dict[str, Any]:
+    """Swap *every* live instance of the area to the new source version in one engine transaction (all of them swap,
+    or none does and the old version keeps serving). The result carries a per-instance report."""
     from bot.runtime import legacy
 
     result: dict[str, Any] = {"unit": area.id, "files": [f.name for f in files]}
-    ref = make_ref(area.id)
-    if ref not in engine._active:
+    refs = live_refs(engine, area.id)
+    if not refs:
         legacy.purge(area)
         legacy.scrub_inactive_tools()
         return {**result, "action": "dropped", "ok": True,
                 "detail": f"{area.id} is not running: nothing registered; its next load imports the new code"}
     version = legacy.source_version(area)
-    current = engine.manifest.instances.get(ref)
-    if current is not None and current.version == version:
-        return {**result, "action": "unchanged", "ok": True, "version": version, "detail": "same source version"}
+    live_instances = engine.manifest.instances
+    stale = [r for r in refs if r not in live_instances or live_instances[r].version != version]
+    if not stale:
+        return {**result, "action": "unchanged", "ok": True, "version": version, "detail": "same source version",
+                "instances": {r: "unchanged" for r in refs}}
+    target = engine.manifest
+    for ref in stale:
+        old = live_instances.get(ref)
+        target = target.with_instance(area.id, split_ref(ref)[1],
+                                      InstanceSpec(area.id, version, dict(old.settings) if old else {}))
     try:
-        report = await engine.swap(area.id, version)
+        report = await engine.apply(target, label=f"reload {area.id} ({len(stale)} instance(s))")
     except Exception as exc:  # noqa: BLE001 - a reload never takes the watcher down
         logger.exception("hot reload of unit %s raised", area.id)
-        return {**result, "action": "swap", "ok": False, "version": version, "detail": f"{type(exc).__name__}: {exc}"}
+        return {**result, "action": "swap", "ok": False, "version": version, "detail": f"{type(exc).__name__}: {exc}",
+                "instances": {r: f"failed: {type(exc).__name__}: {exc}" for r in stale}}
     finally:
         legacy.scrub_inactive_tools()
     result.update(action="swap", ok=report.ok, version=version, generation=report.generation)
     if report.ok:
-        result["detail"] = f"{area.id} swapped to {version} (generation {report.generation}); the old version drains"
+        result["instances"] = {r: ("swapped" if r in stale else "unchanged") for r in refs}
+        result["detail"] = (f"{area.id} swapped to {version} (generation {report.generation}; "
+                            f"{len(stale)} instance(s)); the old version drains")
     else:
+        result["instances"] = {r: ("failed: " + report.failed[r] if r in report.failed else "kept previous version")
+                               for r in stale}
         result["detail"] = f"{area.id} keeps its previous version: {report.error}"
         result["failed"] = dict(report.failed)
     return result

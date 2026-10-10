@@ -73,6 +73,11 @@ def get_engine() -> RuntimeEngine:
 
 def reset() -> None:
     global _engine, _key, booted
+    if _engine is not None:                 # its state connection would otherwise stay open on a file that is about to change
+        try:
+            _engine.store.close()
+        except Exception:  # noqa: BLE001
+            pass
     _engine, _key, booted = None, None, False
 
 

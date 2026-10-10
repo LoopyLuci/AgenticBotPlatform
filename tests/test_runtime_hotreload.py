@@ -327,3 +327,31 @@ def test_an_area_swap_changes_its_http_handlers_and_unload_answers_unit_unavaila
             assert gone.json() == {"error": {"code": "unit_unavailable", "unit": "toyc", "state": "unloaded"}}
 
     asyncio.run(go())
+
+
+def test_edit_swaps_every_live_instance_of_the_unit_in_one_transaction(toys):
+    async def go():
+        engine = live.get_engine()
+        await _load(engine, "toya")
+        assert (await engine.load("toya", instance="second", settings={"k": 1})).ok
+        first, second = make_ref("toya"), make_ref("toya", "second")
+        assert {first, second} <= set(engine._active)
+        generation = engine.generation
+        result = await _reload(_edit(toys, "toya", "two"))
+        assert result["status"] == "applied", result
+        unit = result["units"][0]
+        assert unit["ok"] and unit["instances"] == {first: "swapped", second: "swapped"}
+        assert engine.generation == generation + 1                    # one transaction for both instances
+        version = legacy.source_version(legacy.AREAS["toya"])
+        assert engine._active[first].version == version and engine._active[second].version == version
+        assert engine.manifest.instances[second].settings == {"k": 1}  # settings of the other instance survive
+        # a broken edit leaves both on the old version
+        path = _edit(toys, "toya", "two")
+        path.write_text("raise RuntimeError('boom')\n", encoding="utf-8")
+        importlib.invalidate_caches()
+        failed = (await _reload(path))["units"][0]
+        assert failed["ok"] is False and set(failed["instances"]) == {first, second}
+        assert engine._active[first].version == version and engine._active[second].version == version
+        assert engine.generation == generation + 1
+
+    asyncio.run(go())

@@ -48,7 +48,8 @@ POOL_THREADS = ("asyncio_", "AnyIO worker", "ThreadPoolExecutor")      # lazily 
 
 
 def _own_threads(names) -> list:
-    return sorted(n for n in names if not n.startswith(POOL_THREADS))
+    # backend clients (ollama, unsloth ...) start "<name>-find" probe threads when another test on the same worker touches them
+    return sorted(n for n in names if not n.startswith(POOL_THREADS) and not n.endswith("-find"))
 
 
 def _until(fn, seconds: float = 5.0) -> bool:
@@ -223,7 +224,8 @@ def test_g4_a_toy_swapped_repeatedly_under_load_drops_no_request(real_app):
         time.sleep(0.2)
         for v in range(2, 12):
             assert app.swap("toy", str(v)).status_code == 200
-            time.sleep(0.03)
+            # let the load actually see this version before the next swap (a loaded machine can starve the hammer)
+            _until(lambda: str(v) in finish.versions, 3.0)
     finally:
         results, errors = finish()
     # The requests really ran across the swaps (several versions answered), however slow the machine is.

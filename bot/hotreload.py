@@ -254,7 +254,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.agent_runtime.context_window",  # holds the learned chars-per-token ratio per model
     "bot.hotreload",  # never reload the reloader mid-cycle
     "bot.mcp_server",  # a separate process (python -m bot.mcp_server); not part of this one anyway
-    "bot.tui.app", "bot.tui.client", "bot.tui.__main__",  # a separate process (python -m bot.tui); not part of this one anyway
+    "bot.tui.app", "bot.tui.client", "bot.tui.units", "bot.tui.__main__",  # a separate process (python -m bot.tui); not part of this one anyway
     "bot.tui.screens.connect", "bot.tui.screens.bot_list", "bot.tui.screens.add_bot", "bot.tui.screens.bot_detail",
     "bot.tui.screens.chat", "bot.tui.screens.providers", "bot.tui.screens.agent_settings",
     "bot.tui.screens.swarms", "bot.tui.screens.sessions", "bot.tui.screens.ssh_toolkit", "bot.tui.screens.infra",

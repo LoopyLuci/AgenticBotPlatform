@@ -61,6 +61,14 @@ class DashboardClient:
             return None
         return resp.json()
 
+    # ---------------------------------------------------------------- unit runtime
+    async def ui_manifest(self) -> dict:
+        """Generation + the panels of the live units (404, an ApiError, on a server without the unit runtime)."""
+        return await self._request("GET", "/api/ui/manifest")
+
+    async def runtime_events(self, since: int = 0) -> dict:
+        return await self._request("GET", "/api/runtime/events", params={"since": since})
+
     # ---------------------------------------------------------------- bots
     async def list_bots(self) -> list[dict]:
         return await self._request("GET", "/api/bots")
