@@ -83,6 +83,10 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.agent_runtime.engine", "bot.agent_runtime.approval", "bot.agent_runtime.subagent_registry",
     "bot.platform_supervisor",
     "bot.tasks",  # holds the strong references that keep in-flight background tasks alive
+    # The unit runtime owns the live route/tool/panel tables, the task groups and an sqlite connection; a reload
+    # would orphan them. (The runtime replaces units itself, through its own transactions.)
+    "bot.runtime.unit", "bot.runtime.tasks", "bot.runtime.state", "bot.runtime.dispatcher",
+    "bot.runtime.registries", "bot.runtime.manifest", "bot.runtime.engine", "bot.runtime.api", "bot.runtime.live", "bot.runtime.legacy", "bot.runtime.pluggables", "bot.runtime.reload", "bot.runtime.snapshot",
     # bot.db's per-area functions (bot/storage/): part of bot.db, which is denylisted above for the connection it
     # owns; reloading a piece would leave bot.db re-exporting the stale functions.
     "bot.storage.agent_settings", "bot.storage.approvals", "bot.storage.chat", "bot.storage.devices",
@@ -158,6 +162,8 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.unsloth.client", "bot.unsloth.harness", "bot.unsloth.tools", "bot.dashboard.unsloth_api",
     # Ollama: harness.py holds the background pull/push/create jobs, tools.py registers tools at import time.
     "bot.ollama.client", "bot.ollama.harness", "bot.ollama.tools", "bot.dashboard.ollama_api",
+    # ModelMistress: client.py caches where the hub is, tools.py registers tools at import time.
+    "bot.modelmistress.client", "bot.modelmistress.harness", "bot.modelmistress.tools", "bot.dashboard.modelmistress_api",
     # VM-Harness: harness.py holds the background setup/update jobs, tools.py registers tools at import time.
     "bot.vm_harness.client", "bot.vm_harness.harness", "bot.vm_harness.tools", "bot.dashboard.vm_harness_api",
     # Hermes Manager: harness.py holds the background setup/update jobs, tools.py registers tools at import time.
@@ -244,7 +250,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.agent_runtime.context_window",  # holds the learned chars-per-token ratio per model
     "bot.hotreload",  # never reload the reloader mid-cycle
     "bot.mcp_server",  # a separate process (python -m bot.mcp_server); not part of this one anyway
-    "bot.tui.app", "bot.tui.client", "bot.tui.__main__",  # a separate process (python -m bot.tui); not part of this one anyway
+    "bot.tui.app", "bot.tui.client", "bot.tui.units", "bot.tui.__main__",  # a separate process (python -m bot.tui); not part of this one anyway
     "bot.tui.screens.connect", "bot.tui.screens.bot_list", "bot.tui.screens.add_bot", "bot.tui.screens.bot_detail",
     "bot.tui.screens.chat", "bot.tui.screens.providers", "bot.tui.screens.agent_settings",
     "bot.tui.screens.swarms", "bot.tui.screens.sessions", "bot.tui.screens.ssh_toolkit", "bot.tui.screens.infra",
@@ -433,6 +439,7 @@ BACKEND_MODULES: frozenset[str] = frozenset(m for m in RELOAD_ORDER if m.startsw
 
 _degraded: Optional[str] = None
 _last_events: list[dict[str, Any]] = []
+_last_units: list[dict[str, Any]] = []      # the latest unit swaps (and failures), newest first
 _MAX_EVENTS = 20
 
 
@@ -459,7 +466,16 @@ def status() -> dict[str, Any]:
         enabled = bool(config.current.get("hot_reload_enabled", _enabled_by_default()))
     except Exception:
         pass
-    return {"enabled": enabled, "degraded": _degraded, "recent_events": list(_last_events)}
+    out = {"enabled": enabled, "degraded": _degraded, "recent_events": list(_last_events), "units": list(_last_units)}
+    try:
+        from bot.runtime import live
+
+        if live._engine is not None and live.booted:
+            last = live._engine.last_transaction
+            out["runtime_last_transaction"] = last.to_dict() if last else None
+    except Exception:  # noqa: BLE001
+        pass
+    return out
 
 
 def _path_to_module(path: Path, pkg_root: Path, pkg_dotted_prefix: str) -> Optional[str]:
@@ -478,7 +494,7 @@ def _module_to_path(mod_name: str, pkg_root: Path, pkg_dotted_prefix: str) -> Pa
     return pkg_root.joinpath(*rel_parts).with_suffix(".py")
 
 
-async def run_cycle(
+async def _module_cycle(
     changed_files: list[Path],
     *,
     pkg_root: Path = BOT_PKG_DIR,
@@ -558,11 +574,71 @@ async def run_cycle(
             n = await restart_instances_for_platform(platform_name)
             restarted_summary.append(f"{platform_name}:{n}")
 
+    _scrub_unloaded_tools()
     detail = f"{len(changed_modules)} file(s) changed -> reloaded {len(reloaded)} module(s)"
     if restarted_summary:
         detail += f"; restarted {', '.join(restarted_summary)}"
     _record("applied", detail)
     return {"status": "applied", "detail": detail}
+
+
+def _scrub_unloaded_tools() -> None:
+    """A module reload can re-register tools as an import side effect; those of units that are not running go again."""
+    try:
+        from bot.runtime import legacy, live
+
+        if live.booted:
+            legacy.scrub_inactive_tools()
+    except Exception:  # noqa: BLE001
+        logger.exception("hot-reload: could not scrub the tools of unloaded units")
+
+
+async def _reload_units(paths: list[Path]) -> dict[str, Any]:
+    from bot.runtime import reload as runtime_reload
+
+    return await runtime_reload.reload_units(paths)
+
+
+def _unit_summary(units: list[dict[str, Any]]) -> dict[str, Any]:
+    bad = [u for u in units if not u.get("ok", True)]
+    detail = "; ".join(str(u.get("detail") or u.get("unit")) for u in units)
+    return {"status": "unit_failed" if bad else "applied", "detail": detail}
+
+
+async def run_cycle(changed_files: list[Path], *, unit_reload: Optional[Callable[[list[Path]], Awaitable[dict[str, Any]]]] = None,
+                    **kwargs: Any) -> dict[str, Any]:
+    """One reload cycle. Files that belong to a unit (a feature area, extension or plugin) are first handed to
+    `unit_reload`, which swaps the unit through the runtime engine (bot/runtime/reload.py): all-or-nothing, the old
+    version keeps serving if the new one fails, and a failure there never degrades later cycles. The remaining files
+    take the module-reload path (`_module_cycle`), where kernel and denylisted modules need a restart."""
+    unit_results: list[dict[str, Any]] = []
+    rest = list(changed_files)
+    if unit_reload is not None:
+        try:
+            out = await unit_reload(list(changed_files))
+        except Exception as exc:  # noqa: BLE001 - never takes the watcher down
+            logger.exception("hot-reload: unit reload failed")
+            out = {"handled": [], "units": [{"unit": "?", "ok": False, "action": "swap",
+                                              "detail": f"unit reload raised {type(exc).__name__}: {exc}"}]}
+        handled = {Path(p) for p in out.get("handled", [])}
+        unit_results = list(out.get("units", []))
+        rest = [p for p in changed_files if Path(p) not in handled]
+        for u in unit_results:
+            if u.get("action") == "unchanged":
+                continue
+            kind = "unit_failed" if not u.get("ok", True) else ("unit_dropped" if u.get("action") == "dropped" else "unit_swapped")
+            _record(kind, str(u.get("detail") or u.get("unit")))
+            _last_units.insert(0, {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), **u})
+        del _last_units[_MAX_EVENTS:]
+    result = await _module_cycle(rest, **kwargs)
+    if unit_results:
+        summary = _unit_summary(unit_results)
+        if result["status"] == "no_change":
+            result = summary
+        elif result["status"] == "applied":
+            result = {"status": summary["status"], "detail": f"{summary['detail']}; {result['detail']}"}
+        result["units"] = unit_results
+    return result
 
 
 async def _shutdown_backends() -> None:
@@ -586,8 +662,16 @@ async def trigger_manual_reload() -> dict[str, Any]:
     """The dashboard's "Reload now" button — forces a full cycle over
     every Tier 2/3 module regardless of what actually changed on disk."""
     paths = [_module_to_path(m, BOT_PKG_DIR, PKG_DOTTED_PREFIX) for m in RELOAD_ORDER]
-    return await run_cycle(paths, shutdown_backends=_shutdown_backends,
-                            restart_instances_for_platform=_restart_platform_instances)
+    result = await run_cycle(paths, unit_reload=_reload_units, shutdown_backends=_shutdown_backends,
+                             restart_instances_for_platform=_restart_platform_instances)
+    try:                                   # extensions and plugins carry real file hashes: bring them up to date too
+        from bot.runtime import live, pluggables
+
+        if live.booted:
+            await pluggables.sync(live.get_engine(), kinds=(pluggables.EXT, pluggables.PLUGIN))
+    except Exception:  # noqa: BLE001
+        logger.exception("hot-reload: syncing extensions and plugins failed")
+    return result
 
 
 async def watch_forever() -> None:
@@ -611,7 +695,14 @@ async def watch_forever() -> None:
 
     while True:
         try:
-            async for changes in awatch(str(BOT_PKG_DIR)):
+            roots = [str(BOT_PKG_DIR)]
+            try:
+                from bot.runtime import pluggables
+
+                roots += [str(r) for r in pluggables.watch_roots()]
+            except Exception:  # noqa: BLE001
+                pass
+            async for changes in awatch(*roots):
                 try:
                     from bot.config import config
 
@@ -623,6 +714,7 @@ async def watch_forever() -> None:
                 try:
                     await run_cycle(
                         changed_paths,
+                        unit_reload=_reload_units,
                         shutdown_backends=_shutdown_backends,
                         restart_instances_for_platform=_restart_platform_instances,
                     )

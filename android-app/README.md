@@ -69,6 +69,8 @@ token against it. Real push notifications need:
   The manual host/key entry fallback on the pairing screen exists
   specifically so pairing still works without ever exercising the camera
   path — test that path first if you haven't scanned a real code yet.
-- **The `agenticbotplatform://pair` deep link is parsed but not yet wired** to
-  `MainActivity`'s launch intent (see the `TODO` there) — QR scan is the
-  fully-wired primary path.
+- **The `agenticbotplatform://pair` deep link** (a shared link, or the desktop
+  app's `adb shell am start -a android.intent.action.VIEW -d ...` auto-pair)
+  opens `MainActivity`, which hands the link to `PairingScreen`; it verifies and
+  stores the new key exactly as a QR scan does, even on an already-paired phone.
+  A malformed link falls back to the normal pairing screen without an error.

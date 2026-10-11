@@ -390,6 +390,11 @@ def _open_database() -> None:
 
 async def run() -> None:
     from bot import bot_instances, db, platform_supervisor
+    from bot.runtime import legacy as _unit_adapter
+
+    # the feature areas' background tasks (units) run only while this process leads, like the singletons they replace
+    _unit_adapter.LEADER_GATED = True
+    _unit_adapter.TASKS_ENABLED = True
     from bot.config import config
     from bot.sentinel import bootguard
     from bot.sentinel import sentinel as self_preservation
@@ -527,99 +532,101 @@ async def run() -> None:
                 "available to add one from the Bots tab"
             )
 
-        watch_task = asyncio.create_task(config.watch_forever())
-        # config/providers.yaml too: a provider added outside the app (abp_import, an edit by hand) is picked up at once.
-        from bot import providers as provider_registry
+        # Kernel singletons (not feature areas): each starts on its own, so one that cannot start never stops the
+        # rest. The feature areas' own background work (hosting, storage, localai, neurallab, memoryfabric, cluster)
+        # runs as the tasks of their units (bot/runtime/legacy.py), started and stopped with the unit.
+        tasks: list = []
 
-        providers_watch_task = asyncio.create_task(provider_registry._manager.watch_forever())
+        def _spawn(name: str, make) -> None:
+            try:
+                tasks.append(asyncio.create_task(make()))
+            except Exception:  # noqa: BLE001 - one singleton failing must not stop the others
+                logger.exception("could not start %s; continuing without it", name)
 
-        from bot import hotreload
+        def _providers_watch():
+            from bot import providers as provider_registry   # config/providers.yaml too: a provider added outside the app is picked up at once
 
-        hotreload_task = asyncio.create_task(hotreload.watch_forever())
+            return provider_registry._manager.watch_forever()
 
-        from bot import scheduler
+        def _hotreload_watch():
+            from bot import hotreload
 
-        scheduler_task = asyncio.create_task(scheduler.run_forever(stop_event))
+            return hotreload.watch_forever()
 
-        from bot import infra_automation
+        def _scheduler():
+            from bot import scheduler
 
-        infra_task = asyncio.create_task(infra_automation.run_forever(stop_event))
+            return scheduler.run_forever(stop_event)
 
-        # ABP Web Hosting's upkeep (bot/hosting): dynamic DNS, certificate renewals, the web server and tunnel kept up.
-        from bot.hosting import service as hosting_service
+        def _infra():
+            from bot import infra_automation
 
-        hosting_task = asyncio.create_task(hosting_service.run_forever(stop_event))
+            return infra_automation.run_forever(stop_event)
 
-        # ABP File Server's schedules (bot/fileserver): parity sync/scrub, mover, drive health, index, guard, jobs.
-        from bot.fileserver import service as fileserver_service
+        def _peers_health():
+            from bot import peers
 
-        fileserver_task = asyncio.create_task(fileserver_service.run_forever(stop_event))
+            return peers.health_check_forever(stop_event)
 
-        # ABP's local AI (bot/localai): the Ollama-compatible model server kept up, fine-tunes exported when they finish,
-        # and the model store shared with the modules that run models (ABP_MODELS_DIR).
-        from bot.localai import service as localai_service
+        def _retention():
+            from bot import retention
 
-        localai_service.export_store_env()
-        localai_task = asyncio.create_task(localai_service.run_forever(stop_event))
+            return retention.run_forever(stop_event)
 
-        # The Neural Lab (bot/neurallab): telemetry recorded and the system models that tune this machine kept current.
-        from bot.neurallab import service as neurallab_service
+        def _sentinel():
+            self_preservation.start(loop, stop_event)
+            return self_preservation.run_forever(stop_event)
 
-        neurallab_task = asyncio.create_task(neurallab_service.run_forever(stop_event))
-
-        # The memory fabric (bot/memoryfabric): sources kept fresh, the daily close, the vault read back.
-        from bot.memoryfabric import service as memory_service
-
-        memory_task = asyncio.create_task(memory_service.run_forever(stop_event))
+        _spawn("config watcher", lambda: config.watch_forever())
+        _spawn("providers watcher", _providers_watch)
+        _spawn("hot reload", _hotreload_watch)
+        _spawn("scheduler", _scheduler)
+        _spawn("infra automation", _infra)
 
         # Reactive half of auto-management (bot/auto_manage.py) — a new
         # kanban card fires a real check-in for that board's owning instance,
         # if it's configured to react to this trigger. The scheduled half
         # needs no separate wiring here: it's a normal scheduled_commands row
         # (kind="auto_manage") the scheduler task above already polls.
-        from bot import auto_manage, db as _db
+        try:
+            from bot import auto_manage, db as _db
 
-        def _on_kanban_card_created(card_id: int) -> None:
-            bg.spawn(auto_manage.maybe_trigger_from_kanban_card(card_id))
+            def _on_kanban_card_created(card_id: int) -> None:
+                bg.spawn(auto_manage.maybe_trigger_from_kanban_card(card_id))
 
-        _db.on_kanban_card_created(_on_kanban_card_created)
+            _db.on_kanban_card_created(_on_kanban_card_created)
+        except Exception:  # noqa: BLE001
+            logger.exception("could not hook auto-management to new kanban cards; continuing without it")
 
-        from bot import peers
+        _spawn("peer health checks", _peers_health)
 
-        peers_health_task = asyncio.create_task(peers.health_check_forever(stop_event))
-
-        from bot.cluster import membership as cluster_membership
-
-        # The cluster's heartbeat: every linked peer's node report, rescheduling jobs whose node went down.
-        cluster_task = asyncio.create_task(cluster_membership.heartbeat_forever(stop_event))
         # Git stacks' poller (bot/git_stacks.py): idle unless a stack has auto_deploy on.
-        import threading as _threading
+        git_stacks_stop = None
+        try:
+            import threading as _threading
 
-        from bot import git_stacks as _git_stacks
-        git_stacks_stop = _threading.Event()
-        _threading.Thread(target=_git_stacks.poller_forever, args=(git_stacks_stop,), daemon=True, name="git-stacks-poller").start()
+            from bot import git_stacks as _git_stacks
+            git_stacks_stop = _threading.Event()
+            _threading.Thread(target=_git_stacks.poller_forever, args=(git_stacks_stop,), daemon=True, name="git-stacks-poller").start()
+        except Exception:  # noqa: BLE001
+            git_stacks_stop = None
+            logger.exception("could not start the git stacks poller; continuing without it")
 
-        from bot import retention
+        _spawn("retention", _retention)
+        _spawn("sentinel", _sentinel)
 
-        retention_task = asyncio.create_task(retention.run_forever(stop_event))
+        try:
+            from bot import mdns_advertise
 
-        self_preservation.start(loop, stop_event)
-        sentinel_task = asyncio.create_task(self_preservation.run_forever(stop_event))
-
-        from bot import mdns_advertise
-
-        # Blocking (real socket I/O to send the mDNS announcement) but brief and
-        # one-shot — off the event loop rather than a long-lived task. Failure
-        # here (no multicast-capable network stack, etc.) is logged and
-        # swallowed inside start() itself; this is discovery sugar for the
-        # Android app's NsdDiscoveryClient, never a startup dependency.
-        await asyncio.to_thread(mdns_advertise.start, port)
-        handles.update(
-            tasks=[watch_task, providers_watch_task, hotreload_task, scheduler_task, infra_task, hosting_task,
-                   fileserver_task, localai_task, neurallab_task, memory_task, peers_health_task, cluster_task,
-                   retention_task, sentinel_task],
-            git_stacks_stop=git_stacks_stop,
-        )
+            # Blocking (real socket I/O to send the mDNS announcement) but brief and
+            # one-shot — off the event loop rather than a long-lived task. Failure
+            # here (no multicast-capable network stack, etc.) is logged and
+            # swallowed inside start() itself; this is discovery sugar for the
+            # Android app's NsdDiscoveryClient, never a startup dependency.
+            await asyncio.to_thread(mdns_advertise.start, port)
+        except Exception:  # noqa: BLE001
+            logger.exception("could not start mDNS advertisement; continuing without it")
+        handles.update(tasks=tasks, git_stacks_stop=git_stacks_stop)
 
     async def _stop_singletons() -> None:
         """Give every singleton up, keeping the API answering. Cancels the

@@ -18,7 +18,9 @@ Kinds:
     python        spec: {code: "...", args?: [...]}  (run with ABP's Python in isolated mode)
     module_op     spec: {module, operation, args?}    (an operation of a module installed here)
     module_build  spec: {module}                      (build a module installed here)
-    inference     spec: {model, messages, max_tokens?, temperature?}  (a model served here: Ollama for now)
+    inference     spec: {model, messages, max_tokens?, temperature?, hub?}  (a model served here: through ModelMistress
+                  when its hub answers - `hub` names a linked machine's hub in modelmistress.peers, reached with the
+                  peer key configured there - and through Ollama otherwise)
 """
 from __future__ import annotations
 
@@ -50,6 +52,7 @@ SAFE_ENV = ("PATH", "PATHEXT", "SYSTEMROOT", "SystemRoot", "SYSTEMDRIVE", "WINDI
             "CommonProgramFiles", "LANG", "LC_ALL", "TZ", "SHELL", "CARGO_HOME", "RUSTUP_HOME", "JAVA_HOME",
             "ANDROID_HOME", "ANDROID_SDK_ROOT", "GOPATH", "DOTNET_ROOT", "NODE_PATH", "XDG_RUNTIME_DIR")
 MAX_TIMEOUT_S = 7 * 24 * 3600
+OLLAMA_CHAT = "http://127.0.0.1:11434/v1/chat/completions"      # the fallback for inference jobs
 _procs: dict[str, dict] = {}          # job id -> {"proc", "cell", "timer", "cancelled"}
 _lock = threading.Lock()
 
@@ -330,16 +333,37 @@ def _module_build(j: dict) -> Any:
 
 
 def _inference(j: dict) -> Any:
+    """ModelMistress first (spec.hub: a configured peer's hub, else this machine's), Ollama when no hub answers or the
+    hub is down. A hub that answers with an error (an unknown model, a refused key) is reported, not retried on Ollama:
+    that would run the job on a different model server than the one asked for."""
     import httpx
     s = j["spec"]
     body = {"model": s["model"], "messages": s["messages"], "stream": False}
     for k in ("max_tokens", "temperature", "top_p"):
         if k in s:
             body[k] = s[k]
-    _log(j["id"], f"[cluster] inference on {s['model']}")
-    r = httpx.post("http://127.0.0.1:11434/v1/chat/completions", json=body, timeout=j["timeout_s"])
+    ollama = OLLAMA_CHAT
+    try:
+        from bot.modelmistress import client as mm
+        hub = mm.find(str(s.get("hub") or ""))
+    except Exception:  # noqa: BLE001 - ABP without the ModelMistress client runs inference on Ollama
+        hub = None
+    if hub is None and s.get("hub"):
+        raise RuntimeError(f"no ModelMistress hub answers for {s['hub']!r} (modelmistress.peers in the config)")
+    url, headers, served = ollama, {}, "Ollama"
+    if hub is not None:
+        url, served = hub.openai_base + "/chat/completions", "ModelMistress" + (f" on {hub.peer}" if hub.peer else "")
+        headers = {"Authorization": f"Bearer {hub.token}"} if hub.token else {}
+    _log(j["id"], f"[cluster] inference on {s['model']} through {served}")
+    try:
+        r = httpx.post(url, json=body, headers=headers, timeout=j["timeout_s"])
+    except httpx.TransportError as e:
+        if hub is None or s.get("hub"):
+            raise RuntimeError(f"{served} is not reachable: {e}") from None
+        _log(j["id"], f"[cluster] ModelMistress is not reachable ({e}); falling back to Ollama")
+        r, served = httpx.post(ollama, json=body, timeout=j["timeout_s"]), "Ollama"
     if r.status_code >= 400:
-        raise RuntimeError(f"the local model server answered {r.status_code}: {r.text[:500]}")
+        raise RuntimeError(f"{served} answered {r.status_code}: {r.text[:500]}")
     return r.json()
 
 

@@ -395,6 +395,15 @@ class Runtime:
         return self._module.__version__
 
 
+class _ClosedHandle:
+    """Stands in for the native handle once a plugin was closed."""
+
+    manifest: dict = {}
+
+    def __getattr__(self, name: str) -> Any:
+        raise PluginCallError("this plugin was unloaded")
+
+
 class LoadedPlugin:
     """One compiled plugin, as this subsystem uses it.
 
@@ -413,6 +422,21 @@ class LoadedPlugin:
 
     def tool_names(self) -> list:
         return list(self._handle.tool_names())
+
+    def close(self) -> None:
+        """Release the compiled component: call the native handle's own `close()` when it has one, then drop the
+        reference so nothing can be invoked through this plugin afterwards."""
+        handle, self._handle = self._handle, _ClosedHandle()
+        closer = getattr(handle, "close", None)
+        if callable(closer):
+            try:
+                closer()
+            except Exception:  # noqa: BLE001 - closing must never fail a stop
+                logger.debug("closing a wasm plugin handle raised", exc_info=True)
+
+    @property
+    def closed(self) -> bool:
+        return isinstance(self._handle, _ClosedHandle)
 
     def allows_url(self, url: str) -> bool:
         """Whether `url` is on what this plugin was granted. Checked here before a request is

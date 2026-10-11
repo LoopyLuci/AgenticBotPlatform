@@ -319,11 +319,11 @@ def narrow_grants(name: str, *, preopens: Optional[list] = None, network: Option
 # ------------------------------------------------------------------ enable / disable
 
 def enable(name: str) -> dict:
-    """Load a plugin and register its tools with the agent."""
+    """Load a plugin and register its tools with the agent. Replacing a plugin that is already loaded is a swap:
+    the new component is compiled beside the live one and only a successful load retires the old one, so a
+    component that will not load leaves the live version serving."""
     row = _row(name)
     with _state_lock:
-        if name in _loaded:
-            _unload(name)
         try:
             _load(name, row)
         except WasmPluginError:
@@ -334,6 +334,7 @@ def enable(name: str) -> dict:
         state["plugins"][name]["enabled"] = True
         _save_state(state)
     _audit("wasm_plugin_enable", name)
+    _runtime_sync()
     return describe(name)
 
 
@@ -347,6 +348,7 @@ def disable(name: str) -> dict:
         state["plugins"][name]["enabled"] = False
         _save_state(state)
     _audit("wasm_plugin_disable", name)
+    _runtime_sync()
     return describe(name)
 
 
@@ -361,7 +363,15 @@ def uninstall(name: str) -> bool:
         _remove_component(name)
     if existed:
         _audit("wasm_plugin_uninstall", name)
+    _runtime_sync()
     return existed
+
+
+def _runtime_sync() -> None:
+    """Tell the unit runtime what changed (a transaction); the direct stage/apply/revert stays the mechanism."""
+    from bot.runtime import pluggables
+
+    pluggables.sync_from_sync_code(pluggables.WASM)
 
 
 def _remove_component(name: str) -> None:
@@ -386,8 +396,68 @@ def load_enabled() -> None:
 
 # ------------------------------------------------------------------ loading
 
-def _load(name: str, row: dict) -> None:
-    """Compile a plugin, give it its granted capabilities, and register its tools."""
+class StagedWasm:
+    """One compiled version of a plugin, built beside the live one. `apply()` publishes it (retiring the version it
+    replaces), `revert()` unpublishes it and closes the handle; both are synchronous and idempotent."""
+
+    def __init__(self, name: str, row: dict, handle: Any, services: Any, manifest: dict) -> None:
+        self.name = name
+        self.row = row
+        self.handle = handle
+        self.services = services
+        self.manifest = manifest
+        self.applied = False
+        self.closed = False
+        self.managed = False                    # True: the unit runtime registers the tools through its registry
+        self.version = component_version(row)  # of the component as it was when this was compiled
+        self.names, self.entries = _tool_entries(name, manifest)
+
+    def apply(self) -> None:
+        if self.applied:
+            return
+        from bot.wasm_plugins import tools
+
+        old = _loaded.get(self.name)
+        if old is not None and old.get("staged") is not self:
+            old["staged"].revert()
+        _loaded[self.name] = {"handle": self.handle, "services": self.services, "manifest": self.manifest,
+                              "staged": self}
+        if self.managed:
+            tools._registered[self.name] = dict(self.names)
+        else:
+            tools.register_plugin(self.name, self.manifest)
+        self.applied = True
+
+    def revert(self) -> None:
+        if self.applied:
+            from bot.wasm_plugins import tools
+
+            self.applied = False
+            if (_loaded.get(self.name) or {}).get("staged") is self:
+                del _loaded[self.name]
+                if self.managed:
+                    tools._registered.pop(self.name, None)
+                else:
+                    tools.unregister_plugin(self.name)
+        self.close()
+
+    def close(self) -> None:
+        if not self.closed:
+            self.closed = True
+            closer = getattr(self.handle, "close", None)
+            if callable(closer):
+                closer()
+
+
+def _tool_entries(name: str, manifest: dict) -> tuple[dict, list]:
+    from bot.wasm_plugins import tools
+
+    return tools.plugin_entries(name, manifest)
+
+
+def stage(name: str, row: dict) -> StagedWasm:
+    """Compile a plugin and give it its granted capabilities, touching no registry. Raises on any failure."""
+    rt.Runtime.shared()                           # raises WasmUnavailable (with the reason) when the native module is absent
     services = rt.HostServices(
         name,
         _root() / name / "store",
@@ -411,19 +481,46 @@ def _load(name: str, row: dict) -> None:
         grants=grants,
         memory_limit_bytes=int(row.get("memory_mb", rt.DEFAULT_MEMORY_MB)) * 1024 * 1024,
     )
-    manifest = dict(handle.manifest)
-    _loaded[name] = {"handle": handle, "services": services, "manifest": manifest}
-    _register_tools(name, manifest)
-    logger.info("wasm plugin %s loaded: %d tool(s)", name, len(manifest.get("tools", [])))
+    return StagedWasm(name, row, handle, services, dict(handle.manifest))
+
+
+def _load(name: str, row: dict) -> None:
+    """Stage a plugin, then publish it in one step (the version it replaces is retired only after this loaded)."""
+    staged = stage(name, row)
+    staged.apply()
+    logger.info("wasm plugin %s loaded: %d tool(s)", name, len(staged.manifest.get("tools", [])))
+
+
+def component_version(row: dict) -> str:
+    """The content hash of a plugin's component: its version for the unit runtime."""
+    import hashlib
+
+    try:
+        return "v-" + hashlib.sha256(Path(row["component"]).read_bytes()).hexdigest()[:12]
+    except OSError:
+        return "v-missing"
+
+
+def adopt(name: str, row: dict) -> Optional[StagedWasm]:
+    """The version of `name` that is already loaded, if its component is the one on disk."""
+    current = (_loaded.get(name) or {}).get("staged")
+    if current is not None and current.applied and current.version == component_version(row):
+        return current
+    return None
 
 
 def _unload(name: str) -> None:
-    entry = _loaded.pop(name, None)
+    entry = _loaded.get(name)
     if entry is None:
         return
-    from bot.wasm_plugins import tools
+    staged = entry.get("staged")
+    if staged is not None:
+        staged.revert()
+    else:
+        _loaded.pop(name, None)
+        from bot.wasm_plugins import tools
 
-    tools.unregister_plugin(name)
+        tools.unregister_plugin(name)
 
 
 def _register_tools(name: str, manifest: dict) -> None:

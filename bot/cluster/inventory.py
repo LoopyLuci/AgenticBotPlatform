@@ -203,7 +203,7 @@ def _hypervisors() -> list[str]:
     return found
 
 
-TOOLS = ("python", "git", "cargo", "node", "npm", "pnpm", "java", "docker", "go", "dotnet", "gcc", "cmake", "ollama")
+TOOLS = ("python", "git", "cargo", "node", "npm", "pnpm", "java", "docker", "go", "dotnet", "gcc", "cmake", "ollama", "model-mistress")
 
 
 def _toolchains() -> list[str]:

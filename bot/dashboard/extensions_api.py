@@ -8,6 +8,9 @@ discovered at runtime: there is one per extension and ABP has no idea how many u
 Paths are resolved inside the extension's own folder and anything that escapes it is a 404, so
 an extension can serve its own assets and nothing else.
 
+Both are backed by the unit runtime (bot/runtime/pluggables.py): the list is what the runtime has live, and
+listing re-reads the extensions folder, so an extension added or edited on disk is picked up.
+
 Both UIs read /api/extensions on load and build the navigation from it (the sections, nav
 entries and <script> tags for a panel that isn't in either HTML file), which is what lets a
 panel exist without a line of it being committed here.
@@ -34,11 +37,17 @@ def register(app: FastAPI, require_token: Callable) -> None:
 
     @app.get("/api/extensions", dependencies=[Depends(require_token)])
     async def extensions_list():
+        from bot.runtime import live, pluggables
+
+        await pluggables.sync(live.get_engine(), kinds=(pluggables.EXT,))
         loaded = extensions.loaded()
         return {**loaded.describe(), "panels": extensions.panels()}
 
     @app.get("/extensions/{name}/{path:path}", response_class=FileResponse)
     async def extension_file(name: str, path: str):
+        from bot.runtime import live, pluggables
+
+        await pluggables.ensure_loaded(live.get_engine())
         ext = extensions.loaded().by_name(name)
         if ext is None:
             raise HTTPException(status_code=404, detail="no such extension")

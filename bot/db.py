@@ -934,12 +934,13 @@ def _open(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path), check_same_thread=False)
     try:
         conn.row_factory = sqlite3.Row
+        # Multiple paired devices can poll/write concurrently — wait out a
+        # brief lock instead of raising "database is locked" immediately. First, so the
+        # journal-mode switch below (which needs a lock of its own) waits too.
+        conn.execute("PRAGMA busy_timeout=5000;")
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA synchronous=NORMAL;")
         conn.execute("PRAGMA foreign_keys=ON;")
-        # Multiple paired devices can poll/write concurrently — wait out a
-        # brief lock instead of raising "database is locked" immediately.
-        conn.execute("PRAGMA busy_timeout=5000;")
     except sqlite3.Error:
         # A corrupt file fails here, after connect() already opened it. Close it,
         # or the handle stays open and (on Windows) blocks the repair that has to

@@ -10,6 +10,7 @@ from textual.screen import Screen
 from textual.widgets import Button, DataTable, Footer, Header, Label
 
 from bot.tui.client import ApiError
+from bot.tui.units import ACTION_UNITS
 
 COLUMNS = ("id", "name", "platform", "backend", "status", "enabled")
 
@@ -66,7 +67,21 @@ class BotListScreen(Screen):
         table = self.query_one("#bot-table", DataTable)
         table.cursor_type = "row"
         table.add_columns(*COLUMNS)
+        await self.app.follow_units()
+        self.apply_units()
         await self.refresh_bots()
+
+    def apply_units(self) -> None:
+        """Offer the screens of feature areas only while their unit is live (their buttons here, their keys below)."""
+        for action, unit in ACTION_UNITS.items():
+            for button in self.query(f"#btn-{action}"):
+                button.display = self.app.unit_visible(unit)
+
+    def check_action(self, action: str, parameters: tuple) -> bool | None:
+        unit = ACTION_UNITS.get(action.removeprefix("action_"))
+        if unit is not None and not self.app.unit_visible(unit):
+            return False
+        return True
 
     async def refresh_bots(self) -> None:
         table = self.query_one("#bot-table", DataTable)

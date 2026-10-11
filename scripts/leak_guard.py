@@ -18,7 +18,7 @@ With no private folder both default to `fail` for machine paths and `warn` for p
 (the default install has no denylist at all, so there is nothing private to match). Modes and
 any allowlist live in the private config; nothing private is read from or written to the repo.
 
-What it scans: every file git tracks, or — in pre-commit mode — only the lines the staged diff
+What it scans: every file git tracks (as the index holds it, not the working tree), or — in pre-commit mode — only the lines the staged diff
 adds, so an existing match in a file nobody touched doesn't block an unrelated commit. Binary
 files and vendored/generated trees (requirements.lock, the OpenAPI dump, bundled JS libraries)
 are skipped: they are generated elsewhere and never hand-edited here.
@@ -293,10 +293,12 @@ def _staged_paths(root: Path) -> list[str]:
 
 
 def _read(repo_root: Path, rel: str) -> Optional[str]:
-    path = repo_root / rel
+    """The committed-to-the-index content of a tracked file (what a clone would get), not the working tree: local
+    uncommitted edits (a machine's own config) are not what the guard guards."""
     try:
-        data = path.read_bytes()
-    except OSError:
+        data = subprocess.run(["git", "show", f":{rel}"], cwd=repo_root, capture_output=True, check=True,
+                              timeout=60).stdout
+    except (OSError, subprocess.SubprocessError):
         return None
     if b"\0" in data[:8192]:
         return None

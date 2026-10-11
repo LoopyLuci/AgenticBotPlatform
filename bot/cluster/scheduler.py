@@ -203,7 +203,8 @@ async def _place(p: dict, *, exclude: tuple = (), hold: bool = False, group: Opt
                  task: Optional[dict] = None, only: Optional[str] = None,
                  service_group: Optional[str] = None) -> dict:
     req = Request.from_dict(p["req"])
-    fits, why_not = candidates(req, p["kind"], exclude=exclude, only=only, service_group=service_group)
+    fits, why_not = await asyncio.to_thread(candidates, req, p["kind"], exclude=exclude, only=only,
+                                            service_group=service_group)
     if p.get("prefer"):
         fits.sort(key=lambda n: n["name"].lower() != str(p["prefer"]).lower())
     attempt = len(p.get("attempts") or []) + 1
@@ -350,7 +351,8 @@ async def submit_group(spec: dict) -> dict:
         raise ScheduleError("replicas is 1-256")
     gid = uuid.uuid4().hex[:12]
     req = Request.from_dict(spec.get("req"))
-    fits, why_not = candidates(req, str(spec.get("kind")), service_group=spec.get("service_group"))
+    fits, why_not = await asyncio.to_thread(candidates, req, str(spec.get("kind")),
+                                            service_group=spec.get("service_group"))
     if len(fits) < n:
         raise ScheduleError(f"{n} nodes are needed and {len(fits)} can take a member now", why_not)
     chosen = fits[:n]
@@ -435,7 +437,7 @@ def group_results(gid: str) -> dict:
 async def supervise_once() -> None:
     """Refresh running jobs; place again those whose node lost them or went down (when they have retries left);
     keep arrays moving."""
-    health = {n["name"]: n["health"] for n in membership.nodes()}
+    health = {n["name"]: n["health"] for n in await asyncio.to_thread(membership.nodes)}  # probes module hubs
     for p in store.list_("placements", states=("accepted", "held", "starting", "running", "placing"), limit=500):
         p = await refresh(p["id"])
         node_down = p.get("peer") and health.get(p.get("node")) == "down"

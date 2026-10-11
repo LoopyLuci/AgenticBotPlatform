@@ -23,7 +23,7 @@ from urllib.parse import urlsplit
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from bot import db, envfile
@@ -702,7 +702,26 @@ class _NoCacheStaticFiles(StaticFiles):
         return response
 
 
+def _area_routes(units, module: str, *args, **kwargs) -> None:
+    """Hand a feature area's route registration (bot/dashboard/<module>.register) to the runtime: its auth arguments
+    are recorded for the area's unit(s), which run `register` against a collector when they are staged and serve the
+    routes through the dispatcher. The module is imported here so a broken one is recorded (bot.runtime.live.boot
+    reports that unit failed) and ABP carries on."""
+    import importlib
+    from bot.runtime import legacy as _legacy, live as _live
+
+    _legacy.set_api_auth(units, args, kwargs)
+    try:
+        importlib.import_module(f"bot.dashboard.{module}")
+    except Exception as exc:  # noqa: BLE001 - a broken area costs that unit, never the app
+        for unit in ((units,) if isinstance(units, str) else units):
+            _live.record_failure(unit, f"{type(exc).__name__}: {exc}")
+
+
 def build_app() -> FastAPI:
+    from bot.runtime import live as _live_reset
+
+    _live_reset.clear_failures()
     _seed_support_bot_training_ops_skill()
 
     from contextlib import asynccontextmanager
@@ -717,14 +736,22 @@ def build_app() -> FastAPI:
         from bot import power
         power.keeper.start()
         ssh_update_task = asyncio.create_task(_ssh_toolkit_auto_update_loop())
+        # The unit runtime: load the selected feature-area units (ABP_UNITS / runtime.units); never stops startup.
+        from bot.runtime import live as _live
+        await _live.boot()
         try:
             yield
         finally:
+            await _live.shutdown()
             task.cancel()
             ssh_update_task.cancel()
             power.keeper.stop()
 
     app = FastAPI(title="Bot Control Dashboard API", lifespan=_lifespan)
+
+    # Unit runtime: a feature area's routes are its unit's contributions, served by the runtime's dispatcher (404
+    # unit_unavailable while the unit is off); the OpenAPI document merges them back in (see _openapi below).
+    from bot.runtime import live as _runtime_live
 
     def _json_download(data, filename: str) -> Response:
         body = json.dumps(data, indent=2, default=str).encode("utf-8")
@@ -822,6 +849,11 @@ def build_app() -> FastAPI:
             except Exception:
                 logger.exception("ssh_toolkit auto-update loop iteration failed")
 
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon():
+        # Browsers ask for /favicon.ico whatever the page links; answer with the icon the pages already ship.
+        return FileResponse(STATIC_DIR / "icons" / "vaporwave.png", media_type="image/png")
+
     @app.get("/")
     async def index(request: Request):
         return _page_with_token(STATIC_DIR / "dashboard.html", request)
@@ -884,38 +916,23 @@ def build_app() -> FastAPI:
     git_stacks_api.register(app, _require_token, control_auth("docker", write=False), control_auth("docker", write=True))
 
     # Computer vision on this machine (/api/vision): OpenCV and its model zoo (bot/vision).
-    try:
-        from bot.dashboard import vision_api
-
-        vision_api.register(app, _require_token)
-    except ImportError as exc:  # pragma: no cover - OpenCV is in requirements.txt
-        logger.warning("vision API is off: %s", exc)
+    _area_routes("vision", "vision_api", _require_token)
 
     # Studio: generative code and GUI with a real-time preview (/studio/v/*, /api/studio/*; bot/studio).
-    from bot.dashboard import studio_api
-
-    studio_api.register(app, _require_token)
+    _area_routes("studio", "studio_api", _require_token)
 
     # ABP Web Hosting (/api/hosting/*; bot/hosting): sites, DNS, tunnels, certificates, deploys, servers.
-    from bot.dashboard import hosting_api
-
-    hosting_api.register(app, _require_token)
+    _area_routes("hosting", "hosting_api", _require_token)
 
     # ABP File Server management (/api/fileserver/*; bot/fileserver): array, shares, users, jobs, index, guard, apps.
-    from bot.dashboard import fileserver_api
-
-    fileserver_api.register(app, _require_token)
+    _area_routes("storage", "fileserver_api", _require_token)
 
     # Local AI and the Neural Lab (/api/localai/*, /api/lab/*; bot/localai, bot/neurallab): models, fine-tuning, the
     # lab's runs and designs, the toolkit's projects, the system models.
-    from bot.dashboard import localai_api
-
-    localai_api.register(app, _require_token)
+    _area_routes(("localai", "neurallab"), "localai_api", _require_token)
 
     # The memory fabric (/api/memory/*; bot/memoryfabric): memories and conversations shared by every model.
-    from bot.dashboard import memory_api
-
-    memory_api.register(app, _require_token)
+    _area_routes("memoryfabric", "memory_api", _require_token)
 
     # Privacy mode (/api/privacy; bot/privacy.py): every model call and agent tool kept on this machine.
     from bot.dashboard import privacy_api
@@ -977,51 +994,36 @@ def build_app() -> FastAPI:
     sentinel_api.register(app, _require_token_or_api_key, _require_token)
 
     # The model router: its decisions and reasoning, what it learned, training, and its editable policy.
-    from bot.dashboard import router_api
-
-    router_api.register(app, _require_token_or_api_key, _require_token)
+    _area_routes("router", "router_api", _require_token_or_api_key, _require_token)
 
     # Unsloth Studio: load and serve its models, download, train, export, and every other operation it offers.
-    from bot.dashboard import unsloth_api
-
-    unsloth_api.register(app, _require_token_or_api_key, _require_token)
+    _area_routes("unsloth", "unsloth_api", _require_token_or_api_key, _require_token)
 
     # Ollama: pull, load and serve its models, build models from Modelfiles or GGUF files, and every route it serves.
-    from bot.dashboard import ollama_api
+    _area_routes("ollama", "ollama_api", _require_token_or_api_key, _require_token)
 
-    ollama_api.register(app, _require_token_or_api_key, _require_token)
+    # ModelMistress: the local model hub that replaces Ollama / Unsloth Studio while it runs (models, load, pull).
+    _area_routes("modelmistress", "modelmistress_api", _require_token_or_api_key, _require_token)
 
     # VM-Harness: a separate program ABP installs, updates and drives (VMs, containers, and its own window).
-    from bot.dashboard import vm_harness_api
-
-    vm_harness_api.register(app, control_auth("vm-harness", write=False), control_auth("vm-harness", write=True))
+    _area_routes("vm-harness", "vm_harness_api", control_auth("vm-harness", write=False), control_auth("vm-harness", write=True))
 
     # Hermes Manager: a separate program ABP installs, updates and drives (Hermes's gateway, logs, config, backups...
     # and its own window).
-    from bot.dashboard import hermes_manager_api
-
-    hermes_manager_api.register(app, control_auth("hermes-manager", write=False), control_auth("hermes-manager", write=True))
+    _area_routes("hermes-manager", "hermes_manager_api", control_auth("hermes-manager", write=False), control_auth("hermes-manager", write=True))
 
     # TransferDaemon: a separate program ABP builds, updates and drives (encrypted messages and files between devices,
     # its window, terminal UI and relays).
-    from bot.dashboard import transferdaemon_api
-
-    transferdaemon_api.register(app, control_auth("transferdaemon", write=False), control_auth("transferdaemon", write=True))
+    _area_routes("transferdaemon", "transferdaemon_api", control_auth("transferdaemon", write=False), control_auth("transferdaemon", write=True))
 
     # Modules: every separate program ABP installs, updates, builds and drives, on one page (bot/modules/).
-    from bot.dashboard import modules_api
-
-    modules_api.register(app, control_auth("modules", write=False), control_auth("modules", write=True))
+    _area_routes("modules", "modules_api", control_auth("modules", write=False), control_auth("modules", write=True))
 
     # Cluster: this machine as a node (what it shares, the jobs it runs for peers) and the cluster seen from here.
-    from bot.dashboard import cluster_api
-
-    cluster_api.register(app, _identify_caller)
+    _area_routes("cluster", "cluster_api", _identify_caller)
 
     # Power: keep this machine awake while it is in use, wake other machines (Wake-on-LAN).
-    from bot.dashboard import power_api
-
-    power_api.register(app, control_auth("power", write=False), control_auth("power", write=True))
+    _area_routes("power", "power_api", control_auth("power", write=False), control_auth("power", write=True))
 
     # The Sandbox Nervous System: every process ABP started and is still running, its cell, what that
     # cell may do, and the two ways to stop it (one cell, or every non-persistent cell).
@@ -1037,15 +1039,14 @@ def build_app() -> FastAPI:
     # Extensions: what this install added on top of the public ABP (ABP_PRIVATE_DIR). With that
     # variable unset there is nothing to list and nothing to serve, and the routes below add
     # nothing but themselves.
-    from bot import extensions as _extensions
     from bot.dashboard import extensions_api
 
     extensions_api.register(app, _require_token_or_api_key)
-    for _name, _register in _extensions.loaded().routes:
-        try:
-            _register(app, _require_token_or_api_key, _require_token)
-        except Exception:  # noqa: BLE001 — a broken extension's routes cost it its own routes, nothing else
-            logger.exception("extension %s could not register its routes; ABP continues without them", _name)
+    # An extension is a unit of the runtime (bot/runtime/pluggables.py): its routes are dispatched by the runtime, not
+    # added to the app, so they can be reloaded and removed. It gets the same two auth dependencies as before.
+    from bot.runtime import pluggables as _pluggables
+
+    _pluggables.set_auth(_require_token_or_api_key, _require_token)
 
     # Every other route area lives in bot/dashboard/routes/, registered in this exact order.
     from bot.dashboard import routes as _routes  # noqa: F401 — the package
@@ -1060,5 +1061,32 @@ def build_app() -> FastAPI:
             _mod.register(app, json_download=_json_download)
         else:
             _mod.register(app)
+
+    # The unit runtime: its API, the live changes pushed to every open dashboard, and the dispatcher for the
+    # /api/<unit>/... paths no route above matched (units that serve their own routes).
+    from bot.runtime.api import build_router as _runtime_router
+
+    _engine = _runtime_live.get_engine()
+    _engine.on_commit = _broadcast_soon
+    app.include_router(_runtime_router(_engine, _require_token_or_api_key, _require_token))
+    app.router.default = _runtime_live.route_fallback(app.router.default)
+
+    # The feature areas' routes are served by the dispatcher, so they are not on the app; the OpenAPI document (and
+    # /openapi.json, the committed spec, the SDK) still describes them: their routes are merged in when it is built.
+    def _openapi() -> dict:
+        from fastapi.openapi.utils import get_openapi
+        from bot.runtime import legacy as _legacy
+
+        if app.openapi_schema is None:
+            app.openapi_schema = get_openapi(
+                title=app.title, version=app.version, openapi_version=app.openapi_version, summary=app.summary,
+                description=app.description, terms_of_service=app.terms_of_service, contact=app.contact,
+                license_info=app.license_info, routes=list(app.routes) + _legacy.doc_routes(),
+                webhooks=app.webhooks.routes, tags=app.openapi_tags, servers=app.servers,
+                separate_input_output_schemas=app.separate_input_output_schemas,
+                external_docs=app.openapi_external_docs)
+        return app.openapi_schema
+
+    app.openapi = _openapi  # type: ignore[method-assign]
 
     return app

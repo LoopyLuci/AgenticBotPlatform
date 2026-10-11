@@ -179,8 +179,9 @@ def register(app: FastAPI, identify: Callable) -> None:
     @app.post("/api/cluster/candidates")
     async def cluster_candidates(body: dict = Body(...), c: Caller = Depends(local_user)):
         from bot.cluster.offer import Request
-        fits, why_not = scheduler.candidates(Request.from_dict(body.get("req")), str(body.get("kind") or "command"),
-                                             service_group=body.get("service_group"))
+        fits, why_not = await asyncio.to_thread(scheduler.candidates, Request.from_dict(body.get("req")),
+                                                str(body.get("kind") or "command"),
+                                                service_group=body.get("service_group"))
         return {"fits": [n["name"] for n in fits], "why_not": why_not}
 
     @app.post("/api/cluster/jobs")

@@ -130,9 +130,11 @@ function connectDevicesSocket() {
     devicesSocketRetryTimer = setTimeout(connectDevicesSocket, 4000);
     return;
   }
+  devicesSocket.onopen = () => { if (window.ABP && ABP.moduleHost) ABP.moduleHost.socketUp(true); };
   devicesSocket.onmessage = (evt) => {
     try {
       const msg = JSON.parse(evt.data);
+      if (msg.type === 'runtime.changed' && window.ABP && ABP.moduleHost) ABP.moduleHost.onEvent(msg);
       if (msg.type === 'device_list') {
         mobileKeysState.devices = msg.devices;
         renderMobileKeysTable();
@@ -156,6 +158,7 @@ function connectDevicesSocket() {
     } catch (_e) { /* malformed frame, ignore */ }
   };
   devicesSocket.onclose = devicesSocket.onerror = () => {
+    if (window.ABP && ABP.moduleHost) ABP.moduleHost.socketUp(false);
     devicesSocket = null;
     devicesSocketRetryTimer = setTimeout(connectDevicesSocket, 4000);
   };
@@ -1460,6 +1463,12 @@ function _observeSections() {
   if (_sectionObserver) document.querySelectorAll('section[id]').forEach((s) => _sectionObserver.observe(s));
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _observeSections); else _observeSections();
+
+// module-host.js: sections created or removed at runtime join / leave the on-screen tracking.
+window.__abpObserveSection = function (s, on) {
+  if (!_sectionObserver) return;
+  if (on === false) { _sectionObserver.unobserve(s); _onScreen.delete(s.id); } else _sectionObserver.observe(s);
+};
 
 // ------------------------------------------------------------------- boot
 // Skips a poll tick while the window isn't visible (backgrounded or
@@ -5923,12 +5932,16 @@ function initAndroidPanel() {
   const setActive = (id) => {
     links.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + id));
   };
-  if (sections.length && 'IntersectionObserver' in window) {
-    const observer = new IntersectionObserver((entries) => {
+  let observer = null;
+  if ('IntersectionObserver' in window) {
+    observer = new IntersectionObserver((entries) => {
       entries.forEach(entry => { if (entry.isIntersecting) setActive(entry.target.id); });
     }, { rootMargin: '-35% 0px -55% 0px', threshold: 0 });
     sections.forEach(s => observer.observe(s));
   }
+  // module-host.js: nav links and sections created at runtime join the highlight and the search.
+  window.__abpNavAdd = (a, sec) => { if (!links.includes(a)) links.push(a); if (observer && sec) observer.observe(sec); };
+  window.__abpNavRemove = (a, sec) => { const i = links.indexOf(a); if (i >= 0) links.splice(i, 1); if (observer && sec) observer.unobserve(sec); };
 })();
 
 // ------------------------------------------------ sidebar collapse/drawer
@@ -5969,7 +5982,9 @@ function initAndroidPanel() {
     if (e.key === 'Escape' && side.classList.contains('mobile-open')) closeMobileNav();
   });
   side.querySelectorAll('nav.sidenav a').forEach((a) => a.addEventListener('click', closeMobileNav));
-  side.querySelectorAll('nav.sidenav a[href^="#"]').forEach((a) => {
+  function wireNavLink(a) {
+    if (a.__abpWired) return;
+    a.__abpWired = true;
     a.addEventListener('click', (e) => {
       const target = document.getElementById(a.getAttribute('href').slice(1));
       if (!target) return; // no matching section — let the default (no-op) happen
@@ -6026,7 +6041,10 @@ function initAndroidPanel() {
       document.querySelector('main').addEventListener('scrollend', revert, { once: true });
       setTimeout(revert, 4000);
     });
-  });
+  }
+  side.querySelectorAll('nav.sidenav a[href^="#"]').forEach(wireNavLink);
+  // module-host.js calls this for nav links it creates at runtime.
+  window.__abpWireNavLink = (a) => { a.addEventListener('click', closeMobileNav); wireNavLink(a); };
   window.addEventListener('resize', () => {
     if (window.innerWidth > 980 && side.classList.contains('mobile-open')) closeMobileNav();
   });

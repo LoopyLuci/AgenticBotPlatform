@@ -45,6 +45,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["B011", "B017", "ASYNC", "F841", "B007", "B023", "RUF006"]
 "abp_agenteval/**" = ["B011"]
+# A fixture imported from a helper module is "redefined" by every test that takes it as a parameter.
+"tests/test_runtime_{guarantees,ui_real}.py" = ["F811"]
 
 # ------------------------------------------------------------ coverage --
 # The floor only ever moves up: raise it when coverage rises, never lower it

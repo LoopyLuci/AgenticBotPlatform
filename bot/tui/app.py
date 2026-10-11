@@ -17,6 +17,7 @@ from textual.app import App
 
 from bot.tui.client import DashboardClient
 from bot.tui.screens.connect import ConnectScreen
+from bot.tui.units import UnitFollower
 
 
 class AgenticBotPlatformTUI(App):
@@ -26,9 +27,44 @@ class AgenticBotPlatformTUI(App):
     CSS_PATH = "app.tcss"
 
     client: DashboardClient | None = None
+    UNIT_POLL_SECONDS = 3.0
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.units = UnitFollower()
+        self._unit_timer = None
 
     def on_mount(self) -> None:
         self.push_screen(ConnectScreen())
+
+    def unit_visible(self, unit: str | None) -> bool:
+        """Whether a screen of `unit` is offered: only while the unit is live (everything, if the server cannot say)."""
+        return self.units.visible(unit)
+
+    async def follow_units(self) -> None:
+        """Read the manifest once and keep following the runtime's events. Safe to call again."""
+        if self.client is None:
+            return
+        await self._units_changed(await self.units.refresh(self.client))
+        if self._unit_timer is None and self.units.available:
+            self._unit_timer = self.set_interval(self.UNIT_POLL_SECONDS, self._poll_units)
+
+    async def _poll_units(self) -> None:
+        if self.client is None:
+            return
+        await self._units_changed(await self.units.poll(self.client))
+        if self.units.available is False and self._unit_timer is not None:
+            self._unit_timer.stop()
+            self._unit_timer = None
+
+    async def _units_changed(self, changed: bool) -> None:
+        if not changed:
+            return
+        self.refresh_bindings()
+        for screen in self.screen_stack:
+            apply = getattr(screen, "apply_units", None)
+            if apply is not None:
+                apply()
 
     async def on_unmount(self) -> None:
         if self.client is not None:

@@ -376,3 +376,81 @@ def test_ssh_toolkit_screen_adds_tests_and_removes(dashboard_client, monkeypatch
             await _wait_until(lambda: screen.query_one("#ssh-table", DataTable).row_count == 0)
 
     asyncio.run(_run())
+
+
+# ---- the TUI follows the unit runtime --------------------------------------------------------------
+class _Runtime:
+    """A fake runtime behind DashboardClient.ui_manifest / runtime_events (everything else is the real API)."""
+
+    def __init__(self, live):
+        self.live, self.generation = set(live), 1
+
+    def set(self, live):
+        self.live, self.generation = set(live), self.generation + 1
+
+    async def ui_manifest(self):
+        return {"generation": self.generation,
+                "panels": [{"id": u, "unit": u, "kind": "builtin", "section": u} for u in sorted(self.live)]}
+
+    async def runtime_events(self, since=0):
+        return {"generation": self.generation,
+                "events": [{"generation": self.generation}] if self.generation > since else []}
+
+
+def _offered(screen):
+    from textual.widgets import Button
+
+    return {a for a in ("hosting", "storage", "localai") if screen.query_one(f"#btn-{a}", Button).display}
+
+
+def test_feature_screens_are_offered_only_while_their_unit_is_live(dashboard_client, monkeypatch):
+    runtime = _Runtime({"hosting", "storage", "localai"})
+    monkeypatch.setattr(dashboard_client, "ui_manifest", runtime.ui_manifest)
+    monkeypatch.setattr(dashboard_client, "runtime_events", runtime.runtime_events)
+
+    async def _run():
+        app = AgenticBotPlatformTUI()
+        app.UNIT_POLL_SECONDS = 0.1
+        async with app.run_test(size=(140, 100)) as pilot:
+            app.client = dashboard_client
+            await app.push_screen(BotListScreen())
+            await pilot.pause()
+            screen = app.screen
+            assert _offered(screen) == {"hosting", "storage", "localai"}
+            runtime.set({"storage", "localai"})              # hosting unloads: an event, then the screen is gone
+            for _ in range(30):
+                await pilot.pause(0.1)
+                if _offered(screen) == {"storage", "localai"}:
+                    break
+            assert _offered(screen) == {"storage", "localai"}
+            assert screen.check_action("hosting", ()) is False and screen.check_action("storage", ()) is True
+            assert screen.check_action("providers", ()) is True      # a screen without a unit is always offered
+            runtime.set({"hosting", "storage", "localai"})   # loaded again: it appears
+            for _ in range(30):
+                await pilot.pause(0.1)
+                if "hosting" in _offered(screen):
+                    break
+            assert _offered(screen) == {"hosting", "storage", "localai"}
+            assert screen.check_action("hosting", ()) is True
+
+    asyncio.run(_run())
+
+
+def test_a_server_without_a_ui_manifest_shows_everything(dashboard_client, monkeypatch):
+    from bot.tui.client import ApiError
+
+    async def no_manifest():
+        raise ApiError(404, "Not Found")
+
+    monkeypatch.setattr(dashboard_client, "ui_manifest", no_manifest)
+
+    async def _run():
+        app = AgenticBotPlatformTUI()
+        async with app.run_test(size=(140, 100)) as pilot:
+            app.client = dashboard_client
+            await app.push_screen(BotListScreen())
+            await pilot.pause()
+            assert _offered(app.screen) == {"hosting", "storage", "localai"}
+            assert app.units.available is False and app._unit_timer is None     # and it stops asking
+
+    asyncio.run(_run())

@@ -1421,6 +1421,7 @@ async def vision_edit(image: str, steps: list) -> Any:
 # ---- extensions (ABP_PRIVATE_DIR) ----------------------------------------------------
 # Tools an extension registered through ExtensionAPI.add_mcp_tool(), added to the same server
 # as every tool above. One broken extension costs its own tools and nothing else.
+# (This stdio server is a separate process with no unit runtime, so it adds extension tools once at import.)
 def _load_extension_tools() -> None:
     from bot import extensions
 

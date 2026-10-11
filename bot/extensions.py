@@ -20,6 +20,12 @@ dashboard routes, a UI panel, an abp_cli command, an MCP tool, module entries an
 directories. A failing extension is never fatal: the exception is logged, the extension is
 recorded as failed (bot/dashboard/extensions_api.py serves that to the modules/extensions view),
 and ABP carries on without it.
+
+Inside the dashboard process each extension is a unit of the runtime (`ext:<name>`, bot/runtime/pluggables.py):
+its routes go through the runtime's dispatcher, its tools, panels, CLI commands and config overlay through the
+runtime's registries, and it can be reloaded from disk with
+`POST /api/runtime/units/ext:<name>/swap` (the new version is the hash of its files). `load_all()` stays the
+plain, cached discovery used by processes that have no runtime (abp_cli, the stdio MCP server).
 """
 
 from __future__ import annotations
@@ -256,6 +262,7 @@ class ExtensionAPI:
         self.lab_worker_plugins: list[Path] = []
         self.provider_sources: list[Callable] = []
         self.hub_started_hooks: list[Callable] = []
+        self.tasks: list[Callable] = []
 
     # -- configuration -------------------------------------------------------------
 
@@ -306,6 +313,13 @@ class ExtensionAPI:
         if not callable(func):
             raise TypeError(f"extension {self.name}: add_mcp_tool() needs a callable")
         self.mcp_tools.append((func, str(name or getattr(func, "__name__", ""))))
+
+    def add_task(self, coro_fn: Callable) -> None:
+        """Run `coro_fn()` (an async function) in the background while the extension is loaded. The runtime starts
+        it when the extension goes live and cancels it when the extension is unloaded or replaced."""
+        if not callable(coro_fn):
+            raise TypeError(f"extension {self.name}: add_task() needs a callable")
+        self.tasks.append(coro_fn)
 
     def add_module(self, entry: dict) -> None:
         """Add a module entry (the same shape as one item of modules.extra), so a private
@@ -528,6 +542,49 @@ def _state() -> _State:
         if "state" not in _state_holder:
             _state_holder["state"] = _State()
         return _state_holder["state"]
+
+
+def _publish(ext: "Extension") -> "Optional[Extension]":
+    """Make `ext` the loaded extension of its name (called when its unit starts). Returns the one it replaced."""
+    state = _state()
+    with _lock:
+        previous = state.loaded.by_name(ext.name)
+        rest = [e for e in state.loaded.extensions if e.name != ext.name]
+        errors = {k: v for k, v in state.loaded.errors.items() if k != ext.directory.name}
+        state.loaded = Loaded(sorted(rest + [ext], key=lambda e: e.name), errors)
+        state.version = max(state.version, 1)
+        return previous
+
+
+def _retire(ext: "Extension", restore: "Optional[Extension]" = None) -> None:
+    """Take `ext` out of the loaded set (its unit stopped) if it is still the current one, putting back the version
+    it had replaced when a swap was aborted."""
+    state = _state()
+    with _lock:
+        if state.loaded.by_name(ext.name) is not ext:
+            return
+        rest = [e for e in state.loaded.extensions if e is not ext]
+        if restore is not None:
+            rest.append(restore)
+        state.loaded = Loaded(sorted(rest, key=lambda e: e.name), dict(state.loaded.errors))
+
+
+def record_error(folder_name: str, message: str) -> None:
+    """Remember why an extension did not load (shown by GET /api/extensions)."""
+    state = _state()
+    with _lock:
+        errors = dict(state.loaded.errors)
+        errors[folder_name] = message
+        state.loaded = Loaded(list(state.loaded.extensions), errors)
+        state.version = max(state.version, 1)
+
+
+def clear_error(folder_name: str) -> None:
+    state = _state()
+    with _lock:
+        if folder_name in state.loaded.errors:
+            state.loaded = Loaded(list(state.loaded.extensions),
+                                  {k: v for k, v in state.loaded.errors.items() if k != folder_name})
 
 
 def _version_tuple(text: str) -> tuple:

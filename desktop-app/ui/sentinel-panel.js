@@ -7,7 +7,7 @@
   if (typeof api !== 'function') return;
   const $ = (id) => document.getElementById(id);
   const toast = (m, t) => (typeof showToast === 'function' ? showToast(m, t) : console.log(m));
-  const errText = (e) => { let m = e && e.message ? e.message : String(e); try { m = JSON.parse(m).detail || m; } catch (_) {} return m; };
+  const errText = (e) => { if (window.ABP && ABP.unitUnavailable && ABP.unitUnavailable(e)) return 'This module is not loaded.'; let m = e && e.message ? e.message : String(e); try { m = JSON.parse(m).detail || m; } catch (_) {} return m; };
   const dot = (level) => `<span class="dot ${level}" aria-hidden="true"></span>`;
   const when = (iso) => (iso ? new Date(iso).toLocaleString() : 'never');
   const size = (b) => (b > 1 << 20 ? (b / (1 << 20)).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB');

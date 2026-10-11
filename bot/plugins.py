@@ -32,6 +32,14 @@ An optional module-level `PLUGIN_DESCRIPTION` string is shown in the
 plugin list. `setup()` raising any exception aborts the install/enable
 and leaves nothing registered.
 
+A plugin may also define `teardown()`, called once when the plugin is disabled, removed, replaced or its
+unit is unloaded, and its `setup(api)` may call `api.spawn(async_fn)` to run a background coroutine for as long as
+the plugin is live (cancelled on teardown; under the unit runtime it runs in the unit's task group).
+
+**Replacing a plugin is a swap.** The new version is loaded and its `setup()` run *beside* the live one without
+touching any registry; only when that succeeded does one synchronous step retire the old version (calling its
+`teardown()`) and publish the new one. A new version that fails to load leaves the old one serving.
+
 **Versioning.** The plugin API has a version, `SDK_VERSION` (semantic: a breaking change to
 what `setup(api)` and the handlers may rely on bumps the major number; additions bump the
 minor). A plugin can say which versions it was written for with a module-level
@@ -44,6 +52,8 @@ against. See docs/agents/plugin-sdk.md.
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import importlib.util
 import logging
 import re
@@ -106,8 +116,15 @@ class PluginAPI:
     is meant to touch. Never exposed as a bare module so a plugin can't
     reach into another plugin's registrations."""
 
-    def __init__(self, plugin_name: str) -> None:
+    def __init__(self, plugin_name: str, staged: "Optional[StagedPlugin]" = None) -> None:
         self._plugin_name = plugin_name
+        self._staged = staged if staged is not None else StagedPlugin(plugin_name, Path(""))
+
+    def spawn(self, coro_fn: Callable[[], Any]) -> None:
+        """Run `coro_fn()` as a background task while the plugin is live; it is cancelled when the plugin stops."""
+        if not callable(coro_fn):
+            raise PluginError("spawn() needs a callable returning a coroutine")
+        self._staged.tasks.append(coro_fn)
 
     def register_tool(
         self,
@@ -126,7 +143,7 @@ class PluginAPI:
         existing = _tools.get(name)
         if existing is not None and existing["plugin"] != self._plugin_name:
             raise PluginError(f"tool name {name!r} is already registered by plugin {existing['plugin']!r}")
-        _tools[name] = {
+        self._staged.tools[name] = {
             "description": description,
             "input_schema": input_schema,
             "handler": handler,
@@ -157,17 +174,106 @@ class PluginAPI:
             if alias in BUILTIN_COMMANDS or alias in BUILTIN_ALIASES:
                 raise PluginError(f"command alias {alias!r} collides with a built-in command")
             other = _command_aliases.get(alias)
-            if other is not None and other != name:
+            if other is not None and other != name and _commands.get(other, {}).get("plugin") != self._plugin_name:
                 raise PluginError(f"command alias {alias!r} is already used by /{other}")
         cdef = CommandDef(
             name=name, description=description, category=category, aliases=tuple(aliases), args_hint=args_hint
         )
-        _commands[name] = {"def": cdef, "handler": handler, "raw_args": bool(raw_args), "plugin": self._plugin_name}
-        for alias in aliases:
-            _command_aliases[alias] = name
+        self._staged.commands[name] = {"def": cdef, "handler": handler, "raw_args": bool(raw_args),
+                                       "plugin": self._plugin_name}
+
+
+class StagedPlugin:
+    """One loaded version of a plugin, built beside the live one. `apply()` publishes it (and retires the version it
+    replaces) in one synchronous step; `revert()` takes it out and calls the plugin's `teardown()`. Both are
+    idempotent, so the unit runtime's registry and the direct install()/enable() path can share it."""
+
+    def __init__(self, name: str, path: Path, module: Optional[ModuleType] = None, file_hash: str = "") -> None:
+        self.name = name
+        self.path = path
+        self.module = module
+        self.file_hash = file_hash
+        self.tools: dict[str, dict] = {}
+        self.commands: dict[str, dict] = {}
+        self.tasks: list[Callable[[], Any]] = []
+        self.applied = False
+        self.torn = False
+        self.managed = False                    # True: the unit runtime supervises tasks
+        self._running: set = set()
+
+    # -- publish / retract
+    def apply(self) -> None:
+        if self.applied:
+            return
+        old = _staged.get(self.name)
+        if old is not None and old is not self:
+            old.revert()
+        for tname, entry in self.tools.items():
+            _tools[tname] = {**entry, "staged": self}
+        for cname, entry in self.commands.items():
+            _commands[cname] = {**entry, "staged": self}
+            for alias in entry["def"].aliases:
+                _command_aliases[alias] = cname
+        if self.module is not None:
+            _loaded[self.name] = self.module
+        _staged[self.name] = self
+        self.applied, self.torn = True, False
+        if not self.managed:
+            self._start_tasks()
+
+    def revert(self) -> None:
+        if not self.applied:
+            return
+        self.applied, self.torn = False, True
+        for tname in [t for t, d in _tools.items() if d.get("staged") is self]:
+            del _tools[tname]
+        for cname in [c for c, d in _commands.items() if d.get("staged") is self]:
+            for alias in _commands.pop(cname)["def"].aliases:
+                if _command_aliases.get(alias) == cname:
+                    del _command_aliases[alias]
+        if _staged.get(self.name) is self:
+            del _staged[self.name]
+            _loaded.pop(self.name, None)
+        for task in list(self._running):
+            task.cancel()
+        self._running.clear()
+        teardown = getattr(self.module, "teardown", None)
+        if callable(teardown):
+            try:
+                teardown()
+            except Exception:  # noqa: BLE001 - a plugin's cleanup failing must not block its removal
+                logger.exception("plugin %r: teardown() raised", self.name)
+
+    def _start_tasks(self) -> None:
+        if not self.tasks:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            logger.warning("plugin %r: no event loop yet, its spawned tasks were not started", self.name)
+            return
+        for fn in self.tasks:
+            task = loop.create_task(fn())
+            self._running.add(task)
+            task.add_done_callback(self._running.discard)
+
+
+# plugin name -> the version currently published (the one whose tools/commands are in the tables above)
+_staged: dict[str, StagedPlugin] = {}
+
+
+def file_version(path: Path) -> str:
+    """The content hash of a plugin file: its version for the unit runtime."""
+    try:
+        return "v-" + hashlib.sha256(Path(path).read_bytes()).hexdigest()[:12]
+    except OSError:
+        return "v-missing"
 
 
 def _unregister_plugin(name: str) -> None:
+    current = _staged.get(name)
+    if current is not None:
+        current.revert()
     for tname in [t for t, d in _tools.items() if d["plugin"] == name]:
         del _tools[tname]
     for cname in [c for c, d in _commands.items() if d["plugin"] == name]:
@@ -189,9 +295,10 @@ def _load_module(name: str, path: Path) -> ModuleType:
     return module
 
 
-def _activate(name: str, path: Path) -> ModuleType:
-    """Loads and runs setup() for a plugin, leaving nothing registered on
-    any failure (either a bad module or a setup() that raises)."""
+def stage(name: str, path: Path) -> StagedPlugin:
+    """Load a plugin and run setup() into a StagedPlugin, touching no registry. Raises PluginError on any failure
+    (bad module, wrong SDK, setup() raising), leaving everything that is live exactly as it was."""
+    path = Path(path)
     module = _load_module(name, path)
     requirement = getattr(module, "REQUIRES_SDK", None)
     if requirement is not None:
@@ -204,14 +311,35 @@ def _activate(name: str, path: Path) -> ModuleType:
     setup_fn = getattr(module, "setup", None)
     if not callable(setup_fn):
         raise PluginError(f"{path.name} has no setup(api) function")
-    api = PluginAPI(name)
+    staged = StagedPlugin(name, path, module, file_version(path))
     try:
-        setup_fn(api)
+        setup_fn(PluginAPI(name, staged))
     except Exception as exc:
-        _unregister_plugin(name)
         raise PluginError(f"setup() raised: {exc}") from exc
-    _loaded[name] = module
-    return module
+    return staged
+
+
+def adopt(name: str, path: Path) -> Optional[StagedPlugin]:
+    """The version of `name` that is already published, if it was built from the same file contents."""
+    current = _staged.get(name)
+    if current is not None and current.applied and current.file_hash == file_version(path):
+        return current
+    return None
+
+
+def _activate(name: str, path: Path) -> ModuleType:
+    """Stage a plugin and publish it, retiring the version it replaces only after the new one loaded."""
+    staged = stage(name, path)
+    staged.apply()
+    return staged.module
+
+
+def _runtime_sync() -> None:
+    """Tell the unit runtime what changed (a transaction: manifest, generation, runtime.changed). The direct
+    stage/apply/revert above stays the mechanism; the units adopt what was just published."""
+    from bot.runtime import pluggables
+
+    pluggables.sync_from_sync_code(pluggables.PLUGIN)
 
 
 def install(path: str) -> dict:
@@ -220,11 +348,10 @@ def install(path: str) -> dict:
         raise PluginError(f"{path!r} does not exist or isn't a file")
     name = p.stem
     _validate_name(name, kind="plugin")
-    if name in _loaded:
-        _unregister_plugin(name)
-    module = _activate(name, p)
+    module = _activate(name, p)           # stage first: a failing new version leaves the old one serving
     description = (getattr(module, "PLUGIN_DESCRIPTION", "") or "").strip() or "(no description)"
     db.install_plugin_row(name, str(p), description)
+    _runtime_sync()
     return describe(name)
 
 
@@ -235,6 +362,7 @@ def enable(name: str) -> dict:
     if name not in _loaded:
         _activate(name, Path(row["path"]))
     db.set_plugin_enabled(name, True)
+    _runtime_sync()
     return describe(name)
 
 
@@ -244,12 +372,15 @@ def disable(name: str) -> dict:
         raise PluginError(f"no plugin named {name!r}")
     _unregister_plugin(name)
     db.set_plugin_enabled(name, False)
+    _runtime_sync()
     return describe(name)
 
 
 def remove(name: str) -> bool:
     _unregister_plugin(name)
-    return db.delete_plugin_row(name)
+    removed = db.delete_plugin_row(name)
+    _runtime_sync()
+    return removed
 
 
 def describe(name: str) -> dict:

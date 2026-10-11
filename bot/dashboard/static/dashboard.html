@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bot Control — Agentic Bot Platform Dashboard</title>
+<link rel="icon" type="image/png" href="/static/icons/vaporwave.png">
 <script src="/static/ui-prelude.js"></script>
 <style>
   @media (prefers-color-scheme: dark) {
@@ -566,21 +567,21 @@
       <a href="#sessions" title="Sessions"><span class="ic">🗂</span><span class="nav-txt">Sessions</span></a>
       <a href="#bots" title="Bots"><span class="ic">🤖</span><span class="nav-txt">Bots</span></a>
       <a href="#models" title="Models"><span class="ic">🧩</span><span class="nav-txt">Models</span></a>
-      <a href="#router" title="Model Router"><span class="ic">🧭</span><span class="nav-txt">Model Router</span></a>
-      <a href="#unsloth" title="Unsloth"><span class="ic">🦥</span><span class="nav-txt">Unsloth</span></a>
-      <a href="#cluster" title="Cluster"><span class="ic">⧉</span><span class="nav-txt">Cluster</span></a>
-      <a href="#vision" title="Vision"><span class="ic">👁</span><span class="nav-txt">Vision</span></a>
-      <a href="#hosting" title="Hosting"><span class="ic">🌐</span><span class="nav-txt">Hosting</span></a>
-      <a href="#storage" title="Storage"><span class="ic">🗄</span><span class="nav-txt">Storage</span></a>
-      <a href="#localai" title="Local AI"><span class="ic">🦙</span><span class="nav-txt">Local AI</span></a>
-      <a href="#lab" title="Neural Lab"><span class="ic">🧠</span><span class="nav-txt">Neural Lab</span></a>
-      <a href="#studio" title="Studio"><span class="ic">🎨</span><span class="nav-txt">Studio</span></a>
-      <a href="#modules" title="Modules"><span class="ic">▦</span><span class="nav-txt">Modules</span></a>
-      <a href="#transferdaemon" title="TransferDaemon"><span class="ic">⇄</span><span class="nav-txt">TransferDaemon</span></a>
-      <a href="#power" title="Power"><span class="ic">⏻</span><span class="nav-txt">Power</span></a>
-      <a href="#vm-harness" title="VM-Harness"><span class="ic">🖧</span><span class="nav-txt">VM-Harness</span></a>
-      <a href="#hermes-manager" title="Hermes Manager"><span class="ic">☤</span><span class="nav-txt">Hermes Manager</span></a>
-      <a href="#ollama" title="Ollama"><span class="ic">🦙</span><span class="nav-txt">Ollama</span></a>
+      <a href="#router" data-unit="router" title="Model Router"><span class="ic">🧭</span><span class="nav-txt">Model Router</span></a>
+      <a href="#unsloth" data-unit="unsloth" title="Unsloth"><span class="ic">🦥</span><span class="nav-txt">Unsloth</span></a>
+      <a href="#cluster" data-unit="cluster" title="Cluster"><span class="ic">⧉</span><span class="nav-txt">Cluster</span></a>
+      <a href="#vision" data-unit="vision" title="Vision"><span class="ic">👁</span><span class="nav-txt">Vision</span></a>
+      <a href="#hosting" data-unit="hosting" title="Hosting"><span class="ic">🌐</span><span class="nav-txt">Hosting</span></a>
+      <a href="#storage" data-unit="storage" title="Storage"><span class="ic">🗄</span><span class="nav-txt">Storage</span></a>
+      <a href="#localai" data-unit="localai" title="Local AI"><span class="ic">🦙</span><span class="nav-txt">Local AI</span></a>
+      <a href="#lab" data-unit="neurallab" title="Neural Lab"><span class="ic">🧠</span><span class="nav-txt">Neural Lab</span></a>
+      <a href="#studio" data-unit="studio" title="Studio"><span class="ic">🎨</span><span class="nav-txt">Studio</span></a>
+      <a href="#modules" data-unit="modules" title="Modules"><span class="ic">▦</span><span class="nav-txt">Modules</span></a>
+      <a href="#transferdaemon" data-unit="transferdaemon" title="TransferDaemon"><span class="ic">⇄</span><span class="nav-txt">TransferDaemon</span></a>
+      <a href="#power" data-unit="power" title="Power"><span class="ic">⏻</span><span class="nav-txt">Power</span></a>
+      <a href="#vm-harness" data-unit="vm-harness" title="VM-Harness"><span class="ic">🖧</span><span class="nav-txt">VM-Harness</span></a>
+      <a href="#hermes-manager" data-unit="hermes-manager" title="Hermes Manager"><span class="ic">☤</span><span class="nav-txt">Hermes Manager</span></a>
+      <a href="#ollama" data-unit="ollama" title="Ollama"><span class="ic">🦙</span><span class="nav-txt">Ollama</span></a>
       <a href="#kanban" title="Kanban"><span class="ic">🗒</span><span class="nav-txt">Kanban</span></a>
       <a href="#agents" title="ABP Agents"><span class="ic">🤖</span><span class="nav-txt">ABP Agents</span></a>
       <a href="#swarms" title="Swarms"><span class="ic">🐝</span><span class="nav-txt">Swarms</span></a>
@@ -1430,78 +1431,78 @@
       </div>
     </section>
 
-    <section id="router">
+    <section id="router" data-unit="router">
       <div class="sec-head"><h2>Model Router</h2><span class="desc">How bots on model: auto choose a model: every decision and its reasoning, what the router learned from outcomes and your feedback, training, and the policy that shapes how it thinks.</span></div>
       <div id="rt-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
-    <section id="unsloth">
+    <section id="unsloth" data-unit="unsloth">
       <div class="sec-head"><h2>Unsloth</h2><span class="desc">Unsloth Studio from ABP: load models onto the GPU and serve them to your bots, download from Hugging Face, fine-tune, export, and every other Studio feature.</span></div>
       <div id="us-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
-    <section id="studio">
+    <section id="studio" data-unit="studio">
       <div class="sec-head"><h2>Studio</h2><span class="desc">Change ABP's own interface and see it live: variants of the UI (each holds only the files it changes), a real-time preview that reloads as you edit, side-by-side comparison, theme tokens and the component gallery, models proposing several variants at once, and one-click apply and revert. Every step is logged and becomes training data for ABP's own models.</span></div>
       <div id="std-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
-    <section id="localai">
+    <section id="localai" data-unit="localai">
       <div class="sec-head"><h2>Local AI</h2><span class="desc">Run, serve and fine-tune models on this machine: everything Ollama and Unsloth do, inside ABP. An Ollama-compatible server (any Ollama app works against it) and OpenAI's API, llama.cpp on the GPU, models pulled from Ollama's registry or Hugging Face, imported, or used in place from other programs' folders, and LoRA fine-tuning on the GPU exported straight into the store.</span></div>
       <div id="aip-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
-    <section id="lab">
+    <section id="lab" data-unit="neurallab">
       <div class="sec-head"><h2>Neural Lab</h2><span class="desc">Design, train and ship neural networks: one design format for BrainBuilder graphs, mixtures of experts, Amethyst modules and whatever an extension imports, trained on the GPU; and the system models that learn this machine (drive transfers, model runtime options, memory, CPU stability) and tune ABP's own work.</span></div>
       <div id="lab-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
-    <section id="storage">
+    <section id="storage" data-unit="storage">
       <div class="sec-head"><h2>Storage</h2><span class="desc">ABP File Server: disks of any size pooled into shares and protected by one or two parity disks (sync, scrub for bitrot, rebuild a failed disk), a cache with a mover, users and share links, a web file manager and WebDAV for every device, search by contents and meaning, duplicates, drive health with failure risk, a ransomware guard, transfers and sync jobs, encrypted deduplicated backups, and one-click apps.</span></div>
       <div id="stp-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
-    <section id="hosting">
+    <section id="hosting" data-unit="hosting">
       <div class="sec-head"><h2>Hosting</h2><span class="desc">Put websites on the internet from this machine, a VPS, your own server or a hosting provider: sites (a folder, an app on a port, a redirect), domains and DNS at any provider, Cloudflare Tunnel or Tailscale Funnel (no ports to open), router port forwards, automatic HTTPS certificates, deploys (SSH, FTP, Netlify, Vercel, Cloudflare Pages, GitHub Pages) and cloud servers. ABP's agents have the same through their hosting tools.</span></div>
       <div id="hsp-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
-    <section id="vision">
+    <section id="vision" data-unit="vision">
       <div class="sec-head"><h2>Vision</h2><span class="desc">Computer vision on this machine (OpenCV and its model zoo; images never leave it): what is in an image or on the screen (objects, faces, text, QR codes, people), where a piece of text or a button is, what changed between two images, and image edits. ABP's agents have the same through their vision tools.</span></div>
       <div id="vsp-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
 
-    <section id="cluster">
+    <section id="cluster" data-unit="cluster">
       <div class="sec-head"><h2>Cluster</h2><span class="desc">This machine and every linked server as one cluster: each node's hardware and live load, what this machine shares (nothing until you turn it on), and jobs run across the nodes, one at a time, as gangs or as arrays.</span></div>
       <div id="clp-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
-    <section id="modules">
+    <section id="modules" data-unit="modules">
       <div class="sec-head"><h2>Modules</h2><span class="desc">Every separate program ABP installs, updates, builds and drives, here or on a linked server: its checkout and updates waiting, its hub, its toolchain, jobs with live logs, and all of its operations. Each stays its own program in its own repo.</span></div>
       <div id="mdp-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
-    <section id="transferdaemon">
+    <section id="transferdaemon" data-unit="transferdaemon">
       <div class="sec-head"><h2>TransferDaemon</h2><span class="desc">TransferDaemon from ABP: end-to-end encrypted messages and files between your devices, its window and terminal UI driven remotely, its relays, and all of its operations. It stays its own program, built and updated from its own repo.</span></div>
       <div id="tdp-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
-    <section id="power">
+    <section id="power" data-unit="power">
       <div class="sec-head"><h2>Power</h2><span class="desc">Keep this machine (or a linked server) awake while it is in use, wake sleeping machines with Wake-on-LAN, and choose what linked servers may control here.</span></div>
       <div id="pw-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
-    <section id="vm-harness">
+    <section id="vm-harness" data-unit="vm-harness">
       <div class="sec-head"><h2>VM-Harness</h2><span class="desc">VM-Harness from ABP: every virtual machine (QEMU, VirtualBox, VMware, Hyper-V, WSL, KVM) and container (Docker, Podman, Kubernetes) it reaches, its window driven remotely, and all of its operations. It stays its own program, updated from its own repo.</span></div>
       <div id="vh-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
-    <section id="hermes-manager">
+    <section id="hermes-manager" data-unit="hermes-manager">
       <div class="sec-head"><h2>Hermes Manager</h2><span class="desc">Hermes Manager from ABP: Hermes's gateway, logs, sessions, config, updates, backups and tools, its window driven remotely, and all of its operations. It stays its own program, updated from its own repo.</span></div>
       <div id="hmp-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
-    <section id="ollama">
+    <section id="ollama" data-unit="ollama">
       <div class="sec-head"><h2>Ollama</h2><span class="desc">Ollama from ABP: pull and load models and serve them to your bots, cloud models, build models from a Modelfile or a GGUF file, and every route Ollama serves.</span></div>
       <div id="ol-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
@@ -2277,6 +2278,7 @@
 <script src="/static/bot-agent-form.js"></script>
 <script src="/static/action-registry.js"></script>
 <script src="/static/shortcuts.js"></script>
+<script src="/static/module-host.js"></script>
 <script src="/static/extensions.js"></script>
 </body>
 </html>

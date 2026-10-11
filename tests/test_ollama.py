@@ -3,6 +3,7 @@
 tools, the dashboard API and the page. Everything runs against a stand-in Ollama."""
 from __future__ import annotations
 
+import re
 import asyncio
 import hashlib
 import json
@@ -361,13 +362,12 @@ def test_the_api_says_when_ollama_is_not_running(temp_db, monkeypatch):
 
 
 def test_the_page_is_identical_in_both_uis_and_mounted():
-    import re
 
     dash = (ROOT / "bot/dashboard/static/ollama-panel.js").read_text(encoding="utf-8")
     assert dash == (ROOT / "desktop-app/ui/ollama-panel.js").read_text(encoding="utf-8")
     for page in ("bot/dashboard/static/dashboard.html", "desktop-app/ui/index.html"):
         text = (ROOT / page).read_text(encoding="utf-8")
-        assert '<section id="ollama">' in text and 'id="ol-root"' in text and 'href="#ollama"' in text
+        assert re.search(r'<section id="ollama"[^>]*>', text) and 'id="ol-root"' in text and 'href="#ollama"' in text
         assert re.search(r'<script src="(/static/)?ollama-panel\.js"></script>', text)
     from bot.dashboard import ollama_api
 

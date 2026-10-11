@@ -394,6 +394,15 @@ export const operations = {
   ],
   "query_params": []
  },
+ "DELETE /api/runtime/preview/{branch}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/runtime/preview/{branch}",
+  "path_params": [
+   "branch"
+  ],
+  "query_params": []
+ },
  "DELETE /api/security/allowed-users/{telegram_id}": {
   "body": false,
   "method": "DELETE",
@@ -2401,6 +2410,32 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/modelmistress/jobs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modelmistress/jobs",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/modelmistress/models": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modelmistress/models",
+  "path_params": [],
+  "query_params": [
+   "peer",
+   "refresh"
+  ]
+ },
+ "GET /api/modelmistress/status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modelmistress/status",
+  "path_params": [],
+  "query_params": [
+   "peer"
+  ]
+ },
  "GET /api/models": {
   "body": false,
   "method": "GET",
@@ -2867,6 +2902,38 @@ export const operations = {
    "rule_id"
   ],
   "query_params": []
+ },
+ "GET /api/runtime": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/runtime",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/runtime/branches": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/runtime/branches",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/runtime/events": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/runtime/events",
+  "path_params": [],
+  "query_params": [
+   "since"
+  ]
+ },
+ "GET /api/runtime/plan": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/runtime/plan",
+  "path_params": [],
+  "query_params": [
+   "target"
+  ]
  },
  "GET /api/sandbox/cells": {
   "body": false,
@@ -3596,6 +3663,13 @@ export const operations = {
   "query_params": [
    "target"
   ]
+ },
+ "GET /api/ui/manifest": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ui/manifest",
+  "path_params": [],
+  "query_params": []
  },
  "GET /api/unsloth/download-status": {
   "body": false,
@@ -5426,6 +5500,27 @@ export const operations = {
   ],
   "query_params": []
  },
+ "POST /api/modelmistress/load": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modelmistress/load",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/modelmistress/pull": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modelmistress/pull",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/modelmistress/unload": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modelmistress/unload",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/models/refresh": {
   "body": false,
   "method": "POST",
@@ -5954,6 +6049,68 @@ export const operations = {
   "path": "/api/rules/{rule_id}/test",
   "path_params": [
    "rule_id"
+  ],
+  "query_params": []
+ },
+ "POST /api/runtime/branches": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/runtime/branches",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/runtime/instances": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/runtime/instances",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/runtime/preview": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/runtime/preview",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/runtime/rollback": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/runtime/rollback",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/runtime/switch": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/runtime/switch",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/runtime/units/{unit}/load": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/runtime/units/{unit}/load",
+  "path_params": [
+   "unit"
+  ],
+  "query_params": []
+ },
+ "POST /api/runtime/units/{unit}/swap": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/runtime/units/{unit}/swap",
+  "path_params": [
+   "unit"
+  ],
+  "query_params": []
+ },
+ "POST /api/runtime/units/{unit}/unload": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/runtime/units/{unit}/unload",
+  "path_params": [
+   "unit"
   ],
   "query_params": []
  },
@@ -7285,6 +7442,13 @@ export const operations = {
    "session_id",
    "index"
   ],
+  "query_params": []
+ },
+ "add_instance_api_runtime_instances_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/runtime/instances",
+  "path_params": [],
   "query_params": []
  },
  "ai_adopt_all_api_localai_discover_adopt_all_post": {
@@ -10694,6 +10858,15 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "end_preview_api_runtime_preview__branch__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/runtime/preview/{branch}",
+  "path_params": [
+   "branch"
+  ],
+  "query_params": []
+ },
  "export_session_api_agent_sessions__session_key__export_get": {
   "body": false,
   "method": "GET",
@@ -10742,6 +10915,13 @@ export const operations = {
    "needs",
    "limit"
   ]
+ },
+ "fork_branch_api_runtime_branches_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/runtime/branches",
+  "path_params": [],
+  "query_params": []
  },
  "fs_app_install_api_fileserver_apps_post": {
   "body": true,
@@ -12234,6 +12414,13 @@ export const operations = {
    "limit"
   ]
  },
+ "list_branches_api_runtime_branches_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/runtime/branches",
+  "path_params": [],
+  "query_params": []
+ },
  "list_canvases_api_canvas_get": {
   "body": false,
   "method": "GET",
@@ -12260,6 +12447,15 @@ export const operations = {
    "target",
    "instance_id"
   ]
+ },
+ "load_unit_api_runtime_units__unit__load_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/runtime/units/{unit}/load",
+  "path_params": [
+   "unit"
+  ],
+  "query_params": []
  },
  "lv_action_api_vms_libvirt__name___action__post": {
   "body": true,
@@ -12557,6 +12753,53 @@ export const operations = {
   "query_params": [
    "days"
   ]
+ },
+ "modelmistress_jobs_api_modelmistress_jobs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modelmistress/jobs",
+  "path_params": [],
+  "query_params": []
+ },
+ "modelmistress_load_api_modelmistress_load_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modelmistress/load",
+  "path_params": [],
+  "query_params": []
+ },
+ "modelmistress_models_api_modelmistress_models_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modelmistress/models",
+  "path_params": [],
+  "query_params": [
+   "peer",
+   "refresh"
+  ]
+ },
+ "modelmistress_pull_api_modelmistress_pull_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modelmistress/pull",
+  "path_params": [],
+  "query_params": []
+ },
+ "modelmistress_status_api_modelmistress_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modelmistress/status",
+  "path_params": [],
+  "query_params": [
+   "peer"
+  ]
+ },
+ "modelmistress_unload_api_modelmistress_unload_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modelmistress/unload",
+  "path_params": [],
+  "query_params": []
  },
  "models_catalog_api_browser_models_catalog_get": {
   "body": false,
@@ -12992,6 +13235,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "preview_api_runtime_preview_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/runtime/preview",
+  "path_params": [],
+  "query_params": []
+ },
  "privacy_get_api_privacy_get": {
   "body": false,
   "method": "GET",
@@ -13066,6 +13316,13 @@ export const operations = {
   "path_params": [
    "routine_id"
   ],
+  "query_params": []
+ },
+ "rollback_api_runtime_rollback_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/runtime/rollback",
+  "path_params": [],
   "query_params": []
  },
  "router_decision_api_router_decisions__decision_id__get": {
@@ -13291,6 +13548,31 @@ export const operations = {
   "path_params": [
    "routine_id"
   ],
+  "query_params": []
+ },
+ "runtime_events_api_runtime_events_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/runtime/events",
+  "path_params": [],
+  "query_params": [
+   "since"
+  ]
+ },
+ "runtime_plan_api_runtime_plan_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/runtime/plan",
+  "path_params": [],
+  "query_params": [
+   "target"
+  ]
+ },
+ "runtime_status_api_runtime_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/runtime",
+  "path_params": [],
   "query_params": []
  },
  "sandbox_cells_api_sandbox_cells_get": {
@@ -13660,6 +13942,22 @@ export const operations = {
   "path_params": [
    "vid"
   ],
+  "query_params": []
+ },
+ "swap_unit_api_runtime_units__unit__swap_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/runtime/units/{unit}/swap",
+  "path_params": [
+   "unit"
+  ],
+  "query_params": []
+ },
+ "switch_api_runtime_switch_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/runtime/switch",
+  "path_params": [],
   "query_params": []
  },
  "td_audit_api_transferdaemon_audit_get": {
@@ -14077,6 +14375,22 @@ export const operations = {
   "query_params": [
    "address"
   ]
+ },
+ "ui_manifest_api_ui_manifest_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/ui/manifest",
+  "path_params": [],
+  "query_params": []
+ },
+ "unload_unit_api_runtime_units__unit__unload_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/runtime/units/{unit}/unload",
+  "path_params": [
+   "unit"
+  ],
+  "query_params": []
  },
  "unsloth_call_api_unsloth_call_post": {
   "body": true,

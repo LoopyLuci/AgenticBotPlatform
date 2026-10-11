@@ -33,6 +33,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlsplit
 
 from bot.transferdaemon import client
 from bot.transferdaemon.client import DaemonError
@@ -82,13 +83,34 @@ def loss_fraction(value: Any) -> float:
     return min(max(v, 0.0), 1.0)
 
 
+def best_route(routes: Any) -> dict:
+    """The route a peer's traffic is on: the active one, else the fastest. TransferDaemon reports each peer with
+    all its routes (``{"kind", "rtt_ms", "loss", "mbps", "active"}``); the scheduler wants one."""
+    rows = [r for r in routes if isinstance(r, dict)] if isinstance(routes, list) else []
+    if not rows:
+        return {}
+    active = [r for r in rows if r.get("active")]
+    def rtt(r: dict) -> float:
+        try:
+            return float(r.get("rtt_ms") or 0.0) or float("inf")
+        except (TypeError, ValueError):
+            return float("inf")
+    return min(active or rows, key=rtt)
+
+
 def route_summary(row: dict) -> dict:
-    """One overlay route as the UI and the scheduler want it: which way, how far, how good, and its state."""
+    """One overlay route as the UI and the scheduler want it: which way, how far, how good, and its state.
+
+    A peer row with a ``routes`` list (TransferDaemon's overlay.peers) is summarised by its best route."""
+    route = best_route(row.get("routes")) if isinstance(row, dict) else {}
+    def pick(*keys: str) -> Any:
+        found = _first(route, *keys)
+        return found if found is not None else _first(row, *keys)
     return {
-        "kind": _first(row, "kind", "via", "type") or "",
-        "rtt_ms": _first(row, "rtt_ms", "rtt", "latency_ms"),
-        "loss": _first(row, "loss", "loss_pct"),
-        "mbps": _first(row, "mbps", "throughput_mbps", "bps"),
+        "kind": pick("kind", "via", "type") or "",
+        "rtt_ms": pick("rtt_ms", "rtt", "latency_ms"),
+        "loss": pick("loss", "loss_pct"),
+        "mbps": pick("mbps", "throughput_mbps", "bps"),
         "state": _first(row, "state", "status") or "",
         "node_id": _first(row, "node_id", "node", "peer_id", "id") or "",
         "name": _first(row, "name", "label") or "",
@@ -175,7 +197,7 @@ def group_nodes(group: str) -> set[str]:
         raw = _call("overlay.services", timeout=15.0)
     except (DaemonError, OSError, ValueError):
         raw = None
-    for row in _rows(raw, "services"):
+    for row in _rows(raw, "services", "groups"):
         if want not in (str(_first(row, "group", "name") or ""), str(_first(row, "service") or "")):
             continue
         for key in ("nodes", "members", "node_ids"):
@@ -228,14 +250,33 @@ def invite_accept(invite: str, name: Optional[str] = None) -> Optional[dict]:
     return {"node_id": str(peer or ""), "name": name or "", "our_node_id": st.get("node_id", "")}
 
 
+def socket_address(addr: str) -> str:
+    """``host:port`` for the daemon, which forwards to a socket address, from a URL or an address.
+
+    ABP knows its dashboard as a URL (``http://192.168.1.5:8787``). A name is turned into the loopback address
+    when it is this machine's (``localhost``), and a wildcard bind (``0.0.0.0``, ``::``) into loopback too: the
+    daemon connects to it, and nobody can connect to "any address"."""
+    text = str(addr).strip()
+    parts = urlsplit(text if "://" in text else f"//{text}")
+    host = (parts.hostname or "").strip("[]")
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    if host in ("", "localhost", "0.0.0.0"):
+        host = "127.0.0.1"
+    elif host == "::":
+        host = "::1"
+    return f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
+
+
 def expose(local_addr: str, *, allow=ALLOW_PAIRED, service: str = SERVICE) -> Optional[dict]:
     """Publish this machine's dashboard to paired overlay nodes only. No firewall, no forwarded port."""
+    target = socket_address(local_addr)
     try:
-        raw = _call("overlay.expose", {"service": service, "local_addr": str(local_addr), "allow": list(allow)},
+        raw = _call("overlay.expose", {"service": service, "local_addr": target, "allow": list(allow)},
                     timeout=20.0)
     except (DaemonError, OSError, ValueError):
         return None
-    return dict(raw) if isinstance(raw, dict) else {"service": service, "local_addr": str(local_addr)}
+    # The daemon answers {} on success; what was published is what was asked for.
+    return {"service": service, "local_addr": target, "allow": list(allow), **(raw if isinstance(raw, dict) else {})}
 
 
 def unexpose(*, service: str = SERVICE) -> bool:
@@ -267,9 +308,29 @@ def connect(*, node_id: Optional[str] = None, group: Optional[str] = None, servi
     local_addr = _first(raw, "local_addr", "addr", "endpoint", "url")
     if not local_addr:
         return None
+    local_addr = str(local_addr).rstrip("/")
+    if "://" not in local_addr:
+        # TransferDaemon hands out a socket address; ABP calls it as the peer's base URL.
+        local_addr = f"http://{local_addr}"
     route = raw.get("route") if isinstance(raw, dict) else None
-    return {"local_addr": str(local_addr).rstrip("/"), "route": route_summary(route) if isinstance(route, dict) else {},
+    if isinstance(route, str):
+        # TransferDaemon names only the route kind ("direct" or "relay"); the metrics live in overlay.peers.
+        measured = next((r for r in routes(refresh=True) if r["node_id"] == str(node_id or "")), None) if node_id else None
+        route = {**(measured or {}), "kind": route}
+    return {"local_addr": local_addr, "route": route_summary(route) if isinstance(route, dict) else {},
             "node_id": str(node_id or _first(raw, "node_id") or ""), "group": str(group or _first(raw, "group") or "")}
+
+
+def _endpoint_for(target: str, service: str) -> str:
+    """The local endpoint the daemon opened for `service` on `target` (a node id or a group), or ""."""
+    try:
+        raw = _call("overlay.services", timeout=15.0)
+    except (DaemonError, OSError, ValueError):
+        return ""
+    for row in _rows(raw, "connected"):
+        if str(row.get("target") or "") == target and str(row.get("service") or service) == service:
+            return str(row.get("local_addr") or "")
+    return ""
 
 
 def disconnect(*, node_id: Optional[str] = None, group: Optional[str] = None, service: str = SERVICE) -> bool:
@@ -280,6 +341,10 @@ def disconnect(*, node_id: Optional[str] = None, group: Optional[str] = None, se
         args["group"] = str(group)
     else:
         return False
+    # TransferDaemon closes an endpoint by its local address: look up the one it opened for this target.
+    local = _endpoint_for(str(node_id or group), service)
+    if local:
+        args["local_addr"] = local
     try:
         _call("overlay.disconnect", args, timeout=15.0)
     except (DaemonError, OSError, ValueError):
@@ -294,7 +359,18 @@ def services() -> list[dict]:
         raw = _call("overlay.services", timeout=15.0)
     except (DaemonError, OSError, ValueError):
         return []
-    return _rows(raw, "services")
+    rows = _rows(raw, "services")
+    if rows or not isinstance(raw, dict):
+        return rows
+    # TransferDaemon's own shape: what this node exposes, plus what each peer announced (overlay.peers).
+    out = [{"node_id": node_id(), **r} for r in _rows(raw, "exposed")]
+    try:
+        for peer in _rows(_call("overlay.peers", timeout=15.0), "peers"):
+            for name in peer.get("services") or []:
+                out.append({"node_id": str(peer.get("node_id") or ""), "service": str(name)})
+    except (DaemonError, OSError, ValueError):
+        pass
+    return out
 
 
 def events(seconds: float = 5.0) -> list[dict]:
