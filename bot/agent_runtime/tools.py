@@ -1038,7 +1038,27 @@ async def _run_subprocess(args: list[str], cwd: Path) -> str:
     return f"{text}\n[exit code {proc.returncode}]"
 
 
+_TOUCHING = ("read_file", "edit_file", "multi_edit", "write_file")
+
+
 async def execute_tool(
+    name: str, tool_input: dict, *, workspace: Path, instance_id: Optional[int] = None,
+    device_tier: Optional[str] = None,
+) -> str:
+    result = await _execute_tool(name, tool_input, workspace=workspace, instance_id=instance_id, device_tier=device_tier)
+    if name in _TOUCHING and isinstance(result, str) and isinstance(tool_input, dict):
+        try:
+            from bot.agent_runtime import project_rules, toolspec
+
+            extra = project_rules.nested_for(workspace, str(tool_input.get("path") or ""), toolspec.current_session())
+        except Exception:  # noqa: BLE001 - folder guidance is a courtesy, never a reason to fail a tool
+            extra = None
+        if extra:
+            result += extra
+    return result
+
+
+async def _execute_tool(
     name: str, tool_input: dict, *, workspace: Path, instance_id: Optional[int] = None,
     device_tier: Optional[str] = None,
 ) -> str:

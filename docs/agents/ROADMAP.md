@@ -18,7 +18,7 @@
 | P0 | Foundations: eval harness, traces, `ToolSpec`, prompt builder, streaming | **Built** (the harness has now been run live, on one free model — see below) |
 | P1 | Core coding toolset and a better loop | **Built** (interactive PTY and a stateful shell are not) |
 | P2 | Permissions, sandboxing, prompt-injection defence, hooks v2 | **Built**, including `network: none` on every backend (security.md) |
-| P3 | Context and memory | **Built** (no embeddings, no tree-sitter, no user model) |
+| P3 | Context and memory | **Built** (embeddings are optional and need a ModelMistress hub; no tree-sitter, no user model) |
 | P4 | Agents, skills and commands | **Built** (no registry; git fetch untested against a real remote) |
 | PM | Model knowledge, limits and usage (added later) | **Built** (API, chat, and the Usage & limits screen in both UIs) |
 | P5 | Code intelligence and developer surfaces | **Built**, including the VS Code extension (none of it run against Zed, pyright, a GitHub runner or the real OpenCode / OpenClaw) |
@@ -153,9 +153,9 @@ and unit tests).
 | Mid-turn context management: old tool outputs cleared before each model call once the window is 70 % full, then summarised if still too full | Built (Anthropic and OpenAI-compatible transports; the Responses transport does not clear outputs) |
 | Moving prompt-cache breakpoint on the last message (Anthropic) | Built |
 | Fix: a long session used to return its *oldest* 200 messages, silently dropping the newest | Fixed (`list_agent_messages` returns the newest 2000) |
-| AGENTS.md / CLAUDE.md / .claude/CLAUDE.md from the working directory, plus your own AGENTS.md, with `@imports` | Built. Labelled untrusted in the prompt; they cannot grant permissions. Nested per-folder files and parent folders are **not** read |
+| AGENTS.md / CLAUDE.md / .claude/CLAUDE.md from the working directory, plus your own AGENTS.md, with `@imports` | Built. Labelled untrusted in the prompt; they cannot grant permissions. Parent folders are read up to the first `.git` (never past home); a nested per-folder `AGENTS.md` / `CLAUDE.md` is appended once per conversation to the result of the first read/edit of a file under it, size-capped (`project_rules.parents`, `.nested`, `.nested_max_chars`) |
 | `repo_map`: Python via `ast`; JS/TS, Go, Rust, Java/Kotlin/C#, Swift, Ruby, PHP via regular expressions; ranked by how often other files mention a file's symbols; token budget; cached | Built. **Heuristic, not tree-sitter** (not installed); no call graph |
-| `code_search`: SQLite FTS5 index per workspace, incremental, identifier parts (`refresh_token`, `parseHttp`) searchable, BM25 ranking | Built. Keyword index only: **no embeddings**, so it will not link synonyms |
+| `code_search`: SQLite FTS5 index per workspace, incremental, identifier parts (`refresh_token`, `parseHttp`) searchable, BM25 ranking | Built. Plus an optional semantic layer: chunks (40-line windows) are embedded through the local ModelMistress hub's `/v1/embeddings` (`mm-embed-1`, query instruction prefix), stored as float32 blobs in the same SQLite file, refreshed per changed file with a per-search cap, and merged with BM25 by reciprocal-rank fusion. No hub, or any error, means keyword-only as before (`native_agent.code_search.embeddings: false` turns it off). Not run against a real hub yet |
 | `session_search`: FTS5 over earlier conversations of the same bot instance (never another instance's); cleared conversations disappear from it | Built |
 | Typed memories (user, feedback, project, reference, fact), de-duplication (same words and numbers, so "port 8080" and "port 8081" stay separate), fading from the prompt with age unless re-confirmed, `/memory list / forget`, approval gate kept | Built. Fading never deletes; only a person deletes |
 | Optional user model (Hermes/Honcho-style) | **Not built**; typed `user` memories are the nearest thing |
