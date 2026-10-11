@@ -244,6 +244,14 @@ command (JSON on stdin and stdout) or an `http(s)://` URL (JSON in a POST and in
 
 A hook that fails, times out or answers something odd is treated as having no opinion.
 
+## The Permissions & approvals screen
+
+Both UIs have a **Permissions & approvals** screen (`permissions-panel.js`) over the routes above and `/api/approvals`:
+pending approvals with a preview and Approve / Deny, the host's mode and rules (read-only: they live in the settings
+file), a chosen bot's mode and rules (add, edit, delete with a confirmation), MCP pins with an approve button, and the
+sessions that read untrusted content with a clear button. It adds no rules of its own: standing grants still need the
+dashboard token, changes need the write token, and a locked host refuses rule edits.
+
 ## Host lock
 
 A host that embeds ABP can fix the agent's permissions:

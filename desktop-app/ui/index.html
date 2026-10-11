@@ -796,6 +796,7 @@
       <a href="#bots" data-kw="bots agents instances"><span class="ic">🤖</span><span class="nav-txt"><b>Bots</b><small>Manage bot instances</small></span></a>
       <a href="#models" data-kw="models providers api keys free toggle"><span class="ic">🧩</span><span class="nav-txt"><b>Models</b><small>Providers, API keys, per-model toggles</small></span></a>
       <a href="#usage" data-kw="usage limits models tokens calls rate limit 429 quota allowance blocked remaining reset"><span class="ic">📊</span><span class="nav-txt"><b>Usage &amp; limits</b><small>Model use, allowances &amp; blocks</small></span></a>
+      <a href="#permissions" data-kw="permissions approvals approve deny rules allow ask mode plan bypass mcp pins taint untrusted security"><span class="ic">🛡️</span><span class="nav-txt"><b>Permissions &amp; approvals</b><small>Approvals, rules, MCP pins</small></span></a>
       <a href="#traces" data-kw="traces runs agent timeline model calls tool calls approvals errors tokens duration sub-agent debug"><span class="ic">🧵</span><span class="nav-txt"><b>Traces</b><small>What each agent run did</small></span></a>
       <a href="#router" data-unit="router" data-kw="router model routing auto learning decisions policy training feedback"><span class="ic">🧭</span><span class="nav-txt"><b>Model Router</b><small>Decisions, learning, training &amp; policy</small></span></a>
       <a href="#unsloth" data-unit="unsloth" data-kw="unsloth studio local models gguf load gpu fine-tune train export hugging face"><span class="ic">🦥</span><span class="nav-txt"><b>Unsloth</b><small>Local models, fine-tuning &amp; export</small></span></a>
@@ -1835,6 +1836,11 @@
       </div>
     </section>
 
+    <section id="permissions">
+      <div class="sec-head"><h2>Permissions &amp; approvals</h2><span class="desc">What the agents are waiting to do and your say on it, the rules and mode that decide what they may do alone, MCP tools you have approved, and sessions that read untrusted content.</span></div>
+      <div id="pm-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
+
     <section id="traces">
       <div class="sec-head"><h2>Traces</h2><span class="desc">What the native agents did, run by run: each model call, tool call, approval and error with how long it took and how many tokens it used. Traces record the shape of a run, never prompts, replies or tool output.</span></div>
       <div id="tr-root"><p class="cardnote">Connecting to the ABP server…</p></div>
@@ -2523,6 +2529,7 @@
 <script src="routines-panel.js"></script>
 <script src="usage-panel.js"></script>
 <script src="traces-panel.js"></script>
+<script src="permissions-panel.js"></script>
 <script src="vision-panel.js"></script>
 <script src="hosting-panel.js"></script>
 <script src="storage-panel.js"></script>
