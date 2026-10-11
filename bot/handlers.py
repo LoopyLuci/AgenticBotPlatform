@@ -31,6 +31,7 @@ from bot.agent_runtime import approval as agent_approval
 from bot.agent_runtime import engine as agent_engine
 from bot.commands import CmdContext
 from bot.config import config
+from bot.platforms import _stream_edit as stream_edit
 from bot import tasks as bg
 
 logger = logging.getLogger("bot.handlers")
@@ -103,7 +104,7 @@ def require_auth(handler):
     return wrapped
 
 
-async def _reply_chunked(update: Update, text: str, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _reply_chunked(update: Update, text: str, context: ContextTypes.DEFAULT_TYPE, streamer=None) -> None:
     text = text or "(empty response)"
     db.log_message(
         chat_id=update.effective_chat.id,
@@ -113,6 +114,8 @@ async def _reply_chunked(update: Update, text: str, context: ContextTypes.DEFAUL
         text=text,
         instance_id=context.bot_data.get("instance_id"),
     )
+    if streamer is not None and await streamer.finish(text):
+        return  # the streamed message now holds the whole reply
     for i in range(0, len(text), TELEGRAM_MAX_LEN):
         await update.message.reply_text(text[i : i + TELEGRAM_MAX_LEN])
 
@@ -233,6 +236,8 @@ async def _handle_ask(
 
     async def progress(text: str) -> None:
         nonlocal status_msg
+        if streamer is not None and streamer.started:
+            return  # the live reply shows the tool line itself
         if status_msg is None:
             status_msg = await msg.reply_text(text)
         else:
@@ -241,8 +246,28 @@ async def _handle_ask(
             except Exception:
                 pass  # e.g. Telegram's "message not modified" if two tool calls produce the same line back to back
 
+    async def placeholder() -> None:
+        # Reuse the progress message when a tool line already made one, so the chat gets a single draft.
+        nonlocal status_msg
+        if status_msg is None:
+            status_msg = await msg.reply_text(stream_edit.PLACEHOLDER)
+        else:
+            await status_msg.edit_text(stream_edit.PLACEHOLDER)
+
+    async def edit(text: str) -> None:
+        await status_msg.edit_text(text)
+
+    async def remove() -> None:
+        await status_msg.delete()
+
+    streamer = (
+        stream_edit.StreamEditor(placeholder, edit, limit=TELEGRAM_MAX_LEN, delete=remove)
+        if stream_edit.streaming_enabled("telegram") else None
+    )
     ctx = _ctx_from(update, context)
     ctx.progress_notify = progress
+    if streamer is not None:
+        ctx.stream_notify = streamer.notify
     # Popped rather than left in ctx.session (== context.user_data, which
     # persists across turns) — an image/document should only ever attach
     # to the one turn that actually sent it, never bleed into a later
@@ -253,11 +278,19 @@ async def _handle_ask(
         ctx.session["images"] = images
     if documents:
         ctx.session["documents"] = documents
-    reply = await commands.cmd_ask(ctx, raw)
-    ctx.session.pop("images", None)
-    ctx.session.pop("documents", None)
+    try:
+        reply = await commands.cmd_ask(ctx, raw)
+    except BaseException:
+        if streamer is not None:
+            await streamer.abort()
+        raise
+    finally:
+        ctx.session.pop("images", None)
+        ctx.session.pop("documents", None)
 
-    if status_msg is not None:
+    # A streamed reply is finished in place (inside _reply_chunked); otherwise the status message goes.
+    streamed = streamer is not None and streamer.started
+    if status_msg is not None and not streamed:
         try:
             await status_msg.delete()
         except Exception:
@@ -268,7 +301,7 @@ async def _handle_ask(
     else:
         await _set_reaction(context, msg, "👎" if reply.startswith("Backend failed:") else "👍")
 
-    await _reply_chunked(update, reply, context)
+    await _reply_chunked(update, reply, context, streamer)
     if context.user_data.pop("voice_reply", False) and reply and reply != "Stopped." and not reply.startswith("Backend failed:"):
         await _speak_reply(update, reply)
 

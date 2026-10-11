@@ -53,6 +53,9 @@ class CmdContext:
     # means no live progress (every other platform, and paths with no
     # message to edit).
     progress_notify: Optional[Callable[[str], Any]] = None
+    # Live reply text for a channel that can edit its own message (bot/platforms/_stream_edit.py): an async
+    # callable taking a transport StreamEvent, handed to the native loop as context["stream_notify"].
+    stream_notify: Optional[Callable[[Any], Any]] = None
     # Slash-command permission tiers (bot/slash_access.py). Chat-platform
     # adapters set enforce_access=True, so dispatch_command() applies the same
     # admin/user gate on every platform. Operator surfaces (the dashboard
@@ -925,6 +928,8 @@ def _ask_context(ctx: CmdContext) -> Optional[dict]:
         out["approval_notify"] = ctx.notify_approval
     if ctx.progress_notify is not None:
         out["progress_notify"] = ctx.progress_notify
+    if ctx.stream_notify is not None:
+        out["stream_notify"] = ctx.stream_notify
     # Raw {"data": bytes, "mime_type": str} entries for this one turn
     # (see bot/handlers.py's _handle_ask, bot/agent_runtime/vision.py) —
     # validated/base64-encoded downstream, never here.

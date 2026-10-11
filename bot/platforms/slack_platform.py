@@ -47,13 +47,15 @@ from typing import Any, Optional
 from bot import attachments, db, push, voice
 from bot.backends.base import BackendError
 from bot.commands import CmdContext, dispatch_command
-from bot.platforms import _voice
+from bot.platforms import _stream_edit, _voice
 from bot.router import router
 from bot import tasks as bg
 
 logger = logging.getLogger("bot.platforms.slack")
 
 
+# Past this the live message stops being edited and the normal reply is sent whole (Slack itself allows far more).
+SLACK_STREAM_MAX_LEN = 4000
 MAX_FILE_BYTES = 25 * 1024 * 1024  # same ceiling as the dashboard's platform relay
 
 
@@ -98,13 +100,33 @@ class SlackPlatformInstance:
         # see discord_platform.py's identical use of this pattern.
         self._sessions: dict[Any, dict] = {}
 
-    async def _reply(self, say: Any, channel: str, text: str) -> None:
+    async def _reply(self, say: Any, channel: str, text: str, streamer: Optional[_stream_edit.StreamEditor] = None) -> None:
         text = text or "(empty response)"
         db.log_message(
             platform="slack", chat_id=channel, direction="out", source="bot",
             text=text, instance_id=self.instance_id,
         )
+        if streamer is not None and await streamer.finish(text):
+            return  # the streamed message now holds the whole reply
         await say(text)
+
+    def _streamer(self, say: Any, channel: str) -> Optional[_stream_edit.StreamEditor]:
+        """Live reply for a native-agent turn: one message, edited as the text arrives (None when switched off)."""
+        if not _stream_edit.streaming_enabled("slack"):
+            return None
+        sent: list = []
+
+        async def placeholder() -> None:
+            resp = await say(_stream_edit.PLACEHOLDER)
+            sent.append(resp["ts"])
+
+        async def edit(text: str) -> None:
+            await self._app.client.chat_update(channel=channel, ts=sent[0], text=text)
+
+        async def remove() -> None:
+            await self._app.client.chat_delete(channel=channel, ts=sent[0])
+
+        return _stream_edit.StreamEditor(placeholder, edit, limit=SLACK_STREAM_MAX_LEN, delete=remove)
 
     async def _ask(self, event: dict, say: Any, channel: str, user: str, text: str) -> Optional[str]:
         """One message through slash-command dispatch and then the router. Returns the backend's answer
@@ -131,18 +153,26 @@ class SlackPlatformInstance:
             await self._reply(say, channel, cmd_reply)
             return None
 
+        streamer = self._streamer(say, channel)
+        ask_context: dict = {}
+        if session.get("project_cwd"):
+            ask_context["cwd"] = session["project_cwd"]
+        if streamer is not None:
+            ask_context["stream_notify"] = streamer.notify
         try:
             result = await router.ask(
                 text, action_type=session.get("action_type", "quick_question"), user_id=0,
-                context={"cwd": session["project_cwd"]} if session.get("project_cwd") else None,
+                context=ask_context or None,
                 instance_id=self.instance_id, chat_id=channel,
             )
-            await self._reply(say, channel, result.text)
+            await self._reply(say, channel, result.text, streamer)
             return result.text
         except BackendError as exc:
-            await self._reply(say, channel, f"Backend failed: {exc}")
+            await self._reply(say, channel, f"Backend failed: {exc}", streamer)
         except Exception:  # noqa: BLE001 — never leave the user without a reply
             logger.exception("unexpected error answering a message")
+            if streamer is not None:
+                await streamer.abort()
             await self._reply(say, channel, "Something went wrong on my side — it has been logged. Please try again.")
         return None
 

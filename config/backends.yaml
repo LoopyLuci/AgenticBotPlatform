@@ -438,6 +438,10 @@ signal:
   poll_interval_s: 2
 canvas:
   max_bytes: 500000
+streaming:                       # live replies: one chat message edited as a native-agent reply arrives
+  telegram: true
+  discord: true
+  slack: true
 voice:
   stt:
     engine: "off"                # off | openai_compatible | command

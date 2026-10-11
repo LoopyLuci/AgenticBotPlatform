@@ -44,7 +44,7 @@ from typing import Any, Optional
 from bot import attachments, db, push, voice
 from bot.backends.base import BackendError
 from bot.commands import CmdContext, dispatch_command
-from bot.platforms import _voice
+from bot.platforms import _stream_edit, _voice
 from bot.router import router
 from bot import tasks as bg
 
@@ -65,14 +65,33 @@ class DiscordPlatformInstance:
         # has no built-in per-chat session dict the way python-telegram-bot does.
         self._sessions: dict[Any, dict] = {}
 
-    async def _reply(self, channel: Any, text: str) -> None:
+    async def _reply(self, channel: Any, text: str, streamer: Optional[_stream_edit.StreamEditor] = None) -> None:
         text = text or "(empty response)"
         db.log_message(
             platform="discord", chat_id=channel.id, direction="out", source="bot",
             text=text, instance_id=self.instance_id,
         )
+        if streamer is not None and await streamer.finish(text):
+            return  # the streamed message now holds the whole reply
         for i in range(0, len(text), DISCORD_MAX_LEN):
             await channel.send(text[i : i + DISCORD_MAX_LEN])
+
+    def _streamer(self, channel: Any) -> Optional[_stream_edit.StreamEditor]:
+        """Live reply for a native-agent turn: one message, edited as the text arrives (None when switched off)."""
+        if not _stream_edit.streaming_enabled("discord"):
+            return None
+        sent: list = []
+
+        async def placeholder() -> None:
+            sent.append(await channel.send(_stream_edit.PLACEHOLDER))
+
+        async def edit(text: str) -> None:
+            await sent[0].edit(content=text)
+
+        async def remove() -> None:
+            await sent[0].delete()
+
+        return _stream_edit.StreamEditor(placeholder, edit, limit=DISCORD_MAX_LEN, delete=remove)
 
     async def _ask(self, message: Any, text: str) -> Optional[str]:
         """One message through slash-command dispatch and then the router. Returns the backend's answer
@@ -102,19 +121,27 @@ class DiscordPlatformInstance:
             await self._reply(message.channel, cmd_reply)
             return None
 
+        streamer = self._streamer(message.channel)
+        ask_context: dict = {}
+        if session.get("project_cwd"):
+            ask_context["cwd"] = session["project_cwd"]
+        if streamer is not None:
+            ask_context["stream_notify"] = streamer.notify
         async with message.channel.typing():
             try:
                 result = await router.ask(
                     text, action_type=session.get("action_type", "quick_question"), user_id=message.author.id,
-                    context={"cwd": session["project_cwd"]} if session.get("project_cwd") else None,
+                    context=ask_context or None,
                     instance_id=self.instance_id, chat_id=message.channel.id,
                 )
-                await self._reply(message.channel, result.text)
+                await self._reply(message.channel, result.text, streamer)
                 return result.text
             except BackendError as exc:
-                await self._reply(message.channel, f"Backend failed: {exc}")
+                await self._reply(message.channel, f"Backend failed: {exc}", streamer)
             except Exception:  # noqa: BLE001 — never leave the user without a reply
                 logger.exception("unexpected error answering a message")
+                if streamer is not None:
+                    await streamer.abort()
                 await self._reply(message.channel, "Something went wrong on my side — it has been logged. Please try again.")
         return None
 

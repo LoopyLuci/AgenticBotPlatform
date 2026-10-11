@@ -40,6 +40,30 @@ The server half is complete: registration, long-poll delivery, results, consent,
 implement it yet**, so no real phone has answered a command. `python -m abp_node` is a reference node with canned answers,
 and the wire format is in the `bot/nodes.py` docstring; both are what an app implementation starts from.
 
+## Live replies (streaming)
+
+Telegram, Discord and Slack can edit a message they sent, so a native-agent reply shows up as it is written: the bot
+posts a placeholder ("..."), edits it with the text so far about once every 1.2 seconds (inside each platform's edit
+rate limit), shows a trailing "tool name..." line while a tool runs (the tool's name only, never its arguments or
+output), clears the text if the turn fails over to another model, and finally replaces the placeholder with the whole
+reply. No second message is sent. If an edit fails, or the text outgrows the platform's message limit (4096 characters
+on Telegram, 2000 on Discord, 4000 on Slack), streaming stops quietly, the placeholder is deleted and the reply goes out
+the normal way, split as before. A backend that does not stream (the CLI and UI backends, a transport that returns the
+whole reply at once) never posts a placeholder, so nothing changes for it. SMS, e-mail, Signal, iMessage, WhatsApp,
+Teams, Google Chat and Matrix cannot (or are not wired to) edit and stay as they were.
+
+`streaming:` in `config/backends.yaml` switches it per platform; all three default to on:
+
+```yaml
+streaming:
+  telegram: true
+  discord: true
+  slack: true
+```
+
+Code: `bot/platforms/_stream_edit.py` (the shared helper), wired in `bot/handlers.py`, `bot/platforms/discord_platform.py`
+and `bot/platforms/slack_platform.py`; tests in `tests/test_channel_streaming.py`, against fake clients only.
+
 ## Voice
 
 `voice:` in `config/backends.yaml`, off until configured, no model bundled. Speech to text through any OpenAI-compatible
