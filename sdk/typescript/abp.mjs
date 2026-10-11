@@ -533,6 +533,15 @@ export const operations = {
   ],
   "query_params": []
  },
+ "DELETE /api/vault/{name}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/vault/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
  "DELETE /api/vms/qemu/{name}": {
   "body": false,
   "method": "DELETE",
@@ -3800,6 +3809,13 @@ export const operations = {
    "repo_id"
   ]
  },
+ "GET /api/vault": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vault",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/vision": {
   "body": false,
   "method": "GET",
@@ -6988,6 +7004,13 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/validate-field",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/vault": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/vault",
   "path_params": [],
   "query_params": []
  },
@@ -14696,6 +14719,29 @@ export const operations = {
   "method": "POST",
   "path": "/api/rules/validate",
   "path_params": [],
+  "query_params": []
+ },
+ "vault_add_api_vault_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/vault",
+  "path_params": [],
+  "query_params": []
+ },
+ "vault_list_api_vault_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/vault",
+  "path_params": [],
+  "query_params": []
+ },
+ "vault_remove_api_vault__name__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/vault/{name}",
+  "path_params": [
+   "name"
+  ],
   "query_params": []
  },
  "vision_analyze_api_vision_analyze_post": {

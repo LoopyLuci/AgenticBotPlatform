@@ -798,6 +798,7 @@
       <a href="#usage" data-kw="usage limits models tokens calls rate limit 429 quota allowance blocked remaining reset"><span class="ic">📊</span><span class="nav-txt"><b>Usage &amp; limits</b><small>Model use, allowances &amp; blocks</small></span></a>
       <a href="#permissions" data-kw="permissions approvals approve deny rules allow ask mode plan bypass mcp pins taint untrusted security"><span class="ic">🛡️</span><span class="nav-txt"><b>Permissions &amp; approvals</b><small>Approvals, rules, MCP pins</small></span></a>
       <a href="#traces" data-kw="traces runs agent timeline model calls tool calls approvals errors tokens duration sub-agent debug"><span class="ic">🧵</span><span class="nav-txt"><b>Traces</b><small>What each agent run did</small></span></a>
+      <a href="#vault" data-kw="vault credentials logins passwords totp two-factor secrets browser agent keys"><span class="ic">🔑</span><span class="nav-txt"><b>Vault</b><small>Logins the browser agent can use</small></span></a>
       <a href="#router" data-unit="router" data-kw="router model routing auto learning decisions policy training feedback"><span class="ic">🧭</span><span class="nav-txt"><b>Model Router</b><small>Decisions, learning, training &amp; policy</small></span></a>
       <a href="#unsloth" data-unit="unsloth" data-kw="unsloth studio local models gguf load gpu fine-tune train export hugging face"><span class="ic">🦥</span><span class="nav-txt"><b>Unsloth</b><small>Local models, fine-tuning &amp; export</small></span></a>
       <a href="#cluster" data-unit="cluster" data-kw="cluster nodes share resources cpu gpu ram jobs scheduler gang array distributed compute"><span class="ic">⧉</span><span class="nav-txt"><b>Cluster</b><small>Share machines, run jobs</small></span></a>
@@ -1846,6 +1847,11 @@
       <div id="tr-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
+    <section id="vault">
+      <div class="sec-head"><h2>Vault</h2><span class="desc">The logins the browser agent can fill in without ever seeing them. This screen lists names, sites and usernames only; a password or code you add is sent once and never shown again.</span></div>
+      <div id="vt-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
+
     <section id="usage">
       <div class="sec-head"><h2>Usage &amp; limits</h2><span class="desc">What each model has used, how much of its free or paid allowance is left and when it frees up, and any model ABP is holding back until a rate limit passes.</span></div>
       <div id="ul-root"><p class="cardnote">Connecting to the ABP server…</p></div>
@@ -2529,6 +2535,7 @@
 <script src="routines-panel.js"></script>
 <script src="usage-panel.js"></script>
 <script src="traces-panel.js"></script>
+<script src="vault-panel.js"></script>
 <script src="permissions-panel.js"></script>
 <script src="vision-panel.js"></script>
 <script src="hosting-panel.js"></script>

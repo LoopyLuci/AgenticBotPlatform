@@ -130,10 +130,19 @@ def remove(name: str) -> bool:
     return True
 
 
-def listing() -> list[dict]:
-    """Names, sites and which fields exist. Never a value."""
+def listing(*, with_added: bool = False) -> list[dict]:
+    """Names, sites and which fields exist (and, if asked, when each was added). Never a value."""
     return [{"name": n, "origin": e["origin"], "username": e.get("username", ""), "has_password": bool(e.get("password")),
-             "has_totp": bool(e.get("totp_secret")), "note": e.get("note", "")} for n, e in sorted(_load().items())]
+             "has_totp": bool(e.get("totp_secret")), "note": e.get("note", ""), **({"added": e.get("added")} if with_added else {})}
+            for n, e in sorted(_load().items())]
+
+
+def key_source() -> str:
+    """Where the key lives, without reading or creating it: "env" (ABP_VAULT_KEY), "file" (vault.key beside the
+    vault) or "none" (no key yet; one is made beside the vault when the first entry is added)."""
+    if os.environ.get("ABP_VAULT_KEY", "").strip():
+        return "env"
+    return "file" if (_dir() / "vault.key").exists() else "none"
 
 
 def value(name: str, field: str, *, page_url: str) -> str:

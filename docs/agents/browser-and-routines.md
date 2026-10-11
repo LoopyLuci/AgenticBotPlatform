@@ -49,6 +49,12 @@ set `ABP_VAULT_KEY` from your OS keychain to keep the key elsewhere. The agent c
 page echoes one back it is masked, and an attempt to send one out in a request is refused. TOTP codes follow RFC 6238
 (checked against the RFC's test vectors).
 
+The **Vault** screen (dashboard and desktop app) lists entries and lets you add or delete one: `GET /api/vault`,
+`POST /api/vault`, `DELETE /api/vault/{name}` (the last two need the write token). It shows names, sites, usernames,
+which kinds are stored and when, and says whether the key comes from `ABP_VAULT_KEY` or a file beside the vault. A
+password or TOTP secret is sent once and never returned by any route, so the screen cannot show or edit one; to change
+an entry, delete it and add it again.
+
 ## Routines
 
 Do a task with the agent, then ask it to save that as a routine. It writes the routine itself (`routine_save`): a
@@ -86,4 +92,4 @@ The Android app does not show these yet: the API is what it would call.
   carry images back in tool results yet, and there is no display to control.
 * **Recording a workflow automatically** by watching clicks. A routine is a prompt the agent writes after doing the
   task, not a replay.
-* A dashboard or desktop screen for the vault or approvals (API and chat commands only).
+* Viewing a stored password or code anywhere (the **Vault** screen shows names, sites and usernames only, by design).

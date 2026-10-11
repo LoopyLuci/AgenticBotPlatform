@@ -963,6 +963,11 @@ def build_app() -> FastAPI:
 
     traces_api.register(app, _require_token_or_api_key)
 
+    # Credential vault (/api/vault): names, sites and kinds only; a secret is accepted once and never returned.
+    from bot.dashboard import vault_api
+
+    vault_api.register(app, _require_token_or_api_key, _require_token)
+
     # Approvals as reviewable objects (/api/approvals): a preview of what the agent wants to do, and a way to decide.
     from bot.dashboard import approvals_api
 
