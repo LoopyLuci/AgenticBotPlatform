@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import mimetypes
+import uuid
 from typing import Callable, Optional
 
 from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -14,6 +15,7 @@ from fastapi.responses import FileResponse
 from bot import attachments, bot_instances, db, outbox, thumbnails
 from bot import commands as bot_commands
 from bot.backends.base import BackendError
+from bot.dashboard.chat_stream import ChatStreamer
 from bot.router import router
 
 
@@ -23,6 +25,7 @@ def register(app: FastAPI, *, json_download: Callable) -> None:
         PLATFORM_RELAY_LIMIT_BYTES,
         _app_chat_sessions,
         _caller_thread_identity,
+        _manager,
         _require_token_or_api_key,
         _ts_stamp,
     )
@@ -148,6 +151,11 @@ def register(app: FastAPI, *, json_download: Callable) -> None:
             instance_id=int(instance_id), instance_name=instance["name"], user_id=chat_id,
             chat_id=chat_id, actor=f"{source}:{chat_id}", session=session,
         )
+        # Live reply for the dashboard/desktop chat: events go to the authenticated /api/ws sockets only.
+        streamer = ChatStreamer(_manager.broadcast, int(instance_id), chat_id, uuid.uuid4().hex[:12])
+        ask_context = {"stream_notify": streamer.notify}
+        if session.get("project_cwd"):
+            ask_context["cwd"] = session["project_cwd"]
         try:
             cmd_reply = await bot_commands.dispatch_command(text, cmd_ctx)
             if cmd_reply is not None:
@@ -155,16 +163,21 @@ def register(app: FastAPI, *, json_download: Callable) -> None:
             else:
                 result = await router.ask(
                     text, action_type=session.get("action_type", "quick_question"), user_id=chat_id,
-                    context={"cwd": session["project_cwd"]} if session.get("project_cwd") else None,
+                    context=ask_context,
                     instance_id=int(instance_id), chat_id=chat_id,
                 )
                 reply_text = result.text
         except BackendError as exc:
             reply_text = f"Backend failed: {exc}"
+        except BaseException:
+            await streamer.finish()
+            raise
         db.log_message(
             platform="app", chat_id=chat_id, direction="out", source="bot",
             text=reply_text, instance_id=int(instance_id),
         )
+        # After the final message is stored, so a client that refetches on "done" already finds it.
+        await streamer.finish()
         return {"ok": True, "reply": reply_text}
 
     @app.post("/api/chat/send-file", dependencies=[Depends(_require_token_or_api_key)])
