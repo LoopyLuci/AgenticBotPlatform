@@ -958,6 +958,11 @@ def build_app() -> FastAPI:
 
     models_info_api.register(app, _require_token_or_api_key, _require_token)
 
+    # Agent traces (/api/agent/traces): the Traces screen's read-only view of the tamper-evident run store.
+    from bot.dashboard import traces_api
+
+    traces_api.register(app, _require_token_or_api_key)
+
     # Approvals as reviewable objects (/api/approvals): a preview of what the agent wants to do, and a way to decide.
     from bot.dashboard import approvals_api
 

@@ -369,7 +369,14 @@ Every run leaves a trace in the agent trace store
 (`data/agent/traces.db`, override with `ABP_AGENT_TRACE_DB`): the run, each model call,
 each tool call and approval. It records shape — tool, status, timing, sizes, a short
 redacted target — and never prompts, replies, file contents or tool output. The eval
-runner reads it to grade what the agent *did*; dashboards will read the same store.
+runner reads it to grade what the agent *did*; the dashboard reads the same store.
+
+**Traces screen.** The dashboard and the desktop app have a **Traces** screen (one `traces-panel.js`, fed by
+`GET /api/agent/traces` and `GET /api/agent/traces/{run_id}`, both read-only). The list shows runs newest first
+and filters by status, bot instance, text (run id, agent, model, tool, target, error) and time range, with paging.
+Opening a run shows model calls (model, tokens, duration), tool calls (name, short target, outcome), approvals and
+errors in order with the time since the run began, token and duration totals, and links to the parent run and any
+sub-agent runs. It shows only what the store holds, so it never shows prompts, replies or tool output.
 
 ## Not covered yet
 

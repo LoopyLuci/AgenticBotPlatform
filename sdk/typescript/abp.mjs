@@ -635,6 +635,30 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/agent/traces": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/agent/traces",
+  "path_params": [],
+  "query_params": [
+   "instance_id",
+   "status",
+   "q",
+   "since",
+   "until",
+   "limit",
+   "offset"
+  ]
+ },
+ "GET /api/agent/traces/{run_id}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/agent/traces/{run_id}",
+  "path_params": [
+   "run_id"
+  ],
+  "query_params": []
+ },
  "GET /api/android/apk/download/{push_id}": {
   "body": false,
   "method": "GET",
@@ -12455,6 +12479,21 @@ export const operations = {
    "instance_id"
   ]
  },
+ "list_traces_api_agent_traces_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/agent/traces",
+  "path_params": [],
+  "query_params": [
+   "instance_id",
+   "status",
+   "q",
+   "since",
+   "until",
+   "limit",
+   "offset"
+  ]
+ },
  "load_unit_api_runtime_units__unit__load_post": {
   "body": true,
   "method": "POST",
@@ -14104,6 +14143,15 @@ export const operations = {
   "method": "GET",
   "path": "/api/agent/tools",
   "path_params": [],
+  "query_params": []
+ },
+ "trace_detail_api_agent_traces__run_id__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/agent/traces/{run_id}",
+  "path_params": [
+   "run_id"
+  ],
   "query_params": []
  },
  "ts_acl_get_api_tailscale_api_acl_get": {
