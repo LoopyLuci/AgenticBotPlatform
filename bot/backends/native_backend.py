@@ -510,12 +510,21 @@ class NativeAgentBackend(Backend):
                         await progress(_progress_line(tc.name, tc.arguments))
                     except Exception:
                         logger.exception("progress_notify callback failed")
-                return await tool_loop.run_one_tool(
-                    tc.name, tc.arguments, workspace=workspace,
-                    instance_id=instance_id, chat_id=chat_id, session_key=session_key,
-                    notify=notify, agent_tools=agent_tools, agent_approval=agent_approval,
-                    device_tier=device_tier,
-                )
+                # Tool activity for a live view: the tool NAME only, never its arguments or output.
+                if stream_notify is not None:
+                    from bot.agent_runtime.transports.base import StreamEvent
+
+                    await _emit(StreamEvent("tool_start", tc.name))
+                try:
+                    return await tool_loop.run_one_tool(
+                        tc.name, tc.arguments, workspace=workspace,
+                        instance_id=instance_id, chat_id=chat_id, session_key=session_key,
+                        notify=notify, agent_tools=agent_tools, agent_approval=agent_approval,
+                        device_tier=device_tier,
+                    )
+                finally:
+                    if stream_notify is not None:
+                        await _emit(StreamEvent("tool_end", tc.name))
 
             try:
                 await loop_guard.run_calls(response.tool_calls, _one, toolspec.is_concurrency_safe, results)

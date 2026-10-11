@@ -135,6 +135,7 @@ function connectDevicesSocket() {
     try {
       const msg = JSON.parse(evt.data);
       if (msg.type === 'runtime.changed' && window.ABP && ABP.moduleHost) ABP.moduleHost.onEvent(msg);
+      if (msg.type === 'chat_stream') onChatStream(msg);
       if (msg.type === 'device_list') {
         mobileKeysState.devices = msg.devices;
         renderMobileKeysTable();
@@ -3648,6 +3649,47 @@ function appendChatMessages(instanceId, rows) {
     panel.lastId = Math.max(panel.lastId, m.id);
   });
   if (rows.length && atBottom) win.scrollTop = win.scrollHeight;
+}
+
+// Live reply draft: {type:"chat_stream", instance_id, turn_id, kind, text?, tool?} frames from /api/ws
+// (see bot/dashboard/chat_stream.py). Everything is rendered with textContent, never innerHTML.
+function onChatStream(msg) {
+  const instanceId = Number(msg.instance_id);
+  if (!instanceId) return;
+  const panel = panelFor(instanceId);
+  const win = ensurePanel(instanceId);
+  const dropDraft = () => {
+    if (panel.stream) { clearTimeout(panel.stream.timer); panel.stream.row.remove(); panel.stream = null; }
+  };
+  if (msg.kind === 'done') {
+    dropDraft();
+    refreshChat(instanceId);   // the final message is already stored; show it now instead of at the next poll
+    return;
+  }
+  if (!panel.stream || panel.stream.turn !== msg.turn_id) {
+    dropDraft();
+    const row = document.createElement('div');
+    row.className = 'chat-row out chat-draft';
+    const bubble = document.createElement('div');
+    bubble.className = 'chat-bubble';
+    const textEl = document.createElement('div');
+    const toolEl = document.createElement('div');
+    toolEl.className = 'chat-meta';
+    bubble.appendChild(textEl);
+    bubble.appendChild(toolEl);
+    row.appendChild(bubble);
+    panel.stream = { turn: msg.turn_id, row, textEl, toolEl, text: '', timer: null };
+  }
+  const s = panel.stream;
+  clearTimeout(s.timer);
+  s.timer = setTimeout(dropDraft, 120000);   // never leave a stale draft behind if "done" is missed
+  const atBottom = win.scrollHeight - win.scrollTop - win.clientHeight < 60;
+  if (msg.kind === 'text_delta') { s.text += String(msg.text || ''); s.textEl.textContent = s.text; s.toolEl.textContent = ''; }
+  else if (msg.kind === 'reset') { s.text = ''; s.textEl.textContent = ''; s.toolEl.textContent = ''; }
+  else if (msg.kind === 'tool_start') s.toolEl.textContent = '🔧 ' + String(msg.tool || 'tool') + '…';
+  else if (msg.kind === 'tool_end') s.toolEl.textContent = '';
+  win.appendChild(s.row);   // keeps the draft below any message rows appended meanwhile
+  if (atBottom) win.scrollTop = win.scrollHeight;
 }
 
 function renderChatRecipients() {

@@ -36,7 +36,8 @@ class ToolCall:
 class StreamEvent:
     """One piece of a reply as it is produced. `kind` is "text" (a delta to append)
     or "reset" (discard what was shown so far — a retry against another provider is
-    starting, and would otherwise repeat the text)."""
+    starting, and would otherwise repeat the text). The loop also emits "tool_start" /
+    "tool_end" with the tool's name in `text` (never its arguments or output)."""
     kind: str
     text: str = ""
 
