@@ -104,9 +104,14 @@ swarm on.
   a 20-per-minute model. Read-only sub-agents may use both.
 * **Chat**: `/modelinfo` (this bot's model), `/modelinfo provider/model`, `/modelinfo usage` (last 24 hours),
   `/modelinfo refresh` (download the catalog again). Alias `/limits`.
-* **Dashboard API**: `GET /api/models/info`, `/api/models/usage`, `/api/models/find`,
+* **Dashboard API**: `GET /api/models/info`, `/api/models/usage`, `/api/models/usage-limits`, `/api/models/find`,
   `POST /api/models/refresh`, `PUT` / `DELETE /api/models/limits` (the last three need the dashboard token).
 * **MCP**: `get_model_info`, `get_model_usage`, `find_models`.
+* **Screen**: **Usage & limits** in the dashboard and the desktop app (one `usage-panel.js`, fed by
+  `GET /api/models/usage-limits`). A table per model for the last 1 or 7 days (calls, tokens, 429s, errors, last used),
+  a bar for each known limit window (requests and tokens per minute and per day) with what is left and when it frees
+  up, a "blocked until" badge, an empty state, and a refresh every 30 seconds while the screen is open. Times are in
+  the viewer's local time zone. Read-only; limits are still edited with `PUT /api/models/limits` or `native_agent.models.limits`.
 
 ## Context windows
 
@@ -116,7 +121,6 @@ larger Claude window is a separate opt-in and over-estimating it makes the provi
 
 ## Not done
 
-* No dashboard or desktop screen yet; the API is what one would call.
 * Tokens per minute are enforced from ABP's own estimate before a call and its counts after it; a
   provider that counts differently can still refuse a call ABP thought fine.
 * Limits that depend on a plan or on your account's balance cannot be discovered; set them yourself.

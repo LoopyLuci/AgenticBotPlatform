@@ -10,7 +10,7 @@
 > runner; the real OpenCode and OpenClaw programs; Gmail / a real mailbox, Twilio, a Signal bridge, BlueBubbles; a real Whisper service or Piper;
 > real websites in the browser tool (a real Edge against local pages *was* used); Firebase push; and the Android app, which implements none of
 > the new node, approval or canvas surfaces; Google Chat and Teams (built and tested against stand-ins of Google's and Microsoft's servers).
-> **Not built at all:** the shared cloud computer, native computer use, dashboard screens for traces / permissions / usage / vault / approvals,
+> **Not built at all:** the shared cloud computer, native computer use, dashboard screens for traces / permissions / vault / approvals,
 > and consumption of streaming by the UIs.
 
 | Phase | What | Status |
@@ -20,7 +20,7 @@
 | P2 | Permissions, sandboxing, prompt-injection defence, hooks v2 | **Built**, including `network: none` on every backend (security.md) |
 | P3 | Context and memory | **Built** (no embeddings, no tree-sitter, no user model) |
 | P4 | Agents, skills and commands | **Built** (no registry; git fetch untested against a real remote) |
-| PM | Model knowledge, limits and usage (added later) | **Built** (API and chat only; no dashboard screen) |
+| PM | Model knowledge, limits and usage (added later) | **Built** (API, chat, and the Usage & limits screen in both UIs) |
 | P5 | Code intelligence and developer surfaces | **Built**, including the VS Code extension (none of it run against Zed, pyright, a GitHub runner or the real OpenCode / OpenClaw) |
 | P6 | Browser, computer use, routines (the Grok Bot pillar) | **Partly built** (browser, vault, routines, approvals, routines dashboard screen; not the cloud computer or computer use) |
 | P7 | Channels, devices and voice | **Partly built** (six new channels including Google Chat and Teams, node protocol, voice on Telegram/Discord/Slack, canvas - all against fakes; Android does not implement nodes) |
@@ -190,7 +190,7 @@ would want to know about a model.
 | Enforcement: wait briefly for a per-minute limit; refuse at once, with the reset time in your time zone, for a daily limit / 429 / concurrency cap; the loop fails over to the fallback model with no wasted call; used-up free models skipped when picking swarm models | Built and tested with fake transports. **Not exercised against a real provider's 429** |
 | Agent tools `model_info`, `find_models`; a stable prompt line about its own model; `/modelinfo` (`/limits`); `/api/models/*`; MCP `get_model_info`, `get_model_usage`, `find_models` | Built |
 | Context windows from the catalog (smaller of catalog and table for Claude) | Built |
-| Dashboard and desktop screens for usage and limits | **Not built** (API only) |
+| Dashboard and desktop **Usage & limits** screen (`usage-panel.js`, `GET /api/models/usage-limits`): per-model use for 1 / 7 days, limit bars with reset times, blocked-until badge, auto-refresh | Built (not yet exercised in a real browser against live provider traffic) |
 | Eval: `know_your_allowance` | Built |
 
 ### P5 — Code intelligence and developer surfaces (L) — built; see [developer-surfaces.md](developer-surfaces.md)

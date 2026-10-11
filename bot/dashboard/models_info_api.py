@@ -3,7 +3,8 @@
     GET    /api/models/info?provider=&model=     everything known about a model, where each fact came from,
                                                  and how much of its allowance is used / left
     GET    /api/models/usage?days=1              calls, tokens and rate-limit hits per model
-    GET    /api/models/find?...                  catalogued models that fit a need, with current headroom
+    GET    /api/models/usage-limits              use over 1 and 7 days plus limit windows and blocks, per model (the Usage & limits screen)
+    GET    /api/models/find?...                catalogued models that fit a need, with current headroom
     POST   /api/models/refresh                   download the catalog again (models.dev)
     PUT    /api/models/limits                    set your own limits for a model (or a pattern like openrouter/*:free)
     DELETE /api/models/limits?key=               remove your override
@@ -47,6 +48,31 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
     @app.get("/api/models/usage", dependencies=read)
     async def model_usage(days: int = Query(1, ge=1, le=45)):
         return {"days": days, "models": usage_limits.report(days), "timezone": str(usage_limits.tz())}
+
+    @app.get("/api/models/usage-limits", dependencies=read)
+    async def model_usage_limits():
+        """What the Usage & limits screen shows: per model, the last 1 and 7 days of use plus every limited
+        window (used, limit, remaining, resets_at) and when it is blocked until. Read-only."""
+        import time
+
+        now = time.time()
+        by_period = {1: usage_limits.report(1, now=now), 7: usage_limits.report(7, now=now)}
+        keys: dict[tuple[str, str], dict] = {}
+        for days in (7, 1):
+            for row in by_period[days]:
+                keys.setdefault((row["provider"], row["model"]), {})
+        models = []
+        for provider, model in keys:
+            snap = usage_limits.snapshot(provider, model, now=now)
+            entry: dict[str, Any] = {"provider": provider, "model": model, "windows": snap["windows"],
+                                     "blocked_until": snap["blocked_until"], "headroom": snap["headroom"]}
+            for days in (1, 7):
+                row = next((r for r in by_period[days] if r["provider"] == provider and r["model"] == model), None)
+                entry[f"d{days}"] = ({k: row[k] for k in ("calls", "tokens", "rate_limited", "errors", "last_used")} if row else
+                                     {"calls": 0, "tokens": 0, "rate_limited": 0, "errors": 0, "last_used": None})
+            models.append(entry)
+        models.sort(key=lambda m: (-m["d7"]["calls"], m["provider"], m["model"]))
+        return {"now": now, "timezone": str(usage_limits.tz()), "models": models}
 
     @app.get("/api/models/find", dependencies=read)
     async def find_models(provider: str = "", query: str = "", free_only: bool = False, min_context: int = 0,

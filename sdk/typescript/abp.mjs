@@ -2478,6 +2478,13 @@ export const operations = {
    "days"
   ]
  },
+ "GET /api/models/usage-limits": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/models/usage-limits",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/modules": {
   "body": false,
   "method": "GET",
@@ -12753,6 +12760,13 @@ export const operations = {
   "query_params": [
    "days"
   ]
+ },
+ "model_usage_limits_api_models_usage_limits_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/models/usage-limits",
+  "path_params": [],
+  "query_params": []
  },
  "modelmistress_jobs_api_modelmistress_jobs_get": {
   "body": false,

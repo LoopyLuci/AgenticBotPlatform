@@ -428,6 +428,34 @@ def test_api_reads_and_the_token_gate_on_changes(client):
     assert client.put("/api/models/limits", json={"key": "x/y", "rpm": 1}, headers={"X-Dashboard-Token": "wrong"}).status_code == 401
 
 
+def test_usage_limits_route_gives_1d_7d_use_windows_and_blocks(client):
+    now = time.time()
+    for ago, status in ((10, 200), (20, 200), (30, 429), (40, 500), (3 * 86400, 200)):     # the last one is only in the 7-day view
+        usage_limits.record("groq", "openai/gpt-oss-20b", tokens=100, status=status, now=now - ago)
+    usage_limits.record("anthropic", "claude-sonnet-4-6", tokens=5, now=now - 2 * 86400)   # nothing today, no known limits
+    usage_limits.note_rate_limited("groq", "openai/gpt-oss-20b", 600)
+    assert client.get("/api/models/usage-limits").status_code == 401
+    body = client.get("/api/models/usage-limits", headers=H).json()
+    assert body["timezone"] and body["now"] >= now
+    by = {(m["provider"], m["model"]): m for m in body["models"]}
+    groq = by[("groq", "openai/gpt-oss-20b")]
+    assert body["models"][0]["model"] == "openai/gpt-oss-20b"      # most used first
+    assert (groq["d1"]["calls"], groq["d1"]["tokens"], groq["d1"]["rate_limited"], groq["d1"]["errors"]) == (4, 400, 1, 1)
+    assert groq["d7"]["calls"] == 5 and groq["d1"]["last_used"] == pytest.approx(now - 10, abs=1)
+    windows = {w["name"]: w for w in groq["windows"]}
+    assert windows["requests/min"]["limit"] == 30 and windows["requests/min"]["used"] == 4 and windows["requests/min"]["remaining"] == 26
+    assert windows["requests/min"]["resets_at"] > now
+    assert groq["blocked_until"] and groq["blocked_until"] > now
+    sonnet = by[("anthropic", "claude-sonnet-4-6")]
+    assert sonnet["d1"] == {"calls": 0, "tokens": 0, "rate_limited": 0, "errors": 0, "last_used": None}
+    assert sonnet["d7"]["calls"] == 1 and sonnet["windows"] == [] and sonnet["blocked_until"] is None
+
+
+def test_usage_limits_route_is_empty_without_any_use(client):
+    body = client.get("/api/models/usage-limits", headers=H).json()
+    assert body["models"] == []
+
+
 def test_api_saves_and_clears_your_limits(client, monkeypatch):
     saved = {}
     from bot.config import config
