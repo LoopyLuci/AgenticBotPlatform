@@ -189,6 +189,8 @@ async def _dispatch(args, client: DashboardClient) -> int:
         return await _providers(args, client)
     if cmd == "modules":
         return await _modules(args, client)
+    if cmd == "studio":
+        return await _studio(args, client)
     if cmd == "vision":
         return await _vision(args, client)
     if cmd == "hermes":
@@ -1538,6 +1540,22 @@ async def _modules_catalog(client: DashboardClient, api: str, args) -> int:
     return 0
 
 
+async def _studio(args, client: DashboardClient) -> int:
+    """studio km export|build|status: Knowledge Modules from the changes applied through Studio."""
+    sub = args.km_cmd
+    if sub == "status":
+        res = await client._request("GET", "/api/studio/km" + (f"?task={args.task}" if args.task else ""))
+        if args.json:
+            _print(args, res)
+            return 0
+        print(f"hub: {'running' if res['hub'] else 'not running'}; export: {res['export']['documents']} document(s)")
+        _print(args, res["tasks"], table=["task", "state", "open_reviews", "needs"])
+        return 0
+    res = await client._request("POST", f"/api/studio/km/{sub}", json={"datasets": bool(args.datasets)})
+    _print(args, res)
+    return 0
+
+
 async def _modules(args, client: DashboardClient) -> int:
     sub = args.modules_cmd
     api = "/api/modules"
@@ -1833,6 +1851,17 @@ def _parser() -> argparse.ArgumentParser:
     p = psub.add_parser("restore")
     p.add_argument("name")
     p.add_argument("--api-key", default=None, dest="api_key")
+
+    stu = sub.add_parser("studio", help="Studio, ABP's own interface changes")
+    ssub = stu.add_subparsers(dest="studio_cmd", required=True)
+    km = ssub.add_parser("km", help="Knowledge Modules from applied changes (ModelMistress builds them)")
+    ksub = km.add_subparsers(dest="km_cmd", required=True)
+    for name, hlp in (("export", "write the scrubbed documents for the factory"),
+                      ("build", "export, then make a factory task in ModelMistress (a person approves the plan and promotion there)")):
+        p = ksub.add_parser(name, help=hlp)
+        p.add_argument("--datasets", action="store_true", help="also refresh sft.jsonl and prefs.jsonl")
+    p = ksub.add_parser("status", help="the tasks built so far and where each stands")
+    p.add_argument("task", nargs="?", default="")
 
     mods = sub.add_parser("modules", help="modules: separate programs ABP builds and drives; adopt any project")
     msub = mods.add_subparsers(dest="modules_cmd", required=True)

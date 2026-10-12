@@ -19,6 +19,9 @@ API (the dashboard token):
     GET  /api/studio/jobs/{id}
     POST /api/studio/revert                    {backup}
     GET  /api/studio/log?limit=&kind=          POST /api/studio/datasets
+    GET  /api/studio/km?task=                  Knowledge Module tasks made from applied changes, polled from ModelMistress
+    POST /api/studio/km/export                 {datasets?} the scrubbed documents for the factory
+    POST /api/studio/km/build                  {datasets?} export, then a factory task (the plan and the promotion wait for a person)
 """
 from __future__ import annotations
 
@@ -32,7 +35,7 @@ from typing import Callable
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse
 
-from bot.studio import gate, generate, log, shots, tokens, variants
+from bot.studio import gate, generate, km, log, shots, tokens, variants
 from bot.studio.variants import StudioError
 
 PAGE = "bot/dashboard/static/dashboard.html"
@@ -244,3 +247,15 @@ def register(app: FastAPI, require_token: Callable) -> None:
     @app.post("/api/studio/datasets", dependencies=dep)
     async def studio_datasets():
         return await _s(log.datasets)
+
+    @app.get("/api/studio/km", dependencies=dep)
+    async def studio_km_status(task: str = Query("")):
+        return await _s(km.status, task)
+
+    @app.post("/api/studio/km/export", dependencies=dep)
+    async def studio_km_export(body: dict = Body(default={})):
+        return await _s(km.export, bool(body.get("datasets")))
+
+    @app.post("/api/studio/km/build", dependencies=dep)
+    async def studio_km_build(body: dict = Body(default={})):
+        return await _s(km.build, bool(body.get("datasets")))
