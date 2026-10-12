@@ -221,12 +221,14 @@ def _on(entry: tuple) -> bool:
 
 
 def registered_schemas() -> list[dict[str, Any]]:
-    return [entry[0] for entry in _registered.values() if _on(entry)]
+    # list(...) first: tools register from whichever thread imports an area's module (a dashboard unit loading) while
+    # another thread lists them; iterating the live dict raised "dictionary changed size during iteration".
+    return [entry[0] for entry in list(_registered.values()) if _on(entry)]
 
 
 def registered_names() -> frozenset[str]:
     """Names of the registered tools that are currently switched on."""
-    return frozenset(name for name, entry in _registered.items() if _on(entry))
+    return frozenset(name for name, entry in list(_registered.items()) if _on(entry))
 
 
 def has_handler(name: str) -> bool:

@@ -22,6 +22,10 @@ from textual.widgets import Button, Checkbox, Footer, Input, Label, Select, Stat
 
 from bot.tui.client import ApiError
 
+#: "Nothing chosen" in a Select. Textual renamed it (BLANK became NULL and BLANK turned into a plain False), so a
+#: comparison with BLANK alone no longer recognises an empty select and sends the sentinel to the server as a value.
+_NO_CHOICE = getattr(Select, "NULL", Select.BLANK)
+
 AGENT_SETTINGS_FIELDS = ("permission_mode", "max_children", "worker_model", "worker_effort",
                          "manager_effort", "fallback_provider", "fallback_model", "require_plan_approval")
 
@@ -105,7 +109,7 @@ class AgentSettingsScreen(Screen):
             return Checkbox(field["label"], bool(value), id=fid)
         if ftype == "enum" and field.get("choices"):
             options = [(label, val) for val, label in field["choices"]]
-            return Select(options, value=value if value is not None else Select.BLANK, id=fid)
+            return Select(options, value=value if value is not None else _NO_CHOICE, id=fid)
         if ftype in ("list", "rules"):
             text = "\n".join(value) if isinstance(value, list) else (value or "")
             return TextArea(text, id=fid)
@@ -142,7 +146,7 @@ class AgentSettingsScreen(Screen):
         if ftype == "bool":
             return bool(widget.value)
         if ftype == "enum":
-            return None if widget.value is Select.BLANK else widget.value
+            return None if widget.value is _NO_CHOICE or widget.value is Select.BLANK else widget.value
         if ftype in ("list", "rules"):
             return [line.strip() for line in widget.text.split("\n") if line.strip()]
         if ftype == "textarea":

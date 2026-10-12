@@ -545,7 +545,8 @@ def test_a_deploy_behind_the_gate_installs_beside_the_running_code_and_swaps_to_
         assert "verified" in result.ran, result.ran
 
     assert probe.requests > 30, "the probe barely ran - this test proved nothing"
-    assert probe.failures == [], f"{len(probe.failures)} of {probe.requests} request(s) failed: {probe.failures[:5]}"
+    assert not probe.failures, (f"{len(probe.failures)} of {probe.requests} request(s) failed: {probe.failures[:5]}"
+                                  f"\n{gate.log_tail(world, 60)}\n" + "\n".join(world.lines[-40:]))
     assert world.served_commit() == "v3", "the last deploy is not what is serving"
 
     # Each swap really did replace the previous instance, and left nothing of it
@@ -580,7 +581,7 @@ def test_a_broken_new_bundle_is_rolled_back_by_the_gate_and_the_old_version_keep
     with Probe(f"{world.public}/healthz") as probe:
         bad = _deploy(world, commit="v2", broken=True)
 
-    assert probe.failures == [], probe.failures[:5]
+    assert not probe.failures, (probe.failures[:5], gate.log_tail(world, 60), "\n".join(world.lines[-40:]))
     assert not bad.ok
     assert "failed at step 1" in bad.failures[0], bad.failures
     assert "still serving" in bad.failures[0], bad.failures
@@ -618,7 +619,7 @@ def test_a_deploy_that_swaps_but_serves_the_wrong_api_goes_back_to_the_previous_
     with Probe(f"{world.public}/healthz") as probe:
         wrong = _deploy(world, commit="v2", paths_shown=1)
 
-    assert probe.failures == [], probe.failures[:5]
+    assert not probe.failures, (probe.failures[:5], gate.log_tail(world, 60), "\n".join(world.lines[-40:]))
     assert not wrong.ok
     assert any("not this commit's API" in failure for failure in wrong.failures), wrong.failures
     assert any("swapped back to" in step for step in wrong.ran), wrong.ran

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import logging
 import socket
 import sys
 import threading
@@ -145,6 +146,19 @@ def real_app(monkeypatch, temp_db, tmp_path):
     monkeypatch.setattr(ol, "summary", lambda full=None: {"unit": "ol"})
     started: list[RealApp] = []
 
+    # A 5xx in the server is only a status code in the test; keep the server-side traceback so the cause is visible.
+    class _Errors(logging.Handler):
+        def __init__(self) -> None:
+            super().__init__(logging.ERROR)
+            self.found: list[str] = []
+
+        def emit(self, record: logging.LogRecord) -> None:
+            self.found.append(self.format(record))
+    errors = _Errors()
+    errors.setFormatter(logging.Formatter("%(message)s"))
+    uvicorn_log = logging.getLogger("uvicorn.error")
+    uvicorn_log.addHandler(errors)
+
     def start(units: str = "all") -> RealApp:
         monkeypatch.setenv("ABP_UNITS", units)
         live.reset()
@@ -166,6 +180,10 @@ def real_app(monkeypatch, temp_db, tmp_path):
         app.stop()
     live.reset()
     live.clear_failures()
+    uvicorn_log.removeHandler(errors)
+    if errors.found:
+        # Printed (pytest shows captured output of a failing test) and logged; a passing test is not failed by it.
+        print("SERVER-SIDE ERRORS:\n" + "\n---\n".join(errors.found))
     # Put back what was there; keep what the app imported meanwhile (area tool modules register once, at import,
     # and stay imported - wiping them left later tests in this process without those tools).
     toolspec._registered.update(saved_tools)

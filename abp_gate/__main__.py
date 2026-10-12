@@ -218,6 +218,13 @@ class Gate:
             dead = not procs.alive(inst.pid)
             if not dead and not self._unanswerable_for(inst.name):
                 return
+        if self.mgr.busy() or registry.active_name() != inst.name:
+            # The verdict above took a while (a probe is up to 3s) and a swap may have run in that time: the instance
+            # judged is then the one that was REPLACED, stopped on purpose, and acting on it would mark it failed
+            # (which takes the public port down: a 503 until the next swap) or restart the new code that is serving.
+            # Nothing here is awaited after this check until the verdict is recorded, so it cannot go stale again.
+            logger.debug("watcher: %r was replaced (or an operation is running) while it was being judged; skipping", inst.name)
+            return
         self._unhealthy_since.pop(inst.name, None)
         if inst.sandbox:
             # A sandbox that died is just a sandbox that died: record it and let
@@ -252,10 +259,14 @@ class Gate:
                 return
             except asyncio.TimeoutError:
                 pass
+        if registry.active_name() != inst.name:
+            # A swap made another instance the active one while this waited: the one judged down is gone on purpose.
+            logger.info("active instance changed from %r while waiting to restart it; leaving the new one alone", inst.name)
+            return
         registry.record_restart(inst.name)
         logger.warning("active instance %r is not healthy (pid=%s) - restarting it", inst.name, inst.pid)
         try:
-            await self.mgr.restart_active()
+            await self.mgr.restart_active(only_if=inst.name)
         except manager.SwapError as exc:
             logger.error("could not restart the active instance: %s", exc)
 

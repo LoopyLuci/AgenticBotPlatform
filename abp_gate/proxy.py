@@ -158,33 +158,38 @@ class ProxyApp:
         if not port:
             await self._no_instance(scope, receive, send)
             return
-        body = await _read_body(receive)
-        headers = [
-            (k, v)
-            for k, v in scope.get("headers", [])
-            if k.decode("latin-1").lower() not in _DROP_FROM_REQUEST
-        ]
-        url = _upstream_url(int(port), scope.get("path", "/"), scope.get("query_string", b"").decode("latin-1"))
+        # Counted in flight in the same breath as the target is read, before the first await: a request that had
+        # picked the outgoing instance's port but was still reading its body was not counted yet, so a swap's drain
+        # saw nothing in flight, stopped that instance, and the request then found its port closed (a 502).
         self.router.begin(self.channel)
         try:
-            client = await self._client()
-            request = client.build_request(scope["method"], url, headers=headers, content=body)
-            response = await client.send(request, stream=True)
-        except httpx.HTTPError as exc:
-            logger.warning("%s %s upstream failed: %s", scope.get("method"), url, exc)
-            self.router.end(self.channel)
-            await self._error(send, 502, f"the active ABP instance is not answering: {exc}")
-            return
-        try:
-            raw = [(k, v) for k, v in response.headers.raw if k.decode("latin-1").lower() not in _DROP_FROM_RESPONSE]
-            await send({"type": "http.response.start", "status": response.status_code, "headers": raw})
-            async for chunk in response.aiter_raw():
-                if not chunk:
-                    continue
-                await send({"type": "http.response.body", "body": chunk, "more_body": True})
-            await send({"type": "http.response.body", "body": b"", "more_body": False})
+            body = await _read_body(receive)
+            headers = [
+                (k, v)
+                for k, v in scope.get("headers", [])
+                if k.decode("latin-1").lower() not in _DROP_FROM_REQUEST
+            ]
+            url = _upstream_url(int(port), scope.get("path", "/"), scope.get("query_string", b"").decode("latin-1"))
+            try:
+                client = await self._client()
+                request = client.build_request(scope["method"], url, headers=headers, content=body)
+                response = await client.send(request, stream=True)
+            except httpx.HTTPError as exc:
+                logger.warning("%s %s upstream failed: %s", scope.get("method"), url, exc)
+                await self._error(send, 502, f"the active ABP instance is not answering: {exc}")
+                return
+            try:
+                raw = [(k, v) for k, v in response.headers.raw
+                       if k.decode("latin-1").lower() not in _DROP_FROM_RESPONSE]
+                await send({"type": "http.response.start", "status": response.status_code, "headers": raw})
+                async for chunk in response.aiter_raw():
+                    if not chunk:
+                        continue
+                    await send({"type": "http.response.body", "body": chunk, "more_body": True})
+                await send({"type": "http.response.body", "body": b"", "more_body": False})
+            finally:
+                await response.aclose()
         finally:
-            await response.aclose()
             self.router.end(self.channel)
 
     async def _no_instance(self, scope, receive, send) -> None:
