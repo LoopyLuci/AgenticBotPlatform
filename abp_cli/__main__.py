@@ -36,7 +36,7 @@ Commands:
   dns resolve|status                     resolve a name here; Tailscale DNS status
   doctor                                 one screen: can it reach ABP, does the token work, what answers
   providers list|add|remove|catalog|models|toggle|restore
-  modules list|show|ops|run-op|start|stop|status|logs|call|setup|adopt|add|candidates|new|publish|forget
+  modules list|show|ops|run-op|start|stop|status|logs|call|setup|adopt|add|refresh|candidates|new|publish|forget
                                           every module; `modules adopt <folder>` makes any project one
   vision status|analyze|find|compare|edit|fetch
                                           computer vision here (OpenCV + its model zoo): objects, faces, text,
@@ -1581,6 +1581,31 @@ async def _modules(args, client: DashboardClient) -> int:
         else:
             print(f"\nfailed: {job.get('error')}", file=sys.stderr)
         return 0 if job.get("state") == "done" else 1
+    if sub == "refresh":
+        res = await client._request("POST" if args.apply else "GET", f"{api}/{args.module}/refresh")
+        if args.json:
+            _print(args, res)
+            return 0
+        ops = res["operations"]
+        print(f"{res['id']}: {res['from_commit']} -> {res['to_commit']} ({res['new_commits']} new commits on {res['upstream']})")
+        for line in res.get("commits") or []:
+            print(f"  {line}")
+        for key, mark in (("added", "+"), ("removed", "-")):
+            for o in ops[key]:
+                print(f"  {mark} {o['id']}  {o['signature']}")
+        for o in ops["changed"]:
+            print(f"  ~ {o['id']}  ({', '.join(o['groups'])})")
+        for k, v in {**res["manifest"], **{"service." + k: v for k, v in ops["service"].items()}}.items():
+            print(f"  manifest {k}: {v['from']!r} -> {v['to']!r}")
+        if res["ops_hand_owned"]:
+            print("  abp-ops.toml is hand-owned and kept as it is"
+                  + (f"; detection also finds {len(res['detected_not_in_ops_file'])} operations it does not list"
+                     if res["detected_not_in_ops_file"] else ""))
+        if not res["changed"]:
+            print("  nothing changed")
+        print("applied" + (f" (wrote {', '.join(res['wrote']) or 'no module files'})" if res["applied"] else "")
+              if res["applied"] else "dry run: nothing written; add --apply to apply")
+        return 0
     if sub == "candidates":
         _print(args, (await client._request("GET", f"{api}/candidates", params={"folder": args.folder}))["projects"],
                table=["name", "module", "markers"])
@@ -1761,6 +1786,8 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("url", help="https://github.com/owner/name (any https git host) or owner/name")
     p.add_argument("--id", default=""); p.add_argument("--name", default=""); p.add_argument("--branch", default="")
     p.add_argument("--full", action="store_true", help="clone the whole history (default: the latest commit)")
+    p = msub.add_parser("refresh", help="fetch upstream and show what changed in a module's operations (--apply writes)")
+    p.add_argument("module"); p.add_argument("--apply", action="store_true")
     p = msub.add_parser("candidates", help="project folders in a folder, and which are modules")
     p.add_argument("folder")
     p = msub.add_parser("publish", help="commit its module files and create its private GitHub repo")

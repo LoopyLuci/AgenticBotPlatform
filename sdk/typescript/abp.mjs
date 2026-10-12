@@ -2599,6 +2599,15 @@ export const operations = {
    "refresh"
   ]
  },
+ "GET /api/modules/{mid}/refresh": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modules/{mid}/refresh",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
  "GET /api/network-info": {
   "body": false,
   "method": "GET",
@@ -5715,6 +5724,15 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/modules/{mid}/publish",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "POST /api/modules/{mid}/refresh": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/refresh",
   "path_params": [
    "mid"
   ],
@@ -13075,6 +13093,24 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/modules/{mid}/publish",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "module_refresh_apply_api_modules__mid__refresh_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/modules/{mid}/refresh",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "module_refresh_preview_api_modules__mid__refresh_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modules/{mid}/refresh",
   "path_params": [
    "mid"
   ],

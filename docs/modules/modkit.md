@@ -65,6 +65,22 @@ ABP's OpenAI-compatible model gateway (`$ABP_URL/api/browser/v1`, `Authorization
 `provider/model`) and ABP's modules (`/api/modules`, `X-Dashboard-Token: $ABP_KEY`). It cannot control bots, Docker
 or configuration, and never sees credentials.
 
+## Refreshing after upstream changes
+
+`abp modules refresh <id>` (also `GET /api/modules/<id>/refresh`, the `module_refresh` tool, and "Check for updates
+(what changed in its operations)" on the module's page) works for a module added from a URL (an overlay) or an adopted
+project. It fetches upstream and shows what a refresh would change, writing nothing: operations added, removed and
+changed (signature = kind/method/path/inputs, command = argv/cwd/env/timeouts, description = summary) and the manifest
+and service fields that changed. `--apply` (`POST`, write auth) fast-forwards the checkout and writes the merged files.
+
+Nothing is reset or discarded: tracked local changes in the checkout (the module files of an adopted project aside) or a
+branch that diverged from upstream stop the refresh with a message, everything untouched. Merge rules, on top of the
+re-adopt merge above: a hand-written summary, inputs, flags and service settings win over detection; operations you added
+stay; an `abp-ops.toml` or `abp-module.toml` without the generated marker is kept exactly as it is (the report lists what
+detection finds that it does not list); an operation whose script or route upstream dropped is removed, unless you edited
+it (it stays and is reported as `kept_stale`); a summary still as detection wrote it follows upstream's new text. A
+manifest with the generated marker is regenerated: delete the marker line to own it.
+
 ## Publishing
 
 `abp modules publish` (and `python -m abp_modkit adopt --publish`) puts a project in its own private GitHub repo,

@@ -17,6 +17,10 @@ TridentDroid, BrainBuilder, Wrightspace, and any added in config), on one page.
     GET  /api/modules/candidates?folder=...     project folders there, and which are modules already
     POST /api/modules/{id}/publish              {"push"?}: its own private GitHub repo (a job)
     POST /api/modules/{id}/forget               stop listing an adopted project (its files stay)
+    GET  /api/modules/{id}/refresh              dry run: fetch upstream and show what a refresh would change in the
+                                                operations and manifest (writes nothing)
+    POST /api/modules/{id}/refresh              apply it: fast-forward the checkout, merge the module files, keeping
+                                                hand edits (refused over local changes or a diverged branch)
 
 Reading needs the dashboard's normal auth; changes need the desktop dashboard token, or a linked server this machine
 allows (peers.remote_control: [modules]). Changes are written to ABP's audit log.
@@ -88,6 +92,17 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         from bot.modules import adoption
         audit(mid, "forget")
         return await run(adoption.unregister, mid)
+
+    @app.get("/api/modules/{mid}/refresh", dependencies=read)
+    async def module_refresh_preview(mid: str):
+        from bot.modules import refresh
+        return await run(refresh.refresh, mid, apply=False)
+
+    @app.post("/api/modules/{mid}/refresh", dependencies=write)
+    async def module_refresh_apply(mid: str):
+        from bot.modules import refresh
+        audit(mid, "refresh", "apply")
+        return await run(refresh.refresh, mid, apply=True)
 
     @app.get("/api/modules/jobs/{job_id}", dependencies=read)
     async def modules_job(job_id: str):

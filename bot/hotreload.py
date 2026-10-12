@@ -175,7 +175,8 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.transferdaemon.overlay",
     # Modules: harness.py holds the background jobs, registry.py the manifest cache, tools.py registers at import time.
     "bot.modules.manifest", "bot.modules.registry", "bot.modules.client", "bot.modules.adapters", "bot.modules.harness",
-    "bot.modules.tools", "bot.modules.conformance", "bot.modules.adoption", "bot.dashboard.modules_api",
+    "bot.modules.tools", "bot.modules.conformance", "bot.modules.adoption", "bot.modules.refresh",
+    "bot.dashboard.modules_api",
     # Integration keys: the gate middleware is registered once at startup.
     "bot.integrations", "bot.dashboard.integrations_api",
     # Git stacks: the poller thread and the deploy lock; the routes register once.
