@@ -117,6 +117,7 @@ native_agent:
     docker:
       image: python:3.11-slim
       network: none           # none | bridge (host is refused)
+      # proxy_image: ""       # network: allowlist only
       memory: 1g
       cpus: "2"
       pids: 256
@@ -179,6 +180,55 @@ tree-walk `local`/`docker` fall back to, which can lose a race against a process
 or deliberately detaches. Windows-only; refused elsewhere. Verified for real (`CreateJobObject`,
 `AssignProcessToJobObject`, `TerminateJobObject`) in `tests/test_sandbox_windows_job.py`, which
 needs no external service and so is never skipped on Windows.
+
+### Only listed hosts: `network: allowlist`
+
+```yaml
+native_agent:
+  sandbox:
+    backend: docker
+    network: allowlist
+    allow_hosts: ["pypi.org", "*.pythonhosted.org", "api.example.com:443"]
+    allow_private_hosts: []     # names that may point at this computer or a private network
+    docker: {proxy_image: ""}   # "" = docker.image; the proxy needs python3 in it
+```
+
+**Built for the `docker` backend only.** Every command gets a throwaway `--internal` Docker network, which has
+**no route out at all**, and a small proxy container (`bot/agent_runtime/net_allowlist.py`, standard
+library only, read-only, all capabilities dropped, 128 MB) that sits on that network and on the default
+bridge. The command's container is on the internal network only, with `HTTP(S)_PROXY` pointing at the
+proxy, so a program that ignores the proxy simply has no network. Both are removed when the command ends
+or is killed. **Fail closed:** if the network or the proxy cannot start or does not report ready, the
+command does not run. `docker.extra_args` that touch the network are refused. Nothing on the host is
+changed: no firewall, route or DNS setting.
+
+The proxy serves HTTP `CONNECT` (https and other tunnels) and plain `http://` absolute-form requests, and
+refuses everything else.
+- A host must match an entry exactly, or `*.domain` (any name below `domain`, not `domain` itself); an
+  entry may end in `:port`, otherwise any port matches.
+- The proxy resolves DNS itself and connects to the address it checked.
+- An IP address is refused unless that exact address is listed.
+- Loopback, private, link-local (cloud metadata included), reserved, CGNAT and multicast destinations are
+  refused, **including a listed public name that points at one**, unless the host matches an
+  `allow_private_hosts` entry (which also counts as allowed). This is what keeps a command from using the
+  proxy to reach this computer's own services.
+- Limits: 16 KB of request headers in 10 s, 64 simultaneous connections, 60 s idle, 10 min and 512 MB per
+  connection.
+- Every allow and deny is written to the agent trace (a `note`) and to the sandbox event ring
+  (`net.allow` / `net.deny`).
+
+Every other backend refuses `allowlist` with a clear error and never runs the command with the network:
+- **Windows (`local`, `windows_job`): not built, on purpose.** The AppContainer has no network at all.
+  Letting it reach a proxy on this computer needs a loopback exemption (`CheckNetIsolation`), which is a
+  firewall-class change to the host that has not been approved. Use `docker`, or `network: none`.
+- **Linux `local`, `wsl`, `ssh`: not built.** A network namespace whose only way out is a proxy needs a
+  veth pair and routing (root) or a user-space network stack. `unshare --user --net` alone gives an empty
+  namespace, which is `network: none`.
+
+Tested in `tests/test_net_allowlist.py`: the matching and refusal rules and the proxy against local
+servers, and (skipped without a Docker daemon and a local python image; nothing is pulled) real containers:
+an allowed host reachable, an unlisted one and a listed-but-private one refused, and a direct connection
+without the proxy failing.
 
 ### Offline commands: `network: none`
 
