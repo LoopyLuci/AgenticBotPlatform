@@ -35,7 +35,7 @@ ROOTS = ("native_agent", "swarm_budget", "swarm_observability", "agent_control")
 YAML_ONLY_PREFIXES = (
     "native_agent.models.limits", "native_agent.models.overrides", "native_agent.context_windows",
     "native_agent.code_intel.lsp.servers", "native_agent.code_intel.formatters", "native_agent.mcp_trust",
-    "native_agent.sandbox.docker", "native_agent.skills.external_dirs",
+    "native_agent.sandbox.docker", "native_agent.skills.external_dirs", "native_agent.budget.prices",
 )
 
 
