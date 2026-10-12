@@ -260,7 +260,7 @@ class FakeApproval:
 
 
 @pytest.fixture
-def loop_env(monkeypatch, tmp_path, cfg):
+def loop_env(monkeypatch, tmp_path, cfg, temp_db):
     monkeypatch.setattr(tool_loop, "try_checkpoint", lambda *a, **k: None)
     taint.forget_all()
     ws = (tmp_path / "ws")

@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
@@ -929,6 +930,26 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _enable_wal(conn: sqlite3.Connection, attempts: int = 40) -> None:
+    """WAL is persistent in the file, so only switch when it is not already on.
+    The switch needs an exclusive lock, and when several connections to a brand
+    new file race to make it (threads of a starting app) SQLite can answer
+    "database is locked" at once, without consulting busy_timeout; retry that
+    one pragma a bounded number of times."""
+    for attempt in range(attempts):
+        try:
+            if str(conn.execute("PRAGMA journal_mode;").fetchone()[0]).lower() == "wal":
+                return
+            conn.execute("PRAGMA journal_mode=WAL;")
+            return
+        except sqlite3.OperationalError as e:
+            if "locked" not in str(e).lower() and "busy" not in str(e).lower():
+                raise
+            if attempt == attempts - 1:
+                raise
+            time.sleep(min(0.25, 0.01 * (attempt + 1)))
+
+
 def _open(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path), check_same_thread=False)
@@ -938,7 +959,7 @@ def _open(path: Path) -> sqlite3.Connection:
         # brief lock instead of raising "database is locked" immediately. First, so the
         # journal-mode switch below (which needs a lock of its own) waits too.
         conn.execute("PRAGMA busy_timeout=5000;")
-        conn.execute("PRAGMA journal_mode=WAL;")
+        _enable_wal(conn)
         conn.execute("PRAGMA synchronous=NORMAL;")
         conn.execute("PRAGMA foreign_keys=ON;")
     except sqlite3.Error:
