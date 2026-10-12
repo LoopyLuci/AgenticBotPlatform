@@ -55,11 +55,12 @@ this is just the map:
 | **Traces** | Every native-agent run with its model calls, tool calls, timings and tokens (`GET /api/agent/traces`). |
 | **Permissions** | Pending approvals (allow once, for the session, always, or deny), each bot's rules and mode, MCP tool pins, and clearing a session's untrusted mark. |
 | **Vault** | Stored site credentials by name, site and username — add and remove them; passwords and two-factor secrets never leave the server. |
+| **User profiles** | The optional user model (off by default): what the agent has learned about each person (preferences, expertise, standing instructions, goals), used only once you approve it; export or forget any of it. |
 | **Skills** | Fetch a skill pack from a git URL into quarantine, read its scan findings, approve or reject it, review skill drafts with an advisory automatic check, and remove installed packs. |
 | **Evals** | The agent eval harness's saved live runs: model, pass rate, calls, tokens, time, and the tasks that failed (also `python -m abp_agenteval page --reports`). |
 | **Sandbox** | What ABP has running right now and which part of ABP started it, with limits, recent kills and what this OS can enforce; stop a cell after a confirm. |
 | **Modules** | Programs ABP drives as modules (see [docs/modules/modkit.md](docs/modules/modkit.md)): add one from a git URL, **Check for updates** (fetch, fast-forward only, a diff of its operations, hand edits kept), **Assist setup** (model-proposed descriptions, input types and a panel layout you pick from before anything is written), **Open panel** (a module's operations as forms), and a **Catalog** of shared module overlays to install from (`modules.catalogs`). |
-| **Studio** | Model-generated variants of ABP's own screens, previewed and rated; a variant is applied only after it passes a test gate on a temporary copy (validators, parity, leak guard, `node --check`, the screens' own tests). |
+| **Studio** | Model-generated variants of ABP's own screens, previewed and rated; a variant is applied only after it passes a test gate on a temporary copy (validators, parity, leak guard, `node --check`, the screens' own tests). | Its History tab can export applied changes (scrubbed) and ask ModelMistress's factory to build a Knowledge Module from them; you approve the plan and any promotion there.
 
 ## Documentation
 
