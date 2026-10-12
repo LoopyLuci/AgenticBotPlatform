@@ -56,6 +56,7 @@ this is just the map:
 | **Permissions** | Pending approvals (allow once, for the session, always, or deny), each bot's rules and mode, MCP tool pins, and clearing a session's untrusted mark. |
 | **Vault** | Stored site credentials by name, site and username — add and remove them; passwords and two-factor secrets never leave the server. |
 | **User profiles** | The optional user model (off by default): what the agent has learned about each person (preferences, expertise, standing instructions, goals), used only once you approve it; export or forget any of it. |
+| **Coordination** | The work board every multi-agent run uses (AgentSentinel's when it runs, ABP's own otherwise): sub-agents and swarm steps as tasks with no duplicates, leases that hand a crashed agent's work to another, and file locks so two agents never edit the same file at once; who holds what, what waits and why. See [docs/coordination.md](docs/coordination.md). |
 | **Skills** | Fetch a skill pack from a git URL into quarantine, read its scan findings, approve or reject it, review skill drafts with an advisory automatic check, and remove installed packs. |
 | **Evals** | The agent eval harness's saved live runs: model, pass rate, calls, tokens, time, and the tasks that failed (also `python -m abp_agenteval page --reports`). |
 | **Sandbox** | What ABP has running right now and which part of ABP started it, with limits, recent kills and what this OS can enforce; stop a cell after a confirm. |
