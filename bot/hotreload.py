@@ -76,7 +76,7 @@ def _enabled_by_default() -> bool:
 # each entry (several were found only by grepping every candidate file
 # for module-level mutable containers, not by inspection alone).
 DENYLIST: frozenset[str] = frozenset({
-    "bot.main", "bot.router", "bot.db", "bot.config", "bot.dashboard.server", "bot.dashboard.cicd_api", "bot.dashboard.agent_security_api", "bot.dashboard.models_info_api", "bot.dashboard.traces_api", "bot.dashboard.evals_api", "bot.dashboard.vault_api", "bot.dashboard.approvals_api", "bot.dashboard.channels_api", "bot.dashboard.agent_config_api", "bot.dashboard.tailscale_api", "bot.dashboard.infra_api", "bot.dashboard.browser_api", "bot.dashboard.browser_gateway_api", "bot.browser_gateway",
+    "bot.main", "bot.router", "bot.db", "bot.config", "bot.dashboard.server", "bot.dashboard.cicd_api", "bot.dashboard.agent_security_api", "bot.dashboard.models_info_api", "bot.dashboard.traces_api", "bot.dashboard.coordination_api", "bot.dashboard.evals_api", "bot.dashboard.vault_api", "bot.dashboard.approvals_api", "bot.dashboard.channels_api", "bot.dashboard.agent_config_api", "bot.dashboard.tailscale_api", "bot.dashboard.infra_api", "bot.dashboard.browser_api", "bot.dashboard.browser_gateway_api", "bot.browser_gateway",
     # Extensions (ABP_PRIVATE_DIR): the loader is loaded once and caches what it found, and its
     # routes are registered on the live app at build time - same reason bot.config is here.
     "bot.extensions", "bot.dashboard.extensions_api",
@@ -268,6 +268,11 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.ssh_session_monitor",  # holds live in-flight session/subprocess state; a reload would orphan it
     "bot.dashboard_client",  # only ever imported by the tui/cli processes above, or abp_cli (its own separate process)
     "bot.swarm.base", "bot.swarm.strategies", "bot.swarm.engine",
+    "bot.swarm.board_run",  # strategies hold its Step/SwarmBoard classes; reloading one without the other would split them
+    # The work board: cached boards and probe result (package __init__), the ContextVars that carry a running work session
+    # and turn, live heartbeat tasks, and the BoardError class that every module catches by identity.
+    "bot.coordination.model", "bot.coordination.base", "bot.coordination.local", "bot.coordination.sentinel",
+    "bot.coordination.session", "bot.coordination.fileguard", "bot.coordination.subagent_board",
     "bot.support_bot.model", "bot.support_bot.training_data", "bot.support_bot.hybrid",
     "bot.support_bot.actions", "bot.support_bot.nn_model", "bot.support_bot.slots",
     "bot.support_bot.engine",

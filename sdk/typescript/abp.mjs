@@ -1195,6 +1195,37 @@ export const operations = {
   ],
   "query_params": []
  },
+ "GET /api/coordination/locks": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/coordination/locks",
+  "path_params": [],
+  "query_params": [
+   "resource_prefix",
+   "owner"
+  ]
+ },
+ "GET /api/coordination/summary": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/coordination/summary",
+  "path_params": [],
+  "query_params": [
+   "board"
+  ]
+ },
+ "GET /api/coordination/tasks": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/coordination/tasks",
+  "path_params": [],
+  "query_params": [
+   "board",
+   "state",
+   "owner",
+   "limit"
+  ]
+ },
  "GET /api/database": {
   "body": false,
   "method": "GET",
@@ -10798,6 +10829,37 @@ export const operations = {
   "path": "/api/agent/config/schema",
   "path_params": [],
   "query_params": []
+ },
+ "coordination_locks_api_coordination_locks_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/coordination/locks",
+  "path_params": [],
+  "query_params": [
+   "resource_prefix",
+   "owner"
+  ]
+ },
+ "coordination_summary_api_coordination_summary_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/coordination/summary",
+  "path_params": [],
+  "query_params": [
+   "board"
+  ]
+ },
+ "coordination_tasks_api_coordination_tasks_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/coordination/tasks",
+  "path_params": [],
+  "query_params": [
+   "board",
+   "state",
+   "owner",
+   "limit"
+  ]
  },
  "create_rule_api_rules_post": {
   "body": true,

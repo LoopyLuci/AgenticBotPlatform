@@ -166,6 +166,14 @@ FIELDS: list[dict] = [
     _f("live_tool_events", "bool", "Show live tool activity from workers", "Stream each worker's tool calls to the Swarms view while it runs.", W, "Swarm behaviour", True, root="swarm_observability"),
     _f("mode", "enum", "Who may command whom", "Trust all lets any bot ask or command any other. Allowlist lets a bot target only the bots listed in its own settings.", W, "Cross-bot control", "trust_all", root="agent_control",
        choices=[["trust_all", "Trust all - any bot may target any other"], ["allowlist", "Allowlist - only bots it is allowed to target"]]),
+    # ------------------------------------------------------------------ work board
+    _f("enabled", "bool", "Work board for sub-agents", "Sub-agent children become tasks on a shared work board, the files they edit are locked for them, and a repeated spawn finds the existing task instead of running twice. Swarm runs always use the board.", W, "Work board", True, root="coordination"),
+    _f("backend", "enum", "Which board", "Auto uses AgentSentinel's board when it answers (agents on the whole machine then share it) and ABP's own otherwise.", W, "Work board", "auto", root="coordination",
+       choices=[["auto", "Auto - AgentSentinel if it answers, else ABP's own"], ["sentinel", "AgentSentinel only"], ["local", "ABP's own only"]]),
+    _f("sentinel_url", "text", "AgentSentinel address", "Where AgentSentinel's API is. Blank uses its default address. The token is read from the AGENT_SENTINEL_TOKEN environment variable, never from this file.", W, "Work board", "", root="coordination", nullable=True, advanced=True),
+    _f("lease_s", "int", "Task lease", "How long a task stays claimed without a sign of life before the board hands it to someone else. Working agents renew it every third of this.", W, "Work board", 120, root="coordination", min=5, max=3600, advanced=True, unit="seconds"),
+    _f("file_lock_lease_s", "int", "File lock lease", "How long an edit lock lasts without being renewed.", W, "Work board", 60, root="coordination", min=5, max=3600, advanced=True, unit="seconds"),
+    _f("swarm_workers", "int", "Workers per swarm step group", "How many workers pull steps from a swarm's board at once.", W, "Work board", 8, root="coordination", min=1, max=64, advanced=True),
     # ------------------------------------------------------------------ models
     _f("models.enforce", "bool", "Enforce model limits", "Hold back a call that would cross a known per-minute or daily limit, and switch to a fallback when one is exhausted. Off keeps counting but never holds a call back.", M, "Limits", True),
     _f("models.max_wait_s", "int", "Longest wait for a limit to clear", "A call that would cross a per-minute limit waits up to this long instead of failing.", M, "Limits", 15, min=0, max=600, unit="seconds"),

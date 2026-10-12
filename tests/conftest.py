@@ -100,6 +100,12 @@ def _isolated_cicd_event_store(monkeypatch, tmp_path):
     # machine; tests that want them clear this (tests/test_module_providers.py).
     monkeypatch.setenv("ABP_NO_MODULE_PROVIDERS", "1")
     monkeypatch.setenv("ABP_AGENT_STATE_DIR", str(tmp_path / "agent-state"))
+    # The work board (bot/coordination): a database of its own per test, and never the AgentSentinel on this machine.
+    monkeypatch.setenv("ABP_COORDINATION_DB", str(tmp_path / "coordination.db"))
+    monkeypatch.setenv("ABP_COORDINATION_BACKEND", "local")
+    from bot import coordination as _coordination
+
+    _coordination.reset()
     # Privacy mode and the memory vault: never the developer's (privacy mode on would refuse every test's cloud backend).
     monkeypatch.setenv("ABP_PRIVACY_FILE", str(tmp_path / "privacy.json"))
     monkeypatch.setenv("ABP_MEMORY_DIR", str(tmp_path / "memory-vault"))

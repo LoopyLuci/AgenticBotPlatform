@@ -42,6 +42,7 @@ class ChildHandle:
     ephemeral_session_id: int
     parent_instance_id: Optional[int]
     goal: str
+    coord: Optional[object] = None      # the child's place on the work board (bot/coordination/subagent_board.Ticket)
 
 
 @dataclass
@@ -123,11 +124,17 @@ def _describe_dispatch(dispatch: Dispatch) -> dict:
     children = []
     for index, handle in sorted(dispatch.children.items()):
         row = db.get_ephemeral_session(handle.ephemeral_session_id)
+        board = None
+        if handle.coord is not None:
+            from bot.coordination import subagent_board
+
+            board = subagent_board.describe(handle.coord)
         children.append({
             "index": index,
             "goal": handle.goal,
             "status": row["status"] if row is not None else ("running" if not handle.task.done() else "unknown"),
             "result_excerpt": (row["result"] or "")[:500] if row is not None and row["result"] else None,
+            **({"board": board} if board else {}),
         })
     return {"dispatch_id": dispatch.dispatch_id, "children": children}
 
