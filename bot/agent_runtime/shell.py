@@ -9,10 +9,12 @@
 * when a command times out, is cancelled, or a job is killed, the whole process tree
   is stopped, not just the shell that started it.
 
-Not built: an interactive terminal (a PTY) and a shell that keeps its own state
-(cd, exported variables) between calls. Each call is a fresh shell; use `cwd` to run
-somewhere else. Both need a platform-specific implementation that has to be tested on
-each OS (see docs/agents/ROADMAP.md).
+* `persistent: true` (or `native_agent.shell.persistent`) keeps one shell per session and
+  working folder, so `cd` and exported variables carry over; see persistent_shell.py. The
+  default is unchanged: each call is a fresh shell, and `cwd` runs it somewhere else.
+
+Not built: an interactive terminal (a PTY), which needs a platform-specific implementation
+tested on each OS (see docs/agents/ROADMAP.md).
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from bot.agent_runtime import sandbox, toolspec
+from bot.agent_runtime import persistent_shell, sandbox, toolspec
 from bot.agent_runtime.errors import ToolError, safe_path
 
 DEFAULT_TIMEOUT_S = 60
@@ -90,13 +92,27 @@ def _decode(data: bytes) -> str:
 
 
 async def run_command(command: str, *, workspace: Path, cwd: Optional[str] = None, timeout=None,
-                      background: bool = False) -> str:
+                      background: bool = False, persistent: Optional[bool] = None) -> str:
     if not isinstance(command, str) or not command.strip():
         raise ToolError("command can't be empty")
     where = _resolve_cwd(workspace, cwd)
     if background:
+        if persistent:
+            raise ToolError("persistent can't be combined with background: a background job runs in its own process")
         return await _start_job(command, where, workspace)
     limit = _clean_timeout(timeout)
+    note = ""
+    if persistent is None:
+        persistent = persistent_shell.default_persistent()
+    if persistent:
+        reason = persistent_shell.unsupported_reason()
+        if reason is None:
+            return await persistent_shell.run(command, workspace=workspace, cwd=where if cwd else None, limit=limit)
+        note = f"[note: running this call in a fresh shell, because {reason}]\n"
+    return note + await _run_fresh(command, where, workspace, limit)
+
+
+async def _run_fresh(command: str, where: Path, workspace: Path, limit: int) -> str:
     proc = await _start(command, where, workspace)
     chunks: list[bytes] = []
     size = 0
@@ -238,6 +254,7 @@ async def _shell_kill(inp: dict, *, workspace=None, instance_id=None, device_tie
 
 async def kill_session_jobs(session: Optional[str] = None) -> int:
     """Stop every background job of a session (or the current one). Returns how many were running."""
+    persistent_shell.close_session(session)
     jobs = _jobs.get(session or toolspec.current_session(), {})
     n = 0
     for job in jobs.values():

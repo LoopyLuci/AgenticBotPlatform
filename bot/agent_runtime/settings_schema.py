@@ -96,6 +96,8 @@ FIELDS: list[dict] = [
     _f("sandbox.env.mode", "enum", "Environment passed to commands", "Which environment variables a command can see.", S, "Sandbox", "secrets",
        choices=[["secrets", "Secrets removed - everything except keys and tokens"], ["minimal", "Minimal - only what is needed to run"], ["inherit", "Inherit - everything, including keys"]], applies="new sessions",
        danger="Commands can read every key and token in this app's environment.", danger_value="inherit"),
+    _f("shell.persistent", "bool", "Keep one shell between commands", "Let run_shell commands share one shell per conversation, so cd and exported variables carry over. An agent can also ask for it per command. Only the local and Windows job backends with the network allowed can do this; others run each command in a fresh shell.", S, "Sandbox", False, applies="next command"),
+    _f("shell.idle_minutes", "int", "Close an unused shell after", "A kept shell that has not been used for this long is closed.", S, "Sandbox", 30, min=1, max=1440, unit="minutes", advanced=True, applies="next command"),
     _f("mcp_pinning", "bool", "Pin MCP tool descriptions", "Block an MCP tool whose description or inputs change after you approved it, since that is how a tool can be turned against you.", S, "External tools", True),
     # ------------------------------------------------------------------ tools
     _f("code_search.embeddings", "bool", "Search code by meaning", "Let code search match by meaning as well as by words, using a ModelMistress embeddings model. Falls back to keyword search when none is running.", T, "Code search", True),

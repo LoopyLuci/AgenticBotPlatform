@@ -228,6 +228,19 @@ confine neither the network nor the file system beyond the file tools' workspace
 per-host allow list either: a command is fully online or fully offline. Allowing a chosen host would
 need a filtering proxy.
 
+### A shell that keeps state: `persistent`
+
+`run_shell` with `persistent: true` (or `native_agent.shell.persistent: true`, with `idle_minutes`,
+default 30) keeps one PowerShell (Windows) or bash process per session and working folder, so `cd` and
+exported variables carry over. It goes through the same approval and permission rules as any
+`run_shell` call, and the process is started by the sandbox with the same scrubbed environment and the
+same kill-on-close cell. Only `local` and `windows_job` with `network: allow` can host it; with
+`docker`, `ssh`, `wsl` or `network: none` the call runs in a fresh shell and says so. A timeout kills
+the whole tree and drops the shell (the next call says it started fresh). If a command leaves the
+working folder, the next call is refused once and the shell is put back. Idle shells close, and all
+close at shutdown. Default behaviour (a fresh shell per call) is unchanged.
+
+
 ## Hooks
 
 Ten events: `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `SessionStart`, `SessionEnd`,

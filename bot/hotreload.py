@@ -128,6 +128,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.agent_runtime.trace", "bot.agent_runtime.toolspec",
     # coding_tools.py keeps per-session read tracking and registers tools at import time.
     "bot.agent_runtime.coding_tools", "bot.agent_runtime.shell",  # shell.py holds the live background-job table
+    "bot.agent_runtime.persistent_shell",  # holds the live shell processes
     "bot.agent_runtime.web",  # registers its tools at import time
     # errors.py defines ToolError, which callers catch by identity: a reloaded copy would
     # be a different class and their `except ToolError` would stop matching.
