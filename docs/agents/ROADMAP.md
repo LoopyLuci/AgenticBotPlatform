@@ -16,7 +16,7 @@
 | Phase | What | Status |
 |---|---|---|
 | P0 | Foundations: eval harness, traces, `ToolSpec`, prompt builder, streaming | **Built** (the harness has now been run live, on one free model — see below) |
-| P1 | Core coding toolset and a better loop | **Built** (interactive PTY and a stateful shell are not) |
+| P1 | Core coding toolset and a better loop | **Built** (an interactive PTY is not) |
 | P2 | Permissions, sandboxing, prompt-injection defence, hooks v2 | **Built**, including `network: none` on every backend (security.md) |
 | P3 | Context and memory | **Built** (embeddings are optional and need a ModelMistress hub; no tree-sitter, no user model) |
 | P4 | Agents, skills and commands | **Built** (no registry; git fetch untested against a real remote) |
@@ -115,7 +115,8 @@ the schema list has a spec (met, enforced by a test); no existing test regresses
 | `todo_write` / `todo_read` (per session, persisted) | Built |
 | `web_fetch` and `web_search` (SearXNG, Brave, Tavily) | Built, **off by default** until P2's injection defences land. web_fetch is public-internet only, checks every redirect and the connected peer, caps the body, labels content untrusted. Search providers are tested against faked responses only, not live |
 | Shell: per-call timeout, `cwd`, background jobs with `shell_output` / `shell_list` / `shell_kill`, process-tree kill on timeout / cancel / kill, large output saved in full inside the workspace | Built and tested on Windows. Untested on POSIX |
-| Shell: interactive PTY; a shell that keeps `cd` and exported variables between calls | **Not built.** Each needs a platform-specific implementation that must be tested on each OS |
+| Shell: a shell that keeps `cd` and exported variables between calls (`run_shell` `persistent: true`, or `native_agent.shell.persistent`; one PowerShell or bash process per session and folder, end marker per call, timeout kills the tree and starts fresh, idle close, leaving the workspace refused once; docker / ssh / wsl / `network: none` fall back to a fresh shell with a note) | Built and tested on Windows (PowerShell). The bash driver is **untested** (no POSIX machine here) |
+| Shell: interactive PTY | **Not built.** Needs a platform-specific implementation that must be tested on each OS |
 | Loop: parallel read-only tool calls (bounded), step / time / token limits that end a turn with a summary instead of an error, repeat and all-failing detection, cancellation that answers the open tool calls so the session stays valid, repair of sessions an older crash left dangling | Built |
 | Cost budget (dollars) per turn | Not built: price lookup is a network call; token and time limits cover the need for now |
 | Leaf sub-agents get the new tools | Built |

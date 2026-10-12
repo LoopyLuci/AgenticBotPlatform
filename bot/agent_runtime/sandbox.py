@@ -446,6 +446,19 @@ async def start(command: str, cwd: Path, workspace: Path) -> asyncio.subprocess.
         raise ToolError(f"could not start the command: {exc}") from exc
 
 
+async def start_persistent(argv: list[str], cwd: Path) -> asyncio.subprocess.Process:
+    """Start a long-lived shell (persistent_shell.py) with a stdin pipe, in the same cell, with the same
+    scrubbed environment as `start()`. Only the backends that run on this machine can host one; callers
+    check persistent_shell.unsupported_reason() first, and this refuses anything else (fail closed)."""
+    cfg = _config()
+    which = backend()
+    if which not in ("local", "windows_job") or network(cfg) == "none":
+        raise ToolError("this sandbox configuration can't host a persistent shell; the shell was not started")
+    pipes = dict(stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+    cell = _cell("persistent shell") if which == "local" else _job_cell("persistent shell", cfg)
+    return await _spawn(argv, cwd, build_env(cfg=cfg), name="persistent shell", cell=cell, pipes=pipes)
+
+
 def _ssh_kill_argv(start_argv: list[str], pidfile: str) -> list[str]:
     # start_argv is [ssh, ...opts..., target, remote_cmd] - reuse everything up to (not
     # including) the remote command, then swap in a best-effort remote kill.

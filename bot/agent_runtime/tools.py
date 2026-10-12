@@ -135,8 +135,9 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": "run_shell",
         "description": (
-            "Run a shell command in the session's working directory. Requires human approval. Each call is a "
-            "fresh shell (cd and exported variables do not carry over); use cwd to run in a sub-folder. "
+            "Run a shell command in the session's working directory. Requires human approval. By default each "
+            "call is a fresh shell (cd and exported variables do not carry over); use cwd to run in a sub-folder, "
+            "or pass persistent=true to use a shell that keeps cd and variables between calls. "
             "Commands stop after timeout seconds (default 60, at most 600). For anything long-running - a dev "
             "server, a watcher, a big build - pass background=true: it returns a job id at once; read output "
             "with shell_output, stop it with shell_kill."
@@ -148,6 +149,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "timeout": {"type": "integer", "description": "Seconds before it is stopped (default 60, max 600)."},
                 "cwd": {"type": "string", "description": "Folder to run in, inside the working directory."},
                 "background": {"type": "boolean", "description": "Start it and return a job id immediately."},
+                "persistent": {"type": "boolean", "description": "Use this session's long-lived shell, which keeps cd and exported variables between calls."},
             },
             "required": ["command"],
         },
@@ -1080,6 +1082,7 @@ async def _execute_tool(
             tool_input.get("command") or "", workspace=workspace, cwd=tool_input.get("cwd"),
             timeout=tool_input.get("timeout") if tool_input.get("timeout") is not None else SHELL_TIMEOUT_S,
             background=bool(tool_input.get("background")),
+            persistent=tool_input.get("persistent") if isinstance(tool_input.get("persistent"), bool) else None,
         )
 
     if name == "read_file":
