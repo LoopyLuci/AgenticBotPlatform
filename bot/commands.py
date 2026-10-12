@@ -867,6 +867,9 @@ async def cmd_hooks(ctx: CmdContext, args: list[str]) -> str:
         command = " ".join(args[3:]).strip()
         if not command:
             return "Usage: /hooks add <PreToolUse|PostToolUse|SessionStart|UserPromptSubmit> <matcher|*> <command...>"
+        problem = agent_hooks.validate_hook_command(command)
+        if problem:
+            return f"Hook rejected: {problem}"
         hook_id = db.add_agent_hook(event, command, matcher=matcher)
         return f"Added hook #{hook_id}."
 
@@ -1603,7 +1606,11 @@ async def cmd_skills(ctx: CmdContext, args: list[str]) -> str:
         return f"Installed {info['name']!r}: {info['description']}"
     if sub == "remove" and len(args) >= 2:
         ok = skills.remove(ctx.instance_id, args[1])
-        return "Removed." if ok else "Not found."
+        if ok:
+            return "Removed."
+        return await _skills_admin(ctx, "remove-pack", args)
+    if sub == "remove-pack" and len(args) >= 2:
+        return await _skills_admin(ctx, sub, args)
     if sub == "inspect" and len(args) >= 2:
         content = skills.get_content(ctx.instance_id, args[1])
         return content if content is not None else "Not found."
@@ -1639,6 +1646,12 @@ async def _skills_admin(ctx: CmdContext, sub: str, args: list[str]) -> str:
             return "Quarantine:\n" + "\n".join(
                 f"  {i['quarantine_name']}: {'OK to approve' if i['ok'] else 'BLOCKED'}, {len(i['findings'])} finding(s), signature {i['signature']}"
                 for i in held) if held else "Nothing in quarantine."
+        if sub == "remove-pack" and len(args) >= 2:
+            from bot import db
+
+            skill_install.remove_installed(args[1])
+            db.log_audit(actor=f"user:{ctx.user_id}", action="skill_pack_remove", detail=args[1])
+            return f"Removed the installed skill pack {args[1]}."
         if sub in ("approve", "reject") and len(args) >= 2:
             if sub == "approve":
                 out = skill_install.approve(args[1])

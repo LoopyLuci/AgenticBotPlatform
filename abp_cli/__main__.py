@@ -1086,6 +1086,12 @@ async def _hooks(args, client: DashboardClient) -> int:
         _print(args, await client.list_hooks(event=args.event), table=["id", "event", "command", "enabled"])
         return 0
     if sub == "add":
+        from bot.agent_runtime.hooks import validate_hook_command
+
+        problem = validate_hook_command(args.command)
+        if problem:
+            print(f"hook rejected: {problem}", file=sys.stderr)
+            return 2
         _print(args, await client.add_hook(args.event, args.command, matcher=args.matcher, instance_id=args.instance))
         return 0
     if sub in ("enable", "disable"):

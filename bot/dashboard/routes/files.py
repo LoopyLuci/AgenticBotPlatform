@@ -533,6 +533,9 @@ def register(app: FastAPI) -> None:
             raise HTTPException(status_code=400, detail=f"event must be one of {sorted(agent_hooks.VALID_EVENTS)}")
         if not command:
             raise HTTPException(status_code=400, detail="command is required")
+        problem = agent_hooks.validate_hook_command(command)
+        if problem:
+            raise HTTPException(status_code=400, detail=problem)
         hook_id = db.add_agent_hook(
             event, command, matcher=payload.get("matcher") or None, instance_id=payload.get("instance_id"),
         )

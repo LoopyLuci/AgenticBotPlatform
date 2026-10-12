@@ -448,6 +448,15 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "DELETE /api/skills/packs/{name}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/skills/packs/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
  "DELETE /api/skills/{name}": {
   "body": false,
   "method": "DELETE",
@@ -13424,6 +13433,15 @@ export const operations = {
   "method": "POST",
   "path": "/api/skills/quarantine/reject",
   "path_params": [],
+  "query_params": []
+ },
+ "remove_pack_api_skills_packs__name__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/skills/packs/{name}",
+  "path_params": [
+   "name"
+  ],
   "query_params": []
  },
  "reset_config_api_agent_config_reset_post": {

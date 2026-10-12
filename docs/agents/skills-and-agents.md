@@ -67,6 +67,8 @@ visible to the model. The scan blocks pipe-to-shell, decode-and-exec, `rm -rf /`
 cloud credentials, symlinks, binaries, oversized packs; it warns on mentions of key files. An Ed25519
 `SKILL.sig` is verified against `native_agent.skills.trusted_keys`, but **a signature never overrides a
 block**. `/skills approve <name>` (or the API) is a person's decision; there is no automatic path.
+An installed pack is removed with `DELETE /api/skills/packs/{name}`, `/skills remove <name>` (bot admins) or the Remove
+button on the Skills screen; only the user's own pack folder is touched, and the removal is audit-logged.
 
 ### Skill drafts
 

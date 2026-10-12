@@ -130,14 +130,19 @@ class _Node:
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 self.send_header("Connection", "close")
+                if outer.drop:
+                    self.send_header("Transfer-Encoding", "chunked")
                 self.end_headers()
                 self.close_connection = True
                 for i, piece in enumerate(STREAMED):
-                    self.wfile.write(chunk({"content": piece}))
+                    data = chunk({"content": piece})
+                    # (a TCP reset here would race the client: it throws away bytes it has not read yet, so the
+                    # first piece could vanish. Closing a chunked body before its terminating chunk cannot lose
+                    # bytes, and is still what a node that dies mid-answer looks like to the reader.)
+                    self.wfile.write(b"%x\r\n%s\r\n" % (len(data), data) if outer.drop else data)
                     self.wfile.flush()
-                    if outer.drop and i == 0:       # the node dies mid-answer: a reset, not a clean end of stream
-                        self.connection.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
-                        self.connection.close()
+                    if outer.drop and i == 0:       # the node dies mid-answer: the body ends without its last chunk
+                        self.connection.shutdown(socket.SHUT_WR)
                         return
                 self.wfile.write(chunk({}, "stop"))
                 self.wfile.write(b"data: [DONE]\n\n")

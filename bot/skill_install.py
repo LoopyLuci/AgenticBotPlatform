@@ -317,6 +317,22 @@ def approve(name: str) -> dict:
     return {"installed": name, "path": str(dest)}
 
 
+def remove_installed(name: str) -> dict:
+    """A person removes an installed pack from the user's skill folder (and only from there)."""
+    if not re.match(r"^[a-z0-9-]{1,64}$", name or ""):
+        raise ToolError(f"{name!r} is not a valid skill pack name")
+    root = skill_packs.user_root()
+    if root is None or not root.is_dir():
+        raise ToolError(f"no installed skill pack named {name!r}")
+    target = root / name
+    if target.is_symlink() or not target.is_dir():
+        raise ToolError(f"no installed skill pack named {name!r}")
+    if target.resolve().parent != root.resolve():
+        raise ToolError(f"{name!r} is outside the skill pack folder")
+    shutil.rmtree(target)
+    return {"removed": name}
+
+
 def reject(name: str) -> bool:
     _report_for(name)
     shutil.rmtree(quarantine_root() / name, ignore_errors=True)

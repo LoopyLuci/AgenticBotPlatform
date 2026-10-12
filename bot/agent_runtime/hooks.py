@@ -178,6 +178,47 @@ def parse_spec(command: str) -> Optional[dict]:
     return spec if spec.get("type") in HOOK_TYPES else {"type": "invalid", "was": str(spec.get("type"))[:40]}
 
 
+_REQUIRED_FIELDS = {
+    "command": ("command",), "http": ("url",), "mcp_tool": ("server", "tool"),
+    "prompt": ("prompt",), "agent": ("agent", "prompt"),
+}
+
+
+def validate_hook_command(command: str) -> Optional[str]:
+    """None when `command` may be stored as a hook, else a short reason. Plain (non-JSON) text is accepted as
+    before; text starting with `{` must be a well-formed typed-hook object."""
+    text = (command or "").strip()
+    if not text.startswith("{"):
+        return None
+    try:
+        spec = json.loads(text)
+    except json.JSONDecodeError as exc:
+        return f"typed hook is not valid JSON: {exc.msg}"
+    if not isinstance(spec, dict):
+        return "typed hook must be a JSON object"
+    kind = spec.get("type")
+    if kind not in HOOK_TYPES:
+        return f"typed hook 'type' must be one of {sorted(HOOK_TYPES)}"
+    for field in _REQUIRED_FIELDS[kind]:
+        value = spec.get(field)
+        if not isinstance(value, str) or not value.strip():
+            return f"{kind} hook needs a non-empty string '{field}'"
+    if kind == "http" and not re.match(r"^https?://\S+$", spec["url"].strip(), re.IGNORECASE):
+        return "http hook 'url' must be an http or https URL"
+    if "async" in spec:
+        if not isinstance(spec["async"], bool):
+            return "'async' must be true or false"
+        if spec["async"] and kind not in ("command", "http"):
+            return f"'async' is only allowed for command and http hooks, not {kind}"
+    if "timeout" in spec:
+        t = spec["timeout"]
+        if isinstance(t, bool) or not isinstance(t, (int, float)) or not 0 < t <= MAX_TIMEOUT_S:
+            return f"'timeout' must be a number above 0 and at most {MAX_TIMEOUT_S} seconds"
+    if "fail" in spec and spec["fail"] not in ("open", "closed"):
+        return "'fail' must be 'open' or 'closed'"
+    return None
+
+
 def _timeout_of(spec: dict) -> float:
     default = DEFAULT_AGENT_TIMEOUT_S if spec.get("type") == "agent" else HOOK_TIMEOUT_S
     try:

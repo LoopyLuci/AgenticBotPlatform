@@ -39,7 +39,7 @@
     if (!packs) return '<p class="sk-empty">Loading…</p>';
     if (!packs.length) return '<p class="sk-empty">No skill packs are installed.</p>';
     return packs.map((p) => `<div class="sk-card"><b>${E(p.name)}</b> <span class="sk-note">${E(p.source)} · ${E(p.files)} bundled file(s)</span>
-      <div>${E(p.description)}</div>${(p.problems || []).length ? `<div class="sk-note">${p.problems.map(E).join('; ')}</div>` : ''}</div>`).join('');
+      <div>${E(p.description)}</div>${(p.problems || []).length ? `<div class="sk-note">${p.problems.map(E).join('; ')}</div>` : ''}${p.source === 'user' ? `<div class="sk-bar"><button class="btn" data-sk="remove-pack" data-name="${E(p.name)}">Remove…</button></div>` : ''}</div>`).join('');
   }
 
   function renderHeld() {
@@ -115,9 +115,9 @@
     loadEvals();
   }
 
-  async function post(path, body, done) {
+  async function post(path, body, done, method) {
     try {
-      const r = await api(path, { method: 'POST', body: JSON.stringify(body) });
+      const r = await api(path, { method: method || 'POST', body: body ? JSON.stringify(body) : undefined });
       msg = done(r);
       err = '';
     } catch (e) {
@@ -136,6 +136,10 @@
       busy = true; render();
       const body = { url: url.trim(), ref: (($('sk-ref') || {}).value || '').trim() || null, subdir: (($('sk-sub') || {}).value || '').trim() };
       return post('/api/skills/fetch', body, (r) => `Fetched ${r.name || 'the pack'} into quarantine (${r.ok ? 'no blocking findings' : 'blocked by the scan'}). Review it below.`).finally(() => { busy = false; render(); });
+    }
+    if (a === 'remove-pack') {
+      if (!window.confirm(`Remove the installed skill ${name}? Its folder is deleted and the agent can no longer use it.`)) return;
+      return post('/api/skills/packs/' + encodeURIComponent(name), null, () => `Removed ${name}.`, 'DELETE');
     }
     const ask = {
       approve: ['/api/skills/quarantine/approve', `Approve ${name}? It becomes an installed skill that the agent can read and follow. Only approve a pack you have read.`, () => `Approved ${name}.`],
