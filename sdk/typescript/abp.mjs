@@ -6532,6 +6532,15 @@ export const operations = {
   ],
   "query_params": []
  },
+ "POST /api/studio/variants/{vid}/gate": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/studio/variants/{vid}/gate",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": []
+ },
  "POST /api/studio/variants/{vid}/rate": {
   "body": true,
   "method": "POST",
@@ -13942,6 +13951,15 @@ export const operations = {
   "body": false,
   "method": "POST",
   "path": "/api/studio/variants/{vid}/discard",
+  "path_params": [
+   "vid"
+  ],
+  "query_params": []
+ },
+ "studio_gate_api_studio_variants__vid__gate_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/studio/variants/{vid}/gate",
   "path_params": [
    "vid"
   ],

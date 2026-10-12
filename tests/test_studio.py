@@ -28,6 +28,7 @@ def ui(tmp_path, monkeypatch):
         shutil.copy2(ROOT / rel, code / rel)
     monkeypatch.setenv("ABP_STUDIO_CODE_ROOT", str(code))
     monkeypatch.setenv("ABP_STUDIO_DIR", str(tmp_path / "studio"))
+    monkeypatch.setenv("ABP_STUDIO_GATE", "off")    # the sandbox gate has its own tests (test_studio_gate.py)
     return code
 
 

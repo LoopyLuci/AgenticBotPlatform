@@ -9,6 +9,9 @@ live, several variants side by side, and one is applied (with a backup, one clic
     generate   layer 2: local and API models fill several variants from one instruction
     tokens     layer 0: the pages' theme tokens (CSS custom properties), read and overridden per variant
     shots      screenshots of a preview (a real browser) and what visibly changed (bot/vision's compare)
+    gate       GEN-3: before an apply, the variant goes onto a temp copy of the UI and the targeted checks run there in a
+               sandbox cell (validators, parity, leak guard, node --check, the tests mapped from the changed paths);
+               it is applied only if they pass (config studio.gate: enabled, timeout_s, always, map)
     log        every step logged (data/studio/log.jsonl), and datasets built from it for ABP's own models
 
 Layer 0 is the person editing (files, theme, components) with the preview live; layer 2 is models proposing variants;

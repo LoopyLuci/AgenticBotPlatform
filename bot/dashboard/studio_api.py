@@ -14,7 +14,7 @@ API (the dashboard token):
     GET  /api/studio/variants/{vid}/file?path= / PUT {path, content} / DELETE ?path=
     GET  /api/studio/variants/{vid}/version    what the preview polls
     GET  /api/studio/variants/{vid}/tokens?page=  /  POST {mode, values}     theme tokens
-    POST /api/studio/variants/{vid}/validate | /apply | /discard | /rate {rating, why?} | /shot {section?}
+    POST /api/studio/variants/{vid}/validate | /gate | /apply | /discard | /rate {rating, why?} | /shot {section?}
     POST /api/studio/generate                  {instruction, files, variants?, models?, focus?, title?, base?} -> a job
     GET  /api/studio/jobs/{id}
     POST /api/studio/revert                    {backup}
@@ -32,7 +32,7 @@ from typing import Callable
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse
 
-from bot.studio import generate, log, shots, tokens, variants
+from bot.studio import gate, generate, log, shots, tokens, variants
 from bot.studio.variants import StudioError
 
 PAGE = "bot/dashboard/static/dashboard.html"
@@ -179,13 +179,14 @@ def register(app: FastAPI, require_token: Callable) -> None:
     async def studio_validate(vid: str):
         return await _s(lambda: {"problems": generate.validate(vid)})
 
+    @app.post("/api/studio/variants/{vid}/gate", dependencies=dep)
+    async def studio_gate(vid: str):
+        return await _s(gate.run, vid)
+
     @app.post("/api/studio/variants/{vid}/apply", dependencies=dep)
     async def studio_apply(vid: str):
         def go():
-            problems = generate.validate(vid)
-            if problems:
-                raise StudioError("not applied, it has problems: " + "; ".join(problems[:5]))
-            res = variants.apply(vid)
+            res = gate.apply_checked(vid)
             _reload_open_windows(res["files"])
             return res
         return await _s(go)

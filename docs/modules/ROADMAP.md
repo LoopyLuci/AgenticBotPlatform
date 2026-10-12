@@ -569,6 +569,6 @@ M0 framework ─┬─> R (all repos; done alongside M0, since it touches only t
 | GEN-0, GEN-2 | **done** 2026-09-30 | `a9310ab`: Studio. Live with three free OpenRouter models: two valid variants, a rate limit passed over to the next model, one unusable answer refused. |
 | GEN-D | **part** | Datasets (`sft.jsonl`, `prefs.jsonl`) from the log. Next: Knowledge Modules from applied changes. |
 | GEN-1 | todo | Needs AM-C; the rank model first, then the edit model (see docs/models/own-models.md). |
-| GEN-3 | **part** | A variant is validated (HTML, `node --check`) before it can be applied. Next: the pipeline in a sandbox before apply. |
+| GEN-3 | **done** 2026-10-11 | `bot/studio/gate.py`: an apply first puts the variant on a temp copy of the UI and runs the validators, twin parity, the leak guard, `node --check` per changed JS and the tests mapped from the changed paths in Sandbox Nervous System cells ("build" preset, time limit); only a pass reaches the live files, a fail returns the failing check names and a short tail. The result is kept with the variant and shown next to Apply. Config `studio.gate` (`enabled`, `timeout_s`, `always`, `map`). Open: a Rust/Python change is not in scope (Studio only changes the UI). |
 | AM-A, AM-B | **done** 2026-09-30 | docs/models/own-models.md. The Neural Lab trains real MoE classifiers on the GPU; BrainBuilder trains real PyTorch models. |
 | AM-C, AM-D | todo | The shared loop; "stack" and "screen" first. |

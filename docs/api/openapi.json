@@ -60925,6 +60925,59 @@
     "summary": "Studio Write"
    }
   },
+  "/api/studio/variants/{vid}/gate": {
+   "post": {
+    "operationId": "studio_gate_api_studio_variants__vid__gate_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "vid",
+      "required": true,
+      "schema": {
+       "title": "Vid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Studio Gate"
+   }
+  },
   "/api/studio/variants/{vid}/rate": {
    "post": {
     "operationId": "studio_rate_api_studio_variants__vid__rate_post",

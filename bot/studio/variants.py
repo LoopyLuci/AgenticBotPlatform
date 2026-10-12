@@ -212,20 +212,34 @@ def _twin(rel: str) -> Optional[str]:
     return None
 
 
+def plan(vid: str, root: Optional[Path] = None) -> dict[str, Path]:
+    """Every file apply() would write, relative path -> the variant's copy of it. `root` is the tree the twin check
+    looks at (default: the live UI); the gate passes its temp copy."""
+    own = files(vid)
+    if not own:
+        raise StudioError("this variant changes nothing")
+    root = root or code_root()
+    sources = {r: _dir(vid) / "files" / r for r in own}
+    for r in own:
+        t = _twin(r)
+        live_r, live_t = root / r, root / t if t else None
+        if t and t not in sources and live_t.is_file() and live_r.is_file() and                 live_t.read_bytes() == live_r.read_bytes():
+            sources[t] = sources[r]
+    return sources
+
+
+def record_gate(vid: str, result: dict) -> None:
+    """Keep the last sandbox gate result with the variant (the Studio screen shows it next to Apply)."""
+    m = meta(vid)
+    m["gate"] = result
+    _save_meta(vid, m)
+
+
 def apply(vid: str) -> dict:
     """Write the variant's files into the live UI. Each live file is backed up first; revert(backup_id) undoes it.
     A panel script that exists in both UIs, identical, is changed in both."""
     m = meta(vid)
-    own = files(vid)
-    if not own:
-        raise StudioError("this variant changes nothing")
-    sources = {r: _dir(vid) / "files" / r for r in own}
-    for r in own:
-        t = _twin(r)
-        live_r, live_t = code_root() / r, code_root() / t if t else None
-        if t and t not in sources and live_t.is_file() and live_r.is_file() and \
-                live_t.read_bytes() == live_r.read_bytes():
-            sources[t] = sources[r]
+    sources = plan(vid)
     changed = sorted(sources)
     bid = time.strftime("%Y%m%d-%H%M%S") + "-" + vid
     bdir = _backups() / bid

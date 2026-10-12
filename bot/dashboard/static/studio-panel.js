@@ -41,6 +41,9 @@
   }
 
   const chip = (t, k) => `<span class="std-chip ${k || ''}">${E(t)}</span>`;
+  // The last sandbox gate result kept with the variant (the targeted checks run on a temp copy before Apply).
+  const gateChip = (v) => { const g = v.gate; if (!g) return ''; if (g.skipped) return `<div class="std-row">${chip('gate skipped')}</div>`;
+    return `<div class="std-row" title="${E((g.tests || []).join(', '))}">${g.passed ? chip('gate passed · ' + g.seconds + 's', 'on') : chip('gate failed', 'bad')}${g.passed ? '' : `<span class="std-muted">${(g.failed || []).slice(0, 3).map(E).join(', ')}</span>`}</div>`; };
   const vName = (id) => { const v = (st.data && st.data.variants || []).find((x) => x.id === id); return v ? v.name : id; };
   const previewUrl = (vid, sec) => (vid ? `${ORIGIN}/studio/v/${encodeURIComponent(vid)}/` : `${ORIGIN}/`) + (sec ? '#' + encodeURIComponent(sec) : '');
   const variantOptions = (sel, withLive) => (withLive ? `<option value="" ${!sel ? 'selected' : ''}>Live (as it is now)</option>` : '') +
@@ -55,7 +58,7 @@
     const card = (v) => `<div class="std-card"><div class="std-row" style="justify-content:space-between"><b>${E(v.name)}</b>${v.state === 'applied' ? chip('applied', 'on') : chip(v.origin)}</div>
 <div class="std-muted">${E(v.note || '')}</div><div class="std-mono">${(v.files || []).map(E).join('<br>') || '<span class="std-muted">no changes yet</span>'}</div>
 <div class="std-row">${[1, 2, 3, 4, 5].map((n) => `<button class="btn ghost" data-rate="${E(v.id)}" data-n="${n}" title="rate ${n}">${v.rating >= n ? '★' : '☆'}</button>`).join('')}</div>
-<div class="std-row"><button class="btn ghost" data-open="${E(v.id)}">Preview</button><button class="btn ghost" data-edit="${E(v.id)}">Edit</button><button class="btn ghost" data-fork="${E(v.id)}">Copy</button>${v.state === 'open' ? `<button class="btn primary" data-apply="${E(v.id)}">Apply</button>` : ''}<button class="btn danger" data-discard="${E(v.id)}">Discard</button></div></div>`;
+${gateChip(v)}<div class="std-row"><button class="btn ghost" data-open="${E(v.id)}">Preview</button><button class="btn ghost" data-edit="${E(v.id)}">Edit</button><button class="btn ghost" data-fork="${E(v.id)}">Copy</button>${v.state === 'open' ? `<button class="btn ghost" data-gate="${E(v.id)}" title="Apply it to a temporary copy and run the targeted tests there">Run gate</button><button class="btn primary" data-apply="${E(v.id)}">Apply</button>` : ''}<button class="btn danger" data-discard="${E(v.id)}">Discard</button></div></div>`;
     return `<div class="std-row" style="margin-bottom:10px"><input id="std-new-name" placeholder="A name for a new variant"><button class="btn" id="std-new">New variant</button><span class="std-muted">A variant holds only the files it changes; the rest is the live UI.</span></div>
 ${Object.values(groups).map((g) => `<div class="std-grid" style="margin-bottom:12px">${g.map(card).join('')}</div>`).join('') || '<p class="std-muted">No variants yet: make one, or let models propose some (Generate).</p>'}`;
   }
@@ -151,6 +154,7 @@ ${a.variant && !a.error ? `<div class="std-row"><button class="btn ghost" data-o
     root.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => { st.cur = b.dataset.open; st.tab = 'preview'; render(); }));
     root.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', () => { st.cur = b.dataset.edit; st.tab = 'edit'; openFile(st.file); }));
     root.querySelectorAll('[data-fork]').forEach((b) => b.addEventListener('click', () => act(async () => { const v = await send('/api/studio/variants', { base: b.dataset.fork, name: vName(b.dataset.fork) + ' (copy)' }); st.cur = v.id; }, 'Copied')));
+    root.querySelectorAll('[data-gate]').forEach((b) => b.addEventListener('click', () => act(async () => { const r = await send(`/api/studio/variants/${encodeURIComponent(b.dataset.gate)}/gate`); toast(r.skipped ? 'Gate is switched off' : r.passed ? 'Gate passed' : 'Gate failed: ' + r.failed.slice(0, 3).join(', '), r.passed || r.skipped ? undefined : 'error'); })));
     root.querySelectorAll('[data-apply]').forEach((b) => b.addEventListener('click', () => { if (confirm('Apply this variant to the live UI? Each file is backed up first; one click reverts it (History).')) act(() => send(`/api/studio/variants/${encodeURIComponent(b.dataset.apply)}/apply`), 'Applied: open pages reload'); }));
     root.querySelectorAll('[data-discard]').forEach((b) => b.addEventListener('click', () => { if (confirm('Discard this variant?')) act(() => send(`/api/studio/variants/${encodeURIComponent(b.dataset.discard)}/discard`)); }));
     root.querySelectorAll('[data-rate]').forEach((b) => b.addEventListener('click', () => act(() => send(`/api/studio/variants/${encodeURIComponent(b.dataset.rate)}/rate`, { rating: +b.dataset.n }))));
