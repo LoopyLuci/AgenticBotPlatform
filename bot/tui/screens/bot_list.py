@@ -33,6 +33,13 @@ class BotListScreen(Screen):
         ("n", "hosting", "Hosting"),
         ("f", "storage", "Storage"),
         ("l", "localai", "Local AI & Lab"),
+        ("k", "hooks", "Hooks"),
+        ("m", "mcp", "MCP servers"),
+        ("u", "plugins", "Plugins"),
+        ("i", "skills", "Skills"),
+        ("b", "snapshots", "Snapshots"),
+        ("y", "security", "Security"),
+        ("x", "peers", "Peers"),
         ("q", "app.quit", "Quit"),
     ]
 
@@ -59,6 +66,13 @@ class BotListScreen(Screen):
             yield Button("Hosting (n)", id="btn-hosting")
             yield Button("Storage (f)", id="btn-storage")
             yield Button("Local AI & Lab (l)", id="btn-localai")
+            yield Button("Hooks (k)", id="btn-hooks")
+            yield Button("MCP (m)", id="btn-mcp")
+            yield Button("Plugins (u)", id="btn-plugins")
+            yield Button("Skills (i)", id="btn-skills")
+            yield Button("Snapshots (b)", id="btn-snapshots")
+            yield Button("Security (y)", id="btn-security")
+            yield Button("Peers (x)", id="btn-peers")
         yield DataTable(id="bot-table")
         yield Label("", id="bot-list-status")
         yield Footer()
@@ -142,6 +156,13 @@ class BotListScreen(Screen):
             "btn-hosting": self.action_hosting,
             "btn-storage": self.action_storage,
             "btn-localai": self.action_localai,
+            "btn-hooks": self.action_hooks,
+            "btn-mcp": self.action_mcp,
+            "btn-plugins": self.action_plugins,
+            "btn-skills": self.action_skills,
+            "btn-snapshots": self.action_snapshots,
+            "btn-security": self.action_security,
+            "btn-peers": self.action_peers,
         }
         handler = actions.get(event.button.id)
         if handler:
@@ -229,6 +250,41 @@ class BotListScreen(Screen):
         from bot.tui.screens.localai import LocalAIScreen
 
         await self.app.push_screen(LocalAIScreen())
+
+    async def action_hooks(self) -> None:
+        from bot.tui.screens.manage import HooksScreen
+
+        await self.app.push_screen(HooksScreen())
+
+    async def action_mcp(self) -> None:
+        from bot.tui.screens.manage import McpScreen
+
+        await self.app.push_screen(McpScreen())
+
+    async def action_plugins(self) -> None:
+        from bot.tui.screens.manage import PluginsScreen
+
+        await self.app.push_screen(PluginsScreen())
+
+    async def action_skills(self) -> None:
+        from bot.tui.screens.manage import SkillsScreen
+
+        await self.app.push_screen(SkillsScreen())
+
+    async def action_snapshots(self) -> None:
+        from bot.tui.screens.manage import SnapshotsScreen
+
+        await self.app.push_screen(SnapshotsScreen())
+
+    async def action_security(self) -> None:
+        from bot.tui.screens.manage import SecurityScreen
+
+        await self.app.push_screen(SecurityScreen())
+
+    async def action_peers(self) -> None:
+        from bot.tui.screens.manage import PeersScreen
+
+        await self.app.push_screen(PeersScreen())
 
     async def _after_form(self, _result: object = None) -> None:
         await self.refresh_bots()

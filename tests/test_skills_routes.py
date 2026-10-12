@@ -40,6 +40,14 @@ def test_create_then_list_a_global_skill(temp_db, monkeypatch):
     assert any(s["name"] == "onboarding_notes" for s in listed)
 
 
+def test_create_honours_the_global_key_dashboard_client_sends(temp_db, monkeypatch):
+    # bot/dashboard_client.py (the CLI and the TUI) sends "global", not "global_".
+    client = _client(monkeypatch)
+    resp = client.post("/api/skills", json={"name": "client_skill", "content": "x", "global": True}, headers=_auth())
+    assert resp.status_code == 200
+    assert resp.json()["global"] is True
+
+
 def test_create_invalid_name_is_400(temp_db, monkeypatch):
     client = _client(monkeypatch)
     resp = client.post("/api/skills", json={"name": "bad name!", "content": "x"}, headers=_auth())
