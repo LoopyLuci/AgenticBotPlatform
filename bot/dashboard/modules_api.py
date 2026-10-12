@@ -14,6 +14,11 @@ TridentDroid, BrainBuilder, Wrightspace, and any added in config), on one page.
     POST /api/modules/adopt                     {"path", "id"?, "name"?, "dry_run"?, "force"?}: make a project a module
     POST /api/modules/add                       {"url", "id"?, "name"?, "shallow"?, "branch"?}: any git repo as a module
                                                 (cloned, adopted as an overlay, checked, registered; a job)
+    GET  /api/modules/catalog                   the configured catalogs and their (synced) entries
+    POST /api/modules/catalog/sync              {"catalog"?}: fetch them (shallow, read-only)
+    POST /api/modules/catalog/install           {"catalog"?, "entry"}: clone its upstream, apply its overlay, check (a job)
+    POST /api/modules/catalog/publish           {"module", "catalog"?, "ref"?}: commit a module's overlay files on a new
+                                                branch of the catalog's working clone and return the diff; never pushes
     GET  /api/modules/candidates?folder=...     project folders there, and which are modules already
     POST /api/modules/{id}/publish              {"push"?}: its own private GitHub repo (a job)
     POST /api/modules/{id}/forget               stop listing an adopted project (its files stay)
@@ -75,6 +80,37 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         audit(str(body.get("id") or url), "add", url)
         return await run(adoption.add_from_url, url, mid=str(body.get("id") or ""), name=str(body.get("name") or ""),
                          shallow=body.get("shallow", True) is not False, branch=str(body.get("branch") or ""))
+
+    @app.get("/api/modules/catalog", dependencies=read)
+    async def modules_catalog():
+        from bot.modules import catalog
+        return await run(catalog.entries)
+
+    @app.post("/api/modules/catalog/sync", dependencies=write)
+    async def modules_catalog_sync(body: dict = Body(default={})):
+        from bot.modules import catalog
+        audit("catalog", "catalog_sync", str(body.get("catalog") or ""))
+        return {"synced": await run(catalog.sync, str(body.get("catalog") or "")), **await run(catalog.entries)}
+
+    @app.post("/api/modules/catalog/install", dependencies=write)
+    async def modules_catalog_install(body: dict = Body(...)):
+        from bot.modules import catalog
+        entry = str(body.get("entry") or "").strip()
+        if not entry:
+            raise HTTPException(status_code=400, detail="entry is required")
+        audit(entry, "catalog_install", str(body.get("catalog") or ""))
+        return await run(catalog.install, str(body.get("catalog") or ""), entry)
+
+    @app.post("/api/modules/catalog/publish", dependencies=write)
+    async def modules_catalog_publish(body: dict = Body(...)):
+        """Prepares the commit and shows the diff. Pushing it is a person's action (`abp modules catalog publish --push`)."""
+        from bot.modules import catalog
+        mid = str(body.get("module") or "").strip()
+        if not mid:
+            raise HTTPException(status_code=400, detail="module is required")
+        audit(mid, "catalog_publish", str(body.get("catalog") or ""))
+        return await run(catalog.publish, mid, str(body.get("catalog") or ""), ref=str(body.get("ref") or ""),
+                         push=False)
 
     @app.get("/api/modules/candidates", dependencies=read)
     async def modules_candidates(folder: str = Query(...)):

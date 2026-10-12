@@ -81,6 +81,43 @@ detection finds that it does not list); an operation whose script or route upstr
 it (it stays and is reported as `kept_stale`); a summary still as detection wrote it follows upstream's new text. A
 manifest with the generated marker is regenerated: delete the marker line to own it.
 
+## The catalog (sharing overlays between machines)
+
+A catalog is a git repo that holds module overlays, so another machine can install them. One folder per entry:
+
+```
+<entry>/entry.toml        name (= the folder), upstream (https git URL), ref (optional: tag, branch or commit to pin),
+                          description, platforms, tools
+<entry>/abp-module.toml   the overlay files, exactly as in catalog/ or data/module-overlays/
+<entry>/abp-ops.toml
+index.json                generated from the entries on every publish; never edit it
+```
+
+Catalogs are listed in config; there are none by default (a private catalog's URL belongs in your private config):
+
+```yaml
+modules:
+  catalogs:
+    - {name: mine, url: "https://github.com/<owner>/<catalog-repo>.git", branch: main}
+```
+
+- `abp modules catalog sync` fetches each catalog (shallow) into `data/module-catalogs/<name>`, which ABP only reads.
+  `abp modules catalog list` shows the entries (also `GET /api/modules/catalog`, and the Catalog section of the Modules page).
+- `abp modules catalog install <entry> [--catalog <name>]` (`POST /api/modules/catalog/install`, the Install button after a
+  confirm; a job) clones the entry's upstream shallowly into the normal module location (`data/modules/<Name>`), at its
+  pinned `ref` if it has one, copies the overlay to `data/module-overlays/<id>`, runs `abp_modkit check --project` and
+  registers it. The upstream must be https on an allowed host (the skills fetch's list: github.com, gitlab.com, codeberg.org,
+  bitbucket.org, plus `native_agent.skills.allowed_hosts`). It refuses if a module with that id, or a non-empty folder where
+  its checkout goes, exists, and removes what it made if the clone fails. A platform or tool the entry names that this
+  machine lacks is a warning in the log.
+- `abp modules catalog publish <module> --catalog <name> [--ref <ref>]` copies the module's overlay files (only those: for an
+  adopted project, only its abp-module.toml and abp-ops.toml; `[checkout] dir` is dropped as it is a machine path), writes
+  `entry.toml` from its manifest, regenerates `index.json` and commits on a new branch `publish/<id>-<time>` of a working
+  clone (`data/module-catalogs/<name>.work`), printing the diff. It refuses, naming file and kind but never the value,
+  if the files hold a machine path (the leak guard's rules), a secret-shaped string, a secrets file, a link, a binary or a
+  file over 1 MB. The API and the page only prepare the commit. Pushing the branch (never `main`, never forced) is the CLI's
+  separate `--push`; merging it is up to the catalog's owner.
+
 ## Publishing
 
 `abp modules publish` (and `python -m abp_modkit adopt --publish`) puts a project in its own private GitHub repo,

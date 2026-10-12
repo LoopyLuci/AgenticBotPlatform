@@ -2559,6 +2559,13 @@ export const operations = {
    "folder"
   ]
  },
+ "GET /api/modules/catalog": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modules/catalog",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/modules/jobs/{job_id}": {
   "body": false,
   "method": "GET",
@@ -5636,6 +5643,27 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/modules/adopt",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/modules/catalog/install": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modules/catalog/install",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/modules/catalog/publish": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modules/catalog/publish",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/modules/catalog/sync": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modules/catalog/sync",
   "path_params": [],
   "query_params": []
  },
@@ -13176,6 +13204,34 @@ export const operations = {
   "query_params": [
    "folder"
   ]
+ },
+ "modules_catalog_api_modules_catalog_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modules/catalog",
+  "path_params": [],
+  "query_params": []
+ },
+ "modules_catalog_install_api_modules_catalog_install_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modules/catalog/install",
+  "path_params": [],
+  "query_params": []
+ },
+ "modules_catalog_publish_api_modules_catalog_publish_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modules/catalog/publish",
+  "path_params": [],
+  "query_params": []
+ },
+ "modules_catalog_sync_api_modules_catalog_sync_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modules/catalog/sync",
+  "path_params": [],
+  "query_params": []
  },
  "modules_job_api_modules_jobs__job_id__get": {
   "body": false,

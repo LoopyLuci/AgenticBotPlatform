@@ -160,16 +160,67 @@
     const areas = {};
     st.list.modules.forEach((r) => { (areas[r.area] = areas[r.area] || []).push(r); });
     body.innerHTML = (errs.length ? `<p class="cardnote">${errs.map(([k, v]) => `<b>${E(k)}</b>: ${E(v)}`).join('<br>')}</p>` : '') +
-      adoptCard() +
+      adoptCard() + catalogCard() +
       `<div class="mdp-grid">${st.list.modules.map((r) => `<div class="mdp-card"><div class="mdp-row" style="justify-content:space-between"><h3>${E(r.name)}</h3><span class="mdp-muted">${E(r.area)}</span></div>
 <div class="mdp-muted">${E(r.description)}</div><div class="mdp-row">${chips(r)}</div>
 ${r.installed ? `<div class="mdp-mono mdp-muted">${E(r.path || '')}${r.commit ? ` · ${E(r.branch || '')} ${E(r.commit)}` : ''}</div>` : ''}
 <div class="mdp-row">${buttons(r)}</div></div>`).join('')}</div>`;
     wire(body);
     wireAdopt();
+    wireCatalog();
     const running = st.list.modules.some((r) => r.job);
     stopPoll();
     if (running) st.poll = setTimeout(() => render(true), 3000);
+  }
+
+  // The catalog (modules.catalogs): overlays other machines published. Everything from the catalog is escaped.
+  function catalogCard() {
+    return `<details class="mdp-card" style="margin-bottom:12px"${st.catOpen ? ' open' : ''} id="mdp-catalog"><summary><b>Catalog</b> <span class="mdp-muted">module overlays shared through a catalog repo (modules.catalogs)</span></summary>
+<div class="mdp-row" style="margin-top:8px"><button class="btn ghost" id="mdp-cat-sync">Sync catalogs</button><span id="mdp-cat-note" class="mdp-muted"></span></div><div id="mdp-cat-out"><p class="mdp-muted">Loading…</p></div></details>`;
+  }
+
+  function catalogRows(r) {
+    if (!r.catalogs.length) return '<p class="mdp-muted">No catalog is configured. Add one under modules.catalogs: name, url, branch.</p>';
+    const errs = Object.entries(r.errors || {}).map(([k, v]) => `<div class="cardnote"><b>${E(k)}</b>: ${E(v)}</div>`).join('');
+    return errs + (r.entries.length ? `<div class="mdp-grid">${r.entries.map((e) => `<div class="mdp-card"><div class="mdp-row" style="justify-content:space-between"><b>${E(e.name)}</b><span class="mdp-muted">${E(e.catalog)}</span></div>
+<div class="mdp-muted">${E(e.description)}</div><div class="mdp-mono mdp-muted">${E(e.upstream)}${e.ref ? ' @ ' + E(e.ref) : ''}</div>
+<div class="mdp-row">${(e.platforms || []).map((p) => chip(p)).join(' ')} ${(e.tools || []).map((t) => chip(t)).join(' ')}</div>
+<div class="mdp-row">${e.installed ? chip('installed', 'on') : `<button class="btn" data-cat-install="${E(e.name)}" data-cat="${E(e.catalog)}">Install</button>`}</div></div>`).join('')}</div>` :
+      '<p class="mdp-muted">No entries yet. Sync, or publish a module to the catalog.</p>');
+  }
+
+  async function loadCatalog(sync) {
+    const out = $('mdp-cat-out'), note = $('mdp-cat-note');
+    if (!out) return;
+    try {
+      const r = sync ? await post('/api/modules/catalog/sync', {}) : await api('/api/modules/catalog');
+      if (note) note.textContent = (r.synced || []).map((s) => `${s.name}: ${s.commit || 'nothing'}${s.note ? ' (' + s.note + ')' : ''}`).join('; ');
+      out.innerHTML = catalogRows(r);
+      out.querySelectorAll('[data-cat-install]').forEach((b) => b.addEventListener('click', async () => {
+        const name = b.dataset.catInstall, cat = b.dataset.cat;
+        if (!confirm(`Install ${name} from the catalog ${cat}? ABP clones its upstream repo (shallow), applies the overlay and checks it.`)) return;
+        out.insertAdjacentHTML('afterbegin', `<div class="mdp-card"><b>Installing ${E(name)}</b><div class="mdp-pre" id="mdp-cat-log">starting…</div></div>`);
+        try {
+          let job = await post('/api/modules/catalog/install', { catalog: cat, entry: name });
+          while (job.state === 'running') {
+            await new Promise((x) => setTimeout(x, 1000));
+            job = await api(`/api/modules/jobs/${encodeURIComponent(job.id)}`);
+            const log = $('mdp-cat-log');
+            if (log) { log.textContent = (job.log || []).join('\n'); log.scrollTop = log.scrollHeight; }
+          }
+          if (job.state !== 'done') throw new Error(job.error || 'it failed');
+          toast(`${name} is a module now${job.result.checked ? '' : ' (its check failed: see the log)'}`); st.list = null; setTimeout(() => render(true), 800);
+        } catch (e) { toast(errText(e), 'error'); const log = $('mdp-cat-log'); if (log) log.textContent += '\n' + errText(e); }
+      }));
+    } catch (e) { out.innerHTML = `<p class="cardnote">${E(errText(e))}</p>`; }
+  }
+
+  function wireCatalog() {
+    const box = $('mdp-catalog');
+    if (!box) return;
+    box.addEventListener('toggle', () => { st.catOpen = box.open; });
+    $('mdp-cat-sync').addEventListener('click', () => loadCatalog(true));
+    loadCatalog(false);
   }
 
   // Any project can become a module: abp_modkit reads it and writes abp-module.toml + abp-ops.toml into it.
@@ -258,7 +309,7 @@ ${s.manifest_error ? `<p class="cardnote">${E(s.manifest_error)}</p>` : ''}
 ${tools ? `<div class="mdp-card"><h4>Toolchain</h4>${tools}</div>` : ''}
 ${m.has_web || m.has_provider ? `<div class="mdp-card"><h4>Its server</h4>${kv([['web UI', m.has_web ? (svc.web ? `<a href="${E(svc.web)}" target="_blank" rel="noopener">${E(svc.web)}</a>` : '<span class="mdp-muted">shown once its server runs (start the hub, then the service.start operation)</span>') : ''], ['as a provider', m.has_provider ? (svc.openai ? chip(`“${m.id}” in model pickers`, 'on') + ` <span class="mdp-mono">${E(svc.openai)}</span>` : '<span class="mdp-muted">offered as a model provider while its server runs</span>') : '']])}
 <div class="mdp-row">${m.has_hub && hub.running && !svc.web && !svc.openai ? '<button class="btn" id="mdp-svc-start">Start its server</button>' : ''}${svc.web ? '<button class="btn ghost" id="mdp-web-show">Show here</button>' : ''}</div></div>` : ''}
-${m.source && m.source !== 'builtin' ? `<div class="mdp-card"><h4>Project</h4><p class="mdp-muted">Its own abp-module.toml and abp-ops.toml describe it. Publishing commits them and creates its private GitHub repo if it has none.</p><div class="mdp-row"><button class="btn ghost" id="mdp-refresh">Check for updates (what changed in its operations)</button><button class="btn ghost" id="mdp-publish">Publish to GitHub</button><button class="btn ghost" id="mdp-forget">Forget it</button></div><div id="mdp-refresh-out"></div></div>` : ''}
+${m.source && m.source !== 'builtin' ? `<div class="mdp-card"><h4>Project</h4><p class="mdp-muted">Its own abp-module.toml and abp-ops.toml describe it. Publishing commits them and creates its private GitHub repo if it has none.</p><div class="mdp-row"><button class="btn ghost" id="mdp-refresh">Check for updates (what changed in its operations)</button><button class="btn ghost" id="mdp-publish">Publish to GitHub</button><button class="btn ghost" id="mdp-catpub">Prepare for the catalog</button><button class="btn ghost" id="mdp-forget">Forget it</button></div><div id="mdp-refresh-out"></div><div id="mdp-catpub-out"></div></div>` : ''}
 ${svc.web ? `<div class="mdp-card" id="mdp-web" style="grid-column:1/-1;display:${st.webOpen === mid ? 'flex' : 'none'}"><div class="mdp-row" style="justify-content:space-between"><h4 style="margin:0">${E(m.name)}</h4><button class="btn ghost" id="mdp-web-hide">Hide</button></div><iframe title="${E(m.name)}" src="${st.webOpen === mid ? E(svc.web) : 'about:blank'}" style="width:100%;height:70vh;border:1px solid var(--line);border-radius:8px;background:#fff"></iframe></div>` : ''}
 <div class="mdp-card" style="grid-column:1/-1"><h4>Jobs</h4>${(jobs || []).slice(0, 6).map((j) => `<details${j.state === 'running' ? ' open' : ''}><summary>${E(j.kind)} ${j.state === 'running' ? chip('running', 'warn') : j.state === 'done' ? chip('done', 'on') : chip(j.state, 'bad')} <span class="mdp-muted">${E(when(j.started))}</span></summary><div class="mdp-pre">${E((j.log || []).join('\n'))}${j.error ? '\n' + E(j.error) : ''}</div></details>`).join('') || '<p class="mdp-muted">None yet.</p>'}</div>
 </div>
@@ -285,6 +336,15 @@ ${m.has_hub ? `<div class="mdp-card" style="margin-top:12px"><h4>Operations</h4>
     on('mdp-publish', async () => {
       if (!confirm(`Commit ${m.name}'s abp-module.toml and abp-ops.toml, and create its private GitHub repo if it has none?`)) return;
       try { await post(`/api/modules/${encodeURIComponent(mid)}/publish`, {}); toast('Publishing: follow it under Jobs'); render(); } catch (e) { toast(errText(e), 'error'); }
+    });
+    on('mdp-catpub', async () => {
+      const out = $('mdp-catpub-out');
+      if (!confirm(`Copy ${m.name}'s overlay files into a new branch of your catalog's working clone? Nothing is pushed.`)) return;
+      out.innerHTML = '<p class="mdp-muted">Preparing…</p>';
+      try {
+        const r = await post('/api/modules/catalog/publish', { module: mid });
+        out.innerHTML = r.changed ? `<p class="mdp-muted">Branch <span class="mdp-mono">${E(r.branch)}</span> in <span class="mdp-mono">${E(r.work)}</span>. Not pushed: review the diff, then run <span class="mdp-mono">abp modules catalog publish ${E(mid)} --push</span> or push it yourself.</p><div class="mdp-pre">${E(r.diff)}</div>` : `<p class="mdp-muted">${E(r.note)}</p>`;
+      } catch (e) { out.innerHTML = `<p class="cardnote">${E(errText(e))}</p>`; }
     });
     on('mdp-forget', async () => {
       if (!confirm(`Stop listing ${m.name}? Its folder and files stay as they are.`)) return;
