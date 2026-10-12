@@ -54556,6 +54556,51 @@
     "summary": "Sandbox Status"
    }
   },
+  "/api/sandbox/summary": {
+   "get": {
+    "description": "Cells and live processes by call site (executable name only, never arguments), recent reflex\nactions and this OS's capabilities - what the Sandbox screen shows.",
+    "operationId": "sandbox_summary_api_sandbox_summary_get",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Sandbox Summary"
+   }
+  },
   "/api/security/allowed-users": {
    "get": {
     "operationId": "api_allowed_users_api_security_allowed_users_get",

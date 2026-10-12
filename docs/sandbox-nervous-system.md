@@ -220,6 +220,7 @@ process a recorded one started). Three surfaces read it, and all three are just 
 |---|---|
 | `GET /api/sandbox/{status,cells,processes,events}` | the data itself, plus `POST /api/sandbox/cells/{id}/kill` and `POST /api/sandbox/estop` - both audited, both behind the dashboard token (`bot/dashboard/sandbox_ns_api.py`) |
 | `abp sandbox {status,cells,ps,events,kill,estop}` | the same API from a terminal (`abp_cli/sandbox.py`); `--json` for a script |
+| the Sandbox screen, in both UIs | `GET /api/sandbox/summary` (dashboard token): live cells and processes by call site (`owner`) with preset, pid, age and CPU/memory, the last `limit_hit`/`kill`/`reap` events, and what this OS can enforce (job object or cgroup, CPU/memory caps, processors kept free). A process is shown by executable name only, never its arguments. A confirmed Stop calls the cell kill above; daemons get none. `sns-panel.js`, identical in `bot/dashboard/static/` and `desktop-app/ui/` |
 | the diagnostics page, in both UIs | a Processes panel with Cells / Processes / Events tabs and a Kill button per cell (`bot/dashboard/static/`, and the desktop app's own copy in `desktop-app/ui/`) |
 
 ## Reflexes
@@ -259,6 +260,7 @@ and `bot/localai/engine.py`'s `llama-server` (`preset="engine"`).
 | `bot/cluster/executor.py` | job, with the job's own reservation as its policy (`memory_mb`, `job_memory_mb`, `cpu_rate_percent`) | `tool` + that policy |
 | `bot/agent_runtime/code_intel.py` `LspClient` | language server, killed by `stop()` / `shutdown_all()` | `tool` |
 | `bot/agent_runtime/browser.py` `Session` | session: Playwright's driver is admitted at `_adopt()`, so the browser it launches is in the cell too, and `close()` kills it | `tool` |
+| `bot/hosting/deploy.py` `ssh_run()`, Cloudflare Pages' `wrangler`, GitHub Pages' `git` calls | - no cell: one buffered call at a time, with its own timeout (`spawn.run()` now also takes `input=`) | `tool` |
 | `bot/git_stacks.py` `_git()` | - no cell: one buffered git call at a time, so the process *is* the tree | `tool` (through `spawn.run()`) |
 Each has a test that starts a real process through that call site and checks the record's
 `owner`/`cell`/`policy` and that stopping the cell stops the process (`tests/test_sandbox_migration.py`,
@@ -275,7 +277,6 @@ in a cell and not in `live.json`:
   (CPU and memory probes), and `bot/hosting/{caddy,service,vps}.py`'s validate/reload/permission calls.
 * `bot/modules/harness.py`'s `_launch_visible()` - `open_gui` and `open_tui`, the one place a
   console or window is for a person, spawned inside `guard.visible()`.
-* `bot/hosting/deploy.py`'s `ssh`/`wrangler`/`git` runs: buffered `subprocess.run()` with their own
-  timeouts, started from a person's click rather than by anything running on a timer. A cell each is
-  the obvious next step, not done in this pass.
+* `bot/hosting/deploy.py`'s remaining `ftplib`/HTTP deploys start no process. (Its `ssh`/`wrangler`/`git`
+  runs are recorded now, as one buffered `tool` call each rather than a cell.)
 * `bot/fileserver/server.py` starts no process at all - uvicorn runs inside this one.

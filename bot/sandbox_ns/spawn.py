@@ -147,7 +147,8 @@ def run(argv: Argv, *, timeout: float = 60, cell: Optional[Cell] = None,
     timeout: containment, limits, an exit record and a timeout that takes the whole tree with
     it, all for one call. `cwd`/`env`/stdio are Popen's own; the result is Popen's own
     CompletedProcess, so an existing `subprocess.run()` call site can move over unchanged."""
-    kw.setdefault("stdin", subprocess.DEVNULL)
+    data = kw.pop("input", None)
+    kw.setdefault("stdin", subprocess.DEVNULL if data is None else subprocess.PIPE)
     kw.setdefault("stdout", subprocess.PIPE)
     kw.setdefault("stderr", subprocess.PIPE)
     kw.setdefault("text", True)
@@ -155,7 +156,7 @@ def run(argv: Argv, *, timeout: float = 60, cell: Optional[Cell] = None,
     kw.setdefault("errors", "replace")
     proc = spawn(argv, cell=cell, **kw)
     try:
-        out, err = proc.communicate(timeout=timeout)
+        out, err = proc.communicate(input=data, timeout=timeout)
     except subprocess.TimeoutExpired:
         if cell is not None:
             cell.kill(reason=f"`{_cmdline(proc.args)}` passed its {timeout:g}s timeout")

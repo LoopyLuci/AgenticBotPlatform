@@ -383,3 +383,70 @@ def test_git_calls_are_recorded_by_the_nervous_system(isolated, tmp_path):
     while time.monotonic() < deadline and status_row.exit_code is None:
         time.sleep(0.1)
     assert status_row.exit_code == 0, "a completed git call must have been marked with its exit code"
+
+
+# ------------------------------------------------------------------ hosting deploys
+
+def _deploy_rows(name: str):
+    return [r for r in registry.records() if r.owner == "hosting.deploy" and r.name == name]
+
+
+def _wait_exit(row, timeout: float = 15.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline and row.exit_code is None:
+        time.sleep(0.1)
+    return row.exit_code
+
+
+def test_ssh_run_goes_through_the_nervous_system_and_still_feeds_stdin(isolated, monkeypatch):
+    """bot/hosting/deploy.py's `ssh_run()`: bytes in on stdin, bytes decoded out, recorded as a `tool`."""
+    from bot.hosting import deploy
+
+    echo = "import sys; sys.stdout.write('got:' + sys.stdin.read())"
+    monkeypatch.setattr(deploy, "_ssh_base", lambda acc: [sys.executable, "-c", echo])
+    out = deploy.ssh_run({}, "ignored", stdin=b"payload")
+    assert out.startswith("got:payload"), out
+
+    rows = _deploy_rows("ssh")
+    assert rows and rows[-1].policy == "tool" and rows[-1].cell == "", rows
+    assert _wait_exit(rows[-1]) == 0
+
+
+def test_cloudflare_publish_runs_wrangler_through_the_nervous_system(standin, monkeypatch, tmp_path):
+    from bot.hosting import accounts, deploy, dns
+
+    monkeypatch.delenv(MODE, raising=False)
+    monkeypatch.setattr(deploy.shutil, "which", lambda name: str(standin.exe))
+    monkeypatch.setattr(accounts, "secret", lambda acc, key: "tok-not-in-the-record")
+    monkeypatch.setattr(accounts, "setting", lambda acc, key: "acct")
+    monkeypatch.setattr(dns, "provider", lambda acc: type("P", (), {"req": lambda self, *a, **k: {}})())
+    site_dir = tmp_path / "site"
+    site_dir.mkdir()
+    res = deploy.cloudflare_publish({"id": "s1"}, site_dir, {}, {}, lambda m: None)
+    assert res["project"] == "abp-s1"
+
+    rows = _deploy_rows("wrangler pages deploy")
+    assert rows and rows[-1].policy == "tool", rows
+    assert "tok-not-in-the-record" not in " ".join(rows[-1].argv)
+    assert _wait_exit(rows[-1]) == 0
+
+
+def test_github_publish_runs_its_git_calls_through_the_nervous_system(standin, monkeypatch, tmp_path):
+    from bot.hosting import accounts, deploy
+
+    monkeypatch.delenv(MODE, raising=False)
+    monkeypatch.setattr(deploy.shutil, "which", lambda name: str(standin.exe))
+    monkeypatch.setattr(accounts, "secret", lambda acc, key: "tok")
+    monkeypatch.setattr(accounts, "setting", lambda acc, key: "me/site")
+    monkeypatch.setattr(deploy.httpx, "post", lambda *a, **k: None)      # the Pages API is the network; the git calls are the test
+    monkeypatch.setattr(deploy, "_http", lambda *a, **k: type("R", (), {"json": lambda self: {"html_url": "https://x"}})())
+    site_dir = tmp_path / "site"
+    site_dir.mkdir()
+    (site_dir / "index.html").write_text("hi", encoding="utf-8")
+    res = deploy.github_publish({"id": "s1", "domains": []}, site_dir, {}, {}, lambda m: None)
+    assert res["repo"] == "me/site"
+
+    rows = _deploy_rows("git")
+    assert len(rows) == 4, [r.argv for r in rows]                 # init, add, commit, push
+    assert all(r.policy == "tool" for r in rows)
+    assert all(_wait_exit(r) == 0 for r in rows)

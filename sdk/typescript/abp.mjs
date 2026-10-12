@@ -3024,6 +3024,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/sandbox/summary": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/sandbox/summary",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/security/allowed-users": {
   "body": false,
   "method": "GET",
@@ -13729,6 +13736,13 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/api/sandbox/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "sandbox_summary_api_sandbox_summary_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/sandbox/summary",
   "path_params": [],
   "query_params": []
  },
