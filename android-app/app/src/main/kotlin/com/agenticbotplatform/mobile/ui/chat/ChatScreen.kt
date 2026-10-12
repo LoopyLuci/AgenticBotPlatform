@@ -306,8 +306,9 @@ private fun ConversationScreen(
             val listState = rememberLazyListState()
             val scope = rememberCoroutineScope()
 
-            LaunchedEffect(state.messages.size) {
-                val count = state.messages.size
+            val draft = state.activeInstanceId?.let { state.drafts[it] }
+            LaunchedEffect(state.messages.size, draft?.text?.length, draft?.tool) {
+                val count = state.messages.size + (if (draft != null) 1 else 0)
                 if (count > 0) scope.launch { listState.animateScrollToItem(count - 1) }
             }
 
@@ -329,6 +330,9 @@ private fun ConversationScreen(
                         },
                         onDelete = { viewModel.deleteMessage(message) },
                     )
+                }
+                if (draft != null) {
+                    item(key = "chat-draft") { DraftBubble(draft) }
                 }
             }
 
@@ -439,6 +443,30 @@ private fun openFile(context: android.content.Context, file: java.io.File, mime:
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
     runCatching { context.startActivity(intent) }
+}
+
+/** The bot's reply while it is still being written: text so far plus the tool
+ * it is running; replaced by the stored message when the turn ends. */
+@Composable
+private fun DraftBubble(draft: com.agenticbotplatform.mobile.data.ChatDraft) {
+    // Drawn like an incoming bubble (the bot's side), as MessageBubble draws direction "in".
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+        Surface(
+            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 4.dp, bottomEnd = 16.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.widthIn(max = 300.dp),
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                if (draft.text.isNotEmpty()) Text(draft.text)
+                Text(
+                    draft.tool?.let { "running $it..." } ?: if (draft.text.isEmpty()) "..." else "",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
 }
 
 @Composable

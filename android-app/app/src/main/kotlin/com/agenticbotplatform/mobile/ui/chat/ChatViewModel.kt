@@ -3,6 +3,8 @@ package com.agenticbotplatform.mobile.ui.chat
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.agenticbotplatform.mobile.data.ChatDraft
+import com.agenticbotplatform.mobile.data.ChatDrafts
 import com.agenticbotplatform.mobile.data.ChatRepository
 import com.agenticbotplatform.mobile.data.UserFacingError
 import com.agenticbotplatform.mobile.data.dto.BotInstanceSummary
@@ -58,6 +60,8 @@ data class ChatUiState(
     val sendingFile: Boolean = false,
     val uploadProgress: Float = 0f,
     val mode: ChatMode = ChatMode.CHAT_WITH_BOT, // the default seat; Send from Server is one tap away
+    /** Live reply of a native-agent turn per bot instance id; empty when nothing streams. */
+    val drafts: Map<Int, ChatDraft> = emptyMap(),
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -100,6 +104,18 @@ class ChatViewModel @Inject constructor(private val repository: ChatRepository) 
         // reconnecting when the server broadcast it).
         repository.observeLiveMessages()
             .onEach { push -> repository.persistPushedMessage(push) }
+            .launchIn(viewModelScope)
+
+        // Live reply: a draft grows from "chat_stream" frames and is replaced by
+        // the stored final message. No socket or no frames means no draft, i.e.
+        // the final reply simply appears as before.
+        repository.observeChatStream()
+            .onEach { frame ->
+                val id = frame.instanceId
+                // Fetch the stored final message before the draft goes away, so the bubble is swapped, not blinked.
+                if (frame.kind == "done" && id != null && id in _uiState.value.drafts) repository.refreshMessages(id)
+                _uiState.update { it.copy(drafts = ChatDrafts.reduce(it.drafts, frame)) }
+            }
             .launchIn(viewModelScope)
     }
 
@@ -148,6 +164,8 @@ class ChatViewModel @Inject constructor(private val repository: ChatRepository) 
             viewModelScope.launch {
                 runCatching { repository.sendToBot(instanceId, text) }
                     .onSuccess { repository.refreshMessages(instanceId) }
+                // The request is over, so whatever draft is left (a missed "done", an error) ends here.
+                _uiState.update { it.copy(drafts = it.drafts - instanceId) }
             }
             return
         }

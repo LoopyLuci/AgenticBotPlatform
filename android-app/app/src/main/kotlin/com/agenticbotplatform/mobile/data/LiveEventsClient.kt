@@ -1,6 +1,7 @@
 package com.agenticbotplatform.mobile.data
 
 import com.agenticbotplatform.mobile.data.dto.ChatMessagePush
+import com.agenticbotplatform.mobile.data.dto.ChatStreamFrame
 import com.agenticbotplatform.mobile.data.dto.DeviceInfo
 import com.agenticbotplatform.mobile.data.dto.DeviceListMessage
 import com.agenticbotplatform.mobile.data.dto.JobUpdatePush
@@ -102,4 +103,11 @@ class LiveEventsClient @Inject constructor(
     val jobUpdates: Flow<JobUpdatePush> = rawEvents
         .filter { it.typeIs("job_update") }
         .mapNotNull { runCatching { json.decodeFromJsonElement(JobUpdatePush.serializer(), it) }.getOrNull() }
+
+    /** Live reply frames of a native-agent turn ("chat_stream"). Frames that
+     * don't parse are dropped; with no socket nothing arrives and chat shows
+     * the final reply only. */
+    val chatStreams: Flow<ChatStreamFrame> = rawEvents
+        .filter { it.typeIs("chat_stream") }
+        .mapNotNull { runCatching { json.decodeFromJsonElement(ChatStreamFrame.serializer(), it) }.getOrNull() }
 }
