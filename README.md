@@ -58,7 +58,7 @@ this is just the map:
 | **Skills** | Fetch a skill pack from a git URL into quarantine, read its scan findings, approve or reject it, review skill drafts with an advisory automatic check, and remove installed packs. |
 | **Evals** | The agent eval harness's saved live runs: model, pass rate, calls, tokens, time, and the tasks that failed (also `python -m abp_agenteval page --reports`). |
 | **Sandbox** | What ABP has running right now and which part of ABP started it, with limits, recent kills and what this OS can enforce; stop a cell after a confirm. |
-| **Modules** | Programs ABP drives as modules (see [docs/modules/modkit.md](docs/modules/modkit.md)): add one from a git URL, **Check for updates** (fetch, fast-forward only, a diff of its operations, hand edits kept), and **Assist setup** (model-proposed descriptions and input types you pick from before anything is written). |
+| **Modules** | Programs ABP drives as modules (see [docs/modules/modkit.md](docs/modules/modkit.md)): add one from a git URL, **Check for updates** (fetch, fast-forward only, a diff of its operations, hand edits kept), **Assist setup** (model-proposed descriptions, input types and a panel layout you pick from before anything is written), **Open panel** (a module's operations as forms), and a **Catalog** of shared module overlays to install from (`modules.catalogs`). |
 | **Studio** | Model-generated variants of ABP's own screens, previewed and rated; a variant is applied only after it passes a test gate on a temporary copy (validators, parity, leak guard, `node --check`, the screens' own tests). |
 
 ## Documentation
@@ -1515,6 +1515,10 @@ incremental reuse of that space.
   binding to `127.0.0.1` (see `DASHBOARD_HOST` in `.env`) plus the
   `DASHBOARD_TOKEN` header required on every state-changing request. Don't
   expose it past localhost without a real reverse proxy and auth in front.
+- The native agent's commands can run offline (`sandbox.network: none`, every backend) or, on the Docker backend,
+  with a per-site allow list (`sandbox.network: allowlist` + `allow_hosts`): a filtering proxy on an internal network
+  is the only way out, private and loopback addresses are refused unless listed, and it fails closed. See
+  [docs/agents/security.md](docs/agents/security.md).
 - Bot instance credentials (platform tokens) live in `data/bot.db` in
   plain text, same trust model as `.env`'s plaintext secrets — both are
   local-only and gitignored, not a regression, just a second place on
