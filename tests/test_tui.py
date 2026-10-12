@@ -716,3 +716,116 @@ def test_peers_screen_lists_and_unlinks_with_confirm(dashboard_client):
             await _wait(pilot, lambda: _rows(screen, "peers") == 0)
 
     asyncio.run(_run())
+
+
+def test_key_bindings_for_devices_env_and_kanban_are_registered():
+    keys = {key: action for key, action, _ in BotListScreen.BINDINGS}
+    assert (keys["j"], keys["z"], keys["1"]) == ("devices", "env", "kanban")
+    assert len(keys) == len(BotListScreen.BINDINGS)
+
+
+def test_devices_screen_lists_online_state_and_revokes_with_confirm(dashboard_client):
+    from bot import db
+
+    key_id, plaintext = db.create_api_key("Pixel", kind="device")
+
+    async def _run():
+        from bot.tui.screens.manage import DevicesScreen
+
+        app = AgenticBotPlatformTUI()
+        async with app.run_test(size=(140, 100)) as pilot:
+            screen = await _open(app, pilot, dashboard_client, DevicesScreen)
+            assert _rows(screen, "devices") == 1
+            assert screen._rows[0]["label"] == "Pixel" and screen._rows[0]["online"] is False
+            assert "mobile key" in str(screen.query_one("#devices-title").content)      # pairing is CLI/GUI only
+            assert not screen.query("#devices-add")                                      # no way to mint a key here
+            assert plaintext not in app.export_screenshot()
+            _select_first(screen, "devices")
+            _press(screen, "devices-revoke")
+            await _confirm(pilot, app, yes=False)
+            assert _rows(screen, "devices") == 1
+            _press(screen, "devices-revoke")
+            await _confirm(pilot, app)
+            await _wait(pilot, lambda: _rows(screen, "devices") == 0)
+            assert db.get_api_key(key_id)["revoked_at"]
+
+    asyncio.run(_run())
+
+
+def test_env_screen_masks_values_sets_one_and_never_shows_a_secret(dashboard_client, monkeypatch, tmp_path):
+    from bot import envfile
+
+    env = tmp_path / "test.env"
+    env.write_text("# comment\nDASHBOARD_TOKEN=test-token\nSECRET_KEY=hunter2-SECRET-VALUE\nEMPTY_ONE=\n", encoding="utf-8")
+    monkeypatch.setattr(envfile, "PROJECT_ENV", env)
+    monkeypatch.setattr(envfile, "GLOBAL_ENV", tmp_path / "none.env")
+    monkeypatch.setattr(envfile, "CONFIG_PATH", tmp_path / "no-config.yaml")
+    monkeypatch.setattr(envfile, "BACKUP_DIR", tmp_path / "env_backups")
+
+    async def _run():
+        from textual.widgets import Input
+
+        from bot.tui.screens.manage import EnvScreen
+
+        app = AgenticBotPlatformTUI()
+        async with app.run_test(size=(140, 100)) as pilot:
+            screen = await _open(app, pilot, dashboard_client, EnvScreen)
+            assert [r["key"] for r in screen._rows] == ["DASHBOARD_TOKEN", "SECRET_KEY", "EMPTY_ONE"]
+            assert screen._rows[1]["set"] is True and screen._rows[2]["set"] is False
+            assert "hunter2" not in app.export_screenshot() and "********" in app.export_screenshot()
+            _set(screen, "env", key="NEW_THING", value="brand-new-SECRET-2")
+            assert screen.query_one("#env-value", Input).password is True
+            _press(screen, "env-add")
+            await _wait(pilot, lambda: any(r["key"] == "NEW_THING" for r in screen._rows))
+            assert screen.query_one("#env-value", Input).value == ""                     # cleared after sending
+            assert "NEW_THING=brand-new-SECRET-2" in env.read_text(encoding="utf-8")
+            _press(screen, "env-add")                                                    # nothing typed
+            await pilot.pause()
+            assert "required" in _status(screen, "env")
+            _set(screen, "env", key="bad=key", value="rejected-SECRET-3")                # the API refuses the key
+            _press(screen, "env-add")
+            await _wait(pilot, lambda: "Failed" in _status(screen, "env"))
+            assert "rejected-SECRET-3" not in _status(screen, "env")
+            assert screen.query_one("#env-value", Input).value == ""
+            _press(screen, "env-reload")
+            await _wait(pilot, lambda: "reloaded" in _status(screen, "env"))
+            _press(screen, "env-diag")
+            await _wait(pilot, lambda: "system_info" in screen.query_one("#env-detail").text)
+            shown = app.export_screenshot() + screen.query_one("#env-detail").text
+            for secret in ("hunter2-SECRET-VALUE", "brand-new-SECRET-2", "rejected-SECRET-3"):
+                assert secret not in shown
+
+    asyncio.run(_run())
+
+
+def test_kanban_screen_adds_moves_and_deletes_a_card_with_confirm(dashboard_client):
+    iid = _create_instance(name="kanban-tui")
+
+    async def _run():
+        from bot.tui.screens.manage import KanbanScreen
+
+        app = AgenticBotPlatformTUI()
+        async with app.run_test(size=(140, 100)) as pilot:
+            screen = await _open(app, pilot, dashboard_client, KanbanScreen)
+            assert _rows(screen, "kanban") == 0
+            _press(screen, "kanban-add")                                                 # no text typed
+            await pilot.pause()
+            assert "required" in _status(screen, "kanban")
+            _set(screen, "kanban", instance=str(iid), board="work", text="write docs")
+            _press(screen, "kanban-add")
+            await _wait(pilot, lambda: _rows(screen, "kanban") == 1)
+            assert screen._rows[0]["column_name"] == "todo"
+            _press(screen, "kanban-boards")
+            await _wait(pilot, lambda: "work" in screen.query_one("#kanban-detail").text)
+            _select_first(screen, "kanban")
+            _set(screen, "kanban", column="doing")
+            _press(screen, "kanban-move")
+            await _wait(pilot, lambda: screen._rows and screen._rows[0]["column_name"] == "doing")
+            _press(screen, "kanban-delete")
+            await _confirm(pilot, app, yes=False)
+            assert _rows(screen, "kanban") == 1
+            _press(screen, "kanban-delete")
+            await _confirm(pilot, app)
+            await _wait(pilot, lambda: _rows(screen, "kanban") == 0)
+
+    asyncio.run(_run())

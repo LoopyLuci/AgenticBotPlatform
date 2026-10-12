@@ -479,6 +479,19 @@ class DashboardClient:
     async def env_status(self) -> dict:
         return await self._request("GET", "/api/env")
 
+    async def env_keys(self) -> list[dict]:
+        """The .env's variable names and whether each has a value - never the values: the file content
+        is fetched and reduced to names at once, so a caller (the TUI's Env screen) cannot show a secret."""
+        content = (await self._request("GET", "/api/env/content")).get("content") or ""
+        keys = []
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            name, _, value = line.removeprefix("export ").partition("=")
+            keys.append({"key": name.strip(), "set": bool(value.strip().strip('"').strip("'"))})
+        return keys
+
     async def infra(self, area: str, method: str, path: str, body: Any = None, host: str = "local") -> Any:
         """Any /api/{tailscale,docker,vms,infra/rules}/... route - the CLI's and TUI's one entry point for them.
         `host` is a linked server's id (or "local"): the same ?host= routing the GUI uses."""

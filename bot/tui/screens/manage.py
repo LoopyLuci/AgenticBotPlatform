@@ -56,7 +56,8 @@ class ManageScreen(Screen):
     COLUMNS: tuple = ()          # (header, row -> value)
     FIELDS: tuple = ()           # (suffix, placeholder, secret)
     ADD_LABEL = "Add"
-    ACTIONS: tuple = ()          # (suffix, label, method name, destructive question or None)
+    ACTIONS: tuple = ()          # (suffix, label, method name, destructive question or None[, True = needs no row])
+    KEEP_FIELDS: tuple = ()      # form fields that stay filled after an add (e.g. which board is open)
 
     def compose(self) -> ComposeResult:
         p = self.PREFIX
@@ -68,7 +69,7 @@ class ManageScreen(Screen):
                 yield Button(self.ADD_LABEL, id=f"{p}-add", variant="primary")
         yield DataTable(id=f"{p}-table")
         with Horizontal():
-            for suffix, label, _method, _confirm in self.ACTIONS:
+            for suffix, label, *_rest in self.ACTIONS:
                 yield Button(label, id=f"{p}-{suffix}")
             yield Button("Refresh", id=f"{p}-refresh")
         yield Label("", id=f"{p}-status")
@@ -159,15 +160,17 @@ class ManageScreen(Screen):
                 self._status(message[1:])
                 return
             for suffix, _, _ in self.FIELDS:      # secrets and everything else leave the inputs once sent
+                if suffix in self.KEEP_FIELDS:
+                    continue
                 self.query_one(f"#{p}-{suffix}", Input).value = ""
             await self.refresh_rows()
             self._status(message)
         else:
-            for suffix, _label, method, question in self.ACTIONS:
+            for suffix, _label, method, question, *rowless in self.ACTIONS:
                 if bid != f"{p}-{suffix}":
                     continue
                 row = self.selected()
-                if row is None:
+                if row is None and not (rowless and rowless[0]):
                     self._status("Select a row first.")
                     return
                 handler = getattr(self, method)
@@ -440,3 +443,153 @@ class PeersScreen(ManageScreen):
 
     async def _remove(self, row: dict) -> None:
         await self._run(lambda: self.app.client.remove_peer(row["id"]), f"Unlinked {row.get('name') or row['id']}.")
+
+
+class DevicesScreen(ManageScreen):
+    """Paired devices (phones, tablets) with their online state; revoking one cuts its access at once.
+    Creating a pairing key is deliberately not here: the key and its QR payload are credentials."""
+
+    TITLE_TEXT = ("Paired devices. To pair a new one, create a mobile key in the web GUI or with "
+                  "`abp_cli security create-mobile-key` (its key and QR code are never shown in the TUI).")
+    PREFIX = "devices"
+    COLUMNS = (("id", lambda r: r["id"]), ("label", lambda r: r.get("label") or ""),
+               ("tier", lambda r: r.get("permission_tier") or ""), ("online", lambda r: _yn(r.get("online"))),
+               ("platform", lambda r: r.get("platform") or ""), ("last used", lambda r: r.get("last_used_at") or ""))
+    ACTIONS = (("revoke", "Revoke", "_revoke", "Revoke device {key}? It can no longer reach this server."),)
+
+    async def load(self) -> list:
+        return await self.app.client.list_devices()
+
+    def row_key(self, row: dict) -> str:
+        return str(row["id"])
+
+    async def _revoke(self, row: dict) -> None:
+        await self._run(lambda: self.app.client.delete_mobile_key(row["id"]),
+                        f"Revoked {row.get('label') or row['id']}.")
+
+
+class EnvScreen(ManageScreen):
+    """The .env's variable names with their values masked, a password-style value editor, config reload
+    and a diagnostics view. A value is sent once and the input cleared; none is ever shown or echoed."""
+
+    TITLE_TEXT = "Environment (.env values are always masked), config and diagnostics"
+    PREFIX = "env"
+    MASK = "********"
+    COLUMNS = (("key", lambda r: r["key"]), ("value", lambda r: EnvScreen.MASK if r.get("set") else "(empty)"))
+    FIELDS = (("key", "variable name", False), ("value", "new value (hidden)", True))
+    ADD_LABEL = "Set value"
+    ACTIONS = (("use", "Use selected key", "_use", None), ("reload", "Reload config", "_reload", None, True),
+               ("diag", "Diagnostics", "_diag", None, True), ("crashes", "Crash reports", "_crashes", None, True))
+
+    async def load(self) -> list:
+        return await self.app.client.env_keys()
+
+    def row_key(self, row: dict) -> str:
+        return row["key"]
+
+    async def add(self, values: dict) -> str:
+        key, value = values["key"], self.query_one("#env-value", Input).value     # not stripped: kept exactly
+        if not key or not value:
+            return "!A variable name and a value are both required."
+        try:
+            await self.app.client.env_set(key, value)
+        except ApiError as exc:
+            self.query_one("#env-value", Input).value = ""
+            return f"!Failed: {str(exc).replace(value, self.MASK)}"                # an error never echoes the value
+        return f"Set {key}."
+
+    async def _use(self, row: dict) -> None:
+        self.query_one("#env-key", Input).value = row["key"]
+        self.query_one("#env-value", Input).focus()
+
+    async def _reload(self, _row: dict | None) -> None:
+        try:
+            await self.app.client.reload_config()
+        except ApiError as exc:
+            self._status(f"Failed: {exc}")
+            return
+        self._status("Config reloaded.")
+
+    async def _diag(self, _row: dict | None) -> None:
+        try:
+            self._show(json.dumps(await self.app.client.diagnostics_summary(), indent=1, default=str))
+        except ApiError as exc:
+            self._status(f"Failed: {exc}")
+
+    async def _crashes(self, _row: dict | None) -> None:
+        try:
+            reports = await self.app.client.crash_reports(limit=20)
+        except ApiError as exc:
+            self._status(f"Failed: {exc}")
+            return
+        self._show(json.dumps(reports, indent=1, default=str) if reports else "(no crash reports)")
+
+
+class KanbanScreen(ManageScreen):
+    """One bot's kanban board: cards by column. Give the bot's instance id (blank = the first bot) and a
+    board name (blank = default), then Refresh; Add card puts text in the given column (blank = todo)."""
+
+    TITLE_TEXT = "Kanban (set instance id and board, then Refresh)"
+    PREFIX = "kanban"
+    COLUMNS = (("id", lambda r: r["id"]), ("column", lambda r: r.get("column_name") or ""),
+               ("card", lambda r: r.get("text") or ""))
+    FIELDS = (("instance", "instance id (blank = first bot)", False), ("board", "board (blank = default)", False),
+              ("column", "column (add/move; blank = todo)", False), ("text", "card text", False))
+    ADD_LABEL = "Add card"
+    KEEP_FIELDS = ("instance", "board", "column")
+    ACTIONS = (("move", "Move to column", "_move", None), ("delete", "Delete", "_delete", "Delete card {key}?"),
+               ("boards", "Boards", "_boards", None, True))
+
+    async def _instance(self) -> int | None:
+        raw = self._value("instance")
+        if raw:
+            return int(raw) if raw.isdigit() else None
+        bots = await self.app.client.list_bots()
+        return bots[0]["id"] if bots else None
+
+    async def load(self) -> list:
+        iid = await self._instance()
+        if iid is None:
+            return []
+        return await self.app.client.kanban_cards(iid, board=self._value("board") or "default")
+
+    def row_key(self, row: dict) -> str:
+        return str(row["id"])
+
+    async def add(self, values: dict) -> str:
+        if values["instance"] and not values["instance"].isdigit():
+            return "!Instance id must be a number."
+        iid = await self._instance()
+        if iid is None:
+            return "!No bot to attach the board to."
+        if not values["text"]:
+            return "!Card text is required."
+        await self.app.client.add_kanban_card(iid, values["text"], board=values["board"] or "default",
+                                              column=values["column"] or None)
+        return "Added card."
+
+    async def _move(self, row: dict) -> None:
+        column, iid = self._value("column"), await self._instance()
+        if not column or iid is None:
+            self._status("Type the target column and pick a valid instance first.")
+            return
+        await self._run(lambda: self.app.client.move_kanban_card(row["id"], iid, column),
+                        f"Moved card {row['id']} to {column}.")
+
+    async def _delete(self, row: dict) -> None:
+        iid = await self._instance()
+        if iid is None:
+            return
+        await self._run(lambda: self.app.client.delete_kanban_card(row["id"], iid), f"Deleted card {row['id']}.")
+
+    async def _boards(self, _row: dict | None) -> None:
+        iid = await self._instance()
+        if iid is None:
+            self._status("No bot to list boards for.")
+            return
+        try:
+            boards = await self.app.client.kanban_boards(iid)
+        except ApiError as exc:
+            self._status(f"Failed: {exc}")
+            return
+        self._show("\n".join(b["name"] for b in boards) or "(no boards yet)")
