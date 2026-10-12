@@ -374,7 +374,7 @@ def _overlay_files(m: mf.Manifest) -> dict[str, bytes]:
     if m.overlay:
         base, names = Path(m.overlay), None
     else:
-        base, names = registry.install_dir(m), [mf.MANIFEST_FILE, "abp-ops.toml"]
+        base, names = registry.install_dir(m), [mf.MANIFEST_FILE, "abp-ops.toml", "abp-panel.json"]
     out: dict[str, bytes] = {}
     for p in sorted(base.rglob("*")) if names is None else [base / n for n in names]:
         if not p.is_file() and not p.is_symlink():

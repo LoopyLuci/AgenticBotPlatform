@@ -2615,6 +2615,15 @@ export const operations = {
    "refresh"
   ]
  },
+ "GET /api/modules/{mid}/panel": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modules/{mid}/panel",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
  "GET /api/modules/{mid}/refresh": {
   "body": false,
   "method": "GET",
@@ -13161,6 +13170,15 @@ export const operations = {
   "query_params": [
    "refresh"
   ]
+ },
+ "module_panel_layout_api_modules__mid__panel_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modules/{mid}/panel",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
  },
  "module_pipeline_api_modules__mid__pipeline_post": {
   "body": false,

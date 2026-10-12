@@ -27,7 +27,9 @@ TridentDroid, BrainBuilder, Wrightspace, and any added in config), on one page.
     POST /api/modules/{id}/refresh              apply it: fast-forward the checkout, merge the module files, keeping
                                                 hand edits (refused over local changes or a diverged branch)
     GET  /api/modules/{id}/assist               the stored assisted-setup proposals (differences against what is there)
-    POST /api/modules/{id}/assist               {"n"?, "models"?}: ask the models for proposals (writes nothing)
+    GET  /api/modules/{id}/panel                its panel layout (abp-panel.json, or the default) and why a stored one was ignored
+    POST /api/modules/{id}/assist               {"n"?, "models"?, "panel"?}: ask the models for proposals (writes nothing);
+                                                "panel": layouts for the module's panel only
     POST /api/modules/{id}/assist/keep          {"batch", "proposal", "drop_comments"?}: write the chosen one as hand edits
                                                 (a hand-owned file's comments are not lost unless drop_comments is true)
 
@@ -144,6 +146,11 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         audit(mid, "refresh", "apply")
         return await run(refresh.refresh, mid, apply=True)
 
+    @app.get("/api/modules/{mid}/panel", dependencies=read)
+    async def module_panel_layout(mid: str):
+        from bot.modules import panel
+        return await run(panel.layout, mid)
+
     @app.get("/api/modules/{mid}/assist", dependencies=read)
     async def module_assist_list(mid: str):
         from bot.modules import assist
@@ -154,7 +161,8 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         from bot.modules import assist
         audit(mid, "assist", "generate")
         try:
-            return await assist.generate(mid, n=int(body.get("n") or 3), models=body.get("models") or None)
+            return await assist.generate(mid, n=int(body.get("n") or 3), models=body.get("models") or None,
+                                         panel=body.get("panel") is True)
         except ModuleError as exc:
             raise HTTPException(status_code=exc.status if 400 <= (exc.status or 0) < 500 else 502,
                                 detail={"error": str(exc), "code": exc.code}) from exc

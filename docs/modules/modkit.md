@@ -97,8 +97,29 @@ shown side by side as differences against what is there. Nothing is written unti
 `abp modules assist <id> --keep N` (`POST /api/modules/<id>/assist/keep`, write auth) writes it as plain hand edits in
 `abp-ops.toml` (and the description in a generated manifest), so a later refresh or re-adopt keeps it. A hand-owned `abp-ops.toml` is written again from its parsed form, which loses its comments (all but the first line), so
 keep refuses and says how many lines would go unless you pass `--drop-comments` (`"drop_comments": true`). A batch made
-before the module files changed is refused as stale. `--show` lists the stored proposals. Not done: a generated panel
-for the module as a Studio variant.
+before the module files changed is refused as stale. `--show` lists the stored proposals.
+
+### The module's panel
+
+"Open panel" on a module's page opens a panel for any module: one hand-written renderer (`module-panel.js`, the same file in
+the dashboard and the desktop app) that shows the module's status and its operations as forms built from their typed
+inputs (type, required, help, allowed values), runs them through the module operation API (`POST /api/modules/<id>/call`,
+write auth; an operation that changes something or is destructive asks first) and shows the result as a table, text or
+JSON. Everything it draws from the module, its hub or a result goes through the page's escape helper.
+
+Nothing is generated as HTML or script. What differs per module is a layout spec, `abp-panel.json`, beside the module's
+files (its overlay folder, or the project for a module without one; `GET /api/modules/<id>/panel` reads it, with the
+default layout when there is none or the stored one no longer validates):
+
+    {"version": 1, "title": "...", "sections": [{"title": "...", "note": "...",
+      "operations": [{"id": "script.alpha", "label": "...", "output": "table|text|json"}]}]}
+
+Strictly checked: known keys only, operations that exist (each at most once, 12 sections, 30 per section, 60 in all), the
+three output kinds, titles/notes/labels capped at 80/60/200/60 characters. The default layout groups the operations by the
+part of their id before the first dot. A model proposes layouts through the same assist flow (`abp modules assist <id>
+--panel`, "Propose a layout" in the panel, or `"panel": true` on `POST /api/modules/<id>/assist`); you see them as lists of
+sections and pick one, and only then it is written (`--keep N`). A refresh never touches `abp-panel.json`, and a catalog
+publish carries it.
 
 ## The catalog (sharing overlays between machines)
 

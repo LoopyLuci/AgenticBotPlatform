@@ -1648,7 +1648,8 @@ async def _modules(args, client: DashboardClient) -> int:
                                                      "drop_comments": args.drop_comments}))
             return 0
         res = await (client._request("GET", f"{api}/{args.module}/assist") if args.show else
-                     client._request("POST", f"{api}/{args.module}/assist", json={"n": args.n}))
+                     client._request("POST", f"{api}/{args.module}/assist",
+                                     json={"n": args.n, "panel": bool(args.panel)}))
         if args.show:
             res = (res["batches"] or [{"proposals": []}])[0]
         if args.json:
@@ -1882,6 +1883,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("module"); p.add_argument("--keep", type=int, default=0, help="write proposal N of the latest batch")
     p.add_argument("--drop-comments", action="store_true", help="with --keep: accept losing a hand-owned abp-ops.toml's comments")
     p.add_argument("--show", action="store_true", help="list the latest stored proposals"); p.add_argument("-n", type=int, default=3)
+    p.add_argument("--panel", action="store_true", help="propose layouts for the module's panel (which operations, sections, labels, result views) instead of wording")
     p = msub.add_parser("candidates", help="project folders in a folder, and which are modules")
     p.add_argument("folder")
     p = msub.add_parser("publish", help="commit its module files and create its private GitHub repo")

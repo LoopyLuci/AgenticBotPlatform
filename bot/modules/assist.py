@@ -20,7 +20,11 @@ proposals are listed with their reasons and cannot be kept.
 Proposals are stored (data/studio/assist/<module>/<batch>.json) and shown as a list of differences against the
 current manifest and operations. `keep` writes one chosen proposal into the module's abp-ops.toml (and the generated
 manifest's description) as plain hand edits, which a later refresh or re-adopt keeps. If the module files changed
-since the batch was made, keep refuses. Nothing is written by generating."""
+since the batch was made, keep refuses. Nothing is written by generating.
+
+A proposal may also carry a "panel": a layout spec for the module's panel (bot.modules.panel: which operations to feature,
+sections, labels, how to show each result), checked by panel.validate_spec against the operations that exist. `keep`
+stores it as abp-panel.json beside the module files. `generate(panel=True)` asks for layouts only."""
 from __future__ import annotations
 
 import asyncio
@@ -78,6 +82,26 @@ Operations (id, kind, how it runs, current summary, existing inputs):
 
 Source files those operations run:
 {files}
+"""
+PANEL_PROMPT = """You lay out a control panel for a software project that AgenticBotPlatform (ABP) runs as a module. A
+fixed renderer draws the panel; you only choose which of the project's operations to feature, how to group them into
+sections, their labels and how each result is shown. You can change nothing else: no command, script, route, input or
+new operation, and no HTML.
+
+Answer ONLY with JSON: an object {{"proposals": [P, ...]}} with exactly {n} proposal(s). Each P:
+{{"panel": {{"version": 1, "title": "<at most {mt} characters>",
+   "sections": [{{"title": "<at most {mst} characters>", "note": "<optional, at most {mn} characters>",
+     "operations": [{{"id": "<an operation id from the list below>", "label": "<optional, at most {ml} characters>",
+                      "output": "table|text|json"}}]}}]}}}}
+At most {ms_} sections, {mo} operations per section, each operation at most once. "output" is how the result is shown:
+"table" for a list of records, "text" for plain output, "json" otherwise. Feature the operations people use most first.
+{direction}
+
+Project: {name}
+Description: {current}
+
+Operations (id, kind, how it runs, summary, inputs):
+{ops}
 """
 DIRECTIONS = ("", "Be concise.", "Be concrete: say what each operation does to the user's files or data.",
               "Write for someone who has never seen the project.", "Prefer plain words over jargon.")
@@ -155,6 +179,15 @@ def _op_line(o) -> str:
     return f"- {o.id} | {o.kind} | {how[:160]} | {o.summary[:120]!r} | inputs: {ins or 'none'}"
 
 
+def build_panel_prompt(m, spec, n: int, direction: str = "") -> str:
+    from bot.modules import panel as pn
+    return PANEL_PROMPT.format(
+        n=n, mt=pn.MAX_TITLE, mst=pn.MAX_SECTION_TITLE, mn=pn.MAX_NOTE, ml=pn.MAX_LABEL, ms_=pn.MAX_SECTIONS,
+        mo=pn.MAX_OPS_PER_SECTION, direction=direction, name=m.name,
+        current=_scrub(m.description or spec.service.description or "(none)"),
+        ops="\n".join(_scrub(_op_line(o)) for o in spec.ops[:MAX_OPS_IN_PROMPT]) or "(none)")
+
+
 def build_prompt(m, home: Path, d: Path, spec, n: int, direction: str = "") -> str:
     files = _op_files(d, spec)
     man = home / "abp-module.toml"
@@ -201,15 +234,21 @@ def _choice_ok(t: str, v: Any) -> bool:
 def validate_proposal(p: Any, spec) -> tuple[Optional[dict], list[str]]:
     """(the cleaned proposal, problems). Problems empty = acceptable. Only descriptive fields survive."""
     problems: list[str] = []
-    if not _keys(p, {"description", "operations"}, "proposal", problems):
+    if not _keys(p, {"description", "operations", "panel"}, "proposal", problems):
         return None, problems
     out: dict[str, Any] = {"description": "", "operations": []}
-    if "description" in p:
+    if "description" in p and p["description"] != "":
         out["description"] = _text(p["description"], MAX_DESCRIPTION, "description", problems)
     ops = p.get("operations", [])
     if not isinstance(ops, list):
         return None, problems + ["operations: a list expected"]
     by = {o.id: o for o in spec.ops}
+    if "panel" in p:
+        from bot.modules import panel as pn
+        clean_panel, pp = pn.validate_spec(p["panel"], by)
+        problems += [f"panel: {x}" for x in pp]
+        if clean_panel is not None:
+            out["panel"] = clean_panel
     seen: set[str] = set()
     for i, e in enumerate(ops):
         where = f"operations[{i}]"
@@ -272,7 +311,7 @@ def validate_proposal(p: Any, spec) -> tuple[Optional[dict], list[str]]:
         if clean_ins:
             rec["inputs"] = clean_ins
         out["operations"].append(rec)
-    if not out["description"] and not out["operations"] and not problems:
+    if not out["description"] and not out["operations"] and not out.get("panel") and not problems:
         problems.append("the proposal changes nothing")
     return (out if not problems else None), problems
 
@@ -306,6 +345,10 @@ def diff(m, spec, prop: dict) -> list[dict]:
     if prop["description"] and prop["description"] != cur:
         rows.append({"target": "module", "field": "description", "from": cur, "to": prop["description"]})
     by = {o.id: o for o in spec.ops}
+    if prop.get("panel"):
+        from bot.modules import panel as pn
+        for line in pn.describe(prop["panel"]):
+            rows.append({"target": "panel", "field": "section", "from": None, "to": line})
     for e in prop["operations"]:
         o = by[e["id"]]
         if "summary" in e and e["summary"] != o.summary:
@@ -384,8 +427,9 @@ async def _ask(chain: list, prompt: str, group: str, mid: str) -> tuple[Optional
     return None, "", failures
 
 
-async def generate(mid: str, *, n: int = 3, models: Optional[list[str]] = None) -> dict:
-    """Ask for up to `n` proposals and store the batch. Writes nothing into the module."""
+async def generate(mid: str, *, n: int = 3, models: Optional[list[str]] = None, panel: bool = False) -> dict:
+    """Ask for up to `n` proposals and store the batch. Writes nothing into the module. `panel`: layouts for the
+    module's panel only (bot.modules.panel), not wording."""
     from bot.studio import generate as gen
     from bot.studio import log, variants
     m = _get(mid)
@@ -397,8 +441,11 @@ async def generate(mid: str, *, n: int = 3, models: Optional[list[str]] = None) 
     except variants.StudioError as e:
         raise ModuleError(str(e), code="no_model", status=409) from None
     group = uuid.uuid4().hex[:12]
-    prompts = [await asyncio.to_thread(build_prompt, m, home, d, spec, 1, DIRECTIONS[i % len(DIRECTIONS)])
-               for i in range(n)]
+    if panel:
+        prompts = [build_panel_prompt(m, spec, 1, DIRECTIONS[i % len(DIRECTIONS)]) for i in range(n)]
+    else:
+        prompts = [await asyncio.to_thread(build_prompt, m, home, d, spec, 1, DIRECTIONS[i % len(DIRECTIONS)])
+                   for i in range(n)]
     chains = [[cands[(i + k) % len(cands)] for k in range(len(cands))] for i in range(n)]
     answers = await asyncio.gather(*(_ask(c, p, group, mid) for c, p in zip(chains, prompts)))
     out, errors = [], []
@@ -420,7 +467,7 @@ async def generate(mid: str, *, n: int = 3, models: Optional[list[str]] = None) 
             out.append(rec)
     for i, rec in enumerate(out, 1):
         rec["n"] = i
-    batch = {"batch": group, "module": m.id, "made": round(time.time(), 1), "fingerprint": _fingerprint(home),
+    batch = {"batch": group, "module": m.id, "kind": "panel" if panel else "setup", "made": round(time.time(), 1), "fingerprint": _fingerprint(home),
              "proposals": out, "errors": errors}
     (_dir(m.id) / f"{group}.json").write_text(json.dumps(batch, indent=1, default=str), encoding="utf-8")
     log.event("assist", module=m.id, batch=group, proposals=len(out), valid=sum(1 for r in out if r["ok"]),
@@ -487,6 +534,12 @@ def keep(mid: str, batch: str, number: int, *, drop_comments: bool = False) -> d
     if b.get("fingerprint") != _fingerprint(home):
         raise ModuleError("the module's files changed since these proposals were made; make new ones", code="stale",
                           status=409)
+    if not prop["description"] and not prop["operations"]:           # a panel layout only: abp-ops.toml stays as it is
+        from bot.modules import panel as pn
+        wrote = [pn.write(home, prop["panel"])]
+        log.event("assist-keep", module=m.id, batch=batch, proposal=number, model=rec.get("model"), wrote=wrote,
+                  changes=len(rec.get("diff") or []))
+        return {"id": m.id, "kept": number, "batch": batch, "wrote": wrote, "changes": rec.get("diff") or []}
     ops_path, man_path = home / ad.OPS_FILE, home / ad.MANIFEST_FILE
     first = (ops_path.read_text(encoding="utf-8").splitlines() or [""])[0]
     if prop["description"]:
@@ -521,6 +574,9 @@ def keep(mid: str, batch: str, number: int, *, drop_comments: bool = False) -> d
             if new != mt:
                 man_path.write_text(new, encoding="utf-8", newline="\n")
                 wrote.append(ad.MANIFEST_FILE)
+    if prop.get("panel"):
+        from bot.modules import panel as pn
+        wrote.append(pn.write(home, prop["panel"]))
     registry.modules(refresh=True)
     log.event("assist-keep", module=m.id, batch=batch, proposal=number, model=rec.get("model"), wrote=wrote,
               changes=len(rec.get("diff") or []))

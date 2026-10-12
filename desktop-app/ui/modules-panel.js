@@ -303,6 +303,14 @@ ${kv([['operations', E(String(r.operations))], ['clone', `<span class="mdp-mono"
 
   function kv(pairs) { return `<dl class="mdp-kv">${pairs.filter(([, v]) => v !== undefined && v !== null && v !== '').map(([k, v]) => `<dt>${E(k)}</dt><dd>${v}</dd>`).join('')}</dl>`; }
 
+  // A module's panel (module-panel.js): one generic renderer, a layout spec per module, a default without one.
+  async function panelView(body) {
+    stopPoll();
+    if (!window.ABPModulePanel) { body.innerHTML = '<p class="cardnote">The module panel script is not loaded.</p>'; return; }
+    body.innerHTML = '<div id="mdp-panel"></div>';
+    await window.ABPModulePanel.mount($('mdp-panel'), st.open, { api, post, toast, back: () => { st.panel = ''; render(); } });
+  }
+
   async function detailView(body) {
     const mid = st.open;
     const s = st.status = await api(`/api/modules/${encodeURIComponent(mid)}`);
@@ -316,7 +324,7 @@ ${s.manifest_error ? `<p class="cardnote">${E(s.manifest_error)}</p>` : ''}
 <div class="mdp-card"><h4>Checkout</h4>${kv([['path', `<span class="mdp-mono">${E(inst.path)}</span>`], ['repo', `<span class="mdp-mono">${E(m.repo)}</span>`], ['branch', E(inst.branch)], ['commit', E(inst.commit ? inst.commit + ' ' + (inst.subject || '') : '')], ['updates', inst.behind != null ? E(`${inst.behind} behind, ${inst.ahead} ahead of ${inst.upstream}`) : ''], ['changes', inst.changed_files ? E(`${inst.changed_files} uncommitted`) : ''], ['manifest', E(m.source)], ['problem', E(inst.git_error)]])}
 <div class="mdp-row">${inst.installed ? act('update', 'Update', false) + (m.can_build ? act('build', 'Build', true) : '') : act('setup', 'Install', false)}<button class="btn ghost" id="mdp-fetch">Check for updates</button>${m.has_pipeline ? act('pipeline', 'Run pipeline', true) : ''}</div></div>
 <div class="mdp-card"><h4>Running</h4>${kv([['hub', m.has_hub ? (hub.running ? chip('running', 'on') + ` <span class="mdp-mono">${E(hub.url || '')}</span> pid ${E(hub.pid || '')}` : chip('stopped')) : '<span class="mdp-muted">no hub yet</span>'], ['version', E(hub.version)], ['this OS', s.host ? (s.host.supported ? chip(s.host.os, 'on') : chip(s.host.os + ': not supported', 'bad')) : ''], ['needs', E((s.host && s.host.needs || []).join(', '))]])}
-<div class="mdp-row">${m.has_hub ? (hub.running ? act('hub/stop', 'Stop hub', true) : act('hub/start', 'Start hub', false)) : ''}${m.has_gui && inst.ready ? act('gui', 'Open window', true) : ''}${m.has_tui ? act('tui', 'Open terminal UI', true) : ''}${m.has_mcp || m.adapter ? act('mcp', 'Add its MCP server', true) : ''}${m.has_hub ? '<button class="btn ghost" id="mdp-conf">Check conformance</button>' : ''}</div><div id="mdp-conf-out"></div></div>
+<div class="mdp-row">${m.has_hub ? (hub.running ? act('hub/stop', 'Stop hub', true) : act('hub/start', 'Start hub', false)) : ''}${m.has_gui && inst.ready ? act('gui', 'Open window', true) : ''}${m.has_tui ? act('tui', 'Open terminal UI', true) : ''}${m.has_mcp || m.adapter ? act('mcp', 'Add its MCP server', true) : ''}${m.has_hub ? '<button class="btn" id="mdp-open-panel">Open panel</button><button class="btn ghost" id="mdp-conf">Check conformance</button>' : ''}</div><div id="mdp-conf-out"></div></div>
 ${tools ? `<div class="mdp-card"><h4>Toolchain</h4>${tools}</div>` : ''}
 ${m.has_web || m.has_provider ? `<div class="mdp-card"><h4>Its server</h4>${kv([['web UI', m.has_web ? (svc.web ? `<a href="${E(svc.web)}" target="_blank" rel="noopener">${E(svc.web)}</a>` : '<span class="mdp-muted">shown once its server runs (start the hub, then the service.start operation)</span>') : ''], ['as a provider', m.has_provider ? (svc.openai ? chip(`“${m.id}” in model pickers`, 'on') + ` <span class="mdp-mono">${E(svc.openai)}</span>` : '<span class="mdp-muted">offered as a model provider while its server runs</span>') : '']])}
 <div class="mdp-row">${m.has_hub && hub.running && !svc.web && !svc.openai ? '<button class="btn" id="mdp-svc-start">Start its server</button>' : ''}${svc.web ? '<button class="btn ghost" id="mdp-web-show">Show here</button>' : ''}</div></div>` : ''}
@@ -325,9 +333,10 @@ ${svc.web ? `<div class="mdp-card" id="mdp-web" style="grid-column:1/-1;display:
 <div class="mdp-card" style="grid-column:1/-1"><h4>Jobs</h4>${(jobs || []).slice(0, 6).map((j) => `<details${j.state === 'running' ? ' open' : ''}><summary>${E(j.kind)} ${j.state === 'running' ? chip('running', 'warn') : j.state === 'done' ? chip('done', 'on') : chip(j.state, 'bad')} <span class="mdp-muted">${E(when(j.started))}</span></summary><div class="mdp-pre">${E((j.log || []).join('\n'))}${j.error ? '\n' + E(j.error) : ''}</div></details>`).join('') || '<p class="mdp-muted">None yet.</p>'}</div>
 </div>
 ${m.has_hub ? `<div class="mdp-card" style="margin-top:12px"><h4>Operations</h4><div id="mdp-ops-area">${hub.running ? '<p class="mdp-muted">Loading…</p>' : '<p class="mdp-muted">Start the hub to use its operations.</p>'}</div></div>` : ''}`;
-    $('mdp-back').addEventListener('click', () => { st.open = ''; stopPoll(); render(true); });
+    $('mdp-back').addEventListener('click', () => { st.open = ''; st.panel = ''; stopPoll(); render(true); });
     $('mdp-fetch').addEventListener('click', async () => { try { await api(`/api/modules/${encodeURIComponent(mid)}?fetch=1`); render(); } catch (e) { toast(errText(e), 'error'); } });
     const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
+    on('mdp-open-panel', () => { st.panel = mid; render(); });
     on('mdp-web-show', () => { st.webOpen = mid; const w = $('mdp-web'); w.style.display = 'flex'; w.style.flexDirection = 'column'; w.querySelector('iframe').src = svc.web; w.scrollIntoView({ behavior: 'smooth' }); });
     on('mdp-web-hide', () => { st.webOpen = ''; $('mdp-web').style.display = 'none'; });
     on('mdp-svc-start', async () => {
@@ -437,7 +446,7 @@ ${m.has_hub ? `<div class="mdp-card" style="margin-top:12px"><h4>Operations</h4>
     if (!body) return;
     $('mdp-note').textContent = machine ? `Controlling ${machine}` : '';
     try {
-      if (st.open) await detailView(body); else await listView(body, refresh || !st.list);
+      if (st.open && st.panel === st.open) await panelView(body); else if (st.open) await detailView(body); else await listView(body, refresh || !st.list);
     } catch (e) { body.innerHTML = `<p class="cardnote">${E(errText(e))}</p>`; }
   }
 
