@@ -56,6 +56,8 @@ _CPU_RATE_CONTROL_ENABLE = 0x1
 _CPU_RATE_CONTROL_HARD_CAP = 0x4
 _PROCESS_SET_QUOTA = 0x0100
 _PROCESS_TERMINATE = 0x0001
+_SYNCHRONIZE = 0x00100000
+_ERROR_INVALID_PARAMETER = 87
 
 #: ABP's own names for the Win32 priority classes (`BasicLimitInformation.PriorityClass`).
 PRIORITY_CLASSES = {
@@ -70,7 +72,7 @@ PRIORITY_CLASSES = {
 MAX_AFFINITY_CPU = 63
 
 if _is_windows:
-    _kernel32 = ctypes.windll.kernel32
+    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)   # use_last_error: get_last_error() below is otherwise always 0
 
     class _IO_COUNTERS(ctypes.Structure):
         _fields_ = [
@@ -115,6 +117,8 @@ if _is_windows:
     _kernel32.QueryInformationJobObject.restype = wintypes.BOOL
     _kernel32.QueryInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD,
                                                     ctypes.POINTER(wintypes.DWORD)]
+    _kernel32.WaitForSingleObject.restype = wintypes.DWORD
+    _kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
     _kernel32.CloseHandle.restype = wintypes.BOOL
     _kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
 
@@ -194,16 +198,35 @@ def create(*, memory_mb: int = 0, active_process_limit: int = 0, job_memory_mb: 
     return handle
 
 
+def _has_exited(pid: int) -> bool:
+    """True when the process is gone or finished. Windows answers a late OpenProcess / AssignProcessToJobObject on
+    such a process with ACCESS_DENIED (or INVALID_PARAMETER once it is reaped), which looks like a refusal."""
+    handle = _kernel32.OpenProcess(_SYNCHRONIZE, False, pid)
+    if not handle:
+        return ctypes.get_last_error() == _ERROR_INVALID_PARAMETER
+    try:
+        return _kernel32.WaitForSingleObject(handle, 0) == 0          # WAIT_OBJECT_0: signalled, i.e. exited
+    finally:
+        _kernel32.CloseHandle(handle)
+
+
 def assign(job_handle: int, pid: int) -> None:
-    """Put an already-running process into the job (see the race note above)."""
+    """Put an already-running process into the job (see the race note above). A process that has already exited
+    (`echo ok` can finish before the parent gets here) has nothing left to confine, so that is not an error."""
     if not _is_windows:
         raise OSError("windows job objects are only available on Windows")
     proc_handle = _kernel32.OpenProcess(_PROCESS_SET_QUOTA | _PROCESS_TERMINATE, False, pid)
     if not proc_handle:
-        raise ctypes.WinError(ctypes.get_last_error())
+        error = ctypes.WinError(ctypes.get_last_error())
+        if _has_exited(pid):
+            return
+        raise error
     try:
         if not _kernel32.AssignProcessToJobObject(job_handle, proc_handle):
-            raise ctypes.WinError(ctypes.get_last_error())
+            error = ctypes.WinError(ctypes.get_last_error())
+            if _has_exited(pid):
+                return
+            raise error
     finally:
         _kernel32.CloseHandle(proc_handle)
 

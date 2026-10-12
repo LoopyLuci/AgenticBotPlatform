@@ -166,6 +166,18 @@ def _isolated_cicd_event_store(monkeypatch, tmp_path):
     monkeypatch.setattr(s_security, "MANIFEST_PATH", sdir / "code-manifest.json")
     monkeypatch.setattr(s_boot, "BOOTS_PATH", sdir / "boots.json")
     monkeypatch.setattr(s_boot, "LKG_DIR", sdir / "last-known-good")
+    # The .env a backup copies (and the dashboard/TUI tests write) and the config files it globs: a private project
+    # root. Otherwise a backup reads the checkout's (or ~/.claude's) real .env at the instant another xdist worker
+    # replaces it, and Windows answers PermissionError.
+    from bot import envfile as _envfile
+
+    proj = tmp_path / "project"
+    (proj / "config").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(s_backup, "PROJECT_ROOT", proj)
+    monkeypatch.setattr(_envfile, "PROJECT_ENV", proj / ".env")
+    monkeypatch.setattr(_envfile, "GLOBAL_ENV", proj / "global.env")
+    monkeypatch.setattr(_envfile, "CONFIG_PATH", backends)
+    monkeypatch.setattr(_envfile, "BACKUP_DIR", proj / "data" / "env_backups")
     monkeypatch.setenv("ABP_ANDROID_KEYSTORE", str(tmp_path / "no-keystore"))
     monkeypatch.setenv("ABP_INSTALL_POINTER", str(tmp_path / "abp-install.json"))
     s_bugs._reset_for_tests(sdir / "issues.json")

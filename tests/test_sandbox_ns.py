@@ -769,6 +769,16 @@ def test_the_emergency_stop_stops_the_work_and_leaves_the_services(temp_db):
     service_proc = spawn([sys.executable, "-c", SLEEPER % 60], cell=service, owner="test",
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
+        # The registry is one per process and shared by every test this worker ran: an asyncio-spawned command
+        # (the stateful shell tests') is only noticed as exited by a sampler pass, until then its cell still
+        # counts as live work and the estop would stop it too. Sample until only this test's cells are left.
+        mine = {work.id, service.id}
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            registry_mod.registry.sample(reflexes=False)
+            if {c.id for c in registry_mod.registry.cells()} <= mine:
+                break
+            time.sleep(0.05)
         assert reflexes.apply(registry_mod.registry, sample=False) == [], "nothing to do while estop is off"
         estop.engage("the test pressed the button")
         try:
