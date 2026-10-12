@@ -3,7 +3,10 @@
     native_agent:
       sandbox:
         backend: local          # local | docker | ssh | wsl | windows_job
-        network: allow          # allow | none - none cuts every backend off from the network
+        network: allow          # allow | none | allowlist - none cuts every backend off from the network;
+                                # allowlist (docker only) lets commands reach only allow_hosts, through a proxy
+        allow_hosts: []         # allowlist: "host", "*.domain", optionally ":port"
+        allow_private_hosts: [] # allowlist: names that may point at this computer / a private network
         network_none:
           extra_paths: []       # Windows: folders an offline command may read and run programs from
         env:
@@ -17,6 +20,7 @@
           cpus: "2"
           pids: 256
           user: ""              # "" = the image default (on Linux/macOS hosts the caller's uid:gid)
+          proxy_image: ""       # allowlist: the image the proxy runs in ("" = image; needs python3)
           extra_args: []
         ssh:
           host: ""              # required
@@ -81,22 +85,36 @@ refused rather than run with the network.
 * `wsl` / `ssh`: the remote side runs the command under `unshare -rn` (Linux remotes;
   inside it, the command's user is shown as root, mapped to the real unprivileged user).
   If the remote has no `unshare`, the command fails there and never runs.
+
+**Network allow list.** `network: allowlist` with `allow_hosts` lets a command reach only the
+listed hosts. Built for `docker` only (net_allowlist.py has the rules): the command's container
+joins a throwaway `--internal` network, which has no route out at all, together with a small
+proxy container that is the only thing on that network with a way out. The command gets
+HTTP(S)_PROXY pointing at the proxy, so a program that ignores the proxy simply has no network.
+If the proxy cannot start, the command does not run. Every other backend refuses
+`allowlist` (never runs the command with the network): Windows would need a loopback
+exemption, which is a firewall-class change; Linux, WSL and ssh would need a veth pair and
+routing set up with root.
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 import os
 import re
 import shlex
 import shutil
 import subprocess
 import sys
+import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Optional
 
-from bot.agent_runtime import appcontainer, secrets_guard, win_job
+from bot.agent_runtime import appcontainer, net_allowlist, secrets_guard, win_job
 from bot.agent_runtime.errors import ToolError
 from bot.sandbox_ns import cell as ns_cell
 from bot.sandbox_ns import policy as ns_policy
@@ -104,7 +122,7 @@ from bot.sandbox_ns import spawn as ns_spawn
 
 BACKENDS = ("local", "docker", "ssh", "wsl", "windows_job")
 ENV_MODES = ("secrets", "minimal", "inherit")
-NETWORKS = ("allow", "none")
+NETWORKS = ("allow", "none", "allowlist")
 _MAC_OFFLINE_PROFILE = "(version 1)(allow default)(deny network*)"
 OWNER = "agent_runtime.sandbox"
 _MINIMAL = {"PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC", "TEMP", "TMP", "TMPDIR", "HOME", "USERPROFILE",
@@ -229,13 +247,17 @@ def build_env(environ: Optional[dict] = None, cfg: Optional[dict] = None) -> dic
     return env
 
 
-def _docker_argv(command: str, cwd: Path, workspace: Path, name: str, cfg: dict, env_names: list[str]) -> list[str]:
+def _docker_argv(command: str, cwd: Path, workspace: Path, name: str, cfg: dict, env_names: list[str],
+                 attach: Optional[str] = None, fixed_env: Optional[dict] = None) -> list[str]:
+    """`attach` is the internal network of an allow-list run; `fixed_env` are plain NAME=value settings."""
     d = cfg.get("docker") or {}
     net = str(d.get("network") or "none").lower()
     if net not in _DOCKER_NETWORKS:
         raise ToolError(f"sandbox.docker.network must be one of {', '.join(_DOCKER_NETWORKS)} (host is not allowed)")
     if network(cfg) == "none":
         net = "none"
+    elif attach:
+        net = attach
     workspace = Path(workspace).resolve()
     try:
         rel = Path(cwd).resolve().relative_to(workspace).as_posix()
@@ -252,9 +274,172 @@ def _docker_argv(command: str, cwd: Path, workspace: Path, name: str, cfg: dict,
         argv += ["--user", user]
     for n in env_names:
         argv += ["-e", n]              # the value is taken from the docker client's own environment, not the command line
+    for n, v in (fixed_env or {}).items():
+        argv += ["-e", f"{n}={v}"]
     argv += [str(a) for a in (d.get("extra_args") or [])]
     argv += [str(d.get("image") or "python:3.11-slim"), "sh", "-c", command]
     return argv
+
+
+# ---- network: allowlist (docker) ----------------------------------------------------------
+PROXY_PORT = net_allowlist.DEFAULT_PORT
+_PROXY_ALIAS = "abp-proxy"
+_NET_LABEL = "abp.netallow=1"
+
+
+def _allow_lists(cfg: dict) -> tuple[list, list]:
+    allow = [str(h) for h in (cfg.get("allow_hosts") or []) if str(h).strip()]
+    private = [str(h) for h in (cfg.get("allow_private_hosts") or []) if str(h).strip()]
+    try:
+        net_allowlist.parse_patterns(allow)
+        net_allowlist.parse_patterns(private)
+    except ValueError as exc:
+        raise ToolError(f"sandbox.allow_hosts: {exc}; the command was not run") from exc
+    return allow, private
+
+
+def _docker_cli(docker: str, *args: str, timeout: int = 60) -> subprocess.CompletedProcess:
+    return subprocess.run([docker, *args], capture_output=True, text=True, timeout=timeout)
+
+
+def _record_proxy_log(text: str, command: str) -> None:
+    """Put the proxy's allow / deny decisions in the agent trace and the nervous system's event ring.
+    Best effort: a missing trace or registry must not fail the command."""
+    rows = []
+    for line in (text or "").splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and row.get("decision") in ("allow", "deny"):
+            rows.append(row)
+    if not rows:
+        return
+    try:
+        from bot.agent_runtime import trace
+
+        t = trace.current()
+        if t is not None:
+            for row in rows[:50]:
+                t.note(f"net {row['decision']} {row.get('method', '')} {row.get('host', '')}:{row.get('port', '')} "
+                       f"({row.get('reason', '')})", level="warn" if row["decision"] == "deny" else "info")
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from bot.sandbox_ns.registry import registry
+
+        for row in rows[:50]:
+            registry.event("net." + row["decision"], cell=_label(command),
+                           detail=f"{row.get('method', '')} {row.get('host', '')}:{row.get('port', '')} {row.get('reason', '')}")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+class _AllowRun:
+    """The throwaway pieces of one allow-list command: an internal network and the proxy container."""
+
+    def __init__(self, docker: str, tag: str, command: str):
+        self.docker, self.command = docker, command
+        self.net = f"nal-net-{tag}"
+        self.proxy = f"nal-proxy-{tag}"
+        self.command_container = f"nal-{tag}"
+        self._done = False
+        self._lock = threading.Lock()
+
+    def setup(self, cfg: dict, allow: list, private: list) -> None:
+        d = cfg.get("docker") or {}
+        image = str(d.get("proxy_image") or d.get("image") or "python:3.11-slim")
+        src = Path(net_allowlist.__file__).read_bytes()
+        try:
+            r = _docker_cli(self.docker, "network", "create", "--internal", "--label", _NET_LABEL, self.net)
+            if r.returncode != 0:
+                raise ToolError(f"could not create the internal network: {(r.stderr or r.stdout).strip()[:300]}")
+            bootstrap = ("import base64,os;exec(compile(base64.b64decode(os.environ['ABP_PROXY_SRC']),"
+                         "'net_allowlist.py','exec'),{'__name__':'__main__','__file__':'net_allowlist.py'})")
+            env = dict(os.environ, ABP_PROXY_SRC=base64.b64encode(src).decode("ascii"),
+                       ABP_NET_ALLOW=json.dumps({"allow": allow, "private": private}))
+            argv = [self.docker, "run", "-d", "--name", self.proxy, "--label", _NET_LABEL, "--network", self.net,
+                    "--network-alias", _PROXY_ALIAS, "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+                    "--read-only", "--memory", "128m", "--pids-limit", "64", "--user", "65534:65534",
+                    "-e", "ABP_PROXY_SRC", "-e", "ABP_NET_ALLOW", image,
+                    "python", "-u", "-c", bootstrap, "--port", str(PROXY_PORT)]
+            r = subprocess.run(argv, capture_output=True, text=True, timeout=120, env=env)
+            if r.returncode != 0:
+                raise ToolError(f"could not start the allow-list proxy: {(r.stderr or r.stdout).strip()[:300]}")
+            r = _docker_cli(self.docker, "network", "connect", "bridge", self.proxy)
+            if r.returncode != 0:
+                raise ToolError(f"could not give the proxy its way out: {(r.stderr or r.stdout).strip()[:300]}")
+            deadline = time.monotonic() + 30
+            while True:
+                logs = _docker_cli(self.docker, "logs", self.proxy)
+                if '"listening"' in (logs.stdout or ""):
+                    return
+                state = _docker_cli(self.docker, "inspect", "-f", "{{.State.Running}}", self.proxy)
+                if state.returncode != 0 or state.stdout.strip() != "true":
+                    raise ToolError("the allow-list proxy stopped at start: "
+                                    f"{((logs.stderr or '') + (logs.stdout or '')).strip()[-300:]}")
+                if time.monotonic() > deadline:
+                    raise ToolError("the allow-list proxy did not become ready in 30 seconds")
+                time.sleep(0.3)
+        except BaseException:
+            self.cleanup()
+            raise
+
+    def env(self) -> dict[str, str]:
+        url = f"http://{_PROXY_ALIAS}:{PROXY_PORT}"
+        out = {"NO_PROXY": "localhost,127.0.0.1,::1", "no_proxy": "localhost,127.0.0.1,::1"}
+        for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
+            out[name] = url
+        return out
+
+    def cleanup(self) -> None:
+        with self._lock:
+            if self._done:
+                return
+            self._done = True
+        try:
+            logs = _docker_cli(self.docker, "logs", self.proxy, timeout=30)
+            _record_proxy_log(logs.stdout, self.command)
+        except (OSError, subprocess.SubprocessError):
+            pass
+        for args in (("rm", "-f", self.command_container), ("rm", "-f", self.proxy), ("network", "rm", self.net)):
+            try:
+                _docker_cli(self.docker, *args, timeout=60)
+            except (OSError, subprocess.SubprocessError):
+                pass
+
+
+async def _start_docker_allowlist(command: str, cwd: Path, workspace: Path, cfg: dict, docker: str, pipes: dict):
+    allow, private = _allow_lists(cfg)
+    d = cfg.get("docker") or {}
+    for a in (str(x).lower() for x in (d.get("extra_args") or [])):
+        if a.startswith(("--network", "--net", "--add-host", "--dns", "--link")):
+            raise ToolError("sandbox.docker.extra_args changes the container's network, which network: allowlist "
+                            "does not allow; the command was not run")
+    tag = uuid.uuid4().hex[:12]
+    run = _AllowRun(docker, tag, command)
+    await asyncio.to_thread(run.setup, cfg, allow, private)
+    try:
+        client_env = build_env(cfg=cfg)
+        injected = list(_injected(cfg, dict(os.environ)))
+        argv = _docker_argv(command, cwd, workspace, run.command_container, cfg, injected, attach=run.net,
+                            fixed_env=run.env())
+        argv[0] = docker
+        proc = await asyncio.create_subprocess_exec(*argv, env=client_env, **pipes, start_new_session=os.name != "nt")
+    except BaseException:
+        await asyncio.to_thread(run.cleanup)
+        raise
+    proc.abp_container = run.command_container
+    proc.abp_cleanup = run.cleanup
+    plain_wait = proc.wait
+
+    async def wait():
+        code = await plain_wait()
+        await asyncio.to_thread(run.cleanup)
+        return code
+
+    proc.wait = wait
+    return proc
 
 
 def _remote_dir(cwd: Path, workspace: Path, root: str) -> str:
@@ -376,6 +561,10 @@ async def start(command: str, cwd: Path, workspace: Path) -> asyncio.subprocess.
     cfg = _config()
     which = backend()
     offline = network(cfg) == "none"
+    allowlist = network(cfg) == "allowlist"
+    if allowlist and which != "docker":
+        raise ToolError(f"sandbox.network is allowlist, which only the docker backend can enforce (not {which}); "
+                        "the command was not run")
     pipes = dict(stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
     try:
         if offline and which in ("local", "windows_job"):
@@ -404,6 +593,8 @@ async def start(command: str, cwd: Path, workspace: Path) -> asyncio.subprocess.
             docker = shutil.which("docker")
             if not docker:
                 raise ToolError("sandbox.backend is docker but the docker command was not found; the command was not run")
+            if allowlist:
+                return await _start_docker_allowlist(command, cwd, workspace, cfg, docker, pipes)
             client_env = build_env(cfg=cfg)                       # what the container is given, minus the host's secrets
             injected = list(_injected(cfg, dict(os.environ)))
             name = f"abp-{uuid.uuid4().hex[:12]}"
@@ -452,7 +643,7 @@ async def start_persistent(argv: list[str], cwd: Path) -> asyncio.subprocess.Pro
     check persistent_shell.unsupported_reason() first, and this refuses anything else (fail closed)."""
     cfg = _config()
     which = backend()
-    if which not in ("local", "windows_job") or network(cfg) == "none":
+    if which not in ("local", "windows_job") or network(cfg) != "allow":
         raise ToolError("this sandbox configuration can't host a persistent shell; the shell was not started")
     pipes = dict(stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
     cell = _cell("persistent shell") if which == "local" else _job_cell("persistent shell", cfg)
@@ -491,6 +682,12 @@ def kill(proc) -> None:
         try:
             subprocess.run([shutil.which("docker") or "docker", "rm", "-f", name], capture_output=True, timeout=30)
         except (OSError, subprocess.SubprocessError):
+            pass
+    cleanup = getattr(proc, "abp_cleanup", None)
+    if cleanup:
+        try:
+            cleanup()                                            # allow-list run: the proxy and its internal network
+        except Exception:  # noqa: BLE001
             pass
     remote_kill = getattr(proc, "abp_remote_kill", None)
     if remote_kill:

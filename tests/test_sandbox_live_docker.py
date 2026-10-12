@@ -85,16 +85,22 @@ def test_the_container_cannot_see_the_hosts_secrets(ws, cfg, monkeypatch):
     assert "should-never-reach-the-container-9999" not in out
 
 
+def _abp_containers() -> set[str]:
+    docker = shutil.which("docker")
+    out = subprocess.run([docker, "ps", "--filter", "name=abp-", "--format", "{{.Names}}"],
+                         capture_output=True, text=True, timeout=15)
+    return set(out.stdout.split())
+
+
 def test_a_real_timeout_stops_the_container_and_removes_it(ws, cfg):
+    before = _abp_containers()   # other live tests (ssh, allowlist) may run their own abp-* containers in parallel
     started = time.monotonic()
     with pytest.raises(ToolError, match="timed out after 2s"):
         run_shell(ws, "sleep 30", timeout=2)
     assert time.monotonic() - started < 30, "kill() must actually stop the real container promptly"
-    # confirm no abp-* container was left running
-    docker = shutil.which("docker")
-    out = subprocess.run([docker, "ps", "--filter", "name=abp-", "--format", "{{.Names}}"],
-                          capture_output=True, text=True, timeout=15)
-    assert out.stdout.strip() == "", f"a real container was left running after timeout: {out.stdout!r}"
+    # confirm this command's container is gone: no abp-* container that was not there before it started
+    left = _abp_containers() - before
+    assert not left, f"a real container was left running after timeout: {sorted(left)!r}"
 
 
 def test_missing_image_fails_the_command_rather_than_silently_running_on_the_host(ws, cfg):

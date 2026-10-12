@@ -150,8 +150,8 @@ def unsupported_reason() -> Optional[str]:
     which = sandbox.backend()
     if which not in ("local", "windows_job"):
         return f"the {which} sandbox can't keep a shell open between calls"
-    if sandbox.network() == "none":
-        return "network: none runs every command in its own confined process, so a shell can't be kept open"
+    if sandbox.network() != "allow":
+        return "network: none / allowlist runs every command in its own confined process, so a shell can't be kept open"
     if _driver_argv() is None:
         return "no PowerShell (Windows) or bash was found to keep open"
     return None
