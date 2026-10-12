@@ -219,7 +219,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.resolver",
     # Studio: routes register once and studio_api.py holds the generation jobs; variants.py holds its write lock; gate.py runs sandbox cells.
     "bot.dashboard.studio_api", "bot.studio.variants", "bot.studio.log", "bot.studio.generate", "bot.studio.edits",
-    "bot.studio.tokens", "bot.studio.shots", "bot.studio.gate",
+    "bot.studio.tokens", "bot.studio.shots", "bot.studio.gate", "bot.studio.km",
     # Cluster: offer.py holds the budget's reservations, executor.py the running jobs, store.py its connection,
     # membership.py the peers' reports; tools.py registers at import time.
     "bot.cluster.inventory", "bot.cluster.offer", "bot.cluster.store", "bot.cluster.executor", "bot.cluster.membership",

@@ -5,7 +5,8 @@
 //   Edit       a variant's copy of any UI file; saving updates the preview at once
 //   Theme      the theme tokens (colours, fonts) for light and dark, and the component gallery in the variant's styles
 //   Generate   models propose several variants from one request (layer 2)
-//   History    applied changes (one click to revert), the log, and the datasets built from it
+//   History    applied changes (one click to revert), the log, the datasets built from it, and Knowledge Modules built
+//              from applied changes (ModelMistress makes them; a person approves the plan and the promotion there)
 // Identical in the dashboard (bot/dashboard/static/) and the desktop app (desktop-app/ui/); tests/test_studio.py checks
 // it. It uses the page's own api(), esc() and showToast(), and draws into #std-root.
 (function (api) {
@@ -109,10 +110,19 @@ ${a.variant && !a.error ? `<div class="std-row"><button class="btn ghost" data-o
 <div class="std-row"><button class="btn primary" id="std-gen" ${g && g.state === 'running' ? 'disabled' : ''}>Propose variants</button><span class="std-muted">Each proposal is checked (HTML, JavaScript) and logged; nothing reaches the live UI until you apply it.</span></div></div>${results}`;
   }
 
+  function kmCard(km) {
+    const rows = (km.tasks || []).map((t) => `<div class="std-row" style="justify-content:space-between"><span><span class="std-mono">${E(t.task)}</span> ${chip(t.state, t.state === 'done' ? 'on' : (t.state === 'failed' ? 'bad' : ''))}${t.open_reviews ? ' ' + chip(t.open_reviews + ' to review') : ''}<br><span class="std-muted">${E(t.error || t.needs || '')}</span></span>${t.review_url ? `<a class="btn ghost" href="${E(t.review_url)}" target="_blank" rel="noopener">Open ModelMistress</a>` : ''}</div>`).join('');
+    return `<div class="std-card"><div class="std-row" style="justify-content:space-between"><b>Knowledge Module</b><span class="std-row"><button class="btn ghost" id="std-km-export">Export</button><button class="btn" id="std-km-build" ${km.hub ? '' : 'disabled title="ModelMistress is not running"'}>Build a Knowledge Module</button></span></div>
+<div class="std-muted">${km.export.documents} scrubbed document(s) from applied changes. ModelMistress writes the KM; you approve its plan and its promotion there, ABP never promotes it.</div>
+<label class="std-row"><input type="checkbox" id="std-km-ds"> also refresh the datasets</label><div id="std-km-out"></div>${rows}</div>`;
+  }
+
   async function historyTab() {
     const lg = await api('/api/studio/log?limit=150');
+    let km = { hub: false, tasks: [], export: { documents: 0 } };
+    try { km = await api('/api/studio/km'); } catch (_) {}
     const bk = st.data.backups || [];
-    return `<div class="std-two"><div class="std-card"><b>Applied changes</b>${bk.map((b) => `<div class="std-row" style="justify-content:space-between"><span><b>${E(b.name)}</b> <span class="std-muted">${new Date(b.at * 1000).toLocaleString()}</span><br><span class="std-mono">${Object.keys(b.files).map(E).join(', ')}</span></span><button class="btn ghost" data-revert="${E(b.id)}">Revert</button></div>`).join('') || '<span class="std-muted">Nothing applied yet.</span>'}</div>
+    return `<div style="margin-bottom:10px">${kmCard(km)}</div><div class="std-two"><div class="std-card"><b>Applied changes</b>${bk.map((b) => `<div class="std-row" style="justify-content:space-between"><span><b>${E(b.name)}</b> <span class="std-muted">${new Date(b.at * 1000).toLocaleString()}</span><br><span class="std-mono">${Object.keys(b.files).map(E).join(', ')}</span></span><button class="btn ghost" data-revert="${E(b.id)}">Revert</button></div>`).join('') || '<span class="std-muted">Nothing applied yet.</span>'}</div>
 <div class="std-card"><div class="std-row" style="justify-content:space-between"><b>Log</b><button class="btn ghost" id="std-datasets">Build the datasets</button></div><div id="std-ds-out"></div>
 <div class="std-pre">${lg.events.slice().reverse().map((e) => `${new Date(e.t * 1000).toLocaleTimeString()}  ${e.kind.padEnd(13)} ${e.vid || ''} ${e.file || e.model || e.name || ''}${e.ok === false ? '  ✗' : ''}`).map(E).join('\n')}</div></div></div>`;
   }
@@ -192,6 +202,9 @@ ${a.variant && !a.error ? `<div class="std-row"><button class="btn ghost" data-o
       } catch (e) { toast(errText(e), 'error'); }
     });
     on('std-cmp', 'click', (e) => { st.cur = e.target.dataset.a; st.other = e.target.dataset.b; st.side = true; st.tab = 'preview'; render(); });
+    const kmDo = (op) => async () => { const out = $('std-km-out'); try { const r = await send('/api/studio/km/' + op, { datasets: !!($('std-km-ds') || {}).checked }); out.innerHTML = op === 'build' ? `<div class="std-mono">task ${E(r.task)} · ${E(r.state)}: approve the plan in ModelMistress</div>` : `<div class="std-mono">${r.documents} document(s)${r.skipped && r.skipped.length ? ' · ' + r.skipped.length + ' left out by the leak check' : ''}</div>`; if (op === 'build') render(); } catch (e) { toast(errText(e), 'error'); } };
+    on('std-km-export', 'click', kmDo('export'));
+    on('std-km-build', 'click', kmDo('build'));
     on('std-datasets', 'click', async () => { try { const r = await send('/api/studio/datasets'); $('std-ds-out').innerHTML = Object.entries(r).map(([k, v]) => `<div class="std-mono">${E(k)}: ${v.rows} row(s) · ${E(v.path)}</div>`).join(''); } catch (e) { toast(errText(e), 'error'); } });
   }
 

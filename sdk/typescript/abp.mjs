@@ -3372,6 +3372,15 @@ export const operations = {
   ],
   "query_params": []
  },
+ "GET /api/studio/km": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/studio/km",
+  "path_params": [],
+  "query_params": [
+   "task"
+  ]
+ },
  "GET /api/studio/log": {
   "body": false,
   "method": "GET",
@@ -6579,6 +6588,20 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/studio/generate",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/studio/km/build": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/studio/km/build",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/studio/km/export": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/studio/km/export",
   "path_params": [],
   "query_params": []
  },
@@ -14144,6 +14167,29 @@ export const operations = {
    "jid"
   ],
   "query_params": []
+ },
+ "studio_km_build_api_studio_km_build_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/studio/km/build",
+  "path_params": [],
+  "query_params": []
+ },
+ "studio_km_export_api_studio_km_export_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/studio/km/export",
+  "path_params": [],
+  "query_params": []
+ },
+ "studio_km_status_api_studio_km_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/studio/km",
+  "path_params": [],
+  "query_params": [
+   "task"
+  ]
  },
  "studio_log_api_studio_log_get": {
   "body": false,
