@@ -1607,10 +1607,10 @@ async def cmd_skills(ctx: CmdContext, args: list[str]) -> str:
     if sub == "inspect" and len(args) >= 2:
         content = skills.get_content(ctx.instance_id, args[1])
         return content if content is not None else "Not found."
-    if sub in ("packs", "fetch", "quarantine", "approve", "reject", "drafts", "approve-draft", "reject-draft"):
+    if sub in ("packs", "fetch", "quarantine", "approve", "reject", "drafts", "check-draft", "approve-draft", "reject-draft"):
         return await _skills_admin(ctx, sub, args)
     return ("Usage: /skills list | install <path> | remove <name> | inspect <name> | packs | "
-            "fetch <git-url> [ref] | quarantine | approve <name> | reject <name> | drafts | approve-draft <name> | reject-draft <name>")
+            "fetch <git-url> [ref] | quarantine | approve <name> | reject <name> | drafts | check-draft <name> | approve-draft <name> | reject-draft <name>")
 
 
 async def _skills_admin(ctx: CmdContext, sub: str, args: list[str]) -> str:
@@ -1650,6 +1650,10 @@ async def _skills_admin(ctx: CmdContext, sub: str, args: list[str]) -> str:
             return "Skill drafts written by the agent:\n" + "\n".join(
                 f"  {d['name']}: {d['description'][:100]}" + (f"  (similar to: {', '.join(d['similar_to'])})" if d.get("similar_to") else "")
                 for d in drafts) if drafts else "No drafts."
+        if sub == "check-draft" and len(args) >= 2:
+            from bot.agent_runtime import skill_draft_eval
+
+            return skill_draft_eval.summary(skill_draft_eval.evaluate_draft(args[1]))
         if sub == "approve-draft" and len(args) >= 2:
             return f"Installed {skill_learning.approve_draft(args[1])['installed']}."
         if sub == "reject-draft" and len(args) >= 2:
@@ -1657,7 +1661,7 @@ async def _skills_admin(ctx: CmdContext, sub: str, args: list[str]) -> str:
             return f"Removed draft {args[1]}."
     except ToolError as exc:
         return str(exc)
-    return "Usage: /skills fetch <url> [ref] | quarantine | approve <name> | reject <name> | drafts | approve-draft <name> | reject-draft <name>"
+    return "Usage: /skills fetch <url> [ref] | quarantine | approve <name> | reject <name> | drafts | check-draft <name> | approve-draft <name> | reject-draft <name>"
 
 
 def _describe_quarantined(info: dict) -> str:

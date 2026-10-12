@@ -244,7 +244,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.dashboard.routes.rules",
     "bot.agent_runtime.session_export", "bot.backends.external_agent_backend",  # imported by denied modules (dashboard, router)
     "bot.model_catalog", "bot.agent_runtime.usage_limits", "bot.agent_runtime.model_tools",  # usage counters and per-process caches
-    "bot.custom_commands", "bot.agent_runtime.skill_learning",  # small, stateless, but imported by denied modules only
+    "bot.custom_commands", "bot.agent_runtime.skill_learning", "bot.agent_runtime.skill_draft_eval",  # small, stateless, but imported by denied modules only
     "bot.skill_packs", "bot.skill_install",  # skill_packs registers read_skill_file at import time
     "bot.agent_runtime.agent_defs", "bot.agent_runtime.worktrees",  # agent_defs registers a tool at import time
     "bot.agent_runtime.repo_map", "bot.agent_runtime.ext_browser", "bot.agent_runtime.search_index",  # register their tools at import time; repo_map caches

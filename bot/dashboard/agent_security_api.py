@@ -13,6 +13,7 @@
     GET  /api/skills/quarantine                 packs waiting for a person, with their scan reports
     POST /api/skills/quarantine/approve|reject  a person's decision
     GET  /api/skills/drafts                     skills the agent drafted from a task
+    GET  /api/skills/drafts/{name}/evaluation   automatic, advisory check of one draft (never approves anything)
     POST /api/skills/drafts/approve|reject      a person's decision
 
 Reads follow the dashboard's normal auth (the desktop token or a paired device's key);
@@ -128,7 +129,7 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
     import asyncio
 
     from bot import skill_install, skill_packs
-    from bot.agent_runtime import skill_learning
+    from bot.agent_runtime import skill_draft_eval, skill_learning
     from bot.agent_runtime.errors import ToolError
 
     def _guard(fn, *a):
@@ -165,6 +166,11 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
     @app.get("/api/skills/drafts", dependencies=read)
     async def get_drafts():
         return {"drafts": skill_learning.list_drafts()}
+
+    @app.get("/api/skills/drafts/{name}/evaluation", dependencies=read)
+    async def evaluate_draft(name: str):
+        # Advice for the person reading the draft; read-only, it never approves or rejects.
+        return _guard(skill_draft_eval.evaluate_draft, name)
 
     @app.post("/api/skills/drafts/approve", dependencies=write)
     async def approve_draft(body: _NameBody):

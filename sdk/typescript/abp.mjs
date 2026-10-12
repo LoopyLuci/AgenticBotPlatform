@@ -3186,6 +3186,15 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/skills/drafts/{name}/evaluation": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/skills/drafts/{name}/evaluation",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
  "GET /api/skills/packs": {
   "body": false,
   "method": "GET",
@@ -10918,6 +10927,15 @@ export const operations = {
   "path": "/api/runtime/preview/{branch}",
   "path_params": [
    "branch"
+  ],
+  "query_params": []
+ },
+ "evaluate_draft_api_skills_drafts__name__evaluation_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/skills/drafts/{name}/evaluation",
+  "path_params": [
+   "name"
   ],
   "query_params": []
  },
