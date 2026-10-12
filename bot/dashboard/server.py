@@ -963,6 +963,11 @@ def build_app() -> FastAPI:
 
     traces_api.register(app, _require_token_or_api_key)
 
+    # Agent eval reports (/api/agent/evals/reports): the Evals screen's read-only view of the harness's JSON reports.
+    from bot.dashboard import evals_api
+
+    evals_api.register(app, _require_token_or_api_key)
+
     # Credential vault (/api/vault): names, sites and kinds only; a secret is accepted once and never returned.
     from bot.dashboard import vault_api
 

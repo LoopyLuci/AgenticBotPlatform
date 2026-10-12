@@ -92,6 +92,17 @@ python -m abp_agenteval bench summary --dir docs/benchmarks/runs
 python -m abp_agenteval page --bench docs/benchmarks/runs --out docs/benchmarks/index.html
 ```
 
+### Live reports on the page and in the dashboard
+
+```bash
+python -m abp_agenteval page --reports docs/agents/eval-reports --out evals.html
+```
+
+`page --reports DIR` renders every run report and compare report in a folder: a table across runs (model, date, pass rate, tasks failed, model calls, tokens, wall time), a section per run with its categories and failing tasks, and the prompt-variant comparisons. Combine it with `--bench` to get both on one page. It is one self-contained file, with every value escaped.
+
+The dashboard and desktop app have an **Evals** screen over the same files: `GET /api/agent/evals/reports` and `GET /api/agent/evals/reports/{name}` (read-only, same auth as the other read routes). They read only `*.json` files directly in `docs/agents/eval-reports` and in any folders listed in `ABP_EVAL_REPORTS_DIR`; `name` must be a file name from the listing, so `../x.json` or an absolute path is a 404.
+
+
 `bench run` runs the suite live with every model you name, or `auto`. `auto` means the model router's candidates:
 free models from your configured providers, never Claude unless you listed it. Each model runs `--repeats` times,
 because one run of a small suite is noise.

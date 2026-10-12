@@ -594,6 +594,22 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/agent/evals/reports": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/agent/evals/reports",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/agent/evals/reports/{name}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/agent/evals/reports/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
  "GET /api/agent/overview": {
   "body": false,
   "method": "GET",
@@ -11399,6 +11415,15 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "get_eval_report_api_agent_evals_reports__name__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/agent/evals/reports/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
  "get_instance_permissions_api_instances__instance_id__permissions_get": {
   "body": false,
   "method": "GET",
@@ -12479,6 +12504,13 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/api/canvas",
+  "path_params": [],
+  "query_params": []
+ },
+ "list_eval_reports_api_agent_evals_reports_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/agent/evals/reports",
   "path_params": [],
   "query_params": []
  },

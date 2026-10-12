@@ -125,7 +125,146 @@ def render_bench_html(summary: dict, reports: list[dict], *, title: str = "ABP a
     return "".join(out)
 
 
-def main(paths: list[str], out: str, *, bench_dir: str | None = None) -> int:
+def classify(data) -> str:
+    """'run' for a report of one suite run, 'compare' for a `compare` report, '' for anything else."""
+    if not isinstance(data, dict):
+        return ""
+    if isinstance(data.get("results"), list):
+        return "run"
+    if isinstance(data.get("variants"), list):
+        return "compare"
+    return ""
+
+
+def summarize_run(r: dict) -> dict:
+    """The numbers a reader wants from one run report, tolerant of missing keys."""
+    results = [x for x in r.get("results", []) if isinstance(x, dict)]
+    failed = [x for x in results if not x.get("passed") and not x.get("limited")]
+    cats: dict[str, list[int]] = {}
+    for x in results:
+        if x.get("limited"):
+            continue
+        c = cats.setdefault(str(x.get("category", "")), [0, 0])
+        c[1] += 1
+        c[0] += bool(x.get("passed"))
+    total = r.get("total", len(results))
+    return {
+        "mode": r.get("mode", ""), "model": r.get("model", ""), "when": r.get("when") or 0,
+        "total": total, "measured": r.get("measured", total), "limited": r.get("limited", 0),
+        "passed": r.get("passed", 0), "score": r.get("score", 0), "tokens": r.get("tokens", 0),
+        "duration_ms": r.get("duration_ms", 0),
+        "model_calls": sum(int(x.get("iterations") or 0) for x in results),
+        "categories": {k: {"passed": v[0], "total": v[1]} for k, v in sorted(cats.items())},
+        "failed": [{"id": str(x.get("id", "")), "title": str(x.get("title", "")), "category": str(x.get("category", ""))} for x in failed],
+        "tasks_failed": len(failed),
+    }
+
+
+def summarize_compare(c: dict) -> dict:
+    keys = ("name", "passed", "total", "score", "tokens", "iterations", "gained", "lost", "verdict")
+    return {"mode": c.get("mode", ""), "model": c.get("model", ""), "note": c.get("note"),
+            "variants": [{k: v.get(k) for k in keys} for v in c.get("variants", []) if isinstance(v, dict)]}
+
+
+def load_reports(folder) -> list[tuple[str, dict]]:
+    """Every readable *.json report in `folder`, as (file name, data), sorted by name. Unreadable files are skipped."""
+    out = []
+    try:
+        files = sorted(Path(folder).glob("*.json"))
+    except OSError:
+        return out
+    for f in files:
+        try:
+            out.append((f.name, json.loads(f.read_text(encoding="utf-8"))))
+        except (OSError, ValueError):
+            continue
+    return out
+
+
+def _when(ts) -> str:
+    try:
+        return time.strftime("%Y-%m-%d", time.gmtime(float(ts))) if ts else ""
+    except (TypeError, ValueError, OverflowError, OSError):
+        return ""
+
+
+def _secs(ms) -> str:
+    try:
+        s = float(ms or 0) / 1000
+    except (TypeError, ValueError):
+        return ""
+    return f"{int(s // 60)} m {int(s % 60):02d} s" if s >= 60 else f"{s:.1f} s"
+
+
+def render_reports_html(named: list[tuple[str, dict]], *, title: str = "ABP live evaluation reports", body_only: bool = False) -> str:
+    """Per-run summaries and a cross-run table for run reports, plus any `compare` reports. Everything is escaped."""
+    runs = [(n, summarize_run(d)) for n, d in named if classify(d) == "run"]
+    comps = [(n, summarize_compare(d)) for n, d in named if classify(d) == "compare"]
+    runs.sort(key=lambda x: (str(x[1]["when"]), x[0]))
+    out = []
+    if not runs and not comps:
+        out.append("<p>No eval reports found.</p>")
+    if runs:
+        out.append("<h2>All runs</h2><table><tr><th>Report</th><th>Mode</th><th>Model</th><th>Date</th><th>Pass rate</th><th>Passed</th>"
+                   "<th>Failed</th><th>Model calls</th><th>Tokens</th><th>Wall time</th></tr>")
+        for n, s in runs:
+            out.append(f"<tr><td>{_esc(n)}</td><td class={'ok' if s['mode'] == 'live' else 'muted'}>{_esc(s['mode'])}</td><td>{_esc(s['model'])}</td>"
+                       f"<td>{_esc(_when(s['when']))}</td><td>{_esc(s['score'])}%</td><td>{_esc(s['passed'])}/{_esc(s['measured'])}</td>"
+                       f"<td>{s['tasks_failed']}</td><td>{s['model_calls']}</td><td>{_esc(s['tokens'])}</td><td>{_esc(_secs(s['duration_ms']))}</td></tr>")
+        out.append("</table>")
+    for n, s in runs:
+        out.append(f"<h2>{_esc(s['model'])} <span class=muted>{_esc(_when(s['when']))} - {_esc(n)}</span></h2>"
+                   f"<p>{_esc(s['mode'])} run: <strong>{_esc(s['passed'])}/{_esc(s['measured'])}</strong> tasks passed ({_esc(s['score'])}%), "
+                   f"{s['model_calls']} model calls, {_esc(s['tokens'])} tokens, {_esc(_secs(s['duration_ms']))}."
+                   + (f" {_esc(s['limited'])} task(s) not measured (allowance ran out)." if s["limited"] else "") + "</p>")
+        if s["categories"]:
+            out.append("<table><tr><th>Category</th><th>Passed</th></tr>" + "".join(
+                f"<tr><td>{_esc(k)}</td><td>{v['passed']}/{v['total']}</td></tr>" for k, v in s["categories"].items()) + "</table>")
+        if s["failed"]:
+            out.append("<p class=bad>Failed tasks</p><table><tr><th>Task</th><th>Category</th></tr>" + "".join(
+                f"<tr><td>{_esc(x['id'])}<div class=muted>{_esc(x['title'])}</div></td><td>{_esc(x['category'])}</td></tr>" for x in s["failed"]) + "</table>")
+    for n, c in comps:
+        out.append(f"<h2>Prompt comparison <span class=muted>{_esc(n)}</span></h2><p>{_esc(c['mode'])} - {_esc(c['model'])}"
+                   + (f" - {_esc(c['note'])}" if c["note"] else "") + "</p><table><tr><th>Variant</th><th>Passed</th><th>Score</th><th>Tokens</th>"
+                   "<th>Model calls</th><th>Gained</th><th>Lost</th><th>Verdict</th></tr>")
+        for v in c["variants"]:
+            out.append(f"<tr><td>{_esc(v['name'])}</td><td>{_esc(v['passed'])}/{_esc(v['total'])}</td><td>{_esc(v['score'])}%</td><td>{_esc(v['tokens'])}</td>"
+                       f"<td>{_esc(v['iterations'])}</td><td>{_esc(', '.join(map(str, v['gained'] or [])))}</td>"
+                       f"<td>{_esc(', '.join(map(str, v['lost'] or [])))}</td><td>{_esc(v['verdict'])}</td></tr>")
+        out.append("</table>")
+    body = "".join(out)
+    if body_only:
+        return body
+    return (f"<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
+            f"<title>{_esc(title)}</title><style>{CSS}</style></head><body><h1>{_esc(title)}</h1>{body}"
+            "<p class=muted>Generated by <code>python -m abp_agenteval page --reports</code>. See docs/agents/evals.md.</p></body></html>")
+
+
+def _main_reports(paths: list[str], out: str, bench_dir: str | None, reports_dir: str) -> int:
+    named = load_reports(reports_dir)
+    for p in paths:
+        try:
+            named.append((Path(p).name, json.loads(Path(p).read_text(encoding="utf-8"))))
+        except (OSError, ValueError) as exc:
+            print(f"could not read {p}: {exc}", file=sys.stderr)
+            return 2
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    if bench_dir:
+        from . import bench
+
+        runs = bench.load(Path(bench_dir))
+        page = render_bench_html(bench.summarize(runs), runs)
+        text = page.replace("</body></html>", render_reports_html(named, body_only=True) + "</body></html>")
+    else:
+        text = render_reports_html(named)
+    Path(out).write_text(text, encoding="utf-8")
+    print(f"wrote {out}")
+    return 0
+
+
+def main(paths: list[str], out: str, *, bench_dir: str | None = None, reports_dir: str | None = None) -> int:
+    if reports_dir:
+        return _main_reports(paths, out, bench_dir, reports_dir)
     reports = []
     for p in paths:
         try:

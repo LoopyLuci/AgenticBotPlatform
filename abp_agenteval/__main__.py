@@ -43,6 +43,7 @@ def main(argv=None) -> int:
     page = sub.add_parser("page", help="write a static results page from one or more reports, or from a benchmark folder")
     page.add_argument("reports", nargs="*")
     page.add_argument("--bench", help="a `bench run` folder: the page shows its leaderboard")
+    page.add_argument("--reports", dest="reports_dir", help="a folder of run reports and compare reports (docs/agents/eval-reports): a summary per run and a table across runs")
     page.add_argument("--out", required=True)
     bench = sub.add_parser("bench", help="the suite, live, across several models and repeated (see abp_agenteval/bench.py)")
     bsub = bench.add_subparsers(dest="bench_cmd", required=True)
@@ -72,7 +73,7 @@ def main(argv=None) -> int:
     if args.cmd == "page":
         from . import page as page_mod
 
-        return page_mod.main(args.reports, args.out, bench_dir=args.bench)
+        return page_mod.main(args.reports, args.out, bench_dir=args.bench, reports_dir=args.reports_dir)
     tasks = seed_suite()
     if args.cmd == "bench":
         from . import bench as bench_mod
