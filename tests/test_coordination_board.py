@@ -407,3 +407,20 @@ def test_the_factory_prefers_a_live_sentinel_and_falls_back_to_local(monkeypatch
     coordination.reset()                              # the cached "it answers" must not outlive the server
     assert coordination.get_board().name == "local"
     coordination.reset()
+
+
+def test_sentinel_url_and_token_come_from_this_machines_agentsentinel_config(tmp_path, monkeypatch):
+    from bot.coordination import sentinel
+
+    (tmp_path / "config.json").write_text('{"http_port": 18123, "agent_token": "tok-from-config", "admin_token": "x"}',
+                                          encoding="utf-8")
+    monkeypatch.setenv("AGENT_SENTINEL_HOME", str(tmp_path))
+    monkeypatch.delenv("AGENT_SENTINEL_URL", raising=False)
+    monkeypatch.delenv("AGENT_SENTINEL_TOKEN", raising=False)
+    assert sentinel.sentinel_url() == "http://127.0.0.1:18123"
+    assert sentinel.sentinel_token() == "tok-from-config"          # the agent token, never the admin one
+    monkeypatch.setenv("AGENT_SENTINEL_TOKEN", "from-env")
+    assert sentinel.sentinel_token() == "from-env"                # the environment wins
+    monkeypatch.setenv("AGENT_SENTINEL_HOME", str(tmp_path / "missing"))
+    monkeypatch.delenv("AGENT_SENTINEL_TOKEN")
+    assert sentinel.sentinel_token() == "" and sentinel.sentinel_url() == sentinel.DEFAULT_URL

@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+from pathlib import Path
 from typing import Any, Optional
 
 import httpx
@@ -37,11 +38,31 @@ def sentinel_url() -> str:
             return str(cfg).rstrip("/")
     except Exception:  # noqa: BLE001 - config trouble must not decide where the board is
         pass
-    return DEFAULT_URL
+    port = _machine_config().get("http_port")
+    return f"http://127.0.0.1:{int(port)}" if isinstance(port, int) else DEFAULT_URL
 
 
 def sentinel_token() -> str:
-    return os.environ.get("AGENT_SENTINEL_TOKEN", "").strip()
+    """AGENT_SENTINEL_TOKEN, else the agent token of this machine's AgentSentinel (its config file, as the
+    `agent-sentinel` CLI finds it) — so a local AgentSentinel is used without copying a token anywhere."""
+    return os.environ.get("AGENT_SENTINEL_TOKEN", "").strip() or str(_machine_config().get("agent_token") or "").strip()
+
+
+def _machine_config() -> dict:
+    """This machine's AgentSentinel config.json (AGENT_SENTINEL_HOME, else %APPDATA%/AgentSentinel or
+    ~/.config/agent-sentinel), or {} when there is none or it can't be read. Only the port and agent token are used."""
+    home = os.environ.get("AGENT_SENTINEL_HOME", "").strip()
+    if home:
+        folder = Path(home)
+    elif os.name == "nt":
+        folder = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming") / "AgentSentinel"
+    else:
+        folder = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "agent-sentinel"
+    try:
+        data = json.loads((folder / "config.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _alias(item: Any) -> Any:
