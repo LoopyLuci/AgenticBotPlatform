@@ -125,3 +125,18 @@ larger Claude window is a separate opt-in and over-estimating it makes the provi
   provider that counts differently can still refuse a call ABP thought fine.
 * Limits that depend on a plan or on your account's balance cannot be discovered; set them yourself.
 * The catalog has no rate limits and only some providers publish them, so most models show no limit.
+
+## A money limit for one turn
+
+`native_agent.budget` (Agents page, Runtime tab, "Limits") stops a turn once its model calls have cost
+`max_usd_per_turn` dollars (0 = off). It ends the turn the way the token limit does: the agent summarises what is
+done, and "continue" picks up. Sub-agents started during the turn spend from the same budget.
+
+Nothing is looked up while a turn runs. A model's price comes from, in order: your `budget.prices` table
+(`"provider/model"` or a pattern, dollars per million tokens: `input`, `output`, optional `cache_read` and
+`cache_write`, or `free: true`); the model running on this computer or your own network (ModelMistress, Ollama,
+LocalAI, LM Studio, vLLM, llama.cpp — by provider, not by address: a proxy on your network may forward to a paid API, so mark it `free: true` in `prices` if it is free), which costs 0; then the catalog above (including
+`native_agent.models.overrides` `price_input` / `price_output`). `unknown_price: allow` (default) carries on with a
+one-time note in the run's trace; `stop` ends the turn after a call to a model with no known price. Cached tokens are
+charged at the cache price when one is known, else at the input price. The cost of each call and run is in the trace
+(`usd`) whenever the price is known.

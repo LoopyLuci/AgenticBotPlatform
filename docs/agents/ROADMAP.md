@@ -118,7 +118,7 @@ the schema list has a spec (met, enforced by a test); no existing test regresses
 | Shell: a shell that keeps `cd` and exported variables between calls (`run_shell` `persistent: true`, or `native_agent.shell.persistent`; one PowerShell or bash process per session and folder, end marker per call, timeout kills the tree and starts fresh, idle close, leaving the workspace refused once; docker / ssh / wsl / `network: none` fall back to a fresh shell with a note) | Built and tested on Windows (PowerShell). The bash driver is **untested** (no POSIX machine here) |
 | Shell: interactive PTY | **Not built.** Needs a platform-specific implementation that must be tested on each OS |
 | Loop: parallel read-only tool calls (bounded), step / time / token limits that end a turn with a summary instead of an error, repeat and all-failing detection, cancellation that answers the open tool calls so the session stays valid, repair of sessions an older crash left dangling | Built |
-| Cost budget (dollars) per turn | Not built: price lookup is a network call; token and time limits cover the need for now |
+| Cost budget (dollars) per turn (`native_agent.budget.max_usd_per_turn`, off by default) | Built. Prices come only from local data (your `budget.prices` table, "runs on this computer or network = free", the cached models.dev catalog), never a lookup during a turn. Ends the turn like the token limit; sub-agents spend from the same budget; the cost is recorded in the trace. Tested against fake transports only |
 | Leaf sub-agents get the new tools | Built |
 | Eval tasks for all of the above (17 in the suite) | Built |
 

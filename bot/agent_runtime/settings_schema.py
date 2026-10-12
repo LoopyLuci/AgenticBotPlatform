@@ -26,6 +26,7 @@ TABS = [
 
 # Settings that live in config/backends.yaml but are edited there, not on the page.
 YAML_ONLY = [
+    {"key": "native_agent.budget.prices", "why": "your own model prices in dollars per million tokens (input, output, cache_read, cache_write), by provider/model or pattern; see docs/agents/models.md"},
     {"key": "native_agent.models.limits / native_agent.models.overrides", "why": "per-model limit tables (see docs/agents/models.md)"},
     {"key": "native_agent.context_windows", "why": "a map of model name to context size"},
     {"key": "native_agent.code_intel.lsp.servers / .formatters", "why": "language-server commands per language"},
@@ -62,6 +63,8 @@ FIELDS: list[dict] = [
     _f("limits.max_iterations", "int", "Steps per turn", "How many tool-use steps one message may take before the agent stops and reports back.", R, "Limits", 30, min=1, max=1000),
     _f("limits.max_seconds", "int", "Time limit per turn", "Stop a turn after this long. 0 means no limit.", R, "Limits", 0, min=0, max=86400, unit="seconds"),
     _f("limits.max_tokens", "int", "Token limit per turn", "Stop a turn after this many tokens have been spent on it. 0 means no limit.", R, "Limits", 0, min=0, unit="tokens"),
+    _f("budget.max_usd_per_turn", "float", "Money limit per turn", "Stop a turn once its model calls have cost this many US dollars, counting any helper agents it started. Works from the prices ABP already has saved (nothing is looked up while a turn runs); models on this computer or your own network cost nothing. 0 means no limit.", R, "Limits", 0, min=0, unit="USD"),
+    _f("budget.unknown_price", "enum", "Models with no known price", "What the money limit does when a model's price is not known: carry on (and note it once in the run's trace), or stop the turn.", R, "Limits", "allow", choices=[["allow", "Carry on"], ["stop", "Stop the turn"]]),
     _f("prompt.guidance", "bool", "Built-in guidance", "The operating guidance ABP gives every agent (how to use tools, how to be careful). Turn off only if you supply your own.", R, "Instructions", True),
     _f("prompt.environment", "bool", "Describe the environment", "Tell the agent the date, operating system, working folder and git state.", R, "Instructions", True),
     _f("prompt.extra", "textarea", "Extra instructions", "Text added to every agent's instructions, after the built-in guidance. Applies to all bots.", R, "Instructions", ""),

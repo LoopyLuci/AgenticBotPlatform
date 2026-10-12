@@ -92,7 +92,7 @@ def test_run_detail_has_ordered_events_totals_and_links(client):
     ev = client.get("/api/agent/traces/bbbb0002", headers=H).json()
     assert [e["kind"] for e in ev["events"]] == ["agent.run.start", "llm.call", "approval", "tool.call", "llm.call", "agent.run.end"]
     assert [e["offset_ms"] for e in ev["events"]] == sorted(e["offset_ms"] for e in ev["events"])
-    assert ev["totals"] == {"llm_calls": 2, "tool_calls": 1, "tokens": 200, "cache_read": 0, "cache_create": 0, "llm_ms": 700,
+    assert ev["totals"] == {"llm_calls": 2, "tool_calls": 1, "tokens": 200, "usd": None, "cache_read": 0, "cache_create": 0, "llm_ms": 700,
                             "tool_ms": 30, "failed_tools": 1, "denied_tools": 0, "approvals": 1}
     assert ev["run"]["error"] == "exit 2"
     tool = next(e for e in ev["events"] if e["kind"] == "tool.call")["data"]
