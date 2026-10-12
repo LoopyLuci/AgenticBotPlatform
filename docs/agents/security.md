@@ -244,6 +244,30 @@ command (JSON on stdin and stdout) or an `http(s)://` URL (JSON in a POST and in
 
 A hook that fails, times out or answers something odd is treated as having no opinion.
 
+**Typed hooks.** A hook's command may be a JSON object instead:
+
+    {"type": "command", "command": "...", "async": true}
+    {"type": "http", "url": "https://..."}
+    {"type": "mcp_tool", "server": "name", "tool": "check", "arguments": {}, "payload_arg": "event"}
+    {"type": "prompt", "prompt": "Does this command delete data?", "model": "provider/model"}
+    {"type": "agent", "agent": "reviewer", "prompt": "Is this change safe to run?"}
+
+* `mcp_tool` calls a tool on a configured, connected MCP server (a pinned-and-blocked tool is not callable)
+  with the event under `payload_arg`; the text it returns is read as a command hook's JSON.
+* `prompt` asks a small model (`model`, or the `native_agent.mcp_sampling` model) and maps its answer
+  (`{"decision": "allow"|"deny"|"ask", "reason": ...}`, or a plain yes / no) to a decision; on `Stop` a deny
+  is a block. The event is given to the model as data, not as instructions.
+* `agent` runs a read-only agent definition (`mode: plan`; anything else is refused) as a leaf sub-agent and
+  maps its final verdict the same way. Its own tool calls do not start further agent hooks.
+* Every typed hook takes `timeout` (seconds; default 30, agent 120, at most 300) and `fail`: `open` (default,
+  the failure policy above) or `closed` (a failure or timeout denies).
+* `async: true` runs the hook in the background: the turn never waits, it can neither block nor rewrite,
+  its answer is only logged, at most 8 run at once (the rest are dropped with a log line), and the timeout
+  still kills its whole process tree.
+* Hooks never widen permissions: a decision can only be allow (no effect), ask or deny/block, and a rewritten
+  input is judged again by the permission rules. Hooks from an agent definition are narrowed further (no
+  rewrite) and only run while that agent runs. All of it is operator configuration; an agent cannot add a hook.
+
 ## The Permissions & approvals screen
 
 Both UIs have a **Permissions & approvals** screen (`permissions-panel.js`) over the routes above and `/api/approvals`:
