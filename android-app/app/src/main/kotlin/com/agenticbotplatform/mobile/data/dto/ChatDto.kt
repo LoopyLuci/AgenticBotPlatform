@@ -120,3 +120,16 @@ data class UploadCompleteResponse(
     val id: Int,
     val relayed: Boolean = true,
 )
+
+/** The "chat_stream" push over /api/ws - see bot/dashboard/chat_stream.py.
+ * kind is "text_delta" (text), "reset" (drop the text so far), "tool_start" /
+ * "tool_end" (tool = name only) or "done" (the final message is stored). */
+@Serializable
+data class ChatStreamFrame(
+    @SerialName("instance_id") val instanceId: Int? = null,
+    @SerialName("chat_id") val chatId: String? = null,
+    @SerialName("turn_id") val turnId: String = "",
+    val kind: String = "",
+    val text: String? = null,
+    val tool: String? = null,
+)

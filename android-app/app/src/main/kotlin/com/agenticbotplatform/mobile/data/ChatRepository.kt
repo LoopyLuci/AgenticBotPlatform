@@ -8,6 +8,7 @@ import com.agenticbotplatform.mobile.data.db.ChatMessageEntity
 import com.agenticbotplatform.mobile.data.dto.BotInstanceSummary
 import com.agenticbotplatform.mobile.data.dto.ChatMessage
 import com.agenticbotplatform.mobile.data.dto.ChatMessagePush
+import com.agenticbotplatform.mobile.data.dto.ChatStreamFrame
 import com.agenticbotplatform.mobile.data.dto.SendMessageRequest
 import com.agenticbotplatform.mobile.data.dto.SendToBotRequest
 import com.agenticbotplatform.mobile.data.dto.UploadInitRequest
@@ -46,6 +47,9 @@ class ChatRepository @Inject constructor(
      * ViewModel collects this and calls [persistPushedMessage] rather than
      * this repository owning a collection scope of its own. */
     fun observeLiveMessages(): Flow<ChatMessagePush> = liveEvents.chatMessages
+
+    /** Live reply frames of the native agent (see [ChatDrafts]). */
+    fun observeChatStream(): Flow<ChatStreamFrame> = liveEvents.chatStreams
 
     /** Writes one pushed message straight into Room — no network round
      * trip needed the way refreshMessages()'s poll-based catch-up requires,

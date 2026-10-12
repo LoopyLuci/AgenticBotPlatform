@@ -4,7 +4,7 @@ Kotlin + Jetpack Compose + Material 3 native app for pairing with a running
 AgenticBotPlatform instance over Tailscale (see `../docs/mobile-access.md`). Mirrors
 the desktop dashboard's Chat, Support Bot, Sessions, Jobs, and Bots tabs
 (seven bottom-nav tabs total), plus QR-code pairing and push notifications
-for new inbound messages. Every chat composer (Chat and Support) pops the
+for new inbound messages. In Chat with Bot the native agent's reply shows live as a growing draft bubble, with the tool it is running, over the shared `/api/ws` socket. Every chat composer (Chat and Support) pops the
 same "/" slash-command autocomplete menu the desktop app has, and the
 Support tab talks to the same local, dependency-free Support Bot model
 described in `../docs/support-bot.md` — nothing mobile-specific about its
