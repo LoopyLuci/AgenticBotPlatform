@@ -166,5 +166,6 @@ def real_app(monkeypatch, temp_db, tmp_path):
         app.stop()
     live.reset()
     live.clear_failures()
-    toolspec._registered.clear()
+    # Put back what was there; keep what the app imported meanwhile (area tool modules register once, at import,
+    # and stay imported - wiping them left later tests in this process without those tools).
     toolspec._registered.update(saved_tools)

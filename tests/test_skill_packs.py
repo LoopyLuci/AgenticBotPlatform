@@ -23,7 +23,7 @@ def run(coro):
 
 
 @pytest.fixture(autouse=True)
-def _home(tmp_path, monkeypatch):
+def _home(tmp_path, monkeypatch, temp_db):
     home = tmp_path / "abp-data"
     home.mkdir()
     for mod in (skill_packs, custom_commands):
