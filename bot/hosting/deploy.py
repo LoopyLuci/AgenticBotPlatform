@@ -33,6 +33,7 @@ import httpx
 
 from bot.hosting import accounts
 from bot.hosting.store import HostingError
+from bot.sandbox_ns.spawn import run as ns_run
 
 Log = Callable[[str], None]
 _SKIP = {".git", ".DS_Store", "Thumbs.db", "node_modules", ".abp-site.json"}
@@ -68,7 +69,8 @@ def _ssh_base(acc: dict) -> list[str]:
 
 def ssh_run(acc: dict, command: str, stdin: Optional[bytes] = None, timeout: float = 600.0) -> str:
     try:
-        r = subprocess.run(_ssh_base(acc) + [command], input=stdin, capture_output=True, timeout=timeout)
+        r = ns_run(_ssh_base(acc) + [command], input=stdin, timeout=timeout, owner="hosting.deploy", name="ssh",
+                   env=dict(os.environ), text=False, encoding=None, errors=None)
     except subprocess.TimeoutExpired as e:
         raise HostingError(f"the server did not finish within {timeout:.0f}s") from e
     out = (r.stdout or b"").decode(errors="replace") + (r.stderr or b"").decode(errors="replace")
@@ -359,9 +361,9 @@ def cloudflare_publish(site: dict, folder: Path, acc: dict, target: dict, log: L
         p.req("POST", f"/accounts/{env['CLOUDFLARE_ACCOUNT_ID']}/pages/projects",
               json={"name": project, "production_branch": "main"})
         log(f"Cloudflare Pages: created project {project}")
-    r = subprocess.run([npx, "--yes", "wrangler@3", "pages", "deploy", str(folder), "--project-name", project,
-                        "--branch", "main", "--commit-dirty=true"], capture_output=True, text=True, env=env, timeout=900,
-                       shell=os.name == "nt")
+    r = ns_run([npx, "--yes", "wrangler@3", "pages", "deploy", str(folder), "--project-name", project,
+                "--branch", "main", "--commit-dirty=true"], env=env, timeout=900, owner="hosting.deploy",
+               name="wrangler pages deploy", shell=os.name == "nt")
     out = (r.stdout or "") + (r.stderr or "")
     if r.returncode != 0:
         raise HostingError(f"wrangler pages deploy failed: {out[-800:]}")
@@ -391,7 +393,7 @@ def github_publish(site: dict, folder: Path, acc: dict, target: dict, log: Log) 
             (work / "CNAME").write_text(doms[0] + "\n")
 
         def g(*args):
-            r = subprocess.run([git, *args], cwd=work, env=env, capture_output=True, text=True, timeout=600)
+            r = ns_run([git, *args], cwd=work, env=env, timeout=600, owner="hosting.deploy", name="git")
             if r.returncode != 0:
                 raise HostingError(f"git {args[0]} failed: {(r.stderr or r.stdout)[-500:]}")
             return r.stdout

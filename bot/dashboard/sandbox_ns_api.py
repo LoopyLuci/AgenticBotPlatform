@@ -2,7 +2,9 @@
 
     GET  /api/sandbox/status                    everything: the guard, every record, every cell with its
                                                 measured CPU/memory and the limits the OS really has, recent events
-    GET  /api/sandbox/cells                     the cells, each with the processes under it
+    GET  /api/sandbox/summary                   the Sandbox screen's one call: cells and processes by call site, with age,
+                                                CPU/memory, recent reflex actions and what this OS can enforce
+    GET  /api/sandbox/cells                the cells, each with the processes under it
     GET  /api/sandbox/processes                 every process this ABP process started and everything it
                                                 started, live ones first
     GET  /api/sandbox/events?since=<epoch>      the event ring buffer, oldest first, only what is newer
@@ -20,6 +22,8 @@ audit log. State lives in bot/sandbox_ns/registry.py, which is on bot/hotreload.
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
 import time
 from typing import Callable, Optional
 
@@ -50,6 +54,73 @@ def snapshot() -> dict:
     return _with_processes(registry.status())
 
 
+REFLEX_KINDS = ("limit_hit", "kill", "reap")
+
+
+def _exe(argv) -> str:
+    """The executable's file name and nothing else: the arguments are where secrets live, and the Sandbox
+    screen needs to say *what* is running, not *with what*."""
+    first = str((argv or [""])[0] or "")
+    return os.path.basename(first.replace("\\", "/")) or "?"
+
+
+def capabilities() -> dict:
+    """What this OS can enforce, as measured here rather than assumed."""
+    from bot.sandbox_ns import policy
+
+    out: dict = {"os": "windows" if os.name == "nt" else ("macos" if sys.platform == "darwin" else "linux"),
+                 "avoid_cpus": list(policy.avoid_cpus())}
+    try:
+        import psutil  # noqa: F401
+
+        out["sampling"] = True
+    except Exception:  # noqa: BLE001
+        out["sampling"] = False
+    if os.name == "nt":
+        from bot.agent_runtime import win_job
+
+        ok = bool(win_job.is_supported())
+        out.update(containment="Win32 Job Object", tree_kill="guaranteed", cpu_cap=ok, memory_cap=ok, priority=True)
+    else:
+        cgroup = os.access("/sys/fs/cgroup", os.W_OK) and os.path.exists("/sys/fs/cgroup/cgroup.controllers")
+        out.update(containment="session + rlimits" + (" + cgroup v2" if cgroup else ""), tree_kill="process group",
+                   cpu_cap=bool(cgroup), memory_cap=True, priority=True)
+    return out
+
+
+def summary(now: Optional[float] = None) -> dict:
+    """The compact picture the Sandbox screen draws: per cell and per process, who asked (the call site),
+    which preset, pid, age, CPU and memory; the reflex actions of the last while; what the OS can enforce."""
+    now = time.time() if now is None else now
+    status = registry.status()
+    live = [r for r in status.get("processes") or [] if r.get("alive")]
+    cells = []
+    for c in status.get("cells") or []:
+        pol = c.get("policy") or {}
+        sample = c.get("sample") or {}
+        lim = c.get("limits") or {}
+        cells.append({"id": c.get("id"), "name": c.get("name"), "call_site": c.get("owner") or "",
+                      "preset": pol.get("name") or "", "persistent": bool(pol.get("persistent")),
+                      "age_s": round(max(0.0, now - float(lim.get("created") or now)), 1),
+                      "processes": c.get("processes") or 0, "rss_mb": sample.get("rss_mb") or 0.0,
+                      "cpu_percent": sample.get("cpu_percent") or 0.0, "limits_applied": lim.get("limits_applied") or {},
+                      "notes": [str(n)[:200] for n in lim.get("notes") or []],
+                      # the same kill the Processes panel uses; a daemon is somebody's running service
+                      "killable": not bool(pol.get("persistent"))})
+    procs = [{"pid": r.get("pid"), "exe": _exe(r.get("argv")), "call_site": r.get("owner") or "",
+              "preset": r.get("policy") or "", "cell": r.get("cell") or "", "role": r.get("role"),
+              "parent_pid": r.get("parent_pid") or 0, "persistent": bool(r.get("persistent")),
+              "age_s": round(max(0.0, now - float(r.get("started") or now)), 1)} for r in live]
+    procs.sort(key=lambda r: -r["age_s"])
+    reflexes = [e for e in status.get("events") or [] if e.get("kind") in REFLEX_KINDS][-20:]
+    sites: dict[str, int] = {}
+    for p in procs:
+        sites[p["call_site"] or "?"] = sites.get(p["call_site"] or "?", 0) + 1
+    return {"now": now, "run_id": status.get("run_id"), "guard": status.get("guard"),
+            "sampler_running": status.get("sampler_running"), "capabilities": capabilities(),
+            "cells": cells, "processes": procs, "call_sites": sites, "reflexes": reflexes}
+
+
 def _audit(action: str, detail: str) -> None:
     try:
         db.log_audit(actor="dashboard", action=action, detail=detail[:500])
@@ -64,6 +135,12 @@ def register(app: FastAPI, require_token: Callable) -> None:
     async def sandbox_status():
         """Everything the nervous system knows: guard, records, cells (with limits and samples), events."""
         return await asyncio.to_thread(snapshot)
+
+    @app.get("/api/sandbox/summary", dependencies=dep)
+    async def sandbox_summary():
+        """Cells and live processes by call site (executable name only, never arguments), recent reflex
+        actions and this OS's capabilities - what the Sandbox screen shows."""
+        return await asyncio.to_thread(summary)
 
     @app.get("/api/sandbox/cells", dependencies=dep)
     async def sandbox_cells():
