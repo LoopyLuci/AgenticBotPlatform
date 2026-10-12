@@ -91,7 +91,7 @@ COMMAND_DEFS: tuple[CommandDef, ...] = (
                args_hint="every <interval> <prompt> | status | pause | resume | clear", aliases=("hb",), raw_args=True),
     CommandDef("topic", "Show/list this forum topic's independent session", category="Session", args_hint="[list]"),
     CommandDef("kanban", "A per-bot kanban board", category="Tools",
-               args_hint="boards | list <board> | add <board> <col> <text> | move <id> <col> | done <id> | delete <id>"),
+               args_hint="boards | list <board> | add <board> <col> <text> | move <id> <col> | done <id> | delete <id> | workboard [board]"),
     CommandDef("memory", "Review or add long-term memory", category="Tools",
                args_hint="[pending] | approve <id> | reject <id> | approval on|off | add <text>", raw_args=True),
     CommandDef("skills", "Manage locally-installed skills", category="Tools",

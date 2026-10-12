@@ -17,6 +17,7 @@ from fastapi import Body, Depends, FastAPI, HTTPException
 
 from bot import bot_instances, db, envfile
 from bot.config import config
+from bot.coordination import hermes_board
 from bot.router import router
 
 
@@ -293,26 +294,40 @@ def register(app: FastAPI) -> None:
             detail=f"instance {instance_id} -> {worker_provider}/{worker_model}: {goal[:120]}"
             + (f" (est. ${decision.estimated_usd:.4f})" if decision.estimated_usd else ""),
         )
-        try:
+        async def _round_trip() -> dict:
             result = await router.ask(prompt, action_type="swarm_dispatch", instance_id=instance_id)
+            job_row = db.get_latest_job(instance_id, "swarm_dispatch")
+            children = None
+            if job_row is not None:
+                db.set_audit_log_job_id(audit_id, job_row["id"])
+                children = parse_child_breakdown(result.text)
+                if children is not None:
+                    db.set_job_children(job_row["id"], children)
+            # What the work board stores on the dispatch's task: the answer and Hermes's own per-child breakdown.
+            return {"text": result.text, "job_id": job_row["id"] if job_row is not None else None,
+                    "children": children}
+
+        # The call is a task on the work board (bot/coordination/hermes_board.py): an identical dispatch that is running
+        # or just finished is not sent to Hermes again, and a crash mid-run leaves a task that expires, never a lost one.
+        try:
+            outcome = await hermes_board.run(instance_id, goal, worker_provider, worker_model, max_children, _round_trip)
+        except hermes_board.DispatchBusy as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except hermes_board.DispatchFailed as exc:
+            raise HTTPException(status_code=502, detail=f"dispatch failed: {exc}") from exc
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"dispatch failed: {exc}") from exc
-
-        job_row = db.get_latest_job(instance_id, "swarm_dispatch")
-        if job_row is not None:
-            db.set_audit_log_job_id(audit_id, job_row["id"])
-            children = parse_child_breakdown(result.text)
-            if children is not None:
-                db.set_job_children(job_row["id"], children)
+        stored = outcome.result if isinstance(outcome.result, dict) else {}
 
         return {
             "ok": True,
-            "result": result.text,
+            "result": stored.get("text", ""),
             "worker_provider": worker_provider,
             "worker_model": worker_model,
             "worker_model_source": pricing_source,
             "estimated_usd": decision.estimated_usd,
-            "job_id": job_row["id"] if job_row is not None else None,
+            "job_id": stored.get("job_id"),
+            **({"deduped": True, "board_task": outcome.task} if outcome.deduped else {}),
         }
 
     @app.post("/api/native-agent/{instance_id}/dispatch", dependencies=[Depends(_require_token_or_api_key)])

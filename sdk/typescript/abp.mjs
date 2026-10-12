@@ -2163,6 +2163,16 @@ export const operations = {
    "board"
   ]
  },
+ "GET /api/kanban/work-board": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/kanban/work-board",
+  "path_params": [],
+  "query_params": [
+   "board",
+   "limit"
+  ]
+ },
  "GET /api/lab": {
   "body": false,
   "method": "GET",
@@ -8926,6 +8936,16 @@ export const operations = {
    "card_id"
   ],
   "query_params": []
+ },
+ "api_kanban_work_board_api_kanban_work_board_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/kanban/work-board",
+  "path_params": [],
+  "query_params": [
+   "board",
+   "limit"
+  ]
  },
  "api_lease_release_api_lease_release_post": {
   "body": false,

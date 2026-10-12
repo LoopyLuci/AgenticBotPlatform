@@ -1361,6 +1361,12 @@ async def _kanban(args, client: DashboardClient) -> int:
         _print(args, await client.kanban_cards(instance_id=args.instance, board=args.board),
               table=["id", "column", "text"])
         return 0
+    if sub == "workboard":
+        data = await client.kanban_work_board(args.board)
+        rows = [{"board": b["board"], "state": col["name"], "id": c["id"][:8], "title": c["title"], "owner": c["owner"] or ""}
+                for b in data["boards"] for col in b["columns"] for c in col["cards"]]
+        _print(args, data if args.json else rows, table=["board", "state", "id", "title", "owner"])
+        return 0
     if sub == "add":
         _print(args, await client.add_kanban_card(args.instance, args.text, board=args.board, column=args.column))
         return 0
@@ -2196,6 +2202,8 @@ def _parser() -> argparse.ArgumentParser:
     p = kbsub.add_parser("cards")
     p.add_argument("--instance", type=int, required=True)
     p.add_argument("--board", default="default")
+    p = kbsub.add_parser("workboard", help="the agents' work board as read-only kanban columns (not your cards)")
+    p.add_argument("--board", default=None, help="one board name, e.g. abp/hermes-3 (default: all)")
     p = kbsub.add_parser("add")
     p.add_argument("--instance", type=int, required=True)
     p.add_argument("--text", required=True)

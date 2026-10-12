@@ -573,6 +573,11 @@ async def run() -> None:
 
             return retention.run_forever(stop_event)
 
+        def _coordination_watch():
+            from bot.coordination import watch
+
+            return watch.run_forever(stop_event)
+
         def _sentinel():
             self_preservation.start(loop, stop_event)
             return self_preservation.run_forever(stop_event)
@@ -614,6 +619,7 @@ async def run() -> None:
 
         _spawn("retention", _retention)
         _spawn("sentinel", _sentinel)
+        _spawn("work board stuck-work check", _coordination_watch)
 
         try:
             from bot import mdns_advertise

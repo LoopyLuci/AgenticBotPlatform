@@ -538,7 +538,21 @@ class KanbanScreen(ManageScreen):
     ADD_LABEL = "Add card"
     KEEP_FIELDS = ("instance", "board", "column")
     ACTIONS = (("move", "Move to column", "_move", None), ("delete", "Delete", "_delete", "Delete card {key}?"),
-               ("boards", "Boards", "_boards", None, True))
+               ("boards", "Boards", "_boards", None, True), ("workboard", "Work board", "_workboard", None, True))
+
+    async def _workboard(self, _row: dict | None) -> None:
+        """The agents' work board as read-only columns - not your cards, and nothing here changes it."""
+        try:
+            data = await self.app.client.kanban_work_board()
+        except ApiError as exc:
+            self._status(f"Failed: {exc}")
+            return
+        lines = ["Work board (read-only mirror, not your kanban cards)"]
+        for b in data["boards"]:
+            lines.append(f"\n{b['board']}")
+            for col in b["columns"]:
+                lines.extend([f"  {col['name']}: {c['title']}" + (f" [{c['owner']}]" if c["owner"] else "") for c in col["cards"]])
+        self._show("\n".join(lines) if data["boards"] else "(the work board has no tasks)")
 
     async def _instance(self) -> int | None:
         raw = self._value("instance")

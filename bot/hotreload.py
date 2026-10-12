@@ -273,6 +273,8 @@ DENYLIST: frozenset[str] = frozenset({
     # and turn, live heartbeat tasks, and the BoardError class that every module catches by identity.
     "bot.coordination.model", "bot.coordination.base", "bot.coordination.local", "bot.coordination.sentinel",
     "bot.coordination.session", "bot.coordination.fileguard", "bot.coordination.subagent_board",
+    "bot.coordination.hermes_board",  # holds the live WorkSession of a Hermes dispatch in flight
+    "bot.coordination.watch",  # its run_forever() loop is a live background task holding the check state
     "bot.support_bot.model", "bot.support_bot.training_data", "bot.support_bot.hybrid",
     "bot.support_bot.actions", "bot.support_bot.nn_model", "bot.support_bot.slots",
     "bot.support_bot.engine",

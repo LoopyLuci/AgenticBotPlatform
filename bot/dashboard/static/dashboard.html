@@ -1584,6 +1584,10 @@
       <div class="card" style="margin-top:14px;">
         <div class="kanban-columns" id="kanban-columns" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:12px;"></div>
       </div>
+      <div class="card" style="margin-top:14px;">
+        <div class="row" style="gap:10px; align-items:center;"><h3 style="margin:0">Agents' work board</h3><span class="cardnote">Read-only mirror of the tasks agents are working on (columns = task states). Not your cards; nothing here can be edited.</span><button class="btn" id="btn-kb-wb-refresh">Refresh</button></div>
+        <div id="kb-wb-root"><p class="cardnote">Loading...</p></div>
+      </div>
     </section>
 
     <section id="agents">
@@ -2327,6 +2331,7 @@
 <script src="/static/usage-panel.js"></script>
 <script src="/static/traces-panel.js"></script>
 <script src="/static/coordination-panel.js"></script>
+<script src="/static/kanban-board-mirror.js"></script>
 <script src="/static/evals-panel.js"></script>
 <script src="/static/sns-panel.js"></script>
 <script src="/static/skills-panel.js"></script>

@@ -22,6 +22,15 @@ def register(app: FastAPI) -> None:
     def api_kanban_cards(instance_id: int, board: str = "default"):
         return {"cards": kanban.list_cards(instance_id, board)}
 
+    @app.get("/api/kanban/work-board", dependencies=[Depends(_require_token_or_api_key)])
+    def api_kanban_work_board(board: str = "", limit: int = 500):
+        """Read-only mirror of the work board's tasks as kanban boards (columns = task states), apart from the
+        hand-made cards. Nothing here writes to the work board."""
+        try:
+            return kanban.work_board_mirror(board or None, limit=limit)
+        except kanban.KanbanError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
     @app.post("/api/kanban/cards", dependencies=[Depends(_require_token_or_api_key)])
     def api_kanban_add_card(payload: dict = Body(...)):
         try:

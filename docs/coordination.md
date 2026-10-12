@@ -79,12 +79,33 @@ Inside the block `work.acquire([...])` takes more shared things for the task; th
   twice at once share their steps (key = hash(swarm, prompt, step)); a step whose worker dies is requeued. A relay link
   that fails leaves the later links cancelled.
 
+- **Hermes-external swarms** (`hermes_board.py`, called by `POST /api/hermes/{id}/dispatch`, which is what the MCP tool
+  `dispatch_swarm_goal` uses). The children of a Hermes run belong to Hermes, so ABP's task is the dispatch itself: board
+  `abp/hermes-<instance id>`, key = hash(instance, goal, worker provider, worker model, max children), run inside a
+  `WorkSession` (lease + heartbeat) for as long as Hermes works, agent `hermes-dispatch:<task>`. The answer and Hermes's
+  per-child breakdown are stored as the task's result; an error is stored as the failure note and re-raised. An identical
+  dispatch while one is running waits for it and returns its stored answer (`deduped: true` in the response, Hermes is not
+  called again); a finished one is reused for 10 minutes. If ABP dies mid-run the lease expires: the task goes back to
+  `open` and the next identical dispatch picks it up (the retry), or after 2 expiries it is `failed` ("lease expired 2
+  times") and shows so on the Coordination screen; a repeat of a failed one is a new task. A dispatch whose lease was taken
+  over is refused (409) and its output dropped. Board off or unreachable: the call just runs.
+- **Kanban mirror** (`kanban.work_board_mirror`, `GET /api/kanban/work-board[?board=]`, `/kanban workboard [board]`,
+  `abp kanban workboard`, the Kanban screens' "Agents' work board" panel / "Work board" action). One kanban board per work
+  board name, one column per task state, one card per task (title, owner, attempts, lease, note; never detail or result).
+  Cards carry `source: "work-board"` and `read_only: true` and sit in their own panel, apart from hand-made cards; there is
+  no write route, and nothing in kanban writes to the board.
+- **Stuck-work check** (`watch.py`, started with ABP's other background jobs in `bot/main.py`). Every
+  `coordination.stuck_watch_interval_s` (60) it reads the board summary and raises a warning - a line in the Sentinel journal
+  (the activity log) and the Sentinel's push to paired phones - for a lease about to run out without a renewal, a task that
+  failed after all its attempts (once per task), runnable tasks waiting for over a minute while agents are idle, and locks
+  held by an agent that is gone. A condition is reported at most once per `coordination.stuck_alert_every_s` (1800).
+  `coordination.stuck_watch: false` turns it off. It only reads.
+
 ## Not wired
 
 - Notebook edits (ABP has no tool that edits notebooks; `edit_file` on an `.ipynb` is covered like any file).
 - Shell commands with a declared write scope (no such declaration exists yet).
-- The Hermes-external swarm path (`dispatch_swarm_goal`): its children are another program's, not ABP's.
-- `bot/kanban.py` is unchanged; it does not mirror the board.
+- The individual children of a Hermes run: they are Hermes's own and invisible to ABP; only the dispatch is a task (their breakdown is stored on it afterwards).
 - A periodic sweeper in LocalBoard: expiry is applied on every call instead, which is enough for one process.
 
 ## Seeing it
@@ -97,4 +118,4 @@ blocked tasks and why), `/tasks` and `/locks`; the **Coordination** screen in th
 
 `tests/test_coordination_board.py` runs one conformance suite against `LocalBoard` and against `SentinelBoard` talking to
 a fake AgentSentinel server (`tests/coordination_fakes.py`, written from the protocol, not the real daemon).
-`tests/test_coordination_wiring.py` covers the wiring, `tests/test_coordination_panel.py` the screen.
+`tests/test_coordination_wiring.py` covers the wiring, `tests/test_coordination_panel.py` the screen, `tests/test_coordination_hermes.py` the Hermes dispatch, `tests/test_kanban_board_mirror.py` the kanban mirror and `tests/test_coordination_watch.py` the stuck-work check.

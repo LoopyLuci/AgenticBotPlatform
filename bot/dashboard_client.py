@@ -566,6 +566,10 @@ class DashboardClient:
         return (await self._request("GET", "/api/kanban/cards",
                                     params={"board": board, "instance_id": instance_id}))["cards"]
 
+    async def kanban_work_board(self, board: Optional[str] = None) -> dict:
+        """The work board's tasks as read-only kanban boards (not the hand-made cards)."""
+        return await self._request("GET", "/api/kanban/work-board", params={"board": board} if board else None)
+
     async def add_kanban_card(self, instance_id: int, text: str, board: str = "default", column: Optional[str] = None) -> dict:
         body: dict[str, Any] = {"instance_id": instance_id, "text": text, "board": board}
         if column:

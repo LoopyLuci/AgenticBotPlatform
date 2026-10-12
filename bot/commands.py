@@ -13,6 +13,7 @@ since inline buttons aren't portable across all three platforms.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
@@ -1582,7 +1583,13 @@ async def cmd_kanban(ctx: CmdContext, args: list[str]) -> str:
     if sub == "delete" and len(args) >= 2 and args[1].isdigit():
         ok = kanban.delete_card(ctx.instance_id, int(args[1]))
         return "Deleted." if ok else "Card not found."
-    return "Usage: /kanban boards | list <board> | add <board> <column> <text> | move <id> <column> | done <id> | delete <id>"
+    if sub == "workboard":
+        try:
+            return await asyncio.to_thread(kanban.format_work_board, args[1] if len(args) > 1 else None)
+        except kanban.KanbanError as exc:
+            return str(exc)
+    return ("Usage: /kanban boards | list <board> | add <board> <column> <text> | move <id> <column> | done <id> | delete <id>"
+            " | workboard [board] (read-only view of the agents' work board)")
 
 
 # ----------------------------------------------------------------- memory -

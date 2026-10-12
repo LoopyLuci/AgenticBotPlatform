@@ -138,6 +138,11 @@ coordination:
   lease_s: 120
   file_lock_lease_s: 60
   swarm_workers: 8
+  # The stuck-work check (bot/coordination/watch.py): warns in the activity log (and pushes to paired phones) about leases
+  # about to run out, tasks that failed after all attempts, runnable tasks next to idle agents, locks of vanished agents.
+  stuck_watch: true
+  stuck_watch_interval_s: 60
+  stuck_alert_every_s: 1800
 # spawn_subagent (bot/agent_runtime/subagents.py) — ephemeral, disposable
 # sub-agent fan-out for api/custom_model-backed instances, the native
 # equivalent of Hermes Agent's own delegate_task. Depth is governed by

@@ -75,3 +75,50 @@ def format_board(instance_id: int, board_name: str) -> str:
         for c in by_col[col]:
             lines.append(f"  #{c['id']} {c['text']}")
     return "\n".join(lines)
+
+
+# ------------------------------------------------------------- work board mirror
+# A read-only view of the work board (bot/coordination) as kanban boards: one board per board name, one column per task
+# state, one card per task. These are NOT the hand-made cards above - they live on the work board, carry `source:
+# "work-board"` and `read_only: true`, and nothing here (or in the routes, CLI or screens on top) writes to the board.
+WORK_BOARD_COLUMNS = ("open", "claimed", "running", "review", "done", "failed", "cancelled")
+
+
+def work_board_mirror(board: str | None = None, *, limit: int = 500) -> dict:
+    from bot import coordination
+    from bot.coordination.model import BoardError
+
+    try:
+        used = coordination.get_board()
+        tasks = used.list_tasks(board or None, limit=max(1, min(int(limit), 1000)))
+    except BoardError as exc:
+        raise KanbanError(f"the work board is not available: {exc.message}") from exc
+    boards: dict[str, dict[str, list[dict]]] = {}
+    for t in tasks:
+        cols = boards.setdefault(t["board"], {c: [] for c in WORK_BOARD_COLUMNS})
+        card = {"id": t["id"], "title": t["title"], "state": t["state"], "owner": t.get("owner"),
+                "priority": t.get("priority", 0), "attempts": t.get("attempts", 0),
+                "max_attempts": t.get("max_attempts"), "lease_until": t.get("lease_until"),
+                "note": t.get("note") or "", "deps": list(t.get("deps") or []),
+                "source": "work-board", "read_only": True}
+        cols.setdefault(t["state"], []).append(card)
+    return {"source": "work-board", "read_only": True, "backend": used.name,
+            "boards": [{"board": name, "columns": [{"name": c, "cards": cols[c]} for c in cols],
+                        "total": sum(len(v) for v in cols.values())} for name, cols in sorted(boards.items())]}
+
+
+def format_work_board(board: str | None = None) -> str:
+    mirror = work_board_mirror(board)
+    if not mirror["boards"]:
+        return "The work board has no tasks" + (f" on {board!r}." if board else ".")
+    lines = ["Work board (read-only mirror - not your kanban cards)"]
+    for b in mirror["boards"]:
+        lines.append(f"\nBoard: {b['board']}")
+        for col in b["columns"]:
+            if not col["cards"]:
+                continue
+            lines.append(f"  {col['name']}:")
+            for c in col["cards"]:
+                who = f" [{c['owner']}]" if c["owner"] else ""
+                lines.append(f"    {c['id'][:8]} {c['title']}{who}")
+    return "\n".join(lines)
