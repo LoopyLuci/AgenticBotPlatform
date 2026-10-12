@@ -41,6 +41,17 @@
       + (r.changed ? '' : '<p class="mdp-muted">Nothing changed.</p>') + '</div>';
   }
 
+  // Assisted setup proposals (GET/POST /api/modules/{id}/assist): side by side, each a list of differences, kept only on a click.
+  function assistHtml(b) {
+    const v = (x) => (x == null || x === '' ? '–' : typeof x === 'string' ? x : JSON.stringify(x));
+    const cols = (b.proposals || []).map((p) => `<div class="mdp-card"><div class="mdp-row"><b>Proposal ${E(p.n)}</b> ${p.ok ? '' : '<span class="mdp-chip bad">rejected</span>'} <span class="mdp-muted">${E(p.model)}</span></div>`
+      + (p.ok ? `<ul>${(p.diff || []).map((d) => `<li><span class="mdp-mono">${E(d.target)}</span> ${E(d.field)}:<br><span class="mdp-muted">${E(v(d.from))}</span><br>→ ${E(v(d.to))}</li>`).join('')}</ul><div class="mdp-row"><button class="btn" data-assist-keep="${E(p.n)}" data-batch="${E(b.batch)}">Keep this one</button></div>`
+        : `<ul>${(p.problems || []).map((x) => `<li class="mdp-muted">${E(x)}</li>`).join('')}</ul>`) + '</div>').join('');
+    return `<div style="margin-top:8px"><p class="mdp-muted">Nothing is written until you keep one. A kept proposal is written as hand edits, so a later refresh keeps it.${b.current === false ? ' These proposals are out of date (the module files changed): make new ones.' : ''}</p>`
+      + (cols ? `<div class="mdp-grid">${cols}</div>` : '<p class="mdp-muted">No proposal came back.</p>')
+      + ((b.errors || []).length ? `<p class="mdp-muted">${E(b.errors.join(' | '))}</p>` : '') + '</div>';
+  }
+
   function css() {
     if ($('mdp-css')) return;
     const s = document.createElement('style');
@@ -258,7 +269,7 @@ ${s.manifest_error ? `<p class="cardnote">${E(s.manifest_error)}</p>` : ''}
 ${tools ? `<div class="mdp-card"><h4>Toolchain</h4>${tools}</div>` : ''}
 ${m.has_web || m.has_provider ? `<div class="mdp-card"><h4>Its server</h4>${kv([['web UI', m.has_web ? (svc.web ? `<a href="${E(svc.web)}" target="_blank" rel="noopener">${E(svc.web)}</a>` : '<span class="mdp-muted">shown once its server runs (start the hub, then the service.start operation)</span>') : ''], ['as a provider', m.has_provider ? (svc.openai ? chip(`“${m.id}” in model pickers`, 'on') + ` <span class="mdp-mono">${E(svc.openai)}</span>` : '<span class="mdp-muted">offered as a model provider while its server runs</span>') : '']])}
 <div class="mdp-row">${m.has_hub && hub.running && !svc.web && !svc.openai ? '<button class="btn" id="mdp-svc-start">Start its server</button>' : ''}${svc.web ? '<button class="btn ghost" id="mdp-web-show">Show here</button>' : ''}</div></div>` : ''}
-${m.source && m.source !== 'builtin' ? `<div class="mdp-card"><h4>Project</h4><p class="mdp-muted">Its own abp-module.toml and abp-ops.toml describe it. Publishing commits them and creates its private GitHub repo if it has none.</p><div class="mdp-row"><button class="btn ghost" id="mdp-refresh">Check for updates (what changed in its operations)</button><button class="btn ghost" id="mdp-publish">Publish to GitHub</button><button class="btn ghost" id="mdp-forget">Forget it</button></div><div id="mdp-refresh-out"></div></div>` : ''}
+${m.source && m.source !== 'builtin' ? `<div class="mdp-card"><h4>Project</h4><p class="mdp-muted">Its own abp-module.toml and abp-ops.toml describe it. Publishing commits them and creates its private GitHub repo if it has none.</p><div class="mdp-row"><button class="btn ghost" id="mdp-refresh">Check for updates (what changed in its operations)</button><button class="btn ghost" id="mdp-assist">Assist setup (descriptions, input types)</button><button class="btn ghost" id="mdp-publish">Publish to GitHub</button><button class="btn ghost" id="mdp-forget">Forget it</button></div><div id="mdp-refresh-out"></div><div id="mdp-assist-out"></div></div>` : ''}
 ${svc.web ? `<div class="mdp-card" id="mdp-web" style="grid-column:1/-1;display:${st.webOpen === mid ? 'flex' : 'none'}"><div class="mdp-row" style="justify-content:space-between"><h4 style="margin:0">${E(m.name)}</h4><button class="btn ghost" id="mdp-web-hide">Hide</button></div><iframe title="${E(m.name)}" src="${st.webOpen === mid ? E(svc.web) : 'about:blank'}" style="width:100%;height:70vh;border:1px solid var(--line);border-radius:8px;background:#fff"></iframe></div>` : ''}
 <div class="mdp-card" style="grid-column:1/-1"><h4>Jobs</h4>${(jobs || []).slice(0, 6).map((j) => `<details${j.state === 'running' ? ' open' : ''}><summary>${E(j.kind)} ${j.state === 'running' ? chip('running', 'warn') : j.state === 'done' ? chip('done', 'on') : chip(j.state, 'bad')} <span class="mdp-muted">${E(when(j.started))}</span></summary><div class="mdp-pre">${E((j.log || []).join('\n'))}${j.error ? '\n' + E(j.error) : ''}</div></details>`).join('') || '<p class="mdp-muted">None yet.</p>'}</div>
 </div>
@@ -281,6 +292,29 @@ ${m.has_hub ? `<div class="mdp-card" style="margin-top:12px"><h4>Operations</h4>
         });
       };
       try { show(await api(base)); } catch (e) { out.innerHTML = `<p class="mdp-muted">${E(errText(e))}</p>`; toast(errText(e), 'error'); }
+    });
+    on('mdp-assist', async () => {
+      const out = $('mdp-assist-out'); out.innerHTML = '<p class="mdp-muted">Asking the models for proposals…</p>';
+      const base = `/api/modules/${encodeURIComponent(mid)}/assist`;
+      try {
+        const b = await post(base, {});
+        out.innerHTML = assistHtml(b);
+        out.querySelectorAll('[data-assist-keep]').forEach((btn) => btn.addEventListener('click', async () => {
+          const keep = async (drop) => {
+            try {
+              await post(base + '/keep', { batch: btn.dataset.batch, proposal: Number(btn.dataset.assistKeep), drop_comments: drop });
+              out.innerHTML = '<p class="mdp-muted">Kept, written as hand edits.</p>'; toast(`${m.name}: setup kept`); render();
+            } catch (e) {
+              const t = errText(e);
+              if (/comment line/.test(t)) {
+                out.insertAdjacentHTML('afterbegin', `<div class="mdp-card" id="mdp-assist-warn"><p>${E(t)}</p><div class="mdp-row"><button class="btn" id="mdp-assist-drop">Keep it and drop those comments</button></div></div>`);
+                on('mdp-assist-drop', () => { if (confirm('Write it and lose the comments in abp-ops.toml?')) keep(true); });
+              } else toast(t, 'error');
+            }
+          };
+          keep(false);
+        }));
+      } catch (e) { out.innerHTML = `<p class="mdp-muted">${E(errText(e))}</p>`; toast(errText(e), 'error'); }
     });
     on('mdp-publish', async () => {
       if (!confirm(`Commit ${m.name}'s abp-module.toml and abp-ops.toml, and create its private GitHub repo if it has none?`)) return;

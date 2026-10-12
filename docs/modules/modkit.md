@@ -81,6 +81,25 @@ detection finds that it does not list); an operation whose script or route upstr
 it (it stays and is reported as `kept_stale`); a summary still as detection wrote it follows upstream's new text. A
 manifest with the generated marker is regenerated: delete the marker line to own it.
 
+## Assisted setup
+
+`abp modules assist <id>` (also `POST /api/modules/<id>/assist`, "Assist setup" on the module's page) asks a model for a
+few proposals of better wording: the module's description, each operation's summary, and the type, required flag, help
+text and allowed values of inputs the operation already has. The model sees the README, the manifest, the operation list
+and a few of the source files the operations run, all capped and passed through ABP's credential scrubbing; files named
+like secrets (`.env`, keys, `secrets*`, `*token*`) are never read. It uses the models Studio uses (ABP's free and local
+ones, with fallback), never a paid default.
+
+Each answer is checked strictly: only those descriptive fields are accepted, so an unknown key, an operation that does
+not exist, an input that is not already one of the operation's, a bad type or an over-long text rejects the proposal (it
+is listed with the reasons and cannot be kept). Nothing is ever added that could run something new. Valid proposals are
+shown side by side as differences against what is there. Nothing is written until you pick one:
+`abp modules assist <id> --keep N` (`POST /api/modules/<id>/assist/keep`, write auth) writes it as plain hand edits in
+`abp-ops.toml` (and the description in a generated manifest), so a later refresh or re-adopt keeps it. A hand-owned `abp-ops.toml` is written again from its parsed form, which loses its comments (all but the first line), so
+keep refuses and says how many lines would go unless you pass `--drop-comments` (`"drop_comments": true`). A batch made
+before the module files changed is refused as stale. `--show` lists the stored proposals. Not done: a generated panel
+for the module as a Studio variant.
+
 ## Publishing
 
 `abp modules publish` (and `python -m abp_modkit adopt --publish`) puts a project in its own private GitHub repo,

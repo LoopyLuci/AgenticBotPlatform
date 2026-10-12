@@ -36,7 +36,7 @@ Commands:
   dns resolve|status                     resolve a name here; Tailscale DNS status
   doctor                                 one screen: can it reach ABP, does the token work, what answers
   providers list|add|remove|catalog|models|toggle|restore
-  modules list|show|ops|run-op|start|stop|status|logs|call|setup|adopt|add|refresh|candidates|new|publish|forget
+  modules list|show|ops|run-op|start|stop|status|logs|call|setup|adopt|add|refresh|assist|candidates|new|publish|forget
                                           every module; `modules adopt <folder>` makes any project one
   vision status|analyze|find|compare|edit|fetch
                                           computer vision here (OpenCV + its model zoo): objects, faces, text,
@@ -1581,6 +1581,29 @@ async def _modules(args, client: DashboardClient) -> int:
         else:
             print(f"\nfailed: {job.get('error')}", file=sys.stderr)
         return 0 if job.get("state") == "done" else 1
+    if sub == "assist":
+        if args.keep:
+            b = (await client._request("GET", f"{api}/{args.module}/assist"))["batches"]
+            if not b:
+                print("no proposals yet: run `modules assist <id>` first", file=sys.stderr)
+                return 1
+            _print(args, await client._request("POST", f"{api}/{args.module}/assist/keep",
+                                               json={"batch": b[0]["batch"], "proposal": args.keep,
+                                                     "drop_comments": args.drop_comments}))
+            return 0
+        res = await (client._request("GET", f"{api}/{args.module}/assist") if args.show else
+                     client._request("POST", f"{api}/{args.module}/assist", json={"n": args.n}))
+        if args.show:
+            res = (res["batches"] or [{"proposals": []}])[0]
+        if args.json:
+            _print(args, res)
+            return 0
+        print(f"batch {res.get('batch', '-')}: nothing is written until `modules assist {args.module} --keep N`")
+        for p in res["proposals"]:
+            print(f"\n[{p['n']}] {p['model']}  " + ("" if p["ok"] else "REJECTED: " + "; ".join(p["problems"])))
+            for d in p.get("diff") or []:
+                print(f"  {d['target']} {d['field']}: {d['from']!r} -> {d['to']!r}")
+        return 0
     if sub == "refresh":
         res = await client._request("POST" if args.apply else "GET", f"{api}/{args.module}/refresh")
         if args.json:
@@ -1788,6 +1811,10 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--full", action="store_true", help="clone the whole history (default: the latest commit)")
     p = msub.add_parser("refresh", help="fetch upstream and show what changed in a module's operations (--apply writes)")
     p.add_argument("module"); p.add_argument("--apply", action="store_true")
+    p = msub.add_parser("assist", help="propose descriptions, summaries and input types with a model; --keep N writes one")
+    p.add_argument("module"); p.add_argument("--keep", type=int, default=0, help="write proposal N of the latest batch")
+    p.add_argument("--drop-comments", action="store_true", help="with --keep: accept losing a hand-owned abp-ops.toml's comments")
+    p.add_argument("--show", action="store_true", help="list the latest stored proposals"); p.add_argument("-n", type=int, default=3)
     p = msub.add_parser("candidates", help="project folders in a folder, and which are modules")
     p.add_argument("folder")
     p = msub.add_parser("publish", help="commit its module files and create its private GitHub repo")

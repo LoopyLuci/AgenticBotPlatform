@@ -2579,6 +2579,15 @@ export const operations = {
    "fetch"
   ]
  },
+ "GET /api/modules/{mid}/assist": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modules/{mid}/assist",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
  "GET /api/modules/{mid}/jobs": {
   "body": false,
   "method": "GET",
@@ -5637,6 +5646,24 @@ export const operations = {
   "method": "POST",
   "path": "/api/modules/adopt",
   "path_params": [],
+  "query_params": []
+ },
+ "POST /api/modules/{mid}/assist": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modules/{mid}/assist",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "POST /api/modules/{mid}/assist/keep": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modules/{mid}/assist/keep",
+  "path_params": [
+   "mid"
+  ],
   "query_params": []
  },
  "POST /api/modules/{mid}/build": {
@@ -12985,6 +13012,33 @@ export const operations = {
   "path": "/api/browser/models/{model_id}/load",
   "path_params": [
    "model_id"
+  ],
+  "query_params": []
+ },
+ "module_assist_generate_api_modules__mid__assist_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modules/{mid}/assist",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "module_assist_keep_api_modules__mid__assist_keep_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modules/{mid}/assist/keep",
+  "path_params": [
+   "mid"
+  ],
+  "query_params": []
+ },
+ "module_assist_list_api_modules__mid__assist_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modules/{mid}/assist",
+  "path_params": [
+   "mid"
   ],
   "query_params": []
  },
