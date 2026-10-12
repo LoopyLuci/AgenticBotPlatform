@@ -72,6 +72,14 @@ what's still dashboard/desktop-app-only.
   only "token set". Not in the TUI yet from those CLI groups: MCP tool pins, skill packs/quarantine/drafts,
   plugin creation from inline code, hook instance scoping, generating a peer pairing token (it is a
   credential; use `abp_cli peers pairing-token`).
+- **Devices, env/config/diagnostics, kanban** (same base): `j` Devices (paired devices with online
+  state; Revoke asks first; creating a pairing key and its QR stay CLI/GUI, `abp_cli security
+  create-mobile-key`, and no key value is ever shown), `z` Env/Config (the .env's variable names with
+  every value shown as `********` or `(empty)`: the client reduces the file to names at once, so a
+  value cannot reach the screen; a hidden-input editor sets one value and clears it, error messages
+  never echo it; Reload config; Diagnostics summary; Crash reports), `1` Kanban (a bot's board: set the
+  instance id and board, add a card, move it to a column, delete with a confirm, list boards). The
+  CLI's `env` prints only the .env's location, so the masking here is the TUI's own.
 
 **CLI only, no TUI screen yet** (all real, all tested against the live dashboard app — just not
 given a Textual screen in this phase):
@@ -130,9 +138,10 @@ given a Textual screen in this phase):
 - **Skills**: `abp_cli skills list|create|remove|packs|fetch|quarantine|approve-quarantine|reject-quarantine|drafts|approve-draft|reject-draft`.
 - **MCP** (internal, i.e. Claude Desktop's own config, and external/remote servers):
   `abp_cli mcp list|logs|enable|disable|pins|approve-pin|external-list|external-add|external-enable|external-disable|external-remove`.
-- **Security & devices**: `abp_cli security allowed-users|allow-user|disallow-user|permissions|instance-permissions|set-instance-permissions|devices|mobile-keys|create-mobile-key|revoke-mobile-key`.
+- **Security & devices** (the TUI has allowed users, devices and revoke; not the permission rules or key creation): `abp_cli security allowed-users|allow-user|disallow-user|permissions|instance-permissions|set-instance-permissions|devices|mobile-keys|create-mobile-key|revoke-mobile-key`.
 - **Snapshots**: `abp_cli snapshots list|create|restore|remove`.
-- **Env / config / diagnostics**: `abp_cli env`, `abp_cli config get|reload|set`, `abp_cli
+- **Env / config / diagnostics** (the TUI has variable names, setting one value, reload and diagnostics; not
+  `config get|set` or bulk `.env` editing): `abp_cli env`, `abp_cli config get|reload|set`, `abp_cli
   diagnostics summary|crash-reports`.
 - **Peers/federation**: `abp_cli peers list|self-address|pairing-token|link|remove|overview|bots`.
   Verified live against two real, separate machines over Tailscale. `peers link` also sets up
@@ -144,7 +153,7 @@ given a Textual screen in this phase):
   it (`Add-SshLinkConnection`) — no manual key generation, copying, or `authorized_keys` editing
   on either side. Best-effort: SSH Toolkit being unavailable (no PowerShell, submodule not
   checked out) never fails the underlying peer link itself, only skips the SSH half of it.
-- **Kanban**: `abp_cli kanban boards|cards|add|move|remove`.
+- **Kanban** (also a TUI screen): `abp_cli kanban boards|cards|add|move|remove`.
 - **Editors**: `abp_cli editors status|install-vscode` (the VS Code extension and the ACP command for other editors).
 - **Local AI and the Neural Lab**: `abp_cli ai status|serve-status|models|list|ps|pull|rm|run|cp|show|import|create|discover|adopt-all|train|server|engine`
   and `abp_cli lab status|runs|run|stop|designs|validate|train|import|projects|systune|advice|bench|retrain|telemetry|hw`
@@ -167,8 +176,7 @@ given a Textual screen in this phase):
 ## What's still dashboard/desktop-app-only
 
 The memory fabric, running agents, the tool inventory, approvals, routing, model knowledge,
-privacy/DNS, `doctor`, the terminal panel, devices/mobile keys, permission rules,
-env/config/diagnostics and kanban have no TUI screen yet (CLI-only, see above) — a
+privacy/DNS, `doctor`, the terminal panel and permission rules have no TUI screen yet (CLI-only, see above) — a
 later pass, not attempted half-way here. Also still GUI-only: Android push/mobile-key QR pairing
 UI, the modules page's own hub/job viewer beyond what `modules status|ops|logs` prints, and the
 Studio, Cluster and Sentinel pages, and extensions' pages, (no CLI surface at all for those route

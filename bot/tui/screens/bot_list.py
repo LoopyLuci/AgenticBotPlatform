@@ -40,6 +40,9 @@ class BotListScreen(Screen):
         ("b", "snapshots", "Snapshots"),
         ("y", "security", "Security"),
         ("x", "peers", "Peers"),
+        ("j", "devices", "Devices"),
+        ("z", "env", "Env/Config"),
+        ("1", "kanban", "Kanban"),
         ("q", "app.quit", "Quit"),
     ]
 
@@ -73,6 +76,9 @@ class BotListScreen(Screen):
             yield Button("Snapshots (b)", id="btn-snapshots")
             yield Button("Security (y)", id="btn-security")
             yield Button("Peers (x)", id="btn-peers")
+            yield Button("Devices (j)", id="btn-devices")
+            yield Button("Env/Config (z)", id="btn-env")
+            yield Button("Kanban (1)", id="btn-kanban")
         yield DataTable(id="bot-table")
         yield Label("", id="bot-list-status")
         yield Footer()
@@ -163,6 +169,9 @@ class BotListScreen(Screen):
             "btn-snapshots": self.action_snapshots,
             "btn-security": self.action_security,
             "btn-peers": self.action_peers,
+            "btn-devices": self.action_devices,
+            "btn-env": self.action_env,
+            "btn-kanban": self.action_kanban,
         }
         handler = actions.get(event.button.id)
         if handler:
@@ -285,6 +294,21 @@ class BotListScreen(Screen):
         from bot.tui.screens.manage import PeersScreen
 
         await self.app.push_screen(PeersScreen())
+
+    async def action_devices(self) -> None:
+        from bot.tui.screens.manage import DevicesScreen
+
+        await self.app.push_screen(DevicesScreen())
+
+    async def action_env(self) -> None:
+        from bot.tui.screens.manage import EnvScreen
+
+        await self.app.push_screen(EnvScreen())
+
+    async def action_kanban(self) -> None:
+        from bot.tui.screens.manage import KanbanScreen
+
+        await self.app.push_screen(KanbanScreen())
 
     async def _after_form(self, _result: object = None) -> None:
         await self.refresh_bots()
