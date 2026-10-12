@@ -110,6 +110,10 @@ class Manager:
         self.instance_lifetime = instance_lifetime if instance_lifetime in LIFETIMES else LIFETIME_GATE
         self._max_instances = max_instances
 
+    def busy(self) -> bool:
+        """A start, swap, rollback, restart or stop is running right now."""
+        return self._ops.locked()
+
     # ------------------------------------------------------------- read side
     def max_instances(self) -> int:
         return self._max_instances or limits.max_instances()
@@ -421,7 +425,7 @@ class Manager:
                 continue
         return {"ok": True, "stopped": stopped}
 
-    async def restart_active(self, *, attempts: int = 3) -> dict[str, Any]:
+    async def restart_active(self, *, attempts: int = 3, only_if: Optional[str] = None) -> dict[str, Any]:
         """The crashed-active-instance case. Same data, same code, same public
         port - so from outside, nothing changed; there is just a second or two
         of 503 while the new process boots. A restart that keeps failing is left
@@ -434,11 +438,22 @@ class Manager:
         port is a second writer of the same database. Each attempt cleans up its
         own failure too, so a failed restart leaves one stopped instance rather
         than a new pile of them. How OFTEN this may be called is the watcher's
-        business (abp_gate/__main__.py), not this method's."""
+        business (abp_gate/__main__.py), not this method's.
+
+        `only_if` is the instance the caller judged to be down. The judgement is made outside the operations lock
+        and the restart waits for it, so a swap can finish in between: the instance that is active now is then a
+        healthy new one, and restarting it would stop the code that is serving traffic before its replacement
+        answers (every request in that gap is a 502). The restart is skipped, and says so, when the active
+        instance is not the one named, or when that one is serving again."""
         async with self._ops:
             inst = await self._find_active()
             if inst is None:
                 raise SwapError("no active instance to restart")
+            if only_if is not None and (inst.name != only_if
+                                        or (procs.alive(inst.pid) and inst.health == registry.HEALTH_HEALTHY)):
+                logger.info("not restarting %r: it was judged down as %r, but %r is serving now", inst.name, only_if,
+                            inst.name)
+                return {"ok": True, "instance": inst.name, "skipped": True}
             code = Path(inst.code_root)
             data = Path(inst.data_root) if inst.data_root else None
             errors: list[str] = []

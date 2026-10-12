@@ -1475,3 +1475,24 @@ def test_a_running_instance_too_busy_to_answer_is_left_alone(tmp_path):
         with contextlib.suppress(Exception):
             procs.taskkill_tree(busy.pid)
         busy.wait(30)
+
+
+def test_a_restart_judged_before_a_swap_leaves_the_instance_the_swap_made_active_alone(tmp_path, monkeypatch):
+    """The watcher decides an instance is down outside the operations lock and the restart waits for it. A swap that
+    finishes in between has made another, healthy instance the active one; restarting THAT stops the code serving
+    traffic before its replacement answers (a 502 for every request in the gap, seen in the hot-swap deploy test under
+    load). A restart that names the instance it judged down must leave a different active instance alone."""
+    from abp_gate import registry
+
+    monkeypatch.setenv("ABP_INSTANCES_DIR", str(tmp_path / "instances"))
+    # Live process (this one) as the "new" instance, no port to probe; the record of the one the swap replaced.
+    registry.put("old", registry.Instance(name="old", pid=None, health=registry.HEALTH_STOPPED))
+    registry.put("new", registry.Instance(name="new", pid=os.getpid(), role=registry.ROLE_ACTIVE,
+                                          health=registry.HEALTH_HEALTHY))
+    registry.set_active("new", previous="old")
+
+    result = asyncio.run(manager.Manager().restart_active(only_if="old"))
+
+    assert result["skipped"] is True and result["instance"] == "new", result
+    assert registry.active_name() == "new"
+    assert registry.get("new").pid == os.getpid(), "the active instance was replaced"

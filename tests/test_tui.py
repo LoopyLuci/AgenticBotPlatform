@@ -208,7 +208,7 @@ def test_providers_screen_adds_lists_and_removes(dashboard_client):
 
 def test_agent_settings_screen_loads_global_schema_and_saves(dashboard_client):
     async def _run():
-        from textual.widgets import Button, Checkbox
+        from textual.widgets import Button, Checkbox, Label
 
         from bot.tui.screens.agent_settings import AgentSettingsScreen, _widget_id
 
@@ -216,15 +216,19 @@ def test_agent_settings_screen_loads_global_schema_and_saves(dashboard_client):
         async with app.run_test(size=(140, 100)) as pilot:
             app.client = dashboard_client
             await app.push_screen(AgentSettingsScreen())
-            await pilot.pause()
             screen = app.screen
             assert isinstance(screen, AgentSettingsScreen)
+            # The form is built after the screen's own requests to the dashboard come back, and a save is a request too:
+            # wait for what each one shows instead of assuming one pause is enough under load.
+            box_id = f"#{_widget_id('native_agent.web.enabled')}"
+            await _wait(pilot, lambda: screen.query(box_id), timeout=30)
+            await pilot.pause()                  # the widgets it just mounted (a Select takes its value on mount) settle
             assert screen._schema.get("fields")
 
-            box = screen.query_one(f"#{_widget_id('native_agent.web.enabled')}", Checkbox)
+            box = screen.query_one(box_id, Checkbox)
             box.value = True
             screen.query_one("#as-save", Button).press()
-            await pilot.pause()
+            await _wait(pilot, lambda: str(screen.query_one("#as-status", Label).content) == "Saved.", timeout=30)
 
             config = await dashboard_client.get_agent_config()
             assert config["values"]["native_agent.web.enabled"] is True
@@ -237,7 +241,7 @@ def test_agent_settings_screen_for_one_bot_shows_its_own_section(dashboard_clien
                                    credentials={}, allowed_user_ids=[])
 
     async def _run():
-        from textual.widgets import Input
+        from textual.widgets import Input, Label
 
         from bot.tui.screens.agent_settings import AgentSettingsScreen
 
@@ -245,14 +249,16 @@ def test_agent_settings_screen_for_one_bot_shows_its_own_section(dashboard_clien
         async with app.run_test(size=(140, 100)) as pilot:
             app.client = dashboard_client
             await app.push_screen(AgentSettingsScreen(instance_id=instance_id))
-            await pilot.pause()
             screen = app.screen
             assert isinstance(screen, AgentSettingsScreen)
+            # Wait for the form (built after the screen's requests return) and then for the save to finish.
+            await _wait(pilot, lambda: screen.query("#f-own-worker_effort"), timeout=30)
+            await pilot.pause()                  # the widgets it just mounted (a Select takes its value on mount) settle
 
             screen.query_one("#f-own-worker_effort", Input).value = "high"
             from textual.widgets import Button
             screen.query_one("#as-save", Button).press()
-            await pilot.pause()
+            await _wait(pilot, lambda: str(screen.query_one("#as-status", Label).content) == "Saved.", timeout=30)
 
             own = await dashboard_client.get_agent_settings(instance_id, own=True)
             assert own["worker_effort"] == "high"

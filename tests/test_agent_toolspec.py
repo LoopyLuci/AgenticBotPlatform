@@ -90,3 +90,41 @@ def test_registering_over_a_builtin_or_with_mismatched_names_fails():
         toolspec.register({"name": "run_shell"}, toolspec.ToolSpec("run_shell", "execute"), handler)
     with pytest.raises(ValueError):
         toolspec.register({"name": "a"}, toolspec.ToolSpec("b", "read", read_only=True), handler)
+
+
+def test_listing_tools_while_another_thread_registers_them_does_not_fail(monkeypatch):
+    """A dashboard unit loading registers its tools on one thread while a request lists them on another; listing
+    walked the live registry and raised "dictionary changed size during iteration" (a 500 from /api/agent/overview)."""
+    import sys
+    import threading
+
+    monkeypatch.setattr(toolspec, "_registered", dict(toolspec._registered))
+    old_interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    stop = threading.Event()
+    errors: list = []
+
+    def churn():
+        n = 0
+        while not stop.is_set():
+            name = f"churn_{n % 500}"
+            toolspec.register({"name": name, "description": "x", "input_schema": {}},
+                              toolspec.ToolSpec(name, "read", read_only=True), lambda *a, **k: "")
+            toolspec.unregister(f"churn_{(n + 250) % 500}")
+            n += 1
+
+    thread = threading.Thread(target=churn, daemon=True)
+    thread.start()
+    try:
+        for _ in range(300):
+            try:
+                toolspec.registered_schemas()
+                toolspec.registered_names()
+            except RuntimeError as exc:
+                errors.append(exc)
+                break
+    finally:
+        stop.set()
+        thread.join(10)
+        sys.setswitchinterval(old_interval)
+    assert not errors, errors

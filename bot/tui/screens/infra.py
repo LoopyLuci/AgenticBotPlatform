@@ -20,6 +20,9 @@ from textual.widgets import Button, DataTable, Footer, Input, Label, RichLog, Se
 from bot.sandbox_ns import guard
 from bot.tui.client import ApiError
 
+# The empty-select marker: Select.NULL in Textual 8 (Select.BLANK is now False), Select.BLANK before.
+_NO_CHOICE = tuple({getattr(Select, "NULL", Select.BLANK), Select.BLANK})
+
 
 def _cell(v: Any) -> str:
     return "" if v is None else str(v)
@@ -105,10 +108,10 @@ class InfraScreen(Screen):
 
     # ------------------------------------------------------------ events
     async def on_select_changed(self, event: Select.Changed) -> None:
-        if event.select.id == f"{self.ID}-host" and event.value != self.host and event.value is not Select.BLANK:
+        if event.select.id == f"{self.ID}-host" and event.value != self.host and event.value not in _NO_CHOICE:
             self.host = str(event.value)
             await self.action_refresh()
-        elif event.select.id == f"{self.ID}-view" and event.value != self.view and event.value is not Select.BLANK:
+        elif event.select.id == f"{self.ID}-view" and event.value != self.view and event.value not in _NO_CHOICE:
             self.view = str(event.value)
             await self.action_refresh()
 

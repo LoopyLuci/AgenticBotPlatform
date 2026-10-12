@@ -65,8 +65,10 @@ def _shown(page, unit: str) -> bool:
     return page.locator(NAV.format(unit)).is_visible()
 
 
-def _wait_shown(page, unit: str, shown: bool, timeout: int = 1500) -> None:
-    """The nav entry reaches the wanted state within `timeout` ms (the websocket path must be this fast)."""
+def _wait_shown(page, unit: str, shown: bool, timeout: int = 4000) -> None:
+    """The nav entry reaches the wanted state within `timeout` ms. The contract is "by the websocket event, not by the
+    5 s poll": 4 s tells the two apart (the poll alone cannot make it) and still holds when the browser and the server
+    are starved by other test workers; 1.5 s measured the machine's load as much as the page."""
     page.wait_for_function(
         "([sel, want]) => { const e = document.querySelector(sel); "
         "return !!e && ((getComputedStyle(e).display !== 'none') === want); }",
@@ -127,7 +129,7 @@ def test_unloading_and_loading_an_area_updates_the_page_within_a_second(real_app
     unit = "ollama"
     assert _shown(page, unit) and _shown(page, "vm-harness")
     assert app.unload(unit).json()["ok"]
-    _wait_shown(page, unit, False)                       # 1.5 s budget over the websocket event
+    _wait_shown(page, unit, False)                       # over the websocket event, well inside the 5 s poll
     assert not page.locator(f'section[data-unit="{unit}"]').is_visible()
     assert _shown(page, "vm-harness"), "other areas stay"
     assert app.load(unit).json()["ok"]
@@ -197,11 +199,11 @@ def test_a_script_panel_of_an_extension_follows_its_unit(real_app, browser, whic
                            "document.getElementById('sample-root').textContent.indexOf('mounted') >= 0", timeout=5_000)
     assert page.locator('#sidenav a[href="#sample"]').count() == 1
     assert app.unload("ext:sample").json()["ok"]
-    page.wait_for_function("document.querySelector('section#sample') === null", timeout=1_500)
+    page.wait_for_function("document.querySelector('section#sample') === null", timeout=4_000)
     assert page.locator('#sidenav a[href="#sample"]').count() == 0
     assert page.locator('script[src*="/extensions/sample/panel.js"]').count() == 0
     assert app.load("ext:sample").json()["ok"]
-    page.wait_for_selector("section#sample", state="attached", timeout=1_500)
+    page.wait_for_selector("section#sample", state="attached", timeout=4_000)
     page.wait_for_function("document.getElementById('sample-root') && "
                            "document.getElementById('sample-root').textContent.indexOf('mounted') >= 0", timeout=5_000)
     assert page.locator('#sidenav a[href="#sample"]').count() == 1

@@ -82,7 +82,7 @@ class SwarmsScreen(Screen):
             name = self.query_one("#swarm-name", Input).value.strip()
             strategy = self.query_one("#swarm-strategy", Select).value
             config_text = self.query_one("#swarm-config", TextArea).text
-            if not name or not strategy or strategy is Select.BLANK:
+            if not name or not strategy or strategy in (Select.BLANK, getattr(Select, "NULL", Select.BLANK)):
                 status.update("Name and strategy are both required.")
                 return
             try:

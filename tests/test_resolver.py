@@ -33,11 +33,22 @@ class LocalDNS:
 
     def __init__(self, records, ad=True, truncate_udp=False, rcode=0):
         self.records, self.ad, self.truncate, self.rcode = records, ad, truncate_udp, rcode
-        self.udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.udp.bind(("127.0.0.1", 0))
-        self.port = self.udp.getsockname()[1]
-        self.tcp = socket.socket()
-        self.tcp.bind(("127.0.0.1", self.port))
+        # DNS answers on one port number over UDP and TCP. The OS hands out the UDP port; the same number may already
+        # be a TCP port in use by another process (other test workers, outgoing connections), which Windows reports as
+        # PermissionError, not "address in use" - so take another UDP port until both are free.
+        for _ in range(50):
+            self.udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.udp.bind(("127.0.0.1", 0))
+            self.port = self.udp.getsockname()[1]
+            self.tcp = socket.socket()
+            try:
+                self.tcp.bind(("127.0.0.1", self.port))
+                break
+            except OSError:
+                self.tcp.close()
+                self.udp.close()
+        else:
+            raise OSError("no port number free for both UDP and TCP on 127.0.0.1")
         self.tcp.listen()
         self.seen: list[str] = []
         self.stop = False
