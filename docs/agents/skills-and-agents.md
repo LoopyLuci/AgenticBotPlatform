@@ -81,8 +81,25 @@ A well-formed, secret-free, script-free answer becomes a **draft** for `/skills 
 `commands` folder. The file body is the prompt; `$ARGUMENTS` and `$1`..`$9` are replaced with what the
 user typed. `/commands` lists them. A command file cannot override a built-in command.
 
+## Agent definitions: sub-folders and hooks
+
+Agent folders are searched recursively (three levels). `.abp/agents/review/security.md` is the agent
+`review/security` (use that in `spawn_subagent`) unless its front matter has its own `name:`. Two files with
+the same name: the one that sorts last wins and a warning is logged.
+
+A `hooks:` block in the front matter holds hooks that run only while that agent runs, after the global hooks,
+and can only narrow (deny / ask / block / add context; "allow" and `updatedInput` are dropped):
+
+    hooks:
+      PreToolUse:
+        - matcher: run_shell
+          command: python check_cmd.py
+        - {type: prompt, prompt: "Is this command destructive?", model: openrouter/small, matcher: run_shell}
+
+Only the user's own agent folder may define hooks; the block is ignored (and listed by `list_agents`) in a
+project's agent file, because a repository must not be able to run commands.
+
 ## Not done
 
 A public skill registry or search; running a skill's bundled scripts under the sandbox as a first-class
-step (the agent runs them like any other command, under the normal permission rules); agent definitions
-with a `hooks:` block; nested agent definitions in sub-folders.
+step (the agent runs them like any other command, under the normal permission rules); more hook events.

@@ -404,6 +404,11 @@ async def _run_one_child(
             context["allowed_tools"] = allowed_tools
         if effort is not None:
             context["effort"] = effort
+        hooks_token = None
+        if agent is not None and agent.hooks:
+            from bot.agent_runtime import hooks as hooks_mod
+
+            hooks_token = hooks_mod.active_definition_hooks.set(tuple(agent.hooks))
         try:
             result = await backend.ask(goal, context=context, timeout_s=CHILD_TIMEOUT_S)
             text = result.text
@@ -440,3 +445,8 @@ async def _run_one_child(
             logger.warning("spawn_subagent child %d failed: %s", index, exc)
             db.finish_ephemeral_session(session_id, status="error", result=str(exc))
             return {"index": index, "goal": goal, "model": backend.model, "status": "error", "result_excerpt": str(exc)[:500]}
+        finally:
+            if hooks_token is not None:
+                from bot.agent_runtime import hooks as hooks_mod
+
+                hooks_mod.active_definition_hooks.reset(hooks_token)

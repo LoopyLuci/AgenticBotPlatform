@@ -18,8 +18,14 @@ of its own so the parent's context stays clean.
 
 **Where they are found** (later wins on a name clash, but built-ins and your own files always
 beat a repository's): built-ins, then `<ABP data>/agents/*.md`, then in the working directory
-`.claude/agents/*.md`, `.opencode/agent/*.md` and `.abp/agents/*.md` - so agents written for
-Claude Code or OpenCode work as they are.
+`.claude/agents`, `.opencode/agent` and `.abp/agents` - so agents written for Claude Code or OpenCode
+work as they are. Sub-folders (up to three deep) are searched too: `.abp/agents/review/security.md` is the agent
+`review/security` (name it that way in `spawn_subagent`) unless its front matter has its own `name:`. Two files that
+end up with the same name: the one that sorts last wins, and the clash is logged.
+
+**Hooks in a definition.** A `hooks:` block (`PreToolUse: [{matcher: run_shell, command: ...}]`, typed entries
+too - see bot/agent_runtime/hooks.py) is applied only while that agent runs, after the global hooks, and can only
+narrow (deny / ask / block, never allow or rewrite). Ignored in a project's file; honoured in your own agent folder.
 
 **What a definition may and may not do.** Files in a repository are text from wherever the
 repository came from, so a definition can only make a child *safer or narrower*:
@@ -46,7 +52,9 @@ logger = logging.getLogger("bot.agent_runtime.agent_defs")
 
 MAX_PROMPT_CHARS = 12_000
 MAX_FILE_BYTES = 60_000
-NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,47}$")
+_SEGMENT = r"[a-z0-9][a-z0-9_-]{0,47}"
+NAME_RE = re.compile(rf"^{_SEGMENT}(?:/{_SEGMENT}){{0,3}}$")      # `review/security` for .abp/agents/review/security.md
+MAX_SUBFOLDER_DEPTH = 3
 
 READ_TOOLS = ("read_file", "list_dir", "grep", "glob", "repo_map", "code_search", "session_search", "git_status",
               "git_diff", "todo_read", "read_skill", "list_skills", "read_skill_file", "model_info", "find_models", "lsp")
@@ -72,6 +80,7 @@ class AgentDef:
     source: str = "built-in"                   # built-in | user | project
     origin: str = ""                           # the file
     problems: tuple = ()
+    hooks: tuple = ()                          # ((event, matcher or None, command), ...) - only while this agent runs
 
 
 BUILTINS: dict[str, AgentDef] = {d.name: d for d in [
@@ -195,25 +204,105 @@ def parse(text: str, *, source: str, origin: str = "", fallback_name: str = "") 
     prompt = body.strip()[:MAX_PROMPT_CHARS]
     if not prompt:
         problems.append("the prompt is empty")
-    return AgentDef(name, description, prompt, tools, model, mode, isolation, source, origin, tuple(problems))
+    hooks, hook_problems = _hooks_of(meta.get("hooks"), source)
+    problems += hook_problems
+    return AgentDef(name, description, prompt, tools, model, mode, isolation, source, origin, tuple(problems), hooks)
+
+
+def _hooks_of(raw, source: str) -> tuple[tuple, list[str]]:
+    """The `hooks:` block as ((event, matcher, command), ...). A hook is a command, an http(s) URL or a typed entry
+    ({type: prompt|agent|mcp_tool|command, async: true, ...}); both the flat form (`PreToolUse: [{matcher, command}]`) and
+    Claude Code's nested one (`[{matcher, hooks: [{type, command}]}]`) are read. Only a user's own or built-in
+    definition may carry hooks: a file from a repository is text from elsewhere and must not be able to run commands."""
+    import json
+
+    if raw is None:
+        return (), []
+    if source == "project":
+        return (), ["hooks are ignored in a project's agent file (only your own agent folder may define hooks)"]
+    if not isinstance(raw, dict):
+        return (), ["hooks must be a mapping of event name to a list of hooks"]
+    from bot.agent_runtime import hooks as hooks_mod
+
+    out: list[tuple] = []
+    problems: list[str] = []
+
+    def add(event: str, matcher, entry) -> None:
+        if isinstance(entry, str):
+            entry = {"command": entry}
+        if not isinstance(entry, dict):
+            problems.append(f"a {event} hook must be a command string or a mapping")
+            return
+        if isinstance(entry.get("hooks"), list):                    # Claude Code's nested shape
+            for inner in entry["hooks"]:
+                add(event, entry.get("matcher") or matcher, inner)
+            return
+        matcher = entry.get("matcher") or matcher
+        spec = {k: v for k, v in entry.items() if k != "matcher"}
+        spec.setdefault("type", "command")
+        if spec["type"] not in hooks_mod.HOOK_TYPES:
+            problems.append(f"a {event} hook has unknown type {spec['type']!r}")
+            return
+        if spec["type"] == "command" and not spec.get("async") and set(spec) <= {"type", "command"} and spec.get("command"):
+            command = str(spec["command"])                           # plain: stored as the command itself
+        else:
+            command = json.dumps(spec, sort_keys=True)
+        out.append((event, str(matcher) if matcher else None, command))
+
+    for event, entries in raw.items():
+        if event not in hooks_mod.VALID_EVENTS:
+            problems.append(f"hooks: unknown event {event!r} ignored")
+            continue
+        for entry in entries if isinstance(entries, list) else [entries]:
+            add(event, None, entry)
+    return tuple(out), problems
+
+
+def _agent_files(folder: Path) -> list[Path]:
+    """The .md files in `folder` and in sub-folders (up to MAX_SUBFOLDER_DEPTH deep), sorted. Hidden folders and
+    symlinked folders are skipped."""
+    found: list[Path] = []
+
+    def walk(directory: Path, depth: int) -> None:
+        try:
+            entries = sorted(directory.iterdir(), key=lambda e: e.name)
+        except OSError:
+            return
+        for entry in entries:
+            try:
+                if entry.is_symlink():
+                    continue
+                if entry.is_dir():
+                    if depth < MAX_SUBFOLDER_DEPTH and not entry.name.startswith("."):
+                        walk(entry, depth + 1)
+                elif entry.suffix == ".md" and entry.is_file():
+                    found.append(entry)
+            except OSError:
+                continue
+
+    walk(folder, 0)
+    return found
 
 
 def _load_dir(folder: Path, source: str, found: dict[str, AgentDef]) -> None:
-    try:
-        files = sorted(folder.glob("*.md"))
-    except OSError:
-        return
-    for path in files:
+    """A file `review/security.md` is named `review/security` unless its front matter says `name:`. When two files
+    in one folder tree end up with the same name, the one sorted last wins and the clash is logged."""
+    seen: dict[str, str] = {}
+    for path in _agent_files(folder):
         try:
             if path.stat().st_size > MAX_FILE_BYTES:
                 continue
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        d = parse(text, source=source, origin=str(path), fallback_name=path.stem)
+        rel = path.relative_to(folder).with_suffix("").as_posix()
+        d = parse(text, source=source, origin=str(path), fallback_name=rel)
         if d is None:
             logger.warning("ignored agent file %s: no usable name", path)
             continue
+        if d.name in seen:
+            logger.warning("agent name %r is defined by both %s and %s; the later one wins", d.name, seen[d.name], path)
+        seen[d.name] = str(path)
         found[d.name] = d
 
 
