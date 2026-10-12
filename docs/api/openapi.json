@@ -41144,6 +41144,427 @@
     "summary": "Module Status"
    }
   },
+  "/api/modules/{mid}/assist": {
+   "get": {
+    "operationId": "module_assist_list_api_modules__mid__assist_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "mid",
+      "required": true,
+      "schema": {
+       "title": "Mid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-platform",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Platform"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-app-version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-App-Version"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-model",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Model"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-os-version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Os-Version"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-mesh-port",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Mesh-Port"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Module Assist List"
+   },
+   "post": {
+    "operationId": "module_assist_generate_api_modules__mid__assist_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "mid",
+      "required": true,
+      "schema": {
+       "title": "Mid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-platform",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Platform"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-app-version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-App-Version"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-model",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Model"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-os-version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Os-Version"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-mesh-port",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Mesh-Port"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "default": {},
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Module Assist Generate"
+   }
+  },
+  "/api/modules/{mid}/assist/keep": {
+   "post": {
+    "operationId": "module_assist_keep_api_modules__mid__assist_keep_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "mid",
+      "required": true,
+      "schema": {
+       "title": "Mid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-platform",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Platform"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-app-version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-App-Version"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-model",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Model"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-os-version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Os-Version"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-mesh-port",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Mesh-Port"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Module Assist Keep"
+   }
+  },
   "/api/modules/{mid}/build": {
    "post": {
     "operationId": "module_build_api_modules__mid__build_post",

@@ -26,6 +26,10 @@ TridentDroid, BrainBuilder, Wrightspace, and any added in config), on one page.
                                                 operations and manifest (writes nothing)
     POST /api/modules/{id}/refresh              apply it: fast-forward the checkout, merge the module files, keeping
                                                 hand edits (refused over local changes or a diverged branch)
+    GET  /api/modules/{id}/assist               the stored assisted-setup proposals (differences against what is there)
+    POST /api/modules/{id}/assist               {"n"?, "models"?}: ask the models for proposals (writes nothing)
+    POST /api/modules/{id}/assist/keep          {"batch", "proposal", "drop_comments"?}: write the chosen one as hand edits
+                                                (a hand-owned file's comments are not lost unless drop_comments is true)
 
 Reading needs the dashboard's normal auth; changes need the desktop dashboard token, or a linked server this machine
 allows (peers.remote_control: [modules]). Changes are written to ABP's audit log.
@@ -139,6 +143,32 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         from bot.modules import refresh
         audit(mid, "refresh", "apply")
         return await run(refresh.refresh, mid, apply=True)
+
+    @app.get("/api/modules/{mid}/assist", dependencies=read)
+    async def module_assist_list(mid: str):
+        from bot.modules import assist
+        return await run(assist.proposals, mid)
+
+    @app.post("/api/modules/{mid}/assist", dependencies=write)
+    async def module_assist_generate(mid: str, body: dict = Body(default={})):
+        from bot.modules import assist
+        audit(mid, "assist", "generate")
+        try:
+            return await assist.generate(mid, n=int(body.get("n") or 3), models=body.get("models") or None)
+        except ModuleError as exc:
+            raise HTTPException(status_code=exc.status if 400 <= (exc.status or 0) < 500 else 502,
+                                detail={"error": str(exc), "code": exc.code}) from exc
+
+    @app.post("/api/modules/{mid}/assist/keep", dependencies=write)
+    async def module_assist_keep(mid: str, body: dict = Body(...)):
+        from bot.modules import assist
+        audit(mid, "assist", f"keep {body.get('batch')} {body.get('proposal')}")
+        try:
+            number = int(body.get("proposal"))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail={"error": "proposal is a number", "code": "invalid"}) from None
+        return await run(assist.keep, mid, str(body.get("batch") or ""), number,
+                         drop_comments=body.get("drop_comments") is True)
 
     @app.get("/api/modules/jobs/{job_id}", dependencies=read)
     async def modules_job(job_id: str):
