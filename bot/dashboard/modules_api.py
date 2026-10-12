@@ -14,6 +14,11 @@ TridentDroid, BrainBuilder, Wrightspace, and any added in config), on one page.
     POST /api/modules/adopt                     {"path", "id"?, "name"?, "dry_run"?, "force"?}: make a project a module
     POST /api/modules/add                       {"url", "id"?, "name"?, "shallow"?, "branch"?}: any git repo as a module
                                                 (cloned, adopted as an overlay, checked, registered; a job)
+    GET  /api/modules/catalog                   the configured catalogs and their (synced) entries
+    POST /api/modules/catalog/sync              {"catalog"?}: fetch them (shallow, read-only)
+    POST /api/modules/catalog/install           {"catalog"?, "entry"}: clone its upstream, apply its overlay, check (a job)
+    POST /api/modules/catalog/publish           {"module", "catalog"?, "ref"?}: commit a module's overlay files on a new
+                                                branch of the catalog's working clone and return the diff; never pushes
     GET  /api/modules/candidates?folder=...     project folders there, and which are modules already
     POST /api/modules/{id}/publish              {"push"?}: its own private GitHub repo (a job)
     POST /api/modules/{id}/forget               stop listing an adopted project (its files stay)
@@ -22,7 +27,9 @@ TridentDroid, BrainBuilder, Wrightspace, and any added in config), on one page.
     POST /api/modules/{id}/refresh              apply it: fast-forward the checkout, merge the module files, keeping
                                                 hand edits (refused over local changes or a diverged branch)
     GET  /api/modules/{id}/assist               the stored assisted-setup proposals (differences against what is there)
-    POST /api/modules/{id}/assist               {"n"?, "models"?}: ask the models for proposals (writes nothing)
+    GET  /api/modules/{id}/panel                its panel layout (abp-panel.json, or the default) and why a stored one was ignored
+    POST /api/modules/{id}/assist               {"n"?, "models"?, "panel"?}: ask the models for proposals (writes nothing);
+                                                "panel": layouts for the module's panel only
     POST /api/modules/{id}/assist/keep          {"batch", "proposal", "drop_comments"?}: write the chosen one as hand edits
                                                 (a hand-owned file's comments are not lost unless drop_comments is true)
 
@@ -80,6 +87,37 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         return await run(adoption.add_from_url, url, mid=str(body.get("id") or ""), name=str(body.get("name") or ""),
                          shallow=body.get("shallow", True) is not False, branch=str(body.get("branch") or ""))
 
+    @app.get("/api/modules/catalog", dependencies=read)
+    async def modules_catalog():
+        from bot.modules import catalog
+        return await run(catalog.entries)
+
+    @app.post("/api/modules/catalog/sync", dependencies=write)
+    async def modules_catalog_sync(body: dict = Body(default={})):
+        from bot.modules import catalog
+        audit("catalog", "catalog_sync", str(body.get("catalog") or ""))
+        return {"synced": await run(catalog.sync, str(body.get("catalog") or "")), **await run(catalog.entries)}
+
+    @app.post("/api/modules/catalog/install", dependencies=write)
+    async def modules_catalog_install(body: dict = Body(...)):
+        from bot.modules import catalog
+        entry = str(body.get("entry") or "").strip()
+        if not entry:
+            raise HTTPException(status_code=400, detail="entry is required")
+        audit(entry, "catalog_install", str(body.get("catalog") or ""))
+        return await run(catalog.install, str(body.get("catalog") or ""), entry)
+
+    @app.post("/api/modules/catalog/publish", dependencies=write)
+    async def modules_catalog_publish(body: dict = Body(...)):
+        """Prepares the commit and shows the diff. Pushing it is a person's action (`abp modules catalog publish --push`)."""
+        from bot.modules import catalog
+        mid = str(body.get("module") or "").strip()
+        if not mid:
+            raise HTTPException(status_code=400, detail="module is required")
+        audit(mid, "catalog_publish", str(body.get("catalog") or ""))
+        return await run(catalog.publish, mid, str(body.get("catalog") or ""), ref=str(body.get("ref") or ""),
+                         push=False)
+
     @app.get("/api/modules/candidates", dependencies=read)
     async def modules_candidates(folder: str = Query(...)):
         from bot.modules import adoption
@@ -108,6 +146,11 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         audit(mid, "refresh", "apply")
         return await run(refresh.refresh, mid, apply=True)
 
+    @app.get("/api/modules/{mid}/panel", dependencies=read)
+    async def module_panel_layout(mid: str):
+        from bot.modules import panel
+        return await run(panel.layout, mid)
+
     @app.get("/api/modules/{mid}/assist", dependencies=read)
     async def module_assist_list(mid: str):
         from bot.modules import assist
@@ -118,7 +161,8 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         from bot.modules import assist
         audit(mid, "assist", "generate")
         try:
-            return await assist.generate(mid, n=int(body.get("n") or 3), models=body.get("models") or None)
+            return await assist.generate(mid, n=int(body.get("n") or 3), models=body.get("models") or None,
+                                         panel=body.get("panel") is True)
         except ModuleError as exc:
             raise HTTPException(status_code=exc.status if 400 <= (exc.status or 0) < 500 else 502,
                                 detail={"error": str(exc), "code": exc.code}) from exc

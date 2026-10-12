@@ -36,7 +36,7 @@ Commands:
   dns resolve|status                     resolve a name here; Tailscale DNS status
   doctor                                 one screen: can it reach ABP, does the token work, what answers
   providers list|add|remove|catalog|models|toggle|restore
-  modules list|show|ops|run-op|start|stop|status|logs|call|setup|adopt|add|refresh|assist|candidates|new|publish|forget
+  modules list|show|ops|run-op|start|stop|status|logs|call|setup|adopt|add|refresh|assist|candidates|new|publish|forget|catalog
                                           every module; `modules adopt <folder>` makes any project one
   vision status|analyze|find|compare|edit|fetch
                                           computer vision here (OpenCV + its model zoo): objects, faces, text,
@@ -1482,6 +1482,62 @@ async def _providers(args, client: DashboardClient) -> int:
     return 2
 
 
+async def _modules_catalog(client: DashboardClient, api: str, args) -> int:
+    import asyncio
+    sub = args.catalog_cmd
+    base = f"{api}/catalog"
+    if sub in ("list", "sync"):
+        res = (await client._request("POST", f"{base}/sync", json={"catalog": args.catalog}) if sub == "sync"
+               else await client._request("GET", base))
+        if args.json:
+            _print(args, res)
+            return 0
+        for s in res.get("synced") or []:
+            print(f"synced {s['name']} {s['commit']} ({s['entries']} entries){' - ' + s['note'] if s['note'] else ''}")
+        if not res["catalogs"]:
+            print("no catalogs configured (modules.catalogs in the config)")
+        for e in res["entries"]:
+            print(f"{e['catalog']}/{e['name']}{'  [installed]' if e['installed'] else ''}  {e['upstream']}"
+                  f"{'@' + e['ref'] if e['ref'] else ''}  {e['description'][:70]}")
+        for k, v in res["errors"].items():
+            print(f"  problem {k}: {v}", file=sys.stderr)
+        return 0
+    if sub == "install":
+        job = await client._request("POST", f"{base}/install", json={"catalog": args.catalog, "entry": args.entry})
+        seen = 0
+        while True:
+            job = await client._request("GET", f"{api}/jobs/{job['id']}")
+            if not args.json:
+                for line in (job.get("log") or [])[seen:]:
+                    print(line)
+                seen = len(job.get("log") or [])
+            if job.get("state") != "running":
+                break
+            await asyncio.sleep(1.0)
+        if args.json:
+            _print(args, job)
+        elif job.get("state") == "done":
+            r = job["result"]
+            print(f"\n{r['id']}: installed from {r['catalog']} ({'checked' if r['checked'] else 'CHECK FAILED'}); its clone: {r['path']}")
+        else:
+            print(f"\nfailed: {job.get('error')}", file=sys.stderr)
+        return 0 if job.get("state") == "done" else 1
+    res = await client._request("POST", f"{base}/publish", json={"module": args.module, "catalog": args.catalog,
+                                                                 "ref": args.ref})
+    if res.get("changed") and args.push:
+        from bot.modules import catalog
+        catalog.push_branch(res["work"], res["branch"])
+        res["pushed"] = True
+    if args.json:
+        _print(args, res)
+        return 0
+    print(res.get("diff") or res.get("note") or "")
+    if res.get("changed"):
+        print(f"\nprepared branch {res['branch']} in {res['work']}; "
+              + ("pushed it." if res.get("pushed") else "not pushed: review it, then run again with --push (or git push it yourself)."))
+    return 0
+
+
 async def _modules(args, client: DashboardClient) -> int:
     sub = args.modules_cmd
     api = "/api/modules"
@@ -1592,7 +1648,8 @@ async def _modules(args, client: DashboardClient) -> int:
                                                      "drop_comments": args.drop_comments}))
             return 0
         res = await (client._request("GET", f"{api}/{args.module}/assist") if args.show else
-                     client._request("POST", f"{api}/{args.module}/assist", json={"n": args.n}))
+                     client._request("POST", f"{api}/{args.module}/assist",
+                                     json={"n": args.n, "panel": bool(args.panel)}))
         if args.show:
             res = (res["batches"] or [{"proposals": []}])[0]
         if args.json:
@@ -1629,6 +1686,8 @@ async def _modules(args, client: DashboardClient) -> int:
         print("applied" + (f" (wrote {', '.join(res['wrote']) or 'no module files'})" if res["applied"] else "")
               if res["applied"] else "dry run: nothing written; add --apply to apply")
         return 0
+    if sub == "catalog":
+        return await _modules_catalog(client, api, args)
     if sub == "candidates":
         _print(args, (await client._request("GET", f"{api}/candidates", params={"folder": args.folder}))["projects"],
                table=["name", "module", "markers"])
@@ -1811,10 +1870,20 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--full", action="store_true", help="clone the whole history (default: the latest commit)")
     p = msub.add_parser("refresh", help="fetch upstream and show what changed in a module's operations (--apply writes)")
     p.add_argument("module"); p.add_argument("--apply", action="store_true")
+    p = msub.add_parser("catalog", help="share module overlays through a catalog repo (modules.catalogs)")
+    csub = p.add_subparsers(dest="catalog_cmd", required=True)
+    csub.add_parser("list", help="the entries of the synced catalogs")
+    q = csub.add_parser("sync", help="fetch the catalogs"); q.add_argument("--catalog", default="")
+    q = csub.add_parser("install", help="clone an entry's upstream, apply its overlay, check, register")
+    q.add_argument("entry"); q.add_argument("--catalog", default="")
+    q = csub.add_parser("publish", help="commit a module's overlay files on a new branch of the catalog's working clone")
+    q.add_argument("module"); q.add_argument("--catalog", default=""); q.add_argument("--ref", default="")
+    q.add_argument("--push", action="store_true", help="also push that branch (never main, never forced)")
     p = msub.add_parser("assist", help="propose descriptions, summaries and input types with a model; --keep N writes one")
     p.add_argument("module"); p.add_argument("--keep", type=int, default=0, help="write proposal N of the latest batch")
     p.add_argument("--drop-comments", action="store_true", help="with --keep: accept losing a hand-owned abp-ops.toml's comments")
     p.add_argument("--show", action="store_true", help="list the latest stored proposals"); p.add_argument("-n", type=int, default=3)
+    p.add_argument("--panel", action="store_true", help="propose layouts for the module's panel (which operations, sections, labels, result views) instead of wording")
     p = msub.add_parser("candidates", help="project folders in a folder, and which are modules")
     p.add_argument("folder")
     p = msub.add_parser("publish", help="commit its module files and create its private GitHub repo")
