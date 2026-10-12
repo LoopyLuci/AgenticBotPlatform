@@ -55,6 +55,9 @@ this is just the map:
 | **Traces** | Every native-agent run with its model calls, tool calls, timings and tokens (`GET /api/agent/traces`). |
 | **Permissions** | Pending approvals (allow once, for the session, always, or deny), each bot's rules and mode, MCP tool pins, and clearing a session's untrusted mark. |
 | **Vault** | Stored site credentials by name, site and username — add and remove them; passwords and two-factor secrets never leave the server. |
+| **Skills** | Fetch a skill pack from a git URL into quarantine, read its scan findings, approve or reject it, review skill drafts with an advisory automatic check, and remove installed packs. |
+| **Evals** | The agent eval harness's saved live runs: model, pass rate, calls, tokens, time, and the tasks that failed (also `python -m abp_agenteval page --reports`). |
+| **Sandbox** | What ABP has running right now and which part of ABP started it, with limits, recent kills and what this OS can enforce; stop a cell after a confirm. |
 
 ## Documentation
 
@@ -753,6 +756,10 @@ validation and setup help per platform, and a schedules panel — talking
 to an **already-running** AgenticBotPlatform's dashboard HTTP API rather than
 the database directly, so it works against a remote/federated install
 exactly like the desktop app does, not just a local one.
+
+From the bot list, single keys open screens for hooks (`k`), MCP servers (`m`), plugins (`u`), skills (`i`),
+snapshots (`b`), allowed users (`y`), peers (`x`), devices (`j`), env/config (`z`, names only, never values) and
+kanban (`1`); the footer lists them. See [docs/agents/cli-tui.md](docs/agents/cli-tui.md).
 
 ```bash
 ./scripts/tui.sh      # Linux/macOS
