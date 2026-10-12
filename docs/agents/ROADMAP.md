@@ -170,9 +170,9 @@ and unit tests).
 | Git-worktree isolation for a sub-agent (`isolation: worktree`), removed if unchanged | Built and tested against real git. Background-child notifications already existed |
 | SKILL.md packs with progressive disclosure (`read_skill`, `read_skill_file`), from `.claude/skills`, `.agents/skills`, `.abp/skills` and the user's folder | Built. `allowed-tools` is information only |
 | Install from a git URL into **quarantine**: allowed hosts only, shallow clone, scan (pipe-to-shell, decode-exec, credential paths, symlinks, binaries, size), Ed25519 signature check, approval by a person only | Built. Tested with a faked `git clone`; **never run against a real remote**. A signature never rescues a blocked pack. No public registry or search |
-| Skill learning: after a long task, one no-tools question; a clean answer becomes a **draft** a person approves or rejects | Built, **off by default**. Evaluating a draft before enabling it is not built (a person reads it) |
+| Skill learning: after a long task, one no-tools question; a clean answer becomes a **draft** a person approves or rejects | Built, **off by default**. Each draft gets an automatic, advisory check (format, secrets, scanner patterns, size, permission/tool/credential instructions, description triggers) via `GET /api/skills/drafts/{name}/evaluation` and `/skills check-draft`; a person still approves. A scripted-agent run was not used; the behavioural check is a deterministic lint |
 | Markdown custom slash commands (`$ARGUMENTS`, `$1`..`$9`) from `.claude/commands`, `.opencode/command(s)`, `.abp/commands`, the user's folder; work in chat and `/commands` lists them | Built |
-| API `/api/skills/*`; `/skills fetch|quarantine|approve|reject|drafts|approve-draft|reject-draft` (admins) | Built. No dashboard screen |
+| API `/api/skills/*`; `/skills fetch|quarantine|approve|reject|drafts|approve-draft|reject-draft` (admins) | Built. Skills screen in the dashboard and desktop app (installed, quarantine, drafts with their check, fetch form) |
 | Eval: `follow_a_skill_pack`, `list_agents_then_delegate_read_only` | Built |
 
 ### PM — Model knowledge, limits and usage (M) — built; see [models.md](models.md)

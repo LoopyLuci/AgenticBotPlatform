@@ -75,6 +75,22 @@ used at least `min_tool_calls` tools ends with one no-tools question: was a reus
 A well-formed, secret-free, script-free answer becomes a **draft** for `/skills drafts`,
 `/skills approve-draft <name>` or `/skills reject-draft <name>`. Drafts are never shown to the model.
 
+**Draft check.** Next to every draft ABP runs an automatic, deterministic check (no model call):
+`GET /api/skills/drafts/{name}/evaluation` or `/skills check-draft <name>`. It re-runs the format lint, looks for secrets,
+re-runs the skill scanner's patterns, checks the size against the skill budget, flags instructions that try to change
+permissions, approvals or the tool list or that name credential files, and tests the description: it must match the draft's
+own `Example:` tasks and must not match unrelated ones. The verdict (`pass`, `review`, `fail`) is **advice only**: it never
+approves, rejects or edits a draft. A scripted run of the agent over the draft was not feasible without a model, so the
+behavioural check is a lint.
+
+### The Skills screen
+
+The dashboard and the desktop app have a Skills screen (`skills-panel.js`, the same file in both): installed packs,
+the quarantine (scan findings, signature status, approve or reject after a confirmation), drafts (read the text, see the
+check, approve or reject) and a form that fetches a git URL into quarantine. Approving uses the write-auth routes, so a
+paired phone can read the screen but not approve. Skill text is shown as text, never as HTML. There is no remove button
+for installed packs because there is no route for it; delete the folder in the skill folder.
+
 ## Custom slash commands
 
 `.claude/commands/name.md`, `.opencode/command(s)/name.md`, `.abp/commands/name.md` or the user's
