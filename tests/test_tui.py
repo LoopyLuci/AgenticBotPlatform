@@ -63,9 +63,9 @@ def test_bot_list_screen_renders_real_bots(dashboard_client):
         async with app.run_test() as pilot:
             app.client = dashboard_client
             await app.push_screen(BotListScreen())
-            await pilot.pause()
             screen = app.screen
             assert isinstance(screen, BotListScreen)
+            await _wait(pilot, lambda: {b["name"] for b in screen._bots} == {"alpha", "beta"})
             names = {b["name"] for b in screen._bots}
             assert names == {"alpha", "beta"}
 
@@ -80,9 +80,7 @@ def test_bot_list_screen_empty_state(dashboard_client):
         async with app.run_test() as pilot:
             app.client = dashboard_client
             await app.push_screen(BotListScreen())
-            await pilot.pause()
-            status = app.screen.query_one("#bot-list-status", Label)
-            assert "no bots yet" in str(status.content).lower()
+            await _wait(pilot, lambda: "no bots yet" in str(app.screen.query_one("#bot-list-status", Label).content).lower())
 
     asyncio.run(_run())
 
@@ -95,18 +93,21 @@ def test_add_bot_flow_creates_a_real_row(dashboard_client):
         async with app.run_test(size=(120, 60)) as pilot:
             app.client = dashboard_client
             await app.push_screen(AddBotScreen())
-            await pilot.pause()
             screen = app.screen
             assert isinstance(screen, AddBotScreen)
+            await _wait(pilot, lambda: screen.query("#field-name") and screen.query("#field-platform"))
+            await pilot.pause()
             screen.query_one("#field-name", Input).value = "new-tui-bot"
             screen.query_one("#field-platform", Select).value = "telegram"
-            await pilot.pause()
+            await _wait(pilot, lambda: screen.query("#cred-bot_token"))     # the credential fields follow the platform
             screen.query_one("#cred-bot_token", Input).value = "123456789:AAExampleTokenFromBotFather1234"
             screen.query_one("#field-allowed", Input).value = "111"
             await pilot.click("#submit")
-            await pilot.pause()
-
-            bots = await dashboard_client.list_bots()
+            for _ in range(300):                 # the create is a request; wait for it instead of one pause
+                bots = await dashboard_client.list_bots()
+                if any(b["name"] == "new-tui-bot" for b in bots):
+                    break
+                await pilot.pause(0.1)
             assert any(b["name"] == "new-tui-bot" for b in bots)
 
     asyncio.run(_run())
@@ -123,17 +124,20 @@ def test_bot_detail_screen_edits_and_schedules(dashboard_client):
         async with app.run_test(size=(120, 80)) as pilot:
             app.client = dashboard_client
             await app.push_screen(BotDetailScreen(bot))
-            await pilot.pause()
             screen = app.screen
             assert isinstance(screen, BotDetailScreen)
+            await _wait(pilot, lambda: screen.query("#sched-chatid") and screen.query("#sched-add"))
+            await pilot.pause()
 
             screen.query_one("#sched-chatid", Input).value = "42"
             screen.query_one("#sched-interval", Input).value = "10m"
             screen.query_one("#sched-prompt", Input).value = "ping"
             screen.query_one("#sched-add", Button).press()
-            await pilot.pause()
-
-            schedules = await dashboard_client.list_schedules(instance_id)
+            for _ in range(300):
+                schedules = await dashboard_client.list_schedules(instance_id)
+                if schedules:
+                    break
+                await pilot.pause(0.1)
             assert len(schedules) == 1
             assert schedules[0]["prompt"] == "ping"
 
@@ -161,14 +165,17 @@ def test_chat_screen_sends_a_real_message_and_shows_the_reply(dashboard_client, 
         async with app.run_test() as pilot:
             app.client = dashboard_client
             await app.push_screen(ChatScreen(bot))
-            await pilot.pause()
             screen = app.screen
             assert isinstance(screen, ChatScreen)
+            await _wait(pilot, lambda: screen.query("#chat-input") and screen.query("#chat-log"))
+            await pilot.pause()
             screen.query_one("#chat-input", Input).value = "hello"
             await pilot.press("enter")
-            await pilot.pause()
-            log = screen.query_one("#chat-log", RichLog)
-            text = "\n".join(str(line) for line in log.lines)
+
+            def shown() -> str:
+                return "\n".join(str(line) for line in screen.query_one("#chat-log", RichLog).lines)
+            await _wait(pilot, lambda: "echo: hello" in shown())
+            text = shown()
             assert "hello" in text and "echo: hello" in text
 
     asyncio.run(_run())
@@ -184,16 +191,19 @@ def test_providers_screen_adds_lists_and_removes(dashboard_client):
         async with app.run_test(size=(120, 80)) as pilot:
             app.client = dashboard_client
             await app.push_screen(ProvidersScreen())
-            await pilot.pause()
             screen = app.screen
             assert isinstance(screen, ProvidersScreen)
+            await _wait(pilot, lambda: screen.query("#prov-name") and screen.query("#prov-add"))
+            await pilot.pause()
 
             screen.query_one("#prov-name", Input).value = "tui-test-provider"
             screen.query_one("#prov-baseurl", Input).value = "http://127.0.0.1:11434/v1"
             screen.query_one("#prov-add", Button).press()
-            await pilot.pause()
-
-            providers = await dashboard_client.list_providers()
+            for _ in range(300):
+                providers = await dashboard_client.list_providers()
+                if any(p["name"] == "tui-test-provider" for p in providers):
+                    break
+                await pilot.pause(0.1)
             assert any(p["name"] == "tui-test-provider" for p in providers)
 
             table = screen.query_one("#providers-table", DataTable)
@@ -287,20 +297,23 @@ def test_swarms_screen_creates_lists_and_runs(dashboard_client, monkeypatch):
         async with app.run_test(size=(140, 100)) as pilot:
             app.client = dashboard_client
             await app.push_screen(SwarmsScreen())
-            await pilot.pause()
             screen = app.screen
             assert isinstance(screen, SwarmsScreen)
+            await _wait(pilot, lambda: screen.query("#swarm-name") and screen.query("#swarm-create"))
+            await pilot.pause()
 
             screen.query_one("#swarm-name", Input).value = "s1"
             screen.query_one("#swarm-strategy", Select).value = "leader_vote"
             screen.query_one("#swarm-config", TextArea).text = f'{{"members": [{instance_id}], "leader": {instance_id}}}'
             screen.query_one("#swarm-create", Button).press()
-            await pilot.pause()
-
-            swarms = await dashboard_client.list_swarms()
+            for _ in range(300):
+                swarms = await dashboard_client.list_swarms()
+                if any(s["name"] == "s1" for s in swarms):
+                    break
+                await pilot.pause(0.1)
             assert any(s["name"] == "s1" for s in swarms)
             table = screen.query_one("#swarms-table", DataTable)
-            assert table.row_count == 1
+            await _wait(pilot, lambda: table.row_count == 1)
 
             table.move_cursor(row=0)
             screen.query_one("#swarm-prompt", Input).value = "go"
@@ -321,9 +334,9 @@ def test_sessions_screen_lists_and_deletes(dashboard_client):
         async with app.run_test(size=(140, 100)) as pilot:
             app.client = dashboard_client
             await app.push_screen(SessionsScreen(instance_id=instance_id))
-            await pilot.pause()
             screen = app.screen
             assert isinstance(screen, SessionsScreen)
+            await _wait(pilot, lambda: screen._sessions is not None)
             # No real sessions exist yet for a brand-new bot - just confirm the screen
             # loads and queries the real route without raising.
             assert screen._sessions is not None
@@ -423,22 +436,16 @@ def test_feature_screens_are_offered_only_while_their_unit_is_live(dashboard_cli
         async with app.run_test(size=(140, 100)) as pilot:
             app.client = dashboard_client
             await app.push_screen(BotListScreen())
-            await pilot.pause()
             screen = app.screen
+            await _wait(pilot, lambda: screen.query("#btn-localai") and _offered(screen) == {"hosting", "storage", "localai"})
             assert _offered(screen) == {"hosting", "storage", "localai"}
             runtime.set({"storage", "localai"})              # hosting unloads: an event, then the screen is gone
-            for _ in range(30):
-                await pilot.pause(0.1)
-                if _offered(screen) == {"storage", "localai"}:
-                    break
+            await _wait(pilot, lambda: _offered(screen) == {"storage", "localai"})
             assert _offered(screen) == {"storage", "localai"}
             assert screen.check_action("hosting", ()) is False and screen.check_action("storage", ()) is True
             assert screen.check_action("providers", ()) is True      # a screen without a unit is always offered
             runtime.set({"hosting", "storage", "localai"})   # loaded again: it appears
-            for _ in range(30):
-                await pilot.pause(0.1)
-                if "hosting" in _offered(screen):
-                    break
+            await _wait(pilot, lambda: "hosting" in _offered(screen))
             assert _offered(screen) == {"hosting", "storage", "localai"}
             assert screen.check_action("hosting", ()) is True
 
@@ -458,15 +465,14 @@ def test_a_server_without_a_ui_manifest_shows_everything(dashboard_client, monke
         async with app.run_test(size=(140, 100)) as pilot:
             app.client = dashboard_client
             await app.push_screen(BotListScreen())
-            await pilot.pause()
+            await _wait(pilot, lambda: app.units.available is False and app._unit_timer is None)   # and it stops asking
             assert _offered(app.screen) == {"hosting", "storage", "localai"}
-            assert app.units.available is False and app._unit_timer is None     # and it stops asking
 
     asyncio.run(_run())
 
 
 # ---- list-and-act screens for what abp_cli covers (bot/tui/screens/manage.py) ----------------------
-async def _wait(pilot, predicate, timeout=5.0):
+async def _wait(pilot, predicate, timeout=30.0):
     elapsed = 0.0
     while elapsed < timeout:
         if predicate():
@@ -483,6 +489,11 @@ async def _open(app, pilot, dashboard_client, screen_cls):
     assert isinstance(screen, screen_cls)
     await pilot.pause()
     return screen
+
+
+async def _loaded(pilot, screen, prefix, rows):
+    """The screen's first list has come back (a pause is one tick, the request behind it is not)."""
+    await _wait(pilot, lambda: _rows(screen, prefix) == rows)
 
 
 def _rows(screen, prefix):
@@ -537,10 +548,9 @@ def test_hooks_screen_adds_disables_and_removes_with_confirm(dashboard_client):
         app = AgenticBotPlatformTUI()
         async with app.run_test(size=(140, 100)) as pilot:
             screen = await _open(app, pilot, dashboard_client, HooksScreen)
-            assert _rows(screen, "hooks") == 0
             _press(screen, "hooks-add")                       # nothing typed: a message, no request
-            await pilot.pause()
-            assert "required" in _status(screen, "hooks")
+            await _wait(pilot, lambda: "required" in _status(screen, "hooks"))
+            assert _rows(screen, "hooks") == 0
             _set(screen, "hooks", event="PreToolUse", command="echo hi", matcher="Bash")
             _press(screen, "hooks-add")
             await _wait(pilot, lambda: _rows(screen, "hooks") == 1)
@@ -684,8 +694,7 @@ def test_security_screen_adds_and_removes_an_allowed_user_with_confirm(dashboard
             screen = await _open(app, pilot, dashboard_client, SecurityScreen)
             _set(screen, "security", telegram_id="abc")
             _press(screen, "security-add")
-            await pilot.pause()
-            assert "numeric" in _status(screen, "security")
+            await _wait(pilot, lambda: "numeric" in _status(screen, "security"))
             _set(screen, "security", telegram_id="424242", name="Ann")
             _press(screen, "security-add")
             await _wait(pilot, lambda: any(r["telegram_id"] == 424242 for r in screen._rows))
@@ -709,10 +718,9 @@ def test_peers_screen_lists_and_unlinks_with_confirm(dashboard_client):
         app = AgenticBotPlatformTUI()
         async with app.run_test(size=(140, 100)) as pilot:
             screen = await _open(app, pilot, dashboard_client, PeersScreen)
-            assert _rows(screen, "peers") == 1
+            await _loaded(pilot, screen, "peers", 1)
             _press(screen, "peers-add")                       # no token typed
-            await pilot.pause()
-            assert "required" in _status(screen, "peers")
+            await _wait(pilot, lambda: "required" in _status(screen, "peers"))
             _select_first(screen, "peers")
             _press(screen, "peers-remove")
             await _confirm(pilot, app, yes=False)
@@ -741,7 +749,7 @@ def test_devices_screen_lists_online_state_and_revokes_with_confirm(dashboard_cl
         app = AgenticBotPlatformTUI()
         async with app.run_test(size=(140, 100)) as pilot:
             screen = await _open(app, pilot, dashboard_client, DevicesScreen)
-            assert _rows(screen, "devices") == 1
+            await _loaded(pilot, screen, "devices", 1)
             assert screen._rows[0]["label"] == "Pixel" and screen._rows[0]["online"] is False
             assert "mobile key" in str(screen.query_one("#devices-title").content)      # pairing is CLI/GUI only
             assert not screen.query("#devices-add")                                      # no way to mint a key here
@@ -776,6 +784,7 @@ def test_env_screen_masks_values_sets_one_and_never_shows_a_secret(dashboard_cli
         app = AgenticBotPlatformTUI()
         async with app.run_test(size=(140, 100)) as pilot:
             screen = await _open(app, pilot, dashboard_client, EnvScreen)
+            await _wait(pilot, lambda: len(screen._rows) == 3)
             assert [r["key"] for r in screen._rows] == ["DASHBOARD_TOKEN", "SECRET_KEY", "EMPTY_ONE"]
             assert screen._rows[1]["set"] is True and screen._rows[2]["set"] is False
             assert "hunter2" not in app.export_screenshot() and "********" in app.export_screenshot()
@@ -786,8 +795,7 @@ def test_env_screen_masks_values_sets_one_and_never_shows_a_secret(dashboard_cli
             assert screen.query_one("#env-value", Input).value == ""                     # cleared after sending
             assert "NEW_THING=brand-new-SECRET-2" in env.read_text(encoding="utf-8")
             _press(screen, "env-add")                                                    # nothing typed
-            await pilot.pause()
-            assert "required" in _status(screen, "env")
+            await _wait(pilot, lambda: "required" in _status(screen, "env"))
             _set(screen, "env", key="bad=key", value="rejected-SECRET-3")                # the API refuses the key
             _press(screen, "env-add")
             await _wait(pilot, lambda: "Failed" in _status(screen, "env"))
@@ -813,10 +821,9 @@ def test_kanban_screen_adds_moves_and_deletes_a_card_with_confirm(dashboard_clie
         app = AgenticBotPlatformTUI()
         async with app.run_test(size=(140, 100)) as pilot:
             screen = await _open(app, pilot, dashboard_client, KanbanScreen)
-            assert _rows(screen, "kanban") == 0
             _press(screen, "kanban-add")                                                 # no text typed
-            await pilot.pause()
-            assert "required" in _status(screen, "kanban")
+            await _wait(pilot, lambda: "required" in _status(screen, "kanban"))
+            assert _rows(screen, "kanban") == 0
             _set(screen, "kanban", instance=str(iid), board="work", text="write docs")
             _press(screen, "kanban-add")
             await _wait(pilot, lambda: _rows(screen, "kanban") == 1)
