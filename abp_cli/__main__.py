@@ -38,6 +38,7 @@ Commands:
   providers list|add|remove|catalog|models|toggle|restore
   modules list|show|ops|run-op|start|stop|status|logs|call|setup|adopt|add|refresh|assist|candidates|new|publish|forget|catalog
                                           every module; `modules adopt <folder>` makes any project one
+  coordination summary|tasks|locks        the work board: who is doing what, what waits and why, who holds which files
   vision status|analyze|find|compare|edit|fetch
                                           computer vision here (OpenCV + its model zoo): objects, faces, text,
                                           codes; find text or an image on the screen; compare two images
@@ -193,6 +194,8 @@ async def _dispatch(args, client: DashboardClient) -> int:
         return await _studio(args, client)
     if cmd == "vision":
         return await _vision(args, client)
+    if cmd == "coordination":
+        return await _coordination(args, client)
     if cmd == "hermes":
         from abp_cli import hermes as _hermes
         return await _hermes.run(args, client)
@@ -1729,6 +1732,39 @@ def _image_arg(v: str) -> str:
     return str(p.resolve()) if p.exists() else v
 
 
+async def _coordination(args, client: DashboardClient) -> int:
+    sub = args.coordination_cmd
+    api = "/api/coordination"
+    if sub == "summary":
+        res = await client._request("GET", f"{api}/summary", params={"board": args.board} if args.board else None)
+        if args.json:
+            _print(args, res)
+            return 0
+        print(f"board: {res['backend']}" + ("" if res.get("enabled", True) else "  (sub-agent coordination is off)"))
+        for name, b in sorted((res["summary"].get("boards") or {}).items()):
+            counts = ", ".join(f"{k} {v}" for k, v in (b.get("counts") or {}).items() if v) or "no tasks"
+            print(f"{name}: {counts}")
+            for h in b.get("holders") or []:
+                print(f"  holds   {h.get('resource')}  {h.get('owner') or h.get('agent')}  {h.get('title') or h.get('task') or ''}")
+            for t in b.get("blocked") or []:
+                print(f"  waiting {t.get('title')}: {t.get('reason')}")
+            for t in b.get("expiring") or []:
+                print(f"  expiring {t.get('title')} ({t.get('owner')})")
+        agents = res["summary"].get("agents") or {}
+        print(f"idle agents: {len(agents.get('idle') or [])}, gone: {len(agents.get('gone') or [])}")
+        return 0
+    if sub == "tasks":
+        params = {k: v for k, v in (("board", args.board), ("state", args.state), ("owner", args.owner), ("limit", args.limit)) if v}
+        res = await client._request("GET", f"{api}/tasks", params=params)
+        _print(args, res if args.json else res["tasks"], table=["state", "owner", "board", "title"])
+        return 0
+    if sub == "locks":
+        res = await client._request("GET", f"{api}/locks", params={"resource_prefix": args.prefix} if args.prefix else None)
+        _print(args, res if args.json else res["locks"], table=["resource", "mode", "owner", "title"])
+        return 0
+    return 2
+
+
 async def _vision(args, client: DashboardClient) -> int:
     sub = args.vision_cmd
     api = "/api/vision"
@@ -1918,6 +1954,13 @@ def _parser() -> argparse.ArgumentParser:
     p = msub.add_parser("publish", help="commit its module files and create its private GitHub repo")
     p.add_argument("module"); p.add_argument("--push", action="store_true")
 
+    co = sub.add_parser("coordination", help="the work board: who is doing what, what waits and why, who holds which files")
+    cosub = co.add_subparsers(dest="coordination_cmd", required=True)
+    p = cosub.add_parser("summary"); p.add_argument("--board", default="")
+    p = cosub.add_parser("tasks")
+    p.add_argument("--board", default=""); p.add_argument("--state", default=""); p.add_argument("--owner", default="")
+    p.add_argument("--limit", type=int, default=200)
+    p = cosub.add_parser("locks"); p.add_argument("--prefix", default="")
     vis = sub.add_parser("vision", help="computer vision on this machine (OpenCV and its model zoo)")
     vsub = vis.add_subparsers(dest="vision_cmd", required=True)
     vsub.add_parser("status")

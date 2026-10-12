@@ -1041,13 +1041,22 @@ async def _run_subprocess(args: list[str], cwd: Path) -> str:
 
 
 _TOUCHING = ("read_file", "edit_file", "multi_edit", "write_file")
+_EDITING = frozenset({"write_file", "edit_file", "multi_edit", "apply_patch"})
 
 
 async def execute_tool(
     name: str, tool_input: dict, *, workspace: Path, instance_id: Optional[int] = None,
     device_tier: Optional[str] = None,
 ) -> str:
-    result = await _execute_tool(name, tool_input, workspace=workspace, instance_id=instance_id, device_tier=device_tier)
+    if name in _EDITING:
+        # Two agents never write one file at once: inside a sub-agent/swarm work session the file is locked on the
+        # work board for that task (bot/coordination/fileguard.py); a lone agent pays nothing.
+        from bot.coordination import fileguard
+
+        async with fileguard.guard(name, tool_input, workspace=workspace, instance_id=instance_id):
+            result = await _execute_tool(name, tool_input, workspace=workspace, instance_id=instance_id, device_tier=device_tier)
+    else:
+        result = await _execute_tool(name, tool_input, workspace=workspace, instance_id=instance_id, device_tier=device_tier)
     if name in _TOUCHING and isinstance(result, str) and isinstance(tool_input, dict):
         try:
             from bot.agent_runtime import project_rules, toolspec

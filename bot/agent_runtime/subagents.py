@@ -211,6 +211,11 @@ async def run_batch(
         # are switched on; never plugin or MCP tools, which a leaf worker has never had.
         allowed_tools = (frozenset(TOOL_SCHEMA_NAMES) | toolspec.registered_names()) - LEAF_BLOCKED_TOOLS
 
+    from bot.coordination.subagent_board import ChildBoard
+
+    # Each child becomes a task on the work board (bot/coordination): a repeat of the same spawn finds it instead of
+    # running twice, and the files a child edits are locked for it. None when coordination is off or unreachable.
+    coord = await ChildBoard.open(parent_instance_id)
     dispatch = subagent_registry.new_dispatch(parent_instance_id)
     token = _delegation_depth.set(depth + 1)
     # Each child's own resolved model, keyed by index — used only for the
@@ -230,7 +235,7 @@ async def run_batch(
             child_models[i] = getattr(task_backend, "model", None)
             task_effort = task.get("effort") or batch_effort
             handle = await _start_child(
-                dispatch, i, task, task_backend, semaphore, allowed_tools, parent_instance_id, task_effort
+                dispatch, i, task, task_backend, semaphore, allowed_tools, parent_instance_id, task_effort, coord
             )
             subagent_registry.register_child(dispatch, i, handle)
     finally:
@@ -324,6 +329,7 @@ async def _start_child(
     allowed_tools: Optional[frozenset],
     parent_instance_id: Optional[int],
     effort: Optional[str] = None,
+    coord=None,
 ):
     """Creates the child's ephemeral_sessions row and steer queue up
     front (before the task starts running), then wraps _run_one_child in
@@ -353,10 +359,13 @@ async def _start_child(
     coro = _run_one_child(
         index, task, goal, session_id, backend, semaphore, allowed_tools, parent_instance_id, steer_queue, effort
     )
+    ticket = await coord.register(dispatch.dispatch_id, index, task, goal) if (coord is not None and goal) else None
+    if ticket is not None:
+        coro = ticket.run(coro, session_id=session_id, index=index, goal=goal, model=getattr(backend, "model", None))
     aio_task = asyncio.create_task(coro)
     return ChildHandle(
         task=aio_task, steer_queue=steer_queue, ephemeral_session_id=session_id,
-        parent_instance_id=parent_instance_id, goal=goal,
+        parent_instance_id=parent_instance_id, goal=goal, coord=ticket,
     )
 
 

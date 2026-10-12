@@ -127,6 +127,17 @@ swarm_budget:
 # itself succeeds.
 swarm_observability:
   live_tool_events: true
+# The work board (bot/coordination, docs/coordination.md): sub-agent children and swarm steps are tasks on a board, files
+# a child edits are locked for it, a repeated spawn finds the existing task. backend: auto uses AgentSentinel's machine-wide
+# board when its API answers (token in the AGENT_SENTINEL_TOKEN environment variable), else ABP's own; sentinel / local force
+# one. ABP_COORDINATION_BACKEND overrides this.
+coordination:
+  enabled: true
+  backend: auto
+  sentinel_url: ""
+  lease_s: 120
+  file_lock_lease_s: 60
+  swarm_workers: 8
 # spawn_subagent (bot/agent_runtime/subagents.py) — ephemeral, disposable
 # sub-agent fan-out for api/custom_model-backed instances, the native
 # equivalent of Hermes Agent's own delegate_task. Depth is governed by

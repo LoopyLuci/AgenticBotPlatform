@@ -1,15 +1,18 @@
 """Built-in swarm strategies. Each `config` shape is validated by
 bot/dashboard/server.py before a swarm is saved (every referenced
 instance id must exist), so strategies here can assume well-formed input.
+
+The steps run as tasks on the work board (bot/swarm/board_run.py): ordering through deps, workers pulling with
+`next`, results recorded on the tasks, repeated dispatches deduplicated.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from typing import Any
 
+from bot.swarm.board_run import Step, SwarmBoard
 from bot.swarm.base import SwarmRunResult, SwarmStrategy, SwarmStrategyError, instance_label, run_member
 
 logger = logging.getLogger("bot.swarm.strategies")
@@ -25,6 +28,24 @@ def _synthesis_prompt(original_prompt: str, answers: list[tuple[str, str]]) -> s
     )
 
 
+def _board(swarm_row: dict[str, Any], prompt: str, swarm_run_id: str, user_id: int) -> SwarmBoard:
+    async def call(instance_id: int, text: str) -> str:
+        return await run_member(instance_id, text, swarm_run_id=swarm_run_id, user_id=user_id)
+
+    return SwarmBoard(swarm_row, prompt, swarm_run_id, call)
+
+
+def _step(sid: str, instance_id: int, role: str, text, **kw: Any) -> Step:
+    """A step whose prompt is fixed text, or a function of the finished steps it depends on."""
+    fn = text if callable(text) else (lambda _o, _t=text: _t)
+    return Step(id=sid, instance_id=instance_id, role=role, label=instance_label(instance_id), prompt=fn, **kw)
+
+
+def _out(outcomes: dict[str, dict], step: Step) -> dict[str, Any]:
+    return outcomes.get(step.id) or {"step": step.label, "instance_id": step.instance_id, "role": step.role,
+                                     **step.extra, "status": "failed", "error": "the step did not run"}
+
+
 class FanoutSynthesizeStrategy(SwarmStrategy):
     name = "fanout_synthesize"
 
@@ -35,40 +56,23 @@ class FanoutSynthesizeStrategy(SwarmStrategy):
         if not members:
             raise SwarmStrategyError("fanout_synthesize needs at least one member")
 
-        async def _one(instance_id: int) -> dict[str, Any]:
-            step = {"step": instance_label(instance_id), "instance_id": instance_id, "role": "worker"}
-            try:
-                text = await run_member(instance_id, prompt, swarm_run_id=swarm_run_id, user_id=user_id)
-                step["status"] = "success"
-                step["result"] = text
-            except Exception as exc:  # noqa: BLE001 — one member's failure (any kind) is that step's, never the whole swarm's
-                step["status"] = "failed"
-                step["error"] = str(exc)
-            return step
-
-        steps = await asyncio.gather(*[_one(m) for m in members])
-        steps = list(steps)
+        board = _board(swarm_row, prompt, swarm_run_id, user_id)
+        defs = [_step(f"w{i}", m, "worker", prompt) for i, m in enumerate(members)]
+        done = await board.run(defs)
+        steps = [_out(done, d) for d in defs]
         succeeded = [(s["step"], s["result"]) for s in steps if s["status"] == "success"]
 
         if not succeeded:
             return SwarmRunResult(status="failed", result=None, steps=steps, error="every member failed")
 
         if synthesizer:
-            syn_step = {"step": instance_label(synthesizer), "instance_id": synthesizer, "role": "synthesizer"}
-            try:
-                final = await run_member(
-                    synthesizer, _synthesis_prompt(prompt, succeeded), swarm_run_id=swarm_run_id, user_id=user_id
-                )
-                syn_step["status"] = "success"
-                syn_step["result"] = final
-                steps.append(syn_step)
+            sdef = _step("synth", synthesizer, "synthesizer", _synthesis_prompt(prompt, succeeded))
+            syn_step = _out(await board.run([sdef]), sdef)
+            steps.append(syn_step)
+            if syn_step["status"] == "success":
                 status = "success" if len(succeeded) == len(members) else "partial"
-                return SwarmRunResult(status=status, result=final, steps=steps)
-            except Exception as exc:  # noqa: BLE001 — one member's failure (any kind) is that step's, never the whole swarm's
-                syn_step["status"] = "failed"
-                syn_step["error"] = str(exc)
-                steps.append(syn_step)
-                return SwarmRunResult(status="failed", result=None, steps=steps, error=f"synthesizer failed: {exc}")
+                return SwarmRunResult(status=status, result=syn_step["result"], steps=steps)
+            return SwarmRunResult(status="failed", result=None, steps=steps, error=f"synthesizer failed: {syn_step.get('error')}")
 
         final = "\n\n".join(f"— {name} —\n{text}" for name, text in succeeded)
         status = "success" if len(succeeded) == len(members) else "partial"
@@ -87,18 +91,10 @@ class LeaderVoteStrategy(SwarmStrategy):
         if not leader:
             raise SwarmStrategyError("leader_vote needs a leader")
 
-        async def _one(instance_id: int) -> dict[str, Any]:
-            step = {"step": instance_label(instance_id), "instance_id": instance_id, "role": "worker"}
-            try:
-                text = await run_member(instance_id, prompt, swarm_run_id=swarm_run_id, user_id=user_id)
-                step["status"] = "success"
-                step["result"] = text
-            except Exception as exc:  # noqa: BLE001 — one member's failure (any kind) is that step's, never the whole swarm's
-                step["status"] = "failed"
-                step["error"] = str(exc)
-            return step
-
-        steps = list(await asyncio.gather(*[_one(m) for m in members]))
+        board = _board(swarm_row, prompt, swarm_run_id, user_id)
+        defs = [_step(f"w{i}", m, "worker", prompt) for i, m in enumerate(members)]
+        done = await board.run(defs)
+        steps = [_out(done, d) for d in defs]
         succeeded = [(s["step"], s["result"]) for s in steps if s["status"] == "success"]
         if not succeeded:
             return SwarmRunResult(status="failed", result=None, steps=steps, error="every member failed")
@@ -110,19 +106,13 @@ class LeaderVoteStrategy(SwarmStrategy):
             f"Question: {prompt}\n\n"
             + "\n\n".join(f"{i+1}) {name}:\n{text}" for i, (name, text) in enumerate(succeeded))
         )
-        leader_step = {"step": instance_label(leader), "instance_id": leader, "role": "leader"}
-        try:
-            final = await run_member(leader, leader_prompt, swarm_run_id=swarm_run_id, user_id=user_id)
-            leader_step["status"] = "success"
-            leader_step["result"] = final
-            steps.append(leader_step)
+        ldef = _step("leader", leader, "leader", leader_prompt)
+        leader_step = _out(await board.run([ldef]), ldef)
+        steps.append(leader_step)
+        if leader_step["status"] == "success":
             status = "success" if len(succeeded) == len(members) else "partial"
-            return SwarmRunResult(status=status, result=final, steps=steps)
-        except Exception as exc:  # noqa: BLE001 — one member's failure (any kind) is that step's, never the whole swarm's
-            leader_step["status"] = "failed"
-            leader_step["error"] = str(exc)
-            steps.append(leader_step)
-            return SwarmRunResult(status="failed", result=None, steps=steps, error=f"leader failed: {exc}")
+            return SwarmRunResult(status=status, result=leader_step["result"], steps=steps)
+        return SwarmRunResult(status="failed", result=None, steps=steps, error=f"leader failed: {leader_step.get('error')}")
 
 
 class SequentialRelayStrategy(SwarmStrategy):
@@ -134,31 +124,34 @@ class SequentialRelayStrategy(SwarmStrategy):
         if not members:
             raise SwarmStrategyError("sequential_relay needs at least one member")
 
-        steps: list[dict[str, Any]] = []
-        current_prompt = prompt
-        last_text = None
-        for i, member in enumerate(members):
+        def link(i: int, member: Any) -> Step:
             instance_id = member["instance_id"] if isinstance(member, dict) else member
             instruction = member.get("instruction") if isinstance(member, dict) else None
-            step_prompt = current_prompt
-            if i > 0:
-                step_prompt = (
-                    f"{prompt}\n\n---\nPrevious step's output:\n{last_text}\n\n"
+
+            def text(done: dict[str, dict]) -> str:
+                if i == 0:
+                    return prompt
+                return (
+                    f"{prompt}\n\n---\nPrevious step's output:\n{done[f'r{i-1}']['result']}\n\n"
                     f"{instruction or 'Continue/refine based on the above.'}"
                 )
-            step = {"step": instance_label(instance_id), "instance_id": instance_id, "role": "relay"}
-            try:
-                text = await run_member(instance_id, step_prompt, swarm_run_id=swarm_run_id, user_id=user_id)
-                step["status"] = "success"
-                step["result"] = text
-                last_text = text
-            except Exception as exc:  # noqa: BLE001 — one member's failure (any kind) is that step's, never the whole swarm's
-                step["status"] = "failed"
-                step["error"] = str(exc)
-                steps.append(step)
-                return SwarmRunResult(status="failed", result=None, steps=steps, error=f"{step['step']} failed: {exc}")
-            steps.append(step)
 
+            return _step(f"r{i}", instance_id, "relay", text, deps=[f"r{i-1}"] if i else [])
+
+        board = _board(swarm_row, prompt, swarm_run_id, user_id)
+        defs = [link(i, m) for i, m in enumerate(members)]
+        done = await board.run(defs)       # a failed link leaves everything after it blocked, and the board drops it
+
+        steps: list[dict[str, Any]] = []
+        last_text = None
+        for d in defs:
+            step = done.get(d.id)
+            if step is None:
+                break
+            steps.append(step)
+            if step["status"] != "success":
+                return SwarmRunResult(status="failed", result=None, steps=steps, error=f"{step['step']} failed: {step.get('error')}")
+            last_text = step["result"]
         return SwarmRunResult(status="success", result=last_text, steps=steps)
 
 
@@ -179,14 +172,13 @@ class DecomposeDelegateStrategy(SwarmStrategy):
             f"worked on in parallel. Respond with ONLY a JSON array like "
             f'[{{"subtask": "..."}}, {{"subtask": "..."}}] and nothing else.\n\nTask: {prompt}'
         )
-        planner_step = {"step": instance_label(planner), "instance_id": planner, "role": "planner"}
-        try:
-            plan_text = await run_member(planner, plan_prompt, swarm_run_id=swarm_run_id, user_id=user_id)
-        except Exception as exc:  # noqa: BLE001 — one member's failure (any kind) is that step's, never the whole swarm's
-            planner_step["status"] = "failed"
-            planner_step["error"] = str(exc)
+        board = _board(swarm_row, prompt, swarm_run_id, user_id)
+        pdef = _step("planner", planner, "planner", plan_prompt)
+        planner_step = _out(await board.run([pdef]), pdef)
+        if planner_step["status"] != "success":
             steps.append(planner_step)
-            return SwarmRunResult(status="failed", result=None, steps=steps, error=f"planner failed: {exc}")
+            return SwarmRunResult(status="failed", result=None, steps=steps, error=f"planner failed: {planner_step.get('error')}")
+        plan_text = planner_step["result"]
 
         try:
             start = plan_text.index("[")
@@ -198,25 +190,13 @@ class DecomposeDelegateStrategy(SwarmStrategy):
             if not subtask_texts:
                 raise ValueError("empty subtask list")
         except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            planner_step = {k: v for k, v in planner_step.items() if k != "result"}
             planner_step["status"] = "failed"
             planner_step["error"] = f"planner didn't return valid JSON: {exc}"
             steps.append(planner_step)
             return SwarmRunResult(status="failed", result=None, steps=steps, error="planner output wasn't valid JSON — no retry in this version")
 
-        planner_step["status"] = "success"
-        planner_step["result"] = plan_text
         steps.append(planner_step)
-
-        async def _one(instance_id: int, subtask: str) -> dict[str, Any]:
-            step = {"step": instance_label(instance_id), "instance_id": instance_id, "role": "worker", "subtask": subtask}
-            try:
-                text = await run_member(instance_id, subtask, swarm_run_id=swarm_run_id, user_id=user_id)
-                step["status"] = "success"
-                step["result"] = text
-            except Exception as exc:  # noqa: BLE001 — one member's failure (any kind) is that step's, never the whole swarm's
-                step["status"] = "failed"
-                step["error"] = str(exc)
-            return step
 
         # A planner that ignores "up to N" must not fan out without bound.
         max_subtasks = int(cfg.get("max_subtasks") or len(members) * 2)
@@ -224,35 +204,31 @@ class DecomposeDelegateStrategy(SwarmStrategy):
             logger.warning("planner returned %d subtasks; running the first %d", len(subtask_texts), max_subtasks)
             subtask_texts = subtask_texts[:max_subtasks]
         # round-robin assignment over the available members
-        pairs = [(members[i % len(members)], subtask) for i, subtask in enumerate(subtask_texts)]
-        worker_steps = list(await asyncio.gather(*[_one(m, s) for m, s in pairs]))
+        wdefs = [
+            _step(f"t{i}", members[i % len(members)], "worker", subtask, deps=["planner"], extra={"subtask": subtask})
+            for i, subtask in enumerate(subtask_texts)
+        ]
+        done = await board.run(wdefs)
+        worker_steps = [_out(done, d) for d in wdefs]
         steps.extend(worker_steps)
         succeeded = [(s["step"], s["result"]) for s in worker_steps if s["status"] == "success"]
         if not succeeded:
             return SwarmRunResult(status="failed", result=None, steps=steps, error="every subtask worker failed")
 
-        agg_step = {"step": instance_label(aggregator), "instance_id": aggregator, "role": "aggregator"}
-        try:
-            final = await run_member(
-                aggregator, _synthesis_prompt(prompt, succeeded), swarm_run_id=swarm_run_id, user_id=user_id
-            )
-            agg_step["status"] = "success"
-            agg_step["result"] = final
-            steps.append(agg_step)
+        adef = _step("aggregator", aggregator, "aggregator", _synthesis_prompt(prompt, succeeded), deps=["planner"])
+        agg_step = _out(await board.run([adef]), adef)
+        steps.append(agg_step)
+        if agg_step["status"] == "success":
             status = "success" if len(succeeded) == len(worker_steps) else "partial"
-            return SwarmRunResult(status=status, result=final, steps=steps)
-        except Exception as exc:  # noqa: BLE001 — one member's failure (any kind) is that step's, never the whole swarm's
-            agg_step["status"] = "failed"
-            agg_step["error"] = str(exc)
-            steps.append(agg_step)
-            return SwarmRunResult(status="failed", result=None, steps=steps, error=f"aggregator failed: {exc}")
+            return SwarmRunResult(status=status, result=agg_step["result"], steps=steps)
+        return SwarmRunResult(status="failed", result=None, steps=steps, error=f"aggregator failed: {agg_step.get('error')}")
 
 
 class CustomStrategy(SwarmStrategy):
     """config: {"steps": [{"id","instance_id","depends_on": [...], "role"?}, ...]}
-    Executed by dependency order — steps with all dependencies satisfied
-    run concurrently via asyncio.gather(); a step's prompt is the original
-    prompt plus every dependency's labeled output when it has any."""
+    Executed by dependency order - steps with all dependencies satisfied run concurrently (the board hands them to
+    workers); a step's prompt is the original prompt plus every dependency's labeled output when it has any. A failed
+    step still unblocks its dependents (they just get no input from it)."""
 
     name = "custom"
 
@@ -269,46 +245,34 @@ class CustomStrategy(SwarmStrategy):
                     raise SwarmStrategyError(f"step {s['id']!r} depends on unknown step {dep!r}")
         self._check_cycles(step_defs)
 
-        results: dict[str, dict[str, Any]] = {}
-        remaining = {s["id"]: s for s in step_defs}
-        all_steps: list[dict[str, Any]] = []
+        def make(step_def: dict[str, Any]) -> Step:
+            deps = list(step_def.get("depends_on") or [])
 
-        while remaining:
-            ready = [
-                s for s in remaining.values()
-                if all(dep in results for dep in (s.get("depends_on") or []))
-            ]
-            if not ready:
-                raise SwarmStrategyError("custom swarm graph is stuck — unresolved dependencies (cycle?)")
+            def text(done: dict[str, dict]) -> str:
+                if not deps:
+                    return prompt
+                context_text = "\n\n".join(
+                    f"— {d} —\n{done[d]['result']}" for d in deps if d in done and done[d]["status"] == "success"
+                )
+                return f"{prompt}\n\n---\nInputs from prior steps:\n{context_text}"
 
-            async def _run_step(step_def: dict[str, Any]) -> dict[str, Any]:
-                instance_id = step_def["instance_id"]
-                deps = step_def.get("depends_on") or []
-                if deps:
-                    context_text = "\n\n".join(
-                        f"— {by_id[d].get('id')} —\n{results[d]['result']}" for d in deps if results[d]["status"] == "success"
-                    )
-                    step_prompt = f"{prompt}\n\n---\nInputs from prior steps:\n{context_text}"
-                else:
-                    step_prompt = prompt
-                out = {
-                    "step": step_def["id"], "instance_id": instance_id,
-                    "role": step_def.get("role", "worker"),
-                }
-                try:
-                    text = await run_member(instance_id, step_prompt, swarm_run_id=swarm_run_id, user_id=user_id)
-                    out["status"] = "success"
-                    out["result"] = text
-                except Exception as exc:  # noqa: BLE001 — one member's failure (any kind) is that step's, never the whole swarm's
-                    out["status"] = "failed"
-                    out["error"] = str(exc)
-                return out
+            return Step(id=step_def["id"], instance_id=step_def["instance_id"], role=step_def.get("role", "worker"),
+                        label=step_def["id"], prompt=text, deps=deps, tolerate=True)
 
-            done = await asyncio.gather(*[_run_step(s) for s in ready])
-            for out in done:
-                results[out["step"]] = out
-                all_steps.append(out)
-                remaining.pop(out["step"], None)
+        board = _board(swarm_row, prompt, swarm_run_id, user_id)
+        defs = [make(s) for s in step_defs]
+        done = await board.run(defs)
+
+        level: dict[str, int] = {}
+
+        def depth(sid: str) -> int:
+            if sid not in level:
+                level[sid] = 1 + max([depth(d) for d in by_id[sid].get("depends_on") or []], default=-1)
+            return level[sid]
+
+        ordered = sorted(defs, key=lambda d: depth(d.id))          # the order the dependency waves would have run in
+        all_steps = [_out(done, d) for d in ordered]
+        results = {d.id: out for d, out in zip(ordered, all_steps)}
 
         # the result is the last-executed step with no other step depending on it
         depended_on = {d for s in step_defs for d in (s.get("depends_on") or [])}
