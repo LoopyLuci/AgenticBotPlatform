@@ -99,16 +99,16 @@ def test_a_failing_command_in_powershell_or_bash_is_non_zero(ws):
 
 def test_output_that_looks_like_a_marker_cannot_end_the_call(ws):
     fake = "ABPEND" + "0" * 32
-    code = f"print('{fake}|0|C:/fake'); print('after-fake')"
+    code = f"print('{fake}|0|/fake/dir'); print('after-fake')"
 
     async def go():
         return await call(ws, pyc(ws, code))
 
     out = scenario(go)
     assert "after-fake" in out
-    assert f"{fake}|0|C:/fake" in out
+    assert f"{fake}|0|/fake/dir" in out
     assert out.rstrip().endswith("]") and "[exit code 0, cwd " in out.splitlines()[-1]
-    assert "C:/fake" not in out.splitlines()[-1]
+    assert "/fake/dir" not in out.splitlines()[-1]
 
 
 def test_a_following_call_is_not_polluted_by_the_previous_output(ws):

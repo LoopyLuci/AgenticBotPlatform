@@ -48,7 +48,7 @@ _AUTHORITY = [(rx_id, re.compile(rx, re.I), why) for rx_id, rx, why in [
     ("tools", r"\b(enable|unlock|use) (every|all|any) tools?\b", "asks for every tool"),
     ("credentials", r"(\.env\b|credentials?\.(json|ya?ml|txt)|secrets?\.(json|ya?ml|txt)|\.gnupg|keychain|/etc/shadow|\.git-credentials|api[_ -]?keys? (file|folder))",
      "refers to a credential or secrets file"),
-    ("credentials", r"(~|\$HOME|%USERPROFILE%|C:\\Users\\[^\\\s]+)[/\\]\.[a-z]", "refers to a hidden folder in a home directory"),
+    ("credentials", r"(~|\$HOME|%USERPROFILE%|[A-Za-z]:\\Users\\[^\\\s]+)[/\\]\.[a-z]", "refers to a hidden folder in a home directory"),
 ]]
 
 
