@@ -801,6 +801,7 @@
       <a href="#evals" data-kw="evals eval benchmark reports pass rate model calls tokens failing tasks"><span class="ic">🧪</span><span class="nav-txt"><b>Evals</b><small>Agent eval results</small></span></a>
       <a href="#sns" data-kw="sandbox processes cells running cpu memory kill reflex limits call site"><span class="ic">📦</span><span class="nav-txt"><b>Sandbox</b><small>What ABP has running</small></span></a>
       <a href="#skills" data-kw="skills packs quarantine drafts approve reject git fetch skill.md learning"><span class="ic">🧩</span><span class="nav-txt"><b>Skills</b><small>Packs, quarantine and drafts</small></span></a>
+      <a href="#profiles" data-kw="user profiles model preferences expertise goals learn approve forget export privacy"><span class="ic">👤</span><span class="nav-txt"><b>User profiles</b><small>What the agent learned about people</small></span></a>
       <a href="#vault" data-kw="vault credentials logins passwords totp two-factor secrets browser agent keys"><span class="ic">🔑</span><span class="nav-txt"><b>Vault</b><small>Logins the browser agent can use</small></span></a>
       <a href="#router" data-unit="router" data-kw="router model routing auto learning decisions policy training feedback"><span class="ic">🧭</span><span class="nav-txt"><b>Model Router</b><small>Decisions, learning, training &amp; policy</small></span></a>
       <a href="#unsloth" data-unit="unsloth" data-kw="unsloth studio local models gguf load gpu fine-tune train export hugging face"><span class="ic">🦥</span><span class="nav-txt"><b>Unsloth</b><small>Local models, fine-tuning &amp; export</small></span></a>
@@ -1850,6 +1851,11 @@
       <div id="sk-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
+    <section id="profiles">
+      <div class="sec-head"><h2>User profiles</h2><span class="desc">What the agent has learned about each person it talks to, if the user model is switched on. Nothing it proposes is used until it is approved; approved notes are that person's preferences, never permissions. Each person can be exported or forgotten.</span></div>
+      <div id="up-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
+
     <section id="traces">
       <div class="sec-head"><h2>Traces</h2><span class="desc">What the native agents did, run by run: each model call, tool call, approval and error with how long it took and how many tokens it used. Traces record the shape of a run, never prompts, replies or tool output.</span></div>
       <div id="tr-root"><p class="cardnote">Connecting to the ABP server…</p></div>
@@ -2557,6 +2563,7 @@
 <script src="evals-panel.js"></script>
 <script src="sns-panel.js"></script>
 <script src="skills-panel.js"></script>
+<script src="profiles-panel.js"></script>
 <script src="vault-panel.js"></script>
 <script src="permissions-panel.js"></script>
 <script src="vision-panel.js"></script>

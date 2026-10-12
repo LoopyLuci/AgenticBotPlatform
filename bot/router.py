@@ -525,6 +525,8 @@ class Router:
         # never send into an unlinked/wrong conversation. Other backends
         # ignore these keys.
         context = dict(context or {})
+        if user_id:
+            context.setdefault("user_id", user_id)       # whose profile (agent_runtime/user_model.py) this turn may use
         # The model router classifies the person's own message, not the bot's standing instructions glued in front
         # of it (those made every task of a bot with long instructions look like a long coding request).
         context.setdefault("route_text", prompt)

@@ -49,6 +49,30 @@ turned off.
 | `inject` | true | turn the whole thing off for backends that build no prompt of their own |
 | `auto_extract` | true | propose memories from what the person says outright |
 
+## An optional model of the person (off by default)
+
+Typed `user` memories remember what a person told a bot. The **user model** (`bot/agent_runtime/user_model.py`) goes one step
+further and is a separate, switched-off-by-default layer: a profile per bot and per user id, in four kinds -
+preferences (style, verbosity, language, tools liked or disliked), expertise, standing instructions and open goals.
+Each item carries its evidence (session, turn, a short quote), a confidence and timestamps.
+
+- **Learning is advisory.** With `native_agent.user_model.enabled: true`, every `learn_every_turns` turns (default 10) one
+  extra, tool-less model call reads only the person's own messages (never tool output or replies) and proposes items. They
+  are stored **pending** and are never used until the person approves them: in chat with `/profile pending`,
+  `/profile approve <id>`, `/profile reject <id>`, `/profile edit <id> <text>`; or on the dashboard's **User profiles**
+  screen. `auto_approve` (default off) skips the review.
+- **Use.** Approved items go into the system prompt as one labelled block after the memory block (the same text every turn
+  until the profile changes, so prompt caching holds), capped by `max_chars` (default 1200). The block says they are the
+  person's own preferences and **not permissions**. An item that reads like a grant (allow, bypass, "without asking",
+  "ignore the rules", a `system:` prefix, ...) is refused when stored or edited and skipped when the block is built.
+- **Privacy.** A profile is read and changed only by its own user (`/profile` works on the sender's profile; items are found
+  only through the instance and user they belong to). Anything that looks like a credential is refused before it is stored,
+  and the model is never shown one. `/profile show`, `export` (everything held, every status), `forget <id>` and
+  `forget all` work, also while the model is off. `retention_days` (default 0 = keep) drops items nobody refreshed.
+- `/profile` with no argument still shows the chat's bot and backend as before.
+- HTTP: `/api/user-model` (dashboard token only): overview, `profile`, `items/{id}/approve|reject`, `PUT/DELETE items/{id}`,
+  `export`, `DELETE profile`.
+
 ## What feeds the knowledge base
 
 Underneath the memories sits the knowledge tree (`bot/memoryfabric/knowledge.py`): every source's text as
