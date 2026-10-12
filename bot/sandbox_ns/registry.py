@@ -135,6 +135,7 @@ class Registry:
     def __init__(self, path: Optional[Path] = None, run_id: str = RUN_ID):
         self.run_id = run_id
         self._lock = threading.RLock()
+        self._file_lock = threading.Lock()      # one state-file write at a time within this run
         self._records: dict[int, Record] = {}
         self._cells: dict[str, Any] = {}
         self._events: deque = deque(maxlen=MAX_EVENTS)
@@ -413,28 +414,43 @@ class Registry:
         run's entries. A read-only state root (an ABP embedded with no ABP_HOME) must not be
         able to break a spawn, so a failure here is reported as False, not raised."""
         try:
-            merged = _read_state(self.path)
-            runs = merged.get("runs") if isinstance(merged.get("runs"), dict) else {}
-            mine = self.state()
-            runs[self.run_id] = mine["runs"][self.run_id]
-            payload = {"updated": round(time.time(), 3), "abp": runs[self.run_id], "runs": runs, "cells": mine["cells"]}
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self.path.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(payload, indent=1), encoding="utf-8")
-            os.replace(tmp, self.path)
+            with self._file_lock:
+                merged = _read_state(self.path)
+                runs = merged.get("runs") if isinstance(merged.get("runs"), dict) else {}
+                mine = self.state()
+                runs[self.run_id] = mine["runs"][self.run_id]
+                payload = {"updated": round(time.time(), 3), "abp": runs[self.run_id], "runs": runs, "cells": mine["cells"]}
+                self._replace_file(payload)
             return True
         except OSError:
             return False
 
+    def _replace_file(self, payload: dict) -> None:
+        """Write `payload` to a temp file of its own and move it over the state file. A shared temp name let two
+        writers (the sampler, an exit watcher) interleave their text into one file, which then failed to parse."""
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_name(f"{self.path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
+        try:
+            tmp.write_text(json.dumps(payload, indent=1), encoding="utf-8")
+            for attempt in range(20):
+                try:
+                    os.replace(tmp, self.path)       # Windows refuses while a reader has the file open
+                    return
+                except PermissionError:
+                    if attempt == 19:
+                        raise
+                    time.sleep(0.02)
+        finally:
+            tmp.unlink(missing_ok=True)
+
     def clear_state(self) -> None:
         """This run's entries are removed from the file (used at exit)."""
         try:
-            merged = _read_state(self.path)
-            runs = merged.get("runs") if isinstance(merged.get("runs"), dict) else {}
-            runs.pop(self.run_id, None)
-            tmp = self.path.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps({"updated": round(time.time(), 3), "runs": runs}, indent=1), encoding="utf-8")
-            os.replace(tmp, self.path)
+            with self._file_lock:
+                merged = _read_state(self.path)
+                runs = merged.get("runs") if isinstance(merged.get("runs"), dict) else {}
+                runs.pop(self.run_id, None)
+                self._replace_file({"updated": round(time.time(), 3), "runs": runs})
         except OSError:
             pass
 

@@ -157,8 +157,8 @@ def repair_database(*, allow_restore: bool = True) -> dict[str, Any]:
             copied = _salvage(quarantine / path.name, salvaged)
             if backup.check_sqlite(salvaged) == "ok":
                 for suffix in ("-wal", "-shm"):
-                    Path(str(path) + suffix).unlink(missing_ok=True)
-                salvaged.replace(path)
+                    backup.retry_while_open(lambda suffix=suffix: Path(str(path) + suffix).unlink(missing_ok=True))
+                backup.retry_while_open(lambda: salvaged.replace(path))
                 steps.append(f"salvaged {sum(copied.values())} row(s) across {len(copied)} table(s) into a fresh file")
                 db.get_conn()
                 return _done(True, steps, quarantine)

@@ -65,6 +65,23 @@ def _file_sources() -> dict[str, Path]:
     return out
 
 
+def retry_while_open(action, *, attempts: int = 40):
+    """Runs a file operation that swaps a live database. Windows refuses to move or replace a file any connection
+    still has open (WinError 32), and a thread of this process may open its own connection to it between our
+    close_conn() and the swap (a background writer logging an audit row). Each refusal closes every connection
+    again and tries once more; an operation that keeps failing is a real problem and raises."""
+    from bot import db
+
+    for attempt in range(attempts):
+        try:
+            return action()
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            db.close_conn()
+            time.sleep(0.05)
+
+
 def _sha256(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as f:
@@ -295,8 +312,8 @@ def restore_backup(name: str, *, parts: tuple[str, ...] = ("db", "config", "secr
         for suffix in ("", "-wal", "-shm"):
             old = Path(str(live) + suffix)
             if old.exists():
-                shutil.move(str(old), str(quarantine / (live.name + suffix)))
-        shutil.copy2(backup_file, live)
+                retry_while_open(lambda old=old, suffix=suffix: shutil.move(str(old), str(quarantine / (live.name + suffix))))
+        retry_while_open(lambda: shutil.copy2(backup_file, live))
         restored.append(str(live))
 
     if "db" in parts:
