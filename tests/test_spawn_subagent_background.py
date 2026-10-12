@@ -56,7 +56,7 @@ def _patch_inherited_backend(monkeypatch, backend):
 
 def test_background_returns_immediately_without_waiting_for_children(temp_db, monkeypatch):
     instance_id = _create_instance()
-    backend = _SlowBackend(delay_s=0.2)
+    backend = _SlowBackend(delay_s=2.0)  # far beyond any scheduling delay on a busy machine
     _patch_inherited_backend(monkeypatch, backend)
 
     async def scenario():
@@ -70,7 +70,7 @@ def test_background_returns_immediately_without_waiting_for_children(temp_db, mo
     result, elapsed = _run(scenario())
     assert result["dispatch_id"]
     assert result["children"] == [{"index": 0, "goal": "a"}, {"index": 1, "goal": "b"}]
-    assert elapsed < 0.1  # nowhere near the backend's own 0.2s delay per child
+    assert elapsed < 1.0  # nowhere near the backend's own 2s delay per child
 
 
 def test_background_children_are_visible_running_then_finished(temp_db, monkeypatch):
