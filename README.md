@@ -59,6 +59,7 @@ this is just the map:
 | **Evals** | The agent eval harness's saved live runs: model, pass rate, calls, tokens, time, and the tasks that failed (also `python -m abp_agenteval page --reports`). |
 | **Sandbox** | What ABP has running right now and which part of ABP started it, with limits, recent kills and what this OS can enforce; stop a cell after a confirm. |
 | **Modules** | Programs ABP drives as modules (see [docs/modules/modkit.md](docs/modules/modkit.md)): add one from a git URL, **Check for updates** (fetch, fast-forward only, a diff of its operations, hand edits kept), and **Assist setup** (model-proposed descriptions and input types you pick from before anything is written). |
+| **Studio** | Model-generated variants of ABP's own screens, previewed and rated; a variant is applied only after it passes a test gate on a temporary copy (validators, parity, leak guard, `node --check`, the screens' own tests). |
 
 ## Documentation
 
