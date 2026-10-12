@@ -1380,12 +1380,56 @@ async def cmd_commands(ctx: CmdContext, args: list[str]) -> str:
     return f"{text}\n\n{extra}" if extra and page == 1 else text
 
 
+_PROFILE_SUBS = ("show", "pending", "approve", "reject", "edit", "forget", "export")
+
+
+def _user_profile_cmd(ctx: CmdContext, args: list[str]) -> str:
+    """`/profile show | pending | approve <id> | reject <id> | edit <id> <text> | forget <id>|all | export`: the person's
+    own profile in this bot (agent_runtime/user_model.py). It only ever reads and changes the sender's own."""
+    from bot.agent_runtime import user_model as um
+
+    sub, iid, uid = args[0].lower(), ctx.instance_id, ctx.user_id
+    if not uid:
+        return "I can't tell who you are in this chat, so there is no profile to show."
+    try:
+        if sub == "forget" and len(args) == 2 and args[1].lower() == "all":
+            return f"Forgot everything about you in this bot ({um.forget_all(iid, uid)} item(s))."
+        if sub == "export":
+            import json
+
+            return json.dumps(um.export(iid, uid), indent=1, default=str)
+        if sub in ("approve", "reject", "forget") and len(args) == 2 and args[1].isdigit():
+            if sub == "forget":
+                um.forget_item(iid, uid, int(args[1]))
+                return f"Forgot #{args[1]}."
+            um.decide(iid, uid, int(args[1]), sub == "approve")
+            return f"{'Approved' if sub == 'approve' else 'Rejected'} #{args[1]}."
+        if sub == "edit" and len(args) >= 3 and args[1].isdigit():
+            item = um.edit_item(iid, uid, int(args[1]), " ".join(args[2:]))
+            return f"Updated #{item['id']} and approved it."
+        if sub in ("show", "pending") and len(args) == 1:
+            if not um.enabled():
+                return "The user model is off for this ABP (native_agent.user_model.enabled). Nothing is learned or used."
+            items = um.list_items(iid, uid, "pending" if sub == "pending" else None)
+            if sub == "show":
+                items = [i for i in items if i["status"] != "rejected"]
+            if not items:
+                return "Nothing pending." if sub == "pending" else "No profile yet."
+            return ("Pending (not used until you approve):" if sub == "pending" else "Your profile (pending items are not used):") + "\n" + "\n".join(
+                f"  #{i['id']} [{i['kind']}{'' if i['status'] == 'approved' else ', ' + i['status']}] {i['text']}" for i in items)
+    except ValueError as exc:
+        return str(exc)
+    return "Usage: /profile show | pending | approve <id> | reject <id> | edit <id> <text> | forget <id> | forget all | export"
+
+
 async def cmd_profile(ctx: CmdContext, args: list[str]) -> str:
     """Shows this chat's active bot instance name and backend — the closest
     equivalent to Hermes's /profile (active profile name + home directory),
     adapted since AgenticBotPlatform's unit is a bot instance, not a CLI profile."""
     if ctx.instance_id is None:
         return "This chat isn't linked to a bot instance."
+    if args and args[0].lower() in _PROFILE_SUBS:
+        return _user_profile_cmd(ctx, args)
     from bot import bot_instances
 
     instance = bot_instances.get_instance(ctx.instance_id)

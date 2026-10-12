@@ -213,6 +213,8 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.dashboard.memory_api", "bot.memoryfabric.store", "bot.memoryfabric.knowledge", "bot.memoryfabric.sources",
     "bot.memoryfabric.vault", "bot.memoryfabric.diff", "bot.memoryfabric.service", "bot.memoryfabric.extract",
     "bot.memoryfabric.rules",
+    # The user model: the routes register once; user_model.py keeps its table-ready marker, and is imported by denied modules.
+    "bot.dashboard.user_model_api", "bot.agent_runtime.user_model",
     # Privacy mode: routes register once; privacy.py caches its settings file. TokenJuice keeps compacted originals.
     "bot.dashboard.privacy_api", "bot.privacy", "bot.agent_runtime.tokenjuice",
     # The DNS resolver keeps its DNS-over-HTTPS connection open.

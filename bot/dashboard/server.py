@@ -934,6 +934,11 @@ def build_app() -> FastAPI:
     # The memory fabric (/api/memory/*; bot/memoryfabric): memories and conversations shared by every model.
     _area_routes("memoryfabric", "memory_api", _require_token)
 
+    # The optional user model (/api/user-model; bot/agent_runtime/user_model.py): per-person profiles awaiting review.
+    from bot.dashboard import user_model_api
+
+    user_model_api.register(app, _require_token)
+
     # Privacy mode (/api/privacy; bot/privacy.py): every model call and agent tool kept on this machine.
     from bot.dashboard import privacy_api
 

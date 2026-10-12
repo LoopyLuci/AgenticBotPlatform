@@ -18,7 +18,7 @@
 | P0 | Foundations: eval harness, traces, `ToolSpec`, prompt builder, streaming | **Built** (the harness has now been run live, on one free model — see below) |
 | P1 | Core coding toolset and a better loop | **Built** (an interactive PTY is not) |
 | P2 | Permissions, sandboxing, prompt-injection defence, hooks v2 | **Built**, including `network: none` on every backend (security.md) |
-| P3 | Context and memory | **Built** (embeddings are optional and need a ModelMistress hub; no tree-sitter, no user model) |
+| P3 | Context and memory | **Built** (embeddings are optional and need a ModelMistress hub; no tree-sitter; the user model is built but off by default) |
 | P4 | Agents, skills and commands | **Built** (no registry; git fetch untested against a real remote) |
 | PM | Model knowledge, limits and usage (added later) | **Built** (API, chat, and the Usage & limits screen in both UIs) |
 | P5 | Code intelligence and developer surfaces | **Built**, including the VS Code extension (none of it run against Zed, pyright, a GitHub runner or the real OpenCode / OpenClaw) |
@@ -60,7 +60,7 @@ Matrix, WhatsApp); vision/PDF input, prompt-cache telemetry, one-shot compaction
 | Context | char-count compaction once per turn; system prompt = memory + skills | mid-loop compaction, hierarchical project rules, repo map |
 | Permissions | binary "dangerous → ask" | pattern rules, modes, persisted allows |
 | Hooks | 10 events, input rewriting, command / http / mcp_tool / prompt / agent hooks, async mode | ~20 events |
-| Memory | approved-facts summary | searchable sessions, user model |
+| Memory | approved-facts summary, typed memories, searchable sessions, an optional approved user model (off by default) | nothing planned |
 | Skills | descriptive text only | SKILL.md standard with resources, registries, learning |
 | Agent definitions | personas are metadata | markdown-defined named agents |
 | Code intelligence | none | LSP, formatters, editor protocol |
@@ -159,7 +159,7 @@ and unit tests).
 | `code_search`: SQLite FTS5 index per workspace, incremental, identifier parts (`refresh_token`, `parseHttp`) searchable, BM25 ranking | Built. Plus an optional semantic layer: chunks (40-line windows) are embedded through the local ModelMistress hub's `/v1/embeddings` (`mm-embed-1`, query instruction prefix), stored as float32 blobs in the same SQLite file, refreshed per changed file with a per-search cap, and merged with BM25 by reciprocal-rank fusion. No hub, or any error, means keyword-only as before (`native_agent.code_search.embeddings: false` turns it off). Not run against a real hub yet |
 | `session_search`: FTS5 over earlier conversations of the same bot instance (never another instance's); cleared conversations disappear from it | Built |
 | Typed memories (user, feedback, project, reference, fact), de-duplication (same words and numbers, so "port 8080" and "port 8081" stay separate), fading from the prompt with age unless re-confirmed, `/memory list / forget`, approval gate kept | Built. Fading never deletes; only a person deletes |
-| Optional user model (Hermes/Honcho-style) | **Not built**; typed `user` memories are the nearest thing |
+| Optional user model (Hermes/Honcho-style): per bot and user, preferences / expertise / standing instructions / open goals with evidence, confidence and timestamps; proposed by one tool-less model call every N turns, **pending until the person approves** (`/profile`, dashboard "User profiles"); approved items go into the prompt as preferences, never permissions; secrets scrubbed, export, forget, retention | Built, **off by default** (`native_agent.user_model.enabled`). Not run against a live model; learning quality is unmeasured |
 | Eval: `search_by_concept`, `orient_with_repo_map` | Built |
 
 ### P4 — Agents, skills, commands (M–L) — built; see [skills-and-agents.md](skills-and-agents.md)

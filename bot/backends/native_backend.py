@@ -283,7 +283,7 @@ class NativeAgentBackend(Backend):
             instance_id, workspace=workspace, session_context=session_start_context,
             agent_prompt=context.get("agent_prompt"),
             include_agents=(allowed_tools is None or "spawn_subagent" in allowed_tools),
-            model_line=_model_line(self.transport, self.model),
+            model_line=_model_line(self.transport, self.model), user_id=context.get("user_id"),
         )
 
         # Plan mode (Phase G of the Claude API/Claude Code parity plan) —
@@ -498,6 +498,13 @@ class NativeAgentBackend(Backend):
                     await skill_learning.maybe_draft(
                         transport=active_transport, model=active_model, history=history, session=session_key,
                         tool_calls=tool_calls_made, run_id=trace.active().run_id or "")
+                from bot.agent_runtime import user_model
+
+                if user_model.enabled() and context.get("user_id"):
+                    # Every few turns: proposals about the person, pending until they approve (never used before that).
+                    await user_model.maybe_learn(
+                        transport=active_transport, model=active_model, history=history, session=session_key,
+                        instance_id=instance_id, user_id=context.get("user_id"))
                 raw = {"total_tokens": total_tokens}
                 if meter.budget.on:
                     raw["cost_usd"] = round(meter.usd, 6)

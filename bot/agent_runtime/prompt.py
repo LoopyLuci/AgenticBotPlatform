@@ -79,7 +79,7 @@ def _is_git_repo(path: Path) -> bool:
 def sections(instance_id: Optional[int], *, workspace: Optional[Path] = None,
              session_context: Optional[str] = None, now: Optional[_dt.datetime] = None,
              agent_prompt: Optional[str] = None, include_agents: bool = False,
-             model_line: Optional[str] = None) -> list[tuple[str, str]]:
+             model_line: Optional[str] = None, user_id=None) -> list[tuple[str, str]]:
     """(name, text) for every non-empty section, in prompt order."""
     cfg = _config()
     out: list[tuple[str, str]] = []
@@ -117,6 +117,13 @@ def sections(instance_id: Optional[int], *, workspace: Optional[Path] = None,
         memory = memory_fabric.memory_block(instance_id) or bot_memory.approved_summary(instance_id)
         if memory:
             out.append(("memory", memory))
+        if user_id is not None:
+            # The person's approved profile (off by default; user_model.py): preferences, never permissions.
+            from bot.agent_runtime import user_model
+
+            profile = user_model.prompt_block(instance_id, user_id)
+            if profile:
+                out.append(("user_model", profile))
     # The person's goals and the tool-scoped rules hold for every agent, a bot's or not (bot/memoryfabric/rules.py).
     from bot.memoryfabric import rules as memory_rules
 
@@ -139,7 +146,8 @@ def sections(instance_id: Optional[int], *, workspace: Optional[Path] = None,
 
 def build(instance_id: Optional[int], *, workspace: Optional[Path] = None,
           session_context: Optional[str] = None, now: Optional[_dt.datetime] = None,
-          agent_prompt: Optional[str] = None, include_agents: bool = False, model_line: Optional[str] = None) -> str:
+          agent_prompt: Optional[str] = None, include_agents: bool = False, model_line: Optional[str] = None,
+          user_id=None) -> str:
     return "\n\n".join(text for _, text in sections(
         instance_id, workspace=workspace, session_context=session_context, now=now,
-        agent_prompt=agent_prompt, include_agents=include_agents, model_line=model_line))
+        agent_prompt=agent_prompt, include_agents=include_agents, model_line=model_line, user_id=user_id))

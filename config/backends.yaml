@@ -252,6 +252,14 @@ native_agent:
   skill_learning:
     enabled: false
     min_tool_calls: 8
+  # Optional model of the person (preferences, expertise, standing instructions, goals) per bot and user. Proposals wait
+  # for that person's approval; approved items are preferences in the prompt, never permissions. See docs/memory.md.
+  user_model:
+    enabled: false
+    auto_approve: false      # use proposals without asking; leave off
+    learn_every_turns: 10
+    max_chars: 1200
+    retention_days: 0        # 0 keeps items until forgotten
   max_concurrent_children: 6
   # Process-wide ceiling on live spawn_subagent children across EVERY
   # dispatch, not just one call's own max_concurrent_children — closes a

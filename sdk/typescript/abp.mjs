@@ -542,6 +542,28 @@ export const operations = {
   ],
   "query_params": []
  },
+ "DELETE /api/user-model/items/{item_id}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/user-model/items/{item_id}",
+  "path_params": [
+   "item_id"
+  ],
+  "query_params": [
+   "instance_id",
+   "user_id"
+  ]
+ },
+ "DELETE /api/user-model/profile": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/user-model/profile",
+  "path_params": [],
+  "query_params": [
+   "instance_id",
+   "user_id"
+  ]
+ },
  "DELETE /api/vault/{name}": {
   "body": false,
   "method": "DELETE",
@@ -3884,6 +3906,34 @@ export const operations = {
    "repo_id"
   ]
  },
+ "GET /api/user-model": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/user-model",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/user-model/export": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/user-model/export",
+  "path_params": [],
+  "query_params": [
+   "instance_id",
+   "user_id"
+  ]
+ },
+ "GET /api/user-model/profile": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/user-model/profile",
+  "path_params": [],
+  "query_params": [
+   "instance_id",
+   "user_id",
+   "status"
+  ]
+ },
  "GET /api/vault": {
   "body": false,
   "method": "GET",
@@ -7132,6 +7182,24 @@ export const operations = {
   ],
   "query_params": []
  },
+ "POST /api/user-model/items/{item_id}/approve": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/user-model/items/{item_id}/approve",
+  "path_params": [
+   "item_id"
+  ],
+  "query_params": []
+ },
+ "POST /api/user-model/items/{item_id}/reject": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/user-model/items/{item_id}/reject",
+  "path_params": [
+   "item_id"
+  ],
+  "query_params": []
+ },
  "POST /api/validate-field": {
   "body": true,
   "method": "POST",
@@ -7627,6 +7695,15 @@ export const operations = {
   "path_params": [
    "session_id",
    "index"
+  ],
+  "query_params": []
+ },
+ "PUT /api/user-model/items/{item_id}": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/user-model/items/{item_id}",
+  "path_params": [
+   "item_id"
   ],
   "query_params": []
  },
@@ -14730,6 +14807,83 @@ export const operations = {
   "method": "GET",
   "path": "/api/ui/manifest",
   "path_params": [],
+  "query_params": []
+ },
+ "um_approve_api_user_model_items__item_id__approve_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/user-model/items/{item_id}/approve",
+  "path_params": [
+   "item_id"
+  ],
+  "query_params": []
+ },
+ "um_edit_api_user_model_items__item_id__put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/user-model/items/{item_id}",
+  "path_params": [
+   "item_id"
+  ],
+  "query_params": []
+ },
+ "um_export_api_user_model_export_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/user-model/export",
+  "path_params": [],
+  "query_params": [
+   "instance_id",
+   "user_id"
+  ]
+ },
+ "um_forget_all_api_user_model_profile_delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/user-model/profile",
+  "path_params": [],
+  "query_params": [
+   "instance_id",
+   "user_id"
+  ]
+ },
+ "um_forget_api_user_model_items__item_id__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/user-model/items/{item_id}",
+  "path_params": [
+   "item_id"
+  ],
+  "query_params": [
+   "instance_id",
+   "user_id"
+  ]
+ },
+ "um_overview_api_user_model_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/user-model",
+  "path_params": [],
+  "query_params": []
+ },
+ "um_profile_api_user_model_profile_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/user-model/profile",
+  "path_params": [],
+  "query_params": [
+   "instance_id",
+   "user_id",
+   "status"
+  ]
+ },
+ "um_reject_api_user_model_items__item_id__reject_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/user-model/items/{item_id}/reject",
+  "path_params": [
+   "item_id"
+  ],
   "query_params": []
  },
  "unload_unit_api_runtime_units__unit__unload_post": {
