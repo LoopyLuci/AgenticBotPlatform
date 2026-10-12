@@ -32,3 +32,15 @@ Screen {
 DataTable {
     height: 1fr;
 }
+
+ConfirmScreen {
+    align: center middle;
+}
+
+#confirm-box {
+    width: 60;
+    height: auto;
+    border: round $error;
+    background: $surface;
+    padding: 1 2;
+}

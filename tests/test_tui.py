@@ -457,3 +457,262 @@ def test_a_server_without_a_ui_manifest_shows_everything(dashboard_client, monke
             assert app.units.available is False and app._unit_timer is None     # and it stops asking
 
     asyncio.run(_run())
+
+
+# ---- list-and-act screens for what abp_cli covers (bot/tui/screens/manage.py) ----------------------
+async def _wait(pilot, predicate, timeout=5.0):
+    elapsed = 0.0
+    while elapsed < timeout:
+        if predicate():
+            return
+        await pilot.pause(0.1)
+        elapsed += 0.1
+    assert predicate()
+
+
+async def _open(app, pilot, dashboard_client, screen_cls):
+    app.client = dashboard_client
+    await app.push_screen(screen_cls())
+    screen = app.screen
+    assert isinstance(screen, screen_cls)
+    await pilot.pause()
+    return screen
+
+
+def _rows(screen, prefix):
+    from textual.widgets import DataTable
+
+    return screen.query_one(f"#{prefix}-table", DataTable).row_count
+
+
+def _status(screen, prefix):
+    from textual.widgets import Label
+
+    return str(screen.query_one(f"#{prefix}-status", Label).content)
+
+
+def _set(screen, prefix, **values):
+    from textual.widgets import Input
+
+    for suffix, value in values.items():
+        screen.query_one(f"#{prefix}-{suffix}", Input).value = value
+
+
+def _press(screen, bid):
+    from textual.widgets import Button
+
+    screen.query_one(f"#{bid}", Button).press()
+
+
+def _select_first(screen, prefix):
+    from textual.widgets import DataTable
+
+    screen.query_one(f"#{prefix}-table", DataTable).move_cursor(row=0)
+
+
+async def _confirm(pilot, app, yes=True):
+    from bot.tui.screens.manage import ConfirmScreen
+
+    await _wait(pilot, lambda: isinstance(app.screen, ConfirmScreen))
+    app.screen.query_one("#confirm-yes" if yes else "#confirm-no").press()
+    await pilot.pause()
+
+
+def test_key_bindings_for_the_new_screens_are_registered_on_the_bot_list():
+    keys = {key: action for key, action, _ in BotListScreen.BINDINGS}
+    assert {keys[k] for k in "kmuibyx"} == {"hooks", "mcp", "plugins", "skills", "snapshots", "security", "peers"}
+    assert len(keys) == len(BotListScreen.BINDINGS)      # no key bound twice
+
+
+def test_hooks_screen_adds_disables_and_removes_with_confirm(dashboard_client):
+    async def _run():
+        from bot.tui.screens.manage import HooksScreen
+
+        app = AgenticBotPlatformTUI()
+        async with app.run_test(size=(140, 100)) as pilot:
+            screen = await _open(app, pilot, dashboard_client, HooksScreen)
+            assert _rows(screen, "hooks") == 0
+            _press(screen, "hooks-add")                       # nothing typed: a message, no request
+            await pilot.pause()
+            assert "required" in _status(screen, "hooks")
+            _set(screen, "hooks", event="PreToolUse", command="echo hi", matcher="Bash")
+            _press(screen, "hooks-add")
+            await _wait(pilot, lambda: _rows(screen, "hooks") == 1)
+            _select_first(screen, "hooks")
+            _press(screen, "hooks-disable")
+            await _wait(pilot, lambda: "Disabled" in _status(screen, "hooks"))
+            assert screen._rows[0]["enabled"] is False
+            _press(screen, "hooks-remove")                    # declined: the hook stays
+            await _confirm(pilot, app, yes=False)
+            assert _rows(screen, "hooks") == 1
+            _press(screen, "hooks-remove")
+            await _confirm(pilot, app, yes=True)
+            await _wait(pilot, lambda: _rows(screen, "hooks") == 0)
+            _set(screen, "hooks", event="NotAnEvent", command="x")   # the API's refusal is shown, not raised
+            _press(screen, "hooks-add")
+            await _wait(pilot, lambda: "Failed" in _status(screen, "hooks"))
+
+    asyncio.run(_run())
+
+
+def test_mcp_screen_adds_external_without_showing_the_token_and_removes_it(dashboard_client, monkeypatch):
+    from bot.agent_runtime import mcp_client
+
+    async def _no_connect(name):
+        return False
+
+    monkeypatch.setattr(mcp_client, "connect", _no_connect)
+
+    async def _run():
+        from textual.widgets import DataTable, Input
+
+        from bot.tui.screens.manage import McpScreen
+
+        app = AgenticBotPlatformTUI()
+        async with app.run_test(size=(140, 100)) as pilot:
+            screen = await _open(app, pilot, dashboard_client, McpScreen)
+            _set(screen, "mcp", name="tui-ext", transport="stdio", command="python", args='["-m", "srv"]',
+                 token="SECRET-TOKEN-VALUE")
+            _press(screen, "mcp-add")
+            await _wait(pilot, lambda: any(r["name"] == "tui-ext" for r in screen._rows))
+            row = next(r for r in screen._rows if r["name"] == "tui-ext")
+            assert row["kind"] == "external" and row["has_auth_token"] is True
+            table = screen.query_one("#mcp-table", DataTable)
+            shown = " ".join(str(c) for r in range(table.row_count) for c in table.get_row_at(r))
+            assert "SECRET-TOKEN-VALUE" not in shown and "set" in shown
+            assert screen.query_one("#mcp-token", Input).value == ""          # cleared once sent
+            table.move_cursor(row=[r["name"] for r in screen._rows].index("tui-ext"))
+            _press(screen, "mcp-disable")
+            await _wait(pilot, lambda: not next(r for r in screen._rows if r["name"] == "tui-ext")["enabled"])
+            _press(screen, "mcp-remove")
+            await _confirm(pilot, app)
+            await _wait(pilot, lambda: not any(r["name"] == "tui-ext" for r in screen._rows))
+
+    asyncio.run(_run())
+
+
+def test_plugins_screen_installs_disables_and_removes_with_confirm(dashboard_client, tmp_path):
+    plugin = tmp_path / "tui_screen_plugin.py"
+    plugin.write_text("PLUGIN_DESCRIPTION = 'x'\n\ndef setup(api):\n    pass\n", encoding="utf-8")
+
+    async def _run():
+        from bot.tui.screens.manage import PluginsScreen
+
+        app = AgenticBotPlatformTUI()
+        async with app.run_test(size=(140, 100)) as pilot:
+            screen = await _open(app, pilot, dashboard_client, PluginsScreen)
+            _set(screen, "plugins", path=str(plugin))
+            _press(screen, "plugins-add")
+            await _wait(pilot, lambda: any(r["name"] == "tui_screen_plugin" for r in screen._rows))
+            _select_first(screen, "plugins")
+            _press(screen, "plugins-disable")
+            await _wait(pilot, lambda: "Disabled" in _status(screen, "plugins"))
+            _press(screen, "plugins-remove")
+            await _confirm(pilot, app)
+            await _wait(pilot, lambda: _rows(screen, "plugins") == 0)
+
+    asyncio.run(_run())
+
+
+def test_skills_screen_adds_and_removes_with_confirm(dashboard_client):
+    iid = _create_instance(name="skill-tui", platform="app", backend="native_agent", credentials={}, allowed_user_ids=[])
+
+    async def _run():
+        from bot.tui.screens.manage import SkillsScreen
+
+        app = AgenticBotPlatformTUI()
+        async with app.run_test(size=(140, 100)) as pilot:
+            screen = await _open(app, pilot, dashboard_client, SkillsScreen)
+            _set(screen, "skills", instance=str(iid), name="greet", description="says hi", content="Say hi.")
+            _press(screen, "skills-add")
+            await _wait(pilot, lambda: "Added" in _status(screen, "skills"))
+            assert "greet" in [s["name"] for s in await dashboard_client.list_skills(instance_id=iid)]
+            _set(screen, "skills", instance="", name="globalskill", description="d", content="body")
+            _press(screen, "skills-add")
+            await _wait(pilot, lambda: any(r["name"] == "globalskill" for r in screen._rows))
+            _select_first(screen, "skills")
+            _press(screen, "skills-remove")
+            await _confirm(pilot, app)
+            await _wait(pilot, lambda: not any(r["name"] == "globalskill" for r in screen._rows))
+
+    asyncio.run(_run())
+
+
+def test_snapshots_screen_creates_restores_and_deletes_with_confirm(dashboard_client, monkeypatch, tmp_path):
+    from bot import snapshots
+
+    monkeypatch.setattr(snapshots, "SNAPSHOTS_ROOT", tmp_path / "snapshots")
+    # restoring would overwrite the live config/db: stub the restore itself; the confirm and the API route are what is tested
+    restored = []
+    monkeypatch.setattr(snapshots, "restore_snapshot", lambda name, *a, **k: restored.append(name) or {"name": name})
+
+    async def _run():
+        from bot.tui.screens.manage import SnapshotsScreen
+
+        app = AgenticBotPlatformTUI()
+        async with app.run_test(size=(140, 100)) as pilot:
+            screen = await _open(app, pilot, dashboard_client, SnapshotsScreen)
+            _set(screen, "snapshots", label="tui")
+            _press(screen, "snapshots-add")
+            await _wait(pilot, lambda: _rows(screen, "snapshots") == 1)
+            _select_first(screen, "snapshots")
+            _press(screen, "snapshots-restore")
+            await _confirm(pilot, app, yes=False)
+            assert restored == []
+            _press(screen, "snapshots-restore")
+            await _confirm(pilot, app)
+            await _wait(pilot, lambda: len(restored) == 1)
+            _press(screen, "snapshots-delete")
+            await _confirm(pilot, app)
+            await _wait(pilot, lambda: _rows(screen, "snapshots") == 0)
+
+    asyncio.run(_run())
+
+
+def test_security_screen_adds_and_removes_an_allowed_user_with_confirm(dashboard_client):
+    async def _run():
+        from bot.tui.screens.manage import SecurityScreen
+
+        app = AgenticBotPlatformTUI()
+        async with app.run_test(size=(140, 100)) as pilot:
+            screen = await _open(app, pilot, dashboard_client, SecurityScreen)
+            _set(screen, "security", telegram_id="abc")
+            _press(screen, "security-add")
+            await pilot.pause()
+            assert "numeric" in _status(screen, "security")
+            _set(screen, "security", telegram_id="424242", name="Ann")
+            _press(screen, "security-add")
+            await _wait(pilot, lambda: any(r["telegram_id"] == 424242 for r in screen._rows))
+            screen.query_one("#security-table").move_cursor(row=[r["telegram_id"] for r in screen._rows].index(424242))
+            _press(screen, "security-remove")
+            await _confirm(pilot, app)
+            await _wait(pilot, lambda: not any(r["telegram_id"] == 424242 for r in screen._rows))
+
+    asyncio.run(_run())
+
+
+def test_peers_screen_lists_and_unlinks_with_confirm(dashboard_client):
+    from bot import db
+
+    key_id, _ = db.create_api_key("peer: Server B", kind="peer_server")
+    db.create_peer_server("Server B", "http://10.0.2.15:8787", "unused", key_id)
+
+    async def _run():
+        from bot.tui.screens.manage import PeersScreen
+
+        app = AgenticBotPlatformTUI()
+        async with app.run_test(size=(140, 100)) as pilot:
+            screen = await _open(app, pilot, dashboard_client, PeersScreen)
+            assert _rows(screen, "peers") == 1
+            _press(screen, "peers-add")                       # no token typed
+            await pilot.pause()
+            assert "required" in _status(screen, "peers")
+            _select_first(screen, "peers")
+            _press(screen, "peers-remove")
+            await _confirm(pilot, app, yes=False)
+            assert _rows(screen, "peers") == 1
+            _press(screen, "peers-remove")
+            await _confirm(pilot, app)
+            await _wait(pilot, lambda: _rows(screen, "peers") == 0)
+
+    asyncio.run(_run())

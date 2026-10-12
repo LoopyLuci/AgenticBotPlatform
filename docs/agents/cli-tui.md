@@ -61,6 +61,18 @@ what's still dashboard/desktop-app-only.
   ("notify") or applies it automatically ("auto") — never touches this machine's own `~/.ssh/config`
   or connection registry, only the vendored submodule's own files.
 
+- **Hooks, MCP servers, plugins, skills, snapshots, allowed users, peers** (`bot/tui/screens/manage.py`,
+  one shared list-and-act base): each screen lists, adds, enables/disables where the CLI does, and
+  asks for a confirmation (a Yes/No dialog) before anything destructive; an API error is shown in the
+  status line, never raised. From the bot list: `k` Hooks, `m` MCP (internal and external servers in
+  one list, add/remove external, logs for internal), `u` Plugins (install from a path), `i` Skills
+  (global, or one bot's with an instance id), `b` Snapshots (create, restore, delete), `y` Security
+  (allowed users), `x` Peers (link with a pairing token, overview, bots, unlink). Secrets are never
+  shown: the auth token and the pairing token are password inputs, cleared once sent, and the lists show
+  only "token set". Not in the TUI yet from those CLI groups: MCP tool pins, skill packs/quarantine/drafts,
+  plugin creation from inline code, hook instance scoping, generating a peer pairing token (it is a
+  credential; use `abp_cli peers pairing-token`).
+
 **CLI only, no TUI screen yet** (all real, all tested against the live dashboard app — just not
 given a Textual screen in this phase):
 
@@ -155,8 +167,8 @@ given a Textual screen in this phase):
 ## What's still dashboard/desktop-app-only
 
 The memory fabric, running agents, the tool inventory, approvals, routing, model knowledge,
-privacy/DNS, `doctor`, the terminal panel, hooks, plugins, skills, MCP, security/devices,
-snapshots/env/config/diagnostics, peers and kanban have no TUI screen yet (CLI-only, see above) — a
+privacy/DNS, `doctor`, the terminal panel, devices/mobile keys, permission rules,
+env/config/diagnostics and kanban have no TUI screen yet (CLI-only, see above) — a
 later pass, not attempted half-way here. Also still GUI-only: Android push/mobile-key QR pairing
 UI, the modules page's own hub/job viewer beyond what `modules status|ops|logs` prints, and the
 Studio, Cluster and Sentinel pages, and extensions' pages, (no CLI surface at all for those route

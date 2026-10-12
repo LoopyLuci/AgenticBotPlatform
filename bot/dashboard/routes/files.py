@@ -578,7 +578,7 @@ def register(app: FastAPI) -> None:
                 payload.get("name", ""),
                 payload.get("description", ""),
                 payload.get("content", ""),
-                global_=bool(payload.get("global_")),
+                global_=bool(payload.get("global_", payload.get("global"))),  # dashboard_client (CLI, TUI) sends "global"
             )
         except bot_skills.SkillError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
