@@ -65,7 +65,7 @@ def _summary(start_ev: dict, end: Optional[dict]) -> dict:
             "instance_id": d.get("instance_id"), "session": d.get("session"), "source": d.get("source"),
             "parent_run": d.get("parent_run"), "effort": d.get("effort"), "tools_available": d.get("tools"),
             "duration_ms": (end or {}).get("duration_ms"), "iterations": (end or {}).get("iterations"),
-            "tokens": (end or {}).get("tokens"), "error": (end or {}).get("error") or None}
+            "tokens": (end or {}).get("tokens"), "usd": (end or {}).get("usd"), "error": (end or {}).get("error") or None}
 
 
 def register(app: FastAPI, read_auth: Callable) -> None:
@@ -135,6 +135,8 @@ def register(app: FastAPI, read_auth: Callable) -> None:
         totals = {
             "llm_calls": len(llm), "tool_calls": len(tools),
             "tokens": sum(int(d.get("tokens") or 0) for d in llm),
+            "usd": (round(sum(float(d["usd"]) for d in llm if d.get("usd") is not None), 6)
+                    if any(d.get("usd") is not None for d in llm) else None),
             "cache_read": sum(int(d.get("cache_read") or 0) for d in llm),
             "cache_create": sum(int(d.get("cache_create") or 0) for d in llm),
             "llm_ms": sum(int(d.get("duration_ms") or 0) for d in llm),

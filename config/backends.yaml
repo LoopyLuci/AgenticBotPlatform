@@ -152,6 +152,13 @@ native_agent:
     max_iterations: 30
     max_seconds: 0
     max_tokens: 0
+  # A money limit for one turn (bot/agent_runtime/turn_budget.py); 0 = off. Prices come from what ABP has
+  # already saved (never a lookup mid-turn); models on this computer or your own network cost nothing.
+  # Reaching it ends the turn the same way a token limit does. Helper agents' spending counts too.
+  budget:
+    max_usd_per_turn: 0
+    unknown_price: allow     # allow = carry on and note it once in the trace; stop = end the turn
+    prices: {}               # e.g. {"openrouter/some-model": {input: 0.5, output: 1.5}} in $ per million tokens
   # Changing an existing file (edit_file, apply_patch, write_file over a file) requires
   # that the agent read it earlier in the session and that it has not changed since.
   require_read_before_write: true

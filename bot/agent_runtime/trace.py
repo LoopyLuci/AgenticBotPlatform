@@ -34,9 +34,9 @@ logger = logging.getLogger("bot.agent_runtime.trace")
 TRACE_KINDS: dict[str, dict[str, type]] = {
     "agent.run.start": {"agent": str, "model": str, "transport": str, "instance_id": int, "session": str,
                         "tools": int, "effort": str, "parent_run": str, "source": str},
-    "agent.run.end": {"status": str, "duration_ms": int, "iterations": int, "tokens": int, "error": str},
+    "agent.run.end": {"status": str, "duration_ms": int, "iterations": int, "tokens": int, "usd": float, "error": str},
     "llm.call": {"iteration": int, "model": str, "duration_ms": int, "tokens": int, "tool_calls": int,
-                 "stop": str, "cache_read": int, "cache_create": int, "streamed": int},
+                 "stop": str, "cache_read": int, "cache_create": int, "streamed": int, "usd": float},
     "tool.call": {"tool": str, "status": str, "duration_ms": int, "approval": str, "error": str,
                   "target": str, "arg_chars": int, "output_chars": int, "read_only": int},
     "approval": {"tool": str, "decision": str, "reason": str},
@@ -101,6 +101,7 @@ class Trace:
         self.started = time.monotonic()
         self.iterations = 0
         self.tokens = 0
+        self.usd: Optional[float] = None    # None until a call with a known price
         self._store = store
         self._token: Optional[contextvars.Token] = None
         parent = _current.get()
@@ -129,14 +130,17 @@ class Trace:
 
     # -- events ------------------------------------------------------------
     def llm_call(self, *, model: str, duration_ms: int, tokens: Optional[int] = None, tool_calls: int = 0,
-                 cache_read: Optional[int] = None, cache_create: Optional[int] = None, streamed: bool = False) -> None:
+                 cache_read: Optional[int] = None, cache_create: Optional[int] = None, streamed: bool = False,
+                 usd: Optional[float] = None) -> None:
         self.iterations += 1
         self.tokens += tokens or 0
+        if usd is not None:
+            self.usd = (self.usd or 0.0) + usd
         self._emit("llm.call", {"iteration": self.iterations, "model": model, "duration_ms": duration_ms,
                                 "tokens": tokens, "tool_calls": tool_calls,
                                 "stop": "tool_use" if tool_calls else "end_turn",
                                 "cache_read": cache_read, "cache_create": cache_create,
-                                "streamed": 1 if streamed else 0})
+                                "streamed": 1 if streamed else 0, "usd": usd})
 
     def tool_call(self, tool: str, tool_input: dict, *, status: str, duration_ms: int, output: str = "",
                   approval: str = "none", error: str = "", read_only: Optional[bool] = None) -> None:
@@ -156,7 +160,7 @@ class Trace:
 
     def end(self, status: str = "ok", error: str = "") -> None:
         self._emit("agent.run.end", {"status": status, "error": error, "iterations": self.iterations,
-                                     "tokens": self.tokens,
+                                     "tokens": self.tokens, "usd": self.usd,
                                      "duration_ms": int((time.monotonic() - self.started) * 1000)})
 
 
@@ -201,6 +205,11 @@ def run_events(run_id: str, store: Optional[EventStore] = None) -> list[dict]:
     return (store or get_store()).events(run_id=run_id, limit=5000)
 
 
+def _usd_total(llm: list) -> Optional[float]:
+    known = [float(e["data"]["usd"]) for e in llm if e["data"].get("usd") is not None]
+    return round(sum(known), 6) if known else None
+
+
 def summarize(run_id: str, store: Optional[EventStore] = None) -> dict:
     """A run reduced to what evals and dashboards ask about."""
     evs = run_events(run_id, store)
@@ -214,6 +223,7 @@ def summarize(run_id: str, store: Optional[EventStore] = None) -> dict:
         "duration_ms": (end_ev or {}).get("data", {}).get("duration_ms"),
         "iterations": len(llm),
         "tokens": sum(int(e["data"].get("tokens") or 0) for e in llm),
+        "usd": _usd_total(llm),
         "tool_calls": [{"tool": e["data"].get("tool"), "status": e["data"].get("status"),
                         "target": e["data"].get("target", "")} for e in tools],
         "tool_counts": {t: sum(1 for e in tools if e["data"].get("tool") == t)

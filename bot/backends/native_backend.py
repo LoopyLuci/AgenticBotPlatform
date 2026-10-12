@@ -21,7 +21,7 @@ import time
 import uuid
 from typing import Optional
 
-from bot.agent_runtime import context_window, loop_guard, toolspec, usage_limits
+from bot.agent_runtime import context_window, loop_guard, toolspec, turn_budget, usage_limits
 from bot.agent_runtime.transports.base import ProviderTransport
 from bot.backends.base import Backend, BackendError, BackendResult
 
@@ -67,6 +67,8 @@ class NativeAgentBackend(Backend):
 
         # A caller may set the permission mode for this run ("plan" makes it read-only).
         mode_token = permissions.mode_var.set(ctx.get("permission_mode"))
+        # The turn's dollar meter (turn_budget.py); a sub-agent's ask() shares its parent's.
+        _meter, meter_token = turn_budget.begin()
         run = trace.begin(
             agent=self.name, model=self.model, transport=type(self.transport).__name__,
             instance_id=ctx.get("instance_id"), session=ctx.get("desktop_session_key") or "",
@@ -83,6 +85,7 @@ class NativeAgentBackend(Backend):
                 raise
             finally:
                 permissions.mode_var.reset(mode_token)
+                turn_budget.end(meter_token)
             run.end("ok")
             if run.run_id and isinstance(getattr(result, "raw", None), dict):
                 result.raw["trace_run"] = run.run_id
@@ -368,10 +371,11 @@ class NativeAgentBackend(Backend):
         cache_creation_tokens: Optional[int] = None
         cache_read_tokens: Optional[int] = None
         watch = loop_guard.Watchdog(loop_guard.limits())
+        meter = turn_budget.active() or turn_budget.Meter()
         stop_hook_blocks = 0
         tool_calls_made = 0
         while True:
-            stop_reason = watch.before_call(total_tokens)
+            stop_reason = watch.before_call(total_tokens, meter)
             if stop_reason:
                 trace.active().note(f"stopped: {stop_reason}", level="warn")
                 await hooks.run_notification("turn_stopped", f"The turn was stopped because {stop_reason}.",
@@ -379,7 +383,7 @@ class NativeAgentBackend(Backend):
                 return await self._wrap_up(
                     stop_reason, history=history, transport=active_transport, model=active_model,
                     system_prompt=system_prompt, effort=effort, timeout_s=timeout_s, session_key=session_key,
-                    total_tokens=total_tokens, lazily_created=lazily_created,
+                    total_tokens=total_tokens, lazily_created=lazily_created, meter=meter,
                 )
             if steer_queue is not None:
                 steered = []
@@ -456,10 +460,11 @@ class NativeAgentBackend(Backend):
                 if response is None:
                     raise last_exc from exc
             context_window.observe(active_model, view["chars"], response.input_tokens)
+            call_usd = meter.add(response, active_transport, active_model)
             trace.active().llm_call(
                 model=active_model, duration_ms=int((time.monotonic() - _sent_at) * 1000), tokens=response.tokens,
                 tool_calls=len(response.tool_calls), cache_read=response.cache_read_tokens,
-                cache_create=response.cache_creation_tokens, streamed=streamed,
+                cache_create=response.cache_creation_tokens, streamed=streamed, usd=call_usd,
             )
             if response.tokens:
                 total_tokens += response.tokens
@@ -494,6 +499,8 @@ class NativeAgentBackend(Backend):
                         transport=active_transport, model=active_model, history=history, session=session_key,
                         tool_calls=tool_calls_made, run_id=trace.active().run_id or "")
                 raw = {"total_tokens": total_tokens}
+                if meter.budget.on:
+                    raw["cost_usd"] = round(meter.usd, 6)
                 if lazily_created:
                     raw["desktop_session_key"] = session_key
                 if cache_creation_tokens is not None:
@@ -548,7 +555,8 @@ class NativeAgentBackend(Backend):
                 db.append_agent_message(session_key, entry["role"], entry["content"])
 
     async def _wrap_up(self, reason: str, *, history: list, transport, model: str, system_prompt: str, effort,
-                       timeout_s: float, session_key: str, total_tokens: int, lazily_created: bool) -> BackendResult:
+                       timeout_s: float, session_key: str, total_tokens: int, lazily_created: bool,
+                       meter: Optional[turn_budget.Meter] = None) -> BackendResult:
         """A turn hit a limit or got stuck. Ask for a short summary with no tools, and return it as the
         reply. Nothing is lost: the session keeps every step, so "continue" resumes."""
         from bot import db
@@ -570,9 +578,13 @@ class NativeAgentBackend(Backend):
             text = response.text.strip()
             if response.tokens:
                 raw["total_tokens"] = total_tokens + response.tokens
+            if meter is not None:
+                meter.add(response, transport, model)
         except Exception:  # noqa: BLE001 - the summary is a courtesy; failing to get one must not lose the turn
             logger.exception("native backend: could not get a wrap-up summary")
             text = ""
+        if meter is not None and meter.budget.on:
+            raw["cost_usd"] = round(meter.usd, 6)
         notice = f"(Stopped: {reason}. Say \"continue\" to carry on.)"
         return BackendResult(text=f"{text}\n\n{notice}" if text else notice, tokens=raw["total_tokens"] or None, raw=raw)
 

@@ -117,7 +117,7 @@ the schema list has a spec (met, enforced by a test); no existing test regresses
 | Shell: per-call timeout, `cwd`, background jobs with `shell_output` / `shell_list` / `shell_kill`, process-tree kill on timeout / cancel / kill, large output saved in full inside the workspace | Built and tested on Windows. Untested on POSIX |
 | Shell: interactive PTY; a shell that keeps `cd` and exported variables between calls | **Not built.** Each needs a platform-specific implementation that must be tested on each OS |
 | Loop: parallel read-only tool calls (bounded), step / time / token limits that end a turn with a summary instead of an error, repeat and all-failing detection, cancellation that answers the open tool calls so the session stays valid, repair of sessions an older crash left dangling | Built |
-| Cost budget (dollars) per turn | Not built: price lookup is a network call; token and time limits cover the need for now |
+| Cost budget (dollars) per turn (`native_agent.budget.max_usd_per_turn`, off by default) | Built. Prices come only from local data (your `budget.prices` table, "runs on this computer or network = free", the cached models.dev catalog), never a lookup during a turn. Ends the turn like the token limit; sub-agents spend from the same budget; the cost is recorded in the trace. Tested against fake transports only |
 | Leaf sub-agents get the new tools | Built |
 | Eval tasks for all of the above (17 in the suite) | Built |
 

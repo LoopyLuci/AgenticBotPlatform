@@ -9,6 +9,8 @@ Limits are configurable under `native_agent.limits` (0 turns a limit off):
         max_seconds: 0          # wall-clock time for one turn
         max_tokens: 0           # tokens spent in one turn
 
+A dollar limit for a turn lives beside these, under `native_agent.budget` (see turn_budget.py).
+
 Reaching a limit is not an error. The loop asks the model for a short summary of what
 is done and what remains, returns that as the reply, and the session keeps everything,
 so "continue" picks up where it stopped.
@@ -77,7 +79,7 @@ class Watchdog:
         self._failure_streak = 0
         self.stop_reason: Optional[str] = None
 
-    def before_call(self, total_tokens: int) -> Optional[str]:
+    def before_call(self, total_tokens: int, meter=None) -> Optional[str]:
         """Called before each model call. Returns why the turn must stop, or None."""
         if self.stop_reason:
             return self.stop_reason
@@ -89,6 +91,8 @@ class Watchdog:
             reason = f"it reached the time limit of {int(lim.max_seconds)} seconds for one turn"
         elif lim.max_tokens and total_tokens >= lim.max_tokens:
             reason = f"it reached the limit of {lim.max_tokens} tokens for one turn"
+        elif meter is not None:
+            reason = meter.stop_reason()  # the dollar budget (turn_budget.py)
         if reason:
             self.stop_reason = reason
             return reason
