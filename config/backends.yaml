@@ -473,6 +473,9 @@ streaming:                       # live replies: one chat message edited as a na
   telegram: true
   discord: true
   slack: true
+  matrix: true
+  teams: true
+  googlechat: true
 voice:
   stt:
     engine: "off"                # off | openai_compatible | command

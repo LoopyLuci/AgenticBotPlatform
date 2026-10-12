@@ -32,7 +32,7 @@ from typing import Any, Optional
 import httpx
 
 from bot import bot_instances
-from bot.platforms import _jwt, _relay
+from bot.platforms import _jwt, _relay, _stream_edit
 
 logger = logging.getLogger("bot.platforms.googlechat")
 
@@ -140,6 +140,53 @@ async def send_text(instance: dict, space: str, text: str, *, thread: str = "", 
             await client.aclose()
 
 
+def _streamer(instance: dict, space: str, thread: str, client: Optional[httpx.AsyncClient]) -> Optional[_stream_edit.StreamEditor]:
+    """Live reply: one message, patched in place (spaces.messages.patch, updateMask=text) as the text arrives;
+    None when switched off. The bot replies through the Chat REST API (not the webhook response), so the new
+    message's resource name is available to edit."""
+    if not _stream_edit.streaming_enabled("googlechat"):
+        return None
+    sent: list[str] = []
+
+    async def call(method: str, url: str, **kw: Any) -> dict:
+        own = client is None
+        http = client or httpx.AsyncClient(timeout=30)
+        try:
+            account = service_account(instance)
+            token = await _tokens.get(account["client_email"],
+                                      lambda: _jwt.google_service_account_token(account, SCOPE, http))
+            r = await http.request(method, url, headers={"Authorization": f"Bearer {token}"}, **kw)
+            if r.status_code >= 300:
+                raise RuntimeError(f"google chat {method} failed: {r.status_code} {r.text[:200]}")
+            try:
+                body = r.json() if r.content else {}
+            except ValueError:
+                body = {}
+            return body if isinstance(body, dict) else {}
+        finally:
+            if own:
+                await http.aclose()
+
+    async def placeholder() -> None:
+        body: dict[str, Any] = {"text": _stream_edit.PLACEHOLDER}
+        params = {}
+        if thread:
+            body["thread"] = {"name": thread}
+            params = {"messageReplyOption": "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD"}
+        out = await call("POST", f"{API}/{space}/messages", params=params, json=body)
+        if not out.get("name"):
+            raise RuntimeError("google chat answered without a message name")
+        sent.append(str(out["name"]))
+
+    async def edit(text: str) -> None:
+        await call("PATCH", f"{API}/{sent[0]}", params={"updateMask": "text"}, json={"text": to_chat_markup(text)})
+
+    async def remove() -> None:
+        await call("DELETE", f"{API}/{sent[0]}")
+
+    return _stream_edit.StreamEditor(placeholder, edit, limit=MAX_TEXT, delete=remove)
+
+
 def welcome(event: dict) -> dict:
     """The synchronous answer when the app is added to a space or DM."""
     return {"text": "Hi! Message me here (in a space, @mention me) and I will answer. Only people on this bot's allowed list get answers."}
@@ -150,7 +197,8 @@ async def deliver(instance: dict, event: dict, *, client: Optional[httpx.AsyncCl
         await send_text(instance, event["space"], reply, thread=event["thread"], client=client)
 
     await _relay.relay(instance, "googlechat", event["space"], event["email"] or event["user"], event["text"], send,
-                       username=event["display_name"])
+                       username=event["display_name"],
+                       streamer=_streamer(instance, event["space"], event["thread"], client))
 
 
 async def run_instance(row: dict[str, Any]) -> None:

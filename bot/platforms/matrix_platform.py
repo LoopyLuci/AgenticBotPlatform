@@ -44,6 +44,7 @@ from typing import Any, Optional
 from bot import attachments, db, push
 from bot.backends.base import BackendError
 from bot.commands import CmdContext, dispatch_command
+from bot.platforms import _stream_edit
 from bot.router import router
 from bot import tasks as bg
 
@@ -80,17 +81,52 @@ class MatrixPlatformInstance:
         # mirrors Discord's per-channel dict.
         self._sessions: dict[Any, dict] = {}
 
-    async def _reply(self, room_id: str, text: str) -> None:
+    async def _reply(self, room_id: str, text: str, streamer: Optional[_stream_edit.StreamEditor] = None) -> None:
         text = text or "(empty response)"
         db.log_message(
             platform="matrix", chat_id=room_id, direction="out", source="bot",
             text=text, instance_id=self.instance_id,
         )
+        if streamer is not None and await streamer.finish(text):
+            return  # the streamed message now holds the whole reply
         for i in range(0, len(text), MATRIX_MAX_LEN):
             await self._client.room_send(
                 room_id=room_id, message_type="m.room.message",
                 content={"msgtype": "m.text", "body": text[i : i + MATRIX_MAX_LEN]},
             )
+
+    def _streamer(self, room_id: str) -> Optional[_stream_edit.StreamEditor]:
+        """Live reply for a native-agent turn: one message, replaced (m.replace) as the text arrives."""
+        if not _stream_edit.streaming_enabled("matrix"):
+            return None
+        sent: list[str] = []
+
+        async def placeholder() -> None:
+            resp = await self._client.room_send(
+                room_id=room_id, message_type="m.room.message",
+                content={"msgtype": "m.text", "body": _stream_edit.PLACEHOLDER},
+            )
+            event_id = getattr(resp, "event_id", None)
+            if not event_id:  # an ErrorResponse (or nothing): there is no event to edit
+                raise RuntimeError(f"matrix send failed: {resp}")
+            sent.append(event_id)
+
+        async def edit(text: str) -> None:
+            resp = await self._client.room_send(
+                room_id=room_id, message_type="m.room.message",
+                content={
+                    "msgtype": "m.text", "body": f" * {text}",
+                    "m.new_content": {"msgtype": "m.text", "body": text},
+                    "m.relates_to": {"rel_type": "m.replace", "event_id": sent[0]},
+                },
+            )
+            if not getattr(resp, "event_id", None):
+                raise RuntimeError(f"matrix edit failed: {resp}")
+
+        async def remove() -> None:
+            await self._client.room_redact(room_id=room_id, event_id=sent[0])
+
+        return _stream_edit.StreamEditor(placeholder, edit, limit=MATRIX_MAX_LEN - 8, delete=remove)
 
     async def _handle_media(self, room, event, kind: str) -> bool:
         """Downloads an incoming image/file/video/audio event's content and
@@ -159,17 +195,25 @@ class MatrixPlatformInstance:
             await self._reply(room.room_id, cmd_reply)
             return
 
+        streamer = self._streamer(room.room_id)
+        ask_context: dict = {}
+        if session.get("project_cwd"):
+            ask_context["cwd"] = session["project_cwd"]
+        if streamer is not None:
+            ask_context["stream_notify"] = streamer.notify
         try:
             result = await router.ask(
                 text, action_type=session.get("action_type", "quick_question"), user_id=sender,
-                context={"cwd": session["project_cwd"]} if session.get("project_cwd") else None,
+                context=ask_context or None,
                 instance_id=self.instance_id, chat_id=room.room_id,
             )
-            await self._reply(room.room_id, result.text)
+            await self._reply(room.room_id, result.text, streamer)
         except BackendError as exc:
-            await self._reply(room.room_id, f"Backend failed: {exc}")
+            await self._reply(room.room_id, f"Backend failed: {exc}", streamer)
         except Exception:  # noqa: BLE001 — never leave the user without a reply
             logger.exception("unexpected error answering a message")
+            if streamer is not None:
+                await streamer.abort()
             await self._reply(room.room_id, "Something went wrong on my side — it has been logged. Please try again.")
 
     async def _on_media(self, room, event) -> None:

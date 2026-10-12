@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, Optional
 
 from bot import db, push
 from bot.backends.base import BackendError
 from bot.commands import CmdContext, dispatch_command
+from bot.platforms._stream_edit import StreamEditor
 from bot.router import router
 from bot import tasks as bg
 
@@ -44,8 +45,10 @@ def reject(instance: dict, platform: str, sender: str) -> None:
     db.log_audit(actor=sender, action="unauthorized_attempt", detail=f"{platform}:{sender} (instance {instance['id']})")
 
 
-async def relay(instance: dict, platform: str, chat_id: str, sender: str, text: str, send: Send, *, username: str = "") -> None:
-    """Handle one message from an already-authorised sender."""
+async def relay(instance: dict, platform: str, chat_id: str, sender: str, text: str, send: Send, *, username: str = "",
+                streamer: Optional[StreamEditor] = None) -> None:
+    """Handle one message from an already-authorised sender. `streamer` (a channel that can edit its own message)
+    shows a native-agent reply live; when it has delivered the whole reply, `send` is not called."""
     text = (text or "").strip()
     if not text:
         return
@@ -56,19 +59,30 @@ async def relay(instance: dict, platform: str, chat_id: str, sender: str, text: 
     ctx = CmdContext(instance_id=instance["id"], instance_name=instance["name"], user_id=sender, chat_id=chat_id, actor=sender,
                      session=session, enforce_access=True, scope="dm")
     reply = await dispatch_command(text, ctx)
-    if reply is None:
+    asked = reply is None
+    if asked:
+        ask_context: dict = {}
+        if session.get("project_cwd"):
+            ask_context["cwd"] = session["project_cwd"]
+        if streamer is not None:
+            ask_context["stream_notify"] = streamer.notify
         try:
             result = await router.ask(text, action_type=session.get("action_type", "quick_question"), user_id=sender,
-                                      context={"cwd": session["project_cwd"]} if session.get("project_cwd") else None,
+                                      context=ask_context or None,
                                       instance_id=instance["id"], chat_id=chat_id)
             reply = result.text
         except BackendError as exc:
             reply = f"Backend failed: {exc}"
         except Exception:  # noqa: BLE001 — never leave the user without a reply
             logger.exception("unexpected error answering a message")
+            if streamer is not None:
+                await streamer.abort()
+                streamer = None
             reply = "Something went wrong on my side — it has been logged. Please try again."
     reply = reply or "(empty response)"
     db.log_message(platform=platform, chat_id=chat_id, direction="out", source="bot", text=reply, instance_id=instance["id"])
+    if asked and streamer is not None and await streamer.finish(reply):
+        return  # the streamed message now holds the whole reply
     await send(chat_id, reply)
 
 

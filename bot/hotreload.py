@@ -234,7 +234,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.platforms.email_platform", "bot.platforms.sms_platform", "bot.platforms.signal_platform", "bot.platforms.imessage_platform",
     "bot.platforms.googlechat_platform", "bot.platforms.teams_platform", "bot.platforms._jwt",  # long-running adapters
     "bot.platforms._voice",  # loaded by the long-running Discord/Slack adapters, which are not reloaded
-    "bot.platforms._stream_edit",  # likewise (Telegram handlers, Discord, Slack)
+    "bot.platforms._stream_edit",  # likewise (Telegram handlers, Discord, Slack, Matrix; Teams and Google Chat via _relay)
     "bot.agent_runtime.browser", "bot.vault", "bot.routines", "bot.approvals_view",  # a running browser / encrypted store / registered tools
     # Routines: the routes register once, and routines_view.py holds the run-history bookkeeping
     # a page's "run now" writes into.
