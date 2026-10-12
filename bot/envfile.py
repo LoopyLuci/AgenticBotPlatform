@@ -176,13 +176,31 @@ def backup_current() -> Optional[Path]:
     if not src.exists():
         return None
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    # Read with a short retry: another process may be replacing the file at this instant (Windows refuses the open).
+    for attempt in range(20):
+        try:
+            data = src.read_bytes()
+            break
+        except FileNotFoundError:
+            return None
+        except PermissionError:
+            if attempt == 19:
+                raise
+            time.sleep(0.05)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    dest = BACKUP_DIR / f"env-{stamp}.env"
-    n = 1
-    while dest.exists():  # collision guard for saves within the same second
-        dest = BACKUP_DIR / f"env-{stamp}-{n}.env"
-        n += 1
-    shutil.copy2(src, dest)
+    n = 0
+    while True:  # exclusive create: saves within the same second, even from several processes, never share a name
+        dest = BACKUP_DIR / (f"env-{stamp}.env" if n == 0 else f"env-{stamp}-{n}.env")
+        try:
+            with open(dest, "xb") as fh:
+                fh.write(data)
+            break
+        except FileExistsError:
+            n += 1
+    try:
+        shutil.copystat(src, dest)  # keep the original's times, as copy2 did; best effort under a concurrent replace
+    except OSError:
+        pass
     return dest
 
 
