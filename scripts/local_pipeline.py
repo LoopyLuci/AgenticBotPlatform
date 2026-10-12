@@ -404,19 +404,24 @@ def check_python() -> bool:
     else:
         Step.warn("pytest-xdist/pytest-cov not installed — serial run without the coverage floor "
                   "(pip install -r requirements-dev.txt)")
-    ok, out = _run([py, "-m", "pytest", "-q", "-rf", *extra], cwd=ROOT, timeout=PYTEST_TIMEOUT)
+    ok, out = _run([py, "-m", "pytest", "-q", "-rfE", *extra], cwd=ROOT, timeout=PYTEST_TIMEOUT)
     if not ok:
         # A test that fails once and passes alone is a flake (a busy port, a
         # timing race), not a regression: re-run ONLY the failures once. A
         # real failure fails again and still blocks; a flake is reported, not
         # silently forgiven.
         # xdist's loadgroup mode reports ids as "path::test@group"; the group is not part of the test's id.
-        failed_ids = [re.sub(r"@[\w.-]+$", "", t) for t in re.findall(r"(?m)^FAILED (\S+)", out)]
-        if failed_ids and len(failed_ids) <= FLAKY_RERUN_LIMIT:
-            Step.warn(f"{len(failed_ids)} test(s) failed — re-running just those once to tell a flake from a real failure")
-            ok2, out2 = _run([py, "-m", "pytest", "-q", "-rf", *failed_ids], cwd=ROOT, timeout=PYTEST_TIMEOUT)
+        # Setup/teardown ERRORs (seen only under parallel load) are re-run like failures;
+        # a collection error (no "::") is never a flake.
+        found = re.findall(r"(?m)^(?:FAILED|ERROR) (\S+)", out)
+        failed_ids = list(dict.fromkeys(re.sub(r"@[\w.-]+$", "", t) for t in found))
+        if failed_ids:
+            Step.warn("failed/errored: " + ", ".join(failed_ids[:40]))
+        if failed_ids and all("::" in t for t in failed_ids) and len(failed_ids) <= FLAKY_RERUN_LIMIT:
+            Step.warn(f"{len(failed_ids)} test(s) failed or errored — re-running just those once to tell a flake from a real failure")
+            ok2, out2 = _run([py, "-m", "pytest", "-q", "-rfE", *failed_ids], cwd=ROOT, timeout=PYTEST_TIMEOUT)
             if not ok2:
-                Step.err("pytest failed (and failed again on re-run):\n" + out2[-4000:])
+                Step.err("pytest failed (and failed again on re-run): " + ", ".join(failed_ids) + "\n" + out2[-4000:])
                 return False
             Step.warn("passed on re-run — FLAKY, please look at: " + ", ".join(failed_ids))
             _RUN.note("flaky tests (failed once, passed on re-run): " + ", ".join(failed_ids), "warn")
@@ -425,7 +430,7 @@ def check_python() -> bool:
                           inputs={"tests": len(failed_ids)})
             out = out2
         else:
-            Step.err("pytest failed:\n" + out[-4000:])
+            Step.err("pytest failed" + (": " + ", ".join(failed_ids[:40]) if failed_ids else "") + "\n" + out[-4000:])
             return False
     Step.ok(out.strip().splitlines()[-1] if out.strip() else "tests passed")
 

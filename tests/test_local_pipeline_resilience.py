@@ -47,6 +47,36 @@ def test_a_flaky_test_is_rerun_once_and_the_pipeline_continues(monkeypatch, caps
     assert "FLAKY" in capsys.readouterr().out
 
 
+def test_an_errored_test_is_rerun_once_like_a_failed_one(monkeypatch, capsys):
+    calls = _script_runs(monkeypatch, [
+        (True, ""), (True, ""), (True, ""),
+        (False, "ERROR tests/test_x.py::test_setup@g1 - sqlite3.OperationalError: database is locked"),
+        (True, "1 passed in 0.1s"),
+        (True, ""),
+    ])
+    assert lp.check_python() is True
+    assert calls[4][-1] == "tests/test_x.py::test_setup"             # xdist group suffix stripped
+    assert "-rfE" in calls[3]
+    out = capsys.readouterr().out
+    assert "FLAKY" in out and "tests/test_x.py::test_setup" in out
+
+
+def test_an_error_that_repeats_still_blocks_and_names_the_test(monkeypatch, capsys):
+    _script_runs(monkeypatch, [
+        (True, ""), (True, ""), (True, ""),
+        (False, "ERROR tests/test_x.py::test_setup - boom"),
+        (False, "ERROR tests/test_x.py::test_setup - boom"),
+    ])
+    assert lp.check_python() is False
+    assert "tests/test_x.py::test_setup" in capsys.readouterr().out
+
+
+def test_a_collection_error_is_not_rerun(monkeypatch):
+    calls = _script_runs(monkeypatch, [(True, ""), (True, ""), (True, ""), (False, "ERROR tests/test_broken.py - ImportError")])
+    assert lp.check_python() is False
+    assert len(calls) == 4
+
+
 def test_a_test_that_fails_again_still_blocks(monkeypatch):
     _script_runs(monkeypatch, [
         (True, ""),
