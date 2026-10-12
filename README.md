@@ -41,7 +41,7 @@ this is just the map:
 | **Control Center** | The router config editor (backends, action overrides, models, timeouts), agent-control mode, feature toggles, security settings, desktop process controls, the **Environment** card (`.env` editor + backups + setup wizard + MCP self-register), and the **MCP servers** card. |
 | **Resilience** | Health checks, hot-reload status, and the full `config_history` change timeline with diffs. |
 | **Live Logs** | Streaming tail of `logs/bot.log`, filterable by level. |
-| **Chat** | A Telegram-style conversation view across every connected bot instance — send text, send files, see attachments/thumbnails inline. A mode toggle switches between Chat with Bot (the default: a real message to the bot, replied to for real) and Send from Server (real outbound, as the bot) — see "Send from Server vs. Chat with Bot" below. |
+| **Chat** | A Telegram-style conversation view across every connected bot instance — send text, send files, see attachments/thumbnails inline. A native-agent reply appears as it is written, with the tool it is running; Telegram, Discord and Slack get the same live reply by editing one message (`streaming:` in `config/backends.yaml`). A mode toggle switches between Chat with Bot (the default: a real message to the bot, replied to for real) and Send from Server (real outbound, as the bot) — see "Send from Server vs. Chat with Bot" below. |
 | **Support Bot** | Chat with the local hybrid (TF-IDF + neural network) management assistant — plain English or slash commands, same engine the Android app's Support tab uses. See "Support Bot" below. |
 | **Sessions** | Browse *past* conversations (grouped by 30-minute gaps, or the "legacy" pre-sessions bucket) — a history view, not to be confused with **session linking** (below), which is about which live chat a bot writes into. |
 | **Bots** | Add/edit/enable/disable/start/stop/restart bot instances; per-instance backups; the **New Session** button for `ui`/`hermes_gateway` bots. |
@@ -51,6 +51,10 @@ this is just the map:
 | **Platforms** | Legacy single-bot-per-platform `.env` fields — superseded by the Bots tab, kept for transparency. |
 | **Mobile** | Mobile pairing keys + QR codes, paired-device list with live online/offline status, and the Android one-click build/install/pair panel. |
 | **Linked Servers** | Link another AgenticBotPlatform install (a laptop, a home PC, a VPS) to see and manage its bots from here — see "Linking servers" below. |
+| **Usage & limits** | Per-provider and per-model usage against each provider's limits, from `GET /api/models/usage-limits`. |
+| **Traces** | Every native-agent run with its model calls, tool calls, timings and tokens (`GET /api/agent/traces`). |
+| **Permissions** | Pending approvals (allow once, for the session, always, or deny), each bot's rules and mode, MCP tool pins, and clearing a session's untrusted mark. |
+| **Vault** | Stored site credentials by name, site and username — add and remove them; passwords and two-factor secrets never leave the server. |
 
 ## Documentation
 
