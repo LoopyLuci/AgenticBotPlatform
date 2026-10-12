@@ -1815,6 +1815,9 @@ async def _execute_tool(
             raise ToolError(f"event must be one of {sorted(_hooks.VALID_EVENTS)}")
         if not command:
             raise ToolError("command is required")
+        problem = _hooks.validate_hook_command(command)
+        if problem:
+            raise ToolError(problem)
         target_instance_id = None
         target_ref = tool_input.get("target_instance")
         if target_ref:

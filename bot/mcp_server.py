@@ -645,6 +645,11 @@ async def add_hook(event: str, command: str, matcher: Optional[str] = None, inst
     every tool. command receives the event's JSON on stdin and is
     expected to print a JSON {"decision": "allow"|"deny"|"ask", "reason":
     ..., "additionalContext": ...} object to stdout."""
+    from bot.agent_runtime.hooks import validate_hook_command
+
+    problem = validate_hook_command(command)
+    if problem:
+        return {"ok": False, "error": problem}
     return await _request(
         "POST", "/api/hooks", json={"event": event, "command": command, "matcher": matcher, "instance_id": instance_id},
     )

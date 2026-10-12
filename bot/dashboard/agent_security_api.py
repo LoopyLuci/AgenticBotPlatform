@@ -9,6 +9,7 @@
     GET  /api/agent/taint?session=KEY           has this session read untrusted content
     POST /api/agent/taint/clear                 a person clears the mark
     GET  /api/skills/packs                      installed skill packs
+    DELETE /api/skills/packs/{name}             remove an installed pack (audit-logged)
     POST /api/skills/fetch                      fetch a pack from a git URL into quarantine (scan report returned)
     GET  /api/skills/quarantine                 packs waiting for a person, with their scan reports
     POST /api/skills/quarantine/approve|reject  a person's decision
@@ -142,6 +143,14 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
     async def get_packs():
         return {"packs": [{"name": s.name, "description": s.description[:300], "source": s.source, "files": len(s.files),
                            "problems": list(s.problems)} for s in skill_packs.discover(None).values()]}
+
+    @app.delete("/api/skills/packs/{name}", dependencies=write)
+    async def remove_pack(name: str):
+        from bot import db
+
+        out = _guard(skill_install.remove_installed, name)
+        db.log_audit(actor="dashboard", action="skill_pack_remove", detail=name)
+        return out
 
     @app.post("/api/skills/fetch", dependencies=write)
     async def fetch_pack(body: _FetchBody):

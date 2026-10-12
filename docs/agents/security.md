@@ -277,6 +277,9 @@ A hook that fails, times out or answers something odd is treated as having no op
 * `async: true` runs the hook in the background: the turn never waits, it can neither block nor rewrite,
   its answer is only logged, at most 8 run at once (the rest are dropped with a log line), and the timeout
   still kills its whole process tree.
+* A typed hook is checked when it is added (dashboard, `/hooks add`, the CLI, the MCP `add_hook` tool and the admin tool):
+  it must be valid JSON with a known `type` and that type's required fields, `async` only on `command` and `http`,
+  an `http`/`https` URL, a positive `timeout` and `fail` of `open` or `closed`. Anything else is refused with the reason.
 * Hooks never widen permissions: a decision can only be allow (no effect), ask or deny/block, and a rewritten
   input is judged again by the permission rules. Hooks from an agent definition are narrowed further (no
   rewrite) and only run while that agent runs. All of it is operator configuration; an agent cannot add a hook.
