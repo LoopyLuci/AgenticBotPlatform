@@ -19,8 +19,10 @@ from bot import db, peers, ssh_toolkit
 
 @pytest.fixture
 def ssh_toolkit_home(tmp_path, monkeypatch):
-    if ssh_toolkit._powershell_binary() is None:   # SSH Toolkit is a PowerShell module: on Linux, only with pwsh
-        pytest.skip("SSH Toolkit needs PowerShell (pwsh), which this machine does not have")
+    # A PowerShell module in a git submodule: skip without pwsh or where vendor/ssh_toolkit is not initialised.
+    available, reason = ssh_toolkit.is_available()
+    if not available:
+        pytest.skip(f"SSH Toolkit is not available here: {reason}")
     monkeypatch.setenv("ABP_SSH_TOOLKIT_HOME", str(tmp_path))
     return tmp_path
 

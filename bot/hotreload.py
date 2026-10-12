@@ -96,7 +96,7 @@ DENYLIST: frozenset[str] = frozenset({
     # Route modules split out of server.py: their routes are registered on the live app once, at build time;
     # reloading a module can't re-register them, same reason bot.dashboard.server itself is here.
     "bot.dashboard.routes.agent_control", "bot.dashboard.routes.android_apk", "bot.dashboard.routes.bots",
-    "bot.dashboard.routes.chat", "bot.dashboard.routes.delegation", "bot.dashboard.routes.devices",
+    "bot.dashboard.routes.chat", "bot.dashboard.chat_stream", "bot.dashboard.routes.delegation", "bot.dashboard.routes.devices",
     "bot.dashboard.routes.files", "bot.dashboard.routes.hermes_delegation", "bot.dashboard.routes.kanban",
     "bot.dashboard.routes.mobile_keys", "bot.dashboard.routes.mutations", "bot.dashboard.routes.ops_endpoints",
     "bot.dashboard.routes.pairing", "bot.dashboard.routes.peers", "bot.dashboard.routes.platforms",
@@ -229,6 +229,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.platforms.email_platform", "bot.platforms.sms_platform", "bot.platforms.signal_platform", "bot.platforms.imessage_platform",
     "bot.platforms.googlechat_platform", "bot.platforms.teams_platform", "bot.platforms._jwt",  # long-running adapters
     "bot.platforms._voice",  # loaded by the long-running Discord/Slack adapters, which are not reloaded
+    "bot.platforms._stream_edit",  # likewise (Telegram handlers, Discord, Slack)
     "bot.agent_runtime.browser", "bot.vault", "bot.routines", "bot.approvals_view",  # a running browser / encrypted store / registered tools
     # Routines: the routes register once, and routines_view.py holds the run-history bookkeeping
     # a page's "run now" writes into.
