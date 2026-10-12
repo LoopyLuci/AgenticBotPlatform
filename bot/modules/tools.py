@@ -246,6 +246,23 @@ def register_tools() -> None:
                             name=str(inp.get("name") or ""), shallow=inp.get("shallow", True) is not False,
                             branch=str(inp.get("branch") or ""))
 
+    async def refresh_(inp, **_):
+        from bot.modules import refresh
+        try:
+            mid = _mid(inp)
+        except ModuleError as exc:
+            return f"Error: {exc}"
+        apply = bool(inp.get("apply"))
+        if inp.get("machine"):
+            return await _remote(inp["machine"], "POST" if apply else "GET", f"/{mid}/refresh")
+        return await _local(refresh.refresh, mid, apply=apply)
+
+    reg("module_refresh", "Check a module added from a URL (or adopted) for upstream changes: fetches upstream and shows "
+        "what a refresh would change - operations added, removed and changed (signature, command, description), "
+        "manifest fields - without writing anything. apply=true then fast-forwards the checkout and writes the "
+        "merged module files; hand edits and hand-kept operations survive. Refuses (changing nothing) when the "
+        "checkout has local changes or has diverged from upstream.",
+        {"module": MODULE, "apply": {"type": "boolean"}}, ["module"], refresh_, permission="config", read_only=False)
     reg("module_add", "Make any git repo an ABP module in one step (the Module Management Hub): url is "
         "https://github.com/owner/name (any https git host) or owner/name. ABP clones it (latest commit only unless "
         "shallow=false), reads it (stacks, build, CLI, scripts, server routes, CMake...), writes its module files as "

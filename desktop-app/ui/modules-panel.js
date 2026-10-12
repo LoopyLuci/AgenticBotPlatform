@@ -24,6 +24,23 @@
   const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body || {}) });
   const st = { open: '', list: null, status: null, ops: null, op: null, poll: null, query: '' };
 
+  // The result of a refresh (GET /api/modules/{id}/refresh): commits, operations added/removed/changed, manifest fields.
+  function refreshHtml(r) {
+    const v = (x) => (x == null ? '' : typeof x === 'string' ? x : JSON.stringify(x));
+    const op = (o, mark) => `<li>${mark} <span class="mdp-mono">${E(o.id)}</span> <span class="mdp-muted">${E(o.signature)}${o.summary ? ' · ' + E(o.summary) : ''}</span></li>`;
+    const o = r.operations || {};
+    const ch = (o.changed || []).map((c) => `<li>~ <span class="mdp-mono">${E(c.id)}</span> <span class="mdp-muted">${E((c.groups || []).join(', '))}</span><ul>${Object.entries(c.fields || {}).map(([k, f]) => `<li>${E(k)}: <span class="mdp-mono">${E(v(f.from))}</span> → <span class="mdp-mono">${E(v(f.to))}</span></li>`).join('')}</ul></li>`).join('');
+    const man = Object.entries(Object.assign({}, r.manifest || {}, ...Object.entries(o.service || {}).map(([k, f]) => ({ ['service.' + k]: f })))).map(([k, f]) => `<li><span class="mdp-mono">${E(k)}</span>: ${E(v(f.from))} → ${E(v(f.to))}</li>`).join('');
+    return `<div class="mdp-card" style="margin-top:8px"><b>${E(r.applied ? 'Refreshed' : 'Dry run')}</b> <span class="mdp-muted">${E(r.from_commit)} → ${E(r.to_commit)}, ${E(r.new_commits)} new commits on ${E(r.upstream)}${r.applied ? '' : ' · nothing written'}</span>`
+      + ((r.commits || []).length ? `<div class="mdp-pre">${E(r.commits.join('\n'))}</div>` : '')
+      + ((o.added || []).length ? `<h4>Operations added</h4><ul>${o.added.map((x) => op(x, '+')).join('')}</ul>` : '')
+      + ((o.removed || []).length ? `<h4>Operations removed</h4><ul>${o.removed.map((x) => op(x, '−')).join('')}</ul>` : '')
+      + (ch ? `<h4>Operations changed</h4><ul>${ch}</ul>` : '')
+      + (man ? `<h4>Manifest</h4><ul>${man}</ul>` : '')
+      + (r.ops_hand_owned ? `<p class="mdp-muted">Its abp-ops.toml is hand-owned and stays as it is${(r.detected_not_in_ops_file || []).length ? `; detection also finds ${E(r.detected_not_in_ops_file.length)} operations it does not list` : ''}.</p>` : '')
+      + (r.changed ? '' : '<p class="mdp-muted">Nothing changed.</p>') + '</div>';
+  }
+
   function css() {
     if ($('mdp-css')) return;
     const s = document.createElement('style');
@@ -241,7 +258,7 @@ ${s.manifest_error ? `<p class="cardnote">${E(s.manifest_error)}</p>` : ''}
 ${tools ? `<div class="mdp-card"><h4>Toolchain</h4>${tools}</div>` : ''}
 ${m.has_web || m.has_provider ? `<div class="mdp-card"><h4>Its server</h4>${kv([['web UI', m.has_web ? (svc.web ? `<a href="${E(svc.web)}" target="_blank" rel="noopener">${E(svc.web)}</a>` : '<span class="mdp-muted">shown once its server runs (start the hub, then the service.start operation)</span>') : ''], ['as a provider', m.has_provider ? (svc.openai ? chip(`“${m.id}” in model pickers`, 'on') + ` <span class="mdp-mono">${E(svc.openai)}</span>` : '<span class="mdp-muted">offered as a model provider while its server runs</span>') : '']])}
 <div class="mdp-row">${m.has_hub && hub.running && !svc.web && !svc.openai ? '<button class="btn" id="mdp-svc-start">Start its server</button>' : ''}${svc.web ? '<button class="btn ghost" id="mdp-web-show">Show here</button>' : ''}</div></div>` : ''}
-${m.source && m.source !== 'builtin' ? `<div class="mdp-card"><h4>Project</h4><p class="mdp-muted">Its own abp-module.toml and abp-ops.toml describe it. Publishing commits them and creates its private GitHub repo if it has none.</p><div class="mdp-row"><button class="btn ghost" id="mdp-publish">Publish to GitHub</button><button class="btn ghost" id="mdp-forget">Forget it</button></div></div>` : ''}
+${m.source && m.source !== 'builtin' ? `<div class="mdp-card"><h4>Project</h4><p class="mdp-muted">Its own abp-module.toml and abp-ops.toml describe it. Publishing commits them and creates its private GitHub repo if it has none.</p><div class="mdp-row"><button class="btn ghost" id="mdp-refresh">Check for updates (what changed in its operations)</button><button class="btn ghost" id="mdp-publish">Publish to GitHub</button><button class="btn ghost" id="mdp-forget">Forget it</button></div><div id="mdp-refresh-out"></div></div>` : ''}
 ${svc.web ? `<div class="mdp-card" id="mdp-web" style="grid-column:1/-1;display:${st.webOpen === mid ? 'flex' : 'none'}"><div class="mdp-row" style="justify-content:space-between"><h4 style="margin:0">${E(m.name)}</h4><button class="btn ghost" id="mdp-web-hide">Hide</button></div><iframe title="${E(m.name)}" src="${st.webOpen === mid ? E(svc.web) : 'about:blank'}" style="width:100%;height:70vh;border:1px solid var(--line);border-radius:8px;background:#fff"></iframe></div>` : ''}
 <div class="mdp-card" style="grid-column:1/-1"><h4>Jobs</h4>${(jobs || []).slice(0, 6).map((j) => `<details${j.state === 'running' ? ' open' : ''}><summary>${E(j.kind)} ${j.state === 'running' ? chip('running', 'warn') : j.state === 'done' ? chip('done', 'on') : chip(j.state, 'bad')} <span class="mdp-muted">${E(when(j.started))}</span></summary><div class="mdp-pre">${E((j.log || []).join('\n'))}${j.error ? '\n' + E(j.error) : ''}</div></details>`).join('') || '<p class="mdp-muted">None yet.</p>'}</div>
 </div>
@@ -253,6 +270,17 @@ ${m.has_hub ? `<div class="mdp-card" style="margin-top:12px"><h4>Operations</h4>
     on('mdp-web-hide', () => { st.webOpen = ''; $('mdp-web').style.display = 'none'; });
     on('mdp-svc-start', async () => {
       try { await post(`/api/modules/${encodeURIComponent(mid)}/call`, { operation: 'service.start', args: {} }); toast(`${m.name}: server started`); render(); } catch (e) { toast(errText(e), 'error'); }
+    });
+    on('mdp-refresh', async () => {
+      const out = $('mdp-refresh-out'); out.innerHTML = '<p class="mdp-muted">Fetching upstream…</p>';
+      const base = `/api/modules/${encodeURIComponent(mid)}/refresh`;
+      const show = (r) => {
+        out.innerHTML = refreshHtml(r) + (r.applied ? '' : r.changed ? '<div class="mdp-row" style="margin-top:8px"><button class="btn" id="mdp-refresh-apply">Apply (hand edits are kept)</button></div>' : '');
+        on('mdp-refresh-apply', async () => {
+          try { show(await post(base)); toast(`${m.name}: refreshed`); } catch (e) { toast(errText(e), 'error'); }
+        });
+      };
+      try { show(await api(base)); } catch (e) { out.innerHTML = `<p class="mdp-muted">${E(errText(e))}</p>`; toast(errText(e), 'error'); }
     });
     on('mdp-publish', async () => {
       if (!confirm(`Commit ${m.name}'s abp-module.toml and abp-ops.toml, and create its private GitHub repo if it has none?`)) return;
