@@ -36,6 +36,7 @@ import re
 import secrets
 import shutil
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -197,9 +198,23 @@ def write_content(content: str, actor: str = "dashboard") -> Optional[Path]:
     path = resolve()
     backup = backup_current()
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
+    # A temp name of this writer's own: several processes may write at once (on a fresh install every process that
+    # starts generates DASHBOARD_TOKEN), and a shared name let one writer's replace() find the other's file gone or
+    # locked ("Permission denied" on Windows).
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
     tmp.write_text(content, encoding="utf-8")
-    tmp.replace(path)
+    try:
+        for attempt in range(20):
+            try:
+                tmp.replace(path)
+                break
+            except PermissionError:
+                # Windows refuses to replace a file another process is replacing or reading at that instant.
+                if attempt == 19:
+                    raise
+                time.sleep(0.05)
+    finally:
+        tmp.unlink(missing_ok=True)
 
     try:
         from bot import db
