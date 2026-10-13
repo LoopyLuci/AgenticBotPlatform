@@ -10711,7 +10711,7 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
- "cluster_blob_api_cluster_blobs__h__head": {
+ "cluster_blob_api_cluster_blobs__h__get": {
   "body": false,
   "method": "GET",
   "path": "/api/cluster/blobs/{h}",

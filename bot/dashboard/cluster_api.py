@@ -183,8 +183,14 @@ def register(app: FastAPI, identify: Callable) -> None:
     async def cluster_blobs(c: Caller = Depends(blob_reader)):
         return blobs.get_store().summary()
 
-    @app.api_route("/api/cluster/blobs/{h}", methods=["GET", "HEAD"])
+    # Two routes, not one api_route with methods=[GET, HEAD]: FastAPI names that one's operation from a set, so the
+    # generated OpenAPI document (and the SDK made from it) would change from run to run.
+    @app.get("/api/cluster/blobs/{h}")
     async def cluster_blob(h: str, c: Caller = Depends(blob_reader)):
+        return await run(blobs.get_store().manifest, h)
+
+    @app.head("/api/cluster/blobs/{h}")
+    async def cluster_blob_head(h: str, c: Caller = Depends(blob_reader)):
         return await run(blobs.get_store().manifest, h)
 
     @app.get("/api/cluster/blobs/{h}/chunks/{index}")

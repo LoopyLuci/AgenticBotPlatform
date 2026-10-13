@@ -11698,7 +11698,7 @@
   },
   "/api/cluster/blobs/{h}": {
    "get": {
-    "operationId": "cluster_blob_api_cluster_blobs__h__head",
+    "operationId": "cluster_blob_api_cluster_blobs__h__get",
     "parameters": [
      {
       "in": "path",
@@ -11829,7 +11829,7 @@
     "summary": "Cluster Blob"
    },
    "head": {
-    "operationId": "cluster_blob_api_cluster_blobs__h__head",
+    "operationId": "cluster_blob_head_api_cluster_blobs__h__head",
     "parameters": [
      {
       "in": "path",
@@ -11957,7 +11957,7 @@
       "description": "Validation Error"
      }
     },
-    "summary": "Cluster Blob"
+    "summary": "Cluster Blob Head"
    }
   },
   "/api/cluster/blobs/{h}/chunks/{index}": {
