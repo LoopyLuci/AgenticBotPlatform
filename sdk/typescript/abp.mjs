@@ -1767,6 +1767,29 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/fileserver/tiering": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/tiering",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/fileserver/tiering/index": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/tiering/index",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "GET /api/fileserver/tiering/scan": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/tiering/scan",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/fileserver/transfers": {
   "body": false,
   "method": "GET",
@@ -5041,6 +5064,20 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/fileserver/shares",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/fileserver/tiering/apply": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/fileserver/tiering/apply",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/fileserver/tiering/recall": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/tiering/recall",
   "path_params": [],
   "query_params": []
  },
@@ -11623,6 +11660,43 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/api/fileserver/stats",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_tiering_apply_api_fileserver_tiering_apply_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/fileserver/tiering/apply",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_tiering_index_api_fileserver_tiering_index_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/tiering/index",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "fs_tiering_recall_api_fileserver_tiering_recall_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/tiering/recall",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_tiering_scan_api_fileserver_tiering_scan_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/tiering/scan",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_tiering_status_api_fileserver_tiering_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/tiering",
   "path_params": [],
   "query_params": []
  },
