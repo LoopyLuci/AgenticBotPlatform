@@ -503,6 +503,19 @@ voice:
     format: opus
   reply_with_voice: false
   max_seconds: 300
+# Context vault (bot/context_vault, docs/context-vault.md): what API models work on (compaction summaries, decisions, plans,
+# error fixes, board briefs and results) is copied passively into a local tiered store, and recalled for local models.
+# Off until enabled. Tiers run fastest first; the RAM tier is a cache, the dir tiers hold the items. Example:
+#   tiers: [{name: ram, kind: ram, max_bytes: 268435456},
+#           {name: nvme, kind: dir, path: /mnt/nvme/abp-ctx, max_bytes: 4294967296},
+#           {name: ssd, kind: dir, path: /mnt/ssd/abp-ctx, max_bytes: 21474836480},
+#           {name: hdd, kind: dir, path: /mnt/hdd/abp-ctx, max_bytes: 0}]
+context_vault:
+  enabled: false
+  inject_for_local: true     # a small "Relevant context" block on local-model turns (never on API turns)
+  embeddings: {enabled: false, model: ""}   # a local embedding model served by ModelMistress; keyword scoring otherwise
+  summarise: {enabled: false, model: ""}    # a local model that turns summaries into items; heuristics otherwise
+
 # Cold data to an archive location (bot/storage_tiering.py): old chat attachments, rotated logs and support bundles
 # move out of the hot data folder, an index (data/storage_tiering.db) keeps them findable, and an opened attachment
 # is brought back automatically. Off until archive_dir is set; it must be outside the data folder and writable.

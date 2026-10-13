@@ -442,6 +442,12 @@ async def _run_one_child(
                     text += f"\n[Its changes are in {info['path']} on branch {info['branch']}; nothing was merged.]"
                     outcome["result_excerpt"] = text[:500]
             db.finish_ephemeral_session(session_id, status=status, result=text)
+            try:
+                from bot.context_vault import capture as _vault_capture
+
+                _vault_capture.on_step_result(goal, status, text, model=backend.model, index=index)
+            except Exception:  # noqa: BLE001 - passive capture never breaks a child
+                pass
             from bot.agent_runtime import hooks
 
             await hooks.run_subagent_stop(text, instance_id=parent_instance_id)
