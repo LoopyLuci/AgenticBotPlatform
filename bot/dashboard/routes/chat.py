@@ -12,7 +12,7 @@ from typing import Callable, Optional
 from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
-from bot import attachments, bot_instances, db, outbox, thumbnails
+from bot import attachments, bot_instances, db, outbox, storage_tiering, thumbnails
 from bot import commands as bot_commands
 from bot.backends.base import BackendError
 from bot.dashboard.chat_stream import ChatStreamer
@@ -308,7 +308,10 @@ def register(app: FastAPI, *, json_download: Callable) -> None:
         if row is None or not row["attachment_path"]:
             raise HTTPException(status_code=404, detail="no attachment on this message")
         full_path = attachments.ATTACHMENTS_DIR / row["attachment_path"]
-        if not full_path.resolve().is_relative_to(attachments.ATTACHMENTS_DIR.resolve()) or not full_path.is_file():
+        if not full_path.resolve().is_relative_to(attachments.ATTACHMENTS_DIR.resolve()):
+            raise HTTPException(status_code=404, detail="attachment file missing")
+        storage_tiering.ensure_hot(full_path)  # tiered to the archive location: bring it back first
+        if not full_path.is_file():
             raise HTTPException(status_code=404, detail="attachment file missing")
         return FileResponse(
             full_path,

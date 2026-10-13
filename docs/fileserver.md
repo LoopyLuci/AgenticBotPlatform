@@ -53,6 +53,25 @@ The code lives in `bot/fileserver/`. Management goes through `bot/dashboard/file
   With `auto_freeze`, the affected shares become read-only for everyone except administrators until a person unfreezes them.
 - **Tiering:** recency and frequency of reads (the access log) keep hot files on the cache.
 
+## Cold data tier (storage tiering)
+
+ABP can move cold, write-once files out of its hot data folder to an archive location and keep an index, so they can be
+found and brought back. Off by default; set `storage_tiering.enabled: true` and an explicit `storage_tiering.archive_dir`
+(for example `/mnt/archive/abp`) in `config/backends.yaml`. The archive must be writable and outside ABP's data folder;
+otherwise every command refuses.
+
+- **Categories** (each with `after_days`): `attachments` (chat attachments, 90 days), `logs` (rotated `*.log.N` files, never
+  the live log, 14 days), `support_bundles` (30 days). Databases, config, `.env`, the vault, keys, thumbnails, in-flight
+  uploads and the pre-migration backups (directories verified in place) are never tiered.
+- **Moves are crash-safe:** copy, verify (size and sha256), write the index row (`data/storage_tiering.db`), then delete the hot
+  copy. A run that stopped half-way is finished or rolled back at the start of the next one. A file that is open elsewhere
+  or changed while copying is skipped, never forced. `max_files` / `max_bytes` cap a run (oldest files first).
+- **Use:** `python -m bot.storage_tiering scan` (dry run), `apply`, `recall <path>`, `status`; or `GET /api/fileserver/tiering`,
+  `/tiering/scan`, `/tiering/index` and, with the dashboard token only, `POST /tiering/apply` and `/tiering/recall`. The Storage
+  overview has a "Cold data tier" card.
+- **Recall:** opening an archived chat attachment (the dashboard and Server Chat download routes) brings it back first,
+  verified by hash. Other categories are recalled explicitly. Nothing runs on a schedule yet: apply is a command.
+
 ## What has been verified, and how
 
 - **`tests/test_fileserver_array.py`, on real files:**

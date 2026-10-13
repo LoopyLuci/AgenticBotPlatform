@@ -21,13 +21,17 @@
                                                    POST /backups/{name}/restore {snapshot, target, include}
     GET    /api/fileserver/apps                    POST /apps {app, name, mounts, ports, env} (-> a run: pulls images)
     GET    /api/fileserver/events                  GET /runs/{id}
+    GET    /api/fileserver/tiering                 status;  GET /tiering/scan (dry run);  GET /tiering/index
+                                                   POST /tiering/apply | /tiering/recall {path}  (dashboard token only)
 """
 from __future__ import annotations
 
 import asyncio
-from typing import Callable
+import hmac
+import os
+from typing import Callable, Optional
 
-from fastapi import Body, Depends, FastAPI, HTTPException, Query
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query
 
 from bot.dashboard.hosting_api import _runs, start_run
 from bot.fileserver import apps, array, backup, disks, exports, guard, index, mover, service, shares, transfer
@@ -270,6 +274,41 @@ def register(app: FastAPI, require_token: Callable) -> None:
         await _t(apps.compose_for, body.get("app", ""), body.get("name", ""), body.get("mounts") or {}, body.get("ports"), body.get("env"))
         return _run(f"Install {body.get('app')}", lambda log: apps.install(body["app"], body["name"], body.get("mounts") or {},
                                                                            body.get("ports"), body.get("env")))
+
+    # Storage tiering (bot/storage_tiering.py): cold files to the archive location, with an index.
+    from bot import storage_tiering
+
+    def operator(x_dashboard_token: Optional[str] = Header(default=None)) -> None:
+        """Moving data and bringing it back: the desktop dashboard token itself (not an integration key)."""
+        expected = os.environ.get("DASHBOARD_TOKEN") or ""
+        if not expected or not x_dashboard_token or not hmac.compare_digest(x_dashboard_token.encode(), expected.encode()):
+            raise HTTPException(status_code=403, detail="this endpoint needs the desktop dashboard token")
+
+    async def _tier(fn, *args, **kwargs):
+        try:
+            return await asyncio.to_thread(fn, *args, **kwargs)
+        except storage_tiering.TieringError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+    @app.get(f"{A}/tiering", dependencies=dep)
+    async def fs_tiering_status():
+        return await _tier(storage_tiering.status)
+
+    @app.get(f"{A}/tiering/scan", dependencies=dep)
+    async def fs_tiering_scan():
+        return await _tier(storage_tiering.scan)
+
+    @app.get(f"{A}/tiering/index", dependencies=dep)
+    async def fs_tiering_index(limit: int = Query(200, ge=1, le=2000)):
+        return await _tier(storage_tiering.listing, None, limit)
+
+    @app.post(f"{A}/tiering/apply", dependencies=[Depends(operator)])
+    async def fs_tiering_apply():
+        return await _tier(storage_tiering.apply)
+
+    @app.post(f"{A}/tiering/recall", dependencies=[Depends(operator)])
+    async def fs_tiering_recall(body: dict = Body(...)):
+        return await _tier(storage_tiering.recall, str(body.get("path") or ""))
 
     @app.get(f"{A}/events", dependencies=dep)
     async def fs_events(limit: int = Query(100)):

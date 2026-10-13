@@ -94,6 +94,11 @@ def overview(deep: bool = False) -> dict:
                       for n, s in shares.shares().items()],
            "users": shares.users(), "frozen": sorted(guard.frozen()), "alerts": [a for a in guard.recent_alerts(10) if not a["cleared"]],
            "transfers": transfer.jobs(), "backups": backup.jobs(), "events": events(30), "settings": settings()}
+    try:  # the cold-data tier (bot/storage_tiering.py): a small status card, never a reason to fail the overview
+        from bot import storage_tiering
+        out["tiering"] = storage_tiering.status()
+    except Exception as e:  # noqa: BLE001
+        out["tiering"] = {"enabled": False, "error": str(e)}
     return out
 
 

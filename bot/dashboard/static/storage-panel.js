@@ -77,6 +77,10 @@ ${stats ? `<div class="stp-card"><b>This machine</b><div>CPU ${E(stats.cpu_perce
 <div class="stp-muted">Up ${Math.round(stats.uptime_s / 3600)} h · network ${human(stats.net.recv)} in, ${human(stats.net.sent)} out since boot</div></div>` : ''}
 <div class="stp-card"><b>Alerts</b>${o.alerts.length ? o.alerts.map((a) => `<div>${chip('bad', 'ransomware?')} <b>${E(a.share)}</b> score ${E(a.score)} ${a.frozen ? '(frozen)' : ''}<div class="stp-muted">${E(a.detail.entropy_jumps)} files became random, ${E(a.detail.renamed_to_new_extensions)} renamed, notes: ${E((a.detail.ransom_notes || []).join(', ') || 'none')}</div></div>`).join('') : '<div class="stp-muted">none</div>'}
 ${o.frozen.length ? `<div>Frozen (read-only): ${E(o.frozen.join(', '))} <button class="btn ghost" id="stp-unfreeze">Unfreeze</button></div>` : ''}</div>
+${o.tiering ? `<div class="stp-card"><b>Cold data tier</b>
+<div>${o.tiering.enabled ? (o.tiering.ready ? chip('ok', 'on') : chip('warn', 'needs setup')) : chip('', 'off')} ${E(o.tiering.archived ? o.tiering.archived.files : 0)} file(s), ${human((o.tiering.archived || {}).bytes || 0)} moved to the archive</div>
+${o.tiering.error && o.tiering.enabled ? `<div class="stp-muted">${E(o.tiering.error)}</div>` : ''}
+<div class="stp-muted">Old attachments and rotated logs move to storage_tiering.archive_dir and come back when opened. Scan, apply and recall: <span class="stp-mono">python -m bot.storage_tiering</span>.</div></div>` : ''}
 <div class="stp-card"><b>Recent events</b><table class="stp-table">${o.events.map((e) => `<tr><td class="stp-muted">${when(e.at)}</td><td>${chip(e.level === 'info' ? '' : e.level === 'alert' ? 'bad' : 'warn', e.kind)}</td><td>${E(e.text)}</td></tr>`).join('') || '<tr><td class="stp-muted">nothing yet</td></tr>'}</table></div></div>`;
   }
 

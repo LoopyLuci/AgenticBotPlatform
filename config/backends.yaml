@@ -502,3 +502,17 @@ voice:
     format: opus
   reply_with_voice: false
   max_seconds: 300
+# Cold data to an archive location (bot/storage_tiering.py): old chat attachments, rotated logs and support bundles
+# move out of the hot data folder, an index (data/storage_tiering.db) keeps them findable, and an opened attachment
+# is brought back automatically. Off until archive_dir is set; it must be outside the data folder and writable.
+# Never touches databases, config, .env, the vault or anything a component holds open. Run it with
+# `python -m bot.storage_tiering scan|apply|recall|status` (scan moves nothing).
+storage_tiering:
+  enabled: false
+  archive_dir: ""          # e.g. /mnt/archive/abp
+  max_files: 200           # per run
+  max_bytes: 2147483648    # per run
+  categories:
+    attachments: {enabled: true, after_days: 90}
+    logs: {enabled: true, after_days: 14}
+    support_bundles: {enabled: true, after_days: 30}
