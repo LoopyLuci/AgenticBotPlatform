@@ -15,6 +15,9 @@ write the index row (state "copied") -> remove the hot copy -> mark the row "arc
 between is finished or rolled back by recover() at the start of the next run. A file another process has open (or
 that changed while it was copied) is skipped and left where it is, never forced.
 
+`storage_tiering.schedule.daily_at: "03:30"` (local time) runs apply() once a day from the scheduler's poll loop
+(scheduled_tick -> a worker thread, one run at a time); the outcome is kept in the index and shown by status().
+
 Settings (config/backends.yaml `storage_tiering:`) are off by default and need an explicit `archive_dir` that is
 outside the state folder and writable. The index is data/storage_tiering.db. Surfaces: `python -m bot.storage_tiering
 scan|apply|recall|status`, /api/fileserver/tiering/*, the Storage page's overview, and bot.attachments callers use
@@ -22,8 +25,10 @@ ensure_hot() so an archived attachment is brought back when it is opened.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -44,7 +49,8 @@ CATEGORIES: dict[str, dict[str, Any]] = {
     "logs": {"dir": "logs", "match": lambda n: bool(re.search(r"\.log\.\d+$", n)), "after_days": 14},
     "support_bundles": {"dir": "logs/support_bundles", "match": lambda n: n.lower().endswith(".zip"), "after_days": 30},
 }
-DEFAULTS: dict[str, Any] = {"enabled": False, "archive_dir": "", "max_files": 200, "max_bytes": 2 * 1024 ** 3}
+DEFAULTS: dict[str, Any] = {"enabled": False, "archive_dir": "", "max_files": 200, "max_bytes": 2 * 1024 ** 3,
+                            "schedule": {}}
 #: Belt and braces: whatever a category folder holds, these are never moved.
 _NEVER = re.compile(r"(\.(db|sqlite|sqlite3|db-wal|db-shm|db-journal|env|yaml|yml|key|pem|vault|part)|\.env\..*)$", re.I)
 
@@ -78,6 +84,8 @@ def settings(cfg: Optional[dict] = None) -> dict:
                                    "after_days": float(c.get("after_days", spec["after_days"]))}
     out["enabled"] = bool(out["enabled"])
     out["archive_dir"] = str(out["archive_dir"] or "").strip()
+    sched = out["schedule"] if isinstance(out["schedule"], dict) else {}
+    out["schedule"] = {"daily_at": str(sched.get("daily_at") or "").strip()}
     return out
 
 
@@ -119,6 +127,7 @@ def _index(root: Path) -> sqlite3.Connection:
     con.execute("""CREATE TABLE IF NOT EXISTS tiered (
         path TEXT PRIMARY KEY, category TEXT NOT NULL, size INTEGER NOT NULL, sha256 TEXT NOT NULL,
         moved_at REAL NOT NULL, archive_path TEXT NOT NULL, state TEXT NOT NULL)""")
+    con.execute("CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)")
     con.commit()
     return con
 
@@ -426,8 +435,14 @@ def status(root: Optional[Path] = None, cfg: Optional[dict] = None) -> dict:
             out["archived"] = {"files": sum(v["files"] for v in out["by_category"].values()),
                                "bytes": sum(v["bytes"] for v in out["by_category"].values())}
             out["pending"] = con.execute("SELECT COUNT(*) FROM tiered WHERE state='copied'").fetchone()[0]
+            row = con.execute("SELECT v FROM meta WHERE k='last_scheduled_run'").fetchone()
+            if row:
+                out["last_scheduled_run"] = json.loads(row["v"])
         finally:
             con.close()
+    out["schedule"] = dict(cfg["schedule"])
+    if cfg["schedule"]["daily_at"] and _parse_daily(cfg["schedule"]["daily_at"]) is None:
+        out["schedule_error"] = f"storage_tiering.schedule.daily_at {cfg['schedule']['daily_at']!r} is not HH:MM"
     return out
 
 
@@ -440,6 +455,94 @@ def listing(root: Optional[Path] = None, limit: int = 200) -> list[dict]:
         return [dict(r) for r in con.execute("SELECT * FROM tiered ORDER BY moved_at DESC LIMIT ?", (limit,))]
     finally:
         con.close()
+
+
+# ---- schedule ------------------------------------------------------------------------------------------------------- #
+
+_run_lock = threading.Lock()   # one scheduled run at a time
+
+
+def _parse_daily(text: str) -> Optional[tuple[int, int]]:
+    m = re.fullmatch(r"(\d{1,2}):(\d{2})", text.strip())
+    if not m or int(m.group(1)) > 23 or int(m.group(2)) > 59:
+        return None
+    return int(m.group(1)), int(m.group(2))
+
+
+def schedule_due(cfg: dict, last_at: float, now: float) -> bool:
+    """True when today's `daily_at` (local time) has passed and no run was attempted since it. A run missed because
+    ABP was down starts when ABP is next up the same day; a failed run is not retried until the next day."""
+    hm = _parse_daily(cfg["schedule"]["daily_at"]) if cfg["schedule"]["daily_at"] else None
+    if hm is None:
+        return False
+    local = time.localtime(now)
+    slot = time.mktime((local.tm_year, local.tm_mon, local.tm_mday, hm[0], hm[1], 0, 0, 0, -1))
+    return now >= slot and last_at < slot
+
+
+def _record_run(root: Path, rec: dict) -> None:
+    con = _index(root)
+    try:
+        con.execute("INSERT OR REPLACE INTO meta VALUES ('last_scheduled_run', ?)", (json.dumps(rec),))
+        con.commit()
+    finally:
+        con.close()
+
+
+def _last_run_at(root: Path) -> float:
+    if not (root / "data" / INDEX_NAME).is_file():
+        return 0.0
+    con = _index(root)
+    try:
+        row = con.execute("SELECT v FROM meta WHERE k='last_scheduled_run'").fetchone()
+        return float(json.loads(row["v"]).get("at", 0)) if row else 0.0
+    except (ValueError, TypeError):
+        return 0.0
+    finally:
+        con.close()
+
+
+def run_scheduled(root: Optional[Path] = None, cfg: Optional[dict] = None, now: Optional[float] = None) -> Optional[dict]:
+    """Blocking: apply() if the schedule says a run is due, tiering is enabled and the archive is valid; the outcome
+    is recorded (status() shows it). None when nothing was due or a run is already going. Never raises."""
+    try:
+        root = _state_root(root)
+        cfg = settings(cfg)
+        now = time.time() if now is None else now
+        if not cfg["enabled"] or not schedule_due(cfg, _last_run_at(root), now):
+            return None
+        if not _run_lock.acquire(blocking=False):
+            return None
+        try:
+            rec: dict[str, Any] = {"at": now}
+            try:
+                res = apply(root, cfg, now)
+                rec.update(ok=True, files=res["files"], bytes=res["bytes"], skipped=len(res["skipped"]))
+            except Exception as e:  # noqa: BLE001 - a bad archive or a disk error: record it, try again tomorrow
+                rec.update(ok=False, error=f"{type(e).__name__}: {e}")
+            _record_run(root, rec)
+            return rec
+        finally:
+            _run_lock.release()
+    except Exception:  # noqa: BLE001
+        logging.getLogger("bot.storage_tiering").exception("scheduled storage tiering run failed")
+        return None
+
+
+async def scheduled_tick(root: Optional[Path] = None, cfg: Optional[dict] = None, now: Optional[float] = None) -> Optional[dict]:
+    """Called by the scheduler's poll loop every few seconds: a cheap config check, and the run itself in a worker
+    thread so the event loop never waits on file copies."""
+    if cfg is None:
+        try:
+            if not settings().get("enabled"):
+                return None
+        except Exception:  # noqa: BLE001
+            return None
+    rec = await asyncio.to_thread(run_scheduled, root, cfg, now)
+    if rec is not None:
+        logging.getLogger("bot.storage_tiering").log(
+            logging.INFO if rec.get("ok") else logging.WARNING, "scheduled storage tiering run: %s", rec)
+    return rec
 
 
 # ---- CLI ------------------------------------------------------------------------------------------------------------ #

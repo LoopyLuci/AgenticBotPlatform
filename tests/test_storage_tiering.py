@@ -258,3 +258,101 @@ def test_two_requests_recalling_one_file_at_once_both_get_it(env):
     assert results == [True] * 4
     assert f.read_bytes() == b"payload" * 50000
     assert not list(f.parent.glob("*.recall.part"))
+
+
+# ---- schedule -------------------------------------------------------------------------
+def _at(hour, minute, day=15):
+    return time.mktime((2026, 3, day, hour, minute, 0, 0, 0, -1))
+
+
+def test_schedule_due_logic():
+    cfg = st.settings({"schedule": {"daily_at": "03:30"}})
+    assert not st.schedule_due(cfg, 0, _at(3, 29))
+    assert st.schedule_due(cfg, 0, _at(3, 30))
+    assert st.schedule_due(cfg, 0, _at(23, 0))                    # missed while down: runs when next up that day
+    assert not st.schedule_due(cfg, _at(3, 31), _at(23, 0))      # already attempted since the slot
+    assert st.schedule_due(cfg, _at(3, 31), _at(3, 30, 16))      # next day
+    for bad in ("", "25:00", "3pm", "03:60"):
+        assert not st.schedule_due(st.settings({"schedule": {"daily_at": bad}}), 0, _at(12, 0))
+    assert not st.schedule_due(st.settings({}), 0, _at(12, 0))   # default: off
+
+
+def test_scheduled_run_applies_once_a_day_and_status_shows_it(env):
+    root, arch, cfg = env
+    cfg["schedule"] = {"daily_at": "03:30"}
+    f = _file(root / "data" / "attachments" / "old.bin", age_days=200)
+    now = _at(4, 0)
+    _file(f, age_days=200)
+    os.utime(f, (now - 200 * DAY, now - 200 * DAY))
+    assert st.run_scheduled(root, cfg, _at(3, 0)) is None and f.exists()
+    rec = st.run_scheduled(root, cfg, now)
+    assert rec["ok"] and rec["files"] == 1 and not f.exists()
+    assert st.run_scheduled(root, cfg, _at(5, 0)) is None            # once per day
+    s = st.status(root, cfg)
+    assert s["last_scheduled_run"]["ok"] and s["last_scheduled_run"]["files"] == 1
+    assert s["schedule"] == {"daily_at": "03:30"}
+    assert st.run_scheduled(root, cfg, _at(3, 31, 16)) is not None   # the next day runs again
+
+
+def test_scheduled_run_needs_enabled_and_a_valid_archive_and_never_raises(env):
+    root, arch, cfg = env
+    cfg["schedule"] = {"daily_at": "03:30"}
+    f = _file(root / "data" / "attachments" / "old.bin")
+    off = {**cfg, "enabled": False}
+    assert st.run_scheduled(root, off, _at(4, 0)) is None and f.exists()
+    bad = {**cfg, "archive_dir": str(root / "data" / "inside")}
+    rec = st.run_scheduled(root, bad, _at(4, 0))                     # refused: recorded as a failure, file stays
+    assert rec["ok"] is False and "outside" in rec["error"] and f.exists()
+    assert st.run_scheduled(root, bad, _at(5, 0)) is None            # a failed run is not retried the same day
+    assert st.status(root, bad)["last_scheduled_run"]["ok"] is False
+
+
+def test_scheduled_run_is_one_at_a_time(env):
+    root, arch, cfg = env
+    cfg["schedule"] = {"daily_at": "03:30"}
+    f = _file(root / "data" / "attachments" / "old.bin")
+    assert st._run_lock.acquire(blocking=False)
+    try:
+        assert st.run_scheduled(root, cfg, _at(4, 0)) is None and f.exists()
+    finally:
+        st._run_lock.release()
+
+
+def test_scheduled_tick_runs_in_a_worker_thread(env, monkeypatch):
+    import asyncio
+    import threading
+    root, arch, cfg = env
+    cfg["schedule"] = {"daily_at": "03:30"}
+    _file(root / "data" / "attachments" / "old.bin")
+    seen = {}
+    real = st.apply
+
+    def spy(*a, **k):
+        seen["thread"] = threading.current_thread()
+        return real(*a, **k)
+    monkeypatch.setattr(st, "apply", spy)
+    rec = asyncio.run(st.scheduled_tick(root, cfg, _at(4, 0)))
+    assert rec["ok"] and seen["thread"] is not threading.main_thread()
+
+
+def test_the_scheduler_poll_loop_drives_the_tick(monkeypatch):
+    import asyncio
+    from bot import scheduler
+    calls = []
+
+    async def fake_tick(*a, **k):
+        calls.append(1)
+    monkeypatch.setattr(scheduler.db, "list_due_scheduled_commands", lambda now: [])
+    monkeypatch.setattr(st, "scheduled_tick", fake_tick)
+
+    async def go(daily):
+        monkeypatch.setattr(st, "settings", lambda cfg=None: {"schedule": {"daily_at": daily}})
+        stop = asyncio.Event()
+        t = asyncio.create_task(scheduler.run_forever(stop))
+        await asyncio.sleep(0.2)
+        stop.set()
+        await t
+    asyncio.run(go(""))
+    assert calls == []                                    # no schedule configured: the tick is not even started
+    asyncio.run(go("03:30"))
+    assert calls == [1]

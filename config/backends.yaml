@@ -380,6 +380,7 @@ cache:
   embeddings_ttl_s: 2592000
   model_lists_ttl_s: 600
   web_fetch_max_bytes: 1000000
+  embeddings_max_lookups: 64   # embedding batches larger than this skip the per-text cache lookups
 retention:
   # Automatic pruning for the highest-volume, lowest-long-term-value
   # tables — job attempts, telemetry samples, connection-health events,
@@ -512,6 +513,7 @@ storage_tiering:
   archive_dir: ""          # e.g. /mnt/archive/abp
   max_files: 200           # per run
   max_bytes: 2147483648    # per run
+  schedule: {daily_at: ""}   # e.g. "03:30" (local time): run apply once a day; empty = only on demand
   categories:
     attachments: {enabled: true, after_days: 90}
     logs: {enabled: true, after_days: 14}

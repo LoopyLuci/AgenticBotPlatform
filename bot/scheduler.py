@@ -242,6 +242,15 @@ async def run_forever(stop_event: asyncio.Event) -> None:
         except Exception:
             logger.exception("scheduler poll failed")
         try:
+            # Storage tiering's daily run (storage_tiering.schedule): off unless configured; the copy work runs in a
+            # worker thread on its own task, so a long run never delays the next poll.
+            from bot import storage_tiering, tasks as bg
+
+            if storage_tiering.settings()["schedule"]["daily_at"]:
+                bg.spawn(storage_tiering.scheduled_tick(), name="storage tiering schedule")
+        except Exception:
+            logger.exception("storage tiering schedule check failed")
+        try:
             await asyncio.wait_for(stop_event.wait(), timeout=POLL_INTERVAL_S)
         except asyncio.TimeoutError:
             pass

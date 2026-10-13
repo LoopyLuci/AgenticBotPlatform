@@ -26,7 +26,7 @@ import re
 import time
 import zipfile
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 import numpy as np
 
@@ -140,6 +140,14 @@ def _http_embed(url: str, model: str, texts: list[str]) -> Optional[np.ndarray]:
         return None
 
 
+def _embed(backend: str, fn: Callable[[list[str]], Any], texts: list[str]):
+    """fn(texts), through CacheIt when cache.embeddings is on (not for hash-tfidf, which costs less than the lookup)."""
+    if backend == "hash-tfidf":
+        return fn(texts)
+    from bot import hotcache
+    return hotcache.embed_cached(backend, fn, texts)
+
+
 def embed_backend() -> tuple[str, Callable[[list[str]], np.ndarray]]:
     """The best local embedder available: ABP's own runtime, a local Ollama embedding model, or hashed TF-IDF."""
     hit = _backend_cache.get("b")
@@ -208,7 +216,7 @@ def index_share(name: str, log: Log = lambda m: None, describe_images: bool = Tr
     def flush():
         if not batch:
             return
-        vecs = embed([b[-1] for b in batch])
+        vecs = _embed(backend, embed, [b[-1] for b in batch])
         with con:
             for (path, size, mtime, kind, ph, tags, text, err, _doc), v in zip(batch, vecs):
                 con.execute("INSERT OR REPLACE INTO files(share, path, size, mtime_ns, kind, phash, sha256, tags, chars, vec, "
@@ -302,7 +310,7 @@ def search(q: str, shares: Optional[list[str]] = None, mode: str = "auto", limit
         ranked["words"] = [(r[0], r[1]) for r in rows if allowed is None or r[0] in allowed]
     if mode in ("auto", "meaning"):
         backend, embed = embed_backend()
-        qv = embed([q])[0]
+        qv = _embed(backend, embed, [q])[0]
         rows = con.execute("SELECT share, path, vec FROM files WHERE vec_backend=?", (backend,)).fetchall()
         rows = [r for r in rows if allowed is None or r[0] in allowed]
         if rows:

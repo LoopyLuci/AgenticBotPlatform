@@ -70,7 +70,12 @@ otherwise every command refuses.
   `/tiering/scan`, `/tiering/index` and, with the dashboard token only, `POST /tiering/apply` and `/tiering/recall`. The Storage
   overview has a "Cold data tier" card.
 - **Recall:** opening an archived chat attachment (the dashboard and Server Chat download routes) brings it back first,
-  verified by hash. Other categories are recalled explicitly. Nothing runs on a schedule yet: apply is a command.
+  verified by hash. Other categories are recalled explicitly.
+- **Schedule:** `storage_tiering.schedule.daily_at: "03:30"` (local time, `HH:MM`; empty = off, the default) runs `apply` once a
+  day from ABP's scheduler loop, in a worker thread, one run at a time, and only when tiering is enabled and the archive is
+  valid. If ABP was down at that time the run happens when it is next up that day; a failed run is not retried until the next
+  day. The result (time, files, bytes, or the error) is in `status` and the log (`last_scheduled_run`). A malformed time
+  shows as `schedule_error` in `status` and nothing runs.
 
 ## What has been verified, and how
 
