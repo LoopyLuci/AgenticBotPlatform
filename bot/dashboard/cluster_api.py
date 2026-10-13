@@ -14,6 +14,11 @@ machine's offer, which only this machine's owner can change (desktop dashboard t
     GET  /api/cluster/runs/{id}/logs?offset=     its log, from a byte offset (for following it)
     GET  /api/cluster/runs/{id}/files/{name}     a result file (from its out/ folder)
 
+  Blobs (content-addressed job data; a linked peer or the owner may read, nothing is written through the API)
+    GET  /api/cluster/blobs                      this node's blob store: count, bytes, cap, hits, transfers
+    GET|HEAD /api/cluster/blobs/{hash}           a blob's manifest (size, chunk size, chunk hashes), 404 if not held
+    GET  /api/cluster/blobs/{hash}/chunks/{i}    one chunk (base64 in JSON), for resumable, verified transfer
+
   The cluster (scheduling from this machine; dashboard and paired phones)
     GET  /api/cluster                            every node: health, hardware, offer, free share, load
     POST /api/cluster/refresh                    ask every peer for its report now
@@ -45,7 +50,7 @@ def _peer_name(key: str) -> Optional[str]:
 
 
 def register(app: FastAPI, identify: Callable) -> None:
-    from bot.cluster import executor, membership, offer, scheduler, store
+    from bot.cluster import blobs, executor, membership, offer, scheduler, store
     from bot.cluster.executor import JobError
     from bot.cluster.scheduler import ScheduleError
 
@@ -76,6 +81,11 @@ def register(app: FastAPI, identify: Callable) -> None:
             raise HTTPException(status_code=403, detail="submitting jobs needs the desktop dashboard token")
         return c
 
+    def blob_reader(c: Caller = Depends(caller)) -> Caller:
+        if c.kind not in ("peer", "dashboard"):
+            raise HTTPException(status_code=403, detail="blobs are for linked servers and this machine's owner")
+        return c
+
     async def run(fn, *args, **kwargs) -> Any:
         try:
             res = fn(*args, **kwargs)
@@ -87,6 +97,8 @@ def register(app: FastAPI, identify: Callable) -> None:
         except ScheduleError as e:
             raise HTTPException(status_code=409, detail={"error": str(e), "code": "unschedulable",
                                                          "reasons": e.reasons}) from e
+        except blobs.BlobError as e:
+            raise HTTPException(status_code=e.status, detail={"error": str(e), "code": e.code}) from e
         except ValueError as e:
             raise HTTPException(status_code=400, detail={"error": str(e), "code": "invalid"}) from e
 
@@ -165,6 +177,19 @@ def register(app: FastAPI, identify: Callable) -> None:
             raise HTTPException(status_code=400, detail={"error": "to: the asker's TransferDaemon node id",
                                                          "code": "invalid"})
         return await run(asyncio.to_thread, executor.send_result, rid, name, to)
+
+    # ---- blobs (hash only: no route takes a path) ----------------------------------------------------------------------
+    @app.get("/api/cluster/blobs")
+    async def cluster_blobs(c: Caller = Depends(blob_reader)):
+        return blobs.get_store().summary()
+
+    @app.api_route("/api/cluster/blobs/{h}", methods=["GET", "HEAD"])
+    async def cluster_blob(h: str, c: Caller = Depends(blob_reader)):
+        return await run(blobs.get_store().manifest, h)
+
+    @app.get("/api/cluster/blobs/{h}/chunks/{index}")
+    async def cluster_blob_chunk(h: str, index: int, c: Caller = Depends(blob_reader)):
+        return await run(asyncio.to_thread, blobs.get_store().chunk_doc, h, index)
 
     # ---- the cluster, from here ----------------------------------------------------------------------------------------
     @app.get("/api/cluster")

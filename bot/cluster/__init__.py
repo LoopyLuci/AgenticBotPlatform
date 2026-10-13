@@ -5,6 +5,7 @@
     store.py       the job records (SQLite): survive restarts, audited
     executor.py    runs jobs here, inside the offer's hard limits, each in its own work folder
     membership.py  every node (this one and linked peers), kept current by a heartbeat
+    blobs.py       content-addressed job inputs/outputs: chunked, verified peer transfer, LRU store
     scheduler.py   places jobs: filter, score, reserve (the chosen node accepts or refuses); groups and arrays
     tools.py       the agent's cluster tools
 """

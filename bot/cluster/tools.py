@@ -45,7 +45,8 @@ def _node_summary(n: dict) -> dict:
             "ram_gb": st.get("ram_gb"), "gpus": [f"{g.get('name')} ({g.get('vram_gb')} GB)" for g in st.get("gpus") or []],
             "cpu_load_pct": live.get("cpu_pct"), "sharing": info.get("available"),
             "not_sharing_because": info.get("unavailable_reason") or None, "offer_kinds": (info.get("offer") or {}).get("kinds"),
-            "free": info.get("free"), "jobs": info.get("jobs"), "models": (info.get("software") or {}).get("models"),
+            "free": info.get("free"), "jobs": info.get("jobs"),
+            "blobs": {k: v for k, v in (info.get("blobs") or {}).items() if k != "held"} or None, "models": (info.get("software") or {}).get("models"),
             "modules": [m["id"] for m in (info.get("software") or {}).get("modules") or []], "error": n.get("error")}
 
 

@@ -13,6 +13,10 @@ sandbox_ns cell whose policy is the job's reservation - a hard CPU-rate cap (its
 cap for the job as a whole and per process, below-normal priority - which on Windows is a real Win32 Job Object
 and elsewhere a session with setrlimit/nice. A timeout, a cancel, or ABP stopping kills the whole process tree.
 
+Data: a job may also carry inputs {name: {hash, size}} (blobs of bot/cluster/blobs.py, fetched from the submitting
+node and the nodes named in data_sources, then copied into <job>/in/<name> before it starts) and outputs ("all", or
+a list of file names in out/), which are stored as blobs when the job succeeds and come back as output_blobs.
+
 Kinds:
     command       spec: {argv: [...], cwd?: a folder inside the job folder, stdin?: text}
     python        spec: {code: "...", args?: [...]}  (run with ABP's Python in isolated mode)
@@ -35,7 +39,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from bot.cluster import inventory, store
+from bot.cluster import blobs, inventory, store
 from bot.cluster.offer import Request, budget, work_root
 from bot.sandbox_ns.cell import new_cell
 from bot.sandbox_ns.policy import Policy
@@ -72,7 +76,7 @@ def _clean_env(job: dict, d: Path) -> dict:
     tmp = d / "tmp"
     tmp.mkdir(exist_ok=True)
     env.update(TEMP=str(tmp), TMP=str(tmp), TMPDIR=str(tmp), CLUSTER_JOB_ID=job["id"], CLUSTER_WORK_DIR=str(d),
-               CLUSTER_OUT_DIR=str(d / "out"), CLUSTER_NODE=inventory.static()["hostname"],
+               CLUSTER_OUT_DIR=str(d / "out"), CLUSTER_IN_DIR=str(d / "in"), CLUSTER_NODE=inventory.static()["hostname"],
                CLUSTER_CPU=str(job["reserved"]["cpu"]), CLUSTER_RAM_GB=str(job["reserved"]["ram_gb"]),
                PYTHONUNBUFFERED="1")
     if job["reserved"]["gpus"]:
@@ -120,9 +124,35 @@ def _validate(job: dict) -> dict:
     timeout = float(job.get("timeout_s") or 3600)
     if not 1 <= timeout <= MAX_TIMEOUT_S:
         raise JobError(f"timeout_s is 1-{MAX_TIMEOUT_S}")
+    inputs = _clean_inputs(job.get("inputs"))
+    outputs = job.get("outputs")
+    if outputs not in (None, "all") and not (isinstance(outputs, list) and all(isinstance(o, str) for o in outputs)):
+        raise JobError('outputs is "all" or a list of file names in the out folder')
+    sources = [str(n) for n in (job.get("data_sources") or []) if isinstance(n, str)][:16]
     return {"id": jid, "kind": kind, "spec": spec, "req": Request.from_dict(job.get("req")).public(),
             "timeout_s": timeout, "env": {str(k): str(v) for k, v in env.items()}, "group": job.get("group"),
-            "task": job.get("task"), "submitter": job.get("submitter") or {}, "hold": bool(job.get("hold"))}
+            "task": job.get("task"), "submitter": job.get("submitter") or {}, "hold": bool(job.get("hold")),
+            "inputs": inputs, "outputs": outputs, "data_sources": sources}
+
+
+def _clean_inputs(raw: Any) -> dict:
+    """inputs: {name: {hash, size?}} with each name a relative path that stays inside the job's in/ folder."""
+    if not raw:
+        return {}
+    if not isinstance(raw, dict) or len(raw) > 1000:
+        raise JobError("inputs is a map of file names to {hash, size}")
+    out = {}
+    for name, ref in raw.items():
+        parts = str(name).replace("\\", "/").split("/")
+        if (not name or str(name).startswith(("/", "\\")) or ".." in parts or "" in parts or ":" in str(name)
+                or not isinstance(ref, dict)):
+            raise JobError(f"input {str(name)[:60]!r}: a relative file name and {{hash}}")
+        try:
+            h = blobs.valid_hash(ref.get("hash"))
+        except blobs.BlobError as e:
+            raise JobError(f"input {str(name)[:60]!r}: {e}") from None
+        out[str(name)] = {"hash": h, **({"size": int(ref["size"])} if ref.get("size") is not None else {})}
+    return out
 
 
 def accept(job: dict, peer: Optional[str] = None) -> dict:
@@ -135,6 +165,8 @@ def accept(job: dict, peer: Optional[str] = None) -> dict:
     if not ok:
         raise JobError(why, code="refused", status=409)
     j.update(state="held" if j["hold"] else "accepted", reserved=taken, peer=peer, node=inventory.static()["hostname"])
+    for ref in j["inputs"].values():
+        blobs.get_store().pin(ref["hash"], j["id"])      # kept from now until the job ends, whatever else is stored
     store.put("runs", j)
     try:
         from bot import db
@@ -177,6 +209,12 @@ def _finish(job_id: str, state: str, **extra: Any) -> None:
         rec = _procs.pop(job_id, None)
     if rec and rec.get("cancelled") and state != "done":
         state = "cancelled"
+    j = store.get("runs", job_id) or {}
+    if state == "done" and j.get("outputs"):
+        extra["output_blobs"], note = _store_outputs(j, files)
+        if note:
+            extra["output_note"] = note
+    blobs.get_store().unpin_owner(job_id)
     store.update("runs", job_id, state=state, finished=time.time(), files=files[:500], **extra)
     budget.release(job_id)
     try:
@@ -186,11 +224,48 @@ def _finish(job_id: str, state: str, **extra: Any) -> None:
         pass
 
 
+def _store_outputs(j: dict, files: list) -> tuple[dict, str]:
+    """Put the job's requested result files into the blob store; {name: {hash, size}} and any problems."""
+    want = None if j["outputs"] == "all" else set(j["outputs"])
+    out, problems = {}, []
+    for f in files:
+        if want is not None and f["name"] not in want:
+            continue
+        try:
+            out[f["name"]] = blobs.get_store().put_file(_job_dir(j["id"]) / "out" / f["name"])
+        except (blobs.BlobError, OSError) as e:
+            problems.append(f"{f['name']}: {e}")
+    return out, "; ".join(problems)[:500]
+
+
+def _stage_inputs(j: dict) -> None:
+    """Fetch the job's missing input blobs (once per node: a blob already held is not transferred) and copy them in."""
+    if not j.get("inputs"):
+        return
+    me = inventory.static()["hostname"]
+    sources = []
+    for n in [(j.get("submitter") or {}).get("node"), *(j.get("data_sources") or [])]:
+        if n and n != me and n not in sources:
+            sources.append(n)
+    st, d = blobs.get_store(), _job_dir(j["id"]) / "in"
+    for name, ref in j["inputs"].items():
+        t0 = time.time()
+        had = st.has(ref["hash"])
+        try:
+            st.ensure(ref["hash"], sources, size=ref.get("size"))
+            st.materialize(ref["hash"], d / name)
+        except blobs.BlobError as e:
+            raise RuntimeError(f"input {name}: {e}") from None
+        _log(j["id"], f"[cluster] input {name}: {'already here' if had else 'fetched'} ({ref['hash'][:12]}, "
+                      f"{time.time() - t0:.1f}s)")
+
+
 def _run(job_id: str) -> None:
     j = store.get("runs", job_id)
     if j is None:
         return
     try:
+        _stage_inputs(j)
         if j["kind"] in ("command", "python"):
             _run_process(j)
         elif j["kind"] == "module_op":
@@ -398,6 +473,7 @@ def cancel(job_id: str) -> dict:
         raise JobError(f"no job {job_id}", code="not_found", status=404)
     if j["state"] in ("held", "accepted"):
         budget.release(job_id)
+        blobs.get_store().unpin_owner(job_id)
         return store.update("runs", job_id, state="cancelled", finished=time.time())
     with _lock:
         rec = _procs.get(job_id)

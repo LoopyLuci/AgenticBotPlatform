@@ -223,8 +223,8 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.dashboard.studio_api", "bot.studio.variants", "bot.studio.log", "bot.studio.generate", "bot.studio.edits",
     "bot.studio.tokens", "bot.studio.shots", "bot.studio.gate", "bot.studio.km",
     # Cluster: offer.py holds the budget's reservations, executor.py the running jobs, store.py its connection,
-    # membership.py the peers' reports; tools.py registers at import time.
-    "bot.cluster.inventory", "bot.cluster.offer", "bot.cluster.store", "bot.cluster.executor", "bot.cluster.membership",
+    # membership.py the peers' reports; blobs.py the blob store and its pins; tools.py registers at import time.
+    "bot.cluster.blobs", "bot.cluster.inventory", "bot.cluster.offer", "bot.cluster.store", "bot.cluster.executor", "bot.cluster.membership",
     "bot.cluster.scheduler", "bot.cluster.tools", "bot.dashboard.cluster_api",
     # The toolkit registers its actions and agent tools at import time.
     "bot.agent_runtime.toolkit_tools",
