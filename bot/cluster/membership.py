@@ -11,7 +11,7 @@ import logging
 import time
 from typing import Any, Optional
 
-from bot.cluster import executor, inventory, offer, store
+from bot.cluster import blobs, executor, inventory, offer, store
 
 logger = logging.getLogger("bot.cluster")
 HEARTBEAT_S = 15
@@ -33,7 +33,9 @@ def this_node() -> dict:
     ok, why = offer.available_now(o)
     running = store.list_("runs", states=("running", "starting"), limit=1000)
     held = store.list_("runs", states=("held", "accepted"), limit=1000)
+    bl = blobs.get_store()
     return {
+        "blobs": {**bl.summary(), "held": bl.advertised()},
         "id": node_id(), "name": inventory.static()["hostname"], "static": inventory.static(), "live": inventory.live(),
         "software": inventory.software(), "api": 1,
         "offer": {k: v for k, v in o.items() if k != "work_dir"},

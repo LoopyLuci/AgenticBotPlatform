@@ -9,6 +9,10 @@ The chosen node has the final word: it reserves the job's share of its offer ato
     submit_array(spec)    an array:  the same, plus count: N tasks (CLUSTER_TASK_INDEX), max_parallel at a time,
                           placed as capacity frees up; results gathered on the group
 
+A job may name inputs (files, text or blob hashes) and outputs: inputs are put into the blob store at submit, the
+nodes that already hold them are preferred (bot/cluster/blobs.py), and the node that runs the job fetches what it
+lacks once. Results come back as output_blobs {name: {hash, size}}.
+
 A job with retries left is placed again elsewhere when its node goes down or loses it. Job ids are the placement id
 plus the attempt ("abc123-a1"), so a node never runs the same attempt twice.
 """
@@ -23,7 +27,7 @@ import zlib
 from pathlib import Path
 from typing import Any, Optional
 
-from bot.cluster import executor, membership, store
+from bot.cluster import blobs, executor, membership, store
 from bot.cluster.offer import Request, work_root
 
 
@@ -103,8 +107,14 @@ def _score(node: dict, req: Request) -> float:
     return cpu_left + ram_left - 0.5 * load + (0.15 if node["peer"] is None else 0) - _distance_ms(node) / 2000
 
 
+def _held_bytes(node: dict, data: Optional[dict]) -> int:
+    """How many bytes of the job's input blobs this node reports holding."""
+    held = ((node.get("info") or {}).get("blobs") or {}).get("held")
+    return sum(int(size or 0) + 1 for h, size in (data or {}).items() if blobs.holds(held, h))
+
+
 def candidates(req: Request, kind: str, *, exclude: tuple = (), only: Optional[str] = None,
-               service_group: Optional[str] = None) -> tuple[list[dict], dict]:
+               service_group: Optional[str] = None, data: Optional[dict] = None) -> tuple[list[dict], dict]:
     """The nodes that could take this job, best first, and why each other node could not. `service_group`
     narrows the choice to the TransferDaemon nodes in that service group (the overlay's own grouping, for a
     gang that wants one specific set of machines)."""
@@ -126,6 +136,8 @@ def candidates(req: Request, kind: str, *, exclude: tuple = (), only: Optional[s
         else:
             why_not[n["name"]] = why
     fits.sort(key=lambda n: _score(n, req), reverse=True)
+    if data:                                          # data-local first (stable: ties keep the score order)
+        fits.sort(key=lambda n: -_held_bytes(n, data))
     return fits, why_not
 
 
@@ -193,8 +205,9 @@ def _address(n: dict) -> str:
 
 # ---- one job ----------------------------------------------------------------------------------------------------------
 def _run_doc(p: dict, attempt: int, *, hold: bool = False, group: Optional[dict] = None,
-             task: Optional[dict] = None) -> dict:
-    return {"id": f"{p['id']}-a{attempt}", "kind": p["kind"], "spec": p["spec"], "req": p["req"],
+             task: Optional[dict] = None, sources: Optional[list] = None) -> dict:
+    return {"inputs": p.get("inputs") or {}, "outputs": p.get("outputs"), "data_sources": sources or [],
+            "id": f"{p['id']}-a{attempt}", "kind": p["kind"], "spec": p["spec"], "req": p["req"],
             "timeout_s": p["timeout_s"], "env": p.get("env") or {}, "hold": hold, "group": group, "task": task,
             "submitter": {"node": membership.inventory.static()["hostname"], "placement": p["id"]}}
 
@@ -204,12 +217,13 @@ async def _place(p: dict, *, exclude: tuple = (), hold: bool = False, group: Opt
                  service_group: Optional[str] = None) -> dict:
     req = Request.from_dict(p["req"])
     fits, why_not = await asyncio.to_thread(candidates, req, p["kind"], exclude=exclude, only=only,
-                                            service_group=service_group)
+                                            service_group=service_group, data=p.get("data"))
     if p.get("prefer"):
         fits.sort(key=lambda n: n["name"].lower() != str(p["prefer"]).lower())
     attempt = len(p.get("attempts") or []) + 1
     for n in fits:
-        doc = _run_doc(p, attempt, hold=hold, group=group, task=task)
+        holders = [h["name"] for h in fits if h["name"] != n["name"] and _held_bytes(h, p.get("data"))]
+        doc = _run_doc(p, attempt, hold=hold, group=group, task=task, sources=holders)
         try:
             run = await _node_call(_node_key(n), "POST", "/runs", doc, timeout=60)
         except Exception as e:  # noqa: BLE001  (a refusal or an unreachable node: ask the next one)
@@ -218,24 +232,70 @@ async def _place(p: dict, *, exclude: tuple = (), hold: bool = False, group: Opt
         p.setdefault("attempts", []).append({"node": n["name"], "peer": n["peer"], "run_id": doc["id"], "at": time.time()})
         p.update(node=n["name"], peer=n["peer"], run_id=doc["id"], state=run.get("state", "accepted"), run=run)
         store.put("placements", p)
+        for ref in (p.get("inputs") or {}).values():
+            blobs.get_store().pin(ref["hash"], "placement:" + p["id"])     # kept here until the job ends
         return p
     raise ScheduleError("no node can take this job right now", why_not)
 
 
+_path_refs: dict = {}                               # (path, size, mtime) -> {hash, size}: a file is hashed once
+
+
+def resolve_inputs(inputs: Any) -> dict:
+    """A job's inputs as {name: {hash, size}}, putting files ({path}) and text ({text}) into this node's blob store.
+    {hash} refs pass through (their size is filled in when this node holds the blob)."""
+    if not inputs:
+        return {}
+    if not isinstance(inputs, dict):
+        raise ScheduleError("inputs is a map of file names to {path}, {text} or {hash}")
+    st, out = blobs.get_store(), {}
+    for name, ref in inputs.items():
+        if not isinstance(ref, dict):
+            raise ScheduleError(f"input {name!r}: expected {{path}}, {{text}} or {{hash}}")
+        try:
+            if ref.get("path"):
+                f = Path(str(ref["path"])).expanduser()
+                stat = f.stat()
+                key = (str(f.resolve()), stat.st_size, stat.st_mtime_ns)
+                done = _path_refs.get(key)
+                if done is None or not st.has(done["hash"]):
+                    done = _path_refs[key] = st.put_file(f)
+                out[name] = dict(done)
+            elif ref.get("text") is not None:
+                out[name] = st.put_bytes(str(ref["text"]).encode("utf-8"))
+            else:
+                h = blobs.valid_hash(ref.get("hash"))
+                out[name] = {"hash": h, **({"size": st.manifest(h)["size"]} if st.has(h) else
+                                           {"size": int(ref["size"])} if ref.get("size") is not None else {})}
+        except (blobs.BlobError, OSError) as e:
+            raise ScheduleError(f"input {name!r}: {e}") from None
+    return out
+
+
+async def _with_inputs(spec: dict) -> dict:
+    """The spec with its inputs resolved to blob refs (files are hashed off the event loop)."""
+    if not spec.get("inputs"):
+        return spec
+    return {**spec, "inputs": await asyncio.to_thread(resolve_inputs, spec["inputs"])}
+
+
 def _placement(spec: dict, *, name: str = "", group_id: Optional[str] = None) -> dict:
     kind = str(spec.get("kind") or "")
-    probe = {**spec, "id": "probe"}
+    inputs = resolve_inputs(spec.get("inputs"))
+    probe = {**spec, "id": "probe", "inputs": inputs}
     executor._validate(probe)                       # the same checks a node makes, before asking any node
     return {"id": uuid.uuid4().hex[:12], "name": name or spec.get("name") or kind, "kind": kind,
             "spec": spec.get("spec") or {}, "req": Request.from_dict(spec.get("req")).public(),
             "timeout_s": float(spec.get("timeout_s") or 3600), "env": spec.get("env") or {},
+            "inputs": inputs, "outputs": spec.get("outputs"),
+            "data": {r["hash"]: int(r.get("size") or 0) for r in inputs.values()},
             "retries": int(spec.get("retries") or 0), "prefer": spec.get("prefer"), "state": "placing",
             "group_id": group_id, "service_group": spec.get("service_group"),
             "created": time.time()}
 
 
 async def submit(spec: dict) -> dict:
-    p = _placement(spec)
+    p = _placement(await _with_inputs(spec))
     try:
         return await _place(p, only=spec.get("node"))
     except ScheduleError as e:
@@ -253,8 +313,12 @@ async def refresh(pid: str) -> dict:
     try:
         run = await _node_call(p.get("peer"), "GET", f"/runs/{p['run_id']}", timeout=20)
         p.update(state=run.get("state"), run=run, node_error=None)
+        if run.get("output_blobs"):
+            p["output_blobs"] = run["output_blobs"]
     except Exception as e:  # noqa: BLE001
         p["node_error"] = str(e)[:300]
+    if p.get("state") in TERMINAL:
+        blobs.get_store().unpin_owner("placement:" + p["id"])
     return store.put("placements", p)
 
 
@@ -269,6 +333,7 @@ async def cancel(pid: str) -> dict:
             p["node_error"] = str(e)[:300]
     p["state"] = "cancelled"
     p["retries"] = 0
+    blobs.get_store().unpin_owner("placement:" + p["id"])
     return store.put("placements", p)
 
 
@@ -349,6 +414,7 @@ async def submit_group(spec: dict) -> dict:
     n = int(spec.get("replicas") or 0)
     if not 1 <= n <= 256:
         raise ScheduleError("replicas is 1-256")
+    spec = await _with_inputs(spec)
     gid = uuid.uuid4().hex[:12]
     req = Request.from_dict(spec.get("req"))
     fits, why_not = await asyncio.to_thread(candidates, req, str(spec.get("kind")),
@@ -389,6 +455,7 @@ async def submit_array(spec: dict) -> dict:
     count = int(spec.get("count") or 0)
     if not 1 <= count <= 10_000:
         raise ScheduleError("count is 1-10000")
+    spec = await _with_inputs(spec)
     _placement(spec)                                  # validate once
     group = {"id": uuid.uuid4().hex[:12], "kind": "array", "name": spec.get("name") or "array", "state": "running",
              "count": count, "max_parallel": int(spec.get("max_parallel") or count), "spec": spec,

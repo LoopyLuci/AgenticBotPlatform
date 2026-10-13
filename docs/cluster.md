@@ -50,6 +50,32 @@ From the Cluster page, the agent (`cluster_run`, `cluster_group`, `cluster_jobs`
   as room frees up. The results are gathered on the group.
 - **Retries.** With `retries`, a job whose node goes down, or loses it, is placed again on another node.
 
+## Job data (inputs and outputs)
+
+A job can carry files in and out without the caller copying anything by hand:
+
+```json
+{"kind": "python", "spec": {"code": "..."}, "outputs": "all",
+ "inputs": {"data/train.bin": {"path": "/data/sets/train.bin"}, "note.txt": {"text": "hi"}, "model.bin": {"hash": "<sha256>"}}}
+```
+
+- **Inputs** are put into the submitting node's blob store when the job is submitted (named by the SHA-256 of
+  their content). The node that runs the job fetches what it lacks, once, and copies each input to
+  `$CLUSTER_IN_DIR/<name>`. A second job with the same input finds it already on that node and moves nothing.
+- **Outputs** (`"all"`, or a list of names in `$CLUSTER_OUT_DIR`) are stored as blobs when the job succeeds, and
+  their hashes come back in `output_blobs`. Anyone holding the hash can fetch them from the node that ran the job.
+- **Transfer** is chunked HTTP over the existing peer link and its keys (`GET /api/cluster/blobs/{hash}` for the
+  manifest, `/chunks/{i}` for a chunk). Every chunk is checked against the manifest and the whole blob against its
+  hash; an interrupted fetch resumes from the verified chunks; only a linked peer or the owner may read, only by hash.
+- **Placement** prefers nodes that report holding the job's inputs (most input bytes first); otherwise scoring is
+  unchanged.
+- **Store.** `data/cluster/blobs`, capped by `cluster.blobs.max_gb` (default 20). The least recently used blob goes
+  first, never one a running job (or a submitted, unfinished job) uses. When CacheIt runs, single-chunk blobs are
+  mirrored there too; the store works without it. Count, bytes and hit/transfer counters are in each node's
+  status (`blobs`).
+- A node fetches from the node that submitted the job (and the nodes that held the data), by the name it has for
+  them as a linked server.
+
 ## How it holds together
 
 - **The heartbeat.** Every 15 seconds each node asks every linked node for its report. A node is *stale* after
