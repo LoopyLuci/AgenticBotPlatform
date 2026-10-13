@@ -180,7 +180,7 @@ def _run(cmd: list[str], cwd: Optional[Path] = None, retries: int = 0,
                 out = proc.communicate(timeout=5)[0] or ""
             except Exception:
                 out = ""
-            return False, f"{' '.join(cmd)}: timed out after {timeout:.0f}s\n{out[-2000:]}"
+            return False, f"{' '.join(cmd)}: timed out after {timeout:.0f}s\n{out}"  # whole: the pytest step keeps it on disk
         if returncode == 0 or attempt >= retries:
             break
         attempt += 1
@@ -371,6 +371,19 @@ def restore_prior_state(was_running: bool) -> None:
         relaunch_bare()
 
 
+def _keep_pytest_output(out: str) -> None:
+    """The whole pytest output next to the run's log: the summary below shows only its tail, and a crash's
+    traceback (a worker's faulthandler dump) or the test it names would otherwise be lost."""
+    try:
+        log_dir = ROOT / "logs" / "local_pipeline"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        path = log_dir / f"{datetime.datetime.now():%Y%m%d-%H%M%S}-pytest.txt"
+        path.write_text(out, encoding="utf-8")
+        Step.doing(f"full pytest output: {path.relative_to(ROOT)}")
+    except OSError:
+        pass
+
+
 def check_python() -> bool:
     Step.head("Python — compile, tests, audit")
     py = _venv_python()
@@ -400,11 +413,15 @@ def check_python() -> bool:
     extra: list[str] = []
     has_dev, _ = _run([py, "-c", "import xdist, pytest_cov"])
     if has_dev:
-        extra = ["-n", "auto", "--dist", "loadgroup", "--cov=bot", "--cov=abp_cicd", "--cov-report=term:skip-covered"]
+        # --max-worker-restart=0: a worker that dies (a native crash) ends the run at once, naming the test it was
+        # running, instead of the session waiting out PYTEST_TIMEOUT for a replacement that never finishes.
+        extra = ["-n", "auto", "--dist", "loadgroup", "--max-worker-restart=0",
+                 "--cov=bot", "--cov=abp_cicd", "--cov-report=term:skip-covered"]
     else:
         Step.warn("pytest-xdist/pytest-cov not installed — serial run without the coverage floor "
                   "(pip install -r requirements-dev.txt)")
     ok, out = _run([py, "-m", "pytest", "-q", "-rfE", *extra], cwd=ROOT, timeout=PYTEST_TIMEOUT)
+    _keep_pytest_output(out)
     if not ok:
         # A test that fails once and passes alone is a flake (a busy port, a
         # timing race), not a regression: re-run ONLY the failures once. A
