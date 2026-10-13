@@ -950,9 +950,68 @@ def _enable_wal(conn: sqlite3.Connection, attempts: int = 40) -> None:
             time.sleep(min(0.25, 0.01 * (attempt + 1)))
 
 
+def _guarded(base: type, name: str):
+    inner = getattr(base, name)
+
+    def method(self, *args, **kwargs):
+        with self._guard:
+            return inner(self, *args, **kwargs)
+    method.__name__ = name
+    return method
+
+
+class _GuardedCursor(sqlite3.Cursor):
+    """Every call that can step the SQLite statement holds the owning
+    connection's guard, so close_conn() (which may run on another thread) can
+    never close the handle while a statement is mid-step -- that is an access
+    violation inside SQLite, not a Python exception."""
+
+    def __init__(self, conn):
+        super().__init__(conn)
+        self._guard = conn._guard
+
+    execute = _guarded(sqlite3.Cursor, "execute")
+    executemany = _guarded(sqlite3.Cursor, "executemany")
+    executescript = _guarded(sqlite3.Cursor, "executescript")
+    fetchone = _guarded(sqlite3.Cursor, "fetchone")
+    fetchmany = _guarded(sqlite3.Cursor, "fetchmany")
+    fetchall = _guarded(sqlite3.Cursor, "fetchall")
+    __next__ = _guarded(sqlite3.Cursor, "__next__")
+
+
+class _GuardedConnection(sqlite3.Connection):
+    """sqlite3.Connection whose statements and close() are mutually exclusive
+    (re-entrant, so the owner can close its own connection from anywhere)."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._guard = threading.RLock()
+
+    def cursor(self, factory=_GuardedCursor):
+        return super().cursor(factory)
+
+    # Connection.execute* build their cursor in C without going through
+    # cursor(), so they are routed through our guarded cursor explicitly.
+    def execute(self, *args):
+        return self.cursor().execute(*args)
+
+    def executemany(self, *args):
+        return self.cursor().executemany(*args)
+
+    def executescript(self, script):
+        return self.cursor().executescript(script)
+
+    commit = _guarded(sqlite3.Connection, "commit")
+    rollback = _guarded(sqlite3.Connection, "rollback")
+    close = _guarded(sqlite3.Connection, "close")
+    backup = _guarded(sqlite3.Connection, "backup")
+    __enter__ = _guarded(sqlite3.Connection, "__enter__")
+    __exit__ = _guarded(sqlite3.Connection, "__exit__")
+
+
 def _open(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path), check_same_thread=False)
+    conn = sqlite3.connect(str(path), check_same_thread=False, factory=_GuardedConnection)
     try:
         conn.row_factory = sqlite3.Row
         # Multiple paired devices can poll/write concurrently — wait out a
