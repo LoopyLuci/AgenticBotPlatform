@@ -11,7 +11,7 @@ from typing import Callable, Optional
 from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
-from bot import attachments, bot_instances, db, thumbnails
+from bot import attachments, bot_instances, db, storage_tiering, thumbnails
 
 
 def register(app: FastAPI, *, json_download: Callable) -> None:
@@ -237,7 +237,10 @@ def register(app: FastAPI, *, json_download: Callable) -> None:
         if row is None or not row["attachment_path"] or not db.is_conversation_participant(row["conversation_id"], device_id):
             raise HTTPException(status_code=404, detail="no such attachment")
         full_path = attachments.ATTACHMENTS_DIR / row["attachment_path"]
-        if not full_path.resolve().is_relative_to(attachments.ATTACHMENTS_DIR.resolve()) or not full_path.is_file():
+        if not full_path.resolve().is_relative_to(attachments.ATTACHMENTS_DIR.resolve()):
+            raise HTTPException(status_code=404, detail="attachment file missing")
+        storage_tiering.ensure_hot(full_path)  # tiered to the archive location: bring it back first
+        if not full_path.is_file():
             raise HTTPException(status_code=404, detail="attachment file missing")
         return FileResponse(full_path, media_type=row["attachment_mime"] or "application/octet-stream", filename=row["attachment_name"] or full_path.name)
 

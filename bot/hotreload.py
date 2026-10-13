@@ -372,6 +372,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.thumbnails",
     "bot.firewall",
     "bot.retention",
+    "bot.storage_tiering",  # stateless: every call takes the state root and settings, the index is opened per call
     "bot.peers",
     "bot.cache",  # CacheIt's client: a reload only drops its pooled connection and its cached hub address
     "bot.tailscale_mgr",
