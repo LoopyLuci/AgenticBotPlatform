@@ -37,3 +37,8 @@ A hub that is not running (or `prefer: false`) is simply not there: tools are no
 Studio, inference jobs go to Ollama. A hub that answers with an error (unknown model, refused key) is reported as it is and not
 retried elsewhere. A peer key reaches only the OpenAI routes (models, chat, completions, embeddings); pulling and loading work
 on a hub of this machine only.
+
+## Context window
+
+For `modelmistress/<model>` the agent's context budget uses the window the model is loaded with, read from the hub (cached
+30 s), not a family default; see "Context windows" in `models.md` for the order and fallbacks.

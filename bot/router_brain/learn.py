@@ -452,6 +452,8 @@ def similar_preferences(text: str, *, threshold: float = 0.3) -> list[dict[str, 
 # ---- reading it back -----------------------------------------------------------------------------------------------------
 def model_board(*, now: Optional[float] = None) -> list[dict[str, Any]]:
     """One row per model the router has seen: reliability with its uncertainty, speed, feedback, rest, share of picks."""
+    from bot.agent_runtime import text_toolcalls
+
     now = time.time() if now is None else now
     rows = store.rows("SELECT model FROM model_stats WHERE task_class = '*' UNION SELECT chosen FROM decisions WHERE chosen IS NOT NULL "
                       "UNION SELECT key FROM cooldowns WHERE key NOT LIKE '%/*'")
@@ -479,7 +481,9 @@ def model_board(*, now: Optional[float] = None) -> list[dict[str, Any]]:
                     "ok": round(s["ok"], 2), "fail": round(s["fail"], 2), "calls": s["calls"], "latency_ms": s["latency_ms"],
                     "up": round(s["up"], 2), "down": round(s["down"], 2), "streak": s["streak"], "last_error_kind": s["last_error_kind"],
                     "last_error": s["last_error"], "last_ok": s["last_ok"], "last_fail": s["last_fail"],
-                    "cooldown": cd, "picks_7d": picks.get(ref, 0), "share_7d": round(picks.get(ref, 0) / total, 3), "classes": per_class})
+                    "cooldown": cd, "picks_7d": picks.get(ref, 0), "share_7d": round(picks.get(ref, 0) / total, 3), "classes": per_class,
+                    # tool calls this process saw from the model: native / parsed from text / repaired / failed
+                    "tool_calls": text_toolcalls.stats(ref)})
     out.sort(key=lambda x: (-x["picks_7d"], -x["calls"], x["model"]))
     return out
 

@@ -29,6 +29,7 @@ from typing import Optional
 
 import httpx
 
+from bot.agent_runtime import text_toolcalls
 from bot.agent_runtime.transports.base import NormalizedResponse, ProviderTransport, StreamEvent, ToolCall
 from bot.backends.base import BackendError
 
@@ -93,6 +94,9 @@ class OpenAICompatibleTransport(ProviderTransport):
         # for its x-opencode-session header. Harmless to generate even
         # for providers that never use it — see provider_quirks.py.
         self._session_id = uuid.uuid4().hex
+        # Set when this server answered a request carrying `response_format` with a client error: grammar mode then
+        # falls back to the prompt-only text mode for the rest of this transport's life.
+        self._no_response_format = False
 
     supports_vision = True
     # No documents support — `document` blocks are an Anthropic-specific
@@ -142,10 +146,17 @@ class OpenAICompatibleTransport(ProviderTransport):
 
     def _build_request(
         self, *, model: str, history: list[dict], tool_schemas: list[dict], max_tokens: int,
-        system_prompt: Optional[str], effort: Optional[str],
+        system_prompt: Optional[str], effort: Optional[str], mode: str = "native",
     ) -> tuple[dict, dict]:
-        """(payload, headers) — shared by send() and send_stream()."""
+        """(payload, headers) — shared by send() and send_stream(). `mode` is the model's tool_call_mode (see
+        text_toolcalls.mode_for): `text` and `grammar` describe the tools in the system prompt instead of sending the
+        API's `tools` field, and `grammar` also constrains the reply with a JSON schema (`response_format`) unless
+        this server already refused one."""
         wire_messages = _to_wire_messages(history)
+        text_mode = mode in ("text", "grammar") and bool(tool_schemas)
+        if text_mode:
+            section = text_toolcalls.tools_prompt(tool_schemas, grammar=(mode == "grammar"))
+            system_prompt = f"{system_prompt}\n\n{section}" if system_prompt else section
         if system_prompt:
             wire_messages = [{"role": "system", "content": system_prompt}] + wire_messages
 
@@ -153,9 +164,12 @@ class OpenAICompatibleTransport(ProviderTransport):
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         payload = {"model": model, "messages": wire_messages, "max_tokens": max_tokens}
-        if tool_schemas:
+        if tool_schemas and not text_mode:
             payload["tools"] = to_openai_tools(tool_schemas)
             payload["tool_choice"] = "auto"
+        if text_mode and mode == "grammar" and not self._no_response_format:
+            payload["response_format"] = {"type": "json_schema", "json_schema": {
+                "name": "tool_call", "strict": True, "schema": text_toolcalls.grammar_schema(tool_schemas)}}
         # Best-effort only: "reasoning_effort" is the real parameter name
         # OpenAI's o-series Chat Completions API accepts, and several
         # OpenRouter-routed models pass it straight through — but this is
@@ -190,27 +204,114 @@ class OpenAICompatibleTransport(ProviderTransport):
         system_prompt: Optional[str] = None,
         effort: Optional[str] = None,
     ) -> NormalizedResponse:
+        mode = text_toolcalls.mode_for(model, self._router_name())
         payload, headers = self._build_request(
             model=model, history=history, tool_schemas=tool_schemas, max_tokens=max_tokens,
-            system_prompt=system_prompt, effort=effort,
+            system_prompt=system_prompt, effort=effort, mode=mode,
         )
+        response = _normalize(await self._post(payload, headers, timeout_s), self.base_url)
+        return await self._recover_text_calls(response, payload=payload, headers=headers, timeout_s=timeout_s,
+                                              model=model, tool_schemas=tool_schemas, mode=mode)
+
+    def _router_name(self) -> str:
+        return str(getattr(self, "router_provider", None) or self.provider_key or "")
+
+    async def _post(self, payload: dict, headers: dict, timeout_s: float) -> dict:
+        """One non-streamed chat-completions call; the parsed JSON body. A server that refuses `response_format`
+        is asked again once without it."""
+        try:
+            return await self._post_once(payload, headers, timeout_s)
+        except _Refused as refused:
+            if "response_format" not in payload:
+                raise refused.error from None
+            self._no_response_format = True
+            logger.info("openai-compatible transport (%s) does not accept response_format; using prompt-only tool calls",
+                        self.base_url)
+            payload = {k: v for k, v in payload.items() if k != "response_format"}
+            return await self._post_once(payload, headers, timeout_s, final=True)
+
+    async def _post_once(self, payload: dict, headers: dict, timeout_s: float, final: bool = False) -> dict:
         async with httpx.AsyncClient(timeout=timeout_s) as client:
             try:
                 resp = await client.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)
                 self.capture(resp)
                 resp.raise_for_status()
-                data = resp.json()
+                return resp.json()
             except httpx.TimeoutException as exc:
                 raise BackendError(f"openai-compatible transport ({self.base_url}) timed out after {timeout_s}s") from exc
             except httpx.HTTPStatusError as exc:
-                raise BackendError(
+                error = BackendError(
                     f"openai-compatible transport ({self.base_url}) returned "
                     f"{exc.response.status_code}: {exc.response.text[:500]}"
-                ) from exc
+                )
+                if not final and "response_format" in payload and exc.response.status_code in (400, 404, 422, 501):
+                    raise _Refused(error) from exc
+                raise error from exc
             except Exception as exc:
                 raise BackendError(f"openai-compatible transport ({self.base_url}) error: {exc}") from exc
 
-        return _normalize(data, self.base_url)
+    async def _recover_text_calls(
+        self, response: NormalizedResponse, *, payload: dict, headers: dict, timeout_s: float, model: str,
+        tool_schemas: list[dict], mode: str,
+    ) -> NormalizedResponse:
+        """Native tool calls pass through untouched (and are counted). A reply with none is checked for calls
+        written as text (text_toolcalls.parse); an attempt that cannot be used is put back to the model ONCE with a
+        short corrective message, and then given up on: the reply is returned as it is, never looped on."""
+        ref = f"{self._router_name()}/{model}"
+        if response.tool_calls:
+            text_toolcalls.record(ref, "native", len(response.tool_calls))
+            return response
+        if not tool_schemas or not response.text:
+            return response
+        grammar = mode == "grammar"
+        parsed = text_toolcalls.parse(response.text, tool_schemas, allow_final=grammar)
+        if not parsed.attempted:
+            return response
+        total = response.tokens
+        reasked = False
+        if parsed.errors:
+            reasked = True
+            retry = {k: v for k, v in payload.items() if k not in ("stream", "stream_options")}
+            if self._no_response_format:
+                retry.pop("response_format", None)
+            retry["messages"] = list(payload["messages"]) + [
+                {"role": "assistant", "content": response.text},
+                {"role": "user", "content": text_toolcalls.corrective_message(parsed.errors, tool_schemas, grammar=grammar)},
+            ]
+            try:
+                second = _normalize(await self._post(retry, headers, timeout_s), self.base_url)
+            except BackendError:
+                logger.info("tool-call re-ask failed on %s; giving up on the call", ref)
+                text_toolcalls.record(ref, "failed")
+                return response
+            if second.tokens or response.tokens:
+                total = (response.tokens or 0) + (second.tokens or 0)
+            if second.tool_calls:
+                text_toolcalls.record(ref, "repaired", len(second.tool_calls))
+                second.tokens = total or None
+                return second
+            parsed = text_toolcalls.parse(second.text, tool_schemas, allow_final=grammar)
+            if not parsed.attempted or parsed.errors:
+                text_toolcalls.record(ref, "failed")
+                second.tokens = total or None
+                return second
+            response = second
+        if not parsed.calls:                          # grammar mode: the model answered in words
+            if parsed.final_answer is None:
+                return response
+            return NormalizedResponse(
+                text=parsed.text, tokens=total or None, input_tokens=response.input_tokens,
+                assistant_message={"role": "assistant", "content": {"content": parsed.text}})
+        raw_calls = [{"id": text_toolcalls.call_id(), "type": "function",
+                      "function": {"name": c.name, "arguments": json.dumps(c.arguments)}} for c in parsed.calls]
+        text_toolcalls.record(ref, "repaired" if (parsed.repaired or reasked) else "text", len(raw_calls))
+        return NormalizedResponse(
+            text=parsed.text,
+            tool_calls=[ToolCall(id=rc["id"], name=rc["function"]["name"], arguments=c.arguments)
+                        for rc, c in zip(raw_calls, parsed.calls)],
+            tokens=total or None, input_tokens=response.input_tokens,
+            assistant_message={"role": "assistant", "content": {"content": parsed.text or None, "tool_calls": raw_calls}},
+        )
 
     supports_streaming = True
 
@@ -228,9 +329,17 @@ class OpenAICompatibleTransport(ProviderTransport):
     ) -> NormalizedResponse:
         """Server-sent-events variant of send(): reply text goes to `on_event` as it
         arrives and the deltas are assembled into the same NormalizedResponse."""
+        mode = text_toolcalls.mode_for(model, self._router_name())
+        if mode == "grammar" and tool_schemas:
+            # A schema-constrained reply is JSON, not prose to show as it arrives: take it whole.
+            response = await self.send(model=model, history=history, tool_schemas=tool_schemas, max_tokens=max_tokens,
+                                       timeout_s=timeout_s, system_prompt=system_prompt, effort=effort)
+            if response.text:
+                await on_event(StreamEvent("text", response.text))
+            return response
         payload, headers = self._build_request(
             model=model, history=history, tool_schemas=tool_schemas, max_tokens=max_tokens,
-            system_prompt=system_prompt, effort=effort,
+            system_prompt=system_prompt, effort=effort, mode=mode,
         )
         payload["stream"] = True
         payload["stream_options"] = {"include_usage": True}
@@ -238,17 +347,25 @@ class OpenAICompatibleTransport(ProviderTransport):
         async with httpx.AsyncClient(timeout=timeout_s) as client:
             try:
                 try:
-                    return await self._consume_stream(client, url, payload, headers, on_event)
+                    streamed = await self._consume_stream(client, url, payload, headers, on_event)
                 except _RetryWithoutUsage:
                     # A few OpenAI-compatible servers reject stream_options; usage is optional.
                     payload.pop("stream_options", None)
-                    return await self._consume_stream(client, url, payload, headers, on_event)
+                    streamed = await self._consume_stream(client, url, payload, headers, on_event)
             except httpx.TimeoutException as exc:
                 raise BackendError(f"openai-compatible transport ({self.base_url}) timed out after {timeout_s}s") from exc
             except BackendError:
                 raise
             except Exception as exc:
                 raise BackendError(f"openai-compatible transport ({self.base_url}) error: {exc}") from exc
+        # Calls written as text were streamed as prose: when they turn into real calls, replace what was shown.
+        recovered = await self._recover_text_calls(streamed, payload=payload, headers=headers, timeout_s=timeout_s,
+                                                   model=model, tool_schemas=tool_schemas, mode=mode)
+        if recovered is not streamed:
+            await on_event(StreamEvent("reset"))
+            if recovered.text:
+                await on_event(StreamEvent("text", recovered.text))
+        return recovered
 
     async def _consume_stream(self, client, url, payload, headers, on_event) -> NormalizedResponse:
         text_parts: list[str] = []
@@ -302,6 +419,14 @@ class OpenAICompatibleTransport(ProviderTransport):
 
 class _RetryWithoutUsage(Exception):
     pass
+
+
+class _Refused(Exception):
+    """The server answered a request carrying `response_format` with a client error."""
+
+    def __init__(self, error: BackendError):
+        super().__init__(str(error))
+        self.error = error
 
 
 def _provider_error(data: dict, base_url: str) -> BackendError:

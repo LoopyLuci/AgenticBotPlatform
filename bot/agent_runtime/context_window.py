@@ -11,6 +11,13 @@ on the real ratio for the text this model is actually seeing.
 and can be overridden per model under `native_agent.context_windows`. Unknown models get
 128 000, a middling default; set the real figure for a model you rely on.
 
+A model served by ModelMistress (`modelmistress/<model>`) has the window it was LOADED with, which is usually far
+smaller than the family table says (a Qwen "131 072" loaded at 16 384). Its window is read from the hub (what the
+hub reports for the loaded model, else llama-server's /props through the hub), cached for 30 seconds; when the hub
+does not say, `native_agent.context_windows`, else 8 192. A configured figure larger than the hub's is not trusted:
+the smaller wins. Other local engines (Ollama, LM Studio, vLLM...) get 8 192 rather than 128 000 when nothing
+else knows the model.
+
 **Managing the fill** (`manage`), before every model call in a turn:
 
 1. below the threshold (default 70 % of the window) nothing happens;
@@ -36,6 +43,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 DEFAULT_WINDOW = 128_000
+LOCAL_DEFAULT_WINDOW = 8_192          # a local model nothing knows: small is safe (too large only fails the call)
 DEFAULT_RATIO = 3.5
 MIN_RATIO, MAX_RATIO = 1.5, 8.0
 EMA = 0.3
@@ -90,24 +98,53 @@ def _catalog_window(model: str, provider: str) -> Optional[int]:
     return _catalog_windows[key]
 
 
-def window_for(model: str, provider: str = "") -> int:
+def _override(name: str) -> Optional[int]:
+    overrides = _cfg().get("context_windows") or {}
+    bare = name.split("/", 1)[1] if name.startswith("modelmistress/") else name
+    for candidate in dict.fromkeys((name, bare)):
+        for key, value in overrides.items():
+            if key == candidate or candidate.startswith(str(key)):
+                try:
+                    return max(1024, int(value))
+                except (TypeError, ValueError):
+                    continue
+    return None
+
+
+def _modelmistress_window(name: str, override: Optional[int]) -> int:
+    """The window a ModelMistress model is loaded with: the hub's figure (smaller of it and your override), else your
+    override, else a conservative default - never the 128 000 of an unknown model."""
+    bare = name.split("/", 1)[1] if name.startswith("modelmistress/") else name
+    real: Optional[int] = None
+    try:
+        from bot.modelmistress import client
+
+        real = client.context_length(bare, wait=False)  # called from the async agent loop: never wait on the hub
+    except Exception:  # noqa: BLE001 - no hub, or a broken answer: fall back
+        real = None
+    if real:
+        return max(1024, min(real, override) if override else real)
+    return override or LOCAL_DEFAULT_WINDOW
+
+
+def window_for(model: str, provider: str = "", *, local: bool = False) -> int:
     """Your override, else what the catalog says, else the built-in family table, else a default.
     Exception: for Claude models the SMALLER of catalog and table wins - a window that is too small
     only compacts early, one that is too large makes the provider refuse the call, and Claude's larger
     windows are a separate opt-in."""
-    overrides = _cfg().get("context_windows") or {}
     name = str(model or "")
-    for key, value in overrides.items():
-        if key == name or name.startswith(str(key)):
-            try:
-                return max(1024, int(value))
-            except (TypeError, ValueError):
-                continue
+    override = _override(name)
+    if provider == "modelmistress" or name.startswith("modelmistress/"):
+        return _modelmistress_window(name, override)
+    if override:
+        return override
     catalog, builtin = _catalog_window(name, str(provider or "")), builtin_window(name)
     if catalog and builtin and "claude" in name.lower():
         return max(1024, min(catalog, builtin))      # a larger Claude window is a separate opt-in; stay on the safe side
     known = catalog or builtin
-    return max(1024, known) if known else DEFAULT_WINDOW
+    if known:
+        return max(1024, known)
+    return LOCAL_DEFAULT_WINDOW if local else DEFAULT_WINDOW
 
 
 def ratio_for(model: str) -> float:
@@ -179,7 +216,19 @@ def manage(history: list[dict], transport, model: str, system_prompt: Optional[s
         keep = int(cfg.get("keep_tool_results", DEFAULT_KEEP_TOOL_RESULTS))
     except (TypeError, ValueError):
         compact_at, keep = DEFAULT_COMPACT_AT, DEFAULT_KEEP_TOOL_RESULTS
-    window = window_for(model, getattr(transport, "provider_key", ""))
+    named = str(getattr(transport, "router_provider", "") or "")
+    local = False
+    if named.lower() == "modelmistress":
+        provider = "modelmistress"
+    else:
+        provider = getattr(transport, "provider_key", "")
+        try:
+            from bot.agent_runtime import turn_budget
+
+            local = named.lower() in turn_budget.LOCAL_PROVIDERS or turn_budget.is_local(transport)
+        except Exception:  # noqa: BLE001
+            local = False
+    window = window_for(model, provider, local=local)
     before = estimate_tokens(history, model, system_prompt, tool_schemas)
     report = Report(history=history, window=window, before=before, after=before)
     if compact_at <= 0 or before <= window * compact_at:

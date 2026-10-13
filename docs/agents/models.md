@@ -119,6 +119,13 @@ swarm on.
 built-in table, then 128 000. For Claude models the smaller of the catalog and the table wins, because a
 larger Claude window is a separate opt-in and over-estimating it makes the provider refuse the call.
 
+A model served by ModelMistress (`modelmistress/<model>`) is different: its window is the one it was **loaded** with,
+read from the hub, never the family table. In order: the hub's loaded-model list (`model.loaded`), an `n_ctx` /
+`ctx_size` field on its `/v1/models`, llama-server's `/props` through the hub; then `native_agent.context_windows`;
+then 8 192. A configured figure above what the hub reports is ignored (the smaller wins). The answer is cached for 30
+seconds (10 for "the hub did not say"). The `context_length` on `/v1/models` is the model's trained maximum and is not
+used. Other local engines (Ollama, LM Studio, vLLM...) get 8 192 instead of 128 000 when nothing knows the model.
+
 ## Not done
 
 * Tokens per minute are enforced from ABP's own estimate before a call and its counts after it; a
@@ -140,3 +147,33 @@ LocalAI, LM Studio, vLLM, llama.cpp — by provider, not by address: a proxy on 
 one-time note in the run's trace; `stop` ends the turn after a call to a model with no known price. Cached tokens are
 charged at the cache price when one is known, else at the input price. The cost of each call and run is in the trace
 (`usd`) whenever the price is known.
+
+## Tool calls from local models
+
+Local models often write the call as text instead of using the API's `tool_calls`. For a reply with **no native
+call**, ABP looks for one (`bot/agent_runtime/text_toolcalls.py`, used by the OpenAI-compatible transport):
+
+* `<tool_call>{"name": ..., "arguments": {...}}</tool_call>` (Qwen, Hermes), also with `<function=name>` and
+  `<parameter=key>value</parameter>` inside; a bare `<function=name>{json}</function>`;
+* a bare JSON object or array (`name` + `arguments` / `parameters` / `args` / `input`, the OpenAI `function` wrapper,
+  a `tool_calls` list, Mistral's `[TOOL_CALLS]`);
+* a fenced ```` ```json ```` block of the same.
+
+Near-miss JSON is repaired where the fix is unambiguous (trailing commas, single quotes, raw newlines in strings,
+`True`/`None`, unquoted keys, `\d`-style escapes), and arguments get light coercion (`"5"` becomes 5). A call is run
+only if its name is a tool offered this turn and its arguments fit that tool's schema. If any call in the text is
+unusable, none runs; the model is told why once, in a short message, and if the second try is also unusable the
+reply is returned as it is (no loop). The call text is removed from the visible reply; the stored assistant turn
+carries a normal `tool_calls` entry. Native calls are never touched.
+
+`native_agent.tool_call_modes` picks how a model is asked to call tools (keys: `provider/model`, a model name, a
+name prefix, or `*`; the longest match wins):
+
+| mode | what is sent |
+|---|---|
+| `native` (default) | the API's `tools` field |
+| `text` | no `tools` field; the tools and the `<tool_call>` format are described in the system prompt |
+| `grammar` | as `text`, plus a JSON-schema `response_format` (one tool call, or `final_answer`) that llama-server turns into a grammar; if the server answers with a client error, ABP stops sending it to that server and carries on as `text`. The reply is taken whole, not streamed |
+
+Counts per model (native / parsed from text / repaired / failed) are in `tool_calls` on each row of the router's
+model board (`GET /api/router/models`'s rows); they are in-process and restart with ABP.
