@@ -357,9 +357,11 @@ class Registry:
 
     def _unrecorded(self, pid: int, snapshot: _Snapshot, records: dict) -> bool:
         """True when `pid` needs a record: either it has none, or the one it has is for a process
-        that has since died and this pid has been handed to something else."""
+        that has since died and this pid has been handed to something else. A record still marked
+        alive counts too: nothing has noticed yet that its process is gone (a descendant is only
+        marked on a sampling pass), and Windows hands a freed pid out again within moments."""
         seen = records.get(pid)
-        return seen is None or (not seen.alive() and not snapshot.is_same(pid, seen.create_time))
+        return seen is None or not snapshot.is_same(pid, seen.create_time)
 
     def _describe(self, pid: int, parent_pid: int, parent: Record) -> Optional[Record]:
         """What a process we did not spawn says about itself, as a record under the one that

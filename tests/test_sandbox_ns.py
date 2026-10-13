@@ -311,11 +311,13 @@ def test_a_cells_kill_kills_the_grandchild_too(tmp_path):
 
 def _wait_record(reg, pid: int, timeout: float = 30.0):
     """The registry's record for `pid`, once it has one. A process that is only a descendant of the
-    spawn is noticed on a sampling pass rather than at the spawn, so this drives those passes."""
+    spawn is noticed on a sampling pass rather than at the spawn, so this drives those passes.
+    A record left by an earlier process that had the same pid does not count: Windows reuses pids
+    quickly, and that record is dead or belongs to another cell."""
     deadline = time.monotonic() + timeout
     while True:
         row = reg.record_for(pid)
-        if row is not None:
+        if row is not None and row.alive() and abs(registry_mod.create_time_of(pid) - row.create_time) <= 1.0:
             return row
         assert time.monotonic() < deadline, f"pid {pid} was started but never recorded"
         reg.sample(reflexes=False)
@@ -360,6 +362,25 @@ def test_the_processes_a_spawned_process_starts_are_recorded_under_it(tmp_path):
         assert set(tree) <= on_disk, "the tree has to be in live.json, or the next run cannot reap it"
         cell.kill("the test asked for it")
     assert wait_gone(list(tree)) == [], "the cell took the launcher and everything below it"
+
+
+def test_a_stale_record_under_a_reused_pid_is_replaced_by_the_process_that_has_it_now(tmp_path):
+    """Windows hands a freed pid out again within moments, and a descendant's record is only marked
+    gone on a sampling pass. A record still marked alive for a pid whose process is another one now
+    must not hide the new process from the walk."""
+    reg = Registry(path=tmp_path / "live.json", run_id="reuse")
+    reg.record(pid=os.getpid(), argv=["me"], owner="test")
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        reg.record(pid=child.pid, argv=["old"], owner="test", create_time=1.0, parent_pid=os.getpid())
+        added = reg.record_descendants(os.getpid(), wait=5.0)
+        row = reg.record_for(child.pid)
+        assert row is not None and row.alive() and row.create_time > 1.0, (added, row)
+    finally:
+        for p in psutil.Process(child.pid).children(recursive=True) if child.poll() is None else []:
+            p.kill()                      # the interpreter behind the venv launcher
+        child.kill()
+        child.wait()
 
 
 @windows_only
