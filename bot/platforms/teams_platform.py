@@ -37,7 +37,7 @@ from typing import Any, Optional
 import httpx
 
 from bot import bot_instances
-from bot.platforms import _jwt, _relay
+from bot.platforms import _jwt, _relay, _stream_edit
 
 logger = logging.getLogger("bot.platforms.teams")
 
@@ -150,6 +150,52 @@ async def post_activity(instance: dict, service_url: str, conversation_id: str, 
             await client.aclose()
 
 
+async def _activity_call(instance: dict, method: str, url: str, activity: Optional[dict], client: Optional[httpx.AsyncClient]) -> dict:
+    """One Bot Connector call that must succeed (live reply streaming): the answer's JSON, or an exception."""
+    own = client is None
+    client = client or httpx.AsyncClient(timeout=30)
+    try:
+        token = await _token(instance, client)
+        r = await client.request(method, url, json=activity, headers={"Authorization": f"Bearer {token}"})
+        if r.status_code >= 300:
+            raise RuntimeError(f"teams {method} failed: {r.status_code} {r.text[:200]}")
+        try:
+            body = r.json() if r.content else {}
+        except ValueError:
+            body = {}
+        return body if isinstance(body, dict) else {}
+    finally:
+        if own:
+            await client.aclose()
+
+
+def _streamer(instance: dict, service_url: str, conversation_id: str, reply_to: str,
+              client: Optional[httpx.AsyncClient]) -> Optional[_stream_edit.StreamEditor]:
+    """Live reply: one message, updated in place (PUT on the activity) as the text arrives; None when switched off."""
+    if not service_url or not _stream_edit.streaming_enabled("teams"):
+        return None
+    base = f"{service_url.rstrip('/')}/v3/conversations/{conversation_id}/activities"
+    sent: list[str] = []
+
+    def message(text: str) -> dict:
+        return {"type": "message", "text": text, "textFormat": "markdown"}
+
+    async def placeholder() -> None:
+        body = await _activity_call(instance, "POST", base + (f"/{reply_to}" if reply_to else ""),
+                                    message(_stream_edit.PLACEHOLDER), client)
+        if not body.get("id"):
+            raise RuntimeError("teams answered without an activity id")
+        sent.append(str(body["id"]))
+
+    async def edit(text: str) -> None:
+        await _activity_call(instance, "PUT", f"{base}/{sent[0]}", message(text), client)
+
+    async def remove() -> None:
+        await _activity_call(instance, "DELETE", f"{base}/{sent[0]}", None, client)
+
+    return _stream_edit.StreamEditor(placeholder, edit, limit=MAX_TEXT, delete=remove)
+
+
 async def send_text(instance: dict, conversation_id: str, text: str, *, service_url: str = "", reply_to: str = "",
                     client: Optional[httpx.AsyncClient] = None) -> None:
     service_url = service_url or service_url_for(instance["id"], conversation_id) or ""
@@ -173,8 +219,9 @@ async def deliver(instance: dict, activity: dict, *, client: Optional[httpx.Asyn
     async def send(chat_id: str, reply: str) -> None:
         await send_text(instance, conversation, reply, service_url=service_url, reply_to=str(activity.get("id") or ""), client=client)
 
+    streamer = _streamer(instance, service_url, conversation, str(activity.get("id") or ""), client)
     await _relay.relay(instance, "teams", conversation, str(sender.get("aadObjectId") or sender.get("id") or ""),
-                       clean_text(activity), send, username=str(sender.get("name") or ""))
+                       clean_text(activity), send, username=str(sender.get("name") or ""), streamer=streamer)
 
 
 async def run_instance(row: dict[str, Any]) -> None:

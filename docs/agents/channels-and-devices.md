@@ -42,27 +42,34 @@ and the wire format is in the `bot/nodes.py` docstring; both are what an app imp
 
 ## Live replies (streaming)
 
-Telegram, Discord and Slack can edit a message they sent, so a native-agent reply shows up as it is written: the bot
+Telegram, Discord, Slack, Matrix, Microsoft Teams and Google Chat can edit a message they sent, so a native-agent reply shows up as it is written: the bot
 posts a placeholder ("..."), edits it with the text so far about once every 1.2 seconds (inside each platform's edit
 rate limit), shows a trailing "tool name..." line while a tool runs (the tool's name only, never its arguments or
 output), clears the text if the turn fails over to another model, and finally replaces the placeholder with the whole
 reply. No second message is sent. If an edit fails, or the text outgrows the platform's message limit (4096 characters
-on Telegram, 2000 on Discord, 4000 on Slack), streaming stops quietly, the placeholder is deleted and the reply goes out
+on Telegram, 2000 on Discord, 4000 on Slack, Teams and Google Chat, about 32000 on Matrix), streaming stops quietly, the placeholder is deleted and the reply goes out
 the normal way, split as before. A backend that does not stream (the CLI and UI backends, a transport that returns the
-whole reply at once) never posts a placeholder, so nothing changes for it. SMS, e-mail, Signal, iMessage, WhatsApp,
-Teams, Google Chat and Matrix cannot (or are not wired to) edit and stay as they were.
+whole reply at once) never posts a placeholder, so nothing changes for it. Matrix edits with an `m.replace` event (the body keeps the ` * ` fallback), Teams updates the activity (PUT) and Google
+Chat patches the message (`updateMask=text`); Teams and Google Chat reply through their REST APIs, so the id to edit is
+known. SMS, e-mail, Signal, iMessage and WhatsApp cannot (or are not wired to) edit and stay as they were.
 
-`streaming:` in `config/backends.yaml` switches it per platform; all three default to on:
+`streaming:` in `config/backends.yaml` switches it per platform; all six default to on:
 
 ```yaml
 streaming:
   telegram: true
   discord: true
   slack: true
+  matrix: true
+  teams: true
+  googlechat: true
 ```
 
-Code: `bot/platforms/_stream_edit.py` (the shared helper), wired in `bot/handlers.py`, `bot/platforms/discord_platform.py`
-and `bot/platforms/slack_platform.py`; tests in `tests/test_channel_streaming.py`, against fake clients only.
+Code: `bot/platforms/_stream_edit.py` (the shared helper), wired in `bot/handlers.py`, `bot/platforms/discord_platform.py`,
+`bot/platforms/slack_platform.py`, `bot/platforms/matrix_platform.py` and (through `_relay.relay(..., streamer=)`)
+`bot/platforms/teams_platform.py` and `bot/platforms/googlechat_platform.py`; tests in `tests/test_channel_streaming.py`
+and `tests/test_channel_streaming_edit.py`, against fake clients only. Matrix, Teams and Google Chat have not been tried
+with a real account.
 
 ## Voice
 
