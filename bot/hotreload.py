@@ -374,6 +374,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.retention",
     "bot.peers",
     "bot.cache",  # CacheIt's client: a reload only drops its pooled connection and its cached hub address
+    "bot.hotcache",  # the hot paths' hit/miss counters (in-process); a reload would zero them
     "bot.tailscale_mgr",
     "bot.browser_policy",
     "bot.native_host",

@@ -155,6 +155,11 @@ def get_or_compute(ns: str, key: str, compute: Callable[[], Any], ttl_s: Optiona
 def stats() -> dict:
     """This process's use of the cache, and the hub's own stats when it is running."""
     out: dict[str, Any] = {"available": available(), "client": dict(_stats)}
+    try:
+        from bot import hotcache
+        out["hot_paths"] = hotcache.stats()        # per feature (web_fetch, embeddings, model_lists): hits, misses, hit_rate
+    except Exception:  # noqa: BLE001
+        pass
     url, token = _find()
     if url:
         try:

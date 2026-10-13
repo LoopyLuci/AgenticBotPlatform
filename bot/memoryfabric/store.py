@@ -142,6 +142,14 @@ def embedder() -> tuple[str, Callable[[list[str]], np.ndarray]]:
     return choice
 
 
+def _embed(name: str, fn: Callable[[list[str]], np.ndarray], texts: list[str]):
+    """fn(texts), through CacheIt when cache.embeddings is on (not for hash-tfidf, which costs less than the lookup)."""
+    if name == "hash-tfidf":
+        return fn(texts)
+    from bot import hotcache
+    return hotcache.embed_cached(name, fn, texts)
+
+
 def _vectors(rows: list[dict]) -> tuple[str, np.ndarray]:
     name, fn = embedder()
     c = _conn()
@@ -157,7 +165,7 @@ def _vectors(rows: list[dict]) -> tuple[str, np.ndarray]:
             out.append(None)
             todo.append((i, h))
     if todo:
-        vecs = fn([rows[i]["content"] for i, _ in todo])
+        vecs = _embed(name, fn, [rows[i]["content"] for i, _ in todo])
         if vecs is None:                     # the embedder stopped answering: fall back for this call
             _embed_cache.clear()
             from bot.fileserver.index import hash_vectors
@@ -182,7 +190,7 @@ def recall(query: str, instance_id: Optional[int] = None, k: Optional[int] = Non
         from bot.fileserver.index import hash_vectors as fn
     else:
         fn = embedder()[1]
-    q = fn([query])
+    q = _embed(name, fn, [query])
     if q is None:
         return []
     q = np.asarray(q, dtype=np.float32)[0]

@@ -370,6 +370,16 @@ support_bot:
 # live on every detected file change, so toggling this takes effect
 # immediately, the same as every other key in this file.
 hot_reload_enabled: true
+# CacheIt on the hot paths (docs/modules/hot-path-cache.md). Each feature is opt-in and does nothing unless the
+# CacheIt module is running; with it off or absent ABP behaves exactly as before.
+cache:
+  web_fetch: false          # the agent's web_fetch GETs, by URL, 2xx only
+  embeddings: false         # key = hash(model id + text)
+  model_lists: false        # provider /models lists (a new model can take up to the TTL to show)
+  web_fetch_ttl_s: 300
+  embeddings_ttl_s: 2592000
+  model_lists_ttl_s: 600
+  web_fetch_max_bytes: 1000000
 retention:
   # Automatic pruning for the highest-volume, lowest-long-term-value
   # tables — job attempts, telemetry samples, connection-health events,

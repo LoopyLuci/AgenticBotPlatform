@@ -418,6 +418,12 @@ async def _fetch_custom_models(name: str, entry: dict, provider_registry, warn: 
         api_key = provider_registry.get_api_key(name)
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
+        from bot import hotcache
+        # cache.model_lists: keyed by provider + base URL + a hash of the key (lists can differ per key); only ids stored.
+        ckey = hotcache.digest(name, base_url, hotcache.digest(api_key or ""))
+        listed = await hotcache.aget("model_lists", ckey)
+        if isinstance(listed, list) and listed and all(isinstance(i, str) for i in listed):
+            return listed
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(f"{base_url}/models", headers=headers)
             resp.raise_for_status()
@@ -430,6 +436,8 @@ async def _fetch_custom_models(name: str, entry: dict, provider_registry, warn: 
         # every 30s once such a server started responding. `or []`
         # covers both cases.
         ids = sorted(m["id"] for m in (data.get("data") or []) if m.get("id"))
+        if ids:
+            await hotcache.aput("model_lists", ckey, ids)
         return ids or None
     except Exception as exc:
         # Only the FIRST failure (a fresh problem worth noticing) logs at

@@ -29,6 +29,7 @@ a private address (a local SearXNG); it is contacted directly.
 from __future__ import annotations
 
 import asyncio
+import base64
 import fnmatch
 import html
 import ipaddress
@@ -225,6 +226,32 @@ def _peer_is_public(response) -> bool:
 
 
 async def fetch(url: str) -> tuple[str, int, str, bytes]:
+    """_fetch_network(), through CacheIt when cache.web_fetch is on: a GET by URL (this client sends no credentials
+    and no cookies), cached only for a 2xx whose body is whole and under cache.web_fetch_max_bytes. The URL is
+    checked first either way, so a policy change applies to a cached page too."""
+    from bot import hotcache
+    if not hotcache.enabled("web_fetch"):
+        return await _fetch_network(url)
+    await check_url(url)
+    key = hotcache.digest("GET", url)
+    hit = await hotcache.aget("web_fetch", key)
+    if isinstance(hit, dict):
+        try:
+            final, status, ctype, body = str(hit["u"]), int(hit["s"]), str(hit["c"]), base64.b64decode(hit["b"])
+        except (KeyError, TypeError, ValueError):
+            pass
+        else:
+            if final != url:
+                await check_url(final)   # where the redirects ended is under today's policy too
+            return final, status, ctype, body
+    final, status, ctype, body = await _fetch_network(url)
+    if 200 <= status < 300 and len(body) < min(MAX_BODY_BYTES, hotcache.max_bytes()):
+        await hotcache.aput("web_fetch", key, {"u": final, "s": status, "c": ctype,
+                                               "b": base64.b64encode(body).decode("ascii")})
+    return final, status, ctype, body
+
+
+async def _fetch_network(url: str) -> tuple[str, int, str, bytes]:
     """(final url, status, content type, body) - following at most MAX_REDIRECTS redirects,
     checking every hop, and stopping at MAX_BODY_BYTES."""
     current = url
