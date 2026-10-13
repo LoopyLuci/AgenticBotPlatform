@@ -1046,6 +1046,32 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/cluster/blobs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/blobs",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/cluster/blobs/{h}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/blobs/{h}",
+  "path_params": [
+   "h"
+  ],
+  "query_params": []
+ },
+ "GET /api/cluster/blobs/{h}/chunks/{index}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/blobs/{h}/chunks/{index}",
+  "path_params": [
+   "h",
+   "index"
+  ],
+  "query_params": []
+ },
  "GET /api/cluster/groups": {
   "body": false,
   "method": "GET",
@@ -10682,6 +10708,32 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/agent/taint/clear",
+  "path_params": [],
+  "query_params": []
+ },
+ "cluster_blob_api_cluster_blobs__h__head": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/blobs/{h}",
+  "path_params": [
+   "h"
+  ],
+  "query_params": []
+ },
+ "cluster_blob_chunk_api_cluster_blobs__h__chunks__index__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/blobs/{h}/chunks/{index}",
+  "path_params": [
+   "h",
+   "index"
+  ],
+  "query_params": []
+ },
+ "cluster_blobs_api_cluster_blobs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/cluster/blobs",
   "path_params": [],
   "query_params": []
  },
