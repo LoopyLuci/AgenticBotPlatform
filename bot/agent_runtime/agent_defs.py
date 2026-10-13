@@ -57,7 +57,8 @@ NAME_RE = re.compile(rf"^{_SEGMENT}(?:/{_SEGMENT}){{0,3}}$")      # `review/secu
 MAX_SUBFOLDER_DEPTH = 3
 
 READ_TOOLS = ("read_file", "list_dir", "grep", "glob", "repo_map", "code_search", "session_search", "git_status",
-              "git_diff", "todo_read", "read_skill", "list_skills", "read_skill_file", "model_info", "find_models", "lsp")
+              "git_diff", "todo_read", "read_skill", "list_skills", "read_skill_file", "model_info", "find_models", "lsp",
+              "outline", "find_symbol", "read_symbol", "references", "callers", "related_tests", "impact", "context_pack")
 # Claude Code / OpenCode tool names -> ours
 ALIASES: dict[str, tuple[str, ...]] = {
     "read": ("read_file", "list_dir"), "grep": ("grep", "code_search"), "glob": ("glob", "repo_map"),

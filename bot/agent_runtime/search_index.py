@@ -124,9 +124,24 @@ def _rank_query(conn: sqlite3.Connection, table: str, cols: str, query: str, lim
 
 
 # ---- code index -------------------------------------------------------------------
-def _code_db(workspace: Path) -> sqlite3.Connection:
+def code_db_path(workspace: Path) -> Path:
+    """Where a workspace's index file is: the agent state folder's code_index/, or `native_agent.code_index_dir`."""
     key = hashlib.sha256(str(Path(workspace).resolve()).encode()).hexdigest()[:16]
-    conn = sqlite3.connect(str(state_dir("code_index") / f"{key}.db"), timeout=30)
+    folder = None
+    try:
+        from bot.config import config
+
+        configured = str((config.current.get("native_agent") or {}).get("code_index_dir") or "").strip()
+        if configured:
+            folder = Path(configured)
+            folder.mkdir(parents=True, exist_ok=True)
+    except Exception:  # noqa: BLE001 - a config problem must not stop a search; use the default folder
+        folder = None
+    return (folder or state_dir("code_index")) / f"{key}.db"
+
+
+def _code_db(workspace: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(str(code_db_path(workspace)), timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, mtime_ns INTEGER, size INTEGER)")
     # `parts` holds the pieces of identifiers found in the chunk (refresh_token -> refresh token, parseHttp ->

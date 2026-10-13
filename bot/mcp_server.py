@@ -1423,6 +1423,72 @@ async def vision_edit(image: str, steps: list) -> Any:
     crop, rotate, flip, gray, blur, sharpen, edges, threshold, invert, brightness, denoise."""
     return await _request("POST", "/api/vision/edit", timeout=300.0, json={"image": image, "steps": steps})
 
+# ---- code navigation (bot/codeintel) --------------------------------------------------
+# Token-minimal ways to find and read code: outline a file instead of reading it, read one symbol instead of the file,
+# ask who calls something, which tests cover it, what a diff touches, or get a budgeted bundle for a task. `root` is the
+# repository to work in; it defaults to this process's working directory (for Claude Code, the project it was started in)
+# and must be ABP's own folder or listed under native_agent.codeintel.roots. Answers are {"text", "tokens", ...}.
+def _code_root(root: str) -> str:
+    return root or os.getcwd()
+
+
+@mcp.tool()
+async def code_outline(path: str, root: str = "", max_tokens: int = 1500) -> Any:
+    """Signatures and line ranges of a source file (no bodies), or the top-level names of each file in a folder.
+    Use before reading a code file; then code_read_symbol for the one function or class you need."""
+    return await _request("GET", "/api/codeintel/outline", timeout=120.0,
+                          params={"path": path, "root": _code_root(root), "max_tokens": max_tokens})
+
+
+@mcp.tool()
+async def code_find_symbol(query: str, kind: str = "", limit: int = 15, root: str = "") -> Any:
+    """Find functions, classes and methods by exact, qualified or fuzzy name (or words from the name or docstring)."""
+    return await _request("GET", "/api/codeintel/find", timeout=120.0,
+                          params={"q": query, "kind": kind, "limit": limit, "root": _code_root(root)})
+
+
+@mcp.tool()
+async def code_read_symbol(target: str, context_lines: int = 0, root: str = "", max_tokens: int = 3000) -> Any:
+    """The exact source of one symbol: a qualified name (module.Class.method), 'path::Class.method', or 'path:line'
+    (the innermost symbol containing that line)."""
+    return await _request("GET", "/api/codeintel/read", timeout=120.0,
+                          params={"target": target, "context": context_lines, "root": _code_root(root), "max_tokens": max_tokens})
+
+
+@mcp.tool()
+async def code_references(symbol: str, root: str = "", limit: int = 60) -> Any:
+    """Where a function/class/name is used (import-linked uses first; says when the name is ambiguous)."""
+    return await _request("GET", "/api/codeintel/refs", timeout=120.0,
+                          params={"symbol": symbol, "limit": limit, "root": _code_root(root)})
+
+
+@mcp.tool()
+async def code_callers(symbol: str, root: str = "", limit: int = 40) -> Any:
+    """Which symbols call a function/method/class, with call-site counts."""
+    return await _request("GET", "/api/codeintel/callers", timeout=120.0,
+                          params={"symbol": symbol, "limit": limit, "root": _code_root(root)})
+
+
+@mcp.tool()
+async def code_related_tests(target: str, root: str = "") -> Any:
+    """Tests for a source file or a symbol (imports, references, naming, coverage), with a pytest line to run."""
+    return await _request("GET", "/api/codeintel/tests", timeout=120.0, params={"target": target, "root": _code_root(root)})
+
+
+@mcp.tool()
+async def code_impact(changes: str, root: str = "") -> Any:
+    """From a unified diff (git diff output) or changed paths: symbols changed, their callers, importers, tests to run."""
+    return await _request("POST", "/api/codeintel/impact", timeout=120.0, json={"changes": changes, "root": _code_root(root)})
+
+
+@mcp.tool()
+async def code_context_pack(task: str, budget_tokens: int = 4000, root: str = "") -> Any:
+    """A budgeted bundle for a task in words: relevant signatures, top function bodies, related tests, project rules.
+    One call instead of many searches and reads."""
+    return await _request("POST", "/api/codeintel/pack", timeout=300.0,
+                          json={"task": task, "budget_tokens": budget_tokens, "root": _code_root(root)})
+
+
 # ---- extensions (ABP_PRIVATE_DIR) ----------------------------------------------------
 # Tools an extension registered through ExtensionAPI.add_mcp_tool(), added to the same server
 # as every tool above. One broken extension costs its own tools and nothing else.

@@ -26,6 +26,7 @@
 | P7 | Channels, devices and voice | **Partly built** (six new channels including Google Chat and Teams, node protocol, voice on Telegram/Discord/Slack, canvas - all against fakes; Android does not implement nodes) |
 | P8 | Learning and efficiency | **Built** (the model router auto-selects and auto-fails-over; the tuning harness has had its first live-model run, which came back within noise at n=4) |
 | P9 | Compatibility and docs | **Built**, except the repeated live benchmark itself, which needs a provider key ABP can actually use (the benchmark harness and page are built, and `run --live` has been run — see [evals.md](evals.md)) The Claude Code and OpenCode importers have now been dry-run against the real installs on this machine, not only against files written from their docs |
+| LF-NAV | Code intelligence for every agent: a per-repository index (symbols with exact ranges, references, imports, test map) and token-minimal tools (`outline`, `find_symbol`, `read_symbol`, `references`, `callers`, `related_tests`, `impact`, `context_pack`) | **Built** (tree-sitter primary, Python `ast` and regex fallbacks; agent tools, MCP, HTTP API, CLI and library; [codeintel.md](codeintel.md)). Not built: LSP bridges for cross-file definitions; per-commit result caching; a tree-sitter grammar for Kotlin `object` declarations parses wrongly in the bundled grammar |
 
 ## 1. What "ABP Agents" are today
 
