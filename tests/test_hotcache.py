@@ -298,3 +298,91 @@ def test_a_repeated_call_is_faster_with_the_cache(monkeypatch, fake, net):
     warm = time.perf_counter() - t0
     print(f"\nTIMING cold={cold * 1000:.0f} ms warm={warm * 1000:.0f} ms")
     assert warm < cold / 2
+
+
+# ---- embeddings: batch cap ------------------------------------------------------------
+def test_big_batches_skip_the_per_text_lookups_and_only_store(monkeypatch, fake):
+    turn_on(monkeypatch, embeddings=True, embeddings_max_lookups=3)
+    emb = Embedder()
+    out = hotcache.embed_cached("m@u", emb, ["a", "bb", "ccc", "dddd"])
+    assert out.shape == (4, 2) and emb.batches == [["a", "bb", "ccc", "dddd"]]
+    assert [c[0] for c in fake.calls] == ["put"] * 4          # no GET at all
+    emb2 = Embedder()
+    hotcache.embed_cached("m@u", emb2, ["a", "bb", "ccc"])     # within the cap: looks up, all hits
+    assert emb2.batches == [] and [c[0] for c in fake.calls[4:]] == ["get"] * 3
+
+
+def test_max_lookups_default_and_bad_values(monkeypatch):
+    for blk, want in (({}, 64), ({"embeddings_max_lookups": "x"}, 64), ({"embeddings_max_lookups": 0}, 64),
+                      ({"embeddings_max_lookups": 5}, 5)):
+        monkeypatch.setattr(hotcache, "_block", lambda b=blk: b)
+        assert hotcache.max_lookups() == want
+
+
+# ---- fileserver index embeddings ------------------------------------------------------
+def test_fileserver_index_embeddings_use_the_cache_except_hash_vectors(monkeypatch, fake):
+    from bot.fileserver import index
+    turn_on(monkeypatch, embeddings=True)
+    emb = Embedder()
+    index._embed("ollama:m", emb, ["aa", "b"])
+    index._embed("ollama:m", emb, ["aa", "b"])
+    assert emb.batches == [["aa", "b"]]                        # the second call was all hits
+    n = len(fake.calls)
+    index._embed("hash-tfidf", emb, ["aa"])
+    assert len(fake.calls) == n and emb.batches[-1] == ["aa"]  # hash vectors never touch the cache
+
+
+# ---- fetch_audio ----------------------------------------------------------------------
+class _Resp:
+    def __init__(self, status, data):
+        self.status_code, self._data = status, data
+
+    async def aiter_bytes(self):
+        for i in range(0, len(self._data), 4):
+            yield self._data[i:i + 4]
+
+
+class _Client:
+    def __init__(self, status=200, data=b"RIFFaudiobytes"):
+        self.resp, self.n = _Resp(status, data), 0
+
+    def stream(self, method, url, headers=None):
+        client = self
+
+        class _Ctx:
+            async def __aenter__(self_):
+                client.n += 1
+                return client.resp
+
+            async def __aexit__(self_, *a):
+                return False
+        return _Ctx()
+
+
+def test_fetch_audio_caches_a_public_get_under_the_web_fetch_flag(monkeypatch, fake):
+    from bot.platforms import _voice
+    turn_on(monkeypatch, web_fetch=True)
+    c = _Client()
+    assert run(_voice.fetch_audio(c, "https://x.test/a.ogg", {})) == b"RIFFaudiobytes"
+    assert run(_voice.fetch_audio(c, "https://x.test/a.ogg", {})) == b"RIFFaudiobytes"
+    assert c.n == 1                                            # second answered from the cache
+
+
+def test_fetch_audio_never_caches_a_request_with_credentials(monkeypatch, fake):
+    from bot.platforms import _voice
+    turn_on(monkeypatch, web_fetch=True)
+    c = _Client()
+    for _ in range(2):
+        assert run(_voice.fetch_audio(c, "https://x.test/a.ogg", {"Authorization": "Bot t"})) == b"RIFFaudiobytes"
+    assert c.n == 2 and fake.calls == []
+
+
+def test_fetch_audio_does_not_cache_failures_or_big_bodies_and_is_off_by_default(monkeypatch, fake):
+    from bot.platforms import _voice
+    turn_on(monkeypatch, web_fetch=True, web_fetch_max_bytes=8)
+    assert run(_voice.fetch_audio(_Client(404), "https://x.test/a", {})) is None
+    assert run(_voice.fetch_audio(_Client(), "https://x.test/b", {})) == b"RIFFaudiobytes"   # 14 bytes > 8
+    assert [c for c in fake.calls if c[0] == "put"] == []
+    turn_on(monkeypatch)
+    assert run(_voice.fetch_audio(_Client(), "https://x.test/c", {})) == b"RIFFaudiobytes"
+    assert fake.calls.count(("get", "web_fetch")) == 2         # only the two earlier (enabled) lookups

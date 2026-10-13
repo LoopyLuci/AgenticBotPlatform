@@ -23,6 +23,7 @@ before making a call when none is).
 
 from __future__ import annotations
 
+import base64
 import logging
 from typing import Any, Optional
 
@@ -38,6 +39,11 @@ def over_limit(size: Optional[int]) -> bool:
     return int(size or 0) > voice.max_bytes()
 
 
+def _has_credentials(headers: Optional[dict]) -> bool:
+    return any(str(k).lower() in ("authorization", "cookie", "proxy-authorization", "x-api-key")
+               for k in (headers or {}))
+
+
 async def fetch_audio(client: Any, url: str, headers: dict, *, limit: Optional[int] = None) -> Optional[bytes]:
     """An attachment's bytes, streamed with a size ceiling (a huge upload must
     not be read whole into memory). `limit` defaults to `voice.max_bytes()`, so
@@ -46,6 +52,25 @@ async def fetch_audio(client: Any, url: str, headers: dict, *, limit: Optional[i
     if not url:
         return None
     cap = voice.max_bytes() if limit is None else limit
+    # Through CacheIt (cache.web_fetch) only for a request that carries no credentials: a request made with the bot's
+    # token is never cached or answered from the cache. The platform adapters always send one, so this is for
+    # public attachment URLs.
+    cacheable = not _has_credentials(headers)
+    ckey = ""
+    if cacheable:
+        from bot import hotcache
+
+        cacheable = hotcache.enabled("web_fetch")
+        if cacheable:
+            ckey = hotcache.digest("GET-audio", url)
+            hit = await hotcache.aget("web_fetch", ckey)
+            if isinstance(hit, str):
+                try:
+                    data = base64.b64decode(hit, validate=True)
+                except ValueError:
+                    data = b""
+                if data and len(data) <= cap:
+                    return data
     # Discord's attachment urls are signed and Slack's carry the file's identity in the query, so only
     # the path is ever logged.
     where = url.split("?", 1)[0]
@@ -61,7 +86,10 @@ async def fetch_audio(client: Any, url: str, headers: dict, *, limit: Optional[i
                     logger.warning("attachment %s is over %d bytes; skipped", where, cap)
                     return None
                 chunks.append(chunk)
-            return b"".join(chunks)
+            body = b"".join(chunks)
+            if cacheable and len(body) < min(cap, hotcache.max_bytes()):
+                await hotcache.aput("web_fetch", ckey, base64.b64encode(body).decode("ascii"))
+            return body
     except Exception:  # noqa: BLE001 — one unreadable file must not drop the message
         logger.warning("could not download attachment %s", where, exc_info=True)
         return None

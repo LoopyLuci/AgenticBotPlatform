@@ -10,6 +10,7 @@ config/backends.yaml:
       embeddings_ttl_s: 2592000
       model_lists_ttl_s: 600
       web_fetch_max_bytes: 1000000
+      embeddings_max_lookups: 64   # bigger batches skip the per-text lookups
 
 Everything here is a miss when a feature is off or CacheIt isn't running, so ABP behaves exactly as it did without
 it. bot/cache.py is synchronous HTTP, so async callers use the a* helpers (asyncio.to_thread). Keys are hashes and
@@ -28,6 +29,9 @@ from bot import cache
 FEATURES = ("web_fetch", "embeddings", "model_lists")
 _DEFAULT_TTL = {"web_fetch": 300, "embeddings": 30 * 86400, "model_lists": 600}
 DEFAULT_MAX_BYTES = 1_000_000
+#: CacheIt has no multi-get, so a batch costs one GET per text; above this many texts the lookups are skipped (the
+#: embedder gets the whole batch, and its vectors are stored) rather than adding a round trip per text.
+DEFAULT_MAX_LOOKUPS = 64
 
 _lock = threading.Lock()
 _counters: dict[str, dict[str, int]] = {f: {"hits": 0, "misses": 0, "puts": 0} for f in FEATURES}
@@ -60,6 +64,14 @@ def max_bytes() -> int:
     except (TypeError, ValueError):
         v = DEFAULT_MAX_BYTES
     return v if v > 0 else DEFAULT_MAX_BYTES
+
+
+def max_lookups() -> int:
+    try:
+        v = int(_block().get("embeddings_max_lookups") or DEFAULT_MAX_LOOKUPS)
+    except (TypeError, ValueError):
+        v = DEFAULT_MAX_LOOKUPS
+    return v if v > 0 else DEFAULT_MAX_LOOKUPS
 
 
 def digest(*parts: str) -> str:
@@ -103,12 +115,16 @@ async def aput(feature: str, key: str, value: Any) -> bool:
 
 def embed_cached(model_id: str, fn: Callable[[list[str]], Any], texts: list[str]) -> Any:
     """fn(texts) with each text's vector cached under hash(model id + text); only the missing texts reach fn. Returns
-    what fn returns (None if the embedder fails)."""
+    what fn returns (None if the embedder fails). A batch of more than max_lookups() texts skips the lookups (one GET
+    each; CacheIt has no multi-get) and only stores."""
     if not enabled("embeddings") or not texts:
         return fn(texts)
     import numpy as np
     keys = [digest(model_id, t) for t in texts]
-    found = [get("embeddings", k) for k in keys]
+    if len(texts) > max_lookups():
+        found: list = [None] * len(texts)
+    else:
+        found = [get("embeddings", k) for k in keys]
     todo = [i for i, v in enumerate(found) if v is None]
     if todo:
         fresh = fn([texts[i] for i in todo])
