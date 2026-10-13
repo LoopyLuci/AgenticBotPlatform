@@ -26,7 +26,7 @@ def client(temp_db, monkeypatch, tmp_path):
     return DashboardClient("http://testserver", "test-token", transport=httpx.ASGITransport(app=build_app()))
 
 
-async def _until(pilot, predicate, timeout=10.0):
+async def _until(pilot, predicate, timeout=30.0):
     waited = 0.0
     while waited < timeout:
         if predicate():

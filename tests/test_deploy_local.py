@@ -947,6 +947,42 @@ def test_a_gate_is_only_trusted_when_it_says_so_and_owns_the_port(tmp_path, monk
     assert deploy_local.gate_in_front(state, 8787, environ=env) is None, "a stale gate.json must not conjure a gate"
 
 
+def test_a_gate_too_busy_to_answer_its_healthz_is_waited_for_not_taken_for_absent(tmp_path, monkeypatch):
+    """gate.json names a live gate that owns the port, but its /healthz times out (a gate on a machine running eight test
+    workers did exactly this, past the old single 3 s probe). Deciding "no gate" then sends the deploy down the
+    stop-install-restart path while the gate still fronts the port. It has to ask again until the gate answers; only a
+    gate that never answers within the patience is given up on, and an answer that is not a gate's ends it at once."""
+    from abp_gate import control
+
+    state = tmp_path / "home"
+    state.mkdir()
+    env = {"ABP_HOME": str(state), "ABP_INSTANCES_DIR": str(tmp_path / "instances")}
+    monkeypatch.setattr(control, "gate_running", lambda: True)
+    monkeypatch.setattr(control, "read_gate_meta", lambda: {
+        "pid": 4242, "control_url": "http://127.0.0.1:9999", "public_ports": [8787]})
+    monkeypatch.setattr(deploy_local, "GATE_HEALTHZ_PATIENCE_S", 5.0)
+
+    answers = [(0, "timed out"), (0, "timed out"), (200, {"gate": "0.1.0", "healthy": True})]
+    calls = []
+
+    def slow_then_answers(*a, **k):
+        calls.append(a)
+        return answers.pop(0)
+    monkeypatch.setattr(deploy_local, "_get", slow_then_answers)
+    found = deploy_local.gate_in_front(state, 8787, environ=env)
+    assert found and found["pid"] == 4242 and len(calls) == 3, (found, len(calls))
+
+    calls.clear()
+    monkeypatch.setattr(deploy_local, "_get", lambda *a, **k: (calls.append(a) or (200, {"status": "ok"})))
+    assert deploy_local.gate_in_front(state, 8787, environ=env) is None and len(calls) == 1,         "an answer that is not a gate's is final"
+
+    calls.clear()
+    monkeypatch.setattr(deploy_local, "GATE_HEALTHZ_PATIENCE_S", 0.6)
+    monkeypatch.setattr(deploy_local, "_get", lambda *a, **k: (calls.append(a) or (0, "timed out")))
+    assert deploy_local.gate_in_front(state, 8787, environ=env) is None, "a gate that never answers is not one"
+    assert 1 < len(calls) < 6, "it must have waited, and it must have stopped"
+
+
 def test_a_gate_refusal_is_reported_in_the_gates_own_words():
     """A 409 from a swap says which step failed and who is still serving, and
     that sentence is the whole diagnosis. Keeping it verbatim is the point; a

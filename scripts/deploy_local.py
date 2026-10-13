@@ -159,6 +159,12 @@ GATE_SWAP_TIMEOUT = 300.0
 #: confusing answers about a gate, so the deploy honours them explicitly.
 GATE_ENV_VARS = ("ABP_HOME", "ABP_INSTANCES_DIR")
 
+#: How long a gate that gate.json says is alive and owns the port may take to answer its /healthz before this deploy
+#: decides there is no gate. A gate on a busy machine can sit unanswering for longer than one probe; "no gate" makes
+#: the deploy stop the app and install over it, which is the outage the gate exists to prevent.
+GATE_HEALTHZ_PATIENCE_S = 30.0
+GATE_HEALTHZ_PROBE_S = 5.0
+
 
 class DeployError(RuntimeError):
     """Anything that makes the deploy unsafe or impossible. Reported, never
@@ -894,7 +900,14 @@ def gate_in_front(state: Path, port: int, *, environ: Optional[dict] = None) -> 
     if port not in owned:
         return None
     control_url = str(meta.get("control_url") or default_control).rstrip("/")
-    _status, body = _get(f"{control_url}/healthz", timeout=3.0)
+    # gate.json names a live gate that owns this port, so a /healthz that does not ANSWER (status 0: timed out, refused)
+    # is a busy gate, not an absent one - ask again until it does. An answer that is not a gate's ends it at once.
+    deadline = time.monotonic() + GATE_HEALTHZ_PATIENCE_S
+    while True:
+        status, body = _get(f"{control_url}/healthz", timeout=GATE_HEALTHZ_PROBE_S)
+        if status or time.monotonic() >= deadline:
+            break
+        time.sleep(0.25)
     if not isinstance(body, dict) or not isinstance(body.get("gate"), str):
         return None
     return {**meta, "control_url": control_url, "healthz": body}
