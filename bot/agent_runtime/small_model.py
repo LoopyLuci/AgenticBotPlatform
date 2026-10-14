@@ -103,7 +103,7 @@ def _provider(transport: Any) -> tuple[str, bool]:
     if named == "modelmistress":
         return "modelmistress", True
     local = named in turn_budget.LOCAL_PROVIDERS or turn_budget.is_local(transport)
-    return str(getattr(transport, "provider_key", "") or ""), local
+    return str(getattr(transport, "provider_key", "") or ""), local or turn_budget.is_loopback_endpoint(transport)
 
 
 def profile_for(transport: Any, model: str) -> Optional[SmallProfile]:
@@ -148,6 +148,21 @@ def filter_schemas(schemas: list[dict], profile: Optional[SmallProfile]) -> list
     if profile is None:
         return schemas
     return [s for s in schemas if s["name"] in profile.tools]
+
+
+def filter_allowed(schemas: list[dict], profile: Optional[SmallProfile]) -> list[dict]:
+    """`schemas` is already limited to an agent's allowed_tools. Small mode sends the intersection with its core set, but
+    never drops a tool the agent could not finish without: the edit and write tools, the verify tool (run_tests / verify)
+    and spawn_subagent. If the intersection would be empty, the allowed tools are sent as they are."""
+    if profile is None:
+        return schemas
+    from bot.agent_runtime import agent_defs
+
+    keep = set(profile.tools) | set(VERIFY_TOOLS) | {"spawn_subagent"}
+    for group in ("edit", "write"):
+        keep.update(agent_defs.ALIASES.get(group, ()))
+    kept = [s for s in schemas if s["name"] in keep]
+    return kept or schemas
 
 
 # ---- once per session -------------------------------------------------------------------------

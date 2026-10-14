@@ -139,7 +139,13 @@ A model with a small window does worse with a long prompt and dozens of tool def
 | `compact_prompt` | `true` | skip the optional prompt sections (skills, skill packs, the sub-agent list, the profile, the code-navigation bullet) |
 | `keep_tool_results` / `compact_at` | 3 / 0.6 | replace `context.keep_tool_results` / `context.compact_at` while the mode is on |
 
-The other tools still exist: an agent definition that lists its tools gets exactly those. Cloud models are never
+`auto` also counts a transport whose base URL points at this machine (`localhost`, `127.x`, `::1`) as local, so a bare
+`--base-url http://127.0.0.1:...` OpenAI-compatible endpoint turns it on; a remote base URL, or a private LAN address,
+does not (a router there may forward to a paid provider). Cloud providers are classified as before.
+
+The other tools still exist. An agent that lists its tools (`allowed_tools`) is sent the intersection of that list and the
+core set, plus the listed edit/write tools, `run_tests` / `verify` and `spawn_subagent` even when the configured `tools` omit
+them, so it can still finish; if the intersection would be empty, the whole list is sent. Cloud models are never
 affected unless you force `enabled: true`. A model with no `tool_call_modes` entry is switched to `text` only when its
 transport says it cannot do native tool calls (`supports_native_tools = False`); otherwise it stays `native`.
 The decision is shown once per session in the run's trace ("small-model mode on for ...").

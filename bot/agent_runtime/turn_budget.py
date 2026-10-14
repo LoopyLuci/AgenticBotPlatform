@@ -85,6 +85,21 @@ def is_local(transport: Any) -> bool:
         return False
 
 
+def is_loopback_endpoint(transport: Any) -> bool:
+    """True when the transport's base URL host is this machine (localhost, 127.x, ::1). Only for choices that do not
+    involve money (small-model mode's auto decision); it does not make the provider free - see is_local."""
+    try:
+        from urllib.parse import urlparse
+        import ipaddress
+
+        host = (urlparse(str(getattr(transport, "base_url", "") or "")).hostname or "").strip("[]").lower()
+        if host == "localhost" or host.endswith(".localhost"):
+            return True
+        return ipaddress.ip_address(host.split("%")[0]).is_loopback
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _from_table(provider: str, model: str) -> Optional[Price]:
     table = _cfg().get("prices")
     if not isinstance(table, dict):

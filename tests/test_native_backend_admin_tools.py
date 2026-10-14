@@ -101,3 +101,15 @@ def test_elevated_device_tier_alone_without_admin_instance_grants_nothing(temp_d
 
     names = _tool_names(transport.send_calls[0])
     assert not (names & agent_tools.ADMIN_TOOLS)
+
+
+def test_small_model_mode_intersects_allowed_tools_but_keeps_edit_and_verify(temp_db, tmp_path):
+    instance_id = _make_instance()
+    transport = _ScriptedTransport([_final_response()])
+    transport.provider_key = transport.router_provider = "ollama"
+    backend = NativeAgentBackend(transport, model="unknown-local")
+    allowed = frozenset({"read_file", "edit_file", "run_tests", "hosting_dns"})
+
+    _run(backend.ask("hi", context={"cwd": str(tmp_path / "ws"), "instance_id": instance_id, "allowed_tools": allowed}))
+
+    assert _tool_names(transport.send_calls[0]) == {"read_file", "edit_file", "run_tests"}

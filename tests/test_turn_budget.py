@@ -175,3 +175,12 @@ def test_a_config_price_beats_the_catalog_and_patterns_match(monkeypatch):
 
     assert turn_budget.price_for(T(), "anything").output == 2
     assert turn_budget.price_for(T(), "free-one").input == 0
+
+
+def test_loopback_endpoint_is_not_a_local_provider():
+    from types import SimpleNamespace
+
+    t = SimpleNamespace(provider_key="openai", base_url="http://127.0.0.1:8080/v1")
+    assert turn_budget.is_loopback_endpoint(t) and not turn_budget.is_local(t)
+    assert not turn_budget.is_loopback_endpoint(SimpleNamespace(provider_key="openai", base_url="https://api.openai.com/v1"))
+    assert not turn_budget.is_loopback_endpoint(SimpleNamespace(provider_key="openai"))

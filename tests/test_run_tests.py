@@ -128,3 +128,50 @@ def test_timeout_setting_is_read_and_clamped(monkeypatch):
 def test_summarise_on_a_collection_error_keeps_the_tail():
     out = run_tests.summarise("ERROR collecting tests/t.py\nImportError: no module named zzz\n\n[exit code 2]")
     assert out.startswith("ERROR:") and "ImportError" in out
+
+
+@pytest.mark.parametrize("make", [
+    lambda ws: {"paths": ["./tests/test_ok.py"]},
+    lambda ws: {"paths": ["tests" + chr(92) + "test_ok.py"]},
+    lambda ws: {"paths": "tests/test_ok.py"},
+    lambda ws: {"paths": ["tests/test_ok.py:3"]},
+    lambda ws: {"paths": '"tests/test_ok.py"'},
+    lambda ws: {"test_paths": ["tests/test_ok.py"]},
+    lambda ws: {"tests": "tests/test_ok.py"},
+    lambda ws: {"target": "tests/test_ok.py"},
+    lambda ws: {"paths": "python -m pytest tests/test_ok.py"},
+    lambda ws: {"paths": [str(ws / "tests" / "test_ok.py")]},
+    lambda ws: {"paths": ["tests"], "k": "test_a"},
+])
+def test_reasonable_forms_are_accepted(ws, make):
+    assert run(ws, **make(ws)).startswith("PASSED")
+
+
+def test_a_string_with_several_targets_is_split(ws):
+    assert run_tests.clean_targets(ws, "tests/test_ok.py, tests/test_bad.py::test_param[1]") == [
+        "tests/test_ok.py", "tests/test_bad.py::test_param[1]"]
+
+
+def test_k_selects_tests_and_is_validated(ws):
+    out = run(ws, paths=["tests/test_ok.py"], k="test_b")
+    assert out.startswith("PASSED: 1 passed")
+    assert run_tests.build_command(["tests/a.py"], "a and not b").count("-k") == 1
+    for bad in ("a; rm x", "$(id)", "-x", "a`b`", "a|b", "%PATH%", "a" * 201, 5):
+        with pytest.raises(ToolError, match="k"):
+            run(ws, paths=["tests/test_ok.py"], k=bad)
+
+
+def test_paths_outside_the_workspace_are_still_refused(ws, tmp_path):
+    (tmp_path / "test_out.py").write_text("def test_x():\n    pass\n", encoding="utf-8")
+    for bad in (str(tmp_path / "test_out.py"), "../test_out.py", "tests/../../test_out.py", "/test_out.py"):
+        with pytest.raises(ToolError):
+            run(ws, paths=[bad])
+
+
+def test_refusals_say_the_accepted_shape_and_suggest_a_near_file(ws):
+    with pytest.raises(ToolError) as e:
+        run(ws, paths=["test_ok.py"])
+    assert "tests/test_ok.py" in str(e.value) and '"paths"' in str(e.value)
+    for bad in (["-x"], ["a;b"], [], ["tests/test_ok.py::a b"]):
+        with pytest.raises(ToolError, match='"paths"'):
+            run(ws, paths=bad)

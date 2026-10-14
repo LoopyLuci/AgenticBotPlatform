@@ -279,12 +279,14 @@ class NativeAgentBackend(Backend):
             tool_schemas = [s for s in tool_schemas if s["name"] in allowed_tools]
 
         # Small-model mode (small_model.py): a local model with a small window is sent a compact tool set and prompt.
-        # An agent definition that names its tools (allowed_tools) is honoured as it is.
+        # An agent that names its tools (allowed_tools) gets the intersection with the core set, plus its edit, write,
+        # verify and spawn_subagent tools (small_model.filter_allowed).
         from bot.agent_runtime import small_model
 
         small = small_model.profile_for(self.transport, self.model)
-        if small is not None and allowed_tools is None:
-            tool_schemas = small_model.filter_schemas(tool_schemas, small)
+        if small is not None:
+            tool_schemas = (small_model.filter_schemas(tool_schemas, small) if allowed_tools is None
+                            else small_model.filter_allowed(tool_schemas, small))
         small_model.announce(session_key, small, self.model, trace.active().note)
 
         from bot.agent_runtime import prompt as prompt_builder
