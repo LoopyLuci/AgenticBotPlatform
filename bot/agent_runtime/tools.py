@@ -2042,6 +2042,7 @@ from bot.agent_runtime import coding_tools as _coding_tools  # noqa: E402,F401
 from bot.agent_runtime import shell as _shell  # noqa: E402,F401
 from bot.agent_runtime import web as _web  # noqa: E402,F401
 from bot.agent_runtime import repo_map as _repo_map  # noqa: E402,F401
+from bot.agent_runtime import run_tests as _run_tests  # noqa: E402,F401
 from bot.agent_runtime import search_index as _search_index  # noqa: E402,F401
 from bot.codeintel import agent_tools as _codeintel_tools  # noqa: E402,F401  (outline, find_symbol, read_symbol, ...)
 from bot.agent_runtime import agent_defs as _agent_defs  # noqa: E402,F401

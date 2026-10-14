@@ -258,3 +258,63 @@ def test_tool_outputs_are_indexed_briefly_and_thinking_is_not(two_instances):
 def test_search_tools_are_read_only_and_parallel_safe():
     for n in ("repo_map", "code_search", "session_search"):
         assert toolspec.is_concurrency_safe(n) and not tools.is_dangerous(n)
+
+
+def _git_init(ws):
+    import subprocess
+
+    subprocess.run(["git", "-C", str(ws), "init", "-q"], check=True, capture_output=True)
+
+
+def test_repo_map_on_a_big_tree_skips_ignored_dirs_and_stays_fast(ws):
+    _git_init(ws)
+    put(ws, ".gitignore", "gen_output/\n")
+    for i in range(300):
+        put(ws, f"src/m{i:03}.py", "".join(f"def real_function_{i}_{j}(x):\n    return other_{j}(x)\n" for j in range(8)))
+    for i in range(1500):
+        put(ws, f"gen_output/g{i}.py", f"def ignored_generated_{i}(x):\n    return x\n")
+        put(ws, f"target/debug/t{i}.rs", f"fn ignored_target_{i}() {{}}\n")
+    started = time.monotonic()
+    out = call(ws, "repo_map", max_tokens=1000)
+    assert time.monotonic() - started < 15
+    assert "ignored_generated" not in out and "gen_output" not in out and "ignored_target" not in out and "target/" not in out
+    assert "of 300 files" in out and "Truncated" not in out
+
+
+def test_repo_map_scales_linearly_with_many_symbols(ws):
+    # 1200 files x 20 symbols used to cost symbols x files regex scans (minutes); one tokenising pass is well under a few seconds
+    for i in range(1200):
+        put(ws, f"p/m{i:04}.py", "".join(f"def func_{i}_{j}(a):\n    return func_{(i + 1) % 1200}_{j}(a)\n" for j in range(20)))
+    started = time.monotonic()
+    out = call(ws, "repo_map", max_tokens=800)
+    assert time.monotonic() - started < 20
+    assert out.startswith("Repository map: ")
+
+
+def test_repo_map_budget_says_when_it_truncated(ws, monkeypatch):
+    monkeypatch.setattr(repo_map, "MAX_FILES", 20)
+    for i in range(50):
+        put(ws, f"m{i:02}.py", f"def function_number_{i}(argument):\n    pass\n")
+    out = call(ws, "repo_map", max_tokens=12000)
+    assert "Truncated" in out and "of 20 files" in out
+
+
+def test_repo_map_does_not_block_the_event_loop(ws):
+    for i in range(200):
+        put(ws, f"m{i:03}.py", f"def function_number_{i}(argument):\n    pass\n")
+
+    async def scenario():
+        ticks = 0
+
+        async def ticker():
+            nonlocal ticks
+            while True:
+                await asyncio.sleep(0.001)
+                ticks += 1
+
+        task = asyncio.create_task(ticker())
+        await tools.execute_tool("repo_map", {}, workspace=ws)
+        task.cancel()
+        return ticks
+
+    assert asyncio.run(scenario()) > 0

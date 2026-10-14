@@ -65,7 +65,7 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "bash": ("run_shell", "shell_output", "shell_list", "shell_kill"), "shell": ("run_shell", "shell_output", "shell_list", "shell_kill"),
     "edit": ("edit_file", "multi_edit", "apply_patch"), "write": ("write_file",), "patch": ("apply_patch",),
     "webfetch": ("web_fetch",), "websearch": ("web_search",), "todowrite": ("todo_write", "todo_read"),
-    "todoread": ("todo_read",), "list": ("list_dir",), "search": ("grep", "code_search"),
+    "todoread": ("todo_read",), "list": ("list_dir",), "search": ("grep", "code_search"), "test": ("run_tests",), "tests": ("run_tests",),
 }
 
 

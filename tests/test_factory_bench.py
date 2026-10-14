@@ -414,3 +414,12 @@ def test_the_existing_suite_accepts_an_endpoint_and_a_context_window():
 
     transport = _live_transport("anthropic", "m", "http://127.0.0.1:9/v1/")
     assert transport.base_url == "http://127.0.0.1:9/v1"
+
+
+def test_without_a_shell_the_agent_gets_run_tests_and_repo_map():
+    cfg = fb.agent_settings(model="m")
+    denied = {r["tool"] for r in cfg["permissions"]["rules"] if r["decision"] == "deny"}
+    assert "run_tests" not in denied and "repo_map" not in denied and "run_shell" in denied
+    assert any(r["decision"] == "allow" and r["tool"] == "run_tests" for r in cfg["permissions"]["rules"])
+    boxed = fb.agent_settings(model="m", shell="sandbox")
+    assert "run_tests" in {r["tool"] for r in boxed["permissions"]["rules"] if r["decision"] == "deny"}
