@@ -204,7 +204,7 @@ class OpenAICompatibleTransport(ProviderTransport):
         system_prompt: Optional[str] = None,
         effort: Optional[str] = None,
     ) -> NormalizedResponse:
-        mode = text_toolcalls.mode_for(model, self._router_name())
+        mode = text_toolcalls.mode_for(model, self._router_name(), self)
         payload, headers = self._build_request(
             model=model, history=history, tool_schemas=tool_schemas, max_tokens=max_tokens,
             system_prompt=system_prompt, effort=effort, mode=mode,
@@ -329,7 +329,7 @@ class OpenAICompatibleTransport(ProviderTransport):
     ) -> NormalizedResponse:
         """Server-sent-events variant of send(): reply text goes to `on_event` as it
         arrives and the deltas are assembled into the same NormalizedResponse."""
-        mode = text_toolcalls.mode_for(model, self._router_name())
+        mode = text_toolcalls.mode_for(model, self._router_name(), self)
         if mode == "grammar" and tool_schemas:
             # A schema-constrained reply is JSON, not prose to show as it arrives: take it whole.
             response = await self.send(model=model, history=history, tool_schemas=tool_schemas, max_tokens=max_tokens,

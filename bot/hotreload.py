@@ -265,6 +265,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.codeintel.agent_tools", "bot.codeintel.roots", "bot.codeintel.bench", "bot.codeintel.cli", "bot.codeintel.__main__",
     "bot.dashboard.codeintel_api",
     "bot.agent_runtime.run_tests", "bot.agent_runtime.repo_map", "bot.agent_runtime.ext_browser", "bot.agent_runtime.search_index",  # register their tools at import time; repo_map caches
+    "bot.agent_runtime.small_model",  # holds the set of sessions already told that small-model mode is on
     "bot.agent_runtime.context_window",  # holds the learned chars-per-token ratio per model
     "bot.hotreload",  # never reload the reloader mid-cycle
     "bot.mcp_server",  # a separate process (python -m bot.mcp_server); not part of this one anyway

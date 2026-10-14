@@ -223,6 +223,17 @@ native_agent:
   # `tools` field) | grammar (as text, plus a JSON-schema response_format; dropped if the server refuses it).
   # Keys: "provider/model", a model name, a name prefix, or "*".
   tool_call_modes: {}       # e.g. {"modelmistress/qwen3": text, my-small-model: grammar}
+  # Small-model mode (bot/agent_runtime/small_model.py): a local model with a small window is SENT a compact core tool set
+  # (read/list/grep/glob/edit/write, run_shell, a test tool if there is one) and a shorter system prompt, and its context is
+  # managed tighter. Other tools still exist and are used when an agent definition names them; cloud models are never affected.
+  small_model:
+    enabled: auto           # auto = on for a local engine whose window <= max_window; true / false force it
+    max_window: 32768
+    tools: []               # empty = the core set; or list the tool names to send
+    compact_prompt: true    # skip the long optional prompt sections (skills, skill packs, agent list, code-navigation hints)
+    keep_tool_results: 3    # replaces context.keep_tool_results while the mode is on
+    compact_at: 0.6         # replaces context.compact_at while the mode is on
+    # A model with no tool_call_modes entry is switched to text only on a transport that cannot do native tool calls.
   # AGENTS.md / CLAUDE.md in the working directory are added to the system prompt (project_rules.py).
   project_rules:
     enabled: true

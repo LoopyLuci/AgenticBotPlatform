@@ -176,7 +176,7 @@ def make(monkeypatch, *messages, mode="native"):
     t.router_provider = "fake"
     server = FakeServer(*messages)
     monkeypatch.setattr(t, "_post", server)
-    monkeypatch.setattr(tt, "mode_for", lambda model, provider="": mode)
+    monkeypatch.setattr(tt, "mode_for", lambda model, provider="", transport=None: mode)
     return t, server
 
 
@@ -324,7 +324,7 @@ def test_grammar_mode_sends_a_json_schema_and_reads_calls_and_final_answers(monk
 
 def test_grammar_mode_falls_back_when_the_server_refuses_response_format(monkeypatch):
     t = OpenAICompatibleTransport(base_url="http://127.0.0.1:1/v1")
-    monkeypatch.setattr(tt, "mode_for", lambda model, provider="": "grammar")
+    monkeypatch.setattr(tt, "mode_for", lambda model, provider="", transport=None: "grammar")
     seen = []
 
     def handler(request: httpx.Request) -> httpx.Response:

@@ -209,13 +209,16 @@ class Report:
 
 
 def manage(history: list[dict], transport, model: str, system_prompt: Optional[str] = None,
-           tool_schemas: Optional[list] = None) -> Report:
+           tool_schemas: Optional[list] = None, small: Any = None) -> Report:
+    """`small`: a small_model.SmallProfile while small-model mode is on; its compact_at / keep_tool_results win."""
     cfg = (_cfg().get("context") or {})
     try:
         compact_at = float(cfg.get("compact_at", DEFAULT_COMPACT_AT))
         keep = int(cfg.get("keep_tool_results", DEFAULT_KEEP_TOOL_RESULTS))
     except (TypeError, ValueError):
         compact_at, keep = DEFAULT_COMPACT_AT, DEFAULT_KEEP_TOOL_RESULTS
+    if small is not None:
+        compact_at, keep = small.compact_at, small.keep_tool_results
     named = str(getattr(transport, "router_provider", "") or "")
     local = False
     if named.lower() == "modelmistress":
