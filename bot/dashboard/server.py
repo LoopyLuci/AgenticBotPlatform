@@ -1058,6 +1058,11 @@ def build_app() -> FastAPI:
 
     sandbox_ns_api.register(app, _require_token)
 
+    # Code intelligence: outline / find / read a symbol / references / tests / impact / context pack (read-only).
+    from bot.dashboard import codeintel_api
+
+    codeintel_api.register(app, _require_token)
+
     # Editor integrations: install the VS Code extension, show the ACP command.
     from bot.dashboard import editors_api
 

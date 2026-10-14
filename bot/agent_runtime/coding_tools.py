@@ -553,6 +553,19 @@ def _pdf_text(path: Path) -> str:
         return f"[PDF could not be read: {exc}]"
 
 
+BIG_FILE_CHARS = 12_000
+_CODE_SUFFIXES = {".py", ".pyi", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".go", ".rs", ".java", ".kt", ".kts", ".cs",
+                  ".swift", ".rb", ".php"}
+
+
+def _navigation_hint(suffix: str, chars: int) -> str:
+    """For a big source file read whole: say what costs less (the tools are in bot/codeintel)."""
+    if suffix not in _CODE_SUFFIXES:
+        return ""
+    return (f"\n(Big source file, ~{int(chars / 3.5)} tokens. Next time: outline(path) lists its symbols with line ranges, "
+            "read_symbol(target) returns one function or class, and read_file with offset/limit reads a range.)")
+
+
 def read_text(path: Path, rel: str, *, offset: Optional[int] = None, limit: Optional[int] = None,
               numbered: bool = False, max_chars: int = 20000) -> str:
     """What read_file returns. Plain text is unchanged from before unless offset, limit or
@@ -574,8 +587,8 @@ def read_text(path: Path, rel: str, *, offset: Optional[int] = None, limit: Opti
     if offset is None and limit is None and not numbered:
         if len(text) > max_chars:
             return (text[:max_chars] + f"\n… truncated ({len(text)} chars total); "
-                    "call read_file again with offset and limit to see the rest")
-        return text
+                    "call read_file again with offset and limit to see the rest" + _navigation_hint(suffix, len(text)))
+        return text + (_navigation_hint(suffix, len(text)) if len(text) > BIG_FILE_CHARS else "")
     lines = text.split("\n")
     if lines and lines[-1] == "":
         lines.pop()

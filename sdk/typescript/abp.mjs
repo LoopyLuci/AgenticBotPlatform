@@ -1172,6 +1172,86 @@ export const operations = {
    "offset"
   ]
  },
+ "GET /api/codeintel/callers": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/codeintel/callers",
+  "path_params": [],
+  "query_params": [
+   "symbol",
+   "root",
+   "limit",
+   "max_tokens"
+  ]
+ },
+ "GET /api/codeintel/find": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/codeintel/find",
+  "path_params": [],
+  "query_params": [
+   "q",
+   "kind",
+   "limit",
+   "root",
+   "max_tokens"
+  ]
+ },
+ "GET /api/codeintel/outline": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/codeintel/outline",
+  "path_params": [],
+  "query_params": [
+   "path",
+   "root",
+   "max_tokens"
+  ]
+ },
+ "GET /api/codeintel/read": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/codeintel/read",
+  "path_params": [],
+  "query_params": [
+   "target",
+   "context",
+   "root",
+   "max_tokens"
+  ]
+ },
+ "GET /api/codeintel/refs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/codeintel/refs",
+  "path_params": [],
+  "query_params": [
+   "symbol",
+   "root",
+   "limit",
+   "max_tokens"
+  ]
+ },
+ "GET /api/codeintel/stats": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/codeintel/stats",
+  "path_params": [],
+  "query_params": [
+   "root"
+  ]
+ },
+ "GET /api/codeintel/tests": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/codeintel/tests",
+  "path_params": [],
+  "query_params": [
+   "target",
+   "root",
+   "max_tokens"
+  ]
+ },
  "GET /api/config": {
   "body": false,
   "method": "GET",
@@ -4752,6 +4832,27 @@ export const operations = {
   "path_params": [
    "rid"
   ],
+  "query_params": []
+ },
+ "POST /api/codeintel/impact": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/codeintel/impact",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/codeintel/index": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/codeintel/index",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/codeintel/pack": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/codeintel/pack",
+  "path_params": [],
   "query_params": []
  },
  "POST /api/config/backups/{name}/{version}/restore": {
@@ -10931,6 +11032,107 @@ export const operations = {
   "path": "/api/cluster/jobs",
   "path_params": [],
   "query_params": []
+ },
+ "codeintel_callers_api_codeintel_callers_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/codeintel/callers",
+  "path_params": [],
+  "query_params": [
+   "symbol",
+   "root",
+   "limit",
+   "max_tokens"
+  ]
+ },
+ "codeintel_find_api_codeintel_find_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/codeintel/find",
+  "path_params": [],
+  "query_params": [
+   "q",
+   "kind",
+   "limit",
+   "root",
+   "max_tokens"
+  ]
+ },
+ "codeintel_impact_api_codeintel_impact_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/codeintel/impact",
+  "path_params": [],
+  "query_params": []
+ },
+ "codeintel_index_api_codeintel_index_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/codeintel/index",
+  "path_params": [],
+  "query_params": []
+ },
+ "codeintel_outline_api_codeintel_outline_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/codeintel/outline",
+  "path_params": [],
+  "query_params": [
+   "path",
+   "root",
+   "max_tokens"
+  ]
+ },
+ "codeintel_pack_api_codeintel_pack_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/codeintel/pack",
+  "path_params": [],
+  "query_params": []
+ },
+ "codeintel_read_api_codeintel_read_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/codeintel/read",
+  "path_params": [],
+  "query_params": [
+   "target",
+   "context",
+   "root",
+   "max_tokens"
+  ]
+ },
+ "codeintel_refs_api_codeintel_refs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/codeintel/refs",
+  "path_params": [],
+  "query_params": [
+   "symbol",
+   "root",
+   "limit",
+   "max_tokens"
+  ]
+ },
+ "codeintel_stats_api_codeintel_stats_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/codeintel/stats",
+  "path_params": [],
+  "query_params": [
+   "root"
+  ]
+ },
+ "codeintel_tests_api_codeintel_tests_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/codeintel/tests",
+  "path_params": [],
+  "query_params": [
+   "target",
+   "root",
+   "max_tokens"
+  ]
  },
  "config_schema_api_agent_config_schema_get": {
   "body": false,

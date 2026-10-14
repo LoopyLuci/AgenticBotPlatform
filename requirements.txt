@@ -29,6 +29,8 @@ ruamel.yaml>=0.18
 jsonschema>=4.20
 zeroconf>=0.132
 tzdata>=2024.1
+tree-sitter==0.26.0  # exact syntax trees for the code index (bot/codeintel); optional at run time, Python ast and regex are the fallbacks
+tree-sitter-language-pack==1.22.1  # grammars for Python, JS/TS, Rust, Go, Java, Kotlin, C#, Swift, Ruby, PHP
 pywinpty>=2.0; sys_platform == "win32"  # ConPTY for interactive container/VM terminals (bot/terminal_broker.py)
 # Not imported by ABP, but present in every venv it ships. Floor past
 # CVE-2022-40897, CVE-2024-6345, CVE-2025-47273, CVE-2026-59890.
