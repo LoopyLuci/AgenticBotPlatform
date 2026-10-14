@@ -11,6 +11,17 @@ from __future__ import annotations
 from typing import Any, Optional
 
 
+def vault_note(event: str, task: Any) -> None:
+    """Hand a board event (a brief created, a review, a result) to the context vault's passive capture. Queued off
+    this thread, a no-op while the vault is off, and never raises."""
+    try:
+        from bot.context_vault import capture
+
+        capture.on_board_event(event, task)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 class Board:
     name = "board"
     blocking = False

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 import uuid
 from typing import Optional
@@ -311,6 +312,14 @@ class NativeAgentBackend(Backend):
         active_transport = self.transport
         active_model = self.model
 
+        # Context vault (bot/context_vault): a LOCAL model's turn gets a small budgeted "Relevant context" block from
+        # what API models worked on earlier; never added for API turns, and "" while the vault is off.
+        from bot.context_vault import tools as _vault_tools
+
+        _vault_block = await _vault_tools.injection_for_turn(prompt, active_transport, project=_vault_project(workspace))
+        if _vault_block:
+            system_prompt = f"{system_prompt}\n\n{_vault_block}" if system_prompt else _vault_block
+
         # Streaming (P0 of docs/agents/ROADMAP.md): a caller that wants reply text as
         # it is generated passes context["stream_notify"], an async callable taking a
         # StreamEvent. A transport that cannot stream simply is not asked to; a
@@ -491,6 +500,14 @@ class NativeAgentBackend(Backend):
                         history.append(entry)
                         db.append_agent_message(session_key, entry["role"], entry["content"])
                         continue
+                try:
+                    from bot.context_vault import capture as _vault_capture
+
+                    _vault_capture.on_turn_end(history, active_transport, active_model, response.text or "",
+                                               session_key=session_key, instance_id=instance_id,
+                                               cwd=context.get("cwd") or workspace)
+                except Exception:  # noqa: BLE001 - passive capture never breaks a turn
+                    pass
                 from bot.agent_runtime import skill_learning
 
                 if skill_learning.enabled():
@@ -655,6 +672,14 @@ def _show_thinking_summary_enabled() -> bool:
     from bot.config import config
 
     return (config.current.get("native_agent") or {}).get("show_thinking_summary", False)
+
+
+def _vault_project(workspace) -> str:
+    """The folder name a turn works in: what the context vault files its items under."""
+    try:
+        return re.split(r"[\\/]", str(workspace).rstrip("\\/"))[-1][:80] if workspace else ""
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def _model_line(transport, model) -> Optional[str]:

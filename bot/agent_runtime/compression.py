@@ -133,4 +133,11 @@ async def maybe_compress(session_key: str, transport: ProviderTransport, *, mode
     logger.info(
         "compression: session %s compressed %d older message(s) into one digest", session_key, len(to_summarize)
     )
+    try:
+        # Passive capture into the local context vault (queued, off this path; a no-op unless it is enabled).
+        from bot.context_vault import capture as _vault_capture
+
+        _vault_capture.on_compaction(session_key, transport, model, digest_text, instance_id=instance_id)
+    except Exception:  # noqa: BLE001 - never breaks compaction
+        pass
     return True

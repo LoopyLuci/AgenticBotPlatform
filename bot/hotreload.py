@@ -214,6 +214,11 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.dashboard.memory_api", "bot.memoryfabric.store", "bot.memoryfabric.knowledge", "bot.memoryfabric.sources",
     "bot.memoryfabric.vault", "bot.memoryfabric.diff", "bot.memoryfabric.service", "bot.memoryfabric.extract",
     "bot.memoryfabric.rules",
+    # The context vault: the singleton and its worker thread, the SQLite handle, the RAM tier and the registered tool; the
+    # capture hooks are imported lazily by denied modules.
+    "bot.context_vault.store", "bot.context_vault.tiers", "bot.context_vault.capture", "bot.context_vault.tools",
+    "bot.context_vault.settings", "bot.context_vault.search", "bot.context_vault.redact", "bot.context_vault.embed",
+    "bot.context_vault.__main__", "bot.dashboard.context_vault_api",
     # The user model: the routes register once; user_model.py keeps its table-ready marker, and is imported by denied modules.
     "bot.dashboard.user_model_api", "bot.agent_runtime.user_model",
     # Privacy mode: routes register once; privacy.py caches its settings file. TokenJuice keeps compacted originals.

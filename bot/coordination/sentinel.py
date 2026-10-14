@@ -19,7 +19,7 @@ from typing import Any, Optional
 
 import httpx
 
-from bot.coordination.base import Board
+from bot.coordination.base import Board, vault_note as _vault_note
 from bot.coordination.model import BoardError, Unavailable
 
 DEFAULT_URL = "http://127.0.0.1:8080"
@@ -143,6 +143,8 @@ class SentinelBoard(Board):
         resp = self._call("POST", "/tasks", body=body)
         data = resp.json()
         if isinstance(data, dict) and isinstance(data.get("task"), dict):
+            if not data.get("deduped"):
+                _vault_note("created", data["task"])
             return data["task"], bool(data.get("deduped", resp.status_code == 200))
         return data, False
 
@@ -176,8 +178,11 @@ class SentinelBoard(Board):
             {"agent": agent, "fence": fence, "lease_s": lease_s, "progress": progress})).json()
 
     def set_state(self, task_id, agent, fence, state, *, result=None, note=""):
-        return self._call("POST", f"/tasks/{task_id}/state", body=self._drop_none(
+        out = self._call("POST", f"/tasks/{task_id}/state", body=self._drop_none(
             {"agent": agent, "fence": fence, "state": state, "result": result, "note": note or None})).json()
+        if state in ("review", "done", "failed") and isinstance(out, dict):
+            _vault_note(state, {**out, "result": out.get("result", result), "note": out.get("note", note)})
+        return out
 
     def cancel(self, task_id, *, agent="", note=""):
         return self._call("POST", f"/tasks/{task_id}/cancel", body=self._drop_none(

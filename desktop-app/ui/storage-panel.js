@@ -67,6 +67,7 @@
   async function overviewTab() {
     const o = st.o, s = o.server;
     const stats = await api(`${A}/stats`).catch(() => null);
+    const cv = await api('/api/context-vault/status').catch(() => null);
     return `<div class="stp-grid"><div class="stp-card"><b>File server</b>
 <div>${s.running ? chip('ok', 'running') : chip('', 'stopped')} port ${E(s.port)}</div>
 ${s.running ? `<div>Web: <a href="${E(s.urls.web)}" target="_blank" rel="noopener">${E(s.urls.web)}</a><br>WebDAV: <span class="stp-mono">${E(s.urls.webdav)}&lt;share&gt;</span></div>` : ''}
@@ -81,6 +82,7 @@ ${o.tiering ? `<div class="stp-card"><b>Cold data tier</b>
 <div>${o.tiering.enabled ? (o.tiering.ready ? chip('ok', 'on') : chip('warn', 'needs setup')) : chip('', 'off')} ${E(o.tiering.archived ? o.tiering.archived.files : 0)} file(s), ${human((o.tiering.archived || {}).bytes || 0)} moved to the archive</div>
 ${o.tiering.error && o.tiering.enabled ? `<div class="stp-muted">${E(o.tiering.error)}</div>` : ''}
 <div class="stp-muted">Old attachments and rotated logs move to storage_tiering.archive_dir and come back when opened. Scan, apply and recall: <span class="stp-mono">python -m bot.storage_tiering</span>.</div></div>` : ''}
+${cv ? `<div class="stp-card"><b>Context vault</b><div>${cv.enabled ? chip('ok', 'on') : chip('', 'off')} ${E(cv.items)} item(s)${cv.hit_rate == null ? '' : ` · hit rate ${Math.round(cv.hit_rate * 100)}%`}</div>${(cv.tiers || []).map((t) => `<div class="stp-muted">${E(t.name)}${t.volatile ? ' (RAM cache)' : ''}: ${E(t.items)} item(s), ${human(t.bytes)}${t.max_bytes ? ` of ${human(t.max_bytes)}` : ''}</div>${t.max_bytes ? meter(t.bytes, t.max_bytes) : ''}`).join('')}${cv.counters ? `<div class="stp-muted">captured ${E(cv.counters.captured)}, deduped ${E(cv.counters.deduped)}, promoted ${E(cv.counters.promoted)}, demoted ${E(cv.counters.demoted)}</div>` : ''}<div class="stp-muted">What API models work on is copied here passively and recalled for local models. Off until context_vault.enabled; tiers and caps: <span class="stp-mono">python -m bot.context_vault status|tiers|recall|rebalance</span>.</div></div>` : ''}
 <div class="stp-card"><b>Recent events</b><table class="stp-table">${o.events.map((e) => `<tr><td class="stp-muted">${when(e.at)}</td><td>${chip(e.level === 'info' ? '' : e.level === 'alert' ? 'bad' : 'warn', e.kind)}</td><td>${E(e.text)}</td></tr>`).join('') || '<tr><td class="stp-muted">nothing yet</td></tr>'}</table></div></div>`;
   }
 

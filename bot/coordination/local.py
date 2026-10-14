@@ -21,7 +21,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from bot.coordination.base import Board
+from bot.coordination.base import Board, vault_note as _vault_note
 from bot.coordination.model import (
     ACTIVE, HEARTBEAT_INTERVAL_S, MAX_DETAIL, MAX_RESULT, MAX_TITLE, MIN_LEASE_S, SETTABLE, STATES, TERMINAL, BoardError,
     clamp_lease, conflicts, mode_conflicts, norm_resources, now_ms,
@@ -359,6 +359,7 @@ class LocalBoard(Board):
                  json.dumps(list(deps or [])), json.dumps(scope), max(1, int(max_attempts)), created_by, now, now))
             task = self._task(self._get(conn, task_id))
             events.append(("board.task.created", task))
+        _vault_note("created", task)
         return task, False
 
     def get_task(self, task_id):
@@ -483,6 +484,8 @@ class LocalBoard(Board):
             task = self._task(self._get(conn, task_id))
             events.append((f"board.task.{state}", {**task, "owner": agent}))
             self._seen(conn, agent, now, status="idle" if finished else "busy", task=None if finished else task_id)
+        if state in ("review", "done", "failed"):
+            _vault_note(state, task)
         return task
 
     def cancel(self, task_id, *, agent="", note=""):
