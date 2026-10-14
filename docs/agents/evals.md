@@ -434,7 +434,11 @@ error; the task is not counted against the model), `lint`, `scope`.
 
 The agent runs with the confined swarm's shape: accept-edits permissions locked, every tool outside the file, search
 and git-read tools denied by name, no network. By default it has **no shell tool** (`--shell none`), because the shell
-is only safe inside the OS sandbox; so it cannot run the tests and the number is a floor for an agent that can.
+is only safe inside the OS sandbox; instead it has `run_tests` (pytest on named test paths and nothing else). Small-model
+mode is forced on for these runs (`--small-model on`, the default; a `--base-url` endpoint is not named as a local engine, so
+`auto` would leave it off): the bench then offers only the tools both its own list and small-model mode's core set contain.
+`--small-model off` gives the full prompt and tool list, `auto` leaves the decision to ABP. The suite (`run --live
+--base-url`) takes the same option.
 `--shell sandbox --sandbox-path DIR` gives it `run_shell` inside the windows_job sandbox without network, where DIR is a
 Python install the sandbox may read; the one task that needs a command (regenerating the SDK) is skipped without it.
 Not exercised against a real model yet.

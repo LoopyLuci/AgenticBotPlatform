@@ -124,3 +124,27 @@ def test_announced_once_per_session(cfg):
     assert small_model.announce("s2", p, "unknown-local", notes.append) is True
     assert small_model.announce("s3", None, "gpt-4", notes.append) is False
     assert len(notes) == 2 and "small-model mode" in notes[0]
+
+
+def test_bare_loopback_base_url_counts_as_local_for_auto(cfg):
+    def bare(url):
+        return SimpleNamespace(provider_key="openai", router_provider="", base_url=url)
+
+    for url in ("http://127.0.0.1:8080/v1", "http://localhost:1234/v1", "http://[::1]:8000/v1"):
+        assert small_model.profile_for(bare(url), "unknown-local") is not None, url
+    for url in ("https://api.example.com/v1", "http://192.168.1.5:8080/v1", ""):
+        assert small_model.profile_for(bare(url), "unknown-local") is None, url
+    assert small_model.profile_for(SimpleNamespace(provider_key="openai", router_provider="openai"), "gpt-4") is None
+
+
+def test_filter_allowed_intersects_but_keeps_edit_and_verify_tools(cfg):
+    schemas = agent_tools.all_tool_schemas()
+    p = small_model.profile_for(local(), "unknown-local")
+    allowed = [s for s in schemas if s["name"] in {"read_file", "hosting_dns", "run_tests", "edit_file"}]
+    assert {s["name"] for s in small_model.filter_allowed(allowed, p)} == {"read_file", "run_tests", "edit_file"}
+    cfg["tools"] = ["read_file"]
+    p = small_model.profile_for(local(), "unknown-local")
+    assert {s["name"] for s in small_model.filter_allowed(allowed, p)} == {"read_file", "run_tests", "edit_file"}
+    only_extra = [s for s in schemas if s["name"] == "hosting_dns"]
+    assert small_model.filter_allowed(only_extra, p) == only_extra            # nothing left: send what was allowed
+    assert small_model.filter_allowed(allowed, None) is allowed

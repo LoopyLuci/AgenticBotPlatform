@@ -5,7 +5,10 @@ A local model working without `run_shell` still has to check its edit. This tool
 
 * every argument must be a test path or node id inside the working directory (`tests/test_x.py`,
   `tests/test_x.py::test_name`, `tests/test_x.py::TestClass::test_name[param]`); anything with a shell
-  metacharacter, an option-looking argument, an absolute path or a `..` is refused;
+  metacharacter, an option-looking argument, a path outside it or a `..` is refused. Usual slips are normalised
+  ("./", backslashes, an absolute path inside the workspace, `file.py:42`, one string instead of a list, `tests`/`target`
+  and similar key names), and `k` selects tests by name (letters, digits, spaces and . _ - [ ] = + , ( ) only). Every refusal
+  says what is accepted, with an example;
 * it starts the process through the same sandbox as `run_shell` (sandbox.start), so a configured
   Windows job / Docker / ssh / WSL sandbox and its network policy apply - it never runs outside one that is set;
 * a timeout (`native_agent.run_tests.timeout_s`, default 300 s) stops the whole process tree;
@@ -56,39 +59,94 @@ def timeout_s() -> int:
     return max(1, min(seconds, MAX_TIMEOUT_S))
 
 
+# Names a model has been seen to use for the list of targets; `paths` is the documented one.
+PATH_KEYS = ("paths", "path", "test_paths", "test_path", "tests", "test", "test_files", "test_file", "files", "file",
+             "targets", "target", "node_ids", "nodeids")
+K_KEYS = ("k", "keyword", "expression")
+_K = re.compile(r"^[\w ._\-\[\]=+,()]+$")
+_RUNNER_PREFIX = re.compile(r"^\s*(?:python3?(?:\.exe)?\s+-m\s+)?pytest\s+", re.I)
+SHAPE = ('Call run_tests with {"paths": ["tests/test_x.py", "tests/test_y.py::TestClass::test_z[1-a]"]} - repository-relative '
+         'test files, folders or node ids (one string per target; "./" and backslashes are fine); to pick tests by name add '
+         '{"k": "name_part and not other"}. No options, no shell syntax.')
+
+
+def _relative(workspace: Path, path: str) -> str:
+    """`path` as a workspace-relative forward-slash path: backslashes, a leading "./" and an absolute path that points
+    inside the workspace are normalised. An absolute path elsewhere is left as it is (and refused later)."""
+    path = path.replace("\\", "/")
+    if re.match(r"^(?:[A-Za-z]:)?/", path):
+        try:
+            return Path(path).resolve().relative_to(workspace).as_posix()
+        except (ValueError, OSError):
+            return path
+    while path.startswith("./"):
+        path = path[2:]
+    return path
+
+
+def pick_inputs(inp: dict):
+    """(raw targets, k expression) from the tool input, accepting the usual alternative key names."""
+    raw = next((inp[key] for key in PATH_KEYS if inp.get(key) not in (None, "", [])), None)
+    k = next((inp[key] for key in K_KEYS if inp.get(key) not in (None, "")), None)
+    return raw, k
+
+
+def clean_k(k) -> str:
+    if k is None:
+        return ""
+    if not isinstance(k, str) or not _K.match(k.strip()) or k.strip().startswith("-") or len(k) > 200:
+        raise ToolError(f"k {k!r} is not accepted: letters, digits, spaces and . _ - [ ] = + , ( ) only, at most 200 characters, "
+                        'e.g. {"k": "parse and not slow"}')
+    return k.strip()
+
+
 def clean_targets(workspace: Path, raw) -> list[str]:
-    """The validated test targets, as given. Raises ToolError naming the first bad one."""
+    """The validated test targets, normalised. Raises ToolError naming the first bad one and the accepted shape."""
+    workspace = Path(workspace).resolve()
     if isinstance(raw, str):
-        raw = [raw]
+        text = _RUNNER_PREFIX.sub("", raw.strip())
+        raw = [t.rstrip(",") for t in text.split() if t.strip(",")] if text else []
     if not isinstance(raw, list) or not raw:
-        raise ToolError("paths must be a non-empty list of test files or node ids, e.g. [\"tests/test_x.py::test_y\"]")
+        raise ToolError("paths must be a non-empty list of test files or node ids. " + SHAPE)
     if len(raw) > MAX_TARGETS:
-        raise ToolError(f"at most {MAX_TARGETS} paths per call")
+        raise ToolError(f"at most {MAX_TARGETS} paths per call. " + SHAPE)
     out: list[str] = []
     for item in raw:
         if not isinstance(item, str) or not item.strip():
-            raise ToolError("each path must be a non-empty string")
+            raise ToolError("each path must be a non-empty string. " + SHAPE)
         target = item.strip()
-        path, _, ident = target.partition("::")
-        if not path or not _PATH.match(path) or path.startswith("-") or ".." in re.split(r"[\\/]", path):
+        if len(target) > 1 and target[0] == target[-1] and target[0] in "\"'":      # one pair of wrapping quotes
+            target = target[1:-1].strip()
+        path, sep, ident = target.partition("::")
+        m = re.match(r"^(.*\.py):\d+$", path)              # file.py:42 -> the file
+        if m:
+            path = m.group(1)
+        path = _relative(workspace, path)
+        target = path + sep + ident
+        if path.startswith("-"):
+            raise ToolError(f"{item!r} looks like an option; run_tests takes no options (use the \"k\" field to select tests by name). " + SHAPE)
+        if not path or not _PATH.match(path) or ".." in re.split(r"[\/]", path):
             raise ToolError(f"{item!r} is not a test path inside the working directory (letters, digits, . _ - / only; "
-                            "no options, no '..', no absolute paths)")
+                            "no '..', no paths outside it, no shell syntax). " + SHAPE)
         if Path(path).is_absolute() or path.startswith(("/", "\\")):
-            raise ToolError(f"{item!r} must be relative to the working directory")
+            raise ToolError(f"{item!r} must be inside the working directory (give it relative to it). " + SHAPE)
         if ident and not all(_ID_PART.match(p) for p in ident.split("::")):
-            raise ToolError(f"{item!r}: the node id after '::' may only hold letters, digits and . _ - [ ] , = + /")
+            raise ToolError(f"{item!r}: the node id after '::' may only hold letters, digits and . _ - [ ] , = + /. " + SHAPE)
         resolved = safe_path(workspace, path)
         if not resolved.exists():
-            raise ToolError(f"{path!r} does not exist")
+            near = sorted(x.relative_to(workspace).as_posix() for x in workspace.rglob(Path(path).name)
+                          if x.is_file() and ".git" not in x.parts and "node_modules" not in x.parts)[:5] if Path(path).name else []
+            hint = f" Did you mean: {', '.join(near)}?" if near else " List the tests folder with list_dir or glob first."
+            raise ToolError(f"{path!r} does not exist.{hint} " + SHAPE)
         if resolved.is_file() and resolved.suffix != ".py":
-            raise ToolError(f"{path!r} is not a Python test file")
+            raise ToolError(f"{path!r} is not a Python test file. " + SHAPE)
         out.append(target)
     return out
 
 
-def build_command(targets: list[str]) -> str:
-    """`python -m pytest -q -x -p no:cacheprovider --tb=short -rfE <targets>`, quoted for the platform's shell."""
-    args = ["-q", "-x", "-p", "no:cacheprovider", "--tb=short", "-rfE", *targets]
+def build_command(targets: list[str], k: str = "") -> str:
+    """`python -m pytest -q -x -p no:cacheprovider --tb=short -rfE [-k EXPR] <targets>`, quoted for the platform's shell."""
+    args = ["-q", "-x", "-p", "no:cacheprovider", "--tb=short", "-rfE", *(["-k", k] if k else []), *targets]
     return "python -m pytest " + (subprocess.list2cmdline(args) if os.name == "nt" else shlex.join(args))
 
 
@@ -132,8 +190,9 @@ def summarise(output: str) -> str:
 
 async def _run_tests(inp: dict, *, workspace: Path, instance_id=None, device_tier=None) -> str:
     workspace = Path(workspace).resolve()
-    targets = clean_targets(workspace, inp.get("paths") if "paths" in inp else inp.get("path"))
-    command = build_command(targets)
+    raw, k = pick_inputs(inp)
+    targets = clean_targets(workspace, raw)
+    command = build_command(targets, clean_k(k))
     limit = timeout_s()
     output = await shell._run_fresh(command, workspace, workspace, limit)      # the sandbox, timeout and tree-kill live here
     return summarise(output)
@@ -145,10 +204,11 @@ def register_all() -> None:
          "description": "Run pytest on test files or node ids inside the working directory and get the pass/fail counts and "
                         "the failing tests' short tracebacks. Runs `python -m pytest -q -x` (stops at the first failure) "
                         "in the configured sandbox. Pass paths such as [\"tests/test_x.py\", \"tests/test_y.py::test_z\"]; "
-                        "no options and no other commands.",
+                        "optional \"k\" picks tests by name (e.g. \"parse and not slow\"). No other options and no other commands.",
          "input_schema": {"type": "object",
                          "properties": {"paths": {"type": "array", "items": {"type": "string"},
-                                                  "description": "Test files, folders or node ids, relative to the working directory."}},
+                                                  "description": "Test files, folders or node ids, relative to the working directory."},
+                                       "k": {"type": "string", "description": "Optional: only tests whose name matches this pytest -k expression."}},
                          "required": ["paths"]}},
         toolspec.ToolSpec("run_tests", "execute", read_only=False, max_output_chars=12_000, origin="registered"),
         _run_tests)

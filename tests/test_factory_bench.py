@@ -326,6 +326,10 @@ def test_the_agents_tools_and_limits_match_the_confined_swarm():
     assert boxed["sandbox"]["network_none"]["extra_paths"] == ["/some/python"]
     assert "run_shell" not in {r["tool"] for r in boxed["permissions"]["rules"] if r["decision"] == "deny"}
     assert any(r["decision"] == "allow" and r["tool"] == "run_shell" for r in boxed["permissions"]["rules"])
+    # an endpoint given by --base-url is not named as a local engine, so small-model mode is forced on unless asked otherwise
+    assert cfg["small_model"] == {"enabled": True}
+    assert fb.agent_settings(model="m", small_model="off")["small_model"] == {"enabled": False}
+    assert "small_model" not in fb.agent_settings(model="m", small_model="auto")
 
 
 def test_the_agent_environment_restores_config_and_path():

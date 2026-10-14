@@ -36,6 +36,7 @@ import sys
 import tempfile
 import time
 import uuid
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -293,8 +294,15 @@ def classify(*, passed: bool, error: Optional[str], stopped: str, edits: list[st
 
 # --------------------------------------------------------------------------------------------------- the agent side
 
+def small_model_overlay(mode: str) -> dict:
+    """`native_agent.small_model` for a bench run. An endpoint given by --base-url is not named as a local engine, so
+    small-model mode's "auto" never turns on for it: "on" (the default here) forces it, "off" leaves the full tool set and
+    prompt, "auto" leaves the decision to ABP."""
+    return {} if mode == "auto" else {"small_model": {"enabled": mode != "off"}}
+
+
 def agent_settings(*, model: str, context: int = 0, timeout_s: float = 900, max_iterations: int = 60,
-                   shell: str = "none", sandbox_paths: Optional[list[str]] = None) -> dict:
+                   shell: str = "none", sandbox_paths: Optional[list[str]] = None, small_model: str = "on") -> dict:
     """The `native_agent` overlay a bench run uses (the confined dev swarm's shape). `shell` is "none" (no shell tool at
     all) or "sandbox" (run_shell, inside the windows_job sandbox with no network; `sandbox_paths` readable)."""
     from bot.agent_runtime import tools
@@ -312,6 +320,7 @@ def agent_settings(*, model: str, context: int = 0, timeout_s: float = 900, max_
     }
     if context:
         cfg["context_windows"] = {model: int(context)}
+    cfg.update(small_model_overlay(small_model))
     if shell == "sandbox":
         cfg["sandbox"] = {"backend": "windows_job", "network": "none",
                           "network_none": {"extra_paths": list(sandbox_paths or [])},
@@ -348,14 +357,20 @@ def endpoint_transport(base_url: str, api_key: str = ""):
 
 
 def drive_agent(prompt: str, ws: Path, transport: Any, model: str, *, timeout_s: float, max_iterations: int, context: int = 0,
-                shell: str = "none", sandbox_paths: Optional[list[str]] = None, python: str = "") -> Any:
+                shell: str = "none", sandbox_paths: Optional[list[str]] = None, python: str = "", small_model: str = "on") -> Any:
     """ABP's native agent, headless (abp_run), on `ws`, with the bench's tool and sandbox settings. Returns the abp_run
     RunResult. A hard wall-clock guard stops a model call that never returns."""
     from abp_run import core
 
     settings = agent_settings(model=model, context=context, timeout_s=timeout_s, max_iterations=max_iterations, shell=shell,
-                              sandbox_paths=sandbox_paths)
+                              sandbox_paths=sandbox_paths, small_model=small_model)
     allowed = frozenset(BASE_TOOLS) | (frozenset(SHELL_TOOLS) if shell == "sandbox" else frozenset(TEST_TOOLS))
+    if small_model == "on":
+        # A turn that names its tools (allowed_tools) is sent exactly those: small-model mode's own tool filter does not
+        # apply to it. So the bench offers the tools both lists agree on, the set a small model would be sent.
+        from bot.agent_runtime import small_model as small
+
+        allowed = allowed & small.core_tools()
     root = Path(tempfile.mkdtemp(prefix="abp-bench-run-"))
     try:
         with core.ephemeral_environment(root, "deny"), agent_environment(settings, python=python):
@@ -401,14 +416,14 @@ def build_prompt(task: FactoryTask, *, shell: str = "none") -> str:
 def run_task(task: FactoryTask, transport_factory: Callable[[FactoryTask], Any], *, model: str, python: str,
              repo: Path = REPO, workdir: Optional[Path] = None, context: int = 0, shell: str = "none",
              sandbox_paths: Optional[list[str]] = None, timeout_s: Optional[float] = None, keep: bool = False,
-             lint: bool = True, test_timeout: float = 300) -> dict:
+             lint: bool = True, test_timeout: float = 300, small_model: str = "on") -> dict:
     """One task end to end: worktree, agent, judge, cleanup. Always returns a result row (a crash is a failed row)."""
     limit = float(timeout_s or task.timeout_s)
     started = time.monotonic()
     row: dict[str, Any] = {"id": task.id, "title": task.title, "category": task.kind, "commit": task.commit, "passed": False,
                            "checks": [], "error": None, "duration_ms": 0, "iterations": 0, "tokens": 0, "tool_counts": {},
                            "denied": 0, "run_id": None, "limited": False, "retry_at": None, "workspace": None,
-                           "tool_errors": 0, "tool_calls": 0, "changed": [], "unrelated": [], "clean": False,
+                           "tool_errors": 0, "tool_error_counts": {}, "tool_calls": 0, "changed": [], "unrelated": [], "clean": False,
                            "failure_kind": "", "text_tool_call": False, "stopped": ""}
     if task.needs_shell and shell != "sandbox":
         row.update(error="not run: this task needs a shell tool (regenerating a file) and the agent has none", limited=True,
@@ -420,7 +435,7 @@ def run_task(task: FactoryTask, transport_factory: Callable[[FactoryTask], Any],
         bench.__enter__()
         result = drive_agent(build_prompt(task, shell=shell), bench.path, transport_factory(task), model, timeout_s=limit,
                              max_iterations=task.max_iterations, context=context, shell=shell, sandbox_paths=sandbox_paths,
-                             python=python)
+                             python=python, small_model=small_model)
         row["duration_ms"] = int((time.monotonic() - started) * 1000)
         counts: dict[str, int] = {}
         for call in result.tool_calls or []:
@@ -428,6 +443,7 @@ def run_task(task: FactoryTask, transport_factory: Callable[[FactoryTask], Any],
         row.update(iterations=result.iterations, tokens=result.tokens, denied=result.denied, run_id=result.run_id or None,
                    tool_counts=dict(sorted(counts.items())), tool_calls=len(result.tool_calls or []),
                    tool_errors=sum(1 for c in result.tool_calls or [] if c.get("status") == "failed"),
+                   tool_error_counts=dict(sorted(Counter(c.get("tool") for c in result.tool_calls or [] if c.get("status") == "failed").items())),
                    stopped=result.stopped or "", error=result.error or None,
                    text_tool_call=bool(TEXT_TOOL_CALL.search(result.reply or "")))
         verdict = judge(bench, python, test_timeout=test_timeout, lint=lint)
@@ -496,6 +512,7 @@ def run_all(tasks: list[FactoryTask], transport_factory: Callable[[FactoryTask],
     return {"schema": SCHEMA_VERSION, "mode": "factory", "model": model, "when": time.time(), **summary,
             "duration_ms": sum(r["duration_ms"] for r in rows),
             "notes": ["each task runs in a throwaway git worktree of the commit's parent", f"shell tool: {kw.get('shell', 'none')}",
+                      f"small-model mode: {kw.get('small_model', 'on')}",
                       f"context window told to the agent: {kw.get('context') or 'default'}"],
             "results": rows}
 
@@ -572,7 +589,8 @@ def main(args, python: str) -> int:
     api_key = os.environ.get(args.api_key_env, "") if args.api_key_env else ""
     transport = endpoint_transport(args.base_url, api_key)
     report = run_all(tasks, lambda _t: transport, model=args.model, python=python, repo=repo, workdir=workdir, context=args.context,
-                     shell=args.shell, sandbox_paths=args.sandbox_path or [], timeout_s=args.timeout, keep=args.keep)
+                     shell=args.shell, sandbox_paths=args.sandbox_path or [], timeout_s=args.timeout, keep=args.keep,
+                     small_model=args.small_model)
     report["model"] = args.label or args.model
     if args.out:
         from . import report as rep
