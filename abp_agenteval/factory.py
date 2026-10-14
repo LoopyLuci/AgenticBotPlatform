@@ -56,10 +56,14 @@ TIMEOUT_PATTERN = re.compile(r"timed out|timeout|time limit|max_seconds", re.I)
 TEXT_TOOL_CALL = re.compile(r"<tool_call>|<function=|<\|tool_call|\"name\"\s*:\s*\"(?:edit_file|read_file|write_file|apply_patch)\"", re.I)
 DRIVE_PATH = re.compile(r"(?<![A-Za-z])[A-Za-z]:[\\/]")
 # The tools the bench agent is told about (the confined dev swarm's set: file and search tools, no network, no Python
-# runner of its own). `run_shell` is added only when the caller has a sandbox for it.
-BASE_TOOLS = ["read_file", "list_dir", "glob", "grep", "code_search", "git_diff", "git_status", "tool_output",
+# runner of its own). `run_shell` is added only when the caller has a sandbox for it; without one the agent gets
+# `run_tests` (pytest on named test paths, nothing else) so it can still check its work.
+# `repo_map` is allowed again: it hung for 15+ minutes on a repository with build output (the 2026-10-13 run) because
+# its ranking was quadratic and it walked ignored folders; it now lists files with git, ranks in one pass and has a budget.
+BASE_TOOLS = ["read_file", "list_dir", "glob", "grep", "repo_map", "code_search", "git_diff", "git_status", "tool_output",
               "edit_file", "multi_edit", "write_file", "apply_patch", "todo_read"]
 SHELL_TOOLS = ["run_shell", "shell_output", "shell_list", "shell_kill"]
+TEST_TOOLS = ["run_tests"]       # stands in for a shell when there is none
 SHELL_ALLOW = ["python -m pytest*", "python -m ruff*", "python -m py_compile*", "python -c *", "pytest*", "dir*", "type *", "echo *"]
 
 
@@ -295,11 +299,13 @@ def agent_settings(*, model: str, context: int = 0, timeout_s: float = 900, max_
     all) or "sandbox" (run_shell, inside the windows_job sandbox with no network; `sandbox_paths` readable)."""
     from bot.agent_runtime import tools
 
-    allowed = set(BASE_TOOLS) | (set(SHELL_TOOLS) if shell == "sandbox" else set())
+    allowed = set(BASE_TOOLS) | (set(SHELL_TOOLS) if shell == "sandbox" else set(TEST_TOOLS))
     names = sorted({s["name"] for s in tools.all_tool_schemas()})
     rules = [{"decision": "deny", "tool": n, "note": "not a bench tool"} for n in names if n not in allowed]
     if shell == "sandbox":
         rules += [{"decision": "allow", "tool": "run_shell", "match": p} for p in SHELL_ALLOW]
+    else:
+        rules.append({"decision": "allow", "tool": "run_tests"})        # its arguments are validated to test paths in the workspace
     cfg: dict[str, Any] = {
         "permissions": {"mode": "accept_edits", "allow_bypass": False, "locked": True, "rules": rules},
         "limits": {"max_iterations": int(max_iterations), "max_seconds": int(timeout_s), "max_tokens": 0},
@@ -349,7 +355,7 @@ def drive_agent(prompt: str, ws: Path, transport: Any, model: str, *, timeout_s:
 
     settings = agent_settings(model=model, context=context, timeout_s=timeout_s, max_iterations=max_iterations, shell=shell,
                               sandbox_paths=sandbox_paths)
-    allowed = frozenset(BASE_TOOLS) | (frozenset(SHELL_TOOLS) if shell == "sandbox" else frozenset())
+    allowed = frozenset(BASE_TOOLS) | (frozenset(SHELL_TOOLS) if shell == "sandbox" else frozenset(TEST_TOOLS))
     root = Path(tempfile.mkdtemp(prefix="abp-bench-run-"))
     try:
         with core.ephemeral_environment(root, "deny"), agent_environment(settings, python=python):
@@ -382,7 +388,8 @@ def drive_agent(prompt: str, ws: Path, transport: Any, model: str, *, timeout_s:
 def build_prompt(task: FactoryTask, *, shell: str = "none") -> str:
     how = ("You can run `python -m pytest -q -p no:cacheprovider <path>` and `python -m ruff check <file>` in a sandbox with no network."
            if shell == "sandbox" else
-           "You cannot run commands here: read the code, make the change carefully and re-read your edit.")
+           "You cannot run commands here, but the run_tests tool runs pytest on test files (for example tests/test_x.py::test_y) "
+           "and reports what failed: read the code, make the change carefully, then check it with run_tests.")
     return (f"You are working in a checkout of a Python repository (your current folder). Resolve the issue below by changing "
             f"the code in this folder. {how} Keep the change small and focused: touch only what the issue needs, delete nothing, "
             f"add or update a test when it is natural. Do not commit. Finish with a two-line summary of what you changed.\n\n"

@@ -16,7 +16,9 @@ How it works, and its limits:
   installed).
 * **Ranking** counts, for each symbol a file defines, how many *other* files mention it by
   name, so central files come first. It is a proxy for importance, not a call graph.
-* Vendored and generated folders are skipped; files over 300 KB are skipped.
+* Inside a git checkout the file list comes from `git ls-files` (so .gitignore'd build output is never walked);
+  otherwise vendored/hidden folders are skipped. Files over 300 KB are skipped. A file-count/time budget bounds
+  the scan and the output says when it truncated. The tool runs off the event loop (asyncio.to_thread).
 * Results are cached per folder until a file changes.
 """
 
@@ -26,8 +28,9 @@ import ast
 import asyncio
 import os
 import re
+import subprocess
 import time
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from pathlib import Path
 
 from bot.agent_runtime import toolspec
@@ -136,38 +139,87 @@ def _names(symbols) -> list[str]:
     return [n for n in out if len(n) >= 4]
 
 
+_IDENT = re.compile(r"[A-Za-z_$][\w$]*")
+
+
+def _git_listing(root: Path) -> list[str] | None:
+    """Tracked + untracked-but-not-ignored files under root (relative, posix), or None when root is not in a git repo."""
+    try:
+        proc = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+                              capture_output=True, timeout=20, check=False,
+                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    return [p for p in proc.stdout.decode("utf-8", errors="replace").split("\0") if p]
+
+
+def _walk_listing(root: Path, deadline: float) -> list[str]:
+    out: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith("."))
+        rel_dir = Path(dirpath).relative_to(root).as_posix()
+        for name in sorted(filenames):
+            out.append(name if rel_dir == "." else f"{rel_dir}/{name}")
+        if time.monotonic() > deadline or len(out) > MAX_FILES * 10:
+            break
+    return out
+
+
+def list_source_files(root: Path, deadline: float | None = None) -> list[str]:
+    """Source files under root worth mapping, relative and sorted. Inside a git checkout this honours .gitignore (so
+    build output such as target/ or dist/ is never walked); elsewhere it walks, skipping vendored/hidden folders."""
+    root = Path(root)
+    deadline = deadline if deadline is not None else time.monotonic() + TIME_BUDGET_S
+    listed = _git_listing(root)
+    if listed is None:
+        listed = _walk_listing(root, deadline)
+    wanted = {".py", *_C_LIKE}
+    out = []
+    for rel in listed:
+        parts = rel.split("/")
+        if any(p in SKIP_DIRS or p.startswith(".") for p in parts[:-1]):
+            continue
+        if os.path.splitext(parts[-1])[1].lower() in wanted:
+            out.append(rel)
+    out.sort()
+    return out
+
+
 def build(root: Path, max_tokens: int = DEFAULT_TOKENS) -> str:
     root = Path(root)
     deadline = time.monotonic() + TIME_BUDGET_S
+    candidates = list_source_files(root, deadline)
+    truncated = len(candidates) > MAX_FILES
     files: list[tuple[str, str, list]] = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith("."))
-        for name in sorted(filenames):
-            if len(files) >= MAX_FILES or time.monotonic() > deadline:
-                break
-            path = Path(dirpath) / name
-            if path.suffix.lower() != ".py" and path.suffix.lower() not in _C_LIKE:
+    for rel in candidates[:MAX_FILES]:
+        if time.monotonic() > deadline:
+            truncated = True
+            break
+        path = root / rel
+        try:
+            if path.stat().st_size > MAX_FILE_BYTES:
                 continue
-            try:
-                if path.stat().st_size > MAX_FILE_BYTES:
-                    continue
-                source = path.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-            syms = symbols_for(path, source)
-            if syms:
-                files.append((path.relative_to(root).as_posix(), source, syms))
+            source = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        syms = symbols_for(path, source)
+        if syms:
+            files.append((rel, source, syms))
     if not files:
         return "No source files with recognisable declarations were found."
 
-    # importance: how many other files mention a symbol this file defines
-    corpus = {rel: src for rel, src, _ in files}
+    # importance: how many other files mention a symbol this file defines. One pass tokenises every file into a set of
+    # identifiers and counts, per identifier, the files containing it - linear in the code size, not symbols x files.
+    idents = {rel: set(_IDENT.findall(src)) for rel, src, _ in files}
+    mentions: Counter = Counter()
+    for found in idents.values():
+        mentions.update(found)
     scored = []
     for rel, _, syms in files:
-        score = 0
-        for nm in set(_names(syms)):
-            rx = re.compile(r"\b" + re.escape(nm) + r"\b")
-            score += sum(1 for other, src in corpus.items() if other != rel and rx.search(src))
+        own = idents[rel]
+        score = sum(mentions[nm] - (1 if nm in own else 0) for nm in set(_names(syms)))
         scored.append((score, rel, syms))
     scored.sort(key=lambda t: (-t[0], t[1]))
 
@@ -186,23 +238,21 @@ def build(root: Path, max_tokens: int = DEFAULT_TOKENS) -> str:
     header = f"Repository map: {shown} of {len(files)} files with declarations, most-referenced first."
     if shown < len(files):
         header += f" ({len(files) - shown} more not shown: raise max_tokens or pass a sub-folder as path.)"
+    if truncated:
+        header += (f" (Truncated: the folder has more source files than the scan budget of {MAX_FILES} files / "
+                   f"{TIME_BUDGET_S:.0f}s; pass a sub-folder as path for the rest.)")
     return header + "\n\n" + "\n".join(lines)
 
 
 def _signature(root: Path) -> tuple:
     sig = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
-        for name in filenames:
-            if name.lower().endswith(tuple([".py", *_C_LIKE])):
-                try:
-                    st = os.stat(os.path.join(dirpath, name))
-                    sig.append((name, st.st_mtime_ns, st.st_size))
-                except OSError:
-                    pass
-        if len(sig) > MAX_FILES:
-            break
-    return tuple(sorted(sig)) if len(sig) < 50_000 else (len(sig),)
+    for rel in list_source_files(root)[:MAX_FILES + 1]:
+        try:
+            st = os.stat(os.path.join(root, rel))
+            sig.append((rel, st.st_mtime_ns, st.st_size))
+        except OSError:
+            pass
+    return tuple(sig)
 
 
 def cached_build(root: Path, max_tokens: int) -> str:
