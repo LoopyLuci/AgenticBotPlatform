@@ -1292,6 +1292,23 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/context-vault/items": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/context-vault/items",
+  "path_params": [],
+  "query_params": [
+   "kind",
+   "limit"
+  ]
+ },
+ "GET /api/context-vault/status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/context-vault/status",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/context/{name}": {
   "body": false,
   "method": "GET",
@@ -11176,6 +11193,23 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/rules",
+  "path_params": [],
+  "query_params": []
+ },
+ "cv_items_api_context_vault_items_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/context-vault/items",
+  "path_params": [],
+  "query_params": [
+   "kind",
+   "limit"
+  ]
+ },
+ "cv_status_api_context_vault_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/context-vault/status",
   "path_params": [],
   "query_params": []
  },

@@ -520,10 +520,13 @@ def test_context_pack_adds_rules_from_a_context_vault_when_one_exists(repo, monk
 
     vault = types.ModuleType("bot.context_vault")
     vault.get_vault = lambda: _Vault()
+    import bot
+
     monkeypatch.setitem(sys.modules, "bot.context_vault", vault)
+    monkeypatch.setattr(bot, "context_vault", vault, raising=False)   # `from bot import x` reads the attribute first
     out = tools.context_pack(repo, "change the helper function", 2000)
     assert "## rules and decisions" in out.text and "never call helper twice" in out.text
-    monkeypatch.delitem(sys.modules, "bot.context_vault")
+    vault.get_vault = lambda: None                                     # vault off: nothing to add
     assert "## rules and decisions" not in tools.context_pack(repo, "change the helper function", 2000).text
 
 
