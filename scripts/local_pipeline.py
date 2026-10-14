@@ -164,6 +164,7 @@ def _run(cmd: list[str], cwd: Optional[Path] = None, retries: int = 0,
         try:
             proc = subprocess.Popen(
                 cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                encoding="utf-8", errors="replace",       # tools print UTF-8; the console code page cannot decode it
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if IS_WINDOWS else 0,
             )
         except FileNotFoundError:
