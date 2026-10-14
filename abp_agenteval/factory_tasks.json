@@ -1,0 +1,465 @@
+{
+ "about": "Factory bench tasks: real, already-solved changes from this repository's history. The agent starts from the commit's first parent; the judge lays the commit's tests over the worktree. Repository-relative paths and commit ids only. See abp_agenteval/factory.py.",
+ "tasks": [
+  {
+   "id": "sandbox-reused-pid",
+   "title": "The sandbox registry keeps a stale record when Windows reuses a process id",
+   "kind": "flaky",
+   "commit": "46622764de",
+   "subject": "Sandbox registry: a record whose process no longer matches its create time is replaced, even before a sampler pass marks it exited (Windows reuses pids fast); the tree test waits for a live, matching record",
+   "prompt": "bot/sandbox_ns/registry.py records the processes a sandbox cell starts. On Windows a freed process id is handed out again within moments. When a record still marked alive exists for a pid, but the process that has that pid now was created at a different time (it is another process), the registry walk (`Registry.record_descendants`) treats the pid as already recorded and never records the new process. Expected: such a stale record is replaced by a record of the process that has the pid now, even if no sampling pass has marked the old one exited yet.",
+   "tests": [
+    "tests/test_sandbox_ns.py::test_a_stale_record_under_a_reused_pid_is_replaced_by_the_process_that_has_it_now"
+   ],
+   "test_files": [
+    "tests/test_sandbox_ns.py"
+   ],
+   "setup_files": [],
+   "checks": [],
+   "allowed_extra": [],
+   "timeout_s": 900,
+   "needs_shell": false
+  },
+  {
+   "id": "sentinel-config-discovery",
+   "title": "ABP should find this machine's AgentSentinel from its config file",
+   "kind": "feature",
+   "commit": "9adc92fa13",
+   "subject": "Coordination: find this machine's AgentSentinel by its config (port and agent token) when no environment variable names it",
+   "prompt": "bot/coordination/sentinel.py takes the AgentSentinel address from AGENT_SENTINEL_URL and the token from AGENT_SENTINEL_TOKEN only, so a local AgentSentinel is not used unless someone copies its port and token into the environment. Wanted: when the environment names neither, read this machine's AgentSentinel config.json (the folder named by AGENT_SENTINEL_HOME if set, else %APPDATA%/AgentSentinel on Windows or $XDG_CONFIG_HOME (default ~/.config)/agent-sentinel elsewhere): `http_port` gives the URL http://127.0.0.1:<port> and `agent_token` gives the token (never the admin token). The environment variables still win; a missing or unreadable config means the existing defaults.",
+   "tests": [
+    "tests/test_coordination_board.py::test_sentinel_url_and_token_come_from_this_machines_agentsentinel_config"
+   ],
+   "test_files": [
+    "tests/test_coordination_board.py"
+   ],
+   "setup_files": [],
+   "checks": [],
+   "allowed_extra": [],
+   "timeout_s": 900,
+   "needs_shell": false
+  },
+  {
+   "id": "desktop-mcp-platforms",
+   "title": "`abp mcp list` fails on Linux, and macOS looks in the wrong folder for Claude Desktop's config",
+   "kind": "bugfix",
+   "commit": "54fb515961",
+   "subject": "Claude Desktop's MCP config: its macOS folder, and none on Linux (abp mcp list failed there)",
+   "prompt": "bot/desktop.py always looks for Claude Desktop's MCP config under %APPDATA%\\Claude. On Linux (no APPDATA, and no Claude Desktop) listing the MCP servers raises instead of returning an empty list, and on macOS the config is in ~/Library/Application Support/Claude. Expected: Windows keeps %APPDATA%/Claude/claude_desktop_config.json; macOS (platform.system() == 'Darwin') uses ~/Library/Application Support/Claude/claude_desktop_config.json; where Claude Desktop does not exist `list_mcp_servers()` returns [] and writing (`_save_mcp_config`) still raises RuntimeError saying it isn't available on this platform.",
+   "tests": [
+    "tests/test_desktop_mcp_platforms.py"
+   ],
+   "test_files": [
+    "tests/test_desktop_mcp_platforms.py"
+   ],
+   "setup_files": [],
+   "checks": [],
+   "allowed_extra": [],
+   "timeout_s": 900,
+   "needs_shell": false
+  },
+  {
+   "id": "docker-down-daemon",
+   "title": "A stopped Docker daemon is reported as a whole JSON document",
+   "kind": "bugfix",
+   "commit": "3d9215a60f",
+   "subject": "Docker: a down daemon is reported in one readable line, not the whole empty docker-info document",
+   "prompt": "bot/docker_mgr.py `info()` returns {'installed': True, 'running': False, 'error': <output>} when `docker info` fails. With the daemon down, `docker info --format '{{json .}}'` prints the whole (empty) info document followed by the real message, so the error shown in the UI is that raw document. Expected: the error is one readable line: the document's `ServerErrors` entries and the lines after the document, de-duplicated and joined by spaces, trimmed to 500 characters; if there is nothing, 'the Docker daemon is not running or not reachable'.",
+   "tests": [
+    "tests/test_integrations.py::test_a_down_docker_daemon_is_one_readable_line"
+   ],
+   "test_files": [
+    "tests/test_integrations.py"
+   ],
+   "setup_files": [],
+   "checks": [],
+   "allowed_extra": [],
+   "timeout_s": 900,
+   "needs_shell": false
+  },
+  {
+   "id": "module-provider-secret",
+   "title": "A module's OpenAI-compatible API should get its key from what the module's hub stored",
+   "kind": "feature",
+   "commit": "236e26f4cf",
+   "subject": "A module's OpenAI-compatible API is a provider with the key its hub stored (a module can hand ABP one itself)",
+   "prompt": "bot/providers.py `module_providers()` builds a provider for a module that serves an OpenAI-compatible API, with the API key read only from the environment variable the manifest names (`openai_key_env`). A module can store a secret through its hub (service.set_secret), which writes `secrets.json` in the module's data folder, but ABP never reads it. Wanted: a helper `_module_secret(data_dir: Path, name: str) -> str` returning the environment variable NAME if set, else the value stored under NAME in `<data_dir>/secrets.json`, else '' (also '' when the file is missing or not valid JSON); `module_providers()` uses it with `registry.data_dir(m)`.",
+   "tests": [
+    "tests/test_providers.py::test_a_module_providers_key_is_the_environments_or_what_its_hub_stored"
+   ],
+   "test_files": [
+    "tests/test_providers.py"
+   ],
+   "setup_files": [],
+   "checks": [],
+   "allowed_extra": [],
+   "timeout_s": 900,
+   "needs_shell": false
+  },
+  {
+   "id": "modkit-curated-ops",
+   "title": "abp_modkit adopt overwrites a hand-curated abp-ops.toml on refresh",
+   "kind": "feature",
+   "commit": "eb47667175",
+   "subject": "abp_modkit: an ops file someone curated by hand is kept on refresh, like a hand-kept manifest",
+   "prompt": "abp_modkit/adopt.py `adopt()` keeps a hand-edited abp-module.toml (one without the generated marker line) on refresh, but always rewrites abp-ops.toml. The generated ops file's first line contains '(abp_modkit)'. Expected: an existing abp-ops.toml whose first line does not contain that marker was taken over by a person and is left exactly as it is (unless `force`), it is reported in the result's `kept` list next to the manifest, and the returned summary describes the kept file (`operations` = its number of ops, plus `by_kind`, `server`, `server_start`, `web`, `openai`).",
+   "tests": [
+    "tests/test_modkit.py::test_adopt_writes_both_files_and_a_refresh_keeps_hand_edits"
+   ],
+   "test_files": [
+    "tests/test_modkit.py"
+   ],
+   "setup_files": [],
+   "checks": [],
+   "allowed_extra": [],
+   "timeout_s": 900,
+   "needs_shell": false
+  },
+  {
+   "id": "deploy-app-only-instance",
+   "title": "A deploy rolls back waiting for an app-only bot instance",
+   "kind": "bugfix",
+   "commit": "fbb25d6ab5",
+   "subject": "A deploy does not wait for app-only bot instances, which never run a poller",
+   "prompt": "scripts/deploy_local.py `verify()` waits until every enabled bot instance from /api/bots is `live_running`. An instance on the in-app platform (platform 'app') has no poller, so it is never live_running, and the first real deploy rolled back waiting for instance 46. Expected: verify does not wait for enabled instances whose platform is 'app'.",
+   "tests": [
+    "tests/test_deploy_local.py::test_verify_does_not_wait_for_an_app_only_instance"
+   ],
+   "test_files": [
+    "tests/test_deploy_local.py"
+   ],
+   "setup_files": [],
+   "checks": [],
+   "allowed_extra": [],
+   "timeout_s": 900,
+   "needs_shell": false
+  },
+  {
+   "id": "deploy-poll-error-body",
+   "title": "A deploy's bot check crashes when the starting app answers an error body",
+   "kind": "flaky",
+   "commit": "67e46072b3",
+   "subject": "A deploy's bot check keeps polling through a starting app's error body",
+   "prompt": "scripts/deploy_local.py `verify()` polls /api/bots until the enabled bots are live. While the app starts it can answer 503 with an error body (a dict); the poll then iterates that body and crashes with AttributeError instead of polling again. Expected: a non-200 or non-list answer is ignored and polling continues with the last good list.",
+   "tests": [
+    "tests/test_deploy_local.py::test_verify_keeps_polling_through_an_error_body_while_the_bots_come_back"
+   ],
+   "test_files": [
+    "tests/test_deploy_local.py"
+   ],
+   "setup_files": [],
+   "checks": [],
+   "allowed_extra": [],
+   "timeout_s": 900,
+   "needs_shell": false
+  },
+  {
+   "id": "release-guard-stdout-only",
+   "title": "A CRLF warning from git was parsed as a list of changed files",
+   "kind": "bugfix",
+   "commit": "0e88607a64",
+   "subject": "Release guard: parse git stdout only, never its warnings",
+   "prompt": "scripts/release_guard.py `git()` returns stdout and stderr joined. Callers parse that output as file lists, SHAs and branch names, so a CRLF-conversion warning that git printed on stderr was parsed as a changed file and a release refused to commit. Expected: when the git command succeeds its output is stdout only; when it fails, stderr is still included so error messages stay useful.",
+   "tests": [
+    "tests/test_release_guard.py::test_git_warnings_never_leak_into_parsed_output"
+   ],
+   "test_files": [
+    "tests/test_release_guard.py"
+   ],
+   "setup_files": [],
+   "checks": [],
+   "allowed_extra": [],
+   "timeout_s": 900,
+   "needs_shell": false
+  },
+  {
+   "id": "agenteval-console-encoding",
+   "title": "abp_agenteval dies printing a report the console cannot encode",
+   "kind": "bugfix",
+   "commit": "f10390148c",
+   "subject": "abp_agenteval no longer dies printing a report the console cannot encode",
+   "prompt": "`python -m abp_agenteval run` prints a report that contains whatever a provider said, in whatever language. On a Windows console (cp1252) one non-ASCII character in an error message ends the run with UnicodeEncodeError after the tokens were spent and before the report is on screen. Expected: the CLI prints the report anyway; characters the console cannot encode become '?'.",
+   "tests": [
+    "tests/test_agenteval.py::test_a_report_the_console_cannot_encode_is_replaced_not_raised"
+   ],
+   "test_files": [
+    "tests/test_agenteval.py"
+   ],
+   "setup_files": [],
+   "checks": [],
+   "allowed_extra": [
+    "CHANGELOG.md"
+   ],
+   "timeout_s": 900,
+   "needs_shell": false
+  },
+  {
+   "id": "module-build-memory-cap",
+   "title": "A module needs to raise its build cell's memory cap (9router's build is killed)",
+   "kind": "config",
+   "commit": "34c78093ac",
+   "subject": "A module can raise its build cell's memory cap; 9router's build gets one above its Node heap",
+   "prompt": "Every module build runs in the 'build' sandbox preset's 6 GB cell. 9router's next build needs a 12 GB Node heap (NODE_OPTIONS in its manifest catalog/9router/abp-module.toml), so the cell kills it whatever the heap is. Wanted: `[build] memory_mb` in abp-module.toml (a whole number of MB, 0 or absent = the preset's cap, otherwise 0..262144, anything else a ManifestError mentioning 'build.memory_mb') parsed into `Manifest.build_memory_mb`; bot/modules/harness.py gets `_build_policy(m)` returning None when the manifest asks for nothing, else the 'build' preset with only memory_mb replaced, and `_build` uses it for its cell; 9router's manifest asks for a cap above its heap.",
+   "tests": [
+    "tests/test_modules.py::test_a_module_can_raise_its_build_cells_memory_cap",
+    "tests/test_modules.py::test_9routers_build_cell_fits_its_node_heap"
+   ],
+   "test_files": [
+    "tests/test_modules.py"
+   ],
+   "setup_files": [],
+   "checks": [],
+   "allowed_extra": [],
+   "timeout_s": 900,
+   "needs_shell": false
+  },
+  {
+   "id": "gate-registry-reader",
+   "title": "The gate's registry write fails with a PermissionError while a reader has the file open",
+   "kind": "flaky",
+   "commit": "d9769b418c",
+   "subject": "abp_gate: a registry write waits out the reader that is holding it open",
+   "prompt": "abp_gate/registry.py `write()` renames a temp file onto registry.json. Windows opens files for reading without FILE_SHARE_DELETE, so while any reader (the gate's own watcher reads it every cycle) has registry.json open, the rename fails immediately with ACCESS DENIED, and a test run failed from a PermissionError in `update()`. Expected: the write waits out the reader (about 2 s: 20 attempts, 0.1 s apart) and still raises a real permissions problem after that.",
+   "tests": [
+    "tests/test_gate.py::test_the_registry_write_waits_out_a_reader_holding_it_open"
+   ],
+   "test_files": [
+    "tests/test_gate.py"
+   ],
+   "setup_files": [],
+   "checks": [],
+   "allowed_extra": [],
+   "timeout_s": 900,
+   "needs_shell": false
+  },
+  {
+   "id": "gate-registry-temp-name",
+   "title": "Two processes writing the gate registry destroy each other's temporary file",
+   "kind": "flaky",
+   "commit": "79a72a6c1d",
+   "subject": "abp_gate: one temporary file per registry write, not one per directory",
+   "prompt": "abp_gate/registry.py `write()` always writes registry.json.tmp and renames it onto registry.json. The lock around it is per process, so the gate and anything else writing the same registry (a script, a test) write each other's temp file and rename each other's file away: a FileNotFoundError for one, or the wrong content in the live registry. Expected: concurrent writers in different processes do not interfere (every write ends in a valid registry) and no temp files are left behind.",
+   "tests": [
+    "tests/test_gate.py::test_two_processes_writing_the_registry_do_not_destroy_each_other"
+   ],
+   "test_files": [
+    "tests/test_gate.py"
+   ],
+   "setup_files": [],
+   "checks": [],
+   "allowed_extra": [],
+   "timeout_s": 900,
+   "needs_shell": false
+  },
+  {
+   "id": "config-secret-logging",
+   "title": "Adding a provider writes its API key into the log and the audit trail",
+   "kind": "bugfix",
+   "commit": "f4c382f827",
+   "subject": "Stop logging provider API keys on config reload",
+   "prompt": "bot/config.py `_diff_summary(old, new)` produces the text logged on a config reload and stored in audit_log and config_history (served back by the API, included in support bundles). It only hides a key named exactly 'secret', so adding a provider (a whole dict appears) writes its `api_key` in plain text. Expected: any key whose name contains secret, token, password, passwd, api_key/api-key/apikey, private_key or credential (any case) is masked at any depth, including inside a dict or list that was added or removed whole; a changed secret is reported as 'changed' without the value; ordinary changes are reported exactly as before.",
+   "tests": [
+    "tests/test_config_secret_logging.py"
+   ],
+   "test_files": [
+    "tests/test_config_secret_logging.py"
+   ],
+   "setup_files": [],
+   "checks": [],
+   "allowed_extra": [],
+   "timeout_s": 900,
+   "needs_shell": false
+  },
+  {
+   "id": "gate-instance-token",
+   "title": "A gate instance inherits the dashboard token of the process that started it",
+   "kind": "bugfix",
+   "commit": "ad94708569",
+   "subject": "A gate instance never inherits the dashboard token of the process that started it",
+   "prompt": "abp_gate/procs.py `instance_env()` builds the environment of an ABP instance from os.environ. Importing bot.main sets DASHBOARD_TOKEN in the starting process for good, and an instance that inherits one never writes a .env of its own, so its gate cannot authenticate against it (every control call answers 503). Expected: an instance never inherits DASHBOARD_TOKEN from the parent environment, but a token passed deliberately through `extra` still gets through.",
+   "tests": [
+    "tests/test_gate.py::test_an_instance_never_inherits_the_dashboard_token_of_the_process_that_started_it"
+   ],
+   "test_files": [
+    "tests/test_gate.py"
+   ],
+   "setup_files": [],
+   "checks": [],
+   "allowed_extra": [],
+   "timeout_s": 900,
+   "needs_shell": false
+  },
+  {
+   "id": "hotreload-classify-streaming",
+   "title": "Hot reload does not know the two new streaming modules",
+   "kind": "hotreload",
+   "commit": "bdcd02059d",
+   "subject": "Hot reload classifies the two new streaming modules; SSH pairing tests skip where the toolkit submodule is missing",
+   "prompt": "bot/hotreload.py keeps a DENYLIST of modules that hot reload must never swap because something long-running holds them. Two modules added by the channel-streaming work are not classified, so the classification test fails: `bot.dashboard.chat_stream` (loaded by the chat route) and `bot.platforms._stream_edit` (used by the long-running Telegram, Discord and Slack adapters, which are not reloaded). Classify them, with a short comment for the second one.",
+   "tests": [
+    "tests/test_hotreload_classification.py"
+   ],
+   "test_files": [],
+   "setup_files": [],
+   "checks": [],
+   "allowed_extra": [],
+   "timeout_s": 900,
+   "needs_shell": false
+  },
+  {
+   "id": "settings-schema-code-search",
+   "title": "The settings screens lack the code search and project rules options",
+   "kind": "config",
+   "commit": "9d36b4687d",
+   "subject": "Code search and project-rules options in the settings screens; SSH Toolkit tests skip where its submodule is missing",
+   "prompt": "config/backends.yaml has `code_search.embeddings`, `code_search.embedding_model` (default mm-embed-1), `code_search.embedding_max_chunks` (512), `code_search.embedding_batch` (32) and `project_rules.parents` (true), `project_rules.nested` (true), `project_rules.nested_max_chars` (8000), but bot/agent_runtime/settings_schema.py has no fields for them, so the settings screens and the schema test that checks every native_agent option is described do not cover them. Add the fields next to the related ones (Instructions group for project_rules, a Code search group in the tools section), each with a title and a one-sentence description, defaults matching the config, and sensible min/max for the numbers.",
+   "tests": [
+    "tests/test_agent_settings_schema.py"
+   ],
+   "test_files": [],
+   "setup_files": [],
+   "checks": [
+    {
+     "file": "bot/agent_runtime/settings_schema.py",
+     "regex": "\"code_search.embeddings\"",
+     "what": "code_search.embeddings"
+    },
+    {
+     "file": "bot/agent_runtime/settings_schema.py",
+     "regex": "\"code_search.embedding_model\"",
+     "what": "code_search.embedding_model"
+    },
+    {
+     "file": "bot/agent_runtime/settings_schema.py",
+     "regex": "\"code_search.embedding_max_chunks\"",
+     "what": "code_search.embedding_max_chunks"
+    },
+    {
+     "file": "bot/agent_runtime/settings_schema.py",
+     "regex": "\"code_search.embedding_batch\"",
+     "what": "code_search.embedding_batch"
+    },
+    {
+     "file": "bot/agent_runtime/settings_schema.py",
+     "regex": "\"project_rules.parents\"",
+     "what": "project_rules.parents"
+    },
+    {
+     "file": "bot/agent_runtime/settings_schema.py",
+     "regex": "\"project_rules.nested\"",
+     "what": "project_rules.nested"
+    },
+    {
+     "file": "bot/agent_runtime/settings_schema.py",
+     "regex": "\"project_rules.nested_max_chars\"",
+     "what": "project_rules.nested_max_chars"
+    }
+   ],
+   "allowed_extra": [],
+   "timeout_s": 900,
+   "needs_shell": false
+  },
+  {
+   "id": "sdk-regenerate-cluster-blobs",
+   "title": "The OpenAPI document and the SDK are stale after the cluster blob routes",
+   "kind": "sdk",
+   "commit": "aacc41aac9",
+   "subject": "SDK and OpenAPI document regenerated for the cluster blob routes",
+   "prompt": "The cluster blob routes (/api/cluster/blobs ...) exist in the dashboard code, but docs/api/openapi.json and the TypeScript client under sdk/typescript/ were not regenerated, so the test that compares the committed spec and client with the generated ones fails. Regenerate them with the repository's own generator (scripts/export_openapi.py, see its docstring) - do not edit the generated files by hand.",
+   "tests": [
+    "tests/test_sdk.py::test_the_committed_spec_and_typescript_client_are_current"
+   ],
+   "test_files": [],
+   "setup_files": [],
+   "checks": [],
+   "allowed_extra": [
+    "docs/api/openapi.json",
+    "sdk/typescript/abp.d.ts",
+    "sdk/typescript/abp.mjs"
+   ],
+   "timeout_s": 900,
+   "needs_shell": true
+  },
+  {
+   "id": "docs-streaming-more-channels",
+   "title": "The docs still say Matrix, Teams and Google Chat do not stream replies",
+   "kind": "docs",
+   "commit": "5772e07c32",
+   "subject": "Matrix, Teams and Google Chat stream native-agent replies into one edited message",
+   "prompt": "Matrix, Microsoft Teams and Google Chat now stream native-agent replies into one edited message, like Telegram, Discord and Slack (`streaming.matrix`, `streaming.teams`, `streaming.googlechat` in config/backends.yaml, default on; Matrix edits with an m.replace event, Teams updates the activity with PUT, Google Chat patches the message with updateMask=text). The code and tests are in place; the documentation is not. Update the 'Live replies (streaming)' section of docs/agents/channels-and-devices.md (who can stream, the yaml block with all six platforms, the code and test pointers, and the note that Matrix, Teams and Google Chat have not been tried with a real account) and the Streaming row of docs/agents/ROADMAP.md accordingly.",
+   "tests": [],
+   "test_files": [],
+   "setup_files": [
+    "bot/hotreload.py",
+    "bot/platforms/_relay.py",
+    "bot/platforms/googlechat_platform.py",
+    "bot/platforms/matrix_platform.py",
+    "bot/platforms/teams_platform.py",
+    "config/backends.yaml",
+    "tests/test_channel_streaming_edit.py"
+   ],
+   "checks": [
+    {
+     "file": "docs/agents/channels-and-devices.md",
+     "regex": "Matrix.{0,80}Teams.{0,80}Google Chat.{0,400}edit",
+     "what": "Matrix, Teams and Google Chat among the streaming channels"
+    },
+    {
+     "file": "docs/agents/channels-and-devices.md",
+     "regex": "matrix:\\s*true[\\s\\S]{0,60}teams:\\s*true[\\s\\S]{0,60}googlechat:\\s*true",
+     "what": "the streaming yaml with the three new platforms"
+    },
+    {
+     "file": "docs/agents/ROADMAP.md",
+     "regex": "Streaming[^\\n]{0,1500}Matrix[^\\n]{0,200}Teams[^\\n]{0,200}Google Chat",
+     "what": "the Streaming row naming the three channels"
+    }
+   ],
+   "allowed_extra": [],
+   "timeout_s": 900,
+   "needs_shell": false
+  },
+  {
+   "id": "cli-progress-tail",
+   "title": "`abp agent run` streamed progress loses the run's last tool events",
+   "kind": "flaky",
+   "commit": "86325ae43b",
+   "subject": "The CLI's streamed progress keeps the tail, and the test waits on the condition",
+   "prompt": "abp_cli/__main__.py `_agent_run_via_api` streams a run's progress by polling the API while the turn is in flight. The polling stops the moment the turn completes, and the run's last tool events are written just before that, so whether they are printed depends on where the last poll landed (the test for it fails about one run in six). Expected: once the turn has returned, take one more look at the run's record and print whatever is new since the last poll (the same poll the loop already makes).",
+   "tests": [
+    "tests/test_abp_cli.py::test_agent_run_streams_progress_through_the_api"
+   ],
+   "test_files": [
+    "tests/test_abp_cli.py"
+   ],
+   "setup_files": [],
+   "checks": [],
+   "allowed_extra": [
+    "CHANGELOG.md"
+   ],
+   "timeout_s": 900,
+   "needs_shell": false
+  },
+  {
+   "id": "models-page-backoff",
+   "title": "The Models page logs a WARNING per poll for an unreachable provider",
+   "kind": "bugfix",
+   "commit": "29ad2e9632",
+   "subject": "Back off unreachable providers on the Models page's polling path too",
+   "prompt": "The Models page polls bot/models.py `browse_provider_models` every 30 s per provider. That path fetches the provider's model list with no cache or backoff, so an unreachable provider logs a WARNING on every poll (live_custom_models already has a failure backoff that the page path does not share). Expected: a working provider is still fetched live on every poll; a provider that failed is not re-fetched while its backoff window (the same `_custom_cache` failure state live_custom_models uses) has not passed, only the first failure logs at WARNING, an explicit refresh always tries, and a provider that recovers resets its backoff.",
+   "tests": [
+    "tests/test_live_custom_models_backoff.py"
+   ],
+   "test_files": [
+    "tests/test_live_custom_models_backoff.py"
+   ],
+   "setup_files": [],
+   "checks": [],
+   "allowed_extra": [
+    "CHANGELOG.md"
+   ],
+   "timeout_s": 900,
+   "needs_shell": false
+  }
+ ]
+}
