@@ -92,6 +92,33 @@ def test_restore_snapshot_restores_config_and_db(temp_db, _isolated_paths):
     assert actors == {"pre-restore"}
 
 
+def test_restore_snapshot_survives_another_thread_reopening_the_database(temp_db, _isolated_paths):
+    """Any thread that touches the database between close_conn() and the file swap reopens it, and on
+    Windows an open -wal file cannot be deleted. A background thread doing exactly that (a sampler, a
+    heartbeat, a leftover worker) made the restore fail with WinError 32 now and then, so db.swapping()
+    holds those threads off until the new file is in place."""
+    import threading
+
+    manifest = snapshots.create_snapshot(label="busy")
+    stop = threading.Event()
+
+    def hammer() -> None:
+        while not stop.is_set():
+            try:
+                db_module.get_conn().execute("SELECT 1").fetchall()
+            except Exception:  # noqa: BLE001 - closed under it by the restore, which is the point
+                pass
+
+    worker = threading.Thread(target=hammer, name="test-db-hammer", daemon=True)
+    worker.start()
+    try:
+        for _ in range(15):
+            snapshots.restore_snapshot(manifest["name"])
+    finally:
+        stop.set()
+        worker.join(10)
+
+
 def test_restore_missing_snapshot_raises(temp_db):
     with pytest.raises(ValueError):
         snapshots.restore_snapshot("does-not-exist")

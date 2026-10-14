@@ -12,6 +12,7 @@ see docs/adr/0003-single-sqlite-connection.md.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import sqlite3
 import threading
@@ -1030,28 +1031,42 @@ def _open(path: Path) -> sqlite3.Connection:
     return conn
 
 
+_swap_lock = threading.RLock()
+
+
+@contextlib.contextmanager
+def swapping():
+    """Hold off every get_conn() (on any other thread) while the database file is being replaced.
+    close_conn() alone is not enough: a thread that touches the database a moment later reopens it,
+    and on Windows an open database file can be neither deleted nor replaced. Re-entrant, so the
+    swapping thread can close and reopen inside it."""
+    with _swap_lock:
+        yield
+
+
 def get_conn() -> sqlite3.Connection:
     """The primary connection for the thread that opened it (the event loop),
     or this thread's own connection to the same file for any other thread.
     Thread connections are dropped and reopened whenever the primary is
     replaced (a test pointing DB_PATH elsewhere, a snapshot restore)."""
     global _conn, _owner, _generation
-    if _conn is None:
-        _conn = _open(DB_PATH)
-        _owner = threading.get_ident()
-        _generation += 1
-    if threading.get_ident() == _owner:
-        return _conn
-    local = _thread_local
-    conn = getattr(local, "conn", None)
-    if conn is None or local.generation != _generation:
-        if conn is not None:
-            _forget(conn)
-        conn = _open(DB_PATH)
-        local.conn, local.generation = conn, _generation
-        with _thread_conns_lock:
-            _thread_conns.add(conn)
-    return conn
+    with _swap_lock:    # held for a whole file swap (swapping()), so nobody reopens the file mid-swap
+        if _conn is None:
+            _conn = _open(DB_PATH)
+            _owner = threading.get_ident()
+            _generation += 1
+        if threading.get_ident() == _owner:
+            return _conn
+        local = _thread_local
+        conn = getattr(local, "conn", None)
+        if conn is None or local.generation != _generation:
+            if conn is not None:
+                _forget(conn)
+            conn = _open(DB_PATH)
+            local.conn, local.generation = conn, _generation
+            with _thread_conns_lock:
+                _thread_conns.add(conn)
+        return conn
 
 
 def _forget(conn: sqlite3.Connection) -> None:
