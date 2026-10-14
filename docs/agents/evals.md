@@ -400,3 +400,41 @@ single run, so a pass rate is still a starting number and not a benchmark; `benc
 it into one. The free tiers these come from are themselves the measurement problem: OpenCode Zen's free models
 are closed to third-party clients, OpenCode Go serves two free models, and OpenRouter's own allowance runs out
 within a day, so a model can stop being measurable between one run and the next.
+
+## Local models and the factory bench
+
+Both measurements below run ABP's native agent headless against any OpenAI-compatible endpoint (a ModelMistress
+instance, llama.cpp, vLLM, a provider), so a local model is measured the way a cloud one is.
+
+```bash
+# the 31-task suite
+python -m abp_agenteval run --live --base-url http://127.0.0.1:PORT/v1 --model MODEL_ID --context 32768 --out report.json
+# the factory bench
+python -m abp_agenteval factory list
+python -m abp_agenteval factory verify                      # every task: its judge fails on the base commit and passes with the real change
+python -m abp_agenteval factory run --base-url http://127.0.0.1:PORT/v1 --model MODEL_ID --context 32768 --out bench.json
+```
+
+`--context` tells the agent the model's real window (`native_agent.context_windows`); without it ABP assumes 128k
+and overflows a smaller server. `--api-key-env NAME` names the variable holding an endpoint key.
+
+**The factory bench** (`abp_agenteval/factory.py`, tasks in `factory_tasks.json`) replays 21 real, already-solved
+changes from this repository's own history: bug fixes with a test, flaky-test fixes, small features, a config block,
+a hot-reload classification, an SDK regeneration and a docs row. Each task gives the agent a throwaway git worktree of
+the commit's parent and a prompt written as an issue (the problem, never the solution). When the agent stops, the
+judge lays the commit's own tests over the worktree (so the agent cannot edit its judge), runs them, runs the task's
+text checks and ruff on the files the agent touched, and removes the worktree. The task data holds commit ids (and the
+subject, to find a commit again after a history rewrite) and repository-relative paths only. `factory verify` proves
+every task is earnable: its judge fails on the untouched base and passes with the real change.
+
+Per task it records: tests pass, ruff clean, files touched that the real change did not touch ("clean" pass rate counts
+only passes with none), seconds, tokens, failed tool calls, a tool call written as text, and for a failure one kind:
+`timeout`, `context overflow`, `bad tool call`, `gave up`, `wrong edit`, `provider error` (the endpoint answered an
+error; the task is not counted against the model), `lint`, `scope`.
+
+The agent runs with the confined swarm's shape: accept-edits permissions locked, every tool outside the file, search
+and git-read tools denied by name, no network. By default it has **no shell tool** (`--shell none`), because the shell
+is only safe inside the OS sandbox; so it cannot run the tests and the number is a floor for an agent that can.
+`--shell sandbox --sandbox-path DIR` gives it `run_shell` inside the windows_job sandbox without network, where DIR is a
+Python install the sandbox may read; the one task that needs a command (regenerating the SDK) is skipped without it.
+Not exercised against a real model yet.

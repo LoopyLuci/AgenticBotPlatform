@@ -5,7 +5,9 @@ Exit status: 0 = all good, 1 = a task failed or (with --baseline) a regression, 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -15,7 +17,12 @@ from .scripted import ScriptedTransport
 from .suite import seed_suite
 
 
-def _live_transport(provider: str, model: str):
+def _live_transport(provider: str, model: str, base_url: str = "", api_key_env: str = ""):
+    if base_url:
+        # Any OpenAI-compatible endpoint (a ModelMistress instance, llama.cpp, vLLM ...): no providers.yaml entry needed.
+        from .factory import endpoint_transport
+
+        return endpoint_transport(base_url, os.environ.get(api_key_env, "") if api_key_env else "")
     if provider == "anthropic":
         from bot.agent_runtime.transports.anthropic import AnthropicTransport
 
@@ -33,6 +40,9 @@ def main(argv=None) -> int:
     run.add_argument("--live", action="store_true", help="use a real model (costs tokens); default is scripted")
     run.add_argument("--provider", default="anthropic", help="live only: 'anthropic' or a provider in config/providers.yaml")
     run.add_argument("--model", default="", help="live only: model id")
+    run.add_argument("--base-url", default="", help="live only: an OpenAI-compatible endpoint (http://host:port/v1) instead of a provider")
+    run.add_argument("--api-key-env", default="", help="live with --base-url: the environment variable holding the endpoint's key (none by default)")
+    run.add_argument("--context", type=int, default=0, help="live: tell the agent this model's context window in tokens (default: ABP's guess)")
     run.add_argument("--task", action="append", help="run only this task id (repeatable)")
     run.add_argument("--out", help="write the JSON report here")
     run.add_argument("--baseline", help="compare with this earlier report; exit 1 on a regression")
@@ -55,6 +65,28 @@ def main(argv=None) -> int:
     bsum = bsub.add_parser("summary")
     bsum.add_argument("--dir", required=True)
     bsum.add_argument("--json", action="store_true")
+    fac = sub.add_parser("factory", help="the factory bench: real solved tasks from this repo's history, replayed in throwaway worktrees (see abp_agenteval/factory.py)")
+    fsub = fac.add_subparsers(dest="factory_cmd", required=True)
+    for name, text in (("list", "list the tasks"), ("verify", "check each task: its judge fails on the base commit and passes with the real change"),
+                       ("run", "run the agent on every task against an OpenAI-compatible endpoint")):
+        f = fsub.add_parser(name, help=text)
+        f.add_argument("--task", action="append", help="only this task id (repeatable)")
+        f.add_argument("--tasks", help="a task file (default abp_agenteval/factory_tasks.json)")
+        f.add_argument("--repo", help="the git repository to replay (default: this one)")
+        f.add_argument("--workdir", help="where the throwaway worktrees go (default: the system temp folder)")
+        f.add_argument("--python", default=sys.executable, help="the Python that judges (needs pytest and ruff)")
+        if name == "run":
+            f.add_argument("--base-url", required=True, help="OpenAI-compatible endpoint, e.g. http://127.0.0.1:8080/v1")
+            f.add_argument("--api-key-env", default="", help="environment variable holding the endpoint's key (none by default)")
+            f.add_argument("--model", default="", help="the model id sent to the endpoint")
+            f.add_argument("--label", default="", help="the name the report carries for the model")
+            f.add_argument("--context", type=int, default=0, help="tell the agent the model's context window in tokens")
+            f.add_argument("--timeout", type=float, default=0, help="seconds per task (default: each task's own, 900)")
+            f.add_argument("--shell", choices=("none", "sandbox"), default="none",
+                           help="none: the agent has no shell tool; sandbox: run_shell inside the windows_job sandbox without network")
+            f.add_argument("--sandbox-path", action="append", help="a folder the sandboxed shell may read (the Python install and venv)")
+            f.add_argument("--out", help="write the JSON report here")
+            f.add_argument("--keep", action="store_true", help="keep each worktree for inspection (you remove them)")
     cmp_ = sub.add_parser("compare", help="run the suite once per variant of prompt / tool wording and compare (see abp_agenteval/compare.py)")
     cmp_.add_argument("--variants", required=True, help="JSON file: a list of {name, config: {native_agent overrides}}")
     cmp_.add_argument("--live", action="store_true")
@@ -74,6 +106,10 @@ def main(argv=None) -> int:
         from . import page as page_mod
 
         return page_mod.main(args.reports, args.out, bench_dir=args.bench, reports_dir=args.reports_dir)
+    if args.cmd == "factory":
+        from . import factory
+
+        return factory.main(args, args.python)
     tasks = seed_suite()
     if args.cmd == "bench":
         from . import bench as bench_mod
@@ -111,17 +147,23 @@ def main(argv=None) -> int:
             print(f"unknown task(s): {', '.join(sorted(unknown))}", file=sys.stderr)
             return 2
         tasks = [t for t in tasks if t.id in set(args.task)]
+    scope = contextlib.nullcontext()
     if args.live:
         if not args.model:
             print("--live needs --model", file=sys.stderr)
             return 2
-        make = lambda _t: _live_transport(args.provider, args.model)  # noqa: E731
-        mode, model = "live", f"{args.provider}/{args.model}"
+        make = lambda _t: _live_transport(args.provider, args.model, args.base_url, args.api_key_env)  # noqa: E731
+        mode, model = "live", f"{args.provider}/{args.model}" if not args.base_url else f"endpoint/{args.model}"
+        if args.context:
+            from .factory import agent_environment
+
+            scope = agent_environment({"context_windows": {args.model: args.context}})
     else:
         make = lambda t: ScriptedTransport(t.script)  # noqa: E731
         mode, model = "scripted", "scripted"
 
-    report = run_suite(tasks, make, mode=mode, model=model, keep=args.keep, api_model=args.model if args.live else None)
+    with scope:
+        report = run_suite(tasks, make, mode=mode, model=model, keep=args.keep, api_model=args.model if args.live else None)
     if args.out:
         rep.save(args.out, report)
     print(json.dumps(report, indent=2) if args.json else rep.render(report))
