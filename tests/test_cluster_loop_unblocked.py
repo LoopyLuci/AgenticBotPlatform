@@ -16,6 +16,7 @@ import uvicorn
 
 from bot.cluster import inventory, membership
 from bot.dashboard.server import build_app
+from bot.modules import client as module_client
 from bot.modules import registry
 from bot.runtime import legacy
 
@@ -36,6 +37,7 @@ class BlackHole:
         self.port = self.sock.getsockname()[1]
         self.held: list = []
         self.accepted = 0
+        self.probed = threading.Event()        # set when the first probe has connected
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self) -> None:
@@ -46,6 +48,21 @@ class BlackHole:
                 return
             self.accepted += 1
             self.held.append(c)
+            self.probed.set()
+
+    def open_probes(self) -> int:
+        """Connections still held open, i.e. probes whose client has not given up yet."""
+        n = 0
+        for c in list(self.held):
+            try:
+                c.setblocking(False)
+                if c.recv(1, socket.MSG_PEEK) != b"":
+                    n += 1
+            except BlockingIOError:
+                n += 1                       # nothing to read and not closed: the probe is still waiting
+            except OSError:
+                pass
+        return n
 
     def close(self) -> None:
         self.sock.close()
@@ -70,6 +87,10 @@ def test_a_hung_module_hub_does_not_delay_requests_while_the_heartbeat_runs(temp
     (tmp_path / "data" / "fake-mod" / "control.json").write_text(
         json.dumps({"url": f"http://127.0.0.1:{hole.port}", "token": "x", "pid": 1}), encoding="utf-8")
 
+    # The hung probe must stay hung for the whole test whatever the machine load: a probe that gave up after the usual
+    # 2 s would let a slow request look "fine" (or a fast one look slow). With 60 s, a request that finishes while the
+    # probe is still open provably did not wait for it, and there is no wall-clock threshold to tune.
+    monkeypatch.setattr(module_client.find, "__defaults__", (60.0,))
     monkeypatch.setenv("DASHBOARD_TOKEN", TOKEN)
     monkeypatch.setattr(membership, "HEARTBEAT_S", 0.2)
     monkeypatch.setattr(legacy, "TASKS_ENABLED", True)
@@ -91,19 +112,14 @@ def test_a_hung_module_hub_does_not_delay_requests_while_the_heartbeat_runs(temp
                 break
             except OSError:
                 time.sleep(0.1)
-        deadline = time.monotonic() + 20
-        while hole.accepted == 0 and time.monotonic() < deadline:
-            time.sleep(0.05)
-        assert hole.accepted, "the heartbeat never probed the module hub"
-        worst = 0.0
+        assert hole.probed.wait(30), "the heartbeat never probed the module hub"
         for _ in range(10):
-            t0 = time.monotonic()
-            r = httpx.get(f"http://127.0.0.1:{port}/api/auth/status", headers={"X-Dashboard-Token": TOKEN}, timeout=10)
-            worst = max(worst, time.monotonic() - t0)
+            assert hole.open_probes() >= 1, "the probe ended before the request started; nothing is being proved"
+            r = httpx.get(f"http://127.0.0.1:{port}/api/auth/status", headers={"X-Dashboard-Token": TOKEN}, timeout=30)
             assert r.status_code < 500, r.text
-            time.sleep(0.1)
-        assert worst < 1.0, f"a request waited {worst:.1f}s behind the hung module hub probe"
+            # the request was answered while a probe was still waiting on the hung hub: it did not wait behind it
+            assert hole.open_probes() >= 1, "the request only finished after the hung probe ended"
     finally:
+        hole.close()                 # lets the hung probe fail at once, so the server can shut down promptly
         srv.should_exit = True
         t.join(timeout=10)
-        hole.close()

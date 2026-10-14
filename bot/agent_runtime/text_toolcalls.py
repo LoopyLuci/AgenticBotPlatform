@@ -35,25 +35,29 @@ _NAME_KEYS = ("name", "tool", "tool_name", "function_name")
 _ARGS_KEYS = ("arguments", "parameters", "args", "input", "params")
 
 
-def mode_for(model: str, provider: str = "") -> str:
+def mode_for(model: str, provider: str = "", transport: object = None) -> str:
     """The model's `tool_call_mode` from `native_agent.tool_call_modes` (native | text | grammar; default native).
-    A key may be "provider/model", a model name, a prefix of one, or "*"; the longest match wins."""
+    A key may be "provider/model", a model name, a prefix of one, or "*"; the longest match wins. With no entry,
+    small-model mode may default to text for a transport known not to support native tools (small_model.py)."""
     try:
         from bot.config import config
 
         table = (config.current.get("native_agent") or {}).get("tool_call_modes") or {}
     except Exception:  # noqa: BLE001
         return "native"
-    if not isinstance(table, dict) or not table:
-        return "native"
     name = str(model or "")
     full = f"{provider}/{name}" if provider else name
     best, best_len = "native", -1
-    for key, value in table.items():
-        k = str(key)
-        hit = k == "*" or k == full or k == name or full.startswith(k) or name.startswith(k)
-        if hit and len(k) > best_len and str(value).lower() in MODES:
-            best, best_len = str(value).lower(), (0 if k == "*" else len(k))
+    if isinstance(table, dict):
+        for key, value in table.items():
+            k = str(key)
+            hit = k == "*" or k == full or k == name or full.startswith(k) or name.startswith(k)
+            if hit and len(k) > best_len and str(value).lower() in MODES:
+                best, best_len = str(value).lower(), (0 if k == "*" else len(k))
+    if best_len == -1 and transport is not None:
+        from bot.agent_runtime import small_model
+
+        return small_model.default_tool_mode(transport, name) or "native"
     return best
 
 

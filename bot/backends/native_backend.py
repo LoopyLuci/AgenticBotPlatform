@@ -278,6 +278,15 @@ class NativeAgentBackend(Backend):
         if allowed_tools is not None:
             tool_schemas = [s for s in tool_schemas if s["name"] in allowed_tools]
 
+        # Small-model mode (small_model.py): a local model with a small window is sent a compact tool set and prompt.
+        # An agent definition that names its tools (allowed_tools) is honoured as it is.
+        from bot.agent_runtime import small_model
+
+        small = small_model.profile_for(self.transport, self.model)
+        if small is not None and allowed_tools is None:
+            tool_schemas = small_model.filter_schemas(tool_schemas, small)
+        small_model.announce(session_key, small, self.model, trace.active().note)
+
         from bot.agent_runtime import prompt as prompt_builder
 
         system_prompt = prompt_builder.build(
@@ -285,6 +294,7 @@ class NativeAgentBackend(Backend):
             agent_prompt=context.get("agent_prompt"),
             include_agents=(allowed_tools is None or "spawn_subagent" in allowed_tools),
             model_line=_model_line(self.transport, self.model), user_id=context.get("user_id"),
+            compact=bool(small and small.compact_prompt),
         )
 
         # Plan mode (Phase G of the Claude API/Claude Code parity plan) —
@@ -404,14 +414,16 @@ class NativeAgentBackend(Backend):
                     history.append(steer_entry)
                     db.append_agent_message(session_key, steer_entry["role"], steer_entry["content"])
 
-            report = context_window.manage(history, active_transport, active_model, system_prompt, tool_schemas)
+            small_now = small_model.profile_for(active_transport, active_model)
+            report = context_window.manage(history, active_transport, active_model, system_prompt, tool_schemas, small=small_now)
             if report.needs_summary and summaries < 2:
                 # Still too full after clearing old tool outputs: summarise the older conversation.
                 if await compression.maybe_compress(session_key, active_transport, model=active_model,
                                                     instance_id=instance_id, force=True):
                     summaries += 1
                     history[:] = db.list_agent_messages(session_key)
-                    report = context_window.manage(history, active_transport, active_model, system_prompt, tool_schemas)
+                    report = context_window.manage(history, active_transport, active_model, system_prompt, tool_schemas,
+                                                   small=small_now)
                     trace.active().note("context summarised mid-turn")
             if report.notes:
                 trace.active().note("; ".join(report.notes))

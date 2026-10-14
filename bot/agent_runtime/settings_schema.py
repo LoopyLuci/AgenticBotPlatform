@@ -30,6 +30,7 @@ YAML_ONLY = [
     {"key": "native_agent.models.limits / native_agent.models.overrides", "why": "per-model limit tables (see docs/agents/models.md)"},
     {"key": "native_agent.context_windows", "why": "a map of model name to context size"},
     {"key": "native_agent.tool_call_modes", "why": "a map of model to how its tool calls are run (native, text or grammar)"},
+    {"key": "native_agent.small_model", "why": "small-model mode for local models with a small window: enabled (auto/true/false), max_window, the core tool list, compact prompt, keep_tool_results, compact_at (see docs/agents/models.md)"},
     {"key": "native_agent.code_intel.lsp.servers / .formatters", "why": "language-server commands per language"},
     {"key": "native_agent.mcp_trust", "why": "a map of MCP server to trusted (also settable from the MCP tab)"},
     {"key": "native_agent.sandbox.docker", "why": "the docker image, network and resource limits"},

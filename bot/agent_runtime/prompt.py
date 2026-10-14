@@ -13,6 +13,9 @@ Operators tune it under `native_agent.prompt` in config/backends.yaml:
         environment: true     # OS, working directory, git, date (default on)
         extra: ""             # a block of your own text, added after the guidance
 
+Small-model mode (small_model.py) builds the prompt with compact=True: the long optional parts (the code-navigation
+bullet, skill packs, the sub-agent list, skills, the person's profile) are skipped, not rewritten.
+
 Project instruction files (AGENTS.md, CLAUDE.md) are read by project_rules.py and
 added after the operator text; see that module for how they are treated.
 """
@@ -38,6 +41,16 @@ You are an agent running inside AgenticBotPlatform. Work the way a careful engin
 - If the request is ambiguous in a way that changes what you would do, ask one short question. Otherwise proceed.
 - Keep replies short and concrete: what you did, what you found, what is left.
 """
+
+# Skipped when compact=True (small-model mode); everything else is kept.
+COMPACT_SKIP_SECTIONS = frozenset({"skill_packs", "agents", "skills", "user_model"})
+COMPACT_SKIP_BULLETS = ("- Navigate code the cheap way",)
+
+
+def guidance(compact: bool = False) -> str:
+    if not compact:
+        return GUIDANCE.strip()
+    return "\n".join(line for line in GUIDANCE.strip().splitlines() if not line.startswith(COMPACT_SKIP_BULLETS))
 
 
 def _config() -> dict:
@@ -80,12 +93,12 @@ def _is_git_repo(path: Path) -> bool:
 def sections(instance_id: Optional[int], *, workspace: Optional[Path] = None,
              session_context: Optional[str] = None, now: Optional[_dt.datetime] = None,
              agent_prompt: Optional[str] = None, include_agents: bool = False,
-             model_line: Optional[str] = None, user_id=None) -> list[tuple[str, str]]:
+             model_line: Optional[str] = None, user_id=None, compact: bool = False) -> list[tuple[str, str]]:
     """(name, text) for every non-empty section, in prompt order."""
     cfg = _config()
     out: list[tuple[str, str]] = []
     if _flag(cfg, "guidance"):
-        out.append(("guidance", GUIDANCE.strip()))
+        out.append(("guidance", guidance(compact)))
     extra = str(cfg.get("extra") or "").strip()
     if extra:
         out.append(("operator", extra))
@@ -142,13 +155,15 @@ def sections(instance_id: Optional[int], *, workspace: Optional[Path] = None,
         out.append(("environment", environment(workspace, now)))
     if session_context:
         out.append(("session", session_context))
+    if compact:
+        out = [(name, text) for name, text in out if name not in COMPACT_SKIP_SECTIONS]
     return out
 
 
 def build(instance_id: Optional[int], *, workspace: Optional[Path] = None,
           session_context: Optional[str] = None, now: Optional[_dt.datetime] = None,
           agent_prompt: Optional[str] = None, include_agents: bool = False, model_line: Optional[str] = None,
-          user_id=None) -> str:
+          user_id=None, compact: bool = False) -> str:
     return "\n\n".join(text for _, text in sections(
         instance_id, workspace=workspace, session_context=session_context, now=now,
-        agent_prompt=agent_prompt, include_agents=include_agents, model_line=model_line, user_id=user_id))
+        agent_prompt=agent_prompt, include_agents=include_agents, model_line=model_line, user_id=user_id, compact=compact))
