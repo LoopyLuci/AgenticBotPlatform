@@ -133,6 +133,27 @@ def _runtime_store() -> Any:
         return None
 
 
+def _swap_database_file(db_module: Any, tmp: Path, dest: Path, attempts: int = 100) -> None:
+    """Clear the stale -wal/-shm files and move `tmp` over `dest`. Any other thread that touches the
+    database between close_conn() and here reopens it (db.swapping() holds ABP's own threads off), and
+    on Windows an open database file can be neither deleted nor replaced (WinError 32 / 5), so a refusal
+    - from anything that still has the file open - closes every connection again and retries; the last
+    refusal is raised."""
+    for attempt in range(attempts):
+        try:
+            for suffix in ("-wal", "-shm"):
+                stale = Path(str(dest) + suffix)
+                if stale.exists():
+                    stale.unlink()
+            os.replace(tmp, dest)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            db_module.close_conn()
+            time.sleep(0.01)
+
+
 def restore_snapshot(name: str) -> dict:
     """Restores config files, the database and the runtime's manifest from a
     previously-created snapshot. Config files and the database are written to
@@ -164,16 +185,12 @@ def restore_snapshot(name: str) -> dict:
     db_src = src_dir / "bot.db"
     if db_src.exists():
         store = _runtime_store()
-        with (store.exclusive() if store is not None else nullcontext()):
+        with (store.exclusive() if store is not None else nullcontext()), db_module.swapping():
             db_module.close_conn()
             dest = Path(db_module.DB_PATH)
             tmp = dest.with_name(dest.name + ".restore.tmp")
             shutil.copy2(db_src, tmp)  # the new file is complete before anything is touched
-            for suffix in ("-wal", "-shm"):
-                stale = Path(str(dest) + suffix)
-                if stale.exists():
-                    stale.unlink()
-            os.replace(tmp, dest)
+            _swap_database_file(db_module, tmp, dest)
         db_module.get_conn()  # reopen eagerly so the next caller doesn't pay for it
 
     backends_config.reload(actor="snapshot-restore")

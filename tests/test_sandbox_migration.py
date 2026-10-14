@@ -229,18 +229,32 @@ BACKENDS = [
 
 
 @pytest.mark.parametrize("kind, factory, owner", BACKENDS, ids=[b[0] for b in BACKENDS])
-def test_a_backend_run_lives_in_an_agent_cell_and_its_timeout_takes_the_tree(kind, factory, owner, standin, isolated):
+def test_a_backend_run_lives_in_an_agent_cell_and_its_timeout_takes_the_tree(kind, factory, owner, standin, isolated,
+                                                                              monkeypatch):
     """One cell per run (bot/backends/base.py's process_cell), and the timeout stops that cell -
-    the CLI's child with it, which is what a bare `proc.kill()` never did."""
+    the CLI's child with it, which is what a bare `proc.kill()` never did.
+
+    The backend's clock starts the moment it has spawned, but the stand-in needs a launcher, an interpreter
+    and a grandchild before it has anything to kill, and on a loaded machine that can outlast any fixed
+    timeout (the run was then killed before its tree existed: "nothing was written", or a tree that was
+    still being born when the cell died). So the timeout is armed only once the tree is up - the 4s is
+    still the backend's own real timeout, it just starts counting when the thing to kill exists."""
     from bot.backends.base import BackendError
 
     backend = factory(str(standin.exe))
     pids_path = Path(os.environ[PIDS])
+    real_wait_for = asyncio.wait_for
+
+    async def wait_for_once_the_tree_is_up(aw, timeout):
+        await async_read_pids(pids_path, timeout=120)
+        return await real_wait_for(aw, timeout)
+
+    monkeypatch.setattr(asyncio, "wait_for", wait_for_once_the_tree_is_up)
 
     async def go() -> tuple:
         task = asyncio.create_task(backend.ask("do the thing", timeout_s=4))
-        cell = await async_wait_cell(owner)
-        pids = await async_read_pids(pids_path)
+        cell = await async_wait_cell(owner, timeout=60)
+        pids = await async_read_pids(pids_path, timeout=120)
         with pytest.raises(BackendError, match="timed out"):
             await task
         return cell, pids
