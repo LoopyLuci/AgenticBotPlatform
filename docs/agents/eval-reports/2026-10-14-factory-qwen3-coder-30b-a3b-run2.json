@@ -1,0 +1,1087 @@
+{
+  "schema": 1,
+  "mode": "factory",
+  "model": "Qwen3-Coder-30B-A3B",
+  "when": 1792007985.3639965,
+  "total": 21,
+  "measured": 20,
+  "limited": 1,
+  "passed": 7,
+  "clean": 3,
+  "score": 35.0,
+  "tokens": 5752125,
+  "avg_seconds": 205.2,
+  "avg_tokens": 287606,
+  "tool_errors": 44,
+  "tool_calls": 513,
+  "text_tool_calls": 0,
+  "failure_kinds": {
+    "gave up": 1,
+    "lint": 2,
+    "wrong edit": 10
+  },
+  "by_kind": {
+    "bugfix": "2/8",
+    "config": "1/2",
+    "docs": "0/1",
+    "feature": "2/3",
+    "flaky": "1/5",
+    "hotreload": "1/1"
+  },
+  "duration_ms": 4103094,
+  "notes": [
+    "each task runs in a throwaway git worktree of the commit's parent",
+    "shell tool: none",
+    "small-model mode: on",
+    "context window told to the agent: 32768"
+  ],
+  "results": [
+    {
+      "id": "sandbox-reused-pid",
+      "title": "The sandbox registry keeps a stale record when Windows reuses a process id",
+      "category": "flaky",
+      "commit": "46622764de",
+      "passed": false,
+      "checks": [
+        {
+          "name": "tests pass",
+          "ok": false,
+          "detail": "exit 1: E            +  and   1.0 = Record(pid=109440, create_time=1.0, argv=['old'], cwd='', owner='test', name='old', cell='', policy='', persistent=False, parent_pid=142760, started=1792004020.6973002, exited=None, exit_code=None).create_time | tests\\test_sandbox_ns.py:378: AssertionError | =========================== short test summary info =========================== | FAILED tests/test_sandbox_ns.py::test_a_stale_record_under_a_reused_pid_is_replaced_by_the_process_that_has_it_now | !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!! | 1 failed in 5.86s"
+        },
+        {
+          "name": "ruff clean",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "error": null,
+      "duration_ms": 201702,
+      "iterations": 27,
+      "tokens": 273417,
+      "tool_counts": {
+        "edit_file": 2,
+        "grep": 3,
+        "list_dir": 1,
+        "read_file": 14,
+        "run_tests": 6
+      },
+      "denied": 0,
+      "run_id": "9aba20fed7724912",
+      "limited": false,
+      "retry_at": null,
+      "workspace": null,
+      "tool_errors": 2,
+      "tool_error_counts": {
+        "edit_file": 1,
+        "run_tests": 1
+      },
+      "tool_calls": 26,
+      "changed": [
+        "bot/sandbox_ns/registry.py"
+      ],
+      "unrelated": [],
+      "clean": false,
+      "failure_kind": "wrong edit",
+      "text_tool_call": false,
+      "stopped": ""
+    },
+    {
+      "id": "sentinel-config-discovery",
+      "title": "ABP should find this machine's AgentSentinel from its config file",
+      "category": "feature",
+      "commit": "9adc92fa13",
+      "passed": true,
+      "checks": [
+        {
+          "name": "tests pass",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "ruff clean",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "error": null,
+      "duration_ms": 297000,
+      "iterations": 30,
+      "tokens": 367674,
+      "tool_counts": {
+        "edit_file": 5,
+        "glob": 2,
+        "grep": 2,
+        "read_file": 13,
+        "run_tests": 6,
+        "write_file": 1
+      },
+      "denied": 0,
+      "run_id": "e0b67c33ce834cb0",
+      "limited": false,
+      "retry_at": null,
+      "workspace": null,
+      "tool_errors": 4,
+      "tool_error_counts": {
+        "edit_file": 4
+      },
+      "tool_calls": 29,
+      "changed": [
+        "bot/coordination/sentinel.py",
+        "temp_test.py"
+      ],
+      "unrelated": [
+        "temp_test.py"
+      ],
+      "clean": false,
+      "failure_kind": "",
+      "text_tool_call": false,
+      "stopped": ""
+    },
+    {
+      "id": "desktop-mcp-platforms",
+      "title": "`abp mcp list` fails on Linux, and macOS looks in the wrong folder for Claude Desktop's config",
+      "category": "bugfix",
+      "commit": "54fb515961",
+      "passed": false,
+      "checks": [
+        {
+          "name": "tests pass",
+          "ok": false,
+          "detail": "exit 1: E        +    where <function _mcp_config_path at 0x000001EF8B7C89A0> = desktop._mcp_config_path | tests\\test_desktop_mcp_platforms.py:23: AssertionError | =========================== short test summary info =========================== | FAILED tests/test_desktop_mcp_platforms.py::test_macos_uses_application_support | !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!! | 1 failed, 1 passed in 0.51s"
+        },
+        {
+          "name": "ruff clean",
+          "ok": false,
+          "detail": "F401 [*] `os` imported but unused\n --> test_platform_fix.py:6:8\n  |\n4 | import platform\n5 | import sys\n6 | import os\n  |        ^^\n7 |\n8 | # Add the project root to Python path so we can import the desktop module\n  |\nhelp: Remove unused import: `os`\n  |\n5 | import sys\n  - import os\n6 |\n  |\n\nFound 1 error.\n[*] 1 fixable with the `--fix` option."
+        }
+      ],
+      "error": null,
+      "duration_ms": 239875,
+      "iterations": 43,
+      "tokens": 453822,
+      "tool_counts": {
+        "edit_file": 5,
+        "grep": 5,
+        "list_dir": 2,
+        "read_file": 20,
+        "run_tests": 9,
+        "write_file": 1
+      },
+      "denied": 0,
+      "run_id": "17038be31eb641c6",
+      "limited": false,
+      "retry_at": null,
+      "workspace": null,
+      "tool_errors": 5,
+      "tool_error_counts": {
+        "run_tests": 5
+      },
+      "tool_calls": 42,
+      "changed": [
+        "bot/desktop.py",
+        "test_platform_fix.py"
+      ],
+      "unrelated": [
+        "test_platform_fix.py"
+      ],
+      "clean": false,
+      "failure_kind": "wrong edit",
+      "text_tool_call": false,
+      "stopped": ""
+    },
+    {
+      "id": "docker-down-daemon",
+      "title": "A stopped Docker daemon is reported as a whole JSON document",
+      "category": "bugfix",
+      "commit": "3d9215a60f",
+      "passed": false,
+      "checks": [
+        {
+          "name": "tests pass",
+          "ok": false,
+          "detail": "exit 1: E         + the Docker daemon is not running or not reachable) | tests\\test_integrations.py:130: AssertionError | =========================== short test summary info =========================== | FAILED tests/test_integrations.py::test_a_down_docker_daemon_is_one_readable_line | !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!! | 1 failed in 0.86s"
+        },
+        {
+          "name": "ruff clean",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "error": null,
+      "duration_ms": 172094,
+      "iterations": 22,
+      "tokens": 269411,
+      "tool_counts": {
+        "edit_file": 2,
+        "grep": 3,
+        "list_dir": 2,
+        "read_file": 6,
+        "run_tests": 8
+      },
+      "denied": 0,
+      "run_id": "7e6a1d1a07d04796",
+      "limited": false,
+      "retry_at": null,
+      "workspace": null,
+      "tool_errors": 2,
+      "tool_error_counts": {
+        "run_tests": 2
+      },
+      "tool_calls": 21,
+      "changed": [
+        "bot/docker_mgr.py"
+      ],
+      "unrelated": [],
+      "clean": false,
+      "failure_kind": "wrong edit",
+      "text_tool_call": false,
+      "stopped": ""
+    },
+    {
+      "id": "module-provider-secret",
+      "title": "A module's OpenAI-compatible API should get its key from what the module's hub stored",
+      "category": "feature",
+      "commit": "236e26f4cf",
+      "passed": true,
+      "checks": [
+        {
+          "name": "tests pass",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "ruff clean",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "error": null,
+      "duration_ms": 204577,
+      "iterations": 33,
+      "tokens": 419930,
+      "tool_counts": {
+        "edit_file": 4,
+        "glob": 2,
+        "grep": 7,
+        "list_dir": 1,
+        "read_file": 14,
+        "run_tests": 3,
+        "write_file": 1
+      },
+      "denied": 0,
+      "run_id": "55c59ead438846df",
+      "limited": false,
+      "retry_at": null,
+      "workspace": null,
+      "tool_errors": 2,
+      "tool_error_counts": {
+        "edit_file": 1,
+        "run_tests": 1
+      },
+      "tool_calls": 32,
+      "changed": [
+        "CHANGES_SUMMARY.md",
+        "bot/providers.py"
+      ],
+      "unrelated": [
+        "CHANGES_SUMMARY.md"
+      ],
+      "clean": false,
+      "failure_kind": "",
+      "text_tool_call": false,
+      "stopped": ""
+    },
+    {
+      "id": "modkit-curated-ops",
+      "title": "abp_modkit adopt overwrites a hand-curated abp-ops.toml on refresh",
+      "category": "feature",
+      "commit": "eb47667175",
+      "passed": false,
+      "checks": [
+        {
+          "name": "tests pass",
+          "ok": false,
+          "detail": "exit 1: E         Use -v to get more diff | tests\\test_modkit.py:330: AssertionError | =========================== short test summary info =========================== | FAILED tests/test_modkit.py::test_adopt_writes_both_files_and_a_refresh_keeps_hand_edits | !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!! | 1 failed in 0.79s"
+        },
+        {
+          "name": "ruff clean",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "error": null,
+      "duration_ms": 182515,
+      "iterations": 22,
+      "tokens": 220546,
+      "tool_counts": {
+        "code_search": 1,
+        "edit_file": 2,
+        "glob": 3,
+        "list_dir": 2,
+        "read_file": 7,
+        "run_tests": 6
+      },
+      "denied": 0,
+      "run_id": "fe5671934f694192",
+      "limited": false,
+      "retry_at": null,
+      "workspace": null,
+      "tool_errors": 0,
+      "tool_error_counts": {},
+      "tool_calls": 21,
+      "changed": [
+        "abp_modkit/adopt.py",
+        "tests/test_modkit.py"
+      ],
+      "unrelated": [],
+      "clean": false,
+      "failure_kind": "wrong edit",
+      "text_tool_call": false,
+      "stopped": ""
+    },
+    {
+      "id": "deploy-app-only-instance",
+      "title": "A deploy rolls back waiting for an app-only bot instance",
+      "category": "bugfix",
+      "commit": "fbb25d6ab5",
+      "passed": true,
+      "checks": [
+        {
+          "name": "tests pass",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "ruff clean",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "error": null,
+      "duration_ms": 129812,
+      "iterations": 19,
+      "tokens": 204672,
+      "tool_counts": {
+        "edit_file": 1,
+        "grep": 3,
+        "list_dir": 2,
+        "read_file": 7,
+        "run_tests": 5
+      },
+      "denied": 0,
+      "run_id": "1060c62ee9a24ac3",
+      "limited": false,
+      "retry_at": null,
+      "workspace": null,
+      "tool_errors": 1,
+      "tool_error_counts": {
+        "run_tests": 1
+      },
+      "tool_calls": 18,
+      "changed": [
+        "scripts/deploy_local.py"
+      ],
+      "unrelated": [],
+      "clean": true,
+      "failure_kind": "",
+      "text_tool_call": false,
+      "stopped": ""
+    },
+    {
+      "id": "deploy-poll-error-body",
+      "title": "A deploy's bot check crashes when the starting app answers an error body",
+      "category": "flaky",
+      "commit": "67e46072b3",
+      "passed": false,
+      "checks": [
+        {
+          "name": "tests pass",
+          "ok": false,
+          "detail": "exit 1: E   AttributeError: 'str' object has no attribute 'get' | scripts\\deploy_local.py:762: AttributeError | =========================== short test summary info =========================== | FAILED tests/test_deploy_local.py::test_verify_keeps_polling_through_an_error_body_while_the_bots_come_back | !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!! | 1 failed in 3.53s"
+        },
+        {
+          "name": "ruff clean",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "error": null,
+      "duration_ms": 222952,
+      "iterations": 22,
+      "tokens": 260008,
+      "tool_counts": {
+        "edit_file": 1,
+        "grep": 3,
+        "read_file": 13,
+        "run_tests": 4
+      },
+      "denied": 0,
+      "run_id": "25627dc48c504546",
+      "limited": false,
+      "retry_at": null,
+      "workspace": null,
+      "tool_errors": 0,
+      "tool_error_counts": {},
+      "tool_calls": 21,
+      "changed": [
+        "scripts/deploy_local.py"
+      ],
+      "unrelated": [],
+      "clean": false,
+      "failure_kind": "wrong edit",
+      "text_tool_call": false,
+      "stopped": ""
+    },
+    {
+      "id": "release-guard-stdout-only",
+      "title": "A CRLF warning from git was parsed as a list of changed files",
+      "category": "bugfix",
+      "commit": "0e88607a64",
+      "passed": false,
+      "checks": [
+        {
+          "name": "tests pass",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "ruff clean",
+          "ok": false,
+          "detail": "f pipeline_already_passed(root: Path = ROOT, environ: Optional[dict] = None) -> Optional[str]:\n767 + def pipeline_already_passed(root: Path = ROOT, environ: Optional[dict] = None) -> str | None:\n768 |     \"\"\"If the release gate already ran the full pipeline on exactly this\n    |\n\nFound 20 errors.\n[*] 17 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option)."
+        }
+      ],
+      "error": null,
+      "duration_ms": 218077,
+      "iterations": 22,
+      "tokens": 158551,
+      "tool_counts": {
+        "edit_file": 1,
+        "glob": 1,
+        "grep": 6,
+        "read_file": 7,
+        "run_tests": 6
+      },
+      "denied": 0,
+      "run_id": "24c4edb459144387",
+      "limited": false,
+      "retry_at": null,
+      "workspace": null,
+      "tool_errors": 2,
+      "tool_error_counts": {
+        "run_tests": 2
+      },
+      "tool_calls": 21,
+      "changed": [
+        "scripts/release_guard.py"
+      ],
+      "unrelated": [],
+      "clean": false,
+      "failure_kind": "lint",
+      "text_tool_call": false,
+      "stopped": ""
+    },
+    {
+      "id": "agenteval-console-encoding",
+      "title": "abp_agenteval dies printing a report the console cannot encode",
+      "category": "bugfix",
+      "commit": "f10390148c",
+      "passed": false,
+      "checks": [
+        {
+          "name": "tests pass",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "ruff clean",
+          "ok": false,
+          "detail": " |                ^^\n127 |         if hasattr(sys.stdout, 'buffer'):\n128 |             # Try to print with error replacement on the buffer\n    |\nhelp: Remove unused import: `io`\n    |\n125 |         # Print with error replacement to ensure the report is still printed.\n    -         import io\n126 |         if hasattr(sys.stdout, 'buffer'):\n    |\n\nFound 1 error.\n[*] 1 fixable with the `--fix` option."
+        }
+      ],
+      "error": null,
+      "duration_ms": 122500,
+      "iterations": 23,
+      "tokens": 253482,
+      "tool_counts": {
+        "edit_file": 5,
+        "grep": 4,
+        "list_dir": 2,
+        "read_file": 11
+      },
+      "denied": 0,
+      "run_id": "78d1b84614f44929",
+      "limited": false,
+      "retry_at": null,
+      "workspace": null,
+      "tool_errors": 1,
+      "tool_error_counts": {
+        "edit_file": 1
+      },
+      "tool_calls": 22,
+      "changed": [
+        "abp_agenteval/__main__.py"
+      ],
+      "unrelated": [],
+      "clean": false,
+      "failure_kind": "lint",
+      "text_tool_call": false,
+      "stopped": ""
+    },
+    {
+      "id": "module-build-memory-cap",
+      "title": "A module needs to raise its build cell's memory cap (9router's build is killed)",
+      "category": "config",
+      "commit": "34c78093ac",
+      "passed": false,
+      "checks": [
+        {
+          "name": "tests pass",
+          "ok": false,
+          "detail": "exit 1: E        +  where None = Manifest(id='fake-mod', name='FakeMod', repo='https://example.invalid/fake-mod.git', branch='main', api=1, area='tools...app', host_os=['linux', 'macos', 'windows'], host_needs=[], pipeline=[], source='builtin', checkout_dir='', overlay='').build_memory_mb | tests\\test_modules.py:300: AssertionError | =========================== short test summary info =========================== | FAILED tests/test_modules.py::test_a_module_can_raise_its_build_cells_memory_cap | !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!! | 1 failed in 0.94s"
+        },
+        {
+          "name": "ruff clean",
+          "ok": false,
+          "detail": " bot.sandbox_ns.policy import Policy\n    |                                       ^^^^^^\n270 |     \n271 |     # Get the default build preset and override memory_mb\n    |\nhelp: Remove unused import: `bot.sandbox_ns.policy.Policy`\n    |\n268 |     from bot.sandbox_ns import policy\n    -     from bot.sandbox_ns.policy import Policy\n269 |     \n    |\n\nFound 1 error.\n[*] 1 fixable with the `--fix` option."
+        }
+      ],
+      "error": null,
+      "duration_ms": 234734,
+      "iterations": 46,
+      "tokens": 518475,
+      "tool_counts": {
+        "edit_file": 7,
+        "glob": 1,
+        "grep": 7,
+        "list_dir": 4,
+        "read_file": 19,
+        "run_tests": 7
+      },
+      "denied": 0,
+      "run_id": "bfd4c4bea8ae41bb",
+      "limited": false,
+      "retry_at": null,
+      "workspace": null,
+      "tool_errors": 6,
+      "tool_error_counts": {
+        "edit_file": 2,
+        "run_tests": 4
+      },
+      "tool_calls": 45,
+      "changed": [
+        "bot/modules/harness.py",
+        "bot/modules/manifest.py",
+        "catalog/9router/abp-module.toml"
+      ],
+      "unrelated": [],
+      "clean": false,
+      "failure_kind": "wrong edit",
+      "text_tool_call": false,
+      "stopped": ""
+    },
+    {
+      "id": "gate-registry-reader",
+      "title": "The gate's registry write fails with a PermissionError while a reader has the file open",
+      "category": "flaky",
+      "commit": "d9769b418c",
+      "passed": true,
+      "checks": [
+        {
+          "name": "tests pass",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "ruff clean",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "error": null,
+      "duration_ms": 406545,
+      "iterations": 22,
+      "tokens": 206572,
+      "tool_counts": {
+        "edit_file": 1,
+        "grep": 5,
+        "list_dir": 2,
+        "read_file": 5,
+        "run_tests": 7,
+        "write_file": 1
+      },
+      "denied": 0,
+      "run_id": "fcb0a3d0dd63456a",
+      "limited": false,
+      "retry_at": null,
+      "workspace": null,
+      "tool_errors": 1,
+      "tool_error_counts": {
+        "run_tests": 1
+      },
+      "tool_calls": 21,
+      "changed": [
+        "CHANGES_SUMMARY.md",
+        "abp_gate/registry.py"
+      ],
+      "unrelated": [
+        "CHANGES_SUMMARY.md"
+      ],
+      "clean": false,
+      "failure_kind": "",
+      "text_tool_call": false,
+      "stopped": ""
+    },
+    {
+      "id": "gate-registry-temp-name",
+      "title": "Two processes writing the gate registry destroy each other's temporary file",
+      "category": "flaky",
+      "commit": "79a72a6c1d",
+      "passed": false,
+      "checks": [
+        {
+          "name": "tests pass",
+          "ok": false,
+          "detail": "exit 1: E                +  where 1 = <Popen: returncode: 1 args: ['Z:\\\\Projects\\\\AgenticBotPlatform\\\\.venv\\\\Scrip...>.returncode | tests\\test_gate.py:1364: AssertionError | =========================== short test summary info =========================== | FAILED tests/test_gate.py::test_two_processes_writing_the_registry_do_not_destroy_each_other | !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!! | 1 failed in 0.94s"
+        }
+      ],
+      "error": null,
+      "duration_ms": 293859,
+      "iterations": 46,
+      "tokens": 537483,
+      "tool_counts": {
+        "edit_file": 16,
+        "glob": 4,
+        "grep": 2,
+        "multi_edit": 1,
+        "read_file": 20,
+        "run_tests": 2
+      },
+      "denied": 0,
+      "run_id": "d23512455b664702",
+      "limited": false,
+      "retry_at": null,
+      "workspace": null,
+      "tool_errors": 8,
+      "tool_error_counts": {
+        "edit_file": 7,
+        "multi_edit": 1
+      },
+      "tool_calls": 45,
+      "changed": [],
+      "unrelated": [],
+      "clean": false,
+      "failure_kind": "gave up",
+      "text_tool_call": false,
+      "stopped": ""
+    },
+    {
+      "id": "config-secret-logging",
+      "title": "Adding a provider writes its API key into the log and the audit trail",
+      "category": "bugfix",
+      "commit": "f4c382f827",
+      "passed": false,
+      "checks": [
+        {
+          "name": "tests pass",
+          "ok": false,
+          "detail": "exit 1: E           pi_key': 'unused-placeholder-value'} | tests\\test_config_secret_logging.py:17: AssertionError | =========================== short test summary info =========================== | FAILED tests/test_config_secret_logging.py::test_a_provider_added_whole_does_not_print_its_api_key | !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!! | 1 failed in 0.26s"
+        },
+        {
+          "name": "ruff clean",
+          "ok": false,
+          "detail": " `pytest` imported but unused\n --> tests\\test_config_diff_masking.py:3:8\n  |\n1 | \"\"\"Test that config diff masking works properly for sensitive keys.\"\"\"\n2 |\n3 | import pytest\n  |        ^^^^^^\n4 | from bot.config import _diff_summary\n  |\nhelp: Remove unused import: `pytest`\n  |\n2 |\n  - import pytest\n3 | from bot.config import _diff_summary\n  |\n\nFound 5 errors.\n[*] 3 fixable with the `--fix` option."
+        }
+      ],
+      "error": null,
+      "duration_ms": 105156,
+      "iterations": 16,
+      "tokens": 146430,
+      "tool_counts": {
+        "edit_file": 2,
+        "glob": 1,
+        "grep": 3,
+        "read_file": 3,
+        "run_tests": 5,
+        "write_file": 1
+      },
+      "denied": 0,
+      "run_id": "425fbf74d0e842e2",
+      "limited": false,
+      "retry_at": null,
+      "workspace": null,
+      "tool_errors": 0,
+      "tool_error_counts": {},
+      "tool_calls": 15,
+      "changed": [
+        "bot/config.py",
+        "tests/test_config_diff_masking.py"
+      ],
+      "unrelated": [],
+      "clean": false,
+      "failure_kind": "wrong edit",
+      "text_tool_call": false,
+      "stopped": ""
+    },
+    {
+      "id": "gate-instance-token",
+      "title": "A gate instance inherits the dashboard token of the process that started it",
+      "category": "bugfix",
+      "commit": "ad94708569",
+      "passed": true,
+      "checks": [
+        {
+          "name": "tests pass",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "ruff clean",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "error": null,
+      "duration_ms": 271295,
+      "iterations": 20,
+      "tokens": 165154,
+      "tool_counts": {
+        "edit_file": 1,
+        "grep": 4,
+        "list_dir": 1,
+        "read_file": 7,
+        "run_tests": 5,
+        "write_file": 1
+      },
+      "denied": 0,
+      "run_id": "df793103076846ce",
+      "limited": false,
+      "retry_at": null,
+      "workspace": null,
+      "tool_errors": 1,
+      "tool_error_counts": {
+        "run_tests": 1
+      },
+      "tool_calls": 19,
+      "changed": [
+        "abp_gate/procs.py",
+        "test_dashboard_token_fix.py"
+      ],
+      "unrelated": [
+        "test_dashboard_token_fix.py"
+      ],
+      "clean": false,
+      "failure_kind": "",
+      "text_tool_call": false,
+      "stopped": ""
+    },
+    {
+      "id": "hotreload-classify-streaming",
+      "title": "Hot reload does not know the two new streaming modules",
+      "category": "hotreload",
+      "commit": "bdcd02059d",
+      "passed": true,
+      "checks": [
+        {
+          "name": "tests pass",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "ruff clean",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "error": null,
+      "duration_ms": 61327,
+      "iterations": 16,
+      "tokens": 145132,
+      "tool_counts": {
+        "edit_file": 2,
+        "grep": 2,
+        "read_file": 9,
+        "run_tests": 2
+      },
+      "denied": 0,
+      "run_id": "f4c58371c0784473",
+      "limited": false,
+      "retry_at": null,
+      "workspace": null,
+      "tool_errors": 1,
+      "tool_error_counts": {
+        "run_tests": 1
+      },
+      "tool_calls": 15,
+      "changed": [
+        "bot/hotreload.py"
+      ],
+      "unrelated": [],
+      "clean": true,
+      "failure_kind": "",
+      "text_tool_call": false,
+      "stopped": ""
+    },
+    {
+      "id": "settings-schema-code-search",
+      "title": "The settings screens lack the code search and project rules options",
+      "category": "config",
+      "commit": "9d36b4687d",
+      "passed": true,
+      "checks": [
+        {
+          "name": "tests pass",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "bot/agent_runtime/settings_schema.py has code_search.embeddings",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "bot/agent_runtime/settings_schema.py has code_search.embedding_model",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "bot/agent_runtime/settings_schema.py has code_search.embedding_max_chunks",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "bot/agent_runtime/settings_schema.py has code_search.embedding_batch",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "bot/agent_runtime/settings_schema.py has project_rules.parents",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "bot/agent_runtime/settings_schema.py has project_rules.nested",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "bot/agent_runtime/settings_schema.py has project_rules.nested_max_chars",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "ruff clean",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "error": null,
+      "duration_ms": 158280,
+      "iterations": 29,
+      "tokens": 302892,
+      "tool_counts": {
+        "code_search": 2,
+        "grep": 8,
+        "multi_edit": 2,
+        "read_file": 12,
+        "run_tests": 4
+      },
+      "denied": 0,
+      "run_id": "2391041160fc46c7",
+      "limited": false,
+      "retry_at": null,
+      "workspace": null,
+      "tool_errors": 1,
+      "tool_error_counts": {
+        "multi_edit": 1
+      },
+      "tool_calls": 28,
+      "changed": [
+        "bot/agent_runtime/settings_schema.py"
+      ],
+      "unrelated": [],
+      "clean": true,
+      "failure_kind": "",
+      "text_tool_call": false,
+      "stopped": ""
+    },
+    {
+      "id": "sdk-regenerate-cluster-blobs",
+      "title": "The OpenAPI document and the SDK are stale after the cluster blob routes",
+      "category": "sdk",
+      "commit": "aacc41aac9",
+      "passed": false,
+      "checks": [],
+      "error": "not run: this task needs a shell tool (regenerating a file) and the agent has none",
+      "duration_ms": 0,
+      "iterations": 0,
+      "tokens": 0,
+      "tool_counts": {},
+      "denied": 0,
+      "run_id": null,
+      "limited": true,
+      "retry_at": null,
+      "workspace": null,
+      "tool_errors": 0,
+      "tool_error_counts": {},
+      "tool_calls": 0,
+      "changed": [],
+      "unrelated": [],
+      "clean": false,
+      "failure_kind": "",
+      "text_tool_call": false,
+      "stopped": ""
+    },
+    {
+      "id": "docs-streaming-more-channels",
+      "title": "The docs still say Matrix, Teams and Google Chat do not stream replies",
+      "category": "docs",
+      "commit": "5772e07c32",
+      "passed": false,
+      "checks": [
+        {
+          "name": "docs/agents/channels-and-devices.md has Matrix, Teams and Google Chat among the streaming channels",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "docs/agents/channels-and-devices.md has the streaming yaml with the three new platforms",
+          "ok": false,
+          "detail": "no match"
+        },
+        {
+          "name": "docs/agents/ROADMAP.md has the Streaming row naming the three channels",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "error": null,
+      "duration_ms": 103640,
+      "iterations": 18,
+      "tokens": 202389,
+      "tool_counts": {
+        "edit_file": 2,
+        "grep": 5,
+        "multi_edit": 1,
+        "read_file": 9
+      },
+      "denied": 0,
+      "run_id": "859da400fd754f85",
+      "limited": false,
+      "retry_at": null,
+      "workspace": null,
+      "tool_errors": 1,
+      "tool_error_counts": {
+        "multi_edit": 1
+      },
+      "tool_calls": 17,
+      "changed": [
+        "docs/agents/ROADMAP.md",
+        "docs/agents/channels-and-devices.md"
+      ],
+      "unrelated": [],
+      "clean": false,
+      "failure_kind": "wrong edit",
+      "text_tool_call": false,
+      "stopped": ""
+    },
+    {
+      "id": "cli-progress-tail",
+      "title": "`abp agent run` streamed progress loses the run's last tool events",
+      "category": "flaky",
+      "commit": "86325ae43b",
+      "passed": false,
+      "checks": [
+        {
+          "name": "tests pass",
+          "ok": false,
+          "detail": "exit 1: E         Use -v to get more diff | tests\\test_abp_cli.py:785: AssertionError | =========================== short test summary info =========================== | FAILED tests/test_abp_cli.py::test_agent_run_streams_progress_through_the_api | !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!! | 1 failed in 3.74s"
+        },
+        {
+          "name": "ruff clean",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "error": null,
+      "duration_ms": 213717,
+      "iterations": 29,
+      "tokens": 323294,
+      "tool_counts": {
+        "edit_file": 2,
+        "grep": 7,
+        "list_dir": 2,
+        "read_file": 12,
+        "repo_map": 1,
+        "run_tests": 4
+      },
+      "denied": 0,
+      "run_id": "2968fef45cf24ed6",
+      "limited": false,
+      "retry_at": null,
+      "workspace": null,
+      "tool_errors": 2,
+      "tool_error_counts": {
+        "edit_file": 1,
+        "run_tests": 1
+      },
+      "tool_calls": 28,
+      "changed": [
+        "abp_cli/__main__.py"
+      ],
+      "unrelated": [],
+      "clean": false,
+      "failure_kind": "wrong edit",
+      "text_tool_call": false,
+      "stopped": ""
+    },
+    {
+      "id": "models-page-backoff",
+      "title": "The Models page logs a WARNING per poll for an unreachable provider",
+      "category": "bugfix",
+      "commit": "29ad2e9632",
+      "passed": false,
+      "checks": [
+        {
+          "name": "tests pass",
+          "ok": false,
+          "detail": "exit 1: E       assert 1 == 3 | tests\\test_live_custom_models_backoff.py:176: AssertionError | =========================== short test summary info =========================== | FAILED tests/test_live_custom_models_backoff.py::test_a_working_provider_is_still_fetched_live_on_every_poll | !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!! | 1 failed, 5 passed in 0.63s"
+        },
+        {
+          "name": "ruff clean",
+          "ok": false,
+          "detail": "r is left blank \u2014 Hermes then decides its\n    |\nhelp: Convert to `X | None`\n    |\n583 |\n    - def local_hermes_default_model() -> Optional[str]:\n584 + def local_hermes_default_model() -> str | None:\n585 |     \"\"\"Hermes Agent's own configured default model, or None if the\n    |\n\nFound 17 errors.\n[*] 12 fixable with the `--fix` option (2 hidden fixes can be enabled with the `--unsafe-fixes` option)."
+        }
+      ],
+      "error": null,
+      "duration_ms": 263437,
+      "iterations": 28,
+      "tokens": 322791,
+      "tool_counts": {
+        "edit_file": 3,
+        "grep": 4,
+        "list_dir": 2,
+        "read_file": 12,
+        "run_tests": 6
+      },
+      "denied": 0,
+      "run_id": "9d6887c0b65c4cd9",
+      "limited": false,
+      "retry_at": null,
+      "workspace": null,
+      "tool_errors": 4,
+      "tool_error_counts": {
+        "edit_file": 1,
+        "run_tests": 3
+      },
+      "tool_calls": 27,
+      "changed": [
+        "bot/models.py"
+      ],
+      "unrelated": [],
+      "clean": false,
+      "failure_kind": "wrong edit",
+      "text_tool_call": false,
+      "stopped": ""
+    }
+  ]
+}

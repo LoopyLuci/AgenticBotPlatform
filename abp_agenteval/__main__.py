@@ -43,6 +43,8 @@ def main(argv=None) -> int:
     run.add_argument("--base-url", default="", help="live only: an OpenAI-compatible endpoint (http://host:port/v1) instead of a provider")
     run.add_argument("--api-key-env", default="", help="live with --base-url: the environment variable holding the endpoint's key (none by default)")
     run.add_argument("--context", type=int, default=0, help="live: tell the agent this model's context window in tokens (default: ABP's guess)")
+    run.add_argument("--small-model", choices=("on", "off", "auto"), default="on",
+                     help="live with --base-url: small-model mode on (default; such an endpoint is not detected as local), off, or auto")
     run.add_argument("--task", action="append", help="run only this task id (repeatable)")
     run.add_argument("--out", help="write the JSON report here")
     run.add_argument("--baseline", help="compare with this earlier report; exit 1 on a regression")
@@ -85,6 +87,9 @@ def main(argv=None) -> int:
             f.add_argument("--shell", choices=("none", "sandbox"), default="none",
                            help="none: the agent has no shell tool; sandbox: run_shell inside the windows_job sandbox without network")
             f.add_argument("--sandbox-path", action="append", help="a folder the sandboxed shell may read (the Python install and venv)")
+            f.add_argument("--small-model", choices=("on", "off", "auto"), default="on",
+                           help="small-model mode (core tools, compact prompt): on (default; a --base-url endpoint is not detected as local, so auto would "
+                                "leave it off), off, or auto")
             f.add_argument("--out", help="write the JSON report here")
             f.add_argument("--keep", action="store_true", help="keep each worktree for inspection (you remove them)")
     cmp_ = sub.add_parser("compare", help="run the suite once per variant of prompt / tool wording and compare (see abp_agenteval/compare.py)")
@@ -154,10 +159,13 @@ def main(argv=None) -> int:
             return 2
         make = lambda _t: _live_transport(args.provider, args.model, args.base_url, args.api_key_env)  # noqa: E731
         mode, model = "live", f"{args.provider}/{args.model}" if not args.base_url else f"endpoint/{args.model}"
-        if args.context:
-            from .factory import agent_environment
+        if args.context or args.base_url:
+            from .factory import agent_environment, small_model_overlay
 
-            scope = agent_environment({"context_windows": {args.model: args.context}})
+            overlay = {"context_windows": {args.model: args.context}} if args.context else {}
+            if args.base_url:
+                overlay.update(small_model_overlay(args.small_model))
+            scope = agent_environment(overlay)
     else:
         make = lambda t: ScriptedTransport(t.script)  # noqa: E731
         mode, model = "scripted", "scripted"
