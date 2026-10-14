@@ -216,6 +216,13 @@ native_agent:
     compact_at: 0.70
     keep_tool_results: 6
   context_windows: {}       # e.g. {my-local-model: 32768}
+  # How a model makes tool calls (bot/agent_runtime/text_toolcalls.py). Default native: the API's tool_calls field.
+  # Whatever the mode, a reply with NO native call is also checked for a call written as text (<tool_call>{json}</tool_call>,
+  # <function=name>, a bare JSON object, a fenced json block); only a tool offered this turn with arguments that fit its schema
+  # is run, and an unusable attempt is put back to the model once. Modes: native | text (tools described in the prompt, no
+  # `tools` field) | grammar (as text, plus a JSON-schema response_format; dropped if the server refuses it).
+  # Keys: "provider/model", a model name, a name prefix, or "*".
+  tool_call_modes: {}       # e.g. {"modelmistress/qwen3": text, my-small-model: grammar}
   # AGENTS.md / CLAUDE.md in the working directory are added to the system prompt (project_rules.py).
   project_rules:
     enabled: true

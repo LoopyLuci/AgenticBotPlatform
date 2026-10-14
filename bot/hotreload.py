@@ -133,6 +133,7 @@ DENYLIST: frozenset[str] = frozenset({
     # errors.py defines ToolError, which callers catch by identity: a reloaded copy would
     # be a different class and their `except ToolError` would stop matching.
     "bot.agent_runtime.errors", "bot.agent_runtime.state",
+    "bot.agent_runtime.text_toolcalls",  # holds the per-model tool-call counters (native / text / repaired / failed)
     # Security layer: permissions.py holds the run-mode ContextVar, taint.py the set of tainted
     # sessions, secrets_guard.py the injected-secret table, mcp_pins.py its warn-once set, and
     # sandbox.py is only ever imported by the (denied) shell module. A reload would reset them.
