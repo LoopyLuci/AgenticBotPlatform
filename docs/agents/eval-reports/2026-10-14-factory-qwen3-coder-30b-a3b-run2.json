@@ -641,7 +641,7 @@
         {
           "name": "tests pass",
           "ok": false,
-          "detail": "exit 1: E                +  where 1 = <Popen: returncode: 1 args: ['Z:\\\\Projects\\\\AgenticBotPlatform\\\\.venv\\\\Scrip...>.returncode | tests\\test_gate.py:1364: AssertionError | =========================== short test summary info =========================== | FAILED tests/test_gate.py::test_two_processes_writing_the_registry_do_not_destroy_each_other | !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!! | 1 failed in 0.94s"
+          "detail": "exit 1: E                +  where 1 = <Popen: returncode: 1 args: ['<path>>.returncode | tests\\test_gate.py:1364: AssertionError | =========================== short test summary info =========================== | FAILED tests/test_gate.py::test_two_processes_writing_the_registry_do_not_destroy_each_other | !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!! | 1 failed in 0.94s"
         }
       ],
       "error": null,

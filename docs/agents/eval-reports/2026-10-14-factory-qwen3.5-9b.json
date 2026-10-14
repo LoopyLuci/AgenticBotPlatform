@@ -422,7 +422,7 @@
         {
           "name": "tests pass",
           "ok": false,
-          "detail": "exit 1: E       UnicodeEncodeError: 'charmap' codec can't encode characters in position 152-156: character maps to <undefined> | C:\\Program Files\\Python311\\Lib\\encodings\\cp1252.py:19: UnicodeEncodeError | =========================== short test summary info =========================== | FAILED tests/test_agenteval.py::test_a_report_the_console_cannot_encode_is_replaced_not_raised | !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!! | 1 failed in 0.95s"
+          "detail": "exit 1: E       UnicodeEncodeError: 'charmap' codec can't encode characters in position 152-156: character maps to <undefined> | <path> Files\\Python311\\Lib\\encodings\\cp1252.py:19: UnicodeEncodeError | =========================== short test summary info =========================== | FAILED tests/test_agenteval.py::test_a_report_the_console_cannot_encode_is_replaced_not_raised | !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!! | 1 failed in 0.95s"
         },
         {
           "name": "ruff clean",
@@ -552,7 +552,7 @@
         {
           "name": "tests pass",
           "ok": false,
-          "detail": "exit 1: E                +  where 1 = <Popen: returncode: 1 args: ['Z:\\\\Projects\\\\AgenticBotPlatform\\\\.venv\\\\Scrip...>.returncode | tests\\test_gate.py:1364: AssertionError | =========================== short test summary info =========================== | FAILED tests/test_gate.py::test_two_processes_writing_the_registry_do_not_destroy_each_other | !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!! | 1 failed in 0.78s"
+          "detail": "exit 1: E                +  where 1 = <Popen: returncode: 1 args: ['<path>>.returncode | tests\\test_gate.py:1364: AssertionError | =========================== short test summary info =========================== | FAILED tests/test_gate.py::test_two_processes_writing_the_registry_do_not_destroy_each_other | !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!! | 1 failed in 0.78s"
         }
       ],
       "error": null,
