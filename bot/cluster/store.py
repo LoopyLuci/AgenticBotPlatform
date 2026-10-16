@@ -82,7 +82,10 @@ def update(table: str, rid: str, **changes: Any) -> Optional[dict]:
 
 def get(table: str, rid: str) -> Optional[dict]:
     assert table in TABLES
-    row = conn().execute(f"SELECT doc FROM {table} WHERE id=?", (rid,)).fetchone()
+    # Under the lock: use_path() closes the connection under it, and closing a sqlite3 connection
+    # while another thread is inside execute() on it is an access violation that kills the process.
+    with _lock:
+        row = conn().execute(f"SELECT doc FROM {table} WHERE id=?", (rid,)).fetchone()
     return json.loads(row[0]) if row else None
 
 
@@ -94,7 +97,9 @@ def list_(table: str, *, states: Optional[tuple] = None, limit: int = 100) -> li
         args += list(states)
     q += " ORDER BY created DESC LIMIT ?"
     args.append(int(limit))
-    return [json.loads(r[0]) for r in conn().execute(q, args).fetchall()]
+    with _lock:                                   # see get()
+        rows = conn().execute(q, args).fetchall()
+    return [json.loads(r[0]) for r in rows]
 
 
 def prune(table: str, older_than_s: float) -> int:

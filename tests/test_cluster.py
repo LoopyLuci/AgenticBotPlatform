@@ -347,3 +347,28 @@ def test_the_inventory_reports_this_machine():
     node = membership.this_node()
     assert {"id", "name", "static", "live", "offer", "capacity", "free", "available"} <= set(node)
     assert "work_dir" not in node["offer"]                              # where jobs run stays private
+
+
+def test_swapping_the_store_while_another_thread_reads_it_does_not_crash(tmp_path):
+    # A finishing job's thread reading the store while the next test's fixture swaps the file closed the
+    # connection mid-execute(): an access violation that killed the whole pytest worker.
+    stop = threading.Event()
+    store.use_path(tmp_path / "a.sqlite3")
+    store.put("runs", {"id": "x", "state": "done"})
+
+    def reader():
+        while not stop.is_set():
+            store.get("runs", "x")
+            store.list_("runs")
+    ts = [threading.Thread(target=reader) for _ in range(4)]
+    for t in ts:
+        t.start()
+    try:
+        for i in range(60):
+            store.use_path(tmp_path / f"b{i % 3}.sqlite3")
+            store.put("runs", {"id": "x", "state": "done"})
+    finally:
+        stop.set()
+        for t in ts:
+            t.join()
+        store.use_path(None)

@@ -294,7 +294,14 @@ class Registry:
 
     def record_for(self, pid: int) -> Optional[Record]:
         with self._lock:
-            return self._records.get(int(pid))
+            row = self._records.get(int(pid))
+        if row is not None and not row.alive() and row.create_time > 0:
+            # An exited record is history, but Windows hands the pid out again within moments: when the
+            # pid is now a different live process, the record is not about it.
+            now = create_time_of(row.pid)
+            if now and abs(now - row.create_time) > CREATE_TIME_SLACK_S:
+                return None
+        return row
 
     # ---- the tree below a recorded process -----------------------------------------------------
     def record_descendants(self, pid: int, *, wait: float = 0.0, interval: float = 0.05) -> list[Record]:

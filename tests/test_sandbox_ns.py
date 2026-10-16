@@ -870,3 +870,14 @@ def test_the_diagnostics_processes_panel_is_in_both_uis_and_wired():
         for needle in ("renderSandboxCells", "renderSandboxProcesses", "renderSandboxEvents", "/api/sandbox/status"):
             assert needle in text, f"{rel} never calls {needle}"
         assert "data-kill-cell" in text, f"{rel} cannot stop a cell from the page"
+
+
+def test_an_exited_record_is_not_reported_for_a_pid_that_is_now_another_process(tmp_path):
+    reg = Registry(path=tmp_path / "live.json", run_id="reuse-lookup")
+    me = os.getpid()
+    row = reg.record(pid=me, argv=["python", "old"], create_time=time.time() - 3600, owner="t", write=False)
+    reg.finish(me)
+    assert reg.record_for(me) is None, "the pid is a different, live process now: the old record is not about it"
+    row = reg.record(pid=me, argv=["python", "this"], owner="t", write=False)       # the real create time
+    reg.finish(me)
+    assert reg.record_for(me) is row, "the same process's own exited record is still history worth keeping"
