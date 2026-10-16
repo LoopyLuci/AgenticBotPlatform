@@ -14,6 +14,10 @@ import shutil
 import tempfile
 from pathlib import Path
 
+# The developer's private overlay (ABP_PRIVATE_DIR, bot/extensions.py) is read at import time too: drop it before any
+# bot module loads, so a test run never sees the developer's private config or extensions.
+os.environ.pop("ABP_PRIVATE_DIR", None)
+
 # Must run BEFORE any `from bot...` import anywhere in the test session —
 # bot/support_bot/hybrid.py loads its persisted classifier state from
 # bot.support_bot.model_io.CURRENT_PATH once, at module import time, not
@@ -117,6 +121,9 @@ def _isolated_cicd_event_store(monkeypatch, tmp_path):
     # developer's running ABP.
     monkeypatch.setenv("ABP_POLLER_CLAIM_DIR", str(tmp_path / "poller-claims"))
     monkeypatch.delenv("ABP_CICD_RUN", raising=False)
+    # The developer's private overlay (bot/extensions.py): its config and extensions must never leak into a test;
+    # tests that exercise the overlay set their own.
+    monkeypatch.delenv("ABP_PRIVATE_DIR", raising=False)
     # The model catalog (models.dev) is a downloaded cache; a test must never see the developer's copy.
     from bot import model_catalog, model_pricing
     from bot.agent_runtime import context_window

@@ -307,12 +307,15 @@ def test_only_the_owner_changes_the_offer_and_peers_see_only_their_own_jobs(clus
 def test_the_owner_submits_and_follows_a_job(cluster):
     c = TestClient(_app("dashboard"))
     p = c.post("/api/cluster/jobs", json={"kind": "python", "spec": {"code": "print('via api')"}}).json()
-    for _ in range(100):
+    # Deadline-based like _wait_run: a fixed 10 s (100 x 0.1 s) is shorter than a
+    # python subprocess can take to start and finish on a loaded machine.
+    deadline = time.time() + 60
+    while time.time() < deadline:
         p = c.get(f"/api/cluster/jobs/{p['id']}").json()
         if p["state"] == "done":
             break
         time.sleep(0.1)
-    assert p["state"] == "done"
+    assert p["state"] == "done", p
     assert "via api" in c.get(f"/api/cluster/jobs/{p['id']}/logs").json()["text"]
     assert c.post("/api/cluster/jobs", json={"kind": "python", "spec": {}}).status_code == 400
     r = c.post("/api/cluster/jobs", json={"kind": "python", "spec": {"code": "1"}, "req": {"cpu": 99}})

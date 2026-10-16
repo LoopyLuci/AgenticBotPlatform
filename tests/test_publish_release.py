@@ -298,9 +298,10 @@ def test_version_bumps_keep_each_files_own_line_endings(env, eol):
 
 
 # ---- installer selection (a stale 0.7.99 installer once shipped as 0.7.28) ---------------
-def _nsis(tmp_path, monkeypatch, names):
+def _nsis(tmp_path, monkeypatch, names, target=None):
     d = tmp_path / "desk"
-    nsis = d / "target" / "release" / "bundle" / "nsis"
+    monkeypatch.delenv("CARGO_TARGET_DIR", raising=False)
+    nsis = (target or d / "target") / "release" / "bundle" / "nsis"
     nsis.mkdir(parents=True)
     for n in names:
         (nsis / n).write_bytes(b"x")
@@ -340,3 +341,37 @@ def test_a_stray_installer_on_the_published_release_is_caught(tmp_path, monkeypa
     monkeypatch.setattr(g, "_run", lambda *a, **k: g.CmdResult(0, listing))
     with pytest.raises(pr.ReleaseError, match="unexpected installer"):
         pr.verify_published_assets("v0.7.28", inst, sig, sleep=lambda s: None)
+
+
+def test_cargo_target_dir_absolute_is_where_the_installer_is_looked_for(tmp_path, monkeypatch):
+    tgt = tmp_path / "elsewhere"
+    nsis = _nsis(tmp_path, monkeypatch, ["App_0.7.28_x64-setup.exe"], target=tgt)
+    monkeypatch.setenv("CARGO_TARGET_DIR", str(tgt))
+    monkeypatch.setattr(g, "installer_product_version", lambda p: "0.7.28")
+    assert pr.build_desktop("0.7.28") == nsis / "App_0.7.28_x64-setup.exe"
+
+
+def test_cargo_target_dir_relative_is_resolved_against_the_desktop_dir(tmp_path, monkeypatch):
+    nsis = _nsis(tmp_path, monkeypatch, ["App_0.7.28_x64-setup.exe"], target=tmp_path / "desk" / "out" / "t")
+    monkeypatch.setenv("CARGO_TARGET_DIR", str(Path("out") / "t"))
+    monkeypatch.setattr(g, "installer_product_version", lambda p: "0.7.28")
+    assert pr.build_desktop("0.7.28") == nsis / "App_0.7.28_x64-setup.exe"
+
+
+def test_cargo_target_dir_set_but_installer_only_in_checkout_target_is_an_error(tmp_path, monkeypatch):
+    _nsis(tmp_path, monkeypatch, ["App_0.7.28_x64-setup.exe"])
+    monkeypatch.setenv("CARGO_TARGET_DIR", str(tmp_path / "empty"))
+    with pytest.raises(pr.ReleaseError, match=r"no \*-setup\.exe"):
+        pr.build_desktop("0.7.28")
+
+
+def test_the_guard_watches_the_cargo_target_dir_too(tmp_path, monkeypatch):
+    desk = tmp_path / "r" / g.DESKTOP_REL
+    monkeypatch.delenv("CARGO_TARGET_DIR", raising=False)
+    assert g.build_target_dir(desk) == desk / "target"
+    assert len(g._guarded_dirs(tmp_path / "r")) == 2
+    monkeypatch.setenv("CARGO_TARGET_DIR", str(tmp_path / "ct"))
+    assert g.build_target_dir(desk) == tmp_path / "ct"
+    assert g._norm(tmp_path / "ct") in g._guarded_dirs(tmp_path / "r")
+    assert g._is_build_tool_path(str(tmp_path / "ct" / "release" / "build" / "x.exe"), tmp_path / "r")
+    assert not g._is_build_tool_path(str(tmp_path / "ct" / "release" / "app.exe"), tmp_path / "r")

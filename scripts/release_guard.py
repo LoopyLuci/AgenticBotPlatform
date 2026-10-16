@@ -360,18 +360,42 @@ def report(checks: list[Check], out=print) -> list[Check]:
 # Build products live under these; nothing that is currently *building* runs
 # out of them (rustc/cargo run from the toolchain, build scripts from
 # target/<profile>/build|deps, which are excluded below).
+def build_target_dir(desktop_dir: Path) -> Path:
+    """Where cargo/tauri write the BUILD output: CARGO_TARGET_DIR when set (a
+    relative value is taken from the build's cwd, desktop_dir, as cargo does),
+    else desktop_dir/target."""
+    override = (os.environ.get("CARGO_TARGET_DIR") or "").strip()
+    if not override:
+        return desktop_dir / "target"
+    p = Path(override).expanduser()
+    return p if p.is_absolute() else desktop_dir / p
+
+
+def _target_dirs(desktop_dir: Path) -> list[Path]:
+    """The in-checkout target/ (the deployed app runs out of it) plus the
+    CARGO_TARGET_DIR build output when that differs."""
+    dirs = [desktop_dir / "target"]
+    built = build_target_dir(desktop_dir)
+    if _norm(built) != _norm(dirs[0]):
+        dirs.append(built)
+    return dirs
+
+
 def _guarded_dirs(root: Path) -> list[str]:
     d = root / DESKTOP_REL
-    return [_norm(d / "target"), _norm(d / "stage")]
+    return [_norm(t) for t in _target_dirs(d)] + [_norm(d / "stage")]
 
 
 def _is_build_tool_path(exe: str, root: Path) -> bool:
     n = _norm(exe)
-    tgt = _norm(root / DESKTOP_REL / "target")
-    if not n.startswith(tgt + os.sep):
-        return False
-    parts = n[len(tgt) + 1:].split(os.sep)
-    return len(parts) >= 2 and parts[1] in ("build", "deps", "incremental", ".fingerprint")
+    for t in _target_dirs(root / DESKTOP_REL):
+        tgt = _norm(t)
+        if not n.startswith(tgt + os.sep):
+            continue
+        parts = n[len(tgt) + 1:].split(os.sep)
+        if len(parts) >= 2 and parts[1] in ("build", "deps", "incremental", ".fingerprint"):
+            return True
+    return False
 
 
 def find_lock_holders(root: Path = ROOT) -> list[psutil.Process]:
@@ -468,7 +492,8 @@ def locked_files(root: Path = ROOT, limit: int = 4000) -> list[str]:
     """Files a build must overwrite that something still holds open. Loaded
     .pyd/.dll/.exe files refuse a write-open on Windows; that's the probe."""
     d = root / DESKTOP_REL
-    roots = [d / "stage" / ".venv", d / "target" / "release" / ".venv"]
+    targets = _target_dirs(d)
+    roots = [d / "stage" / ".venv"] + [t / "release" / ".venv" for t in targets]
     files: list[Path] = []
     for base in roots:
         if not base.is_dir():
@@ -479,7 +504,7 @@ def locked_files(root: Path = ROOT, limit: int = 4000) -> list[str]:
                     files.append(Path(dirpath) / n)
             if len(files) >= limit:
                 break
-    for pattern_dir in (d / "target" / "release", d / "target" / "release" / "bundle" / "nsis"):
+    for pattern_dir in [x for t in targets for x in (t / "release", t / "release" / "bundle" / "nsis")]:
         if pattern_dir.is_dir():
             files += [p for p in pattern_dir.iterdir() if p.suffix.lower() == ".exe"]
     locked = []

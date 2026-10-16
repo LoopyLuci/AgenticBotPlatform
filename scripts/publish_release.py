@@ -216,7 +216,7 @@ def assert_stable(expected_head: str) -> None:
 def build_desktop(version: str) -> Path:
     retrying(["cargo", "tauri", "build"], cwd=DESKTOP_DIR, attempts=3, base_delay=5, timeout=BUILD_TIMEOUT,
              heal=lambda: guard.heal_locks(ROOT), what="cargo tauri build")
-    nsis_dir = DESKTOP_DIR / "target" / "release" / "bundle" / "nsis"
+    nsis_dir = guard.build_target_dir(DESKTOP_DIR) / "release" / "bundle" / "nsis"
     candidates = sorted(nsis_dir.glob("*-setup.exe")) if nsis_dir.exists() else []
     if not candidates:
         raise ReleaseError(
