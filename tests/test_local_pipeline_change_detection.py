@@ -91,3 +91,50 @@ def test_changed_files_new_remote_ref_falls_back_to_merge_base(monkeypatch):
         __import__("io").StringIO(f"refs/heads/main newsha refs/heads/main {'0' * 40}\n"),
     )
     assert local_pipeline.changed_files() == {"bot/router.py"}
+
+
+# ---- which running processes the pipeline may stop (never another checkout's or install's) ------------------
+class _FakeProc:
+    def __init__(self, pid, name, exe, cmdline=()):
+        self.info = {"pid": pid, "name": name, "exe": exe, "cmdline": list(cmdline)}
+
+
+def _fake_processes(monkeypatch, tmp_path, procs):
+    monkeypatch.setattr(local_pipeline, "ROOT", tmp_path / "checkout")
+    monkeypatch.delenv("CARGO_TARGET_DIR", raising=False)
+    monkeypatch.setattr(local_pipeline.psutil, "process_iter", lambda attrs=None: iter(procs))
+
+
+def test_an_app_running_from_another_install_is_never_stopped(monkeypatch, tmp_path):
+    other = tmp_path / "live" / "desktop-app" / "src-tauri" / "target" / "release" / local_pipeline._EXE_NAME
+    _fake_processes(monkeypatch, tmp_path, [_FakeProc(11, local_pipeline._EXE_NAME, str(other))])
+    assert local_pipeline.find_running_instance() is None
+
+
+def test_an_app_running_from_this_checkouts_build_is_found(monkeypatch, tmp_path):
+    mine = tmp_path / "checkout" / "desktop-app" / "src-tauri" / "target" / "release" / local_pipeline._EXE_NAME
+    other = tmp_path / "live" / "x" / local_pipeline._EXE_NAME
+    _fake_processes(monkeypatch, tmp_path, [_FakeProc(11, local_pipeline._EXE_NAME, str(other)),
+                                            _FakeProc(12, local_pipeline._EXE_NAME, str(mine))])
+    assert local_pipeline.find_running_instance() == 12
+
+
+def test_an_app_running_from_the_cargo_target_dir_build_is_found(monkeypatch, tmp_path):
+    _fake_processes(monkeypatch, tmp_path, [])
+    monkeypatch.setenv("CARGO_TARGET_DIR", str(tmp_path / "tgt"))
+    built = tmp_path / "tgt" / "release" / local_pipeline._EXE_NAME
+    monkeypatch.setattr(local_pipeline.psutil, "process_iter",
+                        lambda attrs=None: iter([_FakeProc(13, local_pipeline._EXE_NAME, str(built))]))
+    assert local_pipeline.find_running_instance() == 13
+
+
+def test_only_this_checkouts_mcp_servers_are_stopped(monkeypatch, tmp_path):
+    venv = tmp_path / "checkout" / "desktop-app" / "src-tauri" / "target" / "release" / ".venv" / "Scripts" / "python.exe"
+    live = tmp_path / "live" / ".venv" / "Scripts" / "python.exe"
+    _fake_processes(monkeypatch, tmp_path, [
+        _FakeProc(21, "python.exe", str(venv), ["python", "-m", "bot.mcp_server"]),
+        _FakeProc(22, "python.exe", str(live), ["python", "-m", "bot.mcp_server"]),
+        _FakeProc(23, "python.exe", str(venv), ["python", "-m", "bot.main"]),
+        _FakeProc(24, "python.exe", None, ["python", "-m", "bot.mcp_server"]),
+    ])
+    assert local_pipeline.find_mcp_server_pids() == [21]

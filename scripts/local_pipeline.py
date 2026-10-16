@@ -264,17 +264,40 @@ def find_running_instance() -> Optional[int]:
     spawning a *second* process that holds .venv files open — so as long
     as a previously-built instance is running, the copy step can never
     overwrite its own bundled venv's loaded extension modules and every
-    Rust check fails identically and deterministically, not flakily."""
-    if IS_WINDOWS:
-        out = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-Command",
-             f"(Get-CimInstance Win32_Process -Filter \"Name='{_EXE_NAME}'\").ProcessId"],
-            capture_output=True, text=True,
-        )
-    else:
-        out = subprocess.run(["pgrep", "-x", _EXE_NAME], capture_output=True, text=True)
-    first_line = out.stdout.strip().splitlines()[0].strip() if out.stdout.strip() else ""
-    return int(first_line) if first_line.isdigit() else None
+    Rust check fails identically and deterministically, not flakily.
+
+    Only an instance running out of THIS checkout's build folders counts: one
+    started from another checkout or install (say the owner's live ABP, while
+    the pipeline runs in an integration worktree) holds a different venv, can't
+    block this build, and is never stopped."""
+    for pid, exe in _processes_named(_EXE_NAME):
+        if _in_build_dirs(exe):
+            return pid
+    return None
+
+
+def _build_dirs() -> list[str]:
+    """This checkout's folders a build writes the bundled venv into (normalised, with a trailing separator)."""
+    return [os.path.join(p, "") for p in release_guard._guarded_dirs(ROOT)]
+
+
+def _in_build_dirs(path: Optional[str]) -> bool:
+    if not path:
+        return False
+    p = os.path.normcase(os.path.abspath(path))
+    return any(p.startswith(os.path.normcase(d)) for d in _build_dirs())
+
+
+def _processes_named(name: str) -> list[tuple[int, Optional[str]]]:
+    """(pid, executable path) of every process with this image name; the path is None when it can't be read."""
+    found = []
+    for proc in psutil.process_iter(["pid", "name", "exe"]):
+        try:
+            if (proc.info["name"] or "").lower() == name.lower():
+                found.append((proc.info["pid"], proc.info["exe"]))
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return found
 
 
 def _pid_alive(pid: int) -> bool:
@@ -317,17 +340,19 @@ def find_mcp_server_pids() -> list[int]:
     compiled extension modules (cryptography's _rust.pyd, etc.) mapped
     into memory — Tauri's build script then fails with a locked-file
     error that looks identical to, but has a different root cause than,
-    agentic-bot-platform.exe still running."""
-    if IS_WINDOWS:
-        out = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-Command",
-             "(Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
-             "Where-Object { $_.CommandLine -like '*bot.mcp_server*' }).ProcessId"],
-            capture_output=True, text=True,
-        )
-    else:
-        out = subprocess.run(["pgrep", "-f", "bot.mcp_server"], capture_output=True, text=True)
-    return [int(p) for p in out.stdout.split() if p.strip().isdigit()]
+    agentic-bot-platform.exe still running.
+
+    Only servers whose Python lives in THIS checkout's build folders count
+    (see find_running_instance): another install's MCP servers are left alone."""
+    pids = []
+    for proc in psutil.process_iter(["pid", "exe", "cmdline"]):
+        try:
+            cmd = " ".join(proc.info["cmdline"] or [])
+            if "bot.mcp_server" in cmd and _in_build_dirs(proc.info["exe"]):
+                pids.append(proc.info["pid"])
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return pids
 
 
 def stop_mcp_servers(pids: list[int]) -> None:
