@@ -19,6 +19,40 @@ _completer: Optional[Completer] = None
 class NoLocalModel(RuntimeError):
     """No local model is available (or the one asked for is not local)."""
 
+    release_task = True      # not the task's fault: the board task is handed back (bounded) instead of failed
+
+
+class WorkerModelError(RuntimeError):
+    """The agent's model could not be reached or failed before it did anything (no tool call): not the task's fault."""
+
+    release_task = True
+
+
+def transport_for_ref(ref: str):
+    """(transport, model name) for a local model ref. Never the Anthropic transport: abp_run's split_model/transport_for fall back to it
+    when the provider is unknown, which would silently send local work to a cloud model, so an unknown provider is refused here."""
+    head, _, tail = str(ref).partition("/")
+    if not tail or head in ("", "anthropic"):
+        raise NoLocalModel(f"{ref!r} is not a provider/model reference to a local model")
+    from bot import providers
+    from bot.capacity import routing
+
+    if not routing.is_local_ref(ref):
+        raise NoLocalModel(f"{ref} is not a local model; the conductor uses local models only")
+    if head in providers.list_providers():
+        from abp_run.core import transport_for
+
+        return transport_for(head, tail), tail
+    if head == "modelmistress":                      # a hub found by ABP_MODELMISTRESS_URL / the config rather than the module registry
+        from bot.agent_runtime.transports import build_openai_transport
+        from bot.modelmistress import client as mm
+
+        hub = mm.find()
+        if hub is not None:
+            return build_openai_transport(protocol="openai", base_url=hub.openai_base, api_key=hub.token or "unused",
+                                          name="modelmistress"), tail
+    raise NoLocalModel(f"no provider {head!r} is available (is its hub running?)")
+
 
 def set_completer(fn: Optional[Completer]) -> None:
     global _completer
@@ -45,15 +79,12 @@ async def complete(prompt: str, *, system: str = "", max_tokens: int = 2000, mod
     refs = candidates(model, avoid)
     if not refs:
         raise NoLocalModel("no local model is available (start ModelMistress or Ollama)")
-    from abp_run.core import split_model, transport_for
-
     last: Optional[BaseException] = None
     for ref in refs:
         try:
             if "/" not in ref or ref.startswith("anthropic/"):      # a bare name would resolve to the Anthropic transport
                 continue
-            provider, name = split_model(ref, default_provider="")
-            transport = transport_for(provider, name)
+            transport, name = transport_for_ref(ref)
             resp = await asyncio.wait_for(
                 transport.send(model=name, history=[transport.user_message(prompt)], tool_schemas=[], max_tokens=max_tokens,
                                timeout_s=timeout_s, system_prompt=system), timeout=timeout_s + 10)

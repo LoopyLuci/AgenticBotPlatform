@@ -389,7 +389,7 @@ def test_two_rejections_escalate_and_block_the_dependents(repo, tmp_path):
         assert len(esc) == 1 and esc[0]["task_key"] == plan.tasks[0].key and "2 review rejections" in esc[0]["reason"]
         assert "--verbose" in esc[0]["reason"]
         task = next(t for t in board.list_tasks(limit=20) if t["key"] == plan.tasks[0].key)
-        assert task["state"] == "failed" and task["note"].startswith("ESCALATED")
+        assert task["state"] == "blocked" and task["note"].startswith("ESCALATED")
         assert store.list_queue() == []
     finally:
         board.close()

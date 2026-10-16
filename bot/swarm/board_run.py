@@ -26,7 +26,7 @@ from typing import Any, Awaitable, Callable, Optional
 
 from bot import coordination
 from bot.capacity import follow
-from bot.coordination.model import TERMINAL, BoardError, Unavailable
+from bot.coordination.model import HALTED, BoardError, Blocked, Unavailable
 from bot.coordination.session import WorkLost, WorkSession, acall
 
 logger = logging.getLogger("bot.swarm.board_run")
@@ -66,6 +66,7 @@ class SwarmBoard:
         self.step_of: dict[str, Step] = {}                # task id -> step
         self.results: dict[str, dict] = {}                # step id -> full output of a step this process ran
         self._changed = asyncio.Event()
+        self.max_workers: Optional[int] = None            # parallel workers; None = the coordination setting
         self._requeues: dict[str, int] = {}               # step id -> times handed back for a capacity error
 
     # --------------------------------------------------------------- public
@@ -75,7 +76,7 @@ class SwarmBoard:
         if self.board is None:
             self.board = await coordination.aget_board()
         pending = await self._create(steps)
-        workers = max(1, min(len(pending), coordination.settings()["swarm_workers"]))
+        workers = max(1, min(len(pending), self.max_workers or coordination.settings()["swarm_workers"]))
         caps = sorted({self.run_token, *(f"instance:{s.instance_id}" for s in steps)})
         try:
             await asyncio.gather(*[self._worker(f"swarm:{self.run_id}:w{i}", caps, pending) for i in range(workers)])
@@ -146,6 +147,11 @@ class SwarmBoard:
                     out.update(status="success", result=text)
                 except asyncio.CancelledError:
                     raise
+                except Blocked as exc:                    # stopped on purpose, waiting for a decision: not a failure, not retried
+                    out.update(status="blocked", error=str(exc), context=exc.context)
+                    self.results[step.id] = out
+                    work.block(str(exc)[:500], dict(out))
+                    return
                 except Exception as exc:  # noqa: BLE001 - one member's failure (any kind) is that step's, never the swarm's
                     if self._hand_back(step, exc):
                         work.release(f"capacity: {exc}"[:300])
@@ -169,7 +175,7 @@ class SwarmBoard:
     def _hand_back(self, step: Step, exc: BaseException) -> bool:
         """A step failed because cloud capacity ran out: give it back to the board so it runs again on what the state allows."""
         try:
-            if not follow.is_capacity_error(exc) or self._requeues.get(step.id, 0) >= follow.MAX_REQUEUES:
+            if not (follow.is_capacity_error(exc) or getattr(exc, "release_task", False)) or self._requeues.get(step.id, 0) >= follow.MAX_REQUEUES:
                 return False
             self._requeues[step.id] = self._requeues.get(step.id, 0) + 1
             logger.info("swarm step %s hit a capacity limit; handed back to the board (%d)", step.id, self._requeues[step.id])
@@ -197,7 +203,7 @@ class SwarmBoard:
         """Nothing runnable for this worker. True when its work is over; else it has waited (or adopted a step)."""
         tasks = {t["id"]: t for t in await acall(self.board, self.board.list_tasks, self.board_name, limit=5000)}
         mine = {tid: tasks[tid] for tid in pending if tid in tasks}
-        if len(mine) < len(pending) or all(t["state"] in TERMINAL for t in mine.values()):
+        if len(mine) < len(pending) or all(t["state"] in HALTED for t in mine.values()):
             return True
         active = [t for t in mine.values() if t["state"] in ("claimed", "running", "review")]
         open_ = [t for t in mine.values() if t["state"] == "open"]
@@ -226,7 +232,7 @@ class SwarmBoard:
     @staticmethod
     def _blocked_by_failure(mine: dict[str, dict]) -> set[str]:
         """Open steps that can never run because something they depend on failed or was cancelled."""
-        dead = {tid for tid, t in mine.items() if t["state"] in ("failed", "cancelled")}
+        dead = {tid for tid, t in mine.items() if t["state"] in ("failed", "cancelled", "blocked")}
         stuck: set[str] = set()
         grew = True
         while grew:
@@ -245,7 +251,7 @@ class SwarmBoard:
         for tid in pending:
             try:
                 task = await acall(self.board, self.board.get_task, tid)
-                if task["state"] not in TERMINAL and self.run_token in task["needs"]:
+                if task["state"] not in HALTED and self.run_token in task["needs"]:
                     await acall(self.board, self.board.cancel, tid, agent=f"swarm-run:{self.run_id}", note="the run ended")
             except Exception:  # noqa: BLE001 - tidying up must not hide the run's own outcome
                 logger.debug("could not tidy task %s", tid, exc_info=True)
@@ -259,7 +265,7 @@ class SwarmBoard:
             task = await acall(self.board, self.board.get_task, self.task_of[step.id])
             if isinstance(task.get("result"), dict):
                 out[step.id] = task["result"]
-            elif task["state"] in ("failed", "done"):
+            elif task["state"] in ("failed", "done", "blocked"):
                 out[step.id] = {"step": step.label, "instance_id": step.instance_id, "role": step.role, **step.extra,
                                 "status": "failed", "error": task.get("note") or "the step did not finish"}
         return out

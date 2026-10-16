@@ -32,6 +32,9 @@ CREATE TABLE IF NOT EXISTS queue_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, qu
 CREATE INDEX IF NOT EXISTS queue_audit_q ON queue_audit(queue_id);
 CREATE TABLE IF NOT EXISTS escalations (id INTEGER PRIMARY KEY AUTOINCREMENT, plan_id TEXT NOT NULL, task_key TEXT NOT NULL,
     reason TEXT NOT NULL, created REAL NOT NULL, resolved INTEGER NOT NULL DEFAULT 0, data TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS toolcalls (id INTEGER PRIMARY KEY AUTOINCREMENT, plan_id TEXT NOT NULL, task_key TEXT NOT NULL,
+    attempt INTEGER NOT NULL DEFAULT 1, created REAL NOT NULL, summary TEXT NOT NULL DEFAULT '', data TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS toolcalls_task ON toolcalls(plan_id, task_key);
 """
 
 
@@ -89,9 +92,13 @@ def add_review(plan_id: str, task_key: str, branch: str, report: dict) -> int:
 
 
 def rejections(plan_id: str, task_key: str) -> int:
+    """Rejections since the task's last resolved escalation (a decision starts it afresh)."""
     with _db() as c:
-        row = c.execute("SELECT COUNT(*) n FROM reviews WHERE plan_id = ? AND task_key = ? AND verdict = 'reject'",
-                        (plan_id, task_key)).fetchone()
+        since = 0
+        for r in c.execute("SELECT data FROM escalations WHERE plan_id = ? AND task_key = ? AND resolved = 1", (plan_id, task_key)):
+            since = max(since, int((_json(r["data"]) or {}).get("review_id") or 0))
+        row = c.execute("SELECT COUNT(*) n FROM reviews WHERE plan_id = ? AND task_key = ? AND verdict = 'reject' AND id > ?",
+                        (plan_id, task_key, since)).fetchone()
     return int(row["n"])
 
 
@@ -225,9 +232,12 @@ def finish_push(queue_id: str, by: str, status: str, detail: str = "") -> dict:
 
 # ---------------------------------------------------------- escalations
 def escalate(plan_id: str, task_key: str, reason: str, data: Optional[dict] = None) -> int:
+    """Record that a task needs a decision. `data` carries the blocked context (kind, question, failing check, diff excerpt)."""
     with _db() as c:
+        last = c.execute("SELECT MAX(id) m FROM reviews WHERE plan_id = ? AND task_key = ?", (plan_id, task_key)).fetchone()["m"]
+        data = {**(data or {}), "review_id": int(last or 0)}
         cur = c.execute("INSERT INTO escalations(plan_id, task_key, reason, created, data) VALUES (?,?,?,?,?)",
-                        (plan_id, task_key, reason[:500], time.time(), json.dumps(data or {})))
+                        (plan_id, task_key, reason[:500], time.time(), json.dumps(data)))
         return int(cur.lastrowid or 0)
 
 
@@ -242,3 +252,30 @@ def list_escalations(open_only: bool = True, limit: int = 50) -> list[dict]:
 def resolve_escalation(esc_id: int) -> None:
     with _db() as c:
         c.execute("UPDATE escalations SET resolved = 1 WHERE id = ?", (esc_id,))
+
+
+def open_escalation(plan_id: str, task_key: str) -> Optional[dict]:
+    with _db() as c:
+        r = c.execute("SELECT * FROM escalations WHERE plan_id = ? AND task_key = ? AND resolved = 0 ORDER BY id DESC LIMIT 1",
+                      (plan_id, task_key)).fetchone()
+    return None if r is None else {"id": r["id"], "plan_id": r["plan_id"], "task_key": r["task_key"], "reason": r["reason"],
+                                   "created": r["created"], "resolved": False, "data": _json(r["data"]) or {}}
+
+
+# ----------------------------------------------------------- tool calls
+def add_tool_calls(plan_id: str, task_key: str, attempt: int, calls: list, summary: str = "") -> int:
+    """Every tool call a worker's agent made on a task attempt (the confined runner's audit trail), as the agent's trace has them."""
+    with _db() as c:
+        cur = c.execute("INSERT INTO toolcalls(plan_id, task_key, attempt, created, summary, data) VALUES (?,?,?,?,?,?)",
+                        (plan_id, task_key, int(attempt), time.time(), summary[:500], json.dumps(list(calls), default=str)))
+        return int(cur.lastrowid or 0)
+
+
+def list_tool_calls(plan_id: str, task_key: str = "") -> list[dict]:
+    sql, args = "SELECT * FROM toolcalls WHERE plan_id = ?", [plan_id]
+    if task_key:
+        sql, args = sql + " AND task_key = ?", args + [task_key]
+    with _db() as c:
+        rows = c.execute(sql + " ORDER BY id", args).fetchall()
+    return [{"id": r["id"], "task_key": r["task_key"], "attempt": r["attempt"], "created": r["created"], "summary": r["summary"],
+             "calls": _json(r["data"]) or []} for r in rows]

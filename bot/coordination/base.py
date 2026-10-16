@@ -61,6 +61,13 @@ class Board:
     def cancel(self, task_id: str, *, agent: str = "", note: str = "") -> dict:
         raise NotImplementedError
 
+    def unblock(self, task_id: str, *, by: str, note: str = "") -> dict:
+        """Put a `blocked` task back to `open` after a decision. A board without a blocked state refuses."""
+        from bot.coordination.model import BoardError
+
+        raise BoardError("NOT_BLOCKED", f"the {self.name} board has no blocked state (a blocked task there is failed with a BLOCKED: note)",
+                         status=400)
+
     # ---- locks ----
     def acquire(self, agent: str, resources: list, *, task: Optional[str] = None,
                 lease_s: Optional[float] = None) -> dict:

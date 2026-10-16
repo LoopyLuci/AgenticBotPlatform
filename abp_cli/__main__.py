@@ -41,7 +41,7 @@ Commands:
   coordination summary|tasks|locks        the work board: who is doing what, what waits and why, who holds which files
   capacity status|set|clear|history|probe|policy|packs  the capacity governor: cloud-led / hybrid / local-only, why, and the owner override
                                           (`capacity set local-only --for 2h --reason "usage cap"`; `capacity clear` = automatic)
-  conductor plan|run|review|status|queue|approve|reject|push  the local conductor: plan a goal, run it in a repo, review a diff
+  conductor plan|run|review|status|queue|approve|reject|push|unblock  the local conductor: plan a goal, run it in a repo, review a diff
                                           against the standing rules, the push queue (`conductor approve ID --by owner`)
   vision status|analyze|find|compare|edit|fetch
                                           computer vision here (OpenCV + its model zoo): objects, faces, text,
@@ -1847,6 +1847,16 @@ async def _conductor(args, client: DashboardClient) -> int:
         return 0
     if sub == "run":
         return await _conductor_run(args)
+    if sub == "unblock":
+        from bot.conductor import run as crun
+
+        try:
+            res = crun.Conductor(args.repo or ".", None).unblock(args.plan_id, args.task_key, args.by, args.note)
+        except (KeyError, ValueError) as exc:
+            print(f"conductor: {exc}", file=sys.stderr)
+            return 1
+        print(json.dumps(res) if args.json else f"unblocked {args.task_key} (escalation {res['escalation']}, board task: {res['board']})")
+        return 0
     if sub == "review":
         from bot.conductor import reviewer
         import asyncio as _aio
@@ -1898,8 +1908,14 @@ async def _conductor_run(args) -> int:
     from bot.conductor import run as crun
 
     repo = _os.path.abspath(args.repo)
-    worker = crun.AgentLoopWorker(repo, model=args.model)
-    cond = crun.Conductor(repo, worker, base=args.base or None)
+    from bot.conductor import confine
+
+    try:
+        worker = crun.AgentLoopWorker(repo, model=args.model, shell=getattr(args, "shell", "none"))
+    except confine.SandboxUnavailable as exc:          # never degrade to an unconfined shell
+        print(f"conductor: {exc}", file=sys.stderr)
+        return 2
+    cond = crun.Conductor(repo, worker, base=args.base or None, workers=int(getattr(args, "workers", 0) or 0))
     plan = await cond.plan(args.goal)
     print(f"plan {plan.id} ({plan.planner}): {len(plan.tasks)} task(s)")
     report = await cond.run(plan, integrate=args.integrate)
@@ -2164,6 +2180,13 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("goal"); p.add_argument("--repo", required=True, help="the repository to work in (never defaults to the live install)")
     p.add_argument("--base", default=""); p.add_argument("--model", default="", help="a local model (provider/model)")
     p.add_argument("--integrate", action="store_true", help="merge the reviewed branches, run the suite, queue a green result")
+    p.add_argument("--shell", default="none", choices=["none", "sandbox"],
+                   help="none (default): the workers' agents get file and test tools only; sandbox: also run_shell, inside an AppContainer "
+                        "with no network (refused where that is not available)")
+    p.add_argument("--workers", type=int, default=0, help="parallel workers pulling tasks from the board (0 = the coordination setting)")
+    p = consub.add_parser("unblock", help="a decision on an escalated task: resolve it and put its board task back to open")
+    p.add_argument("plan_id"); p.add_argument("task_key"); p.add_argument("--by", required=True, help="who decides (owner, claude...)")
+    p.add_argument("--note", default=""); p.add_argument("--repo", default="")
     p = consub.add_parser("review", help="review base..head of a repository against the standing rules (exit 1 on a rejection)")
     p.add_argument("--repo", required=True); p.add_argument("--base", default="main"); p.add_argument("--head", required=True)
     p.add_argument("--private", action="store_true", help="the repository is private: skip the public-repo leak rules")
