@@ -76,7 +76,7 @@ def _enabled_by_default() -> bool:
 # each entry (several were found only by grepping every candidate file
 # for module-level mutable containers, not by inspection alone).
 DENYLIST: frozenset[str] = frozenset({
-    "bot.main", "bot.router", "bot.db", "bot.config", "bot.dashboard.server", "bot.dashboard.cicd_api", "bot.dashboard.agent_security_api", "bot.dashboard.models_info_api", "bot.dashboard.traces_api", "bot.dashboard.coordination_api", "bot.dashboard.evals_api", "bot.dashboard.vault_api", "bot.dashboard.approvals_api", "bot.dashboard.channels_api", "bot.dashboard.agent_config_api", "bot.dashboard.tailscale_api", "bot.dashboard.infra_api", "bot.dashboard.browser_api", "bot.dashboard.browser_gateway_api", "bot.browser_gateway",
+    "bot.main", "bot.router", "bot.db", "bot.config", "bot.dashboard.server", "bot.dashboard.cicd_api", "bot.dashboard.agent_security_api", "bot.dashboard.models_info_api", "bot.dashboard.traces_api", "bot.dashboard.coordination_api", "bot.dashboard.capacity_api", "bot.dashboard.evals_api", "bot.dashboard.vault_api", "bot.dashboard.approvals_api", "bot.dashboard.channels_api", "bot.dashboard.agent_config_api", "bot.dashboard.tailscale_api", "bot.dashboard.infra_api", "bot.dashboard.browser_api", "bot.dashboard.browser_gateway_api", "bot.browser_gateway",
     # Extensions (ABP_PRIVATE_DIR): the loader is loaded once and caches what it found, and its
     # routes are registered on the live app at build time - same reason bot.config is here.
     "bot.extensions", "bot.dashboard.extensions_api",
@@ -156,6 +156,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.agent_runtime.settings_schema",  # imports permissions/sandbox (both denied above); a reload would split the classes it validates against
     "bot.agent_runtime.project_rules",  # imported by prompt.py; reloaded with it is not needed and is safe to skip
     "bot.agent_runtime.code_intel",  # running language servers are process state
+    "bot.capacity.governor",  # holds the lock and the dedupe table that keep concurrent signals from double counting
     "bot.model_router", "bot.agent_runtime.trajectory",  # registers a tool / reads the trace store
     # The router's store serialises writes with a module lock, and policy/learn cache the policy and the trained
     # classifier; a reload mid-turn would split the lock and serve a stale policy until the cache expired.
@@ -377,6 +378,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.personas",
     "bot.bot_instances",  # depends only on validators/personas — before pairing/memory, which import it at module scope
     "bot.model_pricing",
+    "bot.capacity.classify", "bot.capacity.handoff", "bot.capacity.routing",  # pure functions over the governor's state; reached as module attributes
     "bot.models",
     "bot.push",
     "bot.desktop",

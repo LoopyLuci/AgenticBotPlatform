@@ -333,7 +333,13 @@ def recommend(task: str, *, candidates: Optional[list[str]] = None, images: bool
         similar = []
     out: list[Recommendation] = []
     skipped: list[str] = []
-    for ref in candidates if candidates is not None else candidate_models():
+    # The capacity governor (bot/capacity): while cloud capacity is short, only local models (all of them in local-only,
+    # the non-hard task classes in hybrid) are ranked.
+    from bot.capacity import routing as capacity_routing
+
+    pool, capacity_notes = capacity_routing.apply(candidates if candidates is not None else candidate_models(), cls.task_class)
+    skipped.extend(capacity_notes)
+    for ref in pool:
         provider, _, model = ref.partition("/")
         blocked = next((r for r in rules if r["kind"] == "block" and policy_mod.rule_matches(r, ref)), None)
         if blocked:
@@ -496,9 +502,14 @@ def record_advice(task: str, cls: Classification, ranked: list[Recommendation], 
     _record(d, task, instance_id, None, status="advice")
 
 
-def reroute_reason(ref: str) -> Optional[str]:
+def reroute_reason(ref: str, task: str = "") -> Optional[str]:
     """Why a bot on `auto` should choose again before this turn instead of keeping `ref`, or None to keep it."""
     try:
+        from bot.capacity import routing as capacity_routing
+
+        why = capacity_routing.should_leave(ref, classify(task).task_class if task else "")
+        if why:
+            return f"{why}, so {ref} (a cloud model) is not used for new work"
         from bot.router_brain import learn
 
         pol = _policy()

@@ -433,6 +433,34 @@ def _status_of(exc: BaseException, transport) -> Optional[int]:
     return int(match.group(1)) if match else None
 
 
+def _capacity_failure(transport, provider: str, model: str, status: int, exc: BaseException, headers: dict) -> None:
+    """Tell the capacity governor (bot/capacity) about a failed call: a usage cap or repeated rate limits switch the system
+    towards local models. A local server's own errors are ignored. Never raises."""
+    try:
+        from bot import capacity
+        from bot.capacity import routing
+
+        text = str(exc)       # the transports put the status and the start of the body in the message
+        local = routing.is_local_transport(transport)
+        capacity.observe_failure(provider, model, status, text, headers, local=local)
+        try:
+            exc.capacity_seen = True      # bot/router.py then does not count the same failure a second time
+        except Exception:  # noqa: BLE001
+            pass
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _capacity_ok(transport, provider: str, model: str) -> None:
+    try:
+        from bot import capacity
+        from bot.capacity import routing
+
+        capacity.observe_ok(provider, model, local=routing.is_local_transport(transport))
+    except Exception:  # noqa: BLE001
+        pass
+
+
 async def guarded(transport, fn, args: tuple, kwargs: dict):
     """Run one transport call under the allowance: check before, count after. Nested calls (a stream that
     falls back to send()) are counted once."""
@@ -464,8 +492,10 @@ async def guarded(transport, fn, args: tuple, kwargs: dict):
             if status == 429:
                 note_rate_limited(provider, model, parsed.get("retry_after_s"))
             record(provider, model, tokens=0, status=status)
+            _capacity_failure(transport, provider, model, status, exc, headers)
             raise
         observe_headers(provider, model, getattr(transport, "rate_headers", {}) or {})
+        _capacity_ok(transport, provider, model)
         record(provider, model, tokens=int(getattr(response, "tokens", 0) or 0) or est, input_tokens=int(getattr(response, "input_tokens", 0) or 0))
         return response
     finally:

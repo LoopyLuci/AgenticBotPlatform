@@ -739,6 +739,12 @@ class Router:
                 db.log_telemetry(component=backend_name, metric="latency_ms", value=latency_ms)
                 db.log_connection_event(component=backend_name, event="request_error", detail=str(exc))
                 logger.warning("job %s: backend %s failed: %s", job_id, backend_name, exc)
+                if not getattr(exc, "capacity_seen", False):
+                    # Claude Code's and other CLI agents' "usage limit reached" arrives only as text; API transports
+                    # already told the governor (bot/agent_runtime/usage_limits.py).
+                    from bot import capacity
+
+                    capacity.observe_text(backend_name, str(exc))
                 last_error = exc
 
         db.mark_job_done(job_id, status="failed", error=str(last_error))
