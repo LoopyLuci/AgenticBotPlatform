@@ -70,6 +70,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import tempfile
+import time
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -330,12 +332,16 @@ async def handle_sampling_request(context, params):
 
 async def _build_session(
     stack: AsyncExitStack, name: str, *, transport: str, command, args, env, url, auth_token,
-    oauth_enabled: bool = False,
+    oauth_enabled: bool = False, diag: Optional[dict] = None,
 ) -> tuple[Any, list[dict]]:
     """The actual protocol setup, given a stack the CALLER owns (see
     _connection_owner below for why ownership matters) — opens the
     transport, wraps it in a ClientSession, initializes, and lists tools.
-    Raises on any failure; the stack is the caller's to close either way."""
+    Raises on any failure; the stack is the caller's to close either way.
+    `diag`, when given, is filled in as it goes (stage, and for stdio the server's stderr file) so a caller that gives up
+    waiting can say what the client had seen - see _describe_wait."""
+    diag = diag if diag is not None else {}
+    diag["stage"] = "starting"
     if transport == "stdio":
         from mcp import ClientSession
         from mcp.client.stdio import StdioServerParameters, stdio_client
@@ -343,7 +349,12 @@ async def _build_session(
         if not command:
             raise ValueError("stdio transport requires a command")
         params = StdioServerParameters(command=command, args=args or [], env=env or None)
-        read, write = await stack.enter_async_context(stdio_client(params))
+        errlog = tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace")   # a real file: the child inherits its handle
+        stack.callback(errlog.close)
+        diag["stderr"] = errlog
+        diag["stage"] = "spawning the server process"
+        read, write = await stack.enter_async_context(stdio_client(params, errlog=errlog))
+        diag["stage"] = "server spawned, opening the session"
         session = await stack.enter_async_context(
             ClientSession(read, write, sampling_callback=handle_sampling_request)
         )
@@ -384,8 +395,11 @@ async def _build_session(
     else:
         raise ValueError(f"unknown external MCP transport {transport!r} — expected 'stdio' or 'remote'")
 
+    diag["stage"] = "waiting for the server's initialize answer"
     await session.initialize()
+    diag["stage"] = "listing tools"
     listed = await session.list_tools()
+    diag["stage"] = "ready"
     tools = [
         # mcp 2.0.0's real field name is the snake_case `input_schema`
         # (confirmed against the installed package — older mcp releases
@@ -394,6 +408,26 @@ async def _build_session(
         for t in listed.tools
     ]
     return session, tools
+
+
+def _stderr_tail(diag: dict, limit: int = 1500) -> str:
+    fh = diag.get("stderr")
+    try:
+        if fh is None or fh.closed:
+            return ""
+        fh.flush()
+        fh.seek(0)
+        return fh.read()[-limit:].strip()
+    except (OSError, ValueError):
+        return ""
+
+
+def _describe_wait(name: str, wait_s: float, started: float, diag: dict) -> str:
+    """What the client saw when it stopped waiting, so a timeout names its cause: how long, the stage it was stuck in, and what
+    the server wrote to stderr (a slow import, a crash trace, nothing at all)."""
+    tail = _stderr_tail(diag)
+    return (f"external MCP server {name!r} did not answer within {wait_s:.0f}s (waited {time.monotonic() - started:.1f}s; "
+            f"stuck at: {diag.get('stage', 'not started')}; server stderr: {tail or 'empty'})")
 
 
 async def _connection_owner(name: str, kwargs: dict, ready_event: asyncio.Event, result: dict) -> None:
@@ -411,8 +445,9 @@ async def _connection_owner(name: str, kwargs: dict, ready_event: asyncio.Event,
     connection that succeeds later still registers itself here, into
     _connections, same as an immediate success would."""
     stack = AsyncExitStack()
+    diag = result.setdefault("diag", {})
     try:
-        session, tools = await _build_session(stack, name, **kwargs)
+        session, tools = await _build_session(stack, name, **kwargs, diag=diag)
     except Exception as exc:
         result["error"] = exc
         ready_event.set()
@@ -462,9 +497,11 @@ async def connect(name: str, *, wait_s: float = CONNECT_WAIT_S) -> bool:
     result: dict = {}
     task = asyncio.create_task(_connection_owner(name, kwargs, ready_event, result))
     _owner_tasks[name] = task
+    started = time.monotonic()
     try:
         await asyncio.wait_for(ready_event.wait(), timeout=wait_s)
     except asyncio.TimeoutError:
+        logger.warning("%s", _describe_wait(name, wait_s, started, result.get("diag", {})))
         return False  # still connecting in the background — see this function's own docstring
     if result.get("error") is not None:
         logger.warning(
@@ -565,13 +602,16 @@ async def open_private(name: str, kwargs: dict, *, wait_s: float = CONNECT_WAIT_
     conn = PrivateConnection(name)
     ready = asyncio.Event()
     result: dict = {}
+    diag: dict = {}
+    started = time.monotonic()
 
     async def owner() -> None:
         stack = AsyncExitStack()
         try:
-            session, tools = await _build_session(stack, name, **kwargs)
+            session, tools = await _build_session(stack, name, **kwargs, diag=diag)
         except BaseException as exc:  # noqa: BLE001 - reported to the opener
             result["error"] = exc
+            result["stderr"] = _stderr_tail(diag)       # before the stack closes the file
             ready.set()
             await stack.aclose()
             return
@@ -584,11 +624,14 @@ async def open_private(name: str, kwargs: dict, *, wait_s: float = CONNECT_WAIT_
     try:
         await asyncio.wait_for(ready.wait(), timeout=wait_s)
     except asyncio.TimeoutError:
+        message = _describe_wait(name, wait_s, started, diag)       # read before close() shuts the stderr file
         await conn.close()
-        raise TimeoutError(f"external MCP server {name!r} did not answer within {wait_s:.0f}s") from None
+        raise TimeoutError(message) from None
     if "error" in result:
+        tail = result.get("stderr", "")
         await conn.close()
-        raise RuntimeError(f"external MCP server {name!r}: {type(result['error']).__name__}: {result['error']}")
+        raise RuntimeError(f"external MCP server {name!r}: {type(result['error']).__name__}: {result['error']}"
+                           + (f" (server stderr: {tail})" if tail else ""))
     return conn
 
 

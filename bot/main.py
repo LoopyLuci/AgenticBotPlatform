@@ -628,6 +628,13 @@ async def run() -> None:
 
         _spawn("capacity recovery probe", _capacity_probe)
 
+        def _capacity_prune():
+            from bot.capacity import handoff
+
+            return handoff.prune_forever(stop_event)
+
+        _spawn("handoff pack pruning", _capacity_prune)
+
         try:
             from bot import mdns_advertise
 

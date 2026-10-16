@@ -13,6 +13,7 @@
     GET  /api/capacity/policy                 what a worker should do now: state, capabilities to advertise, local models
     GET  /api/capacity/events?since=          the capacity-change feed (the LF5 digest reads it)
     GET  /api/capacity/handoff                the handoff packs on disk (status, model, tests, files per task)
+    POST /api/capacity/handoff/prune          {"apply"} remove old finished packs (dry run unless apply is true)
     GET  /api/capacity/handoff/{task_id}      one pack; ?prompt=1 adds the resume prompt for the model taking over
 
 Reading uses the dashboard's normal auth; changing the state needs the dashboard token.
@@ -96,6 +97,10 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
     @app.get("/api/capacity/handoff", dependencies=read)
     async def capacity_handoffs(limit: int = Query(100, ge=1, le=500)):
         return {"packs": handoff.list_packs(limit)}
+
+    @app.post("/api/capacity/handoff/prune", dependencies=write)
+    async def capacity_handoff_prune(body: Optional[dict] = Body(None)):
+        return handoff.prune(apply=bool((body or {}).get("apply", False)))
 
     @app.get("/api/capacity/handoff/{task_id}", dependencies=read)
     async def capacity_handoff(task_id: str, prompt: bool = Query(False)):

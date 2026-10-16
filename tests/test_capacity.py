@@ -615,3 +615,80 @@ def test_failover_hops_use_the_router_while_capacity_is_short(monkeypatch):
     assert list(nb._failover_hops(None, EASY)) == []                      # cloud-led, auto_failover off: no hops
     governor.set_override("local-only", now=time.time())
     assert list(nb._failover_hops(None, EASY)) == [("t", "m")] and calls[0] == "failover"
+
+
+def _aged(task_id, status, age_days, size_pad=0, now=NOW):
+    p = handoff.write(handoff.HandoffPack(task_id=task_id, goal="g", status=status, diff="d" * size_pad), now=now)
+    import os
+    f = handoff._path(task_id)
+    os.utime(f, (now - age_days * 86400, now - age_days * 86400))
+    return p
+
+
+def test_prune_removes_old_finished_packs_but_never_unfinished_ones(temp_db):
+    _aged("old-done", "finished", 30)
+    _aged("old-failed", "failed", 20)
+    _aged("old-running", "running", 90)
+    _aged("old-interrupted", "interrupted", 90)
+    _aged("new-done", "finished", 1)
+    dry = handoff.prune(keep_days=14, now=NOW, apply=False)
+    assert sorted(r["task_id"] for r in dry["removed"]) == ["old-done", "old-failed"] and not dry["applied"]
+    assert handoff.read("old-done") is not None, "a dry run removes nothing"
+    done = handoff.prune(keep_days=14, now=NOW)
+    assert done["applied"] and done["kept"] == 3 and done["freed_bytes"] > 0
+    assert handoff.read("old-done") is None and handoff.read("old-running") and handoff.read("old-interrupted") and handoff.read("new-done")
+
+
+def test_prune_size_cap_goes_oldest_first_and_spares_running(temp_db):
+    _aged("a", "finished", 3, 5000)
+    _aged("b", "finished", 2, 5000)
+    _aged("c", "finished", 1, 5000)
+    _aged("r", "running", 9, 5000)
+    one = handoff._path("a").stat().st_size
+    res = handoff.prune(keep_days=365, max_mb=(one * 2.5) / 1024 / 1024, now=NOW)
+    assert [r["task_id"] for r in res["removed"]] == ["a", "b"] and res["removed"][0]["why"] == "over the size cap"
+    assert handoff.read("c") and handoff.read("r")
+    # a cap that only running packs exceed removes nothing more
+    assert handoff.prune(keep_days=365, max_mb=0.000001, now=NOW)["removed"][0]["task_id"] == "c"
+    assert handoff.read("r") is not None
+
+
+def test_prune_uses_config_defaults(temp_db):
+    assert governor.settings()["packs"]["keep_days"] == 14 and governor.settings()["packs"]["max_mb"] == 200
+
+
+def test_prune_api_is_dry_run_unless_applied(client):
+    c, h = client
+    _aged("api-old", "finished", 40, now=time.time())
+    assert c.post("/api/capacity/handoff/prune", json={}).status_code == 401
+    assert [r["task_id"] for r in c.post("/api/capacity/handoff/prune", headers=h, json={}).json()["removed"]] == ["api-old"]
+    assert handoff.read("api-old") is not None
+    assert c.post("/api/capacity/handoff/prune", headers=h, json={"apply": True}).json()["applied"]
+    assert handoff.read("api-old") is None
+
+
+def test_the_cli_prunes_packs_dry_run_first(client, capsys):
+    from abp_cli import __main__ as cli
+
+    c, h = client
+    _aged("cli-old", "finished", 40, now=time.time())
+
+    class Fake:
+        async def _request(self, method, path, params=None, json=None):
+            r = c.request(method, path, headers=h, params=params, json=json)
+            r.raise_for_status()
+            return r.json()
+
+    class Args:
+        json = False
+        limit = 5
+        capacity_cmd = "packs"
+        prune = True
+        yes = False
+
+    args = Args()
+    assert asyncio.run(cli._capacity(args, Fake())) == 0
+    assert "would remove cli-old" in capsys.readouterr().out and handoff.read("cli-old") is not None
+    args.yes = True
+    assert asyncio.run(cli._capacity(args, Fake())) == 0
+    assert "removed cli-old" in capsys.readouterr().out and handoff.read("cli-old") is None

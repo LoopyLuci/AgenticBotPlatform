@@ -36,6 +36,8 @@ DEFAULTS: dict[str, Any] = {
               "timeout_s": 20, "targets": []},
     # Handoff packs written automatically as a task runs (bot/capacity/autopack.py).
     "handoff": {"auto": True, "min_interval_s": 20, "git_diff": True, "max_diff_chars": 12000},
+    # Pruning of finished packs (handoff.prune): older than keep_days, then oldest first while the folder is over max_mb.
+    "packs": {"keep_days": 14, "max_mb": 200, "prune_interval_s": 3600},
     "local_providers": ["modelmistress", "ollama", "unsloth", "lmstudio", "llamacpp", "vllm"],
 }
 _lock = threading.RLock()
@@ -46,7 +48,7 @@ CAPPED_KEEP = 8
 
 
 def settings() -> dict[str, Any]:
-    out = {**DEFAULTS, **{k: dict(DEFAULTS[k]) for k in ("hybrid", "probe", "handoff")}}
+    out = {**DEFAULTS, **{k: dict(DEFAULTS[k]) for k in ("hybrid", "probe", "handoff", "packs")}}
     try:
         from bot.config import config
 
@@ -55,7 +57,7 @@ def settings() -> dict[str, Any]:
         got = {}
     if isinstance(got, dict):
         for k, v in got.items():
-            if k in ("hybrid", "probe", "handoff") and isinstance(v, dict):
+            if k in ("hybrid", "probe", "handoff", "packs") and isinstance(v, dict):
                 out[k].update(v)
             elif k in DEFAULTS:
                 out[k] = v

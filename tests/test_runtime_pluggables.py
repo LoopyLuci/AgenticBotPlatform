@@ -642,3 +642,32 @@ def test_mcp_routes_are_engine_transactions_with_one_connection_table(env, monke
         assert c.delete("/api/mcp-external/sample", headers=h).status_code == 200
         assert "mcp_sample_shout" not in toolspec.registered_names()
     live.reset()
+
+
+def test_mcp_timeout_names_its_cause(tmp_path):
+    """A server that never answers: the error says how long, where the client was stuck, and what the server wrote to stderr."""
+    script = tmp_path / "silent.py"
+    script.write_text("import sys, time\nsys.stderr.write('importing the world\\n'); sys.stderr.flush()\ntime.sleep(60)\n", encoding="utf-8")
+    hung = {"transport": "stdio", "command": sys.executable, "args": [str(script)], "env": None, "url": None, "auth_token": None}
+
+    async def main():
+        with pytest.raises(TimeoutError) as caught:
+            await mcp_client.open_private("silent", hung, wait_s=3)
+        msg = str(caught.value)
+        assert "did not answer within 3s" in msg and "waited " in msg
+        assert "initialize" in msg and "importing the world" in msg
+
+    run(main())
+
+
+def test_mcp_failed_start_includes_server_stderr(tmp_path):
+    script = tmp_path / "crash.py"
+    script.write_text("import sys\nsys.stderr.write('Traceback: boom\\n')\nsys.exit(3)\n", encoding="utf-8")
+    bad = {"transport": "stdio", "command": sys.executable, "args": [str(script)], "env": None, "url": None, "auth_token": None}
+
+    async def main():
+        with pytest.raises(RuntimeError) as caught:
+            await mcp_client.open_private("crash", bad, wait_s=20)
+        assert "boom" in str(caught.value)
+
+    run(main())

@@ -100,6 +100,13 @@ restart on another model - the resume prompt from the pack is put in front of th
 hand-over. A finished pack is not resumed; a turn started inside another turn (a delegate, a sub-agent) never overwrites its
 parent's pack. `capacity.handoff.auto: false` turns all of this off.
 
+### Cleaning up old packs
+
+Only finished or failed packs are ever removed; a running or interrupted task's pack is always kept. First packs older than
+`capacity.packs.keep_days` (14) go, then the oldest while the pack folder is over `capacity.packs.max_mb` (200). It runs at
+startup and every `capacity.packs.prune_interval_s` (3600). By hand: `abp capacity packs --prune` shows what would go,
+`--yes` removes it; `POST /api/capacity/handoff/prune {"apply": true}` does the same (a dry run without `apply`).
+
 ## Work queues follow the state (phase 2)
 
 `bot/capacity/follow.py`. Board tasks may carry a capacity hint as a `needs` entry, so it works on ABP's local board and
@@ -129,9 +136,9 @@ them as short lines for a digest. The durable record is the history table.
 
 * Config: the `capacity:` section of `config/backends.yaml` (defaults are safe: `mode: auto`).
 * CLI: `abp capacity status`, `abp capacity set <cloud-led|hybrid|local-only|auto> [--for 2h] [--reason ...]`,
-  `abp capacity clear`, `abp capacity history`, `abp capacity probe`, `abp capacity policy`, `abp capacity packs`.
+  `abp capacity clear`, `abp capacity history`, `abp capacity probe`, `abp capacity policy`, `abp capacity packs [--prune [--yes]]`.
 * REST: `GET /api/capacity/state`, `/history`, `/route?task=`, `/handoff`, `/handoff/{task_id}`; `POST /api/capacity/override`,
-  `/clear`, `/report`, `/probe` (the POSTs need the dashboard token); `GET /probe`, `/policy`, `/events?since=`.
+  `/clear`, `/report`, `/probe`, `/handoff/prune` (the POSTs need the dashboard token); `GET /probe`, `/policy`, `/events?since=`.
 * MCP: `capacity_status`, `capacity_history`, `capacity_set`, `capacity_clear`, `capacity_report`, `capacity_handoff`,
   `capacity_probe`, `capacity_policy`.
 * Dashboard: a Capacity card at the top of the Coordination page (state, why, pin / back to automatic, the probe's last answer

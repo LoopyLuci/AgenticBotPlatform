@@ -155,6 +155,77 @@ def delete(task_id: str) -> bool:
         return False
 
 
+def prune(*, keep_days: Optional[float] = None, max_mb: Optional[float] = None, apply: bool = True, now: Optional[float] = None) -> dict:
+    """Retention for packs. Finished/failed packs older than `keep_days` go, then the oldest ones while the folder is over
+    `max_mb`. A pack of a task that is still running or interrupted (it may yet be resumed) is never removed, and neither is
+    one that cannot be read. Defaults come from capacity.packs. `apply=False` only reports what would go."""
+    from bot.capacity import governor
+
+    cfg = governor.settings().get("packs") or {}
+    keep_days = float(cfg.get("keep_days", 14) if keep_days is None else keep_days)
+    max_bytes = float(cfg.get("max_mb", 200) if max_mb is None else max_mb) * 1024 * 1024
+    now = time.time() if now is None else now
+    rows = []
+    for p in pack_dir().glob("*.json"):
+        try:
+            st = p.stat()
+            status = json.loads(p.read_text(encoding="utf-8")).get("status", "running")
+        except (OSError, ValueError):
+            continue
+        rows.append({"path": p, "task_id": p.stem, "status": status, "size": st.st_size, "mtime": st.st_mtime})
+    rows.sort(key=lambda r: r["mtime"])
+    total = sum(r["size"] for r in rows)
+    doomed: list[dict] = []
+    for r in rows:
+        if r["status"] in ("finished", "failed") and now - r["mtime"] > keep_days * 86400:
+            doomed.append({**r, "why": "older than keep_days"})
+    gone = {id(r) for r in doomed}
+    left = total - sum(r["size"] for r in doomed)
+    for r in rows:
+        if left <= max_bytes:
+            break
+        if r["status"] in ("finished", "failed") and id(r) not in gone:
+            doomed.append({**r, "why": "over the size cap"})
+            left -= r["size"]
+    removed = []
+    for r in doomed:
+        if apply:
+            try:
+                r["path"].unlink()
+            except OSError:
+                continue
+        removed.append({"task_id": r["task_id"], "status": r["status"], "size": r["size"], "why": r["why"]})
+    return {"applied": apply, "removed": removed, "freed_bytes": sum(r["size"] for r in removed), "kept": len(rows) - len(removed),
+            "total_bytes": total, "keep_days": keep_days, "max_mb": max_bytes / 1024 / 1024}
+
+
+async def prune_forever(stop_event) -> None:
+    """Background loop: prune at startup, then every capacity.packs.prune_interval_s."""
+    import asyncio
+    import logging
+
+    from bot.capacity import governor
+
+    log = logging.getLogger("bot.capacity.handoff")
+    while not stop_event.is_set():
+        try:
+            res = await asyncio.to_thread(prune)
+            if res["removed"]:
+                log.info("pruned %d handoff pack(s), %d bytes", len(res["removed"]), res["freed_bytes"])
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001
+            log.debug("handoff pack prune failed", exc_info=True)
+        try:
+            wait = max(60.0, float((governor.settings().get("packs") or {}).get("prune_interval_s", 3600)))
+        except (TypeError, ValueError):
+            wait = 3600.0
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=wait)
+        except asyncio.TimeoutError:
+            pass
+
+
 def resume_prompt(pack: HandoffPack) -> str:
     """The opening message for the model taking over. Plain text, no secrets beyond what the pack holds."""
     lines = [f"You are taking over task {pack.task_id}" + (f" from {pack.model}" if pack.model else "") +
