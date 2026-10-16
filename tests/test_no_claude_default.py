@@ -93,3 +93,17 @@ def test_ui_customize_fallback_is_local_not_claude(monkeypatch):
     monkeypatch.setattr(model_router, "default_refs", lambda: ["modelmistress/qwen"])
     assert asyncio.run(ui_customize._candidate_free_models()) == [("modelmistress", "qwen")]
     _nothing(monkeypatch)
+
+
+def test_scripted_and_explicit_models_never_touch_default_selection(monkeypatch, tmp_path):
+    from abp_acp import __main__ as acp
+
+    def boom(*a, **k):
+        raise AssertionError("default selection must not run for an explicit model")
+
+    monkeypatch.setattr(model_router, "default_refs", boom)
+    monkeypatch.setattr(model_router, "default_transport", boom)
+    script = tmp_path / "s.json"
+    script.write_text('[{"say": "ok"}]', encoding="utf-8")
+    assert acp.make_runner(f"scripted:{script}", None) is not None
+    assert acp.make_runner("anthropic/claude-x", None) is not None
