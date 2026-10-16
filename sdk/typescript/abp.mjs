@@ -896,6 +896,51 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/capacity/handoff": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capacity/handoff",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "GET /api/capacity/handoff/{task_id}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capacity/handoff/{task_id}",
+  "path_params": [
+   "task_id"
+  ],
+  "query_params": [
+   "prompt"
+  ]
+ },
+ "GET /api/capacity/history": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capacity/history",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "GET /api/capacity/route": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capacity/route",
+  "path_params": [],
+  "query_params": [
+   "task"
+  ]
+ },
+ "GET /api/capacity/state": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capacity/state",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/chat/attachments/{message_id}": {
   "body": false,
   "method": "GET",
@@ -4747,6 +4792,27 @@ export const operations = {
   "path_params": [
    "name"
   ],
+  "query_params": []
+ },
+ "POST /api/capacity/clear": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/capacity/clear",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/capacity/override": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/capacity/override",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/capacity/report": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/capacity/report",
+  "path_params": [],
   "query_params": []
  },
  "POST /api/chat/send": {
@@ -10711,6 +10777,72 @@ export const operations = {
   "query_params": [
    "sig"
   ]
+ },
+ "capacity_clear_api_capacity_clear_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/capacity/clear",
+  "path_params": [],
+  "query_params": []
+ },
+ "capacity_handoff_api_capacity_handoff__task_id__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capacity/handoff/{task_id}",
+  "path_params": [
+   "task_id"
+  ],
+  "query_params": [
+   "prompt"
+  ]
+ },
+ "capacity_handoffs_api_capacity_handoff_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capacity/handoff",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "capacity_history_api_capacity_history_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capacity/history",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "capacity_override_api_capacity_override_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/capacity/override",
+  "path_params": [],
+  "query_params": []
+ },
+ "capacity_report_api_capacity_report_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/capacity/report",
+  "path_params": [],
+  "query_params": []
+ },
+ "capacity_route_api_capacity_route_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capacity/route",
+  "path_params": [],
+  "query_params": [
+   "task"
+  ]
+ },
+ "capacity_state_api_capacity_state_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capacity/state",
+  "path_params": [],
+  "query_params": []
  },
  "check_shortcut_api_shortcuts_check_post": {
   "body": true,

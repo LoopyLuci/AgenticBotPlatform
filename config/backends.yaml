@@ -143,6 +143,25 @@ coordination:
   stuck_watch: true
   stuck_watch_interval_s: 60
   stuck_alert_every_s: 1800
+# The capacity governor (bot/capacity, docs/capacity-governor.md): one system-wide state - cloud-led, hybrid or local-only -
+# set automatically when a cloud provider says it is out of capacity (a usage cap, a quota, repeated rate limits) and by hand
+# (abp capacity set). local-only routes new work to local models (ModelMistress first, Ollama after); hybrid keeps the hard
+# task classes on cloud models. Work already running is never interrupted. mode: auto, or cloud-led / hybrid / local-only to
+# pin the state from here (a pin set with `abp capacity set` wins over this).
+capacity:
+  enabled: true
+  mode: auto
+  rate_limit_threshold: 3        # this many short rate limits ...
+  rate_limit_window_s: 300       # ... inside this window turn hybrid on
+  hybrid_hold_s: 600             # how long hybrid lasts after that
+  long_retry_s: 900              # a "retry in" longer than this is treated as a usage cap
+  cap_hold_s: 3600               # a usage cap without a reset time: local-only for this long (doubles on a repeat) ...
+  max_hold_s: 21600              # ... never more than this
+  probation_s: 600               # after such a hold, hybrid for this long; a cloud call that works returns to cloud-led
+  hybrid:
+    cloud_classes: [hard_reasoning, long_context]   # task classes that still go to cloud models in hybrid
+  reroute_fixed_models: true     # a bot with a fixed cloud model uses a local one for new turns while local-only
+  local_providers: [modelmistress, ollama, unsloth, lmstudio, llamacpp, vllm]
 # spawn_subagent (bot/agent_runtime/subagents.py) — ephemeral, disposable
 # sub-agent fan-out for api/custom_model-backed instances, the native
 # equivalent of Hermes Agent's own delegate_task. Depth is governed by

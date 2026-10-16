@@ -16,6 +16,7 @@ compatibility shims around this class — their public constructors and
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 import re
 import time
@@ -27,6 +28,8 @@ from bot.agent_runtime.transports.base import ProviderTransport
 from bot.backends.base import Backend, BackendError, BackendResult
 
 logger = logging.getLogger("bot.backends.native")
+# (id of the backend, (transport, model)) while one turn runs on the model the capacity governor chose for it.
+_turn_override: contextvars.ContextVar = contextvars.ContextVar("native_turn_override", default=None)
 
 # Kept for anything that imported it; the real limit is native_agent.limits (see loop_guard.py).
 MAX_TOOL_ITERATIONS = loop_guard.DEFAULT_MAX_ITERATIONS
@@ -47,13 +50,59 @@ class NativeAgentBackend(Backend):
         session_prefix: str = "native",
         name: str = "native_agent",
     ):
-        self.transport = transport
-        self.model = model
+        self._transport = transport
+        self._model = model
         self.max_tokens = max_tokens
         self.session_prefix = session_prefix
         self.name = name
         # model == "auto": the model router picks (and may re-pick) the model; see _ask().
         self._auto = transport is None
+
+    # `transport` and `model` are what this bot is configured with, except inside a turn the capacity governor re-routed to a
+    # local model: that turn (and only that turn - the override lives in a contextvar) sees the local pair, so concurrent
+    # turns on one bot never affect each other and the attributes themselves never change.
+    @property
+    def transport(self):
+        o = _turn_override.get()
+        return o[1][0] if o and o[0] == id(self) else self._transport
+
+    @transport.setter
+    def transport(self, value) -> None:
+        self._transport = value
+
+    @property
+    def model(self):
+        o = _turn_override.get()
+        return o[1][1] if o and o[0] == id(self) else self._model
+
+    @model.setter
+    def model(self, value) -> None:
+        self._model = value
+
+    def _leave_cloud_for_capacity(self, route_text: str, instance_id) -> Optional[tuple]:
+        """For a bot with a fixed cloud model, while the capacity governor (bot/capacity) says cloud capacity is short: the
+        (transport, model) this turn should run on instead - a local model the router picks - else None. Nothing is assigned
+        to self; ask() carries the pair through the one turn. capacity.reroute_fixed_models: false turns this off."""
+        try:
+            from bot import model_router
+            from bot.capacity import governor, routing
+
+            if not governor.settings().get("reroute_fixed_models", True) or self._transport is None:
+                return None
+            if routing.is_local_transport(self._transport):
+                return None
+            why = routing.leave_reason(model_router.classify(route_text).task_class)
+            if not why:
+                return None
+            transport, model, new_ref = _resolve_auto_transport(route_text, exclude=set(), instance_id=instance_id, mode="capacity")
+        except BackendError:
+            logger.warning("native backend: capacity is short but no local model is available; keeping %s", self._model)
+            return None
+        except Exception:  # noqa: BLE001 - the governor must never cost a reply
+            logger.exception("native backend: capacity re-route failed")
+            return None
+        logger.info("native backend: %s - this turn runs on %s instead of %s", why, new_ref, self._model)
+        return transport, model
 
     async def create_session(self) -> str:
         return f"{self.session_prefix}-{uuid.uuid4().hex[:16]}"
@@ -61,9 +110,17 @@ class NativeAgentBackend(Backend):
     async def ask(self, prompt: str, *, context=None, timeout_s: float = 30) -> BackendResult:
         # Every run is traced (bot/agent_runtime/trace.py) — shape only, never
         # content — so the eval harness and dashboards can read what happened.
-        from bot.agent_runtime import trace
-
         ctx = context or {}
+        pair = None if self._auto else self._leave_cloud_for_capacity(str(ctx.get("route_text") or prompt), ctx.get("instance_id"))
+        override_token = _turn_override.set((id(self), pair)) if pair else None
+        try:
+            return await self._ask_traced(prompt, ctx, context, timeout_s)
+        finally:
+            if override_token is not None:
+                _turn_override.reset(override_token)
+
+    async def _ask_traced(self, prompt: str, ctx: dict, context, timeout_s: float) -> BackendResult:
+        from bot.agent_runtime import trace
         from bot.agent_runtime import permissions
 
         # A caller may set the permission mode for this run ("plan" makes it read-only).
@@ -130,7 +187,7 @@ class NativeAgentBackend(Backend):
 
             ref = _ref(self.transport, self.model)
             previous = getattr(self.transport, "router_decision", None)
-            why = model_router.reroute_reason(ref)
+            why = model_router.reroute_reason(ref, route_text)
             if why:
                 try:
                     self.transport, self.model, _auto_ref = _resolve_auto_transport(
@@ -878,6 +935,11 @@ def _failover_hops(instance_id, task_text: str, *, auto: bool = False, tried: Op
             from bot.router_brain import policy as router_policy
 
             use_router = bool(router_policy.current()["learning"]["failover_for_auto"])
+        if not use_router:
+            # While cloud capacity is short, a failed cloud call always gets the router's (local) alternatives.
+            from bot import capacity
+
+            use_router = capacity.effective_state() != capacity.CLOUD_LED
         if not use_router:
             return
         max_hops = max(0, int(router_cfg.get("max_failover_hops") or 2))

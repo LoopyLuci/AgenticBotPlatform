@@ -1489,6 +1489,46 @@ async def code_context_pack(task: str, budget_tokens: int = 4000, root: str = ""
                           json={"task": task, "budget_tokens": budget_tokens, "root": _code_root(root)})
 
 
+# ---- the capacity governor (bot/capacity) -------------------------------------------
+@mcp.tool()
+async def capacity_status() -> Any:
+    """The capacity state: cloud-led, hybrid or local-only; whether it is automatic or pinned by hand, why, and until when."""
+    return await _request("GET", "/api/capacity/state")
+
+
+@mcp.tool()
+async def capacity_history(limit: int = 30) -> Any:
+    """Every change of the capacity state: who or what changed it, when and why."""
+    return await _request("GET", "/api/capacity/history", params={"limit": limit})
+
+
+@mcp.tool()
+async def capacity_set(state: str, reason: str = "", ttl_s: Optional[float] = None) -> Any:
+    """Pin the capacity state by hand: 'local-only', 'hybrid' or 'cloud-led' (ttl_s = seconds until it lapses; 'auto' = clear)."""
+    body: dict = {"state": state, "reason": reason, "actor": "mcp"}
+    if ttl_s:
+        body["ttl_s"] = ttl_s
+    return await _request("POST", "/api/capacity/override", json=body)
+
+
+@mcp.tool()
+async def capacity_clear(reason: str = "") -> Any:
+    """Drop the manual capacity override: back to automatic detection."""
+    return await _request("POST", "/api/capacity/clear", json={"reason": reason, "actor": "mcp"})
+
+
+@mcp.tool()
+async def capacity_report(source: str, text: str, status: Optional[int] = None) -> Any:
+    """Tell the governor about a provider failure seen elsewhere (e.g. Claude Code's 'usage limit reached' line)."""
+    return await _request("POST", "/api/capacity/report", json={"source": source, "text": text, "status": status})
+
+
+@mcp.tool()
+async def capacity_handoff(task_id: str) -> Any:
+    """The handoff pack of a task (goal, plan, files, diff, tests, notes, last error) plus the prompt to resume it."""
+    return await _request("GET", f"/api/capacity/handoff/{task_id}", params={"prompt": "1"})
+
+
 # ---- extensions (ABP_PRIVATE_DIR) ----------------------------------------------------
 # Tools an extension registered through ExtensionAPI.add_mcp_tool(), added to the same server
 # as every tool above. One broken extension costs its own tools and nothing else.

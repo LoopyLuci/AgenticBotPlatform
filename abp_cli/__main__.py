@@ -39,6 +39,8 @@ Commands:
   modules list|show|ops|run-op|start|stop|status|logs|call|setup|adopt|add|refresh|assist|candidates|new|publish|forget|catalog
                                           every module; `modules adopt <folder>` makes any project one
   coordination summary|tasks|locks        the work board: who is doing what, what waits and why, who holds which files
+  capacity status|set|clear|history       the capacity governor: cloud-led / hybrid / local-only, why, and the owner override
+                                          (`capacity set local-only --for 2h --reason "usage cap"`; `capacity clear` = automatic)
   vision status|analyze|find|compare|edit|fetch
                                           computer vision here (OpenCV + its model zoo): objects, faces, text,
                                           codes; find text or an image on the screen; compare two images
@@ -80,9 +82,11 @@ import argparse
 import asyncio
 import json
 import pathlib
+import re
 import shutil
 import sys
 import tempfile
+import time
 from typing import Any, Optional
 
 from bot.dashboard_client import ApiError, DashboardClient, default_connection
@@ -196,6 +200,8 @@ async def _dispatch(args, client: DashboardClient) -> int:
         return await _vision(args, client)
     if cmd == "coordination":
         return await _coordination(args, client)
+    if cmd == "capacity":
+        return await _capacity(args, client)
     if cmd == "hermes":
         from abp_cli import hermes as _hermes
         return await _hermes.run(args, client)
@@ -1738,6 +1744,54 @@ def _image_arg(v: str) -> str:
     return str(p.resolve()) if p.exists() else v
 
 
+def _duration_s(text: str) -> float:
+    """'90', '30s', '15m', '2h', '1d' -> seconds."""
+    m = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*([smhd]?)\s*", text or "")
+    if not m:
+        raise SystemExit(f"cannot read the duration {text!r} (use 30s, 15m, 2h or 1d)")
+    return float(m.group(1)) * {"": 1, "s": 1, "m": 60, "h": 3600, "d": 86400}[m.group(2)]
+
+
+async def _capacity(args, client: DashboardClient) -> int:
+    sub = args.capacity_cmd
+    api = "/api/capacity"
+    if sub == "status":
+        res = await client._request("GET", f"{api}/state")
+        if args.json:
+            _print(args, res)
+            return 0
+        auto = res["auto"]
+        print(f"capacity: {res['state']}  (mode: {res['mode']}{'' if res.get('enabled', True) else ', governor disabled'})")
+        if auto["state"] != "cloud-led":
+            until = f", until {time.strftime('%Y-%m-%d %H:%M', time.localtime(auto['until']))}" if auto.get("until") else ""
+            print(f"  automatic: {auto['state']}{until} - {auto['reason']}")
+        elif auto.get("recent_rate_limits"):
+            print(f"  automatic: cloud-led; {auto['recent_rate_limits']} recent rate limit(s)")
+        ov = res.get("override")
+        if ov:
+            exp = f", until {time.strftime('%Y-%m-%d %H:%M', time.localtime(ov['expires_at']))}" if ov.get("expires_at") else ""
+            print(f"  override: {ov['state']} by {ov['actor']}{exp}" + (f" - {ov['reason']}" if ov.get("reason") else ""))
+        return 0
+    if sub == "set":
+        body = {"state": args.state, "reason": args.reason, "actor": "cli"}
+        if args.duration:
+            body["ttl_s"] = _duration_s(args.duration)
+        res = await client._request("POST", f"{api}/override", json=body)
+        print(json.dumps(res, indent=1) if args.json else f"capacity: {res['state']} (mode: {res['mode']})")
+        return 0
+    if sub == "clear":
+        res = await client._request("POST", f"{api}/clear", json={"reason": args.reason, "actor": "cli"})
+        print(json.dumps(res, indent=1) if args.json else f"capacity: {res['state']} (mode: {res['mode']})")
+        return 0
+    if sub == "history":
+        res = await client._request("GET", f"{api}/history", params={"limit": args.limit})
+        rows = [{**h, "when": time.strftime("%m-%d %H:%M:%S", time.localtime(h["ts"])), "change": f"{h['from']} -> {h['to']}"}
+                for h in res["history"]]
+        _print(args, res if args.json else rows, table=["when", "actor", "kind", "change", "reason"])
+        return 0
+    return 2
+
+
 async def _coordination(args, client: DashboardClient) -> int:
     sub = args.coordination_cmd
     api = "/api/coordination"
@@ -1967,6 +2021,15 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--board", default=""); p.add_argument("--state", default=""); p.add_argument("--owner", default="")
     p.add_argument("--limit", type=int, default=200)
     p = cosub.add_parser("locks"); p.add_argument("--prefix", default="")
+    cap = sub.add_parser("capacity", help="the capacity governor: cloud-led / hybrid / local-only, and the owner override")
+    capsub = cap.add_subparsers(dest="capacity_cmd", required=True)
+    capsub.add_parser("status")
+    p = capsub.add_parser("set", help="pin the state by hand (auto = back to automatic)")
+    p.add_argument("state", choices=["cloud-led", "hybrid", "local-only", "auto"])
+    p.add_argument("--for", dest="duration", default="", help="how long: 30s, 15m, 2h, 1d (default: until cleared)")
+    p.add_argument("--reason", default="")
+    p = capsub.add_parser("clear", help="drop the override: back to automatic"); p.add_argument("--reason", default="")
+    p = capsub.add_parser("history"); p.add_argument("--limit", type=int, default=30)
     vis = sub.add_parser("vision", help="computer vision on this machine (OpenCV and its model zoo)")
     vsub = vis.add_subparsers(dest="vision_cmd", required=True)
     vsub.add_parser("status")

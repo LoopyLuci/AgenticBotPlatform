@@ -975,6 +975,11 @@ def build_app() -> FastAPI:
 
     coordination_api.register(app, _require_token_or_api_key)
 
+    # The capacity governor (/api/capacity): cloud-led / hybrid / local-only, its history, the override and handoff packs.
+    from bot.dashboard import capacity_api
+
+    capacity_api.register(app, _require_token_or_api_key, _require_token)
+
     # Agent eval reports (/api/agent/evals/reports): the Evals screen's read-only view of the harness's JSON reports.
     from bot.dashboard import evals_api
 
