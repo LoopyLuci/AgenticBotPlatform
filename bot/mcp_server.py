@@ -1541,6 +1541,40 @@ async def capacity_handoff(task_id: str) -> Any:
     return await _request("GET", f"/api/capacity/handoff/{task_id}", params={"prompt": "1"})
 
 
+# ---- the local conductor (bot/conductor) --------------------------------------------
+@mcp.tool()
+async def conductor_status() -> Any:
+    """The local conductor: capacity policy, plans, open escalations, recent integrations and the push queue (what waits for approval)."""
+    return await _request("GET", "/api/conductor/status")
+
+
+@mcp.tool()
+async def conductor_plan(goal: str, replan: bool = False) -> Any:
+    """Plan a goal (free text, or FILE:LINE of a roadmap or TODO row) into small board tasks with dependencies, scopes and proofs, using a local model."""
+    return await _request("POST", "/api/conductor/plan", json={"goal": goal, "replan": replan}, timeout=300.0)
+
+
+@mcp.tool()
+async def conductor_review(repo: str, head: str, base: str = "", goal: str = "", model: bool = False) -> Any:
+    """Review the diff base..head of a repository against the owner's standing rules (no feature removed, no deletions, no leaks, hot reload, tests, ruff)."""
+    body: dict[str, Any] = {"repo": repo, "head": head, "goal": goal, "model": model}
+    if base:
+        body["base"] = base
+    return await _request("POST", "/api/conductor/review", json=body, timeout=300.0)
+
+
+@mcp.tool()
+async def conductor_queue(status: str = "") -> Any:
+    """The push queue: integration branches that are green and wait for approval (status: awaiting_approval, approved, rejected)."""
+    return await _request("GET", "/api/conductor/queue", params={"status": status} if status else None)
+
+
+@mcp.tool()
+async def conductor_approve(queue_id: str, by: str, note: str = "", reject: bool = False) -> Any:
+    """Record an approval (or a rejection) of a queued integration branch. It does not push; the answer carries the push command."""
+    return await _request("POST", f"/api/conductor/queue/{queue_id}/{'reject' if reject else 'approve'}", json={"by": by, "note": note})
+
+
 # ---- extensions (ABP_PRIVATE_DIR) ----------------------------------------------------
 # Tools an extension registered through ExtensionAPI.add_mcp_tool(), added to the same server
 # as every tool above. One broken extension costs its own tools and nothing else.

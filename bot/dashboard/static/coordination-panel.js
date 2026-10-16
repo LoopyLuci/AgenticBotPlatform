@@ -2,6 +2,7 @@
 // board is in use (AgentSentinel's or ABP's own), per board the task counts, who holds which files and resources,
 // leases about to run out, idle agents and tasks that are blocked with the reason, plus a filterable task list.
 // Beside the boards, a card shows the capacity governor (cloud-led / hybrid / local-only) with a way to pin it by hand.
+// A conductor card lists the push queue (green integration branches) with Approve / Reject; approving never pushes.
 // Otherwise read-only. This file is identical in the dashboard (bot/dashboard/static/) and the desktop app (desktop-app/ui/);
 // tests/test_coordination_panel.py fails if the two differ. It uses the page's own api() and esc(), and draws into #co-root.
 (function (api) {
@@ -18,6 +19,7 @@
   let tasks = null;     // {tasks}
   let cap = null;       // {state, mode, auto, override, probe} from /api/capacity/state
   let packList = [];    // handoff packs, newest first, from /api/capacity/handoff
+  let cond = null;      // {queue, escalations, integrations} from /api/conductor/status
   let loading = false;
   let err = '';
   let timer = null;
@@ -80,6 +82,20 @@
       <p class="co-note">New work follows this state: local-only uses local models only, hybrid keeps hard tasks on cloud models. Work already running is not interrupted.</p>${probe}${packs}</div>`;
   }
 
+  function conductorCard() {
+    if (!cond) return '';
+    const q = (cond.queue || {}).awaiting_approval || [];
+    const esc = cond.escalations || [];
+    const ints = (cond.integrations || []).slice(0, 3);
+    const rows = q.map((e) => `<tr><td class="co-mono">${E(e.branch)}</td><td class="co-mono">${E((e.head_sha || '').slice(0, 10))}</td><td>${E((e.flaky || []).length)} flaky</td>
+      <td><button class="btn" data-co="cond-approve" data-id="${E(e.id)}">Approve</button> <button class="btn" data-co="cond-reject" data-id="${E(e.id)}">Reject</button></td></tr>`).join('');
+    const table = q.length ? `<div class="co-scroll"><table class="co-table"><thead><tr><th>Branch</th><th>Commit</th><th>Flakes</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="co-note">Nothing waits for approval.</p>';
+    const escs = esc.length ? `<p class="co-note">Escalated: ${esc.slice(0, 5).map((e) => E(e.reason)).join('; ')}</p>` : '';
+    const last = ints.length ? `<p class="co-note">Integrations: ${ints.map((i) => E(i.branch) + ' ' + E(i.status)).join('; ')}</p>` : '';
+    return `<div class="co-card"><h3>Local conductor: push queue</h3>${table}${escs}${last}
+      <p class="co-note">Approving records the decision; it does not push. Models: local only.</p></div>`;
+  }
+
   function blockWhy(t) {
     if (t.reason === 'deps') return 'waiting for ' + (t.waiting_for || []).length + ' task(s) to finish';
     if (t.reason === 'locks') return 'locked by ' + (t.holders || []).map((h) => (h.agent || h.owner || '?') + (h.title ? ' (' + h.title + ')' : '')).join(', ');
@@ -103,7 +119,7 @@
       `<div class="co-bar"><select id="co-board" aria-label="Board"><option value="">All boards</option>${boards.map((b) => `<option value="${E(b)}"${f.board === b ? ' selected' : ''}>${E(b)}</option>`).join('')}</select>
         <select id="co-state" aria-label="State"><option value="">Any state</option>${STATES.map((s) => `<option value="${s}"${f.state === s ? ' selected' : ''}>${s}</option>`).join('')}</select>
         <button class="btn" data-co="apply">Apply</button><button class="btn" data-co="refresh">Refresh</button></div>` +
-      capacityCard() + cards + `<h3>Tasks</h3><div class="co-scroll"><table class="co-table"><thead><tr><th>State</th><th>Task</th><th>Owner</th><th>Attempts</th><th>Note</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="co-empty">No tasks match.</td></tr>'}</tbody></table></div>`;
+      capacityCard() + conductorCard() + cards + `<h3>Tasks</h3><div class="co-scroll"><table class="co-table"><thead><tr><th>State</th><th>Task</th><th>Owner</th><th>Attempts</th><th>Note</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="co-empty">No tasks match.</td></tr>'}</tbody></table></div>`;
     if (keep && $(keep)) { try { $(keep).focus(); } catch (_) {} }
   }
 
@@ -119,6 +135,7 @@
       data = s; tasks = t; err = '';
       try { cap = await api('/api/capacity/state'); } catch (_) { cap = null; }
       try { packList = ((await api('/api/capacity/handoff?limit=10')) || {}).packs || []; } catch (_) { packList = []; }
+      try { cond = await api('/api/conductor/status'); } catch (_) { cond = null; }
     } catch (e) {
       err = errText(e);
     } finally {
@@ -140,6 +157,11 @@
         const call = st === 'auto' ? api('/api/capacity/clear', { method: 'POST', body: '{}' })
           : api('/api/capacity/override', { method: 'POST', body: JSON.stringify({ state: st, reason: 'set on the Coordination page' }) });
         call.catch((e) => { err = errText(e); }).finally(load);
+        return;
+      }
+      if (el.dataset.co === 'cond-approve' || el.dataset.co === 'cond-reject') {
+        const verb = el.dataset.co === 'cond-approve' ? 'approve' : 'reject';
+        api('/api/conductor/queue/' + encodeURIComponent(el.dataset.id) + '/' + verb, { method: 'POST', body: JSON.stringify({ by: 'owner (dashboard)', note: '' }) }).catch((e) => { err = errText(e); }).finally(load);
         return;
       }
       if (el.dataset.co === 'cap-probe') {

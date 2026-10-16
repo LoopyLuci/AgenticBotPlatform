@@ -1321,6 +1321,60 @@ export const operations = {
    "max_tokens"
   ]
  },
+ "GET /api/conductor/escalations": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/conductor/escalations",
+  "path_params": [],
+  "query_params": [
+   "all"
+  ]
+ },
+ "GET /api/conductor/plans": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/conductor/plans",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "GET /api/conductor/plans/{plan_id}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/conductor/plans/{plan_id}",
+  "path_params": [
+   "plan_id"
+  ],
+  "query_params": []
+ },
+ "GET /api/conductor/queue": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/conductor/queue",
+  "path_params": [],
+  "query_params": [
+   "status"
+  ]
+ },
+ "GET /api/conductor/reviews": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/conductor/reviews",
+  "path_params": [],
+  "query_params": [
+   "plan",
+   "task",
+   "limit"
+  ]
+ },
+ "GET /api/conductor/status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/conductor/status",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/config": {
   "body": false,
   "method": "GET",
@@ -4973,6 +5027,38 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/codeintel/pack",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/conductor/plan": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/conductor/plan",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/conductor/queue/{queue_id}/approve": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/conductor/queue/{queue_id}/approve",
+  "path_params": [
+   "queue_id"
+  ],
+  "query_params": []
+ },
+ "POST /api/conductor/queue/{queue_id}/reject": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/conductor/queue/{queue_id}/reject",
+  "path_params": [
+   "queue_id"
+  ],
+  "query_params": []
+ },
+ "POST /api/conductor/review": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/conductor/review",
   "path_params": [],
   "query_params": []
  },
@@ -11358,6 +11444,92 @@ export const operations = {
    "root",
    "max_tokens"
   ]
+ },
+ "conductor_approve_api_conductor_queue__queue_id__approve_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/conductor/queue/{queue_id}/approve",
+  "path_params": [
+   "queue_id"
+  ],
+  "query_params": []
+ },
+ "conductor_escalations_api_conductor_escalations_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/conductor/escalations",
+  "path_params": [],
+  "query_params": [
+   "all"
+  ]
+ },
+ "conductor_plan_api_conductor_plan_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/conductor/plan",
+  "path_params": [],
+  "query_params": []
+ },
+ "conductor_plan_get_api_conductor_plans__plan_id__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/conductor/plans/{plan_id}",
+  "path_params": [
+   "plan_id"
+  ],
+  "query_params": []
+ },
+ "conductor_plans_api_conductor_plans_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/conductor/plans",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "conductor_queue_api_conductor_queue_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/conductor/queue",
+  "path_params": [],
+  "query_params": [
+   "status"
+  ]
+ },
+ "conductor_reject_api_conductor_queue__queue_id__reject_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/conductor/queue/{queue_id}/reject",
+  "path_params": [
+   "queue_id"
+  ],
+  "query_params": []
+ },
+ "conductor_review_api_conductor_review_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/conductor/review",
+  "path_params": [],
+  "query_params": []
+ },
+ "conductor_reviews_api_conductor_reviews_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/conductor/reviews",
+  "path_params": [],
+  "query_params": [
+   "plan",
+   "task",
+   "limit"
+  ]
+ },
+ "conductor_status_api_conductor_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/conductor/status",
+  "path_params": [],
+  "query_params": []
  },
  "config_schema_api_agent_config_schema_get": {
   "body": false,
