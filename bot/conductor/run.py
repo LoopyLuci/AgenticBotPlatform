@@ -131,7 +131,10 @@ class Conductor:
 
     def integrate(self, branches: list[str], *, plan_id: str = "", tasks: Optional[list[str]] = None) -> dict:
         integ = integrator.Integrator(self.repo, base=self.base, suite=self.suite, rerun=self.rerun, workdir=self.workdir,
-                                      suite_timeout_s=float(self.cfg["suite_timeout_s"]))
+                                      suite_timeout_s=float(self.cfg["suite_timeout_s"]), regen_sdk=bool(self.cfg["regen_sdk"]),
+                                      shards=int(self.cfg["suite_shards"]), workers=self.cfg["suite_workers"],
+                                      max_workers=int(self.cfg["max_workers"]), lock_wait_s=float(self.cfg["suite_lock_wait_s"]),
+                                      gate=list(self.cfg["gate_command"]) or None, gate_timeout_s=float(self.cfg["gate_timeout_s"]))
         return integ.integrate(branches, plan_id=plan_id, tasks=tasks or []).to_dict()
 
     # ------------------------------------------------------- one task's work
@@ -240,7 +243,7 @@ def queue(status_filter: str = "") -> list[dict]:
 
 def approve(queue_id: str, by: str, note: str = "", reject: bool = False) -> dict:
     """Record the owner's (or Claude's) decision on a queued integration branch. Approving does not push: the entry says what
-    to push and the approver (or the next phase's pusher) does it."""
+    to push, and the pusher (off by default; `push`) or the approver does it."""
     entry = store.decide(queue_id, "rejected" if reject else "approved", by, note)
     entry["push_command"] = integrator.push_command(entry)
     return entry
@@ -309,3 +312,10 @@ class AgentLoopWorker:
                                       max_iterations=self.max_iterations, python=sys.executable,
                                       shell="none")      # file tools + run_tests only; no shell tool at all
         return str(getattr(res, "reply", "") or getattr(res, "error", "") or "")
+
+
+def push(queue_id: str, by: str, **kw) -> dict:
+    """Push an approved queue entry with the pusher (conductor.pusher.enabled must be true). Raises pusher.PushRefused."""
+    from bot.conductor import pusher
+
+    return pusher.push(queue_id, by, **kw)

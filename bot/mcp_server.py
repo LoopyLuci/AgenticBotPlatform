@@ -1575,6 +1575,14 @@ async def conductor_approve(queue_id: str, by: str, note: str = "", reject: bool
     return await _request("POST", f"/api/conductor/queue/{queue_id}/{'reject' if reject else 'approve'}", json={"by": by, "note": note})
 
 
+@mcp.tool()
+async def conductor_push(queue_id: str, by: str) -> Any:
+    """Push an APPROVED queue entry (exactly its approved commit, to the base branch, fast-forward only; never deploys). Refused unless
+    conductor.pusher.enabled is on, the entry is approved, the branch still holds the approved commit, origin has not moved on and the
+    leak guard is clean."""
+    return await _request("POST", f"/api/conductor/queue/{queue_id}/push", json={"by": by}, timeout=300.0)
+
+
 # ---- extensions (ABP_PRIVATE_DIR) ----------------------------------------------------
 # Tools an extension registered through ExtensionAPI.add_mcp_tool(), added to the same server
 # as every tool above. One broken extension costs its own tools and nothing else.

@@ -1,15 +1,16 @@
-# Local conductor (LF4, phase 1)
+# Local conductor (LF4, phases 1 and 2b)
 
 The factory's own manager: it turns a goal into small tasks, has workers do them, checks every diff against the owner's
 standing rules, and merges what passes into an integration branch that waits in a push queue. It uses **local models only**
-(ModelMistress first, then Ollama; never a cloud model, whatever the capacity state) and **never pushes or deploys**. Code:
-`bot/conductor/`.
+(ModelMistress first, then Ollama; never a cloud model, whatever the capacity state) and **never deploys**. It pushes only through
+the pusher, which is off by default and acts only on a recorded approval. Code: `bot/conductor/`.
 
 ```
 goal --planner--> plan (board tasks) --workers--> branch per task --reviewer--> accepted branch
                                                        ^   |  rejected: the reasons go back to the worker
                                                        +---+  rejected twice: escalated, dependents never start
-accepted branches --integrator--> integ/agents-N --suite--> green --> push queue (awaiting approval) --approve--> a person pushes
+accepted branches --integrator--> integ/agents-N --SDK regen, sharded suite--> green --> push queue (awaiting approval)
+                                                                                   --approve--> pusher (if enabled) or a person pushes
 ```
 
 ## Planner (`planner.py`)
@@ -86,22 +87,62 @@ tests the `-rf` summary names are **re-run alone**: a test that passes on the re
 **failure**. Both are recorded on the integration. Any failure makes it `red` and nothing is queued. A green one (flakes
 allowed and listed) goes into the **push queue** as `awaiting_approval`.
 
+### SDK regeneration, shards, budget and the machine lock (phase 2b)
+
+Before the suite, if the merged branches changed routes (anything under `bot/dashboard/`, or an added or removed
+`@app.get/post/...` or `include_router` line in `bot/`), the integrator runs `scripts/export_openapi.py` in the integration
+worktree and **commits** the regenerated `docs/api/openapi.json` and `sdk/typescript/` on the `integ/agents-N` branch, so the queued
+sha already contains them (`sdk` on the integration says what happened; a failing regeneration makes the run `red`;
+`conductor.regen_sdk: false` turns it off; a repository without the script skips it).
+
+The suite then runs **under a machine-wide lock** (`shards.machine_lock`, built on `scripts/release_guard.PipelineLock`: a live
+holder blocks, a dead or recycled one is stale and replaced). The lock file is one per machine (`ABP_SUITE_LOCK`, else
+`%PROGRAMDATA%/abp/suite.lock`, or `/tmp/abp/suite.lock`), so two integrator runs, or an integrator run and any other job that takes
+the same lock, never run their suites at once. A run waits up to `suite_lock_wait_s` (1800) and is then `red` with "the machine is
+busy". pytest `-n` is **sized from the budget** when `suite_workers` is `auto` (idle CPUs and free RAM at 1.5 GB per worker, at
+least 1, at most `max_workers`; the budget used is recorded as `budget`), or set to a number; a suite command without `-n` is left
+alone. `suite_shards: N` splits `tests/**/test_*.py` by file size into N shards run one after another, each with its own exit
+code, summary, failed tests and seconds in `shards`; the log has a section per shard. Failures from all shards are re-run together
+alone, as before, to tell flakes from failures; a shard that exits with no failed test named (a crash, a timeout) is `red`.
+`gate_command` (e.g. `[python, scripts/local_pipeline.py, --no-deploy]`) is an optional final gate after a green suite, in the same
+lock; its result is `gate`, and a failing gate is `red`.
+
 ## Push queue and approval
 
 `abp conductor queue`, `abp conductor approve ID --by owner [--note ..]`, `abp conductor reject ID --by ..`,
 `POST /api/conductor/queue/{id}/approve|reject` (dashboard token), MCP `conductor_queue` / `conductor_approve`, and the
-Coordination page's conductor card. Approval records who decided and when, and answers with the `git push` command; **it does
-not push**. A person (the owner, or Claude when the owner delegates) pushes.
+Coordination page's conductor card. Approval records who decided and when (and the exact commit approved), and answers with the `git push` command; **approving does
+not push**. Either a person (the owner, or Claude when the owner delegates) pushes, or the pusher does.
+
+## Pusher (`pusher.py`, off by default)
+
+`conductor.pusher.enabled: true` turns it on. `abp conductor push QUEUE_ID --by NAME`, `POST /api/conductor/queue/{id}/push`
+(dashboard token), MCP `conductor_push`. It acts **only on a recorded approval** (who approved is in the entry, who pushed is in
+the audit trail), and checks in this order, stopping at the first failure:
+
+1. enabled, and the entry is `approved` (not awaiting, rejected, pushed, stale or being pushed by another call);
+2. the branch tip is exactly the commit that was approved - a branch that moved after approval is refused;
+3. `git fetch`, then the remote's base branch is an **ancestor** of the commit. If not, the entry is marked **stale** (HTTP 409)
+   and the integration has to be re-run: the pusher never merges, rebases or forces;
+4. the leak guard (`scripts/leak_guard.py`, with `ABP_PRIVATE_DIR`) is clean on the exact tree of the commit (a detached worktree
+   of it, removed afterwards);
+5. `git push <remote> <sha>:refs/heads/<base>`: the approved sha, never a branch name, never `--force`.
+
+A refusal leaves the entry as it was (and says why in the audit trail); a push that fails after the claim puts the entry back to
+`approved`. Status flow: `awaiting_approval -> approved -> pushing -> pushed` (or `stale`). The audit trail (approval, refusals,
+push started, pushed/stale/failed, with who and when) is `GET /api/conductor/queue/{id}/audit`. The pusher never deploys: deploying
+the live ABP stays a separate step for the owner.
 
 ## Settings (`conductor:` in config)
 
 `model`, `review_model` (local refs; empty = the first local models the router offers), `max_tasks` (8), `max_rejections` (2),
 `model_review` (false), `review_diff_cap` (12000), `public_repo` (true), `check_hotreload`, `check_ruff` (true), `suite_command`,
-`suite_timeout_s` (3600), `base_branch` (main).
+`suite_timeout_s` (3600), `base_branch` (main), `regen_sdk` (true), `suite_shards` (1), `suite_workers` (`auto` or a number),
+`max_workers` (8), `suite_lock_wait_s` (1800), `gate_command` (empty), `gate_timeout_s` (7200), and `pusher:` with `enabled` (false),
+`remote` (origin) and `target` (empty = the integration's base branch).
 
 ## Phase 2 needs
 
-The confined worker runner (AppContainer worktrees, N in parallel); the integrator regenerating the SDK and running sharded
-pipelines (LF6); a pusher that acts on an approval; a durable `blocked` state on the work board for escalations (today they use
+The confined worker runner (AppContainer worktrees, N in parallel); other pipelines (LF6) taking the same machine lock; a durable `blocked` state on the work board for escalations (today they use
 `review` then `failed` plus the conductor's list); a live run of a real roadmap item with a local model, and measuring plan quality
 and review false positives on it.

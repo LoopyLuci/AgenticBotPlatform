@@ -1357,6 +1357,15 @@ export const operations = {
    "status"
   ]
  },
+ "GET /api/conductor/queue/{queue_id}/audit": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/conductor/queue/{queue_id}/audit",
+  "path_params": [
+   "queue_id"
+  ],
+  "query_params": []
+ },
  "GET /api/conductor/reviews": {
   "body": false,
   "method": "GET",
@@ -5041,6 +5050,15 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/conductor/queue/{queue_id}/approve",
+  "path_params": [
+   "queue_id"
+  ],
+  "query_params": []
+ },
+ "POST /api/conductor/queue/{queue_id}/push": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/conductor/queue/{queue_id}/push",
   "path_params": [
    "queue_id"
   ],
@@ -11488,6 +11506,15 @@ export const operations = {
    "limit"
   ]
  },
+ "conductor_push_api_conductor_queue__queue_id__push_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/conductor/queue/{queue_id}/push",
+  "path_params": [
+   "queue_id"
+  ],
+  "query_params": []
+ },
  "conductor_queue_api_conductor_queue_get": {
   "body": false,
   "method": "GET",
@@ -11496,6 +11523,15 @@ export const operations = {
   "query_params": [
    "status"
   ]
+ },
+ "conductor_queue_audit_api_conductor_queue__queue_id__audit_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/conductor/queue/{queue_id}/audit",
+  "path_params": [
+   "queue_id"
+  ],
+  "query_params": []
  },
  "conductor_reject_api_conductor_queue__queue_id__reject_post": {
   "body": true,

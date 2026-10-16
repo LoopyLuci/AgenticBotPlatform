@@ -14,7 +14,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
-QUEUE_STATES = ("awaiting_approval", "approved", "rejected")
+QUEUE_STATES = ("awaiting_approval", "approved", "rejected", "pushing", "pushed", "stale")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS plans (id TEXT PRIMARY KEY, goal TEXT NOT NULL, source TEXT NOT NULL DEFAULT '', created REAL NOT NULL,
@@ -27,6 +27,9 @@ CREATE TABLE IF NOT EXISTS integrations (id TEXT PRIMARY KEY, plan_id TEXT NOT N
 CREATE TABLE IF NOT EXISTS queue (id TEXT PRIMARY KEY, integration_id TEXT NOT NULL, plan_id TEXT NOT NULL DEFAULT '',
     branch TEXT NOT NULL, head_sha TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, created REAL NOT NULL, updated REAL NOT NULL,
     decided_by TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', data TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS queue_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, queue_id TEXT NOT NULL, at REAL NOT NULL,
+    actor TEXT NOT NULL DEFAULT '', action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '');
+CREATE INDEX IF NOT EXISTS queue_audit_q ON queue_audit(queue_id);
 CREATE TABLE IF NOT EXISTS escalations (id INTEGER PRIMARY KEY AUTOINCREMENT, plan_id TEXT NOT NULL, task_key TEXT NOT NULL,
     reason TEXT NOT NULL, created REAL NOT NULL, resolved INTEGER NOT NULL DEFAULT 0, data TEXT NOT NULL);
 """
@@ -119,7 +122,7 @@ def list_integrations(limit: int = 20) -> list[dict]:
 
 # ---------------------------------------------------------- push queue
 def _queue_data(integration: dict) -> dict:
-    keep = ("base", "tasks", "merged", "flaky", "suite", "tests_run", "log")
+    keep = ("base", "repo", "tasks", "merged", "flaky", "suite", "tests_run", "log", "shards", "gate", "sdk")
     return {k: integration.get(k) for k in keep if k in integration}
 
 
@@ -174,8 +177,49 @@ def decide(queue_id: str, status: str, by: str, note: str = "") -> dict:
             raise KeyError(queue_id)
         if row["status"] != "awaiting_approval":
             raise ValueError(f"queue entry {queue_id} is already {row['status']}")
-        c.execute("UPDATE queue SET status = ?, decided_by = ?, note = ?, updated = ? WHERE id = ?",
-                  (status, str(by)[:80], str(note)[:500], time.time(), queue_id))
+        full = c.execute("SELECT head_sha, data FROM queue WHERE id = ?", (queue_id,)).fetchone()
+        data = _json(full["data"]) or {}
+        if status == "approved":
+            data["approved_sha"] = full["head_sha"]           # the pusher pushes exactly this commit and nothing else
+        c.execute("UPDATE queue SET status = ?, decided_by = ?, note = ?, updated = ?, data = ? WHERE id = ?",
+                  (status, str(by)[:80], str(note)[:500], time.time(), json.dumps(data), queue_id))
+        _audit(c, queue_id, str(by), status, str(note))
+    return get_queue_entry(queue_id) or {}
+
+
+def _audit(c: sqlite3.Connection, queue_id: str, actor: str, action: str, detail: str = "") -> None:
+    c.execute("INSERT INTO queue_audit(queue_id, at, actor, action, detail) VALUES (?,?,?,?,?)",
+              (queue_id, time.time(), actor[:80], action[:40], detail[:1000]))
+
+
+def audit(queue_id: str, actor: str, action: str, detail: str = "") -> None:
+    with _db() as c:
+        _audit(c, queue_id, actor, action, detail)
+
+
+def list_audit(queue_id: str) -> list[dict]:
+    """Everything that happened to a queue entry, oldest first: approval, push attempts, refusals."""
+    with _db() as c:
+        rows = c.execute("SELECT * FROM queue_audit WHERE queue_id = ? ORDER BY id", (queue_id,)).fetchall()
+    return [{"at": r["at"], "actor": r["actor"], "action": r["action"], "detail": r["detail"]} for r in rows]
+
+
+def claim_push(queue_id: str, by: str) -> bool:
+    """Move an approved entry to 'pushing' - atomically, so two pushers never push the same entry."""
+    with _db() as c:
+        cur = c.execute("UPDATE queue SET status = 'pushing', updated = ? WHERE id = ? AND status = 'approved'", (time.time(), queue_id))
+        if cur.rowcount:
+            _audit(c, queue_id, by, "push_started")
+        return bool(cur.rowcount)
+
+
+def finish_push(queue_id: str, by: str, status: str, detail: str = "") -> dict:
+    """Leave 'pushing' for pushed (done), stale (origin moved: re-run the integration) or approved (try again later)."""
+    if status not in ("pushed", "stale", "approved"):
+        raise ValueError("status must be pushed, stale or approved")
+    with _db() as c:
+        c.execute("UPDATE queue SET status = ?, updated = ? WHERE id = ? AND status = 'pushing'", (status, time.time(), queue_id))
+        _audit(c, queue_id, by, {"pushed": "pushed", "stale": "stale", "approved": "push_failed"}[status], detail)
     return get_queue_entry(queue_id) or {}
 
 

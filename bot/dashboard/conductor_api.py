@@ -10,6 +10,9 @@
     GET  /api/conductor/queue?status=       the push queue (default: all, newest first)
     POST /api/conductor/queue/{id}/approve  {"by", "note"} record the owner's (or Claude's) approval; it does NOT push
     POST /api/conductor/queue/{id}/reject   {"by", "note"}
+    POST /api/conductor/queue/{id}/push     {"by"} push an APPROVED entry (exactly its approved commit; needs conductor.pusher.enabled;
+                                            refuses when unapproved, changed, stale or leaking; never forces, never deploys)
+    GET  /api/conductor/queue/{id}/audit    what happened to an entry: approval, push attempts, refusals
     GET  /api/conductor/escalations         tasks waiting for a decision (two review rejections, ...)
 
 Reading uses the dashboard's normal auth; planning, reviewing and deciding need the dashboard token.
@@ -113,6 +116,29 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
     @app.post("/api/conductor/queue/{queue_id}/reject", dependencies=write)
     async def conductor_reject(queue_id: str, body: dict = Body(...)):
         return _decide(queue_id, body, True)
+
+    @app.post("/api/conductor/queue/{queue_id}/push", dependencies=write)
+    async def conductor_push(queue_id: str, body: dict = Body(...)):
+        import asyncio
+
+        from bot.conductor import pusher, run
+
+        try:
+            return await asyncio.to_thread(run.push, queue_id, str(body.get("by") or ""))
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="no such queue entry") from exc
+        except pusher.PushStale as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except pusher.PushRefused as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    @app.get("/api/conductor/queue/{queue_id}/audit", dependencies=read)
+    async def conductor_queue_audit(queue_id: str):
+        from bot.conductor import store
+
+        if store.get_queue_entry(queue_id) is None:
+            raise HTTPException(status_code=404, detail="no such queue entry")
+        return {"audit": store.list_audit(queue_id)}
 
     @app.get("/api/conductor/escalations", dependencies=read)
     async def conductor_escalations(all: bool = Query(False)):

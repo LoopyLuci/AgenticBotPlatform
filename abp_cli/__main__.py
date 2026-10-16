@@ -41,7 +41,7 @@ Commands:
   coordination summary|tasks|locks        the work board: who is doing what, what waits and why, who holds which files
   capacity status|set|clear|history|probe|policy|packs  the capacity governor: cloud-led / hybrid / local-only, why, and the owner override
                                           (`capacity set local-only --for 2h --reason "usage cap"`; `capacity clear` = automatic)
-  conductor plan|run|review|status|queue|approve|reject  the local conductor: plan a goal, run it in a repo, review a diff
+  conductor plan|run|review|status|queue|approve|reject|push  the local conductor: plan a goal, run it in a repo, review a diff
                                           against the standing rules, the push queue (`conductor approve ID --by owner`)
   vision status|analyze|find|compare|edit|fetch
                                           computer vision here (OpenCV + its model zoo): objects, faces, text,
@@ -1883,6 +1883,11 @@ async def _conductor(args, client: DashboardClient) -> int:
         print(json.dumps(res, indent=1) if args.json else f"{res['id']}: {res['status']} by {res['decided_by']}\n"
               f"  nothing was pushed. To push: {res['push_command']}")
         return 0
+    if sub == "push":
+        res = await client._request("POST", f"{api}/queue/{args.queue_id}/push", json={"by": args.by})
+        print(json.dumps(res, indent=1) if args.json else f"{res['id']}: {res['status']} ({res['branch']} at {res['head_sha'][:10]}), "
+              f"pushed by {args.by}; approved by {res['decided_by']}. Nothing was deployed.")
+        return 0
     return 2
 
 
@@ -2167,6 +2172,8 @@ def _parser() -> argparse.ArgumentParser:
     for name, text in (("approve", "approve a queued integration branch (does not push)"), ("reject", "reject a queued integration branch")):
         p = consub.add_parser(name, help=text)
         p.add_argument("queue_id"); p.add_argument("--by", required=True, help="who decides (owner, claude...)"); p.add_argument("--note", default="")
+    p = consub.add_parser("push", help="push an approved queue entry (exactly its approved commit; off unless conductor.pusher.enabled)")
+    p.add_argument("queue_id"); p.add_argument("--by", required=True, help="who pushes (owner, claude...)")
     vis = sub.add_parser("vision", help="computer vision on this machine (OpenCV and its model zoo)")
     vsub = vis.add_subparsers(dest="vision_cmd", required=True)
     vsub.add_parser("status")
