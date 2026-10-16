@@ -41,6 +41,8 @@ Commands:
   coordination summary|tasks|locks        the work board: who is doing what, what waits and why, who holds which files
   capacity status|set|clear|history|probe|policy|packs  the capacity governor: cloud-led / hybrid / local-only, why, and the owner override
                                           (`capacity set local-only --for 2h --reason "usage cap"`; `capacity clear` = automatic)
+  conductor plan|run|review|status|queue|approve|reject  the local conductor: plan a goal, run it in a repo, review a diff
+                                          against the standing rules, the push queue (`conductor approve ID --by owner`)
   vision status|analyze|find|compare|edit|fetch
                                           computer vision here (OpenCV + its model zoo): objects, faces, text,
                                           codes; find text or an image on the screen; compare two images
@@ -202,6 +204,8 @@ async def _dispatch(args, client: DashboardClient) -> int:
         return await _coordination(args, client)
     if cmd == "capacity":
         return await _capacity(args, client)
+    if cmd == "conductor":
+        return await _conductor(args, client)
     if cmd == "hermes":
         from abp_cli import hermes as _hermes
         return await _hermes.run(args, client)
@@ -1817,6 +1821,85 @@ async def _capacity(args, client: DashboardClient) -> int:
     return 2
 
 
+async def _conductor(args, client: DashboardClient) -> int:
+    sub = args.conductor_cmd
+    api = "/api/conductor"
+    if sub == "plan":
+        res = await client._request("POST", f"{api}/plan", json={"goal": args.goal, "replan": args.replan})
+        if args.json:
+            _print(args, res)
+            return 0
+        print(f"plan {res['id']} ({res['planner']}): {res['goal']}")
+        for t in res["tasks"]:
+            print(f"  {t['id']}" + (f" after {', '.join(t['deps'])}" if t["deps"] else "") + f": {t['title']}")
+            print(f"      proof: {(t.get('proof') or {}).get('command', '-')}")
+        for n in res.get("notes") or []:
+            print(f"  note: {n}")
+        return 0
+    if sub == "run":
+        return await _conductor_run(args)
+    if sub == "review":
+        from bot.conductor import reviewer
+        import asyncio as _aio
+        import os as _os
+
+        rep = await _aio.to_thread(reviewer.review, args.repo, args.base, args.head, public=not args.private,
+                                   private_dir=_os.environ.get("ABP_PRIVATE_DIR") or None)
+        print(json.dumps(rep.to_dict(), indent=1) if args.json else rep.to_text())
+        return 0 if rep.accepted else 1
+    if sub == "status":
+        res = await client._request("GET", f"{api}/status")
+        if args.json:
+            _print(args, res)
+            return 0
+        cap = res["capacity"]
+        print(f"conductor: models {res['models']}; capacity {cap.get('state')}"
+              + (f"; local models: {', '.join(cap['local_models'])}" if cap.get("local_models") else ""))
+        q = res["queue"]["awaiting_approval"]
+        print(f"push queue: {len(q)} awaiting approval")
+        for e in q:
+            print(f"  {e['id']}  {e['branch']}  {e['head_sha'][:10]}  flaky {len(e.get('flaky') or [])}")
+        for e in res["escalations"]:
+            print(f"escalated: {e['task_key']}: {e['reason']}")
+        for i in res["integrations"][:5]:
+            print(f"integration {i['branch']}: {i['status']}" + (f" - {i['note']}" if i.get("note") else ""))
+        return 0
+    if sub == "queue":
+        res = await client._request("GET", f"{api}/queue", params={"status": args.status} if args.status else None)
+        rows = [{**e, "when": time.strftime("%m-%d %H:%M", time.localtime(e["created"])), "sha": e["head_sha"][:10]} for e in res["queue"]]
+        _print(args, res if args.json else rows, table=["id", "when", "status", "branch", "sha", "decided_by"])
+        return 0
+    if sub in ("approve", "reject"):
+        res = await client._request("POST", f"{api}/queue/{args.queue_id}/{sub}", json={"by": args.by, "note": args.note})
+        print(json.dumps(res, indent=1) if args.json else f"{res['id']}: {res['status']} by {res['decided_by']}\n"
+              f"  nothing was pushed. To push: {res['push_command']}")
+        return 0
+    return 2
+
+
+async def _conductor_run(args) -> int:
+    """Plan (or reuse the plan of) a goal and run it in a repository: workers, review, and with --integrate the integration branch."""
+    import os as _os
+
+    from bot.conductor import run as crun
+
+    repo = _os.path.abspath(args.repo)
+    worker = crun.AgentLoopWorker(repo, model=args.model)
+    cond = crun.Conductor(repo, worker, base=args.base or None)
+    plan = await cond.plan(args.goal)
+    print(f"plan {plan.id} ({plan.planner}): {len(plan.tasks)} task(s)")
+    report = await cond.run(plan, integrate=args.integrate)
+    if args.json:
+        _print(args, report.to_dict())
+    else:
+        for tid, row in report.tasks.items():
+            print(f"  {tid}: {row.get('status')}" + (f" - {row['error']}" if row.get("error") else ""))
+        if report.integration:
+            i = report.integration
+            print(f"integration {i['branch']}: {i['status']}" + (f", queued as {i['queue_id']}, awaiting approval" if i.get("queue_id") else ""))
+    return 0 if not report.escalated and not report.not_run else 1
+
+
 async def _coordination(args, client: DashboardClient) -> int:
     sub = args.coordination_cmd
     api = "/api/coordination"
@@ -2058,6 +2141,22 @@ def _parser() -> argparse.ArgumentParser:
     capsub.add_parser("probe", help="send a recovery probe to the capped provider now")
     capsub.add_parser("policy", help="what a worker should advertise and use now")
     p = capsub.add_parser("packs", help="the handoff packs, newest first"); p.add_argument("--limit", type=int, default=30)
+    con = sub.add_parser("conductor", help="the local conductor: plan, work, review and integrate with local models; the push queue")
+    consub = con.add_subparsers(dest="conductor_cmd", required=True)
+    p = consub.add_parser("plan", help="plan a goal (text, or FILE:LINE of a roadmap/TODO row) into small board tasks")
+    p.add_argument("goal"); p.add_argument("--replan", action="store_true")
+    p = consub.add_parser("run", help="run a goal in a repository: workers, review, and with --integrate an integration branch")
+    p.add_argument("goal"); p.add_argument("--repo", required=True, help="the repository to work in (never defaults to the live install)")
+    p.add_argument("--base", default=""); p.add_argument("--model", default="", help="a local model (provider/model)")
+    p.add_argument("--integrate", action="store_true", help="merge the reviewed branches, run the suite, queue a green result")
+    p = consub.add_parser("review", help="review base..head of a repository against the standing rules (exit 1 on a rejection)")
+    p.add_argument("--repo", required=True); p.add_argument("--base", default="main"); p.add_argument("--head", required=True)
+    p.add_argument("--private", action="store_true", help="the repository is private: skip the public-repo leak rules")
+    consub.add_parser("status")
+    p = consub.add_parser("queue", help="the push queue"); p.add_argument("--status", default="", choices=["", "awaiting_approval", "approved", "rejected"])
+    for name, text in (("approve", "approve a queued integration branch (does not push)"), ("reject", "reject a queued integration branch")):
+        p = consub.add_parser(name, help=text)
+        p.add_argument("queue_id"); p.add_argument("--by", required=True, help="who decides (owner, claude...)"); p.add_argument("--note", default="")
     vis = sub.add_parser("vision", help="computer vision on this machine (OpenCV and its model zoo)")
     vsub = vis.add_subparsers(dest="vision_cmd", required=True)
     vsub.add_parser("status")

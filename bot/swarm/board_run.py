@@ -46,6 +46,10 @@ class Step:
     tolerate: bool = False                               # a failed step still unblocks its dependents
     extra: dict = field(default_factory=dict)            # copied into the step's output (e.g. the subtask)
     capacity: str = ""                                   # "" (any model) | "local" | "cloud": see bot/capacity/follow.py
+    scope: Optional[dict] = None                         # board locks the step takes while it runs: {"resources": [...]} (the conductor's)
+    priority: int = 0
+    detail: str = ""                                     # "" = "role ...; bot ..."
+    key: str = ""                                        # "" = a hash of the swarm, the prompt and the step id
 
 
 class SwarmBoard:
@@ -98,11 +102,13 @@ class SwarmBoard:
         return pending
 
     async def _create_one(self, step: Step) -> dict:
-        key = hashlib.sha256(f"{self.swarm_id}\0{self.prompt}\0{step.id}".encode("utf-8")).hexdigest()[:40]
+        key = step.key or hashlib.sha256(f"{self.swarm_id}\0{self.prompt}\0{step.id}".encode("utf-8")).hexdigest()[:40]
         kwargs = dict(
-            key=key, detail=f"role {step.role}; bot {step.label}",
+            key=key, detail=step.detail or f"role {step.role}; bot {step.label}", priority=step.priority,
             needs=[f"instance:{step.instance_id}", self.run_token, *follow.need_for(step.capacity)],
             deps=[self.task_of[d] for d in step.deps], max_attempts=2, created_by=f"swarm-run:{self.run_id}")
+        if step.scope:
+            kwargs["scope"] = step.scope
         title = f"{step.role}: {step.label}" + (f" - {step.extra['subtask'][:120]}" if step.extra.get("subtask") else "")
         try:
             task, _deduped = await acall(self.board, self.board.create_task, self.board_name, title, **kwargs)

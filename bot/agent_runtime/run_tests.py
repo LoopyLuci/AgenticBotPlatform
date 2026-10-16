@@ -100,7 +100,7 @@ def clean_k(k) -> str:
     return k.strip()
 
 
-def clean_targets(workspace: Path, raw) -> list[str]:
+def clean_targets(workspace: Path, raw, must_exist: bool = True) -> list[str]:
     """The validated test targets, normalised. Raises ToolError naming the first bad one and the accepted shape."""
     workspace = Path(workspace).resolve()
     if isinstance(raw, str):
@@ -133,6 +133,9 @@ def clean_targets(workspace: Path, raw) -> list[str]:
         if ident and not all(_ID_PART.match(p) for p in ident.split("::")):
             raise ToolError(f"{item!r}: the node id after '::' may only hold letters, digits and . _ - [ ] , = + /. " + SHAPE)
         resolved = safe_path(workspace, path)
+        if not must_exist:                  # shape check only (the conductor validates a plan's proof before any workspace exists)
+            out.append(target)
+            continue
         if not resolved.exists():
             near = sorted(x.relative_to(workspace).as_posix() for x in workspace.rglob(Path(path).name)
                           if x.is_file() and ".git" not in x.parts and "node_modules" not in x.parts)[:5] if Path(path).name else []
