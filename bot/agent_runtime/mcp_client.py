@@ -504,8 +504,8 @@ async def disconnect(name: str) -> None:
             await asyncio.wait_for(task, timeout=10.0)
         except asyncio.CancelledError:
             pass  # expected when we just called task.cancel() above
-        except Exception:
-            logger.exception("external MCP server %r: error while closing connection", name)
+        except Exception as exc:  # noqa: BLE001 - an unreachable server: a quiet warning, no traceback
+            logger.warning("external MCP server %r: error while closing connection: %s: %s", name, type(exc).__name__, exc)
     _clear_pending_oauth(name)
     _rebuild_tool_index()
 
@@ -543,8 +543,9 @@ class PrivateConnection:
                 await asyncio.wait_for(task, timeout=10.0)
             except (asyncio.CancelledError, asyncio.TimeoutError):
                 task.cancel()
-            except Exception:  # noqa: BLE001
-                logger.exception("external MCP server %r: error while closing connection", self.name)
+            except Exception as exc:  # noqa: BLE001 - an unreachable server: a quiet warning, no traceback
+                logger.warning("external MCP server %r: error while closing connection: %s: %s", self.name,
+                               type(exc).__name__, exc)
         self.session = None
 
 

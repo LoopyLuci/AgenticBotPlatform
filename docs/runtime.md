@@ -73,6 +73,16 @@ operation:
    for the rollback window (default 10 min). `POST /api/runtime/rollback` is another transaction back to the previous
    manifest and reuses the standby builds, so it is instant.
 
+**Optional units.** External MCP servers (`mcp:<name>`) are *optional*: a server that is unreachable, fails to
+start or fails `health()` while it is being **loaded** is left out of the transaction instead of aborting it. The
+transaction commits everything else; the report lists it under `degraded` (ref -> reason), `GET /api/runtime/status`
+shows it under `failed` and `degraded`, and its routes answer `failed`. The wanted manifest still contains it, and the
+engine retries it in its own transaction with exponential backoff (5 s, 10 s, ... capped at 300 s) until it comes up,
+is removed, or the runtime shuts down. Only a `load` is tolerated: swapping or reconfiguring a *running* optional unit
+stays atomic (the old one keeps serving, the swap aborts). Every other unit kind is core and aborts as described
+above; a core failure in the same transaction aborts it, optional units included. Closing a connection to an
+unreachable server logs a one-line warning, not an error with a traceback.
+
 Only one transaction commits at a time (a queue); staging work of one transaction runs in parallel.
 
 ## Parallel config states (branches)

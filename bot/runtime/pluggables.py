@@ -217,7 +217,11 @@ async def sync(engine: Any, kinds: tuple = KINDS):
             return report
         report = await engine.apply(target, label="sync " + ",".join(k.rstrip(":") for k in kinds))
         if report.ok:
+            for ref, message in report.degraded.items():      # optional (MCP) units left out: shown, retried by the engine
+                errors[ref] = message
             for ref in want:
+                if ref in report.degraded:
+                    continue
                 if _failed_versions.get(ref) == want[ref].version:
                     continue
                 _failed_versions.pop(ref, None)
@@ -550,4 +554,4 @@ def register_factories(factories: Any) -> None:
     factories.register_prefix(EXT, lambda spec: ExtensionUnit(spec.unit))
     factories.register_prefix(PLUGIN, lambda spec: PluginUnit(spec.unit))
     factories.register_prefix(WASM, lambda spec: WasmUnit(spec.unit))
-    factories.register_prefix(MCP, lambda spec: McpUnit(spec.unit))
+    factories.register_prefix(MCP, lambda spec: McpUnit(spec.unit), optional=True)   # fails alone, retried

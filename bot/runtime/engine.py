@@ -35,6 +35,7 @@ from bot.runtime.unit import (ACTIVE, DRAINING, STANDBY, STOPPED, Health, Instan
 logger = logging.getLogger("bot.runtime.engine")
 
 DRAIN_GROUP = "runtime:drain"
+RETRY_GROUP = "runtime:retry"
 
 
 class UnitFactories:
@@ -43,12 +44,22 @@ class UnitFactories:
     def __init__(self) -> None:
         self._factories: dict[tuple[str, str], Callable[[InstanceSpec], Any]] = {}
         self._prefixes: dict[str, Callable[[InstanceSpec], Any]] = {}      # "ext:" -> factory for every ext:<name>
+        self._optional: set[str] = set()      # prefixes whose units fail alone (see is_optional)
 
     def register(self, unit_id: str, factory: Callable[[InstanceSpec], Any], version: str = "*") -> None:
         self._factories[(unit_id, version)] = factory
 
-    def register_prefix(self, prefix: str, factory: Callable[[InstanceSpec], Any]) -> None:
+    def register_prefix(self, prefix: str, factory: Callable[[InstanceSpec], Any], optional: bool = False) -> None:
         self._prefixes[prefix] = factory
+        if optional:
+            self._optional.add(prefix)
+        else:
+            self._optional.discard(prefix)
+
+    def is_optional(self, unit_id: str) -> bool:
+        """An optional unit (an external MCP server) that cannot start or fails its health check is left out of a
+        transaction and retried with backoff; it never aborts the others. Core units are never optional."""
+        return any(unit_id.startswith(p) for p in self._optional)
 
     def unregister(self, unit_id: str, version: str = "*") -> None:
         self._factories.pop((unit_id, version), None)
@@ -95,11 +106,12 @@ class Report:
     plan: Optional[Plan] = None
     error: str = ""
     failed: dict = field(default_factory=dict)       # ref -> error
+    degraded: dict = field(default_factory=dict)     # optional ref -> error: left out, the transaction still committed
     duration: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return {"label": self.label, "ok": self.ok, "generation": self.generation, "manifest_id": self.manifest_id,
-                "plan": self.plan.to_dict() if self.plan else None, "error": self.error, "failed": self.failed,
+                "plan": self.plan.to_dict() if self.plan else None, "error": self.error, "failed": self.failed, "degraded": self.degraded,
                 "duration": round(self.duration, 4)}
 
 
@@ -118,7 +130,7 @@ class RuntimeEngine:
                  dispatcher: Optional[Dispatcher] = None, registries: Optional[Registries] = None,
                  supervisor: Optional[TaskSupervisor] = None, on_commit: Optional[Callable[[dict], Any]] = None,
                  drain_deadline: float = 30.0, standby_window: float = 600.0, health_timeout: float = 10.0,
-                 stage_timeout: float = 30.0) -> None:
+                 stage_timeout: float = 30.0, retry_base: float = 5.0, retry_cap: float = 300.0) -> None:
         self.factories = factories
         self.store = store
         self.branches = branches
@@ -130,6 +142,11 @@ class RuntimeEngine:
         self.standby_window = standby_window
         self.health_timeout = health_timeout
         self.stage_timeout = stage_timeout
+        self.retry_base = retry_base
+        self.retry_cap = retry_cap
+        self._degraded: dict[str, InstanceSpec] = {}      # optional units left out of the last commit, to retry
+        self._attempts: dict[str, int] = {}
+        self._retry_armed = False
         self.generation = 0
         self.last_transaction: Optional[Report] = None
         self.version_resolver: Optional[Callable[[str], Optional[str]]] = None   # unit id -> its current version on disk
@@ -173,7 +190,7 @@ class RuntimeEngine:
             "generation": self.generation, "manifest_id": self._manifest.id,
             "units": [i.describe() for _r, i in sorted(self._active.items())],
             "standby": [i.describe() for r, (i, exp) in sorted(self._standby.items()) if exp > now],
-            "failed": dict(self._failures), "boot_error": self.boot_error, "previews": sorted(self._previews),
+            "failed": dict(self._failures), "degraded": sorted(self._degraded), "boot_error": self.boot_error, "previews": sorted(self._previews),
             "tasks": self.supervisor.total(),
             "last_transaction": self.last_transaction.to_dict() if self.last_transaction else None,
         }
@@ -200,18 +217,25 @@ class RuntimeEngine:
         report = Report(label, generation=self.generation, manifest_id=self._manifest.id, plan=plan)
         if plan.empty:
             return self._finish(report, started)
+        wanted = target
         staged: dict[str, Instance] = {}
+        degraded: dict[str, str] = {}
         try:
             self._set_states({o.ref: "loading" for o in plan.ops if o.action == "load"})
-            staged = await self._stage(plan, target)
+            staged = await self._stage(plan, target, degraded)
             self.dispatcher.set_staged(build_table(staged.values()))
-            await self._verify(staged)
+            degraded.update(await self._verify(staged, tolerate=True))
+            if degraded:
+                # optional units that did not come up are left out; everything else commits as planned
+                plan = Plan([o for o in plan.ops if o.ref not in degraded], plan.config_changed)
+                target = self._without_degraded(target, degraded)
+                report.plan = plan
             await self._carry_state(plan, staged)
             new_active = {r: i for r, i in self._active.items()
                           if r in target.instances and r not in staged}
             new_active.update(staged)
             snapshot = self.registries.prepare(i for r, i in new_active.items())
-            self._persist(target)
+            self._persist(wanted)
         except asyncio.CancelledError:
             await asyncio.shield(self._abort(staged))
             raise
@@ -225,7 +249,10 @@ class RuntimeEngine:
             return self._finish(report, started)
         finally:
             self.dispatcher.set_staged(None)
+        self._failures.update(degraded)
+        report.degraded = dict(degraded)
         self._commit(plan, target, staged, new_active, snapshot, report)
+        self._note_degraded(wanted, degraded)
         return self._finish(report, started)
 
     def _finish(self, report: Report, started: float) -> Report:
@@ -234,11 +261,26 @@ class RuntimeEngine:
         return report
 
     # -- 2. stage
-    async def _stage(self, plan: Plan, target: Manifest) -> dict[str, Instance]:
+    def _is_optional(self, ref: str) -> bool:
+        """Only a unit coming up fails alone. Swapping a running optional unit stays atomic: the old one keeps serving."""
+        return ref not in self._active and self.factories.is_optional(split_ref(ref)[0])
+
+    def _without_degraded(self, target: Manifest, degraded: dict[str, str]) -> Manifest:
+        """The manifest that actually runs: a degraded unit keeps its previous spec if it was live, else is absent."""
+        for ref in degraded:
+            unit, instance = split_ref(ref)
+            old = self._manifest.instances.get(ref)
+            target = target.with_instance(unit, instance, old) if old is not None else target.without(ref)
+        return target
+
+    async def _stage(self, plan: Plan, target: Manifest, degraded: Optional[dict] = None) -> dict[str, Instance]:
         refs = [o.ref for o in plan.ops if o.action != "unload"]
         results = await asyncio.gather(*(self._build(r, target.instances[r]) for r in refs), return_exceptions=True)
         built = {r: res for r, res in zip(refs, results) if isinstance(res, Instance)}
         failed = {r: f"{type(res).__name__}: {res}" for r, res in zip(refs, results) if not isinstance(res, Instance)}
+        if degraded is not None:
+            for ref in [r for r in failed if self._is_optional(r)]:
+                degraded[ref] = failed.pop(ref)
         if failed:
             await self._abort(built)
             raise StageError(failed)
@@ -301,7 +343,9 @@ class RuntimeEngine:
                 await self._dispose(inst)
 
     # -- 3. verify
-    async def _verify(self, staged: dict[str, Instance]) -> None:
+    async def _verify(self, staged: dict[str, Instance], tolerate: bool = False) -> dict[str, str]:
+        """Health-check the staged instances. A failure aborts, except an optional unit when `tolerate`: it is
+        stopped, removed from `staged` and returned."""
         async def one(inst: Instance) -> Health:
             try:
                 health = await asyncio.wait_for(inst.unit.health(inst.ctx), self.health_timeout)
@@ -314,8 +358,48 @@ class RuntimeEngine:
 
         results = await asyncio.gather(*(one(i) for i in staged.values()))
         failed = {i.ref: h.detail or "health check failed" for i, h in zip(staged.values(), results) if not h.passes}
+        soft: dict[str, str] = {}
+        if tolerate:
+            for ref in [r for r in failed if self._is_optional(r)]:
+                soft[ref] = failed.pop(ref)
+                await self._dispose(staged.pop(ref))
         if failed:
             raise StageError(failed)
+        return soft
+
+    # -- optional units: retry with backoff
+    def _note_degraded(self, wanted: Manifest, degraded: dict[str, str]) -> None:
+        for ref in list(self._degraded):
+            if ref not in wanted.instances or ref not in degraded:
+                self._degraded.pop(ref, None)
+                self._attempts.pop(ref, None)
+        for ref, why in degraded.items():
+            self._degraded[ref] = wanted.instances[ref]
+            self._attempts[ref] = self._attempts.get(ref, 0) + 1
+            logger.warning("optional unit %s left out (attempt %d): %s", ref, self._attempts[ref], why)
+        if self._degraded and not self._retry_armed:
+            self._retry_armed = True
+            self.supervisor.spawn(RETRY_GROUP, self._retry_later, "retry-optional")
+
+    def retry_delay(self, attempts: int) -> float:
+        return min(self.retry_cap, self.retry_base * (2 ** max(attempts - 1, 0)))
+
+    async def _retry_later(self) -> None:
+        try:
+            while self._degraded:
+                await asyncio.sleep(self.retry_delay(min(self._attempts.get(r, 1) for r in self._degraded)))
+                if not self._degraded:
+                    break
+                await self.retry_degraded()
+        finally:
+            self._retry_armed = False
+
+    async def retry_degraded(self) -> Report:
+        """One transaction that tries the left-out optional units again."""
+        async with self._lock:
+            extra = {r: s for r, s in self._degraded.items() if r not in self._manifest.instances}
+            target = Manifest(self._manifest.config, {**self._manifest.instances, **extra})
+            return await self._transact(target, "retry optional")
 
     # -- 4. carry state
     async def _carry_state(self, plan: Plan, staged: dict[str, Instance]) -> None:
@@ -528,6 +612,8 @@ class RuntimeEngine:
 
     async def shutdown(self) -> None:
         """Unload everything (no units left running) and stop all tasks."""
+        self._degraded.clear()
+        await self.supervisor.cancel_group(RETRY_GROUP, 1.0)
         await self.apply(Manifest(self._manifest.config), label="shutdown")
         await self.settle()
         await self.supervisor.cancel_all(2.0)
