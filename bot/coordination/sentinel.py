@@ -178,6 +178,12 @@ class SentinelBoard(Board):
             {"agent": agent, "fence": fence, "lease_s": lease_s, "progress": progress})).json()
 
     def set_state(self, task_id, agent, fence, state, *, result=None, note=""):
+        if state == "blocked":
+            # AgentSentinel's board has no blocked state (running | review | done | failed | released). `review` is leased and would
+            # be requeued, so a blocked task there ends `failed` with a BLOCKED: note and its context as the result; the conductor's
+            # own list (bot/conductor/store.py) is the durable record and unblocking re-plans the task.
+            state, note = "failed", note if note.startswith("BLOCKED") else f"BLOCKED: {note}"
+            result = {**(result if isinstance(result, dict) else {}), "blocked": True}
         out = self._call("POST", f"/tasks/{task_id}/state", body=self._drop_none(
             {"agent": agent, "fence": fence, "state": state, "result": result, "note": note or None})).json()
         if state in ("review", "done", "failed") and isinstance(out, dict):

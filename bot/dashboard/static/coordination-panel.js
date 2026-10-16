@@ -11,7 +11,7 @@
   const $ = (id) => document.getElementById(id);
   const E = (s) => (typeof esc === 'function' ? esc(s) : String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
   const errText = (e) => { if (window.ABP && ABP.unitUnavailable && ABP.unitUnavailable(e)) return 'This module is not loaded.'; let m = e && e.message ? e.message : String(e); try { m = JSON.parse(m).detail || m; } catch (_) {} return m; };
-  const STATES = ['open', 'claimed', 'running', 'review', 'done', 'failed', 'cancelled'];
+  const STATES = ['open', 'claimed', 'running', 'review', 'blocked', 'done', 'failed', 'cancelled'];
   const when = (ms) => (ms ? new Date(ms).toLocaleTimeString() : '-');
   const left = (ms) => (ms == null ? '-' : (ms < 0 ? 'expired' : Math.round(ms / 1000) + ' s'));
   let f = { board: '', state: '' };
@@ -43,7 +43,7 @@
     document.head.appendChild(s);
   }
 
-  const chip = (st, n) => `<span class="co-chip ${st === 'failed' ? 'bad' : (st === 'running' || st === 'claimed') ? 'run' : ''}">${E(st)}${n != null ? ' ' + E(n) : ''}</span>`;
+  const chip = (st, n) => `<span class="co-chip ${(st === 'failed' || st === 'blocked') ? 'bad' : (st === 'running' || st === 'claimed') ? 'run' : ''}">${E(st)}${n != null ? ' ' + E(n) : ''}</span>`;
 
   function boardCard(name, b) {
     const counts = STATES.filter((s) => (b.counts || {})[s]).map((s) => chip(s, b.counts[s])).join('') || '<span class="co-note">no tasks</span>';

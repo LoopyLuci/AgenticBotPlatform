@@ -55,7 +55,9 @@ token is read from `AGENT_SENTINEL_TOKEN` only (never from a config file) and se
 
 `async with await WorkSession.claim(board, task_id, agent)` (or `WorkSession.next(board, name, agent, capabilities=...)`)
 runs one task's lifetime: it heartbeats the task and its locks every lease/3, marks the agent busy and idle, and always
-ends the task: **done** at the end of the block (with `work.result`), **failed** after `work.fail(note)`, **released**
+ends the task: **done** at the end of the block (with `work.result`), **failed** after `work.fail(note)`, **blocked** after `work.block(note, context)` (a decision is needed: no lease,
+no locks, never requeued; the local board's `unblock` puts it back to `open`; AgentSentinel's board has no such state, so
+there it ends `failed` with a `BLOCKED:` note), **released**
 when the block raises, is cancelled or the process shuts down. If a heartbeat is refused `STALE_FENCE` / `NOT_OWNER`
 the work is cancelled at once, nothing is written back and the block ends with `WorkLost`: its output must be dropped.
 Inside the block `work.acquire([...])` takes more shared things for the task; they are freed with it.

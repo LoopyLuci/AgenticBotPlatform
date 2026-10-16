@@ -1,4 +1,4 @@
-# Local conductor (LF4, phase 1)
+# Local conductor (LF4, phases 1 and 2a)
 
 The factory's own manager: it turns a goal into small tasks, has workers do them, checks every diff against the owner's
 standing rules, and merges what passes into an integration branch that waits in a push queue. It uses **local models only**
@@ -39,11 +39,29 @@ leased and heartbeated, requeued by the board when a worker dies, following the 
 A worker is an async callable `worker(spec, feedback) -> {"branch", "worktree", "start", "created", "summary"}` that leaves its work
 committed on `spec["branch"]`. `AgentLoopWorker` is the real one: a git worktree from the base (or from the branch a dependency
 produced), ABP's headless native agent (`abp_agenteval.factory.drive_agent`, small-model mode) on a local model, then a commit.
-**Confinement.** The agent gets the existing confined native-agent tool set of the LF2 bench (`shell="none"`): file tools
-(read, list, glob, grep, repo map, code search, git diff/status, edit, write, patch) and `run_tests`, with permission mode `accept_edits` and a locked permission list that denies
-every other tool. It has no shell tool; `run_shell` exists only in the bench's `sandbox` mode (Windows job / AppContainer, no
-network), which the conductor does not turn on in this phase. `run_tests` itself starts pytest through `sandbox.start`.
-The confined AppContainer worker runner is phase 2.
+**Confinement** (the runner the owner approved on 2026-10-07: native agent, file and test tools, `run_shell` only inside an
+AppContainer with no network). `AgentLoopWorker(shell=...)` / `abp conductor run --shell none|sandbox`:
+
+| `--shell` | What the agent has |
+|---|---|
+| `none` (default) | The LF2 bench's tool set: file tools (read, list, glob, grep, repo map, code search, git diff/status, edit, write, patch) and `run_tests`; permission mode `accept_edits`, a locked permission list that denies every other tool. No shell tool at all. `run_tests` starts pytest through `sandbox.start`. |
+| `sandbox` | The same plus `run_shell` (and its output/list/kill), allowlisted to pytest, ruff, py_compile, `python -c`, `dir`, `type`, `echo`, running in a Windows AppContainer with no capabilities (`bot/agent_runtime/appcontainer.py`): the kernel denies all network (loopback too) and every path except the worktree (read/write) and the Python install and venv (read only; folders under Program Files and the Windows folder are readable already). |
+
+`sandbox` is refused, never degraded, where there is no AppContainer (`confine.SandboxUnavailable`, CLI exit 2). Before a worker's
+first task, `bot/conductor/confine.py` runs three probes through the same `run_shell` path the agent uses and the same settings:
+the user's home folder cannot be listed, a file outside the worktree cannot be read, a loopback server cannot be reached (and the
+worktree is writable as a control). Any leak and the worker does not start. `tests/test_conductor_runner.py` runs them for real
+and checks they are not vacuous (the same probes against an open shell find the leaks).
+
+**Audit.** Every tool call the agent made, with tokens, iterations and why it stopped, is saved per task attempt
+(`store.list_tool_calls(plan_id, task_key)`; table `toolcalls`).
+
+**Parallel workers.** `Conductor(..., workers=N)` / `--workers N`: N workers pull with `next` (heartbeated leases, each task in its
+own worktree and branch, scopes keep two tasks off the same file). The agent's turn itself holds a process-wide lock (its config
+overlay and ephemeral environment are process-global), so agent turns run one at a time; everything around a turn (worktree,
+commit, review, proofs) and the other workers' waiting runs in parallel. One local model serves one request stream well anyway.
+**Release on failure:** a failure that is not the task's fault (no local model answering yet) hands the board task back (up to 3
+times, attempts not charged) instead of failing it; a lost lease or a crashed worker is requeued by the board as before.
 
 **Proofs are not shell commands.** A plan's proof may only be `python -m pytest <test paths or node ids>` (with `-q -x -v -rf -k EXPR`)
 or `ruff check <paths>` (`bot/conductor/proof.py`). Test targets are validated by the same function as the `run_tests` tool
@@ -75,7 +93,27 @@ check state, findings, advisory notes) and `to_text()`.
 After a static accept, the task's proof command runs in the worker's worktree; a failing proof is a rejection (`proof`).
 A rejection sends the findings back to the worker as feedback. After `conductor.max_rejections` (2) rejections the task is
 **escalated**: a row in the conductor's escalation list (`GET /api/conductor/escalations`, which LF5's digest reads), the board
-task goes to `review` and then `failed` with an `ESCALATED: ...` note, and tasks that depend on it never start.
+task goes to **`blocked`** with an `ESCALATED: ...` note, and tasks that depend on it never start.
+
+## Blocked state and escalations
+
+`blocked` is a real state of the local work board (`bot/coordination`): not leased, owner kept for the record, its locks freed, never
+swept, requeued or counted as an attempt, not terminal. Its result holds the minimum a decider needs (`context`): `kind`, the
+`question`, the `failing_check` (rule names and the first finding) and a `diff_excerpt` (1500 characters). A re-plan joins a blocked
+task by key instead of duplicating it; the dashboard board card counts it. Kinds:
+
+| `kind` | When |
+|---|---|
+| `rejections` | the reviewer rejected the task twice |
+| `rule_decision` | the last rejections were `no_feature_removed` / `no_deletions`: the question is whether the removal may stand |
+| `stuck` | two attempts in a row ended with no change (out of steps or time, or nothing to commit); nothing is sent to review |
+
+`Conductor.unblock(plan_id, task_key, by, note)` / `abp conductor unblock PLAN KEY --by owner` records the decision: the escalation
+is resolved, the task's rejection count starts again, and its board task goes back to `open` for the next `run` of the plan.
+
+AgentSentinel's board has no blocked state (`running | review | done | failed | released`; it is not modified). There a blocked task
+ends `failed` with a `BLOCKED: ...` note and `{"blocked": true, ...context}` as its result (`review` is leased and would be requeued), and
+`unblock` answers `NOT_BLOCKED`; the conductor's own escalation list is the durable record and the next run re-creates the task.
 
 ## Integrator (`integrator.py`)
 
@@ -99,9 +137,18 @@ not push**. A person (the owner, or Claude when the owner delegates) pushes.
 `model_review` (false), `review_diff_cap` (12000), `public_repo` (true), `check_hotreload`, `check_ruff` (true), `suite_command`,
 `suite_timeout_s` (3600), `base_branch` (main).
 
-## Phase 2 needs
+## First live run (2026-10-16)
 
-The confined worker runner (AppContainer worktrees, N in parallel); the integrator regenerating the SDK and running sharded
-pipelines (LF6); a pusher that acts on an approval; a durable `blocked` state on the work board for escalations (today they use
-`review` then `failed` plus the conductor's list); a live run of a real roadmap item with a local model, and measuring plan quality
-and review false positives on it.
+A throwaway clone of ABP, a ModelMistress hub of its own, Qwen3-Coder-30B-A3B (Q4_K_XL, 32k context, 7900 XTX), `--shell sandbox`,
+one worker. Goal: tests for `clamp_lease` and `norm_resources` plus a docstring for `mode_conflicts`. The model planned 3 tasks in
+7 s; 427 s for the run; 4 agent turns of 24 to 40 steps (about 636k tokens). Two tasks were accepted first time; the docstring task
+was rejected twice (a duplicated function the ruff check caught, then a failing proof) and became `blocked` with its diff excerpt.
+What it showed: the model's plan put two tasks on one new test file; a task's proof named one test, so a wrong second test in the
+same branch passed review; and an unknown local provider used to resolve to the Anthropic transport (fixed: `llm.transport_for_ref`
+refuses anything that is not a local provider).
+
+## Still to do
+
+The integrator regenerating the SDK and running sharded pipelines (LF6); a pusher that acts on an approval; LF5 reading the blocked
+contexts; agent turns in separate processes (so they can truly run in parallel and be killed by PID); measuring plan quality and
+review false positives over more live runs.

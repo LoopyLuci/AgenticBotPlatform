@@ -349,7 +349,7 @@ class LocalBoard(Board):
         norm_resources(scope.get("resources"))             # validates
         with self._tx() as (conn, now, events):
             if key:
-                states = ("open", "claimed", "running", "review") + (("done",) if dedupe_done else ())
+                states = ("open", "claimed", "running", "review", "blocked") + (("done",) if dedupe_done else ())
                 marks = ",".join("?" * len(states))
                 row = conn.execute(f"SELECT * FROM coord_tasks WHERE board = ? AND key = ? AND state IN ({marks}) "
                                    "ORDER BY created_at, rowid LIMIT 1", (board, key, *states)).fetchone()
@@ -475,8 +475,8 @@ class LocalBoard(Board):
                 cols["note"] = note[:2000]
             if blob is not None:
                 cols["result"] = blob
-            finished = state in ("done", "failed", "released")
-            if state in ("done", "failed"):
+            finished = state in ("done", "failed", "released", "blocked")
+            if state in ("done", "failed", "blocked"):
                 cols.update(state=state, lease_until=None)
             elif state == "released":
                 cols.update(state="open", owner=None, lease_until=None)
@@ -488,8 +488,22 @@ class LocalBoard(Board):
             task = self._task(self._get(conn, task_id))
             events.append((f"board.task.{state}", {**task, "owner": agent}))
             self._seen(conn, agent, now, status="idle" if finished else "busy", task=None if finished else task_id)
-        if state in ("review", "done", "failed"):
+        if state in ("review", "blocked", "done", "failed"):
             _vault_note(state, task)
+        return task
+
+    def unblock(self, task_id, *, by, note=""):
+        """Put a blocked task back to `open` (a decision was made); its attempts are kept. BoardError NOT_BLOCKED otherwise."""
+        if not str(by or "").strip():
+            raise BoardError("BAD_REQUEST", "say who unblocks it (by)", status=400)
+        with self._tx() as (conn, _now, events):
+            row = self._get(conn, task_id)
+            if row["state"] != "blocked":
+                raise BoardError("NOT_BLOCKED", f"task is {row['state']}, not blocked")
+            self._touch(conn, task_id, state="open", owner=None, lease_until=None,
+                        note=(f"unblocked by {by}" + (f": {note}" if note else ""))[:2000])
+            task = self._task(self._get(conn, task_id))
+            events.append(("board.task.unblocked", task))
         return task
 
     def cancel(self, task_id, *, agent="", note=""):

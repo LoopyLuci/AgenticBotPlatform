@@ -8,10 +8,13 @@ from __future__ import annotations
 import time
 from typing import Any, Optional
 
-STATES = ("open", "claimed", "running", "review", "done", "failed", "cancelled")
+STATES = ("open", "claimed", "running", "review", "blocked", "done", "failed", "cancelled")
 TERMINAL = frozenset({"done", "failed", "cancelled"})
 ACTIVE = frozenset({"claimed", "running", "review"})
-SETTABLE = frozenset({"running", "review", "done", "failed", "released"})
+SETTABLE = frozenset({"running", "review", "blocked", "done", "failed", "released"})
+# `blocked`: a worker stopped on purpose and a decision is needed. No lease, no locks, never swept or requeued, not terminal
+# (it stays until `unblock` puts it back to `open` or someone cancels it). Dependents wait for it like for a failure.
+HALTED = TERMINAL | {"blocked"}
 
 DEFAULT_LEASE_S = 120.0
 MIN_LEASE_S = 5.0
@@ -36,6 +39,14 @@ class BoardError(Exception):
 
     def __str__(self) -> str:
         return f"{self.code}: {self.message}" if self.message != self.code else self.code
+
+
+class Blocked(Exception):
+    """Raised by a step's work to stop on purpose: the task goes to `blocked` with `context` (the minimum a decider needs)."""
+
+    def __init__(self, message: str, context: Optional[dict] = None):
+        super().__init__(message)
+        self.context = context or {}
 
 
 class Unavailable(BoardError):

@@ -132,6 +132,10 @@ class WorkSession:
     def fail(self, note: str, result: Any = None) -> None:
         self._final = ("failed", result, note)
 
+    def block(self, note: str, result: Any = None) -> None:
+        """End the task as `blocked`: it needs a decision (its context is the result); it is not retried or requeued."""
+        self._final = ("blocked", result, note)
+
     def release(self, note: str = "") -> None:
         self._final = ("released", None, note)
 

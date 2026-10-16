@@ -23,20 +23,32 @@ import json
 import logging
 import os
 import sys
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
 from bot import conductor as conductor_pkg
-from bot.conductor import integrator, planner, proof, reviewer, store
+from bot.conductor import confine, integrator, llm, planner, proof, reviewer, store
+from bot.coordination.model import Blocked
 
 logger = logging.getLogger("bot.conductor.run")
 
 Worker = Callable[[dict, str], Awaitable[dict]]
 
 
-class Escalated(RuntimeError):
-    """The task was rejected too often; it waits for a decision (Claude or the owner)."""
+class Escalated(Blocked):
+    """The task needs a decision (Claude or the owner): rejected too often, stuck, or a rule question. The board task goes to
+    `blocked`; `context` is the minimum to decide on (kind, question, failing check, diff excerpt)."""
+
+
+class WorkerStuck(RuntimeError):
+    """A worker may raise this to say it cannot make progress (the conductor escalates it after the same rejections limit)."""
+
+
+KINDS = ("rejections", "stuck", "rule_decision")
+RULE_QUESTIONS = {"no_feature_removed": "The change removes an existing feature. May it be removed (name which), or must the worker keep it?",
+                  "no_deletions": "The change deletes a file the task did not create. May it be deleted, or must the worker keep it?"}
 
 
 @dataclass
@@ -70,7 +82,7 @@ async def run_proof(spec: dict, worktree: str, timeout_s: Optional[int] = None) 
 class Conductor:
     def __init__(self, repo: Any, worker: Worker, *, board: Any = None, base: Optional[str] = None, repo_name: str = "abp",
                  model_complete: Optional[reviewer.ModelCall] = None, suite: Optional[list[str]] = None,
-                 rerun: Optional[list[str]] = None, workdir: Optional[Path] = None, run_proofs: bool = True):
+                 rerun: Optional[list[str]] = None, workdir: Optional[Path] = None, run_proofs: bool = True, workers: int = 0):
         self.repo = Path(repo)
         self.worker = worker
         self.board = board
@@ -82,6 +94,7 @@ class Conductor:
         self.rerun = rerun
         self.workdir = workdir
         self.run_proofs = run_proofs
+        self.workers = int(workers)                            # parallel workers pulling with `next` (0 = the coordination setting)
         self._plan: Optional[planner.Plan] = None
         self._done: dict[str, dict] = {}                       # task id -> accepted result
         self._model_used = ""
@@ -105,6 +118,8 @@ class Conductor:
         sb = SwarmBoard({"id": f"conductor-{plan.id}"}, plan.goal, f"{plan.id}", self._call)
         if self.board is not None:
             sb.board = self.board
+        if self.workers > 0:
+            sb.max_workers = self.workers
         results = await sb.run(steps)
         report = RunReport(plan_id=plan.id)
         for t in planner.topo_order(plan.tasks):
@@ -144,12 +159,31 @@ class Conductor:
                 "files": task.files, "proof": task.proof, "branch": task.branch, "worktree": task.worktree, "base": self.base,
                 "after": [self._done[d]["branch"] for d in task.deps if d in self._done]}
         feedback = ""
+        stuck = attempt = 0
         while True:
             if store.rejections(plan.id, task.key) >= max_rej:
                 await self._escalate(plan, task, "rejected twice and no worker attempt left")
-            result = await self.worker(dict(spec), feedback)
+            attempt += 1
+            try:
+                result = await self.worker(dict(spec), feedback)
+            except WorkerStuck as exc:
+                result = {"branch": task.branch, "empty": True, "summary": str(exc)}
             branch = str(result.get("branch") or spec["branch"])
             review_base = str(result.get("start") or (spec["after"][-1] if spec["after"] else self.base))
+            if result.get("tool_calls") or result.get("tokens"):          # the confined runner's audit trail: every tool call
+                store.add_tool_calls(plan.id, task.key, attempt, result.get("tool_calls") or [],
+                                     f"tokens={result.get('tokens', 0)} iterations={result.get('iterations', 0)} "
+                                     f"stopped={result.get('stopped', '')} shell={result.get('shell', '')}")
+            if result.get("empty"):                                       # nothing to review: the agent produced no change
+                stuck += 1
+                feedback = ("Your previous attempt changed nothing" + (" (it ran out of steps or time)" if result.get("stopped") else "") +
+                            ". Make the smallest change that does the task, and write it with the edit tools.")
+                if stuck >= max_rej:
+                    await self._escalate(plan, task, f"stuck: {stuck} attempts produced no change", kind="stuck",
+                                         question="The worker keeps ending without a change. Is the task clear enough, or should it be "
+                                                  "split, done by hand, or given to a bigger model?",
+                                         base=review_base, branch=branch, summary=str(result.get("summary", "")))
+                continue
             rep = await asyncio.to_thread(
                 reviewer.review, self.repo, review_base, branch, created_files=result.get("created") or [],
                 allow_delete=result.get("allow_delete") or [], public=bool(self.cfg["public_repo"]),
@@ -177,21 +211,36 @@ class Conductor:
                                    "checks": rep.checks, "advisory": [str(f) for f in rep.advisory][:10]})
             feedback = rep.feedback()
             if store.rejections(plan.id, task.key) >= max_rej:
-                await self._escalate(plan, task, f"{max_rej} review rejections; last: " + feedback.splitlines()[0][:300], rep)
+                rule = next((f.rule for f in rep.findings if f.rule in RULE_QUESTIONS), "")
+                await self._escalate(plan, task, f"{max_rej} review rejections; last: " + feedback.splitlines()[0][:300], rep,
+                                     kind="rule_decision" if rule else "rejections", question=RULE_QUESTIONS.get(rule, ""),
+                                     base=review_base, branch=branch, summary=str(result.get("summary", "")))
 
-    async def _escalate(self, plan: planner.Plan, task: planner.PlannedTask, reason: str, rep: Optional[reviewer.Review] = None):
+    async def _escalate(self, plan: planner.Plan, task: planner.PlannedTask, reason: str, rep: Optional[reviewer.Review] = None, *,
+                        kind: str = "rejections", question: str = "", base: str = "", branch: str = "", summary: str = ""):
+        """Stop the task for a decision: a row in the conductor's list (LF5 reads it) and the board task goes to `blocked` with the
+        minimum context. Raises Escalated; the swarm runner ends the board task as blocked (not failed, not requeued)."""
         note = f"ESCALATED: {reason}"[:500]
+        ctx = await asyncio.to_thread(self._blocked_context, task, reason, rep, kind, question, base, branch or task.branch, summary)
         store.escalate(plan.id, task.key, reason, {"title": task.title, "branch": task.branch,
-                                                   "report": rep.to_dict() if rep else None})
-        try:
-            from bot.coordination import current_work
+                                                   "report": rep.to_dict() if rep else None, "blocked": ctx})
+        raise Escalated(note, ctx)
 
-            work = current_work.get()
-            if work is not None:
-                await work.progress("review", note)            # a board.task.review event carrying the reason (LF5 reads it)
-        except Exception:  # noqa: BLE001 - the escalation row is the record; the board note is a bonus
-            pass
-        raise Escalated(note)
+    def _blocked_context(self, task: planner.PlannedTask, reason: str, rep: Optional[reviewer.Review], kind: str, question: str,
+                         base: str, branch: str, summary: str) -> dict:
+        diff = ""
+        if base and branch:
+            try:
+                diff = integrator._git(self.repo, "diff", "--no-color", "-U2", f"{base}..{branch}", check=False).stdout
+            except Exception:  # noqa: BLE001 - the excerpt is a convenience
+                diff = ""
+        finding = str(rep.findings[0])[:300] if rep is not None and rep.findings else ""
+        failed = [rule for rule, state in (rep.checks if rep is not None else {}).items() if state == "fail"]
+        return {"kind": kind, "task": task.title, "branch": branch, "reason": reason[:300],
+                "question": question or "The review rejected this task twice. Is the reviewer right? Tell the worker what to change, or "
+                                        "accept the change by hand.",
+                "failing_check": (", ".join(failed) + (": " if failed and finding else "") + finding)[:400] or summary[:300],
+                "diff_excerpt": diff[:1500]}
 
     # ---------------------------------------------------------------- views
     def status(self) -> dict:
@@ -199,6 +248,28 @@ class Conductor:
 
     def approve(self, queue_id: str, by: str, note: str = "") -> dict:
         return approve(queue_id, by, note)
+
+    def unblock(self, plan_id: str, task_key: str, by: str, note: str = "") -> dict:
+        """A decision on an escalated task: resolve its escalation (its rejection count starts afresh) and put the board task back to
+        `open` so the next `run` of the plan picks it up. Boards without a blocked state (AgentSentinel's) are left as they are: there
+        the task is `failed` with a BLOCKED: note and the next run re-creates it."""
+        if not str(by or "").strip():
+            raise ValueError("say who decides (by)")
+        esc = store.open_escalation(plan_id, task_key)
+        if esc is None:
+            raise KeyError(f"no open escalation for {task_key}")
+        store.resolve_escalation(esc["id"])
+        out: dict[str, Any] = {"escalation": esc["id"], "board": "unchanged"}
+        board = self.board
+        if board is None:
+            from bot import coordination
+
+            board = coordination.get_board()
+        for t in board.list_tasks(f"abp/swarm-conductor-{plan_id}", state="blocked", limit=500):
+            if t.get("key") == task_key:
+                board.unblock(t["id"], by=by, note=note)
+                out["board"] = "open"
+        return out
 
 
 def _detail(task: planner.PlannedTask, plan: planner.Plan) -> str:
@@ -252,13 +323,22 @@ class AgentLoopWorker:
     `drive` is the call that runs the agent (tests replace it); the default uses abp_agenteval.factory.drive_agent, the headless
     loop LF2 benchmarks, with small-model mode."""
 
+    _agent_lock = threading.Lock()      # the agent's config overlay and ephemeral environment are process-global: one agent turn at a time
+
     def __init__(self, repo: Any, *, model: str = "", timeout_s: float = 900, max_iterations: int = 60,
-                 drive: Optional[Callable[..., Awaitable[str]]] = None):
+                 drive: Optional[Callable[..., Awaitable[Any]]] = None, shell: str = "none", sandbox_paths: Optional[list[str]] = None):
+        if shell not in ("none", "sandbox"):
+            raise ValueError("shell must be 'none' (file + test tools only) or 'sandbox' (run_shell inside an AppContainer, no network)")
         self.repo = Path(repo)
         self.model = model
         self.timeout_s = timeout_s
         self.max_iterations = max_iterations
+        self.shell = shell
+        self.sandbox_paths = list(sandbox_paths) if sandbox_paths else None
         self.drive = drive or self._drive
+        self._verified = False
+        if shell == "sandbox" and not confine.supported():          # refused up front, never degraded to an unconfined shell
+            raise confine.SandboxUnavailable("--shell sandbox needs a Windows AppContainer; use --shell none here")
 
     def prepare(self, spec: dict) -> tuple[Path, str]:
         """The task's worktree on its branch (made from the base, or the branch it builds on); its starting commit."""
@@ -285,9 +365,25 @@ class AgentLoopWorker:
                   "Rules: never remove or rename an existing feature (command, flag, route, tool, page, setting); do not delete files; "
                   "add or update a test for what you change; keep the change small." +
                   (f"\n\nYour previous attempt was REJECTED by the reviewer. Fix exactly these:\n{feedback}" if feedback else ""))
-        summary = await self.drive(prompt, wt)
+        if self.shell == "sandbox" and not self._verified:
+            await asyncio.to_thread(self._verify_sandbox, wt)
+        res = await self.drive(prompt, wt)
+        if not isinstance(res, str) and getattr(res, "ok", True) is False and not getattr(res, "tool_calls", None):
+            raise llm.WorkerModelError(f"the model did not answer: {str(getattr(res, 'error', '') or 'no reply')[:300]}")
         await asyncio.to_thread(self._commit, wt, spec)
-        return {"branch": spec["branch"], "worktree": str(wt), "start": start, "summary": str(summary)[:500]}
+        made = integrator._git(wt, "rev-list", "--count", f"{start}..HEAD", check=False).stdout.strip()
+        out = {"branch": spec["branch"], "worktree": str(wt), "start": start, "shell": self.shell, "empty": made in ("", "0")}
+        if isinstance(res, str):
+            return {**out, "summary": res[:500]}
+        reply = str(getattr(res, "reply", "") or getattr(res, "error", "") or "")
+        return {**out, "summary": reply[:500], "tool_calls": list(getattr(res, "tool_calls", None) or []),
+                "tokens": int(getattr(res, "tokens", 0) or 0), "iterations": int(getattr(res, "iterations", 0) or 0),
+                "stopped": str(getattr(res, "stopped", "") or "")}
+
+    def _verify_sandbox(self, wt: Path) -> None:
+        with self._agent_lock:
+            confine.verify(wt, extra_paths=self.sandbox_paths)
+        self._verified = True
 
     @staticmethod
     def _commit(wt: Path, spec: dict) -> None:
@@ -297,15 +393,16 @@ class AgentLoopWorker:
 
     async def _drive(self, prompt: str, wt: Path) -> str:
         from abp_agenteval import factory
-        from abp_run.core import split_model, transport_for
-        from bot.conductor import llm
 
         refs = llm.candidates(self.model)
         if not refs:
             raise llm.NoLocalModel("no local model is available (start ModelMistress or Ollama)")
-        provider, name = split_model(refs[0], default_provider="")
-        transport = transport_for(provider, name)
-        res = await asyncio.to_thread(factory.drive_agent, prompt, wt, transport, name, timeout_s=self.timeout_s,
-                                      max_iterations=self.max_iterations, python=sys.executable,
-                                      shell="none")      # file tools + run_tests only; no shell tool at all
-        return str(getattr(res, "reply", "") or getattr(res, "error", "") or "")
+        transport, name = llm.transport_for_ref(refs[0])
+        paths = (self.sandbox_paths or confine.sandbox_paths()) if self.shell == "sandbox" else None
+
+        def turn():
+            with self._agent_lock:
+                return factory.drive_agent(prompt, wt, transport, name, timeout_s=self.timeout_s, max_iterations=self.max_iterations,
+                                           python=sys.executable, shell=self.shell, sandbox_paths=paths)
+        # shell "none": file tools + run_tests only, no shell tool at all. "sandbox": run_shell inside an AppContainer, no network.
+        return await asyncio.to_thread(turn)

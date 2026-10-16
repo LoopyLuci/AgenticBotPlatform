@@ -380,7 +380,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.bot_instances",  # depends only on validators/personas — before pairing/memory, which import it at module scope
     "bot.model_pricing",
     "bot.capacity.classify", "bot.capacity.handoff", "bot.capacity.routing", "bot.capacity.follow",  # pure functions over the governor's state; reached as module attributes
-    "bot.conductor.store", "bot.conductor.proof", "bot.conductor.llm", "bot.conductor.planner", "bot.conductor.reviewer", "bot.conductor.integrator", "bot.conductor.run",  # the conductor: a connection per call, no state held in the modules
+    "bot.conductor.store", "bot.conductor.proof", "bot.conductor.llm", "bot.conductor.planner", "bot.conductor.reviewer", "bot.conductor.integrator", "bot.conductor.confine", "bot.conductor.run",  # the conductor: a connection per call, no state held in the modules
     "bot.models",
     "bot.push",
     "bot.desktop",
