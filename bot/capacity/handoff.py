@@ -23,6 +23,7 @@ VERSION = 1
 MAX_DIFF = 24_000
 MAX_TEXT = 4_000
 MAX_LIST = 60
+STATUSES = ("running", "finished", "failed", "interrupted")
 TEST_STATES = ("unknown", "not_run", "passing", "failing")
 
 
@@ -39,6 +40,8 @@ class HandoffPack:
     board: str = ""
     model: str = ""                                     # the model that wrote it (informational)
     workspace: str = ""
+    status: str = "running"                             # running | finished | failed | interrupted (autopack.py keeps it)
+    capacity: str = ""                                  # the capacity state when it was last written
     version: int = VERSION
     created_at: float = 0.0
     updated_at: float = 0.0
@@ -77,6 +80,9 @@ def _clean(pack: HandoffPack) -> HandoffPack:
                         "summary": _clip(ts.get("summary", ""), 1500)}
     pack.notes = [_clip(n, 1000) for n in list(pack.notes)[-MAX_LIST:]]
     pack.last_error = _clip(pack.last_error, 2000)
+    pack.status = pack.status if pack.status in STATUSES else "running"
+    pack.capacity = str(pack.capacity or "")[:20]
+    pack.model = str(pack.model or "")[:200]
     pack.version = VERSION
     return pack
 
@@ -135,7 +141,8 @@ def list_packs(limit: int = 100) -> list[dict]:
         except (OSError, ValueError):
             continue
         out.append({"task_id": d.get("task_id"), "goal": str(d.get("goal", ""))[:120], "model": d.get("model", ""),
-                    "test_status": (d.get("test_status") or {}).get("status", "unknown"), "updated_at": d.get("updated_at")})
+                    "test_status": (d.get("test_status") or {}).get("status", "unknown"), "updated_at": d.get("updated_at"),
+                    "status": d.get("status", "running"), "files": len(d.get("files_touched") or [])})
     return out
 
 

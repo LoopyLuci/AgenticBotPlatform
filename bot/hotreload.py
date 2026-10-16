@@ -157,6 +157,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.agent_runtime.project_rules",  # imported by prompt.py; reloaded with it is not needed and is safe to skip
     "bot.agent_runtime.code_intel",  # running language servers are process state
     "bot.capacity.governor",  # holds the lock and the dedupe table that keep concurrent signals from double counting
+    "bot.capacity.events", "bot.capacity.probe", "bot.capacity.autopack",  # the live event ring and listeners, the probe loop and its sender, the contextvar of the running pack
     "bot.model_router", "bot.agent_runtime.trajectory",  # registers a tool / reads the trace store
     # The router's store serialises writes with a module lock, and policy/learn cache the policy and the trained
     # classifier; a reload mid-turn would split the lock and serve a stale policy until the cache expired.
@@ -378,7 +379,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.personas",
     "bot.bot_instances",  # depends only on validators/personas — before pairing/memory, which import it at module scope
     "bot.model_pricing",
-    "bot.capacity.classify", "bot.capacity.handoff", "bot.capacity.routing",  # pure functions over the governor's state; reached as module attributes
+    "bot.capacity.classify", "bot.capacity.handoff", "bot.capacity.routing", "bot.capacity.follow",  # pure functions over the governor's state; reached as module attributes
     "bot.models",
     "bot.push",
     "bot.desktop",

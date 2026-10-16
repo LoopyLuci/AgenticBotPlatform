@@ -16,7 +16,8 @@
   let f = { board: '', state: '' };
   let data = null;      // {backend, enabled, summary}
   let tasks = null;     // {tasks}
-  let cap = null;       // {state, mode, auto, override} from /api/capacity/state
+  let cap = null;       // {state, mode, auto, override, probe} from /api/capacity/state
+  let packList = [];    // handoff packs, newest first, from /api/capacity/handoff
   let loading = false;
   let err = '';
   let timer = null;
@@ -65,10 +66,18 @@
     const why = o ? 'pinned by ' + E(o.actor) + until(o.expires_at) + (o.reason ? ' - ' + E(o.reason) : '')
       : (a.state !== 'cloud-led' ? E(a.reason) + until(a.until) : 'automatic');
     const opts = ['auto', 'cloud-led', 'hybrid', 'local-only'].map((s) => `<option value="${s}">${s}</option>`).join('');
+    const pr = cap.probe || {};
+    const last = pr.last ? (pr.last.ok ? 'answered' : (pr.last.status || 'failed')) + ' ' + new Date(pr.last.ts * 1000).toLocaleTimeString() : 'none yet';
+    const probe = bad && pr.enabled
+      ? `<p class="co-note">Recovery probe: last ${E(last)}${pr.next_at ? ', next ' + new Date(pr.next_at * 1000).toLocaleTimeString() : ''}; ${pr.last_hour || 0}/${pr.max_per_hour || 0} this hour. <button class="btn" data-co="cap-probe">Probe now</button></p>`
+      : '';
+    const packs = packList.length
+      ? `<p class="co-note">Handoff packs: ${packList.slice(0, 5).map((p) => E(p.task_id.slice(0, 8)) + ' ' + E(p.status || '') + (p.model ? ' on ' + E(p.model) : '')).join('; ')}${packList.length > 5 ? ' ...' : ''}</p>`
+      : '';
     return `<div class="co-card"><h3>Capacity</h3><p><span class="co-chip ${bad ? 'bad' : ''}">${E(cap.state)}</span> <span class="co-note">${why}</span></p>
       <div class="co-bar"><select id="co-cap-state" aria-label="Capacity state">${opts}</select>
       <button class="btn" data-co="cap-set">Pin</button><button class="btn" data-co="cap-clear">Back to automatic</button></div>
-      <p class="co-note">New work follows this state: local-only uses local models only, hybrid keeps hard tasks on cloud models. Work already running is not interrupted.</p></div>`;
+      <p class="co-note">New work follows this state: local-only uses local models only, hybrid keeps hard tasks on cloud models. Work already running is not interrupted.</p>${probe}${packs}</div>`;
   }
 
   function blockWhy(t) {
@@ -109,6 +118,7 @@
       const [s, t] = await Promise.all([api('/api/coordination/summary' + q), api('/api/coordination/tasks?' + p.toString())]);
       data = s; tasks = t; err = '';
       try { cap = await api('/api/capacity/state'); } catch (_) { cap = null; }
+      try { packList = ((await api('/api/capacity/handoff?limit=10')) || {}).packs || []; } catch (_) { packList = []; }
     } catch (e) {
       err = errText(e);
     } finally {
@@ -130,6 +140,10 @@
         const call = st === 'auto' ? api('/api/capacity/clear', { method: 'POST', body: '{}' })
           : api('/api/capacity/override', { method: 'POST', body: JSON.stringify({ state: st, reason: 'set on the Coordination page' }) });
         call.catch((e) => { err = errText(e); }).finally(load);
+        return;
+      }
+      if (el.dataset.co === 'cap-probe') {
+        api('/api/capacity/probe', { method: 'POST', body: JSON.stringify({ force: true }) }).catch((e) => { err = errText(e); }).finally(load);
         return;
       }
       if (el.dataset.co === 'apply') f = { board: ($('co-board') || {}).value || '', state: ($('co-state') || {}).value || '' };

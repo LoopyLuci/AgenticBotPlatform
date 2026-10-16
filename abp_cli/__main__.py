@@ -39,7 +39,7 @@ Commands:
   modules list|show|ops|run-op|start|stop|status|logs|call|setup|adopt|add|refresh|assist|candidates|new|publish|forget|catalog
                                           every module; `modules adopt <folder>` makes any project one
   coordination summary|tasks|locks        the work board: who is doing what, what waits and why, who holds which files
-  capacity status|set|clear|history       the capacity governor: cloud-led / hybrid / local-only, why, and the owner override
+  capacity status|set|clear|history|probe|policy|packs  the capacity governor: cloud-led / hybrid / local-only, why, and the owner override
                                           (`capacity set local-only --for 2h --reason "usage cap"`; `capacity clear` = automatic)
   vision status|analyze|find|compare|edit|fetch
                                           computer vision here (OpenCV + its model zoo): objects, faces, text,
@@ -1767,6 +1767,12 @@ async def _capacity(args, client: DashboardClient) -> int:
             print(f"  automatic: {auto['state']}{until} - {auto['reason']}")
         elif auto.get("recent_rate_limits"):
             print(f"  automatic: cloud-led; {auto['recent_rate_limits']} recent rate limit(s)")
+        pr = res.get("probe") or {}
+        if auto["state"] != "cloud-led" and pr.get("enabled"):
+            last = pr.get("last") or {}
+            seen = (("answered" if last.get("ok") else last.get("status") or "failed") + " " + time.strftime("%H:%M:%S", time.localtime(last["ts"]))) if last else "none yet"
+            nxt = f", next {time.strftime('%H:%M:%S', time.localtime(pr['next_at']))}" if pr.get("next_at") else ""
+            print(f"  recovery probe: last {seen}{nxt}; {pr.get('last_hour', 0)}/{pr.get('max_per_hour', 0)} this hour")
         ov = res.get("override")
         if ov:
             exp = f", until {time.strftime('%Y-%m-%d %H:%M', time.localtime(ov['expires_at']))}" if ov.get("expires_at") else ""
@@ -1782,6 +1788,25 @@ async def _capacity(args, client: DashboardClient) -> int:
     if sub == "clear":
         res = await client._request("POST", f"{api}/clear", json={"reason": args.reason, "actor": "cli"})
         print(json.dumps(res, indent=1) if args.json else f"capacity: {res['state']} (mode: {res['mode']})")
+        return 0
+    if sub == "probe":
+        res = await client._request("POST", f"{api}/probe", json={"force": True})
+        if args.json:
+            _print(args, res)
+        else:
+            print(("probed: " + ", ".join(f"{o['provider']}/{o['model']} {'answered' if o['ok'] else o['status']}" for o in res["outcomes"]))
+                  if res["ran"] else "no probe sent (cloud-led, not due yet, or the hourly limit is reached)")
+            print(f"capacity: {res['state']}")
+        return 0
+    if sub == "policy":
+        res = await client._request("GET", f"{api}/policy")
+        _print(args, res) if args.json else print(f"state {res['state']}; advertise: {' '.join(res['capabilities'])}"
+                                                   + (f"; local models: {', '.join(res['local_models'])}" if res["local_models"] else ""))
+        return 0
+    if sub == "packs":
+        res = await client._request("GET", f"{api}/handoff", params={"limit": args.limit})
+        rows = [{**p, "when": time.strftime("%m-%d %H:%M:%S", time.localtime(p["updated_at"])) if p.get("updated_at") else ""} for p in res["packs"]]
+        _print(args, res if args.json else rows, table=["when", "task_id", "status", "model", "test_status", "files"])
         return 0
     if sub == "history":
         res = await client._request("GET", f"{api}/history", params={"limit": args.limit})
@@ -2030,6 +2055,9 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--reason", default="")
     p = capsub.add_parser("clear", help="drop the override: back to automatic"); p.add_argument("--reason", default="")
     p = capsub.add_parser("history"); p.add_argument("--limit", type=int, default=30)
+    capsub.add_parser("probe", help="send a recovery probe to the capped provider now")
+    capsub.add_parser("policy", help="what a worker should advertise and use now")
+    p = capsub.add_parser("packs", help="the handoff packs, newest first"); p.add_argument("--limit", type=int, default=30)
     vis = sub.add_parser("vision", help="computer vision on this machine (OpenCV and its model zoo)")
     vsub = vis.add_subparsers(dest="vision_cmd", required=True)
     vsub.add_parser("status")

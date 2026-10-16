@@ -8619,6 +8619,153 @@
     "summary": "Capacity Clear"
    }
   },
+  "/api/capacity/events": {
+   "get": {
+    "operationId": "capacity_events_api_capacity_events_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "since",
+      "required": false,
+      "schema": {
+       "default": 0,
+       "minimum": 0,
+       "title": "Since",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 100,
+       "maximum": 200,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-platform",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Platform"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-app-version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-App-Version"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-model",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Model"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-os-version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Os-Version"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-mesh-port",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Mesh-Port"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Capacity Events"
+   }
+  },
   "/api/capacity/handoff": {
    "get": {
     "operationId": "capacity_handoffs_api_capacity_handoff_get",
@@ -9088,6 +9235,314 @@
      }
     },
     "summary": "Capacity Override"
+   }
+  },
+  "/api/capacity/policy": {
+   "get": {
+    "operationId": "capacity_policy_api_capacity_policy_get",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-platform",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Platform"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-app-version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-App-Version"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-model",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Model"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-os-version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Os-Version"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-mesh-port",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Mesh-Port"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Capacity Policy"
+   }
+  },
+  "/api/capacity/probe": {
+   "get": {
+    "operationId": "capacity_probe_state_api_capacity_probe_get",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-platform",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Platform"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-app-version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-App-Version"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-model",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Model"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-device-os-version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Device-Os-Version"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-mesh-port",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Mesh-Port"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Capacity Probe State"
+   },
+   "post": {
+    "operationId": "capacity_probe_now_api_capacity_probe_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "anyOf": [
+         {
+          "additionalProperties": true,
+          "type": "object"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Body"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Capacity Probe Now"
    }
   },
   "/api/capacity/report": {

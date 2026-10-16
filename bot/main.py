@@ -621,6 +621,13 @@ async def run() -> None:
         _spawn("sentinel", _sentinel)
         _spawn("work board stuck-work check", _coordination_watch)
 
+        def _capacity_probe():
+            from bot.capacity import probe
+
+            return probe.run_forever(stop_event)
+
+        _spawn("capacity recovery probe", _capacity_probe)
+
         try:
             from bot import mdns_advertise
 

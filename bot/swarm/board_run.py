@@ -2,11 +2,17 @@
 
 Each step of a strategy is a task on board `abp/swarm-<swarm id>`: `deps` carry the ordering (a relay's next link, a
 custom graph's depends_on, an aggregator after its planner), `needs` carry the capability (`instance:<id>` for the bot
-that must run it, `run:<swarm run id>` so only this run's workers pick it up), and the key is a hash of the swarm, the
+that must run it, `run:<swarm run id>` so only this run's workers pick it up, and `capacity:cloud|local` when a step carries a
+capacity hint, see bot/capacity/follow.py), and the key is a hash of the swarm, the
 prompt and the step, so dispatching the same run twice joins the tasks already there instead of doing the work twice.
 Workers pull with `next`, so no worker idles while a runnable step exists; each step runs inside a WorkSession (lease,
 heartbeat, always ended) and its result is recorded on the task. A step whose lease runs out - its worker died - is
 requeued by the board and taken by another worker; a stale worker's late output is refused by the fence.
+
+Capacity (LF3): workers re-read the capacity state each time they ask for work, so while cloud capacity is short a step marked
+`capacity:cloud` waits and every other step runs (on the local models the router then picks); a step that fails because its
+cloud provider ran out is handed back to the board (up to MAX_REQUEUES times) and runs again, resuming from its handoff pack, on
+whatever the state allows. Nothing that is running is interrupted.
 
 Strategies keep their own logic (what the prompts are, how results merge); this module only runs `Step`s.
 """
@@ -19,6 +25,7 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Optional
 
 from bot import coordination
+from bot.capacity import follow
 from bot.coordination.model import TERMINAL, BoardError, Unavailable
 from bot.coordination.session import WorkLost, WorkSession, acall
 
@@ -38,6 +45,7 @@ class Step:
     deps: list[str] = field(default_factory=list)
     tolerate: bool = False                               # a failed step still unblocks its dependents
     extra: dict = field(default_factory=dict)            # copied into the step's output (e.g. the subtask)
+    capacity: str = ""                                   # "" (any model) | "local" | "cloud": see bot/capacity/follow.py
 
 
 class SwarmBoard:
@@ -54,6 +62,7 @@ class SwarmBoard:
         self.step_of: dict[str, Step] = {}                # task id -> step
         self.results: dict[str, dict] = {}                # step id -> full output of a step this process ran
         self._changed = asyncio.Event()
+        self._requeues: dict[str, int] = {}               # step id -> times handed back for a capacity error
 
     # --------------------------------------------------------------- public
     async def run(self, steps: list[Step]) -> dict[str, dict]:
@@ -91,7 +100,8 @@ class SwarmBoard:
     async def _create_one(self, step: Step) -> dict:
         key = hashlib.sha256(f"{self.swarm_id}\0{self.prompt}\0{step.id}".encode("utf-8")).hexdigest()[:40]
         kwargs = dict(
-            key=key, detail=f"role {step.role}; bot {step.label}", needs=[f"instance:{step.instance_id}", self.run_token],
+            key=key, detail=f"role {step.role}; bot {step.label}",
+            needs=[f"instance:{step.instance_id}", self.run_token, *follow.need_for(step.capacity)],
             deps=[self.task_of[d] for d in step.deps], max_attempts=2, created_by=f"swarm-run:{self.run_id}")
         title = f"{step.role}: {step.label}" + (f" - {step.extra['subtask'][:120]}" if step.extra.get("subtask") else "")
         try:
@@ -105,7 +115,9 @@ class SwarmBoard:
     # --------------------------------------------------------------- workers
     async def _worker(self, agent: str, caps: list[str], pending: dict[str, Step]) -> None:
         lease = coordination.settings()["lease_s"]
+        base = caps
         while True:
+            caps = follow.worker_capabilities(base)          # the capacity state now: cloud-marked steps wait while it is local-only
             work = await WorkSession.next(self.board, self.board_name, agent, capabilities=caps, lease_s=lease)
             if work is None:
                 if await self._idle(agent, caps, pending, lease):
@@ -129,6 +141,9 @@ class SwarmBoard:
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:  # noqa: BLE001 - one member's failure (any kind) is that step's, never the swarm's
+                    if self._hand_back(step, exc):
+                        work.release(f"capacity: {exc}"[:300])
+                        return
                     out.update(status="failed", error=str(exc))
                 self.results[step.id] = out
                 record = dict(out)
@@ -144,6 +159,17 @@ class SwarmBoard:
         finally:
             ev, self._changed = self._changed, asyncio.Event()
             ev.set()
+
+    def _hand_back(self, step: Step, exc: BaseException) -> bool:
+        """A step failed because cloud capacity ran out: give it back to the board so it runs again on what the state allows."""
+        try:
+            if not follow.is_capacity_error(exc) or self._requeues.get(step.id, 0) >= follow.MAX_REQUEUES:
+                return False
+            self._requeues[step.id] = self._requeues.get(step.id, 0) + 1
+            logger.info("swarm step %s hit a capacity limit; handed back to the board (%d)", step.id, self._requeues[step.id])
+            return True
+        except Exception:  # noqa: BLE001
+            return False
 
     async def _dep_outputs(self, step: Step) -> dict[str, dict]:
         out: dict[str, dict] = {}

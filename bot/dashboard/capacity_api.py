@@ -8,7 +8,11 @@
     POST /api/capacity/report                 {"source", "status", "text"} classify a failure seen elsewhere (a CLI agent's
                                               "usage limit reached" line) and feed the governor
     GET  /api/capacity/route?task=            where a task like this would go right now
-    GET  /api/capacity/handoff                the handoff packs on disk
+    GET  /api/capacity/probe                  the recovery probe: enabled, last answer, next time, probes this hour, what it asks
+    POST /api/capacity/probe                  {"force"} send a probe now (the hourly limit still holds)
+    GET  /api/capacity/policy                 what a worker should do now: state, capabilities to advertise, local models
+    GET  /api/capacity/events?since=          the capacity-change feed (the LF5 digest reads it)
+    GET  /api/capacity/handoff                the handoff packs on disk (status, model, tests, files per task)
     GET  /api/capacity/handoff/{task_id}      one pack; ?prompt=1 adds the resume prompt for the model taking over
 
 Reading uses the dashboard's normal auth; changing the state needs the dashboard token.
@@ -61,6 +65,29 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         moved = capacity.observe_failure(str(body.get("source") or "external")[:80], str(body.get("model") or "")[:80],
                                          int(status) if isinstance(status, (int, float)) else None, body.get("text") or "")
         return {"changed": moved is not None, "state": governor.get_state()}
+
+    @app.get("/api/capacity/probe", dependencies=read)
+    async def capacity_probe_state():
+        return governor.get_state()["probe"]
+
+    @app.post("/api/capacity/probe", dependencies=write)
+    async def capacity_probe_now(body: Optional[dict] = Body(None)):
+        from bot.capacity import probe
+
+        res = await probe.probe_once(force=bool((body or {}).get("force", True)))
+        return {"ran": res["ran"], "outcomes": res["outcomes"], "probe": res["state"]["probe"], "state": res["state"]["state"]}
+
+    @app.get("/api/capacity/policy", dependencies=read)
+    async def capacity_policy():
+        from bot.capacity import follow
+
+        return follow.policy()
+
+    @app.get("/api/capacity/events", dependencies=read)
+    async def capacity_events(since: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=200)):
+        from bot.capacity import events
+
+        return {"events": events.recent(since, limit), "lines": events.digest_lines(since, limit)}
 
     @app.get("/api/capacity/route", dependencies=read)
     async def capacity_route(task: str = Query("", max_length=2000)):

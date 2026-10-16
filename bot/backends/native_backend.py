@@ -21,7 +21,7 @@ import logging
 import re
 import time
 import uuid
-from typing import Optional
+from typing import Any, Optional
 
 from bot.agent_runtime import context_window, loop_guard, toolspec, turn_budget, usage_limits
 from bot.agent_runtime.transports.base import ProviderTransport
@@ -134,7 +134,7 @@ class NativeAgentBackend(Backend):
         )
         with run:
             try:
-                result = await self._ask(prompt, context=context, timeout_s=timeout_s)
+                result = await self._ask_recorded(prompt, context, timeout_s)
             except asyncio.CancelledError:
                 run.end("cancelled")
                 raise
@@ -148,6 +148,20 @@ class NativeAgentBackend(Backend):
             if run.run_id and isinstance(getattr(result, "raw", None), dict):
                 result.raw["trace_run"] = run.run_id
             return result
+
+    async def _ask_recorded(self, prompt: str, context, timeout_s: float) -> BackendResult:
+        """_ask(), with the turn's handoff pack (bot/capacity/autopack.py) finished however the turn ends. _ask() starts the
+        recording once the model is known and puts the recorder in the holder it finds in the context."""
+        holder: dict = {}
+        ctx = dict(context or {})
+        ctx["_pack_holder"] = holder
+        try:
+            result = await self._ask(prompt, context=ctx, timeout_s=timeout_s)
+        except BaseException as exc:  # noqa: BLE001 - recorded, then re-raised unchanged
+            await _end_pack(holder, ok=False, error=f"{type(exc).__name__}: {exc}", interrupted=isinstance(exc, asyncio.CancelledError))
+            raise
+        await _end_pack(holder, ok=True, text=getattr(result, "text", ""))
+        return result
 
     async def _ask(self, prompt: str, *, context=None, timeout_s: float = 30) -> BackendResult:
         from bot import db
@@ -220,6 +234,10 @@ class NativeAgentBackend(Backend):
         user_prompt_context = await hooks.run_user_prompt_submit(prompt, instance_id=instance_id)
         chat_id = context.get("chat_id")
         workspace = agent_tools.resolve_workspace(instance_id or 0, context.get("cwd"))
+        pack_rec = _begin_pack(context, prompt, _ref(self.transport, self.model), workspace)
+        if pack_rec is not None and pack_rec.resume_text:
+            # Another model worked on this task before (a re-route, or capacity moved): it starts from the handoff pack.
+            prompt = pack_rec.resume_text + "\n\n---\n\n" + prompt
         steer_queue = context.get("steer_queue")
         notify = context.get("approval_notify")
         progress = context.get("progress_notify")
@@ -643,6 +661,8 @@ class NativeAgentBackend(Backend):
                 raise
 
             tool_calls_made += len(results)
+            if pack_rec is not None:
+                await pack_rec.after_round(results)
             notes = watch.after_round(results)
             results = [(tc, out + note) for (tc, out), note in zip(results, notes)]
             for entry in active_transport.tool_result_messages(results):
@@ -793,6 +813,39 @@ def _resolve_fallback_transport(instance_id) -> Optional[tuple]:
     except Exception:
         logger.exception("native backend: failed to resolve fallback transport for instance %s", instance_id)
         return None
+
+
+def _begin_pack(context: dict, prompt: str, model_ref: str, workspace) -> Optional[Any]:
+    """Start the task's handoff pack for this turn (None for an ordinary chat turn). Never raises."""
+    holder = context.get("_pack_holder")
+    if holder is None:
+        return None
+    try:
+        from bot.capacity import autopack
+
+        rec = autopack.begin(prompt, model=model_ref, workspace=workspace, context=context)
+        if rec is not None:
+            holder["rec"], holder["token"] = rec, autopack.active.set(rec)
+        return rec
+    except Exception:  # noqa: BLE001
+        logger.debug("native backend: could not start a handoff pack", exc_info=True)
+        return None
+
+
+async def _end_pack(holder: dict, *, ok: bool, text: str = "", error: str = "", interrupted: bool = False) -> None:
+    rec = holder.get("rec")
+    if rec is None:
+        return
+    try:
+        from bot.capacity import autopack
+
+        try:
+            autopack.active.reset(holder["token"])
+        except ValueError:
+            pass
+        await rec.finish(ok, text, error, interrupted=interrupted)
+    except Exception:  # noqa: BLE001
+        logger.debug("native backend: could not finish a handoff pack", exc_info=True)
 
 
 def _ref(transport, model) -> str:

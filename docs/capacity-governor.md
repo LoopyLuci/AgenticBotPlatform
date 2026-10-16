@@ -1,4 +1,4 @@
-# Capacity governor (LF3, phase 1)
+# Capacity governor (LF3, phases 1 and 2)
 
 One system-wide switch for "is there cloud capacity right now?". Code: `bot/capacity/`. When a cloud provider says it is out
 of allowance, new work moves to local models (ModelMistress first, Ollama after) without anyone touching a setting; when
@@ -51,27 +51,95 @@ cloud model runs each new turn on a local model the router picks while the state
 afterwards (`capacity.reroute_fixed_models: false` turns that off). Claude is never added: the local list is built from local
 providers (`capacity.local_providers` or a loopback base URL) only.
 
+## Recovery probe (phase 2)
+
+`bot/capacity/probe.py`. Without it, recovery waits for the provider's stated reset time or for a real call during hybrid
+probation. While the automatic state is `local-only` or `hybrid` after a cap, the app asks the capped provider the smallest
+possible question now and then: one user message ("ping"), no tools, no system prompt, `max_tokens=1`, through the provider's own
+transport. Settings (`capacity.probe`):
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `enabled` | true | switch the probe off |
+| `interval_s` | 300 | the first probe is one interval after the cap; later ones this far apart |
+| `backoff`, `max_interval_s` | 2, 3600 | the interval doubles after each failed probe, up to the maximum |
+| `max_per_hour` | 6 | never more than this many probe rounds per hour (kept in the database, so a restart does not reset it) |
+| `reset_fraction` | 0.5 | when the provider stated a reset time, nothing is sent before this share of the hold has passed |
+| `targets` | [] | `provider/model` to probe instead of the ones that were capped (needed for a cap seen only as CLI text) |
+| `timeout_s` | 20 | per request |
+
+A probe that works moves `local-only` to hybrid probation, and a working probe (or real call) in hybrid returns to `cloud-led`:
+the same two steps phase 1 defines. A probe answered with a limit backs off, waits for a `Retry-After` or reset time the answer
+gives, and extends the hold when the answer names a later reset. A failed probe is not reported to the governor a second time
+(no extra strike). Work that is running is never touched; the state only decides where new work goes. A cap that was seen only as
+CLI text (Claude Code's limit line) names no API provider, so it is reported as "unprobeable" and recovery waits for the reset
+time. The probe loop is started with the app; `POST /api/capacity/probe`, `abp capacity probe` and the Probe now button on the
+Capacity card send one now (the hourly limit still holds).
+
 ## Handoff packs
 
 `bot/capacity/handoff.py`: one JSON file per task in `data/agent/capacity/handoff/` with the goal, plan, files touched, diff so
-far (capped), test status, notes and last error. `write`, `update`, `read`, `list_packs`, `delete`; `resume_prompt(pack)` renders
-the opening message for the model taking over; `attach_to_board(board, pack, agent, fence)` stores a copy as the work-board
-task's `result` (`{"handoff_pack": ...}`, via `set_state(..., "running")`, since the board client has no attachment call) with a
-note, and `from_board_task(task)` reads it back. Phase 1 provides the helpers; writing packs automatically as a task runs is
-the next step.
+far (capped), test status, notes, last error, the model that wrote it, its status (`running`, `finished`, `failed`,
+`interrupted`) and the capacity state when it was written. `write`, `update`, `read`, `list_packs`, `delete`;
+`resume_prompt(pack)` renders the opening message for the model taking over; `attach_to_board(board, pack, agent, fence)` stores a
+copy as the work-board task's `result` (`{"handoff_pack": ...}`) with a note, and `from_board_task(task)` reads it back.
+
+### Written automatically (phase 2)
+
+`bot/capacity/autopack.py`. A native-agent turn that belongs to a task - it runs inside a work-board task (every swarm step and
+board-fed worker) or its caller passes `context["handoff_task_id"]` - writes and updates its pack itself. Ordinary chat turns have
+no task and cost nothing. After each tool round it records the files touched (write/edit/patch tools), the test status (`run_tests`,
+or a test command run through `run_shell`) and the last error; writes are throttled (`capacity.handoff.min_interval_s`, 20 s)
+except right after a test run or an error, and always at the end (status `finished`, `failed`, or `interrupted` when the turn
+was cancelled). When the task's workspace is a git worktree of its own, the pack also gets `git status` files and the diff so far;
+above `capacity.handoff.max_diff_chars` (12000) only the `--stat` summary is kept. A copy goes to the board task at most once a
+minute. Packs are small by construction: text, lists and diffs are capped (`handoff.py`).
+
+When a turn starts on a task whose pack was written by a different model and is not finished - a re-route, capacity moving, a
+restart on another model - the resume prompt from the pack is put in front of the task's own prompt, and a note records the
+hand-over. A finished pack is not resumed; a turn started inside another turn (a delegate, a sub-agent) never overwrites its
+parent's pack. `capacity.handoff.auto: false` turns all of this off.
+
+## Work queues follow the state (phase 2)
+
+`bot/capacity/follow.py`. Board tasks may carry a capacity hint as a `needs` entry, so it works on ABP's local board and
+AgentSentinel's: no hint = any model (the router decides from the state), `capacity:local` = routine work, safe on a local
+model, `capacity:cloud` = wants a cloud model. A worker advertises `follow.worker_capabilities(base)`: always `capacity:local`,
+and `capacity:cloud` unless the state is `local-only`. So in local-only a cloud-marked task stays open (never failed, dropped or
+run on a local model by surprise), everything else is picked up and run on local models, and when capacity returns the next ask
+for work sees the waiting task. Nothing running is interrupted: the state is read when a worker asks for work.
+
+* **ABP swarms** (`bot/swarm/board_run.py`): workers re-read the capabilities on every ask; `Step(capacity="cloud"|"local")` sets
+  the hint; a step that fails because its provider ran out is handed back to the board (at most `MAX_REQUEUES` = 3 times) and
+  runs again, resuming from its pack, on whatever the state allows. Other failures fail the step as before.
+* **The conductor's queue and the confined dev swarm** (they pull from the work board and live outside this repository): call
+  `GET /api/capacity/policy` / `abp capacity policy` / MCP `capacity_policy` for the capabilities to advertise and the local
+  models to use, put `capacity:cloud` / `capacity:local` in the `needs` of the tasks they create, and read a task's own pack with
+  `capacity_handoff` when picking it up on another model.
+* `follow.placement(task)` says whether a task should run on a local or a cloud model right now.
+
+## Change feed (the LF5 hook)
+
+`bot/capacity/events.py`: every committed state change and probe outcome is published as `capacity.changed`,
+`capacity.recovered` (back to cloud-led) or `capacity.probe`, in a ring (`GET /api/capacity/events?since=`), to subscribers
+(`events.subscribe`), and on the local work board's event feed next to the `board.*` events. `events.digest_lines(since)` renders
+them as short lines for a digest. The durable record is the history table.
 
 ## Surfaces
 
 * Config: the `capacity:` section of `config/backends.yaml` (defaults are safe: `mode: auto`).
 * CLI: `abp capacity status`, `abp capacity set <cloud-led|hybrid|local-only|auto> [--for 2h] [--reason ...]`,
-  `abp capacity clear`, `abp capacity history`.
+  `abp capacity clear`, `abp capacity history`, `abp capacity probe`, `abp capacity policy`, `abp capacity packs`.
 * REST: `GET /api/capacity/state`, `/history`, `/route?task=`, `/handoff`, `/handoff/{task_id}`; `POST /api/capacity/override`,
-  `/clear`, `/report` (the POSTs need the dashboard token).
-* MCP: `capacity_status`, `capacity_history`, `capacity_set`, `capacity_clear`, `capacity_report`, `capacity_handoff`.
-* Dashboard: a Capacity card at the top of the Coordination page (state, why, pin / back to automatic).
+  `/clear`, `/report`, `/probe` (the POSTs need the dashboard token); `GET /probe`, `/policy`, `/events?since=`.
+* MCP: `capacity_status`, `capacity_history`, `capacity_set`, `capacity_clear`, `capacity_report`, `capacity_handoff`,
+  `capacity_probe`, `capacity_policy`.
+* Dashboard: a Capacity card at the top of the Coordination page (state, why, pin / back to automatic, the probe's last answer
+  and next time with a Probe now button, the newest handoff packs).
 
-## Not in phase 1
+## Still open
 
-The takeover drill (cutting API access in the middle of a multi-task run), an active recovery probe (today recovery is the reset
-time, or a working call during hybrid probation), the LF5 digest when cloud capacity returns, and the confined dev swarm and
-the conductor's own queue reading the state. The hooks are marked `TODO(LF3 phase 2)` in `bot/capacity/governor.py`.
+* The takeover drill against a real cut-off (the automated drill, `tests/test_capacity_phase2.py`, uses fakes only).
+* The LF5 digest itself (the feed above is what it reads), and the dev swarm / conductor reading the policy: they are outside this
+  repository and need the small client change described under "Work queues follow the state".
+* A probe for a cap seen only as CLI text (Claude Code's plan limit) - it names no API key to ask with.
