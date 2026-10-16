@@ -1803,6 +1803,15 @@ async def _capacity(args, client: DashboardClient) -> int:
         _print(args, res) if args.json else print(f"state {res['state']}; advertise: {' '.join(res['capabilities'])}"
                                                    + (f"; local models: {', '.join(res['local_models'])}" if res["local_models"] else ""))
         return 0
+    if sub == "packs" and getattr(args, "prune", False):
+        res = await client._request("POST", f"{api}/handoff/prune", json={"apply": bool(args.yes)})
+        if args.json:
+            _print(args, res)
+        else:
+            for r in res["removed"]:
+                print(("removed " if res["applied"] else "would remove ") + f"{r['task_id']} ({r['status']}, {r['size']} bytes, {r['why']})")
+            print(f"{len(res['removed'])} pack(s), {res['freed_bytes']} bytes" + ("" if res["applied"] else " (dry run; add --yes to apply)"))
+        return 0
     if sub == "packs":
         res = await client._request("GET", f"{api}/handoff", params={"limit": args.limit})
         rows = [{**p, "when": time.strftime("%m-%d %H:%M:%S", time.localtime(p["updated_at"])) if p.get("updated_at") else ""} for p in res["packs"]]
@@ -2058,6 +2067,7 @@ def _parser() -> argparse.ArgumentParser:
     capsub.add_parser("probe", help="send a recovery probe to the capped provider now")
     capsub.add_parser("policy", help="what a worker should advertise and use now")
     p = capsub.add_parser("packs", help="the handoff packs, newest first"); p.add_argument("--limit", type=int, default=30)
+    p.add_argument("--prune", action="store_true", help="remove old finished packs (dry run unless --yes)"); p.add_argument("--yes", action="store_true")
     vis = sub.add_parser("vision", help="computer vision on this machine (OpenCV and its model zoo)")
     vsub = vis.add_subparsers(dest="vision_cmd", required=True)
     vsub.add_parser("status")

@@ -4825,6 +4825,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "POST /api/capacity/handoff/prune": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/capacity/handoff/prune",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/capacity/override": {
   "body": true,
   "method": "POST",
@@ -10836,6 +10843,13 @@ export const operations = {
   "query_params": [
    "prompt"
   ]
+ },
+ "capacity_handoff_prune_api_capacity_handoff_prune_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/capacity/handoff/prune",
+  "path_params": [],
+  "query_params": []
  },
  "capacity_handoffs_api_capacity_handoff_get": {
   "body": false,
