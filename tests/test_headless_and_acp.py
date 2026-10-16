@@ -82,7 +82,12 @@ def test_the_model_reference_is_split_at_a_known_provider(monkeypatch):
     assert core.split_model("openrouter/qwen/qwen3.8-27b:free") == ("openrouter", "qwen/qwen3.8-27b:free")
     assert core.split_model("anthropic/claude-sonnet-5") == ("anthropic", "claude-sonnet-5")
     assert core.split_model("claude-sonnet-5") == ("anthropic", "claude-sonnet-5")
-    assert core.split_model("unknownvendor/model") == ("anthropic", "unknownvendor/model")
+    with pytest.raises(core.RunError, match="unknownvendor"):
+        core.split_model("unknownvendor/model")
+    assert core.split_model("unknownvendor/model", default_provider="openrouter") == ("openrouter", "unknownvendor/model")
+    assert core.split_model("some-local-model") == ("", "some-local-model")
+    with pytest.raises(core.RunError):
+        core.transport_for("", "m")
     with pytest.raises(core.RunError):
         core.split_model("")
     with pytest.raises(core.RunError):

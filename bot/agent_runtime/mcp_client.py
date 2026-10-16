@@ -80,7 +80,7 @@ from urllib.parse import parse_qs, urlparse
 logger = logging.getLogger("bot.agent_runtime.mcp_client")
 
 TOOL_PREFIX = "mcp_"
-DEFAULT_SAMPLING_MODEL = "claude-sonnet-5"
+DEFAULT_SAMPLING_MODEL = "claude-sonnet-5"      # only when mcp_sampling.provider is explicitly "anthropic" and no model is named
 MAX_SAMPLING_TOKENS = 4096
 SAMPLING_TIMEOUT_S = 120.0
 OAUTH_CALLBACK_TIMEOUT_S = 300.0
@@ -255,8 +255,14 @@ def _sampling_config() -> dict:
 
 def _resolve_sampling_transport(cfg: dict):
     provider = cfg.get("provider")
-    model = cfg.get("model") or DEFAULT_SAMPLING_MODEL
-    if not provider or provider == "anthropic":
+    model = cfg.get("model")
+    if not provider:
+        from bot import model_router
+
+        transport, picked, _ref = model_router.default_transport()
+        return transport, model or picked
+    if provider == "anthropic":
+        model = model or DEFAULT_SAMPLING_MODEL
         from bot.agent_runtime.transports.anthropic import AnthropicTransport
 
         return AnthropicTransport(), model
@@ -266,6 +272,8 @@ def _resolve_sampling_transport(cfg: dict):
     provider_cfg = provider_registry.get_provider(provider)
     if provider_cfg is None:
         raise ValueError(f"native_agent.mcp_sampling.provider {provider!r} is not a configured provider")
+    if not model:
+        raise ValueError(f"native_agent.mcp_sampling.model is required with provider {provider!r}")
     transport = build_openai_transport(
         protocol=provider_cfg.get("protocol", "openai"), base_url=provider_cfg["base_url"],
         api_key=provider_registry.get_api_key(provider), catalog_id=provider_cfg.get("catalog_id"), name=provider,

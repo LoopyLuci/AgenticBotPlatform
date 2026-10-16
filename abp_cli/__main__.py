@@ -579,7 +579,7 @@ async def _agent_run_local(args, goal: str) -> int:
         print(f"--workspace {workspace} is not a folder", file=sys.stderr)
         return 2
     if args.model:
-        ref = args.model if "/" in args.model else f"{args.backend or 'anthropic'}/{args.model}"
+        ref = args.model if "/" in args.model or not args.backend else f"{args.backend}/{args.model}"
     elif args.backend and "/" in args.backend:
         ref = args.backend
     else:

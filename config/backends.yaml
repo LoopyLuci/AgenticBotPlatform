@@ -334,8 +334,9 @@ native_agent:
   # for me" capability that spends the operator's own configured provider
   # budget with no per-call human step in between. provider/model pick
   # which AgenticBotPlatform-configured transport actually serves these requests;
-  # provider: null (or "anthropic") means the built-in Claude API,
-  # anything else must be a name from config/providers.yaml.
+  # provider: null means the model router's local-first pick (ModelMistress, then
+  # Ollama, ...), never Claude; "anthropic" (set explicitly) is the built-in Claude
+  # API; anything else must be a name from config/providers.yaml.
   mcp_sampling:
     enabled: false
     provider: null

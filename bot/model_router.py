@@ -261,6 +261,43 @@ def candidate_models() -> list[str]:
     return list(dict.fromkeys(free + [str(m) for m in (cfg.get("also") or [])]))
 
 
+def default_refs() -> list[str]:
+    """Model refs ("provider/model") to use when a caller names no model: local ones first (ModelMistress, then Ollama and the
+    like), then whatever else the router would pick. Never Anthropic unless the operator listed it in the router's candidates.
+    Raises BackendError when there is nothing at all, rather than quietly falling back to Claude."""
+    from bot.backends.base import BackendError
+
+    refs: list[str] = []
+    try:
+        from bot.capacity import routing
+
+        refs = list(routing.local_candidates())
+    except Exception:  # noqa: BLE001
+        refs = []
+    refs += [r for r in candidate_models() if r not in refs]
+    if not refs:
+        raise BackendError("no model is available: name a provider/model, start ModelMistress or Ollama, "
+                           "or add a provider (the Models page); ABP does not fall back to Claude on its own")
+    return refs
+
+
+def default_transport() -> tuple:
+    """(transport, model, "provider/model") for the first default_refs() entry whose provider is configured."""
+    from bot import providers as registry
+    from bot.agent_runtime.transports import build_openai_transport
+    from bot.backends.base import BackendError
+
+    for ref in default_refs():
+        name, _, model_id = ref.partition("/")
+        cfg = registry.get_provider(name)
+        if cfg is None or not model_id:
+            continue
+        transport = build_openai_transport(protocol=cfg.get("protocol", "openai"), base_url=cfg["base_url"],
+                                           api_key=registry.get_api_key(name), catalog_id=cfg.get("catalog_id"), name=name)
+        return transport, model_id, ref
+    raise BackendError("no configured provider serves a default model; name a provider/model or add a provider")
+
+
 _local_cache: dict[str, tuple[float, Optional[list[str]]]] = {}
 
 
