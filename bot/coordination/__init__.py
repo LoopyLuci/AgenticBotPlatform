@@ -124,3 +124,12 @@ async def aget_board() -> Board:
     if _override is not None or settings()["backend"] != "auto" or time.monotonic() - _probe[0] < PROBE_TTL_S:
         return get_board()
     return await asyncio.to_thread(get_board)
+
+
+def open_local_boards() -> list[LocalBoard]:
+    """The local boards this process has already opened (never opens one): where process-wide events are published."""
+    with _lock:
+        boards = list(_locals.values())
+    if isinstance(_override, LocalBoard) and _override not in boards:
+        boards.append(_override)
+    return boards

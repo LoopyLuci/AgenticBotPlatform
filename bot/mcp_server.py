@@ -1524,6 +1524,18 @@ async def capacity_report(source: str, text: str, status: Optional[int] = None) 
 
 
 @mcp.tool()
+async def capacity_probe(force: bool = True) -> Any:
+    """Send a recovery probe to the capped cloud provider now (one 1-token request); a working answer starts the way back to cloud-led."""
+    return await _request("POST", "/api/capacity/probe", json={"force": force})
+
+
+@mcp.tool()
+async def capacity_policy() -> Any:
+    """What a worker should do under the current capacity state: capabilities to advertise on the work board, local models to use."""
+    return await _request("GET", "/api/capacity/policy")
+
+
+@mcp.tool()
 async def capacity_handoff(task_id: str) -> Any:
     """The handoff pack of a task (goal, plan, files, diff, tests, notes, last error) plus the prompt to resume it."""
     return await _request("GET", f"/api/capacity/handoff/{task_id}", params={"prompt": "1"})

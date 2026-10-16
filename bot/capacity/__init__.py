@@ -5,12 +5,17 @@ limits and by hand, obeyed by model routing, plus handoff packs so a different m
     governor.py   the state machine, its persistence and history
     routing.py    what the state means for choosing a model
     handoff.py    per-task packs (goal, plan, files, diff, tests, notes, last error)
+    autopack.py   writes and updates a pack as a native agent / swarm task runs; the resume prompt when another model takes over
+    probe.py      the recovery probe: a tiny, rate-limited request to the capped provider
+    follow.py     what the swarm board, the conductor's queue and the dev swarm read to follow the state
+    events.py     capacity-change events (the hook LF5's digest reads)
 
 The functions below are what the rest of ABP calls; they never raise and cost nothing when the governor is off.
 Docs: docs/capacity-governor.md.
 """
 from __future__ import annotations
 
+import contextvars
 import logging
 from typing import Any, Optional
 
@@ -21,12 +26,15 @@ from bot.capacity.governor import CLOUD_LED, HYBRID, LOCAL_ONLY, STATES  # noqa:
 
 logger = logging.getLogger("bot.capacity")
 
+# True while the recovery probe (probe.py) is sending: usage_limits then does not report that call to the governor a second time.
+probing: contextvars.ContextVar[bool] = contextvars.ContextVar("capacity_probing", default=False)
+
 
 def observe_failure(provider: str, model: str, status: Optional[int], text: Any, headers: Optional[dict] = None, *,
                     local: bool = False, now: Optional[float] = None) -> Optional[dict]:
     """A provider call failed. Classify it and, when it means out of capacity, feed the governor. A local provider's 429 is
     that server being busy, not a cloud allowance, so it is ignored. Returns the new state view when the automatic state moved."""
-    if local:
+    if local or probing.get():
         return None
     try:
         signal = _classify.classify(status, text, headers, now=now)
@@ -45,7 +53,7 @@ def observe_text(source: str, text: Any, *, now: Optional[float] = None) -> Opti
 
 def observe_ok(provider: str, model: str, *, local: bool = False) -> None:
     """A provider call worked (ends a probation)."""
-    if local:
+    if local or probing.get():
         return
     try:
         governor.observe_success(provider, model)

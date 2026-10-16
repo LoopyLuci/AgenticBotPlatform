@@ -181,6 +181,10 @@ class LocalBoard(Board):
             except Exception:  # noqa: BLE001 - a listener must never break the board
                 pass
 
+    def publish(self, kind: str, extra: Optional[dict] = None) -> None:
+        """Put an event that is not a task or lock change (a capacity change, LF3/LF5) on this board's feed."""
+        self._emit(kind, None, extra)
+
     def events(self, since: int = 0, limit: int = 100) -> list[dict]:
         with self._ev_lock:
             return [e for e in self._events if e["seq"] > since][-limit:]

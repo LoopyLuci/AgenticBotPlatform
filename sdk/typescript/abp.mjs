@@ -896,6 +896,16 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/capacity/events": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capacity/events",
+  "path_params": [],
+  "query_params": [
+   "since",
+   "limit"
+  ]
+ },
  "GET /api/capacity/handoff": {
   "body": false,
   "method": "GET",
@@ -924,6 +934,20 @@ export const operations = {
   "query_params": [
    "limit"
   ]
+ },
+ "GET /api/capacity/policy": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capacity/policy",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/capacity/probe": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capacity/probe",
+  "path_params": [],
+  "query_params": []
  },
  "GET /api/capacity/route": {
   "body": false,
@@ -4805,6 +4829,13 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/capacity/override",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/capacity/probe": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/capacity/probe",
   "path_params": [],
   "query_params": []
  },
@@ -10785,6 +10816,16 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "capacity_events_api_capacity_events_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capacity/events",
+  "path_params": [],
+  "query_params": [
+   "since",
+   "limit"
+  ]
+ },
  "capacity_handoff_api_capacity_handoff__task_id__get": {
   "body": false,
   "method": "GET",
@@ -10818,6 +10859,27 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/capacity/override",
+  "path_params": [],
+  "query_params": []
+ },
+ "capacity_policy_api_capacity_policy_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capacity/policy",
+  "path_params": [],
+  "query_params": []
+ },
+ "capacity_probe_now_api_capacity_probe_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/capacity/probe",
+  "path_params": [],
+  "query_params": []
+ },
+ "capacity_probe_state_api_capacity_probe_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capacity/probe",
   "path_params": [],
   "query_params": []
  },
