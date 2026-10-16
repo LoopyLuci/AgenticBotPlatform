@@ -231,6 +231,23 @@ def assign(job_handle: int, pid: int) -> None:
         _kernel32.CloseHandle(proc_handle)
 
 
+CREATE_SUSPENDED = 0x00000004
+
+
+def resume(process_handle: int) -> None:
+    """Let a process created with CREATE_SUSPENDED run (NtResumeProcess: `Popen` does not hand back the
+    primary thread's handle, so ResumeThread is not available). Only the first thread was suspended, so
+    this is exactly the one start."""
+    if not _is_windows or not process_handle:
+        return
+    ntdll = ctypes.WinDLL("ntdll")
+    ntdll.NtResumeProcess.argtypes = [wintypes.HANDLE]
+    ntdll.NtResumeProcess.restype = ctypes.c_long
+    status = ntdll.NtResumeProcess(process_handle)
+    if status < 0:
+        raise OSError(f"NtResumeProcess failed with status {status & 0xFFFFFFFF:#010x}")
+
+
 def set_priority(job_handle: int, priority: str) -> None:
     """Change only the priority class of a live job (reflexes.py demotes builds and
     workers when the machine gets hot). Every other limit is read back and re-sent,

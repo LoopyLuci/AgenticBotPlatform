@@ -50,6 +50,34 @@ def _stdio(value: Any, name: str) -> Any:
     return value
 
 
+def _start_held(cell: Optional[Cell], popen_kw: dict) -> bool:
+    """On Windows a process can only be put in a job after CreateProcess returns, and a process that
+    starts something at once (a venv's python.exe launcher starts the real interpreter as its first
+    act) wins that race whenever this thread is descheduled: the child is born outside the job, so
+    the memory cap never applies to it and `Cell.kill()` cannot reach it. So the process is created
+    suspended and `_release()` lets it run once it is in the job."""
+    if os.name != "nt" or cell is None or not cell.job_handle():
+        return False
+    from bot.agent_runtime import win_job
+
+    popen_kw["creationflags"] = (popen_kw.get("creationflags") or 0) | win_job.CREATE_SUSPENDED
+    return True
+
+
+def _release(proc) -> None:
+    from bot.agent_runtime import win_job
+
+    popen = proc if isinstance(proc, subprocess.Popen) else getattr(getattr(proc, "_transport", None),
+                                                                    "get_extra_info", lambda _n: None)("subprocess")
+    handle = getattr(popen, "_handle", None)
+    try:
+        win_job.resume(int(handle))
+    except (OSError, TypeError, ValueError):
+        with contextlib.suppress(OSError, ProcessLookupError):
+            proc.kill()                 # a process that cannot be started is not left suspended forever
+        raise
+
+
 def _argv(argv: Argv) -> list:
     if isinstance(argv, str):
         return [argv]
@@ -94,12 +122,21 @@ def spawn(argv: Argv, *, cell: Optional[Cell] = None, preset: str = "tool", cwd=
     pol = _policy_for(cell, preset, policy)
     if env is None:
         env = pol.environment()
+    held = _start_held(cell, popen_kw)
     with guard.visible() if visible else contextlib.nullcontext():
         proc = subprocess.Popen(argv, cwd=str(cwd) if cwd else None, env=env,
                                 stdin=_stdio(stdin, "stdin"), stdout=_stdio(stdout, "stdout"),
                                 stderr=_stdio(stderr, "stderr"), shell=shell, **popen_kw)
     label = name or os.path.basename(args[0])
-    _register(proc.pid, [shlex.join(args)] if shell else args, cwd, owner or "spawn", label, cell, pol, proc)
+    try:
+        _register(proc.pid, [shlex.join(args)] if shell else args, cwd, owner or "spawn", label, cell, pol, proc)
+    except BaseException:
+        if held:                        # never let a process the job could not take run unconfined
+            with contextlib.suppress(OSError, ProcessLookupError):
+                proc.kill()
+        raise
+    if held:
+        _release(proc)
     _watch_exit(proc, proc.pid)
     _timeout_watchdog(cell, _with_timeout(pol, timeout_s), proc.pid, label)
     return proc
@@ -126,6 +163,7 @@ async def async_spawn(argv: Argv, *, cell: Optional[Cell] = None, preset: str = 
         env = pol.environment()
     if os.name != "nt" and cell is not None:
         popen_kw.setdefault("start_new_session", True)
+    held = _start_held(cell, popen_kw)
     with guard.visible() if visible else contextlib.nullcontext():
         if shell:
             proc = await asyncio.create_subprocess_shell(argv, cwd=str(cwd) if cwd else None, env=env,
@@ -136,7 +174,15 @@ async def async_spawn(argv: Argv, *, cell: Optional[Cell] = None, preset: str = 
                                                         stdin=_stdio(stdin, "stdin"), stdout=_stdio(stdout, "stdout"),
                                                         stderr=_stdio(stderr, "stderr"), **popen_kw)
     label = name or os.path.basename(args[0])
-    _register(proc.pid, [shlex.join(args)] if shell else args, cwd, owner or "async_spawn", label, cell, pol, proc)
+    try:
+        _register(proc.pid, [shlex.join(args)] if shell else args, cwd, owner or "async_spawn", label, cell, pol, proc)
+    except BaseException:
+        if held:                        # never let a process the job could not take run unconfined
+            with contextlib.suppress(OSError, ProcessLookupError):
+                proc.kill()
+        raise
+    if held:
+        _release(proc)
     _timeout_watchdog(cell, _with_timeout(pol, timeout_s), proc.pid, label)
     return proc
 
