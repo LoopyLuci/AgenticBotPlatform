@@ -119,8 +119,9 @@ async def _candidate_free_models() -> list[tuple[Optional[str], str]]:
     likely-large-context ones first (see _LARGE_CONTEXT_FREE_MODEL_HINTS)
     then the rest alphabetically — a ranked list, not a single pick, so
     _generate_raw() can retry against the next candidate if one turns
-    out too small for the file being edited. Falls back to a real
-    Anthropic model if no free custom model is configured anywhere."""
+    out too small for the file being edited. With no free custom model
+    configured, falls back to the model router's local-first picks
+    (never Claude); raises BackendError if there is none at all."""
     from bot import providers as providers_mod
     from bot.models import custom_models_with_pricing
 
@@ -137,7 +138,9 @@ async def _candidate_free_models() -> list[tuple[Optional[str], str]]:
                 all_free.append((provider_name, entry["id"]))
 
     if not all_free:
-        return [(None, "claude-sonnet-5")]
+        from bot import model_router
+
+        return [(r.partition("/")[0], r.partition("/")[2]) for r in model_router.default_refs()]
 
     def _rank(candidate: tuple[Optional[str], str]) -> tuple[int, str]:
         _, model_id = candidate

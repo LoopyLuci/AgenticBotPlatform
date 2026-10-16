@@ -152,13 +152,23 @@ def test_transport_error_returns_error_data_not_a_raise(monkeypatch):
     assert "provider is down" in result.message
 
 
-def test_resolve_sampling_transport_defaults_to_anthropic():
+def test_resolve_sampling_transport_explicit_anthropic_is_still_claude():
     from bot.agent_runtime.transports.anthropic import AnthropicTransport
 
-    transport, model = mcp_client._resolve_sampling_transport({})
+    transport, model = mcp_client._resolve_sampling_transport({"provider": "anthropic"})
 
     assert isinstance(transport, AnthropicTransport)
     assert model == mcp_client.DEFAULT_SAMPLING_MODEL
+
+
+def test_resolve_sampling_transport_without_provider_uses_the_router_pick(monkeypatch):
+    from bot import model_router
+
+    fake = object()
+    monkeypatch.setattr(model_router, "default_transport", lambda: (fake, "qwen-local", "modelmistress/qwen-local"))
+
+    assert mcp_client._resolve_sampling_transport({}) == (fake, "qwen-local")
+    assert mcp_client._resolve_sampling_transport({"model": "m2"}) == (fake, "m2")
 
 
 def test_resolve_sampling_transport_uses_a_named_provider(temp_db):

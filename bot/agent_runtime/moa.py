@@ -42,10 +42,20 @@ MAX_TOKENS = 4096
 CALL_TIMEOUT_S = 120.0
 
 
-def _transport_for(provider: Optional[str], model: str) -> ProviderTransport:
-    """provider=None (or "anthropic") means the built-in Claude API;
-    anything else must be a named config/providers.yaml entry."""
-    if not provider or provider == "anthropic":
+def _resolve(provider: Optional[str], model: str) -> tuple[ProviderTransport, str]:
+    """(transport, model). provider="anthropic" is the built-in Claude API, only when asked for by name; provider=None
+    takes the router's local-first pick (and its model); anything else must be a named config/providers.yaml entry."""
+    if not provider:
+        from bot import model_router
+
+        transport, picked, _ref = model_router.default_transport()
+        return transport, picked
+    return _transport_for(provider, model), model
+
+
+def _transport_for(provider: str, model: str) -> ProviderTransport:
+    """provider "anthropic" means the built-in Claude API; anything else must be a named config/providers.yaml entry."""
+    if provider == "anthropic":
         return AnthropicTransport()
     from bot import providers as provider_registry
 
@@ -67,7 +77,7 @@ async def _single_call(
     for a caller needing a much larger single completion — e.g.
     bot/ui_customize.py generating a whole file, which can easily need
     tens of thousands of output tokens, nothing like a consult() answer."""
-    transport = _transport_for(provider, model)
+    transport, model = _resolve(provider, model)
     history = [transport.user_message(prompt)]
     response = await transport.send(
         model=model, history=history, tool_schemas=[], max_tokens=max_tokens, timeout_s=timeout_s
@@ -76,7 +86,7 @@ async def _single_call(
 
 
 async def _run_reference(ref: dict) -> dict[str, Any]:
-    label_provider = ref.get("provider") or "anthropic"
+    label_provider = ref.get("provider") or "default"
     try:
         text = await _single_call(ref.get("provider"), ref["model"], ref["_question"])
         return {"provider": label_provider, "model": ref["model"], "text": text, "error": None}

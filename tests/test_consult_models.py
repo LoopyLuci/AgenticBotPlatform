@@ -32,8 +32,8 @@ def test_no_aggregator_returns_labeled_raw_answers(monkeypatch):
     ))
 
     assert "[openrouter/free-model]: answer from free-model" in result
-    # provider omitted -> labeled "anthropic" (the built-in Claude API).
-    assert "[anthropic/claude-sonnet-5]: answer from claude-sonnet-5" in result
+    # provider omitted -> labeled "default" (the router's local-first pick, never Claude).
+    assert "[default/claude-sonnet-5]: answer from claude-sonnet-5" in result
 
 
 def test_aggregator_synthesizes_one_final_answer(monkeypatch):

@@ -606,8 +606,8 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "parallel — mixture-of-agents consensus, the same capability Hermes Agent's own MoA mode "
             "gives it, as an on-demand tool instead of an always-on mode. Pass 2+ references to ask; "
             "omit aggregator to see every reference's raw labeled answer yourself, or give one to have "
-            "it synthesize them into a single final answer. Omit a reference's provider for the built-in "
-            "Claude API; otherwise name a provider from config/providers.yaml. One reference failing "
+            "it synthesize them into a single final answer. Omit a reference's provider for the router's "
+            "local-first pick, or say \"anthropic\" for the built-in Claude API; otherwise name a provider from config/providers.yaml. One reference failing "
             "doesn't fail the whole call — its own labeled block just notes the failure."
         ),
         "input_schema": {
@@ -620,7 +620,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     "items": {
                         "type": "object",
                         "properties": {
-                            "provider": {"type": "string", "description": "Omit for the built-in Claude API."},
+                            "provider": {"type": "string", "description": "Omit for the router's local-first pick; \"anthropic\" for the built-in Claude API."},
                             "model": {"type": "string"},
                         },
                         "required": ["model"],

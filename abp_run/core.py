@@ -44,7 +44,9 @@ class RunResult:
 
 def transport_for(provider: str, model: str):
     """The model transport for `provider` ("anthropic", or a name in config/providers.yaml)."""
-    if provider in ("", "anthropic"):
+    if not provider:
+        raise RunError("no provider given: use provider/model (a name in config/providers.yaml, or anthropic/<model> to choose Claude)")
+    if provider == "anthropic":
         from bot.agent_runtime.transports.anthropic import AnthropicTransport
 
         return AnthropicTransport()
@@ -58,8 +60,10 @@ def transport_for(provider: str, model: str):
                                   api_key=registry.get_api_key(provider), catalog_id=cfg.get("catalog_id"), name=provider)
 
 
-def split_model(ref: str, default_provider: str = "anthropic") -> tuple[str, str]:
-    """"provider/model" -> (provider, model); a bare model uses `default_provider`."""
+def split_model(ref: str, default_provider: str = "") -> tuple[str, str]:
+    """"provider/model" -> (provider, model). A bare model uses `default_provider` (none by default: a bare `claude-...` id is
+    taken as the Anthropic model it names, any other bare name has no provider). A "head/" that is not "anthropic" or a
+    configured provider is an error naming it - never a silent Claude."""
     ref = (ref or "").strip()
     if not ref:
         raise RunError("no model given (use --model provider/model, or set ABP_RUN_MODEL)")
@@ -67,6 +71,10 @@ def split_model(ref: str, default_provider: str = "anthropic") -> tuple[str, str
         head, _, tail = ref.partition("/")
         if head == "anthropic" or head in _providers():
             return head, tail
+        if not default_provider:
+            raise RunError(f"unknown provider {head!r} in {ref!r}: not 'anthropic' and not in config/providers.yaml")
+    elif not default_provider and ref.lower().startswith("claude-"):
+        return "anthropic", ref
     return default_provider, ref
 
 
