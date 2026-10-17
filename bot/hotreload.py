@@ -208,7 +208,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.fileserver.exports", "bot.fileserver.gf", "bot.fileserver.guard", "bot.fileserver.mover", "bot.fileserver.server",
     "bot.fileserver.transfer", "bot.localai.discover", "bot.localai.gguf", "bot.localai.mesh", "bot.localai.modelfile",
     "bot.localai.models", "bot.localai.paths", "bot.localai.pull", "bot.localai.server", "bot.localai.train",
-    "bot.localai.train_worker",
+    "bot.localai.train_worker", "bot.localai.train_forge",
     "bot.neurallab.edn", "bot.neurallab.interop", "bot.neurallab.lab", "bot.neurallab.nn_worker", "bot.neurallab.spec",
     "bot.tui.screens.hosting", "bot.tui.screens.localai", "bot.tui.screens.storage",
     # The memory fabric: routes register once; store.py and knowledge.py hold their table set-up and the embedder,
