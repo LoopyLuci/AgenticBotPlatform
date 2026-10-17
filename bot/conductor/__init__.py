@@ -43,7 +43,10 @@ DEFAULTS: dict[str, Any] = {
     "context": {"use_codeintel": True,    # LF-INT: pre-seed prompts with codeintel slices, offer the navigation tools, give the planner a map
                 "use_vault": True,        # recall/capture through the context vault (earlier findings survive a retry)
                 "pack_tokens": 2500, "plan_pack_tokens": 3000, "repo_map_tokens": 1500, "plan_context_chars": 9000,
-                "vault_tokens": 500},
+                "vault_tokens": 500,
+                # adaptive: size the pre-seeded pack by the task (pack_tokens is the cap); false = always pre-seed, as before
+                "adaptive": True, "min_files_for_pack": 3, "min_bytes_for_pack": 20000, "long_detail_chars": 800,
+                "small_repo_symbols": 150, "min_pack_tokens": 400},
     "pusher": {"enabled": False,       # the pusher acts only on a recorded approval, and only when this is true
                "remote": "origin", "target": ""},   # target "" = the integration's base branch
 }

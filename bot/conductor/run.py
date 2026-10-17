@@ -360,7 +360,7 @@ class AgentLoopWorker:
         self.drive = drive or self._drive
         self._verified = False
         self.cfg = context_cfg                                  # the conductor settings (None = read them)
-        self._packs: dict[str, str] = {}                        # task key -> its context_pack, built once and reused on a retry
+        self._packs: dict[str, tuple] = {}                      # task key -> its context_pack, built once and reused on a retry
         self._rejected: dict[str, list[str]] = {}               # task key -> what the reviewer already rejected
         if shell == "sandbox" and not confine.supported():          # refused up front, never degraded to an unconfined shell
             raise confine.SandboxUnavailable("--shell sandbox needs a Windows AppContainer; use --shell none here")
@@ -386,8 +386,12 @@ class AgentLoopWorker:
         wt, start = await asyncio.to_thread(self.prepare, spec)
         key = str(spec.get("key") or spec["id"])
         if key not in self._packs:                              # built once per task; a retry reuses it
-            self._packs[key] = await asyncio.to_thread(navctx.task_pack, wt, f"{spec['title']}\n{spec.get('detail') or ''}", 0, self.cfg)
-        pack = self._packs[key]
+            text = f"{spec['title']}\n{spec.get('detail') or ''}"
+            cap = int(navctx.settings(self.cfg)["pack_tokens"])
+            dec = await asyncio.to_thread(navctx.decide_pack, wt, text, list(spec.get("files") or []), cap, self.cfg)
+            built = await asyncio.to_thread(navctx.task_pack, wt, text, dec["tokens"], self.cfg) if dec["tokens"] > 0 else ""
+            self._packs[key] = (built, dec)
+        pack, dec = self._packs[key]
         vault = await asyncio.to_thread(navctx.vault_block, f"{spec['title']} {str(spec.get('detail') or '')[:300]}", self.cfg)
         before = await asyncio.to_thread(navctx.usage, wt) if pack else {}
         prompt = (f"Task: {spec['title']}\n\n{spec.get('detail') or ''}\n\nOverall goal: {spec['goal']}\n"
@@ -419,6 +423,7 @@ class AgentLoopWorker:
         calls = list(getattr(res, "tool_calls", None) or [])
         mix = navctx.tool_mix(calls)
         mix["context_pack_tokens"] = len(pack) // 4 if pack else 0
+        mix["adaptive"] = {k: dec[k] for k in ("adaptive", "tokens", "reason", "files", "bytes") if k in dec}
         if pack:
             mix["codeintel"] = navctx.usage_delta(before, await asyncio.to_thread(navctx.usage, wt))
         return {**out, "tool_mix": mix, "summary": reply[:500], "tool_calls": calls,
