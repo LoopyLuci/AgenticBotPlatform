@@ -168,7 +168,7 @@ DENYLIST: frozenset[str] = frozenset({
     # Ollama: harness.py holds the background pull/push/create jobs, tools.py registers tools at import time.
     "bot.ollama.client", "bot.ollama.harness", "bot.ollama.tools", "bot.dashboard.ollama_api",
     # ModelMistress: client.py caches where the hub is, tools.py registers tools at import time.
-    "bot.modelmistress.client", "bot.modelmistress.harness", "bot.modelmistress.tools", "bot.dashboard.modelmistress_api",
+    "bot.modelmistress.client", "bot.modelmistress.harness", "bot.modelmistress.supervisor", "bot.modelmistress.tools", "bot.dashboard.modelmistress_api",
     # VM-Harness: harness.py holds the background setup/update jobs, tools.py registers tools at import time.
     "bot.vm_harness.client", "bot.vm_harness.harness", "bot.vm_harness.tools", "bot.dashboard.vm_harness_api",
     # Hermes Manager: harness.py holds the background setup/update jobs, tools.py registers tools at import time.
