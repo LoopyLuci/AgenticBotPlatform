@@ -1541,6 +1541,24 @@ async def capacity_handoff(task_id: str) -> Any:
     return await _request("GET", f"/api/capacity/handoff/{task_id}", params={"prompt": "1"})
 
 
+# ---- the manager channel (bot/manager) ---------------------------------------------
+@mcp.tool()
+async def manager_digest(since: Optional[float] = None, mark: bool = True) -> Any:
+    """A capped (about 3k tokens) digest of the local factory since the last digest: board state, what finished, what failed and why,
+    what waits for a decision, capacity and token accounting. mark=True moves the last-digest marker; since = epoch seconds."""
+    params: dict[str, Any] = {"mark": "1" if mark else "0"}
+    if since is not None:
+        params["since"] = since
+    return await _request("GET", "/api/manager/digest", params=params)
+
+
+@mcp.tool()
+async def manager_escalations(limit: int = 30) -> Any:
+    """Everything waiting for a decision (blocked or in-review tasks, push approvals, capacity overrides, repeated failures), each with the
+    question, the failing check, file:line and a short diff excerpt - never raw logs."""
+    return await _request("GET", "/api/manager/escalations", params={"limit": limit})
+
+
 # ---- the local conductor (bot/conductor) --------------------------------------------
 @mcp.tool()
 async def conductor_status() -> Any:

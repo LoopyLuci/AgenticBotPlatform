@@ -985,6 +985,11 @@ def build_app() -> FastAPI:
 
     conductor_api.register(app, _require_token_or_api_key, _require_token)
 
+    # The manager channel (/api/manager): the capped digest and the escalation queue for a supervising model.
+    from bot.dashboard import manager_api
+
+    manager_api.register(app, _require_token_or_api_key, _require_token)
+
     # Agent eval reports (/api/agent/evals/reports): the Evals screen's read-only view of the harness's JSON reports.
     from bot.dashboard import evals_api
 

@@ -162,6 +162,17 @@ capacity:
     cloud_classes: [hard_reasoning, long_context]   # task classes that still go to cloud models in hybrid
   reroute_fixed_models: true     # a bot with a fixed cloud model uses a local one for new turns while local-only
   local_providers: [modelmistress, ollama, unsloth, lmstudio, llamacpp, vllm]
+# The manager channel (bot/manager, docs/local-manager.md): a capped digest and an escalation queue so a supervising model
+# (Claude) can follow the local factory cheaply. Check-ins are a scheduled digest, OFF by default; they run only while the
+# capacity governor says cloud capacity exists (cloud-led or hybrid) and wait, queued, while it is local-only.
+manager:
+  digest:
+    cap_tokens: 3000             # hard ceiling on one digest (about 4 characters a token)
+    cache_s: 30
+    diff_chars: 400              # diff excerpt per escalation inside a digest
+  checkins:
+    enabled: false
+    interval_s: 3600
 # spawn_subagent (bot/agent_runtime/subagents.py) — ephemeral, disposable
 # sub-agent fan-out for api/custom_model-backed instances, the native
 # equivalent of Hermes Agent's own delegate_task. Depth is governed by

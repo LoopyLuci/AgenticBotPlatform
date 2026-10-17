@@ -2643,6 +2643,33 @@ export const operations = {
    "level"
   ]
  },
+ "GET /api/manager/checkin": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/manager/checkin",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/manager/digest": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/manager/digest",
+  "path_params": [],
+  "query_params": [
+   "since",
+   "mark",
+   "text"
+  ]
+ },
+ "GET /api/manager/escalations": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/manager/escalations",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
  "GET /api/mcp": {
   "body": false,
   "method": "GET",
@@ -5936,6 +5963,13 @@ export const operations = {
   "path_params": [
    "rid"
   ],
+  "query_params": []
+ },
+ "POST /api/manager/checkin": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/manager/checkin",
+  "path_params": [],
   "query_params": []
  },
  "POST /api/mcp-external": {
@@ -13661,6 +13695,40 @@ export const operations = {
    "name"
   ],
   "query_params": []
+ },
+ "manager_checkin_run_api_manager_checkin_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/manager/checkin",
+  "path_params": [],
+  "query_params": []
+ },
+ "manager_checkin_state_api_manager_checkin_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/manager/checkin",
+  "path_params": [],
+  "query_params": []
+ },
+ "manager_digest_api_manager_digest_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/manager/digest",
+  "path_params": [],
+  "query_params": [
+   "since",
+   "mark",
+   "text"
+  ]
+ },
+ "manager_escalations_api_manager_escalations_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/manager/escalations",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
  },
  "mem_add_api_memory_entries_post": {
   "body": true,

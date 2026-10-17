@@ -41,6 +41,7 @@ Commands:
   coordination summary|tasks|locks        the work board: who is doing what, what waits and why, who holds which files
   capacity status|set|clear|history|probe|policy|packs  the capacity governor: cloud-led / hybrid / local-only, why, and the owner override
                                           (`capacity set local-only --for 2h --reason "usage cap"`; `capacity clear` = automatic)
+  manager digest|escalations|checkin     the manager channel: a capped digest of the local factory and what waits for a decision
   conductor plan|run|review|status|queue|approve|reject|push|unblock  the local conductor: plan a goal, run it in a repo, review a diff
                                           against the standing rules, the push queue (`conductor approve ID --by owner`)
   vision status|analyze|find|compare|edit|fetch
@@ -206,6 +207,8 @@ async def _dispatch(args, client: DashboardClient) -> int:
         return await _capacity(args, client)
     if cmd == "conductor":
         return await _conductor(args, client)
+    if cmd == "manager":
+        return await _manager(args, client)
     if cmd == "hermes":
         from abp_cli import hermes as _hermes
         return await _hermes.run(args, client)
@@ -1756,6 +1759,67 @@ def _duration_s(text: str) -> float:
     return float(m.group(1)) * {"": 1, "s": 1, "m": 60, "h": 3600, "d": 86400}[m.group(2)]
 
 
+async def _manager(args, client: DashboardClient) -> int:
+    """The manager channel (bot/manager): digest, escalations, check-ins. See docs/local-manager.md."""
+    sub = args.manager_cmd
+    api = "/api/manager"
+    if sub == "digest":
+        params: dict[str, Any] = {"mark": "0" if args.peek else "1", "text": "1"}
+        if args.since:
+            params["since"] = _since_ts(args.since)
+        res = await client._request("GET", f"{api}/digest", params=params)
+        text = res.pop("text", "")
+        print(json.dumps(res, indent=1) if args.json else text)
+        return 0
+    if sub == "escalations":
+        res = await client._request("GET", f"{api}/escalations", params={"limit": args.limit})
+        if args.json:
+            _print(args, res)
+            return 0
+        print(f"{res['count']} item(s) waiting for a decision")
+        for it in res["items"]:
+            rows = [f"[{it['id']}] {it['kind']}: {it['title']}", f"    {it['question']}"]
+            for label, key in (("check", "failing_check"), ("at", "where"), ("decide", "decide")):
+                if it.get(key):
+                    rows.append(f"    {label}: {it[key]}")
+            print(chr(10).join(rows))
+        return 0
+    if sub == "checkin":
+        if args.now:
+            res = await client._request("POST", f"{api}/checkin", json={"force": bool(args.force)})
+            res.pop("digest", None)
+        else:
+            res = await client._request("GET", f"{api}/checkin")
+        if args.json:
+            _print(args, res)
+        elif args.now:
+            print(f"check-in: {res['status']} (capacity {res['capacity']}" + (f", ~{res['tokens']} tokens" if res.get("tokens") else "") + ")")
+        else:
+            print(f"check-ins: {'on' if res['enabled'] else 'off'} every {res['interval_s']}s; capacity {res['capacity']}; "
+                  f"{res['count']} done, ~{res['tokens_total']} manager tokens in total" + ("; one is queued (local-only)" if res["queued"] else ""))
+            if res.get("latest"):
+                print(res["latest"])
+        return 0
+    return 2
+
+
+def _since_ts(text: str) -> float:
+    """--since: epoch seconds, a duration back from now (30m, 2h, 1d), or a local 'YYYY-MM-DD[ HH:MM]'."""
+    t = text.strip()
+    try:
+        return float(t)
+    except ValueError:
+        pass
+    if t[:-1].isdigit() and t[-1] in "smhd":
+        return time.time() - int(t[:-1]) * {"s": 1, "m": 60, "h": 3600, "d": 86400}[t[-1]]
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            return time.mktime(time.strptime(t, fmt))
+        except ValueError:
+            continue
+    raise SystemExit(f"--since: not a time: {text!r} (use epoch seconds, 2h, or 'YYYY-MM-DD HH:MM')")
+
+
 async def _capacity(args, client: DashboardClient) -> int:
     sub = args.capacity_cmd
     api = "/api/capacity"
@@ -2172,6 +2236,14 @@ def _parser() -> argparse.ArgumentParser:
     capsub.add_parser("policy", help="what a worker should advertise and use now")
     p = capsub.add_parser("packs", help="the handoff packs, newest first"); p.add_argument("--limit", type=int, default=30)
     p.add_argument("--prune", action="store_true", help="remove old finished packs (dry run unless --yes)"); p.add_argument("--yes", action="store_true")
+    mgr = sub.add_parser("manager", help="the manager channel: a capped digest of the local factory, what waits for a decision, check-ins")
+    mgrsub = mgr.add_subparsers(dest="manager_cmd", required=True)
+    p = mgrsub.add_parser("digest", help="what happened since the last digest (and moves the marker; --peek leaves it)")
+    p.add_argument("--since", default="", help="epoch seconds, 2h, 1d or 'YYYY-MM-DD HH:MM' (default: since the last digest)")
+    p.add_argument("--peek", action="store_true", help="do not move the last-digest marker or count the tokens")
+    p = mgrsub.add_parser("escalations", help="everything waiting for a decision, with the minimum context"); p.add_argument("--limit", type=int, default=50)
+    p = mgrsub.add_parser("checkin", help="the check-in schedule; --now runs one (queued while local-only)")
+    p.add_argument("--now", action="store_true"); p.add_argument("--force", action="store_true", help="with --now: even when nothing is new")
     con = sub.add_parser("conductor", help="the local conductor: plan, work, review and integrate with local models; the push queue")
     consub = con.add_subparsers(dest="conductor_cmd", required=True)
     p = consub.add_parser("plan", help="plan a goal (text, or FILE:LINE of a roadmap/TODO row) into small board tasks")

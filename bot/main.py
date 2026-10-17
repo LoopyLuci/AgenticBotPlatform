@@ -635,6 +635,13 @@ async def run() -> None:
 
         _spawn("handoff pack pruning", _capacity_prune)
 
+        def _manager_checkins():
+            from bot.manager import checkin
+
+            return checkin.run_forever(stop_event)
+
+        _spawn("manager check-ins", _manager_checkins)
+
         try:
             from bot import mdns_advertise
 
