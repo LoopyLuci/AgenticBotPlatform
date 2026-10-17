@@ -438,6 +438,8 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.agent_runtime.prompt",  # pure functions over config, no state — only imported lazily inside native_backend.py::ask()
     "bot.agent_runtime.loop_guard",  # pure functions plus a per-turn Watchdog object; no module state
     "bot.backends.native_backend",
+    "bot.gpu",  # pure VRAM probe (DXGI via ctypes), no bot-internal deps
+    "bot.agent_runtime.gpu_tool",  # the gpu_status tool; imports bot.gpu, imported by tools.py below
     "bot.agent_runtime.tools",
     "bot.agent_runtime.checkpoints",
     "bot.agent_runtime.tool_loop",
