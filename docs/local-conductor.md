@@ -179,6 +179,16 @@ the live ABP stays a separate step for the owner.
 `max_workers` (8), `suite_lock_wait_s` (1800), `gate_command` (empty), `gate_timeout_s` (7200), and `pusher:` with `enabled` (false),
 `remote` (origin) and `target` (empty = the integration's base branch).
 
+Test only what changed, and remember what passed:
+
+- `integrator: {selective_first: true}`: the integrator first runs the test files codeintel's `impact` maps from the merged diff
+  (recorded in the integration's `selective`), then the full suite as the final gate. Both results are kept.
+- `review_scope: {fail: false}`: when a task declares its files, the reviewer asks `impact` for callers/importers of the changed code
+  outside them: a `scope` advisory (a rejection with `fail: true`).
+- `cache: {enabled: true}`: `bot/conductor/cache.py` stores *passing* proofs and suite/shard runs in CacheIt (module `cacheit`, hub
+  operations `cache.get`/`cache.put`, namespace `conductor`), keyed by the worktree's tree hash, the exact command and the test ids. A
+  hit starts no process. With no CacheIt hub (or any error) every lookup is a miss and nothing is stored: runs just go on normally.
+
 ## First live run (2026-10-16)
 
 A throwaway clone of ABP, a ModelMistress hub of its own, Qwen3-Coder-30B-A3B (Q4_K_XL, 32k context, 7900 XTX), `--shell sandbox`,

@@ -442,6 +442,27 @@ def check_ruff(repo: Path, head: str, file_changes: list[Change]) -> tuple[list[
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def check_scope(root: Path, diff: str, declared: Iterable[str], changed: Iterable[str]) -> tuple[list[Finding], str]:
+    """codeintel impact on the diff: callers/importers of the changed code that are not among the task's declared files.
+    `root` is a checkout of the head. Findings (one per outside file, capped) are a scope warning for the caller to weigh."""
+    decl = {d.replace("\\", "/") for d in declared}
+    if not decl:
+        return [], "skipped: the task declares no files"
+    try:
+        from bot.codeintel import tools
+
+        data = tools.impact(Path(root), diff, max_tokens=4000).data or {}
+    except Exception as exc:  # noqa: BLE001 - no index, no verdict
+        return [], f"skipped: impact unavailable ({type(exc).__name__})"
+    own = set(changed) | decl
+    outside = [f for f in data.get("affected_files", []) if f not in own and not re.search(r"(^|/)(tests?/|test_[^/]*$|[^/]*_test\.py$)", f)]
+    if not outside:
+        return [], "pass"
+    syms = ", ".join(data.get("symbols", [])[:3])
+    return [Finding("scope", f"changed code ({syms}) is used by {f}, which is not among the task's declared files", f, 0, "scope")
+            for f in outside[:10]], "warn"
+
+
 # ------------------------------------------------------------ the review
 ModelCall = Callable[..., Awaitable[tuple[str, str]]]
 
@@ -458,7 +479,8 @@ Reply with ONLY JSON: {{"verdict": "accept" or "reject", "concerns": ["short, sp
 
 
 def review(repo: Any, base: str, head: str, *, created_files: Iterable[str] = (), allow_delete: Iterable[str] = (),
-           public: bool = True, private_dir: Optional[Path] = None, run_ruff: bool = True, check_reload: bool = True) -> Review:
+           public: bool = True, private_dir: Optional[Path] = None, run_ruff: bool = True, check_reload: bool = True,
+           declared_files: Optional[Iterable[str]] = None, scope_root: Optional[Path] = None, scope_fail: bool = False) -> Review:
     """The static review of base..head in `repo`. Pure: nothing in the repository changes."""
     repo = Path(repo)
     rep = Review(base=_git(repo, "rev-parse", base).strip(), head=_git(repo, "rev-parse", head).strip())
@@ -486,6 +508,14 @@ def review(repo: Any, base: str, head: str, *, created_files: Iterable[str] = ()
     if run_ruff:
         found, state = check_ruff(repo, head, file_changes)
         put("ruff", found, state)
+    if declared_files is not None and scope_root is not None:
+        found, state = check_scope(Path(scope_root), _git(repo, "diff", "-U0", "--no-color", "--no-ext-diff", base, head),
+                                   declared_files, rep.files)
+        if scope_fail:
+            put("scope", found, state if not found else "fail")
+        else:
+            rep.advisory += found
+            rep.checks["scope"] = state
     rep.verdict = REJECT if rep.findings else ACCEPT
     return rep
 

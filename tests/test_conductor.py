@@ -248,7 +248,7 @@ def test_the_integrator_tells_a_flake_from_a_failure_and_queues_only_green(repo,
     monkeypatch.setenv("FLAKE_MARK", str(mark))
     ok = branch(repo, "feat/ok", suite_repo(repo, mark))
     other = branch(repo, "feat/other", {"extra.py": "Y = 2\n"})
-    integ = integrator.Integrator(repo, base="main", workdir=tmp_path / "wt")
+    integ = integrator.Integrator(repo, base="main", workdir=tmp_path / "wt", selective_first=False)
     green = integ.integrate([ok, other], plan_id="p1", tasks=["a", "b"])
     assert green.status == "green" and green.branch == "integ/agents-1" and green.merged == [ok, other]
     assert [t.split("::")[-1] for t in green.flaky] == ["test_flaky"] and green.failed == []
