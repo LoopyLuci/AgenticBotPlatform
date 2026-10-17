@@ -33,12 +33,14 @@ logger = logging.getLogger("bot.agent_runtime.trace")
 
 TRACE_KINDS: dict[str, dict[str, type]] = {
     "agent.run.start": {"agent": str, "model": str, "transport": str, "instance_id": int, "session": str,
-                        "tools": int, "effort": str, "parent_run": str, "source": str},
-    "agent.run.end": {"status": str, "duration_ms": int, "iterations": int, "tokens": int, "usd": float, "error": str},
+                        "tools": int, "effort": str, "parent_run": str, "source": str,
+                        "task_type": str},
+    "agent.run.end": {"status": str, "duration_ms": int, "iterations": int, "tokens": int, "usd": float, "error": str,
+                      "task_id": str},
     "llm.call": {"iteration": int, "model": str, "duration_ms": int, "tokens": int, "tool_calls": int,
                  "stop": str, "cache_read": int, "cache_create": int, "streamed": int, "usd": float},
     "tool.call": {"tool": str, "status": str, "duration_ms": int, "approval": str, "error": str,
-                  "target": str, "arg_chars": int, "output_chars": int, "read_only": int},
+                  "target": str, "arg_chars": int, "output_chars": int, "read_only": int, "skill": str},
     "approval": {"tool": str, "decision": str, "reason": str},
     "compaction": {"messages": int, "before_chars": int},
     "note": {"level": str, "message": str},
@@ -93,6 +95,13 @@ def _target(tool: str, tool_input: dict) -> str:
     return ""
 
 
+def _skill_name(tool: str, tool_input: dict) -> str:
+    """The skill a read_skill / read_skill_file call loaded (a name, not content) - the memory graph's skill signal."""
+    if tool in ("read_skill", "read_skill_file") and isinstance(tool_input, dict):
+        return str(tool_input.get("name") or tool_input.get("skill") or "")[:120]
+    return ""
+
+
 class Trace:
     """One agent run. Every method swallows its own failures."""
 
@@ -102,6 +111,9 @@ class Trace:
         self.iterations = 0
         self.tokens = 0
         self.usd: Optional[float] = None    # None until a call with a known price
+        self.task_id = ""                   # set by the handoff recorder once the turn has a task identity
+        self.goal_hint = ""                 # the start of the prompt, kept in memory only for the memory graph (never traced)
+        self.workspace: Optional[str] = None
         self._store = store
         self._token: Optional[contextvars.Token] = None
         parent = _current.get()
@@ -147,7 +159,8 @@ class Trace:
         self._emit("tool.call", {"tool": tool, "status": status, "duration_ms": duration_ms, "approval": approval,
                                  "error": error, "target": _target(tool, tool_input),
                                  "arg_chars": len(str(tool_input)), "output_chars": len(output or ""),
-                                 "read_only": None if read_only is None else int(read_only)})
+                                 "read_only": None if read_only is None else int(read_only),
+                                 "skill": _skill_name(tool, tool_input)})
 
     def approval(self, tool: str, decision: str, reason: str = "") -> None:
         self._emit("approval", {"tool": tool, "decision": decision, "reason": reason})
@@ -161,7 +174,14 @@ class Trace:
     def end(self, status: str = "ok", error: str = "") -> None:
         self._emit("agent.run.end", {"status": status, "error": error, "iterations": self.iterations,
                                      "tokens": self.tokens, "usd": self.usd,
-                                     "duration_ms": int((time.monotonic() - self.started) * 1000)})
+                                     "duration_ms": int((time.monotonic() - self.started) * 1000),
+                                     "task_id": self.task_id})
+        try:       # the memory graph learns from every finished run; it never raises into the turn
+            from bot.memory_graph import builder
+
+            builder.on_run_end(self)
+        except Exception:  # noqa: BLE001
+            logger.debug("memory graph hook failed", exc_info=True)
 
 
 def start(**fields: Any) -> Optional[Trace]:

@@ -266,6 +266,9 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.codeintel.store", "bot.codeintel.indexer", "bot.codeintel.parsers", "bot.codeintel.treesitter", "bot.codeintel.tools",
     "bot.codeintel.agent_tools", "bot.codeintel.roots", "bot.codeintel.bench", "bot.codeintel.cli", "bot.codeintel.__main__",
     "bot.dashboard.codeintel_api",
+    # Memory graph: tools.py registers memory_relevant at import time; the rest is imported lazily by the trace hook.
+    "bot.memory_graph.tools", "bot.memory_graph.builder", "bot.memory_graph.recall", "bot.memory_graph.settings",
+    "bot.memory_graph.store", "bot.memory_graph.tasktype",
     "bot.agent_runtime.run_tests", "bot.agent_runtime.repo_map", "bot.agent_runtime.ext_browser", "bot.agent_runtime.search_index",  # register their tools at import time; repo_map caches
     "bot.agent_runtime.small_model",  # holds the set of sessions already told that small-model mode is on
     "bot.agent_runtime.context_window",  # holds the learned chars-per-token ratio per model

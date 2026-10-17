@@ -131,6 +131,7 @@ class NativeAgentBackend(Backend):
             agent=self.name, model=self.model, transport=type(self.transport).__name__,
             instance_id=ctx.get("instance_id"), session=ctx.get("desktop_session_key") or "",
             effort=ctx.get("effort") or "", source=ctx.get("source") or "",
+            task_type=ctx.get("task_type") or _task_type(ctx.get("route_text") or prompt),
         )
         with run:
             try:
@@ -235,6 +236,10 @@ class NativeAgentBackend(Backend):
         chat_id = context.get("chat_id")
         workspace = agent_tools.resolve_workspace(instance_id or 0, context.get("cwd"))
         pack_rec = _begin_pack(context, prompt, _ref(self.transport, self.model), workspace)
+        _run = trace.active()          # what the memory graph needs from this turn; kept in memory, never written to the trace
+        _run.goal_hint, _run.workspace = str(context.get("route_text") or prompt)[:600], str(workspace)
+        if pack_rec is not None:
+            _run.task_id = pack_rec.task_id
         if pack_rec is not None and pack_rec.resume_text:
             # Another model worked on this task before (a re-route, or capacity moved): it starts from the handoff pack.
             prompt = pack_rec.resume_text + "\n\n---\n\n" + prompt
@@ -813,6 +818,16 @@ def _resolve_fallback_transport(instance_id) -> Optional[tuple]:
     except Exception:
         logger.exception("native backend: failed to resolve fallback transport for instance %s", instance_id)
         return None
+
+
+def _task_type(text: str) -> str:
+    """The coarse task type the memory graph files this run under (a name, never content). Never raises."""
+    try:
+        from bot.memory_graph import tasktype
+
+        return tasktype.classify(str(text))
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def _begin_pack(context: dict, prompt: str, model_ref: str, workspace) -> Optional[Any]:
