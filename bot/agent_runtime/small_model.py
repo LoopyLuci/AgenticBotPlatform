@@ -95,6 +95,15 @@ def core_tools(existing: Optional[Iterable[str]] = None) -> frozenset:
     return frozenset(n for n in names if n in have)
 
 
+CONDUCTOR_EXTRA = ("outline", "find_symbol", "read_symbol", "callers", "related_tests", "context_pack", "context_recall")
+
+
+def conductor_tools(extra: Optional[Iterable[str]] = None) -> frozenset:
+    """The conductor worker's profile: the compact core set plus codeintel navigation and vault recall (capped slices instead
+    of whole-file reads). The bench's own set (core_tools) is unchanged for every other caller."""
+    return core_tools() | frozenset(CONDUCTOR_EXTRA if extra is None else extra)
+
+
 def _provider(transport: Any) -> tuple[str, bool]:
     """(provider name for window lookup, is it a local engine) - the same reading context_window.manage uses."""
     from bot.agent_runtime import turn_budget

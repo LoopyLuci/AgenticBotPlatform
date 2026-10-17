@@ -76,7 +76,7 @@ def _enabled_by_default() -> bool:
 # each entry (several were found only by grepping every candidate file
 # for module-level mutable containers, not by inspection alone).
 DENYLIST: frozenset[str] = frozenset({
-    "bot.main", "bot.router", "bot.db", "bot.config", "bot.dashboard.server", "bot.dashboard.cicd_api", "bot.dashboard.agent_security_api", "bot.dashboard.models_info_api", "bot.dashboard.traces_api", "bot.dashboard.coordination_api", "bot.dashboard.capacity_api", "bot.dashboard.conductor_api", "bot.dashboard.evals_api", "bot.dashboard.vault_api", "bot.dashboard.approvals_api", "bot.dashboard.channels_api", "bot.dashboard.agent_config_api", "bot.dashboard.tailscale_api", "bot.dashboard.infra_api", "bot.dashboard.browser_api", "bot.dashboard.browser_gateway_api", "bot.browser_gateway",
+    "bot.main", "bot.router", "bot.db", "bot.config", "bot.dashboard.server", "bot.dashboard.cicd_api", "bot.dashboard.agent_security_api", "bot.dashboard.models_info_api", "bot.dashboard.traces_api", "bot.dashboard.coordination_api", "bot.dashboard.capacity_api", "bot.dashboard.conductor_api", "bot.dashboard.manager_api", "bot.dashboard.evals_api", "bot.dashboard.vault_api", "bot.dashboard.approvals_api", "bot.dashboard.channels_api", "bot.dashboard.agent_config_api", "bot.dashboard.tailscale_api", "bot.dashboard.infra_api", "bot.dashboard.browser_api", "bot.dashboard.browser_gateway_api", "bot.browser_gateway",
     # Extensions (ABP_PRIVATE_DIR): the loader is loaded once and caches what it found, and its
     # routes are registered on the live app at build time - same reason bot.config is here.
     "bot.extensions", "bot.dashboard.extensions_api",
@@ -380,7 +380,8 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.bot_instances",  # depends only on validators/personas — before pairing/memory, which import it at module scope
     "bot.model_pricing",
     "bot.capacity.classify", "bot.capacity.handoff", "bot.capacity.routing", "bot.capacity.follow",  # pure functions over the governor's state; reached as module attributes
-    "bot.conductor.store", "bot.conductor.proof", "bot.conductor.llm", "bot.conductor.shards", "bot.conductor.planner", "bot.conductor.reviewer", "bot.conductor.integrator", "bot.conductor.pusher", "bot.conductor.confine", "bot.conductor.run",  # the conductor: a connection per call, no state held in the modules
+    "bot.conductor.store", "bot.conductor.cache", "bot.conductor.proof", "bot.conductor.llm", "bot.conductor.shards", "bot.conductor.navctx", "bot.conductor.planner", "bot.conductor.reviewer", "bot.conductor.integrator", "bot.conductor.pusher", "bot.conductor.confine", "bot.conductor.run",  # the conductor: a connection per call, no state held in the modules
+    "bot.manager.store", "bot.manager.escalations", "bot.manager.digest", "bot.manager.checkin",  # the manager channel: reads the board/conductor/capacity; a connection per call, no state held in the modules
     "bot.models",
     "bot.push",
     "bot.desktop",

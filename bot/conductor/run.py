@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
 from bot import conductor as conductor_pkg
-from bot.conductor import confine, integrator, llm, planner, proof, reviewer, store
+from bot.conductor import confine, integrator, llm, navctx, planner, proof, reviewer, store
 from bot.coordination.model import Blocked
 
 logger = logging.getLogger("bot.conductor.run")
@@ -98,14 +98,21 @@ class Conductor:
         self._plan: Optional[planner.Plan] = None
         self._done: dict[str, dict] = {}                       # task id -> accepted result
         self._model_used = ""
+        self._mix: dict[str, dict] = {}                        # task id -> the tool mix of its last attempt (navigation visible)
 
     # ----------------------------------------------------------------- plan
     async def plan(self, goal: str, *, context: str = "", replan: bool = False) -> planner.Plan:
         from bot.agent_runtime.state import state_dir
 
         root = (self.workdir or state_dir("conductor", "worktrees"))
+        cctx = navctx.settings(self.cfg)
+        extra = ""
+        if cctx["use_codeintel"] and (replan or not planner.plan_exists(goal, self.repo)):
+            extra = await asyncio.to_thread(navctx.planning_context, self.repo, planner.goal_from(goal, self.repo)[0], self.cfg)
+        context = chr(10).join(c for c in (context, extra) if c)
         return await planner.make_plan(goal, repo=self.repo_name, worktree_root=str(root).replace("\\", "/"), context=context,
-                                       model=self.cfg["model"], max_tasks=int(self.cfg["max_tasks"]), root=self.repo, replan=replan)
+                                       model=self.cfg["model"], max_tasks=int(self.cfg["max_tasks"]), root=self.repo, replan=replan,
+                                       context_cap=int(cctx["plan_context_chars"]))
 
     # ------------------------------------------------------------------ run
     async def run(self, plan: planner.Plan, *, integrate: bool = False) -> RunReport:
@@ -129,6 +136,8 @@ class Conductor:
                 report.tasks[t.id] = {"status": "not_run", "why": "a task it depends on did not finish"}
                 continue
             row: dict[str, Any] = {"status": out.get("status"), "rejections": store.rejections(plan.id, t.key)}
+            if t.id in self._mix:
+                row["tools"] = self._mix[t.id]
             if out.get("status") == "success":
                 data = _loads(out.get("result"))
                 row.update(branch=data.get("branch", ""), review=data.get("verdict", ""))
@@ -172,6 +181,8 @@ class Conductor:
             except WorkerStuck as exc:
                 result = {"branch": task.branch, "empty": True, "summary": str(exc)}
             branch = str(result.get("branch") or spec["branch"])
+            if result.get("tool_mix"):
+                self._mix[task.id] = {**result["tool_mix"], "attempt": attempt}
             review_base = str(result.get("start") or (spec["after"][-1] if spec["after"] else self.base))
             if result.get("tool_calls") or result.get("tokens"):          # the confined runner's audit trail: every tool call
                 store.add_tool_calls(plan.id, task.key, attempt, result.get("tool_calls") or [],
@@ -191,7 +202,10 @@ class Conductor:
                 reviewer.review, self.repo, review_base, branch, created_files=result.get("created") or [],
                 allow_delete=result.get("allow_delete") or [], public=bool(self.cfg["public_repo"]),
                 private_dir=os.environ.get("ABP_PRIVATE_DIR") or None, run_ruff=bool(self.cfg["check_ruff"]),
-                check_reload=bool(self.cfg["check_hotreload"]))
+                check_reload=bool(self.cfg["check_hotreload"]),
+                # scope check: flag (or, when configured, reject) a diff whose callers fall outside the task's own files
+                declared_files=list(task.files or []), scope_root=Path(result["worktree"]) if result.get("worktree") else None,
+                scope_fail=bool(self.cfg["review_scope"]["fail"]))
             if self.run_proofs:
                 cmd = str((spec.get("proof") or {}).get("command") or "")
                 why = proof.check(cmd)
@@ -209,10 +223,14 @@ class Conductor:
                                             avoid=self.cfg["model"], diff_cap=int(self.cfg["review_diff_cap"]))
             store.add_review(plan.id, task.key, branch, rep.to_dict())
             if rep.accepted:
+                navctx.capture(f"Task '{task.title}' was accepted on {branch}: {str(result.get('summary', ''))[:600]}", "task_state",
+                               self.repo_name, cfg=self.cfg)
                 self._done[task.id] = {"branch": branch, "head": rep.head}
                 return json.dumps({"branch": branch, "verdict": rep.verdict, "head": rep.head, "summary": result.get("summary", ""),
                                    "checks": rep.checks, "advisory": [str(f) for f in rep.advisory][:10]})
             feedback = rep.feedback()
+            navctx.capture(f"Task '{task.title}' attempt {attempt} was rejected by the reviewer: {feedback[:900]}", "review",
+                           self.repo_name, cfg=self.cfg)
             if store.rejections(plan.id, task.key) >= max_rej:
                 rule = next((f.rule for f in rep.findings if f.rule in RULE_QUESTIONS), "")
                 await self._escalate(plan, task, f"{max_rej} review rejections; last: " + feedback.splitlines()[0][:300], rep,
@@ -329,7 +347,8 @@ class AgentLoopWorker:
     _agent_lock = threading.Lock()      # the agent's config overlay and ephemeral environment are process-global: one agent turn at a time
 
     def __init__(self, repo: Any, *, model: str = "", timeout_s: float = 900, max_iterations: int = 60,
-                 drive: Optional[Callable[..., Awaitable[Any]]] = None, shell: str = "none", sandbox_paths: Optional[list[str]] = None):
+                 drive: Optional[Callable[..., Awaitable[Any]]] = None, shell: str = "none", sandbox_paths: Optional[list[str]] = None,
+                 context_cfg: Optional[dict] = None):
         if shell not in ("none", "sandbox"):
             raise ValueError("shell must be 'none' (file + test tools only) or 'sandbox' (run_shell inside an AppContainer, no network)")
         self.repo = Path(repo)
@@ -340,6 +359,9 @@ class AgentLoopWorker:
         self.sandbox_paths = list(sandbox_paths) if sandbox_paths else None
         self.drive = drive or self._drive
         self._verified = False
+        self.cfg = context_cfg                                  # the conductor settings (None = read them)
+        self._packs: dict[str, str] = {}                        # task key -> its context_pack, built once and reused on a retry
+        self._rejected: dict[str, list[str]] = {}               # task key -> what the reviewer already rejected
         if shell == "sandbox" and not confine.supported():          # refused up front, never degraded to an unconfined shell
             raise confine.SandboxUnavailable("--shell sandbox needs a Windows AppContainer; use --shell none here")
 
@@ -362,12 +384,27 @@ class AgentLoopWorker:
 
     async def __call__(self, spec: dict, feedback: str) -> dict:
         wt, start = await asyncio.to_thread(self.prepare, spec)
+        key = str(spec.get("key") or spec["id"])
+        if key not in self._packs:                              # built once per task; a retry reuses it
+            self._packs[key] = await asyncio.to_thread(navctx.task_pack, wt, f"{spec['title']}\n{spec.get('detail') or ''}", 0, self.cfg)
+        pack = self._packs[key]
+        vault = await asyncio.to_thread(navctx.vault_block, f"{spec['title']} {str(spec.get('detail') or '')[:300]}", self.cfg)
+        before = await asyncio.to_thread(navctx.usage, wt) if pack else {}
         prompt = (f"Task: {spec['title']}\n\n{spec.get('detail') or ''}\n\nOverall goal: {spec['goal']}\n"
                   f"Files likely involved: {', '.join(spec.get('files') or []) or '(find them)'}\n"
                   f"It is done when this passes: {(spec.get('proof') or {}).get('command', '(the tests)')}\n"
                   "Rules: never remove or rename an existing feature (command, flag, route, tool, page, setting); do not delete files; "
                   "add or update a test for what you change; keep the change small." +
+                  (f"\n\nCode context for this task (pre-fetched; use outline / read_symbol / find_symbol for more instead of reading "
+                   f"whole files):\n{pack}" if pack else "") + (f"\n\n{vault}" if vault else "") +
                   (f"\n\nYour previous attempt was REJECTED by the reviewer. Fix exactly these:\n{feedback}" if feedback else ""))
+        if feedback:
+            hist = self._rejected.setdefault(key, [])
+            earlier = [e for e in hist[-3:] if e != feedback]
+            if feedback not in hist:
+                hist.append(feedback)
+            if earlier:
+                prompt += "\n\nEarlier rejections of this task (do not repeat them):\n" + "\n---\n".join(e[:600] for e in earlier)
         if self.shell == "sandbox" and not self._verified:
             await asyncio.to_thread(self._verify_sandbox, wt)
         res = await self.drive(prompt, wt)
@@ -379,7 +416,12 @@ class AgentLoopWorker:
         if isinstance(res, str):
             return {**out, "summary": res[:500]}
         reply = str(getattr(res, "reply", "") or getattr(res, "error", "") or "")
-        return {**out, "summary": reply[:500], "tool_calls": list(getattr(res, "tool_calls", None) or []),
+        calls = list(getattr(res, "tool_calls", None) or [])
+        mix = navctx.tool_mix(calls)
+        mix["context_pack_tokens"] = len(pack) // 4 if pack else 0
+        if pack:
+            mix["codeintel"] = navctx.usage_delta(before, await asyncio.to_thread(navctx.usage, wt))
+        return {**out, "tool_mix": mix, "summary": reply[:500], "tool_calls": calls,
                 "tokens": int(getattr(res, "tokens", 0) or 0), "iterations": int(getattr(res, "iterations", 0) or 0),
                 "stopped": str(getattr(res, "stopped", "") or "")}
 
@@ -406,7 +448,8 @@ class AgentLoopWorker:
         def turn():
             with self._agent_lock:
                 return factory.drive_agent(prompt, wt, transport, name, timeout_s=self.timeout_s, max_iterations=self.max_iterations,
-                                           python=sys.executable, shell=self.shell, sandbox_paths=paths)
+                                           python=sys.executable, shell=self.shell, sandbox_paths=paths,
+                                           extra_tools=navctx.tool_names(self.cfg))
         # shell "none": file tools + run_tests only, no shell tool at all. "sandbox": run_shell inside an AppContainer, no network.
         return await asyncio.to_thread(turn)
 

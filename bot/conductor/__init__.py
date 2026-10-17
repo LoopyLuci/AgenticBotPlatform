@@ -40,6 +40,10 @@ DEFAULTS: dict[str, Any] = {
     "integrator": {"selective_first": True},   # run the tests the merged diff affects first; the full suite is still the final gate
     "cache": {"enabled": True},        # CacheIt-backed result cache for proofs and suite runs (a missing hub just means no caching)
     "review_scope": {"fail": False},   # reviewer: callers outside the task's declared files are a warning (true = a rejection)
+    "context": {"use_codeintel": True,    # LF-INT: pre-seed prompts with codeintel slices, offer the navigation tools, give the planner a map
+                "use_vault": True,        # recall/capture through the context vault (earlier findings survive a retry)
+                "pack_tokens": 2500, "plan_pack_tokens": 3000, "repo_map_tokens": 1500, "plan_context_chars": 9000,
+                "vault_tokens": 500},
     "pusher": {"enabled": False,       # the pusher acts only on a recorded approval, and only when this is true
                "remote": "origin", "target": ""},   # target "" = the integration's base branch
 }
@@ -57,6 +61,7 @@ def settings() -> dict[str, Any]:
     out["pusher"] = {**DEFAULTS["pusher"], **(cfg.get("pusher") if isinstance(cfg.get("pusher"), dict) else {})}
     for k in ("integrator", "cache", "review_scope"):
         out[k] = {**DEFAULTS[k], **(cfg.get(k) if isinstance(cfg.get(k), dict) else {})}
+    out["context"] = {**DEFAULTS["context"], **(cfg.get("context") if isinstance(cfg.get("context"), dict) else {})}
     if not out["suite_command"]:
         out["suite_command"] = [sys.executable, "-m", "pytest", "tests", "-n", "8", "-q", "-p", "no:cacheprovider", "-rf"]
     return out
