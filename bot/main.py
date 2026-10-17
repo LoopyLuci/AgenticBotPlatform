@@ -628,6 +628,13 @@ async def run() -> None:
 
         _spawn("capacity recovery probe", _capacity_probe)
 
+        def _modelmistress_hub():
+            from bot.modelmistress import supervisor
+
+            return supervisor.run_forever(stop_event)
+
+        _spawn("modelmistress hub watchdog", _modelmistress_hub)
+
         def _capacity_prune():
             from bot.capacity import handoff
 

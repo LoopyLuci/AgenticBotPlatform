@@ -199,9 +199,41 @@ def test_found_from_the_module_control_file(hub, tmp_path, monkeypatch):
 def test_a_machine_without_the_module_hub_is_not_an_error(monkeypatch, tmp_path):
     from bot.modules import registry
 
+    monkeypatch.setenv("MM_HOME", str(tmp_path / "no-hub-here"))
     monkeypatch.delenv("ABP_NO_MODULE_PROVIDERS", raising=False)
     monkeypatch.setattr(registry, "data_dir", lambda m: tmp_path / m.id)
     assert client.find() is None
+
+
+def test_discovery_skips_a_stale_module_file_and_uses_the_live_mm_home_one(hub, tmp_path, monkeypatch):
+    from bot.modules import registry
+
+    monkeypatch.delenv("ABP_MODELMISTRESS_URL")
+    monkeypatch.delenv("ABP_NO_MODULE_PROVIDERS", raising=False)
+    monkeypatch.setattr(registry, "data_dir", lambda m: tmp_path / m.id)
+    (tmp_path / "modelmistress").mkdir()
+    (tmp_path / "modelmistress" / "control.json").write_text(      # a dead hub's leftover
+        json.dumps({"url": "http://127.0.0.1:9", "token": "stale", "pid": 1, "api": 1}), encoding="utf-8")
+    home = tmp_path / "mmhome"
+    home.mkdir()
+    monkeypatch.setenv("MM_HOME", str(home))
+    (home / "control.json").write_text(json.dumps({"url": hub.url, "token": OWNER, "pid": os.getpid(), "api": 1}), encoding="utf-8")
+    found = client._discover()
+    assert found is not None and found.url == hub.url and found.token == OWNER
+    (home / "control.json").write_text(json.dumps({"url": hub.url, "token": OWNER, "pid": 2 ** 30}), encoding="utf-8")
+    assert client._from_control_file(home / "control.json") is None          # the file names another pid: stale
+
+
+def test_supervisor_does_not_start_in_a_sandbox_or_when_off(monkeypatch):
+    from bot.modelmistress import supervisor
+
+    monkeypatch.setenv("ABP_NO_MODULE_PROVIDERS", "1")
+    assert supervisor.autostart_enabled() is False and supervisor.ensure() is None
+    monkeypatch.delenv("ABP_NO_MODULE_PROVIDERS")
+    monkeypatch.setattr(supervisor, "_start", lambda: (_ for _ in ()).throw(AssertionError("must not start")))
+    monkeypatch.setattr(supervisor, "_sandboxed", lambda: "sandbox")
+    monkeypatch.setattr(client, "find", lambda *a, **k: None)
+    assert supervisor.ensure() is None
 
 
 # ---- operations --------------------------------------------------------------------------------------------------------------------
@@ -484,3 +516,43 @@ def test_against_the_real_binary(tmp_path, monkeypatch):
                 proc.kill()
                 proc.wait(10)
         shutil.rmtree(home, ignore_errors=True)
+
+
+def test_ollama_and_unsloth_are_an_opt_in_fallback(monkeypatch):
+    monkeypatch.setattr(client, "provider_running", lambda: True)
+    monkeypatch.setattr(client, "_cfg", lambda: {})
+    ollama, studio = {"base_url": "http://127.0.0.1:11434/v1"}, {"base_url": "http://127.0.0.1:8888/v1"}
+    assert client.replaced_by_modelmistress("ollama", ollama) and client.replaced_by_modelmistress("local", studio)
+    assert not client.replaced_by_modelmistress("modelmistress") and not client.replaced_by_modelmistress("lmstudio")
+    monkeypatch.setattr(client, "_cfg", lambda: {"allow_ollama": True})
+    assert not client.replaced_by_modelmistress("ollama", ollama) and client.replaced_by_modelmistress("unsloth", studio)
+    monkeypatch.setattr(client, "_cfg", lambda: {})
+    monkeypatch.setattr(client, "provider_running", lambda: False)      # hub down: the fallback is back
+    monkeypatch.setattr(client, "find_cached", lambda: None)
+    assert not client.replaced_by_modelmistress("ollama", ollama) and not client.replaced_by_modelmistress("unsloth", studio)
+
+
+def test_default_candidates_leave_out_ollama_and_unsloth_while_the_hub_runs(monkeypatch):
+    from bot import model_router, providers
+
+    provs = {"modelmistress": {"base_url": "http://127.0.0.1:1/v1"}, "ollama": {"base_url": "http://127.0.0.1:11434/v1"},
+             "unsloth": {"base_url": "http://127.0.0.1:8888/v1"}}
+    monkeypatch.setattr(providers, "list_providers", lambda: dict(provs))
+    monkeypatch.setattr(model_router, "_cfg", lambda: {})
+    monkeypatch.setattr(model_router, "_local_models", lambda name, pcfg: [f"{name}-m"])
+    monkeypatch.setattr(client, "provider_running", lambda: True)
+    monkeypatch.setattr(client, "_cfg", lambda: {})
+    assert model_router.candidate_models() == ["modelmistress/modelmistress-m"]
+    monkeypatch.setattr(client, "_cfg", lambda: {"allow_ollama": True})
+    assert "ollama/ollama-m" in model_router.candidate_models() and "unsloth/unsloth-m" not in model_router.candidate_models()
+    monkeypatch.setattr(client, "_cfg", lambda: {})
+    monkeypatch.setattr(client, "provider_running", lambda: False)
+    monkeypatch.setattr(client, "find_cached", lambda: None)
+    assert {"ollama/ollama-m", "unsloth/unsloth-m"} <= set(model_router.candidate_models())
+
+
+def test_nothing_was_removed_only_gated():
+    import importlib
+
+    for mod in ("bot.ollama", "bot.unsloth", "bot.localai", "bot.localai.service", "bot.backends.native_backend"):
+        importlib.import_module(mod)

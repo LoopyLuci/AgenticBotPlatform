@@ -7,17 +7,33 @@ Unsloth Studio and ABP's own local AI work as before (`bot/ollama`, `bot/unsloth
 ## Finding the hub
 
 In this order: `ABP_MODELMISTRESS_URL` / `ABP_MODELMISTRESS_TOKEN`; `modelmistress.url` in the config (token from
-`token_env`, or `token`); the module's control file (a hub started from the Modules page). `ABP_NO_MODELMISTRESS=1` turns the
+`token_env`, or `token`); the module's control file (a hub started from the Modules page); then the hub's own home (`modelmistress.home`, `$MM_HOME`,
+`%LOCALAPPDATA%/ModelMistress`, `~/.local/share/ModelMistress`), where the desktop app and a headless `model-mistress serve` write
+theirs. Every candidate is checked with `GET /v1/health` (and its pid); stale files are skipped.
+
+## Always on
+
+With `modelmistress.autostart` (default true) ABP starts the hub at boot with `--home` set to that shared home (one hub and
+model store for the desktop app, headless runs and ABP), reuses a healthy hub instead of starting a second, and a watchdog
+restarts it with back-off (30 s doubling to 15 min). A sandboxed instance never starts it. `require()` tries one start before
+failing. State: `GET /api/modelmistress/hub` (up, url, version, autostart, home, last restart). `ABP_NO_MODELMISTRESS=1` turns the
 whole area off.
 
 ```yaml
 modelmistress:
   url: http://127.0.0.1:8765        # optional: a hub that is not the module's own
   token_env: MODELMISTRESS_TOKEN
+  autostart: true                   # start + keep the hub running
+  home: ""                          # empty: the OS default home above
+  allow_ollama: false               # true: keep Ollama in the default rotation while the hub runs
+  allow_unsloth: false              # true: same for Unsloth Studio (and its auto-load)
   prefer: true                      # false: keep Ollama / Unsloth Studio even while the hub runs
   peers:                            # other machines' hubs, with the peer key their owner made for this machine
     bob: {url: "http://bob:8765", key_env: MM_BOB_KEY}
 ```
+
+Ollama and Unsloth Studio are an opt-in fallback: with a hub up and the flags false they are off the default path (candidate
+lists, auto routing, Studio auto-load); with no hub, or a flag true, they work exactly as before.
 
 ## What uses it
 

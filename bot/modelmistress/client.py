@@ -2,7 +2,10 @@
 
 The hub is found, in this order:
   1. `ABP_MODELMISTRESS_URL` (+ `ABP_MODELMISTRESS_TOKEN`), then `modelmistress.url` in the config (+ `token_env` / `token`);
-  2. the module's control file (`<module data>/control.json`, written by a running hub), checked with GET /v1/health.
+  2. the module's control file (`<module data>/control.json`, written by a running hub), then the hub's own home
+     (`modelmistress.home`, `$MM_HOME`, `LOCALAPPDATA/ModelMistress`, `~/.local/share/ModelMistress`: where the desktop
+     app and a headless `model-mistress serve` write theirs). Each is checked with GET /v1/health (and its pid); a stale
+     file is skipped and the first live hub wins.
 A linked peer's hub is `modelmistress.peers.<name>` ({url, key_env | key}); the key is the peer key that machine's owner
 made for this one. A peer key may use only the OpenAI routes (models, chat, completions, embeddings), so operations
 (pull, load...) work on a local hub only.
@@ -11,10 +14,12 @@ The token or key stays in this process: never shown, logged or sent anywhere but
 """
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Optional
 
 import httpx
@@ -86,6 +91,37 @@ def _configured() -> Optional[tuple[str, str]]:
     return None
 
 
+def mm_home() -> Path:
+    """The hub's own home (control file, model store): `modelmistress.home`, `$MM_HOME`, `LOCALAPPDATA/ModelMistress`
+    on Windows, else `~/.local/share/ModelMistress`. The desktop app, a headless hub and ABP share this one."""
+    given = str(_cfg().get("home") or "").strip() or os.environ.get("MM_HOME", "").strip()
+    if given:
+        return Path(given).expanduser()
+    local = os.environ.get("LOCALAPPDATA", "").strip()
+    if os.name == "nt" and local:
+        return Path(local) / "ModelMistress"
+    return Path.home() / ".local" / "share" / "ModelMistress"
+
+
+def _from_control_file(path: Path) -> Optional[Hub]:
+    """The hub a control file names, when it answers /v1/health (and is the pid the file says); None for a stale file."""
+    try:
+        d = json.loads(path.read_text(encoding="utf-8"))
+        url, token = str(d["url"]).rstrip("/"), str(d.get("token") or "")
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    health = _health(url)
+    if not health:
+        return None
+    want, got = d.get("pid"), health.get("pid")
+    try:
+        if want and got and int(want) != int(got):
+            return None
+    except (TypeError, ValueError):
+        return None
+    return Hub(url, token, str(health.get("version") or d.get("version") or ""))
+
+
 def _from_module() -> Optional[Hub]:
     if os.environ.get("ABP_NO_MODULE_PROVIDERS"):       # tests: never pick up a hub that happens to run on this machine
         return None
@@ -95,8 +131,13 @@ def _from_module() -> Optional[Hub]:
 
         h = modules_client.find(registry.get(MODULE_ID))
     except Exception:  # noqa: BLE001 - no such module, or a broken control file: no hub
+        h = None
+    if h:
+        return Hub(h.url, h.token, h.version)
+    try:
+        return _from_control_file(mm_home() / "control.json")
+    except Exception:  # noqa: BLE001
         return None
-    return Hub(h.url, h.token, h.version) if h else None
 
 
 def _discover(peer: str = "") -> Optional[Hub]:
@@ -164,11 +205,18 @@ def forget() -> None:
 
 def require(peer: str = "") -> Hub:
     hub = find(peer)
+    if hub is None and not peer:
+        try:        # one try to start it (modelmistress.autostart on, not a sandbox); a hub that is already up is reused
+            from bot.modelmistress import supervisor
+
+            hub = supervisor.ensure(refresh=True)
+        except Exception:  # noqa: BLE001
+            hub = None
     if hub is None:
         if peer:
             raise MMError(f"no ModelMistress hub answers for peer {peer!r} (modelmistress.peers.{peer} in the config)",
                           code="unavailable")
-        raise MMError("ModelMistress is not running (start its hub from the Modules page)", code="unavailable")
+        raise MMError("ModelMistress is not running (autostart is off or failed; start its hub from the Modules page)", code="unavailable")
     return hub
 
 
@@ -237,14 +285,44 @@ def provider_running() -> bool:
         return False
 
 
-def replaced_by_modelmistress(name: str, pcfg: Optional[dict] = None) -> bool:
-    """True for a local-model provider ModelMistress replaces (Ollama, Unsloth Studio) while ModelMistress is available.
-    ModelMistress serves the Ollama store and the Hugging Face cache itself, so their models are in its list."""
-    if name == PROVIDER or not provider_running():
-        return False
+def ollama_allowed() -> bool:
+    """`modelmistress.allow_ollama` (default false): Ollama stays on the default path even while a hub runs."""
+    return _cfg().get("allow_ollama", False) is True
+
+
+def unsloth_allowed() -> bool:
+    """`modelmistress.allow_unsloth` (default false): Unsloth Studio stays on the default path (and may auto-load)."""
+    return _cfg().get("allow_unsloth", False) is True
+
+
+def fallback_kind(name: str, pcfg: Optional[dict] = None) -> str:
+    """"ollama" / "unsloth" for those local-model providers, else ""."""
     base = str((pcfg or {}).get("base_url") or "").lower()
     n = name.lower()
-    return "ollama" in n or ":11434" in base or "unsloth" in n or ":8888" in base
+    if "ollama" in n or ":11434" in base:
+        return "ollama"
+    if "unsloth" in n or ":8888" in base:
+        return "unsloth"
+    return ""
+
+
+def hub_available() -> bool:
+    """A hub is up, by the provider registry or by the last (cached) discovery; never waits on the network."""
+    if provider_running():
+        return True
+    return prefer_enabled() and find_cached() is not None
+
+
+def replaced_by_modelmistress(name: str, pcfg: Optional[dict] = None) -> bool:
+    """True for a local-model provider ModelMistress replaces (Ollama, Unsloth Studio) while ModelMistress is available and
+    the owner has not opted that provider in (`modelmistress.allow_ollama` / `allow_unsloth`). With the hub down they are the
+    fallback and stay available. ModelMistress serves the Ollama store and the Hugging Face cache itself."""
+    if name == PROVIDER:
+        return False
+    kind = fallback_kind(name, pcfg)
+    if not kind or (ollama_allowed() if kind == "ollama" else unsloth_allowed()):
+        return False
+    return hub_available()
 
 
 # ---- the context window a model is loaded with ----------------------------------------------------------------

@@ -2846,6 +2846,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/modelmistress/hub": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modelmistress/hub",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/modelmistress/jobs": {
   "body": false,
   "method": "GET",
@@ -14032,6 +14039,13 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/api/models/usage-limits",
+  "path_params": [],
+  "query_params": []
+ },
+ "modelmistress_hub_api_modelmistress_hub_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modelmistress/hub",
   "path_params": [],
   "query_params": []
  },

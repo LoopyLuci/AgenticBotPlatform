@@ -580,3 +580,14 @@ storage_tiering:
     attachments: {enabled: true, after_days: 90}
     logs: {enabled: true, after_days: 14}
     support_bundles: {enabled: true, after_days: 30}
+
+# ModelMistress (docs/agents/modelmistress.md): ABP finds a running hub (env, these keys, the module's control file, then the
+# hub's own home) and keeps one running. Ollama / Unsloth stay as the fallback while no hub answers.
+modelmistress:
+  autostart: true          # start the hub at boot and restart it (with back-off) when it dies; never in a sandboxed instance
+  home: ""                 # the hub's home; empty = $MM_HOME, else the OS default (%LOCALAPPDATA%/ModelMistress, ~/.local/share/ModelMistress)
+  allow_ollama: false      # true: Ollama stays in the default local rotation even while a hub runs (it is the fallback when none does)
+  allow_unsloth: false     # true: Unsloth Studio stays in the default rotation and its auto-load stays on
+  prefer: true             # false: keep Ollama / Unsloth Studio even while the hub runs
+  # url: http://127.0.0.1:8765   # a hub that is not the local one (token from token_env or token)
+  # token_env: MODELMISTRESS_TOKEN

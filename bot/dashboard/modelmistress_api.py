@@ -1,5 +1,6 @@
 """ModelMistress API: ABP's routes for the hub that replaces Ollama / Unsloth Studio for local models.
 
+    GET  /api/modelmistress/hub            up/down, url, version, autostart, home, last restart
     GET  /api/modelmistress/status?peer=   version, loaded models, backends, running downloads (a peer: its model list)
     GET  /api/modelmistress/models?peer=   models that can be served (&refresh=true rescans the disk)
     GET  /api/modelmistress/jobs           downloads, running and finished
@@ -37,6 +38,12 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         if not value:
             raise HTTPException(status_code=400, detail=f"{key} is required")
         return value
+
+    @app.get("/api/modelmistress/hub", dependencies=read)
+    async def modelmistress_hub():
+        from bot.modelmistress import supervisor
+
+        return await asyncio.to_thread(supervisor.status)
 
     @app.get("/api/modelmistress/status", dependencies=read)
     async def modelmistress_status(peer: str = ""):

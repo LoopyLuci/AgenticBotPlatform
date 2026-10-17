@@ -900,9 +900,12 @@ async def _ollama_serving(transport, model: str) -> str:
 async def _load_if_studio(transport, model: str, error: str) -> bool:
     """When Unsloth Studio says it has no model loaded, load `model` there. True if it did (the caller asks again)."""
     try:
+        from bot.modelmistress import client as mm_client
         from bot.unsloth import client as studio_client
         from bot.unsloth import harness as studio
 
+        if mm_client.hub_available() and not mm_client.unsloth_allowed():     # ModelMistress is the default local path
+            return False
         if not studio.not_loaded_error(error):
             return False
         found = studio_client.find()
