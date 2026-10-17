@@ -99,6 +99,10 @@ def goal_from(text: str, root: Optional[Path] = None) -> tuple[str, str]:
     return raw[:2000], ""
 
 
+def plan_exists(goal_text: str, root: Optional[Path] = None) -> bool:
+    return bool(store.get_plan(plan_id(goal_from(goal_text, root)[0])))
+
+
 def plan_id(goal: str) -> str:
     return hashlib.sha256(" ".join(goal.lower().split()).encode("utf-8")).hexdigest()[:12]
 
@@ -263,13 +267,38 @@ def fallback_tasks(goal: str, max_tasks: int = 8, proof_command: str = "python -
     return tasks
 
 
-def _prompt(goal: str, max_tasks: int, context: str) -> str:
+CONTEXT_CAP = 9000       # characters of context (a repo map and a code slice as well as the user's text) the planner is shown
+
+
+def _prompt(goal: str, max_tasks: int, context: str, cap: int = CONTEXT_CAP) -> str:
     return (f"Plan this goal for a software repository as a few small tasks.\n\nGOAL: {goal}\n" +
-            (f"\nCONTEXT:\n{context[:3000]}\n" if context else "") + "\n" + SCHEMA_HELP.replace("{max_tasks}", str(max_tasks)))
+            (f"\nCONTEXT:\n{context[:cap]}\n" if context else "") + "\n" + SCHEMA_HELP.replace("{max_tasks}", str(max_tasks)) +
+            ("\nList in \"files\" only paths that exist in the repository (see the map); a new file goes in an existing folder."
+             if context else ""))
+
+
+def check_files(tasks: list[dict], known: set[str]) -> list[str]:
+    """Errors for task files the model invented (not in the tree, not in an existing folder)."""
+    from bot.conductor import navctx
+
+    return [f"task {t['id']}: these files do not exist in the repository: {', '.join(bad[:5])}; name real files (a new file goes in an "
+            "existing folder)" for t in tasks for bad in [navctx.unknown_paths(t["files"], known)] if bad]
+
+
+def drop_unknown_files(tasks: list[dict], known: set[str]) -> int:
+    from bot.conductor import navctx
+
+    n = 0
+    for t in tasks:
+        bad = set(navctx.unknown_paths(t["files"], known))
+        n += len(bad)
+        t["files"] = [f for f in t["files"] if f not in bad]
+    return n
 
 
 async def make_plan(goal_text: str, *, repo: str = "abp", worktree_root: str = "", context: str = "", model: str = "",
-                    max_tasks: int = 8, root: Optional[Path] = None, replan: bool = False, save: bool = True) -> Plan:
+                    max_tasks: int = 8, root: Optional[Path] = None, replan: bool = False, save: bool = True,
+                    context_cap: int = CONTEXT_CAP) -> Plan:
     """Plan a goal. Returns the stored plan for the same goal unless `replan`."""
     goal, source = goal_from(goal_text, root)
     if not goal:
@@ -282,7 +311,12 @@ async def make_plan(goal_text: str, *, repo: str = "abp", worktree_root: str = "
     notes: list[str] = []
     tasks: list[dict] = []
     planner, repaired = "fallback", 0
-    prompt = _prompt(goal, max_tasks, context)
+    prompt = _prompt(goal, max_tasks, context, context_cap)
+    known: set[str] = set()
+    if root is not None:
+        from bot.conductor import navctx
+
+        known = navctx.tracked_files(Path(root))              # empty (no check) when git cannot list the tree
     try:
         for attempt in range(MAX_REPAIRS + 1):
             text, ref = await llm.complete(prompt, system="You are a careful software planner. Answer with JSON only.",
@@ -291,12 +325,17 @@ async def make_plan(goal_text: str, *, repo: str = "abp", worktree_root: str = "
                 tasks, errors = validate(extract_json(text), max_tasks)
             except PlanError as exc:
                 tasks, errors = [], [str(exc)]
+            if not errors and known:
+                errors = check_files(tasks, known)
+                if errors and attempt == MAX_REPAIRS:          # out of repairs: keep the plan, drop the invented paths
+                    notes.append(f"dropped {drop_unknown_files(tasks, known)} invented file path(s)")
+                    errors = []
             if not errors:
                 planner = f"model:{ref}"
                 break
             repaired += 1
             notes.append(f"model answer {attempt + 1} rejected: " + "; ".join(errors)[:300])
-            prompt = (_prompt(goal, max_tasks, context) + "\n\nYour previous answer was not usable:\n- " + "\n- ".join(errors) +
+            prompt = (_prompt(goal, max_tasks, context, context_cap) + "\n\nYour previous answer was not usable:\n- " + "\n- ".join(errors) +
                       "\nFix these and answer with the corrected JSON only.")
             tasks = []
     except llm.NoLocalModel as exc:

@@ -37,6 +37,10 @@ DEFAULTS: dict[str, Any] = {
     "suite_lock_wait_s": 1800,         # how long a run waits for the machine-wide suite lock before giving up
     "gate_command": [],                # optional final gate after a green suite, e.g. [python, scripts/local_pipeline.py, --no-deploy]
     "gate_timeout_s": 7200,
+    "context": {"use_codeintel": True,    # LF-INT: pre-seed prompts with codeintel slices, offer the navigation tools, give the planner a map
+                "use_vault": True,        # recall/capture through the context vault (earlier findings survive a retry)
+                "pack_tokens": 2500, "plan_pack_tokens": 3000, "repo_map_tokens": 1500, "plan_context_chars": 9000,
+                "vault_tokens": 500},
     "pusher": {"enabled": False,       # the pusher acts only on a recorded approval, and only when this is true
                "remote": "origin", "target": ""},   # target "" = the integration's base branch
 }
@@ -52,6 +56,7 @@ def settings() -> dict[str, Any]:
         pass
     out = {**DEFAULTS, **{k: v for k, v in cfg.items() if k in DEFAULTS}}
     out["pusher"] = {**DEFAULTS["pusher"], **(cfg.get("pusher") if isinstance(cfg.get("pusher"), dict) else {})}
+    out["context"] = {**DEFAULTS["context"], **(cfg.get("context") if isinstance(cfg.get("context"), dict) else {})}
     if not out["suite_command"]:
         out["suite_command"] = [sys.executable, "-m", "pytest", "tests", "-n", "8", "-q", "-p", "no:cacheprovider", "-rf"]
     return out

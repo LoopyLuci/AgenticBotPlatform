@@ -357,9 +357,11 @@ def endpoint_transport(base_url: str, api_key: str = ""):
 
 
 def drive_agent(prompt: str, ws: Path, transport: Any, model: str, *, timeout_s: float, max_iterations: int, context: int = 0,
-                shell: str = "none", sandbox_paths: Optional[list[str]] = None, python: str = "", small_model: str = "on") -> Any:
+                shell: str = "none", sandbox_paths: Optional[list[str]] = None, python: str = "", small_model: str = "on",
+                extra_tools: Optional[list[str]] = None) -> Any:
     """ABP's native agent, headless (abp_run), on `ws`, with the bench's tool and sandbox settings. Returns the abp_run
-    RunResult. A hard wall-clock guard stops a model call that never returns."""
+    RunResult. A hard wall-clock guard stops a model call that never returns. `extra_tools` (the conductor's codeintel and
+    vault-recall tools) are offered on top of the bench set, small-model mode included; the bench itself passes none."""
     from abp_run import core
 
     settings = agent_settings(model=model, context=context, timeout_s=timeout_s, max_iterations=max_iterations, shell=shell,
@@ -371,6 +373,8 @@ def drive_agent(prompt: str, ws: Path, transport: Any, model: str, *, timeout_s:
         from bot.agent_runtime import small_model as small
 
         allowed = allowed & small.core_tools()
+    if extra_tools:
+        allowed = allowed | frozenset(extra_tools)
     root = Path(tempfile.mkdtemp(prefix="abp-bench-run-"))
     try:
         with core.ephemeral_environment(root, "deny"), agent_environment(settings, python=python):
