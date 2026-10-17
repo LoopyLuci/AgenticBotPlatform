@@ -15,6 +15,7 @@ from bot.config import config
 from bot.conductor import llm, navctx, planner, run
 
 repo = base.repo
+ALWAYS = {**run.conductor_pkg.settings(), "context": {"adaptive": False}}      # today's behaviour: always pre-seed
 
 
 def spec_for(repo, tmp_path, key="conductor:p:t1"):
@@ -55,7 +56,7 @@ def test_worker_prompt_has_a_capped_pack_and_vault_block_and_a_retry_reuses_it(r
             prompts.append(prompt)
             return "ok"
 
-        worker = run.AgentLoopWorker(repo, drive=drive)
+        worker = run.AgentLoopWorker(repo, drive=drive, context_cfg=ALWAYS)
         spec = spec_for(repo, tmp_path)
         run_async(worker(spec, ""))
         run_async(worker(spec, "Fix exactly: the proof failed because --json is missing"))
@@ -100,7 +101,7 @@ def test_codeintel_failure_degrades_to_the_plain_prompt(repo, tmp_path, monkeypa
         prompts.append(prompt)
         return "ok"
 
-    run_async(run.AgentLoopWorker(repo, drive=drive)(spec_for(repo, tmp_path), ""))
+    run_async(run.AgentLoopWorker(repo, drive=drive, context_cfg=ALWAYS)(spec_for(repo, tmp_path), ""))
     assert "Code context" not in prompts[0] and "Task: Add a json flag" in prompts[0]
 
 
@@ -127,3 +128,63 @@ def test_the_report_shows_the_tool_mix(repo):
     assert navctx.tool_mix([{"tool": "read_file"}])["skipped_navigation"] is True
     assert navctx.usage_delta({"a": {"calls": 1, "tokens": 5}}, {"a": {"calls": 3, "tokens": 9}, "b": {"calls": 0, "tokens": 0}}) == {
         "a": {"calls": 2, "tokens": 4}}
+
+
+def _drive_once(repo, tmp_path, spec, cfg):
+    prompts = []
+
+    async def drive(prompt, wt):
+        prompts.append(prompt)
+        return SimpleNamespace(ok=True, reply="ok", tool_calls=[], tokens=0, iterations=0, stopped="", error=None)
+
+    res = run_async(run.AgentLoopWorker(repo, drive=drive, context_cfg=cfg)(spec, ""))
+    return prompts[0], res["tool_mix"]
+
+
+def _big_repo(repo, n=5, size=6000):
+    for i in range(n):
+        body = "".join(f"def func_{i}_{j}(x):\n    return x + {j}\n\n" for j in range(size // 40))
+        base.write(repo, f"big/m{i}.py", body)
+    base.git(repo, "add", "-A")
+    base.git(repo, "commit", "-q", "-m", "big")
+
+
+def test_small_task_skips_the_pack_but_still_offers_the_nav_tools(repo, tmp_path):
+    prompt, mix = _drive_once(repo, tmp_path, spec_for(repo, tmp_path), {**run.conductor_pkg.settings(), "context": {"use_vault": False}})
+    assert "Code context for this task" not in prompt and mix["context_pack_tokens"] == 0
+    assert mix["adaptive"]["adaptive"] is True and mix["adaptive"]["tokens"] == 0 and "small localized" in mix["adaptive"]["reason"]
+    assert set(navctx.NAV_TOOLS) <= set(navctx.tool_names())                               # still offered
+
+
+def test_large_multi_file_task_seeds_the_pack_up_to_the_cap(repo, tmp_path):
+    _big_repo(repo)
+    spec = {**spec_for(repo, tmp_path), "files": [f"big/m{i}.py" for i in range(5)], "detail": "touch func_0_1 and func_3_2 across the modules"}
+    cfg = {**run.conductor_pkg.settings(), "context": {"use_vault": False, "min_bytes_for_pack": 10000}}
+    prompt, mix = _drive_once(repo, tmp_path, spec, cfg)
+    assert "Code context for this task" in prompt and mix["context_pack_tokens"] > 0
+    assert mix["adaptive"]["tokens"] == 2500 and mix["adaptive"]["files"] == 5 and "pre-seed 2500 of 2500" in mix["adaptive"]["reason"]
+    assert mix["context_pack_tokens"] <= 2500
+
+
+def test_pack_scales_between_zero_and_the_cap(repo, tmp_path):
+    _big_repo(repo, n=3)
+    files = [f"big/m{i}.py" for i in range(3)]
+    mid = navctx.decide_pack(repo, "x", files, 2500, {"context": {"min_files_for_pack": 3, "min_bytes_for_pack": 10**9}})
+    assert 400 <= mid["tokens"] < 2500                                                      # at the threshold: part of the cap
+    assert navctx.decide_pack(repo, "x", files[:1], 2500, {"context": {"min_bytes_for_pack": 10**9}})["tokens"] == 0
+
+
+def test_adaptive_off_always_seeds_and_codeintel_off_never_does(repo, tmp_path):
+    prompt, mix = _drive_once(repo, tmp_path, spec_for(repo, tmp_path), {**ALWAYS, "context": {"adaptive": False, "use_vault": False}})
+    assert "Code context for this task" in prompt and mix["adaptive"]["adaptive"] is False
+    assert navctx.decide_pack(repo, "x", [], 2500, {"context": {"use_codeintel": False}})["tokens"] == 0
+
+
+def test_planner_context_shrinks_for_a_small_single_file_goal_and_is_full_for_a_broad_one(repo):
+    small = navctx.decide_plan(repo, "add a --json flag in cli.py")
+    assert small["pack"] == 0 and small["map"] < 1500 and "small single-file" in small["reason"]
+    broad = navctx.decide_plan(repo, "rework the status, build and reporting across cli.py, bot/old.py and tests/test_cli.py")
+    assert broad["pack"] == 3000 and broad["map"] == 1500
+    off = navctx.decide_plan(repo, "add a --json flag in cli.py", {"context": {"adaptive": False}})
+    assert off["pack"] == 3000 and off["map"] == 1500
+    assert navctx.planning_context(repo, "add a --json flag in cli.py") != ""                  # a small map is still given
