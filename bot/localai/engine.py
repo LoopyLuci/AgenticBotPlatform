@@ -112,6 +112,11 @@ def gpu_budget() -> int:
     st = settings()
     if st["gpu_memory_gb"]:
         return int(st["gpu_memory_gb"] * (1 << 30))
+    from bot import gpu
+
+    measured = gpu.total_vram_bytes()      # DXGI etc: right even where the registry value is missing or capped at 4 GB
+    if measured:
+        return int(measured * 0.92)
     g = [x for x in gpus() if x["vendor"] in ("amd", "nvidia", "intel")]
     return int(max((x["memory"] for x in g), default=0) * 0.92)
 

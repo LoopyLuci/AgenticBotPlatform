@@ -2059,6 +2059,16 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/gpu": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/gpu",
+  "path_params": [],
+  "query_params": [
+   "need_gb",
+   "headroom_gb"
+  ]
+ },
  "GET /api/hermes-manager/jobs": {
   "body": false,
   "method": "GET",
@@ -9093,6 +9103,16 @@ export const operations = {
   "path": "/api/swarm-budget",
   "path_params": [],
   "query_params": []
+ },
+ "api_gpu_api_gpu_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/gpu",
+  "path_params": [],
+  "query_params": [
+   "need_gb",
+   "headroom_gb"
+  ]
  },
  "api_hermes_agent_config_get_api_hermes__instance_id__agent_config_get": {
   "body": false,

@@ -168,6 +168,8 @@ async def _run(args) -> int:
     if args.cmd in ("gate", "instance", "dev"):
         from abp_cli import gate as _gate
         return await _gate.run(args)
+    if args.cmd == "gpu":
+        return _gpu(args)               # measured locally: needs no dashboard
     client = _client(args)
     try:
         return await _dispatch(args, client)
@@ -2070,12 +2072,41 @@ async def _vision(args, client: DashboardClient) -> int:
     return 2
 
 
+def _gpu(args) -> int:
+    from bot import gpu
+
+    if args.gpu_cmd == "can-fit":
+        rep = gpu.fit_report(args.gb, args.headroom)
+        if args.json:
+            print(json.dumps(rep, indent=1))
+        else:
+            print({True: "yes", False: "no", None: "unknown"}[rep["fits"]], f"(free {rep['free_gb']} GB, need {args.gb} + {args.headroom} headroom)")
+        return {True: 0, False: 1, None: 2}[rep["fits"]]
+    st = gpu.gpu_status()
+    if args.json:
+        print(json.dumps(st, indent=1))
+    else:
+        for a in st["adapters"]:
+            print(f"{a['name']}: total {a['total_gb']} GB, used {a['used_gb']} GB, free {a['free_gb']} GB")
+        if not st["adapters"]:
+            print("no GPU found")
+        print(f"source: {st['source']}")
+    return 0 if st["known"] else 2
+
+
 def _parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="abp_cli", description=__doc__.splitlines()[0])
     ap.add_argument("--host", default=None, help="host:port of the dashboard (default: 127.0.0.1:8787)")
     ap.add_argument("--token", default=None, help="dashboard token (default: .env's DASHBOARD_TOKEN)")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     sub = ap.add_subparsers(dest="cmd", required=True)
+
+    g = sub.add_parser("gpu", help="measured VRAM: total / used / free (local, no dashboard needed)")
+    gsub = g.add_subparsers(dest="gpu_cmd")
+    p = gsub.add_parser("can-fit", help="exit 0 if N GB (+ headroom) is free now, 1 if not, 2 if unknown")
+    p.add_argument("gb", type=float)
+    p.add_argument("--headroom", type=float, default=1.0)
+    gsub.add_parser("status")
 
     bots = sub.add_parser("bots", help="manage bot instances")
     bsub = bots.add_subparsers(dest="bots_cmd", required=True)

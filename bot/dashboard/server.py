@@ -980,6 +980,13 @@ def build_app() -> FastAPI:
 
     capacity_api.register(app, _require_token_or_api_key, _require_token)
 
+    # Measured VRAM (/api/gpu): total / used / free, and whether a given size fits.
+    @app.get("/api/gpu", dependencies=[Depends(_require_token_or_api_key)])
+    async def api_gpu(need_gb: Optional[float] = None, headroom_gb: float = 1.0):
+        from bot import gpu
+
+        return await asyncio.to_thread(gpu.fit_report, need_gb, headroom_gb)
+
     # The local conductor (/api/conductor): plans, reviews against the standing rules, the push queue and its approval.
     from bot.dashboard import conductor_api
 
