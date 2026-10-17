@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Sequence
 
+from bot.conductor import cache as cachelib
 from bot.conductor import shards as shardlib
 from bot.conductor import store
 
@@ -64,6 +65,8 @@ class Integration:
     shards: list[dict] = field(default_factory=list)  # one result per suite shard
     budget: dict = field(default_factory=dict)      # the CPU/RAM budget the suite ran with
     gate: dict = field(default_factory=dict)        # the final gate command and its result, when one is configured
+    selective: dict = field(default_factory=dict)   # the tests the merged diff affects, run before the full suite: {tests, rc, ...}
+    cache: dict = field(default_factory=dict)       # {"hits": n, "stores": n} for suite/shard results
 
     def to_dict(self) -> dict:
         return dict(self.__dict__)
@@ -89,7 +92,7 @@ class Integrator:
                  workdir: Optional[Path] = None, suite_timeout_s: float = 3600, prefix: str = "integ/agents-",
                  regen_sdk: bool = True, shards: int = 1, workers: Any = None, max_workers: int = 8,
                  lock_wait_s: Optional[float] = None, lock_path: Optional[Path] = None, gate: Optional[Sequence[str]] = None,
-                 gate_timeout_s: float = 7200):
+                 gate_timeout_s: float = 7200, selective_first: Optional[bool] = None, cache: Optional[cachelib.Cache] = None):
         """`workers`: None leaves the suite's own `-n`, "auto" sizes it from free CPU/RAM (at most max_workers), a number sets it.
         `lock_wait_s`: None = no machine lock; a number = hold the machine-wide suite lock, waiting that long for it."""
         self.repo = Path(repo)
@@ -108,6 +111,13 @@ class Integrator:
         self.lock_path = Path(lock_path) if lock_path else None
         self.gate = list(gate) if gate else []
         self.gate_timeout = gate_timeout_s
+        cfg = None
+        if selective_first is None or cache is None:
+            from bot import conductor
+
+            cfg = conductor.settings()
+        self.selective_first = bool(cfg["integrator"]["selective_first"]) if selective_first is None else bool(selective_first)
+        self.cache = cache if cache is not None else cachelib.from_settings(cfg)
 
     # ----------------------------------------------------------- branches
     def next_branch(self) -> str:
@@ -238,16 +248,60 @@ class Integrator:
         except shardlib.MachineBusy as exc:
             rec.status, rec.note = "red", f"the machine is busy with another run: {exc}"[:300]
 
+    def related_test_files(self, wt: Path) -> tuple[list[str], str]:
+        """(test files, why-not) the diff base..HEAD affects, from codeintel's impact on the changed lines."""
+        diff = _git(wt, "diff", "-U0", "--no-color", "--no-ext-diff", self.base, "HEAD", check=False).stdout
+        if not diff.strip():
+            return [], "no diff"
+        try:
+            from bot.codeintel import tools
+
+            data = tools.impact(wt, diff, max_tokens=4000).data or {}
+        except Exception as exc:  # noqa: BLE001 - no index: just run the full suite
+            return [], f"impact unavailable ({type(exc).__name__})"
+        tests = [t for t in data.get("tests", []) if (wt / t).is_file()]
+        return tests, "" if tests else "no related tests found"
+
+    def _selective(self, rec: Integration, wt: Path, tree: str) -> None:
+        """Run the tests the merge affects first; recorded in rec.selective. The full suite still runs afterwards as the final gate."""
+        tests, why = self.related_test_files(wt)
+        rec.selective = {"tests": tests, "rc": None, "failed": [], "seconds": 0.0, "note": why}
+        if not tests:
+            return
+        cmd = [*self.rerun, *tests]
+        t0 = time.time()
+        hit = self.cache.lookup(tree, cmd, tests)
+        if hit:
+            rc, out = 0, ""
+            rec.cache["hits"] += 1
+        else:
+            rc, out = self._run(cmd, wt)
+            if rc == 0 and self.cache.store(tree, cmd, tests, {"rc": 0}):
+                rec.cache["stores"] += 1
+        rec.selective.update(rc=rc, failed=failed_tests(out), seconds=round(time.time() - t0, 1), cached=bool(hit),
+                             tests_run=self._summary(out), note=f"{len(tests)} related test file(s)")
+
     def _test_locked(self, rec: Integration, wt: Path) -> None:
         log = wt.parent / f"{wt.name}.suite.log"
         plan = self._commands(rec, wt)
         outs, worst, crashed, failing = [], 0, [], []
+        tree = cachelib.tree_hash(wt) if self.cache.enabled else ""
+        rec.cache = {"hits": 0, "stores": 0}
+        if self.selective_first:
+            self._selective(rec, wt, tree)
         for name, cmd, nfiles in plan:
             t0 = time.time()
-            rc, out = self._run(cmd, wt)
+            hit = self.cache.lookup(tree, cmd)
+            if hit:
+                rc, out = 0, str(hit.get("summary") or "[cached pass]")
+                rec.cache["hits"] += 1
+            else:
+                rc, out = self._run(cmd, wt)
+                if rc == 0 and self.cache.store(tree, cmd, (), {"rc": 0, "summary": f"[cached pass] {self._summary(out)}"}):
+                    rec.cache["stores"] += 1
             named = failed_tests(out)
             rec.shards.append({"name": name, "files": nfiles, "rc": rc, "tests_run": self._summary(out), "failed": named,
-                               "seconds": round(time.time() - t0, 1)})
+                               "seconds": round(time.time() - t0, 1), "cached": bool(hit)})
             outs.append(out if len(plan) == 1 else f"===== {name} (exit {rc}) =====\n{out}")
             worst = worst or rc
             if rc != 0 and not named:

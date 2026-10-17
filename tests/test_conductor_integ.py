@@ -100,7 +100,7 @@ def test_a_sharded_suite_records_each_shard_and_still_tells_a_flake_from_a_failu
     files = {"tests/test_flaky.py": ("import os\nimport pathlib\n\n\ndef test_flaky():\n    m = pathlib.Path(os.environ['FLAKE_MARK'])\n"
                                      "    if not m.exists():\n        m.write_text('x')\n        assert False, 'first run'\n"),
              "tests/test_two.py": "def test_two():\n    assert 1\n", "tests/test_three.py": "def test_three():\n    assert 1\n"}
-    res = integrate(repo, tmp_path, files, suite=PYTEST, shards=3, workers=1)
+    res = integrate(repo, tmp_path, files, suite=PYTEST, shards=3, workers=1, selective_first=False)
     assert res.status == "green" and [s["name"] for s in res.shards] == ["shard 1/3", "shard 2/3", "shard 3/3"]
     assert sum(s["files"] for s in res.shards) == 4 and sorted(s["rc"] for s in res.shards) == [0, 0, 1]
     assert [t.split("::")[-1] for t in res.flaky] == ["test_flaky"] and res.failed == []

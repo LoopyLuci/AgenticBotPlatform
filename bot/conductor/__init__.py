@@ -37,6 +37,9 @@ DEFAULTS: dict[str, Any] = {
     "suite_lock_wait_s": 1800,         # how long a run waits for the machine-wide suite lock before giving up
     "gate_command": [],                # optional final gate after a green suite, e.g. [python, scripts/local_pipeline.py, --no-deploy]
     "gate_timeout_s": 7200,
+    "integrator": {"selective_first": True},   # run the tests the merged diff affects first; the full suite is still the final gate
+    "cache": {"enabled": True},        # CacheIt-backed result cache for proofs and suite runs (a missing hub just means no caching)
+    "review_scope": {"fail": False},   # reviewer: callers outside the task's declared files are a warning (true = a rejection)
     "pusher": {"enabled": False,       # the pusher acts only on a recorded approval, and only when this is true
                "remote": "origin", "target": ""},   # target "" = the integration's base branch
 }
@@ -52,6 +55,8 @@ def settings() -> dict[str, Any]:
         pass
     out = {**DEFAULTS, **{k: v for k, v in cfg.items() if k in DEFAULTS}}
     out["pusher"] = {**DEFAULTS["pusher"], **(cfg.get("pusher") if isinstance(cfg.get("pusher"), dict) else {})}
+    for k in ("integrator", "cache", "review_scope"):
+        out[k] = {**DEFAULTS[k], **(cfg.get(k) if isinstance(cfg.get(k), dict) else {})}
     if not out["suite_command"]:
         out["suite_command"] = [sys.executable, "-m", "pytest", "tests", "-n", "8", "-q", "-p", "no:cacheprovider", "-rf"]
     return out

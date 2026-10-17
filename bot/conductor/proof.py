@@ -12,6 +12,7 @@ refused with a reason and never executed.
 """
 from __future__ import annotations
 
+import asyncio
 import re
 import shlex
 from pathlib import Path
@@ -19,6 +20,7 @@ from typing import Optional
 
 from bot.agent_runtime import run_tests
 from bot.agent_runtime.errors import ToolError
+from bot.conductor import cache as cachelib
 
 _SAFE_FLAGS = {"-q", "-x", "-v", "-rf"}
 _PREFIX = re.compile(r"^\s*(?:python3?(?:\.exe)?\s+-m\s+)?pytest(?=\s|$)", re.I)
@@ -84,12 +86,26 @@ def check(command: str, workspace: Optional[Path] = None) -> Optional[str]:
         return str(exc)
 
 
-async def run(command: str, workspace: Path, timeout_s: Optional[int] = None) -> tuple[bool, str]:
-    """Run an allowed proof in the sandbox: (passed, output). Raises ProofRefused for one that is not allowed (nothing is started)."""
-    from bot.agent_runtime import shell
-
+async def run(command: str, workspace: Path, timeout_s: Optional[int] = None, cache: Optional[cachelib.Cache] = None) -> tuple[bool, str]:
+    """Run an allowed proof in the sandbox: (passed, output). Raises ProofRefused for one that is not allowed (nothing is started).
+    A proof whose exact tree and command already passed (CacheIt, conductor.cache.enabled) is answered without starting anything."""
     ws = Path(workspace).resolve()
     kind, targets, k = parse(command, ws)
+    cache = cache if cache is not None else cachelib.from_settings()
+    tree = await asyncio.to_thread(cachelib.tree_hash, ws) if cache.enabled else ""
+    if tree:
+        hit = await asyncio.to_thread(cache.lookup, tree, command, targets)
+        if hit:
+            return True, str(hit.get("output") or "PASSED (cached)")
+    passed, output = await _execute(kind, targets, k, ws, timeout_s)
+    if passed and tree:
+        await asyncio.to_thread(cache.store, tree, command, targets, {"output": "PASSED (cached) " + output[-600:]})
+    return passed, output
+
+
+async def _execute(kind: str, targets: list[str], k: str, ws: Path, timeout_s: Optional[int]) -> tuple[bool, str]:
+    from bot.agent_runtime import shell
+
     limit = int(timeout_s or run_tests.timeout_s())
     if kind == "ruff":
         out = await shell._run_fresh("python -m ruff check --no-cache " + " ".join(targets), ws, ws, limit)
