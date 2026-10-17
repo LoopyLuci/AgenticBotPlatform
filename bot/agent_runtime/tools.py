@@ -2060,3 +2060,4 @@ from bot import nodes as _nodes  # noqa: E402,F401
 from bot.runtime import legacy as _legacy_units  # noqa: E402
 _legacy_units.import_area_tools()  # noqa: E402
 from bot.agent_runtime import toolkit_tools as _toolkit_tools  # noqa: E402,F401  (abp_toolkit: lint, run, analyze, assets...)
+from bot.agent_runtime import gpu_tool as _gpu_tool  # noqa: E402,F401  (gpu_status: measured free VRAM)
