@@ -252,8 +252,13 @@ DEFAULTS = {"method": "sft", "rank": 16, "alpha": 16, "dropout": 0.0, "learning_
 
 
 def start(base: str, data: list[str], name: str = "", export: str = "q4_k_m", **hp) -> dict:
-    """Start a fine-tuning run on the GPU; returns the run (poll runs() / status())."""
-    if not python().exists():
+    """Start a fine-tuning run on the GPU; returns the run (poll runs() / status()).
+
+    config training.backend picks the trainer: the ModelMistress Forge (train_forge.py) when a hub is up (auto) or
+    always (forge), else this module's own worker (auto fallback, or inprocess)."""
+    from bot.localai import train_forge
+    use_forge = train_forge.choose(hp.get("method") or "sft") == "forge"
+    if not use_forge and not python().exists():
         raise LocalAIError("the training environment is not set up: `abp ai train setup` or the Local AI page")
     for d in data:
         if not Path(d).is_file():
@@ -275,6 +280,17 @@ def start(base: str, data: list[str], name: str = "", export: str = "q4_k_m", **
            "cpu_threads": cpu_threads(), "export": export, "name": name or f"abp/{_slug(Path(base).name)}-{rid}:{export or 'f16'}"}
     (run / "job.json").write_text(json.dumps(job, indent=1), encoding="utf-8")
     (run / "status.json").write_text(json.dumps({"state": "starting", "time": time.time()}), encoding="utf-8")
+    if use_forge:
+        try:
+            info = train_forge.start(run, job)
+        except LocalAIError:
+            if train_forge.backend() == "forge" or not python().exists():
+                shutil.rmtree(run, ignore_errors=True)
+                raise
+            # auto: the Forge refused, train in-process instead
+        else:
+            return {"id": rid, "dir": str(run), "backend": "forge", **info,
+                    **{k: job[k] for k in ("base", "method", "name", "export")}}
     logf = open(run / "worker.log", "ab")
     # One 'worker' cell for the whole run: hours of training in one process, and the cell is what
     # bounds it (memory, CPU rate, the processors ABP keeps off) and contains whatever it starts.
@@ -331,12 +347,16 @@ def status(rid: str) -> dict:
         st = json.loads((run / "status.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         st = {}
+    if job.get("backend") == "forge":
+        from bot.localai import train_forge
+        st = train_forge.refresh(run, job, st)
     pid = int((run / "pid").read_text()) if (run / "pid").exists() else 0
     active = st.get("state") in ("starting", "loading", "training", "merging", "stopping")
     if active and pid and not _alive(pid):
         st = {**st, "state": "failed", "error": st.get("error") or "the worker exited unexpectedly: see worker.log"}
     out = {"id": rid, "dir": str(run), "base": job.get("base_name"), "method": job.get("method"), "name": job.get("name"),
-           "export_quant": job.get("export"), "data": job.get("data"), **st}
+           "export_quant": job.get("export"), "data": job.get("data"),
+           "backend": job.get("backend", "inprocess"), **st}
     exp = run / "export.json"
     if exp.exists():
         out["exported"] = json.loads(exp.read_text(encoding="utf-8"))
@@ -350,11 +370,27 @@ def runs() -> list[dict]:
 
 def stop(rid: str) -> dict:
     run = sub("train") / rid
-    (run / "stop").write_text("stop")
+    job = _job(run)
+    if job.get("backend") == "forge":
+        from bot.localai import train_forge
+        train_forge.stop(job)
+    else:
+        (run / "stop").write_text("stop")
     return status(rid)
 
 
+def _job(run: Path) -> dict:
+    try:
+        return json.loads((run / "job.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
 def log_tail(rid: str, lines: int = 80) -> str:
+    job = _job(sub("train") / rid)
+    if job.get("backend") == "forge":
+        from bot.localai import train_forge
+        return train_forge.log_tail(job, lines)
     p = sub("train") / rid / "worker.log"
     try:
         return "\n".join(p.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:])
@@ -440,9 +476,12 @@ def export(rid: str, quant: str = "", name: str = "", log: Log = lambda m: None,
     quant = quant or job.get("export") or "q4_k_m"
     name = name or job["name"]
     out = {}
-    if (run / "merged" / "config.json").exists():
+    if job.get("backend") == "forge":
+        from bot.localai import train_forge
+        out = train_forge.export(run, job, name, quant, log)
+    elif (run / "merged" / "config.json").exists():
         out = convert_to_gguf(str(run / "merged"), name, quant, log, run / "export")
-    if adapter_gguf and (run / "adapter").is_dir():
+    if adapter_gguf and job.get("backend") != "forge" and (run / "adapter").is_dir():
         src = converter(log)
         lora = run / "export" / "adapter-f16.gguf"
         lora.parent.mkdir(exist_ok=True)

@@ -581,6 +581,12 @@ storage_tiering:
     logs: {enabled: true, after_days: 14}
     support_bundles: {enabled: true, after_days: 30}
 
+# Fine-tuning (docs/localai.md). backend: auto = train through ModelMistress's Forge (forge.run lora_train) when a hub is up and
+# its Forge is installed, else ABP's own PEFT trainer; forge = only the Forge (a clear error without it); inprocess = only ABP's own.
+training:
+  backend: auto
+  min_free_vram_gb: 2      # refuse to start a GPU run with less free GPU memory than this (the Forge plans the rest)
+
 # ModelMistress (docs/agents/modelmistress.md): ABP finds a running hub (env, these keys, the module's control file, then the
 # hub's own home) and keeps one running. Ollama / Unsloth stay as the fallback while no hub answers.
 modelmistress:
