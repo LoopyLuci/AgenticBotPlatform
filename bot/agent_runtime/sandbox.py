@@ -2,7 +2,7 @@
 
     native_agent:
       sandbox:
-        backend: local          # local | docker | ssh | wsl | windows_job
+        backend: local          # local | docker | ssh | wsl | windows_job | wsl_ephemeral
         network: allow          # allow | none | allowlist - none cuts every backend off from the network;
                                 # allowlist (docker only) lets commands reach only allow_hosts, through a proxy
         allow_hosts: []         # allowlist: "host", "*.domain", optionally ":port"
@@ -65,6 +65,10 @@ registered with secrets_guard so it is also redacted from any output.
   workspace path is translated onto the distro's default drive-automount path
   (`/mnt/<drive>/...`); this assumes the distro hasn't turned automount off. Fails
   closed if `wsl.exe` or the named distro isn't available.
+* `wsl_ephemeral` runs each command in its own throw-away WSL2 distro (wsl_vm.py): imported
+  from a cached base rootfs, automount and Windows interop off (no /mnt drives), the workspace
+  copied in and changed files copied back, always offline (`unshare -rn`), and the distro
+  unregistered and its folder deleted afterwards even on error or timeout. Fails closed.
 * `windows_job` runs locally, like `local`, but binds the process to a real Win32 Job
   Object (`win_job.py`) with kill-on-close set, so the whole tree is guaranteed to die
   when the command is stopped - not a `taskkill /T /F` tree-walk, which can lose a race
@@ -122,7 +126,7 @@ from bot.sandbox_ns import cell as ns_cell
 from bot.sandbox_ns import policy as ns_policy
 from bot.sandbox_ns import spawn as ns_spawn
 
-BACKENDS = ("local", "docker", "ssh", "wsl", "windows_job")
+BACKENDS = ("local", "docker", "ssh", "wsl", "windows_job", "wsl_ephemeral")
 ENV_MODES = ("secrets", "minimal", "inherit")
 NETWORKS = ("allow", "none", "allowlist")
 _MAC_OFFLINE_PROFILE = "(version 1)(allow default)(deny network*)"
@@ -653,6 +657,20 @@ async def start(command: str, cwd: Path, workspace: Path) -> asyncio.subprocess.
             proc = await asyncio.create_subprocess_exec(*argv, env=build_env(cfg=cfg), **pipes,
                                                         start_new_session=os.name != "nt")
             proc.abp_remote_kill = _ssh_kill_argv(argv, pidfile)
+            return proc
+
+        if which == "wsl_ephemeral":
+            from bot.agent_runtime import wsl_vm
+            if not wsl_vm.available():
+                raise ToolError("sandbox.backend is wsl_ephemeral but WSL is not available; the command was not run")
+            e = cfg.get("wsl_ephemeral") or {}
+            name, tmp = wsl_vm.new_job()
+            argv = wsl_vm.helper_argv(command, cwd, workspace, name, tmp, float(e.get("timeout") or 0),
+                                      int(e.get("memory_mb") or 0))
+            env = build_env(cfg=cfg)
+            proc = await asyncio.create_subprocess_exec(*argv, env=env, **pipes,
+                                                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            proc.abp_cleanup = lambda: wsl_vm.teardown(name, tmp)
             return proc
 
         if which == "wsl":

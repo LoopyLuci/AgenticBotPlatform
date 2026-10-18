@@ -138,7 +138,7 @@ DENYLIST: frozenset[str] = frozenset({
     # sessions, secrets_guard.py the injected-secret table, mcp_pins.py its warn-once set, and
     # sandbox.py is only ever imported by the (denied) shell module. A reload would reset them.
     "bot.agent_runtime.permissions", "bot.agent_runtime.taint", "bot.agent_runtime.secrets_guard",
-    "bot.agent_runtime.mcp_pins", "bot.agent_runtime.sandbox", "bot.agent_runtime.win_job", "bot.agent_runtime.appcontainer",
+    "bot.agent_runtime.mcp_pins", "bot.agent_runtime.sandbox", "bot.agent_runtime.win_job", "bot.agent_runtime.appcontainer", "bot.agent_runtime.wsl_vm",
     "bot.agent_runtime.net_allowlist",  # imported by sandbox.py (denied above); its classes must stay the ones sandbox.py validates against
     # The Sandbox Nervous System: guard.py replaces subprocess.Popen process-wide (a reload would
     # either install a second wrapper or restore the original and silently stop being windowless),
@@ -150,6 +150,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.sandbox_ns.policy", "bot.sandbox_ns.reaper", "bot.sandbox_ns.reflexes",
     # wasm.py's cells live in that registry: a reloaded WasmCell class would not match the live ones.
     "bot.sandbox_ns.wasm",
+    "bot.redblue.schemas", "bot.redblue.verifier", "bot.redblue.events",  # P0 foundation: live event feed and canary sinks, no reload path yet
     # The routes into that registry: they register once, and a reloaded copy would serve its own
     # (empty) idea of what is running.
     "bot.dashboard.sandbox_ns_api",
