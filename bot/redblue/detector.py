@@ -25,6 +25,15 @@ _PERSIST = ("currentversion\\run", "start menu\\programs\\startup", "schtasks", 
 _NET = ("connect", "socket", "curl", "wget", "invoke-webrequest", "nslookup", "getaddrinfo",
         "sendto", "://")
 _BREAKAWAY = ("breakaway", "create_breakaway_from_job", "escape_job")
+# Agent-runtime vectors (the factory's own confinement layer). Orchestrator/admin-only actions a confined
+# LEAF worker must never perform — a DENIED attempt at one is an escalation attempt.
+_ADMIN = ("create_bot_instance", "configure_delegation", "write_project_context", "save_memory",
+          "create_skill", "create_plugin", "add_hook", "dispatch_swarm", "spawn_subagent", "delegate_task",
+          "enable_hermes", "trigger_hot_reload", "restore_snapshot", "disengage_estop")
+_SHARED_STATE = ("write_project_context", "save_memory", "shared_context", "work_board", "coordination_lease")
+# Prompt-injection markers that try to redirect another agent.
+_INJECTION = ("ignore previous", "ignore all previous", "disregard your", "you are now", "new instructions:",
+              "override your", "system prompt:", "reveal your", "exfiltrate", "act as the owner")
 
 
 def _has(s: str, needles) -> bool:
@@ -62,6 +71,12 @@ SIGNATURES: tuple[Signature, ...] = (
     Signature("persistence_attempt", "escape", "revoke_tool",
               lambda ev, _f: _has(ev.target, _PERSIST) or _has(ev.action, _PERSIST)),
     Signature("spawn_storm", "escape", "kill_cell", _spawn_storm),
+    Signature("role_escalation_admin_tool", "escape", "revoke_tool",
+              lambda ev, _f: ev.grant_result == "denied" and _has(ev.action, _ADMIN)),
+    Signature("prompt_injection_cross_agent", "escape", "quarantine",
+              lambda ev, _f: _has(ev.target, _INJECTION) or _has(str(ev.resource), _INJECTION)),
+    Signature("shared_state_poison", "escape", "tighten_grant",
+              lambda ev, _f: ev.grant_result == "denied" and _has(ev.action, _SHARED_STATE)),
     Signature("fs_write_denied_outside_ws", "escape", "tighten_grant",
               lambda ev, _f: ev.grant_result == "denied"
               and _has(ev.action, ("write", "edit", "create", "mkdir", "delete"))),
