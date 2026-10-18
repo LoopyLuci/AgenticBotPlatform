@@ -1,7 +1,7 @@
-"""scripts/local_pipeline.py's self-healing: a flaky test is re-run once (and
-reported), a real failure still blocks, a hung step times out, the release
-gate's handshake skips the redundant re-run, and only one pipeline runs at a
-time."""
+"""scripts/local_pipeline.py's self-healing: a flaky test is re-run serially with
+the machine settled between attempts (and reported), a real failure that survives
+every attempt still blocks, a hung step times out, the release gate's handshake
+skips the redundant re-run, and only one pipeline runs at a time."""
 from __future__ import annotations
 
 import importlib.util
@@ -28,6 +28,10 @@ def _script_runs(monkeypatch, outcomes):
         calls.append(cmd)
         return outcomes[min(len(calls) - 1, len(outcomes) - 1)]
     monkeypatch.setattr(lp, "_run", fake_run)
+    # The self-healing re-run really samples CPU and sleeps between attempts; stub that out so the
+    # scripted unit tests stay instant and deterministic (the settle/telemetry behaviour is its own concern).
+    monkeypatch.setattr(lp, "_settle", lambda attempt: {"cpu_pct": 0, "inference_ports_up": []})
+    monkeypatch.setattr(lp, "_write_flaky_telemetry", lambda record: None)
     return calls
 
 
@@ -59,6 +63,39 @@ def test_an_errored_test_is_rerun_once_like_a_failed_one(monkeypatch, capsys):
     assert "-rfE" in calls[3]
     out = capsys.readouterr().out
     assert "FLAKY" in out and "tests/test_x.py::test_setup" in out
+
+
+def test_a_flake_that_loses_the_first_rerun_but_passes_a_later_one_is_recovered(monkeypatch, capsys):
+    """The self-heal is multi-attempt: a timing test that still loses the FIRST settled re-run (machine not
+    yet calm) but passes a later attempt must be treated as a flake, not a hard failure."""
+    outcomes = [
+        (True, ""), (True, ""), (True, ""),
+        (False, "FAILED tests/test_x.py::test_timing - timeout"),     # first full pytest run
+        (False, "FAILED tests/test_x.py::test_timing - timeout"),     # self-heal attempt 1 — still loses
+        (True, "1 passed in 0.1s"),                                   # self-heal attempt 2 — recovers
+        (True, ""),                                                   # pip-audit
+    ]
+    calls = []
+
+    def fake_run(cmd, cwd=None, retries=0, timeout=None):
+        calls.append(cmd)
+        return outcomes[min(len(calls) - 1, len(outcomes) - 1)]
+    monkeypatch.setattr(lp, "_run", fake_run)
+    monkeypatch.setattr(lp, "_settle", lambda attempt: {"cpu_pct": 0, "inference_ports_up": []})
+    monkeypatch.setattr(lp, "_write_flaky_telemetry", lambda record: None)
+    monkeypatch.setattr(lp, "FLAKY_RERUN_ATTEMPTS", 3)
+    assert lp.check_python() is True
+    assert "FLAKY" in capsys.readouterr().out
+
+
+def test_a_check_that_itself_crashes_is_reported_as_failed_not_propagated(monkeypatch):
+    """An unexpected exception out of a check (a bug in the check, not a test) is caught, dumped, and
+    reported as a clean failure — the pipeline must not abort with a bare traceback."""
+    monkeypatch.setattr(lp, "_dump_crash", lambda *a, **k: None)
+
+    def boom():
+        raise RuntimeError("kaboom")
+    assert lp._timed("explodey", boom) is False
 
 
 def test_an_error_that_repeats_still_blocks_and_names_the_test(monkeypatch, capsys):

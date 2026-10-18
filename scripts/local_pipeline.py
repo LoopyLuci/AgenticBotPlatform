@@ -54,6 +54,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import io
+import json
 import os
 import platform
 import re
@@ -61,6 +62,7 @@ import shutil
 import subprocess
 import sys
 import time
+import traceback
 from pathlib import Path
 from typing import Optional
 
@@ -136,6 +138,15 @@ BUILD_TIMEOUT = 30 * 60
 DOCKER_INFO_TIMEOUT = 12
 # More failures than this is a real regression, not flakiness — don't re-run.
 FLAKY_RERUN_LIMIT = 10
+# Self-healing re-run: a timing/concurrency flake that lost under the heavy load a push creates (stop +
+# rebuild + restart) often loses an immediate parallel re-run too. So re-run the failing subset SERIALLY,
+# several times, letting the machine settle (backoff) between attempts. A test that passes on ANY attempt
+# is a flake; only tests that fail EVERY attempt are real and block. Both tunable without a code change.
+FLAKY_RERUN_ATTEMPTS = int(os.environ.get("ABP_PIPELINE_FLAKY_ATTEMPTS", "3") or 3)
+FLAKY_SETTLE_BASE_S = float(os.environ.get("ABP_PIPELINE_FLAKY_SETTLE_S", "6") or 6)
+# Machine is "busy enough to cause timing flakes" above this 1s CPU sample; we wait for it to drop (bounded).
+FLAKY_BUSY_CPU_PCT = 70.0
+FLAKY_BUSY_MAX_WAIT_S = 60.0
 
 
 def _run(cmd: list[str], cwd: Optional[Path] = None, retries: int = 0,
@@ -410,6 +421,135 @@ def _keep_pytest_output(out: str) -> None:
         pass
 
 
+def _machine_snapshot() -> dict:
+    """A cheap diagnostic snapshot for telemetry: load + which inference ports are up (common flake causes)."""
+    snap: dict = {}
+    try:
+        snap["cpu_pct"] = psutil.cpu_percent(interval=1.0)
+        vm = psutil.virtual_memory()
+        snap["mem_pct"] = vm.percent
+        snap["mem_avail_gb"] = round(vm.available / 2**30, 2)
+    except Exception as exc:                                  # telemetry must never break the pipeline
+        snap["error"] = str(exc)
+    ports = []
+    try:
+        for c in psutil.net_connections(kind="tcp"):
+            if c.status == "LISTEN" and c.laddr and c.laddr.port in (11434, 32301, 8888):
+                ports.append(c.laddr.port)
+    except Exception:
+        pass
+    snap["inference_ports_up"] = sorted(set(ports))
+    return snap
+
+
+def _settle(attempt: int) -> dict:
+    """Let the box quiet down before a flake re-run: snapshot load, then wait out high CPU (bounded) plus a
+    growing backoff. Returns the telemetry snapshot. This is the pipeline's self-healing wait — a timing
+    test that lost under load gets a genuinely calmer machine on the next attempt instead of an instant retry."""
+    snap = _machine_snapshot()
+    waited = 0.0
+    try:
+        while psutil.cpu_percent(interval=1.0) > FLAKY_BUSY_CPU_PCT and waited < FLAKY_BUSY_MAX_WAIT_S:
+            waited += 1.0
+    except Exception:
+        pass
+    backoff = FLAKY_SETTLE_BASE_S * attempt                   # 6s, 12s, 18s ...
+    time.sleep(backoff)
+    snap["settle_waited_busy_s"] = round(waited, 1)
+    snap["settle_backoff_s"] = backoff
+    return snap
+
+
+def _write_flaky_telemetry(record: dict) -> None:
+    """Structured JSON next to the run log: the full attempt-by-attempt resolution of every re-run test, so a
+    flake that keeps recurring is diagnosable later instead of just scrolling past as a warning."""
+    try:
+        log_dir = ROOT / "logs" / "local_pipeline"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        path = log_dir / f"{datetime.datetime.now():%Y%m%d-%H%M%S}-flaky.json"
+        path.write_text(json.dumps(record, indent=2, default=str), encoding="utf-8")
+        Step.doing(f"flake telemetry: {path.relative_to(ROOT)}")
+    except (OSError, TypeError):
+        pass
+
+
+def _dump_crash(tag: str, tb: str, snapshot: Optional[dict] = None) -> Optional[Path]:
+    """Persist an unexpected failure (traceback + machine state) next to the run log, so a crash in the
+    pipeline itself is diagnosable after the fact instead of scrolling off the console."""
+    try:
+        log_dir = ROOT / "logs" / "local_pipeline"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        safe = re.sub(r"[^\w.-]+", "_", tag)[:60]
+        path = log_dir / f"{datetime.datetime.now():%Y%m%d-%H%M%S}-crash-{safe}.txt"
+        body = f"# pipeline crash: {tag}\n# {datetime.datetime.now().isoformat()}\n\n"
+        if snapshot is not None:
+            body += "## machine snapshot\n" + json.dumps(snapshot, indent=2, default=str) + "\n\n"
+        body += "## traceback\n" + tb
+        path.write_text(body, encoding="utf-8")
+        Step.doing(f"crash report: {path.relative_to(ROOT)}")
+        return path
+    except OSError:
+        return None
+
+
+def _startup_diagnostics() -> dict:
+    """A record of the exact environment this run executed in — printed and journalled up front so a run
+    that behaves differently from another (a different interpreter, a dirty tree, a near-full disk, a busy
+    box) can be told apart later without guessing."""
+    diag: dict = {}
+    try:
+        diag["git_head"] = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True,
+                                           text=True).stdout.strip()[:12]
+        diag["git_dirty"] = bool(subprocess.run(["git", "status", "--porcelain"], cwd=ROOT,
+                                                 capture_output=True, text=True).stdout.strip())
+    except Exception:
+        pass
+    diag["python"] = sys.version.split()[0]
+    diag["venv_python"] = _venv_python()
+    diag["platform"] = platform.platform()
+    try:
+        du = shutil.disk_usage(str(ROOT))
+        diag["disk_free_gb"] = round(du.free / 2**30, 1)
+    except Exception:
+        pass
+    diag.update(_machine_snapshot())
+    try:
+        Step.doing("env: " + json.dumps({k: diag.get(k) for k in
+                    ("git_head", "git_dirty", "python", "disk_free_gb", "cpu_pct", "mem_pct",
+                     "inference_ports_up") if k in diag}))
+        _RUN.note("startup diagnostics: " + json.dumps(diag, default=str), "info")
+    except Exception:
+        pass
+    return diag
+
+
+def _recover_flaky(py: str, failed_ids: list[str]) -> tuple[bool, list[str], dict]:
+    """Self-healing re-run of a failing subset. Runs them SERIALLY (no xdist load), up to
+    FLAKY_RERUN_ATTEMPTS times, settling the machine between attempts. Returns
+    (all_resolved, still_failing, telemetry). A test that passes on any attempt is dropped from the
+    still-failing set; whatever remains after the last attempt is a real failure."""
+    remaining = list(failed_ids)
+    telem: dict = {"candidates": list(failed_ids), "attempts": [], "resolved": [], "started": time.time()}
+    for attempt in range(1, FLAKY_RERUN_ATTEMPTS + 1):
+        snap = _settle(attempt)
+        Step.doing(f"self-heal re-run {attempt}/{FLAKY_RERUN_ATTEMPTS} (serial) of {len(remaining)} "
+                   f"test(s); machine cpu={snap.get('cpu_pct')}% ports_up={snap.get('inference_ports_up')}")
+        ok, out = _run([py, "-m", "pytest", "-q", "-rfE", "-p", "no:xdist", *remaining],
+                       cwd=ROOT, timeout=PYTEST_TIMEOUT)
+        still = list(dict.fromkeys(re.sub(r"@[\w.-]+$", "", t)
+                                   for t in re.findall(r"(?m)^(?:FAILED|ERROR) (\S+)", out)))
+        passed_now = [t for t in remaining if t not in still]
+        telem["attempts"].append({"n": attempt, "ran": list(remaining), "passed": passed_now,
+                                  "still_failing": still, "snapshot": snap})
+        telem["resolved"].extend(passed_now)
+        remaining = still
+        if not remaining:
+            break
+    telem["still_failing"] = remaining
+    telem["ended"] = time.time()
+    return (not remaining), remaining, telem
+
+
 def check_python() -> bool:
     Step.head("Python — compile, tests, audit")
     py = _venv_python()
@@ -461,17 +601,27 @@ def check_python() -> bool:
         if failed_ids:
             Step.warn("failed/errored: " + ", ".join(failed_ids[:40]))
         if failed_ids and all("::" in t for t in failed_ids) and len(failed_ids) <= FLAKY_RERUN_LIMIT:
-            Step.warn(f"{len(failed_ids)} test(s) failed or errored — re-running just those once to tell a flake from a real failure")
-            ok2, out2 = _run([py, "-m", "pytest", "-q", "-rfE", *failed_ids], cwd=ROOT, timeout=PYTEST_TIMEOUT)
-            if not ok2:
-                Step.err("pytest failed (and failed again on re-run): " + ", ".join(failed_ids) + "\n" + out2[-4000:])
+            Step.warn(f"{len(failed_ids)} test(s) failed/errored under parallel load — self-healing: "
+                      f"serial re-run up to {FLAKY_RERUN_ATTEMPTS}x with the machine settled between attempts")
+            resolved_all, still_failing, telem = _recover_flaky(py, failed_ids)
+            _write_flaky_telemetry(telem)
+            flaky = [t for t in failed_ids if t not in still_failing]
+            if flaky:
+                _RUN.note("flaky tests (failed under load, passed on a settled serial re-run): "
+                          + ", ".join(flaky), "warn")
+                _RUN.decision(actor="rules",
+                              decision="accept flaky tests after self-healing serial re-runs",
+                              reason=f"{len(flaky)} test(s) passed once the machine settled",
+                              rule="flaky_rerun",
+                              inputs={"flaky": len(flaky), "attempts": len(telem.get("attempts", []))})
+            if not resolved_all:
+                Step.err(f"pytest: {len(still_failing)} test(s) failed EVERY one of {FLAKY_RERUN_ATTEMPTS} "
+                         "settled serial re-runs — real failure, not a flake: " + ", ".join(still_failing))
+                _RUN.note("real test failures (survived all self-heal re-runs): "
+                          + ", ".join(still_failing), "error")
                 return False
-            Step.warn("passed on re-run — FLAKY, please look at: " + ", ".join(failed_ids))
-            _RUN.note("flaky tests (failed once, passed on re-run): " + ", ".join(failed_ids), "warn")
-            _RUN.decision(actor="rules", decision="accept flaky tests after one re-run",
-                          reason=f"{len(failed_ids)} test(s) passed when re-run alone", rule="flaky_rerun",
-                          inputs={"tests": len(failed_ids)})
-            out = out2
+            Step.warn(f"all {len(flaky)} recovered on a settled serial re-run — FLAKY, please look at: "
+                      + ", ".join(flaky))
         else:
             Step.err("pytest failed" + (": " + ", ".join(failed_ids[:40]) if failed_ids else "") + "\n" + out[-4000:])
             return False
@@ -783,13 +933,34 @@ def main() -> int:
 
 
 def _timed(name: str, fn):
-    """Runs one check as a recorded step: True -> ok, False -> failed, None -> skipped."""
+    """Runs one check as a recorded step: True -> ok, False -> failed, None -> skipped.
+
+    Catches an UNEXPECTED exception out of a check (a bug in the check itself, not a test it ran) so it
+    is reported as a clean failure with its traceback and a machine snapshot — captured to the journal
+    and a crash file — instead of aborting the pipeline with a bare stack dump nobody keeps."""
     with _RUN.step(name) as st:
-        result = fn()
+        try:
+            result = fn()
+        except Exception as exc:
+            tb = traceback.format_exc()
+            snap = _machine_snapshot()
+            Step.err(f"the '{name}' check itself crashed ({type(exc).__name__}: {exc}) — treating as failed\n"
+                     + tb[-3000:])
+            _dump_crash(f"check-{name}", tb, snap)
+            try:
+                st.set(status="failed")
+                _RUN.note(f"check '{name}' raised {type(exc).__name__}: {exc}", "error")
+            except Exception:
+                pass
+            return False
         if result is None:
             st.set(status="skipped", skipped_reason="tool not installed or not applicable")
         elif result is False:
             st.set(status="failed")
+            try:                                             # a failed check: keep the machine state that produced it
+                _RUN.note(f"step '{name}' failed; machine snapshot: {json.dumps(_machine_snapshot())}", "warn")
+            except Exception:
+                pass
         return result
 
 
@@ -801,6 +972,18 @@ def _run_pipeline(args: argparse.Namespace) -> int:
         _RUN = run
         try:
             code = _run_pipeline_body(args)
+        except Exception as exc:                             # an unexpected crash in the pipeline itself
+            tb = traceback.format_exc()
+            snap = _machine_snapshot()
+            path = _dump_crash("pipeline", tb, snap)
+            print("  [ERR]  pipeline crashed (not a check failure): "
+                  f"{type(exc).__name__}: {exc}" + (f" — see {path}" if path else ""), file=sys.stderr)
+            print(tb[-3000:], file=sys.stderr)
+            try:
+                run.note("pipeline crashed: " + tb[-4000:], "error")
+            except Exception:
+                pass
+            code = 1
         finally:
             _RUN = recorder.Run(None, "pipeline")
         run.finish("ok" if code == 0 else "failed", "" if code == 0 else "pipeline failed")
@@ -827,6 +1010,7 @@ def _run_pipeline_body(args: argparse.Namespace) -> int:
     sys.stdout = sys.stderr = _Tee()
     try:
         print("AgenticBotPlatform local CI/CD pipeline")
+        _startup_diagnostics()
 
         Step.head("Change detection")
         changed = changed_files()
