@@ -150,7 +150,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.sandbox_ns.policy", "bot.sandbox_ns.reaper", "bot.sandbox_ns.reflexes",
     # wasm.py's cells live in that registry: a reloaded WasmCell class would not match the live ones.
     "bot.sandbox_ns.wasm",
-    "bot.redblue.schemas", "bot.redblue.verifier", "bot.redblue.events", "bot.redblue.detector",  # P0 foundation + P1 WatchDog detector: live event feed, canary sinks, rule engine; no reload path yet
+    "bot.redblue.schemas", "bot.redblue.verifier", "bot.redblue.events", "bot.redblue.detector", "bot.redblue.watchdog",  # P0 foundation + P1 WatchDog detector: live event feed, canary sinks, rule engine; no reload path yet
     # The routes into that registry: they register once, and a reloaded copy would serve its own
     # (empty) idea of what is running.
     "bot.dashboard.sandbox_ns_api",
