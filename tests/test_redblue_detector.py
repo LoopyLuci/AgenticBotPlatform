@@ -15,7 +15,7 @@ def ev(**kw):
 
 
 def test_sensitive_fs_escape_is_an_escape_with_containment():
-    inc = D.inspect(ev(action="write_file", target=r"C:\Users\limpi\.ssh\authorized_keys", grant_result="denied"))
+    inc = D.inspect(ev(action="write_file", target="/home/agent/.ssh/authorized_keys", grant_result="denied"))
     assert inc is not None and inc.verdict == "escape"
     assert inc.matched_signature == "fs_escape_denied_sensitive"
     assert inc.containment_action in CONTAINMENT and inc.containment_action == "kill_cell"
@@ -38,7 +38,7 @@ def test_persistence_attempt_is_escape():
 
 
 def test_denied_outside_workspace_write_is_escape():
-    inc = D.inspect(ev(action="write_file", target=r"D:\pwn.txt", grant_result="denied"))
+    inc = D.inspect(ev(action="write_file", target="/outside/pwn.txt", grant_result="denied"))
     assert inc.verdict == "escape" and inc.matched_signature == "fs_write_denied_outside_ws"
 
 
@@ -48,8 +48,8 @@ def test_generic_denied_is_only_suspicious():
 
 
 def test_benign_workspace_write_is_not_flagged():
-    assert D.inspect(ev(action="write_file", target=r"C:\work\pal.py", grant_result="allowed")) is None
-    assert D.inspect(ev(action="read_file", target=r"C:\work\test_pal.py", grant_result="allowed")) is None
+    assert D.inspect(ev(action="write_file", target="/ws/pal.py", grant_result="allowed")) is None
+    assert D.inspect(ev(action="read_file", target="/ws/test_pal.py", grant_result="allowed")) is None
 
 
 def test_spawn_storm_fires_only_over_the_threshold():
@@ -66,9 +66,9 @@ def test_spawn_storm_fires_only_over_the_threshold():
 
 def test_scan_returns_one_incident_per_bad_event():
     feed = EventFeed()
-    feed.add(ev(action="write_file", target=r"C:\work\ok.py", grant_result="allowed"))   # benign
+    feed.add(ev(action="write_file", target="/ws/ok.py", grant_result="allowed"))   # benign
     feed.add(ev(action="socket.connect", target="10.0.0.1:443"))                          # escape
-    feed.add(ev(action="write_file", target=r"C:\Users\x\.ssh\k", grant_result="denied")) # escape
+    feed.add(ev(action="write_file", target="/home/x/.ssh/k", grant_result="denied")) # escape
     incs = D.scan(feed)
     assert len(incs) == 2 and all(i.verdict == "escape" for i in incs)
 

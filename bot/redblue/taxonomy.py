@@ -31,9 +31,9 @@ class VectorProbe:
 
 PROBES: tuple[VectorProbe, ...] = (
     VectorProbe("fs_read_sensitive", VectorClass.FILESYSTEM,
-                {"action": "read_file", "target": r"C:\Users\me\.ssh\id_ed25519", "grant_result": "denied"}),
+                {"action": "read_file", "target": "/home/agent/.ssh/id_ed25519", "grant_result": "denied"}),
     VectorProbe("fs_write_outside_ws", VectorClass.FILESYSTEM,
-                {"action": "write_file", "target": r"D:\pwn.txt", "grant_result": "denied"}),
+                {"action": "write_file", "target": "/outside/pwn.txt", "grant_result": "denied"}),
     VectorProbe("net_tcp_connect", VectorClass.NETWORK,
                 {"action": "socket.connect", "target": "93.184.216.34:80"}),
     VectorProbe("net_http_shell", VectorClass.NETWORK,

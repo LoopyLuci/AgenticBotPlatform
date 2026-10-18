@@ -5,14 +5,14 @@ from bot.redblue.watchdog import WatchDog
 
 def test_benign_telemetry_records_nothing():
     wd = WatchDog()
-    assert wd.observe({"actor": "pid:1", "action": "write_file", "target": r"C:\work\a.py",
+    assert wd.observe({"actor": "pid:1", "action": "write_file", "target": "/ws/a.py",
                        "allowed": True}, "grant_check") is None
     assert wd.incidents == []
 
 
 def test_escape_grant_check_is_detected_and_recorded():
     wd = WatchDog()
-    inc = wd.observe({"actor": "pid:9", "action": "write_file", "target": r"C:\Users\x\.ssh\k",
+    inc = wd.observe({"actor": "pid:9", "action": "write_file", "target": "/home/x/.ssh/k",
                       "allowed": False}, "grant_check")
     assert inc is not None and inc.verdict == "escape" and inc.containment_action == "kill_cell"
     assert len(wd.incidents) == 1 and wd.recent_incidents()[-1] is inc
@@ -28,7 +28,7 @@ def test_tool_call_network_attempt_detected():
 def test_contain_is_propose_only_without_a_handler():
     wd = WatchDog()
     inc = wd.observe_event(Event(ts=1.0, actor="pid:2", action="write_file",
-                                 target=r"C:\Users\x\.ssh\k", grant_result="denied"))
+                                 target="/home/x/.ssh/k", grant_result="denied"))
     assert wd.contain(inc) == "proposed:kill_cell"      # nothing executed by default
 
 
@@ -42,7 +42,7 @@ def test_contain_runs_a_wired_handler():
 def test_on_incident_callback_and_summary():
     seen = []
     wd = WatchDog(on_incident=seen.append)
-    wd.observe_event(Event(ts=1.0, actor="a", action="write_file", target=r"C:\Users\x\.ssh\k",
+    wd.observe_event(Event(ts=1.0, actor="a", action="write_file", target="/home/x/.ssh/k",
                            grant_result="denied"))
     wd.observe_event(Event(ts=2.0, actor="b", action="stat", target="x", grant_result="denied"))  # suspicious
     assert len(seen) == 2
