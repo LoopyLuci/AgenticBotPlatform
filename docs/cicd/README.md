@@ -10,7 +10,7 @@
 
 | Piece | State |
 |---|---|
-| Local pipeline (`scripts/local_pipeline.py`): pytest, Rust, Android, Docker checks; change-aware skipping; one-at-a-time lock; flaky re-run; step timeouts | **Built** |
+| Local pipeline (`scripts/local_pipeline.py`): pytest, Rust, Android, Docker checks; change-aware skipping; one-at-a-time lock; **self-healing flake recovery** (serial, settled, multi-attempt — see below); step timeouts | **Built** |
 | Transactional release (`scripts/publish_release.py`, `scripts/release_guard.py`): pre-flight, lock healing, journal, rollback, `--resume`, gate before tagging, bundle smoke test, signed updates verified after upload | **Built** |
 | Update signing, HTTPS-only pinned download URL | **Built** (`updater.rs`) |
 | Diagnostics, crash reports, support bundle, Prometheus counters | **Built** (`bot/diagnostics.py`) |
@@ -180,6 +180,35 @@ Modes, channels, schedules and pinning are specified in
 - **Fault injection** (kill -9 at random points, disk full, corrupt DB, clock
   jump, partition, OOM) runs as a regular test and reports recovery time and
   data-loss window.
+
+### Local pipeline: self-healing flake recovery (`scripts/local_pipeline.py`)
+
+A push runs the full pipeline, which **stops the running instance, rebuilds and restarts it** — so the box
+is heavily loaded exactly while pytest runs. Timing/concurrency tests can lose under that load. The pipeline
+distinguishes a flake from a real failure instead of aborting the deploy on the first lost race:
+
+- The first `pytest` run is parallel (xdist). If ≤ `FLAKY_RERUN_LIMIT` (10) tests fail/error, the failing
+  **subset** is re-run **serially** (no xdist load), up to `FLAKY_RERUN_ATTEMPTS` (default **3**) times, with
+  the machine **settled between attempts**: `_settle()` waits out high CPU (bounded) then a growing backoff.
+- A test that passes on **any** attempt is reported as **flaky** (journalled, never silently hidden); only
+  tests that fail **every** attempt are a real failure and block the push.
+- Tunable without code changes: `ABP_PIPELINE_FLAKY_ATTEMPTS`, `ABP_PIPELINE_FLAKY_SETTLE_S`,
+  `ABP_PIPELINE_PYTEST_TIMEOUT_MIN`. More than `FLAKY_RERUN_LIMIT` failures, or any collection error, is a
+  regression and is never re-run.
+
+Diagnostics written to `logs/local_pipeline/`:
+
+- `*-startup diagnostics` (journalled + printed): git HEAD + dirty flag, interpreter, platform, free disk,
+  CPU/mem, which inference ports (11434/32301/8888) are up — so a run that behaves differently is explainable.
+- `<ts>-flaky.json`: attempt-by-attempt resolution of every re-run test, with a machine snapshot per attempt.
+- `<ts>-crash-*.txt`: an unexpected exception **in a check itself** (not a test it ran) is caught by `_timed`,
+  dumped with its traceback + snapshot, and reported as a clean failure; a top-level handler in
+  `_run_pipeline` does the same for the whole body. The pipeline never aborts with a bare stack dump.
+
+> **Handover note:** if a push fails the `python` gate on a test that passes when you run it alone, it is a
+> flake the settle/backoff should absorb — widen `ABP_PIPELINE_FLAKY_ATTEMPTS`/`_SETTLE_S` or quiet the box;
+> do **not** weaken a real assertion to get a green push. Environment-coupled tests (a test that assumes a
+> local server is **off**) should be made backend-agnostic instead — see `test_ai_run_reaches_the_real_inference_route`.
 
 ## Embedded installs (submodule / sidecar)
 
