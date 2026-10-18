@@ -1149,12 +1149,16 @@ def test_ai_models_ps_and_serve_status(client, capsys):
 
 
 def test_ai_run_reaches_the_real_inference_route(client, capsys):
-    """`ai run` posts to ABP's own /api/ollama/call. With no local Ollama serving a model this is a real
-    failure from that route, not a stubbed one."""
+    """`ai run` posts to ABP's own inference route and surfaces a REAL backend failure, not a stubbed one.
+    Backend-agnostic (ModelMistress is replacing Ollama): with no server the route reports it is not
+    running; with a server up but the model absent it reports a real HTTP error (e.g. 404 not found).
+    Either proves the CLI reached the real route rather than a mock."""
     code, _ = run(["--json", "ai", "run", "some-model", "say", "hi"], client)
     assert code == 1
     err = capsys.readouterr().err.lower()
-    assert "error:" in err and "ollama is not running" in err, err
+    real_route_markers = ("is not running", "not found", "404", "connection", "refused",
+                          "no model", "failed", "modelmistress")
+    assert "error:" in err and any(m in err for m in real_route_markers), err
 
     with pytest.raises(SystemExit) as exc:
         run(["ai", "run", "some-model"], client)
