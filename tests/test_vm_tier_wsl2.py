@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import os
 import socket
 import tarfile
 import threading
@@ -18,7 +19,14 @@ from bot.agent_runtime import sandbox, toolspec, tools, wsl_vm
 from bot.agent_runtime.errors import ToolError
 
 HAVE_WSL = wsl_vm.available()
-needs_wsl = pytest.mark.skipif(not HAVE_WSL, reason="WSL is not available")
+# The real-WSL tests import a ~4 GB base distro per run (~60-70 s each), so they are OPT-IN: set
+# ABP_RUN_WSL_TESTS=1 to run them. Skipped by default (incl. in the pre-push pipeline) so a push stays fast;
+# the unit-level tests below (argv / wsl.conf builders, no real import) always run.
+RUN_WSL = HAVE_WSL and os.environ.get("ABP_RUN_WSL_TESTS", "") not in ("", "0", "false", "no")
+needs_wsl = pytest.mark.skipif(
+    not RUN_WSL,
+    reason="WSL not available" if not HAVE_WSL else "set ABP_RUN_WSL_TESTS=1 to run the slow real-WSL tests",
+)
 
 
 @pytest.fixture(autouse=True)
