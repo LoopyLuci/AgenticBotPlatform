@@ -235,7 +235,8 @@ async def run_batch(
             child_models[i] = getattr(task_backend, "model", None)
             task_effort = task.get("effort") or batch_effort
             handle = await _start_child(
-                dispatch, i, task, task_backend, semaphore, allowed_tools, parent_instance_id, task_effort, coord
+                dispatch, i, task, task_backend, semaphore, allowed_tools, parent_instance_id, task_effort, coord,
+                confine=(role != "orchestrator"),
             )
             subagent_registry.register_child(dispatch, i, handle)
     finally:
@@ -330,6 +331,7 @@ async def _start_child(
     parent_instance_id: Optional[int],
     effort: Optional[str] = None,
     coord=None,
+    confine: bool = True,
 ):
     """Creates the child's ephemeral_sessions row and steer queue up
     front (before the task starts running), then wraps _run_one_child in
@@ -357,7 +359,7 @@ async def _start_child(
     session_id = db.create_ephemeral_session(parent_instance_id, backend.name, backend.model, goal)
     steer_queue: "asyncio.Queue[str]" = asyncio.Queue()
     coro = _run_one_child(
-        index, task, goal, session_id, backend, semaphore, allowed_tools, parent_instance_id, steer_queue, effort
+        index, task, goal, session_id, backend, semaphore, allowed_tools, parent_instance_id, steer_queue, effort, confine
     )
     ticket = await coord.register(dispatch.dispatch_id, index, task, goal) if (coord is not None and goal) else None
     if ticket is not None:
@@ -380,6 +382,7 @@ async def _run_one_child(
     parent_instance_id: Optional[int],
     steer_queue: "asyncio.Queue[str]",
     effort: Optional[str] = None,
+    confine: bool = True,
 ) -> dict[str, Any]:
     from bot import db
     from bot.agent_runtime.output_schema import validate_or_retry
@@ -418,6 +421,12 @@ async def _run_one_child(
             from bot.agent_runtime import hooks as hooks_mod
 
             hooks_token = hooks_mod.active_definition_hooks.set(tuple(agent.hooks))
+        # A leaf worker's shell always runs in the container sandbox; set here, in the context that runs its turn.
+        confine_token = None
+        if confine:
+            from bot.agent_runtime import sandbox
+
+            confine_token = sandbox.set_confined_override()
         try:
             result = await backend.ask(goal, context=context, timeout_s=CHILD_TIMEOUT_S)
             text = result.text
@@ -461,6 +470,8 @@ async def _run_one_child(
             db.finish_ephemeral_session(session_id, status="error", result=str(exc))
             return {"index": index, "goal": goal, "model": backend.model, "status": "error", "result_excerpt": str(exc)[:500]}
         finally:
+            if confine_token is not None:
+                sandbox.reset_confined_override(confine_token)
             if hooks_token is not None:
                 from bot.agent_runtime import hooks as hooks_mod
 

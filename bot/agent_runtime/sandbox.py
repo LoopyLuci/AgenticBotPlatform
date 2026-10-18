@@ -111,6 +111,8 @@ import sys
 import threading
 import time
 import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Optional
 
@@ -133,13 +135,47 @@ _DOCKER_NETWORKS = ("none", "bridge")
 _INJECT = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$")
 
 
-def _config() -> dict:
+# Per-worker override: a swarm leaf worker runs its shell in the native container sandbox whatever the global
+# native_agent.sandbox says. A ContextVar, so it follows the worker's own async context (and the tasks/threads it
+# spawns) and never touches the conductor or any other worker.
+CONFINED = {"backend": "windows_job", "network": "none", "env": {"mode": "secrets"}}
+_sandbox_override: ContextVar[Optional[dict]] = ContextVar("agent_sandbox_override", default=None)
+
+
+@contextmanager
+def confined_override():
+    token = _sandbox_override.set(dict(CONFINED))
+    try:
+        yield
+    finally:
+        _sandbox_override.reset(token)
+
+
+def set_confined_override():
+    """Token form of confined_override() for code that cannot use a with block; pass it to reset_confined_override."""
+    return _sandbox_override.set(dict(CONFINED))
+
+
+def reset_confined_override(token) -> None:
+    _sandbox_override.reset(token)
+
+
+def _global_config() -> dict:
     try:
         from bot.config import config
 
         return ((config.current.get("native_agent") or {}).get("sandbox")) or {}
     except Exception:  # noqa: BLE001
         return {}
+
+
+def _config() -> dict:
+    override = _sandbox_override.get()
+    if override is None:
+        return _global_config()
+    merged = dict(_global_config())
+    merged.update(override)
+    return merged
 
 
 def backend() -> str:
