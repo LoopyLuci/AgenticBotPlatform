@@ -41,6 +41,8 @@ Commands:
   coordination summary|tasks|locks        the work board: who is doing what, what waits and why, who holds which files
   capacity status|set|clear|history|probe|policy|packs  the capacity governor: cloud-led / hybrid / local-only, why, and the owner override
                                           (`capacity set local-only --for 2h --reason "usage cap"`; `capacity clear` = automatic)
+  redblue run [--journal PATH]|coverage    EscapeArtist/WatchDog: the red<->blue loop and the vector-taxonomy
+                                          coverage benchmark (local, model-free, propose-only/dry-run)
   manager digest|escalations|checkin     the manager channel: a capped digest of the local factory and what waits for a decision
   conductor plan|run|review|status|queue|approve|reject|push|unblock  the local conductor: plan a goal, run it in a repo, review a diff
                                           against the standing rules, the push queue (`conductor approve ID --by owner`)
@@ -170,6 +172,9 @@ async def _run(args) -> int:
         return await _gate.run(args)
     if args.cmd == "gpu":
         return _gpu(args)               # measured locally: needs no dashboard
+    if args.cmd == "redblue":
+        from abp_cli import redblue as _redblue
+        return _redblue.run(args)       # in-process and model-free: needs no dashboard
     client = _client(args)
     try:
         return await _dispatch(args, client)
@@ -2508,6 +2513,9 @@ def _parser() -> argparse.ArgumentParser:
 
     from abp_cli import routine as _routine
     _routine.add_parser(sub)
+
+    from abp_cli import redblue as _redblue
+    _redblue.add_parser(sub)
 
     peers = sub.add_parser("peers", help="linked/federated AgenticBotPlatform servers")
     pesub = peers.add_subparsers(dest="peers_cmd", required=True)
