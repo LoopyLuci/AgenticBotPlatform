@@ -9,6 +9,15 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **`abp redblue run|coverage`** — the EscapeArtist/WatchDog red<->blue loop from the command line (`abp_cli/redblue.py`).
+  - `run` replays every taxonomy vector through WatchDog and prints how many were tried, detected and missed, each
+    detected vector's matched signature, and its containment marked **PROPOSED, dry-run**. `--journal PATH` also appends
+    the findings and detected incidents to an append-only `IncidentJournal`.
+  - `coverage` prints the vector-taxonomy benchmark per vector class plus overall; a class with no probe yet reads
+    `n/a`, not 100%. Both take `--json`, and both exit 1 when any vector is missed (2 on bad usage).
+  - Local and model-free: no dashboard needed, and it reuses `run_loop`/`RedTeam`/`ContainmentExecutor` as they are.
+    Propose-only by construction — containment goes through a dry-run executor with no sinks, and there is no flag
+    that executes containment or patches code.
 - **A deploy is a zero-downtime hot swap when the always-on gate is running** ([docs/deploy.md](docs/deploy.md#when-a-gate-owns-the-port), [docs/always-on.md](docs/always-on.md)).
   - `python scripts/deploy_local.py` (and the `git push` that runs the same code) notices that `abp_gate` owns port 8787 — detected exactly the way the desktop app detects it, from the gate's own unauthenticated `/healthz` — and stops stopping things. The build is installed into a **new versioned folder** beside the install folder (`<install-dir>.v1`, `.v2`, …) instead of over the files the running instance has open, and the gate is asked to swap to it over its control API with the install's own `DASHBOARD_TOKEN`. Nothing is stopped, no lock is waited for, and the public port never goes quiet: a client asking it throughout a deploy gets no failed request, and the Telegram bots behind it do not notice.
   - Verification is unchanged and happens through the same port: `/healthz` ok, `/openapi.json` identical to `docs/api/openapi.json`, every enabled bot instance `live_running` again.
