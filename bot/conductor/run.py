@@ -166,9 +166,8 @@ class Conductor:
 
     def _proof_env(self) -> Optional[Callable[[], Any]]:
         """The environment a real worker's proof runs in: the conductor's interpreter first on PATH (so `python -m pytest` has the
-        project's packages) and the configured sandbox, as before - deliberately not the `sandbox` shell's AppContainer, where pytest
-        cannot start (it opens the NUL device and stats the workspace's parent folders, both denied there). None for a worker without
-        a shell mode (scripted test workers: the proof runs as configured)."""
+        project's packages) and the configured sandbox, as before 0b93f5c. None for a worker without a shell mode (scripted test
+        workers: the proof runs as configured)."""
         if getattr(self.worker, "shell", "") not in ("none", "sandbox"):
             return None
         from abp_agenteval import factory

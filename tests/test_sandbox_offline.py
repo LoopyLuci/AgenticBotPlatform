@@ -11,6 +11,7 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -173,6 +174,17 @@ def test_the_launcher_argv_carries_limits_and_extra_paths(ws):
     assert argv[argv.index("--memory-mb") + 1] == "64" and argv[argv.index("--procs") + 1] == "3"
 
 
+def test_the_container_gets_every_parent_folder_and_a_pytest_that_never_opens_nul(tmp_path):
+    ws = (tmp_path / "a" / "ws").resolve()
+    assert appcontainer.parent_folders(ws)[:2] == [ws.parent, ws.parent.parent]
+    assert str(appcontainer.parent_folders(ws)[-1]) == ws.anchor and "" not in map(str, appcontainer.parent_folders(ws))
+    temp = tmp_path / "AC" / "Temp"
+    opts = appcontainer.pytest_addopts(temp)
+    assert "--capture=sys" in opts and f'--log-file="{(temp / "pytest-log.txt").as_posix()}"' in opts
+    assert appcontainer.pytest_addopts(temp, "-x").startswith("-x ")         # the caller's own options are kept, first
+    assert appcontainer.READ_ATTRIBUTES & 0x1 == 0 and appcontainer.READ_ATTRIBUTES & 0x20 == 0  # never list, never traverse-run
+
+
 def test_the_offline_setting_is_on_the_settings_page():
     from bot.agent_runtime import settings_schema
 
@@ -251,6 +263,43 @@ class TestAppContainer:
         try:
             assert appcontainer.grant(ws, sid, appcontainer.MODIFY) is True
             assert appcontainer.grant(ws, sid, appcontainer.MODIFY) is False
+        finally:
+            appcontainer._adv.FreeSid(sid)
+
+    def test_pytest_runs_inside_the_container(self, ws, cfg):
+        """pytest stats the workspace's parent folders and, by default, opens the NUL device: both used to be denied."""
+        from bot.conductor import confine
+
+        cfg["network_none"] = {"extra_paths": confine.sandbox_paths()}         # the interpreter's install and venv, read-only
+        (ws / "test_inside.py").write_text(
+            "import logging\n\n\ndef test_inside(caplog, capsys):\n    logging.getLogger('x').warning('logged')\n"
+            "    print('printed')\n    assert 'logged' in caplog.text and capsys.readouterr().out == 'printed\\n'\n")
+        out = run_shell(ws, f'"{sys.executable}" -m pytest -q -p no:cacheprovider test_inside.py', timeout=300)
+        assert "1 passed" in out and "[exit code 0]" in out, out[-1500:]
+
+    def test_a_parent_folder_can_be_stat_ed_but_never_listed_or_read(self, ws, cfg, tmp_path):
+        from bot.conductor import confine
+
+        cfg["network_none"] = {"extra_paths": confine.sandbox_paths()}
+        sibling = tmp_path / f"sibling-{uuid.uuid4().hex[:8]}.txt"
+        sibling.write_text("private-next-to-the-workspace")
+        stat = run_shell(ws, f'"{sys.executable}" -c "import os; os.stat(r\'{ws.parent}\'); print(\'stat-ok\')"')
+        assert "stat-ok" in stat, stat[-800:]
+        listing = run_shell(ws, f'dir "{ws.parent}"')
+        assert sibling.name not in listing, "a parent folder must not be listable from the container"
+        assert "private-next-to-the-workspace" not in run_shell(ws, f'type "{sibling}"')
+
+    def test_the_parent_grant_is_that_folder_only(self, tmp_path):
+        parent, child = tmp_path / "p", tmp_path / "p" / "child"
+        child.mkdir(parents=True)
+        sid = appcontainer.container_sid()
+        try:
+            assert appcontainer.grant(parent, sid, appcontainer.READ_ATTRIBUTES, appcontainer._NO_INHERIT) is True
+            assert appcontainer.grant(parent, sid, appcontainer.READ_ATTRIBUTES, appcontainer._NO_INHERIT) is False
+            new = tmp_path / "p" / "made-after"
+            new.mkdir()
+            for c in (child, new):                     # neither an existing nor a new child folder gets the container ACE
+                assert not appcontainer._has_grant(str(c), sid, appcontainer.READ_ATTRIBUTES, appcontainer._NO_INHERIT)
         finally:
             appcontainer._adv.FreeSid(sid)
 

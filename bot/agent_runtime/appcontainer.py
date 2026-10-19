@@ -32,6 +32,13 @@ per-user Python or a virtualenv outside the workspace, are therefore invisible u
 listed there. This is deliberate: the alternative is a network block that a command
 could bypass by reading the user's saved credentials instead.
 
+The workspace's parent folders get one narrower grant each: their own attributes
+(READ_ATTRIBUTES, that folder only, never inherited), so tools that walk up from the
+workspace (pytest's rootdir/conftest search) can stat them, but nothing can list them or
+read anything in them. pytest also gets PYTEST_ADDOPTS that keep it off the NUL device,
+which a container cannot open (its log file goes to the container's temp folder; capture
+is sys-level).
+
 Fails closed. If any step fails (an old Windows, an unsupported filesystem such as a
 network drive, an ACL that cannot be changed), the command is not run and the error
 says why.
@@ -53,6 +60,11 @@ _DESCRIPTION = "Runs agent shell commands with no network access"
 # Access masks: modify (read, write, run, delete) for the workspace; read and run for extras.
 MODIFY = 0x1301BF
 READ_EXECUTE = 0x1200A9
+# The workspace's parent folders: their own attributes only (FILE_READ_ATTRIBUTES | SYNCHRONIZE), granted on that one folder and
+# never inherited. Not FILE_LIST_DIRECTORY, not FILE_READ_DATA: a command can stat a parent, never list it or read anything in it.
+# Tools that walk up from the workspace (pytest's rootdir and conftest search) stat each parent and fail without it.
+READ_ATTRIBUTES = 0x100080
+_NO_INHERIT = 0x0
 _INHERIT_BOTH = 0x3            # OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE
 _ACCESS_ALLOWED_ACE_TYPE = 0
 _SE_FILE_OBJECT = 1
@@ -142,6 +154,12 @@ if _is_windows:
     _proto(_adv.SetEntriesInAclW, wintypes.DWORD, wintypes.ULONG, ctypes.POINTER(_EXPLICIT_ACCESS_W),
            wintypes.LPVOID, ctypes.POINTER(wintypes.LPVOID))
     _proto(_adv.GetAclInformation, wintypes.BOOL, wintypes.LPVOID, wintypes.LPVOID, wintypes.DWORD, ctypes.c_int)
+    _proto(_adv.InitializeSecurityDescriptor, wintypes.BOOL, wintypes.LPVOID, wintypes.DWORD)
+    _proto(_adv.SetSecurityDescriptorDacl, wintypes.BOOL, wintypes.LPVOID, wintypes.BOOL, wintypes.LPVOID, wintypes.BOOL)
+    _proto(_adv.GetSecurityDescriptorControl, wintypes.BOOL, wintypes.LPVOID, ctypes.POINTER(wintypes.WORD),
+           ctypes.POINTER(wintypes.DWORD))
+    _proto(_adv.SetSecurityDescriptorControl, wintypes.BOOL, wintypes.LPVOID, wintypes.WORD, wintypes.WORD)
+    _proto(_adv.SetFileSecurityW, wintypes.BOOL, wintypes.LPCWSTR, wintypes.DWORD, wintypes.LPVOID)
     _proto(_adv.GetAce, wintypes.BOOL, wintypes.LPVOID, wintypes.DWORD, ctypes.POINTER(wintypes.LPVOID))
     _proto(_k32.LocalFree, wintypes.LPVOID, wintypes.LPVOID)
     _proto(_k32.InitializeProcThreadAttributeList, wintypes.BOOL, wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD,
@@ -203,7 +221,7 @@ def container_folder(sid) -> Path:
         _ole.CoTaskMemFree(out)
 
 
-def _has_grant(path: str, sid, mask: int) -> bool:
+def _has_grant(path: str, sid, mask: int, inherit: int = _INHERIT_BOTH) -> bool:
     dacl, sd = wintypes.LPVOID(), wintypes.LPVOID()
     err = _adv.GetNamedSecurityInfoW(path, _SE_FILE_OBJECT, _DACL_SECURITY_INFORMATION, None, None,
                                      ctypes.byref(dacl), None, ctypes.byref(sd))
@@ -223,19 +241,20 @@ def _has_grant(path: str, sid, mask: int) -> bool:
                 continue
             ace_sid = ace.value + _ACCESS_ALLOWED_ACE.SidStart.offset
             if (_adv.EqualSid(ace_sid, sid) and allowed.Mask & mask == mask
-                    and allowed.Header.AceFlags & _INHERIT_BOTH == _INHERIT_BOTH):
+                    and allowed.Header.AceFlags & inherit == inherit):
                 return True
         return False
     finally:
         _k32.LocalFree(sd)
 
 
-def grant(path: Path, sid, mask: int) -> bool:
-    """Give the container `mask` on `path` and everything under it. A no-op (returns
-    False) when an equal grant is already there: re-applying rewrites the ACL of every
-    file in the tree, which is slow on a large workspace."""
+def grant(path: Path, sid, mask: int, inherit: int = _INHERIT_BOTH) -> bool:
+    """Give the container `mask` on `path` and (with the default `inherit`) everything under it;
+    `inherit=_NO_INHERIT` grants that one folder only. A no-op (returns False) when an equal
+    grant is already there: re-applying rewrites the ACL of every file in the tree, which is
+    slow on a large workspace."""
     target = str(Path(path).resolve())
-    if _has_grant(target, sid, mask):
+    if _has_grant(target, sid, mask, inherit):
         return False
     dacl, sd = wintypes.LPVOID(), wintypes.LPVOID()
     err = _adv.GetNamedSecurityInfoW(target, _SE_FILE_OBJECT, _DACL_SECURITY_INFORMATION, None, None,
@@ -247,13 +266,18 @@ def grant(path: Path, sid, mask: int) -> bool:
         ea = _EXPLICIT_ACCESS_W()
         ea.grfAccessPermissions = mask
         ea.grfAccessMode = _GRANT_ACCESS
-        ea.grfInheritance = _INHERIT_BOTH
+        ea.grfInheritance = inherit
         ea.Trustee.TrusteeForm = _TRUSTEE_IS_SID
         ea.Trustee.TrusteeType = _TRUSTEE_IS_WELL_KNOWN_GROUP
         ea.Trustee.ptstrName = sid
         err = _adv.SetEntriesInAclW(1, ctypes.byref(ea), dacl, ctypes.byref(new_dacl))
         if err:
             raise OSError(err, f"building the permissions for {target} failed: {ctypes.FormatError(err).strip()}")
+        if inherit == _NO_INHERIT:
+            # One folder only. SetNamedSecurityInfo would re-propagate inheritance through the folder's whole subtree (minutes
+            # on a big parent folder, for nothing: this ACE does not inherit); SetFileSecurity writes this one object's DACL.
+            _set_dacl_only(target, sd, new_dacl)
+            return True
         err = _adv.SetNamedSecurityInfoW(target, _SE_FILE_OBJECT, _DACL_SECURITY_INFORMATION, None, None,
                                          new_dacl, None)
         if err:
@@ -263,6 +287,26 @@ def grant(path: Path, sid, mask: int) -> bool:
     finally:
         _k32.LocalFree(new_dacl)
         _k32.LocalFree(sd)
+
+
+_SE_DACL_AUTO_INHERITED = 0x0400
+_SE_DACL_PROTECTED = 0x1000
+
+
+def _set_dacl_only(target: str, old_sd, new_dacl) -> None:
+    """Write `new_dacl` on `target` alone (no propagation to children), keeping the old descriptor's DACL inheritance flags."""
+    control, rev = wintypes.WORD(), wintypes.DWORD()
+    _win_check(_adv.GetSecurityDescriptorControl(old_sd, ctypes.byref(control), ctypes.byref(rev)), "GetSecurityDescriptorControl")
+    sd = ctypes.create_string_buffer(64)                      # SECURITY_DESCRIPTOR_MIN_LENGTH is 40 on 64-bit Windows
+    _win_check(_adv.InitializeSecurityDescriptor(sd, 1), "InitializeSecurityDescriptor")
+    _win_check(_adv.SetSecurityDescriptorDacl(sd, True, new_dacl, False), "SetSecurityDescriptorDacl")
+    keep = control.value & (_SE_DACL_AUTO_INHERITED | _SE_DACL_PROTECTED)
+    if keep:
+        _win_check(_adv.SetSecurityDescriptorControl(sd, _SE_DACL_AUTO_INHERITED | _SE_DACL_PROTECTED, keep),
+                   "SetSecurityDescriptorControl")
+    if not _adv.SetFileSecurityW(target, _DACL_SECURITY_INFORMATION, sd):
+        err = ctypes.get_last_error()
+        raise OSError(err, f"granting the offline sandbox read-attributes on {target} failed: {ctypes.FormatError(err).strip()}")
 
 
 def _inheritable_std_handles() -> tuple[int, int, int]:
@@ -275,20 +319,42 @@ def _inheritable_std_handles() -> tuple[int, int, int]:
     return tuple(handles)
 
 
+def parent_folders(workspace: Path) -> list[Path]:
+    """The folders above the workspace, nearest first, up to and including the drive root."""
+    return list(Path(workspace).resolve().parents)
+
+
+def pytest_addopts(temp: Path, existing: str = "") -> str:
+    """PYTEST_ADDOPTS for a contained command. The container cannot open the NUL device, and pytest opens it twice by default:
+    its logging plugin's file handler (os.devnull when no --log-file is given) and fd-level capture's stdin. So the log file goes
+    to the container's own temp folder and capture is sys-level (stdout/stderr still captured; caplog still works)."""
+    log = (Path(temp) / "pytest-log.txt").as_posix()
+    return " ".join(p for p in (existing.strip(), "--capture=sys", f'--log-file="{log}"') if p)
+
+
 def run(command: str, cwd: Path, *, grants: list[tuple[Path, int]], memory_mb: int = 0,
-        active_process_limit: int = 0) -> int:
-    """Run `command` through cmd.exe inside the container, wait, and return its exit code."""
+        active_process_limit: int = 0, attr_grants: list[Path] = ()) -> int:
+    """Run `command` through cmd.exe inside the container, wait, and return its exit code. `attr_grants`: folders that get
+    READ_ATTRIBUTES on themselves only, best effort (a folder whose ACL cannot be changed, e.g. a drive root, is skipped:
+    that only affects tools that stat it, never what the container may list, read or write)."""
     from bot.agent_runtime import win_job
 
     sid = container_sid()
     try:
         for path, mask in grants:
             grant(path, sid, mask)
+        for path in attr_grants:
+            try:
+                grant(path, sid, READ_ATTRIBUTES, _NO_INHERIT)
+            except OSError:
+                pass
         # The command's temp files go to the container's own folder; the user's %TEMP% is out of reach.
         temp = container_folder(sid) / "Temp"
         temp.mkdir(parents=True, exist_ok=True)
         for name in ("TEMP", "TMP"):              # the child inherits this process's environment block
             _win_check(_k32.SetEnvironmentVariableW(name, str(temp)), "SetEnvironmentVariable")
+        _win_check(_k32.SetEnvironmentVariableW("PYTEST_ADDOPTS", pytest_addopts(temp, os.environ.get("PYTEST_ADDOPTS", ""))),
+                   "SetEnvironmentVariable")
 
         caps = _SECURITY_CAPABILITIES(AppContainerSid=sid, Capabilities=None, CapabilityCount=0, Reserved=0)
         size = ctypes.c_size_t()
@@ -367,7 +433,8 @@ def main(argv: list[str]) -> int:
         return 126
     grants = [(Path(args.workspace), MODIFY)] + [(Path(p), READ_EXECUTE) for p in args.read]
     try:
-        return run(command, Path(args.cwd), grants=grants, memory_mb=args.memory_mb, active_process_limit=args.procs)
+        return run(command, Path(args.cwd), grants=grants, memory_mb=args.memory_mb, active_process_limit=args.procs,
+                   attr_grants=parent_folders(Path(args.workspace)))
     except OSError as exc:
         print(f"abp offline sandbox: {exc}; the command was not run", file=sys.stderr)
         return 126

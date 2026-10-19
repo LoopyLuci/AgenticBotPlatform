@@ -167,7 +167,7 @@ def test_the_proof_environment_is_the_workers(repo):
         before = os.environ.get("PATH", "")
         with env():
             assert os.environ["PATH"].split(os.pathsep)[0] == str(Path(sys.executable).parent)
-            # never the sandbox shell's AppContainer overlay: pytest cannot start inside it
+            # the configured sandbox, not the sandbox shell's AppContainer overlay
             assert "sandbox" not in (config._data.get("native_agent") or {}) or \
                 (config._data["native_agent"]["sandbox"] or {}).get("network") != "none"
         assert os.environ.get("PATH", "") == before

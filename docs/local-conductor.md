@@ -79,9 +79,12 @@ whole suite, which can never pass inside the no-network sandbox; the integrator 
 
 A proof runs with **the conductor's own interpreter first on PATH** (an agent environment with `shell: none`, so the configured
 sandbox, under the process-wide lock agent turns hold, `proof.ENV_LOCK`, in a thread so the event loop keeps heartbeating). Before,
-`python -m pytest` in a proof was whatever `python` the PATH found first, which may lack the project's packages. It does **not** use the
-`--shell sandbox` AppContainer: pytest cannot start there (it opens the NUL device and stats the workspace's parent folders, both
-denied), which also means a sandbox-shell worker's own pytest runs fail today; see "Still to do".
+`python -m pytest` in a proof was whatever `python` the PATH found first, which may lack the project's packages.
+
+pytest runs inside the `--shell sandbox` AppContainer since 2026-10-19 (owner-approved confinement change): the workspace's parent
+folders are stat-able there (read-attributes on each, that folder only; never listable or readable) and pytest is kept off the NUL
+device (`PYTEST_ADDOPTS`: log file in the container's temp folder, sys-level capture). Before, a sandbox-shell worker's pytest
+could not start at all.
 
 ## Reviewer (`reviewer.py`)
 
@@ -213,7 +216,6 @@ refuses anything that is not a local provider).
 
 ## Still to do
 
-pytest inside the `--shell sandbox` AppContainer (needs the NUL device avoided, e.g. `-p no:logging -s`, and read-attributes on the
-workspace's parent folders: a confinement change for the owner to approve); other pipelines (LF6) taking the same machine lock as the integrator; LF5 reading the blocked contexts; agent turns in
+other pipelines (LF6) taking the same machine lock as the integrator; LF5 reading the blocked contexts; agent turns in
 separate processes (so they can truly run in parallel and be killed by PID); measuring plan quality and review false
 positives over more live runs; one proof per task file, so a task's proof covers every test it adds.
