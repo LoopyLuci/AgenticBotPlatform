@@ -77,9 +77,11 @@ started. A third, symbolic proof, `changed-tests` (`proof.CHANGED_TESTS`, what t
 files the task's branch added or changed since its start; a task that touched no test file fails it. (The fallback used to be the
 whole suite, which can never pass inside the no-network sandbox; the integrator runs the full suite anyway.)
 
-A proof runs **in the worker's own agent environment**: the conductor's interpreter first on PATH and, for `--shell sandbox`, the
-same read grants (the venv), under the same process-wide lock agent turns hold (`proof.ENV_LOCK`), in a thread so the event loop
-keeps heartbeating. Before, `python -m pytest` in a proof was whatever `python` the PATH found first.
+A proof runs with **the conductor's own interpreter first on PATH** (an agent environment with `shell: none`, so the configured
+sandbox, under the process-wide lock agent turns hold, `proof.ENV_LOCK`, in a thread so the event loop keeps heartbeating). Before,
+`python -m pytest` in a proof was whatever `python` the PATH found first, which may lack the project's packages. It does **not** use the
+`--shell sandbox` AppContainer: pytest cannot start there (it opens the NUL device and stats the workspace's parent folders, both
+denied), which also means a sandbox-shell worker's own pytest runs fail today; see "Still to do".
 
 ## Reviewer (`reviewer.py`)
 
@@ -211,6 +213,7 @@ refuses anything that is not a local provider).
 
 ## Still to do
 
-Other pipelines (LF6) taking the same machine lock as the integrator; LF5 reading the blocked contexts; agent turns in
+pytest inside the `--shell sandbox` AppContainer (needs the NUL device avoided, e.g. `-p no:logging -s`, and read-attributes on the
+workspace's parent folders: a confinement change for the owner to approve); other pipelines (LF6) taking the same machine lock as the integrator; LF5 reading the blocked contexts; agent turns in
 separate processes (so they can truly run in parallel and be killed by PID); measuring plan quality and review false
 positives over more live runs; one proof per task file, so a task's proof covers every test it adds.

@@ -165,15 +165,15 @@ class Conductor:
         return integ.integrate(branches, plan_id=plan_id, tasks=tasks or []).to_dict()
 
     def _proof_env(self) -> Optional[Callable[[], Any]]:
-        """The real worker's agent environment for running a proof (its shell mode, the conductor's interpreter first on PATH, and
-        for `sandbox` the same read grants), or None for a worker without one (scripted test workers: the proof runs as configured)."""
-        shell = getattr(self.worker, "shell", "")
-        if shell not in ("none", "sandbox"):
+        """The environment a real worker's proof runs in: the conductor's interpreter first on PATH (so `python -m pytest` has the
+        project's packages) and the configured sandbox, as before - deliberately not the `sandbox` shell's AppContainer, where pytest
+        cannot start (it opens the NUL device and stats the workspace's parent folders, both denied there). None for a worker without
+        a shell mode (scripted test workers: the proof runs as configured)."""
+        if getattr(self.worker, "shell", "") not in ("none", "sandbox"):
             return None
         from abp_agenteval import factory
 
-        paths = (getattr(self.worker, "sandbox_paths", None) or confine.sandbox_paths()) if shell == "sandbox" else None
-        settings = factory.agent_settings(model="proof", shell=shell, sandbox_paths=paths)
+        settings = factory.agent_settings(model="proof", shell="none")
         return lambda: factory.agent_environment(settings, python=sys.executable)
 
     # ------------------------------------------------------- one task's work

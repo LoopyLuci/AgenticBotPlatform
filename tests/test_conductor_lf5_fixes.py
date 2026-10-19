@@ -159,12 +159,18 @@ def test_the_proof_environment_is_the_workers(repo):
     async def scripted(spec, feedback):
         return {}
 
+    from bot.config import config
+
     assert run.Conductor(repo, scripted)._proof_env() is None              # a scripted test worker: the proof runs as configured
-    env = run.Conductor(repo, SimpleNamespace(shell="none"))._proof_env()
-    before = os.environ.get("PATH", "")
-    with env():
-        assert os.environ["PATH"].split(os.pathsep)[0] == str(Path(sys.executable).parent)
-    assert os.environ.get("PATH", "") == before
+    for shell in ("none", "sandbox"):
+        env = run.Conductor(repo, SimpleNamespace(shell=shell))._proof_env()
+        before = os.environ.get("PATH", "")
+        with env():
+            assert os.environ["PATH"].split(os.pathsep)[0] == str(Path(sys.executable).parent)
+            # never the sandbox shell's AppContainer overlay: pytest cannot start inside it
+            assert "sandbox" not in (config._data.get("native_agent") or {}) or \
+                (config._data["native_agent"]["sandbox"] or {}).get("network") != "none"
+        assert os.environ.get("PATH", "") == before
 
 
 # ---- C: the conductor's tokens reach LF5's accounting --------------------------------------------------------------
