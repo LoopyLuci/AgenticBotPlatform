@@ -38,6 +38,10 @@ os.environ["AGENTICBOTPLATFORM_SUPPORT_BOT_MODEL_PATH"] = str(_STATE / "support_
 # Module persisted models and manifest — see that module's own comment.
 os.environ["AGENTICBOTPLATFORM_SUPPORT_BOT_MODULES_DIR"] = str(_STATE / "support_bot_modules")
 os.environ["AGENTICBOTPLATFORM_SUPPORT_BOT_MANIFEST_PATH"] = str(_STATE / "support_bot_manifest.json")
+# The live WatchDog (bot/redblue/live.py) journals every incident it sees to data/redblue/ under the project root, which in a
+# checkout that also runs ABP is the live install's journal. Tests run tools and permission checks constantly (the
+# confinement stress tests try escapes on purpose): off for the session; tests/test_redblue_live.py turns it on with a tmp journal.
+os.environ["ABP_REDBLUE_WATCHDOG"] = "off"
 
 # Same rule, same reason, for the process layer: bot/sandbox_ns/guard.py wraps subprocess.Popen so
 # every process this session starts is windowless. In the real app this is a boot-time call from

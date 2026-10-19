@@ -155,6 +155,7 @@ DENYLIST: frozenset[str] = frozenset({
     # (empty) idea of what is running.
     "bot.dashboard.sandbox_ns_api",
     "bot.dashboard.redblue_api",  # read-only red/blue summary routes; they register once, like the routes above
+    "bot.redblue.live",  # the live WatchDog: a process-wide monitor, its queue and worker thread are process state
     "bot.agent_runtime.settings_schema",  # imports permissions/sandbox (both denied above); a reload would split the classes it validates against
     "bot.agent_runtime.project_rules",  # imported by prompt.py; reloaded with it is not needed and is safe to skip
     "bot.agent_runtime.code_intel",  # running language servers are process state

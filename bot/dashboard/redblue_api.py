@@ -55,4 +55,6 @@ def register(app: FastAPI, read_auth: Callable) -> None:
 
     @app.get("/api/redblue/summary", dependencies=read)
     def redblue_summary(limit: int = Query(20, ge=1, le=200)):
-        return summarize(journal_mod.default_journal(), limit)
+        from bot.redblue import live
+
+        return {**summarize(journal_mod.default_journal(), limit), "live": live.stats()}   # the passive live WatchDog's feed

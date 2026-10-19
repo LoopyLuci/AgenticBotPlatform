@@ -332,5 +332,12 @@ def evaluate(tool: str, tool_input: dict, *, workspace: Optional[Path], instance
     from bot.agent_runtime import taint
 
     mode, rules, allow_bypass = effective(instance_id)
-    return decide(tool, tool_input, rules=rules, mode=mode, workspace=workspace,
-                  tainted=taint.is_tainted(session), allow_bypass=allow_bypass)
+    verdict = decide(tool, tool_input, rules=rules, mode=mode, workspace=workspace,
+                     tainted=taint.is_tainted(session), allow_bypass=allow_bypass)
+    try:                                   # the live WatchDog sees every decision (passive: queued, never blocks or changes it)
+        from bot.redblue import live
+
+        live.grant_check(tool, tool_input, verdict, instance_id=instance_id)
+    except Exception:  # noqa: BLE001 - monitoring must never affect a permission decision
+        pass
+    return verdict

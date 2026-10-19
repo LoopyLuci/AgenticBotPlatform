@@ -1048,6 +1048,12 @@ async def execute_tool(
     name: str, tool_input: dict, *, workspace: Path, instance_id: Optional[int] = None,
     device_tier: Optional[str] = None,
 ) -> str:
+    try:                                   # the live WatchDog sees every attempted call (passive: queued, never blocks it)
+        from bot.redblue import live
+
+        live.tool_call(name, tool_input, instance_id=instance_id, workspace=workspace)
+    except Exception:  # noqa: BLE001 - monitoring must never affect a tool call
+        pass
     if name in _EDITING:
         # Two agents never write one file at once: inside a sub-agent/swarm work session the file is locked on the
         # work board for that task (bot/coordination/fileguard.py); a lone agent pays nothing.
