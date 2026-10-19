@@ -7,6 +7,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -208,6 +209,55 @@ def test_the_release_gate_handshake_skips_the_whole_pipeline(monkeypatch, capsys
     monkeypatch.setattr(sys, "argv", ["local_pipeline.py"])
     assert lp.main() == 0
     assert "already verified" in capsys.readouterr().out
+
+
+def _stamp_env(monkeypatch, *, heads, dirty=(), code=0):
+    """_run_pipeline with the body stubbed: records clear/stamp calls against a scripted HEAD sequence."""
+    calls = []
+    seq = iter(heads)
+    monkeypatch.setattr(release_guard, "clear_pipeline_passed", lambda root: calls.append("clear"))
+    monkeypatch.setattr(release_guard, "head_sha", lambda root: next(seq))
+    monkeypatch.setattr(release_guard, "tracked_changes_outside", lambda root: list(dirty))
+    monkeypatch.setattr(release_guard, "record_pipeline_passed", lambda root, sha: calls.append(("stamp", sha)))
+    monkeypatch.setattr(lp, "_run_pipeline_body", lambda args: code)
+    return calls
+
+
+def test_a_green_deployed_run_records_its_exact_commit(monkeypatch):
+    calls = _stamp_env(monkeypatch, heads=["abc123", "abc123"])
+    assert lp._run_pipeline(SimpleNamespace(no_deploy=False)) == 0
+    assert calls == ["clear", ("stamp", "abc123")]           # cleared first, then stamped
+
+
+def test_a_failed_run_clears_and_never_stamps(monkeypatch):
+    calls = _stamp_env(monkeypatch, heads=["abc123", "abc123"], code=1)
+    assert lp._run_pipeline(SimpleNamespace(no_deploy=False)) == 1
+    assert calls == ["clear"]
+
+
+def test_a_no_deploy_run_is_not_stamped(monkeypatch):
+    # push == deploy: a check-only run must not let a push ship code that was never deployed
+    calls = _stamp_env(monkeypatch, heads=["abc123", "abc123"])
+    assert lp._run_pipeline(SimpleNamespace(no_deploy=True)) == 0
+    assert calls == ["clear"]
+
+
+def test_no_stamp_when_head_moved_or_the_tree_was_dirty(monkeypatch):
+    calls = _stamp_env(monkeypatch, heads=["abc123", "def456"])
+    assert lp._run_pipeline(SimpleNamespace(no_deploy=False)) == 0
+    assert calls == ["clear"]
+    calls = _stamp_env(monkeypatch, heads=["abc123", "abc123"], dirty=["bot/x.py"])
+    assert lp._run_pipeline(SimpleNamespace(no_deploy=False)) == 0
+    assert calls == ["clear"]
+
+
+def test_a_stamp_failure_never_turns_a_green_run_red(monkeypatch):
+    _stamp_env(monkeypatch, heads=["abc123", "abc123"])
+
+    def boom(root, sha):
+        raise OSError("read-only git dir")
+    monkeypatch.setattr(release_guard, "record_pipeline_passed", boom)
+    assert lp._run_pipeline(SimpleNamespace(no_deploy=False)) == 0
 
 
 def test_a_second_pipeline_is_refused_while_one_is_running(monkeypatch, capsys):

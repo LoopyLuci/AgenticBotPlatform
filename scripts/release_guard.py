@@ -861,10 +861,53 @@ def head_sha(root: Path = ROOT) -> str:
     return git("rev-parse", "HEAD", root=root).output.strip()
 
 
+PIPELINE_STAMP = "abp-pipeline-passed"   # in the git dir: never tracked, never pushed
+
+
+def _stamp_path(root: Path) -> Path:
+    return _git_dir(root) / PIPELINE_STAMP
+
+
+def record_pipeline_passed(root: Path, sha: str) -> Path:
+    """A full pipeline run went green AND deployed exactly `sha`. A later push of that same commit (the retry
+    after GitHub dropped the SSH connection the long hook left idle, or `local_pipeline.py` then `git push`)
+    has nothing left to verify. Keyed to the exact SHA, so any new commit runs the full pipeline again."""
+    p = _stamp_path(root)
+    p.write_text(sha + "\n", encoding="utf-8")
+    return p
+
+
+def clear_pipeline_passed(root: Path = ROOT) -> None:
+    """Every full run starts by forgetting the last green one: a re-run that fails must not leave a pass behind."""
+    try:
+        _stamp_path(root).unlink()
+    except FileNotFoundError:
+        pass
+
+
 def pipeline_already_passed(root: Path = ROOT, environ: Optional[dict] = None) -> Optional[str]:
-    """If the release gate already ran the full pipeline on exactly this
-    commit, the pre-push hook has nothing left to verify (and must NOT rebuild
-    the app over the installer that is about to be signed and uploaded)."""
+    """If the release gate (ABP_PIPELINE_PASSED_SHA) or an earlier green, deployed pipeline run (the stamp in
+    the git dir) already verified exactly this commit, the pre-push hook has nothing left to verify (and must
+    NOT rebuild the app over the installer that is about to be signed and uploaded)."""
     env = os.environ if environ is None else environ
+    head = head_sha(root)
+    if not head:
+        return None
     sha = env.get(PIPELINE_PASSED_ENV, "").strip()
-    return sha if sha and sha == head_sha(root) else None
+    if sha == head:
+        return sha
+    try:
+        stamped = _stamp_path(root).read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return stamped if stamped == head else None
+
+
+def tracked_changes_outside(root: Path, allowed: tuple[str, ...] = ("config/",)) -> list[str]:
+    """Tracked files whose content differs from HEAD, ignoring the local-only config the pipeline never ships
+    (config/*.yaml hold secrets and are deliberately never committed). Content-compared like check_clean_tree."""
+    git("update-index", "-q", "--refresh", root=root)
+    r = git("diff", "--name-only", "HEAD", root=root)
+    if not r.ok:
+        return ["<git diff failed>"]
+    return [ln.strip() for ln in r.output.splitlines() if ln.strip() and not ln.strip().startswith(allowed)]

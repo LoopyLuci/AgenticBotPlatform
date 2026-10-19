@@ -916,10 +916,11 @@ def main() -> int:
     passed = release_guard.pipeline_already_passed(ROOT)
     if passed:
         print("AgenticBotPlatform local CI/CD pipeline\n"
-              f"  [ok]   already verified at {passed[:10]} by the release gate — nothing to re-run")
+              f"  [ok]   already verified at {passed[:10]} (release gate, or an earlier green deployed run of "
+              "this exact commit) — nothing to re-run")
         with recorder.start_run("pipeline", title="pre-push (already verified)") as run:
             run.decision(actor="release_gate", decision="skip the pipeline", rule="pipeline_already_passed",
-                         reason=f"commit {passed[:10]} was verified by the release gate")
+                         reason=f"commit {passed[:10]} was already verified")
         return 0
 
     # One pipeline/release at a time. A push made from inside a release is a
@@ -968,10 +969,17 @@ def _run_pipeline(args: argparse.Namespace) -> int:
     """Runs the pipeline inside a recorded run (see docs/cicd/README.md)."""
     global _RUN
     trigger = "pre-push" if os.environ.get("AGENTICBOTPLATFORM_LOCAL_PIPELINE_HOOK") == "1" else "manual"
+    release_guard.clear_pipeline_passed(ROOT)
+    head = release_guard.head_sha(ROOT)
     with recorder.start_run("pipeline", title=trigger) as run:
         _RUN = run
         try:
             code = _run_pipeline_body(args)
+            if code == 0 and not args.no_deploy:
+                try:
+                    _stamp_green_run(head)
+                except Exception as exc:                 # best effort: never turns a green run red
+                    print(f"  [!]    couldn't record the verified commit ({exc}) — a retried push re-runs the pipeline")
         except Exception as exc:                             # an unexpected crash in the pipeline itself
             tb = traceback.format_exc()
             snap = _machine_snapshot()
@@ -988,6 +996,23 @@ def _run_pipeline(args: argparse.Namespace) -> int:
             _RUN = recorder.Run(None, "pipeline")
         run.finish("ok" if code == 0 else "failed", "" if code == 0 else "pipeline failed")
         return code
+
+
+def _stamp_green_run(head: str) -> None:
+    """Remember that `head` went green and was deployed, so the push that follows (or its retry after GitHub
+    drops the SSH connection the ~25-min hook left idle) skips straight to the upload. Only when what was tested
+    IS that commit: HEAD unchanged since the run started and no tracked edits outside the local-only config/."""
+    if not head or release_guard.head_sha(ROOT) != head:
+        print("  [!]    HEAD moved during the run — not recording it as verified; the push will re-run the pipeline")
+        return
+    dirty = release_guard.tracked_changes_outside(ROOT)
+    if dirty:
+        print("  [!]    uncommitted tracked changes (" + ", ".join(dirty[:4]) + ") — not recording "
+              f"{head[:10]} as verified; the push will re-run the pipeline")
+        return
+    release_guard.record_pipeline_passed(ROOT, head)
+    print(f"  [ok]   recorded {head[:10]} as verified — a `git push` of this exact commit now uploads without "
+          "re-running the pipeline")
 
 
 def _run_pipeline_body(args: argparse.Namespace) -> int:

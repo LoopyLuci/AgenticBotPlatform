@@ -29,6 +29,9 @@ python -m pytest tests/test_<area>.py -q -p no:cacheprovider          # one area
 1. **`push == deploy`.** A git `pre-push` hook runs `scripts/local_pipeline.py`, which **stops the live
    instance, rebuilds, runs every gate, and redeploys** on success. Never push unless you intend to ship,
    and only with the owner's go. A failed gate aborts the push and restarts the old bundle — live is safe.
+   Preferred: `python scripts/local_pipeline.py` then `git push`. A green, deployed run stamps its exact
+   commit, so the push uploads at once instead of idling until GitHub drops the SSH connection. If a hooked
+   push drops after a green run, just `git push` again (never `--no-verify`). See `docs/cicd/README.md`.
 2. **Never run agent swarms unconfined.** Leaf workers must be OS-level confined (deny-by-default FS, no
    network) before they touch a real task; the owner approves first. See `bot/agent_runtime/` (sandbox,
    appcontainer, wsl_vm) and the confinement tests.

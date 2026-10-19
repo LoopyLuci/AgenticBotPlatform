@@ -480,6 +480,42 @@ def test_pipeline_is_skipped_only_for_the_exact_commit_that_passed(repo):
     assert g.pipeline_already_passed(repo, {g.PIPELINE_PASSED_ENV: sha}) is None
 
 
+def test_a_green_run_stamp_skips_only_that_exact_commit(repo):
+    sha = _git(repo, "rev-parse", "HEAD")
+    assert g.pipeline_already_passed(repo, {}) is None
+    stamp = g.record_pipeline_passed(repo, sha)
+    assert stamp.parent == repo / ".git"                      # in the git dir: never tracked, never pushed
+    assert g.pipeline_already_passed(repo, {}) == sha
+    (repo / "y.txt").write_text("y", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "a new commit")
+    assert g.pipeline_already_passed(repo, {}) is None        # a new commit always runs the full pipeline
+
+
+def test_clearing_the_stamp_forgets_the_pass(repo):
+    g.record_pipeline_passed(repo, _git(repo, "rev-parse", "HEAD"))
+    g.clear_pipeline_passed(repo)
+    assert g.pipeline_already_passed(repo, {}) is None
+    g.clear_pipeline_passed(repo)                             # no stamp: still fine
+
+
+def test_a_garbage_stamp_never_matches(repo):
+    (repo / ".git" / g.PIPELINE_STAMP).write_text("not-a-sha\n", encoding="utf-8")
+    assert g.pipeline_already_passed(repo, {}) is None
+
+
+def test_tracked_changes_outside_ignores_only_local_config(repo):
+    (repo / "config").mkdir()
+    (repo / "config" / "backends.yaml").write_text("a: 1\n", encoding="utf-8")
+    (repo / "code.py").write_text("x = 1\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "add files")
+    (repo / "config" / "backends.yaml").write_text("a: 2\n", encoding="utf-8")
+    assert g.tracked_changes_outside(repo) == []
+    (repo / "code.py").write_text("x = 2\n", encoding="utf-8")
+    assert g.tracked_changes_outside(repo) == ["code.py"]
+
+
 def test_rollback_restores_uncommitted_version_bumps(repo):
     _release_files(repo)
     base = _git(repo, "rev-parse", "HEAD")

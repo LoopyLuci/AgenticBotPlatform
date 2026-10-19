@@ -210,6 +210,25 @@ Diagnostics written to `logs/local_pipeline/`:
 > do **not** weaken a real assertion to get a green push. Environment-coupled tests (a test that assumes a
 > local server is **off**) should be made backend-agnostic instead — see `test_ai_run_reaches_the_real_inference_route`.
 
+### Pushing without GitHub dropping the connection (verified-commit stamp)
+
+git opens the SSH connection to GitHub **before** the pre-push hook runs, and the ~25-minute pipeline leaves
+it idle long enough for GitHub to close it: the run goes green and deploys, then the push fails with
+`Connection to github.com closed by remote host` and nothing reaches origin. To handle this, a full pipeline
+run that goes green **and deploys** records the exact HEAD it verified in `.git/abp-pipeline-passed` (in the
+git dir, never tracked). The pre-push hook already skips the run when `release_guard.pipeline_already_passed()`
+matches HEAD, and it now honours that stamp as well as the release gate's `ABP_PIPELINE_PASSED_SHA`. So:
+
+- **Preferred:** `python scripts/local_pipeline.py`, then `git push`. The push finds the stamp and uploads in
+  seconds.
+- **If a hooked `git push` drops after a green run:** just `git push` again. Never `--no-verify`.
+- The stamp is written only when HEAD didn't move during the run and there are no uncommitted tracked
+  changes outside the local-only `config/`. It is never written for `--no-deploy` (push == deploy). Every full
+  run clears it first, so a failed re-run never leaves an earlier pass behind. Any new commit gets the full
+  pipeline again.
+- After pulling hook changes, re-run `scripts/install_git_hooks.ps1`/`.sh`. `.git/hooks` is a copy, and a
+  stale one won't export `AGENTICBOTPLATFORM_LOCAL_PIPELINE_HOOK`, which scopes the run to the pushed range.
+
 ## Embedded installs (submodule / sidecar)
 
 When ABP runs with `ABP_HOME` set or `ABP_PROFILE=sidecar`:
