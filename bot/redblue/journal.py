@@ -17,9 +17,17 @@ from collections import Counter
 from pathlib import Path
 from typing import Callable, Iterator, Optional, Union
 
+from bot.envfile import PROJECT_ROOT
 from bot.redblue.schemas import Finding, Incident, SchemaError
 
 _Record = Union[Incident, Finding]
+
+# Where a live WatchDog's journal lives (and what the read-only dashboard summary reads). Runtime data, gitignored.
+DEFAULT_PATH = PROJECT_ROOT / "data" / "redblue" / "incidents.jsonl"
+
+
+def default_journal() -> "IncidentJournal":
+    return IncidentJournal(DEFAULT_PATH)
 
 
 class IncidentJournal:

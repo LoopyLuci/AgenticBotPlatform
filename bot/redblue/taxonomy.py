@@ -53,3 +53,24 @@ PROBES: tuple[VectorProbe, ...] = (
     VectorProbe("agent_shared_state_poison", VectorClass.AGENT_RUNTIME,
                 {"action": "coordination_lease_steal", "target": "board", "grant_result": "denied"}),
 )
+
+# Detector signature -> the vector class it guards, for grouping incidents by category (an Incident carries the
+# signature it matched, not a vector class). grant_denied_generic is a catch-all with no class of its own.
+SIGNATURE_VECTORS: dict[str, VectorClass | None] = {
+    "fs_escape_denied_sensitive": VectorClass.FILESYSTEM,
+    "fs_write_denied_outside_ws": VectorClass.FILESYSTEM,
+    "network_attempt_confined": VectorClass.NETWORK,
+    "job_breakaway": VectorClass.PROCESS,
+    "persistence_attempt": VectorClass.PROCESS,
+    "spawn_storm": VectorClass.RESOURCE,
+    "role_escalation_admin_tool": VectorClass.AGENT_RUNTIME,
+    "prompt_injection_cross_agent": VectorClass.AGENT_RUNTIME,
+    "shared_state_poison": VectorClass.AGENT_RUNTIME,
+    "grant_denied_generic": None,
+}
+
+
+def vector_class_of(signature: str | None) -> str:
+    """The vector-class value for a matched signature, or 'uncategorized' when it has none (or is unknown)."""
+    vc = SIGNATURE_VECTORS.get(signature or "")
+    return vc.value if vc is not None else "uncategorized"

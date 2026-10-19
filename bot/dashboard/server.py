@@ -1042,6 +1042,11 @@ def build_app() -> FastAPI:
 
     sentinel_api.register(app, _require_token_or_api_key, _require_token)
 
+    # Red/blue (EscapeArtist/WatchDog): a read-only summary of the persisted incident journal. Never executes containment.
+    from bot.dashboard import redblue_api
+
+    redblue_api.register(app, _require_token)
+
     # The model router: its decisions and reasoning, what it learned, training, and its editable policy.
     _area_routes("router", "router_api", _require_token_or_api_key, _require_token)
 
