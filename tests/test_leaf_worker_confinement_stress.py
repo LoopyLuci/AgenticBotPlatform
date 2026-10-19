@@ -4,9 +4,11 @@ orphans (the process-explosion guard). Mirrors test_sandbox_offline.py's real-ru
 command runs for real on Windows through the confined override. Bounded on purpose (short
 timeouts, few processes) so it is safe in CI."""
 import asyncio
+import ctypes
 import os
 import pathlib
 import shutil
+import string
 import sys
 import tempfile
 import time
@@ -63,7 +65,13 @@ def test_write_into_user_profile_ssh_is_denied(ws):
 
 @windows_only
 def test_write_to_other_drive_root_is_denied(ws):
-    for drive in ("D:/", "C:/"):
+    # The system drive plus every other existing drive root, found at run time (no drive letters hard-coded:
+    # the public-repo leak guard treats them as machine paths). At least as strict as the fixed pair it replaces.
+    system = os.environ.get("SystemDrive", "C:").rstrip("\\/") + "/"
+    fixed = 3                                                  # DRIVE_FIXED: skip network/optical/removable drives
+    others = [f"{d}:/" for d in string.ascii_uppercase
+              if f"{d}:/" != system and ctypes.windll.kernel32.GetDriveTypeW(f"{d}:\\") == fixed]
+    for drive in [system, *others]:
         target = pathlib.Path(drive) / f"PWN_{uuid.uuid4().hex}.txt"
         sh(ws, f'cmd /c echo x> "{target}"')
         assert not target.exists()

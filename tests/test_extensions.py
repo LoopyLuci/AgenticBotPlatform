@@ -72,6 +72,9 @@ def private(tmp_path, monkeypatch):
     monkeypatch.setenv(extensions.PRIVATE_DIR_ENV, str(d))
     extensions.load_all(force=True)
     yield d
+    # Restore ABP_PRIVATE_DIR BEFORE the reload: reloading with the tmp folder still set re-cached this test's
+    # extensions (e.g. "greedy"), and every later test on the same xdist worker saw them in /api/extensions.
+    monkeypatch.undo()
     extensions.load_all(force=True)
 
 
