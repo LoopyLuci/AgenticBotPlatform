@@ -15,6 +15,8 @@ turns the feed off.
 """
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import logging
 import os
 import queue
@@ -32,7 +34,20 @@ _lock = threading.Lock()
 _queue: "queue.Queue[tuple[dict, str]]" = queue.Queue(maxsize=QUEUE_MAX)
 _wd: Any = None
 _thread: Optional[threading.Thread] = None
-_stats = {"received": 0, "observed": 0, "dropped": 0, "errors": 0, "incidents": 0, "started": 0.0}
+_stats = {"received": 0, "observed": 0, "dropped": 0, "errors": 0, "incidents": 0, "suppressed": 0, "started": 0.0}
+# A deliberate self-test (the conductor's confinement probes try a loopback connection and an outside read ON PURPOSE) is not
+# an escape: inside `self_test()` records are counted as suppressed instead of reaching the detector. Counted, never hidden.
+_self_test: contextvars.ContextVar[str] = contextvars.ContextVar("redblue_self_test", default="")
+
+
+@contextlib.contextmanager
+def self_test(why: str):
+    """Mark the calls made inside as a known self-test (e.g. "confinement probe"): counted as suppressed, not detected."""
+    token = _self_test.set(why or "self-test")
+    try:
+        yield
+    finally:
+        _self_test.reset(token)
 
 
 def enabled() -> bool:
@@ -96,6 +111,10 @@ def emit(raw: dict, source: str) -> None:
     """Hand one record to the monitor. Never raises, never blocks."""
     try:
         if not enabled():
+            return
+        if _self_test.get():
+            with _lock:
+                _stats["suppressed"] += 1
             return
         _ensure_thread()
         with _lock:

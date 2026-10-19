@@ -106,3 +106,25 @@ def test_the_summary_shows_the_live_feed(on, monkeypatch, temp_db):
     body = TestClient(build_app()).get("/api/redblue/summary", headers={"X-Dashboard-Token": "test-token"}).json()
     assert body["total"] >= 1 and body["live"]["mode"] == "propose-only" and body["live"]["handlers"] == 0
     assert body["live"]["observed"] >= 1 and body["dry_run"] is True
+
+
+def test_a_self_test_is_counted_not_detected(on):
+    with live.self_test("unit"):
+        live.tool_call("run_shell", {"command": "curl.exe http://127.0.0.1:9/"})
+    live.tool_call("run_shell", {"command": "curl.exe http://127.0.0.1:9/"})       # outside it: detected as before
+    assert live.drain(5)
+    st = live.stats()
+    assert st["suppressed"] == 1 and st["received"] == 1 and len(on.incidents()) == 1
+
+
+@pytest.mark.skipif(__import__("os").name != "nt", reason="the confinement probes need a Windows AppContainer")
+def test_the_conductor_s_confinement_probe_is_not_an_escape(on, tmp_path):
+    """Run 5 of the LF5 measurement journaled the probe's deliberate loopback attempt as network_attempt_confined."""
+    from bot.conductor import confine
+
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    confine.verify(ws, extra_paths=confine.sandbox_paths())
+    assert live.drain(10)
+    st = live.stats()
+    assert st["suppressed"] > 0 and st["received"] == 0 and on.incidents() == []

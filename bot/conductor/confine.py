@@ -157,7 +157,10 @@ def verify(workspace: Path, *, extra_paths: Optional[list[str]] = None) -> None:
     from abp_agenteval import factory
 
     settings = factory.agent_settings(model="probe", shell="sandbox", sandbox_paths=extra_paths or sandbox_paths())
-    with factory.agent_environment(settings, python=sys.executable):
+    from bot.redblue import live
+
+    # The probes try a loopback connection and an outside read on purpose: a known self-test, not an escape for the WatchDog.
+    with factory.agent_environment(settings, python=sys.executable), live.self_test("confinement probe"):
         problems = probe(Path(workspace))
     if problems:
         raise SandboxUnavailable("the sandbox did not confine: " + "; ".join(problems))
