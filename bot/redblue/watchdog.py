@@ -4,21 +4,27 @@ ingest raw telemetry -> normalize to an Event -> run the rule detector -> record
 PROPOSED reversible containment. Side-effect-free by default: observe() classifies and records but executes
 nothing unless a containment handler is explicitly wired, and even then only the reversible allowlist — a
 durable code patch is never auto-applied (that path is human-gated; see docs/red-blue-escapeartist-watchdog.md).
-The slow remediator/patcher is a separate, later component.
+The slow remediator/patcher is a separate, later component. Give it an IncidentJournal (journal=...) and every
+incident it records is also appended there; a journal write failure is logged and never stops monitoring.
 """
 from __future__ import annotations
 
+import logging
 from typing import Callable, Optional
 
 from bot.redblue.detector import Detector
 from bot.redblue.events import Event, EventFeed
+from bot.redblue.journal import IncidentJournal
 from bot.redblue.schemas import Incident
+
+logger = logging.getLogger("bot.redblue.watchdog")
 
 
 class WatchDog:
     def __init__(self, detector: Optional[Detector] = None, *, feed: Optional[EventFeed] = None,
                  max_incidents: int = 1000, on_incident: Optional[Callable[[Incident], None]] = None,
-                 handlers: Optional[dict[str, Callable[[Incident], str]]] = None):
+                 handlers: Optional[dict[str, Callable[[Incident], str]]] = None,
+                 journal: Optional[IncidentJournal] = None):
         self.detector = detector or Detector()
         self.feed = feed or EventFeed()
         self.incidents: list[Incident] = []
@@ -27,12 +33,19 @@ class WatchDog:
         # containment_action -> callable(incident)->str. Wired later and gated to the reversible allowlist;
         # empty by default (propose-only), so the monitor never changes live state on its own.
         self.handlers = handlers or {}
+        self.journal = journal
 
     def _record(self, inc: Optional[Incident]) -> Optional[Incident]:
         if inc is None:
             return None
         self.incidents.append(inc)
         del self.incidents[:-self.max_incidents]
+        if self.journal is not None:
+            try:
+                self.journal.record(inc)
+            except Exception:                     # a full disk or bad path must never break monitoring
+                logger.warning("WatchDog: could not persist incident %s to %s", inc.matched_signature,
+                               getattr(self.journal, "path", "?"), exc_info=True)
         if self.on_incident:
             try:
                 self.on_incident(inc)

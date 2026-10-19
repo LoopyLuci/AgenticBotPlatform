@@ -25,6 +25,8 @@ data/support_bot_models/
 # whatever auth/session tokens that account has) for an isolated
 # hermes_gateway-backed bot instance. Never committed, same as data/*.db.
 data/hermes_homes/
+# The red/blue IncidentJournal (bot/redblue/journal.py): runtime incident records, never source.
+data/redblue/
 logs/*.log
 logs/local_pipeline/
 

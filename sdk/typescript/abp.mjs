@@ -3253,6 +3253,15 @@ export const operations = {
    "refresh"
   ]
  },
+ "GET /api/redblue/summary": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/redblue/summary",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
  "GET /api/router/decisions": {
   "body": false,
   "method": "GET",
@@ -14648,6 +14657,15 @@ export const operations = {
   "path": "/api/shortcuts",
   "path_params": [],
   "query_params": []
+ },
+ "redblue_summary_api_redblue_summary_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/redblue/summary",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
  },
  "refresh_catalog_api_models_refresh_post": {
   "body": false,
