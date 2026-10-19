@@ -42,6 +42,27 @@ def test_drive_agent_offers_the_codeintel_tools_to_the_conductor_only(tmp_path, 
     assert set(small_model.CONDUCTOR_EXTRA) == set(navctx.tool_names())
 
 
+def test_the_offered_navigation_tools_are_also_permitted(tmp_path, monkeypatch):
+    """They used to be offered but denied by the locked permission list (every LF5 run: 0 navigation calls)."""
+    seen = []
+
+    async def fake_run_turn(prompt, **kw):
+        rules = config._data["native_agent"]["permissions"]["rules"]
+        seen.append(({r["tool"] for r in rules if r["decision"] == "deny"}, {r["tool"] for r in rules if r["decision"] == "allow"}))
+        return SimpleNamespace(ok=True, reply="", tool_calls=[], tokens=0, iterations=0, stopped="", error=None)
+
+    from abp_run import core
+
+    monkeypatch.setattr(core, "run_turn", fake_run_turn)
+    for extra in (None, navctx.tool_names()):
+        factory.drive_agent("p", tmp_path, object(), "m", timeout_s=5, max_iterations=2, extra_tools=extra)
+    (plain_deny, _), (cond_deny, cond_allow) = seen
+    nav = set(navctx.tool_names())
+    assert nav <= plain_deny                                       # the bench's own run still denies them
+    assert not nav & cond_deny and nav <= cond_allow               # the conductor's workers may use what they are offered
+    assert {"run_shell", "web_fetch"} & cond_deny == ({"run_shell", "web_fetch"} & plain_deny)   # nothing else opened up
+
+
 def test_worker_prompt_has_a_capped_pack_and_vault_block_and_a_retry_reuses_it(repo, tmp_path, monkeypatch):
     monkeypatch.setitem(config._data, "context_vault", {"enabled": True})
     vault = tcv.make(tmp_path / "v")

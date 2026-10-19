@@ -302,14 +302,18 @@ def small_model_overlay(mode: str) -> dict:
 
 
 def agent_settings(*, model: str, context: int = 0, timeout_s: float = 900, max_iterations: int = 60,
-                   shell: str = "none", sandbox_paths: Optional[list[str]] = None, small_model: str = "on") -> dict:
+                   shell: str = "none", sandbox_paths: Optional[list[str]] = None, small_model: str = "on",
+                   extra_tools: Optional[list[str]] = None) -> dict:
     """The `native_agent` overlay a bench run uses (the confined dev swarm's shape). `shell` is "none" (no shell tool at
-    all) or "sandbox" (run_shell, inside the windows_job sandbox with no network; `sandbox_paths` readable)."""
+    all) or "sandbox" (run_shell, inside the windows_job sandbox with no network; `sandbox_paths` readable). `extra_tools`
+    (the conductor's read-only codeintel and vault-recall tools) are allowed too: offered but denied, they were dead weight."""
     from bot.agent_runtime import tools
 
-    allowed = set(BASE_TOOLS) | (set(SHELL_TOOLS) if shell == "sandbox" else set(TEST_TOOLS))
+    extra = set(extra_tools or [])
+    allowed = set(BASE_TOOLS) | (set(SHELL_TOOLS) if shell == "sandbox" else set(TEST_TOOLS)) | extra
     names = sorted({s["name"] for s in tools.all_tool_schemas()})
     rules = [{"decision": "deny", "tool": n, "note": "not a bench tool"} for n in names if n not in allowed]
+    rules += [{"decision": "allow", "tool": n} for n in sorted(extra)]
     if shell == "sandbox":
         rules += [{"decision": "allow", "tool": "run_shell", "match": p} for p in SHELL_ALLOW]
     else:
@@ -365,7 +369,7 @@ def drive_agent(prompt: str, ws: Path, transport: Any, model: str, *, timeout_s:
     from abp_run import core
 
     settings = agent_settings(model=model, context=context, timeout_s=timeout_s, max_iterations=max_iterations, shell=shell,
-                              sandbox_paths=sandbox_paths, small_model=small_model)
+                              sandbox_paths=sandbox_paths, small_model=small_model, extra_tools=extra_tools)
     allowed = frozenset(BASE_TOOLS) | (frozenset(SHELL_TOOLS) if shell == "sandbox" else frozenset(TEST_TOOLS))
     if small_model == "on":
         # A turn that names its tools (allowed_tools) is sent exactly those: small-model mode's own tool filter does not

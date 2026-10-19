@@ -93,6 +93,8 @@ config) to the Python files the branch changed and commits them on the branch as
 (`conductor.autofix_lint`, default on). An unused import, the commonest local-model slip, then costs no review round; anything
 ruff cannot fix safely still fails the `ruff` check below. The worker's prompt also names the exact test file its proof runs, asks
 for no unused imports, and says how to read code with the navigation tools (outline, read_symbol, find_symbol) instead of whole files.
+Those tools (and context_recall) are **permitted** as well as offered: until 2026-10-19 the bench's locked permission list denied
+every tool outside its own set, so the conductor's workers were offered navigation tools they could not use (0 calls in every run).
 
 `abp conductor review --repo R --base main --head BRANCH` (exit 1 on a rejection), `POST /api/conductor/review`, MCP
 `conductor_review`. Static checks first, the same answer every time; every finding names the rule, the file and line, and the
