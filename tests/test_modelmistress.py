@@ -196,6 +196,21 @@ def test_found_from_the_module_control_file(hub, tmp_path, monkeypatch):
     assert harness.status()["service"]["version"] == "0.1.0"
 
 
+def test_the_modules_page_finds_the_hub_the_supervisor_started_in_the_mm_home(hub, tmp_path, monkeypatch):
+    """The supervisor starts the hub with --home at the MM home, so its control file is there, not in the module's {data}:
+    /api/modules/modelmistress/operations and /call said "not running" while it ran."""
+    from bot.modules import client as module_client
+    from bot.modules import registry
+
+    monkeypatch.setattr(registry, "data_dir", lambda m: tmp_path / "empty-module-data")
+    home = tmp_path / "mmhome"
+    home.mkdir()
+    monkeypatch.setenv("MM_HOME", str(home))
+    (home / "control.json").write_text(json.dumps({"url": hub.url, "token": OWNER, "pid": os.getpid(), "api": 1}), encoding="utf-8")
+    found = module_client.find(registry.get("modelmistress"))
+    assert found is not None and found.url == hub.url.rstrip("/") and found.token == OWNER
+
+
 def test_a_machine_without_the_module_hub_is_not_an_error(monkeypatch, tmp_path):
     from bot.modules import registry
 

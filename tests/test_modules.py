@@ -96,6 +96,10 @@ def test_env_and_config_choose_the_checkout(tmp_path, monkeypatch):
     monkeypatch.setattr(registry, "_cfg", lambda: {"fake-mod": {"path": str(tmp_path / "cfg")}, "build_cache": str(tmp_path / "cache")})
     assert registry.install_dir(m) == tmp_path / "cfg"
     assert registry.target_dir(m) == tmp_path / "cache" / "fake-mod"
+    # a module's own target wins over the build cache (ModelMistress's engine build needs a short path)
+    monkeypatch.setattr(registry, "_cfg", lambda: {"fake-mod": {"target": str(tmp_path / "t")}, "build_cache": str(tmp_path / "cache")})
+    assert registry.target_dir(m) == tmp_path / "t"
+    assert registry.expand_cmd(m, ["{target}/release/x"])[0].startswith(str(tmp_path / "t"))
     monkeypatch.setattr(registry, "_cfg", lambda: {})
     assert registry.install_dir(m) == registry.abp_root() / "data" / "modules" / "FakeMod"
 

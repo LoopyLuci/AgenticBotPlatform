@@ -56,6 +56,8 @@ its own hub.
 modules:
   build_cache: /srv/abp-build          # cargo target dirs on fast storage, one folder per module
   brainbuilder: {path: /srv/src/BrainBuilder}
+  modelmistress: {target: /srv/mm}   # this module's own target dir (wins over build_cache); on Windows its bundled
+                                     # llama.cpp build needs a short one (the deepest file must stay under ~243 chars)
   wrightspace: {enabled: false}      # hide a module
   extra:
     - {id: my-tool, name: My Tool, repo: https://github.com/me/my-tool.git, marker: [Cargo.toml]}

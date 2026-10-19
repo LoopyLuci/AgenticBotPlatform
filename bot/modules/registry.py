@@ -233,8 +233,13 @@ def data_dir(m: Manifest) -> Path:
 
 
 def target_dir(m: Manifest) -> Path:
-    """The cargo target dir: <build_cache>/<id> when modules.build_cache is set (fast storage), else the workspace's."""
-    cache = os.environ.get("ABP_MODULE_BUILD_CACHE") or _cfg().get("build_cache")
+    """The cargo target dir: modules.<id>.target when set (e.g. a short path: ModelMistress's bundled llama.cpp build fails
+    when its deepest file passes ~243 characters), else <build_cache>/<id> when modules.build_cache is set (fast storage),
+    else the workspace's."""
+    own = _mod_cfg(m.id).get("target")
+    if own:
+        return Path(str(own)).expanduser()
+    cache =os.environ.get("ABP_MODULE_BUILD_CACHE") or _cfg().get("build_cache")
     if cache:
         return Path(str(cache)).expanduser() / m.id
     return install_dir(m) / m.subdir / "target" if m.subdir else install_dir(m) / "target"

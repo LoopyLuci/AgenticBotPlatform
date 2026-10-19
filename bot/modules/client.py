@@ -37,11 +37,29 @@ def control_file(m: Manifest) -> Optional[Path]:
     return Path(registry.expand(m, m.hub.control_file)) if m.hub else None
 
 
+def _control_files(m: Manifest) -> list[Path]:
+    own = control_file(m)
+    if own is None:
+        return []
+    if m.id == "modelmistress":
+        # bot/modelmistress/supervisor.py starts this hub with --home at the shared MM home, not the manifest's {data}, so
+        # its control file is there (the Modules page's operations and calls said "not running" while it ran).
+        from bot.modelmistress import client as mm_client
+
+        return [mm_client.mm_home() / "control.json", own]
+    return [own]
+
+
 def find(m: Manifest, timeout: float = 2.0) -> Optional[Hub]:
     """The module's running hub, or None (no control file, nobody answering, or a stale file from a hub that died)."""
-    path = control_file(m)
-    if path is None:
-        return None
+    for path in _control_files(m):
+        hub = _from_file(m, path, timeout)
+        if hub is not None:
+            return hub
+    return None
+
+
+def _from_file(m: Manifest, path: Path, timeout: float) -> Optional[Hub]:
     try:
         d = json.loads(path.read_text(encoding="utf-8"))
         url, token = str(d["url"]).rstrip("/"), str(d["token"])
