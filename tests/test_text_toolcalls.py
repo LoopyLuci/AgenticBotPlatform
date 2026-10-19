@@ -457,6 +457,7 @@ def test_props_through_the_hub(hub, conf):
 
 
 def test_resolution_order_hub_then_config_then_8192(hub, conf):
+    warm()                     # the hub's real figure must be known first (window_for never waits for it: under load it raced)
     conf["context_windows"] = {"qwen3-8b": 12000}
     assert cw.window_for("modelmistress/qwen3-8b") == 12000      # config is the smaller: kept
     conf["context_windows"] = {"qwen3-8b": 100000}

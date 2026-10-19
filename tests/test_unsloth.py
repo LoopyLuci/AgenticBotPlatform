@@ -389,6 +389,9 @@ def test_the_page_uploads_through_the_api(studio, monkeypatch):
     h = {"X-Dashboard-Token": "t" * 48}
     body = {"operation": "upload", "files": {"file": [{"name": "x.jsonl", "data": base64.b64encode(b"abc").decode()}]}}
     assert c.post("/api/unsloth/upload", json=body).status_code == 401
-    assert c.post("/api/unsloth/upload", headers=h, json=body).json()["result"]["sizes"] == [3]
+    up = c.post("/api/unsloth/upload", headers=h, json=body)
+    # Flaked twice under the pipeline's parallel load (KeyError 'result'), never alone: say what came back instead.
+    assert up.status_code == 200 and "result" in up.json(), f"{up.status_code}: {up.text[:500]}"
+    assert up.json()["result"]["sizes"] == [3]
     assert c.post("/api/unsloth/upload", headers=h, json={"operation": "upload", "files": {"file": [{"name": "x", "data": "!!"}]}}).status_code == 400
     assert c.post("/api/unsloth/upload", headers=h, json={"operation": "upload", "files": {}}).status_code == 400
