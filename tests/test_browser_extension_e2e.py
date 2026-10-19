@@ -61,67 +61,80 @@ def env():
         pytest.skip("Microsoft Edge or Google Chrome is required")
     subprocess.run([shutil.which("node"), "esbuild.config.mjs"], cwd=EXT, check=True, capture_output=True)
 
+    # Teardown runs even when setup fails (e.g. the service worker never appears): a sync Playwright left
+    # unstopped keeps its event loop marked running on this thread, and the un-undone monkeypatch keeps the
+    # test DB + DASHBOARD_TOKEN — together they break every later test on the same xdist worker.
     mp = pytest.MonkeyPatch()
-    tmp = Path(tempfile.mkdtemp())
-    mp.setattr(db, "DB_PATH", tmp / "e2e.db")
-    mp.setattr(db, "_conn", None)
-    db.get_conn()
-    db.init_db()
-    mp.setenv("DASHBOARD_TOKEN", TOKEN)
-    bb.bridge.connections.clear()
-    bb.pairing = bb.Pairing()
+    server = site = pw = ctx = None
+    try:
+        tmp = Path(tempfile.mkdtemp())
+        mp.setattr(db, "DB_PATH", tmp / "e2e.db")
+        mp.setattr(db, "_conn", None)
+        db.get_conn()
+        db.init_db()
+        mp.setenv("DASHBOARD_TOKEN", TOKEN)
+        bb.bridge.connections.clear()
+        bb.pairing = bb.Pairing()
 
-    abp_port = _free_port()
-    server = uvicorn.Server(uvicorn.Config(build_app(), host="127.0.0.1", port=abp_port, log_level="error"))
-    threading.Thread(target=server.run, daemon=True).start()
+        abp_port = _free_port()
+        server = uvicorn.Server(uvicorn.Config(build_app(), host="127.0.0.1", port=abp_port, log_level="error"))
+        threading.Thread(target=server.run, daemon=True).start()
 
-    site_port = _free_port()
-    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(SITE))
-    handler.log_message = lambda *a, **k: None  # type: ignore[attr-defined]
-    site = http.server.ThreadingHTTPServer(("127.0.0.1", site_port), handler)
-    threading.Thread(target=site.serve_forever, daemon=True).start()
-    for _ in range(100):
-        try:
-            socket.create_connection(("127.0.0.1", abp_port), timeout=0.2).close()
-            break
-        except OSError:
-            time.sleep(0.1)
-
-    events: list[tuple[str, dict]] = []
-    bb.bridge.listen(lambda name, data: events.append((name, data)))
-
-    pw = playwright_sync.sync_playwright().start()
-    ctx = pw.chromium.launch_persistent_context(
-        tempfile.mkdtemp(), channel=channel, headless=False,
-        args=["--headless=new", f"--disable-extensions-except={DIST}", f"--load-extension={DIST}", "--no-first-run"])
-    sw = ctx.service_workers[0] if ctx.service_workers else ctx.wait_for_event("serviceworker", timeout=20000)
-    assert EXT_ID in sw.url
-    time.sleep(1.5)                                         # the extension opens its own options page on first install
-    opts_url = f"chrome-extension://{EXT_ID}/options.html"
-    ext_page = next((pg for pg in ctx.pages if pg.url.startswith(opts_url)), None)
-    if ext_page is None:
-        ext_page = ctx.new_page()
-        for attempt in range(3):
+        site_port = _free_port()
+        handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(SITE))
+        handler.log_message = lambda *a, **k: None  # type: ignore[attr-defined]
+        site = http.server.ThreadingHTTPServer(("127.0.0.1", site_port), handler)
+        threading.Thread(target=site.serve_forever, daemon=True).start()
+        for _ in range(100):
             try:
-                ext_page.goto(opts_url)
+                socket.create_connection(("127.0.0.1", abp_port), timeout=0.2).close()
                 break
-            except Exception:                               # "interrupted by another navigation" while the extension is still starting
-                time.sleep(1.0)
+            except OSError:
+                time.sleep(0.1)
 
-    class Env:
-        abp = f"http://127.0.0.1:{abp_port}"
-        site = f"http://127.0.0.1:{site_port}"
-        site_alt = f"http://localhost:{site_port}"
-        context = ctx
-        opts = ext_page
-        evts = events
+        events: list[tuple[str, dict]] = []
+        bb.bridge.listen(lambda name, data: events.append((name, data)))
 
-    yield Env
-    ctx.close()
-    pw.stop()
-    server.should_exit = True
-    site.shutdown()
-    mp.undo()
+        pw = playwright_sync.sync_playwright().start()
+        ctx = pw.chromium.launch_persistent_context(
+            tempfile.mkdtemp(), channel=channel, headless=False,
+            args=["--headless=new", f"--disable-extensions-except={DIST}", f"--load-extension={DIST}", "--no-first-run"])
+        sw = ctx.service_workers[0] if ctx.service_workers else ctx.wait_for_event("serviceworker", timeout=20000)
+        assert EXT_ID in sw.url
+        time.sleep(1.5)                                     # the extension opens its own options page on first install
+        opts_url = f"chrome-extension://{EXT_ID}/options.html"
+        ext_page = next((pg for pg in ctx.pages if pg.url.startswith(opts_url)), None)
+        if ext_page is None:
+            ext_page = ctx.new_page()
+            for attempt in range(3):
+                try:
+                    ext_page.goto(opts_url)
+                    break
+                except Exception:                           # "interrupted by another navigation" while the extension is still starting
+                    time.sleep(1.0)
+
+        class Env:
+            abp = f"http://127.0.0.1:{abp_port}"
+            site = f"http://127.0.0.1:{site_port}"
+            site_alt = f"http://localhost:{site_port}"
+            context = ctx
+            opts = ext_page
+            evts = events
+
+        yield Env
+    finally:
+        if ctx is not None:
+            try:
+                ctx.close()
+            except Exception:  # noqa: BLE001 - the browser may already be gone; pw.stop() must still run
+                pass
+        if pw is not None:
+            pw.stop()
+        if server is not None:
+            server.should_exit = True
+        if site is not None:
+            site.shutdown()
+        mp.undo()
 
 
 def rpc(env, method, params=None, **extra):
