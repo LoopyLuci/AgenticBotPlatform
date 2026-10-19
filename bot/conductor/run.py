@@ -23,7 +23,6 @@ import json
 import logging
 import os
 import sys
-import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
@@ -64,14 +63,16 @@ class RunReport:
         return dict(self.__dict__)
 
 
-async def run_proof(spec: dict, worktree: str, timeout_s: Optional[int] = None) -> Optional[reviewer.Finding]:
+async def run_proof(spec: dict, worktree: str, timeout_s: Optional[int] = None, *, base: str = "",
+                    env: Optional[Callable[[], Any]] = None) -> Optional[reviewer.Finding]:
     """Check a task's proof and run it in the worker's worktree through the sandbox (conductor/proof.py). None when it passes; a
-    finding when it is not an allowed proof (never executed) or fails."""
+    finding when it is not an allowed proof (never executed) or fails. `base`: where the branch began (for proof.CHANGED_TESTS);
+    `env`: the worker's agent environment, so the proof runs with the interpreter and sandbox grants the worker had."""
     cmd = str((spec.get("proof") or {}).get("command") or "").strip()
     if not cmd:
         return None
     try:
-        ok, output = await proof.run(cmd, Path(worktree), timeout_s)
+        ok, output = await proof.run(cmd, Path(worktree), timeout_s, base=base, env=env)
     except proof.ProofRefused as exc:
         return reviewer.Finding("proof", f"proof not allowed: {exc}", kind="proof", text=cmd)
     except Exception as exc:  # noqa: BLE001 - a proof that cannot run does not pass
@@ -82,11 +83,13 @@ async def run_proof(spec: dict, worktree: str, timeout_s: Optional[int] = None) 
 class Conductor:
     def __init__(self, repo: Any, worker: Worker, *, board: Any = None, base: Optional[str] = None, repo_name: str = "abp",
                  model_complete: Optional[reviewer.ModelCall] = None, suite: Optional[list[str]] = None,
-                 rerun: Optional[list[str]] = None, workdir: Optional[Path] = None, run_proofs: bool = True, workers: int = 0):
+                 rerun: Optional[list[str]] = None, workdir: Optional[Path] = None, run_proofs: bool = True, workers: int = 0,
+                 model: str = ""):
         self.repo = Path(repo)
         self.worker = worker
         self.board = board
         self.cfg = conductor_pkg.settings()
+        self.model = model                                     # the planner's model (`--model`), ahead of conductor.model
         self.base = base or self.cfg["base_branch"]
         self.repo_name = repo_name
         self.model_complete = model_complete
@@ -111,7 +114,7 @@ class Conductor:
             extra = await asyncio.to_thread(navctx.planning_context, self.repo, planner.goal_from(goal, self.repo)[0], self.cfg)
         context = chr(10).join(c for c in (context, extra) if c)
         return await planner.make_plan(goal, repo=self.repo_name, worktree_root=str(root).replace("\\", "/"), context=context,
-                                       model=self.cfg["model"], max_tasks=int(self.cfg["max_tasks"]), root=self.repo, replan=replan,
+                                       model=self.model or self.cfg["model"], max_tasks=int(self.cfg["max_tasks"]), root=self.repo, replan=replan,
                                        context_cap=int(cctx["plan_context_chars"]))
 
     # ------------------------------------------------------------------ run
@@ -161,6 +164,18 @@ class Conductor:
                                       gate=list(self.cfg["gate_command"]) or None, gate_timeout_s=float(self.cfg["gate_timeout_s"]))
         return integ.integrate(branches, plan_id=plan_id, tasks=tasks or []).to_dict()
 
+    def _proof_env(self) -> Optional[Callable[[], Any]]:
+        """The real worker's agent environment for running a proof (its shell mode, the conductor's interpreter first on PATH, and
+        for `sandbox` the same read grants), or None for a worker without one (scripted test workers: the proof runs as configured)."""
+        shell = getattr(self.worker, "shell", "")
+        if shell not in ("none", "sandbox"):
+            return None
+        from abp_agenteval import factory
+
+        paths = (getattr(self.worker, "sandbox_paths", None) or confine.sandbox_paths()) if shell == "sandbox" else None
+        settings = factory.agent_settings(model="proof", shell=shell, sandbox_paths=paths)
+        return lambda: factory.agent_environment(settings, python=sys.executable)
+
     # ------------------------------------------------------- one task's work
     async def _call(self, _instance: int, task_id: str) -> str:
         plan = self._plan
@@ -187,7 +202,8 @@ class Conductor:
             if result.get("tool_calls") or result.get("tokens"):          # the confined runner's audit trail: every tool call
                 store.add_tool_calls(plan.id, task.key, attempt, result.get("tool_calls") or [],
                                      f"tokens={result.get('tokens', 0)} iterations={result.get('iterations', 0)} "
-                                     f"stopped={result.get('stopped', '')} shell={result.get('shell', '')}")
+                                     f"stopped={result.get('stopped', '')} shell={result.get('shell', '')}",
+                                     tokens=int(result.get("tokens", 0) or 0))
             if result.get("empty"):                                       # nothing to review: the agent produced no change
                 stuck += 1
                 feedback = ("Your previous attempt changed nothing" + (" (it ran out of steps or time)" if result.get("stopped") else "") +
@@ -211,7 +227,7 @@ class Conductor:
                 why = proof.check(cmd)
                 bad = reviewer.Finding("proof", f"proof not allowed: {why}", kind="proof", text=cmd) if why else None
                 if bad is None and rep.accepted and result.get("worktree"):
-                    bad = await run_proof(spec, str(result["worktree"]))
+                    bad = await run_proof(spec, str(result["worktree"]), base=review_base, env=self._proof_env())
                 if bad:
                     rep.findings.append(bad)
                     rep.checks["proof"] = "fail"
@@ -344,7 +360,7 @@ class AgentLoopWorker:
     `drive` is the call that runs the agent (tests replace it); the default uses abp_agenteval.factory.drive_agent, the headless
     loop LF2 benchmarks, with small-model mode."""
 
-    _agent_lock = threading.Lock()      # the agent's config overlay and ephemeral environment are process-global: one agent turn at a time
+    _agent_lock = proof.ENV_LOCK        # the agent's config overlay and ephemeral environment are process-global: one turn (or proof) at a time
 
     def __init__(self, repo: Any, *, model: str = "", timeout_s: float = 900, max_iterations: int = 60,
                  drive: Optional[Callable[..., Awaitable[Any]]] = None, shell: str = "none", sandbox_paths: Optional[list[str]] = None,
@@ -396,7 +412,7 @@ class AgentLoopWorker:
         before = await asyncio.to_thread(navctx.usage, wt) if pack else {}
         prompt = (f"Task: {spec['title']}\n\n{spec.get('detail') or ''}\n\nOverall goal: {spec['goal']}\n"
                   f"Files likely involved: {', '.join(spec.get('files') or []) or '(find them)'}\n"
-                  f"It is done when this passes: {(spec.get('proof') or {}).get('command', '(the tests)')}\n"
+                  f"It is done when this passes: {proof.describe((spec.get('proof') or {}).get('command', '')) or '(the tests)'}\n"
                   "Rules: never remove or rename an existing feature (command, flag, route, tool, page, setting); do not delete files; "
                   "add or update a test for what you change; keep the change small." +
                   (f"\n\nCode context for this task (pre-fetched; use outline / read_symbol / find_symbol for more instead of reading "

@@ -55,7 +55,11 @@ worktree is writable as a control). Any leak and the worker does not start. `tes
 and checks they are not vacuous (the same probes against an open shell find the leaks).
 
 **Audit.** Every tool call the agent made, with tokens, iterations and why it stopped, is saved per task attempt
-(`store.list_tool_calls(plan_id, task_key)`; table `toolcalls`).
+(`store.list_tool_calls(plan_id, task_key)`; table `toolcalls`, with a `tokens` column). LF5's digest counts those tokens
+(`store.worker_tokens`) in its factory accounting: the headless worker turns write no agent trace.
+
+`abp conductor run --model REF` uses that local model for the **planner** as well as the workers, and `conductor run`, `unblock` and
+`review` run in-process, so they need no dashboard token.
 
 **Parallel workers.** `Conductor(..., workers=N)` / `--workers N`: N workers pull with `next` (heartbeated leases, each task in its
 own worktree and branch, scopes keep two tasks off the same file). The agent's turn itself holds a process-wide lock (its config
@@ -69,7 +73,13 @@ or `ruff check <paths>` (`bot/conductor/proof.py`). Test targets are validated b
 (`run_tests.clean_targets`: no shell syntax, no options, no `..`, nothing outside the worktree) and run through the same sandbox
 runner (`sandbox.start`, its timeout and tree-kill). Anything else (`python -c`, `cmd`, `powershell`, `;`/`&&`, outside paths) is
 refused when the plan is made (the model is asked to fix it) and again at review time as `proof not allowed: <reason>`; it is never
-started.
+started. A third, symbolic proof, `changed-tests` (`proof.CHANGED_TESTS`, what the deterministic fallback plan uses), runs the test
+files the task's branch added or changed since its start; a task that touched no test file fails it. (The fallback used to be the
+whole suite, which can never pass inside the no-network sandbox; the integrator runs the full suite anyway.)
+
+A proof runs **in the worker's own agent environment**: the conductor's interpreter first on PATH and, for `--shell sandbox`, the
+same read grants (the venv), under the same process-wide lock agent turns hold (`proof.ENV_LOCK`), in a thread so the event loop
+keeps heartbeating. Before, `python -m pytest` in a proof was whatever `python` the PATH found first.
 
 ## Reviewer (`reviewer.py`)
 

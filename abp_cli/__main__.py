@@ -175,6 +175,8 @@ async def _run(args) -> int:
     if args.cmd == "redblue":
         from abp_cli import redblue as _redblue
         return _redblue.run(args)       # in-process and model-free: needs no dashboard
+    if args.cmd == "conductor" and getattr(args, "conductor_cmd", "") in IN_PROCESS_CONDUCTOR:
+        return await _conductor(args, None)   # these run in this process: needs no dashboard (or its token)
     client = _client(args)
     try:
         return await _dispatch(args, client)
@@ -1901,7 +1903,10 @@ async def _capacity(args, client: DashboardClient) -> int:
     return 2
 
 
-async def _conductor(args, client: DashboardClient) -> int:
+IN_PROCESS_CONDUCTOR = ("run", "unblock", "review")        # the conductor subcommands that never call the dashboard
+
+
+async def _conductor(args, client: Optional[DashboardClient]) -> int:
     sub = args.conductor_cmd
     api = "/api/conductor"
     if sub == "plan":
@@ -1986,7 +1991,8 @@ async def _conductor_run(args) -> int:
     except confine.SandboxUnavailable as exc:          # never degrade to an unconfined shell
         print(f"conductor: {exc}", file=sys.stderr)
         return 2
-    cond = crun.Conductor(repo, worker, base=args.base or None, workers=int(getattr(args, "workers", 0) or 0))
+    cond = crun.Conductor(repo, worker, base=args.base or None, workers=int(getattr(args, "workers", 0) or 0),
+                          model=args.model or "")                # --model plans as well as works
     plan = await cond.plan(args.goal)
     print(f"plan {plan.id} ({plan.planner}): {len(plan.tasks)} task(s)")
     report = await cond.run(plan, integrate=args.integrate)

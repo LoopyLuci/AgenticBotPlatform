@@ -33,9 +33,22 @@ CREATE INDEX IF NOT EXISTS queue_audit_q ON queue_audit(queue_id);
 CREATE TABLE IF NOT EXISTS escalations (id INTEGER PRIMARY KEY AUTOINCREMENT, plan_id TEXT NOT NULL, task_key TEXT NOT NULL,
     reason TEXT NOT NULL, created REAL NOT NULL, resolved INTEGER NOT NULL DEFAULT 0, data TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS toolcalls (id INTEGER PRIMARY KEY AUTOINCREMENT, plan_id TEXT NOT NULL, task_key TEXT NOT NULL,
-    attempt INTEGER NOT NULL DEFAULT 1, created REAL NOT NULL, summary TEXT NOT NULL DEFAULT '', data TEXT NOT NULL);
+    attempt INTEGER NOT NULL DEFAULT 1, created REAL NOT NULL, summary TEXT NOT NULL DEFAULT '', data TEXT NOT NULL,
+    tokens INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS toolcalls_task ON toolcalls(plan_id, task_key);
 """
+_migrated: set[str] = set()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Columns added after a table first shipped (an older conductor.db keeps its rows; the new column defaults to 0)."""
+    key = str(db_path())
+    if key in _migrated:
+        return
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(toolcalls)")}
+    if "tokens" not in cols:
+        conn.execute("ALTER TABLE toolcalls ADD COLUMN tokens INTEGER NOT NULL DEFAULT 0")
+    _migrated.add(key)
 
 
 def db_path() -> Path:
@@ -50,6 +63,7 @@ def _db() -> Iterator[sqlite3.Connection]:
     conn.row_factory = sqlite3.Row
     try:
         conn.executescript(_SCHEMA)
+        _migrate(conn)
         yield conn
         conn.commit()
     finally:
@@ -263,12 +277,21 @@ def open_escalation(plan_id: str, task_key: str) -> Optional[dict]:
 
 
 # ----------------------------------------------------------- tool calls
-def add_tool_calls(plan_id: str, task_key: str, attempt: int, calls: list, summary: str = "") -> int:
-    """Every tool call a worker's agent made on a task attempt (the confined runner's audit trail), as the agent's trace has them."""
+def add_tool_calls(plan_id: str, task_key: str, attempt: int, calls: list, summary: str = "", tokens: int = 0) -> int:
+    """Every tool call a worker's agent made on a task attempt (the confined runner's audit trail), as the agent's trace has them,
+    and the tokens the attempt spent (LF5's accounting reads them: the headless worker turns write no agent trace)."""
     with _db() as c:
-        cur = c.execute("INSERT INTO toolcalls(plan_id, task_key, attempt, created, summary, data) VALUES (?,?,?,?,?,?)",
-                        (plan_id, task_key, int(attempt), time.time(), summary[:500], json.dumps(list(calls), default=str)))
+        cur = c.execute("INSERT INTO toolcalls(plan_id, task_key, attempt, created, summary, data, tokens) VALUES (?,?,?,?,?,?,?)",
+                        (plan_id, task_key, int(attempt), time.time(), summary[:500], json.dumps(list(calls), default=str),
+                         max(0, int(tokens or 0))))
         return int(cur.lastrowid or 0)
+
+
+def worker_tokens(since: float = 0.0) -> dict:
+    """Tokens the conductor's workers spent on task attempts recorded after `since` (all on local models: the conductor uses no other)."""
+    with _db() as c:
+        row = c.execute("SELECT COUNT(*), COALESCE(SUM(tokens), 0) FROM toolcalls WHERE created > ?", (float(since),)).fetchone()
+    return {"attempts": int(row[0]), "tokens": int(row[1])}
 
 
 def list_tool_calls(plan_id: str, task_key: str = "") -> list[dict]:
@@ -278,4 +301,4 @@ def list_tool_calls(plan_id: str, task_key: str = "") -> list[dict]:
     with _db() as c:
         rows = c.execute(sql + " ORDER BY id", args).fetchall()
     return [{"id": r["id"], "task_key": r["task_key"], "attempt": r["attempt"], "created": r["created"], "summary": r["summary"],
-             "calls": _json(r["data"]) or []} for r in rows]
+             "tokens": r["tokens"], "calls": _json(r["data"]) or []} for r in rows]

@@ -248,9 +248,13 @@ def build(goal: str, raw_tasks: list[dict], *, source: str = "", planner: str, r
     return plan
 
 
-def fallback_tasks(goal: str, max_tasks: int = 8, proof_command: str = "python -m pytest tests -q") -> list[dict]:
+def fallback_tasks(goal: str, max_tasks: int = 8, proof_command: str = "") -> list[dict]:
     """The deterministic plan: one task per line or numbered/bulleted item of the goal (a single task for one sentence), each
-    after the one before it, each proved by the repository's test command."""
+    after the one before it, each proved by the tests it adds or changes (proof.CHANGED_TESTS). Not the whole suite: inside a
+    no-network sandbox that can never pass, and the integrator runs the full suite anyway."""
+    from bot.conductor import proof as proof_mod
+
+    proof_command = proof_command or proof_mod.CHANGED_TESTS
     parts = [re.sub(r"^\s*(?:[-*+]|\d+[.)])\s*", "", ln).strip() for ln in goal.splitlines()]
     parts = [p for p in parts if p]
     if len(parts) == 1 and ";" in parts[0]:
@@ -262,7 +266,8 @@ def fallback_tasks(goal: str, max_tasks: int = 8, proof_command: str = "python -
         if any(t["id"] == tid for t in tasks):
             tid = f"{tid}-{i}"
         tasks.append({"id": tid, "title": p[:100], "detail": p if len(parts) > 1 else goal, "deps": [prev] if prev else [],
-                      "files": [], "proof": {"command": proof_command, "description": "the test suite passes"}, "capacity": ""})
+                      "files": [], "proof": {"command": proof_command, "description": "the tests this task adds or changes pass"},
+                      "capacity": ""})
         prev = tid
     return tasks
 

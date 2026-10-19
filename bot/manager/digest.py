@@ -82,32 +82,46 @@ def _integrations(since: float) -> list[dict]:
 
 
 def factory_tokens(since: float) -> dict:
-    """Tokens the factory's own agents spent, read from the agent traces (llm.call events); local models are split out."""
-    out = {"llm_calls": 0, "tokens": 0, "local_tokens": 0, "source": "agent traces"}
+    """Tokens the factory's own agents spent: the agent traces (llm.call events; local models split out) plus the conductor's
+    worker attempts, which run headless and write no trace (all local: the conductor uses no other models)."""
+    out = {"llm_calls": 0, "tokens": 0, "local_tokens": 0, "conductor_attempts": 0, "conductor_tokens": 0}
+    sources: list[str] = []
     try:
         from bot.agent_runtime import trace
         from bot.capacity import governor
 
         path = trace.db_path()
-        if not path.is_file():
-            return {**out, "source": "none"}
-        local = tuple(f"{p}/" for p in governor.settings().get("local_providers") or [])
-        conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True, timeout=5)
-        try:
-            for (raw,) in conn.execute("SELECT data FROM events WHERE kind = 'llm.call' AND ts > ?", (since,)):
-                try:
-                    d = json.loads(raw)
-                except ValueError:
-                    continue
-                n = int(d.get("tokens") or 0)
-                out["llm_calls"] += 1
-                out["tokens"] += n
-                if str(d.get("model") or "").startswith(local):
-                    out["local_tokens"] += n
-        finally:
-            conn.close()
+        if path.is_file():
+            local = tuple(f"{p}/" for p in governor.settings().get("local_providers") or [])
+            conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True, timeout=5)
+            try:
+                for (raw,) in conn.execute("SELECT data FROM events WHERE kind = 'llm.call' AND ts > ?", (since,)):
+                    try:
+                        d = json.loads(raw)
+                    except ValueError:
+                        continue
+                    n = int(d.get("tokens") or 0)
+                    out["llm_calls"] += 1
+                    out["tokens"] += n
+                    if str(d.get("model") or "").startswith(local):
+                        out["local_tokens"] += n
+            finally:
+                conn.close()
+            sources.append("agent traces")
     except Exception:  # noqa: BLE001
-        return {**out, "source": "unavailable"}
+        sources.append("agent traces unavailable")
+    try:
+        from bot.conductor import store as cstore
+
+        if cstore.db_path().is_file():
+            w = cstore.worker_tokens(since)
+            out["conductor_attempts"], out["conductor_tokens"] = w["attempts"], w["tokens"]
+            out["tokens"] += w["tokens"]
+            out["local_tokens"] += w["tokens"]
+            sources.append("conductor")
+    except Exception:  # noqa: BLE001
+        sources.append("conductor unavailable")
+    out["source"] = " + ".join(sources) or "none"
     return out
 
 

@@ -9,18 +9,30 @@ Test targets go through `bot.agent_runtime.run_tests.clean_targets` (no shell sy
 workspace) and run through `shell._run_fresh`, the runner behind run_tests, which starts the process with `sandbox.start` - the
 configured Windows job / Docker / ssh sandbox and its network policy, with a timeout that stops the process tree. Anything else is
 refused with a reason and never executed.
+
+`CHANGED_TESTS` is a third, symbolic proof (the deterministic fallback plan uses it): the test files the task's branch added or
+changed since its start, run as `python -m pytest <those files>`. A task that touched no test file has nothing to prove with.
+
+`run(..., env=...)` runs the proof inside the worker's own agent environment (the same interpreter first on PATH and the same
+sandbox grants, e.g. the venv readable inside the AppContainer), under `ENV_LOCK`, the lock agent turns hold: that environment is
+process-global. Without it, `python` is whatever the PATH finds first, which may not have the project's packages.
 """
 from __future__ import annotations
 
 import asyncio
 import re
 import shlex
+import subprocess
+import threading
 from pathlib import Path
-from typing import Optional
+from typing import Callable, ContextManager, Optional
 
 from bot.agent_runtime import run_tests
 from bot.agent_runtime.errors import ToolError
 from bot.conductor import cache as cachelib
+
+CHANGED_TESTS = "changed-tests"
+ENV_LOCK = threading.Lock()       # held by every agent turn and every proof run in an agent environment: both change process-global state
 
 _SAFE_FLAGS = {"-q", "-x", "-v", "-rf"}
 _PREFIX = re.compile(r"^\s*(?:python3?(?:\.exe)?\s+-m\s+)?pytest(?=\s|$)", re.I)
@@ -79,6 +91,8 @@ def parse(command: str, workspace: Optional[Path] = None) -> tuple[str, list[str
 
 def check(command: str, workspace: Optional[Path] = None) -> Optional[str]:
     """None when the proof is allowed, else the reason it is not."""
+    if str(command or "").strip() == CHANGED_TESTS:
+        return None
     try:
         parse(command, workspace)
         return None
@@ -86,10 +100,40 @@ def check(command: str, workspace: Optional[Path] = None) -> Optional[str]:
         return str(exc)
 
 
-async def run(command: str, workspace: Path, timeout_s: Optional[int] = None, cache: Optional[cachelib.Cache] = None) -> tuple[bool, str]:
+def describe(command: str) -> str:
+    """The proof as a worker's prompt should say it."""
+    command = str(command or "").strip()
+    return "the tests you add or change for this task pass (python -m pytest <those test files>)" if command == CHANGED_TESTS else command
+
+
+def changed_tests(workspace: Path, base: str) -> list[str]:
+    """Test files (tests/**/test_*.py, *_test.py) added, modified or renamed on the branch since `base`, that still exist."""
+    if not base:
+        return []
+    out = subprocess.run(["git", "-C", str(workspace), "diff", "--name-only", "--diff-filter=AMR", f"{base}..HEAD", "--", "tests"],
+                         capture_output=True, text=True, timeout=60)
+    names = [ln.strip().replace("\\", "/") for ln in out.stdout.splitlines() if ln.strip()] if out.returncode == 0 else []
+    return [n for n in names if n.endswith(".py") and (Path(n).name.startswith("test_") or n.endswith("_test.py"))
+            and (Path(workspace) / n).is_file()]
+
+
+def resolve(command: str, workspace: Path, base: str = "") -> str:
+    """The concrete proof command: CHANGED_TESTS becomes `python -m pytest <the changed test files>`; anything else is returned as is."""
+    if str(command or "").strip() != CHANGED_TESTS:
+        return command
+    files = changed_tests(workspace, base)
+    if not files:
+        raise ProofRefused("the task added or changed no test file, so there is nothing to prove it with: add a test for the change")
+    return "python -m pytest " + " ".join(files)
+
+
+async def run(command: str, workspace: Path, timeout_s: Optional[int] = None, cache: Optional[cachelib.Cache] = None, *,
+              base: str = "", env: Optional[Callable[[], ContextManager]] = None) -> tuple[bool, str]:
     """Run an allowed proof in the sandbox: (passed, output). Raises ProofRefused for one that is not allowed (nothing is started).
-    A proof whose exact tree and command already passed (CacheIt, conductor.cache.enabled) is answered without starting anything."""
+    A proof whose exact tree and command already passed (CacheIt, conductor.cache.enabled) is answered without starting anything.
+    `base`: the branch's start (for CHANGED_TESTS). `env`: the worker's agent environment to run in (see the module doc)."""
     ws = Path(workspace).resolve()
+    command = await asyncio.to_thread(resolve, command, ws, base)
     kind, targets, k = parse(command, ws)
     cache = cache if cache is not None else cachelib.from_settings()
     tree = await asyncio.to_thread(cachelib.tree_hash, ws) if cache.enabled else ""
@@ -97,10 +141,19 @@ async def run(command: str, workspace: Path, timeout_s: Optional[int] = None, ca
         hit = await asyncio.to_thread(cache.lookup, tree, command, targets)
         if hit:
             return True, str(hit.get("output") or "PASSED (cached)")
-    passed, output = await _execute(kind, targets, k, ws, timeout_s)
+    if env is None:
+        passed, output = await _execute(kind, targets, k, ws, timeout_s)
+    else:                                   # in a thread: waiting for the lock must never block the event loop (leases, heartbeats)
+        passed, output = await asyncio.to_thread(_execute_in, env, kind, targets, k, ws, timeout_s)
     if passed and tree:
         await asyncio.to_thread(cache.store, tree, command, targets, {"output": "PASSED (cached) " + output[-600:]})
     return passed, output
+
+
+def _execute_in(env: Callable[[], ContextManager], kind: str, targets: list[str], k: str, ws: Path,
+                timeout_s: Optional[int]) -> tuple[bool, str]:
+    with ENV_LOCK, env():
+        return asyncio.run(_execute(kind, targets, k, ws, timeout_s))
 
 
 async def _execute(kind: str, targets: list[str], k: str, ws: Path, timeout_s: Optional[int]) -> tuple[bool, str]:
