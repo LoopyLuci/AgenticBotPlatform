@@ -32,6 +32,20 @@ modelmistress:
     bob: {url: "http://bob:8765", key_env: MM_BOB_KEY}
 ```
 
+Guards (`bot/modelmistress/guard.py`), each from a real failure:
+
+- **One hub per home.** Before starting a hub ABP looks for a running `model-mistress ... serve --home <home>` process; when
+  there is one it waits for it (a hub still starting) and otherwise reports that it cannot reach it, never starting a twin.
+- **Redirected AppData.** A process inside a packaged app (MSIX, or a tool started from one) has its writes under
+  `%LOCALAPPDATA%` redirected into `Packages\<app>\LocalCache` and may read a stale control file there. ABP finds this with
+  a one-off probe file and refuses to start the shared hub from such a process.
+- **No engine.** A hub built without `--features bundled-engine` answers but serves nothing; the hub state shows
+  `degraded` with the reason.
+- **Too little context.** The conductor checks a hub model's per-request context (`n_ctx / slots` from `/v1/models`)
+  against `conductor.min_context` (16384) before a worker starts, and hands the task back with the reason instead.
+- A module's cargo target can be set short with `modules.modelmistress.target`: the bundled llama.cpp build stops when its
+  deepest path passes ~243 characters (rc.exe).
+
 Ollama and Unsloth Studio are an opt-in fallback: with a hub up and the flags false they are off the default path (candidate
 lists, auto routing, Studio auto-load); with no hub, or a flag true, they work exactly as before.
 

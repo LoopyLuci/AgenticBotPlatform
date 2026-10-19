@@ -406,7 +406,8 @@ class AgentLoopWorker:
         self.sandbox_paths = list(sandbox_paths) if sandbox_paths else None
         self.drive = drive or self._drive
         self._verified = False
-        self.cfg = context_cfg                                  # the conductor settings (None = read them)
+        self._context_ok: set[str] = set()
+        self.cfg = context_cfg                                 # the conductor settings (None = read them)
         self._packs: dict[str, tuple] = {}                      # task key -> its context_pack, built once and reused on a retry
         self._rejected: dict[str, list[str]] = {}               # task key -> what the reviewer already rejected
         if shell == "sandbox" and not confine.supported():          # refused up front, never degraded to an unconfined shell
@@ -484,6 +485,26 @@ class AgentLoopWorker:
                 "tokens": int(getattr(res, "tokens", 0) or 0), "iterations": int(getattr(res, "iterations", 0) or 0),
                 "stopped": str(getattr(res, "stopped", "") or "")}
 
+    def _check_context(self, ref: str, name: str) -> None:
+        """Once per model: a ModelMistress model served with too little context per request (n_ctx / slots) would have
+        every longer request refused mid-task ("exceeds the available context size"), so the worker does not start."""
+        if not ref.startswith("modelmistress/") or ref in self._context_ok:
+            return
+        from bot.modelmistress import client as mm
+        from bot.modelmistress import guard
+
+        try:
+            models = mm.models()
+        except Exception:  # noqa: BLE001 - the hub's own error comes with the turn
+            return
+        from bot import conductor
+
+        need = int((self.cfg or conductor.settings()).get("min_context") or 0)
+        problem = guard.context_problem(models, name, need)
+        if problem:
+            raise llm.WorkerModelError(problem)
+        self._context_ok.add(ref)
+
     def _verify_sandbox(self, wt: Path) -> None:
         with self._agent_lock:
             confine.verify(wt, extra_paths=self.sandbox_paths)
@@ -502,6 +523,7 @@ class AgentLoopWorker:
         if not refs:
             raise llm.NoLocalModel("no local model is available (start ModelMistress or Ollama)")
         transport, name = llm.transport_for_ref(refs[0])
+        await asyncio.to_thread(self._check_context, refs[0], name)
         paths = (self.sandbox_paths or confine.sandbox_paths()) if self.shell == "sandbox" else None
 
         def turn():

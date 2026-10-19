@@ -14,7 +14,7 @@ import threading
 import time
 from typing import Optional
 
-from bot.modelmistress import client
+from bot.modelmistress import client, guard
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,9 @@ def _start() -> None:
         raise RuntimeError("the ModelMistress module has no hub to start")
     cmd = registry.expand_cmd(m, m.hub.start)
     home = client.mm_home()
+    why = guard.virtualized(home)
+    if why:
+        raise RuntimeError(f"not starting a hub from here: {why}")
     if os.path.isabs(cmd[0]) and not os.path.exists(cmd[0]):
         raise RuntimeError(f"ModelMistress is not built yet ({cmd[0]} is missing)")
     home.mkdir(parents=True, exist_ok=True)
@@ -88,6 +91,21 @@ def ensure(*, refresh: bool = False, wait_s: float = 45.0) -> Optional[client.Hu
         return hub
     if not autostart_enabled() or _sandboxed():
         return None
+    # A hub already runs for this home (still starting, or one this process cannot reach): never start a second one.
+    running = guard.hub_processes(client.mm_home())
+    if running:
+        deadline = time.time() + wait_s
+        while time.time() < deadline:
+            hub = client.find(refresh=True)
+            if hub:
+                _mark(True)
+                return hub
+            time.sleep(1.0)
+        why = guard.virtualized(client.mm_home())
+        _state["last_error"] = (f"a hub (pid {', '.join(map(str, running))}) already runs for {client.mm_home()} but this process "
+                                f"cannot reach it" + (f": {why}" if why else " (its control file is missing or stale)"))
+        logger.warning("ModelMistress: %s - not starting a second hub", _state["last_error"])
+        return None
     with _lock:
         if time.time() - _state["last_start"] < 5:        # a start is already in flight
             return None
@@ -112,10 +130,18 @@ def ensure(*, refresh: bool = False, wait_s: float = 45.0) -> Optional[client.Hu
 
 def tick() -> None:
     """One watchdog pass: note up/down; when down, autostart is on and the back-off allows, (re)start the hub."""
-    if client.find(refresh=True):
+    hub = client.find(refresh=True)
+    if hub:
         with _lock:
             _state["backoff_s"], _state["next_try"] = BACKOFF_START_S, 0.0
+            fresh = _state.get("engine_checked") != (hub.url, hub.version)
         _mark(True)
+        if fresh:                                          # once per hub (a restart has a new url): can it serve models?
+            problem = guard.engine_problem(hub)
+            with _lock:
+                _state["engine_checked"], _state["engine_problem"] = (hub.url, hub.version), problem or ""
+            if problem:
+                logger.warning("ModelMistress: %s", problem)
         return
     _mark(False)
     if not autostart_enabled() or _sandboxed() or time.time() < _state["next_try"]:
@@ -149,4 +175,4 @@ def status() -> dict:
     return {"up": hub is not None, "url": hub.url if hub else None, "version": hub.version if hub else None,
             "autostart": autostart_enabled(), "home": str(client.mm_home()),
             "last_restart": s["last_start"] or None, "restarts": s["starts"], "last_error": s["last_error"] or None,
-            "since": s["since"] or None}
+            "since": s["since"] or None, "degraded": s.get("engine_problem") or None}

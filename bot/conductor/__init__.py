@@ -28,6 +28,7 @@ DEFAULTS: dict[str, Any] = {
     "check_hotreload": True,
     "check_ruff": True,
     "autofix_lint": True,              # before review: apply ruff's SAFE fixes to the branch's changed .py files, as their own commit
+    "min_context": 16384,              # a ModelMistress model served with less context per request than this is refused up front
     "suite_command": [],               # [] = python -m pytest tests -n 8 -q -p no:cacheprovider -rf
     "suite_timeout_s": 3600,
     "base_branch": "main",
