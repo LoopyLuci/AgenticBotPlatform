@@ -22,6 +22,7 @@ import asyncio
 import json
 import logging
 import os
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -61,6 +62,33 @@ class RunReport:
 
     def to_dict(self) -> dict:
         return dict(self.__dict__)
+
+
+AUTOFIX_COMMIT = "conductor: ruff safe fixes"
+
+
+def autofix_lint(worktree: Path, base: str) -> list[str]:
+    """Apply ruff's SAFE fixes (never --unsafe-fixes; the repository's own ruff config) to the Python files the branch changed
+    since `base`, and commit them on the branch as their own commit. Returns the files it changed ([] when nothing changed or ruff
+    cannot run). An unused import, the commonest local-model slip, then never costs a review round; what ruff cannot fix safely
+    still reaches the reviewer's ruff check as before."""
+    wt = Path(worktree)
+    try:
+        names = integrator._git(wt, "diff", "--name-only", "--diff-filter=AMR", f"{base}..HEAD", check=False).stdout.split()
+        py = [n for n in names if n.endswith(".py") and (wt / n).is_file()]
+        if not py:
+            return []
+        subprocess.run([sys.executable, "-m", "ruff", "check", "--fix", "--no-cache", "--quiet", *py], cwd=wt,
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+        changed = integrator._git(wt, "diff", "--name-only", "--", *py, check=False).stdout.split()
+        if not changed:
+            return []
+        integrator._git(wt, "add", "--", *changed)
+        integrator._git(wt, "commit", "-q", "-m", AUTOFIX_COMMIT)
+        return [c.replace("\\", "/") for c in changed]
+    except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
+        logger.info("conductor: ruff autofix skipped (%s)", exc)
+        return []
 
 
 async def run_proof(spec: dict, worktree: str, timeout_s: Optional[int] = None, *, base: str = "",
@@ -213,6 +241,10 @@ class Conductor:
                                                   "split, done by hand, or given to a bigger model?",
                                          base=review_base, branch=branch, summary=str(result.get("summary", "")))
                 continue
+            if self.cfg.get("autofix_lint") and result.get("worktree"):
+                fixed = await asyncio.to_thread(autofix_lint, Path(result["worktree"]), review_base)
+                if fixed:
+                    result["autofixed"] = fixed
             rep = await asyncio.to_thread(
                 reviewer.review, self.repo, review_base, branch, created_files=result.get("created") or [],
                 allow_delete=result.get("allow_delete") or [], public=bool(self.cfg["public_repo"]),
@@ -409,11 +441,18 @@ class AgentLoopWorker:
         pack, dec = self._packs[key]
         vault = await asyncio.to_thread(navctx.vault_block, f"{spec['title']} {str(spec.get('detail') or '')[:300]}", self.cfg)
         before = await asyncio.to_thread(navctx.usage, wt) if pack else {}
+        proof_cmd = str((spec.get("proof") or {}).get("command", "") or "")
+        test_files = proof.target_files(proof_cmd)
+        nav = navctx.settings(self.cfg)["use_codeintel"]
         prompt = (f"Task: {spec['title']}\n\n{spec.get('detail') or ''}\n\nOverall goal: {spec['goal']}\n"
                   f"Files likely involved: {', '.join(spec.get('files') or []) or '(find them)'}\n"
-                  f"It is done when this passes: {proof.describe((spec.get('proof') or {}).get('command', '')) or '(the tests)'}\n"
+                  f"It is done when this passes: {proof.describe(proof_cmd) or '(the tests)'}\n" +
+                  (f"Put the tests in exactly {' and '.join(test_files)}: that is the file the check runs; tests anywhere else are "
+                   "not checked and the task is rejected.\n" if test_files else "") +
                   "Rules: never remove or rename an existing feature (command, flag, route, tool, page, setting); do not delete files; "
-                  "add or update a test for what you change; keep the change small." +
+                  "add or update a test for what you change; keep the change small; no unused imports." +
+                  ("\nReading code: call outline(path) first and read_symbol / find_symbol for the parts you need; read a whole file "
+                   "with read_file only when it is short or you need all of it." if nav else "") +
                   (f"\n\nCode context for this task (pre-fetched; use outline / read_symbol / find_symbol for more instead of reading "
                    f"whole files):\n{pack}" if pack else "") + (f"\n\n{vault}" if vault else "") +
                   (f"\n\nYour previous attempt was REJECTED by the reviewer. Fix exactly these:\n{feedback}" if feedback else ""))

@@ -88,6 +88,12 @@ could not start at all.
 
 ## Reviewer (`reviewer.py`)
 
+Before a worker's branch is reviewed, the conductor applies ruff's **safe** fixes (never `--unsafe-fixes`; the repository's own
+config) to the Python files the branch changed and commits them on the branch as `conductor: ruff safe fixes`
+(`conductor.autofix_lint`, default on). An unused import, the commonest local-model slip, then costs no review round; anything
+ruff cannot fix safely still fails the `ruff` check below. The worker's prompt also names the exact test file its proof runs, asks
+for no unused imports, and says how to read code with the navigation tools (outline, read_symbol, find_symbol) instead of whole files.
+
 `abp conductor review --repo R --base main --head BRANCH` (exit 1 on a rejection), `POST /api/conductor/review`, MCP
 `conductor_review`. Static checks first, the same answer every time; every finding names the rule, the file and line, and the
 line itself:

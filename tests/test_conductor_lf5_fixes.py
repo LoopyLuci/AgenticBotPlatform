@@ -5,6 +5,11 @@ B. The fallback plan's proof was the whole suite (never passes in a no-network s
    the PATH found first instead of the worker's interpreter and sandbox grants.
 C. LF5's factory token accounting read only agent traces; the conductor's headless worker turns write none.
 D. `abp conductor run` (in-process) demanded a dashboard token it never uses.
+
+And from the third run (the first accepted task; the other failed on model slips, not the environment):
+- an unused import (ruff F401, in every run) cost a review round: ruff's safe fixes are now applied before review;
+- the worker wrote its tests into a different file than its proof runs: the prompt now names that file, the planner is told to;
+- workers never used the code-navigation tools: the prompt now says how to read code with them.
 """
 from __future__ import annotations
 
@@ -20,6 +25,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import bot.conductor as conductor_pkg
 from bot.conductor import llm, planner, proof, run, store
 from bot.manager import digest
 
@@ -197,3 +203,52 @@ def test_an_older_conductor_db_gains_the_tokens_column():
     store._migrated.discard(str(path))
     store.add_tool_calls("new", "k", 1, [], tokens=5)
     assert store.worker_tokens(0) == {"attempts": 2, "tokens": 5}
+
+
+# ---- run 3: worker slips -------------------------------------------------------------------------------------------
+def test_ruff_safe_fixes_are_committed_on_the_branch_before_review(repo):
+    base = git(repo, "rev-parse", "HEAD")
+    write(repo, "tests/test_new.py", "import os\nimport pytest\n\n\ndef test_new():\n    assert True\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "worker")
+    assert run.autofix_lint(repo, base) == ["tests/test_new.py"]
+    assert git(repo, "log", "-1", "--format=%s") == run.AUTOFIX_COMMIT
+    assert "import" not in (repo / "tests/test_new.py").read_text(encoding="utf-8")
+    assert git(repo, "status", "--porcelain") == ""
+    assert run.autofix_lint(repo, base) == []                                   # nothing left to fix: no empty commit
+    assert git(repo, "log", "-1", "--format=%s") == run.AUTOFIX_COMMIT and git(repo, "rev-list", "--count", f"{base}..HEAD") == "2"
+
+
+def test_autofix_only_touches_the_branch_s_python_and_never_unsafe_fixes(repo):
+    base = git(repo, "rev-parse", "HEAD")
+    write(repo, "mod.py", "X = 1\n\n\ndef f(x):\n    y = 2\n    return x\n")          # F841 needs --unsafe-fixes: left alone
+    write(repo, "notes.txt", "import os\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "worker")
+    assert run.autofix_lint(repo, base) == []
+    assert "y = 2" in (repo / "mod.py").read_text(encoding="utf-8")
+    assert conductor_pkg.DEFAULTS["autofix_lint"] is True
+
+
+def test_the_proof_s_test_file_is_named_to_the_worker():
+    assert proof.target_files("python -m pytest tests/test_a.py::test_x tests/test_b.py tests/test_a.py -q") == \
+        ["tests/test_a.py", "tests/test_b.py"]
+    assert proof.target_files(proof.CHANGED_TESTS) == [] and proof.target_files("ruff check mod.py") == []
+    assert proof.target_files("rm -rf /") == []
+    assert "proof runs exactly that file" in planner.SCHEMA_HELP
+
+
+def test_the_worker_prompt_names_the_test_file_and_how_to_navigate(repo, tmp_path):
+    prompts = []
+
+    async def drive(prompt, wt):
+        prompts.append(prompt)
+        return "nothing to do"
+
+    worker = run.AgentLoopWorker(repo, drive=drive, shell="none")
+    spec = {"plan_id": "p", "goal": "g", "id": "t", "key": "conductor:p:t", "title": "Test X", "detail": "add a test",
+            "files": ["tests/test_x.py"], "proof": {"command": "python -m pytest tests/test_x.py::test_x -q"},
+            "branch": "feat/t", "worktree": str(tmp_path / "wt"), "base": "main", "after": []}
+    asyncio.run(worker(spec, ""))
+    assert "Put the tests in exactly tests/test_x.py" in prompts[0] and "outline(path)" in prompts[0]
+    assert "no unused imports" in prompts[0]

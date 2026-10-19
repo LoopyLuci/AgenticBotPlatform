@@ -27,6 +27,7 @@ DEFAULTS: dict[str, Any] = {
     "public_repo": True,               # apply the public-repo leak rules to every diff
     "check_hotreload": True,
     "check_ruff": True,
+    "autofix_lint": True,              # before review: apply ruff's SAFE fixes to the branch's changed .py files, as their own commit
     "suite_command": [],               # [] = python -m pytest tests -n 8 -q -p no:cacheprovider -rf
     "suite_timeout_s": 3600,
     "base_branch": "main",

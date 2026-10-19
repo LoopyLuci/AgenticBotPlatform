@@ -100,6 +100,20 @@ def check(command: str, workspace: Optional[Path] = None) -> Optional[str]:
         return str(exc)
 
 
+def target_files(command: str) -> list[str]:
+    """The test files a pytest proof runs (node ids reduced to their file), for telling the worker where its tests must go.
+    Empty for CHANGED_TESTS, a ruff proof, or a proof that is not allowed."""
+    if str(command or "").strip() == CHANGED_TESTS:
+        return []
+    try:
+        kind, targets, _k = parse(command)
+    except ProofRefused:
+        return []
+    if kind != "pytest":
+        return []
+    return list(dict.fromkeys(t.split("::")[0] for t in targets if t.split("::")[0].endswith(".py")))
+
+
 def describe(command: str) -> str:
     """The proof as a worker's prompt should say it."""
     command = str(command or "").strip()

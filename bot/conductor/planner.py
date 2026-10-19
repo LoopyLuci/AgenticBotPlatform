@@ -33,7 +33,9 @@ SCHEMA_HELP = """Reply with ONLY one JSON object:
   "capacity": "local"}]}
 Rules: 1 to {max_tasks} tasks, each small enough for one focused change; ids are lowercase letters, digits and dashes; no cycles;
 every task has a proof command; paths are relative to the repository; "capacity" is "local" (routine) or "cloud" (needs a strong
-model) or "". Never remove or rename an existing feature (a command, flag, route, tool, page or setting)."""
+model) or "". Never remove or rename an existing feature (a command, flag, route, tool, page or setting).
+A task that adds tests names its test file in "files" and its proof runs exactly that file (one test file per task: two tasks never
+share a new test file)."""
 
 _ID = re.compile(r"[^a-z0-9]+")
 _FENCE = re.compile(r"^```[a-zA-Z]*\s*|\s*```$")
