@@ -23,6 +23,18 @@ logger = logging.getLogger("bot.agent_runtime.tool_loop")
 turn_failures: "contextvars.ContextVar[Optional[dict]]" = contextvars.ContextVar("turn_failures", default=None)
 
 
+def _report_denial(name, tool_input, reason: str, source: str, instance_id) -> None:
+    """Tell the live WatchDog about a denial made after the rule check (a hook, or the approval step);
+    permissions.evaluate() already reports the rule verdict itself. Monitoring never affects the call."""
+    try:
+        from bot.agent_runtime.permissions import Verdict
+        from bot.redblue import live
+
+        live.grant_check(name, tool_input, Verdict("deny", reason, source), instance_id=instance_id)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 async def run_one_tool(
     name, tool_input, *, workspace, instance_id, chat_id, session_key, notify, agent_tools, agent_approval,
     device_tier=None,
@@ -83,6 +95,8 @@ async def _run_one_tool(
         hook = await hooks.run_pre_tool_use_full(name, tool_input, instance_id=instance_id)
         if hook.decision == "deny":
             outcome["status"], outcome["approval"] = "denied", "hook"
+            _report_denial(name, tool_input, f"denied by hook: {hook.reason}" if hook.reason else "denied by hook",
+                           "hook", instance_id)
             return f"Denied by hook{f': {hook.reason}' if hook.reason else '.'}"
         if hook.updated_input is not None and hook.updated_input != tool_input:
             tool_input = hook.updated_input
@@ -133,6 +147,8 @@ async def _run_one_tool(
                                     "untrusted content in session" if fresh else "")
             if approval == "deny":
                 outcome["status"] = "denied"
+                _report_denial(name, tool_input, "denied at approval (declined, or nobody answered in time)", "approval",
+                               instance_id)
                 return "Denied by user."
         elif verdict.decision == "allow":
             outcome["approval"] = "policy"

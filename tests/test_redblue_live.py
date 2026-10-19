@@ -85,6 +85,46 @@ def test_permission_decisions_and_tool_calls_are_fed_in_from_the_runtime(on, mon
     assert seen == ["grant_check", "tool_call"]
 
 
+class _Deny:
+    async def request_approval(self, *a, **k):
+        return "deny"
+
+
+def _loop_call(ws, name, inp):
+    from bot.agent_runtime import tool_loop
+
+    return asyncio.run(tool_loop.run_one_tool(name, inp, workspace=ws, instance_id=7, chat_id=1, session_key="s",
+                                              notify=None, agent_tools=tools, agent_approval=_Deny()))
+
+
+def test_a_denial_at_the_approval_step_is_fed_in_too(on, monkeypatch, tmp_path, temp_db):
+    """The rule check said "ask"/default; the approval step denied (nobody answered). Run 5's journal missed all 66 such
+    denials because only the rule verdict was reported."""
+    seen = []
+    monkeypatch.setattr(live, "emit", lambda raw, source: seen.append((source, raw)))
+    out = _loop_call(tmp_path, "run_shell", {"command": "python -c \"print(1)\""})
+    assert out == "Denied by user."
+    final = [raw for source, raw in seen if source == "grant_check" and raw["allowed"] is False]
+    assert len(final) == 1 and final[0]["actor"] == "instance:7" and final[0]["target"].startswith("python -c")
+    assert "approval" in final[0]["reason"]
+
+
+def test_a_hook_denial_is_fed_in_too(on, monkeypatch, tmp_path, temp_db):
+    from types import SimpleNamespace
+
+    from bot.agent_runtime import hooks
+
+    async def deny_hook(*a, **k):
+        return SimpleNamespace(decision="deny", reason="no curl here", updated_input=None)
+
+    monkeypatch.setattr(hooks, "run_pre_tool_use_full", deny_hook)
+    seen = []
+    monkeypatch.setattr(live, "emit", lambda raw, source: seen.append((source, raw)))
+    assert _loop_call(tmp_path, "run_shell", {"command": "curl.exe http://x"}).startswith("Denied by hook")
+    final = [raw for source, raw in seen if source == "grant_check" and raw["allowed"] is False]
+    assert len(final) == 1 and final[0]["reason"] == "denied by hook: no curl here"
+
+
 def test_a_broken_monitor_never_changes_a_decision_or_a_tool(on, monkeypatch, tmp_path):
     def boom(*a, **k):
         raise RuntimeError("monitor down")
