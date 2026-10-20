@@ -225,6 +225,10 @@ DEPLOY_PREFIXES = ("bot/", "config/", "desktop-app/", "requirements.txt", "requi
                    "docs/api/openapi.json", "native/", "abp_native/")
 
 
+# The base..head this push is verified over (set by changed_files()); the ML diff-lint reviews the same range.
+_DIFF_RANGE: Optional[str] = None
+
+
 def _matches(changed: set[str], prefixes: tuple[str, ...]) -> bool:
     return any(f.startswith(prefixes) for f in changed)
 
@@ -256,6 +260,8 @@ def changed_files() -> Optional[set[str]]:
         if not ok:
             return None
         range_spec = f"{base.strip()}..HEAD"
+    global _DIFF_RANGE
+    _DIFF_RANGE = range_spec
     ok, out = _run(["git", "diff", "--name-only", range_spec], cwd=ROOT)
     if not ok:
         return None
@@ -573,6 +579,87 @@ def check_python() -> bool:
     else:
         Step.ok("ruff: clean")
 
+    job = _start_difflint()          # advisory: the local coder on the GPU while pytest keeps the CPU busy
+    try:
+        return _check_tests_and_audit(py)
+    finally:
+        _finish_difflint(job)
+
+
+DIFFLINT_JOIN_SLACK_S = 30.0       # past its own budget, how long the pipeline still waits for the diff-lint thread
+
+
+class _DiffLintJob:
+    """The ML diff-lint (bot/conductor/difflint.py) in a daemon thread next to pytest. It prints nothing while it runs (the
+    summary comes after pytest) and can never fail the pipeline: its result is advisory, a crash is one warning line."""
+
+    def __init__(self, base: str, head: str, budget: float):
+        import threading
+
+        self.base, self.head, self.budget = base, head, budget
+        self.report = None
+        self.error = ""
+        self.thread = threading.Thread(target=self._go, name="difflint", daemon=True)
+
+    def _go(self) -> None:
+        try:
+            from bot.conductor import difflint
+
+            self.report = difflint.run(ROOT, self.base, self.head, budget=self.budget)
+        except Exception as exc:  # noqa: BLE001 - advisory
+            self.error = f"{type(exc).__name__}: {exc}"[:300]
+
+
+def _start_difflint() -> Optional[_DiffLintJob]:
+    """Start the ML diff-lint over this push's range, or None (off: ABP_PIPELINE_DIFFLINT=0; or no range). Never raises."""
+    try:
+        if os.environ.get("ABP_PIPELINE_DIFFLINT", "1").strip().lower() in ("0", "false", "no", "off"):
+            Step.skip("ML diff-lint: off (ABP_PIPELINE_DIFFLINT=0)")
+            return None
+        base, head = (_DIFF_RANGE.split("..", 1) if _DIFF_RANGE and ".." in _DIFF_RANGE else ("", "HEAD"))
+        if not base:
+            mb = subprocess.run(["git", "merge-base", "HEAD", "origin/main"], cwd=ROOT, capture_output=True, text=True, timeout=30)
+            base = mb.stdout.strip() if mb.returncode == 0 else ""
+        if not base:
+            Step.skip("ML diff-lint: no base to diff against")
+            return None
+        from bot.conductor import difflint
+
+        job = _DiffLintJob(base, head or "HEAD", difflint.budget_s())
+        job.thread.start()
+        Step.doing(f"ML diff-lint started next to pytest (advisory, budget {job.budget:.0f}s)")
+        return job
+    except Exception as exc:  # noqa: BLE001 - advisory: never in the pipeline's way
+        Step.warn(f"ML diff-lint could not start ({type(exc).__name__}: {exc})")
+        return None
+
+
+def _finish_difflint(job: Optional[_DiffLintJob]) -> None:
+    """Wait out what is left of the diff-lint's budget (pytest is normally the longer one) and print its one-line summary."""
+    if job is None:
+        return
+    try:
+        job.thread.join(timeout=job.budget + DIFFLINT_JOIN_SLACK_S)
+        if job.thread.is_alive():
+            Step.warn(f"ML diff-lint overran its {job.budget:.0f}s budget - left behind (advisory, the pipeline goes on)")
+            return
+        rep = job.report
+        if rep is None:
+            Step.warn(f"ML diff-lint crashed ({job.error or 'no report'}) - advisory, the pipeline goes on")
+            return
+        line = rep.summary()
+        if rep.json_path:
+            try:
+                line = line.replace(rep.json_path, str(Path(rep.json_path).relative_to(ROOT)))
+            except ValueError:
+                pass
+        (Step.skip if rep.status == "skipped" else Step.warn if rep.status == "error" else Step.ok)(line)
+        _RUN.note(line, "info")
+    except Exception as exc:  # noqa: BLE001
+        Step.warn(f"ML diff-lint: {type(exc).__name__}: {exc}")
+
+
+def _check_tests_and_audit(py: str) -> bool:
     # Parallel (pytest-xdist) with a coverage floor (pyproject.toml's
     # [tool.coverage.report] fail_under) when the dev requirements are
     # installed; otherwise the plain serial run, exactly as before.
