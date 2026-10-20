@@ -30,7 +30,7 @@ from typing import Optional
 import httpx
 
 from bot.agent_runtime import text_toolcalls
-from bot.agent_runtime.transports.base import NormalizedResponse, ProviderTransport, StreamEvent, ToolCall
+from bot.agent_runtime.transports.base import NormalizedResponse, ProviderTransport, StreamEvent, ToolCall, report_speed
 from bot.backends.base import BackendError
 
 logger = logging.getLogger("bot.agent_runtime.transports.openai_compatible")
@@ -210,6 +210,7 @@ class OpenAICompatibleTransport(ProviderTransport):
             system_prompt=system_prompt, effort=effort, mode=mode,
         )
         response = _normalize(await self._post(payload, headers, timeout_s), self.base_url)
+        report_speed(model, response.tokens_per_s)
         return await self._recover_text_calls(response, payload=payload, headers=headers, timeout_s=timeout_s,
                                               model=model, tool_schemas=tool_schemas, mode=mode)
 
@@ -358,6 +359,7 @@ class OpenAICompatibleTransport(ProviderTransport):
                 raise
             except Exception as exc:
                 raise BackendError(f"openai-compatible transport ({self.base_url}) error: {exc}") from exc
+        report_speed(model, streamed.tokens_per_s)
         # Calls written as text were streamed as prose: when they turn into real calls, replace what was shown.
         recovered = await self._recover_text_calls(streamed, payload=payload, headers=headers, timeout_s=timeout_s,
                                                    model=model, tool_schemas=tool_schemas, mode=mode)
@@ -371,6 +373,7 @@ class OpenAICompatibleTransport(ProviderTransport):
         text_parts: list[str] = []
         calls: dict[int, dict] = {}
         usage: dict = {}
+        timings: dict = {}
         async with client.stream("POST", url, json=payload, headers=headers) as resp:
             self.capture(resp)
             if resp.status_code >= 400:
@@ -393,6 +396,8 @@ class OpenAICompatibleTransport(ProviderTransport):
                     raise _provider_error(event, self.base_url)   # an error can arrive inside a 200 stream too
                 if event.get("usage"):
                     usage = event["usage"]
+                if isinstance(event.get("timings"), dict):      # llama.cpp's own timing, on the last chunk
+                    timings = event["timings"]
                 for choice in event.get("choices") or []:
                     delta = choice.get("delta") or {}
                     if delta.get("content"):
@@ -414,7 +419,7 @@ class OpenAICompatibleTransport(ProviderTransport):
                  "function": {"name": c["name"], "arguments": c["arguments"]}}
                 for i, c in sorted(calls.items())
             ]
-        return _normalize({"usage": usage, "choices": [{"message": message}]}, self.base_url)
+        return _normalize({"usage": usage, "timings": timings, "choices": [{"message": message}]}, self.base_url)
 
 
 class _RetryWithoutUsage(Exception):
@@ -469,10 +474,16 @@ def _normalize(data: dict, base_url: str) -> NormalizedResponse:
     if tool_calls_raw:
         assistant_payload["tool_calls"] = tool_calls_raw
 
+    timings = data.get("timings") if isinstance(data.get("timings"), dict) else {}
+    try:
+        tps = float(timings.get("predicted_per_second") or 0) or None
+    except (TypeError, ValueError):
+        tps = None
     return NormalizedResponse(
         text=message.get("content") or "",
         tool_calls=tool_calls,
         tokens=tokens or None,
         input_tokens=usage.get("prompt_tokens") or None,
         assistant_message={"role": "assistant", "content": assistant_payload},
+        tokens_per_s=tps,
     )

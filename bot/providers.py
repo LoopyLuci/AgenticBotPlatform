@@ -154,12 +154,18 @@ def module_providers() -> dict[str, dict]:
         try:
             from bot.modules import client, registry
 
-            path = client.control_file(registry.get(mid))
-            if path is None or not path.is_file():
-                continue
-            d = json.loads(path.read_text(encoding="utf-8"))
-            pid = int(d.get("pid") or 0)
-            if not pid or not _pid_alive(pid):
+            d = None
+            # ModelMistress's supervisor writes its control file in the MM home, not the module's {data} (2026-10-19:
+            # the "modelmistress" provider was missing on live, so no agent turn could use the hub's models)
+            for path in client._control_files(registry.get(mid)):
+                if not path.is_file():
+                    continue
+                cand = json.loads(path.read_text(encoding="utf-8"))
+                pid = int(cand.get("pid") or 0)
+                if pid and _pid_alive(pid):
+                    d = cand
+                    break
+            if d is None:
                 continue
             out[mid] = {"base_url": str(d["url"]).rstrip("/") + "/v1", "protocol": "openai", "api_key": str(d["token"]),
                         "module": mid, "description": description}

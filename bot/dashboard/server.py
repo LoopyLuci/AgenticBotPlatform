@@ -997,6 +997,11 @@ def build_app() -> FastAPI:
 
     manager_api.register(app, _require_token_or_api_key, _require_token)
 
+    # Local Chat (/api/local-chat): the first screen's chat with local models on ModelMistress, with ABP's agent.
+    from bot.dashboard import localchat_api
+
+    localchat_api.register(app, _require_token_or_api_key, _require_token)
+
     # Agent eval reports (/api/agent/evals/reports): the Evals screen's read-only view of the harness's JSON reports.
     from bot.dashboard import evals_api
 

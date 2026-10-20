@@ -21,8 +21,9 @@ already be wire-ready by the loop itself.
 
 from __future__ import annotations
 
+import contextvars
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Callable, Optional
 
 
 @dataclass
@@ -67,10 +68,29 @@ class NormalizedResponse:
     # Tokens the provider counted in what it was sent (including cached ones) - the loop compares this
     # with the characters it sent to calibrate its own estimate (see context_window.py).
     input_tokens: Optional[int] = None
+    # Generation speed the server measured itself (llama.cpp's timings.predicted_per_second, which ModelMistress passes
+    # through); None when the server does not say.
+    tokens_per_s: Optional[float] = None
 
     @property
     def stop(self) -> bool:
         return not self.tool_calls
+
+
+# Whoever wants each model call's generation speed (Local Chat, for its model picker) sets this for the turn; transports
+# report through report_speed(). Never set = nothing happens.
+speed_observer: "contextvars.ContextVar[Optional[Callable[[str, float], None]]]" = contextvars.ContextVar(
+    "transport_speed_observer", default=None)
+
+
+def report_speed(model: str, tokens_per_s: Optional[float]) -> None:
+    fn = speed_observer.get()
+    if fn is None or not tokens_per_s:
+        return
+    try:
+        fn(model, float(tokens_per_s))
+    except Exception:  # noqa: BLE001 - an observer must never break a model call
+        pass
 
 
 class ProviderTransport:

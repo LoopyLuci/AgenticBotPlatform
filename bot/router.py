@@ -446,7 +446,10 @@ class Router:
         swarm_run_id: Optional[str] = None,
         chat_id: Optional[Any] = None,
         thread_id: Optional[Any] = None,
+        model_override: Optional[str] = None,
     ) -> BackendResult:
+        # model_override: this one turn's model (Local Chat's per-session model picker), winning over the instance's own
+        # model and a routing rule's, the way a person's explicit choice should.
         # Checked here, at the ONE shared entry point every backend's
         # ask() flows through, rather than inside each backend
         # implementation individually — that's how this gap happened in
@@ -518,6 +521,8 @@ class Router:
             # that has none either.
             logger.info("job routing: rule picked model %s for this turn", rule_model)
             instance_model = rule_model
+        if model_override:
+            instance_model = model_override
 
         # ui/hermes_gateway are session-aware backends (see their own
         # ask()) — they need to know which bot instance this call belongs

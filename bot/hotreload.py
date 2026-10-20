@@ -156,6 +156,8 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.dashboard.sandbox_ns_api",
     "bot.dashboard.redblue_api",  # read-only red/blue summary routes; they register once, like the routes above
     "bot.redblue.live",  # the live WatchDog: a process-wide monitor, its queue and worker thread are process state
+    "bot.localchat.chat",  # Local Chat turns: the running turns (asyncio tasks, for cancel) are process state
+    "bot.dashboard.localchat_api",
     "bot.agent_runtime.settings_schema",  # imports permissions/sandbox (both denied above); a reload would split the classes it validates against
     "bot.agent_runtime.project_rules",  # imported by prompt.py; reloaded with it is not needed and is safe to skip
     "bot.agent_runtime.code_intel",  # running language servers are process state
@@ -388,6 +390,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.capacity.classify", "bot.capacity.handoff", "bot.capacity.routing", "bot.capacity.follow",  # pure functions over the governor's state; reached as module attributes
     "bot.conductor.store", "bot.conductor.cache", "bot.conductor.proof", "bot.conductor.llm", "bot.conductor.shards", "bot.conductor.navctx", "bot.conductor.planner", "bot.conductor.reviewer", "bot.conductor.integrator", "bot.conductor.pusher", "bot.conductor.confine", "bot.conductor.run",  # the conductor: a connection per call, no state held in the modules
     "bot.manager.store", "bot.manager.escalations", "bot.manager.digest", "bot.manager.checkin",  # the manager channel: reads the board/conductor/capacity; a connection per call, no state held in the modules
+    "bot.localchat.store", "bot.localchat.speed", "bot.localchat.catalog",  # Local Chat: a connection per call, a speed file and a short catalog cache
     "bot.models",
     "bot.push",
     "bot.desktop",
