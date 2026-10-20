@@ -437,6 +437,17 @@ def test_window_from_the_hubs_loaded_model(hub, conf):
     assert mm.context_length("qwen3-8b") == 16384
 
 
+def test_window_from_a_0_3_hubs_serving_block(hub, conf):
+    # MM 0.3.0's model.loaded nests the window under "serving"; a request gets n_ctx_per_slot of the shared n_ctx
+    hub.loaded = [{"model": "qwen3-8b", "pid": 1, "serving": {"n_ctx": 65536, "n_ctx_per_slot": 32768, "slots": 2}}]
+    warm()
+    assert cw.window_for("modelmistress/qwen3-8b") == 32768
+    mm.forget_context()
+    hub.loaded = [{"model": "qwen3-8b", "pid": 1, "serving": {"n_ctx": 32768, "slots": 1}}]
+    warm()
+    assert cw.window_for("modelmistress/qwen3-8b") == 32768
+
+
 def test_trained_context_in_the_model_list_is_not_the_window(hub, conf):
     hub.loaded = None
     assert cw.window_for("modelmistress/qwen3-8b") == cw.LOCAL_DEFAULT_WINDOW == 8192

@@ -342,6 +342,12 @@ def _positive(value: Any) -> Optional[int]:
 
 
 def _ctx_of(entry: dict, keys: tuple = _CTX_KEYS) -> Optional[int]:
+    serving = entry.get("serving")
+    if isinstance(serving, dict):
+        # MM 0.3+: what one request gets (n_ctx is shared by every slot), else the whole window
+        n = _positive(serving.get("n_ctx_per_slot")) or _positive(serving.get("n_ctx"))
+        if n:
+            return n
     for source in (entry, entry.get("metadata"), entry.get("meta"), entry.get("runtime")):
         if isinstance(source, dict):
             for k in keys:
