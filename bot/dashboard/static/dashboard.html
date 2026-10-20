@@ -67,6 +67,7 @@
   .side-toggle:hover { background:var(--surface-3); color:var(--ink); }
   .side-toggle svg { transition:transform .18s ease; }
   nav.sidenav { display:flex; flex-direction:column; gap:2px; }
+  nav.sidenav .nav-group { font-size:10.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); padding:12px 10px 4px; user-select:none; } nav.sidenav .nav-group:first-child { padding-top:2px; } html.bs-sidebar-collapsed nav.sidenav .nav-group, html.sidebar-collapsed nav.sidenav .nav-group { font-size:0; padding:0; margin:6px 8px; border-top:1px solid var(--line); } nav.sidenav.nav-filtering .nav-group { display:none; }
   nav.sidenav a { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:7px; color:var(--ink-soft); text-decoration:none; font-size:13px; font-weight:600; white-space:nowrap; }
   nav.sidenav a:hover, nav.sidenav a:focus-visible { background:var(--surface-2); color:var(--ink); }
   nav.sidenav a .ic { width:auto; min-width:16px; text-align:center; font-family:var(--font-mono); color:var(--accent); font-size:clamp(12px,0.85vw,15px); flex:none; }
@@ -554,62 +555,67 @@
       </button>
     </div>
     <nav class="sidenav" id="sidenav">
+      <div class="nav-group" role="presentation">Work</div>
       <a href="#local-chat" title="Local Chat"><span class="ic">✦</span><span class="nav-txt">Local Chat</span></a>
       <a href="#overview" title="Overview"><span class="ic">◆</span><span class="nav-txt">Overview</span></a>
+      <a href="#chat" title="Chat"><span class="ic">💬</span><span class="nav-txt">Chat</span></a>
+      <a href="#server-chat" title="Server Chat"><span class="ic">🖥</span><span class="nav-txt">Server Chat</span></a>
+      <a href="#sessions" title="Sessions"><span class="ic">🗂</span><span class="nav-txt">Sessions</span></a>
+      <a href="#kanban" title="Kanban"><span class="ic">🗒</span><span class="nav-txt">Kanban</span></a>
+      <a href="#files" title="Files"><span class="ic">📁</span><span class="nav-txt">Files</span></a>
+      <a href="#routines" title="Routines"><span class="ic">🔁</span><span class="nav-txt">Routines</span></a>
+      <div class="nav-group" role="presentation">Agents</div>
+      <a href="#agents" title="ABP Agents"><span class="ic">🤖</span><span class="nav-txt">ABP Agents</span></a>
+      <a href="#swarms" title="Swarms"><span class="ic">🐝</span><span class="nav-txt">Swarms</span></a>
+      <a href="#bots" title="Bots"><span class="ic">🤖</span><span class="nav-txt">Bots</span></a>
+      <a href="#skills" title="Skills"><span class="ic">🧩</span><span class="nav-txt">Skills</span></a>
+      <a href="#coordination" title="Coordination"><span class="ic">🧩</span><span class="nav-txt">Coordination</span></a>
+      <a href="#evals" title="Evals"><span class="ic">🧪</span><span class="nav-txt">Evals</span></a>
+      <a href="#traces" title="Traces"><span class="ic">🧵</span><span class="nav-txt">Traces</span></a>
+      <a href="#sns" title="Sandbox"><span class="ic">📦</span><span class="nav-txt">Sandbox</span></a>
+      <a href="#support" title="Support Bot"><span class="ic">🛟</span><span class="nav-txt">Support Bot</span></a>
+      <a href="#training" title="Training"><span class="ic">🎓</span><span class="nav-txt">Training</span></a>
+      <div class="nav-group" role="presentation">Models &amp; AI</div>
+      <a href="#models" title="Models"><span class="ic">🧩</span><span class="nav-txt">Models</span></a>
+      <a href="#router" data-unit="router" title="Model Router"><span class="ic">🧭</span><span class="nav-txt">Model Router</span></a>
+      <a href="#localai" data-unit="localai" title="Local AI"><span class="ic">🦙</span><span class="nav-txt">Local AI</span></a>
+      <a href="#ollama" data-unit="ollama" title="Ollama"><span class="ic">🦙</span><span class="nav-txt">Ollama</span></a>
+      <a href="#unsloth" data-unit="unsloth" title="Unsloth"><span class="ic">🦥</span><span class="nav-txt">Unsloth</span></a>
+      <a href="#lab" data-unit="neurallab" title="Neural Lab"><span class="ic">🧠</span><span class="nav-txt">Neural Lab</span></a>
+      <a href="#studio" data-unit="studio" title="Studio"><span class="ic">🎨</span><span class="nav-txt">Studio</span></a>
+      <a href="#vision" data-unit="vision" title="Vision"><span class="ic">👁</span><span class="nav-txt">Vision</span></a>
+      <a href="#usage" title="Usage &amp; limits"><span class="ic">📊</span><span class="nav-txt">Usage &amp; limits</span></a>
+      <div class="nav-group" role="presentation">System</div>
       <a href="#jobs" title="Jobs"><span class="ic">▤</span><span class="nav-txt">Jobs</span></a>
       <a href="#telemetry" title="Connections &amp; Telemetry"><span class="ic">◈</span><span class="nav-txt">Connections &amp; Telemetry</span></a>
       <a href="#database" title="Database"><span class="ic">▥</span><span class="nav-txt">Database</span></a>
-      <a href="#control" title="Control Center"><span class="ic">⚙</span><span class="nav-txt">Control Center</span></a>
-      <a href="#resilience" title="Resilience"><span class="ic">↻</span><span class="nav-txt">Resilience</span></a>
-      <a href="#diagnostics" title="Diagnostics"><span class="ic">🩺</span><span class="nav-txt">Diagnostics</span></a>
       <a href="#logs" title="Live Logs"><span class="ic">▦</span><span class="nav-txt">Live Logs</span></a>
-      <a href="#chat" title="Chat"><span class="ic">💬</span><span class="nav-txt">Chat</span></a>
-      <a href="#server-chat" title="Server Chat"><span class="ic">🖥</span><span class="nav-txt">Server Chat</span></a>
-      <a href="#support" title="Support Bot"><span class="ic">🛟</span><span class="nav-txt">Support Bot</span></a>
-      <a href="#sessions" title="Sessions"><span class="ic">🗂</span><span class="nav-txt">Sessions</span></a>
-      <a href="#bots" title="Bots"><span class="ic">🤖</span><span class="nav-txt">Bots</span></a>
-      <a href="#models" title="Models"><span class="ic">🧩</span><span class="nav-txt">Models</span></a>
-      <a href="#usage" title="Usage &amp; limits"><span class="ic">📊</span><span class="nav-txt">Usage &amp; limits</span></a>
+      <a href="#diagnostics" title="Diagnostics"><span class="ic">🩺</span><span class="nav-txt">Diagnostics</span></a>
+      <a href="#resilience" title="Resilience"><span class="ic">↻</span><span class="nav-txt">Resilience</span></a>
+      <a href="#control" title="Control Center"><span class="ic">⚙</span><span class="nav-txt">Control Center</span></a>
       <a href="#permissions" title="Permissions &amp; approvals"><span class="ic">🛡️</span><span class="nav-txt">Permissions &amp; approvals</span></a>
-      <a href="#traces" title="Traces"><span class="ic">🧵</span><span class="nav-txt">Traces</span></a>
-      <a href="#coordination" title="Coordination"><span class="ic">🧩</span><span class="nav-txt">Coordination</span></a>
-      <a href="#evals" title="Evals"><span class="ic">🧪</span><span class="nav-txt">Evals</span></a>
-      <a href="#sns" title="Sandbox"><span class="ic">📦</span><span class="nav-txt">Sandbox</span></a>
-      <a href="#skills" title="Skills"><span class="ic">🧩</span><span class="nav-txt">Skills</span></a>
-      <a href="#profiles" title="User profiles"><span class="ic">👤</span><span class="nav-txt">User profiles</span></a>
       <a href="#vault" title="Vault"><span class="ic">🔑</span><span class="nav-txt">Vault</span></a>
-      <a href="#router" data-unit="router" title="Model Router"><span class="ic">🧭</span><span class="nav-txt">Model Router</span></a>
-      <a href="#unsloth" data-unit="unsloth" title="Unsloth"><span class="ic">🦥</span><span class="nav-txt">Unsloth</span></a>
-      <a href="#cluster" data-unit="cluster" title="Cluster"><span class="ic">⧉</span><span class="nav-txt">Cluster</span></a>
-      <a href="#vision" data-unit="vision" title="Vision"><span class="ic">👁</span><span class="nav-txt">Vision</span></a>
-      <a href="#hosting" data-unit="hosting" title="Hosting"><span class="ic">🌐</span><span class="nav-txt">Hosting</span></a>
-      <a href="#storage" data-unit="storage" title="Storage"><span class="ic">🗄</span><span class="nav-txt">Storage</span></a>
-      <a href="#localai" data-unit="localai" title="Local AI"><span class="ic">🦙</span><span class="nav-txt">Local AI</span></a>
-      <a href="#lab" data-unit="neurallab" title="Neural Lab"><span class="ic">🧠</span><span class="nav-txt">Neural Lab</span></a>
-      <a href="#studio" data-unit="studio" title="Studio"><span class="ic">🎨</span><span class="nav-txt">Studio</span></a>
-      <a href="#modules" data-unit="modules" title="Modules"><span class="ic">▦</span><span class="nav-txt">Modules</span></a>
-      <a href="#transferdaemon" data-unit="transferdaemon" title="TransferDaemon"><span class="ic">⇄</span><span class="nav-txt">TransferDaemon</span></a>
+      <a href="#profiles" title="User profiles"><span class="ic">👤</span><span class="nav-txt">User profiles</span></a>
       <a href="#power" data-unit="power" title="Power"><span class="ic">⏻</span><span class="nav-txt">Power</span></a>
-      <a href="#vm-harness" data-unit="vm-harness" title="VM-Harness"><span class="ic">🖧</span><span class="nav-txt">VM-Harness</span></a>
-      <a href="#hermes-manager" data-unit="hermes-manager" title="Hermes Manager"><span class="ic">☤</span><span class="nav-txt">Hermes Manager</span></a>
-      <a href="#ollama" data-unit="ollama" title="Ollama"><span class="ic">🦙</span><span class="nav-txt">Ollama</span></a>
-      <a href="#kanban" title="Kanban"><span class="ic">🗒</span><span class="nav-txt">Kanban</span></a>
-      <a href="#agents" title="ABP Agents"><span class="ic">🤖</span><span class="nav-txt">ABP Agents</span></a>
-      <a href="#swarms" title="Swarms"><span class="ic">🐝</span><span class="nav-txt">Swarms</span></a>
+      <a href="#storage" data-unit="storage" title="Storage"><span class="ic">🗄</span><span class="nav-txt">Storage</span></a>
+      <a href="#modules" data-unit="modules" title="Modules"><span class="ic">▦</span><span class="nav-txt">Modules</span></a>
+      <a href="#cluster" data-unit="cluster" title="Cluster"><span class="ic">⧉</span><span class="nav-txt">Cluster</span></a>
+      <div class="nav-group" role="presentation">Infrastructure</div>
       <a href="#tailscale" title="Tailscale"><span class="ic">🛰</span><span class="nav-txt">Tailscale</span></a>
       <a href="#containers" title="Containers"><span class="ic">📦</span><span class="nav-txt">Containers</span></a>
       <a href="#vms" title="Virtual Machines"><span class="ic">🖥</span><span class="nav-txt">Virtual Machines</span></a>
+      <a href="#vm-harness" data-unit="vm-harness" title="VM-Harness"><span class="ic">🖧</span><span class="nav-txt">VM-Harness</span></a>
       <a href="#infra-rules" title="Infra Automation"><span class="ic">⚙</span><span class="nav-txt">Infra Automation</span></a>
-      <a href="#browser" title="Browser"><span class="ic">🌐</span><span class="nav-txt">Browser</span></a>
-      <a href="#ssh-toolkit" title="SSH Toolkit"><span class="ic">🔑</span><span class="nav-txt">SSH Toolkit</span></a>
-      <a href="#automation" title="Automation"><span class="ic">🪝</span><span class="nav-txt">Automation</span></a>
-      <a href="#routines" title="Routines"><span class="ic">🔁</span><span class="nav-txt">Routines</span></a>
-      <a href="#customize" title="Customize UI"><span class="ic">🪄</span><span class="nav-txt">Customize UI</span></a>
-      <a href="#training" title="Training"><span class="ic">🎓</span><span class="nav-txt">Training</span></a>
-      <a href="#platforms" title="Platforms"><span class="ic">🔌</span><span class="nav-txt">Platforms</span></a>
-      <a href="#mobile" title="Mobile"><span class="ic">📱</span><span class="nav-txt">Mobile</span></a>
-      <a href="#files" title="Files"><span class="ic">📁</span><span class="nav-txt">Files</span></a>
+      <a href="#hosting" data-unit="hosting" title="Hosting"><span class="ic">🌐</span><span class="nav-txt">Hosting</span></a>
       <a href="#servers" title="Linked Servers"><span class="ic">🌐</span><span class="nav-txt">Linked Servers</span></a>
+      <a href="#ssh-toolkit" title="SSH Toolkit"><span class="ic">🔑</span><span class="nav-txt">SSH Toolkit</span></a>
+      <a href="#browser" title="Browser"><span class="ic">🌐</span><span class="nav-txt">Browser</span></a>
+      <a href="#transferdaemon" data-unit="transferdaemon" title="TransferDaemon"><span class="ic">⇄</span><span class="nav-txt">TransferDaemon</span></a>
+      <a href="#hermes-manager" data-unit="hermes-manager" title="Hermes Manager"><span class="ic">☤</span><span class="nav-txt">Hermes Manager</span></a>
+      <a href="#mobile" title="Mobile"><span class="ic">📱</span><span class="nav-txt">Mobile</span></a>
+      <a href="#platforms" title="Platforms"><span class="ic">🔌</span><span class="nav-txt">Platforms</span></a>
+      <a href="#automation" title="Automation"><span class="ic">🪝</span><span class="nav-txt">Automation</span></a>
+      <a href="#customize" title="Customize UI"><span class="ic">🪄</span><span class="nav-txt">Customize UI</span></a>
       <a href="#settings" class="nav-settings" title="Settings"><span class="ic">⚙</span><span class="nav-txt">Settings</span></a>
     </nav>
     <div class="side-status">

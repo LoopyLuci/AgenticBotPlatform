@@ -5977,6 +5977,7 @@ function initAndroidPanel() {
         const hit = !q || (a.dataset.kw || '').includes(q);
         a.classList.toggle('hidden-by-search', !hit);
       });
+      document.getElementById('sidenav').classList.toggle('nav-filtering', !!q);   // group headings hide while filtering
     };
   }
 
