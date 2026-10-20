@@ -147,3 +147,53 @@ def test_the_registry_has_the_screen_and_its_actions():
     reg = (DESK / "action-registry.js").read_text(encoding="utf-8")
     assert "[['local-chat'], 'Local Chat', 'lc']" in reg
     assert "id: 'localchat.new'" in reg and "id: 'localchat.focus'" in reg
+
+
+# ---- S2: the sidebar, the session header, split view, notifications --------------------------------------------------------
+def test_the_sidebar_sorts_sessions_into_sections():
+    harness = """
+const fs = require('fs');
+global.window = { addEventListener() {}, dispatchEvent() {} };
+global.document = { readyState: 'complete', getElementById: () => null, addEventListener() {}, querySelector: () => null };
+global.localStorage = { getItem: () => null, setItem() {} };
+global.api = async () => ({});
+eval(fs.readFileSync(process.argv[1], 'utf8'));
+const lc = window.ABP.localChat;
+lc.state.groups = [{ id: 'g1', name: 'Factory' }];
+const now = Date.now() / 1000;
+const rows = [
+  { id: 'a', pinned: true, status: 'working', updated: now },
+  { id: 'b', status: 'needs_you', group_id: 'g1', updated: now },
+  { id: 'c', status: 'working', updated: now },
+  { id: 'd', status: 'done', group_id: 'g1', updated: now },
+  { id: 'e', status: 'idle', group_id: 'gone', updated: now },
+  { id: 'f', status: 'done', updated: now - 3 * 86400 },
+];
+const out = {};
+rows.forEach((r) => { out[r.id] = lc.sectionOf(r); });
+lc.state.showArchived = true;
+out.arch = lc.sectionOf(rows[5]);
+process.stdout.write(JSON.stringify(out));
+"""
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    r = subprocess.run([node, "-e", harness, str(DESK / "local-chat.js")], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout) == {"a": "pinned", "b": "needs", "c": "working", "d": "g:g1", "e": "today", "f": "earlier",
+                                    "arch": "archived"}
+
+
+def test_the_sidebar_header_and_composer_offer_the_session_actions():
+    for label in ("'Pinned'", "'Needs you'", "'Working now'", "'Today'", "'Earlier'", "'Archived'"):
+        assert label in JS, label
+    for action in ("wt-diff", "wt-sync", "wt-commit", "wt-merge", "wt-keep", "wt-discard", "wt-create", "rewind", "queue",
+                   "group-new", "split", "notify", "prune"):
+        assert f'"{action}"' in JS or f"'{action}'" in JS, action
+    for route in ("/worktree", "'/diff'", "'/sync'", "'/commit-message'", "'/commit'", "'/queue-merge'", "'/keep'", "'/discard'",
+                  "'/steer'", "'/rewind'", "'/read'", "/api/local-chat/groups", "/api/local-chat/worktrees/prune"):
+        assert route in JS, route
+    assert "new Notification(" in JS and "Notification.requestPermission()" in JS
+    assert "lc-split" in JS and "openSplit" in JS
+    # a 409 from discard / delete is shown with what would be lost before anything is removed
+    assert JS.count("would_lose") >= 4 and "{ confirm: true }" in JS and "?confirm=true" in JS

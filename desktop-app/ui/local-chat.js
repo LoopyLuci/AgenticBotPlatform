@@ -4,6 +4,11 @@
 // status strip at the bottom. The model picker shows every model the hub can run with each figure labelled by where it
 // came from (measured, planned, metadata, estimated). Replies stream from /api/ws (chat_stream frames for chat_id
 // "localchat:<sid>"); a tool that needs a person arrives as a local_chat_approval frame and is decided inline.
+// Sessions (S2): the sidebar groups them (Pinned, Needs you, Working now, user groups, Today, Earlier, Archived) with a
+// status dot, unread, model / workspace / branch chips, filters and a right-click menu; each pane has a session header with
+// its worktree (branch, ahead / behind, changed files) and Diff / Sync / Commit / Merge (through the push queue) / Keep /
+// Discard; a turn that changed files can be undone; a message sent while it works steers it or waits in the queue; two
+// sessions can sit side by side (split view); the browser notifies when a session needs you or finishes out of sight.
 //
 // This file and local-chat.css are identical in the dashboard (bot/dashboard/static/) and the desktop app
 // (desktop-app/ui/); tests/test_local_chat_ui.py fails if they differ. It uses the page's own api() and draws into #lc-root.
@@ -26,13 +31,15 @@
   const GROUP_LABEL = { loaded: 'Loaded', gpu: 'Fits on the GPU', cpu: 'Runs on the CPU (slow)', too_big: 'Too big for this machine', other: 'Other (not planned by the hub)' };
   const SOURCE_LABEL = { measured: 'measured', estimated: 'estimated', rough_estimate: 'rough estimate', planned: 'planned', metadata: 'metadata', unknown: 'unknown' };
   const RUNS_ON = { gpu: 'GPU', cpu: 'CPU', none: 'does not fit', unknown: 'unknown' };
+  const STATUS_LABEL = { working: 'working', needs_you: 'needs you', idle: 'idle', error: 'error', done: 'done' };
   const SLASH = [['/new', 'Start a new session'], ['/model', 'Open the model picker'], ['/mode chat|build|plan|review', 'Switch the agent type'],
     ['/autonomy 0-5', 'Set autonomy'], ['/cloud off|ask|auto', 'Set cloud assist'], ['/export', 'Download this session as Markdown'],
     ['/settings', 'Open the settings']];
 
   // ---- state ---------------------------------------------------------------------------------------------------------
   const S = {
-    sessions: [], query: '', showArchived: false,
+    sessions: [], groups: [], query: '', showArchived: false, filter: { status: '', model: '', workspace: '' },
+    collapsed: (() => { try { return JSON.parse(store.get('collapsed') || '{}'); } catch (_) { return {}; } })(),
     catalog: null, catalogErr: '', status: null, setup: null,
     panes: [],                // [{sid, session, messages, running, draft:{text, tools}, approvals, err, el}]
     active: 0, pickerFor: -1, rightOpen: store.get('right') !== '0', visible: false, timer: null,
@@ -111,10 +118,35 @@
   async function loadSessions() {
     try {
       const q = S.query ? '&q=' + encodeURIComponent(S.query) : '';
-      const d = await api('/api/local-chat/sessions?archived=' + (S.showArchived ? 'true' : 'false') + q);
+      const [d, g] = await Promise.all([api('/api/local-chat/sessions?archived=' + (S.showArchived ? 'true' : 'false') + q),
+        api('/api/local-chat/groups').catch(() => ({ groups: [] }))]);
       S.sessions = d.sessions || [];
+      S.groups = g.groups || [];
     } catch (e) { S.sessions = []; S.sessionsErr = errText(e); }
     renderSide();
+  }
+  async function loadWorktree(i) {
+    const p = pane(i);
+    if (!p || !p.sid) return;
+    const sid = p.sid;
+    try {
+      const [w, c, q] = await Promise.all([api('/api/local-chat/sessions/' + encodeURIComponent(sid) + '/worktree').catch((e) => ({ worktree: null, err: errText(e) })),
+        api('/api/local-chat/sessions/' + encodeURIComponent(sid) + '/checkpoints').catch(() => ({ checkpoints: [] })),
+        api('/api/local-chat/sessions/' + encodeURIComponent(sid) + '/queued').catch(() => ({ queued: [] }))]);
+      if (p.sid !== sid) return;
+      p.wt = w.worktree; p.wtErr = w.err || '';
+      p.checkpoints = c.checkpoints || [];
+      p.queued = q.queued || [];
+    } catch (_) { /* the header just stays as it was */ }
+    renderHead(i); renderMsgs(i); renderComposerState(i);
+  }
+  function markRead(i) {
+    const p = pane(i);
+    if (!p || !p.sid || document.hidden) return;
+    const row = S.sessions.find((r) => r.id === p.sid);
+    if (row && !row.unread && !(p.session && p.session.unread)) return;
+    if (row) row.unread = false;
+    post('/api/local-chat/sessions/' + encodeURIComponent(p.sid) + '/read').then(() => renderSide()).catch(() => {});
   }
   async function loadCatalog(refresh) {
     try {
@@ -142,7 +174,7 @@
   async function openSession(sid, i) {
     const p = pane(i);
     if (!p) return;
-    p.sid = sid; p.session = null; p.messages = []; p.draft = null; p.approvals = []; p.err = '';
+    p.sid = sid; p.session = null; p.messages = []; p.draft = null; p.approvals = []; p.err = ''; p.wt = null; p.checkpoints = []; p.queued = [];
     if (sid) store.set('last', sid);
     renderPane(i == null ? S.active : i);
     if (!sid) return;
@@ -154,6 +186,8 @@
     } catch (e) { p.err = errText(e); }
     renderPane(i == null ? S.active : i);
     renderSide();
+    loadWorktree(i == null ? S.active : i);
+    markRead(i == null ? S.active : i);
   }
   async function refreshMessages(i) {
     const p = pane(i);
@@ -165,7 +199,7 @@
       if ((d.messages || []).length) p.messages = p.messages.concat(d.messages);
       const was = p.running;
       p.running = !!d.running;
-      if (was && !p.running) p.draft = null;
+      if (was && !p.running) { p.draft = null; loadWorktree(i); markRead(i); }
     } catch (e) { p.err = errText(e); }
     renderMsgs(i); renderTop(i); renderRight(i); renderComposerState(i);
   }
@@ -191,14 +225,16 @@
     const el = pane(i) && pane(i).el && pane(i).el.querySelector('.lc-input');
     if (el) el.focus();
   }
-  async function ensureSession(i) {
+  async function ensureSession(i, firstText) {
     const p = pane(i);
     if (p.sid) return p.sid;
     const d = S.defaults;
-    const s = await post('/api/local-chat/sessions', { model: d.model || '', mode: d.mode, autonomy: d.autonomy, cloud_assist: d.cloud_assist, workspace: d.workspace || '' });
+    const title = String(firstText || '').split(/\s+/).join(' ').slice(0, 60);     // also names the worktree's branch
+    const s = await post('/api/local-chat/sessions', { title, model: d.model || '', mode: d.mode, autonomy: d.autonomy, cloud_assist: d.cloud_assist, workspace: d.workspace || '' });
     p.sid = s.id; p.session = s; p.messages = [];
     store.set('last', s.id);
     loadSessions();
+    loadWorktree(i);
     return s.id;
   }
 
@@ -221,10 +257,10 @@
     const text = (textArg != null ? textArg : box.value).trim();
     if (!text) return;
     if (text.startsWith('/') && textArg == null && slash(i, text)) { box.value = ''; hideSlash(i); return; }
-    if (p.running) { toast('This session is still answering. Stop it first (Ctrl+C) or wait.', 'error'); return; }
+    if (p.running) { steer(i, text, 'steer'); return; }
     p.err = '';
     try {
-      const sid = await ensureSession(i);
+      const sid = await ensureSession(i, text);
       if (textArg == null) box.value = '';
       hideSlash(i);
       p.messages.push({ id: (p.messages.length ? p.messages[p.messages.length - 1].id : 0) + 0.5, role: 'user', text, created: Date.now() / 1000, pending: true });
@@ -234,8 +270,7 @@
       p.turn = r.turn_id;
       p.messages = p.messages.filter((m) => !m.pending);
       await refreshMessages(i);
-      p.running = true;
-      if (!p.draft) p.draft = { text: '', tools: [] };
+      if (p.running && !p.draft) p.draft = { text: '', tools: [] };
       renderMsgs(i); renderComposerState(i);
     } catch (e) {
       p.messages = p.messages.filter((m) => !m.pending);
@@ -243,6 +278,18 @@
       if (textArg == null && !box.value) box.value = text;
       renderMsgs(i); renderComposerState(i);
     }
+  }
+  async function steer(i, textArg, how) {
+    const p = pane(i);
+    const box = p.el.querySelector('.lc-input');
+    const text = (textArg != null ? textArg : box.value).trim();
+    if (!text || !p.sid) return;
+    try {
+      const r = await post('/api/local-chat/sessions/' + encodeURIComponent(p.sid) + '/steer', { text, how });
+      if (box.value.trim() === text) box.value = '';
+      toast(r.steered ? 'Sent to the running turn.' : 'Queued: it starts when this turn finishes.');
+      if (r.steered) refreshMessages(i); else loadWorktree(i);
+    } catch (e) { toast(errText(e), 'error'); }
   }
   async function cancel(i) {
     const p = pane(i);
@@ -272,11 +319,36 @@
       } else if (msg.type === 'local_chat_turn') {
         p.running = false; p.draft = null; p.approvals = [];
         p.lastTurn = msg;
-        refreshMessages(i);
+        refreshMessages(i).then(() => { loadWorktree(i); markRead(i); });
         renderStatus();
       }
     });
     if (msg.type === 'local_chat_turn') loadSessions();
+    if (msg.type === 'local_chat_session' && msg.session) onSessionFrame(msg);
+  }
+  function onSessionFrame(msg) {
+    const s = msg.session;
+    const row = S.sessions.find((r) => r.id === s.id);
+    const was = row ? row.status : '';
+    if (row) Object.assign(row, s);
+    else if (!S.showArchived && !s.archived) { loadSessions(); }
+    const open = S.panes.some((p) => p.sid === s.id);
+    S.panes.forEach((p, i) => { if (p.sid === s.id) { p.session = { ...(p.session || {}), ...s }; renderHead(i); if (s.unread) markRead(i); } });
+    renderSide();
+    if (was !== s.status && (s.status === 'needs_you' || s.status === 'done' || s.status === 'error') && (document.hidden || !open)) {
+      notify(s);
+    }
+  }
+  function notify(s) {
+    const text = s.status === 'needs_you' ? 'needs you (an approval is waiting)' : s.status === 'error' ? 'stopped with an error' : 'finished';
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted' || store.get('notify') !== '1') {
+      toast((s.title || 'A session') + ' ' + text + '.');
+      return;
+    }
+    try {
+      const n = new Notification('Local Chat: ' + (s.title || 'session'), { body: text, tag: 'lc-' + s.id });
+      n.onclick = () => { window.focus(); openSession(s.id, S.active); n.close(); };
+    } catch (_) { toast((s.title || 'A session') + ' ' + text + '.'); }
   }
   window.addEventListener('abp:ws-frame', (ev) => onFrame(ev.detail));
 
@@ -296,16 +368,21 @@
     if (!root.querySelector('.lc')) {
       root.innerHTML = `<div class="lc${S.rightOpen ? '' : ' lc-noright'}">
   <aside class="lc-side" aria-label="Local Chat sessions">
-    <div class="lc-side-head"><button type="button" class="btn primary lc-new" data-lc="new">+ New session</button></div>
-    <input type="search" class="lc-search" id="lc-search" aria-label="Search sessions and messages" placeholder="Search sessions">
+    <div class="lc-side-head"><button type="button" class="btn primary lc-new" data-lc="new">+ New session</button>
+      <button type="button" class="lc-icon" data-lc="new-group" aria-label="New group" title="New group">⊞</button>
+      <button type="button" class="lc-icon" data-lc="notify" aria-label="Desktop notifications" title="Notify me when a session needs me or finishes">🔔</button></div>
+    <input type="search" class="lc-search" id="lc-search" aria-label="Search sessions and messages" placeholder="Search titles and messages">
+    <div class="lc-filters" id="lc-filters"></div>
     <label class="lc-arch"><input type="checkbox" id="lc-archived"> Archived</label>
     <div class="lc-list" id="lc-list" role="list"></div>
+    <button type="button" class="lc-mini lc-prune" data-lc="prune" title="Remove worktrees no session owns (never ones with uncommitted work)">Clean up worktrees</button>
   </aside>
   <div class="lc-panes" id="lc-panes"></div>
 </div>
 <div class="lc-hint hidden" id="lc-hint" role="status"></div>
 <div class="lc-status" id="lc-status" role="status" aria-live="polite"></div>
-<div class="lc-picker hidden" id="lc-picker" role="dialog" aria-label="Choose a model"></div>`;
+<div class="lc-picker hidden" id="lc-picker" role="dialog" aria-label="Choose a model"></div>
+<div class="lc-picker lc-modal hidden" id="lc-modal" role="dialog" aria-modal="true" aria-label="Local Chat"></div>`;
     }
     const host = $('lc-panes');
     while (host.children.length > S.panes.length) host.lastChild.remove();
@@ -325,6 +402,7 @@
   }
   function paneSkeleton(i) {
     return `<div class="lc-top" data-part="top"></div>
+<div class="lc-head" data-part="head"></div>
 <div class="lc-body"><div class="lc-center">
   <div class="lc-msgs" data-part="msgs" role="log" aria-live="polite" aria-label="Conversation"></div>
   <div class="lc-composer">
@@ -333,6 +411,7 @@
     <div class="lc-compose-bar">
       <span class="lc-note" data-part="cnote"></span>
       <button type="button" class="btn danger hidden" data-lc="cancel" aria-label="Stop the reply (Ctrl+C)">Stop</button>
+      <button type="button" class="btn hidden" data-lc="queue" aria-label="Queue this message for the next turn">Queue</button>
       <button type="button" class="btn primary" data-lc="send" aria-label="Send (Ctrl+Enter)">Send</button>
     </div>
   </div>
@@ -342,7 +421,7 @@
     const p = pane(i);
     if (!p || !p.el) return;
     p.el.classList.toggle('lc-active', i === S.active && S.panes.length > 1);
-    renderTop(i); renderMsgs(i); renderRight(i); renderComposerState(i);
+    renderTop(i); renderHead(i); renderMsgs(i); renderRight(i); renderComposerState(i);
   }
   const part = (i, name) => { const p = pane(i); return p && p.el ? p.el.querySelector(`[data-part="${name}"]`) : null; };
 
@@ -379,11 +458,15 @@ ${S.panes.length > 1 ? `<button type="button" class="lc-icon" data-lc="close-pan
       : `<span class="lc-who">${E(role === 'user' ? 'You' : role === 'error' ? 'Error' : 'ABP')}</span>`;
     const body = role === 'assistant' ? md(m.text) : `<p>${E(m.text).replace(/\n/g, '<br>')}</p>`;
     const actions = [`<button type="button" class="lc-mini" data-lc="copy-msg" data-id="${E(m.id)}" aria-label="Copy this message">Copy</button>`];
+    const p = pane(i);
+    const cp = role === 'user' && m.turn_id && !m.reverted ? (p.checkpoints || []).find((c) => c.turn_id === m.turn_id && !c.rewound) : null;
+    if (cp && !p.running) actions.push(`<button type="button" class="lc-mini" data-lc="rewind" data-turn="${E(m.turn_id)}" aria-label="Undo this turn's file changes">Undo this turn</button>`);
     if (role === 'user' && isLastUser) {
       actions.push(`<button type="button" class="lc-mini" data-lc="retry" data-id="${E(m.id)}" aria-label="Send this message again">Retry</button>`);
       actions.push(`<button type="button" class="lc-mini" data-lc="edit" data-id="${E(m.id)}" aria-label="Edit this message and send it again">Edit</button>`);
     }
-    return `<div class="lc-msg lc-${E(role)}" data-id="${E(m.id)}"><div class="lc-msg-head">${head}<span class="lc-meta">${E(when(m.created))}</span></div>
+    const tags = (m.reverted ? '<span class="lc-chip">reverted</span>' : '') + (m.meta && m.meta.steered ? '<span class="lc-chip">steered</span>' : '');
+    return `<div class="lc-msg lc-${E(role)}${m.reverted ? ' lc-reverted' : ''}" data-id="${E(m.id)}"><div class="lc-msg-head">${head}<span class="lc-meta">${E(when(m.created))}</span>${tags}</div>
 <div class="lc-msg-body">${body}</div><div class="lc-msg-actions">${actions.join('')}</div></div>`;
   }
   function approvalHtml(a) {
@@ -432,8 +515,118 @@ ${S.catalogErr ? `<p class="lc-warn">${E(S.catalogErr)}</p>` : model ? `<p class
     const p = pane(i);
     if (!p || !p.el) return;
     p.el.querySelector('[data-lc="cancel"]').classList.toggle('hidden', !p.running);
+    p.el.querySelector('[data-lc="queue"]').classList.toggle('hidden', !p.running);
+    const sendBtn = p.el.querySelector('[data-lc="send"]');
+    sendBtn.textContent = p.running ? 'Steer' : 'Send';
+    sendBtn.setAttribute('aria-label', p.running ? 'Add this to the running turn (Ctrl+Enter)' : 'Send (Ctrl+Enter)');
     const note = part(i, 'cnote');
-    if (note) note.textContent = p.running ? 'Answering… Ctrl+C stops it.' : '';
+    const q = (p.queued || []).length;
+    if (note) note.textContent = (p.running ? 'Answering… Steer adds to this turn, Queue waits for the next. Ctrl+C stops it.' : '') + (q ? ` ${q} queued.` : '');
+  }
+
+  // ---- the session header: worktree and its actions --------------------------------------------------------------------
+  function renderHead(i) {
+    const el = part(i, 'head');
+    if (!el) return;
+    const p = pane(i);
+    const s = p.session;
+    if (!s) { el.innerHTML = ''; el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    const st = `<span class="lc-dot lc-dot-${E(s.status || 'idle')}" aria-hidden="true"></span><span class="lc-note">${E(STATUS_LABEL[s.status] || s.status || 'idle')}</span>`;
+    const w = p.wt;
+    if (!w) {
+      el.innerHTML = `${st}${s.workspace ? `<span class="lc-note">${E(s.workspace)}</span>
+<button type="button" class="lc-mini" data-lc="wt-create" aria-label="Give this session its own git worktree">Make a worktree</button>` : '<span class="lc-note">no workspace</span>'}
+${p.wtErr ? `<span class="lc-warn">${E(p.wtErr)}</span>` : ''}`;
+      return;
+    }
+    const changed = (w.dirty || []).length;
+    el.innerHTML = `${st}<span class="lc-chip" title="${E(w.path || '')}">⎇ ${E(w.branch)}</span><span class="lc-note">from ${E(w.base)}</span>
+<span class="lc-note" title="commits ahead of / behind the base">↑${E(w.ahead)} ↓${E(w.behind)}</span>
+<span class="lc-note">${changed ? `${changed} changed` : 'clean'}</span>
+${(w.conflicts || []).length ? `<span class="lc-warn">conflicts: ${E(w.conflicts.join(', '))}</span>` : ''}
+<span class="lc-top-gap"></span>
+<button type="button" class="lc-mini" data-lc="wt-diff" aria-label="Show the session's changes against its base">Diff</button>
+<button type="button" class="lc-mini" data-lc="wt-sync" aria-label="Merge the base branch into this session">Sync${w.behind ? ' (' + E(w.behind) + ')' : ''}</button>
+<button type="button" class="lc-mini" data-lc="wt-commit" aria-label="Commit the changes"${changed ? '' : ' disabled'}>Commit</button>
+<button type="button" class="lc-mini" data-lc="wt-merge" aria-label="Ask to merge this branch (push queue, needs approval)"${w.ahead ? '' : ' disabled'}>Merge…</button>
+<label class="lc-note lc-keep"><input type="checkbox" data-lc="wt-keep"${w.keep ? ' checked' : ''}> keep</label>
+<button type="button" class="lc-mini" data-lc="wt-discard" aria-label="Discard this worktree">Discard</button>`;
+  }
+  function openModal(title, body, actions) {
+    const el = $('lc-modal');
+    if (!el) return;
+    el.innerHTML = `<div class="lc-picker-head"><b>${E(title)}</b><span class="lc-top-gap"></span>
+<button type="button" class="lc-icon" data-lcx="close" aria-label="Close">✕</button></div><div class="lc-picker-body lc-pad">${body}</div>
+<div class="lc-modal-foot">${(actions || []).map((a, n) => `<button type="button" class="btn${n === 0 ? ' primary' : ''}${a.danger ? ' danger' : ''}" data-lcx="${n}">${E(a.label)}</button>`).join('')}</div>`;
+    el.__actions = actions || [];
+    el.classList.remove('hidden');
+    const first = el.querySelector('textarea,button[data-lcx="0"]');
+    if (first) first.focus();
+  }
+  function closeModal() { const el = $('lc-modal'); if (el) { el.classList.add('hidden'); el.innerHTML = ''; } }
+  function diffHtml(text) {
+    return `<pre class="lc-pre lc-diff lc-diffview">${String(text || '').split('\n').map((ln) => {
+      const cls = ln.startsWith('+') && !ln.startsWith('+++') ? 'lc-add' : ln.startsWith('-') && !ln.startsWith('---') ? 'lc-del' : ln.startsWith('@@') ? 'lc-hunk' : '';
+      return `<span class="${cls}">${E(ln)}</span>`;
+    }).join('\n')}</pre>`;
+  }
+  async function worktreeAction(i, a, t) {
+    const p = pane(i);
+    if (!p.sid) return;
+    const base = '/api/local-chat/sessions/' + encodeURIComponent(p.sid) + '/worktree';
+    try {
+      if (a === 'wt-create') { await post(base, {}); toast('This session now has its own worktree.'); }
+      else if (a === 'wt-diff') {
+        const d = await api(base + '/diff');
+        openModal('Changes against ' + d.base, `<p class="lc-note">${E(d.stat || 'No changes.')}</p>${d.untracked.length ? `<p class="lc-note">New files: ${E(d.untracked.join(', '))}</p>` : ''}
+${d.clipped ? '<p class="lc-warn">Long diff: only the first part is shown.</p>' : ''}${diffHtml(d.diff)}`, [{ label: 'Close', run: closeModal }]);
+        return;
+      } else if (a === 'wt-sync') {
+        const r = await post(base + '/sync', {});
+        if (r.conflicts && r.conflicts.length) {
+          openModal('Sync stopped on conflicts', `<p>Merging ${E(p.wt.base)} stopped on conflicts in:</p><ul>${r.conflicts.map((f) => `<li>${E(f)}</li>`).join('')}</ul>
+<p class="lc-note">The merge is left in progress. Ask the agent to resolve them, or resolve them yourself and commit.</p>`,
+          [{ label: 'Ask the agent to resolve them', run: () => { closeModal(); send(i, r.prompt); } }, { label: 'Later', run: closeModal }]);
+        } else toast(r.merged ? 'Synced with ' + p.wt.base + '.' : 'Already up to date.');
+      } else if (a === 'wt-commit') {
+        const d = await api(base + '/commit-message');
+        openModal('Commit the changes', `<p class="lc-note">Message (${E(d.source)}; edit it as you like):</p>
+<textarea class="lc-input" id="lc-commit-msg" rows="8" aria-label="Commit message">${E(d.message)}</textarea>`,
+        [{ label: 'Commit', run: async () => { const m = ($('lc-commit-msg') || {}).value || ''; try { await post(base + '/commit', { message: m }); closeModal(); toast('Committed.'); loadWorktree(i); } catch (e) { toast(errText(e), 'error'); } } },
+          { label: 'Cancel', run: closeModal }]);
+        return;
+      } else if (a === 'wt-merge') {
+        openModal('Merge this branch', `<p>This puts <b>${E(p.wt.branch)}</b> (${E(p.wt.ahead)} commit(s)) in the push queue for <b>${E(p.wt.base)}</b>.</p>
+<p class="lc-note">Nothing is merged or pushed until you approve it in the push queue (Coordination → Conductor), and the pusher checks it again before it pushes.</p>`,
+        [{ label: 'Put it in the push queue', run: async () => { try { const r = await post(base + '/queue-merge', {}); closeModal(); toast('Queued for approval (' + r.queued.id + ').'); } catch (e) { toast(errText(e), 'error'); } } },
+          { label: 'Cancel', run: closeModal }]);
+        return;
+      } else if (a === 'wt-keep') { await post(base + '/keep', { keep: !!t.checked }); }
+      else if (a === 'wt-discard') {
+        try { await post(base + '/discard', {}); toast('Worktree removed (it had nothing unmerged).'); }
+        catch (e) {
+          let d = null;
+          try { d = JSON.parse(e.message).detail; } catch (_) { /* not the 409 */ }
+          if (!d || !d.would_lose) throw e;
+          openModal('Discard work?', `<p class="lc-warn">${E(d.message)}.</p>
+${d.would_lose.uncommitted.length ? `<p>Uncommitted:</p><ul>${d.would_lose.uncommitted.slice(0, 30).map((f) => `<li>${E(f)}</li>`).join('')}</ul>` : ''}
+${d.would_lose.commits.length ? `<p>Commits not on the base:</p><ul>${d.would_lose.commits.slice(0, 30).map((c) => `<li>${E(c)}</li>`).join('')}</ul>` : ''}`,
+          [{ label: 'Keep it', run: closeModal }, { label: 'Discard it all', danger: true, run: async () => { try { await post(base + '/discard', { confirm: true }); closeModal(); toast('Discarded.'); loadWorktree(i); } catch (x) { toast(errText(x), 'error'); } } }]);
+          return;
+        }
+      }
+    } catch (e) { toast(errText(e), 'error'); }
+    loadWorktree(i);
+  }
+  async function rewind(i, turnId) {
+    const p = pane(i);
+    if (!window.confirm('Undo this turn? The files go back to how they were before it (and every later turn). The messages stay, marked reverted, and the current state is kept as a checkpoint.')) return;
+    try {
+      const r = await post('/api/local-chat/sessions/' + encodeURIComponent(p.sid) + '/rewind', { turn_id: turnId });
+      toast(`Rewound. ${r.messages_reverted} message(s) marked reverted.`);
+      await openSession(p.sid, i);
+    } catch (e) { toast(errText(e), 'error'); }
   }
 
   // ---- right panel: the model and the session ------------------------------------------------------------------------
@@ -469,16 +662,52 @@ ${(row.warnings || []).map((w) => `<p class="lc-warn">${E(w)}</p>`).join('')}`;
   }
 
   // ---- the sidebar ---------------------------------------------------------------------------------------------------
+  function sectionOf(s) {
+    if (S.showArchived) return 'archived';
+    if (s.pinned) return 'pinned';
+    if (s.status === 'needs_you') return 'needs';
+    if (s.status === 'working') return 'working';
+    if (s.group_id && S.groups.some((g) => g.id === s.group_id)) return 'g:' + s.group_id;
+    return new Date(s.updated * 1000).toDateString() === new Date().toDateString() ? 'today' : 'earlier';
+  }
+  function sessionRow(s, open) {
+    const wt = s.worktree && s.worktree.branch ? `<span class="lc-chip" title="worktree branch">⎇ ${E(s.worktree.branch.split('/').pop())}</span>` : '';
+    const ws = s.workspace ? `<span class="lc-chip" title="${E(s.workspace)}">${E(s.workspace.split(/[\\/]/).filter(Boolean).pop() || s.workspace)}</span>` : '';
+    return `<div class="lc-row${open.has(s.id) ? ' on' : ''}${s.unread ? ' lc-unread' : ''}" role="listitem" data-sid="${E(s.id)}">
+<button type="button" class="lc-row-main" data-lc="open" data-sid="${E(s.id)}" aria-label="Open session ${E(s.title || 'untitled')}, ${E(STATUS_LABEL[s.status] || 'idle')}${s.unread ? ', unread' : ''}">
+<span class="lc-row-title"><span class="lc-dot lc-dot-${E(s.status || 'idle')}" aria-hidden="true"></span>${s.pinned ? '📌 ' : ''}${E(s.title || 'Untitled session')}</span>
+<span class="lc-row-sub"><span class="lc-chip">${E(shortModel(s.model) || 'no model')}</span>${ws}${wt}<span>${E(when(s.updated))}</span></span></button>
+<button type="button" class="lc-icon lc-row-menu" data-lc="menu" data-sid="${E(s.id)}" aria-label="More for ${E(s.title || 'this session')}" title="More">⋯</button></div>`;
+  }
+  function renderFilters() {
+    const el = $('lc-filters');
+    if (!el) return;
+    const uniq = (k) => [...new Set(S.sessions.map((s) => s[k]).filter(Boolean))].sort();
+    const sel = (key, label, opts, fmt) => `<select class="lc-sel" data-lcf="${key}" aria-label="Filter by ${label}"><option value="">${E(label)}: all</option>${opts.map((o) =>
+      `<option value="${E(o)}"${S.filter[key] === o ? ' selected' : ''}>${E(fmt ? fmt(o) : o)}</option>`).join('')}</select>`;
+    el.innerHTML = sel('status', 'status', Object.keys(STATUS_LABEL), (o) => STATUS_LABEL[o])
+      + sel('model', 'model', uniq('model'), shortModel)
+      + sel('workspace', 'workspace', uniq('workspace'), (o) => o.split(/[\\/]/).filter(Boolean).pop() || o);
+  }
   function renderSide() {
     const el = $('lc-list');
     if (!el) return;
+    renderFilters();
     const open = new Set(S.panes.map((p) => p.sid));
-    if (!S.sessions.length) { el.innerHTML = `<p class="lc-note lc-pad">${S.query ? 'Nothing matches.' : S.showArchived ? 'No archived sessions.' : 'No sessions yet.'}</p>`; return; }
-    el.innerHTML = S.sessions.map((s) => `<div class="lc-row${open.has(s.id) ? ' on' : ''}" role="listitem" data-sid="${E(s.id)}">
-<button type="button" class="lc-row-main" data-lc="open" data-sid="${E(s.id)}" aria-label="Open session ${E(s.title || 'untitled')}">
-<span class="lc-row-title">${s.pinned ? '📌 ' : ''}${E(s.title || 'Untitled session')}</span>
-<span class="lc-row-sub">${E(shortModel(s.model) || 'no model yet')} · ${E(s.mode)} · ${E(when(s.updated))}</span></button>
-<button type="button" class="lc-icon lc-row-menu" data-lc="menu" data-sid="${E(s.id)}" aria-label="More for ${E(s.title || 'this session')}" title="More">⋯</button></div>`).join('');
+    const f = S.filter;
+    const rows = S.sessions.filter((s) => (!f.status || s.status === f.status) && (!f.model || s.model === f.model) && (!f.workspace || s.workspace === f.workspace));
+    if (!rows.length) { el.innerHTML = `<p class="lc-note lc-pad">${S.query || f.status || f.model || f.workspace ? 'Nothing matches.' : S.showArchived ? 'No archived sessions.' : 'No sessions yet.'}</p>`; return; }
+    const sections = [['pinned', 'Pinned'], ['needs', 'Needs you'], ['working', 'Working now'],
+      ...S.groups.map((g) => ['g:' + g.id, g.name, g.id]), ['today', 'Today'], ['earlier', 'Earlier'], ['archived', 'Archived']];
+    el.innerHTML = sections.map(([key, label, gid]) => {
+      const inS = rows.filter((s) => sectionOf(s) === key);
+      if (!inS.length && !gid) return '';
+      const closed = !!S.collapsed[key];
+      const unread = inS.filter((s) => s.unread).length;
+      return `<div class="lc-sec"><div class="lc-sec-head"><button type="button" class="lc-sec-btn" data-lc="collapse" data-key="${E(key)}" aria-expanded="${!closed}">${closed ? '▸' : '▾'} ${E(label)} <span class="lc-note">${inS.length}${unread ? ' · ' + unread + ' unread' : ''}</span></button>
+${gid ? `<button type="button" class="lc-icon" data-lc="group-menu" data-gid="${E(gid)}" aria-label="Rename or remove the group ${E(label)}" title="Group">⋯</button>` : ''}</div>
+${closed ? '' : inS.map((s) => sessionRow(s, open)).join('') || '<p class="lc-note lc-pad">Empty: move a session here from its menu.</p>'}</div>`;
+    }).join('');
   }
   function sessionMenu(sid, x, y) {
     const s = S.sessions.find((r) => r.id === sid);
@@ -490,7 +719,10 @@ ${(row.warnings || []).map((w) => `<p class="lc-warn">${E(w)}</p>`).join('')}`;
     m.setAttribute('role', 'menu');
     const items = [['rename', 'Rename'], ['pin', s.pinned ? 'Unpin' : 'Pin'], ['split', 'Open in split view'], ['export-md', 'Export as Markdown'],
       ['export-json', 'Export as JSON'], ['archive', s.archived ? 'Restore from the archive' : 'Archive'], ['delete', 'Delete…']];
-    m.innerHTML = items.map(([a, label]) => `<button type="button" role="menuitem" data-lcm="${a}" data-sid="${E(sid)}">${E(label)}</button>`).join('');
+    const groups = S.groups.filter((g) => g.id !== s.group_id).map((g) => [`group:${g.id}`, `Move to ${g.name}`]);
+    if (s.group_id) groups.push(['group:', 'Remove from its group']);
+    groups.push(['group-new', 'Move to a new group…']);
+    m.innerHTML = [...items.slice(0, 3), ...groups, ...items.slice(3)].map(([a, label]) => `<button type="button" role="menuitem" data-lcm="${E(a)}" data-sid="${E(sid)}">${E(label)}</button>`).join('');
     m.style.left = Math.min(x, window.innerWidth - 220) + 'px';
     m.style.top = Math.min(y, window.innerHeight - 260) + 'px';
     document.body.appendChild(m);
@@ -509,6 +741,13 @@ ${(row.warnings || []).map((w) => `<p class="lc-warn">${E(w)}</p>`).join('')}`;
       } else if (action === 'pin') await patch(url, { pinned: !s.pinned });
       else if (action === 'archive') await patch(url, { archived: !s.archived });
       else if (action === 'split') { openSplit(sid); return; }
+      else if (action.startsWith('group:')) await patch(url, { group_id: action.slice(6) });
+      else if (action === 'group-new') {
+        const name = window.prompt('Name of the new group');
+        if (!name) return;
+        const g = await post('/api/local-chat/groups', { name });
+        await patch(url, { group_id: g.id });
+      }
       else if (action === 'export-md' || action === 'export-json') {
         const d = await api(url);
         const name = (d.session.title || 'session').replace(/[^\w.-]+/g, '_');
@@ -517,11 +756,30 @@ ${(row.warnings || []).map((w) => `<p class="lc-warn">${E(w)}</p>`).join('')}`;
         return;
       } else if (action === 'delete') {
         if (!window.confirm('Delete "' + (s.title || 'this session') + '" and all its messages? This cannot be undone. Archive keeps it instead.')) return;
-        await api(url, { method: 'DELETE' });
+        try { await api(url, { method: 'DELETE' }); }
+        catch (e) {
+          let d = null;
+          try { d = JSON.parse(e.message).detail; } catch (_) { /* not the 409 */ }
+          if (!d || !d.would_lose) throw e;
+          const lost = d.would_lose.uncommitted.length + ' uncommitted change(s) and ' + d.would_lose.commits.length + ' commit(s)';
+          if (!window.confirm('Its worktree holds unmerged work: ' + lost + ' would be lost. Delete anyway?')) return;
+          await api(url + '?confirm=true', { method: 'DELETE' });
+        }
         S.panes.forEach((p, i) => { if (p.sid === sid) openSession('', i); });
       }
     } catch (e) { toast(errText(e), 'error'); }
     S.panes.forEach((p, i) => { if (p.sid === sid && action !== 'delete') openSession(sid, i); });
+    loadSessions();
+  }
+  async function groupMenu(gid) {
+    const g = S.groups.find((x) => x.id === gid);
+    if (!g) return;
+    const name = window.prompt(`Rename the group "${g.name}" (leave it empty to remove the group; its sessions stay)`, g.name);
+    if (name == null) return;
+    try {
+      if (name.trim()) await patch('/api/local-chat/groups/' + encodeURIComponent(gid), { name });
+      else await api('/api/local-chat/groups/' + encodeURIComponent(gid), { method: 'DELETE' });
+    } catch (e) { toast(errText(e), 'error'); }
     loadSessions();
   }
 
@@ -662,12 +920,26 @@ ${(st.running || []).length ? `<span>${st.running.length} answering</span>` : ''
       const i = paneOf(t);
       if (t.closest('.lc-pane')) S.active = i;
       if (t.dataset.lcp) { ev.preventDefault(); pickerAction(t.dataset.lcp, t.dataset.id); return; }
+      if (t.dataset.lc && t.dataset.lc.startsWith('wt-') && t.dataset.lc !== 'wt-keep') { worktreeAction(i, t.dataset.lc, t); return; }
       const a = t.dataset.lc;
       const p = pane(i);
       if (a === 'new') newSession(S.active);
       else if (a === 'open') openSession(t.dataset.sid, S.active);
       else if (a === 'menu') { const r = t.getBoundingClientRect(); sessionMenu(t.dataset.sid, r.left, r.bottom); }
       else if (a === 'send') send(i);
+      else if (a === 'queue') steer(i, null, 'queue');
+      else if (a === 'rewind') rewind(i, t.dataset.turn);
+      else if (a === 'collapse') { S.collapsed[t.dataset.key] = !S.collapsed[t.dataset.key]; store.set('collapsed', JSON.stringify(S.collapsed)); renderSide(); }
+      else if (a === 'group-menu') groupMenu(t.dataset.gid);
+      else if (a === 'new-group') { const name = window.prompt('Name of the new group'); if (name) post('/api/local-chat/groups', { name }).then(loadSessions, (e) => toast(errText(e), 'error')); }
+      else if (a === 'notify') {
+        if (typeof Notification === 'undefined') { toast('This browser cannot show notifications.', 'error'); return; }
+        const on = store.get('notify') === '1';
+        if (on) { store.set('notify', '0'); toast('Desktop notifications off.'); return; }
+        Notification.requestPermission().then((perm) => { store.set('notify', perm === 'granted' ? '1' : '0'); toast(perm === 'granted' ? 'You will be notified when a session needs you or finishes.' : 'Notifications were not allowed.'); });
+      } else if (a === 'prune') {
+        post('/api/local-chat/worktrees/prune', {}).then((r) => toast(`Removed ${r.removed.length} orphan worktree(s); kept ${r.kept.length}.`), (e) => toast(errText(e), 'error'));
+      }
       else if (a === 'cancel') cancel(i);
       else if (a === 'picker') openPicker(i);
       else if (a === 'mode') setField(i, 'mode', t.dataset.v);
@@ -692,6 +964,8 @@ ${(st.running || []).length ? `<span>${st.running.length} answering</span>` : ''
       const t = ev.target;
       const i = paneOf(t);
       if (t.id === 'lc-archived') { S.showArchived = t.checked; loadSessions(); return; }
+      if (t.dataset.lcf) { S.filter[t.dataset.lcf] = t.value; renderSide(); return; }
+      if (t.dataset.lc === 'wt-keep') { worktreeAction(i, 'wt-keep', t); return; }
       if (t.dataset.lc === 'autonomy') setField(i, 'autonomy', Number(t.value));
       else if (t.dataset.lc === 'cloud') setField(i, 'cloud_assist', t.value);
       else if (t.dataset.lc === 'workspace') setField(i, 'workspace', t.value.trim());
@@ -705,7 +979,7 @@ ${(st.running || []).length ? `<span>${st.running.length} answering</span>` : ''
     });
     root.addEventListener('keydown', (ev) => {
       const t = ev.target;
-      if (ev.key === 'Escape') { if (S.pickerFor >= 0) { closePicker(); ev.preventDefault(); } closeMenu(); return; }
+      if (ev.key === 'Escape') { if (S.pickerFor >= 0) { closePicker(); ev.preventDefault(); } closeModal(); closeMenu(); return; }
       if (!t.classList || !t.classList.contains('lc-input')) return;
       const i = paneOf(t);
       S.active = i;
@@ -739,6 +1013,15 @@ ${(st.running || []).length ? `<span>${st.running.length} answering</span>` : ''
       ev.preventDefault();
       addFiles(paneOf(t), ev.clipboardData.files);
     });
+    root.addEventListener('click', (ev) => {
+      const x = ev.target.closest && ev.target.closest('[data-lcx]');
+      if (!x) return;
+      const modal = $('lc-modal');
+      if (x.dataset.lcx === 'close') { closeModal(); return; }
+      const act = (modal.__actions || [])[Number(x.dataset.lcx)];
+      if (act && act.run) act.run();
+    });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) S.panes.forEach((_, n) => markRead(n)); });
     document.addEventListener('click', (ev) => {
       const m = ev.target.closest && ev.target.closest('[data-lcm]');
       if (m) { menuAction(m.dataset.lcm, m.dataset.sid); return; }
@@ -789,6 +1072,6 @@ ${(st.running || []).length ? `<span>${st.running.length} answering</span>` : ''
     if ('IntersectionObserver' in window) new IntersectionObserver((es) => setVisible(es.some((e) => e.isIntersecting))).observe(sec);
     else setVisible(true);
   }
-  ABP.localChat = { open: (sid) => openSession(sid, S.active), newSession: () => newSession(S.active), split: openSplit, state: S };
+  ABP.localChat = { open: (sid) => openSession(sid, S.active), newSession: () => newSession(S.active), split: openSplit, state: S, sectionOf };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })(typeof api === 'function' ? api : null);
