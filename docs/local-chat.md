@@ -125,3 +125,12 @@ In Build / Plan / Review the agent is asked to end each turn with a task list an
 (`local_chat.next_step_box`). Chapters (`POST …/chapters`) are dividers with a jump list; `GET …/export?format=md|json`
 downloads the session; `local_chat.auto_archive_days` archives quiet sessions (never pinned, working or waiting ones; a
 worktree with unmerged work is kept).
+
+## Offline and shared-GPU behaviour
+
+Local Chat needs no network: catalog, sessions, worktrees, Build turns, Factory planning and the capability index all run
+on this machine (`tests/test_localchat_offline.py` runs the flow with every non-local connection refused). When a turn
+fails because ModelMistress is down or degraded, the error says so and what to do (start it from Modules; Retry). One GPU
+is shared: a chat turn will not load a model that would unload the one a running Factory run uses (409, and the picker
+warns); the Factory's own model, or one that fits beside it, is fine. The picker answers from its cache
+(`local_chat.catalog_ttl_s`) without asking the hub again.

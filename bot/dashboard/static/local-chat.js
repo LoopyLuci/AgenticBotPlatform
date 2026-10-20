@@ -188,6 +188,7 @@
       S.defaultsLoaded = true;
       S.panes.forEach((p, i) => { if (!p.sid) renderTop(i); });
     }
+    S.panes.forEach((p, i) => { if (!p.sid) renderMsgs(i); });       // the empty state says when the hub is down
     renderStatus();
   }
   async function loadSetup() {
@@ -542,7 +543,9 @@ ${(mm.next.options || []).map((o) => `<button type="button" class="btn" data-lc=
   }
   function emptyHtml() {
     const model = S.catalog && S.catalog.default_model;
-    return `<div class="lc-empty"><h3>Local Chat</h3><p>Chat and code with local models on ModelMistress. Nothing here needs a cloud backend or the network.</p>
+    const hub = (S.status && S.status.hub) || null;
+    const down = hub && !hub.up ? `<p class="lc-warn">ModelMistress (the local model hub) is not running. Start it from <a href="#modules">Modules</a>; with autostart on, ABP restarts it by itself.</p>` : '';
+    return `<div class="lc-empty"><h3>Local Chat</h3>${down}<p>Chat and code with local models on ModelMistress. Nothing here needs a cloud backend or the network.</p>
 ${S.catalogErr ? `<p class="lc-warn">${E(S.catalogErr)}</p>` : model ? `<p class="lc-note">New sessions start on <b>${E(shortModel(model))}</b>. Pick another in the top bar.</p>` : '<p class="lc-note">Load or download a model on ModelMistress to start.</p>'}
 <p class="lc-note">Chat: no tools. Build: the agent edits files in the workspace (edits ask first). Plan: it proposes a plan for your approval. Review: it only reads.</p></div>`;
   }
@@ -987,7 +990,8 @@ ${closed ? '' : inS.map((s) => sessionRows(s, open, 0)).join('') || '<p class="l
     return `<div class="lc-prow${r.id === current ? ' on' : ''}${r.kind !== 'chat' ? ' lc-dim' : ''}">
 <div class="lc-prow-main"><b>${E(r.name)}</b> <span class="lc-note">${E(bits.join(' · '))}</span>
 <div class="lc-prow-line">Runs on: ${runs} · ${speedTxt}</div>${good ? `<div class="lc-prow-line">Good for: ${good}</div>` : ''}
-${(r.warnings || []).map((w) => `<div class="lc-warn">${E(w)}</div>`).join('')}</div>
+${(r.warnings || []).map((w) => `<div class="lc-warn">${E(w)}</div>`).join('')}
+${(pl.unload || []).filter((u) => ((S.catalog && S.catalog.factory_models) || []).includes(u)).map((u) => `<div class="lc-warn">A Factory run is using ${E(shortModel(u))}: this model would unload it, so chat turns on it wait until the run ends.</div>`).join('')}</div>
 <div class="lc-prow-act">${r.kind === 'chat' && r.runs_on !== 'none' ? `<button type="button" class="btn primary" data-lcp="use" data-id="${E(r.id)}">${r.id === current ? 'In use' : 'Use'}</button>` : ''}
 ${r.loaded ? `<button type="button" class="btn" data-lcp="unload" data-id="${E(r.id)}">Unload</button>` : (r.runs_on === 'gpu' || r.runs_on === 'cpu') && r.group !== 'other' ? `<button type="button" class="btn" data-lcp="load" data-id="${E(r.id)}">Load</button>` : ''}
 ${r.group !== 'other' && r.runs_on !== 'none' ? `<button type="button" class="btn" data-lcp="bench" data-id="${E(r.id)}" title="Measure its speed on this machine">Benchmark</button>` : ''}</div></div>`;

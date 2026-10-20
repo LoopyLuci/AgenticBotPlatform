@@ -27,6 +27,12 @@ logger = logging.getLogger("bot.localchat.factory")
 
 Broadcast = Callable[[dict], Awaitable[None]]
 _runs: dict[str, asyncio.Task] = {}
+_models: dict[str, str] = {}          # session -> the model its running Factory run works on (GPU sharing with chat)
+
+
+def busy_models() -> set[str]:
+    """The models running Factory runs are using: a chat turn must not unload them."""
+    return {m for sid, m in list(_models.items()) if m and running(sid)}
 
 
 class FactoryRefused(RuntimeError):
@@ -166,6 +172,7 @@ async def start(sid: str, plan_id: str, broadcast: Broadcast, *, confirm: bool =
     store.add_message(sid, "system", f"Factory run of plan {plan_id} started: {len(plan.tasks)} task(s), workers confined "
                       "(AppContainer, no network). Its workers appear as linked sessions.", meta={"factory_run": plan_id})
     await chat._status(broadcast, sid, "working", factory=plan_id)
+    _models[sid] = session["model"]
     _runs[sid] = asyncio.create_task(_run(sid, cond, plan, broadcast, integrate), name=f"localchat-factory-{sid}")
     return {"started": plan_id, "tasks": len(plan.tasks), "repo": repo, "base": base}
 
@@ -201,6 +208,7 @@ async def _run(sid: str, cond: Any, plan: Any, broadcast: Broadcast, integrate: 
         store.add_message(sid, "error", f"The Factory run failed: {type(e).__name__}: {e}"[:2000])
     finally:
         _runs.pop(sid, None)
+        _models.pop(sid, None)
         await chat._status(broadcast, sid, state, unread=True)
         await chat._safe(broadcast, {"type": "local_chat_turn", "session_id": sid, "turn_id": "", "state": state, "factory": True})
 

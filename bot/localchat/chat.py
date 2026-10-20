@@ -166,6 +166,8 @@ async def send(sid: str, text: str, broadcast: Broadcast, *, cloud: bool = False
         if not model:
             raise LookupError("no local chat model is available: load or download one on ModelMistress")
         store.update(sid, model=model)
+    if not to_cloud:
+        gpu_check(model)
     turn_id = store.start_turn(sid)
     store.add_message(sid, "user", text, turn_id=turn_id, model=CLOUD if to_cloud else model, meta={"cloud": True} if to_cloud else None)
     _steer[sid] = asyncio.Queue()
@@ -173,6 +175,27 @@ async def send(sid: str, text: str, broadcast: Broadcast, *, cloud: bool = False
                                name=f"localchat-{sid}")
     _running[sid] = task
     return {"turn_id": turn_id, "model": CLOUD if to_cloud else model, "chat_id": chat_id(sid), "cloud": to_cloud}
+
+
+def gpu_check(model: str) -> None:
+    """One GPU, shared: a chat turn may not load a model that would unload the one a running Factory run works on (the
+    hub's plan says what loading it unloads). The Factory's own model, or one that fits beside it, is fine."""
+    from bot.localchat import factory
+
+    busy = factory.busy_models() - {model}
+    if not busy:
+        return
+    try:
+        from bot.localchat import catalog
+
+        row = next((r for r in catalog.get().get("models", []) if r["id"] == model), None)
+    except Exception:  # noqa: BLE001 - no catalog: nothing known to unload
+        return
+    unload = set(((row or {}).get("plan") or {}).get("unload") or [])
+    clash = sorted(unload & busy)
+    if clash and not (row or {}).get("loaded"):
+        raise RuntimeError(f"loading {model.split(':')[-1]} would unload {', '.join(c.split(':')[-1] for c in clash)}, which a "
+                           "Factory run is using: pick that model for this session, or wait for the run to finish")
 
 
 CLOUD = "cloud"            # the model a cloud-assisted message is recorded under (the router's configured cloud backend)
@@ -351,7 +374,7 @@ async def _turn(sid: str, turn_id: str, text: str, model: str, session: dict, br
     except Exception as e:  # noqa: BLE001 - the session shows the error instead of hanging
         state = "error"
         logger.warning("local chat turn %s failed: %s", turn_id, e)
-        store.add_message(sid, "error", f"{type(e).__name__}: {e}"[:2000], turn_id=turn_id, model=model)
+        store.add_message(sid, "error", _explain(e, to_cloud), turn_id=turn_id, model=model)
     finally:
         speed_observer.reset(observer)
         store.finish_turn(turn_id, state)
@@ -382,6 +405,25 @@ async def _after_turn(sid: str, state: str, broadcast: Broadcast) -> None:
         except Exception as e:  # noqa: BLE001 - say why the queued message did not start, keep it
             store.queue_message(sid, nxt)
             store.add_message(sid, "system", f"A queued message did not start: {e}")
+
+
+def _explain(e: Exception, to_cloud: bool) -> str:
+    """The error a turn ended with, said plainly: a hub that is down or degraded says so (and what to do)."""
+    raw = f"{type(e).__name__}: {e}"[:1500]
+    if to_cloud:
+        return raw + " (the cloud backend did not answer: Local Chat still works locally with cloud assist Off)"
+    try:
+        from bot.modelmistress import supervisor
+
+        hub = supervisor.status()
+    except Exception:  # noqa: BLE001
+        return raw
+    if not hub.get("up"):
+        return ("ModelMistress (the local model hub) is not running, so the local model could not answer. Start it from "
+                "Modules -> ModelMistress (ABP restarts it by itself when autostart is on), then press Retry. " + f"({raw})")
+    if hub.get("degraded"):
+        return f"ModelMistress is running but degraded ({hub['degraded']}). " + raw
+    return raw
 
 
 def context_limit(model: str) -> Optional[int]:

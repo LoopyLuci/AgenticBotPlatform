@@ -146,7 +146,9 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
             doc = await asyncio.to_thread(catalog.get, refresh=refresh)
         except Exception as e:  # noqa: BLE001 - say why instead of a bare 500
             raise HTTPException(status_code=503, detail=f"ModelMistress did not answer: {e}") from e
-        return {**doc, "default_model": catalog.default_model(doc)}
+        from bot.localchat import factory
+
+        return {**doc, "default_model": catalog.default_model(doc), "factory_models": sorted(factory.busy_models())}
 
     @app.post("/api/local-chat/models/benchmark", dependencies=write)
     async def local_chat_benchmark(payload: dict = Body(...)):
