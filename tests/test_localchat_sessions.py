@@ -257,7 +257,10 @@ def test_steer_reaches_the_running_turn_and_queue_waits_for_the_next(agent):
     async def go():
         agent.gate = asyncio.Event()
         await chat.send(s["id"], "first", _bc(frames))
-        await asyncio.sleep(0.05)
+        for _ in range(500):                          # the turn reaches the agent (after the model-load check and the window warm-up)
+            if agent.calls:
+                break
+            await asyncio.sleep(0.01)
         assert chat.steer(s["id"], "also do X", "steer") == {"steered": True, "queued": False}
         assert chat.steer(s["id"], "then do Y", "queue")["queued"] is True
         q = agent.calls[-1]["context"]["steer_queue"]
