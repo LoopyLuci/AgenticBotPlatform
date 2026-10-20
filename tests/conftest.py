@@ -94,6 +94,16 @@ _worker_db_ready = False
 
 
 @pytest.fixture(autouse=True)
+def _local_chat_tests_have_a_hub(request, monkeypatch):
+    """Local Chat tests drive turns with a stand-in agent and no hub (ABP_NO_MODULE_PROVIDERS): chat.send's "no hub answers,
+    refuse at once" check would refuse them all. A test about that check has "no_hub" in its name and keeps it."""
+    if "localchat" in request.module.__name__ and "no_hub" not in request.node.name:
+        from bot.localchat import chat
+
+        monkeypatch.setattr(chat, "_hub_or_raise", lambda: None)
+
+
+@pytest.fixture(autouse=True)
 def _isolated_cicd_event_store(monkeypatch, tmp_path):
     """Instrumented scripts (release, pipeline) record into the CI/CD event
     store. No test may ever write into the real one, so every test gets its own."""

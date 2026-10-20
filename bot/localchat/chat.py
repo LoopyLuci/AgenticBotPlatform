@@ -158,6 +158,8 @@ async def send(sid: str, text: str, broadcast: Broadcast, *, cloud: bool = False
     if session["mode"] in WRITES and cwd and not session.get("worktree") and _is_live_checkout(cwd):
         raise ValueError("Chat, Build and Plan never work in the live ABP checkout: give this session a worktree first")
     model = session["model"]
+    if not to_cloud:
+        await asyncio.to_thread(_hub_or_raise)
     if not model and not to_cloud:
         from bot.localchat import catalog
 
@@ -174,6 +176,17 @@ async def send(sid: str, text: str, broadcast: Broadcast, *, cloud: bool = False
                                name=f"localchat-{sid}")
     _running[sid] = task
     return {"turn_id": turn_id, "model": CLOUD if to_cloud else model, "chat_id": chat_id(sid), "cloud": to_cloud}
+
+
+def _hub_or_raise() -> None:
+    """Refuse a local turn at once when no hub answers. client.find() is cached (a fresh miss costs well under a second);
+    the slow path - require() asking the supervisor to start or wait for a hub - is left to the supervisor's own
+    background check, which restarts the hub when autostart is on. A send used to stall 5-60 s here before saying no."""
+    from bot.modelmistress import client
+
+    if client.find() is None:
+        raise client.MMError("ModelMistress is not running. Start it from the Modules page; with autostart on, ABP "
+                             "restarts it by itself within about a minute.", code="unavailable")
 
 
 def gpu_check(model: str) -> None:

@@ -73,7 +73,13 @@ def test_a_packaged_process_never_starts_the_shared_hub(monkeypatch):
 # ---- one hub per home ----------------------------------------------------------------------------------------------------------
 class _Proc:
     def __init__(self, pid, name, cmdline):
-        self.info = {"pid": pid, "name": name, "cmdline": cmdline}
+        self.info = {"pid": pid, "name": name}       # what process_iter(["pid", "name"]) gives
+        self._cmd = cmdline
+
+    def cmdline(self):
+        if not self.info["name"].lower().startswith("model-mistress"):
+            raise AssertionError("only a model-mistress process's command line is read")
+        return self._cmd
 
 
 def test_hub_processes_finds_a_hub_for_this_home_only(monkeypatch, tmp_path):

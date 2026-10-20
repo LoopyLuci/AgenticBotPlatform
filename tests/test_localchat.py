@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -525,8 +526,10 @@ def test_sending_with_no_hub_is_a_plain_502_not_a_500_or_a_sign_in_503(temp_db, 
     c = TestClient(build_app())
     h = {"X-Dashboard-Token": "test-token"}
     s = c.post("/api/local-chat/sessions", json={"mode": "chat"}, headers=h).json()
+    t0 = time.perf_counter()
     r = c.post(f"/api/local-chat/sessions/{s['id']}/send", json={"text": "hello"}, headers=h)
     assert r.status_code == 502 and "not running" in r.json()["detail"]      # the dashboard reads 503 as "not signed in"
+    assert time.perf_counter() - t0 < 5                                       # at once (it took 57 s on 2026-10-20)
     assert store.messages(s["id"]) == []
 
 

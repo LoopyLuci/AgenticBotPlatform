@@ -113,11 +113,15 @@ def hub_processes(home: Path) -> list[int]:
     except ImportError:
         return []
     out: list[int] = []
-    for p in psutil.process_iter(["pid", "name", "cmdline"]):
+    # names first, a command line only for a model-mistress process: reading every process's command line took ~4.5 s
+    # on Windows, on every hub lookup that found no hub
+    for p in psutil.process_iter(["pid", "name"]):
         try:
             name = (p.info.get("name") or "").lower()
-            cmd = p.info.get("cmdline") or []
-            if not name.startswith("model-mistress") or "serve" not in cmd or "--home" not in cmd:
+            if not name.startswith("model-mistress"):
+                continue
+            cmd = p.info.get("cmdline") or p.cmdline() or []
+            if "serve" not in cmd or "--home" not in cmd:
                 continue
             i = cmd.index("--home")
             if i + 1 < len(cmd) and _same_path(cmd[i + 1], home):
