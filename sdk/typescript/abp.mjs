@@ -926,6 +926,25 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/capabilities": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capabilities",
+  "path_params": [],
+  "query_params": [
+   "q",
+   "kind",
+   "limit",
+   "offline"
+  ]
+ },
+ "GET /api/capabilities/stats": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capabilities/stats",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/capacity/events": {
   "body": false,
   "method": "GET",
@@ -11366,6 +11385,25 @@ export const operations = {
   "query_params": [
    "sig"
   ]
+ },
+ "capabilities_search_api_capabilities_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capabilities",
+  "path_params": [],
+  "query_params": [
+   "q",
+   "kind",
+   "limit",
+   "offline"
+  ]
+ },
+ "capabilities_stats_api_capabilities_stats_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capabilities/stats",
+  "path_params": [],
+  "query_params": []
  },
  "capacity_clear_api_capacity_clear_post": {
   "body": true,

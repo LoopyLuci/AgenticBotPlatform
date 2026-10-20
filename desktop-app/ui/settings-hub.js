@@ -8,6 +8,7 @@
 // tests/test_settings_hub.py fails if the two differ, if a link points at a page neither app has, or if a page that
 // existed before Settings is missing from both the navigation and this index. It uses the page's own api() and draws
 // into #settings-root. ABP.settingsIndex is the same table as data (used by the capability index and Local Chat's palette).
+// A search also shows matches from ABP's capability index (/api/capabilities) under "Elsewhere in ABP".
 (function (api) {
   'use strict';
   if (typeof api !== 'function') return;
@@ -101,6 +102,8 @@
   let lc = null;          // /api/local-chat/status (settings + hub)
   let models = [];        // chat models from the catalog
   let setup = null;       // /api/setup/status
+  let elsewhere = [];     // capability-index matches for the current search
+  let capTimer = null;
 
   window.ABP = window.ABP || {};
   window.ABP.settingsIndex = SECTIONS.map((s) => ({ id: s.id, title: s.title, desc: s.desc,
@@ -187,7 +190,11 @@
 <nav class="sh-toc" aria-label="Settings sections">${SECTIONS.map((s) => `<a href="#settings/${E(s.id)}">${E(s.title)}</a>`).join('')}</nav>
 <div class="sh-grid">${shown.map((s) => `<div class="sh-card${q ? ' sh-hit' : ''}" id="settings-${E(s.id)}"><h3>${E(s.title)}</h3><p class="sh-desc">${E(s.desc)}</p>
 ${s.id === 'backends' ? backendsExtra() : ''}${s.items.filter((i) => !q || matches({ title: s.title, desc: s.desc, items: [] }, q) || itemMatches(i, q)).map(itemHtml).join('')}
-${s.id === 'local-models' ? localChatForm() : ''}</div>`).join('') || '<p class="sh-note">No setting matches. Try fewer words.</p>'}</div>`;
+${s.id === 'local-models' ? localChatForm() : ''}</div>`).join('') || '<p class="sh-note">No setting matches. Try fewer words.</p>'}</div>
+${q && elsewhere.length ? `<div class="sh-card sh-else"><h3>Elsewhere in ABP</h3>${elsewhere.map((c) => {
+    const go = c.where.startsWith('#') ? c.where.slice(1) : c.where.startsWith('action:') ? 'do:action:' + c.where.slice(7) : c.where.startsWith('settings/') ? 'do:section:' + c.where.slice(9) : '';
+    return `<div class="sh-item">${go ? `<button type="button" class="sh-link" data-sh-go="${E(go)}">${E(c.label)}</button>` : `<b>${E(c.label)}</b>`}<span>${E(c.kind)} · ${E(c.desc)}</span></div>`;
+  }).join('')}</div>` : ''}`;
     if (focusId === 'sh-search') { const box = $('sh-search'); box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
   }
 
@@ -211,6 +218,8 @@ ${s.id === 'local-models' ? localChatForm() : ''}</div>`).join('') || '<p class=
     if (target === 'do:wizard') { const b = $('btn-open-wizard'); if (b) b.click(); else toast('The setup wizard is not in this app.', 'error'); return; }
     if (target === 'do:shortcuts') { if (window.abpShortcuts) window.abpShortcuts.openHelp(); return; }
     if (target === 'do:estop') { if (window.abpActions) window.abpActions.run('estop.agent'); return; }
+    if (target.startsWith('do:action:')) { if (window.abpActions) window.abpActions.run(target.slice(10)); return; }
+    if (target.startsWith('do:section:')) { openSection(target.slice(11)); return; }
     if (target.startsWith('card:')) { const el = $(target.slice(5)); scrollTo(el && (el.closest('.card') || el.closest('[id^="sh-"]') || el)); return; }
     const link = document.querySelector(`nav.sidenav a[href="#${target}"]`);
     if (link) link.click(); else scrollTo($(target));
@@ -241,7 +250,18 @@ ${s.id === 'local-models' ? localChatForm() : ''}</div>`).join('') || '<p class=
     if (!root) return;
     css();
     render();
-    root.addEventListener('input', (ev) => { if (ev.target.id === 'sh-search') { query = ev.target.value; render(); } });
+    root.addEventListener('input', (ev) => {
+      if (ev.target.id !== 'sh-search') return;
+      query = ev.target.value;
+      render();
+      clearTimeout(capTimer);
+      const q = query.trim();
+      if (q.length < 2) { elsewhere = []; return; }
+      capTimer = setTimeout(() => {
+        api('/api/capabilities?limit=8&kind=page&kind=action&kind=command&kind=tool&kind=module&q=' + encodeURIComponent(q))
+          .then((d) => { if (query.trim() === q) { elsewhere = d.results || []; render(); } }, () => {});
+      }, 250);
+    });
     root.addEventListener('click', (ev) => {
       const t = ev.target.closest('[data-sh-go]');
       if (t) { ev.preventDefault(); go(t.dataset.shGo); return; }

@@ -1002,6 +1002,11 @@ def build_app() -> FastAPI:
 
     localchat_api.register(app, _require_token_or_api_key, _require_token)
 
+    # The capability index (/api/capabilities): search everything ABP can do (pages, settings, actions, tools, routes).
+    from bot.dashboard import capabilities_api
+
+    capabilities_api.register(app, _require_token_or_api_key, _require_token)
+
     # Agent eval reports (/api/agent/evals/reports): the Evals screen's read-only view of the harness's JSON reports.
     from bot.dashboard import evals_api
 

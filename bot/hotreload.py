@@ -159,6 +159,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.localchat.chat",  # Local Chat turns: the running turns (asyncio tasks, for cancel) are process state
     "bot.localchat.factory",  # Local Chat Factory runs: the running conductor runs (asyncio tasks, for stop) are process state
     "bot.dashboard.localchat_api",
+    "bot.dashboard.capabilities_api",  # read-only capability search routes; they register once, like the routes above
     "bot.agent_runtime.settings_schema",  # imports permissions/sandbox (both denied above); a reload would split the classes it validates against
     "bot.agent_runtime.project_rules",  # imported by prompt.py; reloaded with it is not needed and is safe to skip
     "bot.agent_runtime.code_intel",  # running language servers are process state
@@ -451,6 +452,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.backends.native_backend",
     "bot.gpu",  # pure VRAM probe (DXGI via ctypes), no bot-internal deps
     "bot.agent_runtime.gpu_tool",  # the gpu_status tool; imports bot.gpu, imported by tools.py below
+    "bot.capabilities.tool",  # the abp_capabilities tool (reads the capability index lazily); imported by tools.py below
     "bot.agent_runtime.tools",
     "bot.agent_runtime.checkpoints",
     "bot.agent_runtime.tool_loop",

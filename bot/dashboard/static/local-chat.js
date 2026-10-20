@@ -17,6 +17,7 @@
 // agent's autonomy and tools, the session's Factory board, the manager's digest and escalations, and WatchDog incidents.
 // Long sessions (S4): the agent's task list and next-step question show under its last reply (answer buttons send the
 // answer), compactions and chapters are visible dividers (Chapters jumps to one), and Compact / Export are one click.
+// The `/` palette (P5) also searches ABP's capability index (/api/capabilities): pages, settings, actions, tools.
 //
 // This file and local-chat.css are identical in the dashboard (bot/dashboard/static/) and the desktop app
 // (desktop-app/ui/); tests/test_local_chat_ui.py fails if they differ. It uses the page's own api() and draws into #lc-root.
@@ -1065,6 +1066,7 @@ ${(st.running || []).length ? `<span>${st.running.length} answering</span>` : ''
 
   // ---- events --------------------------------------------------------------------------------------------------------
   function paneOf(el) { const p = el && el.closest ? el.closest('.lc-pane') : null; return p ? Number(p.dataset.pane) : S.active; }
+  let capTimer = null;
   function showSlash(i) {
     const p = pane(i);
     const box = p.el.querySelector('.lc-input');
@@ -1072,8 +1074,29 @@ ${(st.running || []).length ? `<span>${st.running.length} answering</span>` : ''
     const v = box.value;
     if (!v.startsWith('/') || v.includes('\n')) { el.classList.add('hidden'); return; }
     const hits = SLASH.filter(([c]) => c.startsWith(v.split(' ')[0]));
-    el.innerHTML = hits.map(([c, d]) => `<button type="button" role="option" data-lc="slash" data-v="${E(c.split(' ')[0])}"><b>${E(c)}</b> <span class="lc-note">${E(d)}</span></button>`).join('');
-    el.classList.toggle('hidden', !hits.length);
+    const draw = (caps) => {
+      el.innerHTML = hits.map(([c, d]) => `<button type="button" role="option" data-lc="slash" data-v="${E(c.split(' ')[0])}"><b>${E(c)}</b> <span class="lc-note">${E(d)}</span></button>`).join('')
+        + (caps || []).map((c) => `<button type="button" role="option" data-lc="cap" data-where="${E(c.where)}"><span class="lc-chip">${E(c.kind)}</span> <b>${E(c.label)}</b> <span class="lc-note">${E(c.desc)}${c.network ? ' · needs the internet' : ''}${c.cloud ? ' · cloud' : ''}</span></button>`).join('');
+      el.classList.toggle('hidden', !el.innerHTML);
+    };
+    draw(null);
+    clearTimeout(capTimer);
+    const q = v.slice(1).trim();
+    if (q.length < 2 || hits.some(([c]) => c.split(' ')[0] === v.split(' ')[0])) return;
+    capTimer = setTimeout(() => {
+      api('/api/capabilities?limit=8&kind=page&kind=setting&kind=action&kind=command&kind=tool&kind=module&q=' + encodeURIComponent(q))
+        .then((d) => { if (box.value === v) draw(d.results); }, () => {});
+    }, 200);
+  }
+  function goCapability(i, where) {
+    hideSlash(i);
+    const box = pane(i).el.querySelector('.lc-input');
+    box.value = '';
+    if (where.startsWith('#')) { const a = document.querySelector(`nav.sidenav a[href="${where}"]`); if (a) a.click(); else location.hash = where; return; }
+    if (where.startsWith('action:')) { if (window.abpActions) window.abpActions.run(where.slice(7)); return; }
+    if (where.startsWith('settings/')) { location.hash = '#' + where; return; }
+    if (where.startsWith('tool:')) { box.value = `Use the ${where.slice(5)} tool to `; box.focus(); return; }
+    box.value = where; box.focus();
   }
   function hideSlash(i) { const el = part(i, 'slash'); if (el) el.classList.add('hidden'); }
 
@@ -1129,6 +1152,7 @@ ${(st.running || []).length ? `<span>${st.running.length} answering</span>` : ''
       else if (a === 'copy-msg') { const m = p.messages.find((x) => String(x.id) === t.dataset.id); if (m) copyOut(m.text); }
       else if (a === 'retry') { const m = p.messages.find((x) => String(x.id) === t.dataset.id); if (m) send(i, m.text); }
       else if (a === 'edit') { const m = p.messages.find((x) => String(x.id) === t.dataset.id); if (m) { const box = p.el.querySelector('.lc-input'); box.value = m.text; box.focus(); } }
+      else if (a === 'cap') goCapability(i, t.dataset.where);
       else if (a === 'slash') { const box = p.el.querySelector('.lc-input'); box.value = t.dataset.v + ' '; box.focus(); showSlash(i); }
       else if (a === 'hint-close') { store.set('hint-dismissed', '1'); renderHint(); }
       else if (a === 'setup') { const b = $('btn-open-wizard'); if (b) b.click(); }
