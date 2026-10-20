@@ -144,8 +144,8 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
 
         try:
             doc = await asyncio.to_thread(catalog.get, refresh=refresh)
-        except Exception as e:  # noqa: BLE001 - say why instead of a bare 500
-            raise HTTPException(status_code=503, detail=f"ModelMistress did not answer: {e}") from e
+        except Exception as e:  # noqa: BLE001 - no hub is a normal state on the first screen: say why, not an HTTP error
+            return {"models": [], "default_model": "", "factory_models": [], "error": f"ModelMistress did not answer: {e}"}
         from bot.localchat import factory
 
         return {**doc, "default_model": catalog.default_model(doc), "factory_models": sorted(factory.busy_models())}

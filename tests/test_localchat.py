@@ -379,3 +379,15 @@ def test_the_api(temp_db, monkeypatch):
     assert c.get("/api/local-chat/sessions/nope", headers=h).status_code == 404
     assert c.post(f"/api/local-chat/sessions/{s['id']}/cancel", headers=h).json() == {"cancelled": False}
     assert c.delete(f"/api/local-chat/sessions/{s['id']}", headers=h).json() == {"deleted": True}
+
+
+def test_no_hub_is_an_empty_picker_with_a_reason_not_an_http_error(temp_db, monkeypatch):
+    monkeypatch.setenv("DASHBOARD_TOKEN", "test-token")
+    from bot.dashboard.server import build_app
+
+    def down(refresh=False, ttl_s=None):
+        raise RuntimeError("the hub is not running")
+    monkeypatch.setattr(catalog, "get", down)
+    r = TestClient(build_app()).get("/api/local-chat/models", headers={"X-Dashboard-Token": "test-token"})
+    assert r.status_code == 200                      # the first screen must not log a console error without a hub
+    assert r.json()["models"] == [] and "not running" in r.json()["error"]

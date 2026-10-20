@@ -174,7 +174,7 @@
   async function loadCatalog(refresh) {
     try {
       S.catalog = await api('/api/local-chat/models' + (refresh ? '?refresh=true' : ''));
-      S.catalogErr = '';
+      S.catalogErr = S.catalog.error || '';
     } catch (e) { S.catalogErr = errText(e); }
     S.panes.forEach((p, i) => { renderTop(i); renderRight(i); if (!p.sid) renderMsgs(i); });
     if (S.pickerFor >= 0) renderPicker();
