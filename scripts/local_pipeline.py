@@ -591,12 +591,15 @@ DIFFLINT_JOIN_SLACK_S = 30.0       # past its own budget, how long the pipeline 
 
 class _DiffLintJob:
     """The ML diff-lint (bot/conductor/difflint.py) in a daemon thread next to pytest. It prints nothing while it runs (the
-    summary comes after pytest) and can never fail the pipeline: its result is advisory, a crash is one warning line."""
+    summary comes after pytest) and can never fail the pipeline: its result is advisory, a crash is one warning line.
 
-    def __init__(self, base: str, head: str, budget: float):
+    The pipeline has stopped live ABP by now, and the ModelMistress hub live ABP's supervisor keeps up went with it, so the
+    stage starts its own hub for the model call (start_hub; ABP_PIPELINE_DIFFLINT_HUB=0 turns that off) and stops it after."""
+
+    def __init__(self, base: str, head: str, budget: float, start_hub: bool = True):
         import threading
 
-        self.base, self.head, self.budget = base, head, budget
+        self.base, self.head, self.budget, self.start_hub = base, head, budget, start_hub
         self.report = None
         self.error = ""
         self.thread = threading.Thread(target=self._go, name="difflint", daemon=True)
@@ -605,7 +608,7 @@ class _DiffLintJob:
         try:
             from bot.conductor import difflint
 
-            self.report = difflint.run(ROOT, self.base, self.head, budget=self.budget)
+            self.report = difflint.run(ROOT, self.base, self.head, budget=self.budget, start_hub=self.start_hub)
         except Exception as exc:  # noqa: BLE001 - advisory
             self.error = f"{type(exc).__name__}: {exc}"[:300]
 
@@ -625,7 +628,8 @@ def _start_difflint() -> Optional[_DiffLintJob]:
             return None
         from bot.conductor import difflint
 
-        job = _DiffLintJob(base, head or "HEAD", difflint.budget_s())
+        own_hub = os.environ.get("ABP_PIPELINE_DIFFLINT_HUB", "1").strip().lower() not in ("0", "false", "no", "off")
+        job = _DiffLintJob(base, head or "HEAD", difflint.budget_s(), start_hub=own_hub)
         job.thread.start()
         Step.doing(f"ML diff-lint started next to pytest (advisory, budget {job.budget:.0f}s)")
         return job
@@ -642,6 +646,9 @@ def _finish_difflint(job: Optional[_DiffLintJob]) -> None:
         job.thread.join(timeout=job.budget + DIFFLINT_JOIN_SLACK_S)
         if job.thread.is_alive():
             Step.warn(f"ML diff-lint overran its {job.budget:.0f}s budget - left behind (advisory, the pipeline goes on)")
+            from bot.conductor import difflint
+
+            difflint.stop_own_hub()          # a hub it started must not outlive the stage into the redeploy
             return
         rep = job.report
         if rep is None:

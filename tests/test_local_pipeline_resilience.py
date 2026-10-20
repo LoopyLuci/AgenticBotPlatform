@@ -305,3 +305,75 @@ def test_a_failing_stage_rebuild_fails_the_rust_check(monkeypatch):
     monkeypatch.setattr(lp.shutil, "which", lambda name: "/usr/bin/cargo")
     monkeypatch.setattr(release_guard, "missing_bundle_resources", lambda root: ["stage/abp_cicd"])
     assert lp.check_rust() is False
+
+
+# ---- the ML diff-lint runs after the live stop: it brings its own hub ------------------------------------------------------
+def _difflint_on(monkeypatch, run):
+    from bot.conductor import difflint
+
+    monkeypatch.setenv("ABP_PIPELINE_DIFFLINT", "1")
+    monkeypatch.setattr(lp, "_DIFF_RANGE", "aaa..bbb")
+    monkeypatch.setattr(difflint, "run", run)
+    return difflint
+
+
+@pytest.mark.parametrize("env, want", [(None, True), ("0", False)])
+def test_the_diff_lint_starts_its_own_hub_unless_told_not_to(monkeypatch, env, want):
+    """Live ABP (and the hub its supervisor keeps up) is stopped before the gates, so the stage asks for a hub of its own."""
+    from bot.conductor.difflint import Report
+
+    seen = {}
+
+    def run(root, base, head, budget=None, start_hub=False, **kw):
+        seen["start_hub"] = start_hub
+        return Report(status="ok")
+    _difflint_on(monkeypatch, run)
+    if env is None:
+        monkeypatch.delenv("ABP_PIPELINE_DIFFLINT_HUB", raising=False)
+    else:
+        monkeypatch.setenv("ABP_PIPELINE_DIFFLINT_HUB", env)
+    job = lp._start_difflint()
+    job.thread.join(5)
+    assert seen == {"start_hub": want}
+
+
+def test_an_overrunning_diff_lint_has_its_hub_stopped_before_the_redeploy(monkeypatch, capsys):
+    import threading
+
+    from bot.conductor.difflint import Report
+
+    gate = threading.Event()
+    difflint = _difflint_on(monkeypatch, lambda *a, **k: gate.wait(5) and Report())
+    stopped = []
+    monkeypatch.setattr(difflint, "stop_own_hub", lambda: stopped.append(1))
+    monkeypatch.setattr(difflint, "budget_s", lambda: 0.1)
+    monkeypatch.setattr(lp, "DIFFLINT_JOIN_SLACK_S", 0.1)
+    job = lp._start_difflint()
+    lp._finish_difflint(job)
+    gate.set()
+    assert stopped == [1] and "overran" in capsys.readouterr().out
+
+
+def test_a_diff_lint_that_starts_its_own_hub_does_not_hold_up_pytest(monkeypatch):
+    """The stage is a side thread: pytest's command is issued while the stage is still busy bringing its hub up."""
+    import threading
+
+    from bot.conductor.difflint import Report
+
+    release, done, at_pytest = threading.Event(), [], []
+
+    def stage(*a, **k):
+        release.wait(5)
+        done.append(1)
+        return Report(status="ok")
+    _difflint_on(monkeypatch, stage)
+
+    def fake_run(cmd, cwd=None, retries=0, timeout=None):
+        if "pytest" in cmd and "-c" not in cmd:
+            at_pytest.append(list(done))         # the stage has not finished when pytest starts
+            release.set()
+        return True, "1 passed in 0.1s"
+    monkeypatch.setattr(lp, "_run", fake_run)
+    monkeypatch.setattr(lp, "_keep_pytest_output", lambda out: None)
+    assert lp.check_python() is True
+    assert at_pytest and at_pytest[0] == [] and done == [1]

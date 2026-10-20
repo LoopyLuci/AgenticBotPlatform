@@ -6,6 +6,7 @@
     python scripts/difflint.py --dismiss <id>       the finding was wrong or not worth it (counts against its category's precision)
     python scripts/difflint.py --stats              per-category counts and precision (accepted / judged)
     python scripts/difflint.py --run [--base REF]   run the stage by hand on REF..HEAD (default: the merge base with origin/main)
+                                    [--start-hub]   ... starting a hub for the model call when none runs (as the pipeline does)
 
 Nothing here commits, pushes or touches anything but the working tree --apply is asked to change.
 """
@@ -61,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--stats", action="store_true", help="per-category counts and precision")
     g.add_argument("--run", action="store_true", help="run the stage by hand")
     ap.add_argument("--base", default="", help="with --run: the base ref (default: merge-base HEAD origin/main)")
+    ap.add_argument("--start-hub", action="store_true", help="with --run: start a hub for the model call when none runs")
     args = ap.parse_args(argv)
     if args.list:
         return _list()
@@ -87,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     if not base:
         print("no base: pass --base REF", file=sys.stderr)
         return 1
-    rep = difflint.run(ROOT, base, "HEAD")
+    rep = difflint.run(ROOT, base, "HEAD", start_hub=args.start_hub)
     print(rep.summary())
     return 0
 

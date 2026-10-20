@@ -203,6 +203,182 @@ def test_the_default_gate_skips_without_a_hub(monkeypatch):
     assert not g.ok and "hub is not running" in g.reason
 
 
+# ---- its own hub (the pipeline stopped live ABP, and live ABP's hub with it) ----------------------------------------
+class _FakeHubLife:
+    """client.find answers only while the stand-in hub "runs"; start_transient starts it, its stop ends it."""
+
+    def __init__(self, monkeypatch, start_why=""):
+        from bot.modelmistress import client, supervisor
+
+        self.up, self.starts, self.stops, self.locks = False, [], [], []
+        monkeypatch.setattr(client, "find", lambda *a, **k: client.Hub("http://127.0.0.1:9", "t", "0.3.0") if self.up else None)
+        monkeypatch.setattr(client, "models", lambda hub=None: [{"id": "qwen3-coder-30b-a3b",
+                                                                 "serving": {"n_ctx": 65536, "slots": 2}}])
+
+        def stop():
+            self.stops.append(1)
+            self.up = False
+
+        def start(wait_s):
+            self.starts.append(wait_s)
+            if start_why:
+                return None, start_why, None
+            self.up = True
+            return client.Hub("http://127.0.0.1:9", "t", "0.3.0"), "", stop
+        monkeypatch.setattr(supervisor, "start_transient", start)
+        monkeypatch.setattr(difflint, "gpu_gate", lambda lease_s, board=None: (lambda: self.locks.append("released"), ""))
+
+
+def test_without_start_hub_the_gate_never_starts_one(monkeypatch):
+    life = _FakeHubLife(monkeypatch)
+    g = difflint.default_gate(60)
+    assert not g.ok and g.reason == "the ModelMistress hub is not running" and life.starts == []
+
+
+def test_the_gate_starts_its_own_hub_and_stops_it_on_release(monkeypatch):
+    life = _FakeHubLife(monkeypatch)
+    g = difflint.default_gate(60, start_hub=True, start_wait_s=12)
+    assert g.ok and g.started_hub and g.model == "modelmistress/qwen3-coder-30b-a3b" and life.starts == [12]
+    assert life.up and life.stops == [] and life.locks == []
+    g.release()
+    assert not life.up and life.stops == [1] and life.locks == ["released"]
+    difflint.stop_own_hub()                  # already stopped: nothing twice
+    assert life.stops == [1]
+
+
+def test_a_running_hub_is_used_never_a_second_one(monkeypatch):
+    life = _FakeHubLife(monkeypatch)
+    life.up = True
+    g = difflint.default_gate(60, start_hub=True)
+    assert g.ok and not g.started_hub and life.starts == []
+    g.release()
+    assert life.up and life.stops == []
+
+
+def test_a_hub_that_cannot_be_started_is_a_skip_with_the_reason_and_the_lock_back(monkeypatch):
+    life = _FakeHubLife(monkeypatch, start_why="not starting a hub from here: virtualized view")
+    g = difflint.default_gate(60, start_hub=True)
+    assert not g.ok and "could not start one: not starting a hub from here: virtualized view" in g.reason
+    assert life.locks == ["released"]
+
+
+def test_no_hub_is_started_while_the_gpu_lock_is_taken(monkeypatch):
+    life = _FakeHubLife(monkeypatch)
+    monkeypatch.setattr(difflint, "gpu_gate", lambda lease_s, board=None: (None, "the GPU lock custom:gpu0 is not free (x)"))
+    g = difflint.default_gate(60, start_hub=True)
+    assert not g.ok and "not free" in g.reason and life.starts == []
+
+
+def test_the_run_stops_its_hub_after_the_model_call_and_says_so(monkeypatch, repo, tmp_path):
+    r, base = repo
+    life = _FakeHubLife(monkeypatch)
+    up_during_call = []
+
+    async def complete(prompt, **kw):
+        up_during_call.append(life.up)
+        return json.dumps({"findings": [NOFIX]}), kw["model"]
+    rep = difflint.run(r, base, "HEAD", runner=plain_runner, out_dir=tmp_path / "logs", state=tmp_path / "state",
+                       run_name="own", with_context=False, with_static=False, complete=complete, start_hub=True, budget=60)
+    assert rep.status == "ok" and rep.started_hub and up_during_call == [True]
+    assert not life.up and life.stops == [1] and life.locks == ["released"]
+    assert "(own hub)" in rep.summary() and life.starts == [15.0]          # a quarter of the budget for the start
+    assert json.loads(Path(rep.json_path).read_text(encoding="utf-8"))["started_hub"] is True
+
+
+def test_the_run_stops_its_hub_even_when_the_model_fails(monkeypatch, repo, tmp_path):
+    r, base = repo
+    life = _FakeHubLife(monkeypatch)
+
+    async def broken(prompt, **kw):
+        raise ConnectionError("hub went away")
+    rep = difflint.run(r, base, "HEAD", runner=plain_runner, out_dir=tmp_path / "logs", state=tmp_path / "state",
+                       run_name="own", with_context=False, with_static=False, complete=broken, start_hub=True, budget=60)
+    assert rep.status == "error" and not life.up and life.stops == [1] and life.locks == ["released"]
+
+
+# ---- supervisor.start_transient: the guards ------------------------------------------------------------------------------
+@pytest.fixture
+def transient(monkeypatch, tmp_path):
+    from bot.modelmistress import client, guard, supervisor
+    from bot.sandbox_ns import cell as cell_mod
+
+    monkeypatch.setattr(supervisor, "autostart_enabled", lambda: True)
+    monkeypatch.setattr(supervisor, "_sandboxed", lambda: None)
+    monkeypatch.setattr(client, "mm_home", lambda: tmp_path / "mm")
+    monkeypatch.setattr(guard, "hub_processes", lambda home: [])
+    monkeypatch.setattr(guard, "virtualized", lambda path: None)
+    monkeypatch.setattr(guard, "engine_problem", lambda hub: None)
+    st = {"up": False, "spawned": [], "killed": [], "stop_posts": []}
+
+    class Cell:
+        def kill(self, reason=""):
+            st["killed"].append(reason)
+            st["up"] = False
+
+    def new_cell(preset="tool", *, name="", owner="", policy=None):
+        st["policy"] = policy
+        return Cell()
+
+    def start(cell=None):
+        st["spawned"].append(cell)
+        st["up"] = True
+        return cell
+
+    def request(method, path, **kw):
+        st["stop_posts"].append(path)
+        st["up"] = False
+    monkeypatch.setattr(cell_mod, "new_cell", new_cell)
+    monkeypatch.setattr(supervisor, "_start", start)
+    monkeypatch.setattr(client, "find", lambda *a, **k: client.Hub("http://127.0.0.1:9", "t", "0.3.0") if st["up"] else None)
+    monkeypatch.setattr(client, "request", request)
+    return supervisor, guard, st
+
+
+def test_start_transient_starts_one_in_a_kill_on_close_cell_and_stops_it(transient):
+    supervisor, _guard, st = transient
+    hub, why, stop = supervisor.start_transient(5)
+    assert hub is not None and why == "" and len(st["spawned"]) == 1
+    assert st["policy"].persistent is False and st["policy"].kill_on_close is True     # dies with the pipeline if nothing else
+    stop()
+    assert st["stop_posts"] and len(st["killed"]) == 1 and not st["up"]
+    stop()
+    assert len(st["killed"]) == 1
+
+
+@pytest.mark.parametrize("case", ["running", "virtualized", "autostart_off", "sandboxed"])
+def test_start_transient_respects_the_guards(transient, monkeypatch, case):
+    supervisor, guard, st = transient
+    if case == "running":
+        monkeypatch.setattr(guard, "hub_processes", lambda home: [4242])
+        monkeypatch.setattr(guard, "virtualized", lambda path: "virtualized view")
+        want = "a hub (pid 4242) already runs"
+    elif case == "virtualized":
+        monkeypatch.setattr(guard, "virtualized", lambda path: "virtualized view")
+        want = "not starting a hub from here: virtualized view"
+    elif case == "autostart_off":
+        monkeypatch.setattr(supervisor, "autostart_enabled", lambda: False)
+        want = "autostart is off"
+    else:
+        monkeypatch.setattr(supervisor, "_sandboxed", lambda: "an agent sandbox")
+        want = "sandboxed"
+    hub, why, stop = supervisor.start_transient(5)
+    assert hub is None and stop is None and want in why and st["spawned"] == []
+
+
+def test_start_transient_stops_a_hub_without_an_engine(transient, monkeypatch):
+    supervisor, guard, st = transient
+    monkeypatch.setattr(guard, "engine_problem", lambda hub: "the ModelMistress hub 0.3.0 has no inference engine")
+    hub, why, stop = supervisor.start_transient(5)
+    assert hub is None and stop is None and "no inference engine" in why and st["killed"] and not st["up"]
+
+
+def test_start_transient_gives_up_on_a_hub_that_never_answers(transient, monkeypatch):
+    supervisor, _guard, st = transient
+    monkeypatch.setattr(supervisor, "_start", lambda cell=None: st["spawned"].append(cell) or cell)    # spawned, never answers
+    hub, why, stop = supervisor.start_transient(1)
+    assert hub is None and "did not answer within 1s" in why and st["killed"]
+
+
 def test_the_gpu_lock_is_taken_released_and_respected(tmp_path):
     from bot.coordination.local import LocalBoard
 
@@ -348,7 +524,7 @@ def test_the_stage_runs_next_to_pytest_and_prints_one_line(monkeypatch, capsys, 
     monkeypatch.setattr(lp, "_DIFF_RANGE", "aaa..bbb")
     seen = {}
 
-    def fake_run(root, base, head, budget=None):
+    def fake_run(root, base, head, budget=None, **kw):
         seen.update(base=base, head=head, budget=budget, thread=__import__("threading").current_thread().name)
         rep = Report(status="ok", findings=[Finding("dl-1", "m.py", 1, "logic", "high", "x", "p", verified=True)])
         rep.json_path = str(lp.ROOT / "logs" / "local_pipeline" / "r-difflint.json")
@@ -367,7 +543,7 @@ def test_the_pipeline_never_fails_because_of_the_stage(monkeypatch, capsys, lp, 
     monkeypatch.delenv("ABP_PIPELINE_DIFFLINT", raising=False)
     monkeypatch.setattr(lp, "_DIFF_RANGE", "aaa..bbb")
 
-    def fake_run(root, base, head, budget=None):
+    def fake_run(root, base, head, budget=None, **kw):
         if behaviour == "raises":
             raise RuntimeError("the stage itself is broken")
         return Report(status=behaviour, reason="the ModelMistress hub is not running" if behaviour == "skipped" else "boom")
