@@ -110,6 +110,10 @@ def _from_control_file(path: Path) -> Optional[Hub]:
         url, token = str(d["url"]).rstrip("/"), str(d.get("token") or "")
     except (OSError, ValueError, KeyError, TypeError):
         return None
+    from bot.modules.client import pid_alive
+
+    if not pid_alive(d.get("pid")):          # a hub that died left this file: don't pay a refused connect (~2 s on Windows)
+        return None
     health = _health(url)
     if not health:
         return None

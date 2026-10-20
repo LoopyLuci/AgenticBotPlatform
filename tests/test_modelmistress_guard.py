@@ -90,6 +90,7 @@ def test_hub_processes_finds_a_hub_for_this_home_only(monkeypatch, tmp_path):
 
 def test_a_second_hub_is_never_started_while_one_runs_for_the_home(monkeypatch):
     """The case found: a hub this process could not reach (startup race, or a virtualized control file) got a twin."""
+    monkeypatch.setitem(supervisor._state, "unreachable", None)
     monkeypatch.delenv("ABP_NO_MODULE_PROVIDERS", raising=False)
     monkeypatch.delenv("ABP_NO_MODELMISTRESS", raising=False)
     monkeypatch.setattr(client, "_cfg", lambda: {"autostart": True})
@@ -103,17 +104,44 @@ def test_a_second_hub_is_never_started_while_one_runs_for_the_home(monkeypatch):
 
 
 def test_a_starting_hub_is_waited_for_and_reused(monkeypatch):
+    monkeypatch.setitem(supervisor._state, "unreachable", None)
     monkeypatch.delenv("ABP_NO_MODULE_PROVIDERS", raising=False)
     monkeypatch.delenv("ABP_NO_MODELMISTRESS", raising=False)
     monkeypatch.setattr(client, "_cfg", lambda: {"autostart": True})
     monkeypatch.setattr(supervisor, "_sandboxed", lambda: None)
     monkeypatch.setattr(guard, "hub_processes", lambda home: [4242])
+    monkeypatch.setattr(guard, "virtualized", lambda path: None)
     monkeypatch.setattr(supervisor, "_start", lambda: pytest.fail("a second hub must not be started"))
     answers = iter([None, None, client.Hub("http://127.0.0.1:1", "t", "0.3.0")])
     monkeypatch.setattr(client, "find", lambda *a, **k: next(answers))
     monkeypatch.setattr(supervisor.time, "sleep", lambda s: None)
     hub = supervisor.ensure(wait_s=30)
     assert hub is not None and hub.version == "0.3.0"
+
+
+def test_an_unreachable_hub_is_not_waited_for_again_or_at_all_when_the_view_is_redirected(monkeypatch):
+    # live 2026-10-20: every chat send from a process that could not reach the running hub stalled 45 s, so the page timed out
+    monkeypatch.delenv("ABP_NO_MODULE_PROVIDERS", raising=False)
+    monkeypatch.delenv("ABP_NO_MODELMISTRESS", raising=False)
+    monkeypatch.setattr(client, "_cfg", lambda: {"autostart": True})
+    monkeypatch.setattr(supervisor, "_sandboxed", lambda: None)
+    monkeypatch.setattr(supervisor, "_start", lambda: pytest.fail("a second hub must not be started"))
+    monkeypatch.setattr(guard, "hub_processes", lambda home: [4242])
+    monkeypatch.setitem(supervisor._state, "unreachable", None)
+    finds = []
+    monkeypatch.setattr(client, "find", lambda *a, **k: finds.append(1))
+    monkeypatch.setattr(supervisor.time, "sleep", lambda s: None)
+    monkeypatch.setattr(guard, "virtualized", lambda path: "redirected (test)")
+    assert supervisor.ensure(wait_s=30) is None and len(finds) == 1              # the first look only: no wait
+    assert "redirected (test)" in supervisor._state["last_error"]
+    monkeypatch.setattr(guard, "virtualized", lambda path: None)
+    monkeypatch.setitem(supervisor._state, "unreachable", None)
+    assert supervisor.ensure(wait_s=0.05) is None                                  # not redirected: waits once ...
+    finds.clear()
+    assert supervisor.ensure(wait_s=30) is None and len(finds) == 1              # ... and not again for the same hub
+    monkeypatch.setattr(guard, "hub_processes", lambda home: [5151])             # another hub process: waited for again
+    finds.clear()
+    assert supervisor.ensure(wait_s=0.05) is None and len(finds) > 1
 
 
 # ---- a hub without its engine ----------------------------------------------------------------------------------------------------

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import shutil
 import socket
 import sys
@@ -85,7 +86,7 @@ def test_a_hung_module_hub_does_not_delay_requests_while_the_heartbeat_runs(temp
     hole = BlackHole()
     (tmp_path / "data" / "fake-mod").mkdir(parents=True)
     (tmp_path / "data" / "fake-mod" / "control.json").write_text(
-        json.dumps({"url": f"http://127.0.0.1:{hole.port}", "token": "x", "pid": 1}), encoding="utf-8")
+        json.dumps({"url": f"http://127.0.0.1:{hole.port}", "token": "x", "pid": os.getpid()}), encoding="utf-8")
 
     # The hung probe must stay hung for the whole test whatever the machine load: a probe that gave up after the usual
     # 2 s would let a slow request look "fine" (or a fast one look slow). With 60 s, a request that finishes while the

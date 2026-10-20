@@ -33,6 +33,22 @@ class Hub:
     version: str = ""
 
 
+def pid_alive(pid) -> bool:
+    """False only when a control file names a process that is surely gone; True when it names none or we cannot tell."""
+    try:
+        n = int(pid)
+    except (TypeError, ValueError):
+        return True
+    if n <= 0:
+        return True
+    try:
+        import psutil
+
+        return psutil.pid_exists(n)
+    except Exception:  # noqa: BLE001 - no psutil, or no permission to look: probe as before
+        return True
+
+
 def control_file(m: Manifest) -> Optional[Path]:
     return Path(registry.expand(m, m.hub.control_file)) if m.hub else None
 
@@ -65,6 +81,8 @@ def _from_file(m: Manifest, path: Path, timeout: float) -> Optional[Hub]:
         url, token = str(d["url"]).rstrip("/"), str(d["token"])
     except (OSError, ValueError, KeyError, TypeError):
         return None
+    if not pid_alive(d.get("pid")):
+        return None          # a stale file from a hub that died: on Windows a refused loopback connect still costs ~2 s
     try:
         r = httpx.get(url + m.hub.api_base + m.hub.health, timeout=timeout)
         health = r.json() if r.content else {}

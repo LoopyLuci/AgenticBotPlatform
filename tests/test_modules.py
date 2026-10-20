@@ -189,6 +189,17 @@ def test_a_stale_control_file_is_ignored(fake, tmp_path):
     assert client.find(registry.get("fake-mod")) is None
 
 
+def test_a_control_file_whose_process_is_gone_is_not_even_probed(fake, tmp_path, monkeypatch):
+    # live 2026-10-20: three stale files cost ~2 s each (a refused loopback connect on Windows), on every hub lookup
+    d = tmp_path / "data" / "fake-mod"
+    d.mkdir(parents=True)
+    (d / "control.json").write_text('{"url": "http://127.0.0.1:9", "token": "unused", "pid": 424242}', encoding="utf-8")
+    assert client.pid_alive(None) and client.pid_alive("x")            # no pid, or one we cannot read: probe as before
+    monkeypatch.setattr(client, "pid_alive", lambda pid: False)
+    monkeypatch.setattr(client.httpx, "get", lambda *a, **k: pytest.fail("a dead hub's file must not be probed"))
+    assert client.find(registry.get("fake-mod")) is None
+
+
 def _hubless_brainbuilder(tmp_path, monkeypatch) -> None:
     """A BrainBuilder checkout with only its markers, so the built-in manifest (no hub, no window) applies whatever
     is checked out next to ABP on this machine (the real BrainBuilder has its own abp-module.toml)."""

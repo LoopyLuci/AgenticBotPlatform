@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 CHECK_S = 30.0
 BACKOFF_START_S = 30.0
 BACKOFF_MAX_S = 900.0
+UNREACHABLE_TTL_S = 120.0     # after a wait for a running-but-unreachable hub failed, don't wait for the same hub again this long
 
 _lock = threading.Lock()
 _state: dict = {"up": None, "since": 0.0, "last_start": 0.0, "last_error": "", "starts": 0,
@@ -100,14 +101,20 @@ def ensure(*, refresh: bool = False, wait_s: float = 45.0) -> Optional[client.Hu
     # A hub already runs for this home (still starting, or one this process cannot reach): never start a second one.
     running = guard.hub_processes(client.mm_home())
     if running:
-        deadline = time.time() + wait_s
-        while time.time() < deadline:
-            hub = client.find(refresh=True)
-            if hub:
-                _mark(True)
-                return hub
-            time.sleep(1.0)
         why = guard.virtualized(client.mm_home())
+        # Waiting cannot help when this process's view of the home is redirected, nor again right after a wait for the same
+        # hub failed: every request on that path (a chat send, the model picker) used to stall for wait_s each time.
+        unreachable = _state.get("unreachable") or (frozenset(), 0.0)
+        if not why and not (unreachable[0] == frozenset(running) and time.time() - unreachable[1] < UNREACHABLE_TTL_S):
+            deadline = time.time() + wait_s
+            while time.time() < deadline:
+                hub = client.find(refresh=True)
+                if hub:
+                    _mark(True)
+                    _state["unreachable"] = None
+                    return hub
+                time.sleep(1.0)
+        _state["unreachable"] = (frozenset(running), time.time())
         _state["last_error"] = (f"a hub (pid {', '.join(map(str, running))}) already runs for {client.mm_home()} but this process "
                                 f"cannot reach it" + (f": {why}" if why else " (its control file is missing or stale)"))
         logger.warning("ModelMistress: %s - not starting a second hub", _state["last_error"])
