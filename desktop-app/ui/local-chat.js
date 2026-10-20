@@ -15,6 +15,8 @@
 // run in a repository asks), the result's push-queue entry can be approved from the chat (approving never pushes), cloud
 // assist adds "Ask the cloud" for one message, and the right panel shows the context meter, tokens (local / cloud), the
 // agent's autonomy and tools, the session's Factory board, the manager's digest and escalations, and WatchDog incidents.
+// Long sessions (S4): the agent's task list and next-step question show under its last reply (answer buttons send the
+// answer), compactions and chapters are visible dividers (Chapters jumps to one), and Compact / Export are one click.
 //
 // This file and local-chat.css are identical in the dashboard (bot/dashboard/static/) and the desktop app
 // (desktop-app/ui/); tests/test_local_chat_ui.py fails if they differ. It uses the page's own api() and draws into #lc-root.
@@ -345,6 +347,7 @@
     });
     if (msg.type === 'local_chat_turn') loadSessions();
     if (msg.type === 'local_chat_session' && msg.session) onSessionFrame(msg);
+    if (msg.type === 'local_chat_compacted') S.panes.forEach((p, i) => { if (p.sid === msg.session_id) refreshMessages(i); });
     if (msg.type === 'local_chat_note') S.panes.forEach((p, i) => { if (p.sid === msg.session_id) { refreshMessages(i); loadWorktree(i); } });
   }
   function onSessionFrame(msg) {
@@ -467,7 +470,10 @@
     `<option value="${v}"${s.cloud_assist === v ? ' selected' : ''}>${E(label)}</option>`).join('')}</select>
 <input type="text" class="lc-ws" data-lc="workspace" aria-label="Workspace folder" placeholder="Workspace folder (optional)" value="${E(s.workspace || '')}">
 <span class="lc-top-gap"></span>
-${p.sid ? `<button type="button" class="lc-icon" data-lc="export" aria-label="Download this session as Markdown" title="Export">⤓</button>` : ''}
+${p.sid ? `<select class="lc-sel" data-lc="chapter-jump" aria-label="Jump to a chapter"><option value="">Chapters</option>${p.messages.filter((m) => m.meta && m.meta.chapter).map((m) =>
+    `<option value="${E(m.id)}">${E(m.meta.chapter)}</option>`).join('')}<option value="+">+ Add a chapter here…</option></select>
+<button type="button" class="lc-icon" data-lc="export" aria-label="Download this session as Markdown" title="Export as Markdown">⤓</button>
+<button type="button" class="lc-icon" data-lc="export-json" aria-label="Download this session as JSON" title="Export as JSON">{}</button>` : ''}
 ${S.panes.length > 1 ? `<button type="button" class="lc-icon" data-lc="close-pane" aria-label="Close this pane" title="Close pane">✕</button>` : ''}
 <button type="button" class="lc-icon" data-lc="right" aria-label="${S.rightOpen ? 'Hide' : 'Show'} the details panel" aria-expanded="${S.rightOpen}" title="Details">☰</button>`;
   }
@@ -475,6 +481,12 @@ ${S.panes.length > 1 ? `<button type="button" class="lc-icon" data-lc="close-pan
   // ---- messages ------------------------------------------------------------------------------------------------------
   function msgHtml(m, i, isLastUser) {
     const role = m.role;
+    const mm = m.meta || {};
+    if (mm.chapter) return `<div class="lc-divider lc-chapter" id="lc-ch-${E(m.id)}" data-id="${E(m.id)}"><span>${E(mm.chapter)}</span></div>`;
+    if (mm.compaction) {
+      return `<div class="lc-divider lc-compacted" data-id="${E(m.id)}"><span>Compacted: ${E(mm.compaction.messages)} earlier message(s) summarized${mm.compaction.source === 'extract' ? ' (without a model)' : ''}</span>
+<details><summary>The summary the agent continues from</summary><pre class="lc-pre">${E(mm.compaction.summary)}</pre></details></div>`;
+    }
     const head = role === 'assistant'
       ? `<span class="lc-who">${E(shortModel(m.model) || 'assistant')}</span>${m.tokens_per_s ? `<span class="lc-meta">${E(fmtTps(m.tokens_per_s))} ${badge('measured')}</span>` : ''}${m.tokens ? `<span class="lc-meta">${E(m.tokens)} tokens</span>` : ''}`
       : `<span class="lc-who">${E(role === 'user' ? 'You' : role === 'error' ? 'Error' : 'ABP')}</span>`;
@@ -501,8 +513,16 @@ ${S.panes.length > 1 ? `<button type="button" class="lc-icon" data-lc="close-pan
     }
     const tags = (m.reverted ? '<span class="lc-chip">reverted</span>' : '') + (m.meta && m.meta.steered ? '<span class="lc-chip">steered</span>' : '')
       + (m.meta && m.meta.cloud ? '<span class="lc-chip lc-cloud">cloud</span>' : '');
-    return `<div class="lc-msg lc-${E(role)}${m.reverted ? ' lc-reverted' : ''}" data-id="${E(m.id)}"><div class="lc-msg-head">${head}<span class="lc-meta">${E(when(m.created))}</span>${tags}</div>
+    const steps = mm.steps ? `<ul class="lc-steps" aria-label="Task list">${mm.steps.map((st) => `<li class="${st.done ? 'done' : ''}">${st.done ? '☑' : '☐'} ${E(st.text)}</li>`).join('')}</ul>` : '';
+    const nxt = mm.next && isLastAssistant(i, m) ? `<div class="lc-next" role="group" aria-label="Next step"><p>${E(mm.next.recap)}</p>${mm.next.ask ? `<p><b>${E(mm.next.ask)}</b></p>` : ''}
+${(mm.next.options || []).map((o) => `<button type="button" class="btn" data-lc="answer" data-v="${E(o)}">${E(o)}</button>`).join('')}</div>` : '';
+    return `<div class="lc-msg lc-${E(role)}${m.reverted ? ' lc-reverted' : ''}" data-id="${E(m.id)}"><div class="lc-msg-head">${head}<span class="lc-meta">${E(when(m.created))}</span>${tags}</div>${steps}${nxt}
 <div class="lc-msg-body">${body}</div><div class="lc-msg-actions">${actions.join('')}</div></div>`;
+  }
+  function isLastAssistant(i, m) {
+    const p = pane(i);
+    const last = [...p.messages].reverse().find((x) => x.role === 'assistant');
+    return !!last && last.id === m.id && !p.running;
   }
   function approvalHtml(a) {
     const pv = a.preview || {};
@@ -670,6 +690,32 @@ ${d.would_lose.commits.length ? `<p>Commits not on the base:</p><ul>${d.would_lo
     } catch (e) { toast(errText(e), 'error'); }
     loadWorktree(i);
   }
+  async function serverExport(p, fmt) {
+    try {
+      const headers = {};
+      const token = typeof getToken === 'function' ? getToken() : '';
+      if (token) headers['X-Dashboard-Token'] = token;
+      const base = typeof API_BASE === 'string' ? API_BASE : '';
+      const res = await fetch(base + '/api/local-chat/sessions/' + encodeURIComponent(p.sid) + '/export?format=' + fmt, { headers });
+      if (!res.ok) throw new Error(await res.text());
+      download((p.session.title || 'session').replace(/[^\w.-]+/g, '_') + '.' + fmt, await res.text(), fmt === 'json' ? 'application/json' : 'text/markdown');
+    } catch (_) {                              // offline from the server: the copy in the page still exports
+      if (fmt === 'md') download((p.session.title || 'session').replace(/[^\w.-]+/g, '_') + '.md', asMarkdown(p), 'text/markdown');
+      else download((p.session.title || 'session').replace(/[^\w.-]+/g, '_') + '.json', JSON.stringify({ session: p.session, messages: p.messages }, null, 1), 'application/json');
+    }
+  }
+  async function chapterJump(i, v) {
+    const p = pane(i);
+    if (!v) return;
+    if (v === '+') {
+      const title = window.prompt('Chapter title');
+      if (!title) return;
+      try { await post('/api/local-chat/sessions/' + encodeURIComponent(p.sid) + '/chapters', { title }); await refreshMessages(i); } catch (e) { toast(errText(e), 'error'); }
+      return;
+    }
+    const el = p.el.querySelector(`[data-id="${CSS && CSS.escape ? CSS.escape(v) : v}"]`);
+    if (el) el.scrollIntoView({ block: 'start' });
+  }
   async function factoryRun(i, planId, confirmed) {
     const p = pane(i);
     try {
@@ -737,7 +783,8 @@ ${(row.warnings || []).map((w) => `<p class="lc-warn">${E(w)}</p>`).join('')}`;
       return `<div class="lc-meter" role="meter" aria-label="Context used" aria-valuemin="0" aria-valuemax="${E(c.meter.limit || 0)}" aria-valuenow="${E(c.meter.used)}"><span style="width:${pct == null ? 0 : pct}%" class="${pct != null && pct > 85 ? 'lc-meter-hot' : ''}"></span></div>
 <div class="lc-kv"><div><span>Context</span><b>≈${E(c.meter.used.toLocaleString())}${c.meter.limit ? ' of ' + E(c.meter.limit.toLocaleString()) : ''} tokens</b>${badge('estimated')}</div>
 <div><span>Tokens</span><b>${E(c.tokens.local.toLocaleString())} local · ${E(c.tokens.cloud.toLocaleString())} cloud</b>${badge('measured')}</div></div>
-${pct != null && pct > 85 ? '<p class="lc-warn">Near the model\'s context: older turns will need summarizing.</p>' : ''}`;
+${pct != null && pct > 85 ? '<p class="lc-warn">Near the model\'s context: older turns are summarized before the next turn.</p>' : ''}
+<button type="button" class="lc-mini" data-lc="compact" aria-label="Summarize the older turns now">Compact now</button>`;
     })() : '<p class="lc-note">A session starts with your first message.</p>';
     const agent = c ? `<div class="lc-kv"><div><span>Autonomy</span><b>${E(c.autonomy.level)} ${E(c.autonomy.label)}</b></div><div><span>Means</span><b>${E(c.autonomy.summary)}</b></div>
 <div><span>Tools</span><b>${c.tools === 'all' ? 'the agent\'s full set' : c.tools === 'none' ? 'none (chat)' : E(c.tools.length) + ' read-only'}</b></div>
@@ -1073,7 +1120,9 @@ ${(st.running || []).length ? `<span>${st.running.length} answering</span>` : ''
         else { S.rightOpen = !S.rightOpen; store.set('right', S.rightOpen ? '1' : '0'); lc.classList.toggle('lc-noright', !S.rightOpen); }
         S.panes.forEach((_, n) => renderTop(n));
       }
-      else if (a === 'export' && p.sid) download((p.session.title || 'session').replace(/[^\w.-]+/g, '_') + '.md', asMarkdown(p), 'text/markdown');
+      else if ((a === 'export' || a === 'export-json') && p.sid) serverExport(p, a === 'export' ? 'md' : 'json');
+      else if (a === 'answer') send(i, t.dataset.v);
+      else if (a === 'compact') post('/api/local-chat/sessions/' + encodeURIComponent(p.sid) + '/compact').then((r) => { toast(r.compacted ? `Compacted ${r.messages} message(s).` : r.why); refreshMessages(i); loadWorktree(i); }, (e) => toast(errText(e), 'error'));
       else if (a === 'close-pane') closePane(i);
       else if (a === 'approve') decide(i, t.dataset.id, t.dataset.v);
       else if (a === 'copy-code') { const code = t.closest('.lc-code').querySelector('code').textContent; copyOut(code); }
@@ -1090,6 +1139,7 @@ ${(st.running || []).length ? `<span>${st.running.length} answering</span>` : ''
       if (t.id === 'lc-archived') { S.showArchived = t.checked; loadSessions(); return; }
       if (t.dataset.lcf) { S.filter[t.dataset.lcf] = t.value; renderSide(); return; }
       if (t.dataset.lc === 'wt-keep') { worktreeAction(i, 'wt-keep', t); return; }
+      if (t.dataset.lc === 'chapter-jump') { chapterJump(i, t.value); t.value = ''; return; }
       if (t.dataset.lc === 'autonomy') setField(i, 'autonomy', Number(t.value));
       else if (t.dataset.lc === 'cloud') setField(i, 'cloud_assist', t.value);
       else if (t.dataset.lc === 'workspace') setField(i, 'workspace', t.value.trim());

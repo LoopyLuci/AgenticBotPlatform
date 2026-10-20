@@ -10,6 +10,7 @@
                 the dashboard sockets; cancel stops it; steer / queue while it runs; rewind a turn's file changes
     autonomy.py   autonomy 0-5 as a permission mode plus run-level rules (destructive commands always ask; no push)
     factory.py    Factory mode: plan preview, the owner's Run, confined conductor workers as linked sessions, push queue
+    housekeeping.py  compaction (visible, nothing dropped), task list / next-step parsing, chapters, export, auto-archive
     links.py      linked sessions: fork, task, hand off, notes to the parent, Factory workers
     worktrees.py  a git worktree per session (S1): create, status, diff, sync with the base, commit, discard (asks when work
                 would be lost), merge only through the conductor's push queue, prune
@@ -34,6 +35,9 @@ DEFAULTS: dict[str, Any] = {
     "worktrees": "auto",             # auto: a new session on a git workspace gets its own worktree (not in Chat mode) | off
     "worktree_root": "",             # "" = a short folder in the agent state folder
     "worktree_prefix": "chat",       # branches are <prefix>/<slug>-<id>
+    "compact_at": 0.7,               # summarize older turns past this fraction of the context per request (0 = never)
+    "auto_archive_days": 0,          # archive sessions untouched this many days (0 = off)
+    "next_step_box": True,           # ask the agent for a task list and a next-step question (Build / Plan / Review)
 }
 
 

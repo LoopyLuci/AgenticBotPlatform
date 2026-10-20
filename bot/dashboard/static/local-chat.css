@@ -140,6 +140,15 @@ section#local-chat { max-width: none; content-visibility: visible; padding-top: 
 .lc-meter span.lc-meter-hot { background: var(--warning); }
 .lc-cloud { background: var(--accent-soft); color: var(--accent); }
 .lc-digest { max-height: 180px; white-space: pre-wrap; font-size: 11px; }
+.lc-divider { margin: 10px 0 14px; text-align: center; font-size: 11.5px; color: var(--muted); }
+.lc-divider > span { display: inline-block; padding: 2px 12px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); }
+.lc-chapter > span { font-weight: 700; color: var(--ink-soft); }
+.lc-compacted details { margin-top: 4px; text-align: left; }
+.lc-steps { list-style: none; margin: 4px 0; padding: 6px 10px; border-radius: 8px; background: var(--surface-3); font-size: 12.5px; }
+.lc-steps li.done { color: var(--muted); }
+.lc-next { margin: 6px 0; padding: 8px 10px; border-radius: 8px; border-left: 3px solid var(--accent); background: var(--surface-3); font-size: 12.5px; }
+.lc-next p { margin: 2px 0 6px; }
+.lc-next .btn { margin-right: 6px; }
 @media (max-width: 1250px) {
   .lc-body { grid-template-columns: minmax(0, 1fr); }
   .lc-right { display: none; }

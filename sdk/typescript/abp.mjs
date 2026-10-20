@@ -2671,6 +2671,17 @@ export const operations = {
   ],
   "query_params": []
  },
+ "GET /api/local-chat/sessions/{sid}/export": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/export",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": [
+   "format"
+  ]
+ },
  "GET /api/local-chat/sessions/{sid}/factory": {
   "body": false,
   "method": "GET",
@@ -6093,6 +6104,24 @@ export const operations = {
   "body": false,
   "method": "POST",
   "path": "/api/local-chat/sessions/{sid}/cancel",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/local-chat/sessions/{sid}/chapters": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/chapters",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/local-chat/sessions/{sid}/compact": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/compact",
   "path_params": [
    "sid"
   ],
@@ -14077,6 +14106,15 @@ export const operations = {
   ],
   "query_params": []
  },
+ "local_chat_chapter_api_local_chat_sessions__sid__chapters_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/chapters",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
  "local_chat_checkpoints_api_local_chat_sessions__sid__checkpoints_get": {
   "body": false,
   "method": "GET",
@@ -14090,6 +14128,15 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/api/local-chat/sessions/{sid}/children",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_compact_api_local_chat_sessions__sid__compact_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/compact",
   "path_params": [
    "sid"
   ],
@@ -14131,6 +14178,17 @@ export const operations = {
    "after",
    "session_id",
    "limit"
+  ]
+ },
+ "local_chat_export_api_local_chat_sessions__sid__export_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/export",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": [
+   "format"
   ]
  },
  "local_chat_factory_board_api_local_chat_sessions__sid__factory_get": {

@@ -315,12 +315,19 @@ async def _turn(sid: str, turn_id: str, text: str, model: str, session: dict, br
         context["cwd"] = ws
     wt_root = (session.get("worktree") or {}).get("path")
     await _checkpoint(sid, turn_id, wt_root if wt_root and Path(wt_root).is_dir() else ws, session["mode"])   # the whole worktree
-    from bot.localchat import links
+    from bot.localchat import housekeeping, links
 
+    if not to_cloud:
+        await _maybe_compact(sid, model, broadcast)
     prompt = text
     brief = links.pending_context(sid)              # a fork / task / hand-off starts with its parent's context
-    if brief:
-        prompt = f"{brief}\n\n---\n\n{text}"
+    summary = housekeeping.pending_summary(sid)     # the first turn after a compaction starts from the summary
+    for head in (summary, brief):
+        if head:
+            prompt = f"{head}\n\n---\n\n{prompt}"
+    if session["mode"] in ("build", "plan", "review") and localchat.settings().get("next_step_box"):
+        prompt = f"{prompt}\n\n{housekeeping.NEXT_STEP_INSTRUCTIONS}"
+    agent_cid = housekeeping.agent_chat_id(sid)
     from bot.agent_runtime.transports.base import speed_observer
 
     speeds: list[float] = []
@@ -329,14 +336,15 @@ async def _turn(sid: str, turn_id: str, text: str, model: str, session: dict, br
     state, reply, tokens = "done", "", 0
     try:
         if to_cloud:                       # the configured cloud backend (the router's default), same tools and approvals
-            result = await router.ask(prompt, action_type="local_chat", context=context, instance_id=instance_id, chat_id=cid)
+            result = await router.ask(prompt, action_type="local_chat", context=context, instance_id=instance_id, chat_id=agent_cid)
         else:
             result = await router.ask(prompt, action_type="local_chat", backend_override="native_agent", context=context,
-                                      instance_id=instance_id, chat_id=cid, model_override=model_ref(model))
+                                      instance_id=instance_id, chat_id=agent_cid, model_override=model_ref(model))
         reply, tokens = result.text or "", int(result.tokens or 0)
+        reply, extra = housekeeping.steps_and_next(reply)
         tps = 0.0 if to_cloud else _record_speed(model, speeds)
         store.add_message(sid, "assistant", reply, turn_id=turn_id, model=CLOUD if to_cloud else model, tokens=tokens,
-                          tokens_per_s=tps, meta={"cloud": True} if to_cloud else None)
+                          tokens_per_s=tps, meta={**({"cloud": True} if to_cloud else {}), **extra} or None)
     except asyncio.CancelledError:
         state = "cancelled"
         store.add_message(sid, "system", "Stopped.", turn_id=turn_id, model=model)
@@ -374,6 +382,46 @@ async def _after_turn(sid: str, state: str, broadcast: Broadcast) -> None:
         except Exception as e:  # noqa: BLE001 - say why the queued message did not start, keep it
             store.queue_message(sid, nxt)
             store.add_message(sid, "system", f"A queued message did not start: {e}")
+
+
+def context_limit(model: str) -> Optional[int]:
+    """The tokens the hub serves the model per request (its plan), or None when the hub does not say."""
+    try:
+        from bot.localchat import catalog
+
+        row = next((r for r in catalog.get().get("models", []) if r["id"] == model), None)
+        v = ((row or {}).get("plan") or {}).get("n_ctx_per_slot")
+        return int(v) if v else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+async def summarize_with(model: str, sid: str, text: str) -> str:
+    """The session's local model, no tools, summarizing older turns for a compaction."""
+    from bot.router import router
+
+    instance_id = await asyncio.to_thread(ensure_instance)
+    prompt = ("Summarize this conversation for yourself so you can continue the work: the goal, decisions made, files touched, "
+              "what is done and what is left, open questions. Be concise (under 400 words).\n\n" + text[-60000:])
+    res = await router.ask(prompt, action_type="local_chat", backend_override="native_agent", instance_id=instance_id,
+                           chat_id=f"localchat:{sid}:summary", model_override=model_ref(model),
+                           context={"allowed_tools": frozenset()})
+    return res.text or ""
+
+
+async def _maybe_compact(sid: str, model: str, broadcast: Broadcast) -> None:
+    from bot.localchat import housekeeping
+
+    limit = await asyncio.to_thread(context_limit, model)
+    if not housekeeping.needs_compaction(sid, limit):
+        return
+    try:
+        res = await housekeeping.compact(sid, lambda t: summarize_with(model, sid, t))
+    except Exception:  # noqa: BLE001 - a turn goes ahead even if compaction could not run
+        logger.info("local chat: compaction failed for %s", sid, exc_info=True)
+        return
+    if res.get("compacted"):
+        await _safe(broadcast, {"type": "local_chat_compacted", "session_id": sid, **res})
 
 
 def _record_speed(model: str, speeds: list[float]) -> float:

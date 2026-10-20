@@ -219,3 +219,10 @@ def test_factory_cloud_assist_and_the_right_panel_are_wired():
     for route in ("'/context'", "'/factory'", "/api/manager/digest", "/api/manager/escalations", "/api/redblue/summary"):
         assert route in JS, route
     assert 'role="meter"' in JS and "badge('estimated')" in JS
+
+
+# ---- S4: long sessions ------------------------------------------------------------------------------------------------------
+def test_long_session_ui_is_wired():
+    assert "mm.compaction" in JS and "lc-compacted" in JS and "mm.chapter" in JS and "'/chapters'" in JS
+    assert "mm.steps" in JS and "mm.next" in JS and 'data-lc="answer"' in JS
+    assert "'/compact'" in JS and "/export?format=" in JS and "local_chat_compacted" in JS

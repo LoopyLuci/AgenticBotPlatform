@@ -171,6 +171,9 @@
 <label for="sh-lc-wt">Worktrees</label><select id="sh-lc-wt" data-sh-key="worktrees">${opt(['auto', 'off'], st.worktrees || 'auto', (v) => (v === 'auto' ? 'a worktree per code session' : 'off'))}</select>
 <label for="sh-lc-prefix">Branch prefix</label><input id="sh-lc-prefix" data-sh-key="worktree_prefix" value="${E(st.worktree_prefix || 'chat')}">
 <label for="sh-lc-root">Worktree folder</label><input id="sh-lc-root" data-sh-key="worktree_root" value="${E(st.worktree_root || '')}" placeholder="default: a short folder in ABP's agent data">
+<label for="sh-lc-compact">Compact at</label><select id="sh-lc-compact" data-sh-key="compact_at" data-sh-num="1">${opt([0.5, 0.6, 0.7, 0.8, 0.9, 0], st.compact_at == null ? 0.7 : st.compact_at, (v) => (Number(v) ? Math.round(v * 100) + '% of the context' : 'never'))}</select>
+<label for="sh-lc-archive">Auto-archive</label><select id="sh-lc-archive" data-sh-key="auto_archive_days" data-sh-int="1">${opt([0, 7, 14, 30, 90], st.auto_archive_days || 0, (v) => (Number(v) ? 'after ' + v + ' quiet days' : 'off'))}</select>
+<label for="sh-lc-next">Next-step box</label><select id="sh-lc-next" data-sh-key="next_step_box" data-sh-bool="1">${opt(['true', 'false'], String(st.next_step_box !== false), (v) => (v === 'true' ? 'on: task list and a question' : 'off'))}</select>
 </div><p class="sh-note">Saved to the config (local_chat.*) as you change them; new sessions use them.</p></div>`;
   }
 
@@ -248,7 +251,7 @@ ${s.id === 'local-models' ? localChatForm() : ''}</div>`).join('') || '<p class=
     root.addEventListener('change', async (ev) => {
       const t = ev.target;
       if (!t.dataset || !t.dataset.shKey) return;
-      const value = t.dataset.shInt ? Number(t.value) : t.value.trim();
+      const value = t.dataset.shInt || t.dataset.shNum ? Number(t.value) : t.dataset.shBool ? t.value === 'true' : t.value.trim();
       try {
         await api('/api/config/set', { method: 'POST', body: JSON.stringify({ path: ['local_chat', t.dataset.shKey], value }) });
         toast('Saved.');

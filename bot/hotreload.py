@@ -394,6 +394,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.localchat.store", "bot.localchat.speed", "bot.localchat.catalog",  # Local Chat: a connection per call, a speed file and a short catalog cache
     "bot.localchat.links",  # linked Local Chat sessions: functions over the store, nothing held
     "bot.localchat.autonomy",  # Local Chat autonomy levels: pure functions
+    "bot.localchat.housekeeping",  # Local Chat compaction, chapters, export, auto-archive: functions over the store
     "bot.localchat.worktrees",  # Local Chat worktrees: git calls and per-repository locks (rebuilt empty on reload: nothing held between calls)
     "bot.models",
     "bot.push",

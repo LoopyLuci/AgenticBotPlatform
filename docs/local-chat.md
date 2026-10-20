@@ -111,3 +111,17 @@ tokens vs the tokens the hub serves per request).
 AppContainer without network) and is refused, never degraded, without it; the first run in a repository needs
 confirmation. Workers appear as linked worker sessions; the green integration waits in the push queue, and Approve in
 the chat records the approval without pushing.
+
+## Long sessions
+
+Before a turn, when the conversation since the last compaction passes `local_chat.compact_at` (default 0.7) of the
+tokens the hub serves the model per request (32k when it does not say), the older turns are summarized by the session's
+model (no tools; an extract, labelled, when no model answers). A visible "Compacted" marker holds the summary; no message
+is removed. The agent then continues on a fresh history (`localchat:<sid>:g<N>`) whose first turn starts from the summary
+and the newest messages. `POST …/compact` does it on demand.
+
+In Build / Plan / Review the agent is asked to end each turn with a task list and a next-step box (fenced `abp-steps` /
+`abp-next` blocks); they are taken out of the reply text and shown under it, the answers as buttons
+(`local_chat.next_step_box`). Chapters (`POST …/chapters`) are dividers with a jump list; `GET …/export?format=md|json`
+downloads the session; `local_chat.auto_archive_days` archives quiet sessions (never pinned, working or waiting ones; a
+worktree with unmerged work is kept).

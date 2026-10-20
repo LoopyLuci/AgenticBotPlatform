@@ -50,6 +50,12 @@ Agent and Factory in chat (P4):
                                                       needs confirm (409 until then)
     POST   /api/local-chat/sessions/{sid}/factory/stop
     GET    /api/local-chat/sessions/{sid}/factory     this session's Factory board: worker sessions and push-queue entries
+
+Long sessions (S4):
+    POST   /api/local-chat/sessions/{sid}/compact     summarize the older turns now (a visible marker; nothing is deleted)
+    POST   /api/local-chat/sessions/{sid}/chapters    {"title"} a chapter marker
+    GET    /api/local-chat/sessions/{sid}/export?format=md|json   the whole session as a file
+Auto-archive (local_chat.auto_archive_days) runs at start and at most hourly with the status call.
 A session created with a git workspace gets its own worktree unless {"worktree": false} or local_chat.worktrees is off;
 DELETE asks (409) when the session's worktree holds unmerged work, unless ?confirm=true.
 
@@ -72,6 +78,21 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         store.recover()
     except Exception:  # noqa: BLE001 - recovery must never stop the dashboard from starting
         pass
+    housekeeping_at = {"t": 0.0}
+
+    def _housekeep() -> None:
+        import time as _time
+
+        if _time.time() - housekeeping_at["t"] < 3600:
+            return
+        housekeeping_at["t"] = _time.time()
+        try:
+            from bot.localchat import housekeeping
+
+            housekeeping.auto_archive()
+        except Exception:  # noqa: BLE001 - housekeeping never breaks a request
+            pass
+    _housekeep()
 
     async def _broadcast(frame: dict) -> None:
         from bot.dashboard.server import _manager
@@ -112,6 +133,7 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         from bot.localchat import chat, store
         from bot.modelmistress import supervisor
 
+        await asyncio.to_thread(_housekeep)
         hub = await asyncio.to_thread(supervisor.status)
         return {"hub": hub, "settings": localchat.settings(), "running": [t for t in store.running_turns()
                                                                          if chat.is_running(t["session_id"])]}
@@ -535,3 +557,36 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
 
         _session_or_404(sid)
         return factory.board(sid)
+
+    # ---- long sessions (S4) -------------------------------------------------------------------------------------------------
+    @app.post("/api/local-chat/sessions/{sid}/compact", dependencies=write)
+    async def local_chat_compact(sid: str):
+        from bot.localchat import chat, housekeeping
+
+        s = _session_or_404(sid)
+        if chat.is_running(sid):
+            raise HTTPException(status_code=409, detail="wait for the running turn to finish")
+        summarize = (lambda t: chat.summarize_with(s["model"], sid, t)) if s["model"] else None
+        return await housekeeping.compact(sid, summarize, reason="asked for")
+
+    @app.post("/api/local-chat/sessions/{sid}/chapters", dependencies=write)
+    async def local_chat_chapter(sid: str, payload: dict = Body(...)):
+        from bot.localchat import housekeeping
+
+        _session_or_404(sid)
+        try:
+            return {"id": housekeeping.add_chapter(sid, str(payload.get("title") or ""))}
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+    @app.get("/api/local-chat/sessions/{sid}/export", dependencies=read)
+    async def local_chat_export(sid: str, format: str = Query("md", pattern="^(md|json)$")):
+        from fastapi.responses import Response
+
+        from bot.localchat import housekeeping
+
+        s = _session_or_404(sid)
+        body, media = housekeeping.export(sid, format)
+        name = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in (s["title"] or "session"))[:60] or "session"
+        return Response(content=body.encode("utf-8"), media_type=media,
+                        headers={"Content-Disposition": f'attachment; filename="{name}.{format}"'})

@@ -101,9 +101,9 @@ def test_a_fork_works_in_its_own_worktree_and_its_turn_end_reaches_the_parent(re
     # its first turn starts with the parent's conversation as context; later turns do not repeat it
     asyncio.run(_turn(child["id"], "now test it", frames))
     first = agent[-1]["prompt"]
-    assert "forked from" in first and "User: add a helper" in first and first.endswith("now test it")
+    assert "forked from" in first and "User: add a helper" in first and "now test it" in first
     asyncio.run(_turn(child["id"], "and again", frames))
-    assert agent[-1]["prompt"] == "and again"
+    assert agent[-1]["prompt"].startswith("and again") and "forked from" not in agent[-1]["prompt"]
 
     # the child's turn end left a note with its recap in the parent, and told the sockets
     notes = [m for m in store.messages(parent["id"]) if (m["meta"] or {}).get("note")]
