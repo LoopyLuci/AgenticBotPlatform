@@ -11,7 +11,8 @@ rules (AGENTS.md). The rules a static check can decide (no feature removed, hot-
 from the conductor's reviewer (reviewer.review, no model) and are passed to the model as already found, so it is not asked twice.
 
 Only when the ModelMistress hub answers and the GPU lock (custom:gpu0 on the coordination board) is free; the lock is held for the
-model call only. Local models only: the call goes through llm.transport_for_ref, which refuses any cloud ref. A hard time budget
+model call only. With start_hub (the pipeline's run: it stops live ABP, and live ABP's hub goes with it) a hub that is not running
+is started for the model call alone (supervisor.start_transient, with every guard of guard.py) and stopped right after it. Local models only: the call goes through llm.transport_for_ref, which refuses any cloud ref. A hard time budget
 (ABP_PIPELINE_DIFFLINT_BUDGET_S, default 180 s); a result is cached by the diff's hash. Nothing here changes the commit being
 verified or the checkout: patches are applied in a temporary worktree, and only the owner applies one (scripts/difflint.py).
 
@@ -85,6 +86,7 @@ class Report:
     findings: list[Finding] = field(default_factory=list)
     json_path: str = ""
     patch_path: str = ""
+    started_hub: bool = False             # the stage started (and stopped) its own hub for the model call
 
     @property
     def verified(self) -> list[Finding]:
@@ -92,7 +94,7 @@ class Report:
 
     def to_dict(self) -> dict:
         return {"version": PROMPT_VERSION, "status": self.status, "reason": self.reason, "base": self.base, "head": self.head,
-                "diff_hash": self.diff_hash, "model": self.model, "elapsed_s": self.elapsed_s,
+                "diff_hash": self.diff_hash, "model": self.model, "elapsed_s": self.elapsed_s, "started_hub": self.started_hub,
                 "findings": [f.to_dict() for f in self.findings]}
 
     def summary(self) -> str:
@@ -102,8 +104,9 @@ class Report:
             return f"ML diff-lint did not finish ({self.reason}) - advisory, the pipeline goes on"
         where = f" - {self.json_path}" if self.json_path else ""
         cached = " (cached)" if self.status == "cached" else ""
+        own = " (own hub)" if self.started_hub else ""
         return (f"ML diff-lint{cached}: {len(self.findings)} finding(s), {len(self.verified)} verified fix(es)"
-                f" in {self.elapsed_s:.0f}s{where}")
+                f" in {self.elapsed_s:.0f}s{own}{where}")
 
 
 def budget_s() -> float:
@@ -324,6 +327,7 @@ class Gate:
     reason: str = ""
     model: str = ""
     release: Optional[Callable[[], None]] = None
+    started_hub: bool = False             # the hub was started for this call (and stops on release)
 
 
 def _pick_model(models: list[dict]) -> str:
@@ -383,14 +387,51 @@ def gpu_gate(lease_s: float, board: Any = None) -> tuple[Optional[Callable[[], N
     return release, ""
 
 
-def default_gate(lease_s: float) -> Gate:
+HUB_START_WAIT_S = 45.0
+_own_hub_stop: list[Callable[[], None]] = []     # the stop of a hub this stage started and has not stopped yet
+
+
+def stop_own_hub() -> None:
+    """Stop the hub the stage started, if one still runs (the pipeline calls this when it leaves an overrunning stage behind)."""
+    while _own_hub_stop:
+        try:
+            _own_hub_stop.pop()()
+        except Exception as exc:  # noqa: BLE001 - its cell dies with this process anyway
+            logger.info("difflint: stopping its hub failed: %s", exc)
+
+
+def default_gate(lease_s: float, *, start_hub: bool = False, start_wait_s: float = HUB_START_WAIT_S) -> Gate:
     ref, why = hub_gate()
-    if not ref:
-        return Gate(False, why)
+    if ref or not start_hub or not why.endswith("is not running"):
+        if not ref:
+            return Gate(False, why)
+        release, why = gpu_gate(lease_s)
+        if release is None:
+            return Gate(False, why)
+        return Gate(True, model=ref, release=release)
+    # No hub: start one for this call only, the GPU lock taken first (loading a model is GPU work too).
     release, why = gpu_gate(lease_s)
     if release is None:
         return Gate(False, why)
-    return Gate(True, model=ref, release=release)
+    from bot.modelmistress import supervisor
+
+    hub, why, stop = supervisor.start_transient(start_wait_s)
+    if hub is None or stop is None:
+        release()
+        return Gate(False, f"the ModelMistress hub is not running and the stage could not start one: {why}")
+    _own_hub_stop.append(stop)
+    ref, why = hub_gate()
+    if not ref:
+        stop_own_hub()
+        release()
+        return Gate(False, why)
+
+    def release_both() -> None:
+        try:
+            stop_own_hub()
+        finally:
+            release()
+    return Gate(True, model=ref, release=release_both, started_hub=True)
 
 
 async def hub_complete(prompt: str, *, system: str = "", max_tokens: int = 2500, model: str = "",
@@ -612,9 +653,10 @@ def apply_patch(fid: str, root: Path, out_dir: Path, state: Optional[Path] = Non
 def run(root: Path, base: str, head: str = "HEAD", *, budget: Optional[float] = None, complete: Optional[Complete] = None,
         gate: Optional[Callable[[float], Gate]] = None, runner: Optional[Runner] = None, out_dir: Optional[Path] = None,
         state: Optional[Path] = None, run_name: str = "", use_cache: bool = True, with_static: bool = True,
-        with_context: bool = True) -> Report:
+        with_context: bool = True, start_hub: bool = False) -> Report:
     """The advisory stage: review base..head with the local coder, verify the suggested fixes, write the run's JSON and .patch
-    and update the stats. Never raises: a skip or a failure is a Report with status "skipped" or "error"."""
+    and update the stats. Never raises: a skip or a failure is a Report with status "skipped" or "error". start_hub: when no hub
+    answers, start one for the model call (within the budget) and stop it after."""
     t0 = time.monotonic()
     limit = float(budget if budget is not None else budget_s())
     deadline = t0 + limit
@@ -642,11 +684,15 @@ def run(root: Path, base: str, head: str = "HEAD", *, budget: Optional[float] = 
                 return rep
             except (OSError, ValueError, TypeError):
                 pass
-        g = (gate or default_gate)(limit + 30)
+        if gate is not None:
+            g = gate(limit + 30)
+        else:
+            g = default_gate(limit + 30, start_hub=start_hub, start_wait_s=min(HUB_START_WAIT_S, max(5.0, limit / 4)))
         if not g.ok:
             rep.status, rep.reason = "skipped", g.reason
             return rep
         rep.model = g.model
+        rep.started_hub = g.started_hub
         try:
             static = static_findings(root, rep.base, rep.head) if with_static else []
             ctx, tests = context(root, diff) if with_context else ("", [])

@@ -242,6 +242,18 @@ the touched symbols gives it context.
 - **Only when it can:** the hub answers (with enough context per request, `conductor.min_context`) and the GPU
   lock `custom:gpu0` on the coordination board is free; the lock is held for the model call only. Otherwise one
   `[--] ML diff-lint skipped: <why>` line. Local only: `llm.transport_for_ref` refuses a cloud ref.
+- **Its own hub:** the pipeline stops live ABP before its gates, and the hub live ABP's supervisor keeps up goes
+  with it, so on a real push no hub answers. The stage then starts one for the model call alone
+  (`supervisor.start_transient`, the module's built `modules.modelmistress.target`) with the GPU lock taken first,
+  and stops it right after the call (graceful `/service/stop`, then its cell): the verification, the redeploy and
+  live ABP's own supervisor never see it. The cell is kill-on-close, so a pipeline that dies takes the hub with it,
+  and an overrun stage has its hub stopped before the redeploy. Every `guard.py` rule holds: never a second hub for
+  the home (a hub process that runs but does not answer is a skip, not a second start), never from a virtualized
+  view of the home (a shell started from a packaged desktop app), never with `modelmistress.autostart` off or in a
+  sandbox, and a hub without its inference engine is stopped and reported. The start counts against the stage's
+  budget (at most a quarter of it, 45 s by default). A hub that already answers is used and left running.
+  `ABP_PIPELINE_DIFFLINT_HUB=0` turns the own hub off (the stage then skips without one); the summary line says
+  `(own hub)` when it ran on one, and `scripts/difflint.py --run --start-hub` does the same by hand.
 - **Budget:** `ABP_PIPELINE_DIFFLINT_BUDGET_S` (default 180 s) bounds the whole stage. `ABP_PIPELINE_DIFFLINT=0`
   turns it off; `ABP_PIPELINE_DIFFLINT_MODEL` picks the hub model (default: the first one named `*coder*`).
 - **Verified fixes only:** each suggested patch is applied alone in a throwaway `git worktree` of HEAD, then ruff
