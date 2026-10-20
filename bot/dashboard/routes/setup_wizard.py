@@ -20,7 +20,9 @@ def register(app: FastAPI) -> None:
 
     @app.get("/api/setup/status", dependencies=[Depends(_require_token_or_bootstrap)])
     async def api_setup_status():
-        return setup_wizard.check_status()
+        # check_status probes backends (about a second); on the event loop that froze every request, and both UIs ask
+        # for it at boot (the setup check and the Settings hub)
+        return await asyncio.to_thread(setup_wizard.check_status)
 
     @app.get("/api/setup/detect-desktop", dependencies=[Depends(_require_token_or_bootstrap)])
     def api_setup_detect_desktop():
@@ -29,7 +31,7 @@ def register(app: FastAPI) -> None:
 
     @app.post("/api/setup/apply", dependencies=[Depends(_require_token_or_bootstrap)])
     async def api_setup_apply(payload: dict = Body(...)):
-        backup, status = setup_wizard.apply_setup(payload, actor="setup-wizard")
+        backup, status = await asyncio.to_thread(setup_wizard.apply_setup, payload, actor="setup-wizard")
         return {"ok": True, "backup": backup.name if backup else None, "status": status}
 
     @app.post("/api/setup/install-cli", dependencies=[Depends(_require_token)])

@@ -238,7 +238,7 @@ ${q && elsewhere.length ? `<div class="sh-card sh-else"><h3>Elsewhere in ABP</h3
   }
 
   async function load() {
-    const [a, b, c] = await Promise.all([api('/api/local-chat/status').catch(() => null), api('/api/setup/status').catch(() => null),
+    const [a, b, c] = await Promise.all([api('/api/local-chat/status').catch(() => null), (window.__abpSetupStatus ? Promise.resolve(window.__abpSetupStatus) : api('/api/setup/status').catch(() => null)),
       api('/api/local-chat/models').catch(() => null)]);
     lc = a; setup = b;
     models = ((c && c.models) || []).filter((m) => m.kind === 'chat');
