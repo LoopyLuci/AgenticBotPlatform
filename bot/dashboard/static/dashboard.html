@@ -6,6 +6,7 @@
 <title>Bot Control — Agentic Bot Platform Dashboard</title>
 <link rel="icon" type="image/png" href="/static/icons/vaporwave.png">
 <script src="/static/ui-prelude.js"></script>
+<link rel="stylesheet" href="/static/local-chat.css">
 <style>
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -553,6 +554,7 @@
       </button>
     </div>
     <nav class="sidenav" id="sidenav">
+      <a href="#local-chat" title="Local Chat"><span class="ic">✦</span><span class="nav-txt">Local Chat</span></a>
       <a href="#overview" title="Overview"><span class="ic">◆</span><span class="nav-txt">Overview</span></a>
       <a href="#jobs" title="Jobs"><span class="ic">▤</span><span class="nav-txt">Jobs</span></a>
       <a href="#telemetry" title="Connections &amp; Telemetry"><span class="ic">◈</span><span class="nav-txt">Connections &amp; Telemetry</span></a>
@@ -608,6 +610,7 @@
       <a href="#mobile" title="Mobile"><span class="ic">📱</span><span class="nav-txt">Mobile</span></a>
       <a href="#files" title="Files"><span class="ic">📁</span><span class="nav-txt">Files</span></a>
       <a href="#servers" title="Linked Servers"><span class="ic">🌐</span><span class="nav-txt">Linked Servers</span></a>
+      <a href="#settings" class="nav-settings" title="Settings"><span class="ic">⚙</span><span class="nav-txt">Settings</span></a>
     </nav>
     <div class="side-status">
       <div class="row"><span>Desktop</span><b id="s-desktop">—</b></div>
@@ -620,7 +623,7 @@
   <main tabindex="-1">
     <div class="topbar">
       <button class="mobile-nav-btn" id="btn-mobile-nav" type="button" aria-controls="sidenav" aria-expanded="false" title="Open navigation" aria-label="Open navigation">☰</button>
-      <div class="title">Overview</div>
+      <div class="title">Local Chat</div>
       <div class="pillrow">
         <span class="pill" id="pill-bot" aria-live="polite"><span class="dot neutral"></span>Checking bots…</span>
         <span class="pill hidden" id="pill-mcp-warn"><span class="dot warning"></span><span id="pill-mcp-warn-text"></span></span>
@@ -629,6 +632,11 @@
         <button class="btn" id="btn-shortcuts" aria-haspopup="dialog" title="Keyboard shortcuts (?)">Shortcuts</button>
       </div>
     </div>
+
+    <section id="local-chat">
+      <div class="sec-head"><h2>Local Chat</h2><span class="desc">Local models on ModelMistress, with ABP's agent · works offline</span></div>
+      <div id="lc-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
 
     <section id="overview">
       <div class="sec-head"><h2>Overview</h2><span class="desc">Live snapshot · refreshed every 5s</span></div>
@@ -2272,6 +2280,11 @@
       </div>
     </section>
 
+    <section id="settings">
+      <div class="sec-head"><h2>Settings</h2><span class="desc">Every setting in one place · each links to where it lives</span></div>
+      <div id="settings-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
+
     <footer class="dashfoot">Bot Control Dashboard · local-only · single-user allowlist enforced</footer>
   </main>
 </div>
@@ -2331,6 +2344,8 @@
 <script src="/static/usage-panel.js"></script>
 <script src="/static/traces-panel.js"></script>
 <script src="/static/coordination-panel.js"></script>
+<script src="/static/local-chat.js"></script>
+<script src="/static/settings-hub.js"></script>
 <script src="/static/kanban-board-mirror.js"></script>
 <script src="/static/evals-panel.js"></script>
 <script src="/static/sns-panel.js"></script>

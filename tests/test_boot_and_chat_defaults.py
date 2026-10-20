@@ -1,4 +1,5 @@
-"""The desktop boot panel always ends in a finished state, and Chat opens in "Chat with Bot"."""
+"""The desktop boot panel always ends in a finished state, boot ends in Local Chat (the setup wizard no longer blocks; it is
+"Run setup again" in Settings), and Chat opens in "Chat with Bot"."""
 from __future__ import annotations
 
 import pathlib
@@ -77,3 +78,18 @@ def test_the_chat_markup_starts_in_chat_with_bot(rel):
 def test_the_android_chat_defaults_to_chat_with_bot():
     kt = (ROOT / "android-app/app/src/main/kotlin/com/agenticbotplatform/mobile/ui/chat/ChatViewModel.kt").read_text(encoding="utf-8")
     assert "val mode: ChatMode = ChatMode.CHAT_WITH_BOT" in kt
+
+
+@pytest.mark.parametrize("name", ["dashboard", "desktop"])
+def test_boot_ends_in_local_chat_and_the_wizard_no_longer_blocks(name):
+    """Owner decision 2026-10-19 (PLAN-local-chat.md P2): the first screen is Local Chat whether or not a backend is set up."""
+    text = WEB[name]
+    body = _function_body(text, "async function checkSetupAndProceed(onReady)")
+    assert "openWizard(" not in body                                  # an unconfigured install is not stopped by the wizard
+    assert "window.__abpSetupStatus = status;" in body and "onReady();" in body
+    landing = _function_body(text, "function landOnLocalChat()")
+    assert "'#local-chat'" in landing and "!location.hash" in landing   # a deep link still wins
+    start = "function startDashboardPolling()" if name == "desktop" else "function startDashboard()"
+    assert _function_body(text, start).lstrip("{").split(";")[0].strip() == "landOnLocalChat()"
+    # the wizard stays reachable on demand
+    assert "document.getElementById('btn-open-wizard').onclick" in text and "function openWizard(status)" in text

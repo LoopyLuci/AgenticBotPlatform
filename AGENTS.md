@@ -83,4 +83,6 @@ A handover agent should read those plus the owner's persistent memory index befo
 - Match the surrounding code's style, naming, and comment density; prefer the dedicated test/lint tools.
 - New `bot/` module → classify it in `bot/hotreload.py`.
 - API route change → regenerate the SDK and `docs/api/openapi.json` (the pipeline checks they match).
+- New route, page, action, module or settings section → `python scripts/gen_capabilities.py` (the capability index
+  in `docs/capabilities.*`; `tests/test_capabilities.py` fails until it is current).
 - Keep `TODO.md`/`PLAN.md` current as work lands, with the commit.

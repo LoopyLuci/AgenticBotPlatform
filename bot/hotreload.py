@@ -157,7 +157,9 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.dashboard.redblue_api",  # read-only red/blue summary routes; they register once, like the routes above
     "bot.redblue.live",  # the live WatchDog: a process-wide monitor, its queue and worker thread are process state
     "bot.localchat.chat",  # Local Chat turns: the running turns (asyncio tasks, for cancel) are process state
+    "bot.localchat.factory",  # Local Chat Factory runs: the running conductor runs (asyncio tasks, for stop) are process state
     "bot.dashboard.localchat_api",
+    "bot.dashboard.capabilities_api",  # read-only capability search routes; they register once, like the routes above
     "bot.agent_runtime.settings_schema",  # imports permissions/sandbox (both denied above); a reload would split the classes it validates against
     "bot.agent_runtime.project_rules",  # imported by prompt.py; reloaded with it is not needed and is safe to skip
     "bot.agent_runtime.code_intel",  # running language servers are process state
@@ -391,6 +393,10 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.conductor.store", "bot.conductor.cache", "bot.conductor.proof", "bot.conductor.llm", "bot.conductor.shards", "bot.conductor.navctx", "bot.conductor.planner", "bot.conductor.reviewer", "bot.conductor.integrator", "bot.conductor.pusher", "bot.conductor.confine", "bot.conductor.run", "bot.conductor.difflint",  # the conductor: a connection per call, no state held in the modules
     "bot.manager.store", "bot.manager.escalations", "bot.manager.digest", "bot.manager.checkin",  # the manager channel: reads the board/conductor/capacity; a connection per call, no state held in the modules
     "bot.localchat.store", "bot.localchat.speed", "bot.localchat.catalog",  # Local Chat: a connection per call, a speed file and a short catalog cache
+    "bot.localchat.links",  # linked Local Chat sessions: functions over the store, nothing held
+    "bot.localchat.autonomy",  # Local Chat autonomy levels: pure functions
+    "bot.localchat.housekeeping",  # Local Chat compaction, chapters, export, auto-archive: functions over the store
+    "bot.localchat.worktrees",  # Local Chat worktrees: git calls and per-repository locks (rebuilt empty on reload: nothing held between calls)
     "bot.models",
     "bot.push",
     "bot.desktop",
@@ -446,6 +452,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.backends.native_backend",
     "bot.gpu",  # pure VRAM probe (DXGI via ctypes), no bot-internal deps
     "bot.agent_runtime.gpu_tool",  # the gpu_status tool; imports bot.gpu, imported by tools.py below
+    "bot.capabilities.tool",  # the abp_capabilities tool (reads the capability index lazily); imported by tools.py below
     "bot.agent_runtime.tools",
     "bot.agent_runtime.checkpoints",
     "bot.agent_runtime.tool_loop",

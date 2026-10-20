@@ -260,7 +260,8 @@ def _staged_lines(root: Path) -> Iterator[tuple[str, int, str]]:
     send whoever fixes the leak to the wrong line."""
     try:
         diff = subprocess.run(["git", "diff", "--cached", "--unified=0", "--no-color", "--diff-filter=ACMR"],
-                              cwd=root, capture_output=True, text=True, check=True, timeout=120).stdout
+                              cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", check=True,
+                              timeout=120).stdout or ""      # utf-8 always: the locale code page cannot decode every byte
     except (OSError, subprocess.SubprocessError):
         return
     lines = diff.splitlines()

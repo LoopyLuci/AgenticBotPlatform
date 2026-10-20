@@ -133,6 +133,7 @@
 
   // ---- navigation: `g` then a unique token, so not one of these steals a bare key -----------
   const SCREENS = [
+    [['local-chat'], 'Local Chat', 'lc'],
     [['overview'], 'Overview', 'o'],
     [['jobs'], 'Jobs', 'j'],
     [['telemetry'], 'Connections & Telemetry', 'te'],
@@ -180,6 +181,7 @@
     [['files', 'storage'], 'Files', 'fi'],
     [['servers'], 'Linked Servers', 'sv'],
     [['updates'], 'Updates', 'up'],
+    [['settings'], 'Settings', 'gs'],
   ];
 
   const ACTIONS = [
@@ -228,6 +230,12 @@
       keys: [`g ${token}`],
       run: () => navTo(ids),
     })),
+
+    // ---- local chat (local-chat.js) -------------------------------------------------------------
+    { id: 'localchat.new', label: 'New Local Chat session', group: 'Local Chat', context: 'local-chat', keys: [],
+      run: () => { navTo(['local-chat']); if (window.ABP && ABP.localChat) ABP.localChat.newSession(); } },
+    { id: 'localchat.focus', label: 'Jump to the Local Chat message box', group: 'Local Chat', context: 'local-chat', keys: [],
+      run: () => { const el = document.querySelector('#lc-root .lc-input'); if (el) el.focus(); } },
 
     // ---- chat -----------------------------------------------------------------------------------
     { id: 'chat.focus', label: 'Jump to the message box', group: 'Chat', context: 'chat', keys: ['mod+alt+i'],

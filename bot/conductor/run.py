@@ -11,6 +11,11 @@ requeued by the board as for any swarm. What is new is what a task does inside a
 worker, and the second rejection escalates the task (board state `review` with an `ESCALATED:` note, then failed with the same
 note, plus a row in the conductor's escalation list, which LF5 reads). Tasks that depend on an escalated one never start.
 
+An optional `on_event(event)` observer (sync or async) hears each task's progress - {"kind": "task_start" | "task_review" |
+"task_accepted" | "task_escalated", "plan_id", "task_id", "title", "branch", "worktree", "attempt", ...} - so a surface can show the
+workers as they go (Local Chat shows them as linked worker sessions). It only watches: what it does never changes the run, and an
+observer that fails is logged and ignored.
+
 A worker is any async callable `worker(spec, feedback) -> {"branch", "worktree"?, "start"?, "created"?, "summary"?}` that leaves
 its work committed on `spec["branch"]`. `AgentLoopWorker` is the real one (ABP's native agent on a local model, in a worktree);
 tests use scripted ones. Models are local only (llm.py); the capacity state decides which tasks wait (capacity:cloud ones).
@@ -112,7 +117,7 @@ class Conductor:
     def __init__(self, repo: Any, worker: Worker, *, board: Any = None, base: Optional[str] = None, repo_name: str = "abp",
                  model_complete: Optional[reviewer.ModelCall] = None, suite: Optional[list[str]] = None,
                  rerun: Optional[list[str]] = None, workdir: Optional[Path] = None, run_proofs: bool = True, workers: int = 0,
-                 model: str = ""):
+                 model: str = "", on_event: Optional[Callable[[dict], Any]] = None):
         self.repo = Path(repo)
         self.worker = worker
         self.board = board
@@ -130,6 +135,20 @@ class Conductor:
         self._done: dict[str, dict] = {}                       # task id -> accepted result
         self._model_used = ""
         self._mix: dict[str, dict] = {}                        # task id -> the tool mix of its last attempt (navigation visible)
+        self.on_event = on_event                               # watches task progress; never changes the run
+
+    async def _emit(self, kind: str, task: planner.PlannedTask, **fields: Any) -> None:
+        if self.on_event is None:
+            return
+        plan = self._plan
+        event = {"kind": kind, "plan_id": plan.id if plan else "", "goal": plan.goal if plan else "", "task_id": task.id,
+                 "key": task.key, "title": task.title, **fields}
+        try:
+            out = self.on_event(event)
+            if asyncio.iscoroutine(out):
+                await out
+        except Exception:  # noqa: BLE001 - an observer can never break the run
+            logger.debug("conductor: on_event failed for %s", kind, exc_info=True)
 
     # ----------------------------------------------------------------- plan
     async def plan(self, goal: str, *, context: str = "", replan: bool = False) -> planner.Plan:
@@ -218,6 +237,7 @@ class Conductor:
             if store.rejections(plan.id, task.key) >= max_rej:
                 await self._escalate(plan, task, "rejected twice and no worker attempt left")
             attempt += 1
+            await self._emit("task_start", task, attempt=attempt, branch=task.branch, worktree=task.worktree, feedback=bool(feedback))
             try:
                 result = await self.worker(dict(spec), feedback)
             except WorkerStuck as exc:
@@ -269,10 +289,15 @@ class Conductor:
                 await reviewer.model_review(rep, self.repo, goal=plan.goal, complete=self.model_complete, model=self.cfg["review_model"],
                                             avoid=self.cfg["model"], diff_cap=int(self.cfg["review_diff_cap"]))
             store.add_review(plan.id, task.key, branch, rep.to_dict())
+            await self._emit("task_review", task, attempt=attempt, branch=branch, worktree=str(result.get("worktree") or ""),
+                             verdict=rep.verdict, summary=str(result.get("summary", ""))[:600],
+                             findings=[str(f) for f in rep.findings][:10])
             if rep.accepted:
                 navctx.capture(f"Task '{task.title}' was accepted on {branch}: {str(result.get('summary', ''))[:600]}", "task_state",
                                self.repo_name, cfg=self.cfg)
                 self._done[task.id] = {"branch": branch, "head": rep.head}
+                await self._emit("task_accepted", task, attempt=attempt, branch=branch, worktree=str(result.get("worktree") or ""),
+                                 head=rep.head, summary=str(result.get("summary", ""))[:600])
                 return json.dumps({"branch": branch, "verdict": rep.verdict, "head": rep.head, "summary": result.get("summary", ""),
                                    "checks": rep.checks, "advisory": [str(f) for f in rep.advisory][:10]})
             feedback = rep.feedback()
@@ -288,6 +313,7 @@ class Conductor:
                         kind: str = "rejections", question: str = "", base: str = "", branch: str = "", summary: str = ""):
         """Stop the task for a decision: a row in the conductor's list (LF5 reads it) and the board task goes to `blocked` with the
         minimum context. Raises Escalated; the swarm runner ends the board task as blocked (not failed, not requeued)."""
+        await self._emit("task_escalated", task, reason=reason[:600], escalation_kind=kind, question=question, branch=branch)
         note = f"ESCALATED: {reason}"[:500]
         ctx = await asyncio.to_thread(self._blocked_context, task, reason, rep, kind, question, base, branch or task.branch, summary)
         store.escalate(plan.id, task.key, reason, {"title": task.title, "branch": task.branch,

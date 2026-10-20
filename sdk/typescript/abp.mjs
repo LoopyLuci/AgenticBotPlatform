@@ -257,12 +257,33 @@ export const operations = {
    "instance_id"
   ]
  },
+ "DELETE /api/local-chat/groups/{gid}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/local-chat/groups/{gid}",
+  "path_params": [
+   "gid"
+  ],
+  "query_params": []
+ },
  "DELETE /api/local-chat/sessions/{sid}": {
   "body": false,
   "method": "DELETE",
   "path": "/api/local-chat/sessions/{sid}",
   "path_params": [
    "sid"
+  ],
+  "query_params": [
+   "confirm"
+  ]
+ },
+ "DELETE /api/local-chat/sessions/{sid}/queued/{qid}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/local-chat/sessions/{sid}/queued/{qid}",
+  "path_params": [
+   "sid",
+   "qid"
   ],
   "query_params": []
  },
@@ -902,6 +923,25 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/api/canvas",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/capabilities": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capabilities",
+  "path_params": [],
+  "query_params": [
+   "q",
+   "kind",
+   "limit",
+   "offline"
+  ]
+ },
+ "GET /api/capabilities/stats": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capabilities/stats",
   "path_params": [],
   "query_params": []
  },
@@ -2574,6 +2614,24 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/local-chat/events": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/events",
+  "path_params": [],
+  "query_params": [
+   "after",
+   "session_id",
+   "limit"
+  ]
+ },
+ "GET /api/local-chat/groups": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/groups",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/local-chat/models": {
   "body": false,
   "method": "GET",
@@ -2604,6 +2662,89 @@ export const operations = {
   "query_params": [
    "after"
   ]
+ },
+ "GET /api/local-chat/sessions/{sid}/checkpoints": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/checkpoints",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "GET /api/local-chat/sessions/{sid}/children": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/children",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "GET /api/local-chat/sessions/{sid}/context": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/context",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "GET /api/local-chat/sessions/{sid}/export": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/export",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": [
+   "format"
+  ]
+ },
+ "GET /api/local-chat/sessions/{sid}/factory": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/factory",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "GET /api/local-chat/sessions/{sid}/queued": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/queued",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "GET /api/local-chat/sessions/{sid}/worktree": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/worktree",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "GET /api/local-chat/sessions/{sid}/worktree/commit-message": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/worktree/commit-message",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "GET /api/local-chat/sessions/{sid}/worktree/diff": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/worktree/diff",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
  },
  "GET /api/local-chat/status": {
   "body": false,
@@ -4641,6 +4782,15 @@ export const operations = {
   ],
   "query_params": []
  },
+ "PATCH /api/local-chat/groups/{gid}": {
+  "body": true,
+  "method": "PATCH",
+  "path": "/api/local-chat/groups/{gid}",
+  "path_params": [
+   "gid"
+  ],
+  "query_params": []
+ },
  "PATCH /api/local-chat/sessions/{sid}": {
   "body": true,
   "method": "PATCH",
@@ -5948,6 +6098,13 @@ export const operations = {
    "timeout"
   ]
  },
+ "POST /api/local-chat/groups": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/groups",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/local-chat/models/benchmark": {
   "body": true,
   "method": "POST",
@@ -5971,6 +6128,78 @@ export const operations = {
   ],
   "query_params": []
  },
+ "POST /api/local-chat/sessions/{sid}/chapters": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/chapters",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/local-chat/sessions/{sid}/compact": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/compact",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/local-chat/sessions/{sid}/factory/run": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/factory/run",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/local-chat/sessions/{sid}/factory/stop": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/factory/stop",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/local-chat/sessions/{sid}/fork": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/fork",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/local-chat/sessions/{sid}/handoff": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/handoff",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/local-chat/sessions/{sid}/read": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/read",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/local-chat/sessions/{sid}/rewind": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/rewind",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
  "POST /api/local-chat/sessions/{sid}/send": {
   "body": true,
   "method": "POST",
@@ -5978,6 +6207,85 @@ export const operations = {
   "path_params": [
    "sid"
   ],
+  "query_params": []
+ },
+ "POST /api/local-chat/sessions/{sid}/steer": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/steer",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/local-chat/sessions/{sid}/task": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/task",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/local-chat/sessions/{sid}/worktree": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/worktree",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/local-chat/sessions/{sid}/worktree/commit": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/worktree/commit",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/local-chat/sessions/{sid}/worktree/discard": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/worktree/discard",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/local-chat/sessions/{sid}/worktree/keep": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/worktree/keep",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/local-chat/sessions/{sid}/worktree/queue-merge": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/worktree/queue-merge",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/local-chat/sessions/{sid}/worktree/sync": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/worktree/sync",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/local-chat/worktrees/prune": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/worktrees/prune",
+  "path_params": [],
   "query_params": []
  },
  "POST /api/localai/discover/adopt": {
@@ -11078,6 +11386,25 @@ export const operations = {
    "sig"
   ]
  },
+ "capabilities_search_api_capabilities_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capabilities",
+  "path_params": [],
+  "query_params": [
+   "q",
+   "kind",
+   "limit",
+   "offline"
+  ]
+ },
+ "capabilities_stats_api_capabilities_stats_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/capabilities/stats",
+  "path_params": [],
+  "query_params": []
+ },
  "capacity_clear_api_capacity_clear_post": {
   "body": true,
   "method": "POST",
@@ -13817,6 +14144,51 @@ export const operations = {
   ],
   "query_params": []
  },
+ "local_chat_chapter_api_local_chat_sessions__sid__chapters_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/chapters",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_checkpoints_api_local_chat_sessions__sid__checkpoints_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/checkpoints",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_children_api_local_chat_sessions__sid__children_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/children",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_compact_api_local_chat_sessions__sid__compact_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/compact",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_context_api_local_chat_sessions__sid__context_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/context",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
  "local_chat_create_api_local_chat_sessions_post": {
   "body": true,
   "method": "POST",
@@ -13831,6 +14203,107 @@ export const operations = {
   "path_params": [
    "sid"
   ],
+  "query_params": [
+   "confirm"
+  ]
+ },
+ "local_chat_events_api_local_chat_events_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/events",
+  "path_params": [],
+  "query_params": [
+   "after",
+   "session_id",
+   "limit"
+  ]
+ },
+ "local_chat_export_api_local_chat_sessions__sid__export_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/export",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": [
+   "format"
+  ]
+ },
+ "local_chat_factory_board_api_local_chat_sessions__sid__factory_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/factory",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_factory_run_api_local_chat_sessions__sid__factory_run_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/factory/run",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_factory_stop_api_local_chat_sessions__sid__factory_stop_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/factory/stop",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_fork_api_local_chat_sessions__sid__fork_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/fork",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_group_create_api_local_chat_groups_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/groups",
+  "path_params": [],
+  "query_params": []
+ },
+ "local_chat_group_delete_api_local_chat_groups__gid__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/local-chat/groups/{gid}",
+  "path_params": [
+   "gid"
+  ],
+  "query_params": []
+ },
+ "local_chat_group_rename_api_local_chat_groups__gid__patch": {
+  "body": true,
+  "method": "PATCH",
+  "path": "/api/local-chat/groups/{gid}",
+  "path_params": [
+   "gid"
+  ],
+  "query_params": []
+ },
+ "local_chat_groups_api_local_chat_groups_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/groups",
+  "path_params": [],
+  "query_params": []
+ },
+ "local_chat_handoff_api_local_chat_sessions__sid__handoff_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/handoff",
+  "path_params": [
+   "sid"
+  ],
   "query_params": []
  },
  "local_chat_models_api_local_chat_models_get": {
@@ -13841,6 +14314,43 @@ export const operations = {
   "query_params": [
    "refresh"
   ]
+ },
+ "local_chat_queued_api_local_chat_sessions__sid__queued_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/queued",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_queued_drop_api_local_chat_sessions__sid__queued__qid__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/local-chat/sessions/{sid}/queued/{qid}",
+  "path_params": [
+   "sid",
+   "qid"
+  ],
+  "query_params": []
+ },
+ "local_chat_read_api_local_chat_sessions__sid__read_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/read",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_rewind_api_local_chat_sessions__sid__rewind_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/rewind",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
  },
  "local_chat_send_api_local_chat_sessions__sid__send_post": {
   "body": true,
@@ -13880,6 +14390,24 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "local_chat_steer_api_local_chat_sessions__sid__steer_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/steer",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_task_api_local_chat_sessions__sid__task_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/task",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
  "local_chat_update_api_local_chat_sessions__sid__patch": {
   "body": true,
   "method": "PATCH",
@@ -13887,6 +14415,94 @@ export const operations = {
   "path_params": [
    "sid"
   ],
+  "query_params": []
+ },
+ "local_chat_worktree_api_local_chat_sessions__sid__worktree_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/worktree",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_worktree_commit_api_local_chat_sessions__sid__worktree_commit_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/worktree/commit",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_worktree_create_api_local_chat_sessions__sid__worktree_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/worktree",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_worktree_diff_api_local_chat_sessions__sid__worktree_diff_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/worktree/diff",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_worktree_discard_api_local_chat_sessions__sid__worktree_discard_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/worktree/discard",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_worktree_draft_api_local_chat_sessions__sid__worktree_commit_message_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/worktree/commit-message",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_worktree_keep_api_local_chat_sessions__sid__worktree_keep_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/worktree/keep",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_worktree_queue_api_local_chat_sessions__sid__worktree_queue_merge_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/worktree/queue-merge",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_worktree_sync_api_local_chat_sessions__sid__worktree_sync_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/worktree/sync",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_worktrees_prune_api_local_chat_worktrees_prune_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/worktrees/prune",
+  "path_params": [],
   "query_params": []
  },
  "lv_action_api_vms_libvirt__name___action__post": {

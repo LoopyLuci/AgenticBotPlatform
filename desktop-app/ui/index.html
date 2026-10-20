@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bot Control — Agentic Bot Platform Dashboard</title>
 <script src="ui-prelude.js"></script>
+<link rel="stylesheet" href="local-chat.css">
 <style>
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -780,6 +781,7 @@
       <input type="text" id="sidenav-search" aria-label="Search sections" placeholder="Search sections">
     </div>
     <nav class="sidenav" id="sidenav">
+      <a href="#local-chat" data-kw="local chat models modelmistress coding agent build plan review offline"><span class="ic">✦</span><span class="nav-txt"><b>Local Chat</b><small>Chat &amp; code with local models</small></span></a>
       <a href="#overview" data-kw="overview live status kpis"><span class="ic">◆</span><span class="nav-txt"><b>Overview</b><small>Live status &amp; KPIs</small></span></a>
       <a href="#jobs" data-kw="jobs queue history backends"><span class="ic">▤</span><span class="nav-txt"><b>Jobs</b><small>Queue, history &amp; backends</small></span></a>
       <a href="#telemetry" data-kw="connections telemetry health latency errors"><span class="ic">◈</span><span class="nav-txt"><b>Connections &amp; Telemetry</b><small>Health, latency &amp; errors</small></span></a>
@@ -835,6 +837,7 @@
       <a href="#mobile" data-kw="mobile android pairing devices"><span class="ic">📱</span><span class="nav-txt"><b>Mobile</b><small>Pair &amp; manage devices</small></span></a>
       <a href="#servers" data-kw="servers linked federation multi-machine"><span class="ic">🌐</span><span class="nav-txt"><b>Linked Servers</b><small>Manage other AgenticBotPlatform installs</small></span></a>
       <a href="#updates" data-kw="updates upgrade version install"><span class="ic">⬆</span><span class="nav-txt"><b>Updates</b><small>Check &amp; install the latest version</small></span></a>
+      <a href="#settings" class="nav-settings" data-kw="settings preferences setup wizard backends configuration options search"><span class="ic">⚙</span><span class="nav-txt"><b>Settings</b><small>Every setting, organized</small></span></a>
     </nav>
     <div class="side-status">
       <div class="row"><span>Desktop</span><b id="s-desktop">—</b></div>
@@ -847,7 +850,7 @@
   <main tabindex="-1">
     <div class="topbar">
       <button class="mobile-nav-btn" id="btn-mobile-nav" type="button" aria-controls="sidenav" aria-expanded="false" title="Open navigation" aria-label="Open navigation">☰</button>
-      <div class="title">Overview</div>
+      <div class="title">Local Chat</div>
       <div class="pillrow">
         <span class="pill" id="pill-bot" aria-live="polite"><span class="dot neutral"></span>Checking bots…</span>
         <span class="pill hidden" id="pill-mcp-warn"><span class="dot warning"></span><span id="pill-mcp-warn-text"></span></span>
@@ -860,6 +863,11 @@
         <button class="btn" id="btn-shortcuts" aria-haspopup="dialog" title="Keyboard shortcuts (?)">Shortcuts</button>
       </div>
     </div>
+
+    <section id="local-chat">
+      <div class="sec-head"><h2>Local Chat</h2><span class="desc">Local models on ModelMistress, with ABP's agent · works offline</span></div>
+      <div id="lc-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
 
     <section id="overview">
       <div class="sec-head"><h2>Overview</h2><span class="desc">Live snapshot · refreshed every 5s</span></div>
@@ -2510,6 +2518,11 @@
       </div>
     </section>
 
+    <section id="settings">
+      <div class="sec-head"><h2>Settings</h2><span class="desc">Every setting in one place · each links to where it lives</span></div>
+      <div id="settings-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
+
     <footer class="dashfoot">Bot Control Dashboard · local-only · single-user allowlist enforced</footer>
   </main>
 </div>
@@ -2571,6 +2584,8 @@
 <script src="usage-panel.js"></script>
 <script src="traces-panel.js"></script>
 <script src="coordination-panel.js"></script>
+<script src="local-chat.js"></script>
+<script src="settings-hub.js"></script>
 <script src="kanban-board-mirror.js"></script>
 <script src="evals-panel.js"></script>
 <script src="sns-panel.js"></script>

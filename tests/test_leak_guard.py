@@ -263,6 +263,13 @@ def test_staged_mode_reports_the_real_line_number_not_a_diff_offset(repo):
     assert [(f.line, f.text) for f in found] == [(30, "leak = 'A:/Thing'")]
 
 
+def test_staged_mode_reads_any_utf8_text_whatever_the_locale(repo):
+    # "☐" is e2 98 90 in UTF-8; 0x90 has no meaning in the Windows cp1252 code page, which once crashed the hook
+    _write(repo, "bot/ui.js", "const box = '☐ to do';" + chr(10) + "leak = 'A:/Thing'" + chr(10))
+    git(repo, "add", "bot/ui.js")
+    assert [(f.path, f.line) for f in leak_guard.scan(repo, staged=True)] == [("bot/ui.js", 2)]
+
+
 def test_a_staged_deletion_is_not_a_leak(repo):
     _write(repo, "bot/x.py", "leak = 'A:/Thing'\n")
     _commit(repo, "bot/x.py")

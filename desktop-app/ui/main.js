@@ -135,6 +135,8 @@ function connectDevicesSocket() {
     try {
       const msg = JSON.parse(evt.data);
       if (msg.type === 'runtime.changed' && window.ABP && ABP.moduleHost) ABP.moduleHost.onEvent(msg);
+      // Local Chat (local-chat.js) and any other shared panel read the frames they need from this event.
+      try { window.dispatchEvent(new CustomEvent('abp:ws-frame', { detail: msg })); } catch (_e) { /* old browser */ }
       if (msg.type === 'chat_stream') onChatStream(msg);
       if (msg.type === 'device_list') {
         mobileKeysState.devices = msg.devices;
@@ -1495,7 +1497,13 @@ async function refreshAll() {
   await Promise.allSettled(tasks);
 }
 
+// Boot ends in Local Chat, the first screen (and the first section of the page); a deep link (#jobs, ...) still wins.
+function landOnLocalChat() {
+  if (!location.hash || location.hash === '#') history.replaceState(null, '', '#local-chat');
+}
+
 function startDashboardPolling() {
+  landOnLocalChat();
   refreshAll();
   pollWhenVisible(refreshOverview, 5000);
   pollWhenVisible(refreshJobsTable, 5000, 'jobs');
@@ -5424,7 +5432,11 @@ async function checkSetupAndProceed(onReady) {
     const res = await fetch(API_BASE + '/api/setup/status', { headers });
     if (!res.ok) { onReady(); return; } // 401 etc — let the normal dashboard flow prompt for the token
     const status = await res.json();
-    if (status.ready) onReady(); else openWizard(status);
+    // The setup wizard no longer blocks the first screen: Local Chat works without any backend, and an install with
+    // none configured gets a dismissible hint there instead. The wizard stays one click away (Settings -> Backends,
+    // "Run setup again").
+    window.__abpSetupStatus = status;
+    onReady();
   } catch (e) {
     onReady(); // don't block the whole UI on a network hiccup
   }
