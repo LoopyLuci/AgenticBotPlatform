@@ -109,11 +109,13 @@ def _session(sid: str) -> dict:
     return s
 
 
-def _wt(sid: str) -> tuple[dict, dict]:
+def _wt(sid: str, *, change: bool = True) -> tuple[dict, dict]:
     s = _session(sid)
     wt = s.get("worktree")
     if not wt:
         raise WorktreeError("this session has no worktree")
+    if change and wt.get("worker"):
+        raise WorktreeError("a Factory worker's worktree belongs to the conductor: it is read-only here")
     if not Path(wt["path"]).is_dir():
         raise WorktreeError(f"the worktree folder is gone ({wt['path']}); discard it or prune")
     return s, wt
@@ -183,7 +185,7 @@ def _ahead_behind(path: Path, base: str) -> tuple[int, int]:
 
 
 def status(sid: str) -> dict:
-    s, wt = _wt(sid)
+    s, wt = _wt(sid, change=False)
     path = Path(wt["path"])
     ahead, behind = _ahead_behind(path, wt["base"])
     dirty = _dirty(path)
@@ -197,7 +199,7 @@ def status(sid: str) -> dict:
 
 def diff(sid: str) -> dict:
     """The session's changes against the point where it forked from the base: committed, uncommitted and new files."""
-    s, wt = _wt(sid)
+    s, wt = _wt(sid, change=False)
     path = Path(wt["path"])
     fork = _git(path, "merge-base", wt["base"], "HEAD", check=False).stdout.strip() or wt["base_sha"]
     untracked = _git(path, "ls-files", "--others", "--exclude-standard").stdout.split("\n")
@@ -280,6 +282,8 @@ def discard(sid: str, *, confirm: bool = False) -> dict:
     wt = s.get("worktree")
     if not wt:
         raise WorktreeError("this session has no worktree")
+    if wt.get("worker"):
+        raise WorktreeError("a Factory worker's worktree belongs to the conductor: it is read-only here")
     path, repo = Path(wt["path"]), Path(wt["repo"])
     lost = _lost(path, wt["base"]) if path.is_dir() else {"uncommitted": [], "commits": []}
     if (lost["uncommitted"] or lost["commits"]) and not confirm:
@@ -298,10 +302,7 @@ def discard(sid: str, *, confirm: bool = False) -> dict:
 
 
 def set_keep(sid: str, keep: bool) -> dict:
-    s = _session(sid)
-    wt = s.get("worktree")
-    if not wt:
-        raise WorktreeError("this session has no worktree")
+    s, wt = _wt(sid)
     wt = {**wt, "keep": bool(keep)}
     store.set_worktree(sid, wt)
     return wt
@@ -350,8 +351,11 @@ def prune(*, clean_merged: bool = False) -> dict:
     removed, kept, repos = [], [], set()
     owned = {}
     for s in store.sessions_with_worktrees():
+        if not s["worktree"].get("path"):
+            continue
         owned[str(Path(s["worktree"]["path"]).resolve()).lower()] = s
-        repos.add(s["worktree"]["repo"])
+        if s["worktree"].get("repo"):
+            repos.add(s["worktree"]["repo"])
     base = root()
     for folder in sorted(p for p in base.iterdir() if p.is_dir()) if base.is_dir() else []:
         key = str(folder.resolve()).lower()
@@ -375,7 +379,7 @@ def prune(*, clean_merged: bool = False) -> dict:
         for s in owned.values():
             wt = s["worktree"]
             path = Path(wt["path"])
-            if wt.get("keep") or not path.is_dir() or _dirty(path):
+            if wt.get("keep") or wt.get("worker") or not path.is_dir() or _dirty(path):
                 continue
             merged = _git(path, "merge-base", "--is-ancestor", "HEAD", wt["base"], check=False).returncode == 0
             if merged:

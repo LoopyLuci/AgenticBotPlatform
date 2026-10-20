@@ -2653,6 +2653,15 @@ export const operations = {
   ],
   "query_params": []
  },
+ "GET /api/local-chat/sessions/{sid}/children": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/children",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
  "GET /api/local-chat/sessions/{sid}/queued": {
   "body": false,
   "method": "GET",
@@ -6071,6 +6080,24 @@ export const operations = {
   ],
   "query_params": []
  },
+ "POST /api/local-chat/sessions/{sid}/fork": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/fork",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/local-chat/sessions/{sid}/handoff": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/handoff",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
  "POST /api/local-chat/sessions/{sid}/read": {
   "body": false,
   "method": "POST",
@@ -6102,6 +6129,15 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/local-chat/sessions/{sid}/steer",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/local-chat/sessions/{sid}/task": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/task",
   "path_params": [
    "sid"
   ],
@@ -14014,6 +14050,15 @@ export const operations = {
   ],
   "query_params": []
  },
+ "local_chat_children_api_local_chat_sessions__sid__children_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/children",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
  "local_chat_create_api_local_chat_sessions_post": {
   "body": true,
   "method": "POST",
@@ -14042,6 +14087,15 @@ export const operations = {
    "session_id",
    "limit"
   ]
+ },
+ "local_chat_fork_api_local_chat_sessions__sid__fork_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/fork",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
  },
  "local_chat_group_create_api_local_chat_groups_post": {
   "body": true,
@@ -14073,6 +14127,15 @@ export const operations = {
   "method": "GET",
   "path": "/api/local-chat/groups",
   "path_params": [],
+  "query_params": []
+ },
+ "local_chat_handoff_api_local_chat_sessions__sid__handoff_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/handoff",
+  "path_params": [
+   "sid"
+  ],
   "query_params": []
  },
  "local_chat_models_api_local_chat_models_get": {
@@ -14163,6 +14226,15 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/local-chat/sessions/{sid}/steer",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_task_api_local_chat_sessions__sid__task_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/task",
   "path_params": [
    "sid"
   ],

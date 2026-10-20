@@ -32,6 +32,12 @@ Sessions and worktrees (S1):
     POST   /api/local-chat/sessions/{sid}/worktree/discard       {confirm?} 409 with what would be lost unless confirmed
     POST   /api/local-chat/sessions/{sid}/worktree/queue-merge   into the conductor's push queue (owner approval there)
     POST   /api/local-chat/worktrees/prune                       {clean_merged?} orphans (and merged, clean ones)
+Linked sessions (S3):
+    POST   /api/local-chat/sessions/{sid}/fork        {title?, base?} a new session with this conversation, in its own worktree
+    POST   /api/local-chat/sessions/{sid}/task        {brief, title?, start?} a fresh session on a brief (started unless false)
+    POST   /api/local-chat/sessions/{sid}/handoff     {plan, title?, stop?} the in-progress task moves to a new session
+    GET    /api/local-chat/sessions/{sid}/children    the sessions linked under it, with their status
+When a linked session ends a turn, a note with its recap lands in the parent (local_chat_note frame).
 A session created with a git workspace gets its own worktree unless {"worktree": false} or local_chat.worktrees is off;
 DELETE asks (409) when the session's worktree holds unmerged work, unless ?confirm=true.
 
@@ -397,3 +403,57 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         from bot.localchat import worktrees
 
         return await asyncio.to_thread(_wt_errors, worktrees.prune, clean_merged=bool((payload or {}).get("clean_merged")))
+
+    # ---- linked sessions (S3) -----------------------------------------------------------------------------------------------
+    def _link_errors(fn, *a, **kw):
+        try:
+            return fn(*a, **kw)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+    @app.post("/api/local-chat/sessions/{sid}/fork", dependencies=write)
+    async def local_chat_fork(sid: str, payload: Optional[dict] = Body(None)):
+        from bot.localchat import links
+
+        _session_or_404(sid)
+        p = payload or {}
+        res = await asyncio.to_thread(_link_errors, links.fork, sid, title=str(p.get("title") or ""), base=str(p.get("base") or "") or None)
+        await _announce(res["session"])
+        return res
+
+    @app.post("/api/local-chat/sessions/{sid}/task", dependencies=write)
+    async def local_chat_task(sid: str, payload: dict = Body(...)):
+        from bot.localchat import chat, links
+
+        _session_or_404(sid)
+        res = await asyncio.to_thread(_link_errors, links.task, sid, str(payload.get("brief") or ""), title=str(payload.get("title") or ""))
+        await _announce(res["session"])
+        if payload.get("start", True):
+            try:
+                res["turn"] = await chat.send(res["session"]["id"], res["brief"], _broadcast)
+            except (RuntimeError, ValueError, LookupError) as e:
+                res["turn_error"] = str(e)
+        return res
+
+    @app.post("/api/local-chat/sessions/{sid}/handoff", dependencies=write)
+    async def local_chat_handoff(sid: str, payload: dict = Body(...)):
+        from bot.localchat import chat, links
+
+        _session_or_404(sid)
+        if payload.get("stop") and chat.is_running(sid):
+            await chat.cancel(sid)
+        res = await asyncio.to_thread(_link_errors, links.handoff, sid, str(payload.get("plan") or ""), title=str(payload.get("title") or ""))
+        await _announce(res["session"])
+        if payload.get("start", True):
+            try:
+                res["turn"] = await chat.send(res["session"]["id"], "Continue with what is left to do.", _broadcast)
+            except (RuntimeError, ValueError, LookupError) as e:
+                res["turn_error"] = str(e)
+        return res
+
+    @app.get("/api/local-chat/sessions/{sid}/children", dependencies=read)
+    async def local_chat_children(sid: str):
+        from bot.localchat import links
+
+        _session_or_404(sid)
+        return {"children": links.children(sid)}

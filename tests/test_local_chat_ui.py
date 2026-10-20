@@ -197,3 +197,14 @@ def test_the_sidebar_header_and_composer_offer_the_session_actions():
     assert "lc-split" in JS and "openSplit" in JS
     # a 409 from discard / delete is shown with what would be lost before anything is removed
     assert JS.count("would_lose") >= 4 and "{ confirm: true }" in JS and "?confirm=true" in JS
+
+
+# ---- S3: linked sessions -------------------------------------------------------------------------------------------------
+def test_linked_sessions_are_offered_nested_and_noted():
+    for action in ("['fork', ", "['task', ", "['handoff', "):
+        assert action in JS, action
+    assert "url + '/' + action" in JS                       # POST .../fork | /task | /handoff
+    assert "return 'child';" in JS and "function sessionRows(" in JS        # children drawn under their parent
+    assert "'/children'" in JS and "local_chat_note" in JS
+    assert "m.meta && m.meta.child" in JS                   # a note in the parent opens the child
+    assert "p.session.link === 'worker'" in JS and ".disabled = ro" in JS    # workers are read-only

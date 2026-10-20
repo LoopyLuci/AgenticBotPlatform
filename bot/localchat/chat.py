@@ -126,6 +126,8 @@ async def send(sid: str, text: str, broadcast: Broadcast) -> dict[str, Any]:
         raise KeyError(sid)
     if is_running(sid):
         raise RuntimeError("this session is still answering; steer it, queue the message, or cancel it first")
+    if session.get("link") == "worker":
+        raise ValueError("a Factory worker's session is read-only: talk to the session that started the run")
     from bot.localchat import worktrees
 
     cwd = worktrees.cwd_of(session)
@@ -252,6 +254,12 @@ async def _turn(sid: str, turn_id: str, text: str, model: str, session: dict, br
         context["cwd"] = ws
     wt_root = (session.get("worktree") or {}).get("path")
     await _checkpoint(sid, turn_id, wt_root if wt_root and Path(wt_root).is_dir() else ws, session["mode"])   # the whole worktree
+    from bot.localchat import links
+
+    prompt = text
+    brief = links.pending_context(sid)              # a fork / task / hand-off starts with its parent's context
+    if brief:
+        prompt = f"{brief}\n\n---\n\n{text}"
     from bot.agent_runtime.transports.base import speed_observer
 
     speeds: list[float] = []
@@ -259,7 +267,7 @@ async def _turn(sid: str, turn_id: str, text: str, model: str, session: dict, br
     started = time.monotonic()
     state, reply, tokens = "done", "", 0
     try:
-        result = await router.ask(text, action_type="local_chat", backend_override="native_agent", context=context,
+        result = await router.ask(prompt, action_type="local_chat", backend_override="native_agent", context=context,
                                   instance_id=instance_id, chat_id=cid, model_override=model_ref(model))
         reply, tokens = result.text or "", int(result.tokens or 0)
         tps = _record_speed(model, speeds)
@@ -290,8 +298,6 @@ async def _after_turn(sid: str, state: str, broadcast: Broadcast) -> None:
         from bot.localchat import links
 
         await links.on_turn_end(sid, state, broadcast)
-    except ImportError:
-        pass
     except Exception:  # noqa: BLE001 - a note that could not be delivered must not break the session
         logger.debug("local chat: parent note failed for %s", sid, exc_info=True)
     if state != "done":

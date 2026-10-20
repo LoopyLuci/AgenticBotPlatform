@@ -9,6 +9,8 @@
 // its worktree (branch, ahead / behind, changed files) and Diff / Sync / Commit / Merge (through the push queue) / Keep /
 // Discard; a turn that changed files can be undone; a message sent while it works steers it or waits in the queue; two
 // sessions can sit side by side (split view); the browser notifies when a session needs you or finishes out of sight.
+// Linked sessions (S3): Fork, New task and Hand off from a session's menu; children are listed under their parent (and in
+// its header), a child's turn end lands in the parent as a note with an Open button, and Factory workers are read-only.
 //
 // This file and local-chat.css are identical in the dashboard (bot/dashboard/static/) and the desktop app
 // (desktop-app/ui/); tests/test_local_chat_ui.py fails if they differ. It uses the page's own api() and draws into #lc-root.
@@ -137,6 +139,7 @@
       p.wt = w.worktree; p.wtErr = w.err || '';
       p.checkpoints = c.checkpoints || [];
       p.queued = q.queued || [];
+      p.children = (await api('/api/local-chat/sessions/' + encodeURIComponent(sid) + '/children').catch(() => ({ children: [] }))).children || [];
     } catch (_) { /* the header just stays as it was */ }
     renderHead(i); renderMsgs(i); renderComposerState(i);
   }
@@ -325,6 +328,7 @@
     });
     if (msg.type === 'local_chat_turn') loadSessions();
     if (msg.type === 'local_chat_session' && msg.session) onSessionFrame(msg);
+    if (msg.type === 'local_chat_note') S.panes.forEach((p, i) => { if (p.sid === msg.session_id) { refreshMessages(i); loadWorktree(i); } });
   }
   function onSessionFrame(msg) {
     const s = msg.session;
@@ -460,6 +464,8 @@ ${S.panes.length > 1 ? `<button type="button" class="lc-icon" data-lc="close-pan
     const actions = [`<button type="button" class="lc-mini" data-lc="copy-msg" data-id="${E(m.id)}" aria-label="Copy this message">Copy</button>`];
     const p = pane(i);
     const cp = role === 'user' && m.turn_id && !m.reverted ? (p.checkpoints || []).find((c) => c.turn_id === m.turn_id && !c.rewound) : null;
+    const child = m.meta && m.meta.child;
+    if (child) actions.push(`<button type="button" class="lc-mini" data-lc="open" data-sid="${E(child)}" aria-label="Open the linked session">Open</button>`);
     if (cp && !p.running) actions.push(`<button type="button" class="lc-mini" data-lc="rewind" data-turn="${E(m.turn_id)}" aria-label="Undo this turn's file changes">Undo this turn</button>`);
     if (role === 'user' && isLastUser) {
       actions.push(`<button type="button" class="lc-mini" data-lc="retry" data-id="${E(m.id)}" aria-label="Send this message again">Retry</button>`);
@@ -514,6 +520,9 @@ ${S.catalogErr ? `<p class="lc-warn">${E(S.catalogErr)}</p>` : model ? `<p class
   function renderComposerState(i) {
     const p = pane(i);
     if (!p || !p.el) return;
+    const ro = !!(p.session && p.session.link === 'worker');
+    p.el.querySelector('.lc-input').disabled = ro;
+    p.el.querySelector('[data-lc="send"]').disabled = ro;
     p.el.querySelector('[data-lc="cancel"]').classList.toggle('hidden', !p.running);
     p.el.querySelector('[data-lc="queue"]').classList.toggle('hidden', !p.running);
     const sendBtn = p.el.querySelector('[data-lc="send"]');
@@ -521,7 +530,8 @@ ${S.catalogErr ? `<p class="lc-warn">${E(S.catalogErr)}</p>` : model ? `<p class
     sendBtn.setAttribute('aria-label', p.running ? 'Add this to the running turn (Ctrl+Enter)' : 'Send (Ctrl+Enter)');
     const note = part(i, 'cnote');
     const q = (p.queued || []).length;
-    if (note) note.textContent = (p.running ? 'Answering… Steer adds to this turn, Queue waits for the next. Ctrl+C stops it.' : '') + (q ? ` ${q} queued.` : '');
+    if (note) note.textContent = ro ? 'A Factory worker is read-only: talk to the session that started the run.'
+      : (p.running ? 'Answering… Steer adds to this turn, Queue waits for the next. Ctrl+C stops it.' : '') + (q ? ` ${q} queued.` : '');
   }
 
   // ---- the session header: worktree and its actions --------------------------------------------------------------------
@@ -532,8 +542,17 @@ ${S.catalogErr ? `<p class="lc-warn">${E(S.catalogErr)}</p>` : model ? `<p class
     const s = p.session;
     if (!s) { el.innerHTML = ''; el.classList.add('hidden'); return; }
     el.classList.remove('hidden');
-    const st = `<span class="lc-dot lc-dot-${E(s.status || 'idle')}" aria-hidden="true"></span><span class="lc-note">${E(STATUS_LABEL[s.status] || s.status || 'idle')}</span>`;
+    const parentRow = s.parent_id ? S.sessions.find((r) => r.id === s.parent_id) : null;
+    const linkTxt = { fork: 'fork of', task: 'task from', handoff: 'handed off from', worker: 'worker for' }[s.link] || 'linked to';
+    const up = s.parent_id ? `<button type="button" class="lc-mini" data-lc="open" data-sid="${E(s.parent_id)}" aria-label="Open the parent session">↰ ${E(linkTxt)} ${E((parentRow && parentRow.title) || 'its parent')}</button>` : '';
+    const kids = (p.children || []).length ? `<span class="lc-note">linked:</span>${p.children.map((c) =>
+      `<button type="button" class="lc-mini" data-lc="open" data-sid="${E(c.id)}" aria-label="Open the linked session ${E(c.title)}"><span class="lc-dot lc-dot-${E(c.status || 'idle')}" aria-hidden="true"></span> ${E(c.title || c.id)}</button>`).join('')}` : '';
+    const st = `${up}<span class="lc-dot lc-dot-${E(s.status || 'idle')}" aria-hidden="true"></span><span class="lc-note">${E(STATUS_LABEL[s.status] || s.status || 'idle')}</span>${kids}`;
     const w = p.wt;
+    if (s.link === 'worker') {
+      el.innerHTML = `${st}<span class="lc-note">A Factory worker: confined, read-only here.</span>${w && w.branch ? `<span class="lc-chip">⎇ ${E(w.branch)}</span>` : ''}`;
+      return;
+    }
     if (!w) {
       el.innerHTML = `${st}${s.workspace ? `<span class="lc-note">${E(s.workspace)}</span>
 <button type="button" class="lc-mini" data-lc="wt-create" aria-label="Give this session its own git worktree">Make a worktree</button>` : '<span class="lc-note">no workspace</span>'}
@@ -663,6 +682,7 @@ ${(row.warnings || []).map((w) => `<p class="lc-warn">${E(w)}</p>`).join('')}`;
 
   // ---- the sidebar ---------------------------------------------------------------------------------------------------
   function sectionOf(s) {
+    if (s.parent_id && S.sessions.some((r) => r.id === s.parent_id)) return 'child';      // drawn under its parent
     if (S.showArchived) return 'archived';
     if (s.pinned) return 'pinned';
     if (s.status === 'needs_you') return 'needs';
@@ -670,13 +690,18 @@ ${(row.warnings || []).map((w) => `<p class="lc-warn">${E(w)}</p>`).join('')}`;
     if (s.group_id && S.groups.some((g) => g.id === s.group_id)) return 'g:' + s.group_id;
     return new Date(s.updated * 1000).toDateString() === new Date().toDateString() ? 'today' : 'earlier';
   }
-  function sessionRow(s, open) {
+  function sessionRows(s, open, depth) {
+    const kids = depth > 3 ? [] : S.sessions.filter((r) => r.parent_id === s.id);
+    return sessionRow(s, open, depth) + kids.map((k) => sessionRows(k, open, depth + 1)).join('');
+  }
+  function sessionRow(s, open, depth) {
     const wt = s.worktree && s.worktree.branch ? `<span class="lc-chip" title="worktree branch">⎇ ${E(s.worktree.branch.split('/').pop())}</span>` : '';
     const ws = s.workspace ? `<span class="lc-chip" title="${E(s.workspace)}">${E(s.workspace.split(/[\\/]/).filter(Boolean).pop() || s.workspace)}</span>` : '';
-    return `<div class="lc-row${open.has(s.id) ? ' on' : ''}${s.unread ? ' lc-unread' : ''}" role="listitem" data-sid="${E(s.id)}">
+    const link = s.link ? `<span class="lc-chip" title="linked session">${E({ fork: 'fork', task: 'task', handoff: 'hand-off', worker: 'worker' }[s.link] || s.link)}</span>` : '';
+    return `<div class="lc-row${open.has(s.id) ? ' on' : ''}${s.unread ? ' lc-unread' : ''}${depth ? ' lc-child' : ''}" role="listitem" data-sid="${E(s.id)}"${depth ? ` style="margin-left:${Math.min(depth, 3) * 14}px"` : ''}>
 <button type="button" class="lc-row-main" data-lc="open" data-sid="${E(s.id)}" aria-label="Open session ${E(s.title || 'untitled')}, ${E(STATUS_LABEL[s.status] || 'idle')}${s.unread ? ', unread' : ''}">
 <span class="lc-row-title"><span class="lc-dot lc-dot-${E(s.status || 'idle')}" aria-hidden="true"></span>${s.pinned ? '📌 ' : ''}${E(s.title || 'Untitled session')}</span>
-<span class="lc-row-sub"><span class="lc-chip">${E(shortModel(s.model) || 'no model')}</span>${ws}${wt}<span>${E(when(s.updated))}</span></span></button>
+<span class="lc-row-sub">${link}<span class="lc-chip">${E(shortModel(s.model) || 'no model')}</span>${ws}${wt}<span>${E(when(s.updated))}</span></span></button>
 <button type="button" class="lc-icon lc-row-menu" data-lc="menu" data-sid="${E(s.id)}" aria-label="More for ${E(s.title || 'this session')}" title="More">⋯</button></div>`;
   }
   function renderFilters() {
@@ -706,7 +731,7 @@ ${(row.warnings || []).map((w) => `<p class="lc-warn">${E(w)}</p>`).join('')}`;
       const unread = inS.filter((s) => s.unread).length;
       return `<div class="lc-sec"><div class="lc-sec-head"><button type="button" class="lc-sec-btn" data-lc="collapse" data-key="${E(key)}" aria-expanded="${!closed}">${closed ? '▸' : '▾'} ${E(label)} <span class="lc-note">${inS.length}${unread ? ' · ' + unread + ' unread' : ''}</span></button>
 ${gid ? `<button type="button" class="lc-icon" data-lc="group-menu" data-gid="${E(gid)}" aria-label="Rename or remove the group ${E(label)}" title="Group">⋯</button>` : ''}</div>
-${closed ? '' : inS.map((s) => sessionRow(s, open)).join('') || '<p class="lc-note lc-pad">Empty: move a session here from its menu.</p>'}</div>`;
+${closed ? '' : inS.map((s) => sessionRows(s, open, 0)).join('') || '<p class="lc-note lc-pad">Empty: move a session here from its menu.</p>'}</div>`;
     }).join('');
   }
   function sessionMenu(sid, x, y) {
@@ -717,12 +742,13 @@ ${closed ? '' : inS.map((s) => sessionRow(s, open)).join('') || '<p class="lc-no
     m.className = 'lc-menu';
     m.id = 'lc-menu';
     m.setAttribute('role', 'menu');
-    const items = [['rename', 'Rename'], ['pin', s.pinned ? 'Unpin' : 'Pin'], ['split', 'Open in split view'], ['export-md', 'Export as Markdown'],
+    const items = [['rename', 'Rename'], ['pin', s.pinned ? 'Unpin' : 'Pin'], ['split', 'Open in split view'], ['fork', 'Fork (its own worktree)'],
+      ['task', 'New task from here…'], ['handoff', 'Hand off the rest…'], ['export-md', 'Export as Markdown'],
       ['export-json', 'Export as JSON'], ['archive', s.archived ? 'Restore from the archive' : 'Archive'], ['delete', 'Delete…']];
     const groups = S.groups.filter((g) => g.id !== s.group_id).map((g) => [`group:${g.id}`, `Move to ${g.name}`]);
     if (s.group_id) groups.push(['group:', 'Remove from its group']);
     groups.push(['group-new', 'Move to a new group…']);
-    m.innerHTML = [...items.slice(0, 3), ...groups, ...items.slice(3)].map(([a, label]) => `<button type="button" role="menuitem" data-lcm="${E(a)}" data-sid="${E(sid)}">${E(label)}</button>`).join('');
+    m.innerHTML = [...items.slice(0, 6), ...groups, ...items.slice(6)].map(([a, label]) => `<button type="button" role="menuitem" data-lcm="${E(a)}" data-sid="${E(sid)}">${E(label)}</button>`).join('');
     m.style.left = Math.min(x, window.innerWidth - 220) + 'px';
     m.style.top = Math.min(y, window.innerHeight - 260) + 'px';
     document.body.appendChild(m);
@@ -742,6 +768,21 @@ ${closed ? '' : inS.map((s) => sessionRow(s, open)).join('') || '<p class="lc-no
       else if (action === 'archive') await patch(url, { archived: !s.archived });
       else if (action === 'split') { openSplit(sid); return; }
       else if (action.startsWith('group:')) await patch(url, { group_id: action.slice(6) });
+      else if (action === 'fork' || action === 'task' || action === 'handoff') {
+        let body = {};
+        if (action === 'task') { const brief = window.prompt('The task for the new session (its brief)'); if (!brief) return; body = { brief }; }
+        if (action === 'handoff') {
+          const plan = window.prompt('What is left to do? The new session continues from here with this plan.');
+          if (!plan) return;
+          body = { plan, stop: window.confirm('Stop this session\'s running turn first? (Cancel keeps it running.)') };
+        }
+        const r = await post(url + '/' + action, body);
+        toast(action === 'fork' ? 'Forked.' : action === 'task' ? 'Task started.' : 'Handed off.');
+        if (r.not_carried && r.not_carried.length) toast(r.not_carried.length + ' uncommitted change(s) were not carried into the fork: commit them first to include them.');
+        await loadSessions();
+        openSplit(r.session.id);
+        return;
+      }
       else if (action === 'group-new') {
         const name = window.prompt('Name of the new group');
         if (!name) return;

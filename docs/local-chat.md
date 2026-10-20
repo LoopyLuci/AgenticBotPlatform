@@ -78,3 +78,17 @@ reverted (nothing is deleted) and checkpoints the state it left, so a rewind can
 
 **Steer and queue**: `POST …/steer {"text", "how": "steer"}` adds a message to the running turn at its next step;
 `"how": "queue"` keeps it for the next turn, which starts by itself when the current one finishes cleanly.
+
+## Linked sessions
+
+From any session: **Fork** (`POST …/fork`) starts a new session with this conversation as context, in its own worktree
+cut from this session's branch tip (committed work only; uncommitted changes are listed, not carried); **New task**
+(`POST …/task {"brief"}`) starts a fresh session on a brief; **Hand off** (`POST …/handoff {"plan"}`) moves the
+in-progress task to a new session with the remaining plan and the recent conversation. The child's first turn receives
+that context. When a linked session ends a turn, a note with its recap lands in the parent (`local_chat_note` frame) and
+the parent is marked unread; `GET …/children` lists them.
+
+**Factory workers** appear as read-only linked sessions under the session that started the run: the conductor takes an
+optional `on_event` observer, and `links.factory_observer(parent)` turns each task's start, review, acceptance or
+escalation into the worker session's status and messages. A worker's worktree belongs to the conductor (confined); Local
+Chat never changes or removes it.
