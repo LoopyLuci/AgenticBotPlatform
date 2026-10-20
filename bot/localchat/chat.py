@@ -65,7 +65,7 @@ def tools_for(mode: str) -> Optional[frozenset]:
     """The tools a mode offers: None = every tool the turn may use (a small local model is sent a core set and loads the rest
     with find_tools - bot/agent_runtime/tool_discovery.py), else that set."""
     if mode == "review":
-        from bot.agent_runtime import toolspec
+        from bot.agent_runtime import tools as _registers_every_tool, toolspec  # noqa: F401 - registered tools import there
 
         names = set(toolspec.builtin_names()) | set(getattr(toolspec, "_registered", {}) or {})
         return frozenset(n for n in names if toolspec.is_read_only(n))

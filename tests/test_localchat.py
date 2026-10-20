@@ -155,6 +155,23 @@ def test_without_a_loaded_model_the_best_measured_coder_that_fits_is_the_default
     assert catalog.default_model(doc) == CODER
 
 
+def test_a_loaded_model_runs_on_its_device_even_when_its_plan_says_it_does_not_fit():
+    # the live hub on 2026-10-20: the loaded coder's plan counts its own VRAM as taken -> "does_not_fit"
+    row = {"id": CODER, "name": "Qwen3 Coder", "size_gb": 17.7}
+    plan = {"verdict": "does_not_fit", "estimate": {"total_mib": 20419}, "free_mib": 1719}
+    r = catalog.build_row(row, plan, DEVICE, ram_free_gb=8, reports=[], min_context=0, loaded={CODER})
+    assert r["group"] == "loaded" and r["runs_on"] == "gpu"
+
+
+def test_an_ollama_model_is_named_by_its_tag_not_the_name_inside_its_gguf():
+    row = {"id": "fractions-tutor-large:latest", "name": "Gguf Large", "source": "ollama", "size_gb": 1.1}
+    r = catalog.build_row(row, {"verdict": "fits"}, DEVICE, ram_free_gb=8, reports=[], min_context=0, loaded=set())
+    assert r["name"] == "fractions-tutor-large:latest"
+    hf = catalog.build_row({"id": CODER, "name": "Qwen3 Coder", "source": "huggingface"}, {"verdict": "fits"}, DEVICE,
+                           ram_free_gb=8, reports=[], min_context=0, loaded=set())
+    assert hf["name"] == "Qwen3 Coder"
+
+
 def test_cpu_when_it_only_fits_in_memory():
     row = {"id": "a/b:c", "size_gb": 10.0}
     assert catalog._runs_on({"verdict": "does_not_fit"}, row, ram_free_gb=32) == "cpu"

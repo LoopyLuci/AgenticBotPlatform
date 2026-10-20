@@ -137,11 +137,21 @@ def _runs_on(plan: Optional[dict], row: dict, ram_free_gb: float) -> str:
     return "unknown"
 
 
+def _display_name(row: dict, mid: str) -> str:
+    """An Ollama model is known by its tag (fractions-tutor-large:latest), not by the name inside its GGUF ("Gguf Large")."""
+    if str(row.get("source") or "").lower() == "ollama":
+        return mid
+    return str(row.get("name") or mid)
+
+
 def build_row(row: dict, plan: Optional[dict], device: str, ram_free_gb: float, reports: list[dict], min_context: int,
               loaded: set[str]) -> dict:
     mid = str(row.get("id") or "")
     ollama = mid.startswith("ollama/")
+    is_loaded = mid in loaded or bool(row.get("loaded"))
     runs_on = "unknown" if ollama else _runs_on(plan, row, ram_free_gb)
+    if is_loaded and not ollama:       # it runs now: the hub's plan counts its own VRAM as taken and says does_not_fit
+        runs_on = "cpu" if "cpu" in str(device).lower() else "gpu"
     serving = (plan or {}).get("serving") or {}
     est = (plan or {}).get("estimate") or {}
     evals = evals_for(mid, reports)
@@ -151,10 +161,9 @@ def build_row(row: dict, plan: Optional[dict], device: str, ram_free_gb: float, 
         warnings.append(f"served with {per_slot} tokens per request: below the {min_context} agent work needs")
     if (plan or {}).get("unload"):
         warnings.append("loading it unloads " + ", ".join(str(u) for u in plan["unload"]))
-    is_loaded = mid in loaded or bool(row.get("loaded"))
     group = "loaded" if is_loaded else "other" if ollama else {"gpu": "gpu", "cpu": "cpu", "none": "too_big"}.get(runs_on, "other")
     return {
-        "id": mid, "name": row.get("name") or mid, "kind": kind_of(row), "group": group, "loaded": is_loaded,
+        "id": mid, "name": _display_name(row, mid), "kind": kind_of(row), "group": group, "loaded": is_loaded,
         "metadata": {"architecture": row.get("architecture"), "size_label": row.get("size_label"), "size_gb": row.get("size_gb"),
                      "quant": quant_of(mid), "context_max": row.get("context_length"), "experts": row.get("experts"),
                      "experts_used": row.get("experts_used"), "vision": bool(row.get("vision")), "source": row.get("source")},
