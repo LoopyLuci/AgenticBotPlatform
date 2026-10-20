@@ -125,6 +125,7 @@ class NativeAgentBackend(Backend):
 
         # A caller may set the permission mode for this run ("plan" makes it read-only).
         mode_token = permissions.mode_var.set(ctx.get("permission_mode"))
+        rules_token = permissions.rules_var.set(tuple(ctx.get("permission_rules") or ()))    # run-level rules (Local Chat autonomy)
         # The turn's dollar meter (turn_budget.py); a sub-agent's ask() shares its parent's.
         _meter, meter_token = turn_budget.begin()
         run = trace.begin(
@@ -144,6 +145,7 @@ class NativeAgentBackend(Backend):
                 raise
             finally:
                 permissions.mode_var.reset(mode_token)
+                permissions.rules_var.reset(rules_token)
                 turn_budget.end(meter_token)
             run.end("ok")
             if run.run_id and isinstance(getattr(result, "raw", None), dict):

@@ -2662,6 +2662,24 @@ export const operations = {
   ],
   "query_params": []
  },
+ "GET /api/local-chat/sessions/{sid}/context": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/context",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "GET /api/local-chat/sessions/{sid}/factory": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/factory",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
  "GET /api/local-chat/sessions/{sid}/queued": {
   "body": false,
   "method": "GET",
@@ -6075,6 +6093,24 @@ export const operations = {
   "body": false,
   "method": "POST",
   "path": "/api/local-chat/sessions/{sid}/cancel",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/local-chat/sessions/{sid}/factory/run": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/factory/run",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "POST /api/local-chat/sessions/{sid}/factory/stop": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/factory/stop",
   "path_params": [
    "sid"
   ],
@@ -14059,6 +14095,15 @@ export const operations = {
   ],
   "query_params": []
  },
+ "local_chat_context_api_local_chat_sessions__sid__context_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/context",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
  "local_chat_create_api_local_chat_sessions_post": {
   "body": true,
   "method": "POST",
@@ -14087,6 +14132,33 @@ export const operations = {
    "session_id",
    "limit"
   ]
+ },
+ "local_chat_factory_board_api_local_chat_sessions__sid__factory_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/sessions/{sid}/factory",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_factory_run_api_local_chat_sessions__sid__factory_run_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/factory/run",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
+ },
+ "local_chat_factory_stop_api_local_chat_sessions__sid__factory_stop_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/local-chat/sessions/{sid}/factory/stop",
+  "path_params": [
+   "sid"
+  ],
+  "query_params": []
  },
  "local_chat_fork_api_local_chat_sessions__sid__fork_post": {
   "body": true,

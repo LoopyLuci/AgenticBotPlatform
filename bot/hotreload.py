@@ -157,6 +157,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.dashboard.redblue_api",  # read-only red/blue summary routes; they register once, like the routes above
     "bot.redblue.live",  # the live WatchDog: a process-wide monitor, its queue and worker thread are process state
     "bot.localchat.chat",  # Local Chat turns: the running turns (asyncio tasks, for cancel) are process state
+    "bot.localchat.factory",  # Local Chat Factory runs: the running conductor runs (asyncio tasks, for stop) are process state
     "bot.dashboard.localchat_api",
     "bot.agent_runtime.settings_schema",  # imports permissions/sandbox (both denied above); a reload would split the classes it validates against
     "bot.agent_runtime.project_rules",  # imported by prompt.py; reloaded with it is not needed and is safe to skip
@@ -392,6 +393,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.manager.store", "bot.manager.escalations", "bot.manager.digest", "bot.manager.checkin",  # the manager channel: reads the board/conductor/capacity; a connection per call, no state held in the modules
     "bot.localchat.store", "bot.localchat.speed", "bot.localchat.catalog",  # Local Chat: a connection per call, a speed file and a short catalog cache
     "bot.localchat.links",  # linked Local Chat sessions: functions over the store, nothing held
+    "bot.localchat.autonomy",  # Local Chat autonomy levels: pure functions
     "bot.localchat.worktrees",  # Local Chat worktrees: git calls and per-repository locks (rebuilt empty on reload: nothing held between calls)
     "bot.models",
     "bot.push",

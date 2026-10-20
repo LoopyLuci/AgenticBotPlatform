@@ -92,3 +92,22 @@ the parent is marked unread; `GET …/children` lists them.
 optional `on_event` observer, and `links.factory_observer(parent)` turns each task's start, review, acceptance or
 escalation into the worker session's status and messages. A worker's worktree belongs to the conductor (confined); Local
 Chat never changes or removes it.
+
+## Agent and Factory in chat
+
+**Autonomy 0-5** sets each turn's permission mode and run-level rules (`bot/localchat/autonomy.py`): 0 Locked (every call
+asks), 1 Cautious (reads run, edits and commands ask), 2 Supervised (ABP's defaults), 3 Trusted (edits run), 4 Autonomous
+(edits and the usual build / test / git-inspection commands run), 5 Sovereign (any single command runs). At every level
+destructive or irreversible commands ask and `git push` is denied: pushing only happens through the push queue. A
+host-locked permission config accepts only the deny / ask rules.
+
+**Cloud assist**: `off` never leaves the machine (a cloud request is refused); `ask` adds "Ask the cloud" for one message
+(`send {"cloud": true}`, recorded with model `cloud`); `auto` uses the cloud when the capacity governor is cloud-led.
+Tokens are shown per message and per session (local / cloud); `GET …/context` also gives the context meter (estimated
+tokens vs the tokens the hub serves per request).
+
+**Factory mode**: the message is a goal; the conductor plans it and the plan arrives with a Run button. Run
+(`POST …/factory/run`) uses the conductor's real worker with `shell="sandbox"` (commands only inside a Windows
+AppContainer without network) and is refused, never degraded, without it; the first run in a repository needs
+confirmation. Workers appear as linked worker sessions; the green integration waits in the push queue, and Approve in
+the chat records the approval without pushing.

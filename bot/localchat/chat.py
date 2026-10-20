@@ -14,7 +14,10 @@ for every other bot. The session picks the model per turn (router.ask(model_over
                                  taken at the start of every Build / Plan turn); the turn's messages stay, marked reverted
 
 Modes: chat (no tools), build (the agent's tools; edits ask as usual), plan (proposes a plan for approval first),
-review (read-only tools). A turn works in the session's worktree when it has one (bot/localchat/worktrees.py); Build and
+review (read-only tools), factory (the message is a goal: the conductor plans it and nothing runs until the owner's Run -
+bot/localchat/factory.py). Autonomy 0-5 sets the turn's permission mode and rules (bot/localchat/autonomy.py). Cloud assist:
+"off" never leaves the machine; "ask" lets a single message go to the configured cloud backend (send(..., cloud=True));
+"auto" sends to the cloud when the capacity governor is cloud-led and keeps everything local otherwise. A turn works in the session's worktree when it has one (bot/localchat/worktrees.py); Build and
 Plan never work directly in the live ABP checkout.
 """
 from __future__ import annotations
@@ -117,7 +120,26 @@ async def _status(broadcast: Broadcast, sid: str, status: str, **kw: Any) -> Non
         await _safe(broadcast, frame)
 
 
-async def send(sid: str, text: str, broadcast: Broadcast) -> dict[str, Any]:
+def wants_cloud(session: dict, cloud: bool) -> bool:
+    """Whether this turn goes to the cloud backend. "off" refuses a cloud request (and never decides on its own)."""
+    assist = session.get("cloud_assist") or "ask"
+    if assist == "off":
+        if cloud:
+            raise ValueError("cloud assist is off for this session: switch it to Ask to send a message to a cloud model")
+        return False
+    if cloud:
+        return True
+    if assist == "auto":
+        try:
+            from bot.capacity import governor
+
+            return governor.effective_state() == governor.CLOUD_LED
+        except Exception:  # noqa: BLE001 - no governor: stay local
+            return False
+    return False
+
+
+async def send(sid: str, text: str, broadcast: Broadcast, *, cloud: bool = False) -> dict[str, Any]:
     text = (text or "").strip()
     if not text:
         raise ValueError("nothing to send")
@@ -128,13 +150,16 @@ async def send(sid: str, text: str, broadcast: Broadcast) -> dict[str, Any]:
         raise RuntimeError("this session is still answering; steer it, queue the message, or cancel it first")
     if session.get("link") == "worker":
         raise ValueError("a Factory worker's session is read-only: talk to the session that started the run")
+    if session["mode"] == "factory":
+        return await _factory_send(sid, text, session, broadcast)
+    to_cloud = wants_cloud(session, cloud)
     from bot.localchat import worktrees
 
     cwd = worktrees.cwd_of(session)
     if session["mode"] in WRITES and cwd and not session.get("worktree") and _is_live_checkout(cwd):
         raise ValueError("Build and Plan never work in the live ABP checkout: give this session a worktree first")
     model = session["model"]
-    if not model:
+    if not model and not to_cloud:
         from bot.localchat import catalog
 
         model = catalog.default_model(await asyncio.to_thread(catalog.get))
@@ -142,11 +167,40 @@ async def send(sid: str, text: str, broadcast: Broadcast) -> dict[str, Any]:
             raise LookupError("no local chat model is available: load or download one on ModelMistress")
         store.update(sid, model=model)
     turn_id = store.start_turn(sid)
-    store.add_message(sid, "user", text, turn_id=turn_id, model=model)
+    store.add_message(sid, "user", text, turn_id=turn_id, model=CLOUD if to_cloud else model, meta={"cloud": True} if to_cloud else None)
     _steer[sid] = asyncio.Queue()
-    task = asyncio.create_task(_turn(sid, turn_id, text, model, store.get(sid) or session, broadcast), name=f"localchat-{sid}")
+    task = asyncio.create_task(_turn(sid, turn_id, text, model, store.get(sid) or session, broadcast, to_cloud),
+                               name=f"localchat-{sid}")
     _running[sid] = task
-    return {"turn_id": turn_id, "model": model, "chat_id": chat_id(sid)}
+    return {"turn_id": turn_id, "model": CLOUD if to_cloud else model, "chat_id": chat_id(sid), "cloud": to_cloud}
+
+
+CLOUD = "cloud"            # the model a cloud-assisted message is recorded under (the router's configured cloud backend)
+
+
+async def _factory_send(sid: str, goal: str, session: dict, broadcast: Broadcast) -> dict[str, Any]:
+    """Factory mode: the message is a goal. The conductor plans it in the background; the plan arrives as a message with a
+    Run button. Nothing runs here."""
+    from bot.localchat import factory
+
+    async def plan_it() -> None:
+        state = "done"
+        await _status(broadcast, sid, "working", factory="plan")
+        try:
+            await factory.preview(sid, goal)
+        except asyncio.CancelledError:
+            state = "cancelled"
+            store.add_message(sid, "system", "Stopped planning.")
+        except Exception as e:  # noqa: BLE001 - the session shows why there is no plan
+            state = "error"
+            store.add_message(sid, "user", goal)
+            store.add_message(sid, "error", f"No plan: {type(e).__name__}: {e}"[:2000])
+        finally:
+            _running.pop(sid, None)
+            await _status(broadcast, sid, {"done": "done", "cancelled": "idle", "error": "error"}[state], unread=True)
+            await _safe(broadcast, {"type": "local_chat_turn", "session_id": sid, "turn_id": "", "state": state, "factory": "plan"})
+    _running[sid] = asyncio.create_task(plan_it(), name=f"localchat-plan-{sid}")
+    return {"turn_id": "", "model": session["model"], "chat_id": chat_id(sid), "factory": "plan"}
 
 
 async def cancel(sid: str) -> bool:
@@ -213,7 +267,7 @@ def rewind(sid: str, turn_id: str) -> dict[str, Any]:
     return {"rewound": turn_id, "messages_reverted": n, "undo_point": undo_point, "workspace": cp["workspace"]}
 
 
-async def _turn(sid: str, turn_id: str, text: str, model: str, session: dict, broadcast: Broadcast) -> None:
+async def _turn(sid: str, turn_id: str, text: str, model: str, session: dict, broadcast: Broadcast, to_cloud: bool = False) -> None:
     from bot.dashboard.chat_stream import ChatStreamer
     from bot.localchat import worktrees
     from bot.router import router
@@ -249,6 +303,13 @@ async def _turn(sid: str, turn_id: str, text: str, model: str, session: dict, br
         context["allowed_tools"] = allowed
     if session["mode"] == "plan":
         context["plan_first"] = True
+    from bot.localchat import autonomy
+
+    pol = autonomy.policy(session.get("autonomy", 2))
+    context["permission_mode"] = "plan" if session["mode"] == "plan" else pol["permission_mode"]
+    context["permission_rules"] = pol["rules"]
+    if session.get("effort"):
+        context["effort"] = session["effort"]
     ws = _workspace(worktrees.cwd_of(session))
     if ws:
         context["cwd"] = ws
@@ -267,11 +328,15 @@ async def _turn(sid: str, turn_id: str, text: str, model: str, session: dict, br
     started = time.monotonic()
     state, reply, tokens = "done", "", 0
     try:
-        result = await router.ask(prompt, action_type="local_chat", backend_override="native_agent", context=context,
-                                  instance_id=instance_id, chat_id=cid, model_override=model_ref(model))
+        if to_cloud:                       # the configured cloud backend (the router's default), same tools and approvals
+            result = await router.ask(prompt, action_type="local_chat", context=context, instance_id=instance_id, chat_id=cid)
+        else:
+            result = await router.ask(prompt, action_type="local_chat", backend_override="native_agent", context=context,
+                                      instance_id=instance_id, chat_id=cid, model_override=model_ref(model))
         reply, tokens = result.text or "", int(result.tokens or 0)
-        tps = _record_speed(model, speeds)
-        store.add_message(sid, "assistant", reply, turn_id=turn_id, model=model, tokens=tokens, tokens_per_s=tps)
+        tps = 0.0 if to_cloud else _record_speed(model, speeds)
+        store.add_message(sid, "assistant", reply, turn_id=turn_id, model=CLOUD if to_cloud else model, tokens=tokens,
+                          tokens_per_s=tps, meta={"cloud": True} if to_cloud else None)
     except asyncio.CancelledError:
         state = "cancelled"
         store.add_message(sid, "system", "Stopped.", turn_id=turn_id, model=model)

@@ -8,6 +8,9 @@
     chat.py     a turn: ABP's native agent on the session's model and workspace, through the internal "Local Chat" app
                 instance (so approvals, traces, memory and the e-stop work exactly as everywhere else), streamed live to
                 the dashboard sockets; cancel stops it; steer / queue while it runs; rewind a turn's file changes
+    autonomy.py   autonomy 0-5 as a permission mode plus run-level rules (destructive commands always ask; no push)
+    factory.py    Factory mode: plan preview, the owner's Run, confined conductor workers as linked sessions, push queue
+    links.py      linked sessions: fork, task, hand off, notes to the parent, Factory workers
     worktrees.py  a git worktree per session (S1): create, status, diff, sync with the base, commit, discard (asks when work
                 would be lost), merge only through the conductor's push queue, prune
 
@@ -17,7 +20,8 @@ from __future__ import annotations
 
 from typing import Any
 
-MODES = ("chat", "build", "plan", "review")        # chat: no tools; build: edits; plan: proposes first; review: reads only
+MODES = ("chat", "build", "plan", "review", "factory")   # chat: no tools; build: edits; plan: proposes first; review: reads only;
+                                                          # factory: a goal -> conductor plan -> owner's Run -> confined workers
 CLOUD_ASSIST = ("off", "ask", "auto")
 
 DEFAULTS: dict[str, Any] = {

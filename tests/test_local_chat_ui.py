@@ -136,9 +136,9 @@ def test_the_panel_only_calls_routes_that_exist(client):
     assert '"/api/modelmistress/load"' in mm and '"/api/modelmistress/unload"' in mm
     calls.discard("/api/modelmistress/")
     for path in sorted(calls):
-        probe = path + ("x" if path.endswith("/") else "")
+        probes = [path + "x", path + "x/approve"] if path.endswith("/") else [path]      # a prefix the panel completes
         methods = ("GET", "POST", "PATCH", "DELETE")
-        assert any(_route_exists(client.app, m, probe) for m in methods), path
+        assert any(_route_exists(client.app, m, pr) for m in methods for pr in probes), path
     for name in ("local-chat.js", "local-chat.css"):
         assert client.get("/static/" + name).status_code == 200
 
@@ -208,3 +208,14 @@ def test_linked_sessions_are_offered_nested_and_noted():
     assert "'/children'" in JS and "local_chat_note" in JS
     assert "m.meta && m.meta.child" in JS                   # a note in the parent opens the child
     assert "p.session.link === 'worker'" in JS and ".disabled = ro" in JS    # workers are read-only
+
+
+# ---- P4: agent and Factory in chat -----------------------------------------------------------------------------------------
+def test_factory_cloud_assist_and_the_right_panel_are_wired():
+    assert "['factory', 'Factory'," in JS
+    assert "'/factory/run'" in JS and "confirm: !!confirmed" in JS and "d.needs_confirmation" in JS
+    assert "'/api/conductor/queue/'" in JS and "(approve ? 'approve' : 'reject')" in JS     # approve from the chat (never pushes)
+    assert "cloud ? { text, cloud: true } : { text }" in JS and "assist === 'off'" in JS
+    for route in ("'/context'", "'/factory'", "/api/manager/digest", "/api/manager/escalations", "/api/redblue/summary"):
+        assert route in JS, route
+    assert 'role="meter"' in JS and "badge('estimated')" in JS

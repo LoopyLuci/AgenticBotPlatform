@@ -11,6 +11,10 @@
 // sessions can sit side by side (split view); the browser notifies when a session needs you or finishes out of sight.
 // Linked sessions (S3): Fork, New task and Hand off from a session's menu; children are listed under their parent (and in
 // its header), a child's turn end lands in the parent as a note with an Open button, and Factory workers are read-only.
+// Agent and Factory (P4): Factory mode turns a goal into a conductor plan with a Run button (confined workers; the first
+// run in a repository asks), the result's push-queue entry can be approved from the chat (approving never pushes), cloud
+// assist adds "Ask the cloud" for one message, and the right panel shows the context meter, tokens (local / cloud), the
+// agent's autonomy and tools, the session's Factory board, the manager's digest and escalations, and WatchDog incidents.
 //
 // This file and local-chat.css are identical in the dashboard (bot/dashboard/static/) and the desktop app
 // (desktop-app/ui/); tests/test_local_chat_ui.py fails if they differ. It uses the page's own api() and draws into #lc-root.
@@ -27,14 +31,15 @@
   const store = { get(k) { try { return localStorage.getItem('lc-' + k); } catch (_) { return null; } }, set(k, v) { try { localStorage.setItem('lc-' + k, v); } catch (_) { /* private mode */ } } };
 
   const MODES = [['chat', 'Chat', 'Plain chat, no tools'], ['build', 'Build', 'The agent edits and runs commands; edits ask as usual'],
-    ['plan', 'Plan', 'Proposes a plan for your approval first'], ['review', 'Review', 'Reads only']];
+    ['plan', 'Plan', 'Proposes a plan for your approval first'], ['review', 'Review', 'Reads only'],
+    ['factory', 'Factory', 'A goal becomes a conductor plan; confined workers run it only when you press Run']];
   const AUTONOMY = ['0 Locked', '1 Cautious', '2 Supervised', '3 Trusted', '4 Autonomous', '5 Sovereign'];
   const CLOUD = [['off', 'Cloud off'], ['ask', 'Cloud: ask'], ['auto', 'Cloud: auto']];
   const GROUP_LABEL = { loaded: 'Loaded', gpu: 'Fits on the GPU', cpu: 'Runs on the CPU (slow)', too_big: 'Too big for this machine', other: 'Other (not planned by the hub)' };
   const SOURCE_LABEL = { measured: 'measured', estimated: 'estimated', rough_estimate: 'rough estimate', planned: 'planned', metadata: 'metadata', unknown: 'unknown' };
   const RUNS_ON = { gpu: 'GPU', cpu: 'CPU', none: 'does not fit', unknown: 'unknown' };
   const STATUS_LABEL = { working: 'working', needs_you: 'needs you', idle: 'idle', error: 'error', done: 'done' };
-  const SLASH = [['/new', 'Start a new session'], ['/model', 'Open the model picker'], ['/mode chat|build|plan|review', 'Switch the agent type'],
+  const SLASH = [['/new', 'Start a new session'], ['/model', 'Open the model picker'], ['/mode chat|build|plan|review|factory', 'Switch the agent type'],
     ['/autonomy 0-5', 'Set autonomy'], ['/cloud off|ask|auto', 'Set cloud assist'], ['/export', 'Download this session as Markdown'],
     ['/settings', 'Open the settings']];
 
@@ -140,8 +145,20 @@
       p.checkpoints = c.checkpoints || [];
       p.queued = q.queued || [];
       p.children = (await api('/api/local-chat/sessions/' + encodeURIComponent(sid) + '/children').catch(() => ({ children: [] }))).children || [];
+      const [ctx, fb] = await Promise.all([api('/api/local-chat/sessions/' + encodeURIComponent(sid) + '/context').catch(() => null),
+        api('/api/local-chat/sessions/' + encodeURIComponent(sid) + '/factory').catch(() => null)]);
+      p.ctx = ctx; p.factory = fb;
+      loadSide();
     } catch (_) { /* the header just stays as it was */ }
-    renderHead(i); renderMsgs(i); renderComposerState(i);
+    renderHead(i); renderMsgs(i); renderComposerState(i); renderRight(i);
+  }
+  async function loadSide() {                // the manager's digest and escalations, WatchDog incidents (shared by every pane)
+    if (S.sideAt && Date.now() - S.sideAt < 30000) return;
+    S.sideAt = Date.now();
+    const [dg, es, rb] = await Promise.all([api('/api/manager/digest?text=true').catch(() => null), api('/api/manager/escalations?limit=5').catch(() => null),
+      api('/api/redblue/summary?limit=3').catch(() => null)]);
+    S.side = { digest: dg, escalations: es, watchdog: rb };
+    S.panes.forEach((_, n) => renderRight(n));
   }
   function markRead(i) {
     const p = pane(i);
@@ -254,7 +271,7 @@
     if (cmd === '/settings') { const a = document.querySelector('nav.sidenav a[href="#settings"]') || document.querySelector('nav.sidenav a[href="#control"]'); if (a) a.click(); return true; }
     return false;
   }
-  async function send(i, textArg) {
+  async function send(i, textArg, cloud) {
     const p = pane(i);
     const box = p.el.querySelector('.lc-input');
     const text = (textArg != null ? textArg : box.value).trim();
@@ -269,7 +286,7 @@
       p.messages.push({ id: (p.messages.length ? p.messages[p.messages.length - 1].id : 0) + 0.5, role: 'user', text, created: Date.now() / 1000, pending: true });
       p.running = true; p.draft = { text: '', tools: [] };
       renderMsgs(i); renderComposerState(i);
-      const r = await post('/api/local-chat/sessions/' + encodeURIComponent(sid) + '/send', { text });
+      const r = await post('/api/local-chat/sessions/' + encodeURIComponent(sid) + '/send', cloud ? { text, cloud: true } : { text });
       p.turn = r.turn_id;
       p.messages = p.messages.filter((m) => !m.pending);
       await refreshMessages(i);
@@ -416,6 +433,7 @@
       <span class="lc-note" data-part="cnote"></span>
       <button type="button" class="btn danger hidden" data-lc="cancel" aria-label="Stop the reply (Ctrl+C)">Stop</button>
       <button type="button" class="btn hidden" data-lc="queue" aria-label="Queue this message for the next turn">Queue</button>
+      <button type="button" class="btn hidden" data-lc="cloud-send" aria-label="Send this one message to the cloud model" title="Cloud assist: this message only">Ask the cloud</button>
       <button type="button" class="btn primary" data-lc="send" aria-label="Send (Ctrl+Enter)">Send</button>
     </div>
   </div>
@@ -464,6 +482,16 @@ ${S.panes.length > 1 ? `<button type="button" class="lc-icon" data-lc="close-pan
     const actions = [`<button type="button" class="lc-mini" data-lc="copy-msg" data-id="${E(m.id)}" aria-label="Copy this message">Copy</button>`];
     const p = pane(i);
     const cp = role === 'user' && m.turn_id && !m.reverted ? (p.checkpoints || []).find((c) => c.turn_id === m.turn_id && !c.rewound) : null;
+    const plan = m.meta && m.meta.factory_plan;
+    if (plan) actions.push(`<button type="button" class="btn primary" data-lc="factory-run" data-plan="${E(plan.id)}" aria-label="Run this plan with confined workers">Run (confined workers)</button>`);
+    const qid = m.meta && m.meta.queue_id;
+    if (qid) {
+      const q = ((p.factory && p.factory.queue) || []).find((x) => x.id === qid);
+      if (!q || q.status === 'awaiting_approval') {
+        actions.push(`<button type="button" class="btn primary" data-lc="queue-approve" data-id="${E(qid)}" aria-label="Approve this integration branch (does not push)">Approve</button>`);
+        actions.push(`<button type="button" class="btn" data-lc="queue-reject" data-id="${E(qid)}" aria-label="Reject this integration branch">Reject</button>`);
+      } else actions.push(`<span class="lc-chip">push queue: ${E(q.status)}</span>`);
+    }
     const child = m.meta && m.meta.child;
     if (child) actions.push(`<button type="button" class="lc-mini" data-lc="open" data-sid="${E(child)}" aria-label="Open the linked session">Open</button>`);
     if (cp && !p.running) actions.push(`<button type="button" class="lc-mini" data-lc="rewind" data-turn="${E(m.turn_id)}" aria-label="Undo this turn's file changes">Undo this turn</button>`);
@@ -471,7 +499,8 @@ ${S.panes.length > 1 ? `<button type="button" class="lc-icon" data-lc="close-pan
       actions.push(`<button type="button" class="lc-mini" data-lc="retry" data-id="${E(m.id)}" aria-label="Send this message again">Retry</button>`);
       actions.push(`<button type="button" class="lc-mini" data-lc="edit" data-id="${E(m.id)}" aria-label="Edit this message and send it again">Edit</button>`);
     }
-    const tags = (m.reverted ? '<span class="lc-chip">reverted</span>' : '') + (m.meta && m.meta.steered ? '<span class="lc-chip">steered</span>' : '');
+    const tags = (m.reverted ? '<span class="lc-chip">reverted</span>' : '') + (m.meta && m.meta.steered ? '<span class="lc-chip">steered</span>' : '')
+      + (m.meta && m.meta.cloud ? '<span class="lc-chip lc-cloud">cloud</span>' : '');
     return `<div class="lc-msg lc-${E(role)}${m.reverted ? ' lc-reverted' : ''}" data-id="${E(m.id)}"><div class="lc-msg-head">${head}<span class="lc-meta">${E(when(m.created))}</span>${tags}</div>
 <div class="lc-msg-body">${body}</div><div class="lc-msg-actions">${actions.join('')}</div></div>`;
   }
@@ -525,6 +554,9 @@ ${S.catalogErr ? `<p class="lc-warn">${E(S.catalogErr)}</p>` : model ? `<p class
     p.el.querySelector('[data-lc="send"]').disabled = ro;
     p.el.querySelector('[data-lc="cancel"]').classList.toggle('hidden', !p.running);
     p.el.querySelector('[data-lc="queue"]').classList.toggle('hidden', !p.running);
+    const assist = (p.session || S.defaults).cloud_assist;
+    const mode = (p.session || S.defaults).mode;
+    p.el.querySelector('[data-lc="cloud-send"]').classList.toggle('hidden', p.running || ro || assist === 'off' || mode === 'factory');
     const sendBtn = p.el.querySelector('[data-lc="send"]');
     sendBtn.textContent = p.running ? 'Steer' : 'Send';
     sendBtn.setAttribute('aria-label', p.running ? 'Add this to the running turn (Ctrl+Enter)' : 'Send (Ctrl+Enter)');
@@ -638,6 +670,31 @@ ${d.would_lose.commits.length ? `<p>Commits not on the base:</p><ul>${d.would_lo
     } catch (e) { toast(errText(e), 'error'); }
     loadWorktree(i);
   }
+  async function factoryRun(i, planId, confirmed) {
+    const p = pane(i);
+    try {
+      const r = await post('/api/local-chat/sessions/' + encodeURIComponent(p.sid) + '/factory/run', { plan_id: planId, confirm: !!confirmed });
+      toast(`Factory run started: ${r.tasks} task(s), workers confined. They appear under this session.`);
+      loadWorktree(i); loadSessions();
+    } catch (e) {
+      let d = null;
+      try { d = JSON.parse(e.message).detail; } catch (_) { /* not the 409 */ }
+      if (d && d.needs_confirmation) {
+        openModal('First Factory run here', `<p>${E(d.message)}.</p><p class="lc-note">Workers are ABP's agent on your local model, each in its own worktree, with commands only inside a Windows AppContainer without network. The reviewer checks every change; the green result waits in the push queue for your approval.</p>`,
+          [{ label: 'Run it', run: () => { closeModal(); factoryRun(i, planId, true); } }, { label: 'Not now', run: closeModal }]);
+        return;
+      }
+      toast(errText(e), 'error');
+    }
+  }
+  async function queueDecide(i, id, approve) {
+    const note = approve ? '' : (window.prompt('Why reject it? (optional)') || '');
+    try {
+      const r = await post('/api/conductor/queue/' + encodeURIComponent(id) + '/' + (approve ? 'approve' : 'reject'), { by: 'owner (Local Chat)', note });
+      toast(approve ? 'Approved. Nothing was pushed: ' + (r.push_command || 'the pusher pushes it when enabled') : 'Rejected.');
+    } catch (e) { toast(errText(e), 'error'); }
+    loadWorktree(i);
+  }
   async function rewind(i, turnId) {
     const p = pane(i);
     if (!window.confirm('Undo this turn? The files go back to how they were before it (and every later turn). The messages stay, marked reverted, and the current state is kept as a checkpoint.')) return;
@@ -674,10 +731,32 @@ ${(row.warnings || []).map((w) => `<p class="lc-warn">${E(w)}</p>`).join('')}`;
     const model = (s && s.model) || S.defaults.model || (S.catalog && S.catalog.default_model) || '';
     const msgs = p.messages || [];
     const tokens = msgs.reduce((n, m) => n + (m.tokens || 0), 0);
-    el.innerHTML = `<section class="lc-card"><h3>Model</h3>${modelDetails(modelRow(model))}</section>
+    const c = p.ctx;
+    const meter = c && c.meter ? (() => {
+      const pct = c.meter.limit ? Math.min(100, Math.round(100 * c.meter.used / c.meter.limit)) : null;
+      return `<div class="lc-meter" role="meter" aria-label="Context used" aria-valuemin="0" aria-valuemax="${E(c.meter.limit || 0)}" aria-valuenow="${E(c.meter.used)}"><span style="width:${pct == null ? 0 : pct}%" class="${pct != null && pct > 85 ? 'lc-meter-hot' : ''}"></span></div>
+<div class="lc-kv"><div><span>Context</span><b>≈${E(c.meter.used.toLocaleString())}${c.meter.limit ? ' of ' + E(c.meter.limit.toLocaleString()) : ''} tokens</b>${badge('estimated')}</div>
+<div><span>Tokens</span><b>${E(c.tokens.local.toLocaleString())} local · ${E(c.tokens.cloud.toLocaleString())} cloud</b>${badge('measured')}</div></div>
+${pct != null && pct > 85 ? '<p class="lc-warn">Near the model\'s context: older turns will need summarizing.</p>' : ''}`;
+    })() : '<p class="lc-note">A session starts with your first message.</p>';
+    const agent = c ? `<div class="lc-kv"><div><span>Autonomy</span><b>${E(c.autonomy.level)} ${E(c.autonomy.label)}</b></div><div><span>Means</span><b>${E(c.autonomy.summary)}</b></div>
+<div><span>Tools</span><b>${c.tools === 'all' ? 'the agent\'s full set' : c.tools === 'none' ? 'none (chat)' : E(c.tools.length) + ' read-only'}</b></div>
+<div><span>Cloud</span><b>${E(c.cloud.assist)}${c.cloud.governor ? ' · governor ' + E(c.cloud.governor) : ''}</b></div></div>
+<p class="lc-note">Destructive commands always ask; pushing only happens through the push queue.</p>` : '';
+    const fb = p.factory;
+    const board = fb && (fb.workers.length || fb.queue.length || fb.running) ? `<section class="lc-card"><h3>Factory</h3>${fb.running ? '<p class="lc-note">A run is going. <button type="button" class="lc-mini" data-lc="factory-stop">Stop it</button></p>' : ''}
+${fb.workers.map((w) => `<div class="lc-kv"><div><button type="button" class="lc-mini" data-lc="open" data-sid="${E(w.id)}" aria-label="Open the worker session ${E(w.title)}"><span class="lc-dot lc-dot-${E(w.status || 'idle')}" aria-hidden="true"></span> ${E(w.title)}</button></div></div>`).join('')}
+${fb.queue.map((q) => `<p class="lc-note">push queue ${E(q.id)}: <b>${E(q.status)}</b> (${E(q.branch)})</p>`).join('')}</section>` : '';
+    const sd = S.side || {};
+    const esc = sd.escalations && sd.escalations.count ? `<p class="lc-warn">${E(sd.escalations.count)} escalation(s) waiting for a decision.</p>` : '';
+    const dg = sd.digest && sd.digest.text ? `<pre class="lc-pre lc-digest">${E(String(sd.digest.text).slice(0, 1200))}</pre>` : '';
+    const wd = sd.watchdog ? `<p class="lc-note">WatchDog: ${E(sd.watchdog.total || 0)} incident(s)${sd.watchdog.escapes ? `, <b class="lc-warn">${E(sd.watchdog.escapes)} escape(s)</b>` : ''}. Containment is only proposed, never run.</p>` : '';
+    el.innerHTML = `<section class="lc-card"><h3>Context</h3>${meter}</section>${c ? `<section class="lc-card"><h3>Agent</h3>${agent}</section>` : ''}${board}
+<section class="lc-card"><h3>Model</h3>${modelDetails(modelRow(model))}</section>
 <section class="lc-card"><h3>Session</h3>${s ? `<div class="lc-kv"><div><span>Title</span><b>${E(s.title || 'untitled')}</b></div>
 <div><span>Messages</span><b>${msgs.length}</b></div><div><span>Tokens</span><b>${tokens.toLocaleString()}</b></div>
-<div><span>Workspace</span><b>${E(s.workspace || 'none')}</b></div></div>` : '<p class="lc-note">A session starts with your first message.</p>'}</section>`;
+<div><span>Workspace</span><b>${E(s.workspace || 'none')}</b></div></div>` : '<p class="lc-note">A session starts with your first message.</p>'}</section>
+${esc || dg || wd ? `<section class="lc-card"><h3>Manager &amp; WatchDog</h3>${esc}${dg}${wd}</section>` : ''}`;
   }
 
   // ---- the sidebar ---------------------------------------------------------------------------------------------------
@@ -969,6 +1048,10 @@ ${(st.running || []).length ? `<span>${st.running.length} answering</span>` : ''
       else if (a === 'menu') { const r = t.getBoundingClientRect(); sessionMenu(t.dataset.sid, r.left, r.bottom); }
       else if (a === 'send') send(i);
       else if (a === 'queue') steer(i, null, 'queue');
+      else if (a === 'cloud-send') send(i, null, true);
+      else if (a === 'factory-run') factoryRun(i, t.dataset.plan, false);
+      else if (a === 'factory-stop') post('/api/local-chat/sessions/' + encodeURIComponent(p.sid) + '/factory/stop').then(() => loadWorktree(i), (e) => toast(errText(e), 'error'));
+      else if (a === 'queue-approve' || a === 'queue-reject') queueDecide(i, t.dataset.id, a === 'queue-approve');
       else if (a === 'rewind') rewind(i, t.dataset.turn);
       else if (a === 'collapse') { S.collapsed[t.dataset.key] = !S.collapsed[t.dataset.key]; store.set('collapsed', JSON.stringify(S.collapsed)); renderSide(); }
       else if (a === 'group-menu') groupMenu(t.dataset.gid);

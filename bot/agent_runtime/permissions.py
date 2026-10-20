@@ -250,6 +250,8 @@ def decide(tool: str, tool_input: dict, *, rules: list[Rule], mode: str = "defau
 # ---- where rules and the mode come from ------------------------------------------------
 # A caller (a sub-agent, an API request) may narrow the mode for one run; see effective().
 mode_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("permission_mode", default=None)
+# ...and add rules for one run (Local Chat's autonomy level). Host-locked permissions take only its deny and ask rules.
+rules_var: contextvars.ContextVar[tuple] = contextvars.ContextVar("permission_rules", default=())
 _STRICTNESS = {"plan": 0, "default": 1, "accept_edits": 2, "bypass": 3}
 
 
@@ -319,6 +321,9 @@ def effective(instance_id: Optional[int]) -> tuple[str, list[Rule], bool]:
         inst = instance_settings(instance_id)
         rules = rules + parse_rules(inst["rules"])
         mode = inst["mode"] or mode
+    run_rules = parse_rules(list(rules_var.get() or ()))
+    if run_rules:
+        rules = rules + [r for r in run_rules if not is_locked() or r.decision != "allow"]
     override = mode_var.get()
     if override in MODES and (not is_locked() or _STRICTNESS[override] <= _STRICTNESS.get(mode, 1)):
         mode = override

@@ -38,6 +38,18 @@ Linked sessions (S3):
     POST   /api/local-chat/sessions/{sid}/handoff     {plan, title?, stop?} the in-progress task moves to a new session
     GET    /api/local-chat/sessions/{sid}/children    the sessions linked under it, with their status
 When a linked session ends a turn, a note with its recap lands in the parent (local_chat_note frame).
+
+Agent and Factory in chat (P4):
+    POST   /api/local-chat/sessions/{sid}/send        {"text", "cloud"?} cloud: this one message goes to the cloud backend
+                                                      (refused when the session's cloud assist is off)
+    GET    /api/local-chat/sessions/{sid}/context     the context meter (estimated tokens vs the model's context per request),
+                                                      tokens used (local / cloud), the tools this mode offers, the autonomy
+                                                      policy, cloud assist and the capacity governor's state
+    POST   /api/local-chat/sessions/{sid}/factory/run {"plan_id", "confirm"?} the owner's Run of a Factory plan: confined
+                                                      workers (refused without the sandbox); the first run in a repository
+                                                      needs confirm (409 until then)
+    POST   /api/local-chat/sessions/{sid}/factory/stop
+    GET    /api/local-chat/sessions/{sid}/factory     this session's Factory board: worker sessions and push-queue entries
 A session created with a git workspace gets its own worktree unless {"worktree": false} or local_chat.worktrees is off;
 DELETE asks (409) when the session's worktree holds unmerged work, unless ?confirm=true.
 
@@ -209,7 +221,7 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
 
         _session_or_404(sid)
         try:
-            return await chat.send(sid, str(payload.get("text") or ""), _broadcast)
+            return await chat.send(sid, str(payload.get("text") or ""), _broadcast, cloud=bool(payload.get("cloud")))
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         except RuntimeError as e:
@@ -457,3 +469,69 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
 
         _session_or_404(sid)
         return {"children": links.children(sid)}
+
+    # ---- agent and Factory in chat (P4) ---------------------------------------------------------------------------------
+    @app.get("/api/local-chat/sessions/{sid}/context", dependencies=read)
+    async def local_chat_context(sid: str):
+        from bot.localchat import autonomy, catalog, chat, store
+
+        s = _session_or_404(sid)
+        msgs = store.messages(sid, include_reverted=False)
+        chars = sum(len(m["text"]) for m in msgs if m["role"] in ("user", "assistant", "system"))
+        per_slot = None
+        try:
+            doc = await asyncio.to_thread(catalog.get)
+            row = next((r for r in doc.get("models", []) if r["id"] == s["model"]), None)
+            per_slot = ((row or {}).get("plan") or {}).get("n_ctx_per_slot")
+        except Exception:  # noqa: BLE001 - no hub: the meter says it does not know the limit
+            pass
+        tools = chat.tools_for(s["mode"])
+        try:
+            from bot.capacity import governor
+
+            gstate = governor.effective_state()
+        except Exception:  # noqa: BLE001
+            gstate = None
+        pol = autonomy.policy(s.get("autonomy", 2))
+        return {"meter": {"used": chars // 4, "source": "estimated (characters / 4)", "limit": per_slot,
+                          "limit_source": "planned (the hub serves this many tokens per request)" if per_slot else None},
+                "tokens": {"local": sum(m["tokens"] for m in msgs if m["role"] == "assistant" and m["model"] != chat.CLOUD),
+                           "cloud": sum(m["tokens"] for m in msgs if m["role"] == "assistant" and m["model"] == chat.CLOUD)},
+                "tools": "none" if tools == frozenset() else ("all" if tools is None else sorted(tools)),
+                "autonomy": {k: pol[k] for k in ("level", "label", "summary", "permission_mode")},
+                "cloud": {"assist": s["cloud_assist"], "governor": gstate}}
+
+    def _factory_errors(e: Exception):
+        from bot.localchat import factory
+
+        if isinstance(e, factory.NeedsConfirmation):
+            return HTTPException(status_code=409, detail={"message": str(e), "needs_confirmation": True})
+        if isinstance(e, factory.FactoryRefused):
+            return HTTPException(status_code=400, detail=str(e))
+        if isinstance(e, LookupError):
+            return HTTPException(status_code=404, detail=str(e))
+        return HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+
+    @app.post("/api/local-chat/sessions/{sid}/factory/run", dependencies=write)
+    async def local_chat_factory_run(sid: str, payload: dict = Body(...)):
+        from bot.localchat import factory
+
+        _session_or_404(sid)
+        try:
+            return await factory.start(sid, str(payload.get("plan_id") or ""), _broadcast, confirm=bool(payload.get("confirm")))
+        except (factory.FactoryRefused, LookupError) as e:
+            raise _factory_errors(e) from e
+
+    @app.post("/api/local-chat/sessions/{sid}/factory/stop", dependencies=write)
+    async def local_chat_factory_stop(sid: str):
+        from bot.localchat import factory
+
+        _session_or_404(sid)
+        return {"stopped": await factory.stop(sid)}
+
+    @app.get("/api/local-chat/sessions/{sid}/factory", dependencies=read)
+    async def local_chat_factory_board(sid: str):
+        from bot.localchat import factory
+
+        _session_or_404(sid)
+        return factory.board(sid)

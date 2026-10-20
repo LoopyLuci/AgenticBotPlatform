@@ -135,6 +135,11 @@ section#local-chat { max-width: none; content-visibility: visible; padding-top: 
 .lc-add { color: var(--good); }
 .lc-del { color: var(--critical); }
 .lc-hunk { color: var(--accent); }
+.lc-meter { height: 8px; border-radius: 999px; background: var(--surface-3); overflow: hidden; margin: 2px 0 6px; }
+.lc-meter span { display: block; height: 100%; background: var(--accent); }
+.lc-meter span.lc-meter-hot { background: var(--warning); }
+.lc-cloud { background: var(--accent-soft); color: var(--accent); }
+.lc-digest { max-height: 180px; white-space: pre-wrap; font-size: 11px; }
 @media (max-width: 1250px) {
   .lc-body { grid-template-columns: minmax(0, 1fr); }
   .lc-right { display: none; }
