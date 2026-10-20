@@ -75,6 +75,16 @@ class ChatStreamer:
         except Exception:  # noqa: BLE001
             logger.exception("chat_stream notify failed")
 
+    async def event(self, kind: str, **fields) -> None:
+        """A frame of the caller's own kind (e.g. Local Chat's "loading" / "loaded" while the model loads), in order."""
+        try:
+            async with self._lock:
+                await self._cancel_timer()
+                await self._flush_locked()
+                await self._emit(kind=kind, **fields)
+        except Exception:  # noqa: BLE001
+            logger.exception("chat_stream event failed")
+
     async def finish(self) -> None:
         """Flush whatever is pending and send the closing "done" frame (call in a finally)."""
         try:

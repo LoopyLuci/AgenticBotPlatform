@@ -361,6 +361,7 @@ async def _turn(sid: str, turn_id: str, text: str, model: str, session: dict, br
         if to_cloud:                       # the configured cloud backend (the router's default), same tools and approvals
             result = await router.ask(prompt, action_type="local_chat", context=context, instance_id=instance_id, chat_id=agent_cid)
         else:
+            await _ensure_loaded(model, streamer)
             result = await router.ask(prompt, action_type="local_chat", backend_override="native_agent", context=context,
                                       instance_id=instance_id, chat_id=agent_cid, model_override=model_ref(model))
         reply, tokens = result.text or "", int(result.tokens or 0)
@@ -385,6 +386,34 @@ async def _turn(sid: str, turn_id: str, text: str, model: str, session: dict, br
         await _safe(broadcast, {"type": "local_chat_turn", "session_id": sid, "turn_id": turn_id, "state": state,
                                 "model": model, "tokens": tokens, "seconds": round(time.monotonic() - started, 1)})
         await _after_turn(sid, state, broadcast)
+
+
+async def _ensure_loaded(model: str, streamer: Any) -> None:
+    """A model the hub has not loaded yet (every deploy restarts the hub) is loaded before the turn, with a "loading" frame
+    so the pane says why it waits. Left to the hub's on-demand load, a big model plus a long prompt outlasts the backend's
+    first-byte timeout and the first turn fails. A model the catalog does not know, an Ollama pass-through, or a hub that
+    cannot say what it has loaded is left to the turn as before."""
+    from bot.localchat import catalog
+
+    if model.startswith("ollama/"):
+        return
+    try:
+        doc = await asyncio.to_thread(catalog.get)
+        if not any(r.get("id") == model for r in doc.get("models", [])):
+            return
+        if model in await asyncio.to_thread(catalog.loaded_ids):
+            return
+    except Exception:  # noqa: BLE001 - no hub answer: the turn says what is wrong
+        return
+    await streamer.event("loading", model=model)
+    started = time.monotonic()
+    try:
+        await asyncio.to_thread(catalog.load, model)
+    except Exception as e:  # noqa: BLE001 - said plainly instead of as a transport timeout later
+        raise RuntimeError(f"ModelMistress could not load {model.split(':')[-1]}: {e}") from e
+    finally:
+        catalog.forget()                    # the picker's "loaded" group changed
+    await streamer.event("loaded", model=model, seconds=round(time.monotonic() - started, 1))
 
 
 async def _after_turn(sid: str, state: str, broadcast: Broadcast) -> None:

@@ -33,6 +33,7 @@ def agent(temp_db, monkeypatch):
 
     monkeypatch.setattr(router, "ask", ask)
     monkeypatch.setattr(catalog, "get", lambda **k: {"device": "cpu", "models": [{"id": CODER, "plan": {"n_ctx_per_slot": 32768}}]})
+    monkeypatch.setattr(catalog, "loaded_ids", lambda *a: {CODER})        # warm: never a load on whatever hub runs here
     return calls, box
 
 
