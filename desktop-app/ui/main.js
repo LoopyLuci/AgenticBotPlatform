@@ -2655,7 +2655,9 @@ async function refreshBots() {
     </div>`;
   if (!bots.length) {
     const nameField = document.getElementById('bot-new-name');
-    if (document.activeElement === document.body) nameField.focus();
+    // only when Bots is on screen: on a fresh install this focus scrolled away from Local Chat (the first screen)
+    const r = nameField.getBoundingClientRect();
+    if (document.activeElement === document.body && r.bottom > 0 && r.top < window.innerHeight) nameField.focus({ preventScroll: true });
   }
 
   wireCustomSelects(grid, async (el, value) => {

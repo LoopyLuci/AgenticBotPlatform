@@ -15,6 +15,7 @@
   let evals = {};          // draft name -> evaluation (or { error })
   let open = {};           // draft name -> text expanded
   let msg = '', err = '', busy = false;
+  let packQuery = '', packLimit = 50;    // thousands of installed packs made this section ~660 000 px tall: filter, then 50 at a time
 
   function css() {
     if ($('sk-css')) return;
@@ -38,8 +39,15 @@
   function renderPacks() {
     if (!packs) return '<p class="sk-empty">Loading…</p>';
     if (!packs.length) return '<p class="sk-empty">No skill packs are installed.</p>';
-    return packs.map((p) => `<div class="sk-card"><b>${E(p.name)}</b> <span class="sk-note">${E(p.source)} · ${E(p.files)} bundled file(s)</span>
-      <div>${E(p.description)}</div>${(p.problems || []).length ? `<div class="sk-note">${p.problems.map(E).join('; ')}</div>` : ''}${p.source === 'user' ? `<div class="sk-bar"><button class="btn" data-sk="remove-pack" data-name="${E(p.name)}">Remove…</button></div>` : ''}</div>`).join('');
+    const q = packQuery.trim().toLowerCase();
+    const hits = q ? packs.filter((p) => (String(p.name) + ' ' + String(p.description || '')).toLowerCase().includes(q)) : packs;
+    const shown = hits.slice(0, packLimit);
+    const more = hits.length - shown.length;
+    return `<div class="sk-bar"><input id="sk-pack-q" type="search" placeholder="Filter ${packs.length} installed skills" aria-label="Filter installed skills" value="${E(packQuery)}"> <span class="sk-note">${hits.length} match${hits.length === 1 ? '' : 'es'}</span></div>` +
+      (hits.length ? '' : '<p class="sk-empty">No installed skill matches.</p>') +
+      shown.map((p) => `<div class="sk-card"><b>${E(p.name)}</b> <span class="sk-note">${E(p.source)} · ${E(p.files)} bundled file(s)</span>
+      <div>${E(p.description)}</div>${(p.problems || []).length ? `<div class="sk-note">${p.problems.map(E).join('; ')}</div>` : ''}${p.source === 'user' ? `<div class="sk-bar"><button class="btn" data-sk="remove-pack" data-name="${E(p.name)}">Remove…</button></div>` : ''}</div>`).join('') +
+      (more > 0 ? `<div class="sk-bar"><button class="btn" data-sk="more-packs">Show ${Math.min(50, more)} more (${more} not shown)</button></div>` : '');
   }
 
   function renderHeld() {
@@ -130,6 +138,7 @@
   function act(a, name) {
     if (a === 'refresh') { msg = ''; return load(); }
     if (a === 'toggle') { open[name] = !open[name]; return render(); }
+    if (a === 'more-packs') { packLimit += 50; return render(); }
     if (a === 'fetch') {
       const url = ($('sk-url') || {}).value || '';
       if (!url.trim()) { err = 'Enter a git URL first.'; return render(); }
@@ -159,6 +168,15 @@
     root.addEventListener('click', (ev) => {
       const el = ev.target.closest('[data-sk]');
       if (el && !el.disabled) act(el.dataset.sk, el.dataset.name);
+    });
+    root.addEventListener('input', (ev) => {
+      if (!ev.target || ev.target.id !== 'sk-pack-q') return;
+      packQuery = ev.target.value;
+      packLimit = 50;
+      const at = ev.target.selectionStart;
+      render();
+      const box = $('sk-pack-q');
+      if (box) { box.focus({ preventScroll: true }); try { box.setSelectionRange(at, at); } catch (_) { /* search inputs */ } }
     });
     const onHash = () => { if ((location.hash || '').replace('#', '') === 'skills') load(); };
     window.addEventListener('hashchange', onHash);

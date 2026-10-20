@@ -1411,6 +1411,41 @@ function _observeSections() {
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _observeSections); else _observeSections();
 
+// The top bar names the section being read (it said "Local Chat" - before that "Overview" - whatever was on screen).
+(function trackTitle() {
+  let queued = false;
+  function update() {
+    queued = false;
+    const scroller = document.querySelector('main');
+    const title = document.querySelector('.topbar .title');
+    if (!scroller || !title) return;
+    const top = scroller.getBoundingClientRect().top + 90;
+    let current = null;
+    document.querySelectorAll('main > section[id]').forEach((s) => {
+      if (s.offsetParent !== null && s.getBoundingClientRect().top <= top) current = s;
+    });
+    if (!current) current = document.querySelector('main > section[id]');
+    if (!current) return;
+    const link = document.querySelector(`nav.sidenav a[href="#${current.id}"]`);
+    const h = current.querySelector('h2');
+    const name = (link && (link.getAttribute('title') || link.textContent) || h && h.textContent || '').trim();
+    if (name && title.textContent !== name) title.textContent = name;
+  }
+  function onScroll() { if (!queued) { queued = true; requestAnimationFrame(update); } }
+  function start() {
+    const scroller = document.querySelector('main');
+    if (!scroller) return;
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    // sections hold placeholder heights (content-visibility) until shown, so positions settle only after a jump ends
+    scroller.addEventListener('scrollend', onScroll);
+    const settle = () => { onScroll(); setTimeout(onScroll, 700); setTimeout(onScroll, 4300); };
+    window.addEventListener('hashchange', settle);
+    document.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('nav.sidenav a')) settle(); });
+    settle();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+})();
+
 // module-host.js: sections created or removed at runtime join / leave the on-screen tracking.
 window.__abpObserveSection = function (s, on) {
   if (!_sectionObserver) return;
@@ -2953,8 +2988,10 @@ async function refreshBots() {
       <p class="cardnote">A "bot" here is one connection to a chat platform (Telegram, Discord, Slack, Matrix, or WhatsApp) paired with a backend that answers it (Claude, Hermes Agent, or any custom model). Fill in the form above and click "Add bot" to create your first one — nothing else needs to be set up first.</p>
     </div>`;
   if (!bots.length) {
+    // only when someone is looking at Bots: on a fresh install this focus scrolled the page away from Local Chat (the
+    // first screen) down to the Bots form, and the next click or keystroke landed there
     const nameField = document.getElementById('bot-new-name');
-    if (document.activeElement === document.body) nameField.focus();
+    if (document.activeElement === document.body && _onScreen.has('bots')) nameField.focus({ preventScroll: true });
   }
 
   wireCustomSelects(grid, async (el, value) => {
