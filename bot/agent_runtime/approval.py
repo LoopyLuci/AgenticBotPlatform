@@ -92,6 +92,7 @@ async def request_approval(
         return outcome
     finally:
         _waiters.pop(approval_id, None)
+        _expire_if_unanswered(approval_id)
 
 
 def resolve(approval_id: int, outcome: Outcome, actor: str) -> bool:
@@ -158,6 +159,22 @@ async def request_plan_approval(
         return outcome != "deny"
     finally:
         _waiters.pop(approval_id, None)
+        _expire_if_unanswered(approval_id)
+
+
+def _expire_if_unanswered(approval_id: int) -> None:
+    """The run stopped waiting (cancelled, or it failed) before anyone answered: nothing can answer it now."""
+    try:
+        row = db.get_pending_approval(approval_id)
+        if row is not None and row["status"] == "pending":
+            db.resolve_pending_approval(approval_id, status="expired", resolved_by=None)
+    except Exception:  # noqa: BLE001 - bookkeeping never masks how the run ended
+        logger.exception("approval %s: could not mark it expired", approval_id)
+
+
+def expire_orphans() -> int:
+    """Expire the pending approvals no run in this process waits on (left by a run that ended or a process that died)."""
+    return db.expire_orphaned_approvals(keep=set(_waiters))
 
 
 def oldest_pending(instance_id: int, chat_id: Any) -> Optional[dict]:

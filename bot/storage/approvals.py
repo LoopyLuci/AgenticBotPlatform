@@ -49,6 +49,22 @@ def resolve_pending_approval(approval_id: int, status: str, resolved_by: Optiona
         conn.commit()
 
 
+def expire_orphaned_approvals(keep: Optional[set] = None) -> int:
+    """Mark every pending approval expired except the ids in `keep` (the ones a running turn still waits on). An
+    approval's waiter lives only in the process that asked: one left pending by a run that ended or a process that
+    died can never be answered, and would otherwise sit in every pending list for good."""
+    conn = _db.get_conn()
+    keep = set(keep or ())
+    with _db._lock:
+        ids = [r["id"] for r in conn.execute("SELECT id FROM pending_approvals WHERE status='pending'").fetchall()
+               if r["id"] not in keep]
+        for i in ids:
+            conn.execute("UPDATE pending_approvals SET status='expired', resolved_at=?, resolved_by=NULL WHERE id=?",
+                         (_db._now(), i))
+        conn.commit()
+    return len(ids)
+
+
 def grant_tool_approval(instance_id: int, tool_name: str, session_key: Optional[str]) -> None:
     conn = _db.get_conn()
     with _db._lock:

@@ -21,7 +21,13 @@ class _Resolve(BaseModel):
 
 def register(app: FastAPI, read_auth: Callable, write_auth: Callable, caller_is_owner: Callable) -> None:
     from bot import approvals_view
+    from bot.agent_runtime import approval
 
+    # Pending approvals from a previous process can never be answered (their waiter died with it).
+    try:
+        approval.expire_orphans()
+    except Exception:  # noqa: BLE001 - a fresh install may not have the table yet
+        pass
     read = [Depends(read_auth)]
 
     @app.get("/api/approvals", dependencies=read)

@@ -1532,7 +1532,7 @@ from bot.storage.sessions import (  # noqa: E402,F401
     export_chat_messages_data,
 )
 from bot.storage.approvals import (  # noqa: E402,F401
-    create_pending_approval, get_pending_approval, list_pending_approvals, resolve_pending_approval,
+    create_pending_approval, get_pending_approval, list_pending_approvals, resolve_pending_approval, expire_orphaned_approvals,
     grant_tool_approval, has_tool_approval,
 )
 from bot.storage.schedules import (  # noqa: E402,F401

@@ -112,4 +112,8 @@ def decide(approval_id: int, outcome: str, actor: str) -> str:
         return "not_found"
     if row["status"] != "pending":
         return "already_resolved"
-    return "decided" if approval.resolve(approval_id, outcome, actor) else "already_resolved"
+    if approval.resolve(approval_id, outcome, actor):
+        return "decided"
+    if approval_id not in approval._waiters:          # nothing waits on it any more: it can never be answered
+        db.resolve_pending_approval(approval_id, status="expired", resolved_by=None)
+    return "already_resolved"
