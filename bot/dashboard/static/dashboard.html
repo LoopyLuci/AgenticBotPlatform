@@ -139,7 +139,6 @@
 
   .topbar { position:sticky; top:0; z-index:5; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 28px; background:var(--bg); border-bottom:1px solid var(--line); }
   .topbar .title { font-family:var(--font-display); font-size:18px; font-weight:700; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  @media (max-width:640px) { .topbar { flex-wrap:wrap; } .topbar .title { flex:1 1 auto; } .topbar .pillrow { flex-basis:100%; } }   /* a phone: menu + title on one row, the buttons below */
   .pillrow { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
   .pill { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:999px; font-size:12px; font-weight:600; background:var(--surface-2); color:var(--ink-soft); border:1px solid var(--line); }
   .pill .dot { width:7px; height:7px; border-radius:50%; flex:none; }
@@ -490,6 +489,7 @@
     .term-icon-btn { width:26px; }
     .term-controls { gap:2px; }
     .term-header { padding:0 4px 0 2px; }
+    .topbar { flex-wrap:wrap; } .topbar .title { flex:1 1 auto; } .topbar .pillrow { flex-basis:100%; }   /* menu + title on one row, the buttons below */
   }
   #xterm-container { flex:1; padding:6px 10px; min-height:0; }
   #xterm-container .xterm { height:100%; }
