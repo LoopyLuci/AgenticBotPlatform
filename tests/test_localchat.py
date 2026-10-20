@@ -306,6 +306,33 @@ def test_the_modelmistress_provider_is_found_in_the_mm_home(monkeypatch, tmp_pat
     assert got["modelmistress"]["base_url"] == "http://127.0.0.1:9/v1" and got["modelmistress"]["api_key"] == "t"
 
 
+def test_a_running_hub_wins_over_a_stale_providers_yaml_entry(monkeypatch):
+    from bot import providers
+
+    stale = {"modelmistress": {"base_url": "http://127.0.0.1:32301/v1", "api_key": "old"}, "ollama": {"base_url": "o"}}
+    live = {"modelmistress": {"base_url": "http://127.0.0.1:29317/v1", "api_key": "new", "module": "modelmistress"}}
+    monkeypatch.setattr(providers, "file_providers", lambda: dict(stale))
+    monkeypatch.setattr(providers, "module_providers", lambda: dict(live))
+    monkeypatch.setattr(providers, "_answers", lambda url: ":32301" not in url)      # the file's copy is dead
+    assert providers.get_provider("modelmistress")["base_url"].endswith(":29317/v1")
+    assert providers.get_api_key("modelmistress") == "new" and providers.get_provider("ollama") == {"base_url": "o"}
+    monkeypatch.setattr(providers, "_answers", lambda url: True)                     # a file entry that answers wins
+    assert providers.get_provider("modelmistress")["base_url"].endswith(":32301/v1")
+    monkeypatch.setattr(providers, "module_providers", lambda: {})                   # no hub running: the file's entry
+    monkeypatch.setattr(providers, "_answers", lambda url: False)
+    assert providers.get_provider("modelmistress")["base_url"].endswith(":32301/v1")
+
+
+def test_answers_is_cached_and_never_raises(monkeypatch):
+    from bot import providers
+
+    monkeypatch.setattr(providers, "_answer_cache", {})
+    assert providers._answers("") is False
+    assert providers._answers("http://127.0.0.1:9/v1") is False                       # nothing listens on port 9
+    providers._answer_cache["http://x/v1"] = (providers.time.monotonic(), True)
+    assert providers._answers("http://x/v1") is True
+
+
 def test_router_ask_uses_the_turns_model(temp_db, monkeypatch):
     from bot import router as router_mod
     from bot import setup_wizard

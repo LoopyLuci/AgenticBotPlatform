@@ -44,6 +44,7 @@ def test_no_hub_or_a_dead_one_is_no_provider(home, monkeypatch):
 def test_a_provider_in_the_file_wins_and_the_store_never_sees_the_token(home, monkeypatch):
     write_control(home, os.getpid())
     monkeypatch.setattr(providers, "file_providers", lambda: {"modelmistress": {"base_url": "http://elsewhere/v1"}})
+    monkeypatch.setattr(providers, "_answers", lambda url: True)      # a deliberate entry that answers wins
     assert providers.get_provider("modelmistress")["base_url"] == "http://elsewhere/v1"
     seen = {}
     from bot import provider_store

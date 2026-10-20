@@ -115,8 +115,39 @@ def list_providers() -> dict[str, dict]:
     """name -> {base_url, protocol, api_key_env?} — never includes a raw
     inline api_key's value beyond what's already in the file verbatim,
     same "no extra redaction on read" stance the rest of config.py takes
-    (GET /api/config already serves backends.yaml back unredacted)."""
-    return {**module_providers(), **file_providers()}
+    (GET /api/config already serves backends.yaml back unredacted).
+
+    A providers.yaml entry with a running module hub's name wins (it may point at another hub on purpose) - unless it
+    does not answer while the module hub does: a hub's port and token change on every start, so a written-down copy goes
+    stale (2026-10-19: a "modelmistress" entry pointing at a 10-17 hub's port sent every Local Chat turn to a dead address)."""
+    files, modules = file_providers(), module_providers()
+    out = {**modules, **files}
+    for name, live in modules.items():
+        if name in files and not _answers(str(files[name].get("base_url") or "")):
+            out[name] = live
+    return out
+
+
+_answer_cache: dict[str, tuple[float, bool]] = {}
+_ANSWER_TTL_S = 30.0
+
+
+def _answers(base_url: str) -> bool:
+    """Whether an OpenAI-compatible server answers at `base_url` (GET <base>/models, 1.5 s), cached for 30 s."""
+    if not base_url:
+        return False
+    now = time.monotonic()
+    hit = _answer_cache.get(base_url)
+    if hit and now - hit[0] < _ANSWER_TTL_S:
+        return hit[1]
+    try:
+        import httpx
+
+        ok = httpx.get(base_url.rstrip("/") + "/models", timeout=1.5).status_code < 500
+    except Exception:  # noqa: BLE001 - refused, timed out, bad URL: it does not answer
+        ok = False
+    _answer_cache[base_url] = (now, ok)
+    return ok
 
 
 def file_providers() -> dict[str, dict]:
