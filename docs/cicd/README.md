@@ -229,6 +229,38 @@ matches HEAD, and it now honours that stamp as well as the release gate's `ABP_P
 - After pulling hook changes, re-run `scripts/install_git_hooks.ps1`/`.sh`. `.git/hooks` is a copy, and a
   stale one won't export `AGENTICBOTPLATFORM_LOCAL_PIPELINE_HOOK`, which scopes the run to the pushed range.
 
+### ML diff-lint (advisory, verified fixes only)
+
+`bot/conductor/difflint.py` reviews the pushed range (the same `base..head` change detection uses) with the
+local coder on the ModelMistress hub, **in a thread next to the pytest step**: pytest keeps the CPU busy, the model
+uses the GPU, so it adds roughly no wall-clock time. It looks for what ruff cannot see: logic slips, wrong API
+use, missing or weak tests, flaky test patterns (leaked event loops, fixtures without cleanup), and the AGENTS.md
+rules. The rules a static check decides (no feature removed, hot-reload classification, leak guard, tests) come
+from the conductor's reviewer and are passed to the model as already found; a codeintel impact + context pack for
+the touched symbols gives it context.
+
+- **Only when it can:** the hub answers (with enough context per request, `conductor.min_context`) and the GPU
+  lock `custom:gpu0` on the coordination board is free; the lock is held for the model call only. Otherwise one
+  `[--] ML diff-lint skipped: <why>` line. Local only: `llm.transport_for_ref` refuses a cloud ref.
+- **Budget:** `ABP_PIPELINE_DIFFLINT_BUDGET_S` (default 180 s) bounds the whole stage. `ABP_PIPELINE_DIFFLINT=0`
+  turns it off; `ABP_PIPELINE_DIFFLINT_MODEL` picks the hub model (default: the first one named `*coder*`).
+- **Verified fixes only:** each suggested patch is applied alone in a throwaway `git worktree` of HEAD, then ruff
+  on the touched files and the affected tests (the branch's changed tests plus codeintel's) run through the
+  conductor's proof sandbox. A fix that fails is dropped (kept in the JSON with the reason). The commit being
+  pushed and the checkout are never modified.
+- **Cache:** a result is keyed by the diff's hash (`data/agent/difflint/cache/`); a re-run of the same diff needs
+  neither the hub nor the GPU.
+- **Output:** `logs/local_pipeline/<run>-difflint.json` (every finding: id, file, line, category, severity,
+  explanation, patch, verification) and `<run>-difflint.patch` (the verified fixes), and one summary line:
+  `ML diff-lint: N finding(s), M verified fix(es) ... - <path>`.
+- **Advisory:** it never fails the pipeline in this version: a crash, a timeout or an overrun is one `[!]` line.
+
+The owner's side, `scripts/difflint.py`: `--list` (the newest run), `--apply <id>` (applies that verified fix to
+the working tree and marks it accepted; you review and commit), `--dismiss <id>`, `--stats`, `--run [--base REF]`.
+Per-category counts (found / verified / accepted / dismissed) live in `data/agent/difflint/stats.json`;
+`precision = accepted / (accepted + dismissed)` is what decides when a category is accurate enough to be
+promoted to blocking — a later, owner-approved change.
+
 ## Embedded installs (submodule / sidecar)
 
 When ABP runs with `ABP_HOME` set or `ABP_PROFILE=sidecar`:

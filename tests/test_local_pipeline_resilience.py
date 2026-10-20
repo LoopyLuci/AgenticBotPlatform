@@ -21,6 +21,13 @@ _SPEC.loader.exec_module(lp)
 import release_guard  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _no_difflint(monkeypatch):
+    """These tests script check_python's commands; the advisory ML diff-lint (its own tests: test_difflint.py) stays off so it
+    never looks for a real hub or GPU lock from here."""
+    monkeypatch.setenv("ABP_PIPELINE_DIFFLINT", "0")
+
+
 def _script_runs(monkeypatch, outcomes):
     """Feeds check_python() a scripted sequence of (ok, output) per command."""
     calls = []
