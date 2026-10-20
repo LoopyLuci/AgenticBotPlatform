@@ -203,6 +203,9 @@ def turns(temp_db, monkeypatch):
 
     monkeypatch.setattr(router, "ask", fake_ask)
     monkeypatch.setattr(catalog, "get", lambda **k: {"device": DEVICE, "models": []})
+    from bot.modelmistress import client as mm_client
+
+    monkeypatch.setattr(mm_client, "context_length", lambda model, **k: seen.setdefault("warmed", []).append((model, k)))
     return frames, seen
 
 
@@ -219,6 +222,7 @@ def test_a_turn_runs_on_the_sessions_model_and_workspace_and_keeps_the_reply(tur
     assert seen["model_override"] == "modelmistress/" + CODER and seen["backend_override"] == "native_agent"
     assert "allowed_tools" not in seen["context"] and seen["context"]["cwd"] == str(tmp_path)   # Chat: every tool
     assert seen["context"]["approval_notify"] and seen["context"]["stream_notify"]
+    assert seen["warmed"] == [(CODER, {"wait": True})]          # the served window is known before the first step
     msgs = store.messages(s["id"])
     assert [m["role"] for m in msgs] == ["user", "assistant"]
     assert msgs[1]["text"] == "Done: renamed it." and msgs[1]["tokens"] == 1234 and msgs[1]["tokens_per_s"] == 35.0

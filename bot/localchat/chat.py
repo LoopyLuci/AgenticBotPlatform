@@ -361,6 +361,7 @@ async def _turn(sid: str, turn_id: str, text: str, model: str, session: dict, br
             result = await router.ask(prompt, action_type="local_chat", context=context, instance_id=instance_id, chat_id=agent_cid)
         else:
             await _ensure_loaded(model, streamer)
+            await _warm_window(model)
             result = await router.ask(prompt, action_type="local_chat", backend_override="native_agent", context=context,
                                       instance_id=instance_id, chat_id=agent_cid, model_override=model_ref(model))
         reply, tokens = result.text or "", int(result.tokens or 0)
@@ -413,6 +414,20 @@ async def _ensure_loaded(model: str, streamer: Any) -> None:
     finally:
         catalog.forget()                    # the picker's "loaded" group changed
     await streamer.event("loaded", model=model, seconds=round(time.monotonic() - started, 1))
+
+
+async def _warm_window(model: str) -> None:
+    """Ask the hub once for the window it serves the model with, so the turn's first step is sized by it. The agent loop never
+    waits on the hub (context_window reads a cache it refreshes in the background), so right after a restart its first step
+    would otherwise be sized as an unknown local model (8192 tokens) and compact far too early."""
+    if model.startswith("ollama/"):
+        return
+    try:
+        from bot.modelmistress import client
+
+        await asyncio.to_thread(client.context_length, model, wait=True)
+    except Exception:  # noqa: BLE001 - no answer: the loop falls back as before
+        pass
 
 
 async def _after_turn(sid: str, state: str, broadcast: Broadcast) -> None:
