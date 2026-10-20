@@ -27,7 +27,13 @@
   if (typeof api !== 'function') return;
   const $ = (id) => document.getElementById(id);
   const E = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const errText = (e) => { let m = e && e.message ? e.message : String(e); try { m = JSON.parse(m).detail || m; } catch (_) { /* plain text */ } return String(m); };
+  const errText = (e) => {
+    if (e && e.name === 'AbortError' || /signal is aborted|aborted without reason/i.test(String(e && e.message))) return 'The ABP server took too long to answer. Try again in a moment.';
+    let m = e && e.message ? e.message : (e && typeof e === 'object' ? (e.detail || e.error || JSON.stringify(e)) : String(e));
+    try { m = JSON.parse(m).detail || m; } catch (_) { /* plain text */ }
+    if (m && typeof m === 'object') m = m.error || m.message || JSON.stringify(m);   // a detail object ({error, code})
+    return String(m);
+  };
   const toast = (m, t) => { if (typeof window.showToast === 'function') window.showToast(m, t); };
   const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body || {}) });
   const patch = (path, body) => api(path, { method: 'PATCH', body: JSON.stringify(body || {}) });
@@ -216,7 +222,9 @@
   async function refreshMessages(i) {
     const p = pane(i);
     if (!p || !p.sid) return;
-    const last = p.messages.length ? p.messages[p.messages.length - 1].id : 0;
+    // the last message the server stored: a pending one shown before the server answered has a made-up id (n + 0.5)
+    const real = p.messages.filter((m) => !m.pending && Number.isInteger(m.id));
+    const last = real.length ? real[real.length - 1].id : 0;
     try {
       const d = await api('/api/local-chat/sessions/' + encodeURIComponent(p.sid) + '?after=' + last);
       p.session = d.session;

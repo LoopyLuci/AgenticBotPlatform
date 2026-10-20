@@ -81,6 +81,7 @@ section#local-chat { max-width: none; content-visibility: visible; padding-top: 
 .lc-note { color: var(--muted); font-size: 12px; }
 .lc-pad { padding: 8px; }
 .lc-warn { color: var(--warning); font-size: 12px; margin: 3px 0; }
+.lc-warn a, .lc-note a, .lc-msg-body a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }   /* not the browser's default blue on a dark theme */
 .lc-dim { opacity: .65; }
 .lc-empty { max-width: 620px; margin: 40px auto; text-align: center; }
 .lc-empty h3 { margin: 0 0 8px; font-size: 20px; }

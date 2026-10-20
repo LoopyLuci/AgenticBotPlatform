@@ -514,6 +514,22 @@ def test_the_api(temp_db, monkeypatch):
     assert c.delete(f"/api/local-chat/sessions/{s['id']}", headers=h).json() == {"deleted": True}
 
 
+def test_sending_with_no_hub_is_a_plain_502_not_a_500_or_a_sign_in_503(temp_db, monkeypatch):
+    monkeypatch.setenv("DASHBOARD_TOKEN", "test-token")
+    from bot.dashboard.server import build_app
+    from bot.modelmistress.client import MMError
+
+    def down(refresh=False, ttl_s=None):
+        raise MMError("ModelMistress is not running (test)", code="unavailable")
+    monkeypatch.setattr(catalog, "get", down)
+    c = TestClient(build_app())
+    h = {"X-Dashboard-Token": "test-token"}
+    s = c.post("/api/local-chat/sessions", json={"mode": "chat"}, headers=h).json()
+    r = c.post(f"/api/local-chat/sessions/{s['id']}/send", json={"text": "hello"}, headers=h)
+    assert r.status_code == 502 and "not running" in r.json()["detail"]      # the dashboard reads 503 as "not signed in"
+    assert store.messages(s["id"]) == []
+
+
 def test_no_hub_is_an_empty_picker_with_a_reason_not_an_http_error(temp_db, monkeypatch):
     monkeypatch.setenv("DASHBOARD_TOKEN", "test-token")
     from bot.dashboard.server import build_app

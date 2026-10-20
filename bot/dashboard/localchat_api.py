@@ -248,10 +248,17 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
             return await chat.send(sid, str(payload.get("text") or ""), _broadcast, cloud=bool(payload.get("cloud")))
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
-        except RuntimeError as e:
-            raise HTTPException(status_code=409, detail=str(e)) from e
         except LookupError as e:
-            raise HTTPException(status_code=503, detail=str(e)) from e
+            # 502, not 503: the dashboard's api() reads 503 as "not signed in" and shows the sign-in notice instead
+            raise HTTPException(status_code=502, detail=str(e)) from e
+        except Exception as e:
+            from bot.modelmistress.client import MMError
+
+            if isinstance(e, MMError):           # no hub, or one that cannot be reached: said plainly, at once
+                raise HTTPException(status_code=502, detail=str(e)) from e
+            if isinstance(e, RuntimeError):
+                raise HTTPException(status_code=409, detail=str(e)) from e
+            raise
 
     @app.post("/api/local-chat/sessions/{sid}/cancel", dependencies=write)
     async def local_chat_cancel(sid: str):
