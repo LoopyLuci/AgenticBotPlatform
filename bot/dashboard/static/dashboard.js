@@ -1440,7 +1440,13 @@ async function refreshAll() {
   const tasks = [refreshOverview(), refreshJobsTable(), refreshJobsCharts(), refreshTelemetry(), refreshDatabase(), refreshConfig(), refreshMcp(), refreshAllowedUsers(), refreshLogs(), refreshEnv()];
   await Promise.allSettled(tasks);
 }
+// Boot ends in Local Chat, the first screen (and the first section of the page); a deep link (#jobs, ...) still wins.
+function landOnLocalChat() {
+  if (!location.hash || location.hash === '#') history.replaceState(null, '', '#local-chat');
+}
+
 function startDashboard() {
+  landOnLocalChat();
   refreshAll();
   pollWhenVisible(refreshOverview, 5000);
   pollWhenVisible(refreshJobsTable, 5000, 'jobs');
@@ -4079,6 +4085,8 @@ function connectLiveEventsSocket() {
         // static-file-serving route already assumes.
         setTimeout(() => location.reload(), 800);
       }
+      // Local Chat (local-chat.js) and any other shared panel read the frames they need from this event.
+      try { window.dispatchEvent(new CustomEvent('abp:ws-frame', { detail: msg })); } catch (_e) { /* old browser */ }
       if (msg.type === 'chat_stream') onChatStream(msg);
       if (msg.type === 'ssh_session_event') onSshSessionEvent(msg);
       if (msg.type === 'ssh_session_stopped') onSshSessionStopped(msg);
@@ -5667,7 +5675,11 @@ async function checkSetupAndProceed(onReady) {
     const res = await fetch('/api/setup/status', { headers });
     if (!res.ok) { onReady(); return; } // 401 etc — let the normal dashboard flow prompt for the token
     const status = await res.json();
-    if (status.ready) onReady(); else openWizard(status);
+    // The setup wizard no longer blocks the first screen: Local Chat works without any backend, and an install with
+    // none configured gets a dismissible hint there instead. The wizard stays one click away (Settings -> Backends,
+    // "Run setup again").
+    window.__abpSetupStatus = status;
+    onReady();
   } catch (e) {
     onReady(); // don't block the whole UI on a network hiccup
   }

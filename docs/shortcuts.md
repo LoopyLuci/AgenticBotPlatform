@@ -105,6 +105,7 @@ Generated from the registry; `tests/test_shortcuts.py` checks this table against
 
 | Action id | What it does | Default | Applies on |
 | --- | --- | --- | --- |
+| `nav.local-chat` | Go to Local Chat | `g lc` | anywhere |
 | `nav.overview` | Go to Overview | `g o` | anywhere |
 | `nav.jobs` | Go to Jobs | `g j` | anywhere |
 | `nav.telemetry` | Go to Connections & Telemetry | `g te` | anywhere |
@@ -152,6 +153,13 @@ Generated from the registry; `tests/test_shortcuts.py` checks this table against
 | `nav.files` | Go to Files | `g fi` | anywhere |
 | `nav.servers` | Go to Linked Servers | `g sv` | anywhere |
 | `nav.updates` | Go to Updates | `g up` | anywhere |
+
+### Local Chat
+
+| Action id | What it does | Default | Applies on |
+| --- | --- | --- | --- |
+| `localchat.new` | New Local Chat session | — | `local-chat` |
+| `localchat.focus` | Jump to the Local Chat message box | — | `local-chat` |
 
 ### Chat
 
