@@ -11,10 +11,15 @@ the model per turn (`router.ask(model_override="modelmistress/<id>")`) and the w
 
 | Mode | Tools |
 |---|---|
-| `chat` | none |
-| `build` | the agent's tools; edits and commands ask as usual |
+| `chat` | every tool, conversational (no worktree of its own); edits and commands ask as usual |
+| `build` | every tool, in the session's worktree; edits and commands ask as usual |
 | `plan` | proposes a plan for approval first (the plan gate) |
 | `review` | read-only tools only |
+
+"Every tool" is the whole pool: skills, memory and RAG recall, code search and navigation, web fetch, image and asset
+generation, vision, model management, ABP modules, MCP servers, sub-agents, schedules, plugins. A local model in
+small-model mode (a window of 32k or less, see `docs/agents/models.md`) is sent a compact core set plus `find_tools`,
+which searches the pool and loads what it finds for the next step, so its prompt stays short and nothing is out of reach.
 
 `POST /api/local-chat/sessions/{sid}/send` starts the turn and returns at once. The reply streams on `/api/ws` as
 `chat_stream` frames (`chat_id` `localchat:<sid>`); a tool that needs a person arrives as a `local_chat_approval` frame

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Any
 
-MODES = ("chat", "build", "plan", "review", "factory")   # chat: no tools; build: edits; plan: proposes first; review: reads only;
+MODES = ("chat", "build", "plan", "review", "factory")   # chat: every tool, conversational; build: edits in a worktree; plan: proposes first; review: reads only;
                                                           # factory: a goal -> conductor plan -> owner's Run -> confined workers
 CLOUD_ASSIST = ("off", "ask", "auto")
 

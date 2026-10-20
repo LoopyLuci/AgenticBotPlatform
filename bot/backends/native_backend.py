@@ -128,6 +128,10 @@ class NativeAgentBackend(Backend):
         rules_token = permissions.rules_var.set(tuple(ctx.get("permission_rules") or ()))    # run-level rules (Local Chat autonomy)
         # The turn's dollar meter (turn_budget.py); a sub-agent's ask() shares its parent's.
         _meter, meter_token = turn_budget.begin()
+        # The turn's tool pool (tool_discovery.py): what find_tools may load, and the only tools a call may name.
+        from bot.agent_runtime import tool_discovery
+
+        pool_token = tool_discovery.begin()
         run = trace.begin(
             agent=self.name, model=self.model, transport=type(self.transport).__name__,
             instance_id=ctx.get("instance_id"), session=ctx.get("desktop_session_key") or "",
@@ -147,6 +151,7 @@ class NativeAgentBackend(Backend):
                 permissions.mode_var.reset(mode_token)
                 permissions.rules_var.reset(rules_token)
                 turn_budget.end(meter_token)
+                tool_discovery.end(pool_token)
             run.end("ok")
             if run.run_id and isinstance(getattr(result, "raw", None), dict):
                 result.raw["trace_run"] = run.run_id
@@ -359,16 +364,21 @@ class NativeAgentBackend(Backend):
             tool_schemas = [s for s in tool_schemas if s["name"] not in agent_tools.ADMIN_TOOLS_ELEVATED]
         if allowed_tools is not None:
             tool_schemas = [s for s in tool_schemas if s["name"] in allowed_tools]
+        pool = list(tool_schemas)          # everything this turn may use; find_tools loads from it (tool_discovery.py)
 
         # Small-model mode (small_model.py): a local model with a small window is sent a compact tool set and prompt.
         # An agent that names its tools (allowed_tools) gets the intersection with the core set, plus its edit, write,
         # verify and spawn_subagent tools (small_model.filter_allowed).
-        from bot.agent_runtime import small_model
+        from bot.agent_runtime import small_model, tool_discovery
 
         small = small_model.profile_for(self.transport, self.model)
         if small is not None:
             tool_schemas = (small_model.filter_schemas(tool_schemas, small) if allowed_tools is None
                             else small_model.filter_allowed(tool_schemas, small))
+        tool_schemas = list(tool_schemas)
+        if len(tool_schemas) < len(pool) and not any(s["name"] == tool_discovery.TOOL_NAME for s in tool_schemas):
+            tool_schemas += [s for s in pool if s["name"] == tool_discovery.TOOL_NAME]    # the rest stays one search away
+        tool_discovery.attach(pool, tool_schemas)
         small_model.announce(session_key, small, self.model, trace.active().note)
 
         from bot.agent_runtime import prompt as prompt_builder

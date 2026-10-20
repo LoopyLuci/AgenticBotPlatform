@@ -33,7 +33,7 @@
   const patch = (path, body) => api(path, { method: 'PATCH', body: JSON.stringify(body || {}) });
   const store = { get(k) { try { return localStorage.getItem('lc-' + k); } catch (_) { return null; } }, set(k, v) { try { localStorage.setItem('lc-' + k, v); } catch (_) { /* private mode */ } } };
 
-  const MODES = [['chat', 'Chat', 'Plain chat, no tools'], ['build', 'Build', 'The agent edits and runs commands; edits ask as usual'],
+  const MODES = [['chat', 'Chat', 'Talk with every tool on hand: skills, memory, search, web, generation (edits ask first)'], ['build', 'Build', 'The agent edits and runs commands; edits ask as usual'],
     ['plan', 'Plan', 'Proposes a plan for your approval first'], ['review', 'Review', 'Reads only'],
     ['factory', 'Factory', 'A goal becomes a conductor plan; confined workers run it only when you press Run']];
   const AUTONOMY = ['0 Locked', '1 Cautious', '2 Supervised', '3 Trusted', '4 Autonomous', '5 Sovereign'];
@@ -547,7 +547,7 @@ ${(mm.next.options || []).map((o) => `<button type="button" class="btn" data-lc=
     const down = hub && !hub.up ? `<p class="lc-warn">ModelMistress (the local model hub) is not running. Start it from <a href="#modules">Modules</a>; with autostart on, ABP restarts it by itself.</p>` : '';
     return `<div class="lc-empty"><h3>Local Chat</h3>${down}<p>Chat and code with local models on ModelMistress. Nothing here needs a cloud backend or the network.</p>
 ${S.catalogErr ? `<p class="lc-warn">${E(S.catalogErr)}</p>` : model ? `<p class="lc-note">New sessions start on <b>${E(shortModel(model))}</b>. Pick another in the top bar.</p>` : '<p class="lc-note">Load or download a model on ModelMistress to start.</p>'}
-<p class="lc-note">Chat: no tools. Build: the agent edits files in the workspace (edits ask first). Plan: it proposes a plan for your approval. Review: it only reads.</p></div>`;
+<p class="lc-note">Chat: every tool on hand, conversational (edits ask first). Build: the agent works in the session's worktree (edits ask first). Plan: it proposes a plan for your approval. Review: it only reads.</p></div>`;
   }
   function renderMsgs(i) {
     const el = part(i, 'msgs');

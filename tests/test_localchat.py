@@ -175,10 +175,12 @@ def test_eval_reports_are_read_from_the_folder(tmp_path):
 def test_modes_offer_the_right_tools():
     from bot.agent_runtime import toolspec
 
-    assert chat.tools_for("chat") == frozenset()
+    assert chat.tools_for("chat") is None                   # Chat has every tool (skills, memory, web, generation ...)
     assert chat.tools_for("build") is None and chat.tools_for("plan") is None
+    assert "chat" in chat.WRITES                             # so Chat turns are checkpointed and kept out of the live checkout
     review = chat.tools_for("review")
     assert review and all(toolspec.is_read_only(n) for n in review) and "write_file" not in review
+    assert "find_tools" in review                            # Review can still load more read-only tools
     assert chat.model_ref(CODER) == "modelmistress/" + CODER and chat.model_ref("modelmistress/x") == "modelmistress/x"
 
 
@@ -215,7 +217,7 @@ def test_a_turn_runs_on_the_sessions_model_and_workspace_and_keeps_the_reply(tur
     started = asyncio.run(go())
     assert started["model"] == CODER and started["chat_id"] == f"localchat:{s['id']}"
     assert seen["model_override"] == "modelmistress/" + CODER and seen["backend_override"] == "native_agent"
-    assert seen["context"]["allowed_tools"] == frozenset() and seen["context"]["cwd"] == str(tmp_path)
+    assert "allowed_tools" not in seen["context"] and seen["context"]["cwd"] == str(tmp_path)   # Chat: every tool
     assert seen["context"]["approval_notify"] and seen["context"]["stream_notify"]
     msgs = store.messages(s["id"])
     assert [m["role"] for m in msgs] == ["user", "assistant"]

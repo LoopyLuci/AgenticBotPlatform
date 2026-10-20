@@ -11,10 +11,10 @@ for every other bot. The session picks the model per turn (router.ask(model_over
     steer(sid, text, how)        while a turn runs: "steer" adds the message to the running turn, "queue" keeps it for the
                                  next turn (started by itself when the current one finishes)
     rewind(sid, turn_id)         puts the workspace's files back as they were before that turn's tools ran (a checkpoint is
-                                 taken at the start of every Build / Plan turn); the turn's messages stay, marked reverted
+                                 taken at the start of every Chat / Build / Plan turn); the turn's messages stay, marked reverted
 
-Modes: chat (no tools), build (the agent's tools; edits ask as usual), plan (proposes a plan for approval first),
-review (read-only tools), factory (the message is a goal: the conductor plans it and nothing runs until the owner's Run -
+Modes: chat (every tool, conversational; edits ask as usual), build (every tool, in the session's worktree; edits ask as
+usual), plan (proposes a plan for approval first), review (read-only tools), factory (the message is a goal: the conductor plans it and nothing runs until the owner's Run -
 bot/localchat/factory.py). Autonomy 0-5 sets the turn's permission mode and rules (bot/localchat/autonomy.py). Cloud assist:
 "off" never leaves the machine; "ask" lets a single message go to the configured cloud backend (send(..., cloud=True));
 "auto" sends to the cloud when the capacity governor is cloud-led and keeps everything local otherwise. A turn works in the session's worktree when it has one (bot/localchat/worktrees.py); Build and
@@ -36,7 +36,7 @@ logger = logging.getLogger("bot.localchat.chat")
 Broadcast = Callable[[dict], Awaitable[None]]
 _running: dict[str, asyncio.Task] = {}
 _steer: dict[str, asyncio.Queue] = {}
-WRITES = ("build", "plan")          # modes whose tools can change files: checkpointed, kept out of the live checkout
+WRITES = ("chat", "build", "plan")  # modes whose tools can change files: checkpointed, kept out of the live checkout
 
 
 def chat_id(sid: str) -> str:
@@ -62,9 +62,8 @@ def ensure_instance() -> int:
 
 
 def tools_for(mode: str) -> Optional[frozenset]:
-    """The tools a mode offers: None = the agent's full set, an empty set = none."""
-    if mode == "chat":
-        return frozenset()
+    """The tools a mode offers: None = every tool the turn may use (a small local model is sent a core set and loads the rest
+    with find_tools - bot/agent_runtime/tool_discovery.py), else that set."""
     if mode == "review":
         from bot.agent_runtime import toolspec
 
@@ -157,7 +156,7 @@ async def send(sid: str, text: str, broadcast: Broadcast, *, cloud: bool = False
 
     cwd = worktrees.cwd_of(session)
     if session["mode"] in WRITES and cwd and not session.get("worktree") and _is_live_checkout(cwd):
-        raise ValueError("Build and Plan never work in the live ABP checkout: give this session a worktree first")
+        raise ValueError("Chat, Build and Plan never work in the live ABP checkout: give this session a worktree first")
     model = session["model"]
     if not model and not to_cloud:
         from bot.localchat import catalog

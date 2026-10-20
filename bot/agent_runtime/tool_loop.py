@@ -70,9 +70,16 @@ async def _run_one_tool(
     name, tool_input, *, workspace, instance_id, chat_id, session_key, notify, agent_tools, agent_approval,
     device_tier, outcome,
 ) -> str:
-    from bot.agent_runtime import hooks, permissions, secrets_guard, taint
+    from bot.agent_runtime import hooks, permissions, secrets_guard, taint, tool_discovery
 
     try:
+        # 0. Only a tool this turn may use (tool_discovery.py): allowed_tools used to hide schemas without stopping a
+        #    model that named a hidden tool.
+        if not tool_discovery.permitted(name):
+            outcome["status"], outcome["approval"], outcome["error"] = "denied", "policy", "not in this turn's tools"
+            _report_denial(name, tool_input, "not in this turn's tools", "pool", instance_id)
+            return f"Error: {name} is not available in this turn. Use find_tools to see what is."
+
         # 1. Credentials never leave in a request: refuse a network / external call whose arguments
         #    contain a value from the server's secrets.
         spec = toolspec.spec_for(name)

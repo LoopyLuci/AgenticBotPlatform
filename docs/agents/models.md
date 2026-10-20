@@ -150,6 +150,12 @@ affected unless you force `enabled: true`. A model with no `tool_call_modes` ent
 transport says it cannot do native tool calls (`supports_native_tools = False`); otherwise it stays `native`.
 The decision is shown once per session in the run's trace ("small-model mode on for ...").
 
+**The rest is one search away.** Each native turn records its tool pool: every tool it may use, after the admin gate and
+any `allowed_tools`, before this trim (`bot/agent_runtime/tool_discovery.py`). When fewer tools are sent than the pool
+holds, `find_tools` is sent too: it searches the pool for a plain-words query ("search my notes", "make an icon") and adds
+the matching tools to what is sent from the next step on. The pool is also enforced: a call naming a tool outside it is
+refused before it runs (before this, `allowed_tools` only hid schemas from the model).
+
 ## Not done
 
 * Tokens per minute are enforced from ABP's own estimate before a call and its counts after it; a
