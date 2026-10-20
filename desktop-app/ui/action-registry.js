@@ -181,6 +181,7 @@
     [['files', 'storage'], 'Files', 'fi'],
     [['servers'], 'Linked Servers', 'sv'],
     [['updates'], 'Updates', 'up'],
+    [['settings'], 'Settings', 'gs'],
   ];
 
   const ACTIONS = [

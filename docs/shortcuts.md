@@ -153,6 +153,7 @@ Generated from the registry; `tests/test_shortcuts.py` checks this table against
 | `nav.files` | Go to Files | `g fi` | anywhere |
 | `nav.servers` | Go to Linked Servers | `g sv` | anywhere |
 | `nav.updates` | Go to Updates | `g up` | anywhere |
+| `nav.settings` | Go to Settings | `g gs` | anywhere |
 
 ### Local Chat
 
