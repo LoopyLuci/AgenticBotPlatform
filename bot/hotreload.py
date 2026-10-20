@@ -391,6 +391,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.conductor.store", "bot.conductor.cache", "bot.conductor.proof", "bot.conductor.llm", "bot.conductor.shards", "bot.conductor.navctx", "bot.conductor.planner", "bot.conductor.reviewer", "bot.conductor.integrator", "bot.conductor.pusher", "bot.conductor.confine", "bot.conductor.run",  # the conductor: a connection per call, no state held in the modules
     "bot.manager.store", "bot.manager.escalations", "bot.manager.digest", "bot.manager.checkin",  # the manager channel: reads the board/conductor/capacity; a connection per call, no state held in the modules
     "bot.localchat.store", "bot.localchat.speed", "bot.localchat.catalog",  # Local Chat: a connection per call, a speed file and a short catalog cache
+    "bot.localchat.worktrees",  # Local Chat worktrees: git calls and per-repository locks (rebuilt empty on reload: nothing held between calls)
     "bot.models",
     "bot.push",
     "bot.desktop",

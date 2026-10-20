@@ -47,3 +47,34 @@ local_chat:
   cloud_assist: ask        # off | ask | auto
   catalog_ttl_s: 60
 ```
+
+## Sessions and worktrees
+
+Each session has a **status** (`working`, `needs_you` while an approval waits, `idle`, `error`, `done`) and **unread** (set
+when a turn ends, cleared by `POST …/read`); changes go out as `local_chat_session` frames and are kept as events
+(`GET /api/local-chat/events`) for the sidebar and notifications. Sessions can be put in user **groups**.
+
+A new Build / Plan / Review session on a git workspace gets its **own worktree** (`local_chat.worktrees: auto`; pass
+`"worktree": false` to skip): a new branch `<worktree_prefix>/<slug>-<id>` from the repository's current branch, in a short
+folder outside the repository (`local_chat.worktree_root`, default a folder in the agent state folder). Turns work there;
+the base checkout is never touched, and Build / Plan never work directly in the live ABP checkout.
+
+| Action | Route (`/api/local-chat/sessions/{sid}/worktree…`) | Notes |
+|---|---|---|
+| status | `GET` | branch, base, ahead / behind, dirty files, conflicts |
+| diff | `GET …/diff` | everything since the session forked from its base, untracked files included |
+| sync | `POST …/sync` | merges the base in; refused with uncommitted work; conflicts are listed, the merge is left in progress, and `hand_to_agent` starts a turn that resolves them |
+| commit | `GET …/commit-message`, `POST …/commit` | a drafted message the owner confirms |
+| merge / push | `POST …/queue-merge` | into the conductor's push queue, awaiting the owner's approval; nothing merges or pushes by itself |
+| keep / discard | `POST …/keep`, `POST …/discard` | discarding unmerged work answers 409 with what would be lost until `confirm` |
+
+Archiving a session removes an unchanged worktree and keeps a changed one; deleting a session with unmerged work asks
+first. `POST /api/local-chat/worktrees/prune` removes orphan worktrees without uncommitted work (and, with
+`clean_merged`, the clean worktrees whose branch is merged into its base).
+
+**Rewind**: every Build / Plan turn checkpoints the worktree (the shadow checkpoint store, never the repository's own git)
+before its tools run. `POST …/rewind {"turn_id"}` puts the files back, marks that turn's and every later turn's messages
+reverted (nothing is deleted) and checkpoints the state it left, so a rewind can be undone too.
+
+**Steer and queue**: `POST …/steer {"text", "how": "steer"}` adds a message to the running turn at its next step;
+`"how": "queue"` keeps it for the next turn, which starts by itself when the current one finishes cleanly.

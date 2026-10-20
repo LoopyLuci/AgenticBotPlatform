@@ -245,6 +245,22 @@ def compress(workspace: Path) -> str:
     return "Compressed — no net changes remained, history cleared back to session start."
 
 
+def mark(workspace: Path, label: str) -> str:
+    """Checkpoint whatever changed (if anything) and return the full hash of the shadow store's HEAD: the exact state of the
+    workspace right now, to restore later (Local Chat's per-turn rewind)."""
+    create_checkpoint(workspace, label)
+    return _run(["rev-parse", "HEAD"], workspace)
+
+
+def restore(workspace: Path, commit: str) -> str:
+    """Put the workspace's files back exactly as they were at `commit` (one of this workspace's checkpoints). The state it
+    leaves is checkpointed first, so a restore can itself be undone: returns that checkpoint's hash."""
+    before = mark(workspace, f"before restoring {commit[:8]}")
+    _run(["cat-file", "-e", f"{commit}^{{commit}}"], workspace)
+    _run(["reset", "--hard", commit], workspace)
+    return before
+
+
 def worktree(workspace: Path, name: str) -> str:
     """Adds a linked worktree next to `workspace` (not inside it — git
     forbids nesting a worktree under the repo it's linked to) on a new
