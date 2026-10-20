@@ -172,6 +172,22 @@ def test_an_ollama_model_is_named_by_its_tag_not_the_name_inside_its_gguf():
     assert hf["name"] == "Qwen3 Coder"
 
 
+def test_with_nothing_loaded_the_default_is_the_measured_coder_not_the_first_small_model():
+    # the live picker on 2026-10-20 with the Ollama folder added: nothing loaded, only suite reports -> a 1B tutor model won
+    def row(mid, *, size, evals=(), coder=False):
+        return {"id": mid, "kind": "chat", "group": "gpu", "loaded": False, "metadata": {"size_gb": size},
+                "evals": [{"kind": k, "score": s} for k, s in evals],
+                "strengths": [{"text": "coding (a code-tuned model)"}] if coder else []}
+    doc = {"models": [row("fractions-tutor-large:latest", size=1.1), row("qwen3:1.7b", size=1.4),
+                      row("qwen3.5:9b", size=5.6, evals=[("suite", 0.548)]),
+                      row(CODER, size=17.7, evals=[("suite", 0.581)], coder=True)]}
+    assert catalog.default_model(doc) == CODER
+    doc["models"][2]["evals"].append({"kind": "factory", "score": 0.6})        # a Factory result outranks the suite
+    assert catalog.default_model(doc) == "qwen3.5:9b"
+    no_evals = {"models": [row("tiny:1b", size=0.8), row("coder-small", size=3.0, coder=True)]}
+    assert catalog.default_model(no_evals) == "coder-small"
+
+
 def test_cpu_when_it_only_fits_in_memory():
     row = {"id": "a/b:c", "size_gb": 10.0}
     assert catalog._runs_on({"verdict": "does_not_fit"}, row, ram_free_gb=32) == "cpu"

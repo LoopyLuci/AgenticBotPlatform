@@ -267,7 +267,14 @@ def default_model(doc: dict) -> str:
         if r["loaded"]:
             return r["id"]
     gpu = [r for r in chat if r["group"] == "gpu"]
-    scored = sorted(gpu, key=lambda r: -max((e["score"] for e in r["evals"] if e["kind"] == "factory"), default=-1))
+
+    def rank(r: dict) -> tuple:
+        # measured here first (Factory runs, then the suite), then a code-tuned model, then the bigger one that still fits;
+        # never the list's order (that put a 1B Ollama tutor model ahead of the measured coder)
+        best = {k: max((e["score"] for e in r["evals"] if e["kind"] == k), default=-1.0) for k in ("factory", "suite")}
+        coder = any("coding" in s["text"] for s in r.get("strengths") or [])
+        return (best["factory"], best["suite"], coder, float((r.get("metadata") or {}).get("size_gb") or 0))
+    scored = sorted(gpu, key=rank, reverse=True)
     if scored:
         return scored[0]["id"]
     return chat[0]["id"] if chat else ""
