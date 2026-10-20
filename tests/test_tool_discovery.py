@@ -16,6 +16,7 @@ class Recorder:
     def __init__(self, responses):
         self.responses = list(responses)
         self.sent: list[list[str]] = []
+        self.prompts: list[str] = []
 
     def user_message(self, text, *, images=None, documents=None):
         return {"role": "user", "content": text}
@@ -25,6 +26,7 @@ class Recorder:
 
     async def send(self, **kw):
         self.sent.append([s["name"] for s in kw["tool_schemas"]])
+        self.prompts.append(kw.get("system_prompt") or "")
         return self.responses.pop(0)
 
 
@@ -82,6 +84,14 @@ def test_a_small_model_loads_a_tool_with_find_tools_and_then_uses_it(temp_db, mo
     assert "find_tools" in first and "list_skills" not in first          # the core set, plus the way to the rest
     assert "list_skills" in second                                       # loaded for the next step
     assert len(t.sent) == 3
+    assert tool_discovery.PROMPT_HINT.strip() in t.prompts[0]            # and the prompt says the rest exists
+
+
+def test_no_hint_when_every_tool_is_sent(temp_db, monkeypatch):
+    monkeypatch.setattr(small_model, "profile_for", lambda transport, model: None)
+    t = Recorder([_done()])
+    _ask(t)
+    assert tool_discovery.PROMPT_HINT.strip() not in t.prompts[0]
 
 
 def test_a_tool_outside_the_turns_pool_is_refused_even_when_named(temp_db, tmp_path):

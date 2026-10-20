@@ -390,6 +390,8 @@ class NativeAgentBackend(Backend):
             model_line=_model_line(self.transport, self.model), user_id=context.get("user_id"),
             compact=bool(small and small.compact_prompt),
         )
+        if len(tool_schemas) < len(pool) and any(s["name"] == tool_discovery.TOOL_NAME for s in tool_schemas):
+            system_prompt += tool_discovery.PROMPT_HINT
 
         # Plan mode (Phase G of the Claude API/Claude Code parity plan) —
         # "propose a plan, get human sign-off, then execute." context["plan_first"]

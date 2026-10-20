@@ -24,6 +24,10 @@ from typing import Optional
 
 TOOL_NAME = "find_tools"
 MAX_RESULTS = 8
+# Added to the system prompt when the sent tools are a trimmed set: a small model tends to reach for run_shell instead.
+PROMPT_HINT = ("\n\nYou have many more tools than the ones listed (skills, memory and notes, code search, web, image and "
+               "asset generation, models, ABP modules and more). Before using run_shell to find or inspect something ABP "
+               "knows about, call find_tools with what you want to do; the tools it returns can be called right away.")
 
 
 class _Turn:
