@@ -334,6 +334,8 @@
         p.running = true;
         if (msg.kind === 'text_delta') p.draft.text += msg.text || '';
         else if (msg.kind === 'reset') p.draft.text = '';
+        else if (msg.kind === 'loading') p.draft.loading = msg.model || 'the model';
+        else if (msg.kind === 'loaded') p.draft.loading = '';
         else if (msg.kind === 'tool_start') p.draft.tools.push({ name: msg.tool, state: 'running' });
         else if (msg.kind === 'tool_end') { const t = p.draft.tools.slice().reverse().find((x) => x.name === msg.tool && x.state === 'running'); if (t) t.state = 'done'; }
         renderDraft(i);
@@ -538,8 +540,9 @@ ${(mm.next.options || []).map((o) => `<button type="button" class="btn" data-lc=
     const d = p.draft;
     if (!d) return '';
     const tools = d.tools.length ? `<div class="lc-tools">${d.tools.map((t) => `<span class="lc-tool lc-tool-${E(t.state)}">${t.state === 'running' ? '⟳' : '✓'} ${E(t.name)}</span>`).join('')}</div>` : '';
-    const text = d.text ? md(d.text) : '<p class="lc-note">Thinking…</p>';
-    return `<div class="lc-msg lc-assistant lc-draft"><div class="lc-msg-head"><span class="lc-who">${E(shortModel(p.session && p.session.model) || 'assistant')}</span><span class="lc-meta">answering…</span></div>${tools}<div class="lc-msg-body">${text}</div></div>`;
+    const text = d.loading ? `<p class="lc-note">Loading ${E(shortModel(d.loading))} on ModelMistress first (it was not loaded, e.g. after a hub restart); a big model can take a minute.</p>`
+      : d.text ? md(d.text) : '<p class="lc-note">Thinking…</p>';
+    return `<div class="lc-msg lc-assistant lc-draft"><div class="lc-msg-head"><span class="lc-who">${E(shortModel(p.session && p.session.model) || 'assistant')}</span><span class="lc-meta">${d.loading ? 'loading the model…' : 'answering…'}</span></div>${tools}<div class="lc-msg-body">${text}</div></div>`;
   }
   function emptyHtml() {
     const model = S.catalog && S.catalog.default_model;

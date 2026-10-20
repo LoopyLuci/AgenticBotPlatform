@@ -263,6 +263,7 @@ def test_a_failed_turn_shows_the_error_instead_of_hanging(temp_db, monkeypatch):
         raise RuntimeError("hub went away")
 
     monkeypatch.setattr(router, "ask", boom)
+    monkeypatch.setattr(catalog, "get", lambda **k: {"device": DEVICE, "models": []})
     s = store.create(model=CODER)
     frames = []
 
@@ -272,6 +273,99 @@ def test_a_failed_turn_shows_the_error_instead_of_hanging(temp_db, monkeypatch):
     asyncio.run(go())
     last = store.messages(s["id"])[-1]
     assert last["role"] == "error" and "hub went away" in last["text"]
+
+
+@pytest.fixture
+def cold(temp_db, monkeypatch):
+    """A hub that has just restarted: the catalog knows the coder, the hub has nothing loaded; loading is recorded."""
+    from bot.router import router
+
+    box = {"loaded": set(), "events": [], "load_error": None}
+
+    async def ask(prompt, **kw):
+        box["events"].append(("ask", kw["model_override"]))
+        return BackendResult(text="warm now", tokens=5)
+
+    def load(model):
+        box["events"].append(("load", model))
+        if box["load_error"]:
+            raise box["load_error"]
+        box["loaded"].add(model)
+        return {"model": model, "state": "ready"}
+
+    def loaded_ids():
+        if isinstance(box["loaded"], Exception):
+            raise box["loaded"]
+        return set(box["loaded"])
+
+    monkeypatch.setattr(router, "ask", ask)
+    monkeypatch.setattr(catalog, "get", lambda **k: {"device": DEVICE, "models": [{"id": CODER, "loaded": True}]})  # stale
+    monkeypatch.setattr(catalog, "loaded_ids", loaded_ids)
+    monkeypatch.setattr(catalog, "load", load)
+    return box
+
+
+def _run_turn(sid):
+    frames = []
+
+    async def go():
+        await chat.send(sid, "hi", _bc(frames))
+        await asyncio.wait_for(chat._running[sid], 10)
+    asyncio.run(go())
+    return frames
+
+
+def test_a_cold_model_is_loaded_before_the_turn_and_the_pane_says_so(cold):
+    s = store.create(model=CODER)
+    frames = _run_turn(s["id"])
+    assert cold["events"] == [("load", CODER), ("ask", "modelmistress/" + CODER)]     # loaded first, then the turn
+    kinds = [f["kind"] for f in frames if f.get("type") == "chat_stream"]
+    assert kinds == ["loading", "loaded", "done"]
+    loading = next(f for f in frames if f.get("kind") == "loading")
+    assert loading["model"] == CODER and loading["chat_id"] == f"localchat:{s['id']}"
+    assert store.messages(s["id"])[-1]["text"] == "warm now"
+
+
+def test_a_warm_model_is_not_loaded_again(cold):
+    cold["loaded"] = {CODER}
+    s = store.create(model=CODER)
+    frames = _run_turn(s["id"])
+    assert cold["events"] == [("ask", "modelmistress/" + CODER)]
+    assert not [f for f in frames if f.get("kind") in ("loading", "loaded")]
+
+
+def test_a_model_that_cannot_load_says_so_instead_of_timing_out(cold):
+    cold["load_error"] = RuntimeError("out of VRAM")
+    s = store.create(model=CODER)
+    _run_turn(s["id"])
+    assert [e[0] for e in cold["events"]] == ["load"]                                  # the turn never started
+    last = store.messages(s["id"])[-1]
+    assert last["role"] == "error" and "could not load" in last["text"] and "out of VRAM" in last["text"]
+
+
+def test_no_answer_about_loaded_models_or_an_unknown_model_leaves_the_turn_as_before(cold, monkeypatch):
+    cold["loaded"] = ConnectionError("hub restarting")
+    s = store.create(model=CODER)
+    _run_turn(s["id"])
+    assert cold["events"] == [("ask", "modelmistress/" + CODER)]
+    cold["events"].clear()
+    cold["loaded"] = set()
+    monkeypatch.setattr(catalog, "get", lambda **k: {"device": DEVICE, "models": []})
+    _run_turn(s["id"])
+    assert cold["events"] == [("ask", "modelmistress/" + CODER)]
+
+
+def test_loaded_ids_reads_either_shape_the_hub_answers_with():
+    assert catalog.loaded_ids(lambda op, a: [{"model": CODER}, {"id": SMALL}, "junk"]) == {CODER, SMALL}
+    assert catalog.loaded_ids(lambda op, a: {"models": [{"model": CODER}]}) == {CODER}
+    assert catalog.loaded_ids(lambda op, a: None) == set()
+
+
+def test_the_pane_shows_the_loading_frame():
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parents[1] / "bot" / "dashboard" / "static" / "local-chat.js").read_text(encoding="utf-8")
+    assert "msg.kind === 'loading'" in js and "msg.kind === 'loaded'" in js and "loading the model" in js
 
 
 # ---- the transport reports llama.cpp's own speed -----------------------------------------------------------------------------

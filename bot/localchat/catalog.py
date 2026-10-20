@@ -29,6 +29,7 @@ _lock = threading.Lock()
 _cache: dict[str, Any] = {"ts": 0.0, "doc": None}
 
 Call = Callable[[str, Optional[dict]], Any]
+LOAD_TIMEOUT_S = 900.0     # a big model from a cold disk; the turn shows it is loading meanwhile
 
 
 def _hub_call(op: str, args: Optional[dict] = None) -> Any:
@@ -181,10 +182,9 @@ def build(call: Call = _hub_call, *, reports: Optional[list[dict]] = None, min_c
     listed = call("model.list", None) or []
     listed = listed if isinstance(listed, list) else (listed.get("models") or [])
     try:
-        loaded_rows = call("model.loaded", None) or []
+        loaded = loaded_ids(call)
     except Exception:  # noqa: BLE001
-        loaded_rows = []
-    loaded = {str(r.get("model") or r.get("id") or "") for r in loaded_rows if isinstance(r, dict)}
+        loaded = set()
     ram_free_gb = float(((status.get("system") or {}).get("available_mb") or 0)) / 1024
     reports = eval_reports() if reports is None else reports
 
@@ -208,6 +208,20 @@ def build(call: Call = _hub_call, *, reports: Optional[list[dict]] = None, min_c
                     "engine_version": status.get("llama_built_in") or status.get("llama_version")},
             "device": device, "ram_free_gb": round(ram_free_gb, 1), "min_context": min_context,
             "groups": [g for g in GROUP_ORDER if any(r["group"] == g for r in rows)], "models": rows, "built": time.time()}
+
+
+def loaded_ids(call: Call = _hub_call) -> set[str]:
+    """The models the hub has loaded right now (asked fresh: the cached catalog is stale after a hub restart)."""
+    rows = call("model.loaded", None) or []
+    rows = rows if isinstance(rows, list) else (rows.get("models") or [])
+    return {str(r.get("model") or r.get("id") or "") for r in rows if isinstance(r, dict)}
+
+
+def load(model: str) -> Any:
+    """Load `model` on the hub with the hub's own plan (what an on-demand load would use); waits until it is ready."""
+    from bot.modelmistress import client
+
+    return client.call("model.load", {"model": model}, timeout=LOAD_TIMEOUT_S)
 
 
 def get(*, refresh: bool = False, ttl_s: Optional[float] = None) -> dict:
