@@ -511,6 +511,38 @@ class Vault:
         return report
 
     # ------------------------------------------------------------------ recovery
+    OWNER_FILE = ".vault-index"
+
+    def _owns(self, backend, stray: list) -> bool:
+        """May recover() delete the files in `backend` that this index does not know? Only in a tier folder this vault owns.
+        Tier folders are absolute paths from the config, so a second ABP with its own data folder (a test instance, a staged
+        bundle) shares them; its sweep used to delete the live vault's items (2026-10-20: 13 of 22 lost). A folder records
+        its owner's index in .vault-index; an unmarked folder is claimed only when nothing in it is foreign."""
+        root = getattr(backend, "root", None)
+        if root is None:
+            return True
+        marker = Path(root) / self.OWNER_FILE
+        me = str(self.index_file.resolve())
+        try:
+            owner = marker.read_text(encoding="utf-8").strip()
+        except OSError:
+            owner = ""
+        if owner and Path(owner) != Path(me):
+            if stray:
+                logger.warning("context vault: tier %s (%s) belongs to the vault at %s; its %d item(s) unknown here are left alone",
+                               backend.name, root, owner, len(stray))
+            return False
+        if not owner:
+            if stray:
+                logger.warning("context vault: tier %s (%s) holds %d item(s) this vault does not know and has no owner mark; "
+                               "left alone (another vault may share the folder)", backend.name, root, len(stray))
+                return False
+            try:
+                marker.write_text(me, encoding="utf-8")
+            except OSError:
+                pass
+        return True
+
     def recover(self) -> dict:
         """Finish or roll back moves a crash left half done, forget RAM copies, sweep leftovers."""
         out = {"completed": 0, "rolled_back": 0, "lost": 0, "swept": 0}
@@ -540,11 +572,16 @@ class Vault:
                     out["lost"] += 1
             for backend in self.durable:
                 out["swept"] += backend.clear_partial()
+                stray = []
                 for key in backend.keys():
                     rows = self._q("SELECT tier FROM items WHERE id = ?", (key,))
                     if not rows or rows[0]["tier"] != backend.name:
-                        backend.delete(key)
-                        out["swept"] += 1
+                        stray.append(key)
+                if not self._owns(backend, stray):
+                    continue
+                for key in stray:
+                    backend.delete(key)
+                    out["swept"] += 1
         if out["completed"] or out["rolled_back"] or out["lost"]:
             self._incr("recovered", out["completed"] + out["rolled_back"])
             if out["lost"]:

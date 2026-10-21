@@ -219,6 +219,31 @@ def test_recovery_rolls_back_when_the_copy_is_damaged_and_sweeps_leftovers(tmp_p
     v2.close()
 
 
+def test_a_second_vault_sharing_the_tier_folders_never_sweeps_the_first_ones_items(tmp_path):
+    # 2026-10-20: tier folders are absolute paths from the config, so a second ABP (its own data folder, the same config)
+    # opened a vault on them, and its start-up sweep deleted the live vault's items as "unknown here".
+    live = make(tmp_path)
+    ids = [live.add(f"Decision {i}: keep the tiers apart from the index. " + unique(i), "decision")["id"] for i in range(3)]
+    live.close()
+    other = Vault(cfg_for(tmp_path), tmp_path / "other-home" / "index.db", clock=Clock())
+    other.close()
+    assert len(tier_files(tmp_path, "nvme")) == 3                            # nothing of the live vault's was swept
+    live = make(tmp_path)
+    assert all(live.get(i, touch=False) for i in ids)
+    live.close()
+
+
+def test_an_unmarked_tier_with_foreign_items_is_left_alone_and_a_clean_one_is_claimed(tmp_path):
+    v = make(tmp_path)
+    v.add("Note: the owner mark is written when the folder is clean.", "note")
+    v.close()
+    marker = tmp_path / "nvme" / Vault.OWNER_FILE
+    assert marker.read_text(encoding="utf-8") == str((tmp_path / "idx" / "index.db").resolve())
+    marker.unlink()                                                          # a folder from before the mark existed
+    Vault(cfg_for(tmp_path), tmp_path / "fresh" / "index.db", clock=Clock()).close()
+    assert len(tier_files(tmp_path, "nvme")) == 1 and not marker.exists()    # foreign item: kept, folder not claimed
+
+
 def test_recovery_after_the_index_update_removes_the_stale_source(tmp_path):
     v = make(tmp_path)
     iid = v.add("Rule: never store credentials in the vault.", "rule")["id"]
