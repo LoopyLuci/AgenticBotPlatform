@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 SHARED = 0                       # bot/memory.py's instance id for memories every bot and model shares
 # Backends that keep the conversation themselves; the native loop's three share one history (agent_messages).
 FAMILIES = {"api": "native", "custom_model": "native", "native_agent": "native"}
-STATELESS = {"hermes_cli", "opencode", "openclaw"}          # one prompt in, one answer out: they remember nothing
+STATELESS = {"hermes_cli", "opencode", "openclaw", "grok"}          # one prompt in, one answer out: they remember nothing
 HASH_FLOOR, RELATIVE = 0.06, 0.6     # recall: the hashed embedder's floor; the share of the best match a memory needs
 DEFAULTS = {"shared_approval": True, "recall_k": 6, "recall_min": 0.45, "block_chars": 4000, "handoff_chars": 6000,
             "handoff_turns": 12, "inject": True, "auto_extract": True, "summarizer": "", "vault": True,

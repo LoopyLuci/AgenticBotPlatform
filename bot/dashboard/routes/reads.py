@@ -156,7 +156,7 @@ def register(app: FastAPI, *, json_download: Callable) -> None:
             "family": backend_families(),
             "current": {
                 name: (config.current.get("backends", {}).get(name) or {}).get("model")
-                for name in ("api", "hermes_cli", "hermes_gateway", "opencode", "openclaw")
+                for name in ("api", "hermes_cli", "hermes_gateway", "opencode", "openclaw", "grok")
             },
             "live": {
                 "api": live_api,

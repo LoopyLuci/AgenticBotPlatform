@@ -713,7 +713,7 @@ let modelsCache = null;
 
 function _defaultModelInputFocused() {
   const active = document.activeElement;
-  return active && ['model-api', 'model-hermes_cli', 'model-hermes_gateway', 'model-opencode', 'model-openclaw'].includes(active.id);
+  return active && ['model-api', 'model-hermes_cli', 'model-hermes_gateway', 'model-opencode', 'model-openclaw', 'model-grok'].includes(active.id);
 }
 
 function _turnInputsFocused() {
@@ -749,6 +749,7 @@ async function refreshModels() {
 
   document.getElementById('model-opencode').value = m.current.opencode || '';
   document.getElementById('model-openclaw').value = m.current.openclaw || '';
+  document.getElementById('model-grok').value = m.current.grok || '';
 
   refreshBotModelOptions();
   refreshBots();
@@ -876,7 +877,7 @@ document.getElementById('model-api').onchange = async (e) => {
   await api('/api/config/set', { method: 'POST', body: JSON.stringify({ path: ['backends', 'api', 'model'], value }) });
   refreshConfig();
 };
-['hermes_cli', 'hermes_gateway', 'opencode', 'openclaw'].forEach(name => {
+['hermes_cli', 'hermes_gateway', 'opencode', 'openclaw', 'grok'].forEach(name => {
   document.getElementById(`model-${name}`).onchange = async (e) => {
     const value = e.target.value.trim() || null;
     await api('/api/config/set', { method: 'POST', body: JSON.stringify({ path: ['backends', name, 'model'], value }) });

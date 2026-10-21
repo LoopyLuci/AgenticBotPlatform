@@ -15,7 +15,7 @@ from textual.widgets import Button, Footer, Input, Label, Select, Static
 from bot.tui.client import ApiError
 
 from bot.bot_instances import PLATFORMS, STRING_ID_PLATFORMS
-BACKENDS = ("cli", "api", "ui", "hermes_cli", "hermes_gateway", "custom_model", "opencode", "openclaw")
+BACKENDS = ("cli", "api", "ui", "hermes_cli", "hermes_gateway", "custom_model", "opencode", "openclaw", "grok")
 
 
 class AddBotScreen(Screen):

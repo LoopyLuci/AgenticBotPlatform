@@ -897,6 +897,10 @@
             <div><div class="st">openclaw</div><div class="sd">Passed to `openclaw agent --model` — blank uses OpenClaw's own default.</div></div>
             <input type="text" id="model-openclaw" aria-label="openclaw" placeholder="(default)" style="min-width:220px;">
           </div>
+          <div class="settingrow">
+            <div><div class="st">grok</div><div class="sd">Passed to `grok --model` — blank uses Grok Build's own default. Run `grok models` for the list (e.g. grok-4.7, grok-4.7-build-fast). Sign in once with `grok login`.</div></div>
+            <input type="text" id="model-grok" aria-label="grok" placeholder="(default)" style="min-width:220px;">
+          </div>
         </div>
       </div>
 
@@ -1227,6 +1231,7 @@
               <optgroup label="Other agent CLIs (their own tools and permissions, not ABP's)">
                 <option value="opencode">opencode — OpenCode CLI</option>
                 <option value="openclaw">openclaw — OpenClaw CLI</option>
+                <option value="grok">grok — Grok Build CLI (xAI)</option>
               </optgroup>
             </select>
           </div>

@@ -51,7 +51,7 @@ async def _extract_memories(instance_id: int, prompt: str) -> None:
 
 
 BUILTIN_BACKENDS = ("api", "cli", "ui", "hermes_cli", "hermes_gateway", "custom_model", "native_agent", "opencode",
-                    "openclaw")
+                    "openclaw", "grok")
 
 
 class _BackendNames(Sequence):
@@ -304,6 +304,16 @@ class Router:
             return cls(
                 binary=b_cfg.get("binary", name), model=model_override or b_cfg.get("model"), agent=b_cfg.get("agent"),
                 extra_args=b_cfg.get("extra_args", []), cwd=b_cfg.get("cwd"), auto_approve=bool(b_cfg.get("auto_approve", False)),
+            )
+        if name == "grok":
+            # xAI's Grok Build CLI, signed in with `grok login` (bot/backends/external_agent_backend.py GrokBackend).
+            from bot.backends.external_agent_backend import GrokBackend
+
+            return GrokBackend(
+                binary=b_cfg.get("binary", "grok"), model=model_override or b_cfg.get("model"), agent=b_cfg.get("agent"),
+                extra_args=b_cfg.get("extra_args", []), cwd=b_cfg.get("cwd"), auto_approve=bool(b_cfg.get("auto_approve", False)),
+                permission_mode=b_cfg.get("permission_mode", "default"), sandbox=b_cfg.get("sandbox"),
+                tools=b_cfg.get("tools"), web_search=bool(b_cfg.get("web_search", True)),
             )
         from bot import extensions
 

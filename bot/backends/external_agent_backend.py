@@ -3,6 +3,7 @@
     backends:
       opencode:  {binary: opencode, model: null, agent: null, auto_approve: false, extra_args: []}
       openclaw:  {binary: openclaw, model: null, agent: null, extra_args: []}
+      grok:      {binary: grok, model: null, agent: null, permission_mode: default, sandbox: null, extra_args: []}
 
 The point is choice: a bot instance can use OpenCode or OpenClaw as its engine (with their own tools, models
 and permission handling) while keeping ABP's channels, pairing, schedules and dashboards around it. ABP's own
@@ -131,7 +132,8 @@ class ExternalAgentBackend(Backend):
                 raise
             text_out = out.decode("utf-8", "replace")[:MAX_OUTPUT_CHARS]
             if proc.returncode != 0:
-                detail = _ANSI.sub("", err.decode("utf-8", "replace")).strip() or _ANSI.sub("", text_out).strip()
+                detail = (self.failure_detail(text_out) or _ANSI.sub("", err.decode("utf-8", "replace")).strip()
+                          or _ANSI.sub("", text_out).strip())
                 raise BackendError(f"{self.name} exited with status {proc.returncode}: {detail[:500]}")
             reply = self.parse_output(text_out)
             if not reply:
@@ -139,6 +141,10 @@ class ExternalAgentBackend(Backend):
             return BackendResult(text=reply, raw={"backend": self.name, "exit": proc.returncode, **self.extra_raw(text_out)})
         finally:
             cell.close()          # the turn is over either way: release its job handle
+
+    def failure_detail(self, stdout: str) -> Optional[str]:
+        """The product's own error message from a failed run's stdout, when it reports one (GrokBackend); None = use stderr."""
+        return None
 
     def extra_raw(self, stdout: str) -> dict:
         """Extra BackendResult.raw fields a product's own output reveals — currently only
@@ -253,3 +259,85 @@ class OpenClawBackend(ExternalAgentBackend):
         if status in ("error", "failed", "timeout", "cancelled", "canceled"):
             raise BackendError(f"openclaw reported {status}: {(_find_text(data) or '')[:300]}")
         return _find_text(data) or cleaned
+
+
+# Grok Build's permission modes (`grok --help`, 1.0.62). bypassPermissions is refused: it would run every tool call unasked.
+GROK_PERMISSION_MODES = ("default", "acceptEdits", "auto", "dontAsk", "plan")
+_SESSION_KEYS = ("session_id", "sessionId", "sessionID")
+
+
+def _grok_events(stdout: str) -> list[dict]:
+    """`grok -p ... --output-format json`'s output as JSON objects: one document, or one object per line."""
+    cleaned = _ANSI.sub("", stdout).strip()
+    try:
+        data = json.loads(cleaned)
+    except ValueError:
+        return _opencode_events(cleaned)
+    if isinstance(data, list):
+        return [d for d in data if isinstance(d, dict)]
+    return [data] if isinstance(data, dict) else []
+
+
+def _grok_error(stdout: str) -> Optional[str]:
+    """The message of a `{"type":"error","message":...}` event. Confirmed live (grok 1.0.62): a 402 "usage balance
+    exhausted" prints exactly that on stdout and exits 1."""
+    for ev in _grok_events(stdout):
+        if ev.get("type") == "error":
+            msg = ev.get("message") or ev.get("error") or "grok reported an error"
+            return (msg if isinstance(msg, str) else json.dumps(msg))[:500]
+    return None
+
+
+class GrokBackend(ExternalAgentBackend):
+    """xAI's Grok Build CLI (`npm i -g @xai-official/grok`), signed in once with `grok login` (OAuth): no key in ABP's config.
+    Headless: `grok -p <prompt> --output-format json`. Confirmed live: the error event shape and exit status 1. Not yet observed
+    live: a successful reply's JSON (the account had no Grok Build balance when this was written), so the reply and the session
+    id are found by the generic search OpenCodeBackend also uses, not a hard-coded field name."""
+
+    name = "grok"
+
+    def __init__(self, binary: str = "grok", *, permission_mode: str = "default", sandbox: Optional[str] = None,
+                 tools: Optional[str] = None, web_search: bool = True, **kw):
+        super().__init__(binary, **kw)
+        if self.auto_approve and permission_mode == "default":
+            permission_mode = "acceptEdits"           # auto_approve accepts file edits; it never becomes bypassPermissions
+        if permission_mode not in GROK_PERMISSION_MODES:
+            raise ValueError(f"grok permission_mode must be one of {', '.join(GROK_PERMISSION_MODES)} (bypassPermissions is refused)")
+        if any(a in ("--always-approve", "bypassPermissions") for a in self.extra_args):
+            raise ValueError("grok extra_args may not approve every tool call (--always-approve / bypassPermissions)")
+        self.permission_mode, self.sandbox, self.tools, self.web_search = permission_mode, sandbox, tools, web_search
+
+    def build_args(self, prompt, *, cwd, session, timeout_s):
+        args = ["-p", prompt, "--output-format", "json", "--permission-mode", self.permission_mode]
+        if self.model:
+            args += ["--model", self.model]
+        if self.agent:
+            args += ["--agent", self.agent]
+        if self.sandbox:
+            args += ["--sandbox", self.sandbox]       # Grok's own filesystem/network profile, on top of ABP's process cell
+        if self.tools is not None:
+            args += ["--tools", self.tools]           # "" = no built-in tools at all: text only
+        if not self.web_search:
+            args += ["--disable-web-search"]
+        if cwd:
+            args += ["--cwd", str(cwd)]
+        if session:
+            args += ["--resume", str(session)]
+        return args
+
+    def failure_detail(self, stdout: str) -> Optional[str]:
+        return _grok_error(stdout)
+
+    def parse_output(self, stdout: str) -> str:
+        msg = _grok_error(stdout)
+        if msg:
+            raise BackendError(f"grok reported an error: {msg}")
+        events = _grok_events(stdout)
+        return (_find_text(events) if events else None) or super().parse_output(stdout)
+
+    def extra_raw(self, stdout: str) -> dict:
+        for ev in reversed(_grok_events(stdout)):
+            sid = next((ev[k] for k in _SESSION_KEYS if isinstance(ev.get(k), str) and ev[k]), None)
+            if sid:
+                return {"desktop_session_key": sid}
+        return {}

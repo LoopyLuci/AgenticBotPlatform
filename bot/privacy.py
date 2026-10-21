@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
 
-CLOUD_BACKENDS = frozenset({"api", "cli", "ui", "hermes_cli", "hermes_gateway", "opencode", "openclaw"})
+CLOUD_BACKENDS = frozenset({"api", "cli", "ui", "hermes_cli", "hermes_gateway", "opencode", "openclaw", "grok"})
 NETWORK_TOOLS = frozenset({"web_search", "web_fetch", "browser_navigate", "browser_click", "browser_type", "browser_snapshot",
                            "browser_screenshot", "browser", "consult_models", "dispatch_batch_completions",
                            "check_batch_status", "get_batch_results", "fetch_url", "http_request"})

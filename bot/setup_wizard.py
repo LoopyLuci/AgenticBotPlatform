@@ -247,6 +247,10 @@ def _openclaw_ready() -> tuple[bool, str]:
     return _binary_ready("openclaw", "openclaw")
 
 
+def _grok_ready() -> tuple[bool, str]:
+    return _binary_ready("grok", "grok")
+
+
 _READINESS_CHECKS: dict[str, Callable[[], tuple[bool, str]]] = {
     "api": _api_ready,
     "cli": _cli_ready,
@@ -257,6 +261,7 @@ _READINESS_CHECKS: dict[str, Callable[[], tuple[bool, str]]] = {
     "native_agent": _custom_model_ready,  # same providers.yaml registry
     "opencode": _opencode_ready,
     "openclaw": _openclaw_ready,
+    "grok": _grok_ready,
 }
 
 

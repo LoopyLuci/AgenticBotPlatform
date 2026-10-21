@@ -32,7 +32,8 @@ BACKEND_FAMILY: dict[str, str] = {
     "hermes_gateway": "hermes",
     "custom_model": "custom",
     "native_agent": "custom",
-    "opencode": "custom",       # provider/model strings, like custom_model; the model itself is resolved by that product
+    "opencode": "custom",
+    "grok": "custom",           # Grok Build's own model names (grok-4.7, ...), resolved by the grok CLI       # provider/model strings, like custom_model; the model itself is resolved by that product
     "openclaw": "custom",
 }
 
