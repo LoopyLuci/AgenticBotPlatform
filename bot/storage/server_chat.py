@@ -36,8 +36,17 @@ def delete_server_chat_conversation(conversation_id: int) -> bool:
     direct 1:1 conversation can. Returns False if it didn't exist."""
     conn = _db.get_conn()
     with _db._lock:
-        if conn.execute("SELECT 1 FROM server_chat_conversations WHERE id=?", (conversation_id,)).fetchone() is None:
+        conv = conn.execute(
+            "SELECT kind, participant_a, participant_b FROM server_chat_conversations WHERE id=?", (conversation_id,)
+        ).fetchone()
+        if conv is None:
             return False
+        if conv["kind"] == "direct":
+            # Tombstone so backfill doesn't resurrect it on the next start.
+            conn.execute(
+                "INSERT OR REPLACE INTO server_chat_deleted_pairs (participant_a, participant_b, deleted_at) VALUES (?, ?, ?)",
+                (conv["participant_a"], conv["participant_b"], _db._now()),
+            )
         msg_rows = conn.execute(
             "SELECT attachment_path, thumbnail_path FROM server_chat_messages WHERE conversation_id=?",
             (conversation_id,),
@@ -74,9 +83,11 @@ def ensure_server_chat_group() -> int:
         return cur.lastrowid
 
 
-def ensure_direct_conversation(device_a: int, device_b: int) -> int:
+def ensure_direct_conversation(device_a: int, device_b: int, *, respect_deleted: bool = False) -> Optional[int]:
     """One row per unordered device pair — participant_a is always the
-    smaller id so (3, 7) and (7, 3) resolve to the same conversation."""
+    smaller id so (3, 7) and (7, 3) resolve to the same conversation.
+    `respect_deleted` (used by the startup backfill) returns None for a pair
+    the owner fully deleted; an explicit call clears that tombstone."""
     lo, hi = (device_a, device_b) if device_a <= device_b else (device_b, device_a)
     conn = _db.get_conn()
     with _db._lock:
@@ -86,6 +97,12 @@ def ensure_direct_conversation(device_a: int, device_b: int) -> int:
         ).fetchone()
         if row is not None:
             return row["id"]
+        if conn.execute(
+            "SELECT 1 FROM server_chat_deleted_pairs WHERE participant_a=? AND participant_b=?", (lo, hi)
+        ).fetchone() is not None:
+            if respect_deleted:
+                return None
+            conn.execute("DELETE FROM server_chat_deleted_pairs WHERE participant_a=? AND participant_b=?", (lo, hi))
         cur = conn.execute(
             "INSERT INTO server_chat_conversations (kind, participant_a, participant_b, created_at) "
             "VALUES ('direct', ?, ?, ?)",
@@ -104,7 +121,7 @@ def backfill_server_chat_conversations() -> None:
     devices = [_db.SERVER_CHAT_DESKTOP_DEVICE_ID] + keys
     for i, a in enumerate(devices):
         for b in devices[i + 1:]:
-            _db.ensure_direct_conversation(a, b)
+            _db.ensure_direct_conversation(a, b, respect_deleted=True)
 
 
 def create_conversations_for_new_device(device_id: int) -> None:
@@ -113,10 +130,10 @@ def create_conversations_for_new_device(device_id: int) -> None:
     every other already-paired (non-revoked) device, so every device can
     reach every other device from the moment it's added without anyone
     having to manually start a chat."""
-    _db.ensure_direct_conversation(device_id, _db.SERVER_CHAT_DESKTOP_DEVICE_ID)
+    _db.ensure_direct_conversation(device_id, _db.SERVER_CHAT_DESKTOP_DEVICE_ID, respect_deleted=True)
     for row in _db.list_api_keys(kind="device"):
         if row["id"] != device_id and not row["revoked_at"]:
-            _db.ensure_direct_conversation(device_id, row["id"])
+            _db.ensure_direct_conversation(device_id, row["id"], respect_deleted=True)
 
 
 def is_conversation_participant(conversation_id: int, device_id: int) -> bool:
@@ -149,7 +166,7 @@ def list_server_chat_conversations(device_id: int) -> list[dict]:
             d["peer_device_id"] = None
         else:
             peer_id = d["participant_b"] if d["participant_a"] == device_id else d["participant_a"]
-            d["title"] = _db.device_label(peer_id)
+            d["title"] = d.get("custom_title") or _db.device_label(peer_id)
             d["peer_device_id"] = peer_id
         last = conn.execute(
             "SELECT text, ts, attachment_name FROM server_chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 1",
@@ -217,3 +234,43 @@ def delete_server_chat_message(message_id: int) -> bool:
         conn.execute("DELETE FROM server_chat_messages WHERE id=?", (message_id,))
         conn.commit()
         return True
+
+
+def rename_server_chat_conversation(conversation_id: int, title: str) -> bool:
+    """Sets (or, for an empty title, clears) a direct conversation's custom
+    display name. The group room keeps its fixed name — the caller refuses it."""
+    conn = _db.get_conn()
+    with _db._lock:
+        cur = conn.execute(
+            "UPDATE server_chat_conversations SET custom_title=? WHERE id=?",
+            ((title or "").strip()[:80] or None, conversation_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def search_server_chat_messages(conversation_ids: list[int], query: str, limit: int = 50) -> list[dict]:
+    """Case-insensitive text/attachment-name search across the given conversations."""
+    q = (query or "").strip()
+    if not q or not conversation_ids:
+        return []
+    like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    marks = ",".join("?" * len(conversation_ids))
+    rows = _db.get_conn().execute(
+        f"SELECT id, conversation_id, sender_device_id, ts, text, attachment_name FROM server_chat_messages "
+        f"WHERE conversation_id IN ({marks}) AND (text LIKE ? ESCAPE '\\' OR attachment_name LIKE ? ESCAPE '\\') "
+        f"ORDER BY id DESC LIMIT ?",
+        (*conversation_ids, like, like, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def set_server_chat_archived(conversation_id: int, archived: bool) -> bool:
+    conn = _db.get_conn()
+    with _db._lock:
+        cur = conn.execute(
+            "UPDATE server_chat_conversations SET archived=? WHERE id=? AND kind='direct'",
+            (1 if archived else 0, conversation_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0

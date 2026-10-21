@@ -4588,7 +4588,9 @@ let serverChatPendingFile = null;
 async function refreshServerChatList() {
   const select = document.getElementById('serverchat-conversation');
   try {
-    serverChatState.conversations = await api('/api/server-chat/conversations');
+    const all = await api('/api/server-chat/conversations');
+    const showArch = document.getElementById('serverchat-show-archived').checked;
+    serverChatState.conversations = all.filter(c => !!c.archived === showArch || c.kind === 'group');
   } catch (_e) { return; }
   const prevValue = select.value;
   select.innerHTML = serverChatState.conversations.map(c => {
@@ -4627,12 +4629,99 @@ document.getElementById('btn-serverchat-copy').onclick = () => {
 document.getElementById('btn-serverchat-clear').onclick = async () => {
   if (!serverChatState.activeId) return;
   const conv = serverChatState.conversations.find(c => c.id === serverChatState.activeId);
-  if (!confirm(`Delete all history in "${conv ? conv.title : 'this conversation'}"? This permanently removes its messages and attachments — export first if you want a copy.`)) return;
-  await api(`/api/server-chat/conversations/${serverChatState.activeId}`, { method: 'DELETE' });
+  if (conv && conv.kind === 'group') { alert('The Server Chat group room is permanent: its history can\'t be cleared or deleted.'); return; }
+  if (!confirm(`Delete all history in "${conv ? conv.title : 'this conversation'}"? This permanently removes its messages and attachments (the conversation itself stays) — export first if you want a copy.`)) return;
+  try {
+    await api(`/api/server-chat/conversations/${serverChatState.activeId}`, { method: 'DELETE' });
+  } catch (e) { alert('Clear failed: ' + (e.message || e)); return; }
   document.getElementById('serverchat-window').innerHTML = '';
   serverChatState.lastId = 0;
   refreshServerChatList();
 };
+document.getElementById('btn-serverchat-delete').onclick = async () => {
+  if (!serverChatState.activeId) return;
+  const conv = serverChatState.conversations.find(c => c.id === serverChatState.activeId);
+  if (conv && conv.kind === 'group') { alert('The Server Chat group room is permanent and can\'t be deleted.'); return; }
+  if (!confirm(`Delete the conversation "${conv ? conv.title : ''}" entirely? This permanently removes the conversation, all its messages and attachment files. It reappears empty only if either device messages the other again. Export first if you want a copy.`)) return;
+  try {
+    await api(`/api/server-chat/conversations/${serverChatState.activeId}?full=true`, { method: 'DELETE' });
+  } catch (e) { alert('Delete failed: ' + (e.message || e)); return; }
+  serverChatState.activeId = null;
+  document.getElementById('serverchat-window').innerHTML = '';
+  refreshServerChatList();
+};
+document.getElementById('serverchat-show-archived').onchange = () => {
+  const showArch = document.getElementById('serverchat-show-archived').checked;
+  document.getElementById('btn-serverchat-archive').textContent = showArch ? '🗄 Unarchive' : '🗄 Archive';
+  serverChatState.activeId = null;
+  refreshServerChatList();
+};
+document.getElementById('btn-serverchat-archive').onclick = async () => {
+  if (!serverChatState.activeId) return;
+  const conv = serverChatState.conversations.find(c => c.id === serverChatState.activeId);
+  if (conv && conv.kind === 'group') { alert("The group room is always visible and can't be archived."); return; }
+  const archived = !document.getElementById('serverchat-show-archived').checked;
+  try {
+    await api(`/api/server-chat/conversations/${serverChatState.activeId}/archive`, { method: 'POST', body: JSON.stringify({ archived }) });
+  } catch (e) { alert('Failed: ' + (e.message || e)); return; }
+  serverChatState.activeId = null;
+  refreshServerChatList();
+};
+document.getElementById('btn-serverchat-rename').onclick = async () => {
+  if (!serverChatState.activeId) return;
+  const conv = serverChatState.conversations.find(c => c.id === serverChatState.activeId);
+  if (conv && conv.kind === 'group') { alert('The group room\'s name is fixed.'); return; }
+  const title = prompt('New name (leave empty to use the device name):', conv ? conv.title : '');
+  if (title === null) return;
+  try {
+    await api(`/api/server-chat/conversations/${serverChatState.activeId}`, { method: 'PATCH', body: JSON.stringify({ title }) });
+  } catch (e) { alert('Rename failed: ' + (e.message || e)); return; }
+  refreshServerChatList();
+};
+document.getElementById('btn-serverchat-bulk').onclick = () => {
+  const panel = document.getElementById('serverchat-bulk-panel');
+  if (!panel.classList.toggle('hidden')) {
+    const direct = serverChatState.conversations.filter(c => c.kind !== 'group');
+    panel.innerHTML = direct.length
+      ? direct.map(c => `<label style="display:block"><input type="checkbox" class="sc-bulk" value="${c.id}"> ${esc(c.title)}</label>`).join('')
+        + '<button class="btn" id="btn-sc-bulk-clear">Clear history of selected</button> <button class="btn" id="btn-sc-bulk-del" style="color:var(--critical);">Delete selected</button>'
+      : 'No deletable conversations (the group room is permanent).';
+    const run = async (full) => {
+      const picked = [...panel.querySelectorAll('.sc-bulk:checked')].map(i => Number(i.value));
+      if (!picked.length) return;
+      const names = picked.map(id => (serverChatState.conversations.find(c => c.id === id) || {}).title).join(', ');
+      const what = full ? 'permanently delete these conversations with all their messages and attachment files' : 'permanently delete all messages and attachment files in these conversations (the conversations stay)';
+      if (!confirm(`This will ${what}:\n${names}\n\nExport first if you want a copy. Continue?`)) return;
+      try {
+        await api('/api/server-chat/conversations/bulk-delete', { method: 'POST', body: JSON.stringify({ ids: picked, full }) });
+      } catch (e) { alert('Failed: ' + (e.message || e)); return; }
+      panel.classList.add('hidden');
+      serverChatState.activeId = null;
+      document.getElementById('serverchat-window').innerHTML = '';
+      refreshServerChatList();
+    };
+    const bc = document.getElementById('btn-sc-bulk-clear'); if (bc) bc.onclick = () => run(false);
+    const bd = document.getElementById('btn-sc-bulk-del'); if (bd) bd.onclick = () => run(true);
+  }
+};
+document.getElementById('serverchat-search').addEventListener('input', async (e) => {
+  const box = document.getElementById('serverchat-search-results');
+  const q = e.target.value.trim();
+  if (!q) { box.classList.add('hidden'); return; }
+  try {
+    const rows = await api('/api/server-chat/search?q=' + encodeURIComponent(q));
+    box.classList.remove('hidden');
+    box.innerHTML = rows.length ? rows.map(r => {
+      const c = serverChatState.conversations.find(x => x.id === r.conversation_id);
+      return `<div><a href="#" data-conv="${r.conversation_id}">${esc(c ? c.title : '#' + r.conversation_id)}</a>: ${esc((r.text || r.attachment_name || '').slice(0, 80))}</div>`;
+    }).join('') : 'No matches.';
+    box.querySelectorAll('a[data-conv]').forEach(a => a.onclick = (ev) => {
+      ev.preventDefault();
+      document.getElementById('serverchat-conversation').value = a.dataset.conv;
+      activateServerChatConversation(Number(a.dataset.conv));
+    });
+  } catch (_e) { /* ignore */ }
+});
 
 async function downloadServerChatAttachment(messageId, name) {
   try {
@@ -4785,7 +4874,8 @@ function appendServerChatMessages(rows) {
     meta.className = 'chat-meta';
     meta.textContent = fmtChatTime(m.ts);
     bubble.appendChild(meta);
-    if (isOut) {
+    const scConv = serverChatState.conversations.find(c => c.id === serverChatState.activeId);
+    if (!(scConv && scConv.kind === 'group')) {
       const del = document.createElement('button');
       del.type = 'button';
       del.className = 'chat-msg-delete';

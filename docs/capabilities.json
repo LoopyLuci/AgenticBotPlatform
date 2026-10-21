@@ -4,7 +4,7 @@
   "action": 102,
   "module": 9,
   "page": 59,
-  "route": 1047,
+  "route": 1043,
   "setting": 72
  },
  "entries": [
@@ -5921,6 +5921,16 @@
   {
    "cloud": false,
    "desc": "API (server-chat)",
+   "id": "route:GET /api/server-chat/search",
+   "keywords": "server-chat",
+   "kind": "route",
+   "label": "Api Server Chat Search",
+   "network": false,
+   "where": "GET /api/server-chat/search"
+  },
+  {
+   "cloud": false,
+   "desc": "API (server-chat)",
    "id": "route:GET /api/server-chat/whoami",
    "keywords": "server-chat",
    "kind": "route",
@@ -6890,26 +6900,6 @@
   },
   {
    "cloud": false,
-   "desc": "API (vision)",
-   "id": "route:GET /api/vision",
-   "keywords": "vision",
-   "kind": "route",
-   "label": "Vision Status",
-   "network": false,
-   "where": "GET /api/vision"
-  },
-  {
-   "cloud": false,
-   "desc": "API (vision)",
-   "id": "route:GET /api/vision/out/{name}",
-   "keywords": "vision",
-   "kind": "route",
-   "label": "Vision Out",
-   "network": false,
-   "where": "GET /api/vision/out/{name}"
-  },
-  {
-   "cloud": false,
    "desc": "API (vm-harness)",
    "id": "route:GET /api/vm-harness/audit",
    "keywords": "vm-harness",
@@ -7237,6 +7227,16 @@
    "label": "Mem Source Update",
    "network": false,
    "where": "PATCH /api/memory/sources/{source_id}"
+  },
+  {
+   "cloud": false,
+   "desc": "API (server-chat)",
+   "id": "route:PATCH /api/server-chat/conversations/{conversation_id}",
+   "keywords": "server-chat",
+   "kind": "route",
+   "label": "Api Server Chat Rename",
+   "network": false,
+   "where": "PATCH /api/server-chat/conversations/{conversation_id}"
   },
   {
    "cloud": false,
@@ -10401,6 +10401,26 @@
   {
    "cloud": false,
    "desc": "API (server-chat)",
+   "id": "route:POST /api/server-chat/conversations/bulk-delete",
+   "keywords": "server-chat",
+   "kind": "route",
+   "label": "Api Server Chat Bulk Delete",
+   "network": false,
+   "where": "POST /api/server-chat/conversations/bulk-delete"
+  },
+  {
+   "cloud": false,
+   "desc": "API (server-chat)",
+   "id": "route:POST /api/server-chat/conversations/{conversation_id}/archive",
+   "keywords": "server-chat",
+   "kind": "route",
+   "label": "Api Server Chat Archive",
+   "network": false,
+   "where": "POST /api/server-chat/conversations/{conversation_id}/archive"
+  },
+  {
+   "cloud": false,
+   "desc": "API (server-chat)",
    "id": "route:POST /api/server-chat/send",
    "keywords": "server-chat",
    "kind": "route",
@@ -11467,66 +11487,6 @@
    "label": "Vault Add",
    "network": false,
    "where": "POST /api/vault"
-  },
-  {
-   "cloud": false,
-   "desc": "API (vision)",
-   "id": "route:POST /api/vision/analyze",
-   "keywords": "vision",
-   "kind": "route",
-   "label": "Vision Analyze",
-   "network": false,
-   "where": "POST /api/vision/analyze"
-  },
-  {
-   "cloud": false,
-   "desc": "API (vision)",
-   "id": "route:POST /api/vision/compare",
-   "keywords": "vision",
-   "kind": "route",
-   "label": "Vision Compare",
-   "network": false,
-   "where": "POST /api/vision/compare"
-  },
-  {
-   "cloud": false,
-   "desc": "API (vision)",
-   "id": "route:POST /api/vision/edit",
-   "keywords": "vision",
-   "kind": "route",
-   "label": "Vision Edit",
-   "network": false,
-   "where": "POST /api/vision/edit"
-  },
-  {
-   "cloud": false,
-   "desc": "API (vision)",
-   "id": "route:POST /api/vision/faces",
-   "keywords": "vision",
-   "kind": "route",
-   "label": "Vision Faces",
-   "network": false,
-   "where": "POST /api/vision/faces"
-  },
-  {
-   "cloud": false,
-   "desc": "API (vision)",
-   "id": "route:POST /api/vision/find",
-   "keywords": "vision",
-   "kind": "route",
-   "label": "Vision Find",
-   "network": false,
-   "where": "POST /api/vision/find"
-  },
-  {
-   "cloud": false,
-   "desc": "API (vision)",
-   "id": "route:POST /api/vision/models/{model}/fetch",
-   "keywords": "vision",
-   "kind": "route",
-   "label": "Vision Fetch",
-   "network": false,
-   "where": "POST /api/vision/models/{model}/fetch"
   },
   {
    "cloud": false,
