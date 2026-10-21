@@ -88,7 +88,8 @@ _SYNONYMS = {
     "url": ("fetch",), "skill": ("skill",), "skills": ("skill",), "test": ("tests", "run"), "tests": ("run",),
     "symbol": ("find", "outline", "references"), "code": ("code", "symbol", "outline"), "train": ("train", "lab"),
     "model": ("model", "models"), "models": ("model",), "plugin": ("plugin",), "schedule": ("schedule",),
-    "subagent": ("subagent", "spawn"), "agent": ("subagent", "agents"), "kanban": ("kanban", "card"),
+    "subagent": ("subagent", "spawn"), "bot": ("instance", "delegate", "bots"), "bots": ("instance", "delegate"),
+    "remote": ("instance", "delegate"), "delegate": ("instance", "bots"), "mention": ("instance", "delegate"), "agent": ("subagent", "agents"), "kanban": ("kanban", "card"),
     # "where is X defined, what calls it" (the 2026-10-20 eval went to grep): the code-navigation tools
     "define": ("find", "symbol"), "defined": ("find", "symbol"), "definition": ("find", "symbol"),
     "call": ("callers", "references"), "calls": ("callers", "references"), "called": ("callers", "references"),

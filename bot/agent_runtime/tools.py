@@ -467,15 +467,45 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "gives Hermes agents. Only instances your own can_target list allows are reachable when the "
             "dashboard's agent_control mode is 'allowlist'; under the default 'trust_all' mode any instance "
             "is reachable. Bounded by agent_runtime.max_delegation_depth to prevent an accidental delegation "
-            "cycle between two instances that target each other."
+            "cycle between two instances that target each other. Pass the same 'conversation' label on later "
+            "calls to keep talking to that bot in ONE session (multi-turn); 'files' inlines workspace files into "
+            "the prompt; 'save_to' also writes the reply to a workspace file. When the person writes @botname, "
+            "that is a registered bot: use this tool for it. list_bot_instances shows the bots."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "target_instance": {"type": "string", "description": "Target bot_instances.id (or exact name)."},
                 "prompt": {"type": "string", "description": "The question/task to send it."},
+                "conversation": {"type": "string", "description": "Optional label; reuse it to continue the same session with this bot."},
+                "files": {"type": "array", "items": {"type": "string"}, "description": "Optional workspace-relative files to include in the prompt."},
+                "save_to": {"type": "string", "description": "Optional workspace-relative file to write the reply to."},
             },
             "required": ["target_instance", "prompt"],
+        },
+    },
+    {
+        "name": "list_bot_instances",
+        "description": (
+            "List the registered bots (Remote Bots) you can delegate to: id, name, platform, backend, model, "
+            "enabled, and whether you may target it. Use before delegate_to_instance / delegate_to_bots."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "delegate_to_bots",
+        "description": (
+            "Run several registered bots in parallel on parts of one task and get all their replies back together "
+            "to combine. Each task is {target_instance, prompt, conversation?, files?}. Same permissions, depth "
+            "limit and audit as delegate_to_instance. A failing bot is reported in its own entry, not for all."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"tasks": {"type": "array", "items": {"type": "object", "properties": {
+                "target_instance": {"type": "string"}, "prompt": {"type": "string"},
+                "conversation": {"type": "string"}, "files": {"type": "array", "items": {"type": "string"}},
+            }, "required": ["target_instance", "prompt"]}}},
+            "required": ["tasks"],
         },
     },
     {
@@ -1013,6 +1043,69 @@ def resolve_workspace(instance_id: int, cwd_override: Optional[str]) -> Path:
 
 _safe_path = safe_path
 
+MAX_DELEGATE_FILE_CHARS = 20000
+
+
+async def _delegate_one(tool_input: dict, workspace: Path, instance_id: int) -> str:
+    """One delegation to a registered bot (delegate_to_instance, and each task of delegate_to_bots)."""
+    from bot import agent_control, bot_instances, db
+    from bot.backends.base import BackendError
+    from bot.config import config
+    from bot.router import router
+
+    target_ref = tool_input.get("target_instance")
+    prompt = (tool_input.get("prompt") or "").strip()
+    if not target_ref or not prompt:
+        raise ToolError("both target_instance and prompt are required")
+
+    max_depth = (config.current.get("agent_runtime") or {}).get("max_delegation_depth", 2)
+    depth = _delegation_depth.get()
+    if depth >= max_depth:
+        raise ToolError(
+            f"delegation depth limit reached (depth={depth}, max_delegation_depth={max_depth}) — "
+            "raise agent_runtime.max_delegation_depth in config/backends.yaml if deeper nesting is required"
+        )
+
+    target = agent_control.resolve_instance(str(target_ref).lstrip("@"))
+    if target is None:
+        raise ToolError(f"no bot instance found matching {target_ref!r}")
+    if not agent_control.can_target(instance_id, target["id"]):
+        raise ToolError(f"instance {instance_id} is not permitted to target {target['name']!r} under the current allowlist")
+
+    files = tool_input.get("files") or []
+    if not isinstance(files, list):
+        raise ToolError("files must be an array of workspace-relative paths")
+    parts = []
+    for rel in files[:10]:
+        path = _safe_path(workspace, str(rel))
+        if not path.is_file():
+            raise ToolError(f"{rel!r} is not a file in the workspace")
+        parts.append(f"--- file: {rel} ---\n{path.read_text(encoding='utf-8', errors='replace')[:MAX_DELEGATE_FILE_CHARS]}")
+    if parts:
+        prompt = prompt + "\n\n" + "\n\n".join(parts)
+
+    source = bot_instances.get_instance(instance_id)
+    source_name = source["name"] if source else f"instance {instance_id}"
+    # Matches the ask_instance/dispatch_swarm_goal audit shape exactly so all cross-instance paths show up the same way.
+    db.log_audit(actor=f"agent:{source_name}", action="agent_delegate", detail=f"-> {target['name']}: {prompt[:120]}")
+
+    # A 'conversation' label keeps the target's session between calls (the router links a session per chat id).
+    conv = str(tool_input.get("conversation") or "").strip()
+    chat_id = f"agentconv:{instance_id}:{conv}:{target['id']}" if conv else None
+    token = _delegation_depth.set(depth + 1)
+    try:
+        result = await router.ask(prompt, action_type="agent_delegate", instance_id=target["id"], chat_id=chat_id)
+    except BackendError as exc:
+        raise ToolError(f"delegation to {target['name']!r} failed: {exc}") from exc
+    finally:
+        _delegation_depth.reset(token)
+    save_to = tool_input.get("save_to")
+    if save_to:
+        out = _safe_path(workspace, str(save_to))
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(result.text, encoding="utf-8")
+    return result.text
+
 
 async def _run_subprocess(args: list[str], cwd: Path) -> str:
     try:
@@ -1440,50 +1533,39 @@ async def _execute_tool(
             scheduler.remove(int(sched_id))
         return "ok"
 
-    if name == "delegate_to_instance":
-        from bot import agent_control, bot_instances, db
-        from bot.backends.base import BackendError
-        from bot.config import config
-        from bot.router import router
+    if name == "list_bot_instances":
+        from bot import agent_control, bot_instances
 
+        rows = []
+        for row in bot_instances.list_instances():
+            if row["id"] == instance_id:
+                continue                     # not yourself
+            rows.append({
+                "id": row["id"], "name": row["name"], "platform": row["platform"], "backend": row["backend"],
+                "model": row.get("model"), "enabled": bool(row["enabled"]),
+                "can_target": instance_id is None or agent_control.can_target(instance_id, row["id"]),
+            })
+        return _json_dumps(rows)
+
+    if name == "delegate_to_instance":
         if instance_id is None:
             raise ToolError("delegate_to_instance needs an instance context")
-        target_ref = tool_input.get("target_instance")
-        prompt = (tool_input.get("prompt") or "").strip()
-        if not target_ref or not prompt:
-            raise ToolError("both target_instance and prompt are required")
+        return await _delegate_one(tool_input, workspace, instance_id)
 
-        max_depth = (config.current.get("agent_runtime") or {}).get("max_delegation_depth", 2)
-        depth = _delegation_depth.get()
-        if depth >= max_depth:
-            raise ToolError(
-                f"delegation depth limit reached (depth={depth}, max_delegation_depth={max_depth}) — "
-                "raise agent_runtime.max_delegation_depth in config/backends.yaml if deeper nesting is required"
-            )
+    if name == "delegate_to_bots":
+        tasks = tool_input.get("tasks")
+        if not isinstance(tasks, list) or not tasks or not all(isinstance(t, dict) for t in tasks):
+            raise ToolError("tasks must be a non-empty array of {target_instance, prompt} objects")
+        if instance_id is None:
+            raise ToolError("delegate_to_bots needs an instance context")
 
-        target = agent_control.resolve_instance(target_ref)
-        if target is None:
-            raise ToolError(f"no bot instance found matching {target_ref!r}")
-        if not agent_control.can_target(instance_id, target["id"]):
-            raise ToolError(f"instance {instance_id} is not permitted to target {target['name']!r} under the current allowlist")
+        async def one(t: dict) -> dict:
+            try:
+                return {"target_instance": t.get("target_instance"), "reply": await _delegate_one(t, workspace, instance_id)}
+            except ToolError as exc:
+                return {"target_instance": t.get("target_instance"), "error": str(exc)}
 
-        source = bot_instances.get_instance(instance_id)
-        source_name = source["name"] if source else f"instance {instance_id}"
-        # Matches the ask_instance/dispatch_swarm_goal audit shape exactly
-        # (found missing here while building the delegation-activity
-        # dashboard panel — this call was invisible in that panel's audit-
-        # log-backed data source until this was added) so all three
-        # cross-instance delegation paths show up the same way.
-        db.log_audit(actor=f"agent:{source_name}", action="agent_delegate", detail=f"-> {target['name']}: {prompt[:120]}")
-
-        token = _delegation_depth.set(depth + 1)
-        try:
-            result = await router.ask(prompt, action_type="agent_delegate", instance_id=target["id"])
-        except BackendError as exc:
-            raise ToolError(f"delegation to {target['name']!r} failed: {exc}") from exc
-        finally:
-            _delegation_depth.reset(token)
-        return result.text
+        return _json_dumps(list(await asyncio.gather(*(one(t) for t in tasks[:8]))))
 
     if name == "spawn_subagent":
         from bot.agent_runtime import subagents

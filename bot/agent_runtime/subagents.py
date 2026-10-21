@@ -36,7 +36,7 @@ logger = logging.getLogger("bot.agent_runtime.subagents")
 # delegate, reconfigure another instance's identity, write shared
 # project context, or save memory in the parent's name.
 LEAF_BLOCKED_TOOLS = frozenset({
-    "spawn_subagent", "delegate_to_instance", "update_agent_config",
+    "spawn_subagent", "delegate_to_instance", "delegate_to_bots", "update_agent_config",
     "write_project_context", "save_memory",
     # A leaf worker shouldn't schedule recurring commands or install new
     # skills in the parent's name — same reasoning as save_memory/

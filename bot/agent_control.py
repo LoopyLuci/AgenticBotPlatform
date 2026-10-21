@@ -34,6 +34,19 @@ def resolve_instance(name_or_id: Any) -> Optional[dict[str, Any]]:
     return None
 
 
+def mentioned_bots(text: str, exclude_id: Optional[int] = None) -> list[dict[str, Any]]:
+    """The registered bots a message names as @name (longest names first, so @ops-2 is not read as @ops)."""
+    import re
+
+    found = []
+    for inst in sorted(bot_instances.list_instances(), key=lambda i: -len(i["name"])):
+        if inst["id"] == exclude_id or not inst["name"]:
+            continue
+        if re.search(r"(?<![\w@])@" + re.escape(inst["name"]) + r"(?![\w-])", text, re.IGNORECASE):
+            found.append(inst)
+    return found
+
+
 def can_target(source_instance_id: int, target_instance_id: int) -> bool:
     if current_mode() != "allowlist":
         return True
