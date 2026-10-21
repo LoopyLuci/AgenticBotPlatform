@@ -149,7 +149,7 @@ def list_server_chat_conversations(device_id: int) -> list[dict]:
             d["peer_device_id"] = None
         else:
             peer_id = d["participant_b"] if d["participant_a"] == device_id else d["participant_a"]
-            d["title"] = _db.device_label(peer_id)
+            d["title"] = d.get("custom_title") or _db.device_label(peer_id)
             d["peer_device_id"] = peer_id
         last = conn.execute(
             "SELECT text, ts, attachment_name FROM server_chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 1",
@@ -217,3 +217,32 @@ def delete_server_chat_message(message_id: int) -> bool:
         conn.execute("DELETE FROM server_chat_messages WHERE id=?", (message_id,))
         conn.commit()
         return True
+
+
+def rename_server_chat_conversation(conversation_id: int, title: str) -> bool:
+    """Sets (or, for an empty title, clears) a direct conversation's custom
+    display name. The group room keeps its fixed name — the caller refuses it."""
+    conn = _db.get_conn()
+    with _db._lock:
+        cur = conn.execute(
+            "UPDATE server_chat_conversations SET custom_title=? WHERE id=?",
+            ((title or "").strip()[:80] or None, conversation_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def search_server_chat_messages(conversation_ids: list[int], query: str, limit: int = 50) -> list[dict]:
+    """Case-insensitive text/attachment-name search across the given conversations."""
+    q = (query or "").strip()
+    if not q or not conversation_ids:
+        return []
+    like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    marks = ",".join("?" * len(conversation_ids))
+    rows = _db.get_conn().execute(
+        f"SELECT id, conversation_id, sender_device_id, ts, text, attachment_name FROM server_chat_messages "
+        f"WHERE conversation_id IN ({marks}) AND (text LIKE ? ESCAPE '\\' OR attachment_name LIKE ? ESCAPE '\\') "
+        f"ORDER BY id DESC LIMIT ?",
+        (*conversation_ids, like, like, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]

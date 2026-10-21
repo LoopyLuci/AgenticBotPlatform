@@ -67119,6 +67119,63 @@
     "summary": "Api Server Chat Open"
    }
   },
+  "/api/server-chat/conversations/bulk-delete": {
+   "post": {
+    "description": "{ids: [..], full: bool}: clears (or fully deletes) several direct\nconversations at once. The permanent group room and conversations\nthe caller isn't in are skipped and reported, never touched.",
+    "operationId": "api_server_chat_bulk_delete_api_server_chat_conversations_bulk_delete_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Payload",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Api Server Chat Bulk Delete"
+   }
+  },
   "/api/server-chat/conversations/{conversation_id}": {
    "delete": {
     "description": "`full=false` (default): clear every message, keep the\nconversation itself — the group room and every direct\nconversation are structural (see module comment above), so this\nis what \"delete chat\" meant before `full` existed.\n`full=true`: also drop the conversation row — genuinely removes\nit from the list until either device messages the other again\n(see POST /api/server-chat/conversations, which re-opens exactly\nthis row on demand). Refused for the group room: a shared room\ncan't be unilaterally deleted out from under every other device.",
@@ -67181,6 +67238,70 @@
      }
     },
     "summary": "Api Server Chat Clear"
+   },
+   "patch": {
+    "description": "Renames a direct conversation ({title}; empty resets to the\ndevice's own label). The group room's name is fixed.",
+    "operationId": "api_server_chat_rename_api_server_chat_conversations__conversation_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "conversation_id",
+      "required": true,
+      "schema": {
+       "title": "Conversation Id",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Payload",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Api Server Chat Rename"
    }
   },
   "/api/server-chat/conversations/{conversation_id}/export": {
@@ -67361,6 +67482,69 @@
      }
     },
     "summary": "Api Server Chat Delete Message"
+   }
+  },
+  "/api/server-chat/search": {
+   "get": {
+    "operationId": "api_server_chat_search_api_server_chat_search_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "q",
+      "required": true,
+      "schema": {
+       "title": "Q",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Api Server Chat Search"
    }
   },
   "/api/server-chat/send": {
@@ -84644,436 +84828,6 @@
      }
     },
     "summary": "Vault Remove"
-   }
-  },
-  "/api/vision": {
-   "get": {
-    "operationId": "vision_status_api_vision_get",
-    "parameters": [
-     {
-      "in": "header",
-      "name": "x-dashboard-token",
-      "required": false,
-      "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "X-Dashboard-Token"
-      }
-     }
-    ],
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {}
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Vision Status"
-   }
-  },
-  "/api/vision/analyze": {
-   "post": {
-    "operationId": "vision_analyze_api_vision_analyze_post",
-    "parameters": [
-     {
-      "in": "header",
-      "name": "x-dashboard-token",
-      "required": false,
-      "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "X-Dashboard-Token"
-      }
-     }
-    ],
-    "requestBody": {
-     "content": {
-      "application/json": {
-       "schema": {
-        "additionalProperties": true,
-        "title": "Body",
-        "type": "object"
-       }
-      }
-     },
-     "required": true
-    },
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {}
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Vision Analyze"
-   }
-  },
-  "/api/vision/compare": {
-   "post": {
-    "operationId": "vision_compare_api_vision_compare_post",
-    "parameters": [
-     {
-      "in": "header",
-      "name": "x-dashboard-token",
-      "required": false,
-      "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "X-Dashboard-Token"
-      }
-     }
-    ],
-    "requestBody": {
-     "content": {
-      "application/json": {
-       "schema": {
-        "additionalProperties": true,
-        "title": "Body",
-        "type": "object"
-       }
-      }
-     },
-     "required": true
-    },
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {}
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Vision Compare"
-   }
-  },
-  "/api/vision/edit": {
-   "post": {
-    "operationId": "vision_edit_api_vision_edit_post",
-    "parameters": [
-     {
-      "in": "header",
-      "name": "x-dashboard-token",
-      "required": false,
-      "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "X-Dashboard-Token"
-      }
-     }
-    ],
-    "requestBody": {
-     "content": {
-      "application/json": {
-       "schema": {
-        "additionalProperties": true,
-        "title": "Body",
-        "type": "object"
-       }
-      }
-     },
-     "required": true
-    },
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {}
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Vision Edit"
-   }
-  },
-  "/api/vision/faces": {
-   "post": {
-    "operationId": "vision_faces_api_vision_faces_post",
-    "parameters": [
-     {
-      "in": "header",
-      "name": "x-dashboard-token",
-      "required": false,
-      "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "X-Dashboard-Token"
-      }
-     }
-    ],
-    "requestBody": {
-     "content": {
-      "application/json": {
-       "schema": {
-        "additionalProperties": true,
-        "title": "Body",
-        "type": "object"
-       }
-      }
-     },
-     "required": true
-    },
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {}
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Vision Faces"
-   }
-  },
-  "/api/vision/find": {
-   "post": {
-    "operationId": "vision_find_api_vision_find_post",
-    "parameters": [
-     {
-      "in": "header",
-      "name": "x-dashboard-token",
-      "required": false,
-      "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "X-Dashboard-Token"
-      }
-     }
-    ],
-    "requestBody": {
-     "content": {
-      "application/json": {
-       "schema": {
-        "additionalProperties": true,
-        "title": "Body",
-        "type": "object"
-       }
-      }
-     },
-     "required": true
-    },
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {}
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Vision Find"
-   }
-  },
-  "/api/vision/models/{model}/fetch": {
-   "post": {
-    "operationId": "vision_fetch_api_vision_models__model__fetch_post",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "model",
-      "required": true,
-      "schema": {
-       "title": "Model",
-       "type": "string"
-      }
-     },
-     {
-      "in": "header",
-      "name": "x-dashboard-token",
-      "required": false,
-      "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "X-Dashboard-Token"
-      }
-     }
-    ],
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {}
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Vision Fetch"
-   }
-  },
-  "/api/vision/out/{name}": {
-   "get": {
-    "operationId": "vision_out_api_vision_out__name__get",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "name",
-      "required": true,
-      "schema": {
-       "title": "Name",
-       "type": "string"
-      }
-     },
-     {
-      "in": "header",
-      "name": "x-dashboard-token",
-      "required": false,
-      "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "X-Dashboard-Token"
-      }
-     }
-    ],
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {}
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Vision Out"
    }
   },
   "/api/vm-harness/audit": {

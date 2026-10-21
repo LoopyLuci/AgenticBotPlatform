@@ -3750,6 +3750,16 @@ export const operations = {
    "limit"
   ]
  },
+ "GET /api/server-chat/search": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/server-chat/search",
+  "path_params": [],
+  "query_params": [
+   "q",
+   "limit"
+  ]
+ },
  "GET /api/server-chat/whoami": {
   "body": false,
   "method": "GET",
@@ -4510,22 +4520,6 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
- "GET /api/vision": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/vision",
-  "path_params": [],
-  "query_params": []
- },
- "GET /api/vision/out/{name}": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/vision/out/{name}",
-  "path_params": [
-   "name"
-  ],
-  "query_params": []
- },
  "GET /api/vm-harness/audit": {
   "body": false,
   "method": "GET",
@@ -4806,6 +4800,15 @@ export const operations = {
   "path": "/api/memory/sources/{source_id}",
   "path_params": [
    "source_id"
+  ],
+  "query_params": []
+ },
+ "PATCH /api/server-chat/conversations/{conversation_id}": {
+  "body": true,
+  "method": "PATCH",
+  "path": "/api/server-chat/conversations/{conversation_id}",
+  "path_params": [
+   "conversation_id"
   ],
   "query_params": []
  },
@@ -7313,6 +7316,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "POST /api/server-chat/conversations/bulk-delete": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/server-chat/conversations/bulk-delete",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/server-chat/send": {
   "body": true,
   "method": "POST",
@@ -8121,50 +8131,6 @@ export const operations = {
   "method": "POST",
   "path": "/api/vault",
   "path_params": [],
-  "query_params": []
- },
- "POST /api/vision/analyze": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/vision/analyze",
-  "path_params": [],
-  "query_params": []
- },
- "POST /api/vision/compare": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/vision/compare",
-  "path_params": [],
-  "query_params": []
- },
- "POST /api/vision/edit": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/vision/edit",
-  "path_params": [],
-  "query_params": []
- },
- "POST /api/vision/faces": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/vision/faces",
-  "path_params": [],
-  "query_params": []
- },
- "POST /api/vision/find": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/vision/find",
-  "path_params": [],
-  "query_params": []
- },
- "POST /api/vision/models/{model}/fetch": {
-  "body": false,
-  "method": "POST",
-  "path": "/api/vision/models/{model}/fetch",
-  "path_params": [
-   "model"
-  ],
   "query_params": []
  },
  "POST /api/vm-harness/call": {
@@ -10377,6 +10343,13 @@ export const operations = {
   ],
   "query_params": []
  },
+ "api_server_chat_bulk_delete_api_server_chat_conversations_bulk_delete_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/server-chat/conversations/bulk-delete",
+  "path_params": [],
+  "query_params": []
+ },
  "api_server_chat_clear_api_server_chat_conversations__conversation_id__delete": {
   "body": false,
   "method": "DELETE",
@@ -10430,6 +10403,25 @@ export const operations = {
   "path": "/api/server-chat/conversations",
   "path_params": [],
   "query_params": []
+ },
+ "api_server_chat_rename_api_server_chat_conversations__conversation_id__patch": {
+  "body": true,
+  "method": "PATCH",
+  "path": "/api/server-chat/conversations/{conversation_id}",
+  "path_params": [
+   "conversation_id"
+  ],
+  "query_params": []
+ },
+ "api_server_chat_search_api_server_chat_search_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/server-chat/search",
+  "path_params": [],
+  "query_params": [
+   "q",
+   "limit"
+  ]
  },
  "api_server_chat_send_api_server_chat_send_post": {
   "body": true,
@@ -16978,66 +16970,6 @@ export const operations = {
   "path_params": [
    "name"
   ],
-  "query_params": []
- },
- "vision_analyze_api_vision_analyze_post": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/vision/analyze",
-  "path_params": [],
-  "query_params": []
- },
- "vision_compare_api_vision_compare_post": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/vision/compare",
-  "path_params": [],
-  "query_params": []
- },
- "vision_edit_api_vision_edit_post": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/vision/edit",
-  "path_params": [],
-  "query_params": []
- },
- "vision_faces_api_vision_faces_post": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/vision/faces",
-  "path_params": [],
-  "query_params": []
- },
- "vision_fetch_api_vision_models__model__fetch_post": {
-  "body": false,
-  "method": "POST",
-  "path": "/api/vision/models/{model}/fetch",
-  "path_params": [
-   "model"
-  ],
-  "query_params": []
- },
- "vision_find_api_vision_find_post": {
-  "body": true,
-  "method": "POST",
-  "path": "/api/vision/find",
-  "path_params": [],
-  "query_params": []
- },
- "vision_out_api_vision_out__name__get": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/vision/out/{name}",
-  "path_params": [
-   "name"
-  ],
-  "query_params": []
- },
- "vision_status_api_vision_get": {
-  "body": false,
-  "method": "GET",
-  "path": "/api/vision",
-  "path_params": [],
   "query_params": []
  },
  "vm_action_api_vms_qemu__name___action__post": {

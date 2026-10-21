@@ -85,6 +85,50 @@ def register(app: FastAPI, *, json_download: Callable) -> None:
         count = db.clear_server_chat_messages(conversation_id)
         return {"ok": True, "deleted": count}
 
+    @app.patch("/api/server-chat/conversations/{conversation_id}")
+    def api_server_chat_rename(conversation_id: int, payload: dict = Body(...), device_id: int = Depends(_require_device_id)):
+        """Renames a direct conversation ({title}; empty resets to the
+        device's own label). The group room's name is fixed."""
+        row = db.get_conn().execute(
+            "SELECT kind FROM server_chat_conversations WHERE id=?", (conversation_id,)
+        ).fetchone()
+        if row is None or not db.is_conversation_participant(conversation_id, device_id):
+            raise HTTPException(status_code=404, detail="no such conversation")
+        if row["kind"] == "group":
+            raise HTTPException(status_code=400, detail="the group room can't be renamed")
+        title = payload.get("title")
+        if not isinstance(title, str):
+            raise HTTPException(status_code=400, detail="payload must be {title: <string>}")
+        db.rename_server_chat_conversation(conversation_id, title)
+        return {"ok": True}
+
+    @app.post("/api/server-chat/conversations/bulk-delete")
+    def api_server_chat_bulk_delete(payload: dict = Body(...), device_id: int = Depends(_require_device_id)):
+        """{ids: [..], full: bool}: clears (or fully deletes) several direct
+        conversations at once. The permanent group room and conversations
+        the caller isn't in are skipped and reported, never touched."""
+        ids = payload.get("ids")
+        if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids):
+            raise HTTPException(status_code=400, detail="payload must be {ids: [<int>], full?: <bool>}")
+        full = bool(payload.get("full"))
+        done, skipped = [], []
+        for cid in dict.fromkeys(ids):
+            row = db.get_conn().execute("SELECT kind FROM server_chat_conversations WHERE id=?", (cid,)).fetchone()
+            if row is None or row["kind"] == "group" or not db.is_conversation_participant(cid, device_id):
+                skipped.append(cid)
+                continue
+            if full:
+                db.delete_server_chat_conversation(cid)
+            else:
+                db.clear_server_chat_messages(cid)
+            done.append(cid)
+        return {"ok": True, "done": done, "skipped": skipped, "full": full}
+
+    @app.get("/api/server-chat/search")
+    def api_server_chat_search(q: str, limit: int = 50, device_id: int = Depends(_require_device_id)):
+        ids = [c["id"] for c in db.list_server_chat_conversations(device_id)]
+        return db.search_server_chat_messages(ids, q, limit=max(1, min(limit, 200)))
+
     @app.post("/api/server-chat/conversations")
     def api_server_chat_open(payload: dict = Body(...), device_id: int = Depends(_require_device_id)):
         """Opens (or re-opens, if it was previously fully deleted) a
@@ -109,7 +153,9 @@ def register(app: FastAPI, *, json_download: Callable) -> None:
         row = db.get_server_chat_message(message_id)
         if row is None:
             raise HTTPException(status_code=404, detail="no such message")
-        if row["sender_device_id"] != device_id:
+        # The desktop owner may also remove a paired device's message from a
+        # direct conversation (moderation); devices only their own.
+        if row["sender_device_id"] != device_id and device_id != db.SERVER_CHAT_DESKTOP_DEVICE_ID:
             raise HTTPException(status_code=403, detail="you can only delete your own messages")
         conv = db.get_conn().execute(
             "SELECT kind FROM server_chat_conversations WHERE id=?", (row["conversation_id"],)

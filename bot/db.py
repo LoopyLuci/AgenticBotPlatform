@@ -1191,6 +1191,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "approval_id" not in server_chat_msg_cols:
         conn.execute("ALTER TABLE server_chat_messages ADD COLUMN approval_id INTEGER")
 
+    server_chat_conv_cols = {row["name"] for row in conn.execute("PRAGMA table_info(server_chat_conversations)").fetchall()}
+    if "custom_title" not in server_chat_conv_cols:
+        conn.execute("ALTER TABLE server_chat_conversations ADD COLUMN custom_title TEXT")
+
     support_bot_class_cols = {row["name"] for row in conn.execute("PRAGMA table_info(support_bot_classifications)").fetchall()}
     if "reviewed" not in support_bot_class_cols:
         conn.execute("ALTER TABLE support_bot_classifications ADD COLUMN reviewed INTEGER NOT NULL DEFAULT 0")
@@ -1566,7 +1570,7 @@ from bot.storage.server_chat import (  # noqa: E402,F401
     ensure_server_chat_group, ensure_direct_conversation, backfill_server_chat_conversations,
     create_conversations_for_new_device, is_conversation_participant, list_server_chat_conversations,
     create_server_chat_message, list_server_chat_messages, get_server_chat_message,
-    delete_server_chat_message,
+    delete_server_chat_message, rename_server_chat_conversation, search_server_chat_messages,
 )
 from bot.storage.jobs import (  # noqa: E402,F401
     create_job, mark_job_running, mark_job_retrying, mark_job_done, get_job, list_jobs, get_latest_job,

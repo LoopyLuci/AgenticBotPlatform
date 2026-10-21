@@ -1112,7 +1112,13 @@
           <button class="btn" id="btn-serverchat-copy" title="Copy this conversation as plain text">⧉ Copy</button>
           <button class="btn" id="btn-serverchat-export" title="Download this conversation's history as JSON">⬇ Export</button>
           <button class="btn" id="btn-serverchat-clear" title="Delete this conversation's history" style="color:var(--critical);">🗑 Clear history</button>
+          <button class="btn" id="btn-serverchat-rename" title="Rename this conversation">✎ Rename</button>
+          <button class="btn" id="btn-serverchat-delete" title="Delete this conversation entirely" style="color:var(--critical);">🗑 Delete chat</button>
+          <button class="btn" id="btn-serverchat-bulk" title="Select several conversations to clear or delete" style="color:var(--critical);">☑ Delete several…</button>
+          <input type="search" id="serverchat-search" aria-label="Search messages" placeholder="Search messages…" style="max-width:180px;">
         </div>
+        <div class="cardnote hidden" id="serverchat-search-results"></div>
+        <div class="cardnote hidden" id="serverchat-bulk-panel"></div>
         <div class="chat-window" id="serverchat-window"></div>
         <div class="chat-pending-attachment hidden" id="serverchat-pending-attachment">
           <span id="serverchat-pending-name"></span>

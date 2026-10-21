@@ -6,7 +6,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 |---|---|
 | page | 59 |
 | action | 102 |
-| route | 1047 |
+| route | 1042 |
 | module | 9 |
 | setting | 72 |
 
@@ -1288,7 +1288,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `POST /api/sentinel/issues/status` Sentinel Issue Status
 - `POST /api/sentinel/run/{duty}` Sentinel Run
 
-### server-chat (15)
+### server-chat (18)
 
 - `DELETE /api/server-chat/conversations/{conversation_id}` Api Server Chat Clear
 - `DELETE /api/server-chat/messages/{message_id}` Api Server Chat Delete Message
@@ -1297,9 +1297,12 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `GET /api/server-chat/conversations` Api Server Chat Conversations
 - `GET /api/server-chat/conversations/{conversation_id}/export` Api Server Chat Export
 - `GET /api/server-chat/messages` Api Server Chat Messages
+- `GET /api/server-chat/search` Api Server Chat Search
 - `GET /api/server-chat/whoami` Api Server Chat Whoami
+- `PATCH /api/server-chat/conversations/{conversation_id}` Api Server Chat Rename
 - `POST /api/server-chat/approvals/{approval_id}/resolve` Api Server Chat Approval Resolve
 - `POST /api/server-chat/conversations` Api Server Chat Open
+- `POST /api/server-chat/conversations/bulk-delete` Api Server Chat Bulk Delete
 - `POST /api/server-chat/send` Api Server Chat Send
 - `POST /api/server-chat/send-file` Api Server Chat Send File
 - `POST /api/server-chat/uploads/init` Api Server Chat Uploads Init
@@ -1609,17 +1612,6 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `DELETE /api/vault/{name}` Vault Remove
 - `GET /api/vault` Vault List
 - `POST /api/vault` Vault Add
-
-### vision (8)
-
-- `GET /api/vision` Vision Status
-- `GET /api/vision/out/{name}` Vision Out
-- `POST /api/vision/analyze` Vision Analyze
-- `POST /api/vision/compare` Vision Compare
-- `POST /api/vision/edit` Vision Edit
-- `POST /api/vision/faces` Vision Faces
-- `POST /api/vision/find` Vision Find
-- `POST /api/vision/models/{model}/fetch` Vision Fetch
 
 ### vm-harness (12)
 
