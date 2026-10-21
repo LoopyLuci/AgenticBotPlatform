@@ -133,7 +133,7 @@
 
   // ---- navigation: `g` then a unique token, so not one of these steals a bare key -----------
   const SCREENS = [
-    [['local-chat'], 'Local Chat', 'lc'],
+    [['local-chat'], 'Agentic Workspace', 'lc'],
     [['overview'], 'Overview', 'o'],
     [['jobs'], 'Jobs', 'j'],
     [['telemetry'], 'Connections & Telemetry', 'te'],
@@ -142,14 +142,14 @@
     [['resilience'], 'Resilience', 're'],
     [['diagnostics'], 'Diagnostics', 'dg'],
     [['logs'], 'Live Logs', 'l'],
-    [['chat'], 'Chat', 'h'],
+    [['chat'], 'Remote Bot Chat', 'h'],
     [['server-chat'], 'Server Chat', 'sc'],
     [['support', 'support-bot'], 'Support Bot', 'sp'],
     [['sessions'], 'Sessions', 'se'],
     [['bots'], 'Bots', 'b'],
     [['models'], 'Models', 'm'],
     [['router'], 'Model Router', 'ro'],
-    [['unsloth'], 'Unsloth', 'un'],
+    [['unsloth'], 'Model Studio', 'un'],
     [['cluster'], 'Cluster', 'cl'],
     [['vision'], 'Vision', 'vi'],
     [['hosting'], 'Hosting', 'ho'],
@@ -162,7 +162,7 @@
     [['power'], 'Power', 'pw'],
     [['vm-harness'], 'VM-Harness', 'vm'],
     [['hermes-manager'], 'Hermes Manager', 'hm'],
-    [['ollama'], 'Ollama', 'ol'],
+    [['ollama'], 'Local Models', 'ol'],
     [['kanban'], 'Kanban', 'kb'],
     [['agents'], 'ABP Agents', 'ag'],
     [['swarms'], 'Swarms', 'sw'],
@@ -232,9 +232,9 @@
     })),
 
     // ---- local chat (local-chat.js) -------------------------------------------------------------
-    { id: 'localchat.new', label: 'New Local Chat session', group: 'Local Chat', context: 'local-chat', keys: [],
+    { id: 'localchat.new', label: 'New Agentic Workspace session', group: 'Agentic Workspace', context: 'local-chat', keys: [],
       run: () => { navTo(['local-chat']); if (window.ABP && ABP.localChat) ABP.localChat.newSession(); } },
-    { id: 'localchat.focus', label: 'Jump to the Local Chat message box', group: 'Local Chat', context: 'local-chat', keys: [],
+    { id: 'localchat.focus', label: 'Jump to the Agentic Workspace message box', group: 'Agentic Workspace', context: 'local-chat', keys: [],
       run: () => { const el = document.querySelector('#lc-root .lc-input'); if (el) el.focus(); } },
 
     // ---- chat -----------------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-/* Local Chat (local-chat.js). Identical in the dashboard (bot/dashboard/static/) and the desktop app (desktop-app/ui/);
+/* Agentic Workspace (local-chat.js). Identical in the dashboard (bot/dashboard/static/) and the desktop app (desktop-app/ui/);
    tests/test_local_chat_ui.py fails if the two differ. Uses the page's theme variables only. */
 section#local-chat { max-width: none; content-visibility: visible; padding-top: 18px; }
 .lc { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 10px; height: calc(100vh - 170px); min-height: 520px; }

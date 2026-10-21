@@ -145,7 +145,7 @@ def test_the_panel_only_calls_routes_that_exist(client):
 
 def test_the_registry_has_the_screen_and_its_actions():
     reg = (DESK / "action-registry.js").read_text(encoding="utf-8")
-    assert "[['local-chat'], 'Local Chat', 'lc']" in reg
+    assert "[['local-chat'], 'Agentic Workspace', 'lc']" in reg
     assert "id: 'localchat.new'" in reg and "id: 'localchat.focus'" in reg
 
 

@@ -1412,7 +1412,7 @@ function _observeSections() {
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _observeSections); else _observeSections();
 
-// The top bar names the section being read (it said "Local Chat" - before that "Overview" - whatever was on screen).
+// The top bar names the section being read (it said "Agentic Workspace" - before that "Overview" - whatever was on screen).
 (function trackTitle() {
   let queued = false;
   function update() {
@@ -1429,8 +1429,9 @@ if (document.readyState === 'loading') document.addEventListener('DOMContentLoad
     if (!current) return;
     const link = document.querySelector(`nav.sidenav a[href="#${current.id}"]`);
     const h = current.querySelector('h2');
-    const name = (link && (link.getAttribute('title') || link.textContent) || h && h.textContent || '').trim();
-    if (name && title.textContent !== name) title.textContent = name;
+    // The first screen's heading already says what it is; the bar repeats nothing there.
+    const name = current.id === 'local-chat' ? '' : (link && (link.getAttribute('title') || link.textContent) || h && h.textContent || '').trim();
+    if (title.textContent !== name) title.textContent = name;
   }
   function onScroll() { if (!queued) { queued = true; requestAnimationFrame(update); } }
   function start() {

@@ -1,13 +1,13 @@
 // Settings: one organized place for every setting ABP has (PLAN-local-chat.md P3). Nothing moves out of its page and
 // nothing is duplicated: each section explains what it covers and links straight to the page or card where that setting
-// lives today, the backend setup wizard is "Run setup again" under Backends, and the Local Chat defaults (new with it) are
+// lives today, the backend setup wizard is "Run setup again" under Backends, and the Agentic Workspace defaults (new with it) are
 // edited here. A search box filters everything. Old links keep working: #setup, #wizard, #backends, #preferences and
 // #config land on the matching section, and #settings/<section> opens one directly.
 //
 // This file is identical in the dashboard (bot/dashboard/static/) and the desktop app (desktop-app/ui/);
 // tests/test_settings_hub.py fails if the two differ, if a link points at a page neither app has, or if a page that
 // existed before Settings is missing from both the navigation and this index. It uses the page's own api() and draws
-// into #settings-root. ABP.settingsIndex is the same table as data (used by the capability index and Local Chat's palette).
+// into #settings-root. ABP.settingsIndex is the same table as data (used by the capability index and Agentic Workspace's palette).
 // A search also shows matches from ABP's capability index (/api/capabilities) under "Elsewhere in ABP".
 (function (api) {
   'use strict';
@@ -20,18 +20,18 @@
   // Each item: [label, what it covers, target] - target is a section id, an element id inside a page ("card:<id>"), or an
   // action ("do:<name>").
   const SECTIONS = [
-    { id: 'backends', title: 'Backends', desc: 'The cloud and local backends ABP routes work through: Claude API, Claude Code CLI, Claude Desktop, Hermes. Local Chat needs none of them.',
+    { id: 'backends', title: 'Backends', desc: 'The cloud and local backends ABP routes work through: Claude API, Claude Code CLI, Claude Desktop, Hermes. Agentic Workspace needs none of them.',
       items: [['Run setup again', 'The backend setup wizard: API keys, CLI paths, the Hermes gateway', 'do:wizard'],
         ['Control Center', 'Default backend per action, backend models, security and process controls', 'control'],
         ['Models & providers', 'Providers, API keys and per-model toggles', 'models'],
         ['Model Router', 'Automatic routing between models, its learning and policy', 'router'],
         ['Hermes Manager', 'The Hermes agent: gateway, sessions, config, backups', 'hermes-manager']] },
-    { id: 'local-models', title: 'Local models', desc: 'ModelMistress (the local model hub), Local Chat\'s defaults and the other local runtimes.',
-      items: [['Local Chat defaults', 'Default model, agent type, autonomy, cloud assist and worktrees for new sessions (below)', 'card:sh-localchat'],
+    { id: 'local-models', title: 'Local models', desc: 'ModelMistress (the local model hub), Agentic Workspace\'s defaults and the other local runtimes.',
+      items: [['Agentic Workspace defaults', 'Default model, agent type, autonomy, cloud assist and worktrees for new sessions (below)', 'card:sh-localchat'],
         ['Modules (ModelMistress)', 'The hub: install, update, start, its models and settings', 'modules'],
         ['Local AI', 'Local models, server and fine-tuning', 'localai'],
-        ['Ollama', 'Pull, load and create Ollama models (opt-in)', 'ollama'],
-        ['Unsloth', 'Local models, fine-tuning and export (opt-in)', 'unsloth'],
+        ['Local Models', 'Pull, load and create models through a connected Ollama (opt-in)', 'ollama'],
+        ['Model Studio', 'Local models, fine-tuning and export through a connected Unsloth (opt-in)', 'unsloth'],
         ['Neural Lab', 'Design and train models', 'lab']] },
     { id: 'cloud', title: 'Cloud & capacity', desc: 'When cloud models help: the capacity governor (cloud-led / hybrid / local-only), budgets and usage.',
       items: [['Capacity governor', 'The current mode, pinning it by hand, probes and handoff packs', 'coordination'],
@@ -59,7 +59,7 @@
     { id: 'platforms', title: 'Platforms & bots', desc: 'Chat platforms and the bots on them.',
       items: [['Bots', 'Bot instances, their platforms and agents', 'bots'],
         ['Platforms', 'Legacy single-bot config', 'platforms'],
-        ['Chat', 'Talk to any connected bot (Chat with Bot)', 'chat'],
+        ['Remote Bot Chat', 'Talk to any connected bot (Chat with Bot)', 'chat'],
         ['Support Bot', 'The local assistant for server management', 'support-bot', 'support'],
         ['Training', 'Support Bot phrases and bot instructions', 'training']] },
     { id: 'devices', title: 'Devices & linked servers', desc: 'Phones, other ABP installs, remote machines and networks.',
@@ -161,7 +161,7 @@
   function backendsExtra() {
     if (!setup) return '';
     const missing = (setup.missing || setup.required || []).length;
-    return `<p class="sh-note">${setup.ready ? 'A backend is set up.' : 'No cloud backend is set up (optional: Local Chat works without one).'}${missing && !setup.ready ? ' ' + E(missing) + ' required field(s) open.' : ''}</p>
+    return `<p class="sh-note">${setup.ready ? 'A backend is set up.' : 'No cloud backend is set up (optional: Agentic Workspace works without one).'}${missing && !setup.ready ? ' ' + E(missing) + ' required field(s) open.' : ''}</p>
 <button type="button" class="btn primary" data-sh-go="do:wizard">Run setup again</button>`;
   }
   function localChatForm() {
