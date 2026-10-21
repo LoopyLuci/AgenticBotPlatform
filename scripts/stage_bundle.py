@@ -2,8 +2,8 @@
 installer bundles (see tauri.conf.json "bundle.resources" -> stage/...).
 
 Bundling ../../.venv and ../../bot directly shipped, in every installer:
-- dev-only packages that requirements-dev.txt says must never ship (pytest,
-  pip-audit),
+- dev-only packages that requirements-dev.txt says must never ship
+  (pip-audit; pytest ships since the Factory runs tests with it),
 - __pycache__ directories, including ones left by pytest runs,
 - the builder's absolute paths: pyvenv.cfg's `command =` line, the
   Scripts/activate* files, and the pip/pytest/... launcher .exes that embed
@@ -31,8 +31,9 @@ STAGE = ROOT / "desktop-app" / "src-tauri" / "stage"
 # bot/diagnostics.py's build_status() and scripts/deploy_local.py.
 BUILD_STAMP = ".abp_build.json"
 
-# Packages that are development/CI tooling (requirements-dev.txt), not runtime.
-DEV_ONLY_PACKAGES = {"pytest", "_pytest", "pluggy", "iniconfig", "pip_audit"}
+# Packages that are development/CI tooling (requirements-dev.txt), not runtime. pytest (and its pluggy, iniconfig) is runtime now:
+# a Factory task's proof runs pytest with ABP's interpreter when the repository has no venv (bot/conductor/confine.py).
+DEV_ONLY_PACKAGES = {"pip_audit"}
 DEV_ONLY_DIST_PREFIXES = tuple(p.replace("_", "-") + "-" for p in DEV_ONLY_PACKAGES) + tuple(
     p + "-" for p in DEV_ONLY_PACKAGES
 )

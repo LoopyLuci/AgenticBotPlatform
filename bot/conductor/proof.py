@@ -20,9 +20,11 @@ process-global. Without it, `python` is whatever the PATH finds first, which may
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import shlex
 import subprocess
+import sys
 import threading
 from pathlib import Path
 from typing import Callable, ContextManager, Optional
@@ -114,6 +116,25 @@ def target_files(command: str) -> list[str]:
     return list(dict.fromkeys(t.split("::")[0] for t in targets if t.split("::")[0].endswith(".py")))
 
 
+def missing_targets(command: str, workspace: Path) -> list[str]:
+    """The test files a pytest proof runs that do not exist in `workspace` (so the worker can be told to write exactly those)."""
+    ws = Path(workspace)
+    return [f for f in target_files(command) if not (ws / f).is_file()]
+
+
+def test_files_on_branch(workspace: Path, base: str) -> list[str]:
+    """Test-looking files (test_*.py, *_test.py, anywhere) the branch added or changed since `base`."""
+    if not base:
+        return []
+    out = subprocess.run(["git", "-C", str(workspace), "diff", "--name-only", "--diff-filter=AMR", f"{base}..HEAD"],
+                         capture_output=True, text=True, timeout=60)
+    names = [ln.strip().replace("\\", "/") for ln in out.stdout.splitlines() if ln.strip()] if out.returncode == 0 else []
+    return [n for n in names if n.endswith(".py") and (Path(n).name.startswith("test_") or n.endswith("_test.py"))]
+
+
+NO_PYTEST = re.compile(r"No module named pytest\b")
+
+
 def describe(command: str) -> str:
     """The proof as a worker's prompt should say it."""
     command = str(command or "").strip()
@@ -175,7 +196,9 @@ async def _execute(kind: str, targets: list[str], k: str, ws: Path, timeout_s: O
 
     limit = int(timeout_s or run_tests.timeout_s())
     if kind == "ruff":
-        out = await shell._run_fresh("python -m ruff check --no-cache " + " ".join(targets), ws, ws, limit)
+        # ABP's own ruff (the one the reviewer uses): `python` on PATH may be the repository's venv, which need not have ruff
+        args = [sys.executable, "-m", "ruff", "check", "--no-cache", *targets]
+        out = await shell._run_fresh(subprocess.list2cmdline(args) if os.name == "nt" else shlex.join(args), ws, ws, limit)
         return "[exit code 0]" in out, out[-1500:]
     out = await shell._run_fresh(run_tests.build_command(targets, k), ws, ws, limit)
     summary = run_tests.summarise(out)

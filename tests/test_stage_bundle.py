@@ -57,10 +57,19 @@ def _stage(project: Path) -> Path:
 
 def test_dev_only_packages_and_their_metadata_are_left_out(project):
     sp = _stage(project) / ".venv" / "Lib" / "site-packages"
-    for gone in ("pytest", "_pytest", "pluggy", "iniconfig", "pip_audit", "pytest-9.1.1.dist-info", "pip_audit-2.7.dist-info"):
+    for gone in ("pip_audit", "pip_audit-2.7.dist-info"):
         assert not (sp / gone).exists(), f"{gone} must not ship"
     for kept in ("numpy", "pip", "numpy-2.0.dist-info", "pip-24.0.dist-info"):
         assert (sp / kept).exists(), f"{kept} is needed at runtime"
+
+
+def test_pytest_ships_for_factory_proofs(project):
+    # A Factory task's proof runs pytest with the bundled interpreter when the repository has no venv of its own.
+    stage = _stage(project)
+    sp = stage / ".venv" / "Lib" / "site-packages"
+    for kept in ("pytest", "_pytest", "pluggy", "iniconfig", "pytest-9.1.1.dist-info"):
+        assert (sp / kept).exists(), f"{kept} is needed by Factory proofs"
+    assert not (stage / ".venv" / "Scripts" / "pytest.exe").exists()      # its launcher embeds the builder's path; `python -m pytest` is used
 
 
 def test_pycache_is_left_out_everywhere(project):

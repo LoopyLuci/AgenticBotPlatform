@@ -403,26 +403,38 @@ def check_tests(file_changes: list[Change]) -> tuple[list[Finding], str]:
                     ", ".join(c.path for c in code[:5]))], "fail"
 
 
+RUFF_CONFIGS = ("pyproject.toml", "ruff.toml", ".ruff.toml")
+
+
+def ruff_copy(tmp: Path, repo: Path, ref: str, py: list[str]) -> list[str]:
+    """Write the repository's root ruff config and the `py` files, as they are at `ref`, into `tmp`, byte for byte (CRLF stays
+    CRLF: text-mode writing doubled it and ruff then saw shifted lines and an unsorted import block). Returns the ruff options that
+    go with the copy: `--isolated` when the repository has no config, so neither a parent folder's config nor the user's applies.
+    The review's ruff check and the conductor's safe-fix step both lint this same copy, so a fix ruff offers here is one the
+    review would ask for."""
+    has_cfg = False
+    for cfg in RUFF_CONFIGS:
+        text = _show(repo, ref, cfg)
+        if text is not None:
+            (tmp / cfg).write_text(text, encoding="utf-8", newline="")
+            has_cfg = True
+    for rel in py:
+        src = _show(repo, ref, rel)
+        if src is not None:
+            dest = tmp / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(src, encoding="utf-8", newline="")
+    return [] if has_cfg else ["--isolated"]
+
+
 def check_ruff(repo: Path, head: str, file_changes: list[Change]) -> tuple[list[Finding], str]:
     py = [c.path for c in file_changes if c.status in ("A", "M", "R") and c.path.endswith(".py")]
     if not py:
         return [], "pass (no Python changed)"
     tmp = Path(tempfile.mkdtemp(prefix="abp-conductor-ruff-"))
     try:
-        has_cfg = False
-        for cfg in ("pyproject.toml", "ruff.toml", ".ruff.toml"):
-            text = _show(repo, head, cfg)
-            if text is not None:
-                (tmp / cfg).write_text(text, encoding="utf-8")
-                has_cfg = True
-        for rel in py:
-            src = _show(repo, head, rel)
-            if src is not None:
-                dest = tmp / rel
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_text(src, encoding="utf-8")
-        proc = subprocess.run([sys.executable, "-m", "ruff", "check", "--no-cache", "--output-format=concise",
-                               *([] if has_cfg else ["--isolated"]), *py], cwd=tmp,
+        opts = ruff_copy(tmp, repo, head, py)
+        proc = subprocess.run([sys.executable, "-m", "ruff", "check", "--no-cache", "--output-format=concise", *opts, *py], cwd=tmp,
                               capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
         if "No module named ruff" in proc.stderr:
             return [], "skipped: ruff is not installed"

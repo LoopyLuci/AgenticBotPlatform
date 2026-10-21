@@ -27,6 +27,9 @@ matrix-nio>=0.24
 textual>=0.60
 ruamel.yaml>=0.18
 jsonschema>=4.20
+# The Factory runs a task's tests with pytest (bot/conductor/confine.py test_python: ABP's runtime when the repository has no
+# venv of its own), so it ships in the runtime, not only in requirements-dev.txt.
+pytest>=8.0
 zeroconf>=0.132
 tzdata>=2024.1
 tree-sitter==0.26.0  # exact syntax trees for the code index (bot/codeintel); optional at run time, Python ast and regex are the fallbacks
