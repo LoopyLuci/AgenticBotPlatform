@@ -31,12 +31,11 @@ PROMPT_HINT = ("\n\nYou have many more tools than the ones listed (skills, memor
 
 
 class _Turn:
-    __slots__ = ("pool", "sent", "calls")
+    __slots__ = ("pool", "sent")
 
     def __init__(self) -> None:
         self.pool: Optional[dict] = None     # name -> schema; None until attach()
         self.sent: Optional[list] = None     # the list of schemas the turn sends (shared with the backend)
-        self.calls: dict = {}                # (name, input as JSON) -> how often this turn made that exact call
 
 
 _current: "contextvars.ContextVar[Optional[_Turn]]" = contextvars.ContextVar("tool_discovery_turn", default=None)
@@ -62,23 +61,6 @@ def permitted(name: str) -> bool:
     turn = _current.get()
     return turn is None or turn.pool is None or name in turn.pool
 
-
-REPEAT_LIMIT = 2
-
-
-def repeated(name: str, tool_input) -> int:
-    """Count this exact call (same tool, same input) in the turn; returns how many times it was made before. A small model
-    sometimes repeats one look-up over and over (the find_tools eval on 2026-10-20: abp_capabilities 7 times in a row)."""
-    turn = _current.get()
-    if turn is None:
-        return 0
-    try:
-        key = (name, json.dumps(tool_input, sort_keys=True, default=str))
-    except (TypeError, ValueError):
-        return 0
-    before = turn.calls.get(key, 0)
-    turn.calls[key] = before + 1
-    return before
 
 
 _STOP = frozenset("""a an and are as at be by can do does for from get give has have how i in into is it its me my now of on
