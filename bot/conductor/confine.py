@@ -29,16 +29,59 @@ class SandboxUnavailable(RuntimeError):
     release_task = False
 
 
-def sandbox_paths() -> list[str]:
-    """Folders the sandboxed shell may read (read-only): the Python install and venv the agent's pytest runs from."""
+def _venv_python(venv: Path) -> Path:
+    return venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+
+def _has_pytest(venv: Path) -> bool:
+    if os.name == "nt":
+        return (venv / "Lib" / "site-packages" / "pytest" / "__init__.py").is_file()
+    return any(venv.glob("lib/python3*/site-packages/pytest/__init__.py"))
+
+
+def test_python(repo: Path) -> str:
+    """The interpreter a worker's tests and its proof run with. The repository's own venv (`.venv` or `venv` at its root) when it
+    has pytest: it holds the packages the project's tests import. Otherwise ABP's own runtime, which ships pytest
+    (requirements.txt) so a plain repository's tests run on a fresh install too."""
+    for name in (".venv", "venv"):
+        venv = Path(repo) / name
+        if _venv_python(venv).is_file() and _has_pytest(venv):
+            return str(_venv_python(venv))
+    return sys.executable
+
+
+def _python_roots(python: str) -> list[str]:
+    """The folders `python` runs from: its venv and, from the venv's pyvenv.cfg `home`, the base install it starts."""
+    exe = Path(python)
+    venv = exe.parent.parent
+    roots = [str(venv)]
+    cfg = venv / "pyvenv.cfg"
+    try:
+        for line in cfg.read_text(encoding="utf-8", errors="replace").splitlines():
+            key, sep, value = line.partition("=")
+            if sep and key.strip().lower() == "home" and value.strip():
+                home = Path(value.strip())
+                roots.append(str(home.parent if home.name.lower() == "bin" else home))
+    except OSError:
+        pass
+    return roots
+
+
+def sandbox_paths(python: str = "") -> list[str]:
+    """Folders the sandboxed shell may read (read-only): the Python install and venv the agent's pytest runs from - ABP's own and,
+    when it is another one (test_python: the repository's venv), that interpreter's venv and base install too."""
     system = [os.path.normcase(os.environ.get(v, "")) for v in ("ProgramFiles", "ProgramFiles(x86)", "SystemRoot") if os.environ.get(v)]
     out: list[str] = []
-    for p in (sys.prefix, sys.base_prefix):
-        if not p or p in out or not Path(p).is_dir():
+    candidates = [sys.prefix, sys.base_prefix] + (_python_roots(python) if python else [])
+    for p in candidates:
+        if not p or not Path(p).is_dir():
+            continue
+        p = str(Path(os.path.abspath(p)))      # not resolve(): a mapped drive would turn into a UNC path
+        if any(os.path.normcase(p) == os.path.normcase(o) for o in out):
             continue
         if any(os.path.normcase(p).startswith(s) for s in system):      # already readable by every app container; a grant needs admin
             continue
-        out.append(str(Path(p)))
+        out.append(p)
     return out
 
 

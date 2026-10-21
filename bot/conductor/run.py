@@ -27,8 +27,10 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
@@ -51,7 +53,8 @@ class WorkerStuck(RuntimeError):
     """A worker may raise this to say it cannot make progress (the conductor escalates it after the same rejections limit)."""
 
 
-KINDS = ("rejections", "stuck", "rule_decision")
+KINDS = ("rejections", "stuck", "rule_decision", "environment")
+ENVIRONMENT = "environment"      # a finding the worker cannot fix (the proof's Python has no pytest): escalated at once, no retry
 RULE_QUESTIONS = {"no_feature_removed": "The change removes an existing feature. May it be removed (name which), or must the worker keep it?",
                   "no_deletions": "The change deletes a file the task did not create. May it be deleted, or must the worker keep it?"}
 
@@ -73,27 +76,41 @@ AUTOFIX_COMMIT = "conductor: ruff safe fixes"
 
 
 def autofix_lint(worktree: Path, base: str) -> list[str]:
-    """Apply ruff's SAFE fixes (never --unsafe-fixes; the repository's own ruff config) to the Python files the branch changed
-    since `base`, and commit them on the branch as their own commit. Returns the files it changed ([] when nothing changed or ruff
-    cannot run). An unused import, the commonest local-model slip, then never costs a review round; what ruff cannot fix safely
-    still reaches the reviewer's ruff check as before."""
+    """Apply every SAFE fix ruff offers (never --unsafe-fixes) to the Python files the branch changed since `base`, and commit them
+    on the branch as their own commit. Returns the files it changed ([] when nothing changed or ruff cannot run). An unused import,
+    the commonest local-model slip, then never costs a review round; what ruff cannot fix safely still reaches the reviewer's ruff
+    check as before.
+
+    It fixes the very copy the review's ruff check lints (reviewer.ruff_copy: the branch's committed files and the repository's own
+    root config, `--isolated` without one), not the worktree in place: a worktree inside another project would pick up that
+    project's ruff config, fix nothing the review flags (2026-10-20: I001 and RUF010 marked [*] still rejected), and the review
+    would reject anyway. Fixed files are written back byte for byte."""
     wt = Path(worktree)
+    tmp = Path(tempfile.mkdtemp(prefix="abp-conductor-ruff-fix-"))
     try:
-        names = integrator._git(wt, "diff", "--name-only", "--diff-filter=AMR", f"{base}..HEAD", check=False).stdout.split()
-        py = [n for n in names if n.endswith(".py") and (wt / n).is_file()]
+        names = integrator._git(wt, "diff", "--name-only", "--diff-filter=AMR", f"{base}..HEAD", check=False).stdout.splitlines()
+        py = [n.strip() for n in names if n.strip().endswith(".py") and (wt / n.strip()).is_file()]
         if not py:
             return []
-        subprocess.run([sys.executable, "-m", "ruff", "check", "--fix", "--no-cache", "--quiet", *py], cwd=wt,
+        opts = reviewer.ruff_copy(tmp, wt, "HEAD", py)
+        before = {rel: (tmp / rel).read_bytes() for rel in py if (tmp / rel).is_file()}
+        subprocess.run([sys.executable, "-m", "ruff", "check", "--fix", "--no-cache", "--quiet", *opts, *before], cwd=tmp,
                        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
-        changed = integrator._git(wt, "diff", "--name-only", "--", *py, check=False).stdout.split()
+        changed = [rel for rel, data in before.items() if (tmp / rel).read_bytes() != data]
         if not changed:
             return []
+        for rel in changed:
+            (wt / rel).write_bytes((tmp / rel).read_bytes())
         integrator._git(wt, "add", "--", *changed)
+        if integrator._git(wt, "diff", "--cached", "--quiet", check=False).returncode == 0:
+            return []
         integrator._git(wt, "commit", "-q", "-m", AUTOFIX_COMMIT)
         return [c.replace("\\", "/") for c in changed]
     except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
         logger.info("conductor: ruff autofix skipped (%s)", exc)
         return []
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 async def run_proof(spec: dict, worktree: str, timeout_s: Optional[int] = None, *, base: str = "",
@@ -104,12 +121,23 @@ async def run_proof(spec: dict, worktree: str, timeout_s: Optional[int] = None, 
     cmd = str((spec.get("proof") or {}).get("command") or "").strip()
     if not cmd:
         return None
+    missing = await asyncio.to_thread(proof.missing_targets, cmd, Path(worktree))
+    if missing:                 # said plainly: "proof not allowed: ... does not exist" read as a broken proof, not a misplaced test
+        elsewhere = [f for f in await asyncio.to_thread(proof.test_files_on_branch, Path(worktree), base) if f not in missing]
+        return reviewer.Finding("proof", f"the proof runs {' and '.join(missing)}, which does not exist on your branch: write the "
+                                "tests in exactly that file (tests anywhere else are not run)" +
+                                (f"; this attempt put tests in {', '.join(elsewhere)} instead" if elsewhere else ""),
+                                kind="proof", text=cmd)
     try:
         ok, output = await proof.run(cmd, Path(worktree), timeout_s, base=base, env=env)
     except proof.ProofRefused as exc:
         return reviewer.Finding("proof", f"proof not allowed: {exc}", kind="proof", text=cmd)
     except Exception as exc:  # noqa: BLE001 - a proof that cannot run does not pass
         return reviewer.Finding("proof", f"the proof could not run: {type(exc).__name__}: {exc}"[:300], kind="proof", text=cmd)
+    if not ok and proof.NO_PYTEST.search(output):
+        # The interpreter, not the worker's code: told to the worker it only invites a hand-rolled test script (2026-10-20).
+        return reviewer.Finding("proof", "the proof could not start pytest: the Python it runs with has no pytest installed",
+                                kind=ENVIRONMENT, text=output[-600:])
     return None if ok else reviewer.Finding("proof", f"the proof failed: {cmd}", kind="proof", text=output[-600:])
 
 
@@ -220,7 +248,8 @@ class Conductor:
         from abp_agenteval import factory
 
         settings = factory.agent_settings(model="proof", shell="none")
-        return lambda: factory.agent_environment(settings, python=sys.executable)
+        python = str(getattr(self.worker, "python", "") or sys.executable)     # the interpreter the worker's own tests ran with
+        return lambda: factory.agent_environment(settings, python=python)
 
     # ------------------------------------------------------- one task's work
     async def _call(self, _instance: int, task_id: str) -> str:
@@ -283,8 +312,16 @@ class Conductor:
                     rep.findings.append(bad)
                     rep.checks["proof"] = "fail"
                     rep.verdict = reviewer.REJECT
+                elif not rep.accepted:
+                    rep.checks["proof"] = "skipped: not run, the review already rejected"
                 else:
                     rep.checks["proof"] = "pass"
+                if bad is not None and bad.kind == ENVIRONMENT:
+                    store.add_review(plan.id, task.key, branch, rep.to_dict())
+                    await self._escalate(plan, task, f"the proof cannot run here: {bad.message}", rep, kind=ENVIRONMENT,
+                                         question="The proof's Python has no pytest. Give the repository a .venv with pytest "
+                                                  "(or reinstall ABP, whose runtime ships pytest), then run the task again.",
+                                         base=review_base, branch=branch, summary=str(result.get("summary", "")))
             if rep.accepted and self.cfg["model_review"]:
                 await reviewer.model_review(rep, self.repo, goal=plan.goal, complete=self.model_complete, model=self.cfg["review_model"],
                                             avoid=self.cfg["model"], diff_cap=int(self.cfg["review_diff_cap"]))
@@ -429,6 +466,7 @@ class AgentLoopWorker:
         self.timeout_s = timeout_s
         self.max_iterations = max_iterations
         self.shell = shell
+        self.python = confine.test_python(self.repo)           # the repo's venv when it has pytest, else ABP's runtime (ships pytest)
         self.sandbox_paths = list(sandbox_paths) if sandbox_paths else None
         self.drive = drive or self._drive
         self._verified = False
@@ -470,12 +508,14 @@ class AgentLoopWorker:
         before = await asyncio.to_thread(navctx.usage, wt) if pack else {}
         proof_cmd = str((spec.get("proof") or {}).get("command", "") or "")
         test_files = proof.target_files(proof_cmd)
+        files = list(dict.fromkeys([*(spec.get("files") or []), *test_files]))     # the proof's test file is one of the task's files
         nav = navctx.settings(self.cfg)["use_codeintel"]
         prompt = (f"Task: {spec['title']}\n\n{spec.get('detail') or ''}\n\nOverall goal: {spec['goal']}\n"
-                  f"Files likely involved: {', '.join(spec.get('files') or []) or '(find them)'}\n"
+                  f"Files likely involved: {', '.join(files) or '(find them)'}\n"
                   f"It is done when this passes: {proof.describe(proof_cmd) or '(the tests)'}\n" +
                   (f"Put the tests in exactly {' and '.join(test_files)}: that is the file the check runs; tests anywhere else are "
-                   "not checked and the task is rejected.\n" if test_files else "") +
+                   "not checked and the task is rejected. Write them as pytest test functions (def test_...) and run them with "
+                   "pytest; do not write a test script of your own.\n" if test_files else "") +
                   "Rules: never remove or rename an existing feature (command, flag, route, tool, page, setting); do not delete files; "
                   "add or update a test for what you change; keep the change small; no unused imports." +
                   ("\nReading code: call outline(path) first and read_symbol / find_symbol for the parts you need; read a whole file "
@@ -533,7 +573,7 @@ class AgentLoopWorker:
 
     def _verify_sandbox(self, wt: Path) -> None:
         with self._agent_lock:
-            confine.verify(wt, extra_paths=self.sandbox_paths)
+            confine.verify(wt, extra_paths=self.sandbox_paths or confine.sandbox_paths(self.python))
         self._verified = True
 
     @staticmethod
@@ -550,12 +590,12 @@ class AgentLoopWorker:
             raise llm.NoLocalModel("no local model is available (start ModelMistress or Ollama)")
         transport, name = llm.transport_for_ref(refs[0])
         await asyncio.to_thread(self._check_context, refs[0], name)
-        paths = (self.sandbox_paths or confine.sandbox_paths()) if self.shell == "sandbox" else None
+        paths = (self.sandbox_paths or confine.sandbox_paths(self.python)) if self.shell == "sandbox" else None
 
         def turn():
             with self._agent_lock:
                 return factory.drive_agent(prompt, wt, transport, name, timeout_s=self.timeout_s, max_iterations=self.max_iterations,
-                                           python=sys.executable, shell=self.shell, sandbox_paths=paths,
+                                           python=self.python, shell=self.shell, sandbox_paths=paths,
                                            extra_tools=navctx.tool_names(self.cfg))
         # shell "none": file tools + run_tests only, no shell tool at all. "sandbox": run_shell inside an AppContainer, no network.
         return await asyncio.to_thread(turn)
