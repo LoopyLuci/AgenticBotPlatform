@@ -190,6 +190,10 @@ def build(call: Call = _hub_call, *, reports: Optional[list[dict]] = None, min_c
     status = call("service.status", None) or {}
     listed = call("model.list", None) or []
     listed = listed if isinstance(listed, list) else (listed.get("models") or [])
+    from bot import ollama
+
+    if not ollama.enabled():        # switched off: the hub's Ollama pass-through models are not offered
+        listed = [r for r in listed if not str(r.get("id") or "").startswith("ollama/")]
     try:
         loaded = loaded_ids(call)
     except Exception:  # noqa: BLE001

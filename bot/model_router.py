@@ -226,8 +226,10 @@ def candidate_models() -> list[str]:
     Claude is never used by default, only when a person explicitly opts into it, and this
     is the one place that guarantee has to hold structurally rather than as an accident of
     which models happen to be marked free in the catalog today."""
+    from bot import ollama
+
     cfg = _cfg()
-    listed = [str(m) for m in (cfg.get("candidates") or [])]
+    listed = ollama.leave_out([str(m) for m in (cfg.get("candidates") or [])])     # Ollama switched off: none of its models
     if listed:
         return listed
     from bot import model_catalog
@@ -249,6 +251,8 @@ def candidate_models() -> list[str]:
             continue
         if replaced(name, pcfg or {}):
             continue
+        if not ollama.enabled() and ollama.is_ollama_name(name):
+            continue
         live = _local_models(name, pcfg or {})
         if live is not None:
             # A server on this machine (Ollama, Unsloth Studio, LM Studio...): its own list, not the catalog's guesses
@@ -258,7 +262,7 @@ def candidate_models() -> list[str]:
         for r in model_catalog.search(provider=name, free_only=True, needs=("tools",), limit=12):
             if r["provider"] != "anthropic":
                 free.append(f"{name}/{r['model']}")
-    return list(dict.fromkeys(free + [str(m) for m in (cfg.get("also") or [])]))
+    return ollama.leave_out(list(dict.fromkeys(free + [str(m) for m in (cfg.get("also") or [])])))
 
 
 def default_refs() -> list[str]:

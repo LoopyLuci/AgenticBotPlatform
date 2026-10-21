@@ -61,7 +61,11 @@ def _version(root: str, timeout: float = 3.0) -> Optional[str]:
 
 
 def find(*, refresh: bool = False) -> Optional[Ollama]:
-    """The Ollama this install uses, or None when none is running. Cached for a minute."""
+    """The Ollama this install uses, or None when none is running or it is switched off (ollama.enabled). Cached for a minute."""
+    from bot import ollama as _pkg
+
+    if not _pkg.enabled():
+        return None
     with _lock:
         if not refresh and time.monotonic() - _found["at"] < 60:
             return _found["value"]
@@ -79,6 +83,10 @@ def find_cached() -> Optional[Any]:
     """What find() last saw, without waiting: when that is over a minute old (or was never looked up) a refresh
     starts in the background. For checks that run on every agent turn (whether to offer the tools), which must
     never wait on the network."""
+    from bot import ollama as _pkg
+
+    if not _pkg.enabled():
+        return None
     with _lock:
         fresh = time.monotonic() - _found["at"] < 60
         value = _found["value"]

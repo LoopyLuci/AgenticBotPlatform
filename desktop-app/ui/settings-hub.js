@@ -141,6 +141,9 @@
     return !!$(id);
   };
   function itemHtml([label, desc, target, alt]) {
+    if (target === 'ollama' && lc && lc.ollama_enabled === false) {      // switched off: its page is not loaded
+      return `<div class="sh-item sh-missing"><b>${E(label)}</b><span>Switched off (Ollama below)</span></div>`;
+    }
     const t = exists(target) ? target : alt && exists(alt) ? alt : target;
     const ok = exists(t);
     const link = t.startsWith('do:') || t.startsWith('card:')
@@ -177,7 +180,8 @@
 <label for="sh-lc-compact">Compact at</label><select id="sh-lc-compact" data-sh-key="compact_at" data-sh-num="1">${opt([0.5, 0.6, 0.7, 0.8, 0.9, 0], st.compact_at == null ? 0.7 : st.compact_at, (v) => (Number(v) ? Math.round(v * 100) + '% of the context' : 'never'))}</select>
 <label for="sh-lc-archive">Auto-archive</label><select id="sh-lc-archive" data-sh-key="auto_archive_days" data-sh-int="1">${opt([0, 7, 14, 30, 90], st.auto_archive_days || 0, (v) => (Number(v) ? 'after ' + v + ' quiet days' : 'off'))}</select>
 <label for="sh-lc-next">Next-step box</label><select id="sh-lc-next" data-sh-key="next_step_box" data-sh-bool="1">${opt(['true', 'false'], String(st.next_step_box !== false), (v) => (v === 'true' ? 'on: task list and a question' : 'off'))}</select>
-</div><p class="sh-note">Saved to the config (local_chat.*) as you change them; new sessions use them.</p></div>`;
+</div><p class="sh-note">Saved to the config (local_chat.*) as you change them; new sessions use them.</p></div>
+<div id="sh-ollama" class="sh-form"><label for="sh-ollama-on">Ollama</label><select id="sh-ollama-on" data-sh-switch="ollama">${opt(['true', 'false'], String(!lc || lc.ollama_enabled !== false), (v) => (v === 'true' ? 'on: its page, tools and models' : 'off: hidden and never used'))}</select></div>`;
   }
 
   function render() {
@@ -270,6 +274,17 @@ ${q && elsewhere.length ? `<div class="sh-card sh-else"><h3>Elsewhere in ABP</h3
     });
     root.addEventListener('change', async (ev) => {
       const t = ev.target;
+      if (t.dataset && t.dataset.shSwitch === 'ollama') {
+        // the setting (ollama.enabled: what a restart loads) and the running unit (its page, routes and tools) together
+        const on = t.value === 'true';
+        try {
+          await api('/api/config/set', { method: 'POST', body: JSON.stringify({ path: ['ollama', 'enabled'], value: on }) });
+          await api('/api/runtime/units/ollama/' + (on ? 'load' : 'unload'), { method: 'POST', body: '{}' }).catch(() => null);
+          toast(on ? 'Ollama is on.' : 'Ollama is off: hidden and never used.');
+          load();
+        } catch (e) { toast(errText(e), 'error'); }
+        return;
+      }
       if (!t.dataset || !t.dataset.shKey) return;
       const value = t.dataset.shInt || t.dataset.shNum ? Number(t.value) : t.dataset.shBool ? t.value === 'true' : t.value.trim();
       try {

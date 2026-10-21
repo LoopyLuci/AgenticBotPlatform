@@ -129,14 +129,15 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
 
     @app.get("/api/local-chat/status", dependencies=read)
     async def local_chat_status():
-        from bot import localchat
+        from bot import localchat, ollama
         from bot.localchat import chat, store
         from bot.modelmistress import supervisor
 
         await asyncio.to_thread(_housekeep)
         hub = await asyncio.to_thread(supervisor.status)
         return {"hub": hub, "settings": localchat.settings(), "running": [t for t in store.running_turns()
-                                                                         if chat.is_running(t["session_id"])]}
+                                                                         if chat.is_running(t["session_id"])],
+                "ollama_enabled": ollama.enabled()}      # Settings → Local models shows and flips it
 
     @app.get("/api/local-chat/models", dependencies=read)
     async def local_chat_models(refresh: bool = Query(False)):

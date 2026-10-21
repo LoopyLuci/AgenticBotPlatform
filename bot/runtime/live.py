@@ -82,25 +82,32 @@ def reset() -> None:
 
 
 def selected_units(config: Optional[dict] = None) -> list[str]:
-    """Unit ids to run: ABP_UNITS, else config `runtime.units`, else all built-in areas."""
+    """Unit ids to run: ABP_UNITS, else config `runtime.units`, else all built-in areas. A switched-off area (Ollama with
+    `ollama.enabled: false`) is left out of all of these."""
     raw: Any = os.environ.get("ABP_UNITS")
+    if config is None:
+        from bot.config import config as _config
+        config = _config.current or {}
     if raw is None or not str(raw).strip():
-        if config is None:
-            from bot.config import config as _config
-            config = _config.current or {}
         raw = (config.get("runtime") or {}).get("units")
     if raw is None:
-        return list(legacy.AREAS)
-    if isinstance(raw, (list, tuple)):
+        names = list(legacy.AREAS)
+    elif isinstance(raw, (list, tuple)):
         names = [str(x).strip() for x in raw]
     else:
         text = str(raw).strip()
-        if text.lower() == "all":
-            return list(legacy.AREAS)
         if text.lower() == "none":
             return []
-        names = [p.strip() for p in text.split(",")]
-    return [n for n in dict.fromkeys(names) if n]
+        names = list(legacy.AREAS) if text.lower() == "all" else [p.strip() for p in text.split(",")]
+    off = switched_off(config)
+    return [n for n in dict.fromkeys(names) if n and n not in off]
+
+
+def switched_off(config: Optional[dict] = None) -> set[str]:
+    """Areas the config switches off (Settings): today Ollama, through `ollama.enabled: false`."""
+    from bot import ollama
+
+    return set() if ollama.enabled(config) else {"ollama"}
 
 
 def boot_manifest() -> Manifest:

@@ -67,7 +67,9 @@ def _hf_dirs() -> list[Path]:
 def known_locations() -> list[dict]:
     appdata = Path(os.environ.get("APPDATA", _HOME / "AppData" / "Roaming"))
     local = Path(os.environ.get("LOCALAPPDATA", _HOME / "AppData" / "Local"))
-    locs = [{"app": "Ollama", "kind": "ollama", "path": p} for p in _ollama_dirs()]
+    from bot import ollama
+
+    locs = [{"app": "Ollama", "kind": "ollama", "path": p} for p in _ollama_dirs()] if ollama.enabled() else []     # switched off: its store is not offered
     locs += [{"app": "LM Studio", "kind": "folder", "path": p} for p in
              (_HOME / ".lmstudio" / "models", _HOME / ".cache" / "lm-studio" / "models")]
     locs += [{"app": "Hugging Face", "kind": "hf", "path": p} for p in _hf_dirs()]
