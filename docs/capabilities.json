@@ -54,7 +54,7 @@
    "id": "page:chat",
    "keywords": "chat message conversation",
    "kind": "page",
-   "label": "Chat",
+   "label": "Remote Bot Chat",
    "network": false,
    "where": "#chat"
   },
@@ -214,7 +214,7 @@
    "id": "page:local-chat",
    "keywords": "local chat models modelmistress coding agent build plan review offline",
    "kind": "page",
-   "label": "Local Chat",
+   "label": "Agentic Workspace",
    "network": false,
    "where": "#local-chat"
   },
@@ -274,7 +274,7 @@
    "id": "page:ollama",
    "keywords": "ollama local models pull modelfile gguf cloud llama load gpu",
    "kind": "page",
-   "label": "Ollama",
+   "label": "Local Models",
    "network": true,
    "where": "#ollama"
   },
@@ -534,7 +534,7 @@
    "id": "page:unsloth",
    "keywords": "unsloth studio local models gguf load gpu fine-tune train export hugging face",
    "kind": "page",
-   "label": "Unsloth",
+   "label": "Model Studio",
    "network": false,
    "where": "#unsloth"
   },
@@ -900,21 +900,21 @@
   },
   {
    "cloud": false,
-   "desc": "Local Chat action",
+   "desc": "Agentic Workspace action",
    "id": "action:localchat.focus",
-   "keywords": "Local Chat",
+   "keywords": "Agentic Workspace",
    "kind": "action",
-   "label": "Jump to the Local Chat message box",
+   "label": "Jump to the Agentic Workspace message box",
    "network": false,
    "where": "action:localchat.focus"
   },
   {
    "cloud": false,
-   "desc": "Local Chat action",
+   "desc": "Agentic Workspace action",
    "id": "action:localchat.new",
-   "keywords": "Local Chat",
+   "keywords": "Agentic Workspace",
    "kind": "action",
-   "label": "New Local Chat session",
+   "label": "New Agentic Workspace session",
    "network": false,
    "where": "action:localchat.new"
   },
@@ -1014,7 +1014,7 @@
    "id": "action:nav.chat",
    "keywords": "go to navigate",
    "kind": "action",
-   "label": "Go to Chat",
+   "label": "Go to Remote Bot Chat",
    "network": false,
    "where": "action:nav.chat"
   },
@@ -1154,7 +1154,7 @@
    "id": "action:nav.local-chat",
    "keywords": "go to navigate",
    "kind": "action",
-   "label": "Go to Local Chat",
+   "label": "Go to Agentic Workspace",
    "network": false,
    "where": "action:nav.local-chat"
   },
@@ -1214,7 +1214,7 @@
    "id": "action:nav.ollama",
    "keywords": "go to navigate",
    "kind": "action",
-   "label": "Go to Ollama",
+   "label": "Go to Local Models",
    "network": false,
    "where": "action:nav.ollama"
   },
@@ -1414,7 +1414,7 @@
    "id": "action:nav.unsloth",
    "keywords": "go to navigate",
    "kind": "action",
-   "label": "Go to Unsloth",
+   "label": "Go to Model Studio",
    "network": false,
    "where": "action:nav.unsloth"
   },
@@ -12390,7 +12390,7 @@
   },
   {
    "cloud": false,
-   "desc": "The cloud and local backends ABP routes work through: Claude API, Claude Code CLI, Claude Desktop, Hermes. Local Chat needs none of them.",
+   "desc": "The cloud and local backends ABP routes work through: Claude API, Claude Code CLI, Claude Desktop, Hermes. Agentic Workspace needs none of them.",
    "id": "setting:backends",
    "keywords": "settings preferences",
    "kind": "setting",
@@ -12630,11 +12630,21 @@
   },
   {
    "cloud": false,
-   "desc": "ModelMistress (the local model hub), Local Chat's defaults and the other local runtimes.",
+   "desc": "ModelMistress (the local model hub), Agentic Workspace's defaults and the other local runtimes.",
    "id": "setting:local-models",
    "keywords": "settings preferences",
    "kind": "setting",
    "label": "Settings: Local models",
+   "network": false,
+   "where": "settings/local-models"
+  },
+  {
+   "cloud": false,
+   "desc": "Default model, agent type, autonomy, cloud assist and worktrees for new sessions (below)",
+   "id": "setting:local-models/Agentic Workspace defaults",
+   "keywords": "card:sh-localchat",
+   "kind": "setting",
+   "label": "Agentic Workspace defaults (Local models)",
    "network": false,
    "where": "settings/local-models"
   },
@@ -12650,11 +12660,21 @@
   },
   {
    "cloud": false,
-   "desc": "Default model, agent type, autonomy, cloud assist and worktrees for new sessions (below)",
-   "id": "setting:local-models/Local Chat defaults",
-   "keywords": "card:sh-localchat",
+   "desc": "Pull, load and create models through a connected Ollama (opt-in)",
+   "id": "setting:local-models/Local Models",
+   "keywords": "ollama",
    "kind": "setting",
-   "label": "Local Chat defaults (Local models)",
+   "label": "Local Models (Local models)",
+   "network": false,
+   "where": "settings/local-models"
+  },
+  {
+   "cloud": false,
+   "desc": "Local models, fine-tuning and export through a connected Unsloth (opt-in)",
+   "id": "setting:local-models/Model Studio",
+   "keywords": "unsloth",
+   "kind": "setting",
+   "label": "Model Studio (Local models)",
    "network": false,
    "where": "settings/local-models"
   },
@@ -12680,26 +12700,6 @@
   },
   {
    "cloud": false,
-   "desc": "Pull, load and create Ollama models (opt-in)",
-   "id": "setting:local-models/Ollama",
-   "keywords": "ollama",
-   "kind": "setting",
-   "label": "Ollama (Local models)",
-   "network": false,
-   "where": "settings/local-models"
-  },
-  {
-   "cloud": false,
-   "desc": "Local models, fine-tuning and export (opt-in)",
-   "id": "setting:local-models/Unsloth",
-   "keywords": "unsloth",
-   "kind": "setting",
-   "label": "Unsloth (Local models)",
-   "network": false,
-   "where": "settings/local-models"
-  },
-  {
-   "cloud": false,
    "desc": "Chat platforms and the bots on them.",
    "id": "setting:platforms",
    "keywords": "settings preferences",
@@ -12720,21 +12720,21 @@
   },
   {
    "cloud": false,
-   "desc": "Talk to any connected bot (Chat with Bot)",
-   "id": "setting:platforms/Chat",
-   "keywords": "chat",
-   "kind": "setting",
-   "label": "Chat (Platforms & bots)",
-   "network": false,
-   "where": "settings/platforms"
-  },
-  {
-   "cloud": false,
    "desc": "Legacy single-bot config",
    "id": "setting:platforms/Platforms",
    "keywords": "platforms",
    "kind": "setting",
    "label": "Platforms (Platforms & bots)",
+   "network": false,
+   "where": "settings/platforms"
+  },
+  {
+   "cloud": false,
+   "desc": "Talk to any connected bot (Chat with Bot)",
+   "id": "setting:platforms/Remote Bot Chat",
+   "keywords": "chat",
+   "kind": "setting",
+   "label": "Remote Bot Chat (Platforms & bots)",
    "network": false,
    "where": "settings/platforms"
   },

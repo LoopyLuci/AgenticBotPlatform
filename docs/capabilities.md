@@ -18,7 +18,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 | Automation | Hooks, agent settings & auto-manage | `#automation` |  |
 | Bots | Manage bot instances | `#bots` |  |
 | Browser | Link your real browser | `#browser` | net |
-| Chat | Talk to any connected bot | `#chat` |  |
+| Remote Bot Chat | Talk to any connected bot | `#chat` |  |
 | Cluster | Share machines, run jobs | `#cluster` |  |
 | Containers | Docker, images, stacks, templates | `#containers` |  |
 | Control Center | Backends, models & security | `#control` |  |
@@ -34,13 +34,13 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 | Jobs | Queue, history & backends | `#jobs` |  |
 | Kanban | Per-bot task board | `#kanban` |  |
 | Neural Lab | Design, train, system models | `#lab` |  |
-| Local Chat | Chat & code with local models | `#local-chat` |  |
+| Agentic Workspace | Chat & code with local models | `#local-chat` |  |
 | Local AI | Models, server, fine-tuning | `#localai` | net |
 | Live Logs | Streaming tail | `#logs` |  |
 | Mobile | Pair & manage devices | `#mobile` | net |
 | Models | Providers, API keys, per-model toggles | `#models` | net cloud |
 | Modules | Every program ABP drives | `#modules` |  |
-| Ollama | Pull, load, create & cloud models | `#ollama` | net cloud |
+| Local Models | Pull, load, create & cloud models | `#ollama` | net cloud |
 | Overview | Live status & KPIs | `#overview` |  |
 | Permissions & approvals | Approvals, rules, MCP pins | `#permissions` |  |
 | Platforms | Legacy single-bot config | `#platforms` |  |
@@ -66,7 +66,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 | Traces | What each agent run did | `#traces` |  |
 | Training | Support Bot phrases & bot instructions | `#training` |  |
 | TransferDaemon | Encrypted messages & files | `#transferdaemon` | net |
-| Unsloth | Local models, fine-tuning & export | `#unsloth` |  |
+| Model Studio | Local models, fine-tuning & export | `#unsloth` |  |
 | Updates | Check & install the latest version | `#updates` | net |
 | Usage & limits | Model use, allowances & blocks | `#usage` |  |
 | Vault | Logins the browser agent can use | `#vault` | net |
@@ -99,7 +99,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 | Customize UI (Appearance & shortcuts) | Describe a change, preview, apply | `settings/appearance` |  |
 | Keyboard shortcuts (Appearance & shortcuts) | Every shortcut, and changing them | `settings/appearance` |  |
 | Studio (Appearance & shortcuts) | Change the UI, see it live | `settings/appearance` |  |
-| Settings: Backends | The cloud and local backends ABP routes work through: Claude API, Claude Code CLI, Claude Desktop, Hermes. Local Chat needs none of them. | `settings/backends` |  |
+| Settings: Backends | The cloud and local backends ABP routes work through: Claude API, Claude Code CLI, Claude Desktop, Hermes. Agentic Workspace needs none of them. | `settings/backends` |  |
 | Control Center (Backends) | Default backend per action, backend models, security and process controls | `settings/backends` |  |
 | Hermes Manager (Backends) | The Hermes agent: gateway, sessions, config, backups | `settings/backends` | net cloud |
 | Model Router (Backends) | Automatic routing between models, its learning and policy | `settings/backends` |  |
@@ -123,17 +123,17 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 | Kanban (Factory) | Per-bot task boards | `settings/factory` |  |
 | Swarms (Factory) | Multi-bot orchestration | `settings/factory` |  |
 | Traces (Factory) | What each agent run did | `settings/factory` |  |
-| Settings: Local models | ModelMistress (the local model hub), Local Chat's defaults and the other local runtimes. | `settings/local-models` |  |
+| Settings: Local models | ModelMistress (the local model hub), Agentic Workspace's defaults and the other local runtimes. | `settings/local-models` |  |
+| Agentic Workspace defaults (Local models) | Default model, agent type, autonomy, cloud assist and worktrees for new sessions (below) | `settings/local-models` |  |
 | Local AI (Local models) | Local models, server and fine-tuning | `settings/local-models` |  |
-| Local Chat defaults (Local models) | Default model, agent type, autonomy, cloud assist and worktrees for new sessions (below) | `settings/local-models` |  |
+| Local Models (Local models) | Pull, load and create models through a connected Ollama (opt-in) | `settings/local-models` |  |
+| Model Studio (Local models) | Local models, fine-tuning and export through a connected Unsloth (opt-in) | `settings/local-models` |  |
 | Modules (ModelMistress) (Local models) | The hub: install, update, start, its models and settings | `settings/local-models` |  |
 | Neural Lab (Local models) | Design and train models | `settings/local-models` |  |
-| Ollama (Local models) | Pull, load and create Ollama models (opt-in) | `settings/local-models` |  |
-| Unsloth (Local models) | Local models, fine-tuning and export (opt-in) | `settings/local-models` |  |
 | Settings: Platforms & bots | Chat platforms and the bots on them. | `settings/platforms` |  |
 | Bots (Platforms & bots) | Bot instances, their platforms and agents | `settings/platforms` |  |
-| Chat (Platforms & bots) | Talk to any connected bot (Chat with Bot) | `settings/platforms` |  |
 | Platforms (Platforms & bots) | Legacy single-bot config | `settings/platforms` |  |
+| Remote Bot Chat (Platforms & bots) | Talk to any connected bot (Chat with Bot) | `settings/platforms` |  |
 | Support Bot (Platforms & bots) | The local assistant for server management | `settings/platforms` |  |
 | Training (Platforms & bots) | Support Bot phrases and bot instructions | `settings/platforms` |  |
 | Settings: Safety | Confinement, what is running, the emergency stops, credentials. | `settings/safety` |  |
@@ -185,8 +185,8 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 | Copy this card's text | Kanban action | `action:kanban.card.copy` |  |
 | Delete this card | Kanban action | `action:kanban.card.delete` |  |
 | Refresh the board | Kanban action | `action:kanban.refresh` |  |
-| Jump to the Local Chat message box | Local Chat action | `action:localchat.focus` |  |
-| New Local Chat session | Local Chat action | `action:localchat.new` |  |
+| Jump to the Agentic Workspace message box | Agentic Workspace action | `action:localchat.focus` |  |
+| New Agentic Workspace session | Agentic Workspace action | `action:localchat.new` |  |
 | Copy the whole log view | Logs action | `action:logs.copyAll` |  |
 | Copy this log line | Logs action | `action:logs.copyLine` |  |
 | Run this module's action (install, update, hub) | Modules action | `action:module.act` |  |
@@ -196,7 +196,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 | Go to Automation | Go to action (shortcut g au) | `action:nav.automation` |  |
 | Go to Bots | Go to action (shortcut g b) | `action:nav.bots` |  |
 | Go to Browser | Go to action (shortcut g br) | `action:nav.browser` | net |
-| Go to Chat | Go to action (shortcut g h) | `action:nav.chat` |  |
+| Go to Remote Bot Chat | Go to action (shortcut g h) | `action:nav.chat` |  |
 | Go to Cluster | Go to action (shortcut g cl) | `action:nav.cluster` |  |
 | Go to Containers | Go to action (shortcut g co) | `action:nav.containers` |  |
 | Go to Control Center | Go to action (shortcut g c) | `action:nav.control` |  |
@@ -210,13 +210,13 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 | Go to Jobs | Go to action (shortcut g j) | `action:nav.jobs` |  |
 | Go to Kanban | Go to action (shortcut g kb) | `action:nav.kanban` |  |
 | Go to Neural Lab | Go to action (shortcut g lb) | `action:nav.lab` |  |
-| Go to Local Chat | Go to action (shortcut g lc) | `action:nav.local-chat` |  |
+| Go to Agentic Workspace | Go to action (shortcut g lc) | `action:nav.local-chat` |  |
 | Go to Local AI | Go to action (shortcut g lo) | `action:nav.localai` |  |
 | Go to Live Logs | Go to action (shortcut g l) | `action:nav.logs` |  |
 | Go to Mobile | Go to action (shortcut g mb) | `action:nav.mobile` | net |
 | Go to Models | Go to action (shortcut g m) | `action:nav.models` |  |
 | Go to Modules | Go to action (shortcut g mo) | `action:nav.modules` |  |
-| Go to Ollama | Go to action (shortcut g ol) | `action:nav.ollama` |  |
+| Go to Local Models | Go to action (shortcut g ol) | `action:nav.ollama` |  |
 | Go to Overview | Go to action (shortcut g o) | `action:nav.overview` |  |
 | Go to Platforms | Go to action (shortcut g pf) | `action:nav.platforms` |  |
 | Go to Power | Go to action (shortcut g pw) | `action:nav.power` |  |
@@ -236,7 +236,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 | Go to Connections & Telemetry | Go to action (shortcut g te) | `action:nav.telemetry` |  |
 | Go to Training | Go to action (shortcut g tr) | `action:nav.training` |  |
 | Go to TransferDaemon | Go to action (shortcut g td) | `action:nav.transferdaemon` | net |
-| Go to Unsloth | Go to action (shortcut g un) | `action:nav.unsloth` |  |
+| Go to Model Studio | Go to action (shortcut g un) | `action:nav.unsloth` |  |
 | Go to Updates | Go to action (shortcut g up) | `action:nav.updates` | net |
 | Go to Vision | Go to action (shortcut g vi) | `action:nav.vision` |  |
 | Go to VM-Harness | Go to action (shortcut g vm) | `action:nav.vm-harness` |  |

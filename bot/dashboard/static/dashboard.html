@@ -557,9 +557,9 @@
     </div>
     <nav class="sidenav" id="sidenav">
       <div class="nav-group" role="presentation">Work</div>
-      <a href="#local-chat" title="Local Chat"><span class="ic">✦</span><span class="nav-txt">Local Chat</span></a>
+      <a href="#local-chat" title="Agentic Workspace"><span class="ic">✦</span><span class="nav-txt">Agentic Workspace</span></a>
       <a href="#overview" title="Overview"><span class="ic">◆</span><span class="nav-txt">Overview</span></a>
-      <a href="#chat" title="Chat"><span class="ic">💬</span><span class="nav-txt">Chat</span></a>
+      <a href="#chat" title="Remote Bot Chat"><span class="ic">💬</span><span class="nav-txt">Remote Bot Chat</span></a>
       <a href="#server-chat" title="Server Chat"><span class="ic">🖥</span><span class="nav-txt">Server Chat</span></a>
       <a href="#sessions" title="Sessions"><span class="ic">🗂</span><span class="nav-txt">Sessions</span></a>
       <a href="#kanban" title="Kanban"><span class="ic">🗒</span><span class="nav-txt">Kanban</span></a>
@@ -580,8 +580,8 @@
       <a href="#models" title="Models"><span class="ic">🧩</span><span class="nav-txt">Models</span></a>
       <a href="#router" data-unit="router" title="Model Router"><span class="ic">🧭</span><span class="nav-txt">Model Router</span></a>
       <a href="#localai" data-unit="localai" title="Local AI"><span class="ic">🦙</span><span class="nav-txt">Local AI</span></a>
-      <a href="#ollama" data-unit="ollama" title="Ollama"><span class="ic">🦙</span><span class="nav-txt">Ollama</span></a>
-      <a href="#unsloth" data-unit="unsloth" title="Unsloth"><span class="ic">🦥</span><span class="nav-txt">Unsloth</span></a>
+      <a href="#ollama" data-unit="ollama" title="Local Models"><span class="ic">🦙</span><span class="nav-txt">Local Models</span></a>
+      <a href="#unsloth" data-unit="unsloth" title="Model Studio"><span class="ic">🦥</span><span class="nav-txt">Model Studio</span></a>
       <a href="#lab" data-unit="neurallab" title="Neural Lab"><span class="ic">🧠</span><span class="nav-txt">Neural Lab</span></a>
       <a href="#studio" data-unit="studio" title="Studio"><span class="ic">🎨</span><span class="nav-txt">Studio</span></a>
       <a href="#vision" data-unit="vision" title="Vision"><span class="ic">👁</span><span class="nav-txt">Vision</span></a>
@@ -630,7 +630,7 @@
   <main tabindex="-1">
     <div class="topbar">
       <button class="mobile-nav-btn" id="btn-mobile-nav" type="button" aria-controls="sidenav" aria-expanded="false" title="Open navigation" aria-label="Open navigation">☰</button>
-      <div class="title">Local Chat</div>
+      <div class="title"></div>
       <div class="pillrow">
         <span class="pill" id="pill-bot" aria-live="polite"><span class="dot neutral"></span>Checking bots…</span>
         <span class="pill hidden" id="pill-mcp-warn"><span class="dot warning"></span><span id="pill-mcp-warn-text"></span></span>
@@ -641,7 +641,7 @@
     </div>
 
     <section id="local-chat">
-      <div class="sec-head"><h2>Local Chat</h2><span class="desc">Local models on ModelMistress, with ABP's agent · works offline</span></div>
+      <div class="sec-head"><h2>Agentic Workspace</h2><span class="desc">Local models on ModelMistress, with ABP's agent · works offline</span></div>
       <div id="lc-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
@@ -1066,7 +1066,7 @@
     </section>
 
     <section id="chat">
-      <div class="sec-head"><h2>Chat</h2><span class="desc">The real conversation across every connected platform — read it live, and operate either side of it</span></div>
+      <div class="sec-head"><h2>Remote Bot Chat</h2><span class="desc">The real conversation across every connected platform — read it live, and operate either side of it</span></div>
       <div class="card chat-card mode-bot" id="chat-card">
         <div class="chat-tabs" id="chat-tabs"></div>
         <div class="chat-toolbar">
@@ -1506,7 +1506,7 @@
     </section>
 
     <section id="unsloth" data-unit="unsloth">
-      <div class="sec-head"><h2>Unsloth</h2><span class="desc">Unsloth Studio from ABP: load models onto the GPU and serve them to your bots, download from Hugging Face, fine-tune, export, and every other Studio feature.</span></div>
+      <div class="sec-head"><h2>Model Studio</h2><span class="desc">Connect an external Unsloth Studio: load models onto the GPU and serve them to your bots, download from Hugging Face, fine-tune, export, and every other Studio feature.</span></div>
       <div id="us-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
@@ -1516,7 +1516,7 @@
     </section>
 
     <section id="localai" data-unit="localai">
-      <div class="sec-head"><h2>Local AI</h2><span class="desc">Run, serve and fine-tune models on this machine: everything Ollama and Unsloth do, inside ABP. An Ollama-compatible server (any Ollama app works against it) and OpenAI's API, llama.cpp on the GPU, models pulled from Ollama's registry or Hugging Face, imported, or used in place from other programs' folders, and LoRA fine-tuning on the GPU exported straight into the store.</span></div>
+      <div class="sec-head"><h2>Local AI</h2><span class="desc">Run, serve and fine-tune models on this machine: everything other local-model tools do, inside ABP. An Ollama-compatible server (existing Ollama apps work against it) and OpenAI's API, llama.cpp on the GPU, models pulled from Ollama's registry or Hugging Face, imported, or used in place from other programs' folders, and LoRA fine-tuning on the GPU exported straight into the store.</span></div>
       <div id="aip-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
@@ -1572,7 +1572,7 @@
     </section>
 
     <section id="ollama" data-unit="ollama">
-      <div class="sec-head"><h2>Ollama</h2><span class="desc">Ollama from ABP: pull and load models and serve them to your bots, cloud models, build models from a Modelfile or a GGUF file, and every route Ollama serves.</span></div>
+      <div class="sec-head"><h2>Local Models</h2><span class="desc">Connect an external Ollama: pull and load models and serve them to your bots, cloud models, build models from a Modelfile or a GGUF file, and every route Ollama serves.</span></div>
       <div id="ol-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 

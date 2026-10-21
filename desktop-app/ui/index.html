@@ -783,9 +783,9 @@
     </div>
     <nav class="sidenav" id="sidenav">
       <div class="nav-group" role="presentation">Work</div>
-      <a href="#local-chat" data-kw="local chat models modelmistress coding agent build plan review offline"><span class="ic">✦</span><span class="nav-txt"><b>Local Chat</b><small>Chat &amp; code with local models</small></span></a>
+      <a href="#local-chat" data-kw="local chat models modelmistress coding agent build plan review offline"><span class="ic">✦</span><span class="nav-txt"><b>Agentic Workspace</b><small>Chat &amp; code with local models</small></span></a>
       <a href="#overview" data-kw="overview live status kpis"><span class="ic">◆</span><span class="nav-txt"><b>Overview</b><small>Live status &amp; KPIs</small></span></a>
-      <a href="#chat" data-kw="chat message conversation"><span class="ic">💬</span><span class="nav-txt"><b>Chat</b><small>Talk to any connected bot</small></span></a>
+      <a href="#chat" data-kw="chat message conversation"><span class="ic">💬</span><span class="nav-txt"><b>Remote Bot Chat</b><small>Talk to any connected bot</small></span></a>
       <a href="#server-chat" data-kw="server chat devices files desktop android"><span class="ic">🖥</span><span class="nav-txt"><b>Server Chat</b><small>Message &amp; send files between devices</small></span></a>
       <a href="#sessions" data-kw="sessions past conversations"><span class="ic">🗂</span><span class="nav-txt"><b>Sessions</b><small>Past conversations</small></span></a>
       <a href="#kanban" data-kw="kanban board cards tasks"><span class="ic">🗒</span><span class="nav-txt"><b>Kanban</b><small>Per-bot task board</small></span></a>
@@ -805,8 +805,8 @@
       <a href="#models" data-kw="models providers api keys free toggle"><span class="ic">🧩</span><span class="nav-txt"><b>Models</b><small>Providers, API keys, per-model toggles</small></span></a>
       <a href="#router" data-unit="router" data-kw="router model routing auto learning decisions policy training feedback"><span class="ic">🧭</span><span class="nav-txt"><b>Model Router</b><small>Decisions, learning, training &amp; policy</small></span></a>
       <a href="#localai" data-unit="localai" data-kw="local ai ollama unsloth llama models gguf pull fine-tune finetune lora training gpu inference server"><span class="ic">🦙</span><span class="nav-txt"><b>Local AI</b><small>Models, server, fine-tuning</small></span></a>
-      <a href="#ollama" data-unit="ollama" data-kw="ollama local models pull modelfile gguf cloud llama load gpu"><span class="ic">🦙</span><span class="nav-txt"><b>Ollama</b><small>Pull, load, create &amp; cloud models</small></span></a>
-      <a href="#unsloth" data-unit="unsloth" data-kw="unsloth studio local models gguf load gpu fine-tune train export hugging face"><span class="ic">🦥</span><span class="nav-txt"><b>Unsloth</b><small>Local models, fine-tuning &amp; export</small></span></a>
+      <a href="#ollama" data-unit="ollama" data-kw="ollama local models pull modelfile gguf cloud llama load gpu"><span class="ic">🦙</span><span class="nav-txt"><b>Local Models</b><small>Pull, load, create &amp; cloud models</small></span></a>
+      <a href="#unsloth" data-unit="unsloth" data-kw="unsloth studio local models gguf load gpu fine-tune train export hugging face"><span class="ic">🦥</span><span class="nav-txt"><b>Model Studio</b><small>Local models, fine-tuning &amp; export</small></span></a>
       <a href="#lab" data-unit="neurallab" data-kw="neural lab network design train moe mixture experts brainbuilder amethyst importers system models tuning telemetry cpu stability"><span class="ic">🧠</span><span class="nav-txt"><b>Neural Lab</b><small>Design, train, system models</small></span></a>
       <a href="#studio" data-unit="studio" data-kw="studio generative ui gui code preview live variant theme design components generate model apply revert"><span class="ic">🎨</span><span class="nav-txt"><b>Studio</b><small>Change the UI, see it live</small></span></a>
       <a href="#vision" data-unit="vision" data-kw="vision computer vision opencv image camera screen ocr text faces objects qr barcode detect find compare edit"><span class="ic">👁</span><span class="nav-txt"><b>Vision</b><small>Objects, faces, text, screen</small></span></a>
@@ -856,7 +856,7 @@
   <main tabindex="-1">
     <div class="topbar">
       <button class="mobile-nav-btn" id="btn-mobile-nav" type="button" aria-controls="sidenav" aria-expanded="false" title="Open navigation" aria-label="Open navigation">☰</button>
-      <div class="title">Local Chat</div>
+      <div class="title"></div>
       <div class="pillrow">
         <span class="pill" id="pill-bot" aria-live="polite"><span class="dot neutral"></span>Checking bots…</span>
         <span class="pill hidden" id="pill-mcp-warn"><span class="dot warning"></span><span id="pill-mcp-warn-text"></span></span>
@@ -871,7 +871,7 @@
     </div>
 
     <section id="local-chat">
-      <div class="sec-head"><h2>Local Chat</h2><span class="desc">Local models on ModelMistress, with ABP's agent · works offline</span></div>
+      <div class="sec-head"><h2>Agentic Workspace</h2><span class="desc">Local models on ModelMistress, with ABP's agent · works offline</span></div>
       <div id="lc-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
@@ -1329,7 +1329,7 @@
     </section>
 
     <section id="chat">
-      <div class="sec-head"><h2>Chat</h2><span class="desc">The real conversation across every connected platform — read it live, or send a message straight to the phone/laptop it's logged in on</span></div>
+      <div class="sec-head"><h2>Remote Bot Chat</h2><span class="desc">The real conversation across every connected platform — read it live, or send a message straight to the phone/laptop it's logged in on</span></div>
       <div class="card chat-card">
         <div class="chat-shell">
           <div class="chat-list-pane">
@@ -1907,7 +1907,7 @@
     </section>
 
     <section id="unsloth" data-unit="unsloth">
-      <div class="sec-head"><h2>Unsloth</h2><span class="desc">Unsloth Studio from ABP: load models onto the GPU and serve them to your bots, download from Hugging Face, fine-tune, export, and every other Studio feature.</span></div>
+      <div class="sec-head"><h2>Model Studio</h2><span class="desc">Connect an external Unsloth Studio: load models onto the GPU and serve them to your bots, download from Hugging Face, fine-tune, export, and every other Studio feature.</span></div>
       <div id="us-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
@@ -1917,7 +1917,7 @@
     </section>
 
     <section id="localai" data-unit="localai">
-      <div class="sec-head"><h2>Local AI</h2><span class="desc">Run, serve and fine-tune models on this machine: everything Ollama and Unsloth do, inside ABP. An Ollama-compatible server (any Ollama app works against it) and OpenAI's API, llama.cpp on the GPU, models pulled from Ollama's registry or Hugging Face, imported, or used in place from other programs' folders, and LoRA fine-tuning on the GPU exported straight into the store.</span></div>
+      <div class="sec-head"><h2>Local AI</h2><span class="desc">Run, serve and fine-tune models on this machine: everything other local-model tools do, inside ABP. An Ollama-compatible server (existing Ollama apps work against it) and OpenAI's API, llama.cpp on the GPU, models pulled from Ollama's registry or Hugging Face, imported, or used in place from other programs' folders, and LoRA fine-tuning on the GPU exported straight into the store.</span></div>
       <div id="aip-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
@@ -1973,7 +1973,7 @@
     </section>
 
     <section id="ollama" data-unit="ollama">
-      <div class="sec-head"><h2>Ollama</h2><span class="desc">Ollama from ABP: pull and load models and serve them to your bots, cloud models, build models from a Modelfile or a GGUF file, and every route Ollama serves.</span></div>
+      <div class="sec-head"><h2>Local Models</h2><span class="desc">Connect an external Ollama: pull and load models and serve them to your bots, cloud models, build models from a Modelfile or a GGUF file, and every route Ollama serves.</span></div>
       <div id="ol-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 

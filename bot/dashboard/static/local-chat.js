@@ -1,4 +1,4 @@
-// Local Chat: ABP's first screen. A chat with local models on the ModelMistress hub, with ABP's own agent
+// Agentic Workspace: ABP's first screen. A chat with local models on the ModelMistress hub, with ABP's own agent
 // (bot/localchat, /api/local-chat). Sessions on the left, the conversation in the middle, the session's model, mode,
 // autonomy, cloud assist and workspace in the top bar, model and session details on the right, and the hub's state in a
 // status strip at the bottom. The model picker shows every model the hub can run with each figure labelled by where it
@@ -125,7 +125,7 @@
   }
   function asMarkdown(p) {
     const s = p.session || {};
-    const lines = [`# ${s.title || 'Local Chat session'}`, '', `Model: ${s.model || '-'} · mode: ${s.mode || '-'} · workspace: ${s.workspace || '-'}`, ''];
+    const lines = [`# ${s.title || 'Agentic Workspace session'}`, '', `Model: ${s.model || '-'} · mode: ${s.mode || '-'} · workspace: ${s.workspace || '-'}`, ''];
     p.messages.forEach((m) => { lines.push(`## ${m.role}${m.model && m.role === 'assistant' ? ' (' + shortModel(m.model) + ')' : ''}`, '', m.text, ''); });
     return lines.join('\n');
   }
@@ -382,7 +382,7 @@
       return;
     }
     try {
-      const n = new Notification('Local Chat: ' + (s.title || 'session'), { body: text, tag: 'lc-' + s.id });
+      const n = new Notification('Agentic Workspace: ' + (s.title || 'session'), { body: text, tag: 'lc-' + s.id });
       n.onclick = () => { window.focus(); openSession(s.id, S.active); n.close(); };
     } catch (_) { toast((s.title || 'A session') + ' ' + text + '.'); }
   }
@@ -403,7 +403,7 @@
     if (!root) return;
     if (!root.querySelector('.lc')) {
       root.innerHTML = `<div class="lc${S.rightOpen ? '' : ' lc-noright'}">
-  <aside class="lc-side" aria-label="Local Chat sessions">
+  <aside class="lc-side" aria-label="Agentic Workspace sessions">
     <div class="lc-side-head"><button type="button" class="btn primary lc-new" data-lc="new">+ New session</button>
       <button type="button" class="lc-icon" data-lc="new-group" aria-label="New group" title="New group">⊞</button>
       <button type="button" class="lc-icon" data-lc="notify" aria-label="Desktop notifications" title="Notify me when a session needs me or finishes">🔔</button></div>
@@ -418,7 +418,7 @@
 <div class="lc-hint hidden" id="lc-hint" role="status"></div>
 <div class="lc-status" id="lc-status" role="status" aria-live="polite"></div>
 <div class="lc-picker hidden" id="lc-picker" role="dialog" aria-label="Choose a model"></div>
-<div class="lc-picker lc-modal hidden" id="lc-modal" role="dialog" aria-modal="true" aria-label="Local Chat"></div>`;
+<div class="lc-picker lc-modal hidden" id="lc-modal" role="dialog" aria-modal="true" aria-label="Agentic Workspace"></div>`;
     }
     const host = $('lc-panes');
     while (host.children.length > S.panes.length) host.lastChild.remove();
@@ -556,7 +556,7 @@ ${(mm.next.options || []).map((o) => `<button type="button" class="btn" data-lc=
     const model = S.catalog && S.catalog.default_model;
     const hub = (S.status && S.status.hub) || null;
     const down = hub && !hub.up ? `<p class="lc-warn">ModelMistress (the local model hub) is not running. Start it from <a href="#modules">Modules</a>; with autostart on, ABP restarts it by itself.</p>` : '';
-    return `<div class="lc-empty"><h3>Local Chat</h3>${down}<p>Chat and code with local models on ModelMistress. Nothing here needs a cloud backend or the network.</p>
+    return `<div class="lc-empty"><h3>Agentic Workspace</h3>${down}<p>Chat and code with local models on ModelMistress. Nothing here needs a cloud backend or the network.</p>
 ${S.catalogErr ? `<p class="lc-warn">${E(S.catalogErr)}</p>` : model ? `<p class="lc-note">New sessions start on <b>${E(shortModel(model))}</b>. Pick another in the top bar.</p>` : '<p class="lc-note">Load or download a model on ModelMistress to start.</p>'}
 <p class="lc-note">Chat: every tool on hand, conversational (edits ask first). Build: the agent works in the session's worktree (edits ask first). Plan: it proposes a plan for your approval. Review: it only reads.</p></div>`;
   }
@@ -751,7 +751,7 @@ ${d.would_lose.commits.length ? `<p>Commits not on the base:</p><ul>${d.would_lo
   async function queueDecide(i, id, approve) {
     const note = approve ? '' : (window.prompt('Why reject it? (optional)') || '');
     try {
-      const r = await post('/api/conductor/queue/' + encodeURIComponent(id) + '/' + (approve ? 'approve' : 'reject'), { by: 'owner (Local Chat)', note });
+      const r = await post('/api/conductor/queue/' + encodeURIComponent(id) + '/' + (approve ? 'approve' : 'reject'), { by: 'owner (Agentic Workspace)', note });
       toast(approve ? 'Approved. Nothing was pushed: ' + (r.push_command || 'the pusher pushes it when enabled') : 'Rejected.');
     } catch (e) { toast(errText(e), 'error'); }
     loadWorktree(i);
@@ -1058,7 +1058,7 @@ ${c ? `<p class="lc-note lc-pad">Device: ${E(c.device)} · ${E(c.ram_free_gb)} G
     const show = S.setup && S.setup.ready === false && store.get('hint-dismissed') !== '1';
     el.classList.toggle('hidden', !show);
     if (show) {
-      el.innerHTML = `<span>No cloud backend is connected. That is optional: Local Chat runs on local models without one.</span>
+      el.innerHTML = `<span>No cloud backend is connected. That is optional: Agentic Workspace runs on local models without one.</span>
 <button type="button" class="btn" data-lc="setup">Connect a cloud backend</button><button type="button" class="lc-icon" data-lc="hint-close" aria-label="Dismiss this hint">✕</button>`;
     }
   }
