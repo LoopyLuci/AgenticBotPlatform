@@ -365,7 +365,15 @@ async def _turn(sid: str, turn_id: str, text: str, model: str, session: dict, br
     if not to_cloud:
         await _maybe_compact(sid, model, broadcast)
     prompt = text
-    brief = links.pending_context(sid)              # a fork / task / hand-off starts with its parent's context
+    from bot import agent_control
+
+    bots = await asyncio.to_thread(agent_control.mentioned_bots, text, instance_id)
+    if bots:                                        # @botname: a registered bot the person means you to use
+        names = ", ".join(f"@{b['name']} (id {b['id']}, {b['backend']})" for b in bots)
+        prompt = (f"{prompt}\n\n[The message mentions registered bots: {names}. Work with them through delegate_to_instance "
+                  "(pass a 'conversation' label to keep a multi-turn session) or delegate_to_bots for several at once; "
+                  "find_tools('delegate to a bot') loads those tools.]")
+    brief = links.pending_context(sid)             # a fork / task / hand-off starts with its parent's context
     summary = housekeeping.pending_summary(sid)     # the first turn after a compaction starts from the summary
     for head in (summary, brief):
         if head:
