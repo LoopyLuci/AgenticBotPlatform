@@ -379,6 +379,10 @@ class NativeAgentBackend(Backend):
         if len(tool_schemas) < len(pool) and not any(s["name"] == tool_discovery.TOOL_NAME for s in tool_schemas):
             tool_schemas += [s for s in pool if s["name"] == tool_discovery.TOOL_NAME]    # the rest stays one search away
         tool_discovery.attach(pool, tool_schemas)
+        if len(tool_schemas) < len(pool):
+            prefetched = tool_discovery.prefetch(str(context.get("route_text") or prompt)[:2000])
+            if prefetched:
+                trace.active().note("tools matching the message, sent with the core set: " + ", ".join(prefetched))
         small_model.announce(session_key, small, self.model, trace.active().note)
 
         from bot.agent_runtime import prompt as prompt_builder

@@ -62,8 +62,20 @@ def permitted(name: str) -> bool:
     return turn is None or turn.pool is None or name in turn.pool
 
 
+_STOP = frozenset("""a an and are as at be by can do does for from get give has have how i in into is it its me my now of on
+or our please right set show so tell than that the their them then there these this to up us use was we what when where which
+who why will with you your about all any just like list make need see some via""".split())
+
+
+def _stem(w: str) -> str:
+    for suffix in ("ing", "ed", "es", "s"):
+        if len(w) > 4 and w.endswith(suffix):
+            return w[: -len(suffix)]
+    return w
+
+
 def _words(text: str) -> list[str]:
-    return [w for w in re.split(r"[^a-z0-9]+", str(text).lower()) if len(w) > 1]
+    return [_stem(w) for w in re.split(r"[^a-z0-9]+", str(text).lower()) if len(w) > 1 and w not in _STOP]
 
 
 # Plain words people use, mapped to words tool names and descriptions use.
@@ -78,15 +90,15 @@ _SYNONYMS = {
 }
 
 
-def search(query: str, limit: int = MAX_RESULTS) -> list[dict]:
-    """The pool's tools that best match `query`, best first; [] without a pool."""
+def _scored(query: str) -> list[tuple[int, int, str, dict]]:
+    """(score, how many query words the tool's NAME holds, name, schema) for every pool tool that matches, best first."""
     turn = _current.get()
     if turn is None or not turn.pool:
         return []
     want = _words(query)
     expanded = set(want)
     for w in want:
-        expanded.update(_SYNONYMS.get(w, ()))
+        expanded.update(_stem(s) for s in _SYNONYMS.get(w, ()))
     if not expanded:
         return []
     scored = []
@@ -95,13 +107,41 @@ def search(query: str, limit: int = MAX_RESULTS) -> list[dict]:
             continue
         name_words = set(_words(name.replace("_", " ")))
         desc_words = set(_words(schema.get("description", "")))
-        score = 3 * len(expanded & name_words) + len(expanded & desc_words)
+        in_name = len(expanded & name_words)
+        score = 3 * in_name + len(expanded & desc_words)
         if any(w in name for w in want if len(w) > 3):
             score += 2
         if score:
-            scored.append((score, name, schema))
-    scored.sort(key=lambda t: (-t[0], t[1]))
-    return [s for _, _, s in scored[:max(1, limit)]]
+            scored.append((score, in_name, name, schema))
+    scored.sort(key=lambda t: (-t[0], t[2]))
+    return scored
+
+
+def search(query: str, limit: int = MAX_RESULTS) -> list[dict]:
+    """The pool's tools that best match `query`, best first; [] without a pool."""
+    return [s for _, _, _, s in _scored(query)[:max(1, limit)]]
+
+
+PREFETCH = 5
+
+
+def prefetch(message: str, limit: int = PREFETCH) -> list[str]:
+    """Before the first step: the pool's tools whose NAMES match the person's message are sent with the core set, so the
+    turn can use them without first thinking to call find_tools (the coder on 2026-10-20 reached for grep and run_shell
+    instead in 4 of 10 tasks). Name matches only: a whole message shares common words with almost every description."""
+    turn = _current.get()
+    if turn is None or turn.sent is None:
+        return []
+    have = {s["name"] for s in turn.sent}
+    added = []
+    for _, in_name, name, schema in _scored(message):
+        if len(added) >= limit:
+            break
+        if in_name and name not in have:
+            turn.sent.append(schema)
+            have.add(name)
+            added.append(name)
+    return added
 
 
 def _short(text: str, n: int = 160) -> str:

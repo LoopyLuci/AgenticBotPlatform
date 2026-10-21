@@ -87,6 +87,33 @@ def test_a_small_model_loads_a_tool_with_find_tools_and_then_uses_it(temp_db, mo
     assert tool_discovery.PROMPT_HINT.strip() in t.prompts[0]            # and the prompt says the rest exists
 
 
+def test_tools_named_like_the_message_are_sent_from_the_first_step(temp_db, monkeypatch):
+    # the find_tools eval on 2026-10-20: in 4 of 10 tasks the coder never called find_tools and went for grep / run_shell
+    _small(monkeypatch)
+    t = Recorder([_done()])
+    _ask(t, context={"route_text": "What scheduled commands are set up in ABP?"})
+    assert "list_schedules" in t.sent[0] and "find_tools" in t.sent[0]
+    assert len(t.sent[0]) <= 3 + 1 + tool_discovery.PREFETCH                   # the core set, find_tools, a few matches
+
+
+def test_stop_words_and_stems_shape_the_search():
+    token = tool_discovery.begin()
+    try:
+        pool = [{"name": "list_schedules", "description": "List the scheduled commands"},
+                {"name": "read_file", "description": "Read what is in a file you have"},
+                {"name": "module_list", "description": "The installed ABP modules and their state"}]
+        tool_discovery.attach(pool, [])
+        assert [s["name"] for s in tool_discovery.search("which modules are installed")][:1] == ["module_list"]
+        assert tool_discovery.search("what is the")  == []                          # only stop words: nothing
+        assert tool_discovery._stem("scheduled") == tool_discovery._stem("schedules") == "schedul"
+        sent: list = []
+        tool_discovery.attach(pool, sent)
+        assert tool_discovery.prefetch("What state are they in?") == []          # a description-only match: not sent
+        assert tool_discovery.prefetch("show my file") == ["read_file"]           # a name match is
+    finally:
+        tool_discovery.end(token)
+
+
 def test_no_hint_when_every_tool_is_sent(temp_db, monkeypatch):
     monkeypatch.setattr(small_model, "profile_for", lambda transport, model: None)
     t = Recorder([_done()])
