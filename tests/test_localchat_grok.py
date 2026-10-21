@@ -1,0 +1,53 @@
+"""Grok in the Agentic Workspace's model picker: a "cloud" group from `grok models`, picked explicitly, routed to the grok backend."""
+from __future__ import annotations
+
+import asyncio
+import subprocess
+
+import pytest
+
+from bot.localchat import catalog, chat
+
+_REAL_GROK_MODELS = catalog.grok_models          # taken at import, before conftest's _no_grok_sign_in replaces it
+MODELS_OUT = "You are logged in with grok.com.\n\nDefault model: grok-4.7\n\nAvailable models:\n  * grok-4.7 (default)\n  - grok-4.7-build-fast\n"
+
+
+@pytest.fixture(autouse=True)
+def _no_cache(monkeypatch):
+    monkeypatch.setattr(catalog, "_grok_cache", (0.0, []))
+    monkeypatch.setattr(catalog, "grok_models", _REAL_GROK_MODELS)
+
+
+def _fake_run(out):
+    return lambda *a, **k: subprocess.CompletedProcess(a, 0, stdout=out, stderr="")
+
+
+def test_grok_models_parses_the_signed_in_list(monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda b: "/bin/grok")
+    monkeypatch.setattr(subprocess, "run", _fake_run(MODELS_OUT))
+    assert catalog.grok_models() == ["grok-4.7", "grok-4.7-build-fast"]
+
+
+def test_not_signed_in_or_not_installed_offers_nothing(monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda b: "/bin/grok")
+    monkeypatch.setattr(subprocess, "run", _fake_run("You are not authenticated.\n\nAvailable models:\n  * grok-4.6 (default)\n"))
+    assert catalog.grok_models() == []
+    monkeypatch.setattr("shutil.which", lambda b: None)
+    assert catalog.grok_models() == []
+
+
+def test_cloud_rows_join_the_catalog_in_their_own_group():
+    rows = catalog.cloud_rows(["grok-4.7"])
+    assert rows[0]["id"] == "grok/grok-4.7" and rows[0]["runs_on"] == "cloud" and rows[0]["kind"] == "chat"
+    doc = catalog.with_cloud({"models": [{"id": "modelmistress/x"}], "groups": ["loaded"]}, rows)
+    assert [m["id"] for m in doc["models"]] == ["modelmistress/x", "grok/grok-4.7"] and doc["groups"] == ["loaded", "cloud"]
+    assert catalog.with_cloud({"models": [], "groups": []}, []) == {"models": [], "groups": []}
+
+
+def test_a_grok_session_with_cloud_assist_off_is_refused(monkeypatch):
+    session = {"id": "s1", "mode": "chat", "model": "grok/grok-4.7", "cloud_assist": "off"}
+    monkeypatch.setattr(chat, "is_running", lambda sid: False)
+    monkeypatch.setattr(chat.store, "get", lambda sid: session)
+    assert chat.is_grok("grok/grok-4.7") and not chat.is_grok("modelmistress/qwen")
+    with pytest.raises(ValueError, match="cloud assist is off"):
+        asyncio.run(chat.send("s1", "hi", lambda *a, **k: None))

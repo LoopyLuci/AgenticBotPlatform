@@ -44,9 +44,9 @@
     ['factory', 'Factory', 'A goal becomes a conductor plan; confined workers run it only when you press Run']];
   const AUTONOMY = ['0 Locked', '1 Cautious', '2 Supervised', '3 Trusted', '4 Autonomous', '5 Sovereign'];
   const CLOUD = [['off', 'Cloud off'], ['ask', 'Cloud: ask'], ['auto', 'Cloud: auto']];
-  const GROUP_LABEL = { loaded: 'Loaded', gpu: 'Fits on the GPU', cpu: 'Runs on the CPU (slow)', too_big: 'Too big for this machine', other: 'Other (not planned by the hub)' };
+  const GROUP_LABEL = { loaded: 'Loaded', gpu: 'Fits on the GPU', cpu: 'Runs on the CPU (slow)', too_big: 'Too big for this machine', other: 'Other (not planned by the hub)', cloud: 'Cloud (Grok, xAI)' };
   const SOURCE_LABEL = { measured: 'measured', estimated: 'estimated', rough_estimate: 'rough estimate', planned: 'planned', metadata: 'metadata', unknown: 'unknown' };
-  const RUNS_ON = { gpu: 'GPU', cpu: 'CPU', none: 'does not fit', unknown: 'unknown' };
+  const RUNS_ON = { gpu: 'GPU', cpu: 'CPU', none: 'does not fit', unknown: 'unknown', cloud: 'xAI cloud' };
   const STATUS_LABEL = { working: 'working', needs_you: 'needs you', idle: 'idle', error: 'error', done: 'done' };
   const SLASH = [['/new', 'Start a new session'], ['/model', 'Open the model picker'], ['/mode chat|build|plan|review|factory', 'Switch the agent type'],
     ['/autonomy 0-5', 'Set autonomy'], ['/cloud off|ask|auto', 'Set cloud assist'], ['/export', 'Download this session as Markdown'],
@@ -1005,7 +1005,7 @@ ${(r.warnings || []).map((w) => `<div class="lc-warn">${E(w)}</div>`).join('')}
 ${(pl.unload || []).filter((u) => ((S.catalog && S.catalog.factory_models) || []).includes(u)).map((u) => `<div class="lc-warn">A Factory run is using ${E(shortModel(u))}: this model would unload it, so chat turns on it wait until the run ends.</div>`).join('')}</div>
 <div class="lc-prow-act">${r.kind === 'chat' && r.runs_on !== 'none' ? `<button type="button" class="btn primary" data-lcp="use" data-id="${E(r.id)}">${r.id === current ? 'In use' : 'Use'}</button>` : ''}
 ${r.loaded ? `<button type="button" class="btn" data-lcp="unload" data-id="${E(r.id)}">Unload</button>` : (r.runs_on === 'gpu' || r.runs_on === 'cpu') && r.group !== 'other' ? `<button type="button" class="btn" data-lcp="load" data-id="${E(r.id)}">Load</button>` : ''}
-${r.group !== 'other' && r.runs_on !== 'none' ? `<button type="button" class="btn" data-lcp="bench" data-id="${E(r.id)}" title="Measure its speed on this machine">Benchmark</button>` : ''}</div></div>`;
+${r.group !== 'other' && r.runs_on !== 'none' && r.runs_on !== 'cloud' ? `<button type="button" class="btn" data-lcp="bench" data-id="${E(r.id)}" title="Measure its speed on this machine">Benchmark</button>` : ''}</div></div>`;
   }
   function renderPicker() {
     const el = $('lc-picker');

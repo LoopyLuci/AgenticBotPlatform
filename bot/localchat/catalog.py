@@ -282,3 +282,49 @@ def default_model(doc: dict) -> str:
     if scored:
         return scored[0]["id"]
     return chat[0]["id"] if chat else ""
+
+
+# ---- cloud models a session may pick explicitly (Grok Build through the `grok` backend) --------------------------------------
+GROK_PREFIX = "grok/"
+_grok_cache: tuple[float, list[str]] = (0.0, [])
+
+
+def grok_models(ttl_s: float = 600.0) -> list[str]:
+    """Model names `grok models` lists (signed-in account); [] when grok is not installed or not signed in."""
+    import shutil
+    import subprocess
+    import time as _time
+
+    global _grok_cache
+    if _grok_cache[1] and _time.monotonic() - _grok_cache[0] < ttl_s:
+        return _grok_cache[1]
+    from bot.config import config
+
+    binary = ((config.current.get("backends") or {}).get("grok") or {}).get("binary", "grok")
+    exe = shutil.which(binary)
+    if not exe:
+        return []
+    try:
+        out = subprocess.run([exe, "models"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if "not authenticated" in out.lower():
+        return []
+    names = [ln.strip().lstrip("*-").strip().split(" ")[0] for ln in out.splitlines() if ln.strip()[:1] in ("*", "-")]
+    _grok_cache = (_time.monotonic(), [n for n in names if n])
+    return _grok_cache[1]
+
+
+def cloud_rows(names: Optional[list[str]] = None) -> list[dict]:
+    """Picker rows for the Grok models: group "cloud", runs on xAI's servers, never loaded or benchmarked here."""
+    names = grok_models() if names is None else names
+    return [{"id": f"{GROK_PREFIX}{n}", "name": f"Grok {n.removeprefix('grok-')} (xAI)", "kind": "chat", "group": "cloud",
+             "loaded": False, "metadata": {"source": "grok"}, "runs_on": "cloud", "plan": None, "speed": {}, "strengths": [],
+             "evals": [], "warnings": ["Cloud: messages leave this machine and use your Grok Build allowance."]} for n in names]
+
+
+def with_cloud(doc: dict, rows: list[dict]) -> dict:
+    if not rows:
+        return doc
+    groups = list(doc.get("groups") or [])
+    return {**doc, "models": [*(doc.get("models") or []), *rows], "groups": [*groups, "cloud"] if "cloud" not in groups else groups}

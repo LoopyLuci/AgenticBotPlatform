@@ -104,6 +104,15 @@ def _local_chat_tests_have_a_hub(request, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_grok_sign_in(monkeypatch):
+    """The model picker lists Grok models from the real `grok models` when grok is installed and signed in: no test may depend
+    on that machine state (tests/test_localchat_grok.py keeps the real parser)."""
+    from bot.localchat import catalog
+
+    monkeypatch.setattr(catalog, "grok_models", lambda ttl_s=600.0: [])
+
+
+@pytest.fixture(autouse=True)
 def _isolated_cicd_event_store(monkeypatch, tmp_path):
     """Instrumented scripts (release, pipeline) record into the CI/CD event
     store. No test may ever write into the real one, so every test gets its own."""

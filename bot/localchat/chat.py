@@ -90,6 +90,13 @@ def _is_live_checkout(path: str) -> bool:
         return False
 
 
+def is_grok(model: str) -> bool:
+    """A Grok model the session picked (catalog.cloud_rows): the turn goes to the `grok` backend, on xAI's servers."""
+    from bot.localchat import catalog
+
+    return str(model or "").startswith(catalog.GROK_PREFIX)
+
+
 def model_ref(model: str) -> str:
     return model if model.startswith("modelmistress/") else f"modelmistress/{model}"
 
@@ -151,7 +158,10 @@ async def send(sid: str, text: str, broadcast: Broadcast, *, cloud: bool = False
         raise ValueError("a Factory worker's session is read-only: talk to the session that started the run")
     if session["mode"] == "factory":
         return await _factory_send(sid, text, session, broadcast)
-    to_cloud = wants_cloud(session, cloud)
+    if is_grok(session.get("model") or "") and (session.get("cloud_assist") or "ask") == "off":
+        raise ValueError("this session's model is Grok, which runs in the cloud, but cloud assist is off: switch it to Ask "
+                         "or Auto, or pick a local model")
+    to_cloud = wants_cloud(session, cloud) or is_grok(session.get("model") or "")
     from bot.localchat import worktrees
 
     cwd = worktrees.cwd_of(session)
@@ -370,7 +380,13 @@ async def _turn(sid: str, turn_id: str, text: str, model: str, session: dict, br
     started = time.monotonic()
     state, reply, tokens = "done", "", 0
     try:
-        if to_cloud:                       # the configured cloud backend (the router's default), same tools and approvals
+        if is_grok(model):                 # the session picked a Grok model: xAI's Grok Build CLI does the turn, in the session's folder
+            from bot.localchat import catalog
+
+            result = await router.ask(prompt, action_type="local_chat", backend_override="grok", context=context,
+                                      instance_id=instance_id, chat_id=agent_cid,
+                                      model_override=model.removeprefix(catalog.GROK_PREFIX) or None)
+        elif to_cloud:                     # the configured cloud backend (the router's default), same tools and approvals
             result = await router.ask(prompt, action_type="local_chat", context=context, instance_id=instance_id, chat_id=agent_cid)
         else:
             await _ensure_loaded(model, streamer)

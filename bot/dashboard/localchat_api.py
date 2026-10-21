@@ -143,13 +143,16 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
     async def local_chat_models(refresh: bool = Query(False)):
         from bot.localchat import catalog
 
+        cloud = await asyncio.to_thread(catalog.cloud_rows)          # Grok models: picked explicitly, never a default
         try:
             doc = await asyncio.to_thread(catalog.get, refresh=refresh)
         except Exception as e:  # noqa: BLE001 - no hub is a normal state on the first screen: say why, not an HTTP error
-            return {"models": [], "default_model": "", "factory_models": [], "error": f"ModelMistress did not answer: {e}"}
+            return catalog.with_cloud({"models": [], "groups": [], "default_model": "", "factory_models": [],
+                                       "error": f"ModelMistress did not answer: {e}"}, cloud)
         from bot.localchat import factory
 
-        return {**doc, "default_model": catalog.default_model(doc), "factory_models": sorted(factory.busy_models())}
+        return catalog.with_cloud({**doc, "default_model": catalog.default_model(doc), "factory_models": sorted(factory.busy_models())},
+                                  cloud)
 
     @app.post("/api/local-chat/models/benchmark", dependencies=write)
     async def local_chat_benchmark(payload: dict = Body(...)):
