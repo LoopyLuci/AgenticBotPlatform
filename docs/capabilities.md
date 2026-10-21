@@ -6,7 +6,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 |---|---|
 | page | 59 |
 | action | 102 |
-| route | 1042 |
+| route | 1043 |
 | module | 9 |
 | setting | 72 |
 
@@ -1288,7 +1288,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `POST /api/sentinel/issues/status` Sentinel Issue Status
 - `POST /api/sentinel/run/{duty}` Sentinel Run
 
-### server-chat (18)
+### server-chat (19)
 
 - `DELETE /api/server-chat/conversations/{conversation_id}` Api Server Chat Clear
 - `DELETE /api/server-chat/messages/{message_id}` Api Server Chat Delete Message
@@ -1303,6 +1303,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `POST /api/server-chat/approvals/{approval_id}/resolve` Api Server Chat Approval Resolve
 - `POST /api/server-chat/conversations` Api Server Chat Open
 - `POST /api/server-chat/conversations/bulk-delete` Api Server Chat Bulk Delete
+- `POST /api/server-chat/conversations/{conversation_id}/archive` Api Server Chat Archive
 - `POST /api/server-chat/send` Api Server Chat Send
 - `POST /api/server-chat/send-file` Api Server Chat Send File
 - `POST /api/server-chat/uploads/init` Api Server Chat Uploads Init

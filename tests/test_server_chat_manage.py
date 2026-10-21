@@ -64,3 +64,27 @@ def test_search_and_desktop_moderation(temp_db, monkeypatch):
     assert c.get("/api/server-chat/search", params={"q": "zzz"}, headers=H).json() == []
     assert c.delete(f"/api/server-chat/messages/{mid}", headers=H).status_code == 200
     assert db.get_server_chat_message(mid) is None
+
+
+def test_full_delete_survives_backfill_until_explicit_reopen(temp_db, monkeypatch):
+    c = _client(monkeypatch)
+    k, _ = db.create_api_key("a")
+    cid = db.ensure_direct_conversation(D, k)
+    c.delete(f"/api/server-chat/conversations/{cid}?full=true", headers=H)
+    db.backfill_server_chat_conversations()
+    assert [x for x in db.list_server_chat_conversations(D) if x["kind"] == "direct"] == []
+    new = c.post("/api/server-chat/conversations", json={"peer_device_id": k}, headers=H).json()["conversation_id"]
+    db.backfill_server_chat_conversations()
+    assert new in [x["id"] for x in db.list_server_chat_conversations(D)]
+
+
+def test_archive_roundtrip_and_group_refused(temp_db, monkeypatch):
+    c = _client(monkeypatch)
+    g = db.ensure_server_chat_group()
+    k, _ = db.create_api_key("a")
+    cid = db.ensure_direct_conversation(D, k)
+    assert c.post(f"/api/server-chat/conversations/{cid}/archive", json={}, headers=H).status_code == 200
+    assert [x["archived"] for x in db.list_server_chat_conversations(D) if x["id"] == cid] == [1]
+    c.post(f"/api/server-chat/conversations/{cid}/archive", json={"archived": False}, headers=H)
+    assert [x["archived"] for x in db.list_server_chat_conversations(D) if x["id"] == cid] == [0]
+    assert c.post(f"/api/server-chat/conversations/{g}/archive", json={}, headers=H).status_code == 400

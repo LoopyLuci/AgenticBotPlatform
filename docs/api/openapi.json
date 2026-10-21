@@ -67304,6 +67304,72 @@
     "summary": "Api Server Chat Rename"
    }
   },
+  "/api/server-chat/conversations/{conversation_id}/archive": {
+   "post": {
+    "description": "{archived: bool (default true)}: hides a direct conversation from\nthe main list (reversible; nothing is deleted). The group room is\nalways visible and can't be archived.",
+    "operationId": "api_server_chat_archive_api_server_chat_conversations__conversation_id__archive_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "conversation_id",
+      "required": true,
+      "schema": {
+       "title": "Conversation Id",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "default": {},
+        "title": "Payload",
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Api Server Chat Archive"
+   }
+  },
   "/api/server-chat/conversations/{conversation_id}/export": {
    "get": {
     "operationId": "api_server_chat_export_api_server_chat_conversations__conversation_id__export_get",

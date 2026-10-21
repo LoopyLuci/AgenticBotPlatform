@@ -1194,6 +1194,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
     server_chat_conv_cols = {row["name"] for row in conn.execute("PRAGMA table_info(server_chat_conversations)").fetchall()}
     if "custom_title" not in server_chat_conv_cols:
         conn.execute("ALTER TABLE server_chat_conversations ADD COLUMN custom_title TEXT")
+    if "archived" not in server_chat_conv_cols:
+        conn.execute("ALTER TABLE server_chat_conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS server_chat_deleted_pairs ("
+        "participant_a INTEGER NOT NULL, participant_b INTEGER NOT NULL, deleted_at TEXT NOT NULL, "
+        "PRIMARY KEY (participant_a, participant_b))"
+    )
 
     support_bot_class_cols = {row["name"] for row in conn.execute("PRAGMA table_info(support_bot_classifications)").fetchall()}
     if "reviewed" not in support_bot_class_cols:
@@ -1571,6 +1578,7 @@ from bot.storage.server_chat import (  # noqa: E402,F401
     create_conversations_for_new_device, is_conversation_participant, list_server_chat_conversations,
     create_server_chat_message, list_server_chat_messages, get_server_chat_message,
     delete_server_chat_message, rename_server_chat_conversation, search_server_chat_messages,
+    set_server_chat_archived,
 )
 from bot.storage.jobs import (  # noqa: E402,F401
     create_job, mark_job_running, mark_job_retrying, mark_job_done, get_job, list_jobs, get_latest_job,

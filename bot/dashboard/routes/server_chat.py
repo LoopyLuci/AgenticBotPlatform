@@ -102,6 +102,22 @@ def register(app: FastAPI, *, json_download: Callable) -> None:
         db.rename_server_chat_conversation(conversation_id, title)
         return {"ok": True}
 
+    @app.post("/api/server-chat/conversations/{conversation_id}/archive")
+    def api_server_chat_archive(conversation_id: int, payload: dict = Body(default={}), device_id: int = Depends(_require_device_id)):
+        """{archived: bool (default true)}: hides a direct conversation from
+        the main list (reversible; nothing is deleted). The group room is
+        always visible and can't be archived."""
+        row = db.get_conn().execute(
+            "SELECT kind FROM server_chat_conversations WHERE id=?", (conversation_id,)
+        ).fetchone()
+        if row is None or not db.is_conversation_participant(conversation_id, device_id):
+            raise HTTPException(status_code=404, detail="no such conversation")
+        if row["kind"] == "group":
+            raise HTTPException(status_code=400, detail="the group room is always visible and can't be archived")
+        archived = bool(payload.get("archived", True))
+        db.set_server_chat_archived(conversation_id, archived)
+        return {"ok": True, "archived": archived}
+
     @app.post("/api/server-chat/conversations/bulk-delete")
     def api_server_chat_bulk_delete(payload: dict = Body(...), device_id: int = Depends(_require_device_id)):
         """{ids: [..], full: bool}: clears (or fully deletes) several direct

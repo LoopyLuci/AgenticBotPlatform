@@ -4,7 +4,7 @@
   "action": 102,
   "module": 9,
   "page": 59,
-  "route": 1042,
+  "route": 1043,
   "setting": 72
  },
  "entries": [
@@ -10407,6 +10407,16 @@
    "label": "Api Server Chat Bulk Delete",
    "network": false,
    "where": "POST /api/server-chat/conversations/bulk-delete"
+  },
+  {
+   "cloud": false,
+   "desc": "API (server-chat)",
+   "id": "route:POST /api/server-chat/conversations/{conversation_id}/archive",
+   "keywords": "server-chat",
+   "kind": "route",
+   "label": "Api Server Chat Archive",
+   "network": false,
+   "where": "POST /api/server-chat/conversations/{conversation_id}/archive"
   },
   {
    "cloud": false,

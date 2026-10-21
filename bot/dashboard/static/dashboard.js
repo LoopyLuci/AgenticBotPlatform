@@ -4586,7 +4586,9 @@ let serverChatPendingFile = null;
 async function refreshServerChatList() {
   const select = document.getElementById('serverchat-conversation');
   try {
-    serverChatState.conversations = await api('/api/server-chat/conversations');
+    const all = await api('/api/server-chat/conversations');
+    const showArch = document.getElementById('serverchat-show-archived').checked;
+    serverChatState.conversations = all.filter(c => !!c.archived === showArch || c.kind === 'group');
   } catch (_e) { return; }
   const prevValue = select.value;
   select.innerHTML = serverChatState.conversations.map(c => {
@@ -4644,6 +4646,23 @@ document.getElementById('btn-serverchat-delete').onclick = async () => {
   } catch (e) { alert('Delete failed: ' + (e.message || e)); return; }
   serverChatState.activeId = null;
   document.getElementById('serverchat-window').innerHTML = '';
+  refreshServerChatList();
+};
+document.getElementById('serverchat-show-archived').onchange = () => {
+  const showArch = document.getElementById('serverchat-show-archived').checked;
+  document.getElementById('btn-serverchat-archive').textContent = showArch ? '🗄 Unarchive' : '🗄 Archive';
+  serverChatState.activeId = null;
+  refreshServerChatList();
+};
+document.getElementById('btn-serverchat-archive').onclick = async () => {
+  if (!serverChatState.activeId) return;
+  const conv = serverChatState.conversations.find(c => c.id === serverChatState.activeId);
+  if (conv && conv.kind === 'group') { alert("The group room is always visible and can't be archived."); return; }
+  const archived = !document.getElementById('serverchat-show-archived').checked;
+  try {
+    await api(`/api/server-chat/conversations/${serverChatState.activeId}/archive`, { method: 'POST', body: JSON.stringify({ archived }) });
+  } catch (e) { alert('Failed: ' + (e.message || e)); return; }
+  serverChatState.activeId = null;
   refreshServerChatList();
 };
 document.getElementById('btn-serverchat-rename').onclick = async () => {

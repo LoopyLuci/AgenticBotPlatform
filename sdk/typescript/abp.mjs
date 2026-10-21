@@ -7323,6 +7323,15 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "POST /api/server-chat/conversations/{conversation_id}/archive": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/server-chat/conversations/{conversation_id}/archive",
+  "path_params": [
+   "conversation_id"
+  ],
+  "query_params": []
+ },
  "POST /api/server-chat/send": {
   "body": true,
   "method": "POST",
@@ -10322,6 +10331,15 @@ export const operations = {
   "path": "/api/server-chat/approvals/{approval_id}/resolve",
   "path_params": [
    "approval_id"
+  ],
+  "query_params": []
+ },
+ "api_server_chat_archive_api_server_chat_conversations__conversation_id__archive_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/server-chat/conversations/{conversation_id}/archive",
+  "path_params": [
+   "conversation_id"
   ],
   "query_params": []
  },
