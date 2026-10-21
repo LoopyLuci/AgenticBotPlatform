@@ -97,9 +97,17 @@ def make_worker(repo: str, model: str) -> Any:
 
     try:
         # isolate: this runs inside ABP, and a worker's environment is process-global (bot/conductor/isolated.py)
-        return run.AgentLoopWorker(repo, model=model, shell="sandbox", isolate=True)
+        local = run.AgentLoopWorker(repo, model=model, shell="sandbox", isolate=True)
     except confine.SandboxUnavailable as e:
         raise FactoryRefused(f"the confined sandbox is not available, so no Factory worker runs: {e}") from e
+    from bot.conductor import grok_worker
+
+    if str(grok_worker.settings().get("mode") or "off") == "off":
+        return local
+    try:
+        return grok_worker.GrokWorker(local)       # Grok as advisor or confined worker (conductor.grok)
+    except grok_worker.GrokUnavailable as e:
+        raise FactoryRefused(str(e)) from e
 
 
 def _conductor(repo: str, base: str, worker: Any, model: str, on_event: Any = None) -> Any:

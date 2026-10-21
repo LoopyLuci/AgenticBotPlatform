@@ -54,6 +54,9 @@ from ctypes import wintypes
 from pathlib import Path
 
 PROFILE_NAME = "ABP.Sandbox.Offline"
+# A container of its own for a cloud CLI agent (Grok Build): it may be granted that agent's own sign-in file, which the
+# offline container used by every local worker's shell must never be able to read.
+AGENT_PROFILE_NAME = "ABP.Sandbox.CloudAgent"
 _DISPLAY = "AgenticBotPlatform offline sandbox"
 _DESCRIPTION = "Runs agent shell commands with no network access"
 
@@ -80,6 +83,11 @@ _CREATE_SUSPENDED = 0x00000004
 _STARTF_USESTDHANDLES = 0x00000100
 _HANDLE_FLAG_INHERIT = 0x1
 _INFINITE = 0xFFFFFFFF
+# The well-known `internetClient` capability: outbound internet only. Loopback and the local network stay blocked for an
+# AppContainer (no privateNetworkClientServer, no loopback exemption), so ABP's own server and the LAN are out of reach.
+# Only a caller that asks for it (internet=True) gets it; the default container has no capabilities and no network at all.
+_INTERNET_CLIENT_SID = "S-1-15-3-1"
+_SE_GROUP_ENABLED = 0x4
 
 _is_windows = os.name == "nt"
 
@@ -144,6 +152,7 @@ if _is_windows:
            ctypes.POINTER(wintypes.LPVOID))
     _proto(_uenv.GetAppContainerFolderPath, ctypes.c_long, wintypes.LPCWSTR, ctypes.POINTER(wintypes.LPWSTR))
     _proto(_adv.ConvertSidToStringSidW, wintypes.BOOL, wintypes.LPVOID, ctypes.POINTER(wintypes.LPWSTR))
+    _proto(_adv.ConvertStringSidToSidW, wintypes.BOOL, wintypes.LPCWSTR, ctypes.POINTER(wintypes.LPVOID))
     _proto(_adv.FreeSid, wintypes.LPVOID, wintypes.LPVOID)
     _proto(_adv.EqualSid, wintypes.BOOL, wintypes.LPVOID, wintypes.LPVOID)
     _proto(_adv.GetNamedSecurityInfoW, wintypes.DWORD, wintypes.LPCWSTR, ctypes.c_int, wintypes.DWORD,
@@ -192,12 +201,12 @@ def _win_check(ok, what: str) -> None:
         raise OSError(err, f"{what} failed: {ctypes.FormatError(err).strip()}")
 
 
-def container_sid():
+def container_sid(profile: str = PROFILE_NAME):
     """The container's SID (caller frees it with FreeSid), creating the profile the first time."""
     sid = wintypes.LPVOID()
-    hr = _uenv.CreateAppContainerProfile(PROFILE_NAME, _DISPLAY, _DESCRIPTION, None, 0, ctypes.byref(sid))
+    hr = _uenv.CreateAppContainerProfile(profile, _DISPLAY, _DESCRIPTION, None, 0, ctypes.byref(sid))
     if hr == _ALREADY_EXISTS:
-        hr = _uenv.DeriveAppContainerSidFromAppContainerName(PROFILE_NAME, ctypes.byref(sid))
+        hr = _uenv.DeriveAppContainerSidFromAppContainerName(profile, ctypes.byref(sid))
     _hr_check(hr, "creating the AppContainer profile")
     return sid
 
@@ -333,16 +342,19 @@ def pytest_addopts(temp: Path, existing: str = "") -> str:
 
 
 def run(command: str, cwd: Path, *, grants: list[tuple[Path, int]], memory_mb: int = 0,
-        active_process_limit: int = 0, attr_grants: list[Path] = ()) -> int:
+        active_process_limit: int = 0, attr_grants: list[Path] = (), internet: bool = False,
+        profile: str = PROFILE_NAME, file_grants: list[tuple[Path, int]] = ()) -> int:
     """Run `command` through cmd.exe inside the container, wait, and return its exit code. `attr_grants`: folders that get
     READ_ATTRIBUTES on themselves only, best effort (a folder whose ACL cannot be changed, e.g. a drive root, is skipped:
     that only affects tools that stat it, never what the container may list, read or write)."""
     from bot.agent_runtime import win_job
 
-    sid = container_sid()
+    sid = container_sid(profile)
     try:
         for path, mask in grants:
             grant(path, sid, mask)
+        for path, mask in file_grants:            # single files (an agent's sign-in file): on that file only
+            grant(path, sid, mask, _NO_INHERIT)
         for path in attr_grants:
             try:
                 grant(path, sid, READ_ATTRIBUTES, _NO_INHERIT)
@@ -356,7 +368,13 @@ def run(command: str, cwd: Path, *, grants: list[tuple[Path, int]], memory_mb: i
         _win_check(_k32.SetEnvironmentVariableW("PYTEST_ADDOPTS", pytest_addopts(temp, os.environ.get("PYTEST_ADDOPTS", ""))),
                    "SetEnvironmentVariable")
 
-        caps = _SECURITY_CAPABILITIES(AppContainerSid=sid, Capabilities=None, CapabilityCount=0, Reserved=0)
+        if internet:
+            cap_sid = wintypes.LPVOID()
+            _win_check(_adv.ConvertStringSidToSidW(_INTERNET_CLIENT_SID, ctypes.byref(cap_sid)), "ConvertStringSidToSid")
+            cap = _SID_AND_ATTRIBUTES(Sid=cap_sid, Attributes=_SE_GROUP_ENABLED)
+            caps = _SECURITY_CAPABILITIES(AppContainerSid=sid, Capabilities=ctypes.pointer(cap), CapabilityCount=1, Reserved=0)
+        else:
+            caps = _SECURITY_CAPABILITIES(AppContainerSid=sid, Capabilities=None, CapabilityCount=0, Reserved=0)
         size = ctypes.c_size_t()
         _k32.InitializeProcThreadAttributeList(None, 1, 0, ctypes.byref(size))
         attrs = ctypes.create_string_buffer(size.value)
@@ -380,6 +398,8 @@ def run(command: str, cwd: Path, *, grants: list[tuple[Path, int]], memory_mb: i
                        "starting the command in the AppContainer")
         finally:
             _k32.DeleteProcThreadAttributeList(attrs)
+            if internet:
+                _k32.LocalFree(cap_sid)
     finally:
         _adv.FreeSid(sid)
 
@@ -405,12 +425,21 @@ def run(command: str, cwd: Path, *, grants: list[tuple[Path, int]], memory_mb: i
 
 
 def launcher_argv(python: str, command: str, cwd: Path, workspace: Path, *, extra_paths=(), memory_mb: int = 0,
-                  active_process_limit: int = 0) -> list[str]:
+                  active_process_limit: int = 0, write_paths=(), internet: bool = False, write_files=(),
+                  profile: str = PROFILE_NAME) -> list[str]:
     """The argv sandbox.py starts: this file, run as a script, with the command after `--`."""
     argv = [python, "-I", str(Path(__file__).resolve()), "--cwd", str(cwd), "--workspace", str(workspace),
             "--memory-mb", str(int(memory_mb)), "--procs", str(int(active_process_limit))]
     for p in extra_paths:
         argv += ["--read", str(p)]
+    for p in write_paths:
+        argv += ["--write", str(p)]
+    for p in write_files:
+        argv += ["--write-file", str(p)]
+    if internet:
+        argv += ["--internet"]
+    if profile != PROFILE_NAME:
+        argv += ["--profile", profile]
     return argv + ["--", command]
 
 
@@ -419,6 +448,10 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--cwd", required=True)
     ap.add_argument("--workspace", required=True)
     ap.add_argument("--read", action="append", default=[])
+    ap.add_argument("--write", action="append", default=[])     # extra read-write folders (a CLI agent's own state folder)
+    ap.add_argument("--write-file", action="append", default=[])  # single read-write files (an agent's sign-in file)
+    ap.add_argument("--internet", action="store_true")          # outbound internet only (see _INTERNET_CLIENT_SID)
+    ap.add_argument("--profile", default=PROFILE_NAME, choices=(PROFILE_NAME, AGENT_PROFILE_NAME))
     ap.add_argument("--memory-mb", type=int, default=0)
     ap.add_argument("--procs", type=int, default=0)
     ap.add_argument("command", nargs=argparse.REMAINDER)
@@ -431,10 +464,12 @@ def main(argv: list[str]) -> int:
     if not is_supported():
         print("abp offline sandbox: AppContainers only exist on Windows; the command was not run", file=sys.stderr)
         return 126
-    grants = [(Path(args.workspace), MODIFY)] + [(Path(p), READ_EXECUTE) for p in args.read]
+    grants = ([(Path(args.workspace), MODIFY)] + [(Path(p), MODIFY) for p in args.write]
+              + [(Path(p), READ_EXECUTE) for p in args.read])
     try:
         return run(command, Path(args.cwd), grants=grants, memory_mb=args.memory_mb, active_process_limit=args.procs,
-                   attr_grants=parent_folders(Path(args.workspace)))
+                   attr_grants=parent_folders(Path(args.workspace)), internet=args.internet, profile=args.profile,
+                   file_grants=[(Path(p), MODIFY) for p in args.write_file])
     except OSError as exc:
         print(f"abp offline sandbox: {exc}; the command was not run", file=sys.stderr)
         return 126

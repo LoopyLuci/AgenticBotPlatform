@@ -543,6 +543,8 @@ class AgentLoopWorker:
                    "with read_file only when it is short or you need all of it." if nav else "") +
                   (f"\n\nCode context for this task (pre-fetched; use outline / read_symbol / find_symbol for more instead of reading "
                    f"whole files):\n{pack}" if pack else "") + (f"\n\n{vault}" if vault else "") +
+                  (f"\n\nPlan from the Grok advisor (follow it unless it breaks the rules above):\n{spec['advice']}"
+                   if spec.get("advice") else "") +
                   (f"\n\nYour previous attempt was REJECTED by the reviewer. Fix exactly these:\n{feedback}" if feedback else ""))
         if feedback:
             hist = self._rejected.setdefault(key, [])

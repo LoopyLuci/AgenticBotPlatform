@@ -49,6 +49,9 @@ DEFAULTS: dict[str, Any] = {
                 # adaptive: size the pre-seeded pack by the task (pack_tokens is the cap); false = always pre-seed, as before
                 "adaptive": True, "min_files_for_pack": 3, "min_bytes_for_pack": 20000, "long_detail_chars": 800,
                 "small_repo_symbols": 150, "min_pack_tokens": 400},
+    # Grok Build as a Factory worker (bot/conductor/grok_worker.py): mode off | advisor (Grok plans with no tools, a confined
+    # local model works) | confined (Grok works in its own AppContainer with internet; needs network_approved) | auto
+    "grok": {"mode": "off", "model": "", "network_approved": False, "timeout_s": 900},
     "pusher": {"enabled": False,       # the pusher acts only on a recorded approval, and only when this is true
                "remote": "origin", "target": ""},   # target "" = the integration's base branch
 }
@@ -64,7 +67,7 @@ def settings() -> dict[str, Any]:
         pass
     out = {**DEFAULTS, **{k: v for k, v in cfg.items() if k in DEFAULTS}}
     out["pusher"] = {**DEFAULTS["pusher"], **(cfg.get("pusher") if isinstance(cfg.get("pusher"), dict) else {})}
-    for k in ("integrator", "cache", "review_scope"):
+    for k in ("integrator", "cache", "review_scope", "grok"):
         out[k] = {**DEFAULTS[k], **(cfg.get(k) if isinstance(cfg.get(k), dict) else {})}
     out["context"] = {**DEFAULTS["context"], **(cfg.get("context") if isinstance(cfg.get("context"), dict) else {})}
     if not out["suite_command"]:
