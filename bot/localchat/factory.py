@@ -96,7 +96,8 @@ def make_worker(repo: str, model: str) -> Any:
     from bot.conductor import confine, run
 
     try:
-        return run.AgentLoopWorker(repo, model=model, shell="sandbox")
+        # isolate: this runs inside ABP, and a worker's environment is process-global (bot/conductor/isolated.py)
+        return run.AgentLoopWorker(repo, model=model, shell="sandbox", isolate=True)
     except confine.SandboxUnavailable as e:
         raise FactoryRefused(f"the confined sandbox is not available, so no Factory worker runs: {e}") from e
 

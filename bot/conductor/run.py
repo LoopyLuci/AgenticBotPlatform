@@ -113,6 +113,19 @@ def autofix_lint(worktree: Path, base: str) -> list[str]:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+class ProofEnv:
+    """The worker's agent environment for its proof: called, the context manager (in this process); `isolate` sends the proof
+    to a child process instead (bot/conductor/isolated.py), with `settings` and `python` to rebuild it there."""
+
+    def __init__(self, settings: dict, python: str, *, isolate: bool = False):
+        self.settings, self.python, self.isolate = settings, python, isolate
+
+    def __call__(self):
+        from abp_agenteval import factory
+
+        return factory.agent_environment(self.settings, python=self.python)
+
+
 async def run_proof(spec: dict, worktree: str, timeout_s: Optional[int] = None, *, base: str = "",
                     env: Optional[Callable[[], Any]] = None) -> Optional[reviewer.Finding]:
     """Check a task's proof and run it in the worker's worktree through the sandbox (conductor/proof.py). None when it passes; a
@@ -129,7 +142,12 @@ async def run_proof(spec: dict, worktree: str, timeout_s: Optional[int] = None, 
                                 (f"; this attempt put tests in {', '.join(elsewhere)} instead" if elsewhere else ""),
                                 kind="proof", text=cmd)
     try:
-        ok, output = await proof.run(cmd, Path(worktree), timeout_s, base=base, env=env)
+        if getattr(env, "isolate", False):          # a conductor inside ABP itself: the proof's environment stays in a child
+            from bot.conductor import isolated
+
+            ok, output = await isolated.proof(cmd, Path(worktree), timeout_s, base=base, settings=env.settings, python=env.python)
+        else:
+            ok, output = await proof.run(cmd, Path(worktree), timeout_s, base=base, env=env)
     except proof.ProofRefused as exc:
         return reviewer.Finding("proof", f"proof not allowed: {exc}", kind="proof", text=cmd)
     except Exception as exc:  # noqa: BLE001 - a proof that cannot run does not pass
@@ -249,7 +267,7 @@ class Conductor:
 
         settings = factory.agent_settings(model="proof", shell="none")
         python = str(getattr(self.worker, "python", "") or sys.executable)     # the interpreter the worker's own tests ran with
-        return lambda: factory.agent_environment(settings, python=python)
+        return ProofEnv(settings, python, isolate=bool(getattr(self.worker, "isolate", False)))
 
     # ------------------------------------------------------- one task's work
     async def _call(self, _instance: int, task_id: str) -> str:
@@ -458,7 +476,7 @@ class AgentLoopWorker:
 
     def __init__(self, repo: Any, *, model: str = "", timeout_s: float = 900, max_iterations: int = 60,
                  drive: Optional[Callable[..., Awaitable[Any]]] = None, shell: str = "none", sandbox_paths: Optional[list[str]] = None,
-                 context_cfg: Optional[dict] = None):
+                 context_cfg: Optional[dict] = None, isolate: bool = False):
         if shell not in ("none", "sandbox"):
             raise ValueError("shell must be 'none' (file + test tools only) or 'sandbox' (run_shell inside an AppContainer, no network)")
         self.repo = Path(repo)
@@ -469,6 +487,9 @@ class AgentLoopWorker:
         self.python = confine.test_python(self.repo)           # the repo's venv when it has pytest, else ABP's runtime (ships pytest)
         self.sandbox_paths = list(sandbox_paths) if sandbox_paths else None
         self.drive = drive or self._drive
+        # True inside ABP itself (Local Chat's Factory): the agent turn and the proof run in child processes
+        # (bot/conductor/isolated.py), since their environment is process-global and would be the whole server's
+        self.isolate = isolate
         self._verified = False
         self._context_ok: set[str] = set()
         self.cfg = context_cfg                                 # the conductor settings (None = read them)
@@ -531,7 +552,13 @@ class AgentLoopWorker:
             if earlier:
                 prompt += "\n\nEarlier rejections of this task (do not repeat them):\n" + "\n---\n".join(e[:600] for e in earlier)
         if self.shell == "sandbox" and not self._verified:
-            await asyncio.to_thread(self._verify_sandbox, wt)
+            if self.isolate:
+                from bot.conductor import isolated
+
+                await isolated.verify(wt, self.sandbox_paths or confine.sandbox_paths(self.python))
+                self._verified = True
+            else:
+                await asyncio.to_thread(self._verify_sandbox, wt)
         res = await self.drive(prompt, wt)
         if not isinstance(res, str) and getattr(res, "ok", True) is False and not getattr(res, "tool_calls", None):
             raise llm.WorkerModelError(f"the model did not answer: {str(getattr(res, 'error', '') or 'no reply')[:300]}")
@@ -591,6 +618,12 @@ class AgentLoopWorker:
         transport, name = llm.transport_for_ref(refs[0])
         await asyncio.to_thread(self._check_context, refs[0], name)
         paths = (self.sandbox_paths or confine.sandbox_paths(self.python)) if self.shell == "sandbox" else None
+        if self.isolate:
+            from bot.conductor import isolated
+
+            return await isolated.turn(prompt, wt, refs[0], timeout_s=self.timeout_s, max_iterations=self.max_iterations,
+                                       python=self.python, shell=self.shell, sandbox_paths=paths,
+                                       extra_tools=navctx.tool_names(self.cfg))
 
         def turn():
             with self._agent_lock:
