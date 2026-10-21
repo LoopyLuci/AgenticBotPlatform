@@ -31,11 +31,12 @@ PROMPT_HINT = ("\n\nYou have many more tools than the ones listed (skills, memor
 
 
 class _Turn:
-    __slots__ = ("pool", "sent")
+    __slots__ = ("pool", "sent", "calls")
 
     def __init__(self) -> None:
         self.pool: Optional[dict] = None     # name -> schema; None until attach()
         self.sent: Optional[list] = None     # the list of schemas the turn sends (shared with the backend)
+        self.calls: dict = {}                # (name, input as JSON) -> how often this turn made that exact call
 
 
 _current: "contextvars.ContextVar[Optional[_Turn]]" = contextvars.ContextVar("tool_discovery_turn", default=None)
@@ -62,6 +63,24 @@ def permitted(name: str) -> bool:
     return turn is None or turn.pool is None or name in turn.pool
 
 
+REPEAT_LIMIT = 2
+
+
+def repeated(name: str, tool_input) -> int:
+    """Count this exact call (same tool, same input) in the turn; returns how many times it was made before. A small model
+    sometimes repeats one look-up over and over (the find_tools eval on 2026-10-20: abp_capabilities 7 times in a row)."""
+    turn = _current.get()
+    if turn is None:
+        return 0
+    try:
+        key = (name, json.dumps(tool_input, sort_keys=True, default=str))
+    except (TypeError, ValueError):
+        return 0
+    before = turn.calls.get(key, 0)
+    turn.calls[key] = before + 1
+    return before
+
+
 _STOP = frozenset("""a an and are as at be by can do does for from get give has have how i in into is it its me my now of on
 or our please right set show so tell than that the their them then there these this to up us use was we what when where which
 who why will with you your about all any just like list make need see some via""".split())
@@ -71,7 +90,8 @@ def _stem(w: str) -> str:
     for suffix in ("ing", "ed", "es", "s"):
         if len(w) > 4 and w.endswith(suffix):
             return w[: -len(suffix)]
-    return w
+    # a final e goes too, so "module" meets "modules" (-> modul) and "file" meets "files" (the 2026-10-20 eval missed module_list)
+    return w[:-1] if len(w) >= 4 and w.endswith("e") else w
 
 
 def _words(text: str) -> list[str]:
@@ -87,7 +107,15 @@ _SYNONYMS = {
     "symbol": ("find", "outline", "references"), "code": ("code", "symbol", "outline"), "train": ("train", "lab"),
     "model": ("model", "models"), "models": ("model",), "plugin": ("plugin",), "schedule": ("schedule",),
     "subagent": ("subagent", "spawn"), "agent": ("subagent", "agents"), "kanban": ("kanban", "card"),
+    # "where is X defined, what calls it" (the 2026-10-20 eval went to grep): the code-navigation tools
+    "define": ("find", "symbol"), "defined": ("find", "symbol"), "definition": ("find", "symbol"),
+    "call": ("callers", "references"), "calls": ("callers", "references"), "called": ("callers", "references"),
+    "caller": ("callers",), "usage": ("references", "callers"), "used": ("references", "callers"),
 }
+# looked up by stem, as the query's words are (several spellings of one stem pool their words)
+_SYN: dict = {}
+for _k, _v in _SYNONYMS.items():
+    _SYN[_stem(_k)] = tuple(dict.fromkeys(_SYN.get(_stem(_k), ()) + _v))
 
 
 def _scored(query: str) -> list[tuple[int, int, str, dict]]:
@@ -98,7 +126,7 @@ def _scored(query: str) -> list[tuple[int, int, str, dict]]:
     want = _words(query)
     expanded = set(want)
     for w in want:
-        expanded.update(_stem(s) for s in _SYNONYMS.get(w, ()))
+        expanded.update(_stem(s) for s in _SYN.get(w, ()))
     if not expanded:
         return []
     scored = []

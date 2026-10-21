@@ -79,6 +79,12 @@ async def _run_one_tool(
             outcome["status"], outcome["approval"], outcome["error"] = "denied", "policy", "not in this turn's tools"
             _report_denial(name, tool_input, "not in this turn's tools", "pool", instance_id)
             return f"Error: {name} is not available in this turn. Use find_tools to see what is."
+        # 0b. The same read-only look-up over and over: its answer has not changed, so say so instead of running it again.
+        before = tool_discovery.repeated(name, tool_input)
+        if before >= tool_discovery.REPEAT_LIMIT and toolspec.spec_for(name).read_only:
+            outcome["status"], outcome["error"] = "denied", "repeated call"
+            return (f"You already called {name} with exactly this input {before} times in this turn; its answer is the same. "
+                    "Use what it returned, call it with different input, or answer now.")
 
         # 1. Credentials never leave in a request: refuse a network / external call whose arguments
         #    contain a value from the server's secrets.

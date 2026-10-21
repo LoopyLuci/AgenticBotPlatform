@@ -22,6 +22,7 @@ class Recorder:
         return {"role": "user", "content": text}
 
     def tool_result_messages(self, results):
+        self.results = getattr(self, "results", []) + [str(out) for _tc, out in results]
         return [{"role": "user", "content": f"tool result {tc.name}: {out}"} for tc, out in results]
 
     async def send(self, **kw):
@@ -110,6 +111,39 @@ def test_stop_words_and_stems_shape_the_search():
         tool_discovery.attach(pool, sent)
         assert tool_discovery.prefetch("What state are they in?") == []          # a description-only match: not sent
         assert tool_discovery.prefetch("show my file") == ["read_file"]           # a name match is
+    finally:
+        tool_discovery.end(token)
+
+
+def test_the_2026_10_20_eval_misses_now_match_by_name():
+    token = tool_discovery.begin()
+    try:
+        pool = [{"name": "module_list", "description": "The installed ABP modules and their state"},
+                {"name": "find_symbol", "description": "Where a symbol is defined"},
+                {"name": "callers", "description": "Who calls a function"},
+                {"name": "grep", "description": "Search file contents"}]
+        tool_discovery.attach(pool, [])
+        assert tool_discovery._stem("module") == tool_discovery._stem("modules") == "modul"
+        assert tool_discovery.prefetch("Which ABP modules are installed and what state are they in?") == ["module_list"]
+        assert set(tool_discovery.prefetch("Where is the function permitted defined, and what calls it?")) == {"find_symbol", "callers"}
+    finally:
+        tool_discovery.end(token)
+
+
+def test_a_repeated_read_only_call_is_answered_without_running(temp_db, tmp_path):
+    (tmp_path / "a.txt").write_text("hello", encoding="utf-8")
+    t = Recorder([*[_call("read_file", {"path": "a.txt"}) for _ in range(4)], _done()])
+    assert _ask(t, workspace=tmp_path).text == "done"
+    assert ["hello" in r for r in t.results] == [True, True, False, False]       # two real reads, then the note
+    assert "already called read_file" in t.results[-1]
+
+
+def test_repeated_counts_exact_calls_per_turn():
+    assert tool_discovery.repeated("read_file", {"path": "a"}) == 0          # no turn: never counted
+    token = tool_discovery.begin()
+    try:
+        assert [tool_discovery.repeated("read_file", {"path": "a"}) for _ in range(3)] == [0, 1, 2]
+        assert tool_discovery.repeated("read_file", {"path": "b"}) == 0       # other input: its own count
     finally:
         tool_discovery.end(token)
 
