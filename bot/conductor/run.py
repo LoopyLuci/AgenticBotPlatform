@@ -603,9 +603,12 @@ class AgentLoopWorker:
             confine.verify(wt, extra_paths=self.sandbox_paths or confine.sandbox_paths(self.python))
         self._verified = True
 
+    # Python's caches never belong on a task branch (a repository without a .gitignore had them committed, 2026-10-20)
+    CACHE_PATHSPECS = (":(exclude,glob)**/__pycache__/**", ":(exclude,glob)**/*.pyc")
+
     @staticmethod
     def _commit(wt: Path, spec: dict) -> None:
-        integrator._git(wt, "add", "-A")
+        integrator._git(wt, "add", "-A", "--", ".", *AgentLoopWorker.CACHE_PATHSPECS)
         if integrator._git(wt, "diff", "--cached", "--quiet", check=False).returncode != 0:
             integrator._git(wt, "commit", "-q", "-m", f"{spec['title']}\n\nconductor task {spec['key']}")
 
