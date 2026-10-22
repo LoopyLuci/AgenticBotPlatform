@@ -108,10 +108,20 @@ is used only by the script that posts the comment. It never approves or merges. 
 repository, a scripted model and a faked GitHub API; **never run on a GitHub runner**. The Action installs
 `requirements.txt`, and a non-Anthropic model needs a provider defined in ABP's `config/providers.yaml`.
 
-## Other agents as engines: `opencode` and `openclaw` backends
+## Other agents as engines: `opencode`, `openclaw` and `grok` backends
 
 A bot instance can hand its turns to OpenCode (`opencode run`) or OpenClaw (`openclaw agent --json`) and return
 their answer, keeping ABP's channels, schedules and dashboards. **ABP's own permission rules, taint tracking and
 traces do not apply inside them.** The command lines follow each product's docs; neither is installed here, so
 they are tested against a stand-in program only. OpenCode's output is taken as plain text; OpenClaw's JSON is
 searched for its text field. Put any flag your version needs in the backend's `extra_args`.
+
+### Grok Build: the `grok` backend
+
+- **Install and sign in.** Install with `npm i -g @xai-official/grok` (or xAI's installer). Sign in once with `grok login`. The OAuth token stays in Grok's own `~/.grok/auth.json`, which only the owner can read. Nothing goes in ABP's config.
+- **How a turn runs.** Each turn is `grok -p <prompt> --output-format json --permission-mode <mode>`, plus `--model`, `--agent`, `--sandbox`, `--tools` and `--cwd` when they are set.
+- **One conversation per bot.** The reply's `sessionId` is kept and passed back as `--resume`.
+- **Errors.** Grok reports a failure as `{"type":"error","message":…}` on stdout with a non-zero exit, and that message becomes the backend error. A 402 "usage balance exhausted" means the Grok Build allowance is used up until it resets.
+- **Permissions.** `backends.grok.permission_mode` is `default`, `acceptEdits`, `auto`, `dontAsk` or `plan`. `auto_approve: true` means `acceptEdits`. `bypassPermissions` and `--always-approve` are refused, also in `extra_args`.
+- **Other settings.** `tools: ""` gives a text-only Grok. `web_search: false` adds `--disable-web-search`. `sandbox: <profile>` passes Grok's own sandbox profile; it is kernel-enforced on Linux only.
+- **Still not observed live.** As with OpenCode, a successful reply's JSON was not seen live when this was written. The documented `text` and `sessionId` fields are read by the generic search.

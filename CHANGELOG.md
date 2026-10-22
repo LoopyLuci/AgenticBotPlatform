@@ -9,6 +9,30 @@ app's own version (the Android app versions independently — see its own
 ## [Unreleased]
 
 ### Added
+- **Grok Build (xAI) as a backend: `grok`** ([docs/agents/developer-surfaces.md](docs/agents/developer-surfaces.md#grok-build-the-grok-backend)).
+  - It runs xAI's `grok` CLI headless (`grok -p … --output-format json`) and keeps one conversation per bot through the CLI's `sessionId` and `--resume`. You sign in once with `grok login` (OAuth), so ABP's config holds no key.
+  - It can be picked in Settings → Models, the add-bot dialog and the setup wizard. It is a cloud backend for privacy and stateless for the memory fabric.
+  - `permission_mode` is `default`, `acceptEdits`, `auto`, `dontAsk` or `plan`. `bypassPermissions` and `--always-approve` are refused.
+- **Grok as a Factory worker, hybrid** (`conductor.grok`, [docs/local-conductor.md](docs/local-conductor.md#grok-as-a-worker)).
+  - `advisor`: Grok plans with no tools at all, and the confined local worker makes the change.
+  - `confined`: Grok works in its own AppContainer. It can read and write the task's worktree only and has outbound internet, but no loopback, no LAN and no home folder. It runs only with `network_approved: true`.
+  - `auto`: confined when that is approved and available, otherwise advisor.
+- **AppContainer: opt-in internet and a second container identity** ([docs/agents/security.md](docs/agents/security.md)). `internet=True` adds only the `internetClient` capability, so loopback and the local network stay blocked. `ABP.Sandbox.CloudAgent` is a separate identity for cloud CLI agents and is the only one that may be granted a CLI's sign-in file. The offline container the local workers share keeps no capabilities.
+- **Grok in the Agentic Workspace model picker** ([docs/local-chat.md](docs/local-chat.md#cloud-models-grok)). The "Cloud (Grok, xAI)" group comes from `grok models`. A session on a Grok model sends its turns to the `grok` backend, and that is refused while the session's cloud assist is off.
+- **Remote bots as workspace sub-agents** ([docs/local-chat.md](docs/local-chat.md#remote-bots-as-sub-agents)).
+  - `list_bot_instances` lists the bots. `delegate_to_instance` gained `conversation` (a kept session), `files` and `save_to`. `delegate_to_bots` runs up to 8 bots in parallel.
+  - Writing `@botname` in a workspace message tells the agent which bots you mean.
+  - The same permission gate, taint check, depth limit and audit row apply to every delegation.
+- **Remote Bot Chat management.**
+  - You can rename chats, delete a whole direct chat, delete several at once (the group room is skipped), search messages, and archive or unarchive a chat.
+  - A deleted direct chat stays deleted: a tombstone keeps the startup backfill from recreating it, and only an explicit open recreates it.
+  - The desktop can delete any message in a direct chat.
+
+### Changed
+- **Names.** The UI names changed; internal ids, routes and API paths did not:
+  - "Local Chat" is now **Agentic Workspace**, and "Chat" (the bot server chat) is **Remote Bot Chat**.
+  - The Ollama page is **Local Models** and the Unsloth page is **Model Studio**. Ollama and Unsloth are named only where you connect an external install.
+  - The top bar no longer repeats the first screen's heading.
 - **`abp redblue run|coverage`** — the EscapeArtist/WatchDog red<->blue loop from the command line (`abp_cli/redblue.py`).
   - `run` replays every taxonomy vector through WatchDog and prints how many were tried, detected and missed, each
     detected vector's matched signature, and its containment marked **PROPOSED, dry-run**. `--journal PATH` also appends

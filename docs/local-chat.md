@@ -1,6 +1,6 @@
-# Local Chat
+# Agentic Workspace (Local Chat)
 
-ABP's chat with local models on ModelMistress, with ABP's own agent (`bot/localchat`, `/api/local-chat`). It needs no cloud
+Shown in the UI as **Agentic Workspace**. The code, routes and ids keep the `local-chat` name. ABP's chat with local models on ModelMistress, with ABP's own agent (`bot/localchat`, `/api/local-chat`). It needs no cloud
 backend and no network: with a model on the hub it works offline.
 
 ## How a turn runs
@@ -40,6 +40,26 @@ figure says where it came from:
 
 Warnings: a chat model served with less context per request than `conductor.min_context`, and a model whose loading would
 unload another.
+
+### Cloud models: Grok
+
+When `grok` is installed and signed in, the picker adds a **Cloud (Grok, xAI)** group from `grok models` (cached for 10
+minutes). Grok is never the default model. Picking a Grok model (`grok/<name>`) sends the session's turns to the `grok`
+backend in the session's folder. Grok's own tools and permissions apply, not ABP's. A Grok session with cloud assist
+`off` is refused rather than sent. These rows have no Load or Benchmark buttons.
+
+## Remote bots as sub-agents
+
+A workspace agent can work with the registered bots (Remote Bots):
+
+- **`list_bot_instances`** (read-only) gives each bot's id, name, platform, backend, model and status, with no credentials.
+- **`delegate_to_instance`** sends a bot a task. `conversation` keeps one session per caller, label and bot, for a multi-turn exchange. `files` inlines workspace files. `save_to` writes the reply to a file.
+- **`delegate_to_bots`** sends up to 8 tasks to bots in parallel, each with its own result or error.
+
+Write `@botname` in a message and the agent is told which bots you mean (case-insensitive; e-mail addresses are ignored).
+Every delegation goes through the same permission gate, taint check, depth limit and audit row. A bot's own side effects
+use its backend's approvals. A Grok-backed bot joins a workspace swarm this way, beside local agents and Claude-backed
+bots.
 
 ## Config
 

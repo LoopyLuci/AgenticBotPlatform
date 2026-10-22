@@ -86,6 +86,23 @@ folders are stat-able there (read-attributes on each, that folder only; never li
 device (`PYTEST_ADDOPTS`: log file in the container's temp folder, sys-level capture). Before, a sandbox-shell worker's pytest
 could not start at all.
 
+### Grok as a worker
+
+`conductor.grok.mode` selects how Grok Build takes part (`bot/conductor/grok_worker.py`). The default is `off`. The Agentic
+Workspace's Factory uses the setting through `localchat.factory.make_worker`.
+
+| mode | What Grok does | Confinement |
+|---|---|---|
+| `advisor` | Grok plans each task from the task text and its files, with no tools: `--tools ""`, no web search, plan mode, run in an empty folder. The confined local worker gets the plan in its prompt and makes the change. If Grok fails (for example a 402), the local worker carries on without the plan. | Grok touches no files and runs nothing. The work runs in the usual offline AppContainer. |
+| `confined` | Grok edits the task's worktree itself, with `acceptEdits` and never approve-all. The result is committed on the task branch and reviewed like any other worker's. | Its own AppContainer (`ABP.Sandbox.CloudAgent`). It can read and write the worktree; read `~/.grok`; write `~/.grok/sessions`, `~/.grok/logs` and the sign-in file; and reach the internet (`internetClient`). It cannot reach loopback (ABP's server), the LAN or the rest of the home folder. It needs `network_approved: true`, which is the owner's decision. |
+| `auto` | `confined` when it is approved and possible, `advisor` otherwise. The mode is decided once per run. | as above |
+
+Other keys are `model` (a Grok model name such as `grok-4.7-build-fast`) and `timeout_s` (default 900). Confined mode runs
+the native binary under `~/.grok/bin`, because the npm launcher (node) cannot start inside an AppContainer. A failed
+Grok turn is a `WorkerModelError`, so the task is handed back and not counted as a failure. Checked live on 2026-10-21:
+inside the box Grok is signed in and reaches xAI, `~/.ssh` and loopback are denied, and the offline container cannot
+read Grok's sign-in file.
+
 ## Reviewer (`reviewer.py`)
 
 Before a worker's branch is reviewed, the conductor applies ruff's **safe** fixes (never `--unsafe-fixes`; the repository's own

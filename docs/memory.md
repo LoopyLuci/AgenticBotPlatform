@@ -21,7 +21,7 @@ turned off.
 - **Memories.** The most confirmed ones sit in the system prompt (the same block every turn, so prompt caching keeps
   working). The ones related to the message - found by meaning with ABP's local embedding model, a local Ollama, or
   hashed TF-IDF when neither runs - are sent with the message. Backends that build no system prompt of their own
-  (Claude CLI, Claude Desktop, Hermes, OpenCode, OpenClaw, an extension's backend) get the block in front of the message.
+  (Claude CLI, Claude Desktop, Hermes, OpenCode, OpenClaw, Grok, an extension's backend) get the block in front of the message.
 - **The conversation.** Each backend gets the turns it did not see: a backend that keeps its own session (the native
   loop, the Claude CLI, Hermes, an extension's backend) gets only the turns other models answered since it last spoke; a one-shot
   backend gets the recent conversation every time. Long conversations hand over a running summary plus the latest

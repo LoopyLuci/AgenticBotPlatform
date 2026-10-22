@@ -105,7 +105,7 @@ Generated from the registry; `tests/test_shortcuts.py` checks this table against
 
 | Action id | What it does | Default | Applies on |
 | --- | --- | --- | --- |
-| `nav.local-chat` | Go to Local Chat | `g lc` | anywhere |
+| `nav.local-chat` | Go to Agentic Workspace | `g lc` | anywhere |
 | `nav.overview` | Go to Overview | `g o` | anywhere |
 | `nav.jobs` | Go to Jobs | `g j` | anywhere |
 | `nav.telemetry` | Go to Connections & Telemetry | `g te` | anywhere |
@@ -114,14 +114,14 @@ Generated from the registry; `tests/test_shortcuts.py` checks this table against
 | `nav.resilience` | Go to Resilience | `g re` | anywhere |
 | `nav.diagnostics` | Go to Diagnostics | `g dg` | anywhere |
 | `nav.logs` | Go to Live Logs | `g l` | anywhere |
-| `nav.chat` | Go to Chat | `g h` | anywhere |
+| `nav.chat` | Go to Remote Bot Chat | `g h` | anywhere |
 | `nav.server-chat` | Go to Server Chat | `g sc` | anywhere |
 | `nav.support` | Go to Support Bot | `g sp` | anywhere |
 | `nav.sessions` | Go to Sessions | `g se` | anywhere |
 | `nav.bots` | Go to Bots | `g b` | anywhere |
 | `nav.models` | Go to Models | `g m` | anywhere |
 | `nav.router` | Go to Model Router | `g ro` | anywhere |
-| `nav.unsloth` | Go to Unsloth | `g un` | anywhere |
+| `nav.unsloth` | Go to Model Studio | `g un` | anywhere |
 | `nav.cluster` | Go to Cluster | `g cl` | anywhere |
 | `nav.vision` | Go to Vision | `g vi` | anywhere |
 | `nav.hosting` | Go to Hosting | `g ho` | anywhere |
@@ -134,7 +134,7 @@ Generated from the registry; `tests/test_shortcuts.py` checks this table against
 | `nav.power` | Go to Power | `g pw` | anywhere |
 | `nav.vm-harness` | Go to VM-Harness | `g vm` | anywhere |
 | `nav.hermes-manager` | Go to Hermes Manager | `g hm` | anywhere |
-| `nav.ollama` | Go to Ollama | `g ol` | anywhere |
+| `nav.ollama` | Go to Local Models | `g ol` | anywhere |
 | `nav.kanban` | Go to Kanban | `g kb` | anywhere |
 | `nav.agents` | Go to ABP Agents | `g ag` | anywhere |
 | `nav.swarms` | Go to Swarms | `g sw` | anywhere |
@@ -155,12 +155,12 @@ Generated from the registry; `tests/test_shortcuts.py` checks this table against
 | `nav.updates` | Go to Updates | `g up` | anywhere |
 | `nav.settings` | Go to Settings | `g gs` | anywhere |
 
-### Local Chat
+### Agentic Workspace
 
 | Action id | What it does | Default | Applies on |
 | --- | --- | --- | --- |
-| `localchat.new` | New Local Chat session | — | `local-chat` |
-| `localchat.focus` | Jump to the Local Chat message box | — | `local-chat` |
+| `localchat.new` | New Agentic Workspace session | — | `local-chat` |
+| `localchat.focus` | Jump to the Agentic Workspace message box | — | `local-chat` |
 
 ### Chat
 

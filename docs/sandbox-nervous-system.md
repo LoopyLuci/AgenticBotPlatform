@@ -250,7 +250,7 @@ and `bot/localai/engine.py`'s `llama-server` (`preset="engine"`).
 
 | Call site | One cell per ... | Preset / policy |
 |---|---|---|
-| `bot/backends/cli_backend.py`, `external_agent_backend.py` (opencode, openclaw), `hermes_cli_backend.py` | run, so a timeout or a `/stop` takes the CLI's tool subprocesses too | `agent` |
+| `bot/backends/cli_backend.py`, `external_agent_backend.py` (opencode, openclaw, grok), `hermes_cli_backend.py` | run, so a timeout or a `/stop` takes the CLI's tool subprocesses too | `agent` |
 | `bot/backends/hermes_gateway_backend.py` | the `hermes serve` process, which is meant to outlive ABP | `daemon` (persistent) |
 | `bot/modules/harness.py` `_stream()` (build and pipeline steps) | build / pipeline run | `build` |
 | `bot/modules/harness.py` `start_hub()` | hub, released by `stop_hub()`; killed if it never answered | `daemon` (persistent) |

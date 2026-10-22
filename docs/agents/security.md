@@ -244,6 +244,13 @@ enforce it, the command is refused, never run online.
 | `docker` | `--network none`, whatever `docker.network` says. |
 | `ssh`, `wsl` | The remote side runs the command under `unshare -rn`. If `unshare` is missing or refused there, the command fails before it starts. |
 
+**Opt-in internet for one container.** `appcontainer.run(..., internet=True)` (the launcher's `--internet`) grants
+only the well-known `internetClient` capability. The process can make outbound internet connections, while loopback and
+the local network stay blocked, because there is no `privateNetworkClientServer` and no loopback exemption. The only user
+is the confined Grok Factory worker, in its own container identity `ABP.Sandbox.CloudAgent` (`--profile`). That identity
+is the only one granted a cloud CLI's sign-in file (`--write-file`, a grant on that one file). The offline container
+`ABP.Sandbox.Offline`, which every local worker's shell uses, keeps no capabilities and cannot read the sign-in file.
+
 **How the Windows path works.** Python cannot start a process in an AppContainer, so a small
 launcher (the same file, run as a script) does it:
 1. It creates the `ABP.Sandbox.Offline` profile once per user, and grants it access to the workspace.
