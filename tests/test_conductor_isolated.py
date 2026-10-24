@@ -74,9 +74,14 @@ def test_local_chat_s_factory_worker_is_isolated(monkeypatch):
     from bot.conductor import confine
     from bot.localchat import factory as lc_factory
 
+    from bot.conductor import grok_worker
+
     monkeypatch.setattr(confine, "supported", lambda: True)
-    worker = lc_factory.make_worker(str(Path(__file__).resolve().parents[1]), "m")
-    assert worker.isolate is True
+    for grok_here in (False, True):          # grok is on auto by default: where it is installed it wraps the local worker
+        monkeypatch.setattr(grok_worker, "installed", lambda g=grok_here: g)
+        worker = lc_factory.make_worker(str(Path(__file__).resolve().parents[1]), "m")
+        assert isinstance(worker, grok_worker.GrokWorker) is grok_here
+        assert getattr(worker, "local", worker).isolate is True     # the worker that edits is isolated either way
 
 
 def test_the_cli_worker_stays_in_process(repo):
