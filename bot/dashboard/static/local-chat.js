@@ -741,7 +741,7 @@ ${d.would_lose.commits.length ? `<p>Commits not on the base:</p><ul>${d.would_lo
       let d = null;
       try { d = JSON.parse(e.message).detail; } catch (_) { /* not the 409 */ }
       if (d && d.needs_confirmation) {
-        openModal('First Factory run here', `<p>${E(d.message)}.</p><p class="lc-note">Workers are ABP's agent on your local model, each in its own worktree, with commands only inside a Windows AppContainer without network. The reviewer checks every change; the green result waits in the push queue for your approval.</p>`,
+        openModal(/first Factory run/.test(d.message || '') ? 'First Factory run here' : 'Run this plan again',`<p>${E(d.message)}.</p><p class="lc-note">Workers are ABP's agent on your local model, each in its own worktree, with commands only inside a Windows AppContainer without network. The reviewer checks every change; the green result waits in the push queue for your approval.</p>`,
           [{ label: 'Run it', run: () => { closeModal(); factoryRun(i, planId, true); } }, { label: 'Not now', run: closeModal }]);
         return;
       }

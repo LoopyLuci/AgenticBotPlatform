@@ -169,15 +169,31 @@ async def start(sid: str, plan_id: str, broadcast: Broadcast, *, confirm: bool =
     if raw is None:
         raise LookupError(f"no plan {plan_id}")
     repo, base = _target(session)
-    if not approved(repo):
-        if not confirm:
-            raise NeedsConfirmation(f"this is the first Factory run in {Path(repo).name}: confirm it (workers run confined, "
-                                    "nothing merges or pushes without your approval in the push queue)")
+    first = not approved(repo)
+    # A plan's id comes from its goal, so planning the same goal again is the same plan, and a task an earlier run escalated
+    # would stop this run at once ("0 of 3 accepted" in seconds, 2026-10-20). Said up front; confirming gives it a fresh attempt.
+    waiting = [e for e in cstore.list_escalations(True, 500) if e.get("plan_id") == plan_id]
+    if (first or waiting) and not confirm:
+        why = []
+        if first:
+            why.append(f"this is the first Factory run in {Path(repo).name}: confirm it (workers run confined, nothing merges or "
+                       "pushes without your approval in the push queue)")
+        if waiting:
+            names = ", ".join(sorted({str(e["task_key"]).rsplit(":", 1)[-1] for e in waiting}))
+            why.append(f"an earlier run of this plan is waiting on your decision for {names} (Coordination -> escalations): "
+                       "confirm to give it a fresh attempt")
+        raise NeedsConfirmation("; ".join(why))
+    if first:
         _approve(repo, by)
     model = chat.model_ref(session["model"]) if session["model"] else ""
     worker = make_worker(repo, model)                                  # refuses when the sandbox is unavailable
     plan = planner.Plan.from_dict(raw)
     cond = _conductor(repo, base, worker, model, links.factory_observer(sid, broadcast, repo=repo, base=base, model=session["model"]))
+    for e in waiting:
+        await asyncio.to_thread(cond.unblock, plan_id, e["task_key"], by, "a fresh attempt, confirmed in Local Chat")
+    if waiting:
+        store.add_message(sid, "system", f"{len(waiting)} task(s) an earlier run escalated get a fresh attempt.",
+                          meta={"factory_retry": [e["task_key"] for e in waiting]})
     store.add_message(sid, "system", f"Factory run of plan {plan_id} started: {len(plan.tasks)} task(s), workers confined "
                       "(AppContainer, no network). Its workers appear as linked sessions.", meta={"factory_run": plan_id})
     await chat._status(broadcast, sid, "working", factory=plan_id)

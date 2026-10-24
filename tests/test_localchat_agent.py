@@ -338,3 +338,60 @@ def test_factory_mode_plans_waits_for_the_owners_run_and_shows_its_workers(repo,
     assert "nothing pushes by itself" in final["text"]
     assert not git(repo, "remote")                                                 # no remote: nothing could have been pushed
     assert store.get(s["id"])["status"] == "done"
+
+
+def test_a_run_of_a_plan_an_earlier_run_escalated_asks_first_and_retries_it(repo, fake_router, planner_model, board, tmp_path,
+                                                                         monkeypatch):
+    # 2026-10-20: the same goal planned again is the same plan, and the old escalation stopped the new run in seconds
+    from bot.conductor import store as cstore
+
+    s = store.create(model=CODER, mode="factory", workspace=str(repo))
+
+    async def plan_it():
+        await chat.send(s["id"], "add a flag", _approving([]))
+        await asyncio.wait_for(chat._running[s["id"]], 30)
+    asyncio.run(plan_it())
+    plan = store.messages(s["id"])[-1]["meta"]["factory_plan"]
+    key = plan["tasks"][0]["key"]
+    cstore.escalate(plan["id"], key, "2 review rejections (an earlier run)")
+    factory._approve(str(repo), "test")                                          # not a first run: only the escalation asks
+
+    with pytest.raises(factory.NeedsConfirmation, match="earlier run of this plan .*decision for " + key.rsplit(":", 1)[-1]):
+        asyncio.run(factory.start(s["id"], plan["id"], _approving([])))
+    assert cstore.open_escalation(plan["id"], key) is not None
+
+    monkeypatch.setattr(factory, "make_worker", lambda repo_, model: scripted_worker(repo, tmp_path))
+    real = factory._conductor
+
+    def conductor(repo_, base, worker, model, on_event=None):
+        c = real(repo_, base, worker, model, on_event)
+        c.cfg = {**c.cfg, "model_review": False, "check_ruff": False, "check_hotreload": False, "autofix_lint": False, "public_repo": False}
+        c.suite = [sys.executable, "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider"]
+        c.run_proofs = False
+        return c
+    monkeypatch.setattr(factory, "_conductor", conductor)
+
+    async def run_it():
+        await factory.start(s["id"], plan["id"], _approving([]), confirm=True)
+        await asyncio.wait_for(factory._runs[s["id"]], 120)
+    asyncio.run(run_it())
+    assert cstore.open_escalation(plan["id"], key) is None                      # resolved: the task had its fresh attempt
+    assert "1 of 1 task(s) accepted" in store.messages(s["id"])[-1]["text"]
+
+
+def test_a_worker_commit_leaves_python_caches_out(tmp_path, monkeypatch):
+    # 2026-10-20: in a repository without a .gitignore the worker's commits carried __pycache__/*.pyc
+    from bot.conductor import run as crun
+
+    repo = tmp_path / "r"
+    (repo / "__pycache__").mkdir(parents=True)
+    git(tmp_path, "init", "-q", str(repo))
+    git(repo, "commit", "-q", "--allow-empty", "-m", "base")
+    (repo / "mod.py").write_text("X = 1\n", encoding="utf-8")
+    (repo / "__pycache__" / "mod.cpython-311.pyc").write_bytes(b"\x00")
+    (repo / "stray.pyc").write_bytes(b"\x00")
+    for k, v in (("GIT_AUTHOR_NAME", "T"), ("GIT_AUTHOR_EMAIL", "t@example.org"), ("GIT_COMMITTER_NAME", "T"),
+                 ("GIT_COMMITTER_EMAIL", "t@example.org")):
+        monkeypatch.setenv(k, v)
+    crun.AgentLoopWorker._commit(repo, {"title": "t", "key": "k"})
+    assert git(repo, "show", "--name-only", "--format=", "HEAD").split() == ["mod.py"]
