@@ -352,6 +352,7 @@ async def _turn(sid: str, turn_id: str, text: str, model: str, session: dict, br
 
     pol = autonomy.policy(session.get("autonomy", 2))
     context["permission_mode"] = "plan" if session["mode"] == "plan" else pol["permission_mode"]
+    context["autonomy"] = pol["level"]          # a Grok turn maps the level onto Grok's own modes (grok_mode_for)
     context["permission_rules"] = pol["rules"]
     if session.get("effort"):
         context["effort"] = session["effort"]

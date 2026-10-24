@@ -107,3 +107,19 @@ def test_the_router_builds_it_from_config():
     assert isinstance(g, GrokBackend)
     assert (g.binary, g.model, g.permission_mode, g.tools, g.web_search) == ("g", "grok-4.7", "acceptEdits", "", False)
     assert Router._build_backend(router, "grok", cfg, model_override="grok-4.6").model == "grok-4.6"
+
+
+@pytest.mark.parametrize("ctx, want", [
+    ({"permission_mode": "plan", "autonomy": 5}, "plan"),                   # plan mode wins over any autonomy
+    ({"permission_mode": "default", "autonomy": 2}, "default"),             # manual approval
+    ({"permission_mode": "accept_edits", "autonomy": 3}, "acceptEdits"),    # auto-build: edits run
+    ({"permission_mode": "accept_edits", "autonomy": 5}, "auto"),           # Sovereign
+    ({}, "dontAsk"),                                                        # no switch sent: the configured mode stays
+])
+def test_the_workspace_switches_set_grok_s_mode_for_each_turn(exe, ctx, want):
+    binary, called = exe
+    backend = GrokBackend(binary, permission_mode="dontAsk")
+    ask(backend, **ctx)
+    argv = called()["argv"]
+    assert argv[argv.index("--permission-mode") + 1] == want
+    assert backend.permission_mode == "dontAsk" and "bypassPermissions" not in argv

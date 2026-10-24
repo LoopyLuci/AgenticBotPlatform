@@ -48,6 +48,24 @@ minutes). Grok is never the default model. Picking a Grok model (`grok/<name>`) 
 backend in the session's folder. Grok's own tools and permissions apply, not ABP's. A Grok session with cloud assist
 `off` is refused rather than sent. These rows have no Load or Benchmark buttons.
 
+The session's own switches set Grok's permission mode for each turn:
+
+| Workspace switch | Grok mode |
+|---|---|
+| Agent type **Plan** | `plan` (proposes, changes nothing) |
+| Autonomy Locked, Cautious, Supervised | `default` (manual approval) |
+| Autonomy Trusted, Autonomous | `acceptEdits` (auto-build: edits run) |
+| Autonomy Sovereign | `auto` |
+
+`bypassPermissions` is never used.
+
+### Grok in Factory runs
+
+`conductor.grok.mode` is **auto** by default: confined Grok when network is approved and it can run, otherwise Grok as
+advisor; on a machine without Grok it is skipped and the local worker runs alone. The top bar switches it on the fly:
+the **Grok** dropdown (off, advisor, confined, auto) and the **Grok internet** switch (`conductor.grok.network_approved`,
+off by default). Both are audited and both turn back off the same way.
+
 ## Remote bots as sub-agents
 
 A workspace agent can work with the registered bots (Remote Bots):

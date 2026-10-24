@@ -65,18 +65,63 @@ def test_the_workspace_reads_and_sets_the_factory_grok_mode(temp_db, monkeypatch
     written = []
     monkeypatch.setattr(grok_worker, "settings", lambda cfg=None: dict(gcfg))
 
-    def set_value(path, value, actor="dashboard"):
-        written.append((path, value))
-        gcfg["mode"] = value
-    monkeypatch.setattr(config, "set_value", set_value)
+    def set_values(changes, actor="dashboard"):
+        written.append(dict(changes))
+        gcfg.update({k[-1]: v for k, v in changes.items()})
+    monkeypatch.setattr(config, "set_values", set_values)
     c, h = TestClient(build_app()), {"X-Dashboard-Token": "test-token"}
 
     d = c.get("/api/local-chat/grok-mode", headers=h).json()
     assert d["mode"] == "off" and d["modes"] == list(grok_worker.MODES) and d["effective"] == "off"
     d = c.put("/api/local-chat/grok-mode", headers=h, json={"mode": "confined"}).json()
-    assert written == [(["conductor", "grok", "mode"], "confined")]
+    assert written[-1] == {("conductor", "grok", "mode"): "confined"}
     assert d["mode"] == "confined" and d["effective"] == "off" and "network" in d["why"]   # not approved: says why
     d = c.put("/api/local-chat/grok-mode", headers=h, json={"mode": "auto"}).json()
     assert d["effective"] == "advisor"                                                    # auto falls back, never stops
     assert c.put("/api/local-chat/grok-mode", headers=h, json={"mode": "yolo"}).status_code == 400
     assert len(written) == 2
+
+
+def test_network_approval_switches_on_and_back_off_from_the_workspace(temp_db, monkeypatch):
+    monkeypatch.setenv("DASHBOARD_TOKEN", "test-token")
+    from fastapi.testclient import TestClient
+
+    from bot.conductor import grok_worker
+    from bot.config import config
+    from bot.dashboard.server import build_app
+
+    gcfg = {"mode": "advisor"}
+    written = []
+    monkeypatch.setattr(grok_worker, "settings", lambda cfg=None: dict(gcfg))
+
+    def set_values(changes, actor="dashboard"):
+        written.append(dict(changes))
+        gcfg.update({k[-1]: v for k, v in changes.items()})
+    monkeypatch.setattr(config, "set_values", set_values)
+    c, h = TestClient(build_app()), {"X-Dashboard-Token": "test-token"}
+
+    assert c.put("/api/local-chat/grok-mode", headers=h, json={"network_approved": True}).json()["network_approved"] is True
+    assert c.put("/api/local-chat/grok-mode", headers=h, json={"network_approved": False}).json()["network_approved"] is False
+    assert written == [{("conductor", "grok", "network_approved"): True}, {("conductor", "grok", "network_approved"): False}]
+    assert gcfg["mode"] == "advisor"                                                      # the other field is untouched
+    assert c.put("/api/local-chat/grok-mode", headers=h, json={"network_approved": "yes"}).status_code == 400
+    assert c.put("/api/local-chat/grok-mode", headers=h, json={}).status_code == 400
+
+
+def test_grok_is_on_auto_by_default_and_auto_without_grok_is_the_plain_local_worker(monkeypatch):
+    from bot import conductor
+    from bot.conductor import grok_worker, run
+    from bot.localchat import factory
+
+    assert conductor.DEFAULTS["grok"]["mode"] == "auto" and conductor.DEFAULTS["grok"]["network_approved"] is False
+
+    class Local:
+        def __init__(self, *a, **k):
+            pass
+    monkeypatch.setattr(run, "AgentLoopWorker", Local)
+    monkeypatch.setattr(grok_worker, "settings", lambda cfg=None: {"mode": "auto"})
+    monkeypatch.setattr(grok_worker, "installed", lambda: False)
+    assert isinstance(factory.make_worker("/ws/repo", "m"), Local)          # no Grok here: the run is never refused for it
+    monkeypatch.setattr(grok_worker, "installed", lambda: True)
+    monkeypatch.setattr(grok_worker, "resolve_mode", lambda gcfg: "advisor")
+    assert isinstance(factory.make_worker("/ws/repo", "m"), grok_worker.GrokWorker)

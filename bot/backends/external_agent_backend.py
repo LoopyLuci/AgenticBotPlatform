@@ -33,6 +33,7 @@ and if a flag differs in your version, put the correct one in `extra_args`.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import logging
 import os
@@ -264,6 +265,22 @@ class OpenClawBackend(ExternalAgentBackend):
 # Grok Build's permission modes (`grok --help`, 1.0.62). bypassPermissions is refused: it would run every tool call unasked.
 GROK_PERMISSION_MODES = ("default", "acceptEdits", "auto", "dontAsk", "plan")
 _SESSION_KEYS = ("session_id", "sessionId", "sessionID")
+_TURN_MODE: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("grok_turn_mode", default=None)
+
+
+def grok_mode_for(context: Optional[dict]) -> Optional[str]:
+    """The Grok permission mode a turn's own switches ask for, or None to keep the configured one. The Workspace sends ABP's
+    mode (plan, or its Autonomy level's mode) with every turn: plan -> plan; Locked..Supervised -> default (manual approval:
+    Grok asks before acting); Trusted / Autonomous -> acceptEdits (auto-build: edits run); Sovereign -> auto. Never bypass."""
+    context = context or {}
+    mode = context.get("permission_mode")
+    if mode == "plan":
+        return "plan"
+    if mode == "accept_edits" or mode == "bypass":
+        return "auto" if int(context.get("autonomy") or 0) >= 5 else "acceptEdits"
+    if mode == "default":
+        return "default"
+    return None
 
 
 def _grok_events(stdout: str) -> list[dict]:
@@ -307,8 +324,15 @@ class GrokBackend(ExternalAgentBackend):
             raise ValueError("grok extra_args may not approve every tool call (--always-approve / bypassPermissions)")
         self.permission_mode, self.sandbox, self.tools, self.web_search = permission_mode, sandbox, tools, web_search
 
+    async def ask(self, prompt: str, *, context: Optional[dict] = None, timeout_s: float = 300) -> BackendResult:
+        token = _TURN_MODE.set(grok_mode_for(context))         # per turn (a ContextVar): concurrent turns never share it
+        try:
+            return await super().ask(prompt, context=context, timeout_s=timeout_s)
+        finally:
+            _TURN_MODE.reset(token)
+
     def build_args(self, prompt, *, cwd, session, timeout_s):
-        args = ["-p", prompt, "--output-format", "json", "--permission-mode", self.permission_mode]
+        args = ["-p", prompt, "--output-format", "json", "--permission-mode", _TURN_MODE.get() or self.permission_mode]
         if self.model:
             args += ["--model", self.model]
         if self.agent:

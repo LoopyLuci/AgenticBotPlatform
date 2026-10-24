@@ -49,6 +49,13 @@ def grok_exe() -> Optional[Path]:
     return None
 
 
+def installed() -> bool:
+    """The Grok CLI is here at all (the native binary or the npm launcher the advisor uses)."""
+    import shutil
+
+    return grok_exe() is not None or shutil.which("grok") is not None
+
+
 def settings(cfg: Optional[dict] = None) -> dict:
     from bot import conductor
 

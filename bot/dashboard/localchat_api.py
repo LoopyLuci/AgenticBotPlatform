@@ -13,7 +13,8 @@
                                                       (decide them through /api/approvals), the end as local_chat_turn
     POST   /api/local-chat/sessions/{sid}/cancel      stop the running turn
     GET    /api/local-chat/grok-mode                  conductor.grok.mode: set value, choices, what a Factory run gets now
-    PUT    /api/local-chat/grok-mode                  {"mode": off|advisor|confined|auto} change it (audited; next run reads it)
+    PUT    /api/local-chat/grok-mode                  {"mode"?: off|advisor|confined|auto, "network_approved"?: bool} change
+                                                      either (audited; the next run reads it)
 
 Sessions and worktrees (S1):
     GET    /api/local-chat/groups                     the sidebar's user groups; POST {name} adds one
@@ -161,16 +162,27 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
 
     @app.put("/api/local-chat/grok-mode", dependencies=write)
     def local_chat_set_grok_mode(payload: dict = Body(...)):
-        """Change how Grok joins Factory runs, on the fly (the next run reads it; nothing restarts)."""
+        """Change how Grok joins Factory runs, and whether a confined Grok leaf may use the internet, on the fly (the next
+        run reads it; nothing restarts). Either field may be sent alone; both switch back off the same way."""
         from bot import db
         from bot.conductor import grok_worker
         from bot.config import config
 
-        mode = str(payload.get("mode") or "").strip().lower()
-        if mode not in grok_worker.MODES:
-            raise HTTPException(status_code=400, detail=f"mode must be one of: {', '.join(grok_worker.MODES)}")
-        config.set_value(["conductor", "grok", "mode"], mode, actor="dashboard")
-        db.log_audit(actor="dashboard", action="grok_mode_set", detail=mode)
+        changes: dict = {}
+        if "mode" in payload:
+            mode = str(payload.get("mode") or "").strip().lower()
+            if mode not in grok_worker.MODES:
+                raise HTTPException(status_code=400, detail=f"mode must be one of: {', '.join(grok_worker.MODES)}")
+            changes[("conductor", "grok", "mode")] = mode
+        if "network_approved" in payload:
+            if not isinstance(payload["network_approved"], bool):
+                raise HTTPException(status_code=400, detail="network_approved must be true or false")
+            changes[("conductor", "grok", "network_approved")] = payload["network_approved"]
+        if not changes:
+            raise HTTPException(status_code=400, detail="send mode and/or network_approved")
+        config.set_values(changes, actor="dashboard")
+        db.log_audit(actor="dashboard", action="grok_mode_set",
+                     detail=", ".join(f"{k[-1]}={v}" for k, v in changes.items()))
         return _grok_mode_doc()
 
     @app.get("/api/local-chat/models", dependencies=read)

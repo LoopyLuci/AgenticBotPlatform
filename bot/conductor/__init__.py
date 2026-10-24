@@ -50,8 +50,9 @@ DEFAULTS: dict[str, Any] = {
                 "adaptive": True, "min_files_for_pack": 3, "min_bytes_for_pack": 20000, "long_detail_chars": 800,
                 "small_repo_symbols": 150, "min_pack_tokens": 400},
     # Grok Build as a Factory worker (bot/conductor/grok_worker.py): mode off | advisor (Grok plans with no tools, a confined
-    # local model works) | confined (Grok works in its own AppContainer with internet; needs network_approved) | auto
-    "grok": {"mode": "off", "model": "", "network_approved": False, "timeout_s": 900},
+    # local model works) | confined (Grok works in its own AppContainer with internet; needs network_approved) | auto (the
+    # default: confined when approved, else advisor; skipped where Grok is not installed). The Workspace switches both.
+    "grok": {"mode": "auto", "model": "", "network_approved": False, "timeout_s": 900},
     "pusher": {"enabled": False,       # the pusher acts only on a recorded approval, and only when this is true
                "remote": "origin", "target": ""},   # target "" = the integration's base branch
 }

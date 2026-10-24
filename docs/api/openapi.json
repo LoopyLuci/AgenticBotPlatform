@@ -39198,7 +39198,7 @@
     "summary": "Local Chat Grok Mode"
    },
    "put": {
-    "description": "Change how Grok joins Factory runs, on the fly (the next run reads it; nothing restarts).",
+    "description": "Change how Grok joins Factory runs, and whether a confined Grok leaf may use the internet, on the fly (the next\nrun reads it; nothing restarts). Either field may be sent alone; both switch back off the same way.",
     "operationId": "local_chat_set_grok_mode_api_local_chat_grok_mode_put",
     "parameters": [
      {

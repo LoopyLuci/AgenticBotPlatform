@@ -102,7 +102,8 @@ def make_worker(repo: str, model: str) -> Any:
         raise FactoryRefused(f"the confined sandbox is not available, so no Factory worker runs: {e}") from e
     from bot.conductor import grok_worker
 
-    if str(grok_worker.settings().get("mode") or "off") == "off":
+    mode = str(grok_worker.settings().get("mode") or "off")
+    if mode == "off" or (mode == "auto" and not grok_worker.installed()):     # auto is the default: no Grok here, no Grok
         return local
     try:
         return grok_worker.GrokWorker(local)       # Grok as advisor or confined worker (conductor.grok)
