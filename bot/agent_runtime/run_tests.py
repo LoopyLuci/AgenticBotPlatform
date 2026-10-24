@@ -36,7 +36,7 @@ from bot.agent_runtime.errors import ToolError, safe_path
 # docker/ssh/wsl run their own guest python, so for those we keep the bare name (or an owner-configured interpreter)
 # and let the container/guest resolve it. See docs: the confined case is fixed by native_agent.run_tests.python +
 # sandbox.network_none.extra_paths, or by a future auto-grant of the interpreter tree.
-_DIRECT_BACKEND = "local"
+_DIRECT_BACKENDS = ("local", "windows_job")  # run directly on this host, or the offline AppContainer now grants the interpreter tree
 _interp_cache: dict[str, bool] = {}
 
 DEFAULT_TIMEOUT_S = 300
@@ -186,7 +186,7 @@ def _pytest_python() -> str:
     try:
         from bot.agent_runtime import sandbox
 
-        direct = sandbox.backend() == _DIRECT_BACKEND
+        direct = sandbox.backend() in _DIRECT_BACKENDS
     except Exception:  # noqa: BLE001  (config unreadable: assume the direct/local case, the common one)
         direct = True
     if direct:
@@ -203,7 +203,9 @@ def build_command(targets: list[str], k: str = "") -> str:
     py = _pytest_python()
     args = ["-q", "-x", "-p", "no:cacheprovider", "--tb=short", "-rfE", *(["-k", k] if k else []), *targets]
     if os.name == "nt":
-        return subprocess.list2cmdline([py]) + " -m pytest " + subprocess.list2cmdline(args)
+        # Always quoted: inside the offline AppContainer, cmd.exe given an UNQUOTED absolute path probes its parent
+        # folders (which the container may not read) and reports "Access is denied" before python starts.
+        return f'"{py}" -m pytest ' + subprocess.list2cmdline(args)
     return shlex.quote(py) + " -m pytest " + shlex.join(args)
 
 

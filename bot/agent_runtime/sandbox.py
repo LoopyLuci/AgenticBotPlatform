@@ -244,6 +244,13 @@ def _remote_offline(command: str) -> str:
 
 def _offline_launcher(command: str, cwd: Path, workspace: Path, cfg: dict, limits: Optional[dict] = None) -> list[str]:
     extra = [str(p) for p in ((cfg.get("network_none") or {}).get("extra_paths") or []) if str(p).strip()]
+    # The offline sandbox may run its own interpreter: grant read+execute on the venv (sys.prefix) so a confined
+    # command (run_tests' pytest, the conductor's proof) can launch it and import site-packages. Only a venv needs
+    # this: the base install (sys.base_prefix, e.g. under Program Files) is a system folder AppContainers can already
+    # read, and its ACL cannot be changed without admin -- granting it would refuse every offline command.
+    # Read/execute only; the workspace stays the sole writable tree and the container still has no network.
+    if sys.prefix != sys.base_prefix and sys.prefix not in extra:
+        extra.append(sys.prefix)
     limits = limits or {}
     return appcontainer.launcher_argv(sys.executable, command, cwd, workspace, extra_paths=extra,
                                       memory_mb=int(limits.get("memory_mb") or 0),
