@@ -271,6 +271,15 @@ class OpenClawBackend(ExternalAgentBackend):
 GROK_PERMISSION_MODES = ("default", "acceptEdits", "auto", "dontAsk", "plan")
 _SESSION_KEYS = ("session_id", "sessionId", "sessionID")
 _TURN_MODE: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("grok_turn_mode", default=None)
+_PROMPT_FILE: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("grok_prompt_file", default=None)
+
+
+def _native_grok() -> Optional[str]:
+    """~/.grok/bin/grok(.exe): the real binary. The npm `grok` on Windows is a .cmd wrapper, and a batch file cuts every
+    argument at its first newline - found live 2026-10-24, when Grok received only the first line of a prompt."""
+    home = os.environ.get("GROK_HOME") or os.path.join(os.path.expanduser("~"), ".grok")
+    exe = os.path.join(home, "bin", "grok.exe" if os.name == "nt" else "grok")
+    return exe if os.path.isfile(exe) else None
 
 
 def grok_mode_for(context: Optional[dict]) -> Optional[str]:
@@ -324,7 +333,7 @@ class GrokBackend(ExternalAgentBackend):
 
     def __init__(self, binary: str = "grok", *, permission_mode: str = "default", sandbox: Optional[str] = None,
                  tools: Optional[str] = None, web_search: bool = True, **kw):
-        super().__init__(binary, **kw)
+        super().__init__((_native_grok() or binary) if binary == "grok" else binary, **kw)
         if self.auto_approve and permission_mode == "default":
             permission_mode = "acceptEdits"           # auto_approve accepts file edits; it never becomes bypassPermissions
         if permission_mode not in GROK_PERMISSION_MODES:
@@ -334,14 +343,29 @@ class GrokBackend(ExternalAgentBackend):
         self.permission_mode, self.sandbox, self.tools, self.web_search = permission_mode, sandbox, tools, web_search
 
     async def ask(self, prompt: str, *, context: Optional[dict] = None, timeout_s: float = 300) -> BackendResult:
-        token = _TURN_MODE.set(grok_mode_for(context))         # per turn (a ContextVar): concurrent turns never share it
+        import tempfile
+
+        # The prompt goes in a file (--prompt-file), never on the command line: no newline cut, no length limit. The file sits
+        # in the temp folder, outside the turn's workspace, and is removed when the turn ends.
+        fd, path = tempfile.mkstemp(prefix="abp-grok-", suffix=".txt")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(prompt)
+        token = _TURN_MODE.set(grok_mode_for(context))         # per turn (ContextVars): concurrent turns never share them
+        ptoken = _PROMPT_FILE.set(path)
         try:
             return await super().ask(prompt, context=context, timeout_s=timeout_s)
         finally:
             _TURN_MODE.reset(token)
+            _PROMPT_FILE.reset(ptoken)
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
 
     def build_args(self, prompt, *, cwd, session, timeout_s):
-        args = ["-p", prompt, "--output-format", "json", "--permission-mode", _TURN_MODE.get() or self.permission_mode]
+        pfile = _PROMPT_FILE.get()
+        args = [*(["--prompt-file", pfile] if pfile else ["-p", prompt]), "--output-format", "json",
+                "--permission-mode", _TURN_MODE.get() or self.permission_mode]
         if self.model:
             args += ["--model", self.model]
         if self.agent:

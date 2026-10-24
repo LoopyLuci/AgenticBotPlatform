@@ -17,7 +17,9 @@ from bot.router import VALID_BACKENDS
 STAND_IN = r'''
 import json, os, sys
 mode = os.environ.get("STAND_IN_MODE", "ok")
-open(os.environ["STAND_IN_LOG"], "w").write(json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd()}))
+a = sys.argv[1:]
+prompt = open(a[a.index("--prompt-file") + 1], encoding="utf-8").read() if "--prompt-file" in a else None
+open(os.environ["STAND_IN_LOG"], "w").write(json.dumps({"argv": a, "cwd": os.getcwd(), "prompt": prompt}))
 if mode == "error":
     print(json.dumps({"type": "error", "message": "API error (status 402 Payment Required): Grok Build usage balance exhausted", "cwd": "/ws"}))
     sys.stderr.write("Error: Internal error"); sys.exit(1)
@@ -56,7 +58,8 @@ def test_headless_call_reply_and_session(exe, tmp_path):
     assert res.text == "the grok answer"
     assert res.raw["desktop_session_key"] == "0b9c5d1e-sess"
     argv = called()["argv"]
-    assert argv[:2] == ["-p", "do it"]
+    assert argv[0] == "--prompt-file" and called()["prompt"] == "do it" and "-p" not in argv
+    assert not os.path.exists(argv[1])                                       # the prompt file is gone after the turn
     assert argv[argv.index("--output-format") + 1] == "json"
     assert argv[argv.index("--permission-mode") + 1] == "default"
     assert argv[argv.index("--model") + 1] == "grok-4.7-build-fast"
@@ -135,3 +138,20 @@ def test_a_real_grok_reply_is_parsed():
     assert b.parse_output(out).endswith("Created `ok.txt` with the contents `hi`.")
     assert b.extra_raw(out).get("desktop_session_key") == "01a16fcc-82f0-7561-9297-c7fba9cef210"
     assert b.tokens_used(out) == 36457                                      # Grok's own count, recorded with the turn
+
+
+def test_a_multi_line_prompt_reaches_grok_whole(exe):
+    """Live 2026-10-24: through the npm grok.cmd wrapper, `-p <prompt>` lost everything after the first newline."""
+    binary, called = exe
+    prompt = "line one\nline two\n\nTask: the part that went missing"
+    ask(GrokBackend(binary), prompt=prompt)
+    assert called()["prompt"] == prompt
+
+
+def test_plain_grok_means_the_native_binary_when_it_is_installed(tmp_path, monkeypatch):
+    (tmp_path / "bin").mkdir()
+    native = tmp_path / "bin" / ("grok.exe" if os.name == "nt" else "grok")
+    native.write_text("")
+    monkeypatch.setenv("GROK_HOME", str(tmp_path))
+    assert GrokBackend("grok").binary == str(native)
+    assert GrokBackend("/opt/custom/grok").binary == "/opt/custom/grok"      # an explicit path is kept
