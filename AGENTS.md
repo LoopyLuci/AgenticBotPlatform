@@ -57,6 +57,28 @@ tuning env vars are in [`docs/cicd/README.md`](docs/cicd/README.md).
 > green push.** An environment-coupled test (one that assumes a local server is off) should be made
 > backend-agnostic instead.
 
+## Delegation and model choice (subagents and swarms)
+
+Using **Haiku 5.5** (`claude-haiku-5-5`) is allowed and encouraged for subagents and swarm workers whenever it saves usage
+and can reach work of similar quality to **Sonnet 5.5** (`claude-sonnet-5-5`). Pick the smallest model and the lowest effort
+level that does the job well, and move up only when the work needs it:
+
+| Work | Model and effort |
+|---|---|
+| Read-only search, mapping code, listing files, gathering file:line facts | Haiku 5.5, low effort |
+| Running test suites or lint and reporting the failures | Haiku 5.5, low to medium effort |
+| Mechanical edits with a precise brief (rename, regenerate, small well-specified change, docs updates) | Haiku 5.5, medium effort |
+| Ordinary implementation (a feature or fix in a few files, tests included) | Sonnet 5.5, medium effort (Haiku 5.5 at high effort if a trial shows equal quality) |
+| Cross-cutting design, subtle concurrency/security/consensus code, hard debugging | Sonnet 5.5 at high effort, or the conductor itself |
+
+Rules that keep quality the same:
+- The conductor reviews every diff and re-runs the key tests itself, whichever model wrote it.
+- If a Haiku worker's result fails review or its tests, redo that piece on Sonnet 5.5 instead of iterating on Haiku.
+- Briefs for Haiku are tighter: name the files, the exact behaviour wanted, and the command that proves it.
+- Swarm members still follow ABP's own model routing: never default to a Claude model where a local or other provider
+  is configured; this guidance is about *which* Claude model to use when a Claude model is the right choice.
+- Confinement and approval rules apply unchanged to every model (see Critical rules).
+
 ## Repo map (where things live)
 
 | Path | What |
