@@ -4,7 +4,7 @@
   "action": 102,
   "module": 9,
   "page": 59,
-  "route": 1051,
+  "route": 1053,
   "setting": 72
  },
  "entries": [
@@ -4607,6 +4607,16 @@
    "label": "Local Chat Events",
    "network": false,
    "where": "GET /api/local-chat/events"
+  },
+  {
+   "cloud": false,
+   "desc": "API (local-chat)",
+   "id": "route:GET /api/local-chat/grok-mode",
+   "keywords": "local-chat",
+   "kind": "route",
+   "label": "Local Chat Grok Mode",
+   "network": false,
+   "where": "GET /api/local-chat/grok-mode"
   },
   {
    "cloud": false,
@@ -11937,6 +11947,16 @@
    "label": "Lab Design Put",
    "network": false,
    "where": "PUT /api/lab/designs/{name}"
+  },
+  {
+   "cloud": false,
+   "desc": "API (local-chat)",
+   "id": "route:PUT /api/local-chat/grok-mode",
+   "keywords": "local-chat",
+   "kind": "route",
+   "label": "Local Chat Set Grok Mode",
+   "network": false,
+   "where": "PUT /api/local-chat/grok-mode"
   },
   {
    "cloud": false,

@@ -2625,6 +2625,13 @@ export const operations = {
    "limit"
   ]
  },
+ "GET /api/local-chat/grok-mode": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/grok-mode",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/local-chat/groups": {
   "body": false,
   "method": "GET",
@@ -8498,6 +8505,13 @@ export const operations = {
   ],
   "query_params": []
  },
+ "PUT /api/local-chat/grok-mode": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/local-chat/grok-mode",
+  "path_params": [],
+  "query_params": []
+ },
  "PUT /api/localai/settings": {
   "body": true,
   "method": "PUT",
@@ -14335,6 +14349,13 @@ export const operations = {
   ],
   "query_params": []
  },
+ "local_chat_grok_mode_api_local_chat_grok_mode_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/grok-mode",
+  "path_params": [],
+  "query_params": []
+ },
  "local_chat_group_create_api_local_chat_groups_post": {
   "body": true,
   "method": "POST",
@@ -14452,6 +14473,13 @@ export const operations = {
    "archived",
    "limit"
   ]
+ },
+ "local_chat_set_grok_mode_api_local_chat_grok_mode_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/local-chat/grok-mode",
+  "path_params": [],
+  "query_params": []
  },
  "local_chat_status_api_local_chat_status_get": {
   "body": false,

@@ -44,6 +44,7 @@
     ['factory', 'Factory', 'A goal becomes a conductor plan; confined workers run it only when you press Run']];
   const AUTONOMY = ['0 Locked', '1 Cautious', '2 Supervised', '3 Trusted', '4 Autonomous', '5 Sovereign'];
   const CLOUD = [['off', 'Cloud off'], ['ask', 'Cloud: ask'], ['auto', 'Cloud: auto']];
+  const GROK = { off: 'Grok off', advisor: 'Grok: advisor', confined: 'Grok: confined', auto: 'Grok: auto' };
   const GROUP_LABEL = { loaded: 'Loaded', gpu: 'Fits on the GPU', cpu: 'Runs on the CPU (slow)', too_big: 'Too big for this machine', other: 'Other (not planned by the hub)', cloud: 'Cloud (Grok, xAI)' };
   const SOURCE_LABEL = { measured: 'measured', estimated: 'estimated', rough_estimate: 'rough estimate', planned: 'planned', metadata: 'metadata', unknown: 'unknown' };
   const RUNS_ON = { gpu: 'GPU', cpu: 'CPU', none: 'does not fit', unknown: 'unknown', cloud: 'xAI cloud' };
@@ -196,6 +197,17 @@
     }
     S.panes.forEach((p, i) => { if (!p.sid) renderMsgs(i); });       // the empty state says when the hub is down
     renderStatus();
+  }
+  async function loadGrok() {
+    try { S.grok = await api('/api/local-chat/grok-mode'); } catch (_) { S.grok = null; }
+    S.panes.forEach((p, i) => renderTop(i));
+  }
+  async function setGrok(mode) {
+    try {
+      S.grok = await api('/api/local-chat/grok-mode', { method: 'PUT', body: JSON.stringify({ mode }) });
+      toast(S.grok.why ? `Grok set to ${mode}; a Factory run now gets ${S.grok.effective}: ${S.grok.why}` : `Grok set to ${mode} for the next Factory run.`);
+    } catch (e) { toast(errText(e), 'error'); }
+    S.panes.forEach((p, i) => renderTop(i));
   }
   async function loadSetup() {
     try { S.setup = await api('/api/setup/status'); } catch (_) { S.setup = null; }
@@ -480,6 +492,8 @@
     `<option value="${n}"${Number(s.autonomy) === n ? ' selected' : ''}>${E(label)}</option>`).join('')}</select>
 <select class="lc-sel" data-lc="cloud" aria-label="Cloud assist" title="Off: local only. Ask: one click per message to ask a cloud model. Auto: the capacity governor decides.">${CLOUD.map(([v, label]) =>
     `<option value="${v}"${s.cloud_assist === v ? ' selected' : ''}>${E(label)}</option>`).join('')}</select>
+${S.grok ? `<select class="lc-sel" data-lc="grok" aria-label="Grok in Factory runs" title="How Grok joins Factory runs (all sessions). Advisor: Grok plans, a confined local model works. Confined: Grok works in its own AppContainer (needs network approval). Auto: confined when approved, else advisor.${S.grok.effective !== S.grok.mode ? E(' Now: ' + S.grok.effective + (S.grok.why ? ' (' + S.grok.why + ')' : '')) : ''}">${S.grok.modes.map((v) =>
+    `<option value="${E(v)}"${S.grok.mode === v ? ' selected' : ''}>${E(GROK[v] || 'Grok: ' + v)}</option>`).join('')}</select>` : ''}
 <input type="text" class="lc-ws" data-lc="workspace" aria-label="Workspace folder" placeholder="Workspace folder (optional)" value="${E(s.workspace || '')}">
 <span class="lc-top-gap"></span>
 ${p.sid ? `<select class="lc-sel" data-lc="chapter-jump" aria-label="Jump to a chapter"><option value="">Chapters</option>${p.messages.filter((m) => m.meta && m.meta.chapter).map((m) =>
@@ -1181,6 +1195,7 @@ ${(st.running || []).length ? `<span>${st.running.length} answering</span>` : ''
       if (t.dataset.lc === 'chapter-jump') { chapterJump(i, t.value); t.value = ''; return; }
       if (t.dataset.lc === 'autonomy') setField(i, 'autonomy', Number(t.value));
       else if (t.dataset.lc === 'cloud') setField(i, 'cloud_assist', t.value);
+      else if (t.dataset.lc === 'grok') setGrok(t.value);
       else if (t.dataset.lc === 'workspace') setField(i, 'workspace', t.value.trim());
     });
     let qTimer = null;
@@ -1260,6 +1275,7 @@ ${(st.running || []).length ? `<span>${st.running.length} answering</span>` : ''
   function tick() {
     if (!S.visible) return;
     loadStatus();
+    loadGrok();
     S.panes.forEach((p, i) => { if (p.running) refreshMessages(i); });
   }
   function setVisible(on) {

@@ -6,7 +6,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 |---|---|
 | page | 59 |
 | action | 102 |
-| route | 1051 |
+| route | 1053 |
 | module | 9 |
 | setting | 72 |
 
@@ -874,12 +874,13 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `POST /api/lease/release` Api Lease Release
 - `POST /api/lease/take` Api Lease Take
 
-### local-chat (42)
+### local-chat (44)
 
 - `DELETE /api/local-chat/groups/{gid}` Local Chat Group Delete
 - `DELETE /api/local-chat/sessions/{sid}` Local Chat Delete
 - `DELETE /api/local-chat/sessions/{sid}/queued/{qid}` Local Chat Queued Drop
 - `GET /api/local-chat/events` Local Chat Events
+- `GET /api/local-chat/grok-mode` Local Chat Grok Mode
 - `GET /api/local-chat/groups` Local Chat Groups
 - `GET /api/local-chat/models` Local Chat Models
 - `GET /api/local-chat/sessions` Local Chat Sessions
@@ -918,6 +919,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `POST /api/local-chat/sessions/{sid}/worktree/queue-merge` Local Chat Worktree Queue
 - `POST /api/local-chat/sessions/{sid}/worktree/sync` Local Chat Worktree Sync
 - `POST /api/local-chat/worktrees/prune` Local Chat Worktrees Prune
+- `PUT /api/local-chat/grok-mode` Local Chat Set Grok Mode
 
 ### localai (26)
 

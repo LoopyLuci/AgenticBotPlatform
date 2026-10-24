@@ -51,3 +51,32 @@ def test_a_grok_session_with_cloud_assist_off_is_refused(monkeypatch):
     assert chat.is_grok("grok/grok-4.7") and not chat.is_grok("modelmistress/qwen")
     with pytest.raises(ValueError, match="cloud assist is off"):
         asyncio.run(chat.send("s1", "hi", lambda *a, **k: None))
+
+
+def test_the_workspace_reads_and_sets_the_factory_grok_mode(temp_db, monkeypatch):
+    monkeypatch.setenv("DASHBOARD_TOKEN", "test-token")
+    from fastapi.testclient import TestClient
+
+    from bot.conductor import grok_worker
+    from bot.config import config
+    from bot.dashboard.server import build_app
+
+    gcfg = {"mode": "off"}
+    written = []
+    monkeypatch.setattr(grok_worker, "settings", lambda cfg=None: dict(gcfg))
+
+    def set_value(path, value, actor="dashboard"):
+        written.append((path, value))
+        gcfg["mode"] = value
+    monkeypatch.setattr(config, "set_value", set_value)
+    c, h = TestClient(build_app()), {"X-Dashboard-Token": "test-token"}
+
+    d = c.get("/api/local-chat/grok-mode", headers=h).json()
+    assert d["mode"] == "off" and d["modes"] == list(grok_worker.MODES) and d["effective"] == "off"
+    d = c.put("/api/local-chat/grok-mode", headers=h, json={"mode": "confined"}).json()
+    assert written == [(["conductor", "grok", "mode"], "confined")]
+    assert d["mode"] == "confined" and d["effective"] == "off" and "network" in d["why"]   # not approved: says why
+    d = c.put("/api/local-chat/grok-mode", headers=h, json={"mode": "auto"}).json()
+    assert d["effective"] == "advisor"                                                    # auto falls back, never stops
+    assert c.put("/api/local-chat/grok-mode", headers=h, json={"mode": "yolo"}).status_code == 400
+    assert len(written) == 2

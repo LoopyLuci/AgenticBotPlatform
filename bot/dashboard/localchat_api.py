@@ -12,6 +12,8 @@
                                                       chat_id "localchat:<sid>"), approvals as local_chat_approval frames
                                                       (decide them through /api/approvals), the end as local_chat_turn
     POST   /api/local-chat/sessions/{sid}/cancel      stop the running turn
+    GET    /api/local-chat/grok-mode                  conductor.grok.mode: set value, choices, what a Factory run gets now
+    PUT    /api/local-chat/grok-mode                  {"mode": off|advisor|confined|auto} change it (audited; next run reads it)
 
 Sessions and worktrees (S1):
     GET    /api/local-chat/groups                     the sidebar's user groups; POST {name} adds one
@@ -138,6 +140,38 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         return {"hub": hub, "settings": localchat.settings(), "running": [t for t in store.running_turns()
                                                                          if chat.is_running(t["session_id"])],
                 "ollama_enabled": ollama.enabled()}      # Settings → Local models shows and flips it
+
+    def _grok_mode_doc() -> dict:
+        """conductor.grok.mode as the Workspace's dropdown shows it: the set value, every choice, and what a Factory
+        run would actually get right now (confined falls back or refuses when network is not approved)."""
+        from bot.conductor import grok_worker
+
+        gcfg = grok_worker.settings()
+        mode = str(gcfg.get("mode") or "off")
+        try:
+            effective, why = grok_worker.resolve_mode(gcfg), ""
+        except grok_worker.GrokUnavailable as e:
+            effective, why = "off", str(e)
+        return {"mode": mode, "modes": list(grok_worker.MODES), "effective": effective, "why": why,
+                "network_approved": bool(gcfg.get("network_approved"))}
+
+    @app.get("/api/local-chat/grok-mode", dependencies=read)
+    async def local_chat_grok_mode():
+        return await asyncio.to_thread(_grok_mode_doc)
+
+    @app.put("/api/local-chat/grok-mode", dependencies=write)
+    def local_chat_set_grok_mode(payload: dict = Body(...)):
+        """Change how Grok joins Factory runs, on the fly (the next run reads it; nothing restarts)."""
+        from bot import db
+        from bot.conductor import grok_worker
+        from bot.config import config
+
+        mode = str(payload.get("mode") or "").strip().lower()
+        if mode not in grok_worker.MODES:
+            raise HTTPException(status_code=400, detail=f"mode must be one of: {', '.join(grok_worker.MODES)}")
+        config.set_value(["conductor", "grok", "mode"], mode, actor="dashboard")
+        db.log_audit(actor="dashboard", action="grok_mode_set", detail=mode)
+        return _grok_mode_doc()
 
     @app.get("/api/local-chat/models", dependencies=read)
     async def local_chat_models(refresh: bool = Query(False)):
