@@ -112,7 +112,7 @@ def test_the_router_builds_it_from_config():
 @pytest.mark.parametrize("ctx, want", [
     ({"permission_mode": "plan", "autonomy": 5}, "plan"),                   # plan mode wins over any autonomy
     ({"permission_mode": "default", "autonomy": 2}, "default"),             # manual approval
-    ({"permission_mode": "accept_edits", "autonomy": 3}, "acceptEdits"),    # auto-build: edits run
+    ({"permission_mode": "accept_edits", "autonomy": 3}, "auto"),           # auto-build: headless acceptEdits cancels, auto edits
     ({"permission_mode": "accept_edits", "autonomy": 5}, "auto"),           # Sovereign
     ({}, "dontAsk"),                                                        # no switch sent: the configured mode stays
 ])
@@ -123,3 +123,14 @@ def test_the_workspace_switches_set_grok_s_mode_for_each_turn(exe, ctx, want):
     argv = called()["argv"]
     assert argv[argv.index("--permission-mode") + 1] == want
     assert backend.permission_mode == "dontAsk" and "bypassPermissions" not in argv
+
+
+def test_a_real_grok_reply_is_parsed():
+    """The success shape a live grok 1.0.62 `-p --output-format json` run printed (2026-10-24; cwd neutralised)."""
+    out = json.dumps({"text": "I'll create `ok.txt` with the text `hi`.Created `ok.txt` with the contents `hi`.",
+                      "stopReason": "end_turn", "sessionId": "01a16fcc-82f0-7561-9297-c7fba9cef210",
+                      "requestId": "7c8284a6-32bd-44a0-9cef-47a5bee089ff", "cwd": "/ws/probe",
+                      "usage": {"input_tokens": 16407, "output_tokens": 109, "total_tokens": 36457}, "num_turns": 1})
+    b = GrokBackend("grok")
+    assert b.parse_output(out).endswith("Created `ok.txt` with the contents `hi`.")
+    assert b.extra_raw(out).get("desktop_session_key") == "01a16fcc-82f0-7561-9297-c7fba9cef210"

@@ -270,14 +270,18 @@ _TURN_MODE: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("grok
 
 def grok_mode_for(context: Optional[dict]) -> Optional[str]:
     """The Grok permission mode a turn's own switches ask for, or None to keep the configured one. The Workspace sends ABP's
-    mode (plan, or its Autonomy level's mode) with every turn: plan -> plan; Locked..Supervised -> default (manual approval:
-    Grok asks before acting); Trusted / Autonomous -> acceptEdits (auto-build: edits run); Sovereign -> auto. Never bypass."""
+    mode (plan, or its Autonomy level's mode) with every turn: plan -> plan; Locked..Supervised -> default (manual approval);
+    Trusted and up -> auto (auto-build). Never bypassPermissions.
+
+    Measured live (grok 1.0.62, headless `-p`, 2026-10-24): `default` AND `acceptEdits` both end the turn with stopReason
+    "cancelled" at the first tool call that would ask - a headless run has nobody to answer - so only `auto` actually edits.
+    Manual approval is therefore a hard stop here: Grok says what it would do and changes nothing."""
     context = context or {}
     mode = context.get("permission_mode")
     if mode == "plan":
         return "plan"
     if mode == "accept_edits" or mode == "bypass":
-        return "auto" if int(context.get("autonomy") or 0) >= 5 else "acceptEdits"
+        return "auto"
     if mode == "default":
         return "default"
     return None

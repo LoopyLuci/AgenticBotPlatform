@@ -489,7 +489,7 @@
   <span class="lc-model-name">${E(model ? shortModel(model) : (S.catalogErr ? 'ModelMistress is not answering' : 'Pick a model'))}</span>${runs}${sp}<span aria-hidden="true">▾</span></button>
 <div class="lc-seg" role="radiogroup" aria-label="Agent type">${MODES.map(([id, label, tip]) =>
     `<button type="button" role="radio" aria-checked="${s.mode === id}" class="${s.mode === id ? 'on' : ''}" data-lc="mode" data-v="${id}" title="${E(tip)}">${E(label)}</button>`).join('')}</div>
-<select class="lc-sel" data-lc="autonomy" aria-label="Autonomy" title="How much the agent may do before it asks. Destructive actions always ask. On a Grok model: Locked to Supervised = manual approval, Trusted / Autonomous = auto-build (edits run), Sovereign = Grok auto; the Plan agent type = Grok plan mode.">${AUTONOMY.map((label, n) =>
+<select class="lc-sel" data-lc="autonomy" aria-label="Autonomy" title="How much the agent may do before it asks. Destructive actions always ask. On a Grok model: Locked to Supervised = manual approval (Grok explains, changes nothing), Trusted and up = auto-build (edits run); the Plan agent type = Grok plan mode.">${AUTONOMY.map((label, n) =>
     `<option value="${n}"${Number(s.autonomy) === n ? ' selected' : ''}>${E(label)}</option>`).join('')}</select>
 <select class="lc-sel" data-lc="cloud" aria-label="Cloud assist" title="Off: local only. Ask: one click per message to ask a cloud model. Auto: the capacity governor decides.">${CLOUD.map(([v, label]) =>
     `<option value="${v}"${s.cloud_assist === v ? ' selected' : ''}>${E(label)}</option>`).join('')}</select>

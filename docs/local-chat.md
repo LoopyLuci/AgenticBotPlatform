@@ -54,10 +54,11 @@ The session's own switches set Grok's permission mode for each turn:
 |---|---|
 | Agent type **Plan** | `plan` (proposes, changes nothing) |
 | Autonomy Locked, Cautious, Supervised | `default` (manual approval) |
-| Autonomy Trusted, Autonomous | `acceptEdits` (auto-build: edits run) |
-| Autonomy Sovereign | `auto` |
+| Autonomy Trusted, Autonomous, Sovereign | `auto` (auto-build: edits run) |
 
-`bypassPermissions` is never used.
+`bypassPermissions` is never used. A Grok turn runs headless (`grok -p`), so it cannot stop to ask you: measured live,
+`default` and `acceptEdits` both cancel the turn at the first tool call that would ask. Manual approval therefore means
+Grok explains what it would do and changes nothing; switch to Trusted or higher to let it build.
 
 ### Grok in Factory runs
 
