@@ -134,3 +134,4 @@ def test_a_real_grok_reply_is_parsed():
     b = GrokBackend("grok")
     assert b.parse_output(out).endswith("Created `ok.txt` with the contents `hi`.")
     assert b.extra_raw(out).get("desktop_session_key") == "01a16fcc-82f0-7561-9297-c7fba9cef210"
+    assert b.tokens_used(out) == 36457                                      # Grok's own count, recorded with the turn

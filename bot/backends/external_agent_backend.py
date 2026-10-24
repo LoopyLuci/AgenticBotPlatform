@@ -91,6 +91,10 @@ class ExternalAgentBackend(Backend):
         self.cwd, self.auto_approve = cwd, auto_approve
 
     # ---- per product ------------------------------------------------------------------------
+    def tokens_used(self, stdout: str) -> Optional[int]:
+        """The turn's token count when the agent's output reports one; None when it does not."""
+        return None
+
     def build_args(self, prompt: str, *, cwd: Optional[str], session: Optional[str], timeout_s: float) -> list[str]:
         raise NotImplementedError
 
@@ -139,7 +143,8 @@ class ExternalAgentBackend(Backend):
             reply = self.parse_output(text_out)
             if not reply:
                 raise BackendError(f"{self.name} returned no text")
-            return BackendResult(text=reply, raw={"backend": self.name, "exit": proc.returncode, **self.extra_raw(text_out)})
+            return BackendResult(text=reply, tokens=self.tokens_used(text_out),
+                                 raw={"backend": self.name, "exit": proc.returncode, **self.extra_raw(text_out)})
         finally:
             cell.close()          # the turn is over either way: release its job handle
 
@@ -355,6 +360,14 @@ class GrokBackend(ExternalAgentBackend):
 
     def failure_detail(self, stdout: str) -> Optional[str]:
         return _grok_error(stdout)
+
+    def tokens_used(self, stdout: str) -> Optional[int]:
+        """Grok's own count (`usage.total_tokens`), so a Grok turn's cost shows up beside every other turn's."""
+        for ev in reversed(_grok_events(stdout)):
+            usage = ev.get("usage")
+            if isinstance(usage, dict) and isinstance(usage.get("total_tokens"), int):
+                return usage["total_tokens"]
+        return None
 
     def parse_output(self, stdout: str) -> str:
         msg = _grok_error(stdout)
