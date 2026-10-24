@@ -311,6 +311,10 @@ class Plan:
         return not self.missing
 
 
+def _same_place(a: Path, b: Path) -> bool:
+    return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+
 def plan_install(root: Path, build_profile: Path, install_dir: Path, environ: Optional[dict] = None,
                  allow_missing: bool = False) -> Plan:
     """Every bundle.resources destination, plus the app binary, resolved
@@ -336,13 +340,20 @@ def plan_install(root: Path, build_profile: Path, install_dir: Path, environ: Op
                 plan.skipped.append((rel, "an install's own .env/data/logs is never replaced by a deploy"))
                 continue
         source = build_profile / rel
+        if _same_place(source, Path(install_dir) / rel):
+            # No CARGO_TARGET_DIR: the build IS the install folder, and Tauri already put this there. Installing it
+            # would move it aside as the previous copy first, taking the source with it.
+            plan.skipped.append((rel, "the build already put it in the install folder"))
+            continue
         if not source.exists():
             plan.missing.append(rel)
             if not allow_missing:
                 continue
         plan.install.append(Resource(rel=rel, source=source, dest=Path(install_dir) / rel))
     exe = Resource(rel=EXE_NAME, source=build_profile / EXE_NAME, dest=Path(install_dir) / EXE_NAME)
-    if exe.source.is_file():
+    if _same_place(exe.source, exe.dest):
+        plan.skipped.append((EXE_NAME, "the build already put it in the install folder"))
+    elif exe.source.is_file():
         plan.install.append(exe)
     elif allow_missing:
         plan.install.append(exe)

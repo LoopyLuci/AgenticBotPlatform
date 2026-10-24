@@ -408,6 +408,19 @@ def test_installing_replaces_every_file_and_folder_and_keeps_exactly_one_previou
     assert not list(prev.rglob("*v1*"))
 
 
+def test_a_build_that_is_already_the_install_folder_is_left_in_place(checkout, build):
+    """No CARGO_TARGET_DIR: Tauri builds straight into the folder the app runs from. Installing used to move each
+    resource aside as the previous copy - the source with it - and then fail to copy what was no longer there."""
+    install = _install_dir(checkout)
+    shutil.copytree(build / "release", install, dirs_exist_ok=True)
+    plan = deploy_local.plan_install(checkout, install, install)
+    assert plan.ok and plan.install == []
+    assert {rel for rel, _ in plan.skipped} >= {"bot", EXE}
+    deploy_local.install_resources(plan, install, log=lambda _s: None)
+    assert (install / "bot" / "nested" / "deep.py").read_text(encoding="utf-8") == "DEEP = 'v1'\n"
+    assert (install / EXE).exists()
+
+
 def test_rolling_back_puts_the_previous_files_back(tmp_path):
     """Two real deploys against the same temp install folder: the second
     one's files go back to being the first one's, and anything the second
