@@ -6,7 +6,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 |---|---|
 | page | 59 |
 | action | 102 |
-| route | 1043 |
+| route | 1051 |
 | module | 9 |
 | setting | 72 |
 
@@ -1613,6 +1613,17 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `DELETE /api/vault/{name}` Vault Remove
 - `GET /api/vault` Vault List
 - `POST /api/vault` Vault Add
+
+### vision (8)
+
+- `GET /api/vision` Vision Status
+- `GET /api/vision/out/{name}` Vision Out
+- `POST /api/vision/analyze` Vision Analyze
+- `POST /api/vision/compare` Vision Compare
+- `POST /api/vision/edit` Vision Edit
+- `POST /api/vision/faces` Vision Faces
+- `POST /api/vision/find` Vision Find
+- `POST /api/vision/models/{model}/fetch` Vision Fetch
 
 ### vm-harness (12)
 

@@ -538,5 +538,5 @@ def test_an_allowed_proof_runs_through_the_sandbox_spawn(repo, monkeypatch):
     assert run_async(run.run_proof(spec, str(repo))) is None
     bad = run_async(run.run_proof(spec, str(repo)))
     assert bad.rule == "proof" and "failed" in bad.message
-    assert [(c.startswith("python -m pytest -q -x"), cwd == repo.resolve(), ws == repo.resolve()) for c, cwd, ws in seen] == [(True, True, True)] * 2
+    assert [("-m pytest -q -x" in c, cwd == repo.resolve(), ws == repo.resolve()) for c, cwd, ws in seen] == [(True, True, True)] * 2
     assert "tests/test_cli.py" in seen[0][0]

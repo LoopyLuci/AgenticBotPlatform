@@ -4,7 +4,7 @@
   "action": 102,
   "module": 9,
   "page": 59,
-  "route": 1043,
+  "route": 1051,
   "setting": 72
  },
  "entries": [
@@ -6900,6 +6900,26 @@
   },
   {
    "cloud": false,
+   "desc": "API (vision)",
+   "id": "route:GET /api/vision",
+   "keywords": "vision",
+   "kind": "route",
+   "label": "Vision Status",
+   "network": false,
+   "where": "GET /api/vision"
+  },
+  {
+   "cloud": false,
+   "desc": "API (vision)",
+   "id": "route:GET /api/vision/out/{name}",
+   "keywords": "vision",
+   "kind": "route",
+   "label": "Vision Out",
+   "network": false,
+   "where": "GET /api/vision/out/{name}"
+  },
+  {
+   "cloud": false,
    "desc": "API (vm-harness)",
    "id": "route:GET /api/vm-harness/audit",
    "keywords": "vm-harness",
@@ -11487,6 +11507,66 @@
    "label": "Vault Add",
    "network": false,
    "where": "POST /api/vault"
+  },
+  {
+   "cloud": false,
+   "desc": "API (vision)",
+   "id": "route:POST /api/vision/analyze",
+   "keywords": "vision",
+   "kind": "route",
+   "label": "Vision Analyze",
+   "network": false,
+   "where": "POST /api/vision/analyze"
+  },
+  {
+   "cloud": false,
+   "desc": "API (vision)",
+   "id": "route:POST /api/vision/compare",
+   "keywords": "vision",
+   "kind": "route",
+   "label": "Vision Compare",
+   "network": false,
+   "where": "POST /api/vision/compare"
+  },
+  {
+   "cloud": false,
+   "desc": "API (vision)",
+   "id": "route:POST /api/vision/edit",
+   "keywords": "vision",
+   "kind": "route",
+   "label": "Vision Edit",
+   "network": false,
+   "where": "POST /api/vision/edit"
+  },
+  {
+   "cloud": false,
+   "desc": "API (vision)",
+   "id": "route:POST /api/vision/faces",
+   "keywords": "vision",
+   "kind": "route",
+   "label": "Vision Faces",
+   "network": false,
+   "where": "POST /api/vision/faces"
+  },
+  {
+   "cloud": false,
+   "desc": "API (vision)",
+   "id": "route:POST /api/vision/find",
+   "keywords": "vision",
+   "kind": "route",
+   "label": "Vision Find",
+   "network": false,
+   "where": "POST /api/vision/find"
+  },
+  {
+   "cloud": false,
+   "desc": "API (vision)",
+   "id": "route:POST /api/vision/models/{model}/fetch",
+   "keywords": "vision",
+   "kind": "route",
+   "label": "Vision Fetch",
+   "network": false,
+   "where": "POST /api/vision/models/{model}/fetch"
   },
   {
    "cloud": false,
