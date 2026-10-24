@@ -236,3 +236,29 @@ def test_native_builds_are_skipped_without_cargo(tmp_path, monkeypatch):
     (root / "native" / "abp-demo" / "pyproject.toml").write_text("", encoding="utf-8")
     monkeypatch.setattr(sb.shutil, "which", lambda name: None)
     assert sb.stage_native(tmp_path / "venv", root=root, log=lambda *_: None) == []
+
+
+def test_a_rebuild_prunes_what_the_stage_no_longer_has_from_the_build_folder(tmp_path):
+    """Tauri's copy never deletes: an upgraded package's old dist-info stayed and Sentinel read the old version."""
+    stage, release = tmp_path / "stage", tmp_path / "release"
+    site = Path(".venv") / "Lib" / "site-packages"
+    for root in (stage, release):
+        (root / site / "setuptools-84.1.0.dist-info").mkdir(parents=True)
+        (root / "bot").mkdir(parents=True)
+        (root / "bot" / "main.py").write_text("x", encoding="utf-8")
+    (release / site / "setuptools-84.0.0.dist-info").mkdir()
+    (release / site / "setuptools-84.0.0.dist-info" / "METADATA").write_text("Version: 84.0.0", encoding="utf-8")
+    (release / "bot" / "gone.py").write_text("old", encoding="utf-8")
+    (release / "bot" / "__pycache__").mkdir()
+    (release / "abp_build_only.txt").write_text("not a staged folder", encoding="utf-8")
+
+    removed = sb.prune_stale(stage, release, log=lambda _s: None)
+    assert not (release / site / "setuptools-84.0.0.dist-info").exists() and not (release / "bot" / "gone.py").exists()
+    assert (release / site / "setuptools-84.1.0.dist-info").is_dir() and (release / "bot" / "main.py").is_file()
+    assert (release / "bot" / "__pycache__").is_dir() and (release / "abp_build_only.txt").is_file()
+    assert len(removed) == 2
+
+
+def test_a_module_moved_aside_during_an_upgrade_is_not_shipped():
+    site = sb.ROOT / ".venv" / "Lib" / "site-packages" / "pkg"
+    assert sb._venv_ignore(str(site), ["_x.pyd", "_x.pyd.locked-old"]) == {"_x.pyd.locked-old"}

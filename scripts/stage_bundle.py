@@ -64,7 +64,8 @@ def _is_dev_dist_info(name: str) -> bool:
 
 def _venv_ignore(directory: str, names: list[str]) -> set[str]:
     rel = Path(directory).relative_to(ROOT / ".venv") if Path(directory) != ROOT / ".venv" else Path(".")
-    ignored = {n for n in names if n == "__pycache__" or n.endswith((".pyc", ".pyo"))}
+    # *.locked-old: a compiled module moved aside so an upgrade could replace it while a process still had it loaded.
+    ignored = {n for n in names if n == "__pycache__" or n.endswith((".pyc", ".pyo", ".locked-old"))}
     parts = rel.parts
     if parts == ("Scripts",):
         ignored |= {n for n in names if n not in KEEP_SCRIPTS}
@@ -299,5 +300,42 @@ def stage(stage_dir: Path = STAGE, markers: list[str] | None = None) -> None:
     print(f"staged installer bundle at {stage_dir} ({size_mb:.0f} MB, no dev packages, no personal paths)")
 
 
+def release_dir() -> Path:
+    """Where `cargo tauri build` copies the bundle resources: <CARGO_TARGET_DIR or src-tauri/target>/release."""
+    override = (os.environ.get("CARGO_TARGET_DIR") or "").strip()
+    return (Path(override).expanduser() if override else ROOT / "desktop-app" / "src-tauri" / "target") / "release"
+
+
+def prune_stale(stage_dir: Path = STAGE, release: Path | None = None, log=print) -> list[Path]:
+    """Removes from the build folder's copy of each staged folder whatever the stage no longer has.
+
+    Tauri's resource copy adds and overwrites but never deletes, so an upgraded package left its old *.dist-info beside
+    the new one there, and importlib.metadata (which Sentinel's CVE scan reads) kept reporting the old version; files of
+    removed packages and deleted modules lingered too. __pycache__ is kept: the stage never has it, and the app
+    rebuilds it anyway. A file something still holds open is reported and left."""
+    release = release_dir() if release is None else Path(release)
+    removed: list[Path] = []
+    for top in sorted(p for p in Path(stage_dir).iterdir() if p.is_dir()):
+        dest = release / top.name
+        if not dest.is_dir():
+            continue
+        for path in sorted(dest.rglob("*"), key=lambda p: len(p.parts)):
+            rel = path.relative_to(dest)
+            if "__pycache__" in rel.parts or (top / rel).exists() or not (path.exists() or path.is_symlink()):
+                continue
+            try:
+                if path.is_dir() and not path.is_symlink():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
+                removed.append(path)
+            except OSError as e:
+                log(f"could not remove stale {path}: {e}")
+    if removed:
+        log(f"pruned {len(removed)} stale item(s) from {release} that the stage no longer has")
+    return removed
+
+
 if __name__ == "__main__":
     stage()
+    prune_stale()
