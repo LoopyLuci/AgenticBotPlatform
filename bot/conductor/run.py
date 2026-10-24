@@ -538,7 +538,8 @@ class AgentLoopWorker:
                    "not checked and the task is rejected. Write them as pytest test functions (def test_...) and run them with "
                    "pytest; do not write a test script of your own.\n" if test_files else "") +
                   "Rules: never remove or rename an existing feature (command, flag, route, tool, page, setting); do not delete files; "
-                  "add or update a test for what you change; keep the change small; no unused imports." +
+                  "add or update a test for what you change; test only what the task asks for: do not invent expected values, messages "
+                  "or formats it does not give (a test that asserts a guess fails for no reason); keep the change small; no unused imports." +
                   ("\nReading code: call outline(path) first and read_symbol / find_symbol for the parts you need; read a whole file "
                    "with read_file only when it is short or you need all of it." if nav else "") +
                   (f"\n\nCode context for this task (pre-fetched; use outline / read_symbol / find_symbol for more instead of reading "

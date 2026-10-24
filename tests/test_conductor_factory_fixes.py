@@ -221,6 +221,7 @@ def test_the_worker_prompt_lists_the_proof_s_test_file_and_asks_for_pytest_tests
     asyncio.run(run.AgentLoopWorker(repo, drive=drive, shell="none")(spec, ""))
     assert "Files likely involved: textutil.py, tests/test_textutil.py" in prompts[0]
     assert "Put the tests in exactly tests/test_textutil.py" in prompts[0] and "do not write a test script" in prompts[0]
+    assert "do not invent expected values" in prompts[0]           # factory task 2 failed on an invented "Café" expectation
 
 
 def test_a_proof_naming_a_missing_file_says_so_and_where_the_tests_went(repo):
