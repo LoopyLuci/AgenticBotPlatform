@@ -91,7 +91,8 @@ def test_a_path_through_a_link_out_of_the_workspace_is_refused(ws, tmp_path):
 
 def test_the_command_is_exactly_pytest_with_quiet_and_stop_at_first_failure():
     cmd = run_tests.build_command(["tests/test_a.py::test_b[1-x]"])
-    assert cmd.startswith("python -m pytest -q -x ") and "tests/test_a.py::test_b[1-x]" in cmd
+    # The interpreter may be an absolute path (a host-local sandbox picks a pytest-capable one, not bare PATH python).
+    assert "-m pytest -q -x -p no:cacheprovider --tb=short -rfE " in cmd and "tests/test_a.py::test_b[1-x]" in cmd
 
 
 def test_it_starts_the_process_through_the_configured_sandbox(ws, monkeypatch):
@@ -104,7 +105,7 @@ def test_it_starts_the_process_through_the_configured_sandbox(ws, monkeypatch):
 
     monkeypatch.setattr(sandbox, "start", spy)
     run(ws, paths=["tests/test_ok.py"])
-    assert len(seen) == 1 and seen[0][0].startswith("python -m pytest") and seen[0][1] == ws
+    assert len(seen) == 1 and "-m pytest" in seen[0][0] and seen[0][1] == ws
 
 
 def test_the_timeout_comes_from_config_and_stops_the_run(ws, monkeypatch):

@@ -23,11 +23,21 @@ from __future__ import annotations
 import os
 import re
 import shlex
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from bot.agent_runtime import shell, toolspec
 from bot.agent_runtime.errors import ToolError, safe_path
+
+# The one backend that runs the command directly on this host with no container, so this process's own interpreter
+# path is valid and needs no sandbox grant. windows_job (AppContainer) does NOT auto-grant the venv directory, and
+# docker/ssh/wsl run their own guest python, so for those we keep the bare name (or an owner-configured interpreter)
+# and let the container/guest resolve it. See docs: the confined case is fixed by native_agent.run_tests.python +
+# sandbox.network_none.extra_paths, or by a future auto-grant of the interpreter tree.
+_DIRECT_BACKEND = "local"
+_interp_cache: dict[str, bool] = {}
 
 DEFAULT_TIMEOUT_S = 300
 MAX_TIMEOUT_S = 3600
@@ -147,10 +157,54 @@ def clean_targets(workspace: Path, raw, must_exist: bool = True) -> list[str]:
     return out
 
 
+def _has_pytest(exe: str) -> bool:
+    """True if `exe` can import pytest. Cached per interpreter — the probe runs outside the sandbox, only to
+    choose which interpreter the sandboxed command names."""
+    if exe in _interp_cache:
+        return _interp_cache[exe]
+    try:
+        ok = subprocess.run([exe, "-c", "import pytest"], capture_output=True, timeout=20).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        ok = False
+    _interp_cache[exe] = ok
+    return ok
+
+
+def _pytest_python() -> str:
+    """The interpreter the pytest command should name.
+
+    An explicit `native_agent.run_tests.python` wins on any backend (the owner points it at a pytest-capable
+    interpreter the sandbox can reach). Otherwise, only for the `local` backend — which runs the command directly
+    on this host with no container — do we substitute a verified interpreter (this process's own, then PATH's
+    python/python3), so a stale pyenv that happens to come first on PATH without pytest cannot shadow it (a
+    stray pyenv that happens to precede the project venv on PATH). For a container/remote backend (windows_job AppContainer, docker,
+    ssh, wsl) the bare name is correct: the guest resolves it, and naming an un-granted host path would be denied.
+    Always falls back to the bare name, so it is never worse than before."""
+    configured = str(_config().get("python") or "").strip()
+    if configured and _has_pytest(configured):
+        return configured
+    try:
+        from bot.agent_runtime import sandbox
+
+        direct = sandbox.backend() == _DIRECT_BACKEND
+    except Exception:  # noqa: BLE001  (config unreadable: assume the direct/local case, the common one)
+        direct = True
+    if direct:
+        for exe in (sys.executable, shutil.which("python"), shutil.which("python3")):
+            if exe and _has_pytest(exe):
+                return exe
+    return "python"
+
+
 def build_command(targets: list[str], k: str = "") -> str:
-    """`python -m pytest -q -x -p no:cacheprovider --tb=short -rfE [-k EXPR] <targets>`, quoted for the platform's shell."""
+    """`<python> -m pytest -q -x -p no:cacheprovider --tb=short -rfE [-k EXPR] <targets>`, quoted for the platform's
+    shell. `<python>` is an interpreter verified to have pytest on a host-local sandbox (see _pytest_python), or the
+    bare name `python` for a container/remote backend."""
+    py = _pytest_python()
     args = ["-q", "-x", "-p", "no:cacheprovider", "--tb=short", "-rfE", *(["-k", k] if k else []), *targets]
-    return "python -m pytest " + (subprocess.list2cmdline(args) if os.name == "nt" else shlex.join(args))
+    if os.name == "nt":
+        return subprocess.list2cmdline([py]) + " -m pytest " + subprocess.list2cmdline(args)
+    return shlex.quote(py) + " -m pytest " + shlex.join(args)
 
 
 def summarise(output: str) -> str:
