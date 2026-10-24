@@ -3,6 +3,7 @@ mode runs Grok in its own AppContainer with internet, only when the owner approv
 from __future__ import annotations
 
 import asyncio
+import json
 import subprocess
 from pathlib import Path
 
@@ -113,7 +114,7 @@ def test_confined_runs_in_its_own_container_with_internet_and_commits(monkeypatc
     assert argv[argv.index("--write-file") + 1] == str(home / "auth.json")
     assert str(Path.home()) not in [argv[i + 1] for i, a in enumerate(argv) if a in ("--read", "--write")]
     cmd = argv[-1]
-    assert "--always-approve" not in cmd and "bypassPermissions" not in cmd and "acceptEdits" in cmd
+    assert "--always-approve" not in cmd and "bypassPermissions" not in cmd and "--permission-mode auto" in cmd
     assert out["summary"] == "done" and out["empty"] is False and out["shell"] == "grok-confined"
     assert not (tmp_path / "wt" / ".abp-grok-prompt.txt").exists()
 
@@ -130,6 +131,56 @@ def test_a_failed_confined_turn_is_not_the_tasks_fault(monkeypatch, tmp_path):
     w = GrokWorker(FakeLocal(tmp_path / "wt"), cfg={"grok": {"mode": "confined", "network_approved": True}}, run_confined=run_confined)
     with pytest.raises(llm.WorkerModelError, match="usage balance exhausted"):
         asyncio.run(w(SPEC, ""))
+
+
+def test_a_cancelled_confined_turn_fails_and_a_pretty_printed_reply_is_read(monkeypatch, tmp_path):
+    """Live (2026-10-24): the launcher returns stdout+stderr, Grok's JSON is pretty-printed over many lines, and a turn that
+    stopped before acting says stopReason "cancelled" - that is a failed turn, not an empty success."""
+    from bot.conductor import llm
+
+    monkeypatch.setattr(appcontainer, "is_supported", lambda: True)
+    monkeypatch.setattr(grok_worker, "grok_exe", lambda: tmp_path / "grok.exe")
+    reply = json.dumps({"text": "I'll implement shout.", "stopReason": "cancelled", "sessionId": "s"}, indent=2)
+    stderr_tail = "\nsome stderr line\n"
+
+    async def run_confined(argv, timeout_s):
+        return 0, reply + stderr_tail
+
+    assert grok_worker._reply(reply + stderr_tail) == "I'll implement shout."
+    w = GrokWorker(FakeLocal(tmp_path / "wt"), cfg={"grok": {"mode": "confined", "network_approved": True}}, run_confined=run_confined)
+    with pytest.raises(llm.WorkerModelError, match="cancelled"):
+        asyncio.run(w(SPEC, ""))
+
+
+def test_auto_falls_back_to_advisor_when_confined_grok_cannot_act(monkeypatch, tmp_path):
+    """Live 2026-10-24: inside the AppContainer an edit to an existing file is cancelled. Auto must keep the run going on the
+    advisor path (the local worker does the work) and stay there; an explicit `confined` still fails loudly."""
+    monkeypatch.setattr(appcontainer, "is_supported", lambda: True)
+    monkeypatch.setattr(grok_worker, "grok_exe", lambda: tmp_path / "grok.exe")
+    monkeypatch.setattr(grok_worker, "_confined_broken", "")
+    cancelled = json.dumps({"text": "I'll implement it.", "stopReason": "cancelled"}, indent=2)
+    confined_calls, advice_calls = [], []
+
+    async def run_confined(argv, timeout_s):
+        confined_calls.append(argv)
+        return 0, cancelled
+
+    async def advise(prompt, *, model, timeout_s):
+        advice_calls.append(prompt)
+        return "the plan"
+
+    cfg = {"grok": {"mode": "auto", "network_approved": True}}
+    w = GrokWorker(FakeLocal(tmp_path / "wt"), cfg=cfg, run_confined=run_confined, advise=advise)
+    assert w.mode == "confined"
+    out = asyncio.run(w(SPEC, ""))
+    assert out["grok"]["mode"] == "advisor" and len(confined_calls) == 1 and len(advice_calls) == 1
+    assert GrokWorker(FakeLocal(tmp_path / "wt2"), cfg=cfg).mode == "advisor"           # the next run skips confined
+    from bot.conductor import llm
+
+    explicit = GrokWorker(FakeLocal(tmp_path / "wt3"), cfg={"grok": {"mode": "confined", "network_approved": True}},
+                          run_confined=run_confined)
+    with pytest.raises(llm.WorkerModelError, match="cancelled"):
+        asyncio.run(explicit(SPEC, ""))
 
 
 def test_the_launcher_only_offers_the_two_profiles():

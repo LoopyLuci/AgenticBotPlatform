@@ -150,7 +150,8 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         gcfg = grok_worker.settings()
         mode = str(gcfg.get("mode") or "off")
         try:
-            effective, why = grok_worker.resolve_mode(gcfg), ""
+            effective = grok_worker.resolve_mode(gcfg)
+            why = f"confined Grok could not act earlier ({grok_worker._confined_broken}); using advisor"                 if mode == "auto" and effective == "advisor" and grok_worker._confined_broken else ""
         except grok_worker.GrokUnavailable as e:
             effective, why = "off", str(e)
         return {"mode": mode, "modes": list(grok_worker.MODES), "effective": effective, "why": why,

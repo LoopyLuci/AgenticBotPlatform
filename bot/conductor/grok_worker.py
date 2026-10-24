@@ -29,6 +29,7 @@ from typing import Any, Awaitable, Callable, Optional
 logger = logging.getLogger("bot.conductor.grok")
 
 MODES = ("off", "advisor", "confined", "auto")
+_confined_broken = ""         # why confined Grok could not act in this process; auto then uses advisor until a restart
 FILE_CHARS = 20_000           # per file shown to the advisor
 TOTAL_CHARS = 80_000          # all files together
 
@@ -74,6 +75,8 @@ def resolve_mode(gcfg: dict) -> str:
     why = ("" if gcfg.get("network_approved") else "the owner has not approved network for a Grok leaf (conductor.grok.network_approved)") \
         or ("" if appcontainer.is_supported() else "no Windows AppContainer here") \
         or ("" if grok_exe() else f"no native grok binary under {grok_home() / 'bin'}")
+    if not why and mode == "auto" and _confined_broken:
+        why = f"confined Grok could not act earlier in this run of ABP ({_confined_broken})"
     if not why:
         return "confined"
     if mode == "confined":
@@ -127,7 +130,12 @@ def confined_argv(wt: Path, prompt_file: Path, *, model: str, python: str = sys.
         raise GrokUnavailable(f"no native grok binary under {home / 'bin'}")
     for sub in ("sessions", "logs"):
         (home / sub).mkdir(parents=True, exist_ok=True)
-    cmd = (f'"{exe}" --prompt-file "{prompt_file}" --output-format json --permission-mode acceptEdits '
+    # auto, not acceptEdits: measured live (grok 1.0.62), a headless acceptEdits turn cancels at its first edit. Never
+    # --always-approve: the AppContainer is what bounds it (this worktree, ~/.grok and internet only). Known open issue
+    # (2026-10-24): inside the container an edit to an EXISTING file is still cancelled (a new file is written), while the same
+    # flags outside it edit fine; git cannot start in the container (it cannot open its null device), the leading suspect.
+    # Auto mode falls back to advisor when that happens (GrokWorker.__call__).
+    cmd = (f'"{exe}" --prompt-file "{prompt_file}" --output-format json --permission-mode auto '
            f'--disable-web-search --no-auto-update --cwd "{wt}"' + (f' --model {model}' if model else ""))
     return appcontainer.launcher_argv(python, cmd, wt, wt, extra_paths=[str(home)],
                                       write_paths=[str(home / "sessions"), str(home / "logs")],
@@ -162,7 +170,18 @@ class GrokWorker:
                 plan = ""
             out = await self.local({**spec, "advice": plan}, feedback)
             return {**out, "grok": {"mode": "advisor", "advice_chars": len(plan)}}
-        return await self._confined(spec, feedback)
+        try:
+            return await self._confined(spec, feedback)
+        except Exception as exc:
+            from bot.conductor import llm
+
+            if str(self.gcfg.get("mode")) != "auto" or not isinstance(exc, llm.WorkerModelError) or "cancelled" not in str(exc):
+                raise
+            global _confined_broken
+            _confined_broken = "a confined turn stopped before acting"
+            logger.warning("grok worker: confined Grok stopped before acting; auto falls back to advisor (%s)", exc)
+            self.mode = "advisor"                        # this task and the rest of the run: the local worker does the work
+            return await self(spec, feedback)
 
     async def _confined(self, spec: dict, feedback: str) -> dict:
         from bot.conductor import integrator
@@ -181,20 +200,37 @@ class GrokWorker:
         finally:
             pfile.unlink(missing_ok=True)              # never committed with the task
         reply = _reply(out)
-        if code != 0:
+        if code != 0 or _cancelled(out):
             from bot.conductor import llm
 
-            raise llm.WorkerModelError(f"confined grok exited {code}: {reply[:300]}")
+            why = f"exited {code}" if code != 0 else "stopped before acting (cancelled)"
+            raise llm.WorkerModelError(f"confined grok {why}: {reply[:300]}")
         await asyncio.to_thread(self.local._commit, wt, spec)
         made = integrator._git(wt, "rev-list", "--count", f"{start}..HEAD", check=False).stdout.strip()
         return {"branch": spec["branch"], "worktree": str(wt), "start": start, "shell": "grok-confined",
                 "empty": made in ("", "0"), "summary": reply[:500], "grok": {"mode": "confined"}}
 
 
-def _reply(out: str) -> str:
-    from bot.backends.external_agent_backend import _find_text, _grok_error, _grok_events
+def _events(out: str) -> list[dict]:
+    """Grok's JSON from the launcher's output, which is stdout and stderr together: the pretty-printed document is cut out of
+    whatever surrounds it when the whole text does not parse."""
+    from bot.backends.external_agent_backend import _grok_events
 
-    return _grok_error(out) or _find_text(_grok_events(out)) or out.strip()
+    events = _grok_events(out)
+    if not events and "{" in out:
+        events = _grok_events(out[out.find("{"):out.rfind("}") + 1])
+    return events
+
+
+def _cancelled(out: str) -> bool:
+    return any(ev.get("stopReason") == "cancelled" for ev in _events(out))
+
+
+def _reply(out: str) -> str:
+    from bot.backends.external_agent_backend import _find_text, _grok_error
+
+    events = _events(out)
+    return _grok_error(json.dumps(events[-1]) if events else out) or _find_text(events) or out.strip()
 
 
 async def _run_argv(argv: list[str], timeout_s: float) -> tuple[int, str]:
