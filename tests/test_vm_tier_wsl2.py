@@ -41,8 +41,8 @@ def _session():
 
 @pytest.fixture(scope="session", autouse=True)
 def _base():
-    if HAVE_WSL:
-        wsl_vm.ensure_base()
+    if RUN_WSL:                      # only when the slow real-WSL tests are opt-in (ABP_RUN_WSL_TESTS=1);
+        wsl_vm.ensure_base()         # importing the ~4 GB base otherwise errors on a WSL box in the default/pipeline run
 
 
 @pytest.fixture
