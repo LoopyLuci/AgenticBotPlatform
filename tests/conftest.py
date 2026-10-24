@@ -113,6 +113,17 @@ def _no_grok_sign_in(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_grok_vm(monkeypatch):
+    """A confined Grok turn in the real VM costs Grok tokens and minutes: no test may start one by accident (a default that
+    reaches it must fail loudly). Live checks call bot.agent_runtime.grok_vm directly, outside the suite."""
+    from bot.agent_runtime import grok_vm
+
+    def refuse(*a, **k):
+        raise AssertionError("a test reached the real Grok VM (grok_vm.run_task): inject run_vm instead")
+    monkeypatch.setattr(grok_vm, "run_task", refuse)
+
+
+@pytest.fixture(autouse=True)
 def _isolated_cicd_event_store(monkeypatch, tmp_path):
     """Instrumented scripts (release, pipeline) record into the CI/CD event
     store. No test may ever write into the real one, so every test gets its own."""

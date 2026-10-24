@@ -67,6 +67,24 @@ advisor; on a machine without Grok it is skipped and the local worker runs alone
 the **Grok** dropdown (off, advisor, confined, auto) and the **Grok internet** switch (`conductor.grok.network_approved`,
 off by default). Both are audited and both turn back off the same way.
 
+**Where confined Grok runs** (`conductor.grok.confine_backend`, the **Grok box** selector in the top bar):
+
+- **Linux VM** (`wsl_vm`, the default): a throw-away WSL2 VM per task, imported from a clean Debian base image that
+  contains only Git, Python, pytest, nftables and the official Linux Grok binary. The VM gets:
+  - no Windows drives, no WSL shared mounts and no Windows interop;
+  - a copy of the worktree, without its `.git`;
+  - your `~/.grok/auth.json` and nothing else from your profile.
+
+  A firewall inside the VM drops this machine, the LAN, Tailscale and local addresses before Grok starts, so Grok has
+  the public internet only. Grok runs as an unprivileged user, which cannot change those rules. The changed files are
+  copied back, and the VM is deleted afterwards. Build the base once (and again when Grok updates) with
+  `python scripts/build_grok_vm_base.py <debian-rootfs.tar.gz> <grok-linux-x64.tgz>`.
+- **AppContainer** (`appcontainer`): Windows-only confinement. Grok cannot edit existing files there in a headless run.
+  Windows denies the path lookup Grok uses to check that a file is inside the workspace, so Grok's confirmation floor
+  cancels the edit.
+
+Without WSL or the base image, auto uses advisor.
+
 ## Remote bots as sub-agents
 
 A workspace agent can work with the registered bots (Remote Bots):

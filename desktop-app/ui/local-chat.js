@@ -44,6 +44,7 @@
     ['factory', 'Factory', 'A goal becomes a conductor plan; confined workers run it only when you press Run']];
   const AUTONOMY = ['0 Locked', '1 Cautious', '2 Supervised', '3 Trusted', '4 Autonomous', '5 Sovereign'];
   const CLOUD = [['off', 'Cloud off'], ['ask', 'Cloud: ask'], ['auto', 'Cloud: auto']];
+  const GROK_BOX = { wsl_vm: 'Grok box: Linux VM', appcontainer: 'Grok box: AppContainer' };
   const GROK = { off: 'Grok off', advisor: 'Grok: advisor', confined: 'Grok: confined', auto: 'Grok: auto' };
   const GROUP_LABEL = { loaded: 'Loaded', gpu: 'Fits on the GPU', cpu: 'Runs on the CPU (slow)', too_big: 'Too big for this machine', other: 'Other (not planned by the hub)', cloud: 'Cloud (Grok, xAI)' };
   const SOURCE_LABEL = { measured: 'measured', estimated: 'estimated', rough_estimate: 'rough estimate', planned: 'planned', metadata: 'metadata', unknown: 'unknown' };
@@ -205,7 +206,8 @@
   async function setGrok(change) {
     try {
       S.grok = await api('/api/local-chat/grok-mode', { method: 'PUT', body: JSON.stringify(change) });
-      const what = 'mode' in change ? `Grok set to ${change.mode}` : `Internet for confined Grok ${change.network_approved ? 'on' : 'off'}`;
+      const what = 'mode' in change ? `Grok set to ${change.mode}` : 'confine_backend' in change ? `Confined Grok runs in ${GROK_BOX[change.confine_backend] || change.confine_backend}`
+        : `Internet for confined Grok ${change.network_approved ? 'on' : 'off'}`;
       toast(S.grok.why ? `${what}; a Factory run now gets ${S.grok.effective}: ${S.grok.why}` : `${what} for the next Factory run.`);
     } catch (e) { toast(errText(e), 'error'); }
     S.panes.forEach((p, i) => renderTop(i));
@@ -495,7 +497,9 @@
     `<option value="${v}"${s.cloud_assist === v ? ' selected' : ''}>${E(label)}</option>`).join('')}</select>
 ${S.grok ? `<select class="lc-sel" data-lc="grok" aria-label="Grok in Factory runs" title="How Grok joins Factory runs (all sessions). Advisor: Grok plans, a confined local model works. Confined: Grok works in its own AppContainer (needs network approval). Auto: confined when approved, else advisor.${S.grok.effective !== S.grok.mode ? E(' Now: ' + S.grok.effective + (S.grok.why ? ' (' + S.grok.why + ')' : '')) : ''}">${S.grok.modes.map((v) =>
     `<option value="${E(v)}"${S.grok.mode === v ? ' selected' : ''}>${E(GROK[v] || 'Grok: ' + v)}</option>`).join('')}</select>
-<label class="lc-chip" title="Lets a confined Grok worker reach the internet (never loopback or the LAN). Off: confined cannot run; auto falls back to advisor."><input type="checkbox" data-lc="grok-net"${S.grok.network_approved ? ' checked' : ''}> Grok internet</label>` : ''}
+<label class="lc-chip" title="Lets a confined Grok worker reach the internet (never loopback or the LAN). Off: confined cannot run; auto falls back to advisor."><input type="checkbox" data-lc="grok-net"${S.grok.network_approved ? ' checked' : ''}> Grok internet</label>
+<select class="lc-sel" data-lc="grok-box" aria-label="Where confined Grok runs" title="Linux VM: a throw-away WSL2 VM with only the worktree and internet (edits work). Windows AppContainer: cannot edit existing files headless.">${(S.grok.confine_backends || []).map((v) =>
+    `<option value="${E(v)}"${S.grok.confine_backend === v ? ' selected' : ''}>${E(GROK_BOX[v] || v)}</option>`).join('')}</select>` : ''}
 <input type="text" class="lc-ws" data-lc="workspace" aria-label="Workspace folder" placeholder="Workspace folder (optional)" value="${E(s.workspace || '')}">
 <span class="lc-top-gap"></span>
 ${p.sid ? `<select class="lc-sel" data-lc="chapter-jump" aria-label="Jump to a chapter"><option value="">Chapters</option>${p.messages.filter((m) => m.meta && m.meta.chapter).map((m) =>
@@ -1199,6 +1203,7 @@ ${(st.running || []).length ? `<span>${st.running.length} answering</span>` : ''
       else if (t.dataset.lc === 'cloud') setField(i, 'cloud_assist', t.value);
       else if (t.dataset.lc === 'grok') setGrok({ mode: t.value });
       else if (t.dataset.lc === 'grok-net') setGrok({ network_approved: t.checked });
+      else if (t.dataset.lc === 'grok-box') setGrok({ confine_backend: t.value });
       else if (t.dataset.lc === 'workspace') setField(i, 'workspace', t.value.trim());
     });
     let qTimer = null;

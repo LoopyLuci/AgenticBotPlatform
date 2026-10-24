@@ -4,7 +4,9 @@
   (`--tools ""`, no web search, plan permission mode, run in an empty folder), and answers with a plan. The confined local
   worker (AgentLoopWorker: AppContainer, no network) then makes the change with that plan in its prompt. Grok never touches
   the worktree and runs nothing, so this needs no network approval for a leaf.
-- **confined**: Grok does the work itself, inside an AppContainer of its own (appcontainer.AGENT_PROFILE_NAME, never the
+- **confined**: Grok does the work itself, boxed. By default (`conductor.grok.confine_backend: wsl_vm`) in a throw-away
+  WSL2 VM with only the worktree and internet (bot/agent_runtime/grok_vm.py). The alternative, `appcontainer`, cannot edit
+  existing files headless (see confined_argv); it is kept as an option. The AppContainer variant: inside an AppContainer of its own (appcontainer.AGENT_PROFILE_NAME, never the
   offline container the local workers share): read-write on the task's worktree only, read on its own `~/.grok`, write on its
   session/log folders and its sign-in file, and outbound internet (the `internetClient` capability). Loopback and the local
   network stay blocked, so ABP's server and the LAN are out of reach; the rest of the home folder is not readable. A leaf with
@@ -29,6 +31,7 @@ from typing import Any, Awaitable, Callable, Optional
 logger = logging.getLogger("bot.conductor.grok")
 
 MODES = ("off", "advisor", "confined", "auto")
+CONFINE_BACKENDS = ("wsl_vm", "appcontainer")
 _confined_broken = ""         # why confined Grok could not act in this process; auto then uses advisor until a restart
 FILE_CHARS = 20_000           # per file shown to the advisor
 TOTAL_CHARS = 80_000          # all files together
@@ -63,6 +66,27 @@ def settings(cfg: Optional[dict] = None) -> dict:
     return dict((cfg or conductor.settings()).get("grok") or {})
 
 
+def confine_backend(gcfg: dict) -> str:
+    """Where confined Grok runs: wsl_vm (a throw-away Linux VM, the default) or appcontainer (Windows; it cannot edit existing
+    files headless - see confined_argv)."""
+    b = str(gcfg.get("confine_backend") or "wsl_vm")
+    return b if b in CONFINE_BACKENDS else "wsl_vm"
+
+
+def _box_missing(backend: str) -> str:
+    """Why confined Grok cannot run in `backend` here, or ''."""
+    if not (grok_home() / "auth.json").is_file():
+        return f"Grok is not signed in (no {grok_home() / 'auth.json'})"
+    if backend == "wsl_vm":
+        from bot.agent_runtime import grok_vm
+
+        return "" if grok_vm.available() else "no WSL, or the Grok VM base is not built (scripts/build_grok_vm_base.py)"
+    from bot.agent_runtime import appcontainer
+
+    return ("" if appcontainer.is_supported() else "no Windows AppContainer here") \
+        or ("" if grok_exe() else f"no native grok binary under {grok_home() / 'bin'}")
+
+
 def resolve_mode(gcfg: dict) -> str:
     """'advisor' or 'confined' for this run; raises GrokUnavailable when the asked-for mode cannot run."""
     mode = str(gcfg.get("mode") or "off")
@@ -70,11 +94,8 @@ def resolve_mode(gcfg: dict) -> str:
         raise GrokUnavailable(f"conductor.grok.mode is {mode!r}")
     if mode == "advisor":
         return "advisor"
-    from bot.agent_runtime import appcontainer
-
     why = ("" if gcfg.get("network_approved") else "the owner has not approved network for a Grok leaf (conductor.grok.network_approved)") \
-        or ("" if appcontainer.is_supported() else "no Windows AppContainer here") \
-        or ("" if grok_exe() else f"no native grok binary under {grok_home() / 'bin'}")
+        or _box_missing(confine_backend(gcfg))
     if not why and mode == "auto" and _confined_broken:
         why = f"confined Grok could not act earlier in this run of ABP ({_confined_broken})"
     if not why:
@@ -149,13 +170,16 @@ class GrokWorker:
 
     def __init__(self, local: Any, *, cfg: Optional[dict] = None,
                  advise: Optional[Callable[..., Awaitable[str]]] = None,
-                 run_confined: Optional[Callable[[list[str], float], Awaitable[tuple[int, str]]]] = None):
+                 run_confined: Optional[Callable[[list[str], float], Awaitable[tuple[int, str]]]] = None,
+                 run_vm: Optional[Callable[[Path, str, str, float], Awaitable[tuple[int, str]]]] = None):
         self.local = local
         self.gcfg = settings(cfg)
         self.model = str(self.gcfg.get("model") or "")
         self.timeout_s = float(self.gcfg.get("timeout_s") or 900)
         self.advise = advise or _advise_default
         self.run_confined = run_confined or _run_argv
+        self.run_vm = run_vm or _run_vm
+        self.box = confine_backend(self.gcfg)
         self.mode = resolve_mode(self.gcfg)              # decided once, up front: a run does not switch modes halfway
 
     async def __call__(self, spec: dict, feedback: str) -> dict:
@@ -193,12 +217,15 @@ class GrokWorker:
                   "Rules: never remove or rename an existing feature; do not delete files; add or update a test for what you "
                   "change; keep the change small. Do not commit; just leave the changes in the working tree."
                   + (f"\n\nYour previous attempt was REJECTED by the reviewer. Fix exactly these:\n{feedback}" if feedback else ""))
-        pfile = wt / ".abp-grok-prompt.txt"             # inside the worktree: the only folder the container can read besides ~/.grok
-        try:
-            pfile.write_text(prompt, encoding="utf-8")
-            code, out = await self.run_confined(confined_argv(wt, pfile, model=self.model), self.timeout_s)
-        finally:
-            pfile.unlink(missing_ok=True)              # never committed with the task
+        if self.box == "wsl_vm":
+            code, out = await self.run_vm(wt, prompt, self.model, self.timeout_s)
+        else:
+            pfile = wt / ".abp-grok-prompt.txt"         # inside the worktree: the only folder the container can read besides ~/.grok
+            try:
+                pfile.write_text(prompt, encoding="utf-8")
+                code, out = await self.run_confined(confined_argv(wt, pfile, model=self.model), self.timeout_s)
+            finally:
+                pfile.unlink(missing_ok=True)          # never committed with the task
         reply = _reply(out)
         if code != 0 or _cancelled(out):
             from bot.conductor import llm
@@ -207,8 +234,9 @@ class GrokWorker:
             raise llm.WorkerModelError(f"confined grok {why}: {reply[:300]}")
         await asyncio.to_thread(self.local._commit, wt, spec)
         made = integrator._git(wt, "rev-list", "--count", f"{start}..HEAD", check=False).stdout.strip()
-        return {"branch": spec["branch"], "worktree": str(wt), "start": start, "shell": "grok-confined",
-                "empty": made in ("", "0"), "summary": reply[:500], "grok": {"mode": "confined"}}
+        return {"branch": spec["branch"], "worktree": str(wt), "start": start,
+                "shell": "grok-vm" if self.box == "wsl_vm" else "grok-confined",
+                "empty": made in ("", "0"), "summary": reply[:500], "grok": {"mode": "confined", "box": self.box}}
 
 
 def _events(out: str) -> list[dict]:
@@ -231,6 +259,19 @@ def _reply(out: str) -> str:
 
     events = _events(out)
     return _grok_error(json.dumps(events[-1]) if events else out) or _find_text(events) or out.strip()
+
+
+async def _run_vm(wt: Path, prompt: str, model: str, timeout_s: float) -> tuple[int, str]:
+    """One confined Grok turn in a throw-away WSL2 VM (bot/agent_runtime/grok_vm.py). A VM that cannot be made is not the
+    task's fault: GrokUnavailable hands the board task back."""
+    from bot.agent_runtime import grok_vm
+    from bot.agent_runtime.errors import ToolError
+
+    try:
+        return await asyncio.to_thread(grok_vm.run_task, Path(wt), prompt, auth_file=grok_home() / "auth.json",
+                                       model=model, timeout_s=timeout_s)
+    except ToolError as exc:
+        raise GrokUnavailable(f"the Grok VM could not run: {exc}") from exc
 
 
 async def _run_argv(argv: list[str], timeout_s: float) -> tuple[int, str]:

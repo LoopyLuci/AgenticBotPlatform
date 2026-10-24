@@ -13,7 +13,8 @@
                                                       (decide them through /api/approvals), the end as local_chat_turn
     POST   /api/local-chat/sessions/{sid}/cancel      stop the running turn
     GET    /api/local-chat/grok-mode                  conductor.grok.mode: set value, choices, what a Factory run gets now
-    PUT    /api/local-chat/grok-mode                  {"mode"?: off|advisor|confined|auto, "network_approved"?: bool} change
+    PUT    /api/local-chat/grok-mode                  {"mode"?: off|advisor|confined|auto, "network_approved"?: bool,
+                                                      "confine_backend"?: wsl_vm|appcontainer} change
                                                       either (audited; the next run reads it)
 
 Sessions and worktrees (S1):
@@ -155,7 +156,8 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         except grok_worker.GrokUnavailable as e:
             effective, why = "off", str(e)
         return {"mode": mode, "modes": list(grok_worker.MODES), "effective": effective, "why": why,
-                "network_approved": bool(gcfg.get("network_approved"))}
+                "network_approved": bool(gcfg.get("network_approved")),
+                "confine_backend": grok_worker.confine_backend(gcfg), "confine_backends": list(grok_worker.CONFINE_BACKENDS)}
 
     @app.get("/api/local-chat/grok-mode", dependencies=read)
     async def local_chat_grok_mode():
@@ -179,8 +181,12 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
             if not isinstance(payload["network_approved"], bool):
                 raise HTTPException(status_code=400, detail="network_approved must be true or false")
             changes[("conductor", "grok", "network_approved")] = payload["network_approved"]
+        if "confine_backend" in payload:
+            if payload["confine_backend"] not in grok_worker.CONFINE_BACKENDS:
+                raise HTTPException(status_code=400, detail=f"confine_backend must be one of: {', '.join(grok_worker.CONFINE_BACKENDS)}")
+            changes[("conductor", "grok", "confine_backend")] = payload["confine_backend"]
         if not changes:
-            raise HTTPException(status_code=400, detail="send mode and/or network_approved")
+            raise HTTPException(status_code=400, detail="send mode, network_approved and/or confine_backend")
         config.set_values(changes, actor="dashboard")
         db.log_audit(actor="dashboard", action="grok_mode_set",
                      detail=", ".join(f"{k[-1]}={v}" for k, v in changes.items()))

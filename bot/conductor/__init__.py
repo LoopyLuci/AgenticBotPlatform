@@ -52,7 +52,8 @@ DEFAULTS: dict[str, Any] = {
     # Grok Build as a Factory worker (bot/conductor/grok_worker.py): mode off | advisor (Grok plans with no tools, a confined
     # local model works) | confined (Grok works in its own AppContainer with internet; needs network_approved) | auto (the
     # default: confined when approved, else advisor; skipped where Grok is not installed). The Workspace switches both.
-    "grok": {"mode": "auto", "model": "", "network_approved": False, "timeout_s": 900},
+    "grok": {"mode": "auto", "model": "", "network_approved": False, "timeout_s": 900,
+             "confine_backend": "wsl_vm"},   # confined Grok runs in: wsl_vm (throw-away Linux VM) | appcontainer
     "pusher": {"enabled": False,       # the pusher acts only on a recorded approval, and only when this is true
                "remote": "origin", "target": ""},   # target "" = the integration's base branch
 }

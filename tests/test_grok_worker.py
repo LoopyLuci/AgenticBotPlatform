@@ -18,6 +18,16 @@ def _git(cwd, *args):
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
 
 
+@pytest.fixture(autouse=True)
+def _signed_in_grok_home(tmp_path, monkeypatch):
+    """A signed-in Grok home of its own (auth.json + the native binary), never the machine's."""
+    home = tmp_path / "grok-home"
+    (home / "bin").mkdir(parents=True)
+    (home / "bin" / "grok.exe").write_text("")
+    (home / "auth.json").write_text("{}")
+    monkeypatch.setenv("GROK_HOME", str(home))
+
+
 class FakeLocal:
     def __init__(self, wt: Path):
         self.wt, self.seen = wt, []
@@ -58,7 +68,7 @@ def test_auto_without_approval_is_advisor_and_confined_without_it_refuses():
 def test_auto_with_approval_is_confined_when_available(monkeypatch, tmp_path):
     monkeypatch.setattr(appcontainer, "is_supported", lambda: True)
     monkeypatch.setattr(grok_worker, "grok_exe", lambda: tmp_path / "grok.exe")
-    assert resolve_mode({"mode": "auto", "network_approved": True}) == "confined"
+    assert resolve_mode({"mode": "auto", "network_approved": True, "confine_backend": "appcontainer"}) == "confined"
 
 
 def test_advisor_plan_reaches_the_local_worker_with_file_text_but_nothing_outside(tmp_path):
@@ -96,6 +106,7 @@ def test_confined_runs_in_its_own_container_with_internet_and_commits(monkeypatc
     home = tmp_path / "grokhome"
     (home / "bin").mkdir(parents=True)
     (home / "bin" / "grok.exe").write_text("")
+    (home / "auth.json").write_text("{}")
     monkeypatch.setenv("GROK_HOME", str(home))
     local = FakeLocal(tmp_path / "wt")
     calls = []
@@ -107,7 +118,7 @@ def test_confined_runs_in_its_own_container_with_internet_and_commits(monkeypatc
         (wt / "lib.py").write_text("def slugify(s): return s\n")
         return 0, '{"text": "done", "sessionId": "s1", "stopReason": "end_turn"}'
 
-    w = GrokWorker(local, cfg={"grok": {"mode": "confined", "network_approved": True}}, run_confined=run_confined)
+    w = GrokWorker(local, cfg={"grok": {"mode": "confined", "network_approved": True, "confine_backend": "appcontainer"}}, run_confined=run_confined)
     out = asyncio.run(w(SPEC, ""))
     argv = calls[0]
     assert "--internet" in argv and argv[argv.index("--profile") + 1] == appcontainer.AGENT_PROFILE_NAME
@@ -128,7 +139,7 @@ def test_a_failed_confined_turn_is_not_the_tasks_fault(monkeypatch, tmp_path):
     async def run_confined(argv, timeout_s):
         return 1, '{"type":"error","message":"API error (status 402 Payment Required): Grok Build usage balance exhausted"}'
 
-    w = GrokWorker(FakeLocal(tmp_path / "wt"), cfg={"grok": {"mode": "confined", "network_approved": True}}, run_confined=run_confined)
+    w = GrokWorker(FakeLocal(tmp_path / "wt"), cfg={"grok": {"mode": "confined", "network_approved": True, "confine_backend": "appcontainer"}}, run_confined=run_confined)
     with pytest.raises(llm.WorkerModelError, match="usage balance exhausted"):
         asyncio.run(w(SPEC, ""))
 
@@ -147,7 +158,7 @@ def test_a_cancelled_confined_turn_fails_and_a_pretty_printed_reply_is_read(monk
         return 0, reply + stderr_tail
 
     assert grok_worker._reply(reply + stderr_tail) == "I'll implement shout."
-    w = GrokWorker(FakeLocal(tmp_path / "wt"), cfg={"grok": {"mode": "confined", "network_approved": True}}, run_confined=run_confined)
+    w = GrokWorker(FakeLocal(tmp_path / "wt"), cfg={"grok": {"mode": "confined", "network_approved": True, "confine_backend": "appcontainer"}}, run_confined=run_confined)
     with pytest.raises(llm.WorkerModelError, match="cancelled"):
         asyncio.run(w(SPEC, ""))
 
@@ -169,7 +180,7 @@ def test_auto_falls_back_to_advisor_when_confined_grok_cannot_act(monkeypatch, t
         advice_calls.append(prompt)
         return "the plan"
 
-    cfg = {"grok": {"mode": "auto", "network_approved": True}}
+    cfg = {"grok": {"mode": "auto", "network_approved": True, "confine_backend": "appcontainer"}}
     w = GrokWorker(FakeLocal(tmp_path / "wt"), cfg=cfg, run_confined=run_confined, advise=advise)
     assert w.mode == "confined"
     out = asyncio.run(w(SPEC, ""))
@@ -177,7 +188,7 @@ def test_auto_falls_back_to_advisor_when_confined_grok_cannot_act(monkeypatch, t
     assert GrokWorker(FakeLocal(tmp_path / "wt2"), cfg=cfg).mode == "advisor"           # the next run skips confined
     from bot.conductor import llm
 
-    explicit = GrokWorker(FakeLocal(tmp_path / "wt3"), cfg={"grok": {"mode": "confined", "network_approved": True}},
+    explicit = GrokWorker(FakeLocal(tmp_path / "wt3"), cfg={"grok": {"mode": "confined", "network_approved": True, "confine_backend": "appcontainer"}},
                           run_confined=run_confined)
     with pytest.raises(llm.WorkerModelError, match="cancelled"):
         asyncio.run(explicit(SPEC, ""))
@@ -189,3 +200,45 @@ def test_the_launcher_only_offers_the_two_profiles():
     assert argv[argv.index("--profile") + 1] == appcontainer.AGENT_PROFILE_NAME and "--internet" in argv
     assert "--profile" not in appcontainer.launcher_argv("py", "x", Path("/ws"), Path("/ws"))
     assert "--internet" not in appcontainer.launcher_argv("py", "x", Path("/ws"), Path("/ws"))
+
+
+def test_confined_defaults_to_the_linux_vm_and_commits_what_grok_changed(monkeypatch, tmp_path):
+    from bot.agent_runtime import grok_vm
+
+    monkeypatch.setattr(grok_vm, "available", lambda: True)
+    assert grok_worker.confine_backend({}) == "wsl_vm" and grok_worker.confine_backend({"confine_backend": "x"}) == "wsl_vm"
+    assert resolve_mode({"mode": "auto", "network_approved": True}) == "confined"
+    calls = []
+
+    async def run_vm(wt, prompt, model, timeout_s):
+        calls.append((Path(wt), prompt, model))
+        (Path(wt) / "lib.py").write_text("def slugify(s): return s\n")
+        return 0, json.dumps({"text": "done", "stopReason": "end_turn"}, indent=2)
+
+    w = GrokWorker(FakeLocal(tmp_path / "wt"), cfg={"grok": {"mode": "confined", "network_approved": True, "model": "m"}},
+                   run_vm=run_vm)
+    out = asyncio.run(w(SPEC, ""))
+    assert calls[0][1].startswith("Task: Add slugify") and calls[0][2] == "m"
+    assert out["shell"] == "grok-vm" and out["grok"] == {"mode": "confined", "box": "wsl_vm"} and out["empty"] is False
+    assert out["summary"] == "done" and not (tmp_path / "wt" / ".abp-grok-prompt.txt").exists()
+
+
+def test_without_the_vm_base_auto_is_advisor_and_confined_says_why(monkeypatch):
+    from bot.agent_runtime import grok_vm
+
+    monkeypatch.setattr(grok_vm, "available", lambda: False)
+    assert resolve_mode({"mode": "auto", "network_approved": True}) == "advisor"
+    with pytest.raises(GrokUnavailable, match="build_grok_vm_base"):
+        resolve_mode({"mode": "confined", "network_approved": True})
+
+
+def test_a_vm_that_cannot_be_made_hands_the_task_back(monkeypatch):
+    from bot.agent_runtime import grok_vm
+    from bot.agent_runtime.errors import ToolError
+
+    def boom(*a, **k):
+        raise ToolError("no WSL")
+    monkeypatch.setattr(grok_vm, "run_task", boom)
+    with pytest.raises(GrokUnavailable, match="no WSL") as exc:
+        asyncio.run(grok_worker._run_vm(Path("/ws/wt"), "p", "", 10))
+    assert exc.value.release_task is True
