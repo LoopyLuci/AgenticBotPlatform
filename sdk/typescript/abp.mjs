@@ -361,6 +361,15 @@ export const operations = {
    "key"
   ]
  },
+ "DELETE /api/netguard/firewall/rules/{name}": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/netguard/firewall/rules/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
  "DELETE /api/peers/{peer_id}": {
   "body": false,
   "method": "DELETE",
@@ -2614,6 +2623,33 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/likeness": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/likeness",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "GET /api/likeness/jobs/{job_id}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/likeness/jobs/{job_id}",
+  "path_params": [
+   "job_id"
+  ],
+  "query_params": []
+ },
+ "GET /api/likeness/out/{name}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/likeness/out/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
  "GET /api/local-chat/events": {
   "body": false,
   "method": "GET",
@@ -2639,6 +2675,20 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/local-chat/import": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/import",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/local-chat/import/library": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/import/library",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/local-chat/models": {
   "body": false,
   "method": "GET",
@@ -2656,7 +2706,8 @@ export const operations = {
   "query_params": [
    "q",
    "archived",
-   "limit"
+   "limit",
+   "source"
   ]
  },
  "GET /api/local-chat/sessions/{sid}": {
@@ -3211,6 +3262,46 @@ export const operations = {
   "path_params": [
    "mid"
   ],
+  "query_params": []
+ },
+ "GET /api/netguard/firewall": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/netguard/firewall",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/netguard/journal": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/netguard/journal",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "GET /api/netguard/queries": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/netguard/queries",
+  "path_params": [],
+  "query_params": [
+   "limit",
+   "blocked"
+  ]
+ },
+ "GET /api/netguard/status": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/netguard/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/netguard/system-dns": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/netguard/system-dns",
+  "path_params": [],
   "query_params": []
  },
  "GET /api/network-info": {
@@ -6124,6 +6215,52 @@ export const operations = {
    "timeout"
   ]
  },
+ "POST /api/likeness/characters": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/likeness/characters",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/likeness/characters/{chid}/dataset": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/likeness/characters/{chid}/dataset",
+  "path_params": [
+   "chid"
+  ],
+  "query_params": []
+ },
+ "POST /api/likeness/consents": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/likeness/consents",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/likeness/consents/{cid}/revoke": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/likeness/consents/{cid}/revoke",
+  "path_params": [
+   "cid"
+  ],
+  "query_params": []
+ },
+ "POST /api/likeness/jobs": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/likeness/jobs",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/likeness/uploads": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/likeness/uploads",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/local-chat/grok-vm/rebuild": {
   "body": false,
   "method": "POST",
@@ -6135,6 +6272,20 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/local-chat/groups",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/local-chat/import/cancel": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/local-chat/import/cancel",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/local-chat/import/run": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/import/run",
   "path_params": [],
   "query_params": []
  },
@@ -6814,6 +6965,48 @@ export const operations = {
   "path_params": [
    "instance_id"
   ],
+  "query_params": []
+ },
+ "POST /api/netguard/check": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/netguard/check",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/netguard/firewall/apply": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/netguard/firewall/apply",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/netguard/firewall/rollback": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/netguard/firewall/rollback",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/netguard/firewall/rules": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/netguard/firewall/rules",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/netguard/lists/refresh": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/netguard/lists/refresh",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/netguard/system-dns/apply": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/netguard/system-dns/apply",
+  "path_params": [],
   "query_params": []
  },
  "POST /api/nodes/register": {
@@ -8512,10 +8705,24 @@ export const operations = {
   ],
   "query_params": []
  },
+ "PUT /api/likeness/settings": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/likeness/settings",
+  "path_params": [],
+  "query_params": []
+ },
  "PUT /api/local-chat/grok-mode": {
   "body": true,
   "method": "PUT",
   "path": "/api/local-chat/grok-mode",
+  "path_params": [],
+  "query_params": []
+ },
+ "PUT /api/local-chat/import": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/local-chat/import",
   "path_params": [],
   "query_params": []
  },
@@ -8560,6 +8767,22 @@ export const operations = {
   "body": true,
   "method": "PUT",
   "path": "/api/models/limits",
+  "path_params": [],
+  "query_params": []
+ },
+ "PUT /api/netguard/firewall/rules/{name}": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/netguard/firewall/rules/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "PUT /api/netguard/settings": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/netguard/settings",
   "path_params": [],
   "query_params": []
  },
@@ -14150,6 +14373,86 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "likeness_character_add_api_likeness_characters_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/likeness/characters",
+  "path_params": [],
+  "query_params": []
+ },
+ "likeness_character_dataset_api_likeness_characters__chid__dataset_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/likeness/characters/{chid}/dataset",
+  "path_params": [
+   "chid"
+  ],
+  "query_params": []
+ },
+ "likeness_consent_add_api_likeness_consents_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/likeness/consents",
+  "path_params": [],
+  "query_params": []
+ },
+ "likeness_consent_revoke_api_likeness_consents__cid__revoke_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/likeness/consents/{cid}/revoke",
+  "path_params": [
+   "cid"
+  ],
+  "query_params": []
+ },
+ "likeness_job_api_likeness_jobs__job_id__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/likeness/jobs/{job_id}",
+  "path_params": [
+   "job_id"
+  ],
+  "query_params": []
+ },
+ "likeness_job_submit_api_likeness_jobs_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/likeness/jobs",
+  "path_params": [],
+  "query_params": []
+ },
+ "likeness_out_api_likeness_out__name__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/likeness/out/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "likeness_settings_api_likeness_settings_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/likeness/settings",
+  "path_params": [],
+  "query_params": []
+ },
+ "likeness_status_api_likeness_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/likeness",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "likeness_upload_api_likeness_uploads_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/likeness/uploads",
+  "path_params": [],
+  "query_params": []
+ },
  "list_approvals_api_approvals_get": {
   "body": false,
   "method": "GET",
@@ -14418,6 +14721,41 @@ export const operations = {
   ],
   "query_params": []
  },
+ "local_chat_import_cancel_api_local_chat_import_cancel_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/local-chat/import/cancel",
+  "path_params": [],
+  "query_params": []
+ },
+ "local_chat_import_library_api_local_chat_import_library_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/import/library",
+  "path_params": [],
+  "query_params": []
+ },
+ "local_chat_import_run_api_local_chat_import_run_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/local-chat/import/run",
+  "path_params": [],
+  "query_params": []
+ },
+ "local_chat_import_settings_api_local_chat_import_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/local-chat/import",
+  "path_params": [],
+  "query_params": []
+ },
+ "local_chat_import_status_api_local_chat_import_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/local-chat/import",
+  "path_params": [],
+  "query_params": []
+ },
  "local_chat_models_api_local_chat_models_get": {
   "body": false,
   "method": "GET",
@@ -14492,7 +14830,8 @@ export const operations = {
   "query_params": [
    "q",
    "archived",
-   "limit"
+   "limit",
+   "source"
   ]
  },
  "local_chat_set_grok_mode_api_local_chat_grok_mode_put": {
@@ -15307,6 +15646,113 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/api/modules",
+  "path_params": [],
+  "query_params": []
+ },
+ "netguard_check_api_netguard_check_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/netguard/check",
+  "path_params": [],
+  "query_params": []
+ },
+ "netguard_firewall_api_netguard_firewall_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/netguard/firewall",
+  "path_params": [],
+  "query_params": []
+ },
+ "netguard_firewall_apply_api_netguard_firewall_apply_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/netguard/firewall/apply",
+  "path_params": [],
+  "query_params": []
+ },
+ "netguard_firewall_rollback_api_netguard_firewall_rollback_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/netguard/firewall/rollback",
+  "path_params": [],
+  "query_params": []
+ },
+ "netguard_journal_api_netguard_journal_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/netguard/journal",
+  "path_params": [],
+  "query_params": [
+   "limit"
+  ]
+ },
+ "netguard_lists_refresh_api_netguard_lists_refresh_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/netguard/lists/refresh",
+  "path_params": [],
+  "query_params": []
+ },
+ "netguard_queries_api_netguard_queries_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/netguard/queries",
+  "path_params": [],
+  "query_params": [
+   "limit",
+   "blocked"
+  ]
+ },
+ "netguard_rule_delete_api_netguard_firewall_rules__name__delete": {
+  "body": false,
+  "method": "DELETE",
+  "path": "/api/netguard/firewall/rules/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "netguard_rule_enabled_api_netguard_firewall_rules__name__put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/netguard/firewall/rules/{name}",
+  "path_params": [
+   "name"
+  ],
+  "query_params": []
+ },
+ "netguard_rule_upsert_api_netguard_firewall_rules_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/netguard/firewall/rules",
+  "path_params": [],
+  "query_params": []
+ },
+ "netguard_settings_api_netguard_settings_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/netguard/settings",
+  "path_params": [],
+  "query_params": []
+ },
+ "netguard_status_api_netguard_status_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/netguard/status",
+  "path_params": [],
+  "query_params": []
+ },
+ "netguard_system_dns_api_netguard_system_dns_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/netguard/system-dns",
+  "path_params": [],
+  "query_params": []
+ },
+ "netguard_system_dns_apply_api_netguard_system_dns_apply_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/netguard/system-dns/apply",
   "path_params": [],
   "query_params": []
  },

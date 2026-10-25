@@ -4,10 +4,10 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 
 | Kind | Count |
 |---|---|
-| page | 59 |
+| page | 60 |
 | action | 102 |
-| route | 1055 |
-| module | 9 |
+| route | 1084 |
+| module | 10 |
 | setting | 72 |
 
 ## Pages
@@ -40,6 +40,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 | Mobile | Pair & manage devices | `#mobile` | net |
 | Models | Providers, API keys, per-model toggles | `#models` | net cloud |
 | Modules | Every program ABP drives | `#modules` |  |
+| Sentinel | Ad-blocking & firewall | `#netguard` |  |
 | Local Models | Pull, load, create & cloud models | `#ollama` | net cloud |
 | Overview | Live status & KPIs | `#overview` |  |
 | Permissions & approvals | Approvals, rules, MCP pins | `#permissions` |  |
@@ -267,6 +268,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 | Continuum | Screen sharing and full remote control of devices, for people and agents. | `#modules` |  |
 | Hermes-Manager | Hermes's gateway, logs, config and backups, with its own window. | `#modules` | net cloud |
 | ModelMistress | Loading and hosting models: an OpenAI-compatible server with a router and backends. | `#modules` |  |
+| Sentinel | Ad-blocking (blocklists, a filtering DNS forwarder) and firewall rules; ABP's Sentinel page. | `#modules` |  |
 | TransferDaemon | End-to-end encrypted messages and files between devices; window, terminal UI, relays. | `#modules` | net |
 | TridentDroid | Android emulation: devices on KVM or Windows' hypervisor, driven over gRPC. | `#modules` |  |
 | VM-Harness | Virtual machines and containers on every hypervisor, with its own window. | `#modules` |  |
@@ -874,7 +876,20 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `POST /api/lease/release` Api Lease Release
 - `POST /api/lease/take` Api Lease Take
 
-### local-chat (45)
+### likeness (10)
+
+- `GET /api/likeness` Likeness Status
+- `GET /api/likeness/jobs/{job_id}` Likeness Job
+- `GET /api/likeness/out/{name}` Likeness Out
+- `POST /api/likeness/characters` Likeness Character Add
+- `POST /api/likeness/characters/{chid}/dataset` Likeness Character Dataset
+- `POST /api/likeness/consents` Likeness Consent Add
+- `POST /api/likeness/consents/{cid}/revoke` Likeness Consent Revoke
+- `POST /api/likeness/jobs` Likeness Job Submit
+- `POST /api/likeness/uploads` Likeness Upload
+- `PUT /api/likeness/settings` Likeness Settings
+
+### local-chat (50)
 
 - `DELETE /api/local-chat/groups/{gid}` Local Chat Group Delete
 - `DELETE /api/local-chat/sessions/{sid}` Local Chat Delete
@@ -882,6 +897,8 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `GET /api/local-chat/events` Local Chat Events
 - `GET /api/local-chat/grok-mode` Local Chat Grok Mode
 - `GET /api/local-chat/groups` Local Chat Groups
+- `GET /api/local-chat/import` Local Chat Import Status
+- `GET /api/local-chat/import/library` Local Chat Import Library
 - `GET /api/local-chat/models` Local Chat Models
 - `GET /api/local-chat/sessions` Local Chat Sessions
 - `GET /api/local-chat/sessions/{sid}` Local Chat Session
@@ -899,6 +916,8 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `PATCH /api/local-chat/sessions/{sid}` Local Chat Update
 - `POST /api/local-chat/grok-vm/rebuild` Local Chat Grok Vm Rebuild
 - `POST /api/local-chat/groups` Local Chat Group Create
+- `POST /api/local-chat/import/cancel` Local Chat Import Cancel
+- `POST /api/local-chat/import/run` Local Chat Import Run
 - `POST /api/local-chat/models/benchmark` Local Chat Benchmark
 - `POST /api/local-chat/sessions` Local Chat Create
 - `POST /api/local-chat/sessions/{sid}/cancel` Local Chat Cancel
@@ -921,6 +940,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `POST /api/local-chat/sessions/{sid}/worktree/sync` Local Chat Worktree Sync
 - `POST /api/local-chat/worktrees/prune` Local Chat Worktrees Prune
 - `PUT /api/local-chat/grok-mode` Local Chat Set Grok Mode
+- `PUT /api/local-chat/import` Local Chat Import Settings
 
 ### localai (26)
 
@@ -1082,6 +1102,23 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 ### native-agent (1)
 
 - `POST /api/native-agent/{instance_id}/dispatch` Api Native Agent Dispatch
+
+### netguard (14)
+
+- `DELETE /api/netguard/firewall/rules/{name}` Netguard Rule Delete
+- `GET /api/netguard/firewall` Netguard Firewall
+- `GET /api/netguard/journal` Netguard Journal
+- `GET /api/netguard/queries` Netguard Queries
+- `GET /api/netguard/status` Netguard Status
+- `GET /api/netguard/system-dns` Netguard System Dns
+- `POST /api/netguard/check` Netguard Check
+- `POST /api/netguard/firewall/apply` Netguard Firewall Apply
+- `POST /api/netguard/firewall/rollback` Netguard Firewall Rollback
+- `POST /api/netguard/firewall/rules` Netguard Rule Upsert
+- `POST /api/netguard/lists/refresh` Netguard Lists Refresh
+- `POST /api/netguard/system-dns/apply` Netguard System Dns Apply
+- `PUT /api/netguard/firewall/rules/{name}` Netguard Rule Enabled
+- `PUT /api/netguard/settings` Netguard Settings
 
 ### network-info (1)
 
