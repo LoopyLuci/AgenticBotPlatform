@@ -14,6 +14,12 @@
                                             refuses when unapproved, changed, stale or leaking; never forces, never deploys)
     GET  /api/conductor/queue/{id}/audit    what happened to an entry: approval, push attempts, refusals
     GET  /api/conductor/escalations         tasks waiting for a decision (two review rejections, ...)
+    GET  /api/conductor/knowledge           LF7: lesson counts, failing review rules and the conductor.knowledge switches
+    GET  /api/conductor/knowledge/lessons?repo=&outcome=   the recorded lessons (newest first)
+    GET  /api/conductor/knowledge/recall?repo=&text=&files=&goal=   what a worker (text) and the planner (goal) would be given
+    PUT  /api/conductor/knowledge/settings  {"enabled"?, "for_planner"?, "for_workers"?, "owner_rules"?, "to_memoryfabric"?}
+                                            switch each part on or off (audited; the next run reads it)
+    POST /api/conductor/knowledge/export    {"repo"?} rejected attempts as JSONL for later fine-tunes (agent state folder)
 
 Reading uses the dashboard's normal auth; planning, reviewing and deciding need the dashboard token.
 """
@@ -36,13 +42,19 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
 
     @app.post("/api/conductor/plan", dependencies=write)
     async def conductor_plan(body: dict = Body(...)):
+        import asyncio
+
         from bot import conductor
         from bot.conductor import planner
         from bot.envfile import PROJECT_ROOT
 
         cfg = conductor.settings()
         try:
-            plan = await planner.make_plan(str(body.get("goal") or ""), root=PROJECT_ROOT, model=cfg["model"],
+            from bot.conductor import knowledge
+
+            goal = str(body.get("goal") or "")
+            learned = await asyncio.to_thread(knowledge.planner_block, "abp", goal, cfg) if goal else ""
+            plan = await planner.make_plan(goal, root=PROJECT_ROOT, model=cfg["model"], context=learned,
                                            max_tasks=int(cfg["max_tasks"]), replan=bool(body.get("replan")))
         except planner.PlanError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -145,3 +157,57 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         from bot.conductor import store
 
         return {"escalations": store.list_escalations(not all)}
+
+    # ------------------------------------------------------------- LF7 knowledge
+    def _knowledge_doc() -> dict:
+        from bot.conductor import knowledge
+
+        return {"settings": knowledge.settings(), "switches": list(knowledge.SWITCHES), **knowledge.stats()}
+
+    @app.get("/api/conductor/knowledge", dependencies=read)
+    async def conductor_knowledge():
+        import asyncio
+
+        return await asyncio.to_thread(_knowledge_doc)
+
+    @app.get("/api/conductor/knowledge/lessons", dependencies=read)
+    async def conductor_knowledge_lessons(repo: str = Query(""), outcome: str = Query(""), limit: int = Query(100, ge=1, le=1000)):
+        from bot.conductor import knowledge
+
+        return {"lessons": knowledge.lessons(repo, limit, outcome)}
+
+    @app.get("/api/conductor/knowledge/recall", dependencies=read)
+    async def conductor_knowledge_recall(repo: str = Query("abp"), text: str = Query(""), files: str = Query(""), goal: str = Query("")):
+        from bot.conductor import knowledge
+
+        fl = [f.strip() for f in files.split(",") if f.strip()]
+        return {"task": knowledge.task_block(repo, text, "", fl) if text or fl else "",
+                "planner": knowledge.planner_block(repo, goal) if goal else ""}
+
+    @app.put("/api/conductor/knowledge/settings", dependencies=write)
+    def conductor_knowledge_settings(body: dict = Body(...)):
+        from bot import db
+        from bot.conductor import knowledge
+        from bot.config import config
+
+        changes: dict = {}
+        for k in knowledge.SWITCHES:
+            if k in body:
+                if not isinstance(body[k], bool):
+                    raise HTTPException(status_code=400, detail=f"{k} must be true or false")
+                changes[("conductor", "knowledge", k)] = body[k]
+        if not changes:
+            raise HTTPException(status_code=400, detail=f"send one or more of: {', '.join(knowledge.SWITCHES)}")
+        config.set_values(changes, actor="dashboard")
+        db.log_audit(actor="dashboard", action="conductor_knowledge_set", detail=", ".join(f"{k[-1]}={v}" for k, v in changes.items()))
+        return _knowledge_doc()
+
+    @app.post("/api/conductor/knowledge/export", dependencies=write)
+    def conductor_knowledge_export(body: dict = Body(default={})):
+        from bot import db
+        from bot.agent_runtime.state import state_dir
+        from bot.conductor import knowledge
+
+        out = knowledge.export_dataset(state_dir("conductor") / "datasets" / "factory-lessons.jsonl", str((body or {}).get("repo") or ""))
+        db.log_audit(actor="dashboard", action="conductor_knowledge_export", detail=f"{out['rows']} rows")
+        return out

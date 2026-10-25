@@ -4,7 +4,7 @@
   "action": 102,
   "module": 10,
   "page": 60,
-  "route": 1084,
+  "route": 1089,
   "setting": 72
  },
  "entries": [
@@ -3137,6 +3137,36 @@
    "label": "Conductor Escalations",
    "network": false,
    "where": "GET /api/conductor/escalations"
+  },
+  {
+   "cloud": false,
+   "desc": "API (conductor)",
+   "id": "route:GET /api/conductor/knowledge",
+   "keywords": "conductor",
+   "kind": "route",
+   "label": "Conductor Knowledge",
+   "network": false,
+   "where": "GET /api/conductor/knowledge"
+  },
+  {
+   "cloud": false,
+   "desc": "API (conductor)",
+   "id": "route:GET /api/conductor/knowledge/lessons",
+   "keywords": "conductor",
+   "kind": "route",
+   "label": "Conductor Knowledge Lessons",
+   "network": false,
+   "where": "GET /api/conductor/knowledge/lessons"
+  },
+  {
+   "cloud": false,
+   "desc": "API (conductor)",
+   "id": "route:GET /api/conductor/knowledge/recall",
+   "keywords": "conductor",
+   "kind": "route",
+   "label": "Conductor Knowledge Recall",
+   "network": false,
+   "where": "GET /api/conductor/knowledge/recall"
   },
   {
    "cloud": false,
@@ -8011,6 +8041,16 @@
   {
    "cloud": false,
    "desc": "API (conductor)",
+   "id": "route:POST /api/conductor/knowledge/export",
+   "keywords": "conductor",
+   "kind": "route",
+   "label": "Conductor Knowledge Export",
+   "network": false,
+   "where": "POST /api/conductor/knowledge/export"
+  },
+  {
+   "cloud": false,
+   "desc": "API (conductor)",
    "id": "route:POST /api/conductor/plan",
    "keywords": "conductor",
    "kind": "route",
@@ -12097,6 +12137,16 @@
    "label": "Cluster Offer Set",
    "network": false,
    "where": "PUT /api/cluster/offer"
+  },
+  {
+   "cloud": false,
+   "desc": "API (conductor)",
+   "id": "route:PUT /api/conductor/knowledge/settings",
+   "keywords": "conductor",
+   "kind": "route",
+   "label": "Conductor Knowledge Settings",
+   "network": false,
+   "where": "PUT /api/conductor/knowledge/settings"
   },
   {
    "cloud": false,

@@ -1388,6 +1388,36 @@ export const operations = {
    "all"
   ]
  },
+ "GET /api/conductor/knowledge": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/conductor/knowledge",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/conductor/knowledge/lessons": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/conductor/knowledge/lessons",
+  "path_params": [],
+  "query_params": [
+   "repo",
+   "outcome",
+   "limit"
+  ]
+ },
+ "GET /api/conductor/knowledge/recall": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/conductor/knowledge/recall",
+  "path_params": [],
+  "query_params": [
+   "repo",
+   "text",
+   "files",
+   "goal"
+  ]
+ },
  "GET /api/conductor/plans": {
   "body": false,
   "method": "GET",
@@ -5415,6 +5445,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "POST /api/conductor/knowledge/export": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/conductor/knowledge/export",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/conductor/plan": {
   "body": true,
   "method": "POST",
@@ -8604,6 +8641,13 @@ export const operations = {
   "body": true,
   "method": "PUT",
   "path": "/api/cluster/offer",
+  "path_params": [],
+  "query_params": []
+ },
+ "PUT /api/conductor/knowledge/settings": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/conductor/knowledge/settings",
   "path_params": [],
   "query_params": []
  },
@@ -12286,6 +12330,50 @@ export const operations = {
   "query_params": [
    "all"
   ]
+ },
+ "conductor_knowledge_api_conductor_knowledge_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/conductor/knowledge",
+  "path_params": [],
+  "query_params": []
+ },
+ "conductor_knowledge_export_api_conductor_knowledge_export_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/conductor/knowledge/export",
+  "path_params": [],
+  "query_params": []
+ },
+ "conductor_knowledge_lessons_api_conductor_knowledge_lessons_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/conductor/knowledge/lessons",
+  "path_params": [],
+  "query_params": [
+   "repo",
+   "outcome",
+   "limit"
+  ]
+ },
+ "conductor_knowledge_recall_api_conductor_knowledge_recall_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/conductor/knowledge/recall",
+  "path_params": [],
+  "query_params": [
+   "repo",
+   "text",
+   "files",
+   "goal"
+  ]
+ },
+ "conductor_knowledge_settings_api_conductor_knowledge_settings_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/conductor/knowledge/settings",
+  "path_params": [],
+  "query_params": []
  },
  "conductor_plan_api_conductor_plan_post": {
   "body": true,

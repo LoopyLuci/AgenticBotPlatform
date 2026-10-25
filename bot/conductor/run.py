@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
 from bot import conductor as conductor_pkg
-from bot.conductor import confine, integrator, llm, navctx, planner, proof, reviewer, store
+from bot.conductor import confine, integrator, knowledge, llm, navctx, planner, proof, reviewer, store
 from bot.coordination.model import Blocked
 
 logger = logging.getLogger("bot.conductor.run")
@@ -205,7 +205,8 @@ class Conductor:
         extra = ""
         if cctx["use_codeintel"] and (replan or not planner.plan_exists(goal, self.repo)):
             extra = await asyncio.to_thread(navctx.planning_context, self.repo, planner.goal_from(goal, self.repo)[0], self.cfg)
-        context = chr(10).join(c for c in (context, extra) if c)
+        learned = await asyncio.to_thread(knowledge.planner_block, self.repo_name, planner.goal_from(goal, self.repo)[0], self.cfg)
+        context = chr(10).join(c for c in (context, learned, extra) if c)
         return await planner.make_plan(goal, repo=self.repo_name, worktree_root=str(root).replace("\\", "/"), context=context,
                                        model=self.model or self.cfg["model"], max_tasks=int(self.cfg["max_tasks"]), root=self.repo, replan=replan,
                                        context_cap=int(cctx["plan_context_chars"]))
@@ -275,7 +276,7 @@ class Conductor:
         assert plan is not None
         task = next(t for t in plan.tasks if t.id == task_id)
         max_rej = int(self.cfg["max_rejections"])
-        spec = {"plan_id": plan.id, "goal": plan.goal, "id": task.id, "key": task.key, "title": task.title, "detail": task.detail,
+        spec = {"plan_id": plan.id, "goal": plan.goal, "repo_name": self.repo_name, "id": task.id, "key": task.key, "title": task.title, "detail": task.detail,
                 "files": task.files, "proof": task.proof, "branch": task.branch, "worktree": task.worktree, "base": self.base,
                 "after": [self._done[d]["branch"] for d in task.deps if d in self._done]}
         feedback = ""
@@ -303,6 +304,7 @@ class Conductor:
                 feedback = ("Your previous attempt changed nothing" + (" (it ran out of steps or time)" if result.get("stopped") else "") +
                             ". Make the smallest change that does the task, and write it with the edit tools.")
                 if stuck >= max_rej:
+                    self._learn(plan, task, "stuck", attempt, text=str(result.get("summary", "")) or "attempts produced no change")
                     await self._escalate(plan, task, f"stuck: {stuck} attempts produced no change", kind="stuck",
                                          question="The worker keeps ending without a change. Is the task clear enough, or should it be "
                                                   "split, done by hand, or given to a bigger model?",
@@ -350,6 +352,7 @@ class Conductor:
             if rep.accepted:
                 navctx.capture(f"Task '{task.title}' was accepted on {branch}: {str(result.get('summary', ''))[:600]}", "task_state",
                                self.repo_name, cfg=self.cfg)
+                self._learn(plan, task, "accepted", attempt, text=str(result.get("summary", "")))
                 self._done[task.id] = {"branch": branch, "head": rep.head}
                 await self._emit("task_accepted", task, attempt=attempt, branch=branch, worktree=str(result.get("worktree") or ""),
                                  head=rep.head, summary=str(result.get("summary", ""))[:600])
@@ -358,6 +361,7 @@ class Conductor:
             feedback = rep.feedback()
             navctx.capture(f"Task '{task.title}' attempt {attempt} was rejected by the reviewer: {feedback[:900]}", "review",
                            self.repo_name, cfg=self.cfg)
+            self._learn(plan, task, "rejected", attempt, rules=[f.rule for f in rep.findings if getattr(f, "rule", "")], text=feedback)
             if store.rejections(plan.id, task.key) >= max_rej:
                 rule = next((f.rule for f in rep.findings if f.rule in RULE_QUESTIONS), "")
                 await self._escalate(plan, task, f"{max_rej} review rejections; last: " + feedback.splitlines()[0][:300], rep,
@@ -374,6 +378,12 @@ class Conductor:
         store.escalate(plan.id, task.key, reason, {"title": task.title, "branch": task.branch,
                                                    "report": rep.to_dict() if rep else None, "blocked": ctx})
         raise Escalated(note, ctx)
+
+    def _learn(self, plan: planner.Plan, task: planner.PlannedTask, outcome: str, attempt: int, *, rules: Optional[list] = None,
+               text: str = "") -> None:
+        """LF7: one task outcome becomes a lesson the next plan and the next similar task are given."""
+        knowledge.record(self.repo_name, plan.id, task.key, task.title, outcome, goal=plan.goal, files=list(task.files or []),
+                         attempt=attempt, rules=rules, text=text, cfg=self.cfg)
 
     def _blocked_context(self, task: planner.PlannedTask, reason: str, rep: Optional[reviewer.Review], kind: str, question: str,
                          base: str, branch: str, summary: str) -> dict:
@@ -526,6 +536,9 @@ class AgentLoopWorker:
             self._packs[key] = (built, dec)
         pack, dec = self._packs[key]
         vault = await asyncio.to_thread(navctx.vault_block, f"{spec['title']} {str(spec.get('detail') or '')[:300]}", self.cfg)
+        learned = await asyncio.to_thread(knowledge.task_block, str(spec.get("repo_name") or "abp"), spec["title"],
+                                          str(spec.get("detail") or ""), list(spec.get("files") or []),
+                                          plan_id=str(spec.get("plan_id") or ""), cfg=self.cfg)
         before = await asyncio.to_thread(navctx.usage, wt) if pack else {}
         proof_cmd = str((spec.get("proof") or {}).get("command", "") or "")
         test_files = proof.target_files(proof_cmd)
@@ -543,7 +556,7 @@ class AgentLoopWorker:
                   ("\nReading code: call outline(path) first and read_symbol / find_symbol for the parts you need; read a whole file "
                    "with read_file only when it is short or you need all of it." if nav else "") +
                   (f"\n\nCode context for this task (pre-fetched; use outline / read_symbol / find_symbol for more instead of reading "
-                   f"whole files):\n{pack}" if pack else "") + (f"\n\n{vault}" if vault else "") +
+                   f"whole files):\n{pack}" if pack else "") + (f"\n\n{vault}" if vault else "") + (f"\n\n{learned}" if learned else "") +
                   (f"\n\nPlan from the Grok advisor (follow it unless it breaks the rules above):\n{spec['advice']}"
                    if spec.get("advice") else "") +
                   (f"\n\nYour previous attempt was REJECTED by the reviewer. Fix exactly these:\n{feedback}" if feedback else ""))
