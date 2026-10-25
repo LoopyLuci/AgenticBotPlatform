@@ -16,6 +16,8 @@
     PUT    /api/local-chat/grok-mode                  {"mode"?: off|advisor|confined|auto, "network_approved"?: bool,
                                                       "confine_backend"?: wsl_vm|appcontainer} change
                                                       either (audited; the next run reads it)
+    POST   /api/local-chat/grok-vm/rebuild            rebuild the confined-Grok VM base for the Windows Grok's version
+                                                      (official package, integrity-checked; background; audited)
 
 Sessions and worktrees (S1):
     GET    /api/local-chat/groups                     the sidebar's user groups; POST {name} adds one
@@ -146,6 +148,7 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
     def _grok_mode_doc() -> dict:
         """conductor.grok.mode as the Workspace's dropdown shows it: the set value, every choice, and what a Factory
         run would actually get right now (confined falls back or refuses when network is not approved)."""
+        from bot.agent_runtime import grok_vm
         from bot.conductor import grok_worker
 
         gcfg = grok_worker.settings()
@@ -157,11 +160,30 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
             effective, why = "off", str(e)
         return {"mode": mode, "modes": list(grok_worker.MODES), "effective": effective, "why": why,
                 "network_approved": bool(gcfg.get("network_approved")),
-                "confine_backend": grok_worker.confine_backend(gcfg), "confine_backends": list(grok_worker.CONFINE_BACKENDS)}
+                "confine_backend": grok_worker.confine_backend(gcfg), "confine_backends": list(grok_worker.CONFINE_BACKENDS),
+                "vm": grok_vm.status()}
 
     @app.get("/api/local-chat/grok-mode", dependencies=read)
     async def local_chat_grok_mode():
         return await asyncio.to_thread(_grok_mode_doc)
+
+    @app.post("/api/local-chat/grok-vm/rebuild", dependencies=write)
+    def local_chat_grok_vm_rebuild():
+        """Rebuild the confined-Grok VM base for the Windows Grok's version: fetch the official Linux package, check it against
+        the npm registry's integrity hash, build in the background. The current base keeps working until the new one is done."""
+        import threading
+
+        from bot import db
+        from bot.agent_runtime import grok_vm
+
+        st = grok_vm.status()
+        if st["building"]:
+            raise HTTPException(status_code=409, detail="a rebuild is already running")
+        if not st["host_version"]:
+            raise HTTPException(status_code=400, detail="Grok is not installed on Windows, so there is no version to match")
+        db.log_audit(actor="dashboard", action="grok_vm_rebuild", detail=f"{st['version'] or 'none'} -> {st['host_version']}")
+        threading.Thread(target=grok_vm.rebuild_for, args=(st["host_version"],), name="grok-vm-rebuild", daemon=True).start()
+        return {**grok_vm.status(), "building": True}
 
     @app.put("/api/local-chat/grok-mode", dependencies=write)
     def local_chat_set_grok_mode(payload: dict = Body(...)):

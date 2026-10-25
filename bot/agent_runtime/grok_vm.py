@@ -25,6 +25,7 @@ import gzip
 import io
 import json
 import os
+import re
 import shlex
 import shutil
 import tarfile
@@ -71,6 +72,125 @@ def _data() -> Path:
 
 def base_path() -> Path:
     return _data() / "wsl_base" / "grok-base.tar"
+
+
+def version_path() -> Path:
+    return base_path().with_suffix(".version")
+
+
+def downloads() -> Path:
+    """The verified inputs a rebuild reuses: the Debian rootfs and the Grok npm tarballs."""
+    return _data() / "wsl_base" / "downloads"
+
+
+def parse_version(text: str) -> str:
+    """'1.0.62' from `grok --version` output ('grok 1.0.62 (1474f9cbdd91)'); '' when there is none."""
+    m = re.search(r"\bgrok\s+v?(\d+\.\d+\.\d+)", text or "")
+    return m.group(1) if m else ""
+
+
+def vm_version() -> str:
+    """The Grok version the base image holds ('' when it is not built or predates the version record)."""
+    try:
+        return version_path().read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+_host_cache: tuple[float, str] = (0.0, "")
+
+
+def host_version(ttl_s: float = 600.0) -> str:
+    """The Windows Grok's version (the native binary), cached for `ttl_s`; '' when it is not installed or does not answer."""
+    import subprocess
+    import time
+
+    global _host_cache
+    if time.monotonic() - _host_cache[0] < ttl_s:
+        return _host_cache[1]
+    home = Path(os.environ.get("GROK_HOME") or Path.home() / ".grok")
+    exe = home / "bin" / ("grok.exe" if os.name == "nt" else "grok")
+    version = ""
+    if exe.is_file():
+        try:
+            r = subprocess.run([str(exe), "--version"], capture_output=True, text=True, timeout=20,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            version = parse_version(r.stdout + r.stderr)
+        except (OSError, subprocess.TimeoutExpired):
+            version = ""
+    _host_cache = (time.monotonic(), version)
+    return version
+
+
+def status() -> dict:
+    """For the Workspace: the VM's Grok version, the Windows one, and whether the VM is behind (a rebuild is offered)."""
+    vm, host = vm_version(), host_version()
+    return {"built": base_path().is_file(), "version": vm, "host_version": host,
+            "stale": bool(base_path().is_file() and host and vm != host), "building": _rebuild["running"],
+            "error": _rebuild["error"], "log": _rebuild["log"][-5:]}
+
+
+_rebuild: dict = {"running": False, "error": "", "log": []}
+
+
+def _npm() -> str:
+    exe = shutil.which("npm") or shutil.which("npm.cmd")
+    if not exe:
+        raise ToolError("npm is not installed, so the Grok Linux package cannot be fetched")
+    return exe
+
+
+def fetch_grok_linux(version: str) -> Path:
+    """`npm pack` the official @xai-official/grok-linux-x64@version into downloads(), checked against the registry's
+    sha512 integrity before it is used. Reuses a verified tarball already there."""
+    import base64
+    import hashlib
+    import subprocess
+
+    if not re.fullmatch(r"\d+\.\d+\.\d+", version or ""):
+        raise ToolError(f"not a Grok version: {version!r}")
+    pkg = f"@xai-official/grok-linux-x64@{version}"
+    out = downloads()
+    out.mkdir(parents=True, exist_ok=True)
+    tgz = out / f"xai-official-grok-linux-x64-{version}.tgz"
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    want = subprocess.run([_npm(), "view", pkg, "dist.integrity"], capture_output=True, text=True, timeout=120,
+                          creationflags=flags).stdout.strip()
+    if not want.startswith("sha512-"):
+        raise ToolError(f"the npm registry gave no integrity for {pkg}")
+    if not tgz.is_file():
+        r = subprocess.run([_npm(), "pack", pkg, "--pack-destination", str(out)], capture_output=True, text=True,
+                           timeout=600, creationflags=flags)
+        if r.returncode != 0 or not tgz.is_file():
+            raise ToolError(f"npm pack {pkg} failed: {(r.stderr or r.stdout).strip()[-300:]}")
+    got = "sha512-" + base64.b64encode(hashlib.sha512(tgz.read_bytes()).digest()).decode()
+    if got != want:
+        tgz.unlink(missing_ok=True)
+        raise ToolError(f"{tgz.name} does not match the registry's integrity hash; it was deleted")
+    return tgz
+
+
+def rootfs() -> Path:
+    """The newest verified Debian rootfs in downloads()."""
+    found = sorted(downloads().glob("debian-*-rootfs.tar*"), key=lambda p: p.stat().st_mtime)
+    if not found:
+        raise ToolError(f"no Debian rootfs in {downloads()} (see scripts/build_grok_vm_base.py)")
+    return found[-1]
+
+
+def rebuild_for(version: str) -> None:
+    """Fetch the matching Linux Grok and rebuild the base (the Workspace's Rebuild button runs this in a thread). The
+    current base keeps working until the new one is complete."""
+    if _rebuild["running"]:
+        raise ToolError("a rebuild is already running")
+    _rebuild.update(running=True, error="", log=[])
+    try:
+        tgz = fetch_grok_linux(version)
+        build_base(rootfs(), tgz, log=lambda s: _rebuild["log"].append(s))
+    except Exception as exc:  # noqa: BLE001 - shown in the Workspace, never raised into a request
+        _rebuild["error"] = str(exc)[:500]
+    finally:
+        _rebuild["running"] = False
 
 
 def available() -> bool:
@@ -139,13 +259,15 @@ def build_base(rootfs: Path, grok_tgz: Path, *, log: Callable[[str], None] = pri
         r = wsl_vm._guest(name, BUILD_SCRIPT, timeout=1800)
         if r.returncode != 0:
             raise ToolError(f"building the base failed: {wsl_vm._decode(r.stdout + r.stderr).strip()[-800:]}")
-        log(wsl_vm._decode(r.stdout).strip().splitlines()[-1] if r.stdout.strip() else "grok installed")
+        installed = parse_version(wsl_vm._decode(r.stdout))
+        log(f"grok {installed or '(version unknown)'} installed")
         wsl_vm._wsl("--terminate", name, timeout=120)
         tmp_tar = work / "grok-base.tar"
         r = wsl_vm._wsl("--export", name, str(tmp_tar), timeout=1800)
         if r.returncode != 0:
             raise ToolError(f"could not export the base: {wsl_vm._decode(r.stdout + r.stderr).strip()}")
         os.replace(tmp_tar, base_path())
+        version_path().write_text(installed, encoding="utf-8")
         log(f"base ready: {base_path()} ({base_path().stat().st_size // (1024 * 1024)} MB)")
         return base_path()
     finally:

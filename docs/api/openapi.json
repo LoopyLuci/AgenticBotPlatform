@@ -39253,6 +39253,51 @@
     "summary": "Local Chat Set Grok Mode"
    }
   },
+  "/api/local-chat/grok-vm/rebuild": {
+   "post": {
+    "description": "Rebuild the confined-Grok VM base for the Windows Grok's version: fetch the official Linux package, check it against\nthe npm registry's integrity hash, build in the background. The current base keeps working until the new one is done.",
+    "operationId": "local_chat_grok_vm_rebuild_api_local_chat_grok_vm_rebuild_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Local Chat Grok Vm Rebuild"
+   }
+  },
   "/api/local-chat/groups": {
    "get": {
     "operationId": "local_chat_groups_api_local_chat_groups_get",

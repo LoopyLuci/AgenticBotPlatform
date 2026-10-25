@@ -6,7 +6,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 |---|---|
 | page | 59 |
 | action | 102 |
-| route | 1053 |
+| route | 1054 |
 | module | 9 |
 | setting | 72 |
 
@@ -874,7 +874,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `POST /api/lease/release` Api Lease Release
 - `POST /api/lease/take` Api Lease Take
 
-### local-chat (44)
+### local-chat (45)
 
 - `DELETE /api/local-chat/groups/{gid}` Local Chat Group Delete
 - `DELETE /api/local-chat/sessions/{sid}` Local Chat Delete
@@ -897,6 +897,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `GET /api/local-chat/status` Local Chat Status
 - `PATCH /api/local-chat/groups/{gid}` Local Chat Group Rename
 - `PATCH /api/local-chat/sessions/{sid}` Local Chat Update
+- `POST /api/local-chat/grok-vm/rebuild` Local Chat Grok Vm Rebuild
 - `POST /api/local-chat/groups` Local Chat Group Create
 - `POST /api/local-chat/models/benchmark` Local Chat Benchmark
 - `POST /api/local-chat/sessions` Local Chat Create

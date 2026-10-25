@@ -87,3 +87,59 @@ def test_live_the_vm_has_internet_only_and_no_host_access():
     finally:
         wsl_vm.teardown(name, tmp)
     assert name not in wsl_vm.list_distros() and not Path(tmp).exists()
+
+
+def test_versions_are_read_and_a_vm_behind_windows_is_stale(tmp_path, monkeypatch):
+    assert grok_vm.parse_version("grok 1.0.62 (1474f9cbdd91)") == "1.0.62" and grok_vm.parse_version("nope") == ""
+    base = tmp_path / "grok-base.tar"
+    base.write_bytes(b"x")
+    monkeypatch.setattr(grok_vm, "base_path", lambda: base)
+    monkeypatch.setattr(grok_vm, "host_version", lambda ttl_s=600.0: "1.0.63")
+    (tmp_path / "grok-base.version").write_text("1.0.62")
+    st = grok_vm.status()
+    assert st["version"] == "1.0.62" and st["host_version"] == "1.0.63" and st["stale"] is True and st["building"] is False
+    (tmp_path / "grok-base.version").write_text("1.0.63")
+    assert grok_vm.status()["stale"] is False
+
+
+def test_a_fetched_package_that_does_not_match_the_registry_is_deleted(tmp_path, monkeypatch):
+    import subprocess
+
+    monkeypatch.setattr(grok_vm, "downloads", lambda: tmp_path)
+    monkeypatch.setattr(grok_vm, "_npm", lambda: "npm")
+    tgz = tmp_path / "xai-official-grok-linux-x64-9.9.9.tgz"
+
+    def fake_run(argv, **kw):
+        if argv[1] == "view":
+            return subprocess.CompletedProcess(argv, 0, stdout="sha512-AAAA\n", stderr="")
+        tgz.write_bytes(b"tampered")
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    with pytest.raises(ToolError, match="integrity"):
+        grok_vm.fetch_grok_linux("9.9.9")
+    assert not tgz.exists()
+    with pytest.raises(ToolError, match="not a Grok version"):
+        grok_vm.fetch_grok_linux("1.0; rm -rf /")
+
+
+def test_the_workspace_starts_a_rebuild_for_the_windows_version(temp_db, monkeypatch):
+    monkeypatch.setenv("DASHBOARD_TOKEN", "test-token")
+    from fastapi.testclient import TestClient
+
+    from bot.dashboard.server import build_app
+
+    started = []
+    monkeypatch.setattr(grok_vm, "status", lambda: {"built": True, "version": "1.0.62", "host_version": "1.0.63",
+                                                     "stale": True, "building": False, "error": "", "log": []})
+    monkeypatch.setattr(grok_vm, "rebuild_for", lambda v: started.append(v))
+    c, h = TestClient(build_app()), {"X-Dashboard-Token": "test-token"}
+    assert c.post("/api/local-chat/grok-vm/rebuild").status_code in (401, 403)
+    r = c.post("/api/local-chat/grok-vm/rebuild", headers=h)
+    assert r.status_code == 200 and r.json()["building"] is True
+    import time
+    for _ in range(50):
+        if started:
+            break
+        time.sleep(0.05)
+    assert started == ["1.0.63"]
+    assert c.get("/api/local-chat/grok-mode", headers=h).json()["vm"]["stale"] is True

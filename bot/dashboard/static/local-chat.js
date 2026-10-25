@@ -203,6 +203,22 @@
     try { S.grok = await api('/api/local-chat/grok-mode'); } catch (_) { S.grok = null; }
     S.panes.forEach((p, i) => renderTop(i));
   }
+  async function rebuildGrokVm() {
+    try {
+      const vm = await api('/api/local-chat/grok-vm/rebuild', { method: 'POST', body: '{}' });
+      S.grok = { ...S.grok, vm };
+      toast(`Rebuilding the Grok VM for Grok ${vm.host_version}; the current one keeps working until it is done.`);
+      const poll = setInterval(async () => {
+        await loadGrok();
+        if (!S.grok || !S.grok.vm || !S.grok.vm.building) {
+          clearInterval(poll);
+          toast(S.grok && S.grok.vm && S.grok.vm.error ? `Grok VM rebuild failed: ${S.grok.vm.error}` : 'The Grok VM is rebuilt.',
+            S.grok && S.grok.vm && S.grok.vm.error ? 'error' : undefined);
+        }
+      }, 15000);
+    } catch (e) { toast(errText(e), 'error'); }
+    S.panes.forEach((p, i) => renderTop(i));
+  }
   async function setGrok(change) {
     try {
       S.grok = await api('/api/local-chat/grok-mode', { method: 'PUT', body: JSON.stringify(change) });
@@ -499,7 +515,8 @@ ${S.grok ? `<select class="lc-sel" data-lc="grok" aria-label="Grok in Factory ru
     `<option value="${E(v)}"${S.grok.mode === v ? ' selected' : ''}>${E(GROK[v] || 'Grok: ' + v)}</option>`).join('')}</select>
 <label class="lc-chip" title="Lets a confined Grok worker reach the internet (never loopback or the LAN). Off: confined cannot run; auto falls back to advisor."><input type="checkbox" data-lc="grok-net"${S.grok.network_approved ? ' checked' : ''}> Grok internet</label>
 <select class="lc-sel" data-lc="grok-box" aria-label="Where confined Grok runs" title="Linux VM: a throw-away WSL2 VM with only the worktree and internet (edits work). Windows AppContainer: cannot edit existing files headless.">${(S.grok.confine_backends || []).map((v) =>
-    `<option value="${E(v)}"${S.grok.confine_backend === v ? ' selected' : ''}>${E(GROK_BOX[v] || v)}</option>`).join('')}</select>` : ''}
+    `<option value="${E(v)}"${S.grok.confine_backend === v ? ' selected' : ''}>${E(GROK_BOX[v] || v)}</option>`).join('')}</select>${S.grok.vm && S.grok.vm.building ? `<span class="lc-chip" title="${E((S.grok.vm.log || []).join(' / '))}">Rebuilding Grok VM…</span>`
+    : S.grok.vm && S.grok.vm.stale ? `<button type="button" class="lc-chip" data-lc="grok-vm-rebuild" title="The confined-Grok VM has Grok ${E(S.grok.vm.version || 'unknown')}, Windows has ${E(S.grok.vm.host_version)}. Rebuild fetches the official Linux package for that version and checks it against the npm registry.">Rebuild Grok VM (${E(S.grok.vm.version || '?')} → ${E(S.grok.vm.host_version)})</button>` : ''}` : ''}
 <input type="text" class="lc-ws" data-lc="workspace" aria-label="Workspace folder" placeholder="Workspace folder (optional)" value="${E(s.workspace || '')}">
 <span class="lc-top-gap"></span>
 ${p.sid ? `<select class="lc-sel" data-lc="chapter-jump" aria-label="Jump to a chapter"><option value="">Chapters</option>${p.messages.filter((m) => m.meta && m.meta.chapter).map((m) =>
@@ -1190,6 +1207,7 @@ ${(st.running || []).length ? `<span>${st.running.length} answering</span>` : ''
       else if (a === 'cap') goCapability(i, t.dataset.where);
       else if (a === 'slash') { const box = p.el.querySelector('.lc-input'); box.value = t.dataset.v + ' '; box.focus(); showSlash(i); }
       else if (a === 'hint-close') { store.set('hint-dismissed', '1'); renderHint(); }
+      else if (a === 'grok-vm-rebuild') rebuildGrokVm();
       else if (a === 'setup') { const b = $('btn-open-wizard'); if (b) b.click(); }
     });
     root.addEventListener('change', (ev) => {

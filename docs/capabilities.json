@@ -4,7 +4,7 @@
   "action": 102,
   "module": 9,
   "page": 59,
-  "route": 1053,
+  "route": 1054,
   "setting": 72
  },
  "entries": [
@@ -8907,6 +8907,16 @@
    "label": "Api Lease Take",
    "network": false,
    "where": "POST /api/lease/take"
+  },
+  {
+   "cloud": false,
+   "desc": "API (local-chat)",
+   "id": "route:POST /api/local-chat/grok-vm/rebuild",
+   "keywords": "local-chat",
+   "kind": "route",
+   "label": "Local Chat Grok Vm Rebuild",
+   "network": false,
+   "where": "POST /api/local-chat/grok-vm/rebuild"
   },
   {
    "cloud": false,

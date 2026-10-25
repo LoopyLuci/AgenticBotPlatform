@@ -6124,6 +6124,13 @@ export const operations = {
    "timeout"
   ]
  },
+ "POST /api/local-chat/grok-vm/rebuild": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/local-chat/grok-vm/rebuild",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/local-chat/groups": {
   "body": true,
   "method": "POST",
@@ -14353,6 +14360,13 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/api/local-chat/grok-mode",
+  "path_params": [],
+  "query_params": []
+ },
+ "local_chat_grok_vm_rebuild_api_local_chat_grok_vm_rebuild_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/local-chat/grok-vm/rebuild",
   "path_params": [],
   "query_params": []
  },
