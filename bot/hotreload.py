@@ -158,6 +158,7 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.redblue.live",  # the live WatchDog: a process-wide monitor, its queue and worker thread are process state
     "bot.localchat.chat",  # Local Chat turns: the running turns (asyncio tasks, for cancel) are process state
     "bot.localchat.factory",  # Local Chat Factory runs: the running conductor runs (asyncio tasks, for stop) are process state
+    "bot.localchat.imports",  # Hermes / OpenCode import: the running import (a thread, its job state and cancel flag) is process state
     "bot.dashboard.localchat_api",
     "bot.dashboard.capabilities_api",  # read-only capability search routes; they register once, like the routes above
     "bot.agent_runtime.settings_schema",  # imports permissions/sandbox (both denied above); a reload would split the classes it validates against
@@ -196,6 +197,10 @@ DENYLIST: frozenset[str] = frozenset({
     # dnn.py hold locks and the device fallbacks.
     "bot.dashboard.vision_api", "bot.vision.tools", "bot.vision.pipelines", "bot.vision.zoo", "bot.vision.dnn",
     "bot.vision.service", "bot.vision.images", "bot.vision.ops",
+    # Likeness: routes register once; jobs.py holds the running jobs and the run lock, engine.py the loaded models,
+    # store.py the write lock, models.py the fetch lock.
+    "bot.dashboard.likeness_api", "bot.likeness.jobs", "bot.likeness.engine", "bot.likeness.store",
+    "bot.likeness.models", "bot.likeness.policy", "bot.likeness.provenance", "bot.likeness.onnxfix",
     # Hosting: routes register once and hosting_api.py holds the runs; tools.py registers at import time; store.py
     # holds the write lock, upnp.py the discovered router.
     "bot.dashboard.hosting_api", "bot.hosting.tools", "bot.hosting.store", "bot.hosting.upnp", "bot.hosting.service",
@@ -245,6 +250,8 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.agent_runtime.toolkit_tools",
     # Power: power.py holds the keep-awake thread and its holds; power_tools.py registers tools at import time.
     "bot.power", "bot.power_tools", "bot.dashboard.power_api",
+    # Sentinel: netguard.py holds the running DNS filter (a socket and its threads); the routes register once.
+    "bot.netguard", "bot.dashboard.netguard_api",
     "bot.nodes", "bot.canvas", "bot.voice", "bot.platforms._relay",
     "bot.platforms.email_platform", "bot.platforms.sms_platform", "bot.platforms.signal_platform", "bot.platforms.imessage_platform",
     "bot.platforms.googlechat_platform", "bot.platforms.teams_platform", "bot.platforms._jwt",  # long-running adapters

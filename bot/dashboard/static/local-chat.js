@@ -135,7 +135,8 @@
   // ---- loading -------------------------------------------------------------------------------------------------------
   async function loadSessions() {
     try {
-      const q = S.query ? '&q=' + encodeURIComponent(S.query) : '';
+      const q = (S.query ? '&q=' + encodeURIComponent(S.query) : '')
+        + (S.filter.source ? '&limit=500&source=' + encodeURIComponent(S.filter.source === 'here' ? '' : S.filter.source) : '');
       const [d, g] = await Promise.all([api('/api/local-chat/sessions?archived=' + (S.showArchived ? 'true' : 'false') + q),
         api('/api/local-chat/groups').catch(() => ({ groups: [] }))]);
       S.sessions = d.sessions || [];
@@ -445,6 +446,7 @@
   <aside class="lc-side" aria-label="Agentic Workspace sessions">
     <div class="lc-side-head"><button type="button" class="btn primary lc-new" data-lc="new">+ New session</button>
       <button type="button" class="lc-icon" data-lc="new-group" aria-label="New group" title="New group">⊞</button>
+      <button type="button" class="lc-icon" data-lc="import" aria-label="Import from Hermes and OpenCode" title="Import chats, memories, skills and settings from Hermes Agent and OpenCode">⇩</button>
       <button type="button" class="lc-icon" data-lc="notify" aria-label="Desktop notifications" title="Notify me when a session needs me or finishes">🔔</button></div>
     <input type="search" class="lc-search" id="lc-search" aria-label="Search sessions and messages" placeholder="Search titles and messages">
     <div class="lc-filters" id="lc-filters"></div>
@@ -695,6 +697,82 @@ ${(w.conflicts || []).length ? `<span class="lc-warn">conflicts: ${E(w.conflicts
     const first = el.querySelector('textarea,button[data-lcx="0"]');
     if (first) first.focus();
   }
+  // ---- import from Hermes Agent and OpenCode (/api/local-chat/import) ----------------------------------------------------
+  const IMPORT_LABEL = { hermes: 'Hermes', opencode: 'OpenCode' };
+  const IMPORT_KINDS = [['sessions', 'Chats and sessions'], ['memories', 'Memories'], ['skills', 'Skills (kept in the import library, not active)'],
+    ['config', 'Model and provider settings (summary; secrets left out)']];
+  let importPoll = null;
+  async function openImport() {
+    openModal('Import from Hermes and OpenCode', '<p class="lc-note">Reading the sources…</p>', [{ label: 'Close', run: closeImport }]);
+    const el = $('lc-modal');
+    if (el && !el.__imp) {
+      el.__imp = true;
+      el.addEventListener('change', (ev) => {
+        const t = ev.target;
+        if (!t.dataset || !t.dataset.imp) return;
+        const [src, key] = t.dataset.imp.split('.');
+        const val = t.type === 'checkbox' ? t.checked : t.value;
+        const change = key ? { [src]: { [key]: val } } : { [src]: val };
+        api('/api/local-chat/import', { method: 'PUT', body: JSON.stringify(change) }).then(refreshImport, (e) => toast(errText(e), 'error'));
+      });
+      el.addEventListener('click', (ev) => {
+        const b = ev.target.closest && ev.target.closest('[data-impx]');
+        if (!b) return;
+        const what = b.dataset.impx;
+        if (what === 'run' || what === 'full') post('/api/local-chat/import/run', { full: what === 'full' }).then(refreshImport, (e) => toast(errText(e), 'error'));
+        else if (what === 'cancel') post('/api/local-chat/import/cancel', {}).then(refreshImport, (e) => toast(errText(e), 'error'));
+        else if (what === 'show') { closeImport(); const box = $('lc-search'); if (box) box.value = ''; S.filter.source = b.dataset.src; loadSessions(); }
+      });
+    }
+    await refreshImport();
+  }
+  function closeImport() { if (importPoll) { clearInterval(importPoll); importPoll = null; } closeModal(); }
+  function importCounts(c) {
+    const n = (v) => Number(v || 0).toLocaleString();
+    return `${n(c.sessions_new)} new sessions, ${n(c.messages_added)} new messages${c.messages_updated ? ', ' + n(c.messages_updated) + ' updated' : ''}`
+      + `${c.memories_added ? ', ' + n(c.memories_added) + ' memories' : ''}${c.skills_added ? ', ' + n(c.skills_added) + ' skills' : ''}`;
+  }
+  async function refreshImport() {
+    const el = $('lc-modal');
+    if (!el || el.classList.contains('hidden')) { if (importPoll) { clearInterval(importPoll); importPoll = null; } return; }
+    let d;
+    try { d = await api('/api/local-chat/import'); } catch (e) { toast(errText(e), 'error'); return; }
+    const body = el.querySelector('.lc-picker-body');
+    if (!body) return;
+    const job = d.job || {};
+    const last = job.last || {};
+    const num = (v) => (v == null ? '–' : Number(v).toLocaleString());
+    const srcs = Object.entries((d.preview || {}).sources || {}).map(([k, p]) => {
+      const st = (d.settings || {})[k] || {};
+      const ses = p.sessions || {};
+      const counts = {
+        sessions: `${num(ses.total)} in ${IMPORT_LABEL[k]} (${num(ses.messages)} messages) · ${num((p.imported || {}).sessions)} imported`,
+        memories: `${num((p.memories || {}).total)} found${(p.memories || {}).new != null ? ', ' + num(p.memories.new) + ' new' : ''}`,
+        skills: `${num((p.skills || {}).total)} found, ${num((p.skills || {}).new)} new`,
+        config: (p.config || {}).total ? 'found' : 'none found',
+      };
+      return `<section class="lc-card"><h3><label><input type="checkbox" data-imp="${k}.enabled"${st.enabled ? ' checked' : ''}> ${E(p.label || k)}</label>
+<span class="lc-chip">${p.found ? 'found' : 'not found'}</span></h3>
+<label class="lc-note">Location <input type="text" data-imp="${k}.path" value="${E(st.path || '')}" placeholder="${E(p.path || 'automatic')}" aria-label="${E(p.label || k)} location (empty = automatic)"></label>
+${p.error ? `<p class="lc-note">${E(p.error)}</p>` : ''}
+${IMPORT_KINDS.map(([kind, label]) => `<label class="lc-note" style="display:block"><input type="checkbox" data-imp="${k}.${kind}"${st[kind] ? ' checked' : ''}${st.enabled ? '' : ' disabled'}> ${E(label)}: <b>${E(counts[kind])}</b></label>`).join('')}
+<button type="button" class="lc-mini" data-impx="show" data-src="${k}">Show imported sessions</button></section>`;
+    }).join('');
+    const counts = Object.entries(job.counts || last.counts || {}).map(([k, c]) => `${IMPORT_LABEL[k] || k}: ${importCounts(c)}`).join(' · ');
+    const state = job.running ? `Importing: ${E(job.phase || '')}`
+      : last.finished ? `Last run ${E(when(last.finished))}: ${E(last.phase || '')}${last.error ? ' – ' + E(last.error) : ''}` : 'Not run yet.';
+    const log = (job.log || []).slice(-60).reverse().map((l) => `<div>${E(new Date(l.at * 1000).toLocaleTimeString())} ${E(l.text)}</div>`).join('');
+    body.innerHTML = `<p class="lc-note">Imported sessions appear in the session list marked ⇩ with their source, in an "Imported" group. Re-running adds only new items. The sources are only read, never changed.</p>
+${srcs}
+<label class="lc-note" style="display:block"><input type="checkbox" data-imp="include_tools"${(d.settings || {}).include_tools ? ' checked' : ''}> Include tool calls and their output (as shortened system messages)</label>
+<div class="lc-modal-foot"><button type="button" class="btn primary" data-impx="run"${job.running ? ' disabled' : ''}>Import new</button>
+<button type="button" class="btn" data-impx="full"${job.running ? ' disabled' : ''} title="Read every source from the start again (still without duplicates)">Re-scan all</button>
+<button type="button" class="btn danger" data-impx="cancel"${job.running ? '' : ' disabled'}>Stop</button></div>
+<p class="lc-note" role="status" aria-live="polite"><b>${state}</b>${counts ? '<br>' + E(counts) : ''}</p>
+<div class="lc-pre" style="max-height:200px;overflow:auto" aria-label="Import log">${log || '<span class="lc-note">The live log shows here while an import runs.</span>'}</div>`;
+    if (job.running && !importPoll) importPoll = setInterval(refreshImport, 1500);
+    if (!job.running && importPoll) { clearInterval(importPoll); importPoll = null; loadSessions(); }
+  }
   function closeModal() { const el = $('lc-modal'); if (el) { el.classList.add('hidden'); el.innerHTML = ''; } }
   function diffHtml(text) {
     return `<pre class="lc-pre lc-diff lc-diffview">${String(text || '').split('\n').map((ln) => {
@@ -888,11 +966,12 @@ ${checkins || esc || dg || wd ? `<section class="lc-card"><h3>Manager &amp; Watc
   function sessionRow(s, open, depth) {
     const wt = s.worktree && s.worktree.branch ? `<span class="lc-chip" title="worktree branch">⎇ ${E(s.worktree.branch.split('/').pop())}</span>` : '';
     const ws = s.workspace ? `<span class="lc-chip" title="${E(s.workspace)}">${E(s.workspace.split(/[\\/]/).filter(Boolean).pop() || s.workspace)}</span>` : '';
+    const src = s.source ? `<span class="lc-chip" title="imported from ${E(IMPORT_LABEL[s.source] || s.source)}">⇩ ${E(IMPORT_LABEL[s.source] || s.source)}</span>` : '';
     const link = s.link ? `<span class="lc-chip" title="linked session">${E({ fork: 'fork', task: 'task', handoff: 'hand-off', worker: 'worker' }[s.link] || s.link)}</span>` : '';
     return `<div class="lc-row${open.has(s.id) ? ' on' : ''}${s.unread ? ' lc-unread' : ''}${depth ? ' lc-child' : ''}" role="listitem" data-sid="${E(s.id)}"${depth ? ` style="margin-left:${Math.min(depth, 3) * 14}px"` : ''}>
 <button type="button" class="lc-row-main" data-lc="open" data-sid="${E(s.id)}" aria-label="Open session ${E(s.title || 'untitled')}, ${E(STATUS_LABEL[s.status] || 'idle')}${s.unread ? ', unread' : ''}">
 <span class="lc-row-title"><span class="lc-dot lc-dot-${E(s.status || 'idle')}" aria-hidden="true"></span>${s.pinned ? '📌 ' : ''}${E(s.title || 'Untitled session')}</span>
-<span class="lc-row-sub">${link}<span class="lc-chip">${E(shortModel(s.model) || 'no model')}</span>${ws}${wt}<span>${E(when(s.updated))}</span></span></button>
+<span class="lc-row-sub">${src}${link}<span class="lc-chip">${E(shortModel(s.model) || 'no model')}</span>${ws}${wt}<span>${E(when(s.updated))}</span></span></button>
 <button type="button" class="lc-icon lc-row-menu" data-lc="menu" data-sid="${E(s.id)}" aria-label="More for ${E(s.title || 'this session')}" title="More">⋯</button></div>`;
   }
   function renderFilters() {
@@ -902,6 +981,7 @@ ${checkins || esc || dg || wd ? `<section class="lc-card"><h3>Manager &amp; Watc
     const sel = (key, label, opts, fmt) => `<select class="lc-sel" data-lcf="${key}" aria-label="Filter by ${label}"><option value="">${E(label)}: all</option>${opts.map((o) =>
       `<option value="${E(o)}"${S.filter[key] === o ? ' selected' : ''}>${E(fmt ? fmt(o) : o)}</option>`).join('')}</select>`;
     el.innerHTML = sel('status', 'status', Object.keys(STATUS_LABEL), (o) => STATUS_LABEL[o])
+      + sel('source', 'source', ['here', 'hermes', 'opencode'], (o) => (o === 'here' ? 'made here' : 'imported: ' + (IMPORT_LABEL[o] || o)))
       + sel('model', 'model', uniq('model'), shortModel)
       + sel('workspace', 'workspace', uniq('workspace'), (o) => o.split(/[\\/]/).filter(Boolean).pop() || o);
   }
@@ -912,7 +992,7 @@ ${checkins || esc || dg || wd ? `<section class="lc-card"><h3>Manager &amp; Watc
     const open = new Set(S.panes.map((p) => p.sid));
     const f = S.filter;
     const rows = S.sessions.filter((s) => (!f.status || s.status === f.status) && (!f.model || s.model === f.model) && (!f.workspace || s.workspace === f.workspace));
-    if (!rows.length) { el.innerHTML = `<p class="lc-note lc-pad">${S.query || f.status || f.model || f.workspace ? 'Nothing matches.' : S.showArchived ? 'No archived sessions.' : 'No sessions yet.'}</p>`; return; }
+    if (!rows.length) { el.innerHTML = `<p class="lc-note lc-pad">${S.query || f.status || f.model || f.workspace || f.source ? 'Nothing matches.' : S.showArchived ? 'No archived sessions.' : 'No sessions yet.'}</p>`; return; }
     const sections = [['pinned', 'Pinned'], ['needs', 'Needs you'], ['working', 'Working now'],
       ...S.groups.map((g) => ['g:' + g.id, g.name, g.id]), ['today', 'Today'], ['earlier', 'Earlier'], ['archived', 'Archived']];
     el.innerHTML = sections.map(([key, label, gid]) => {
@@ -1190,6 +1270,7 @@ ${(st.running || []).length ? `<span>${st.running.length} answering</span>` : ''
       else if (a === 'rewind') rewind(i, t.dataset.turn);
       else if (a === 'collapse') { S.collapsed[t.dataset.key] = !S.collapsed[t.dataset.key]; store.set('collapsed', JSON.stringify(S.collapsed)); renderSide(); }
       else if (a === 'group-menu') groupMenu(t.dataset.gid);
+      else if (a === 'import') openImport();
       else if (a === 'new-group') { const name = window.prompt('Name of the new group'); if (name) post('/api/local-chat/groups', { name }).then(loadSessions, (e) => toast(errText(e), 'error')); }
       else if (a === 'notify') {
         if (typeof Notification === 'undefined') { toast('This browser cannot show notifications.', 'error'); return; }
@@ -1227,7 +1308,7 @@ ${(st.running || []).length ? `<span>${st.running.length} answering</span>` : ''
       const t = ev.target;
       const i = paneOf(t);
       if (t.id === 'lc-archived') { S.showArchived = t.checked; loadSessions(); return; }
-      if (t.dataset.lcf) { S.filter[t.dataset.lcf] = t.value; renderSide(); return; }
+      if (t.dataset.lcf) { S.filter[t.dataset.lcf] = t.value; if (t.dataset.lcf === 'source') loadSessions(); else renderSide(); return; }
       if (t.dataset.lc === 'wt-keep') { worktreeAction(i, 'wt-keep', t); return; }
       if (t.dataset.lc === 'chapter-jump') { chapterJump(i, t.value); t.value = ''; return; }
       if (t.dataset.lc === 'autonomy') setField(i, 'autonomy', Number(t.value));

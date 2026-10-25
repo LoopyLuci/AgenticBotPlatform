@@ -9,7 +9,7 @@ Sessions and worktrees (PLAN-local-chat.md 4b, S1): a session also has a status 
 and the last message read, a group, a parent and a link (fork | task | worker | handoff), its git worktree (path, branch, base,
 keep), an effort and when it was archived. `groups` names the sidebar's user groups; `checkpoints` maps a turn to the workspace
 checkpoint taken before its tools ran (rewind); `events` records status changes for the sidebar and notifications; `queued` holds
-messages waiting for the next turn. Older databases are migrated in place (columns added, nothing dropped).
+messages waiting for the next turn. Imported sessions carry their `source` and imported messages their `ext_id`. Older databases are migrated in place (columns added, nothing dropped).
 """
 from __future__ import annotations
 
@@ -59,6 +59,8 @@ _COLUMNS = (
     ("sessions", "effort", "TEXT NOT NULL DEFAULT ''"),
     ("sessions", "archived_at", "REAL"),
     ("messages", "reverted", "INTEGER NOT NULL DEFAULT 0"),
+    ("sessions", "source", "TEXT NOT NULL DEFAULT ''"),     # "" = made here; hermes | opencode = imported (bot/localchat/imports.py)
+    ("messages", "ext_id", "TEXT NOT NULL DEFAULT ''"),     # an imported message's "<source>:<its id>" (re-imports never duplicate)
 )
 
 EDITABLE = ("title", "model", "mode", "autonomy", "workspace", "cloud_assist", "pinned", "archived", "group_id", "effort")
@@ -147,10 +149,11 @@ def get(sid: str) -> Optional[dict[str, Any]]:
 
 
 def list_sessions(*, query: str = "", archived: bool = False, limit: int = 100, parent_id: Optional[str] = None,
-                  status: str = "", workspace: str = "", model: str = "") -> list[dict[str, Any]]:
+                  status: str = "", workspace: str = "", model: str = "", source: Optional[str] = None) -> list[dict[str, Any]]:
     sql = "SELECT * FROM sessions WHERE archived=?"
     args: list[Any] = [1 if archived else 0]
-    for col, val in (("parent_id", parent_id), ("status", status or None), ("workspace", workspace or None), ("model", model or None)):
+    for col, val in (("parent_id", parent_id), ("status", status or None), ("workspace", workspace or None), ("model", model or None),
+                     ("source", source)):
         if val is not None:
             sql += f" AND {col}=?"
             args.append(val)

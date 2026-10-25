@@ -57,6 +57,15 @@ Agent and Factory in chat (P4):
     POST   /api/local-chat/sessions/{sid}/factory/stop
     GET    /api/local-chat/sessions/{sid}/factory     this session's Factory board: worker sessions and push-queue entries
 
+Import (bot/localchat/imports.py):
+    GET    /api/local-chat/import                     settings, the running / last run with its log, preview counts per source
+    PUT    /api/local-chat/import                     {hermes|opencode: {enabled?, path?, sessions?, memories?, skills?, config?},
+                                                      include_tools?} (audited)
+    POST   /api/local-chat/import/run                 {full?, sources?} start an import (audited; 409 while one runs)
+    POST   /api/local-chat/import/cancel              stop it after the current session
+    GET    /api/local-chat/import/library             imported memories, skill names and settings summaries
+GET /api/local-chat/sessions takes ?source=hermes|opencode ("" = made here).
+
 Long sessions (S4):
     POST   /api/local-chat/sessions/{sid}/compact     summarize the older turns now (a visible marker; nothing is deleted)
     POST   /api/local-chat/sessions/{sid}/chapters    {"title"} a chapter marker
@@ -242,10 +251,67 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
             raise HTTPException(status_code=502, detail=f"benchmark failed: {e}") from e
 
     @app.get("/api/local-chat/sessions", dependencies=read)
-    async def local_chat_sessions(q: str = Query(""), archived: bool = Query(False), limit: int = Query(100, ge=1, le=500)):
+    async def local_chat_sessions(q: str = Query(""), archived: bool = Query(False), limit: int = Query(100, ge=1, le=500),
+                                  source: Optional[str] = Query(None)):
         from bot.localchat import store
 
-        return {"sessions": await asyncio.to_thread(store.list_sessions, query=q, archived=archived, limit=limit)}
+        return {"sessions": await asyncio.to_thread(store.list_sessions, query=q, archived=archived, limit=limit, source=source)}
+
+    # ---- import from Hermes Agent and OpenCode (bot/localchat/imports.py) ----
+    @app.get("/api/local-chat/import", dependencies=read)
+    async def local_chat_import_status():
+        """The import's settings, the running (or last) run with its live log, and per-source preview counts."""
+        from bot.localchat import imports
+
+        return {"settings": imports.settings(), "job": imports.status(), "preview": await asyncio.to_thread(imports.preview)}
+
+    @app.put("/api/local-chat/import", dependencies=write)
+    def local_chat_import_settings(payload: dict = Body(...)):
+        """Switch a source or a kind on or off, set a source's path, or include tool output (audited)."""
+        from bot import db
+        from bot.config import config
+        from bot.localchat import imports
+
+        try:
+            changes = imports.setting_changes(payload)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        config.set_values(changes, actor="dashboard")
+        db.log_audit(actor="dashboard", action="import_settings_set", detail=", ".join(f"{'.'.join(k[2:])}={v}" for k, v in changes.items()))
+        return {"settings": imports.settings()}
+
+    @app.post("/api/local-chat/import/run", dependencies=write)
+    def local_chat_import_run(payload: Optional[dict] = Body(None)):
+        """{full?, sources?} start an import in the background (audited); re-runs add only new items."""
+        from bot import db
+        from bot.localchat import imports
+
+        p = payload or {}
+        sources = p.get("sources")
+        if sources is not None and (not isinstance(sources, list) or any(x not in imports.SOURCES for x in sources)):
+            raise HTTPException(status_code=400, detail=f"sources must be a list of: {', '.join(imports.SOURCES)}")
+        try:
+            job = imports.start(full=bool(p.get("full")), sources=sources)
+        except ValueError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
+        db.log_audit(actor="dashboard", action="import_run", detail=f"sources={','.join(sources or imports.SOURCES)} full={bool(p.get('full'))}")
+        return job
+
+    @app.post("/api/local-chat/import/cancel", dependencies=write)
+    def local_chat_import_cancel():
+        from bot import db
+        from bot.localchat import imports
+
+        was = imports.cancel()
+        db.log_audit(actor="dashboard", action="import_cancel", detail="running" if was else "idle")
+        return {"cancelled": was}
+
+    @app.get("/api/local-chat/import/library", dependencies=read)
+    async def local_chat_import_library():
+        """Imported memories, skill names and settings summaries (never active by themselves; secrets left out)."""
+        from bot.localchat import imports
+
+        return await asyncio.to_thread(imports.library)
 
     @app.post("/api/local-chat/sessions", dependencies=write)
     async def local_chat_create(payload: Optional[dict] = Body(None)):
