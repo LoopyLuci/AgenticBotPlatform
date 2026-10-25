@@ -213,3 +213,9 @@ def test_sentinel_is_a_builtin_module():
     from bot.modules import registry
     m = registry.find("sentinel")
     assert m is not None and m.repo.endswith("/Sentinel.git") and "sentinel_core/__init__.py" in m.marker
+
+
+def test_the_default_listen_port_is_not_mdns():
+    """Windows' own mDNS holds UDP 5353, so a filter defaulting to it never starts (found live 2026-10-25)."""
+    from bot import netguard as ng
+    assert ng.hostport(ng.DEFAULTS["adblock"]["listen"])[1] not in (5353, 53)

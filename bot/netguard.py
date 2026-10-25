@@ -10,7 +10,7 @@ Everything is off until switched on from the Sentinel page, and every setting ha
     netguard:
       adblock:
         enabled: false
-        listen: 127.0.0.1:5353       # Windows only uses DNS servers on port 53: use 127.0.0.1:53 to filter the machine
+        listen: 127.0.0.1:5335       # not 5353 (Windows mDNS has it). Windows only uses DNS servers on port 53: use 127.0.0.1:53 to filter the machine
         upstream: 1.1.1.1:53
         response: nxdomain           # nxdomain | zero (0.0.0.0 / ::)
         lists: {stevenblack: true}   # sentinel_core.blocklist.CATALOGUE ids
@@ -43,7 +43,7 @@ log = logging.getLogger("abp.netguard")
 MODULE_ID = "sentinel"
 RESPONSES = ("nxdomain", "zero")
 DEFAULTS: dict[str, Any] = {
-    "adblock": {"enabled": False, "listen": "127.0.0.1:5353", "upstream": "1.1.1.1:53", "response": "nxdomain",
+    "adblock": {"enabled": False, "listen": "127.0.0.1:5335", "upstream": "1.1.1.1:53", "response": "nxdomain",
                 "lists": {}, "block": [], "allow": []},
     "system_dns": {"enabled": False, "dry_run": True},
     "firewall": {"enabled": False, "dry_run": True, "rules": []},

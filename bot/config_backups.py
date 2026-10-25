@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import re
 import shutil
 import time
@@ -95,7 +96,10 @@ def _keep(path: Path, actor: str, reason: str, root: Optional[Path] = None) -> O
     who = re.sub(r"[^A-Za-z0-9._-]", "-", actor or "unknown")[:40] or "unknown"
     target = d / f"{stamp}__{who}{path.suffix}"
     tmp = target.with_suffix(target.suffix + ".part")
-    tmp.write_bytes(data)
+    with open(tmp, "wb") as f:
+        f.write(data)
+        f.flush()
+        os.fsync(f.fileno())   # a power cut must not leave a zero-filled "backup"
     tmp.replace(target)
     meta = d / (target.name + ".reason")
     meta.write_text(reason[:300], encoding="utf-8")

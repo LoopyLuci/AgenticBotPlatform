@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
+import os
 import re
 import threading
 from pathlib import Path
@@ -234,6 +235,8 @@ class ConfigManager:
         tmp_path = target.with_suffix(".yaml.tmp")
         with open(tmp_path, "w", encoding="utf-8") as f:
             y.dump(data, f)
+            f.flush()
+            os.fsync(f.fileno())  # on disk before the rename: a power cut right after a save left a zero-filled file
         from bot import config_backups
 
         config_backups.before_write(target, actor)  # the version about to be replaced is kept
