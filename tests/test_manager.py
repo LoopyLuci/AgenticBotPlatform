@@ -240,3 +240,23 @@ def test_the_mcp_tools_exist():
 
     assert callable(mcp_server.manager_digest.fn if hasattr(mcp_server.manager_digest, "fn") else mcp_server.manager_digest)
     assert mcp_server.manager_escalations is not None
+
+
+def test_checkins_switch_on_and_back_off_from_the_workspace(temp_db, monkeypatch):
+    """Every setting has a GUI control both ways: LF5's check-ins (manager.checkins.*) included."""
+    monkeypatch.setenv("DASHBOARD_TOKEN", "test-token")
+    from fastapi.testclient import TestClient
+
+    from bot.config import config
+    from bot.dashboard.server import build_app
+
+    written = []
+    monkeypatch.setattr(config, "set_values", lambda changes, actor="dashboard": written.append(dict(changes)))
+    c, h = TestClient(build_app()), {"X-Dashboard-Token": "test-token"}
+    assert c.put("/api/manager/checkin/settings", json={"enabled": True}).status_code in (401, 403)
+    assert c.put("/api/manager/checkin/settings", headers=h, json={"enabled": True}).status_code == 200
+    assert c.put("/api/manager/checkin/settings", headers=h, json={"enabled": False, "interval_s": 900}).status_code == 200
+    assert written == [{("manager", "checkins", "enabled"): True},
+                       {("manager", "checkins", "enabled"): False, ("manager", "checkins", "interval_s"): 900}]
+    for bad in ({"enabled": "yes"}, {"interval_s": 10}, {"interval_s": True}, {}):
+        assert c.put("/api/manager/checkin/settings", headers=h, json=bad).status_code == 400

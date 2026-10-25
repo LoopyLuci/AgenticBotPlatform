@@ -5,6 +5,7 @@
     GET  /api/manager/escalations?limit=          everything waiting for a decision, each with the minimum context to decide
     GET  /api/manager/checkin                     the check-in schedule: enabled, queued (waiting for capacity), recent, token total
     POST /api/manager/checkin                     {"force"} run a check-in now (refused with status "queued" while local-only)
+    PUT  /api/manager/checkin/settings            {"enabled"?: bool, "interval_s"?: 300..86400} switch scheduled check-ins (audited)
 
 Reading uses the dashboard's normal auth; running a check-in needs the dashboard token.
 """
@@ -42,6 +43,32 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
     async def manager_checkin_state():
         from bot.manager import checkin
 
+        return checkin.view()
+
+    @app.put("/api/manager/checkin/settings", dependencies=write)
+    def manager_checkin_settings(body: dict = Body(...)):
+        """Turn the scheduled check-ins on or off and set their interval (both ways, from the Workspace; audited)."""
+        from fastapi import HTTPException
+
+        from bot import db
+        from bot.config import config
+        from bot.manager import checkin
+
+        changes: dict = {}
+        if "enabled" in body:
+            if not isinstance(body["enabled"], bool):
+                raise HTTPException(status_code=400, detail="enabled must be true or false")
+            changes[("manager", "checkins", "enabled")] = body["enabled"]
+        if "interval_s" in body:
+            iv = body["interval_s"]
+            if isinstance(iv, bool) or not isinstance(iv, int) or not 300 <= iv <= 86400:
+                raise HTTPException(status_code=400, detail="interval_s must be whole seconds from 300 to 86400")
+            changes[("manager", "checkins", "interval_s")] = iv
+        if not changes:
+            raise HTTPException(status_code=400, detail="send enabled and/or interval_s")
+        config.set_values(changes, actor="dashboard")
+        db.log_audit(actor="dashboard", action="manager_checkins_set",
+                     detail=", ".join(f"{k[-1]}={v}" for k, v in changes.items()))
         return checkin.view()
 
     @app.post("/api/manager/checkin", dependencies=write)

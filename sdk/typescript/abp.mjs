@@ -8533,6 +8533,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "PUT /api/manager/checkin/settings": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/manager/checkin/settings",
+  "path_params": [],
+  "query_params": []
+ },
  "PUT /api/memory/settings": {
   "body": true,
   "method": "PUT",
@@ -14640,6 +14647,13 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/manager/checkin",
+  "path_params": [],
+  "query_params": []
+ },
+ "manager_checkin_settings_api_manager_checkin_settings_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/manager/checkin/settings",
   "path_params": [],
   "query_params": []
  },

@@ -44551,6 +44551,63 @@
     "summary": "Manager Checkin Run"
    }
   },
+  "/api/manager/checkin/settings": {
+   "put": {
+    "description": "Turn the scheduled check-ins on or off and set their interval (both ways, from the Workspace; audited).",
+    "operationId": "manager_checkin_settings_api_manager_checkin_settings_put",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Manager Checkin Settings"
+   }
+  },
   "/api/manager/digest": {
    "get": {
     "operationId": "manager_digest_api_manager_digest_get",

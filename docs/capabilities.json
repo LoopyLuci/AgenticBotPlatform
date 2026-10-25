@@ -4,7 +4,7 @@
   "action": 102,
   "module": 9,
   "page": 59,
-  "route": 1054,
+  "route": 1055,
   "setting": 72
  },
  "entries": [
@@ -11987,6 +11987,16 @@
    "label": "Ai Stores Put",
    "network": false,
    "where": "PUT /api/localai/stores"
+  },
+  {
+   "cloud": false,
+   "desc": "API (manager)",
+   "id": "route:PUT /api/manager/checkin/settings",
+   "keywords": "manager",
+   "kind": "route",
+   "label": "Manager Checkin Settings",
+   "network": false,
+   "where": "PUT /api/manager/checkin/settings"
   },
   {
    "cloud": false,

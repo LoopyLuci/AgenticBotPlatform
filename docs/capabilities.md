@@ -6,7 +6,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 |---|---|
 | page | 59 |
 | action | 102 |
-| route | 1054 |
+| route | 1055 |
 | module | 9 |
 | setting | 72 |
 
@@ -955,12 +955,13 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 
 - `GET /api/logs` Api Logs
 
-### manager (4)
+### manager (5)
 
 - `GET /api/manager/checkin` Manager Checkin State
 - `GET /api/manager/digest` Manager Digest
 - `GET /api/manager/escalations` Manager Escalations
 - `POST /api/manager/checkin` Manager Checkin Run
+- `PUT /api/manager/checkin/settings` Manager Checkin Settings
 
 ### mcp (7)
 

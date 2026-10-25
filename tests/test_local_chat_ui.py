@@ -137,7 +137,7 @@ def test_the_panel_only_calls_routes_that_exist(client):
     calls.discard("/api/modelmistress/")
     for path in sorted(calls):
         probes = [path + "x", path + "x/approve"] if path.endswith("/") else [path]      # a prefix the panel completes
-        methods = ("GET", "POST", "PATCH", "DELETE")
+        methods = ("GET", "POST", "PUT", "PATCH", "DELETE")
         assert any(_route_exists(client.app, m, pr) for m in methods for pr in probes), path
     for name in ("local-chat.js", "local-chat.css"):
         assert client.get("/static/" + name).status_code == 200

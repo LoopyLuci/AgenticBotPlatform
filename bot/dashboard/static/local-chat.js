@@ -166,9 +166,9 @@
   async function loadSide() {                // the manager's digest and escalations, WatchDog incidents (shared by every pane)
     if (S.sideAt && Date.now() - S.sideAt < 30000) return;
     S.sideAt = Date.now();
-    const [dg, es, rb] = await Promise.all([api('/api/manager/digest?text=true').catch(() => null), api('/api/manager/escalations?limit=5').catch(() => null),
-      api('/api/redblue/summary?limit=3').catch(() => null)]);
-    S.side = { digest: dg, escalations: es, watchdog: rb };
+    const [dg, es, rb, ci] = await Promise.all([api('/api/manager/digest?text=true').catch(() => null), api('/api/manager/escalations?limit=5').catch(() => null),
+      api('/api/redblue/summary?limit=3').catch(() => null), api('/api/manager/checkin').catch(() => null)]);
+    S.side = { digest: dg, escalations: es, watchdog: rb, checkin: ci };
     S.panes.forEach((_, n) => renderRight(n));
   }
   function markRead(i) {
@@ -202,6 +202,14 @@
   async function loadGrok() {
     try { S.grok = await api('/api/local-chat/grok-mode'); } catch (_) { S.grok = null; }
     S.panes.forEach((p, i) => renderTop(i));
+  }
+  async function setCheckins(change) {
+    try {
+      const ci = await api('/api/manager/checkin/settings', { method: 'PUT', body: JSON.stringify(change) });
+      S.side = { ...(S.side || {}), checkin: ci };
+      toast('enabled' in change ? `Claude check-ins ${ci.enabled ? 'on' : 'off'}.` : `Check-ins every ${Math.round(ci.interval_s / 60)} min.`);
+    } catch (e) { toast(errText(e), 'error'); }
+    S.panes.forEach((_, n) => renderRight(n));
   }
   async function rebuildGrokVm() {
     try {
@@ -849,13 +857,18 @@ ${fb.queue.map((q) => `<p class="lc-note">push queue ${E(q.id)}: <b>${E(q.status
     const sd = S.side || {};
     const esc = sd.escalations && sd.escalations.count ? `<p class="lc-warn">${E(sd.escalations.count)} escalation(s) waiting for a decision.</p>` : '';
     const dg = sd.digest && sd.digest.text ? `<pre class="lc-pre lc-digest">${E(String(sd.digest.text).slice(0, 1200))}</pre>` : '';
+    const ci = sd.checkin;
+    const IV = [[900, '15 min'], [3600, '1 hour'], [14400, '4 hours'], [86400, '1 day']];
+    const checkins = ci ? `<div class="lc-kv"><div><label title="Claude reads a capped digest of the Factory on a schedule, only while cloud capacity exists. Costs Claude tokens; off by default."><input type="checkbox" data-lc="mgr-checkins"${ci.enabled ? ' checked' : ''}> Claude check-ins</label>
+<select class="lc-sel" data-lc="mgr-interval" aria-label="Check-in interval">${IV.map(([v, l]) => `<option value="${v}"${Number(ci.interval_s) === v ? ' selected' : ''}>every ${l}</option>`).join('')}${IV.some(([v]) => v === Number(ci.interval_s)) ? '' : `<option value="${E(ci.interval_s)}" selected>every ${E(ci.interval_s)} s</option>`}</select></div>
+<div><span>Check-ins so far</span><b>${E(ci.count || 0)} (${E(Number(ci.tokens_total || 0).toLocaleString())} tokens)</b></div></div>` : '';
     const wd = sd.watchdog ? `<p class="lc-note">WatchDog: ${E(sd.watchdog.total || 0)} incident(s)${sd.watchdog.escapes ? `, <b class="lc-warn">${E(sd.watchdog.escapes)} escape(s)</b>` : ''}. Containment is only proposed, never run.</p>` : '';
     el.innerHTML = `<section class="lc-card"><h3>Context</h3>${meter}</section>${c ? `<section class="lc-card"><h3>Agent</h3>${agent}</section>` : ''}${board}
 <section class="lc-card"><h3>Model</h3>${modelDetails(modelRow(model))}</section>
 <section class="lc-card"><h3>Session</h3>${s ? `<div class="lc-kv"><div><span>Title</span><b>${E(s.title || 'untitled')}</b></div>
 <div><span>Messages</span><b>${msgs.length}</b></div><div><span>Tokens</span><b>${tokens.toLocaleString()}</b></div>
 <div><span>Workspace</span><b>${E(s.workspace || 'none')}</b></div></div>` : '<p class="lc-note">A session starts with your first message.</p>'}</section>
-${esc || dg || wd ? `<section class="lc-card"><h3>Manager &amp; WatchDog</h3>${esc}${dg}${wd}</section>` : ''}`;
+${checkins || esc || dg || wd ? `<section class="lc-card"><h3>Manager &amp; WatchDog</h3>${checkins}${esc}${dg}${wd}</section>` : ''}`;
   }
 
   // ---- the sidebar ---------------------------------------------------------------------------------------------------
@@ -1222,6 +1235,8 @@ ${(st.running || []).length ? `<span>${st.running.length} answering</span>` : ''
       else if (t.dataset.lc === 'grok') setGrok({ mode: t.value });
       else if (t.dataset.lc === 'grok-net') setGrok({ network_approved: t.checked });
       else if (t.dataset.lc === 'grok-box') setGrok({ confine_backend: t.value });
+      else if (t.dataset.lc === 'mgr-checkins') setCheckins({ enabled: t.checked });
+      else if (t.dataset.lc === 'mgr-interval') setCheckins({ interval_s: Number(t.value) });
       else if (t.dataset.lc === 'workspace') setField(i, 'workspace', t.value.trim());
     });
     let qTimer = null;
