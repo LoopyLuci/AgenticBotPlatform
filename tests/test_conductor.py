@@ -540,3 +540,21 @@ def test_an_allowed_proof_runs_through_the_sandbox_spawn(repo, monkeypatch):
     assert bad.rule == "proof" and "failed" in bad.message
     assert [("-m pytest -q -x" in c, cwd == repo.resolve(), ws == repo.resolve()) for c, cwd, ws in seen] == [(True, True, True)] * 2
     assert "tests/test_cli.py" in seen[0][0]
+
+
+def test_a_rejected_plan_answer_says_what_the_model_returned():
+    """Live 2026-10-25: three answers rejected as "not a JSON object" and nothing else to go on; the note now shows it."""
+    from bot.conductor import llm, planner
+
+    answers = iter(["", "Sure! Here is the plan you asked for", "still no json"])
+
+    async def fake(prompt, **kw):
+        return next(answers), "modelmistress/coder"
+    llm.set_completer(fake)
+    try:
+        plan = asyncio.run(planner.make_plan("add a shout helper", repo="r", save=False))
+    finally:
+        llm.set_completer(None)
+    notes = " | ".join(plan.notes)
+    assert "the answer was empty" in notes and "it began: 'Sure! Here is the plan" in notes and "modelmistress/coder" in notes
+    assert plan.planner == "fallback"

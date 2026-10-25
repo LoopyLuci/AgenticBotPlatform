@@ -341,7 +341,9 @@ async def make_plan(goal_text: str, *, repo: str = "abp", worktree_root: str = "
                 planner = f"model:{ref}"
                 break
             repaired += 1
-            notes.append(f"model answer {attempt + 1} rejected: " + "; ".join(errors)[:300])
+            seen = " ".join(str(text or "").split())
+            notes.append(f"model answer {attempt + 1} rejected: " + "; ".join(errors)[:300]
+                         + (f" (from {ref}; it began: {seen[:120]!r})" if seen else f" (from {ref}; the answer was empty)"))
             prompt = (_prompt(goal, max_tasks, context, context_cap) + "\n\nYour previous answer was not usable:\n- " + "\n- ".join(errors) +
                       "\nFix these and answer with the corrected JSON only.")
             tasks = []
