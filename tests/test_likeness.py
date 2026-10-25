@@ -205,3 +205,23 @@ def test_api_needs_the_token_and_switch_is_audited(lk, monkeypatch):
     assert up.status_code == 200 and up.json()["id"].startswith("upload:")
     assert c.post("/api/likeness/uploads", headers=h, files={"file": ("a.exe", b"MZ", "application/octet-stream")}).status_code == 400
     assert c.get("/api/likeness/out/..%2Fconsents.json", headers=h).status_code == 404
+
+
+def test_a_damaged_model_file_is_fetched_again(tmp_path, monkeypatch):
+    """A hard crash once left arcface_w600k_r50.onnx as a right-sized file of zeros; size alone must not pass it."""
+    from bot.likeness import models
+    monkeypatch.setenv("ABP_LIKENESS_MODELS_DIR", str(tmp_path))
+    monkeypatch.setattr(models, "_checked", set())
+    f = models.File("t", "t.onnx", 4, __import__("hashlib").sha256(b"good").hexdigest(), "x")
+    (tmp_path / "t.onnx").write_bytes(b"\0\0\0\0")
+    got = []
+
+    class R:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return __import__("io").BytesIO(b"good")
+        def __exit__(self, *a): return False
+
+    monkeypatch.setattr(models.urllib.request, "urlopen", lambda *a, **k: (got.append(1), R())[1])
+    assert models._fetch(f).read_bytes() == b"good" and got == [1]
+    assert models._fetch(f) and got == [1]                          # verified once, then trusted
+    assert not models._derived_ok(tmp_path / "missing.onnx", tmp_path / "missing.npy")

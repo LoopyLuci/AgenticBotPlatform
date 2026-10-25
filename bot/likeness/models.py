@@ -24,6 +24,7 @@ from bot.likeness import onnxfix, store
 
 BASE = "https://github.com/facefusion/facefusion-assets/releases/download/models-3.0.0/"
 _lock = threading.Lock()
+_checked: set[Path] = set()
 
 
 @dataclass(frozen=True)
@@ -74,8 +75,14 @@ def _verified(p: Path, f: File) -> bool:
 
 def _fetch(f: File) -> Path:
     dest = models_dir() / f.name
-    if dest.is_file() and dest.stat().st_size == f.size:
-        return dest                     # verified when it was written; re-hashing 450 MB on every job is wasteful
+    if dest in _checked:
+        return dest                     # hashed once per process; re-hashing 450 MB on every job is wasteful
+    if _verified(dest, f):
+        _checked.add(dest)
+        return dest
+    # missing, or damaged (a hard crash once left a right-sized file of zeros): fetch again, drop what was made from it
+    for derived in ("inswapper_128_opencv.onnx", "inswapper_128_emap.npy"):
+        (dest.parent / derived).unlink(missing_ok=True)
     tmp = dest.with_suffix(".part")
     req = urllib.request.Request(f.url, headers={"User-Agent": "AgenticBotPlatform-likeness/1"})
     with urllib.request.urlopen(req, timeout=120) as r, open(tmp, "wb") as out:
@@ -84,7 +91,22 @@ def _fetch(f: File) -> Path:
         tmp.unlink(missing_ok=True)
         raise RuntimeError(f"{f.name}: the download does not match its pinned SHA-256; not used")
     os.replace(tmp, dest)
+    _checked.add(dest)
     return dest
+
+
+def _derived_ok(cv: Path, emap: Path) -> bool:
+    """The patched swapper and its emap look whole (a crash can leave zero-filled files of the right size)."""
+    try:
+        if not (cv.is_file() and cv.stat().st_size > FILES["swapper"].size // 2):
+            return False
+        with open(cv, "rb") as fh:
+            if fh.read(64).count(0) == 64:
+                return False
+        e = np.load(emap)
+        return e.shape == (512, 512) and bool(np.isfinite(e).all()) and bool(e.any())
+    except (OSError, ValueError):
+        return False
 
 
 def ensure() -> dict[str, Path]:
@@ -92,7 +114,7 @@ def ensure() -> dict[str, Path]:
     with _lock:
         sw, arc = _fetch(FILES["swapper"]), _fetch(FILES["arcface"])
         cv, emap = sw.with_name("inswapper_128_opencv.onnx"), sw.with_name("inswapper_128_emap.npy")
-        if not (cv.is_file() and emap.is_file()):
+        if not _derived_ok(cv, emap):
             data, em, _ = onnxfix.patch_inswapper(sw.read_bytes())
             cv.with_suffix(".part").write_bytes(data)
             os.replace(cv.with_suffix(".part"), cv)
