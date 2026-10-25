@@ -758,3 +758,15 @@ def test_the_cli_and_mcp_reach_the_new_routes(client, capsys, monkeypatch):
     run(mcp_server.capacity_policy())
     assert [(m, p) for m, p, _ in seen] == [("POST", "/api/capacity/probe"), ("GET", "/api/capacity/policy")]
     assert seen[0][2]["json"] == {"force": True}
+
+
+def test_local_candidates_leave_out_embedding_models(monkeypatch):
+    from bot import model_router
+    from bot.capacity import routing
+
+    monkeypatch.setattr(routing, "is_local_ref", lambda r: True)
+    monkeypatch.setattr(model_router, "candidate_models", lambda: [
+        "modelmistress/Qwen/Qwen3-Embedding-0.6B-GGUF:Qwen3-Embedding-0.6B-Q8_0", "ollama/nomic-embed-text",
+        "ollama/bge-reranker-v2", "modelmistress/ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF:Qwen3-TTS-12Hz-1.7B-Base-Q8_0",
+        "modelmistress/Qwen/Qwen3-4B-GGUF:Qwen3-4B-Q4_K_M"])
+    assert routing.local_candidates() == ["modelmistress/Qwen/Qwen3-4B-GGUF:Qwen3-4B-Q4_K_M"]

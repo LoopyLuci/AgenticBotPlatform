@@ -53,12 +53,19 @@ def is_local_transport(transport) -> bool:
     return str(getattr(transport, "router_provider", "") or "").lower() in {str(p).lower() for p in governor.settings().get("local_providers") or []}
 
 
+def is_embedding_ref(ref: str) -> bool:
+    """An embedding, reranker or speech model: it cannot hold a chat, so it is never offered for one."""
+    name = ref.lower().rsplit("/", 1)[-1]
+    return any(k in name for k in ("embed", "rerank", "bge-", "minilm", "-tts"))
+
+
 def local_candidates() -> list[str]:
-    """Local model refs ABP can see: the router's own candidate list, local ones only (ModelMistress first)."""
+    """Local chat model refs ABP can see: the router's own candidate list, local ones only (ModelMistress first), embedding
+    and reranker models left out."""
     try:
         from bot import model_router
 
-        refs = [r for r in model_router.candidate_models() if is_local_ref(r)]
+        refs = [r for r in model_router.candidate_models() if is_local_ref(r) and not is_embedding_ref(r)]
     except Exception:  # noqa: BLE001
         refs = []
     return sorted(dict.fromkeys(refs), key=lambda r: (not r.lower().startswith("modelmistress/"), r))
