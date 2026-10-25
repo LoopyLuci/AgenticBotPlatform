@@ -59,13 +59,29 @@ def set_completer(fn: Optional[Completer]) -> None:
     _completer = fn
 
 
+def ranked(refs: list[str]) -> list[str]:
+    """`refs` best first by the Workspace catalog's ranking (measured evals, then code-tuned, then size); a ref the catalog does
+    not know keeps its place after the known ones. The catalog's order is used as is when it cannot be read."""
+    try:
+        from bot.localchat import catalog
+
+        order = {mid: i for i, mid in enumerate(catalog.ranked_chat(catalog.get()))}
+    except Exception:  # noqa: BLE001 - no catalog: the plain order
+        return list(refs)
+
+    def pos(ref: str) -> int:
+        bare = ref.split("/", 1)[1] if ref.lower().startswith("modelmistress/") else ref
+        return order.get(bare, order.get(ref, len(order)))
+    return sorted(refs, key=pos)
+
+
 def candidates(preferred: str = "", avoid: str = "") -> list[str]:
     """Local model refs to try, in order. `preferred` must itself be local; `avoid` goes last (a reviewer other than the planner)."""
     from bot.capacity import routing
 
     if preferred and not routing.is_local_ref(preferred):
         raise NoLocalModel(f"{preferred} is not a local model; the conductor uses local models only")
-    refs = ([preferred] if preferred else []) + [r for r in routing.local_candidates() if r != preferred]
+    refs = ([preferred] if preferred else []) + [r for r in ranked(routing.local_candidates()) if r != preferred]
     if avoid and avoid in refs and len(refs) > 1:
         refs = [r for r in refs if r != avoid] + [avoid]
     return refs[:3]

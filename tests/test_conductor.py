@@ -558,3 +558,23 @@ def test_a_rejected_plan_answer_says_what_the_model_returned():
     notes = " | ".join(plan.notes)
     assert "the answer was empty" in notes and "it began: 'Sure! Here is the plan" in notes and "modelmistress/coder" in notes
     assert plan.planner == "fallback"
+
+
+def test_planner_candidates_follow_the_catalog_ranking(monkeypatch):
+    from bot.capacity import routing
+    from bot.conductor import llm
+    from bot.localchat import catalog
+
+    def row(mid, group="gpu", suite=None, coder=False, size=1.0):
+        return {"id": mid, "kind": "chat", "group": group, "metadata": {"size_gb": size},
+                "evals": [{"kind": "suite", "score": suite}] if suite is not None else [],
+                "strengths": [{"text": "coding (a code-tuned model)"}] if coder else []}
+    doc = {"models": [row("fractions-tutor"), row("unsloth/Coder-30B", suite=0.58, coder=True, size=17.7),
+                      row("unsloth/Qwen3.5-9B", suite=0.52, size=5.9), row("gemma4-26b", group="cpu", size=17.0)]}
+    monkeypatch.setattr(catalog, "get", lambda **k: doc)
+    monkeypatch.setattr(routing, "local_candidates", lambda: [
+        "modelmistress/fractions-tutor", "modelmistress/gemma4-26b", "modelmistress/unsloth/Coder-30B", "modelmistress/unsloth/Qwen3.5-9B"])
+    assert llm.candidates() == ["modelmistress/unsloth/Coder-30B", "modelmistress/unsloth/Qwen3.5-9B", "modelmistress/fractions-tutor"]
+
+    monkeypatch.setattr(catalog, "get", lambda **k: (_ for _ in ()).throw(RuntimeError("hub down")))
+    assert llm.candidates()[0] == "modelmistress/fractions-tutor", "no catalog: the plain order"

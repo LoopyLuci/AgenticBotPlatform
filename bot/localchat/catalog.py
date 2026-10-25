@@ -257,6 +257,22 @@ def forget() -> None:
         _cache.update(ts=0.0, doc=None)
 
 
+def rank(r: dict) -> tuple:
+    """How good a catalog chat row is for real work: measured here first (Factory runs, then the suite), then a code-tuned
+    model, then the bigger one. Never the list's order (that put a 1B tutor model ahead of the measured coder)."""
+    best = {k: max((e["score"] for e in r.get("evals") or [] if e["kind"] == k), default=-1.0) for k in ("factory", "suite")}
+    coder = any("coding" in s["text"] for s in r.get("strengths") or [])
+    return (best["factory"], best["suite"], coder, float((r.get("metadata") or {}).get("size_gb") or 0))
+
+
+def ranked_chat(doc: dict) -> list[str]:
+    """Chat model ids, best first: the ones that fit the GPU (or are loaded) by rank(), then the rest by rank()."""
+    chat = [r for r in doc.get("models", []) if r["kind"] == "chat" and r.get("group") != "cloud"]
+    fits = sorted((r for r in chat if r["group"] in ("gpu", "loaded")), key=rank, reverse=True)
+    rest = sorted((r for r in chat if r["group"] not in ("gpu", "loaded")), key=rank, reverse=True)
+    return [r["id"] for r in fits + rest]
+
+
 def default_model(doc: dict) -> str:
     """The model a new session starts on: local_chat.default_model, else a loaded chat model, else the best measured local
     coder that fits the GPU, else any chat model that fits."""
@@ -271,13 +287,6 @@ def default_model(doc: dict) -> str:
         if r["loaded"]:
             return r["id"]
     gpu = [r for r in chat if r["group"] == "gpu"]
-
-    def rank(r: dict) -> tuple:
-        # measured here first (Factory runs, then the suite), then a code-tuned model, then the bigger one that still fits;
-        # never the list's order (that put a 1B Ollama tutor model ahead of the measured coder)
-        best = {k: max((e["score"] for e in r["evals"] if e["kind"] == k), default=-1.0) for k in ("factory", "suite")}
-        coder = any("coding" in s["text"] for s in r.get("strengths") or [])
-        return (best["factory"], best["suite"], coder, float((r.get("metadata") or {}).get("size_gb") or 0))
     scored = sorted(gpu, key=rank, reverse=True)
     if scored:
         return scored[0]["id"]
