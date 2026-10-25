@@ -1089,6 +1089,10 @@ def build_app() -> FastAPI:
     # Power: keep this machine awake while it is in use, wake other machines (Wake-on-LAN).
     _area_routes("power", "power_api", control_auth("power", write=False), control_auth("power", write=True))
 
+    # Sentinel: ad-blocking (blocklists, a filtering DNS forwarder) and firewall rules (bot/netguard.py). This
+    # machine only: changing its firewall or DNS needs the desktop token, never a linked server.
+    _area_routes("netguard", "netguard_api", _require_token_or_api_key, _require_token)
+
     # The Sandbox Nervous System: every process ABP started and is still running, its cell, what that
     # cell may do, and the two ways to stop it (one cell, or every non-persistent cell).
     from bot.dashboard import sandbox_ns_api

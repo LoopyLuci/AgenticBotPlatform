@@ -131,7 +131,7 @@ def test_config_key_selects_units_when_env_unset():
     assert live.selected_units({"runtime": {"units": ["ollama"]}}) == ["ollama"]
     assert live.selected_units({"runtime": {"units": "none"}}) == []
     assert live.selected_units({}) == list(legacy.AREAS)
-    assert len(legacy.AREAS) == 18
+    assert len(legacy.AREAS) == 19
 
 
 def test_unload_and_load_a_unit_over_http(env):

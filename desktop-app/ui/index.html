@@ -823,6 +823,7 @@
       <a href="#vault" data-kw="vault credentials logins passwords totp two-factor secrets browser agent keys"><span class="ic">🔑</span><span class="nav-txt"><b>Vault</b><small>Logins the browser agent can use</small></span></a>
       <a href="#profiles" data-kw="user profiles model preferences expertise goals learn approve forget export privacy"><span class="ic">👤</span><span class="nav-txt"><b>User profiles</b><small>What the agent learned about people</small></span></a>
       <a href="#power" data-unit="power" data-kw="power sleep keep awake wake on lan wol magic packet remote control linked server"><span class="ic">⏻</span><span class="nav-txt"><b>Power</b><small>Keep awake &amp; wake machines</small></span></a>
+      <a href="#netguard" data-unit="netguard" data-kw="sentinel ad block adblock ads trackers dns blocklist hosts firewall rules ports block ip"><span class="ic">🛡</span><span class="nav-txt"><b>Sentinel</b><small>Ad-blocking &amp; firewall</small></span></a>
       <a href="#storage" data-unit="storage" data-kw="storage nas file server unraid parity array disks shares smb webdav backup sync transfer raid smart drive health duplicates cache mover ransomware"><span class="ic">🗄</span><span class="nav-txt"><b>Storage</b><small>File server, parity, backups</small></span></a>
       <a href="#modules" data-unit="modules" data-kw="modules programs repos install update build hub pipeline brainbuilder wrightspace tridentdroid modelmistress continuum"><span class="ic">▦</span><span class="nav-txt"><b>Modules</b><small>Every program ABP drives</small></span></a>
       <a href="#cluster" data-unit="cluster" data-kw="cluster nodes share resources cpu gpu ram jobs scheduler gang array distributed compute"><span class="ic">⧉</span><span class="nav-txt"><b>Cluster</b><small>Share machines, run jobs</small></span></a>
@@ -1962,6 +1963,11 @@
       <div id="tdp-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
+    <section id="netguard" data-unit="netguard">
+      <div class="sec-head"><h2>Sentinel</h2><span class="desc">Ad-blocking (blocklists and a filtering DNS forwarder, with a live query log) and firewall rules for this machine. Everything is off until you switch it on here, and every change to the host is shown as the exact commands first.</span></div>
+      <div id="ng-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
+
     <section id="power" data-unit="power">
       <div class="sec-head"><h2>Power</h2><span class="desc">Keep this machine (or a linked server) awake while it is in use, wake sleeping machines with Wake-on-LAN, and choose what linked servers may control here.</span></div>
       <div id="pw-root"><p class="cardnote">Connecting to the ABP server…</p></div>
@@ -2587,6 +2593,7 @@
 <script src="vmharness-panel.js"></script>
 <script src="hermesmgr-panel.js"></script>
 <script src="power-panel.js"></script>
+<script src="netguard-panel.js"></script>
 <script src="transferd-panel.js"></script>
 <script src="module-panel.js"></script>
 <script src="modules-panel.js"></script>

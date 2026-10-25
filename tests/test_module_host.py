@@ -26,7 +26,7 @@ DESKTOP = ROOT / "desktop-app" / "ui"
 UNIT_OF_SECTION = {
     "router": "router", "unsloth": "unsloth", "studio": "studio", "localai": "localai", "lab": "neurallab",
     "storage": "storage", "hosting": "hosting", "vision": "vision", "cluster": "cluster",
-    "modules": "modules", "transferdaemon": "transferdaemon", "power": "power", "vm-harness": "vm-harness",
+    "modules": "modules", "transferdaemon": "transferdaemon", "power": "power", "netguard": "netguard", "vm-harness": "vm-harness",
     "hermes-manager": "hermes-manager", "ollama": "ollama",
 }
 

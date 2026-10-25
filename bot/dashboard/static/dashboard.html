@@ -598,6 +598,7 @@
       <a href="#vault" title="Vault"><span class="ic">🔑</span><span class="nav-txt">Vault</span></a>
       <a href="#profiles" title="User profiles"><span class="ic">👤</span><span class="nav-txt">User profiles</span></a>
       <a href="#power" data-unit="power" title="Power"><span class="ic">⏻</span><span class="nav-txt">Power</span></a>
+      <a href="#netguard" data-unit="netguard" title="Sentinel"><span class="ic">🛡</span><span class="nav-txt">Sentinel</span></a>
       <a href="#storage" data-unit="storage" title="Storage"><span class="ic">🗄</span><span class="nav-txt">Storage</span></a>
       <a href="#modules" data-unit="modules" title="Modules"><span class="ic">▦</span><span class="nav-txt">Modules</span></a>
       <a href="#cluster" data-unit="cluster" title="Cluster"><span class="ic">⧉</span><span class="nav-txt">Cluster</span></a>
@@ -1569,6 +1570,11 @@
       <div id="tdp-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
+    <section id="netguard" data-unit="netguard">
+      <div class="sec-head"><h2>Sentinel</h2><span class="desc">Ad-blocking (blocklists and a filtering DNS forwarder, with a live query log) and firewall rules for this machine. Everything is off until you switch it on here, and every change to the host is shown as the exact commands first.</span></div>
+      <div id="ng-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
+
     <section id="power" data-unit="power">
       <div class="sec-head"><h2>Power</h2><span class="desc">Keep this machine (or a linked server) awake while it is in use, wake sleeping machines with Wake-on-LAN, and choose what linked servers may control here.</span></div>
       <div id="pw-root"><p class="cardnote">Connecting to the ABP server…</p></div>
@@ -2356,6 +2362,7 @@
 <script src="/static/vmharness-panel.js"></script>
 <script src="/static/hermesmgr-panel.js"></script>
 <script src="/static/power-panel.js"></script>
+<script src="/static/netguard-panel.js"></script>
 <script src="/static/transferd-panel.js"></script>
 <script src="/static/module-panel.js"></script>
 <script src="/static/modules-panel.js"></script>

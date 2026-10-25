@@ -77,6 +77,9 @@ AREAS: dict[str, Area] = dict([
     _area("transferdaemon", "TransferDaemon", "⇄", 171, routes=("/api/transferdaemon",),
           tools=("bot.transferdaemon.tools",), api="bot.dashboard.transferdaemon_api"),
     _area("power", "Power", "⏻", 172, routes=("/api/power",), tools=("bot.power_tools",), api="bot.dashboard.power_api"),
+    # Sentinel (bot/netguard.py): ad-blocking and firewall rules, driven from the Sentinel module's core
+    _area("netguard", "Sentinel", "🛡", 175, routes=("/api/netguard",), tasks=("bot.netguard:run_forever",),
+          api="bot.dashboard.netguard_api"),
     # the context vault has no page of its own: a card on the Storage page, one tool, read-only routes
     _area("context-vault", "Context Vault", "", 174, routes=("/api/context-vault",), tools=("bot.context_vault.tools",),
           panel=False, api="bot.dashboard.context_vault_api"),
