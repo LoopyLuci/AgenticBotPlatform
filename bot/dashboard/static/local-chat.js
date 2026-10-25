@@ -946,7 +946,8 @@ ${fb.queue.map((q) => `<p class="lc-note">push queue ${E(q.id)}: <b>${E(q.status
 <section class="lc-card"><h3>Session</h3>${s ? `<div class="lc-kv"><div><span>Title</span><b>${E(s.title || 'untitled')}</b></div>
 <div><span>Messages</span><b>${msgs.length}</b></div><div><span>Tokens</span><b>${tokens.toLocaleString()}</b></div>
 <div><span>Workspace</span><b>${E(s.workspace || 'none')}</b></div></div>` : '<p class="lc-note">A session starts with your first message.</p>'}</section>
-${checkins || esc || dg || wd ? `<section class="lc-card"><h3>Manager &amp; WatchDog</h3>${checkins}${esc}${dg}${wd}</section>` : ''}`;
+${checkins || esc || dg || wd ? `<section class="lc-card"><h3>Manager &amp; WatchDog</h3>${checkins}${esc}${dg}${wd}</section>` : ''}
+${window.ABPLikeness ? window.ABPLikeness.card() : ''}`;
   }
 
   // ---- the sidebar ---------------------------------------------------------------------------------------------------

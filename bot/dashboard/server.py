@@ -918,6 +918,9 @@ def build_app() -> FastAPI:
     # Computer vision on this machine (/api/vision): OpenCV and its model zoo (bot/vision).
     _area_routes("vision", "vision_api", _require_token)
 
+    # Likeness (Video Studio V3): face swap, recast and characters under consent (/api/likeness; bot/likeness).
+    _area_routes("likeness", "likeness_api", _require_token)
+
     # Studio: generative code and GUI with a real-time preview (/studio/v/*, /api/studio/*; bot/studio).
     _area_routes("studio", "studio_api", _require_token)
 

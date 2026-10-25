@@ -197,6 +197,10 @@ DENYLIST: frozenset[str] = frozenset({
     # dnn.py hold locks and the device fallbacks.
     "bot.dashboard.vision_api", "bot.vision.tools", "bot.vision.pipelines", "bot.vision.zoo", "bot.vision.dnn",
     "bot.vision.service", "bot.vision.images", "bot.vision.ops",
+    # Likeness: routes register once; jobs.py holds the running jobs and the run lock, engine.py the loaded models,
+    # store.py the write lock, models.py the fetch lock.
+    "bot.dashboard.likeness_api", "bot.likeness.jobs", "bot.likeness.engine", "bot.likeness.store",
+    "bot.likeness.models", "bot.likeness.policy", "bot.likeness.provenance", "bot.likeness.onnxfix",
     # Hosting: routes register once and hosting_api.py holds the runs; tools.py registers at import time; store.py
     # holds the write lock, upnp.py the discovered router.
     "bot.dashboard.hosting_api", "bot.hosting.tools", "bot.hosting.store", "bot.hosting.upnp", "bot.hosting.service",
