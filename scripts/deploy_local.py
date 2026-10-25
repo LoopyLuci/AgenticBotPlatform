@@ -492,6 +492,7 @@ def build_inputs(root: Path = ROOT) -> list[Path]:
                            DESKTOP_REL / "build.rs")
     ] + [
         root / "config" / "backends.yaml",
+        root / "scripts" / "release_guard.py",
         root / "requirements.txt",
         root / "requirements.lock",
         root / DESKTOP_REL / "tauri.conf.json",

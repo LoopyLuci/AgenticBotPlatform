@@ -111,6 +111,18 @@ def make_worker(repo: str, model: str) -> Any:
         raise FactoryRefused(str(e)) from e
 
 
+def _worker_kind(worker: Any) -> str:
+    """How the run's workers are confined, as the start message says it."""
+    from bot.conductor import grok_worker
+
+    if isinstance(worker, grok_worker.GrokWorker):
+        if worker.mode == "advisor":
+            return "Grok plans with no tools; the local worker edits in an AppContainer with no network"
+        return ("Grok in a throw-away Linux VM with internet only" if worker.box == "wsl_vm"
+                else "Grok in its own AppContainer with internet only")
+    return "AppContainer, no network"
+
+
 def _conductor(repo: str, base: str, worker: Any, model: str, on_event: Any = None) -> Any:
     from bot.conductor import run
 
@@ -196,7 +208,7 @@ async def start(sid: str, plan_id: str, broadcast: Broadcast, *, confirm: bool =
         store.add_message(sid, "system", f"{len(waiting)} task(s) an earlier run escalated get a fresh attempt.",
                           meta={"factory_retry": [e["task_key"] for e in waiting]})
     store.add_message(sid, "system", f"Factory run of plan {plan_id} started: {len(plan.tasks)} task(s), workers confined "
-                      "(AppContainer, no network). Its workers appear as linked sessions.", meta={"factory_run": plan_id})
+                      f"({_worker_kind(worker)}). Its workers appear as linked sessions.", meta={"factory_run": plan_id})
     await chat._status(broadcast, sid, "working", factory=plan_id)
     _models[sid] = session["model"]
     _runs[sid] = asyncio.create_task(_run(sid, cond, plan, broadcast, integrate), name=f"localchat-factory-{sid}")

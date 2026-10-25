@@ -13,6 +13,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import stage_bundle as sb  # noqa: E402
 
+ROOT_DIR = Path(__file__).resolve().parents[1]
 PERSONAL = "C:\\Users\\someone"
 
 
@@ -23,6 +24,9 @@ def _fake_project(root: Path, *, leak: bool = False) -> None:
     (root / "config").mkdir()
     (root / "config" / "backends.yaml").write_text("default_backend: cli\n", encoding="utf-8")
     (root / "config" / "providers.yaml").write_text("providers: {x: {api_key: sk-secret}}\n", encoding="utf-8")
+    (root / "scripts").mkdir()
+    (root / "scripts" / "release_guard.py").write_text("class PipelineLock: ...\n", encoding="utf-8")
+    (root / "scripts" / "local_pipeline.py").write_text("x\n", encoding="utf-8")
 
     venv = root / ".venv"
     (venv / "Scripts").mkdir(parents=True)
@@ -262,3 +266,20 @@ def test_a_rebuild_prunes_what_the_stage_no_longer_has_from_the_build_folder(tmp
 def test_a_module_moved_aside_during_an_upgrade_is_not_shipped():
     site = sb.ROOT / ".venv" / "Lib" / "site-packages" / "pkg"
     assert sb._venv_ignore(str(site), ["_x.pyd", "_x.pyd.locked-old"]) == {"_x.pyd.locked-old"}
+
+
+def test_the_machine_lock_ships_but_no_other_script(project):
+    """bot/conductor/shards.py loads <install>/scripts/release_guard.py for every Factory integration; the installed app had
+    no scripts/ at all, so every integration went red (live, 2026-10-25)."""
+    out = _stage(project)
+    assert (out / "scripts" / "release_guard.py").is_file()
+    assert sorted(p.name for p in (out / "scripts").iterdir()) == ["release_guard.py"]
+
+
+def test_every_install_file_the_conductor_loads_is_a_bundle_resource():
+    import json
+
+    conf = json.loads((ROOT_DIR / "desktop-app" / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))
+    assert conf["bundle"]["resources"].get("stage/scripts/release_guard.py") == "scripts/release_guard.py"
+    shards = (ROOT_DIR / "bot" / "conductor" / "shards.py").read_text(encoding="utf-8")
+    assert '"scripts" / "release_guard.py"' in shards          # the path the conductor loads it from

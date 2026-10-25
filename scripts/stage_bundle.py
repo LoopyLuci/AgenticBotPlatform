@@ -279,6 +279,10 @@ def stage(stage_dir: Path = STAGE, markers: list[str] | None = None) -> None:
             ignore=shutil.ignore_patterns(".git", "__pycache__"),
         )
     stage_vscode_extension(stage_dir / "integrations")
+    # The machine-wide suite lock the conductor's integration holds (bot/conductor/shards.py loads it from
+    # <install>/scripts/release_guard.py). Without it an installed app turned every Factory integration red.
+    (stage_dir / "scripts").mkdir(parents=True, exist_ok=True)
+    shutil.copy2(ROOT / "scripts" / "release_guard.py", stage_dir / "scripts" / "release_guard.py")
     shutil.copytree(ROOT / ".venv", stage_dir / ".venv", ignore=_venv_ignore, symlinks=True)
     cfg = stage_dir / ".venv" / "pyvenv.cfg"
     if cfg.is_file():

@@ -51,6 +51,7 @@
       "stage/config/backends.yaml": "config/backends.yaml",
       "stage/.venv": ".venv",
       "stage/vendor/ssh_toolkit": "vendor/ssh_toolkit",
+      "stage/scripts/release_guard.py": "scripts/release_guard.py",
       "../../requirements.txt": "requirements.txt",
       "../../requirements.lock": "requirements.lock",
       "../ui": "desktop-app/ui",
