@@ -209,6 +209,7 @@ def test_native_extensions_are_built_from_the_tree_into_the_staged_venv(tmp_path
     built from this tree instead, with no trace of the copied one."""
     import zipfile
 
+    monkeypatch.setattr(sb, "_toolchain_path", lambda path: path)      # not this test's concern (see the toolchain test)
     root = tmp_path / "proj"
     (root / "native" / "abp-demo").mkdir(parents=True)
     (root / "native" / "abp-demo" / "pyproject.toml").write_text("[project]\nname='abp-demo'\n", encoding="utf-8")
@@ -283,3 +284,15 @@ def test_every_install_file_the_conductor_loads_is_a_bundle_resource():
     assert conf["bundle"]["resources"].get("stage/scripts/release_guard.py") == "scripts/release_guard.py"
     shards = (ROOT_DIR / "bot" / "conductor" / "shards.py").read_text(encoding="utf-8")
     assert '"scripts" / "release_guard.py"' in shards          # the path the conductor loads it from
+
+
+def test_the_native_build_puts_the_real_toolchain_first_on_path(monkeypatch, tmp_path):
+    """rustup's cargo/rustc symlinks broke maturin's `cargo metadata` outside `cargo tauri build` (pipeline Rust step)."""
+    real = tmp_path / "toolchain" / "bin"
+    real.mkdir(parents=True)
+    (real / "cargo.exe").write_text("")
+    monkeypatch.setattr(sb.shutil, "which", lambda name: "/opt/rustup" if name == "rustup" else None)
+    monkeypatch.setattr(sb.subprocess, "check_output", lambda *a, **k: str(real / "cargo.exe") + "\n")
+    assert sb._toolchain_path("A;B").startswith(str(real))
+    monkeypatch.setattr(sb.shutil, "which", lambda name: None)
+    assert sb._toolchain_path("A;B") == "A;B"                      # no rustup: PATH as it was

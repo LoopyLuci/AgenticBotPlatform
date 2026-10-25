@@ -78,6 +78,23 @@ def _venv_python(venv: Path) -> Path:
     return venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
 
+def _toolchain_path(path: str) -> str:
+    """PATH with the active Rust toolchain's own bin folder first. Where cargo/rustc on PATH are rustup's symlinks with a
+    relative target, maturin's `cargo metadata` fails with "program not found" (found 2026-10-25: the pipeline's Rust step
+    re-stages outside `cargo tauri build`, which otherwise hands its children the real binaries)."""
+    rustup = shutil.which("rustup")
+    if not rustup:
+        return path
+    try:
+        real = Path(subprocess.check_output([rustup, "which", "cargo"], text=True, timeout=60, stderr=subprocess.DEVNULL,
+                                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).strip())
+    except (OSError, subprocess.SubprocessError):
+        return path
+    if not real.is_file():
+        return path
+    return f"{real.parent}{os.pathsep}{path}"
+
+
 def stage_native(stage_venv: Path, root: Path | None = None, log=print) -> list[str]:
     """Build each native/<crate> extension from this tree and install it into the STAGED venv.
 
@@ -109,11 +126,12 @@ def stage_native(stage_venv: Path, root: Path | None = None, log=print) -> list[
         raise SystemExit(f"[FAILED] no site-packages in the staged venv {stage_venv}")
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     installed = []
+    path = _toolchain_path(os.environ.get("PATH", ""))
     with tempfile.TemporaryDirectory(prefix="abp-native-wheels-") as tmp:
         for crate in crates:
             out = Path(tmp) / crate.name
             log(f"native extensions: building {crate.name}")
-            env = {**os.environ, "PYO3_PYTHON": str(builder)}
+            env = {**os.environ, "PYO3_PYTHON": str(builder), "PATH": path}
             done = subprocess.run([str(builder), "-m", "maturin", "build", "--release", "--out", str(out)],
                                   cwd=str(crate), env=env, capture_output=True, text=True, encoding="utf-8",
                                   errors="replace", creationflags=flags)
