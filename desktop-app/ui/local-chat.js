@@ -169,7 +169,8 @@
     S.sideAt = Date.now();
     const [dg, es, rb, ci] = await Promise.all([api('/api/manager/digest?text=true').catch(() => null), api('/api/manager/escalations?limit=5').catch(() => null),
       api('/api/redblue/summary?limit=3').catch(() => null), api('/api/manager/checkin').catch(() => null)]);
-    S.side = { digest: dg, escalations: es, watchdog: rb, checkin: ci };
+    const kn = await api('/api/conductor/knowledge').catch(() => null);
+    S.side = { digest: dg, escalations: es, watchdog: rb, checkin: ci, knowledge: kn };
     S.panes.forEach((_, n) => renderRight(n));
   }
   function markRead(i) {
@@ -209,6 +210,20 @@
       const ci = await api('/api/manager/checkin/settings', { method: 'PUT', body: JSON.stringify(change) });
       S.side = { ...(S.side || {}), checkin: ci };
       toast('enabled' in change ? `Claude check-ins ${ci.enabled ? 'on' : 'off'}.` : `Check-ins every ${Math.round(ci.interval_s / 60)} min.`);
+    } catch (e) { toast(errText(e), 'error'); }
+    S.panes.forEach((_, n) => renderRight(n));
+  }
+  const KNOW = { enabled: 'Record lessons', for_planner: 'Give the planner earlier runs', for_workers: 'Give workers outcomes of similar tasks',
+    owner_rules: 'Owner rules to the planner', to_memoryfabric: 'Mirror into the memory fabric' };
+  const KNOW_TIP = { enabled: 'Each accepted, rejected, stuck or escalated task becomes a lesson.', for_planner: 'Similar earlier plans, their outcomes and the review rules that keep failing go into planning.',
+    for_workers: 'A worker prompt gets earlier outcomes of tasks on the same files or with a similar title.', owner_rules: 'Standing rules from the memory fabric go into planning.',
+    to_memoryfabric: 'Lessons also go into the memory fabric knowledge base, so the memory graph links them.' };
+  async function setKnowledge(change) {         // LF7: what the Factory learns from earlier runs, each part on/off
+    try {
+      const kn = await api('/api/conductor/knowledge/settings', { method: 'PUT', body: JSON.stringify(change) });
+      S.side = { ...(S.side || {}), knowledge: kn };
+      const [k, v] = Object.entries(change)[0];
+      toast(`Factory knowledge: ${KNOW[k] || k} ${v ? 'on' : 'off'} for the next run.`);
     } catch (e) { toast(errText(e), 'error'); }
     S.panes.forEach((_, n) => renderRight(n));
   }
@@ -940,6 +955,10 @@ ${fb.queue.map((q) => `<p class="lc-note">push queue ${E(q.id)}: <b>${E(q.status
     const checkins = ci ? `<div class="lc-kv"><div><label title="Claude reads a capped digest of the Factory on a schedule, only while cloud capacity exists. Costs Claude tokens; off by default."><input type="checkbox" data-lc="mgr-checkins"${ci.enabled ? ' checked' : ''}> Claude check-ins</label>
 <select class="lc-sel" data-lc="mgr-interval" aria-label="Check-in interval">${IV.map(([v, l]) => `<option value="${v}"${Number(ci.interval_s) === v ? ' selected' : ''}>every ${l}</option>`).join('')}${IV.some(([v]) => v === Number(ci.interval_s)) ? '' : `<option value="${E(ci.interval_s)}" selected>every ${E(ci.interval_s)} s</option>`}</select></div>
 <div><span>Check-ins so far</span><b>${E(ci.count || 0)} (${E(Number(ci.tokens_total || 0).toLocaleString())} tokens)</b></div></div>` : '';
+    const kn = sd.knowledge;
+    const knowledge = kn ? `<section class="lc-card"><h3>Factory knowledge</h3><p class="lc-note">${E(kn.lessons || 0)} lesson(s) from ${E(kn.plans || 0)} earlier run(s): ${E((kn.by_outcome || {}).accepted || 0)} accepted, ${E((kn.by_outcome || {}).rejected || 0)} rejected.</p>
+<div class="lc-kv">${(kn.switches || []).map((k) => `<div><label title="${E(KNOW_TIP[k] || '')}"><input type="checkbox" data-lc="know" data-key="${E(k)}"${kn.settings && kn.settings[k] ? ' checked' : ''}> ${E(KNOW[k] || k)}</label></div>`).join('')}</div>
+${(kn.failing_rules || []).length ? `<p class="lc-note">Keeps failing: ${kn.failing_rules.map((r) => `${E(r.rule)} (${E(r.count)}x)`).join(', ')}</p>` : ''}</section>` : '';
     const wd = sd.watchdog ? `<p class="lc-note">WatchDog: ${E(sd.watchdog.total || 0)} incident(s)${sd.watchdog.escapes ? `, <b class="lc-warn">${E(sd.watchdog.escapes)} escape(s)</b>` : ''}. Containment is only proposed, never run.</p>` : '';
     el.innerHTML = `<section class="lc-card"><h3>Context</h3>${meter}</section>${c ? `<section class="lc-card"><h3>Agent</h3>${agent}</section>` : ''}${board}
 <section class="lc-card"><h3>Model</h3>${modelDetails(modelRow(model))}</section>
@@ -947,6 +966,7 @@ ${fb.queue.map((q) => `<p class="lc-note">push queue ${E(q.id)}: <b>${E(q.status
 <div><span>Messages</span><b>${msgs.length}</b></div><div><span>Tokens</span><b>${tokens.toLocaleString()}</b></div>
 <div><span>Workspace</span><b>${E(s.workspace || 'none')}</b></div></div>` : '<p class="lc-note">A session starts with your first message.</p>'}</section>
 ${checkins || esc || dg || wd ? `<section class="lc-card"><h3>Manager &amp; WatchDog</h3>${checkins}${esc}${dg}${wd}</section>` : ''}
+${knowledge}
 ${window.ABPLikeness ? window.ABPLikeness.card() : ''}`;
   }
 
@@ -1318,6 +1338,7 @@ ${(st.running || []).length ? `<span>${st.running.length} answering</span>` : ''
       else if (t.dataset.lc === 'grok-net') setGrok({ network_approved: t.checked });
       else if (t.dataset.lc === 'grok-box') setGrok({ confine_backend: t.value });
       else if (t.dataset.lc === 'mgr-checkins') setCheckins({ enabled: t.checked });
+      else if (t.dataset.lc === 'know') setKnowledge({ [t.dataset.key]: t.checked });
       else if (t.dataset.lc === 'mgr-interval') setCheckins({ interval_s: Number(t.value) });
       else if (t.dataset.lc === 'workspace') setField(i, 'workspace', t.value.trim());
     });

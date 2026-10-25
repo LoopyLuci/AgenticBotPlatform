@@ -8,6 +8,7 @@
     pusher.py      pushes an approved queue entry (only that exact sha, only when fresh, leak-checked); off by default
     run.py         orchestration: plan -> board -> workers (the swarm board runner) -> review -> integrate; status, queue, approval
     store.py       plans, reviews, integrations, the push queue and escalations (SQLite in the agent state folder)
+    knowledge.py   LF7: lessons from earlier runs (outcomes, rejections, failing rules) recalled into planning and worker prompts
     llm.py         the one place a model is called: local models only (ModelMistress first, then Ollama), never a cloud model
 
 Nothing here deploys. A green integration branch waits in the push queue for an approval; only the pusher (off by default) pushes one.
@@ -49,6 +50,10 @@ DEFAULTS: dict[str, Any] = {
                 # adaptive: size the pre-seeded pack by the task (pack_tokens is the cap); false = always pre-seed, as before
                 "adaptive": True, "min_files_for_pack": 3, "min_bytes_for_pack": 20000, "long_detail_chars": 800,
                 "small_repo_symbols": 150, "min_pack_tokens": 400},
+    # LF7: knowledge from earlier runs (bot/conductor/knowledge.py): lessons recorded per task outcome, recalled into the
+    # planner's context and each worker's prompt, mirrored into the memory fabric. Each switch has a Workspace toggle.
+    "knowledge": {"enabled": True, "for_planner": True, "for_workers": True, "owner_rules": True, "to_memoryfabric": True,
+                  "planner_chars": 2500, "task_chars": 1500, "max_lessons": 6},
     # Grok Build as a Factory worker (bot/conductor/grok_worker.py): mode off | advisor (Grok plans with no tools, a confined
     # local model works) | confined (Grok works in its own AppContainer with internet; needs network_approved) | auto (the
     # default: confined when approved, else advisor; skipped where Grok is not installed). The Workspace switches both.
@@ -69,7 +74,7 @@ def settings() -> dict[str, Any]:
         pass
     out = {**DEFAULTS, **{k: v for k, v in cfg.items() if k in DEFAULTS}}
     out["pusher"] = {**DEFAULTS["pusher"], **(cfg.get("pusher") if isinstance(cfg.get("pusher"), dict) else {})}
-    for k in ("integrator", "cache", "review_scope", "grok"):
+    for k in ("integrator", "cache", "review_scope", "grok", "knowledge"):
         out[k] = {**DEFAULTS[k], **(cfg.get(k) if isinstance(cfg.get(k), dict) else {})}
     out["context"] = {**DEFAULTS["context"], **(cfg.get("context") if isinstance(cfg.get("context"), dict) else {})}
     if not out["suite_command"]:

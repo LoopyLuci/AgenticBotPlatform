@@ -211,6 +211,21 @@ A refusal leaves the entry as it was (and says why in the audit trail); a push t
 push started, pushed/stale/failed, with who and when) is `GET /api/conductor/queue/{id}/audit`. The pusher never deploys: deploying
 the live ABP stays a separate step for the owner.
 
+## Knowledge from earlier runs (`knowledge.py`, LF7)
+
+Every task outcome (accepted, rejected, stuck, escalated) is recorded as a lesson in `conductor.db`, with the task's files, the
+review rules that failed and the reviewer's words. On the next run:
+
+- the **planner** gets earlier plans with a similar goal and how their tasks ended, the review rules that keep failing, and the
+  owner's standing rules from the memory fabric;
+- each **worker** gets earlier outcomes of tasks on the same files or with a similar title, failures first.
+
+Lessons are also mirrored into the memory fabric's knowledge base (source `factory`), so the memory graph links runs, files
+and rules; the context vault capture (`navctx`) is unchanged. `POST /api/conductor/knowledge/export` writes rejected attempts
+(paired with the later accepted fix) as JSONL for later fine-tunes of the local coder. `conductor.knowledge.*` holds the
+switches (`enabled`, `for_planner`, `for_workers`, `owner_rules`, `to_memoryfabric`); the Workspace's Factory knowledge card
+toggles each one (audited).
+
 ## Settings (`conductor:` in config)
 
 `model`, `review_model` (local refs; empty = the first local models the router offers), `max_tasks` (8), `max_rejections` (2),

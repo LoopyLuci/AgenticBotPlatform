@@ -6,7 +6,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 |---|---|
 | page | 60 |
 | action | 102 |
-| route | 1084 |
+| route | 1089 |
 | module | 10 |
 | setting | 72 |
 
@@ -487,20 +487,25 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `POST /api/codeintel/index` Codeintel Index
 - `POST /api/codeintel/pack` Codeintel Pack
 
-### conductor (12)
+### conductor (17)
 
 - `GET /api/conductor/escalations` Conductor Escalations
+- `GET /api/conductor/knowledge` Conductor Knowledge
+- `GET /api/conductor/knowledge/lessons` Conductor Knowledge Lessons
+- `GET /api/conductor/knowledge/recall` Conductor Knowledge Recall
 - `GET /api/conductor/plans` Conductor Plans
 - `GET /api/conductor/plans/{plan_id}` Conductor Plan Get
 - `GET /api/conductor/queue` Conductor Queue
 - `GET /api/conductor/queue/{queue_id}/audit` Conductor Queue Audit
 - `GET /api/conductor/reviews` Conductor Reviews
 - `GET /api/conductor/status` Conductor Status
+- `POST /api/conductor/knowledge/export` Conductor Knowledge Export
 - `POST /api/conductor/plan` Conductor Plan
 - `POST /api/conductor/queue/{queue_id}/approve` Conductor Approve
 - `POST /api/conductor/queue/{queue_id}/push` Conductor Push
 - `POST /api/conductor/queue/{queue_id}/reject` Conductor Reject
 - `POST /api/conductor/review` Conductor Review
+- `PUT /api/conductor/knowledge/settings` Conductor Knowledge Settings
 
 ### config (7)
 
